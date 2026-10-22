@@ -3,18 +3,19 @@
 
 use super::*;
 use crate::app::input::entity_pick::PickSource;
-use crate::app::input::{commands, dispatch};
+use crate::app::input::hotkeys::{HotkeyCommand, HotkeyResolution};
+use crate::app::input::{commands, dispatch, keyboard};
 use crate::sim::combat::TargetKind;
 use crate::sim::command::{
-    Command, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, PlaceRecord, ProductionEvent,
-    ProductionRecord, StopRecord,
+    ArchiveRecord, Command, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, PlaceRecord,
+    ProductionEvent, ProductionRecord, StopRecord,
 };
 use crate::sim::production::{ProductionCategory, ProductionSelection};
 use crate::sim::world::Simulation;
 use crate::ui::sidebar::SidebarAction;
 use crate::ui::sidebar::cameo_order::CameoId;
 use winit::event::ElementState;
-use winit::keyboard::Key;
+use winit::keyboard::{Key, KeyLocation};
 
 #[derive(Debug, Default)]
 enum Step {
@@ -38,6 +39,7 @@ enum Step {
     BarracksStarted,
     BarracksCompleting,
     BarracksPlacing,
+    RallyPending,
     GiStarted,
     GiQueued,
     GiProducing,
@@ -59,6 +61,10 @@ struct GiProduct {
     first_progress: u16,
     completed_frame: Option<u32>,
     delivered_frame: Option<u32>,
+    rally_inherited: Option<Value>,
+    rally_handoff: Option<Value>,
+    rally_walk: Option<Value>,
+    rally_arrival: Option<Value>,
 }
 
 #[derive(Default)]
@@ -80,6 +86,12 @@ pub(super) struct BattleOpening {
     gi_places: Vec<PlaceRecord>,
     gi_produces: Vec<ProductionRecord>,
     gi_events: Vec<Value>,
+    rally_input: Option<Value>,
+    rally_prepared: Option<(u16, u16)>,
+    rally_records: [Option<ArchiveRecord>; 2],
+    rally_executions: [Option<Value>; 2],
+    rally_events: Vec<Value>,
+    rally_planning_commits: [Option<Value>; 2],
     /// Actual first held paid identities, observed from the two House Factories.
     /// Index0 is Host, index1 Guest; neither starting infantry nor a guessed ID.
     fighters: [Option<u64>; 2],
@@ -326,6 +338,36 @@ impl BattleOpening {
                         Some(id) == self.barracks_product,
                         "GAPILE PLACE replaced its paid identity"
                     );
+                    let (clicked, prepared) = rally_click(state, id)?;
+                    let eva_requests_added = planning_rally_with_mouse(state, id, clicked)?;
+                    ensure!(
+                        simulation(state)?
+                            .entities()
+                            .get(id)
+                            .context("rallied GAPILE")?
+                            .archive_target()
+                            .is_none(),
+                        "rally click changed producer Archive before synchronized execution"
+                    );
+                    self.rally_prepared = Some(prepared);
+                    self.rally_input = Some(json!({"native_frame":frame,"producer":id,
+                        "clicked":clicked,"prepared":prepared,"eva_requests_added":eva_requests_added,
+                        "planning_at_mouse_release":true,"planning_after_key_release":false}));
+                    self.step = Step::RallyPending;
+                    action = Some(
+                        "real Planning interleaved GAPILE rally and EVA; key release commits before E1",
+                    );
+                }
+            }
+            Step::RallyPending => {
+                let index = usize::from(!host);
+                ensure!(
+                    !state.match_state.input.planning.active(),
+                    "Planning remained active before E1 production input"
+                );
+                if self.rally_executions[index].is_some()
+                    && self.rally_planning_commits[index].is_some()
+                {
                     let sim = simulation(state)?;
                     let rules = state.rules().context("retail rules")?;
                     let owner = sim
@@ -337,7 +379,7 @@ impl BattleOpening {
                     self.gi_wallet = Some(wallet(state)?);
                     cameo(state, "E1", false)?;
                     self.step = Step::GiStarted;
-                    action = Some("same paid GAPILE completed; E1 cameo: Produce");
+                    action = Some("raw ARCHIVE executed on GAPILE; E1 cameo: Produce");
                 }
             }
             Step::GiStarted => {
@@ -371,14 +413,15 @@ impl BattleOpening {
                     && self
                         .gi_products
                         .iter()
-                        .all(|product| product.delivered_frame.is_some())
+                        .all(|product| product.rally_arrival.is_some())
                     && factory(state, ProductionCategory::Infantry)?
                         .is_none_or(|factory| factory.id.is_none() && factory.queue_len == 0)
                 {
                     self.check_gi_payment(state)?;
                     self.step = Step::GiSettling { frame };
-                    action =
-                        Some("both original paid E1 identities delivered; empty Factory and FIFO");
+                    action = Some(
+                        "both original paid E1 identities followed rally and settled; empty Factory and FIFO",
+                    );
                 }
             }
             Step::GiSettling { frame: delivered } if frame >= delivered + 60 => {
@@ -398,7 +441,7 @@ impl BattleOpening {
                         "encounter actor is not the first original local paid GI"
                     );
                     let cell = legal_move_cell(state, id, desired[index])?;
-                    move_with_mouse(state, id, cell)?;
+                    ground_order_with_mouse(state, id, cell)?;
                     self.step = Step::Rendezvous;
                     action = Some("paid E1 delivery stable; tactical Move to encounter staging");
                 }
@@ -424,7 +467,7 @@ impl BattleOpening {
                     let target_cell = (target.position.rx(), target.position.ry());
                     let approach = offset_toward(target_cell, host_cell, 3);
                     let approach = legal_move_cell(state, ids[0], approach)?;
-                    move_with_mouse(state, ids[0], approach)?;
+                    ground_order_with_mouse(state, ids[0], approach)?;
                     self.step = Step::Approaching;
                     action = Some("both paid GIs staged; Host approaches through tactical Move");
                 }
@@ -468,7 +511,7 @@ impl BattleOpening {
                     select_entity(state, id)?;
                     chat_key(state, KeyCode::KeyS, &Key::Character("s".into()), Some("s"));
                 }
-                move_with_mouse(state, id, cell)?;
+                ground_order_with_mouse(state, id, cell)?;
                 self.step = Step::Disengaging { frame };
                 action = Some("raw Stop cleared orders; tactical Move separates the surviving GIs");
             }
@@ -579,6 +622,49 @@ impl BattleOpening {
     /// skips the required boundary, refuse the capture instead of labelling a
     /// later mutable state as the command's immediate effect.
     fn observe_due_orders(&mut self, state: &AppState, frame: u32) -> Result<()> {
+        for index in 0..2 {
+            let Some(record) = self.rally_records[index] else {
+                continue;
+            };
+            let after_execution = u32::try_from(record.frame)?
+                .checked_add(1)
+                .context("ARCHIVE frame")?;
+            let sim = simulation(state)?;
+            let source = sim
+                .entities()
+                .get(u64::try_from(record.entity_id)?)
+                .context("rally producer")?;
+            ensure!(
+                sim.planning_paths(source.owner()).is_empty(),
+                "manual GAPILE rally created a Planning path"
+            );
+            if self.rally_executions[index].is_some() {
+                continue;
+            }
+            let MegaMissionTarget::Cell { x, y } = record.target else {
+                anyhow::bail!("manual GAPILE rally did not carry a prepared Cell");
+            };
+            if frame < after_execution {
+                ensure!(
+                    source.archive_target().is_none(),
+                    "GAPILE Archive changed before admitted raw ARCHIVE executed"
+                );
+                continue;
+            }
+            ensure!(
+                frame == after_execution,
+                "capture missed ARCHIVE execution boundary: expected{after_execution}, observed{frame}"
+            );
+            ensure!(
+                source.archive_target()
+                    == Some(TargetKind::Cell(u16::try_from(x)?, u16::try_from(y)?)),
+                "executed raw ARCHIVE did not set the prepared GAPILE target"
+            );
+            self.rally_executions[index] =
+                Some(json!({"native_frame":frame,"event_frame":record.frame,
+                "source":record.entity_id,"owner":sim.interner().resolve(source.owner()),
+                "archive":source.archive_target(),"planning_paths":0}));
+        }
         if let Some(attack) = self.pending_attack {
             let after_execution = u32::try_from(attack.frame)?
                 .checked_add(1)
@@ -691,9 +777,12 @@ impl BattleOpening {
                     ensure!(
                         !matches!(
                             &command.payload,
-                            Command::PlaceProducedMobile { .. } | Command::Attack { .. }
+                            Command::PlaceProducedMobile { .. }
+                                | Command::Attack { .. }
+                                | Command::SetRally { .. }
+                                | Command::ArchiveObject { .. }
                         ),
-                        "live Battle admitted semantic mobile PLACE or Attack"
+                        "live Battle admitted a semantic mobile PLACE, Attack or rally"
                     );
                     continue;
                 };
@@ -735,6 +824,72 @@ impl BattleOpening {
                         "a House admitted an extra GI PRODUCE"
                     );
                     self.gi_events.push(json!({"admission_tick":tick.tick,"kind":"PRODUCE","house":produce.house_id,"issue_frame":produce.frame,"bytes":record.as_bytes().as_slice()}));
+                }
+                if let Some(archive) = ArchiveRecord::decode(record) {
+                    let sim = simulation(state)?;
+                    let source = sim
+                        .entities()
+                        .get(u64::try_from(archive.entity_id)?)
+                        .context("admitted ARCHIVE source")?;
+                    if sim.interner().resolve(source.type_ref()) == "GAPILE" {
+                        let index = [HOST_NAME, GUEST_NAME]
+                            .iter()
+                            .position(|name| *name == sim.interner().resolve(source.owner()))
+                            .context("rally Human")?;
+                        ensure!(
+                            archive.house_id == house_id_for_owner(state, source.owner())?,
+                            "raw GAPILE ARCHIVE issuing House differs from producer"
+                        );
+                        ensure!(
+                            self.rally_records[index].is_none(),
+                            "duplicate manual GAPILE ARCHIVE"
+                        );
+                        let MegaMissionTarget::Cell { x, y } = archive.target else {
+                            anyhow::bail!("manual GAPILE rally did not carry a prepared Cell");
+                        };
+                        let prepared = (u16::try_from(x)?, u16::try_from(y)?);
+                        if sim.session().current_house() == Some(source.owner()) {
+                            ensure!(
+                                self.rally_prepared == Some(prepared)
+                                    && self.barracks_product == Some(source.stable_id()),
+                                "local raw ARCHIVE differs from clicked GAPILE/prepared target"
+                            );
+                        }
+                        self.rally_records[index] = Some(archive);
+                        self.rally_events.push(json!({"admission_tick":tick.tick,"admission_observed_frame":frame,
+                            "event_frame":archive.frame,"opcode":record.opcode(),"source":archive.entity_id,
+                            "house":archive.house_id,"prepared":prepared,"bytes":record.as_bytes().as_slice()}));
+                    }
+                }
+                // The real Planning key release reaches PlanMgr637A10 and
+                // encode_plan_commit_record. Keep its ordinary raw2B after
+                // this House's raw1E; an empty commit must still cross LAN.
+                if record.opcode() == 0x2b {
+                    let sim = simulation(state)?;
+                    let owner = *sim
+                        .houses()
+                        .order()
+                        .get(usize::try_from(record.house_id())?)
+                        .context("PLAN_COMMIT issuing House")?;
+                    let index = [HOST_NAME, GUEST_NAME]
+                        .iter()
+                        .position(|name| *name == sim.interner().resolve(owner))
+                        .context("PLAN_COMMIT Human")?;
+                    let archive = self.rally_records[index]
+                        .context("PLAN_COMMIT admitted before its House's manual ARCHIVE")?;
+                    ensure!(
+                        self.rally_planning_commits[index].is_none(),
+                        "duplicate rally PLAN_COMMIT"
+                    );
+                    ensure!(
+                        record.frame_stamp() >= archive.frame
+                            && record.house_id() == archive.house_id,
+                        "PLAN_COMMIT frame/House preceded the manual ARCHIVE"
+                    );
+                    self.rally_planning_commits[index] = Some(json!({
+                        "admission_tick":tick.tick,"admission_observed_frame":frame,
+                        "event_frame":record.frame_stamp(),"opcode":record.opcode(),
+                        "house":record.house_id(),"bytes":record.as_bytes().as_slice()}));
                 }
                 let [Some(actor), Some(target)] = self.fighters else {
                     continue;
@@ -833,6 +988,15 @@ impl BattleOpening {
             .interner()
             .get(&local_owner(state)?)
             .context("local House")?;
+        let rally = self.rally_prepared.context("executed local rally")?;
+        ensure!(
+            sim.entities()
+                .get(self.barracks_product.context("paid barracks")?)
+                .context("rally producer")?
+                .archive_target()
+                == Some(TargetKind::Cell(rally.0, rally.1)),
+            "GAPILE lost its rally while the paid GIs consumed their own Archives"
+        );
         if let Some(factory) = &factory {
             if let Some(order) = self.gi_factory_order {
                 ensure!(
@@ -865,6 +1029,10 @@ impl BattleOpening {
                     first_progress: factory.progress,
                     completed_frame: None,
                     delivered_frame: None,
+                    rally_inherited: None,
+                    rally_handoff: None,
+                    rally_walk: None,
+                    rally_arrival: None,
                 });
                 actions.push(json!({"native_frame":frame,"observation":"paid GI held identity","id":id,"factory":factory_json(factory)}));
             }
@@ -890,13 +1058,57 @@ impl BattleOpening {
                 actions.push(json!({"native_frame":frame,"observation":"paid GI complete and retained in limbo","id":product.id}));
             }
             if !entity.in_limbo() && product.delivered_frame.is_none() {
+                // Exit44499C copies Archive at PLACE, then444CE7 retains the
+                // rally while the GI walks to its dock; Begin alone does not.
+                ensure!(
+                    entity.archive_target() == Some(TargetKind::Cell(rally.0, rally.1))
+                        && entity.navigation.nav_com().is_some(),
+                    "paid GI did not inherit the producer's rally at automatic PLACE"
+                );
                 product.delivered_frame = Some(frame);
+                product.rally_inherited = Some(gi_rally_snapshot(entity, frame));
                 actions.push(json!({"native_frame":frame,"observation":"same paid GI delivered by automatic PLACE","id":product.id,"position":entity.position}));
             }
             ensure!(
                 product.delivered_frame.is_none() || !entity.in_limbo(),
                 "delivered GI returned to limbo"
             );
+            let walk = entity.locomotor.as_ref().context("paid GI Walk")?;
+            let destination = Some(crate::sim::components::NavTargetRef::cell(rally.0, rally.1));
+            if product.delivered_frame.is_some()
+                && product.rally_handoff.is_none()
+                && entity.archive_target().is_none()
+                && entity.navigation.nav_com() == destination
+                && walk.walk_is_moving() == Some(true)
+            {
+                let snapshot = gi_rally_snapshot(entity, frame);
+                actions.push(json!({"native_frame":frame,"observation":"paid GI naturally consumed Archive into rally navigation","gi":snapshot}));
+                product.rally_handoff = Some(snapshot);
+            }
+            if product.rally_walk.is_none()
+                && let Some(handoff) = &product.rally_handoff
+                && handoff["native_frame"]
+                    .as_u64()
+                    .is_some_and(|start| u64::from(frame) > start)
+                && json!(entity.position) != handoff["position"]
+                && entity.navigation.nav_com() == destination
+                && walk.walk_is_moving() == Some(true)
+                && walk.step_head().is_some()
+            {
+                product.rally_walk = Some(gi_rally_snapshot(entity, frame));
+            }
+            if product.rally_arrival.is_none()
+                && product.rally_walk.is_some()
+                && (entity.position.rx(), entity.position.ry()) == rally
+                && entity.archive_target().is_none()
+                && entity.navigation.nav_com().is_none()
+                && walk.walk_is_moving() == Some(false)
+                && entity.mission.current().raw() == 5
+            {
+                let snapshot = gi_rally_snapshot(entity, frame);
+                actions.push(json!({"native_frame":frame,"observation":"paid GI naturally arrived at rally in Guard with cleared Archive/navigation","gi":snapshot}));
+                product.rally_arrival = Some(snapshot);
+            }
         }
         Ok(())
     }
@@ -939,6 +1151,13 @@ impl BattleOpening {
     pub(super) fn finished(&self, state: &AppState) -> Result<bool> {
         let sim = simulation(state)?;
         Ok(matches!(self.step, Step::Done)
+            && self.rally_executions.iter().all(Option::is_some)
+            && self.rally_planning_commits.iter().all(Option::is_some)
+            && self.gi_products.len() == 2
+            && self
+                .gi_products
+                .iter()
+                .all(|product| product.rally_arrival.is_some())
             && self.attack_observation.is_some()
             && self.hit_observation.is_some()
             && self.stop_observation.is_some()
@@ -965,7 +1184,11 @@ impl BattleOpening {
             "starting_credits":self.starting_credits,"final_credits":self.final_credits,
             "gi_wallet_before":self.gi_wallet,"gi_cost":self.gi_cost,"gi_factory_order":self.gi_factory_order,
             "gi_products":self.gi_products.iter().map(|product| json!({"id":product.id,"first_progress":product.first_progress,
-                "completed_frame":product.completed_frame,"delivered_frame":product.delivered_frame})).collect::<Vec<_>>(),
+                "completed_frame":product.completed_frame,"delivered_frame":product.delivered_frame,
+                "rally_inherited":product.rally_inherited,"rally_handoff":product.rally_handoff,
+                "rally_walk":product.rally_walk,"rally_arrival":product.rally_arrival})).collect::<Vec<_>>(),
+            "rally":{"input":self.rally_input,"native_events":self.rally_events,
+                "executions":self.rally_executions,"planning_commits":self.rally_planning_commits},
             "successor_promotions":self.successor_promotions,"gi_native_events":self.gi_events,
             "combat":{"fighters":self.fighters,"staging":self.staging,
                 "attack_input_frame":self.attack_input_frame,"attack":self.attack_observation,
@@ -1045,6 +1268,94 @@ fn combat_snapshot(state: &AppState, ids: [u64; 2], frame: u32) -> Result<Value>
             "rearm_start":entity.rearm_timer.start_frame(),"rearm_duration":entity.rearm_timer.duration()}));
     }
     Ok(json!({"native_frame":frame,"entities":entities}))
+}
+
+fn gi_rally_snapshot(entity: &crate::sim::game_entity::GameEntity, frame: u32) -> Value {
+    let walk = entity.locomotor.as_ref();
+    json!({"native_frame":frame,"id":entity.stable_id(),"position":entity.position,
+        "archive":entity.archive_target(),"destination":entity.navigation.nav_com(),
+        "mission":entity.mission.current().raw(),"queued_mission":entity.mission.queued().raw(),
+        "tether":entity.tether.partner(),"radio_partner":entity.radio_contacts.slot(0),
+        "walk_moving":walk.and_then(|walk| walk.walk_is_moving()),
+        "walk_destination":walk.and_then(|walk| walk.walk_destination()),
+        "step_head":walk.and_then(|walk| walk.step_head())})
+}
+
+fn rally_eva_requests(state: &AppState) -> usize {
+    state
+        .match_state
+        .match_audio
+        .sound_events
+        .iter()
+        .filter(|event| {
+            matches!(event,
+        crate::audio::events::GameSoundEvent::Eva { event, .. }
+        if event == crate::app::match_runtime::eva_producers::EVA_NEW_RALLY_POINT_ESTABLISHED)
+        })
+        .count()
+}
+
+fn rally_click(state: &AppState, producer: u64) -> Result<((u16, u16), (u16, u16))> {
+    let sim = simulation(state)?;
+    let source = sim
+        .entities()
+        .get(producer)
+        .context("local rally producer")?;
+    ensure!(
+        sim.session().current_house() == Some(source.owner()),
+        "diagnostic attempted a remote House's rally input query"
+    );
+    let origin = (source.position.rx(), source.position.ry());
+    let rules = state.rules().context("retail rules")?;
+    for (dx, dy) in [
+        (6, 0),
+        (0, 6),
+        (-6, 0),
+        (0, -6),
+        (6, 3),
+        (-6, -3),
+        (3, 6),
+        (-3, -6),
+    ] {
+        let (Ok(x), Ok(y)) = (
+            u16::try_from(i32::from(origin.0) + dx),
+            u16::try_from(i32::from(origin.1) + dy),
+        ) else {
+            continue;
+        };
+        let Some(cell) = state
+            .resolved_terrain()
+            .and_then(|terrain| terrain.cell(x, y))
+        else {
+            continue;
+        };
+        let world = crate::app::input::camera::cell_centre_world_point(x, y, cell.level);
+        if crate::app::input::entity_pick::hover_object_at_point(
+            crate::app::input::entity_pick::presented(state, sim),
+            world.0,
+            world.1,
+            &local_owner(state)?,
+            false,
+        )
+        .is_some()
+        {
+            continue;
+        }
+        let Some(prepared) = sim
+            .factory_rally_cell_input(producer, (x, y), rules)
+            .map_err(anyhow::Error::msg)?
+        else {
+            continue;
+        };
+        let distance = origin
+            .0
+            .abs_diff(prepared.0)
+            .max(origin.1.abs_diff(prepared.1));
+        if (4..=12).contains(&distance) {
+            return Ok(((x, y), prepared));
+        }
+    }
+    anyhow::bail!("no nearby ground rally click for GAPILE{producer}")
 }
 
 /// Diagnostic rendezvous geometry only; actual Cell admission/pathing remains
@@ -1147,13 +1458,91 @@ fn mouse_can_pick(state: &AppState, id: u64) -> Result<bool> {
     .is_some_and(|target| target.stable_id == id))
 }
 
-fn move_with_mouse(state: &mut AppState, id: u64, cell: (u16, u16)) -> Result<()> {
+fn ground_order_with_mouse(state: &mut AppState, id: u64, cell: (u16, u16)) -> Result<()> {
     select_entity(state, id)?;
+    point_at_ground(state, cell)?;
+    for edge in [ElementState::Pressed, ElementState::Released] {
+        dispatch::handle_mouse_input(state, MouseButton::Left, edge);
+    }
+    Ok(())
+}
 
+fn planning_rally_with_mouse(state: &mut AppState, id: u64, cell: (u16, u16)) -> Result<usize> {
+    ensure!(
+        !state.match_state.input.planning.active(),
+        "rally gesture began with Planning active"
+    );
+    let sim = simulation(state)?;
+    let owner = sim.entities().get(id).context("rally GAPILE")?.owner();
+    ensure!(
+        sim.planning_paths(owner).is_empty(),
+        "rally gesture began with an existing Planning path"
+    );
+    let key = Key::Character("z".into());
+    let input = &state.match_state.input;
+    ensure!(
+        input
+            .hotkey_bindings
+            .resolve_event(&key, KeyLocation::Standard, input.hotkey_modifiers)
+            == HotkeyResolution::Command(HotkeyCommand::PlanningMode),
+        "loaded Z binding does not resolve PlanningMode; current binding={:?}",
+        input.hotkey_bindings.first_key(HotkeyCommand::PlanningMode)
+    );
+    let key_edge = |state: &mut AppState, edge| {
+        keyboard::in_game_key_edge(
+            state,
+            keyboard::InGameKeyEdge {
+                physical: KeyCode::KeyZ,
+                logical: &key,
+                unmodified: &key,
+                location: KeyLocation::Standard,
+                state: edge,
+                repeat: false,
+                text: None,
+            },
+            false,
+        );
+    };
+    select_entity(state, id)?;
+    point_at_ground(state, cell)?;
+    // A Building press already in Planning refuses before tactical capture.
+    // Take ordinary capture first, then enter PlanMgr6379C0 through the real
+    // binding. Its drag cancellation leaves capture for LeftUp4ABF7F's Click
+    // fallback, which dispatches this direct Building ARCHIVE while held.
+    dispatch::handle_mouse_input(state, MouseButton::Left, ElementState::Pressed);
+    key_edge(state, ElementState::Pressed);
+    ensure!(
+        state.match_state.input.planning.active(),
+        "real Planning key press did not enter Planning"
+    );
+    let before = rally_eva_requests(state);
+    dispatch::handle_mouse_input(state, MouseButton::Left, ElementState::Released);
+    ensure!(
+        state.match_state.input.planning.active(),
+        "Planning was inactive at the rally mouse release/EVA observation"
+    );
+    let after = rally_eva_requests(state);
+    ensure!(
+        after == before + 1,
+        "Planning-active GAPILE rally did not synchronously announce NewRallyPoint"
+    );
+    ensure!(
+        simulation(state)?.planning_paths(owner).is_empty(),
+        "direct Planning-active GAPILE rally created a Building path"
+    );
+    key_edge(state, ElementState::Released);
+    ensure!(
+        !state.match_state.input.planning.active(),
+        "real Planning key release did not leave Planning before E1 production"
+    );
+    Ok(after - before)
+}
+
+fn point_at_ground(state: &mut AppState, cell: (u16, u16)) -> Result<()> {
     let z = state
         .resolved_terrain()
         .and_then(|terrain| terrain.cell(cell.0, cell.1))
-        .context("Move terrain cell")?
+        .context("ground input terrain cell")?
         .level;
     let world = crate::app::input::camera::cell_centre_world_point(cell.0, cell.1, z);
     crate::app::input::camera::center_camera_on_cell(state, cell.0, cell.1);
@@ -1161,14 +1550,12 @@ fn move_with_mouse(state: &mut AppState, id: u64, cell: (u16, u16)) -> Result<()
     input.cursor_x = (world.0 - input.camera_x) * input.zoom_level;
     input.cursor_y = (world.1 - input.camera_y) * input.zoom_level;
     dispatch::handle_cursor_moved_in_game(state);
-    for edge in [ElementState::Pressed, ElementState::Released] {
-        dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-    }
     Ok(())
 }
 
 fn select_entity(state: &mut AppState, id: u64) -> Result<()> {
-    // Clicking an already-selected GI is a Deploy action. Preserve the actual
+    // An already-selected object can have a self action (GI Deploy, Primary).
+    // Preserve the actual
     // input selection, including its pending frame-ingress projection, which
     // is also what the following Move/Attack/Stop input consumes.
     if projected_selection(state) != [id] {
@@ -1181,7 +1568,7 @@ fn select_entity(state: &mut AppState, id: u64) -> Result<()> {
         }
         ensure!(
             projected_selection(state).is_empty(),
-            "tactical cancel did not clear selection before GI{id}: projected={:?}, pending={}, targeting={:?}",
+            "tactical cancel did not clear selection before object{id}: projected={:?}, pending={}, targeting={:?}",
             projected_selection(state),
             state.match_state.input.selection_order_pending,
             state.match_state.input.targeting_mode
@@ -1190,7 +1577,7 @@ fn select_entity(state: &mut AppState, id: u64) -> Result<()> {
     }
     ensure!(
         projected_selection(state) == [id],
-        "tactical input did not retain GI{id}: projected={:?}, pending={}, position={:?}",
+        "tactical input did not retain object{id}: projected={:?}, pending={}, position={:?}",
         projected_selection(state),
         state.match_state.input.selection_order_pending,
         simulation(state)?

@@ -93,8 +93,8 @@ impl LiveLanCapture {
 
     fn required_frames(&self) -> u32 {
         if self.battle.is_some() {
-            // Includes paid production, ordinary GI travel across the retail
-            // map, object Attack/Stop and a stable separated tail. Every frame
+            // Includes a barracks rally and paid GI walk, ordinary travel across
+            // the map, object Attack/Stop and a stable separated tail. Every frame
             // still belongs to normal production pacing/pathing/combat.
             7200
         } else {
@@ -740,7 +740,7 @@ impl LiveLanCapture {
         );
         Ok(
             json!({"target":format!("{:?}",self.target),"service_boundary":"two independent App processes; real UDP/global/private queues; ordinary frame boundary",
-            "scope":if self.failure.is_some() { "shared 300-frame prefix followed by real peer disappearance and ordinary wait recovery or Quit; bounded runtime validation, not whole-match/native parity" } else if self.battle.is_some() { "kick/rejoin, Battle opening, two automatic paid GI deliveries per Human, tactical GI Move/object Attack, post-command rifle damage and raw Stop, then separation; bounded runtime validation, not whole-match/native parity" } else { "kick/rejoin, 300 native frames and local Move/Stop; bounded runtime validation, not whole-match/native parity" },
+            "scope":if self.failure.is_some() { "shared 300-frame prefix followed by real peer disappearance and ordinary wait recovery or Quit; bounded runtime validation, not whole-match/native parity" } else if self.battle.is_some() { "kick/rejoin, Battle opening, tactical barracks rally through raw ARCHIVE, two automatic paid GI deliveries and natural rally walks per Human, tactical GI Move/object Attack, post-command rifle damage and raw Stop, then separation; bounded runtime validation, not whole-match/native parity" } else { "kick/rejoin, 300 native frames and local Move/Stop; bounded runtime validation, not whole-match/native parity" },
             "required_frames":self.required_frames(),"battle":self.battle.as_ref().map(|battle| battle.receipt(state)).transpose()?,
             "failure":self.failure.as_ref().map(|failure| failure.receipt()),
             "kick_observed":self.kick_observed,

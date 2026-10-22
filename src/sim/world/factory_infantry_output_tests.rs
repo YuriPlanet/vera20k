@@ -1958,7 +1958,8 @@ fn joined_two_paid_gi(route: OutputRoute) {
                 producer_ids: vec![producer],
             },
         );
-        sim.advance_tick(&[command], Some(&rules), None, Some(&registry), TICK_MS);
+        assert!(sim.issue_local_command(command));
+        sim.advance_tick(&[], Some(&rules), None, Some(&registry), TICK_MS);
         assert_eq!(
             sim.substrate.entities.get(producer).unwrap().rally_cell(),
             rally_cell,
@@ -2004,7 +2005,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
             && products[0].placed_frame.is_none()
         {
             let (rx, ry) = rally_cell.unwrap();
-            sim.queue_command(CommandEnvelope::new(
+            sim.issue_local_command(CommandEnvelope::new(
                 owner,
                 sim.session.tick() + 1,
                 Command::SetRally {
@@ -2039,7 +2040,11 @@ fn joined_two_paid_gi(route: OutputRoute) {
                 let event_types: Vec<_> = admitted
                     .iter()
                     .map(|command| match command.payload {
-                        Command::SetRally { .. } => 0x1E,
+                        Command::SynchronizedRecord { ref record }
+                            if crate::sim::command::ArchiveRecord::decode(record).is_some() =>
+                        {
+                            0x1E
+                        }
                         Command::SynchronizedRecord { ref record }
                             if crate::sim::command::PlaceRecord::decode(record).is_some() =>
                         {

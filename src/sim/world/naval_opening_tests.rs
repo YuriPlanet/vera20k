@@ -406,6 +406,10 @@ fn two_searches_and_event_birth_match_the_original_supplied_map_control() {
         let (terrain, zones, raw) = native_fixture(&json!({"zero_speed_table":zero_speeds}));
         let mut sim = Simulation::new();
         let owner = sim.intern("Local");
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
         let type_ref = sim.intern("YARD");
         let mut actor = GameEntity::new_at_frame_zero_for_test(
             1,

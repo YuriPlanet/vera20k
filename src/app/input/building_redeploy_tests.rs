@@ -839,7 +839,9 @@ fn an_object_archive_whose_target_is_gone_clears_the_archive() {
         Some(&rules)
     ));
     assert_eq!(sim.entities().get(yard).unwrap().archive_target(), None);
-    assert!(!sim.apply_command(
+    // ARCHIVE4C6DAA tests alive, not the issuer's ownership. A captured
+    // producer and an already accepted object event retain their authority.
+    assert!(sim.apply_command(
         "Russians",
         &Command::ArchiveObject {
             entity_id: yard,
@@ -847,6 +849,10 @@ fn an_object_archive_whose_target_is_gone_clears_the_archive() {
         },
         Some(&rules)
     ));
+    assert_eq!(
+        sim.entities().get(yard).unwrap().archive_target(),
+        Some(TargetKind::Entity(yard))
+    );
 }
 
 /// Alt or Ctrl+Alt over a Terrain object with a building selected: Techno

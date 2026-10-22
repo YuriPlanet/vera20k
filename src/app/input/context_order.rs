@@ -1290,6 +1290,7 @@ fn finish_order(
     state: &mut AppState,
     queued: Vec<CommandEnvelope>,
     speaker_id: Option<u64>,
+    rally_announce: bool,
 ) -> bool {
     let admitted = if state.match_state.input.planning.active() {
         let mut queued = queued;
@@ -1356,6 +1357,16 @@ fn finish_order(
         }
         true
     };
+    // Building4437A3 passes announce=true to443860 in planning too.
+    // LeftUp4ABF78..4ABF8E refuses before dispatch; admitted clicks announce
+    // after the append attempt, including a full OutList or a missed search
+    // (4439DC/443A89 ->443A2B..443A69). Source: original gamemd.exe.
+    if admitted && rally_announce {
+        crate::app::input::dispatch::push_local_eva(
+            state,
+            crate::app::match_runtime::eva_producers::EVA_NEW_RALLY_POINT_ESTABLISHED,
+        );
+    }
     //4ABF94's admitted planning route joins the same70D150 suffix at
     //4ABFAE;4ABF8E's refusal exits4AC294 without restarting this timer.
     if admitted
@@ -2082,7 +2093,7 @@ pub(crate) fn try_queue_context_order(
                 (target_rx, target_ry),
                 owner_id,
             ) {
-                LeftRelease::Dispatch => finish_order(state, queued, speaker_id),
+                LeftRelease::Dispatch => finish_order(state, queued, speaker_id, rally_announce),
                 LeftRelease::Nothing => true,
                 LeftRelease::Select => false,
             };
@@ -2113,7 +2124,7 @@ pub(crate) fn try_queue_context_order(
             selected_units.retain(|id| !repair_dispatch.receivers.contains(id));
             selected_ids.retain(|id| !repair_dispatch.receivers.contains(id));
             if selected_ids.is_empty() {
-                let sent = finish_order(state, queued, speaker_id);
+                let sent = finish_order(state, queued, speaker_id, rally_announce);
                 return sent || (consumed_attack_action && !repair_dispatch.select_fallback);
             }
         }
@@ -2157,7 +2168,7 @@ pub(crate) fn try_queue_context_order(
                 selected_units.retain(|id| !engineers.contains(id));
                 selected_ids.retain(|id| !engineers.contains(id));
                 if friendly || selected_units.is_empty() {
-                    return finish_order(state, queued, speaker_id);
+                    return finish_order(state, queued, speaker_id, rally_announce);
                 }
             }
         }
@@ -2187,7 +2198,8 @@ pub(crate) fn try_queue_context_order(
                             .is_some_and(|actor| actor.category() == EntityCategory::Structure)
                 });
                 if selected_ids.is_empty() {
-                    return finish_order(state, queued, speaker_id) || consumed_attack_action;
+                    return finish_order(state, queued, speaker_id, rally_announce)
+                        || consumed_attack_action;
                 }
             }
         }
@@ -2344,7 +2356,7 @@ pub(crate) fn try_queue_context_order(
             .filter(|id| !attack_receivers.contains(id))
             .collect();
         if selected_ids.is_empty() {
-            let sent = finish_order(state, queued, speaker_id);
+            let sent = finish_order(state, queued, speaker_id, rally_announce);
             return sent || (consumed_attack_action && !select_fallback);
         }
         selected_units.retain(|id| !attack_receivers.contains(id));
@@ -2420,7 +2432,7 @@ pub(crate) fn try_queue_context_order(
                     );
                 }
                 if consumed_building_action && selected_units.is_empty() {
-                    return finish_order(state, queued, speaker_id);
+                    return finish_order(state, queued, speaker_id, rally_announce);
                 }
             }
 
@@ -2449,7 +2461,7 @@ pub(crate) fn try_queue_context_order(
                         .map(|command| CommandEnvelope::new(owner_id, execute_tick, command)),
                 );
                 if selected_units.is_empty() {
-                    return finish_order(state, queued, speaker_id);
+                    return finish_order(state, queued, speaker_id, rally_announce);
                 }
             }
 
@@ -2462,7 +2474,7 @@ pub(crate) fn try_queue_context_order(
                             .into_iter()
                             .map(|command| CommandEnvelope::new(owner_id, execute_tick, command)),
                     );
-                    return finish_order(state, queued, speaker_id);
+                    return finish_order(state, queued, speaker_id, rally_announce);
                 }
             }
 
@@ -2487,7 +2499,7 @@ pub(crate) fn try_queue_context_order(
                             },
                         ));
                     }
-                    return finish_order(state, queued, speaker_id);
+                    return finish_order(state, queued, speaker_id, rally_announce);
                 }
             }
 
@@ -2509,7 +2521,7 @@ pub(crate) fn try_queue_context_order(
                 )
             {
                 queued.push(CommandEnvelope::new(owner_id, execute_tick, cmd));
-                return finish_order(state, queued, speaker_id);
+                return finish_order(state, queued, speaker_id, rally_announce);
             }
             if context_actions_enabled
                 && hover.as_ref().is_some_and(|target| {
@@ -2524,7 +2536,7 @@ pub(crate) fn try_queue_context_order(
                     )
                 })
             {
-                return finish_order(state, queued, speaker_id);
+                return finish_order(state, queued, speaker_id, rally_announce);
             }
             if context_actions_enabled
                 && let Some(target) = hover.as_ref()
@@ -2543,7 +2555,7 @@ pub(crate) fn try_queue_context_order(
                         queued.extend(
                             order.map(|order| CommandEnvelope::new(owner_id, execute_tick, order)),
                         );
-                        finish_order(state, queued, speaker_id)
+                        finish_order(state, queued, speaker_id, rally_announce)
                     }
                     _ => true,
                 };
@@ -2576,7 +2588,7 @@ pub(crate) fn try_queue_context_order(
                             },
                         ));
                     }
-                    return finish_order(state, queued, speaker_id);
+                    return finish_order(state, queued, speaker_id, rally_announce);
                 }
             }
             // The cursor owner's What_Action distinguishes a different allied
@@ -2604,7 +2616,7 @@ pub(crate) fn try_queue_context_order(
                     || consumed_attack_action)
             {
                 return if consumed_building_action || consumed_attack_action {
-                    finish_order(state, queued, speaker_id)
+                    finish_order(state, queued, speaker_id, rally_announce)
                 } else {
                     false
                 };
@@ -2831,13 +2843,7 @@ pub(crate) fn try_queue_context_order(
         }
     }
 
-    if rally_announce && !state.match_state.input.planning.active() {
-        crate::app::input::dispatch::push_local_eva(
-            state,
-            crate::app::match_runtime::eva_producers::EVA_NEW_RALLY_POINT_ESTABLISHED,
-        );
-    }
-    finish_order(state, queued, speaker_id) || consumed_attack_action
+    finish_order(state, queued, speaker_id, rally_announce) || consumed_attack_action
 }
 
 /// A receiver's order when its ClickedAction on a Cell re-asks its What_Action

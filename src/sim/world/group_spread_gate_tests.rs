@@ -25,11 +25,11 @@ fn only_a_cell_destination_has_a_spread_key() {
     };
     assert_eq!(
         Simulation::formation_key(&move_to_cell),
-        Some(((2, 0, 0), 4, 5))
+        Some(((2, 0, 0, 5004), 4, 5))
     );
     assert_eq!(
         Simulation::formation_key(&attack_move(None, Some(TargetKind::Cell(4, 5)))),
-        Some(((29, 0, 0), 4, 5))
+        Some(((29, 0, 0, 5004), 4, 5))
     );
     for command in [
         Command::MoveToObject {
@@ -135,6 +135,27 @@ fn planning_flags_use_the_production_group_destination_distributor() {
             .zip(&commands)
             .any(|(a, b)| a.payload != b.payload),
         "fixture must exercise actual destination redistribution"
+    );
+    // Getter6E6E20 stores quotient/remainder as WORDs. These two raw Cell
+    // values therefore project to one destination, but64CB42..64CB5C keeps
+    // them in separate runs. Neither single-member run may rewrite bytes.
+    let mut distinct: Vec<_> = commands[..2]
+        .iter()
+        .map(|command| {
+            let record = sim
+                .encode_megamission_record(owner, &command.payload)
+                .unwrap();
+            super::QueuedCommand::from_envelope(CommandEnvelope::synchronized(record, 1))
+        })
+        .collect();
+    let record = distinct[1].record_mut().unwrap();
+    let destination = i32::from_le_bytes(record.payload()[12..16].try_into().unwrap());
+    record.payload_mut()[12..16].copy_from_slice(&(destination + 65536 * 1000).to_le_bytes());
+    let before = distinct.clone();
+    sim.adjust_staged_megamission_destinations(&mut distinct, &rules, Some(&registry));
+    assert_eq!(
+        distinct, before,
+        "raw destination identity, not projected geometry, owns the run"
     );
     for flag in [1, 2] {
         let mut planned: Vec<_> = commands

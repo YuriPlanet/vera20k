@@ -79,19 +79,41 @@ impl Simulation {
         {
             let mut accepted = true;
             for &producer in producer_ids {
+                // Building443860 prepares the Cell once. Constructor4C6780
+                // and each independent cap128 admission remain in click order.
+                let Some(record) = self.encode_archive_record(
+                    producer,
+                    crate::sim::command::MegaMissionTarget::Cell {
+                        x: *rx as i16,
+                        y: *ry as i16,
+                    },
+                ) else {
+                    accepted = false;
+                    continue;
+                };
                 accepted &= self.local_commands.try_push(QueuedCommand::from_envelope(
-                    CommandEnvelope::new(
-                        command.owner,
-                        command.execute_tick,
-                        Command::SetRally {
-                            rx: *rx,
-                            ry: *ry,
-                            producer_ids: vec![producer],
-                        },
-                    ),
+                    CommandEnvelope::synchronized(record, command.execute_tick),
                 ));
             }
             return accepted;
+        }
+        if let Command::ArchiveObject {
+            entity_id,
+            target_id,
+        } = &command.payload
+        {
+            let Some(target_id) = i32::try_from(*target_id).ok() else {
+                return false;
+            };
+            let Some(record) = self.encode_archive_record(
+                *entity_id,
+                crate::sim::command::MegaMissionTarget::Object { id: target_id },
+            ) else {
+                return false;
+            };
+            return self.local_commands.try_push(QueuedCommand::from_envelope(
+                CommandEnvelope::synchronized(record, command.execute_tick),
+            ));
         }
         self.local_commands
             .try_push(QueuedCommand::from_envelope(command))
@@ -525,31 +547,38 @@ impl Simulation {
     /// onto an object, and an attack-move with a target or an object
     /// destination, have no key: each ends a run and is never spread. The
     /// click never sends an attack-move with both tokens.
-    fn formation_key(command: &impl FormationCommand) -> Option<((u8, i32, u8), u16, u16)> {
+    fn formation_key(command: &impl FormationCommand) -> Option<((u8, i32, u8, i32), u16, u16)> {
         if let Some(record) = command.formation_record() {
             return Self::native_formation_key(record);
         }
-        match command.formation_semantic()? {
+        let (mission, rx, ry) = match command.formation_semantic()? {
             Command::Move {
                 target_rx,
                 target_ry,
                 ..
-            } => Some(((2, 0, 0), *target_rx, *target_ry)),
+            } => (2, *target_rx, *target_ry),
             Command::AttackMove {
                 target: None,
                 destination: Some(crate::sim::combat::TargetKind::Cell(rx, ry)),
                 ..
-            } => Some(((29, 0, 0), *rx, *ry)),
+            } => (29, *rx, *ry),
             // 64CB0A..64CBDB groups all staged opcode4 records by mission,
             // target and destination tokens, including planning flags1/2.
-            Command::PlanningRecord { record } => Self::native_formation_key(record),
-            _ => None,
+            Command::PlanningRecord { record } => return Self::native_formation_key(record),
+            _ => return None,
+        };
+        let (destination, _) = crate::sim::command::MegaMissionTarget::Cell {
+            x: rx as i16,
+            y: ry as i16,
         }
+        .token()
+        .ok()?;
+        Some(((mission, 0, 0, destination), rx, ry))
     }
 
     fn native_formation_key(
         record: &crate::sim::command::CommandRecord,
-    ) -> Option<((u8, i32, u8), u16, u16)> {
+    ) -> Option<((u8, i32, u8, i32), u16, u16)> {
         if record.opcode() != 4 || record.payload()[16] != 11 {
             return None;
         }
@@ -561,7 +590,14 @@ impl Simulation {
             return None;
         };
         Some((
-            (p[5], i32::from_le_bytes(p[7..11].try_into().ok()?), p[11]),
+            //64CB42..64CB5C compares raw destination kind/DWORD. Different
+            // tokens can project to the same WORD coordinates at6E6E20.
+            (
+                p[5],
+                i32::from_le_bytes(p[7..11].try_into().ok()?),
+                p[11],
+                destination,
+            ),
             x as u16,
             y as u16,
         ))
@@ -715,6 +751,15 @@ impl Simulation {
                 run_end += 1;
             }
             if run_end - run_start > 1 {
+                let clicked_target = (key.1 as i16, key.2 as i16);
+                //64CDE9 resolves the Cell;64CDF6 returns for the shared
+                // dummy before member collection or destination rewrites.
+                if NativeCellQuery::canonical(terrain).lookup(clicked_target)
+                    == NativeCellIdentity::Dummy
+                {
+                    run_start = run_end;
+                    continue;
+                }
                 let mut members = Vec::new();
                 for (command_index, command) in commands[run_start..run_end].iter().enumerate() {
                     let Some(entity_id) = Self::formation_entity_id(command) else {
@@ -739,7 +784,6 @@ impl Simulation {
                         source_cell: (entity.position.rx() as i16, entity.position.ry() as i16),
                     });
                 }
-                let clicked_target = (key.1 as i16, key.2 as i16);
                 let mut member_target: Option<GroupMemberTarget> = None;
                 let assignments = group_destination::distribute_group_destinations(
                     clicked_target,

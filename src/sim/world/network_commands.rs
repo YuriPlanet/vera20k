@@ -172,8 +172,87 @@ impl<'a> NetworkCommandQueues<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::command::{Command, CommandEnvelope, GameSpeedRecord};
+    use crate::sim::command::{
+        ArchiveRecord, Command, CommandEnvelope, GameSpeedRecord, MegaMissionTarget,
+    };
     use crate::sim::command_queue::DoListEvent;
+
+    /// Building4439C5/44367B uses each actor's House; ARCHIVE4C6780
+    /// occupies one OutList slot per selected producer, in click order.
+    #[test]
+    fn local_rally_records_preserve_each_actor_and_the_accepted_prefix() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = &retail.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x443860);
+        sim.resolve_type_handles(rules);
+        let local = sim.interner.get("Americans").unwrap();
+        let foreign = sim.interner.get("Russians").unwrap();
+        let local_index = sim.houses.order().iter().position(|h| *h == local).unwrap();
+        let foreign_index = sim
+            .houses
+            .order()
+            .iter()
+            .position(|h| *h == foreign)
+            .unwrap();
+        let first = sim
+            .spawn_object("GAPILE", "Americans", 8, 8, 0, rules)
+            .unwrap();
+        let second = sim
+            .spawn_object("GAPILE", "Russians", 20, 8, 0, rules)
+            .unwrap();
+        sim.session.set_binary_frame_for_test(73);
+        assert!(sim.issue_local_command(CommandEnvelope::new(
+            local,
+            41,
+            Command::SetRally {
+                rx: 13,
+                ry: 14,
+                producer_ids: vec![second, first],
+            }
+        )));
+        {
+            let queues = sim.network_command_queues();
+            let records = queues
+                .local_records()
+                .expect("rally must be a native wire event");
+            assert_eq!(records.len(), 2);
+            for (record, actor, owner_index) in [
+                (records[0], second, foreign_index),
+                (records[1], first, local_index),
+            ] {
+                assert_eq!(record.opcode(), 0x1e);
+                assert_eq!(record.frame_stamp(), 73);
+                let event = ArchiveRecord::decode(record).unwrap();
+                assert_eq!(event.entity_id, actor as i32);
+                assert_eq!(event.target, MegaMissionTarget::Cell { x: 13, y: 14 });
+                assert_eq!(record.house_id() as usize, owner_index);
+            }
+        }
+        sim.take_frame_commands_for_test();
+        let stop = sim.encode_stop_record(local, first).unwrap();
+        for _ in 0..127 {
+            assert!(sim.issue_local_command(CommandEnvelope::synchronized(stop.clone(), 41)));
+        }
+        assert!(!sim.issue_local_command(CommandEnvelope::new(
+            local,
+            41,
+            Command::SetRally {
+                rx: 15,
+                ry: 16,
+                producer_ids: vec![second, first],
+            }
+        )));
+        let queues = sim.network_command_queues();
+        let records = queues.local_records().unwrap();
+        assert_eq!(records.len(), 128);
+        assert_eq!(records[127].opcode(), 0x1e);
+        assert_eq!(
+            ArchiveRecord::decode(records[127]).unwrap().entity_id,
+            second as i32
+        );
+    }
 
     #[test]
     fn network_commit_preserves_unsent_headers_and_records_only_accepted_mirrors() {
