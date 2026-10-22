@@ -10,7 +10,7 @@
   "assumptions": [
     "Synthetic ground victim/type/house/WarheadExtension and linked-cell backing are explicit inputs; no mod assets, physical INI loader or full type registration. Baseline collector controls bound zero/half/unit/two-cell spread, ground/deck lists and signed UID order/dedup; separately declared building groups add selected ordinary structures, while air remains excluded.",
     "ReadString lexical transport supplies values, actual Ares int/double/threshold parser and CRT sscanf execute. CRT per-thread accessor10085F5C returns a supplied C-locale thread block; original locale initializer10085839 executes. No scanner result is supplied.",
-    "Original Ares deliver10062320, affect-house10051B70, immunity10062D90, enable10062B40, disable100627F0 and AI10053DF0 execute; synthetic virtual queries supply type/category/mission/ground/iron-curtain and empty-cell-building interfaces.",
+    "Original Ares deliver10062320, affect-house10051B70, immunity10062D90, enable10062B40, disable100627F0 and AI10053DF0 execute; synthetic virtual queries supply type/category/ground/iron-curtain and empty-cell-building interfaces; mission queries execute actual5B3040.",
     "Native Deactivate/Reactivate are existing downstream owner boundaries; supplied effects only update their deactivated/selection flags. Select and baseline QueueMission are recorded interfaces. Only ai_expiry redirects that virtual interface to unchanged native MissionClass QueueMission5B35E0, preserving arguments and recording its actual writes.",
     "Victims have no Team, Temporal, Capture, Spawn or Slave manager; threshold0. Spawn-manager is a sink. Actual sparkle selection/one-instance guard/expiry execute; animation storage/constructor/owner interface are supplied. Animation internal timers/RNG/rendering are not covered.",
     "FPCW0E7F is established explicitly. Original100772B0 conversion executes with declared CPU dispatch0 and selected SSE3 dispatch2 controls; out-of-i32 conversions yield INT_MIN, not a universal safe numeric input policy.",
@@ -30,6 +30,7 @@
     "Building chains bind one native-vtable powered slot3 Anim. Actual452480/452410 and43FB20..43FC39\u21924549B0 loss/restore execute Pause425260/Resume425270. Prepared frame/timer input bytes are retained; Anim construction, image/rendering, full AI and loop lifetime are excluded. The separate original42449B pause gate\u2192426630\u2192424507 stage slice establishes absolute timer retention and a single resumed stage commit.",
     "Building AI and human controls execute the same reached EMP tail. Structure flags+14 lack Foot bit4, so actual100628B2 skips AI QueueMission recovery; no Hunt queue is supplied or expected. First delivery and full-power expiry preserve Focus around actual Stun, whereas later power recovery via whole Techno-head1004B320\u21921004B568\u2192Activate clears Focus. House dirty acknowledge and changed-current-mission steps are explicit diagnostic input mutations, not a House scan or native command producer.",
     "Building phase controls call selected native regions in their original order: early operational/art edge precedes Techno-head; per-reached Techno tail follows other common work. They do not execute whole Building/Techno AI or prove Logic scheduling. Original Building43FE56 calls6F9E50; category6 skips generic stage6FABC4 because4509DE already advanced it, but still reaches shared flash and stock EMP6FAF0D. Ares replaces the stock counter tail and returns6FAFFD; stock active-retail positive-counter production is not established here.",
+    "All victim virtual184 mission queries execute actual MissionClass5B3040: current+AC when present, otherwise queued+B4. Building deferred controls use raw current-1/queued Construction18 and a currentMove2 precedence control. Enable10062B98 and delayed tick10053E35 save raw current, not that effective value. Once an explicitly supplied queued Guard5 becomes advisable, actual10053DF0 calls only Deactivate10048690, not full enable10062B40: actual Stun clears Focus and mission timers while acknowledged House dirty bytes stay clear. Initial-hit Building enable instead preserves Focus and marks House/Stuff. Construction completion/House acknowledgement are explicit fixture inputs; no full Construction/Commence or whole AI is executed. Prepared slot timers retain their bytes; original code and all3 RNG states remain unchanged and guarded RNG/Detach entries are not reached.",
     "Parent pre-effect controls execute Ares10053727..10053770/100537F2 from its supplied Bullet/local-impact frame. Actual10053660 jumps planar ObjectDistance_To5F6440: concrete Bullet/Unit/Building GetCoords, XY-only Sqrt_Approx4CAC40/ftol7C5F00 and target foundation discount run unchanged. The signed distance<64 branch copies target vt48 into the local impact; it does not use incoming impact for distance or Building TargetCoordOffset/vtA4. Missing target skips query. Stops before pre-effect callbacks, AttachEffect/Airburst and EMP producer; no whole Bullet caller or detonation execution claim."
   ],
   "substitutions": [
@@ -76,6 +77,8 @@
     "foundation_height": "0x0045ECA0",
     "stun": "0x0070F850",
     "assign_mission": "0x005B2FD0",
+    "effective_mission": "0x005B3040",
+    "emp_deactivation_advisable": "0x10062D60",
     "building_navigation": "0x00455D50",
     "building_set_target": "0x00443B90",
     "anim_pause": "0x00425260",
@@ -88,6 +91,6 @@
     "parent_snap_end": "0x10053770",
     "parent_no_snap_end": "0x100537F2"
   },
-  "payload_sha256": "242d067473ca5c3b2de00090491dc06403a8595d335165feb6ab504eab221e08",
+  "payload_sha256": "5f9c920edbcfe6d468a60a546e01a5f0d87efbd442b401240e6c356e750da90a",
   "replay_command": "python -m tools.rules_oracle.ares_emp"
 }

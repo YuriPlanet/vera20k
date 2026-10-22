@@ -3176,6 +3176,385 @@
       }
     }
   ],
+  "building_deferred_deactivation": [
+    {
+      "code_unchanged": true,
+      "fixture": {
+        "cap": 10,
+        "current": -1,
+        "duration": 5,
+        "initial_focus": 305419896,
+        "mission_timer": [
+          101,
+          202,
+          303
+        ],
+        "queued": 18
+      },
+      "name": "current_none_queued_construction",
+      "queue_calls": [],
+      "result": [
+        {
+          "bypass": 1,
+          "calls": [],
+          "counter": 0,
+          "current_mission": -1,
+          "deactivated": false,
+          "effective_mission": 18,
+          "focus": 305419896,
+          "house_dirty": [
+            0,
+            0,
+            0
+          ],
+          "mission_timer": [
+            101,
+            202,
+            303
+          ],
+          "online": true,
+          "operated_cached": false,
+          "operational": false,
+          "queued_mission": 18,
+          "saved_mission": 0,
+          "slot_paused": false,
+          "slot_pointer_retained": true,
+          "slot_timer_unchanged": true,
+          "stuff": true
+        },
+        {
+          "bypass": 1,
+          "calls": [
+            "1004B320"
+          ],
+          "counter": 0,
+          "current_mission": -1,
+          "deactivated": false,
+          "effective_mission": 18,
+          "focus": 305419896,
+          "house_dirty": [
+            0,
+            0,
+            0
+          ],
+          "mission_timer": [
+            101,
+            202,
+            303
+          ],
+          "online": true,
+          "operated_cached": false,
+          "operational": false,
+          "queued_mission": 18,
+          "saved_mission": 0,
+          "slot_paused": false,
+          "slot_pointer_retained": true,
+          "slot_timer_unchanged": true,
+          "stuff": true
+        },
+        {
+          "bypass": 1,
+          "calls": [
+            "10062B40",
+            "00452480",
+            "00425260"
+          ],
+          "counter": 5,
+          "current_mission": -1,
+          "deactivated": false,
+          "effective_mission": 18,
+          "focus": 305419896,
+          "house_dirty": [
+            1,
+            1,
+            0
+          ],
+          "mission_timer": [
+            101,
+            202,
+            303
+          ],
+          "online": true,
+          "operated_cached": false,
+          "operational": false,
+          "queued_mission": 18,
+          "saved_mission": -1,
+          "slot_paused": true,
+          "slot_pointer_retained": true,
+          "slot_timer_unchanged": true,
+          "stuff": false
+        },
+        {
+          "bypass": 1,
+          "calls": [],
+          "counter": 4,
+          "current_mission": -1,
+          "deactivated": false,
+          "effective_mission": 18,
+          "focus": 305419896,
+          "house_dirty": [
+            1,
+            1,
+            0
+          ],
+          "mission_timer": [
+            101,
+            202,
+            303
+          ],
+          "online": true,
+          "operated_cached": false,
+          "operational": false,
+          "queued_mission": 18,
+          "saved_mission": -1,
+          "slot_paused": true,
+          "slot_pointer_retained": true,
+          "slot_timer_unchanged": true,
+          "stuff": false
+        },
+        {
+          "bypass": 1,
+          "calls": [],
+          "counter": 4,
+          "current_mission": -1,
+          "deactivated": false,
+          "effective_mission": 5,
+          "focus": 305419896,
+          "house_dirty": [
+            0,
+            0,
+            0
+          ],
+          "mission_timer": [
+            101,
+            202,
+            303
+          ],
+          "online": true,
+          "operated_cached": false,
+          "operational": false,
+          "queued_mission": 5,
+          "saved_mission": -1,
+          "slot_paused": true,
+          "slot_pointer_retained": true,
+          "slot_timer_unchanged": true,
+          "stuff": false
+        },
+        {
+          "bypass": 1,
+          "calls": [
+            "1004B320"
+          ],
+          "counter": 4,
+          "current_mission": -1,
+          "deactivated": false,
+          "effective_mission": 5,
+          "focus": 305419896,
+          "house_dirty": [
+            0,
+            0,
+            0
+          ],
+          "mission_timer": [
+            101,
+            202,
+            303
+          ],
+          "online": true,
+          "operated_cached": false,
+          "operational": false,
+          "queued_mission": 5,
+          "saved_mission": -1,
+          "slot_paused": true,
+          "slot_pointer_retained": true,
+          "slot_timer_unchanged": true,
+          "stuff": false
+        },
+        {
+          "bypass": 0,
+          "calls": [
+            "1004CDC0",
+            "0070F850",
+            "005B2FD0",
+            "10013250"
+          ],
+          "counter": 3,
+          "current_mission": 5,
+          "deactivated": true,
+          "effective_mission": 5,
+          "focus": 0,
+          "house_dirty": [
+            0,
+            0,
+            0
+          ],
+          "mission_timer": [
+            0,
+            0,
+            0
+          ],
+          "online": true,
+          "operated_cached": false,
+          "operational": false,
+          "queued_mission": -1,
+          "saved_mission": -1,
+          "slot_paused": true,
+          "slot_pointer_retained": true,
+          "slot_timer_unchanged": true,
+          "stuff": false
+        }
+      ],
+      "rng_streams_unchanged": true,
+      "steps": [
+        {
+          "action": "prepared"
+        },
+        {
+          "action": "head"
+        },
+        {
+          "action": "hit"
+        },
+        {
+          "action": "tick"
+        },
+        {
+          "action": "queue_guard_and_ack"
+        },
+        {
+          "action": "head"
+        },
+        {
+          "action": "tick"
+        }
+      ]
+    },
+    {
+      "code_unchanged": true,
+      "fixture": {
+        "cap": 10,
+        "current": 2,
+        "duration": 5,
+        "initial_focus": 305419896,
+        "mission_timer": [
+          101,
+          202,
+          303
+        ],
+        "queued": 18
+      },
+      "name": "current_move_overrides_queued_construction",
+      "queue_calls": [],
+      "result": [
+        {
+          "bypass": 1,
+          "calls": [],
+          "counter": 0,
+          "current_mission": 2,
+          "deactivated": false,
+          "effective_mission": 2,
+          "focus": 305419896,
+          "house_dirty": [
+            0,
+            0,
+            0
+          ],
+          "mission_timer": [
+            101,
+            202,
+            303
+          ],
+          "online": true,
+          "operated_cached": false,
+          "operational": true,
+          "queued_mission": 18,
+          "saved_mission": 0,
+          "slot_paused": false,
+          "slot_pointer_retained": true,
+          "slot_timer_unchanged": true,
+          "stuff": true
+        },
+        {
+          "bypass": 1,
+          "calls": [
+            "1004B320"
+          ],
+          "counter": 0,
+          "current_mission": 2,
+          "deactivated": false,
+          "effective_mission": 2,
+          "focus": 305419896,
+          "house_dirty": [
+            0,
+            0,
+            0
+          ],
+          "mission_timer": [
+            101,
+            202,
+            303
+          ],
+          "online": true,
+          "operated_cached": true,
+          "operational": true,
+          "queued_mission": 18,
+          "saved_mission": 0,
+          "slot_paused": false,
+          "slot_pointer_retained": true,
+          "slot_timer_unchanged": true,
+          "stuff": true
+        },
+        {
+          "bypass": 0,
+          "calls": [
+            "10062B40",
+            "00452480",
+            "00425260",
+            "1004CDC0",
+            "0070F850",
+            "005B2FD0",
+            "10013250"
+          ],
+          "counter": 5,
+          "current_mission": 5,
+          "deactivated": true,
+          "effective_mission": 5,
+          "focus": 305419896,
+          "house_dirty": [
+            1,
+            1,
+            0
+          ],
+          "mission_timer": [
+            0,
+            0,
+            0
+          ],
+          "online": true,
+          "operated_cached": true,
+          "operational": false,
+          "queued_mission": -1,
+          "saved_mission": 2,
+          "slot_paused": true,
+          "slot_pointer_retained": true,
+          "slot_timer_unchanged": true,
+          "stuff": false
+        }
+      ],
+      "rng_streams_unchanged": true,
+      "steps": [
+        {
+          "action": "prepared"
+        },
+        {
+          "action": "head"
+        },
+        {
+          "action": "hit"
+        }
+      ]
+    }
+  ],
   "building_slot_timer": [
     {
       "code_unchanged": true,

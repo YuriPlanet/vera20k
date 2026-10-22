@@ -85,8 +85,6 @@ class EmpProbe(Probe):
             result = self.iron_curtain
         elif pc == 0x30000330:  # cell coordinate interface for ground factory gate
             result = self.cell
-        elif pc == 0x30000340:  # CurrentMission virtual query
-            result = self.read(self.actor + 0xac)
         elif pc == 0x30000350:  # selected-state interface
             self.services.append(dict(service='Select', selected=bool(u.mem_read(self.actor+0x83, 1)[0])))
             u.mem_write(self.actor+0x83, b'\1')
@@ -138,7 +136,7 @@ class EmpProbe(Probe):
         self.ext, self.firer, self.whext = ext, firer, whext
         vtable = self.alloc(0x400)
         for offset, sink in ((0x84,0x30000300),(0x2c,0x30000310),(0x160,0x30000320),
-                             (0x1bc,0x30000330),(0x184,0x30000340),(0x14c,0x30000350),
+                             (0x1bc,0x30000330),(0x184,0x5b3040),(0x14c,0x30000350),
                              (0x1e8,0x30000360),(0x54,0x30000370),
                              (0x1dc,0x30000370),(0x290,0x30000370),(0x37c,0x30000380),
                              (0x48,0x30000390)):
@@ -781,6 +779,40 @@ def building_slot_timer_case(images):
         code_unchanged=True,rng_streams_unchanged=True)
 
 
+def building_deferred_deactivation_case(images, current):
+    """Actual effective-mission getter, first hit and delayed Deactivate tail."""
+    p=BuildingEmpProbe(images).building({})
+    # MissionClass5B3040 is also Building's actual virtual184. Construction is
+    # literal18; a present current mission must take priority over that queue.
+    assert p.read(0x7e3ebc+0x184)==0x5b3040
+    p.write(p.actor+0xac,current);p.write(p.actor+0xb4,18)
+    steps=[];states=[]
+    def step(action,**values):
+        start=len(p.building_calls)
+        if action=='head':p.call(0x1004b320,p.update_frame)
+        elif action=='hit':p.call(0x10062320,p.actor,p.firer,p.whext)
+        elif action=='tick':p.call(0x10053df0,p.tick_frame)
+        elif action=='queue_guard_and_ack':
+            # Explicit completion/House inputs; not a Construction producer.
+            p.write(p.actor+0xac,-1);p.write(p.actor+0xb4,5)
+            p.u.mem_write(p.house+0x1fc,b'\0');p.u.mem_write(p.house+0x5778,b'\0\0')
+        elif action!='prepared':raise ValueError(action)
+        steps.append(dict(action=action,**values))
+        states.append(dict(**p.building_state(),
+            effective_mission=signed(p.call(0x5b3040,ecx=p.actor)),
+            calls=p.building_calls[start:]))
+    step('prepared');step('head');step('hit')
+    if current==-1:
+        step('tick');step('queue_guard_and_ack');step('head');step('tick')
+    p.check_code()
+    return dict(name='current_none_queued_construction' if current==-1 else
+                'current_move_overrides_queued_construction',
+        fixture=dict(current=current,queued=18,duration=5,cap=10,
+                     initial_focus=0x12345678,mission_timer=[101,202,303]),
+        steps=steps,result=states,queue_calls=p.queues,
+        code_unchanged=True,rng_streams_unchanged=True)
+
+
 def building_groups(images):
     return dict(building_admission=building_admission_cases(images),
         building_collectors=[collector_case(images,name,.7,objects,
@@ -956,6 +988,8 @@ def generate(ares):
                 registered_animation_readers=[registered_animation_reader_case(images,raw)
                     for raw in ('SPARKLE_A','SPARKLE_B','UNREGISTERED')],
                 parent_impact_snap=parent_impact_snap_cases(images),
+                building_deferred_deactivation=[building_deferred_deactivation_case(images,current)
+                    for current in (-1,2)],
                 **building_groups(images))
 
 
@@ -964,7 +998,7 @@ def metadata():
         assumptions=[
             'Synthetic ground victim/type/house/WarheadExtension and linked-cell backing are explicit inputs; no mod assets, physical INI loader or full type registration. Baseline collector controls bound zero/half/unit/two-cell spread, ground/deck lists and signed UID order/dedup; separately declared building groups add selected ordinary structures, while air remains excluded.',
             'ReadString lexical transport supplies values, actual Ares int/double/threshold parser and CRT sscanf execute. CRT per-thread accessor10085F5C returns a supplied C-locale thread block; original locale initializer10085839 executes. No scanner result is supplied.',
-            'Original Ares deliver10062320, affect-house10051B70, immunity10062D90, enable10062B40, disable100627F0 and AI10053DF0 execute; synthetic virtual queries supply type/category/mission/ground/iron-curtain and empty-cell-building interfaces.',
+            'Original Ares deliver10062320, affect-house10051B70, immunity10062D90, enable10062B40, disable100627F0 and AI10053DF0 execute; synthetic virtual queries supply type/category/ground/iron-curtain and empty-cell-building interfaces; mission queries execute actual5B3040.',
             'Native Deactivate/Reactivate are existing downstream owner boundaries; supplied effects only update their deactivated/selection flags. Select and baseline QueueMission are recorded interfaces. Only ai_expiry redirects that virtual interface to unchanged native MissionClass QueueMission5B35E0, preserving arguments and recording its actual writes.',
             'Victims have no Team, Temporal, Capture, Spawn or Slave manager; threshold0. Spawn-manager is a sink. Actual sparkle selection/one-instance guard/expiry execute; animation storage/constructor/owner interface are supplied. Animation internal timers/RNG/rendering are not covered.',
             'FPCW0E7F is established explicitly. Original100772B0 conversion executes with declared CPU dispatch0 and selected SSE3 dispatch2 controls; out-of-i32 conversions yield INT_MIN, not a universal safe numeric input policy.',
@@ -985,6 +1019,7 @@ def metadata():
             'Building chains bind one native-vtable powered slot3 Anim. Actual452480/452410 and43FB20..43FC39→4549B0 loss/restore execute Pause425260/Resume425270. Prepared frame/timer input bytes are retained; Anim construction, image/rendering, full AI and loop lifetime are excluded. The separate original42449B pause gate→426630→424507 stage slice establishes absolute timer retention and a single resumed stage commit.',
             'Building AI and human controls execute the same reached EMP tail. Structure flags+14 lack Foot bit4, so actual100628B2 skips AI QueueMission recovery; no Hunt queue is supplied or expected. First delivery and full-power expiry preserve Focus around actual Stun, whereas later power recovery via whole Techno-head1004B320→1004B568→Activate clears Focus. House dirty acknowledge and changed-current-mission steps are explicit diagnostic input mutations, not a House scan or native command producer.',
             'Building phase controls call selected native regions in their original order: early operational/art edge precedes Techno-head; per-reached Techno tail follows other common work. They do not execute whole Building/Techno AI or prove Logic scheduling. Original Building43FE56 calls6F9E50; category6 skips generic stage6FABC4 because4509DE already advanced it, but still reaches shared flash and stock EMP6FAF0D. Ares replaces the stock counter tail and returns6FAFFD; stock active-retail positive-counter production is not established here.',
+            'All victim virtual184 mission queries execute actual MissionClass5B3040: current+AC when present, otherwise queued+B4. Building deferred controls use raw current-1/queued Construction18 and a currentMove2 precedence control. Enable10062B98 and delayed tick10053E35 save raw current, not that effective value. Once an explicitly supplied queued Guard5 becomes advisable, actual10053DF0 calls only Deactivate10048690, not full enable10062B40: actual Stun clears Focus and mission timers while acknowledged House dirty bytes stay clear. Initial-hit Building enable instead preserves Focus and marks House/Stuff. Construction completion/House acknowledgement are explicit fixture inputs; no full Construction/Commence or whole AI is executed. Prepared slot timers retain their bytes; original code and all3 RNG states remain unchanged and guarded RNG/Detach entries are not reached.',
             'Parent pre-effect controls execute Ares10053727..10053770/100537F2 from its supplied Bullet/local-impact frame. Actual10053660 jumps planar ObjectDistance_To5F6440: concrete Bullet/Unit/Building GetCoords, XY-only Sqrt_Approx4CAC40/ftol7C5F00 and target foundation discount run unchanged. The signed distance<64 branch copies target vt48 into the local impact; it does not use incoming impact for distance or Building TargetCoordOffset/vtA4. Missing target skips query. Stops before pre-effect callbacks, AttachEffect/Airburst and EMP producer; no whole Bullet caller or detonation execution claim.',
         ],substitutions=['Existing Probe VM/call/arena, optional CRT thread block, lexical ReadString and diagnostics; declared world and existing downstream owners only. Original code bytes checked unchanged after each run.'],
         entry_points=dict(deliver=0x10062320,affect_house=0x10051b70,immunity=0x10062d90,
@@ -1005,7 +1040,8 @@ def metadata():
             building_enable_stuff=0x452410,building_disable_stuff=0x452480,
             building_art_dispatch=0x4549b0,building_get_coords=0x447ac0,
             foundation_width=0x45ec90,foundation_height=0x45eca0,
-            stun=0x70f850,assign_mission=0x5b2fd0,building_navigation=0x455d50,
+            stun=0x70f850,assign_mission=0x5b2fd0,effective_mission=0x5b3040,
+            emp_deactivation_advisable=0x10062d60,building_navigation=0x455d50,
             building_set_target=0x443b90,anim_pause=0x425260,anim_resume=0x425270,
             anim_pause_stage=0x42449b,anim_pause_stage_end=0x424507,
             parent_snap_entry=0x10053727,parent_snap_distance=0x10053660,
