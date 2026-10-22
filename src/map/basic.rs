@@ -96,6 +96,23 @@ pub struct BasicSection {
     pub pre_map_select: Option<String>,
 }
 
+impl BasicSection {
+    /// gamemd.exe ScenarioClass::Read_INI_Basic @0x00689E90,
+    /// 689FC0..689FF4 reads Next/Alt with their current buffers as defaults. ClearScene685237 -> SetDefaults
+    /// preserves them; only the constructor683407/68340A clears them.
+    /// Resolve parsed writes against the installed Scenario, not reset fields.
+    /// Physical empty values are omitted by the native INI parser; an actual
+    /// cached Some("") remains an explicit write that clears its buffer.
+    pub fn resolve_retained_destinations(&mut self, prior: &Self) {
+        if self.next_scenario.is_none() {
+            self.next_scenario.clone_from(&prior.next_scenario);
+        }
+        if self.alt_next_scenario.is_none() {
+            self.alt_next_scenario.clone_from(&prior.alt_next_scenario);
+        }
+    }
+}
+
 /// Parsed flags from a map's `[SpecialFlags]` section.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SpecialFlagsSection {
@@ -280,6 +297,35 @@ pub fn parse_special_flags_section(ini: &IniFile) -> SpecialFlagsSection {
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
+
+    #[test]
+    fn fresh_destination_reads_retain_missing_and_physical_empty_keys() {
+        let prior = parse_basic_section(&IniFile::from_str(
+            "[Basic]\nNextScenario=ALL02UMD.MAP\nAltNextScenario=ALL03UMD.MAP\nSkipScore=yes\n",
+        ));
+        let mut incoming = parse_basic_section(&IniFile::from_str(
+            "[Basic]\nNextScenario=\nAltNextScenario=   \nSkipMapSelect=yes\n",
+        ));
+        incoming.resolve_retained_destinations(&prior);
+        assert_eq!(incoming.next_scenario.as_deref(), Some("ALL02UMD.MAP"));
+        assert_eq!(incoming.alt_next_scenario.as_deref(), Some("ALL03UMD.MAP"));
+        assert_eq!(incoming.skip_score, None);
+    }
+
+    #[test]
+    fn a_stored_empty_destination_clears_only_its_native_buffer() {
+        let prior = parse_basic_section(&IniFile::from_str(
+            "[Basic]\nNextScenario=ALL02UMD.MAP\nAltNextScenario=ALL03UMD.MAP\n",
+        ));
+        let mut section = crate::rules::ini_parser::IniSection::new("Basic".into());
+        // Unlike physical empty lines, an actual cached INI entry is a write.
+        section.set("NextScenario", "");
+        let ini = IniFile::from_sections_for_test([section]);
+        let mut incoming = parse_basic_section(&ini);
+        incoming.resolve_retained_destinations(&prior);
+        assert_eq!(incoming.next_scenario.as_deref(), Some(""));
+        assert_eq!(incoming.alt_next_scenario.as_deref(), Some("ALL03UMD.MAP"));
+    }
 
     #[test]
     fn campaign_current_special_bits_match_original_execution() {

@@ -337,6 +337,13 @@ pub(crate) fn install_world_presentation(
 /// owner suspends/resumes audio; the later Theme queue/Stop(true) belongs to
 /// apply_map_load_result (683E4D..683E66), after this movie returns.
 pub(crate) fn finish_fresh_scenario_read(state: &mut AppState, mut result: init::MapLoadResult) {
+    // Read_INI_Basic689FD6/689FF4 retains these two buffers across fresh
+    // ClearScene reads. Saved restoration instead installs the saved values
+    // directly through install_world_presentation; it must not inherit here.
+    result
+        .scenario
+        .basic
+        .resolve_retained_destinations(&state.match_state.map_basic);
     let action_movie = result.scenario.startup.campaign().and_then(|startup| {
         // Start_Scenario683D9C tests its DL argument before the movie.
         if !startup.plays_action_movie() {

@@ -457,9 +457,10 @@ Scenario=ALL03umd.MAP
     }
 
     #[test]
-    fn skip_map_select_uses_saved_stage_and_the_parsed_destination() {
-        let basic =
-            basic("SkipMapSelect=yes\nNextScenario=all02UMD.map\nAltNextScenario=all03UMD.map");
+    fn skip_map_select_uses_saved_stage_and_retained_destinations() {
+        let previous = basic("NextScenario=all02UMD.map\nAltNextScenario=all03UMD.map");
+        let mut basic = basic("SkipMapSelect=yes");
+        basic.resolve_retained_destinations(&previous);
         let mapsel = IniFile::from_str(MAPSEL);
         // The saved stage wins over the current filename. Neither MapVQ nor
         // the normal first-choice rule gates the explicit destination search.

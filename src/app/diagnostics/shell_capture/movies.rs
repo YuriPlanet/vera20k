@@ -2012,6 +2012,8 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
             "saved_world_restored": state.match_state.startup.restored()},
         "seed": sim.session().seed(), "map_name": sim.session().map_name(), "theater": sim.session().theater(),
         "game_mode_nonzero": sim.session().game_mode_nonzero(), "campaign_mission_counter": mission_counter,
+        "destinations": {"next": state.match_state.map_basic.next_scenario,
+            "alternate": state.match_state.map_basic.alt_next_scenario},
         "campaign_difficulty_rows": {"player": player_difficulty as i32, "computer": computer_difficulty as i32},
         "current_house": {"name": sim.interner().resolve(current), "native_unique_id": current_native_id},
         "fog": {"enabled": sim.session().game_options().fog_of_war,
