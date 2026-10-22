@@ -41,6 +41,17 @@ pub const ALLY_OPCODE: u8 = 0x03;
 pub const CHEER_OPCODE: u8 = 0x2d;
 /// Native `EventClass` opcode for a MegaMission order envelope.
 pub const MEGAMISSION_OPCODE: u8 = 0x04;
+/// Native `EventClass` opcode for the same MegaMission body (`MEGAMISSION_F`).
+///
+/// `EventClass::Execute`'s dispatch table (`0x004C8114`) points its fourth and
+/// fifth entries at the same branch (`0x004C71CA`), and that body never reads
+/// its own opcode byte, so both opcodes decode the same payload offsets and the
+/// same planning flag. Only the wire length differs: the `.rdata 0x8208EC`
+/// length table says 24 bytes instead of 23, the extra trailing byte unread.
+/// Two original sender-side guards stay opcode-4 only and are reproduced as
+/// such: the OutList run merge (`0x0064B926 cmp al,4 / jne`) and
+/// `Execute_DoList`'s secondary staging ring (`0x0064C731 cmp al,4 / jne`).
+pub const MEGAMISSION_F_OPCODE: u8 = 0x05;
 /// Per-House capacity of Execute_DoList's secondary MegaMission ring.
 pub const MEGAMISSION_STAGE_CAPACITY: usize = 0x100;
 
@@ -831,8 +842,15 @@ impl MegaMissionRecord {
 
     /// Decode represented ordinary movement, combat and special mission
     /// forms. Planning flags are dispatched by the PlanMgr owner.
+    ///
+    /// `Event4C71CA` serves both opcode 4 and its `MEGAMISSION_F` alias 5, so
+    /// the typed view accepts either opcode.
     pub fn decode(record: &CommandRecord) -> Option<Self> {
-        if record.opcode() != MEGAMISSION_OPCODE || record.house_id() < 0 {
+        if !matches!(
+            record.opcode(),
+            MEGAMISSION_OPCODE | MEGAMISSION_F_OPCODE
+        ) || record.house_id() < 0
+        {
             return None;
         }
         let payload = record.payload();
@@ -1317,10 +1335,10 @@ mod battle_opening_tests;
 mod tests {
     use super::{
         ABSTRACT_OBJECT_TARGET_KIND, COMMAND_RECORD_LEN, COMMAND_RECORD_PAYLOAD_LEN, CommandRecord,
-        CommandRecordError, EXIT_OPCODE, ExitRecord, IDLE_OPCODE, MOVE_ACTION,
-        MegaMissionCellTokenError, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget,
-        NULL_TARGET_KIND, SCATTER_OPCODE, SELL_WALL_AT_CELL_OPCODE, ScatterRecord,
-        SellWallAtCellRecord, StopRecord,
+        CommandRecordError, EXIT_OPCODE, ExitRecord, IDLE_OPCODE, MEGAMISSION_F_OPCODE,
+        MEGAMISSION_OPCODE, MOVE_ACTION, MegaMissionCellTokenError, MegaMissionOrder,
+        MegaMissionRecord, MegaMissionTarget, NULL_TARGET_KIND, SCATTER_OPCODE,
+        SELL_WALL_AT_CELL_OPCODE, ScatterRecord, SellWallAtCellRecord, StopRecord,
     };
 
     fn native_record(value: &serde_json::Value) -> CommandRecord {
@@ -1414,6 +1432,30 @@ mod tests {
         assert!(
             matches!(restored.payload, Command::SynchronizedRecord { record: restored_record } if restored_record == record)
         );
+    }
+
+    /// `EventClass::Execute` routes opcode 4 and its `MEGAMISSION_F` alias 5 to
+    /// the same branch (`0x004C71CA`), which never reads the opcode byte, so the
+    /// typed view must not depend on which of the two carried the order.
+    #[test]
+    fn megamission_f_alias_decodes_like_opcode_four() {
+        let typed = MegaMissionRecord {
+            house_id: 3,
+            frame: 55,
+            source_id: 101,
+            order: MegaMissionOrder::Move {
+                target_x: 5,
+                target_y: 6,
+            },
+        };
+        let mut record = CommandRecord::encode(MEGAMISSION_OPCODE, 3, 55, &[]).unwrap();
+        typed.write_into(&mut record).unwrap();
+        assert_eq!(MegaMissionRecord::decode(&record), Some(typed));
+
+        let mut alias = record;
+        alias.set_issue_header(MEGAMISSION_F_OPCODE, 3, 55);
+        assert_eq!(alias.opcode(), MEGAMISSION_F_OPCODE);
+        assert_eq!(MegaMissionRecord::decode(&alias), Some(typed));
     }
 
     #[test]

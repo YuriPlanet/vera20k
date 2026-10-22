@@ -588,3 +588,52 @@ fn retail_planned_garrison_capture_and_self_unload_reach_passenger_owners() {
     }
     panic!("planned building self-Unload must release the garrison");
 }
+
+/// `EventClass::Execute`'s table (`0x004C8114`) sends opcode 4 and its
+/// `MEGAMISSION_F` alias 5 to the same branch (`0x004C71CA`), which never reads
+/// the opcode byte, so a plan envelope must survive either opcode.
+#[test]
+fn megamission_f_alias_keeps_the_planning_envelope() {
+    let Some((mut sim, rules, owner)) = scene() else {
+        return;
+    };
+    let actor = sim
+        .spawn_object("AMCV", "Americans", 12, 12, 0, &rules)
+        .unwrap();
+    let order = Command::Move {
+        entity_id: actor,
+        target_rx: 24,
+        target_ry: 12,
+    };
+    let planned_record = sim
+        .encode_planning_order_record(owner, &order)
+        .expect("resolved click is representable");
+    assert_eq!(planned_record.opcode(), crate::sim::command::MEGAMISSION_OPCODE);
+
+    let (planned_house, planned_frame) = (
+        i32::from(planned_record.house_id()),
+        planned_record.frame_stamp(),
+    );
+    let mut alias = planned_record;
+    alias.set_issue_header(
+        crate::sim::command::MEGAMISSION_F_OPCODE,
+        planned_house,
+        planned_frame,
+    );
+    let command = sim
+        .decode_native_command_record(&alias, sim.session.tick())
+        .expect("MEGAMISSION_F keeps the plan envelope");
+    assert!(matches!(command.payload, Command::PlanningRecord { .. }));
+
+    // The ordinary MegaMission body reads the same payload offsets, so the
+    // alias decodes the plain order once the planning flag is clear.
+    let mut ordinary = alias;
+    ordinary.payload_mut()[22] = 0;
+    let command = sim
+        .decode_native_command_record(&ordinary, sim.session.tick())
+        .expect("MEGAMISSION_F decodes the ordinary order");
+    assert!(matches!(
+        command.payload,
+        Command::Move { entity_id, .. } if entity_id == actor
+    ));
+}

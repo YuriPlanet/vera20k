@@ -718,9 +718,14 @@ impl Simulation {
         }
         // PlanMgr637E00/638120 owns the payload and validates live actors.
         // Keep its native byte record intact through the scheduled envelope.
+        // Native `Event4C71CA` serves the `MEGAMISSION_F` alias 5 as well, so the
+        // planning flag is honoured on both opcodes.
         if matches!(record.opcode(), 0x2A..=0x2C)
-            || (record.opcode() == crate::sim::command::MEGAMISSION_OPCODE
-                && matches!(record.payload()[22], 1 | 2))
+            || (matches!(
+                record.opcode(),
+                crate::sim::command::MEGAMISSION_OPCODE
+                    | crate::sim::command::MEGAMISSION_F_OPCODE
+            ) && matches!(record.payload()[22], 1 | 2))
         {
             let house_index = usize::try_from(record.house_id()).ok()?;
             let owner = *self.houses.order().get(house_index)?;
