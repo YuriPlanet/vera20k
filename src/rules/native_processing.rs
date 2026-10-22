@@ -1656,6 +1656,13 @@ impl ProcessedRulesLayers {
         )
     }
 
+    /// ReadAudioVisual66A679..66A693/66B49E..66B4BE retains these across
+    /// Process and Type resets; the Rules registry remains their sole owner.
+    pub(crate) fn shroud_growth_inputs(&self) -> (bool, NativeF64Bits) {
+        let registry = self.native_type_construction_trace.registry_state();
+        (registry.rules_shroud_grow, registry.rules_shroud_rate)
+    }
+
     /// Rules+1648 after the reached ReadAudioVisual66B4CA..66B4E4 passes.
     pub(crate) fn fog_rate(&self) -> NativeF64Bits {
         self.native_type_construction_trace
@@ -2335,6 +2342,10 @@ pub(crate) struct NativeRulesRegistryState {
     rules_detail: DetailRules,
     rules_ambient_change_rate: NativeF64Bits,
     rules_ambient_change_step: NativeF64Bits,
+    #[serde(default)]
+    rules_shroud_grow: bool,
+    #[serde(default = "crate::rules::ruleset::default_shroud_rate")]
+    rules_shroud_rate: NativeF64Bits,
     #[serde(default = "crate::rules::ruleset::default_fog_rate")]
     rules_fog_rate: NativeF64Bits,
     rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
@@ -2407,6 +2418,8 @@ impl Default for NativeRulesRegistryState {
             rules_detail: DetailRules::default(),
             rules_ambient_change_rate: crate::rules::ruleset::DEFAULT_AMBIENT_CHANGE_RATE,
             rules_ambient_change_step: crate::rules::ruleset::DEFAULT_AMBIENT_CHANGE_STEP,
+            rules_shroud_grow: general.shroud_grow,
+            rules_shroud_rate: general.shroud_rate,
             rules_fog_rate: general.fog_rate,
             rules_difficulty_rows: general.difficulty_rows,
             rules_gravity: general.gravity,
@@ -2771,6 +2784,8 @@ impl NativeRulesRegistryState {
             rules_detail: self.rules_detail,
             rules_ambient_change_rate: self.rules_ambient_change_rate,
             rules_ambient_change_step: self.rules_ambient_change_step,
+            rules_shroud_grow: self.rules_shroud_grow,
+            rules_shroud_rate: self.rules_shroud_rate,
             rules_fog_rate: self.rules_fog_rate,
             rules_difficulty_rows: self.rules_difficulty_rows,
             rules_gravity: self.rules_gravity,
@@ -3616,6 +3631,8 @@ struct RulesPassProcessor {
     rules_detail: DetailRules,
     rules_ambient_change_rate: NativeF64Bits,
     rules_ambient_change_step: NativeF64Bits,
+    rules_shroud_grow: bool,
+    rules_shroud_rate: NativeF64Bits,
     rules_fog_rate: NativeF64Bits,
     rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
     rules_gravity: i32,
@@ -3679,6 +3696,8 @@ impl RulesPassProcessor {
             rules_detail: registry_state.rules_detail,
             rules_ambient_change_rate: registry_state.rules_ambient_change_rate,
             rules_ambient_change_step: registry_state.rules_ambient_change_step,
+            rules_shroud_grow: registry_state.rules_shroud_grow,
+            rules_shroud_rate: registry_state.rules_shroud_rate,
             rules_fog_rate: registry_state.rules_fog_rate,
             rules_difficulty_rows: registry_state.rules_difficulty_rows,
             rules_gravity: registry_state.rules_gravity,
@@ -6079,6 +6098,8 @@ impl RulesPassProcessor {
         // Original 66920D..669258 reads these first, including the cold
         // startup's same AudioVisual call before any complete Process.
         self.rules_detail = self.rules_detail.read_pass(section);
+        // gamemd.exe ReadAudioVisual66A68E/66A693: current byte default.
+        self.rules_shroud_grow = section.read_bool("ShroudGrow", self.rules_shroud_grow);
         // AudioVisual66B385..66B39E: ReadRange474620, current +14BC default.
         // Rules6672FF constructs1024 leptons; literal -1 retains the prior.
         self.rules_drop_zone_radius =
@@ -6088,6 +6109,7 @@ impl RulesPassProcessor {
         self.rules_gravity = section.read_int("Gravity", self.rules_gravity);
         // ReadAudioVisual66B4CA..66B4E4: retain the current double across
         // Process and Type resets; authored input is scanned as f32 then widened.
+        self.rules_shroud_rate = section.read_double_bits("ShroudRate", self.rules_shroud_rate);
         self.rules_fog_rate = section.read_double_bits("FogRate", self.rules_fog_rate);
         // AudioVisual66B5D7..66B625: rate then step; both ReadDouble defaults
         // are the current Rules fields. Missing reads retain; malformed float
@@ -6256,6 +6278,8 @@ impl RulesPassProcessor {
                     rules_detail: self.rules_detail,
                     rules_ambient_change_rate: self.rules_ambient_change_rate,
                     rules_ambient_change_step: self.rules_ambient_change_step,
+                    rules_shroud_grow: self.rules_shroud_grow,
+                    rules_shroud_rate: self.rules_shroud_rate,
                     rules_fog_rate: self.rules_fog_rate,
                     rules_difficulty_rows: self.rules_difficulty_rows,
                     rules_gravity: self.rules_gravity,

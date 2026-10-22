@@ -1093,11 +1093,30 @@ impl Simulation {
         }
     }
 
-    /// Execute31 at6DE2B5 ->4ACAC0, then4ADFF0(0,0). The cell passes
+    /// LogicClass::AI55B20B..55B27B, before the pending-shroud/fog rungs.
+    /// gamemd.exe tests ShroudGrow and ordered nonzero ShroudRate, then the
+    /// Scenario timer; neither FogOfWar nor a mode/editor flag gates it.
+    pub(super) fn tick_shroud_growth(&mut self, context: UninitContext<'_>) {
+        let rules = &context.rules().general;
+        let rate = f64::from_bits(rules.shroud_rate.bits());
+        if !rules.shroud_grow
+            || rate == 0.0
+            || rate.is_nan()
+            || !self
+                .session
+                .poll_shroud_growth(rules.shroud_growth_interval_frames())
+        {
+            return;
+        }
+        self.grow_shroud(context);
+    }
+
+    /// DisplayClass::GrowShroud4ACAC0, shared by Logic55B27B and
+    /// Execute31 at6DE2B5, then4ADFF0(0,0). The cell passes
     /// leave sight admissions/House240/241 alone. The Ground display vector
     /// 8A0394 is re-read after each See callback, whose discovery can raise
     /// Tags. AbstractFlags14/1 admits every GameEntity, with no Alive90 gate.
-    pub(crate) fn trigger_grow_shroud(&mut self, context: UninitContext<'_>) {
+    pub(crate) fn grow_shroud(&mut self, context: UninitContext<'_>) {
         if let (Some(viewer), Some(size)) = (self.session.current_house(), self.map_size_diamond())
         {
             let cells = context

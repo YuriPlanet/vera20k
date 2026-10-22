@@ -75,7 +75,7 @@ fn aircraft_uncached_ground_sight_uses_one_cell_radius_without_replacing_its_sou
                 assert!(sim.change_visible_map_area([2, 2, 16, 12], &rules));
                 assert!(sim.entities().get(id).unwrap().in_playfield());
             } else {
-                sim.trigger_grow_shroud(UninitContext::with_rules(&rules));
+                sim.grow_shroud(UninitContext::with_rules(&rules));
             }
         });
         // Native radius1 offset order, also consumed by reveal_area_tests.

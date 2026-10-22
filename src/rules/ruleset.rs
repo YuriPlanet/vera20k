@@ -1408,6 +1408,12 @@ pub struct GeneralRules {
     /// 6DE0EF..6DE100 converts MessageDelay*900 through the native ftol into
     /// MessageList's 16ms buckets, independently of simulation pacing.
     pub message_delay_minutes: crate::util::native_x87::NativeF64Bits,
+    /// RulesClass::ReadAudioVisual6691E0,66A679..66A693: current-default
+    /// `[AudioVisual] ShroudGrow`; constructor667775 initializes false.
+    pub shroud_grow: bool,
+    /// Rules+1640, ReadAudioVisual66B49E..66B4BE: current-default
+    /// ShroudRate in minutes, f32 widened; constructor6673FC/667402 stores4.
+    pub shroud_rate: NativeF64Bits,
     /// `[AudioVisual] FogRate=` in minutes, Rules+1648. Constructor
     /// 66740C/667416 stores binary64 .05; ReadAudioVisual66B4CA..66B4E4
     /// reads the current default through ReadDouble5283D0 (f32 widened).
@@ -2255,6 +2261,11 @@ pub(crate) const fn default_fog_rate() -> NativeF64Bits {
     NativeF64Bits::from_bits(0x3fa9_9999_9999_999a)
 }
 
+pub(crate) const fn default_shroud_rate() -> NativeF64Bits {
+    // RulesClass constructor6673FC/667402, independent of retail tuning.
+    NativeF64Bits::from_bits(0x4010_0000_0000_0000)
+}
+
 impl Default for GeneralRules {
     fn default() -> Self {
         let (ambient_change_rate_nonzero, ambient_change_interval_frames, ambient_change_step) =
@@ -2520,6 +2531,8 @@ impl Default for GeneralRules {
             message_delay_minutes: crate::util::native_x87::NativeF64Bits::from_bits(
                 0x3FE3_3333_3333_3333,
             ),
+            shroud_grow: false,
+            shroud_rate: default_shroud_rate(),
             fog_rate: default_fog_rate(),
             speak_delay_minutes: 0.0,
             gui_combo_open_sound: None,
@@ -3070,6 +3083,12 @@ pub(crate) fn ambient_change_terms(rate: f64, step: f64) -> (bool, i32, i32) {
 }
 
 impl GeneralRules {
+    /// LogicClass::AI55B259..55B265 uses the shared ftol(minutes*900),
+    /// without clamping negative, zero or exceptional conversion results.
+    pub fn shroud_growth_interval_frames(&self) -> i32 {
+        native_minutes_to_frames(f64::from_bits(self.shroud_rate.bits()))
+    }
+
     /// LogicClass::AI55B304..55B310 converts the retained FogRate through
     /// the shared native minute-to-frame conversion before restarting its timer.
     pub fn fog_regrowth_interval_frames(&self) -> i32 {
@@ -3728,6 +3747,8 @@ impl GeneralRules {
             game_forming_sound: None,
             game_closed_sound: None,
             message_delay_minutes,
+            shroud_grow: audio_visual.read_bool("ShroudGrow", defaults.shroud_grow),
+            shroud_rate: audio_visual.read_double_bits("ShroudRate", defaults.shroud_rate),
             fog_rate: audio_visual.read_double_bits("FogRate", defaults.fog_rate),
             speak_delay_minutes: audio_visual.read_double("SpeakDelay", 0.0),
             gui_combo_open_sound: audio_visual
@@ -4463,6 +4484,7 @@ impl RuleSet {
         );
         rules.general.prism_support = processed.prism_support();
         rules.general.patrol_scan_minutes = processed.patrol_scan_minutes();
+        (rules.general.shroud_grow, rules.general.shroud_rate) = processed.shroud_growth_inputs();
         rules.general.fog_rate = processed.fog_rate();
         rules.general.prism_type = processed.prism_type().map(str::to_owned);
         let (drop_zone_anim, drop_zone_radius) = processed.drop_zone_controls();
@@ -6416,6 +6438,11 @@ impl RuleSet {
         self.general.maximum_cheer_rate.hash(&mut hasher);
         self.general.comp_easy_bonus.hash(&mut hasher);
         self.general.patrol_scan_minutes.hash(&mut hasher);
+        if self.general.shroud_grow || self.general.shroud_rate != default_shroud_rate() {
+            b"shroud-growth-controls-v1".hash(&mut hasher);
+            self.general.shroud_grow.hash(&mut hasher);
+            self.general.shroud_rate.hash(&mut hasher);
+        }
         if self.general.fog_rate != default_fog_rate() {
             b"fog-regrowth-rate-v1".hash(&mut hasher);
             self.general.fog_rate.hash(&mut hasher);
@@ -9987,6 +10014,38 @@ MutateWarhead=MyMutate\n\
             (0.1_f32 as f64).to_bits()
         );
         assert_eq!(native_minutes_to_frames(parsed.savour_delay_minutes), 90);
+    }
+
+    #[test]
+    fn shroud_growth_controls_retain_native_defaults_through_process_reset_and_save() {
+        assert!(!GeneralRules::default().shroud_grow);
+        assert_eq!(GeneralRules::default().shroud_rate, default_shroud_rate());
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[AudioVisual]\nShroudGrow=yes\nShroudRate=.5\n",
+        ));
+        layers.push(
+            crate::rules::native_processing::RulesLayerKind::Scenario,
+            IniFile::from_str("[AudioVisual]\nshroudgrow=no\n"),
+        );
+        let processed = layers.process().unwrap();
+        let (_, trace) = processed.into_ini_and_native_type_construction_trace();
+        let retained = trace
+            .into_registry_state_discarding_events()
+            .destructive_reset();
+        let saved = crate::util::save_codec::serialize(&retained).unwrap();
+        let retained = crate::util::save_codec::deserialize(&saved).unwrap();
+        let after_reset = RulesLayerStack::new(IniFile::empty())
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), retained)
+            .unwrap();
+        let rules = RuleSet::from_processed_rules(&after_reset).unwrap();
+        assert!(rules.general.shroud_grow);
+        assert_eq!(rules.general.shroud_rate.bits(), (0.5_f32 as f64).to_bits());
+        assert_eq!(rules.general.shroud_growth_interval_frames(), 450);
+        if let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() {
+            assert!(!retail.rules.general.shroud_grow);
+            assert_eq!(retail.rules.general.shroud_rate, default_shroud_rate());
+            assert_eq!(retail.rules.general.shroud_growth_interval_frames(), 3600);
+        }
     }
 
     #[test]

@@ -639,7 +639,7 @@ fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags
         .unwrap()
         .set_map_is_clear_for_test(true);
     let rng_before = rng(&sim);
-    sim.trigger_grow_shroud(UninitContext::new(&rules, Some(&registry)));
+    sim.grow_shroud(UninitContext::new(&rules, Some(&registry)));
     assert!(sim.fog.is_ground_unshrouded(houses[0], 14, 15));
     assert!(!sim.fog.is_ground_unshrouded(houses[0], 23, 15));
     assert!(!sim.fog.is_ground_unshrouded(houses[0], 23, 23));

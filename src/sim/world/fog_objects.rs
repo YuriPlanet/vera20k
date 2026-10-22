@@ -317,6 +317,61 @@ mod tests {
     }
 
     #[test]
+    fn automatic_shroud_growth_reaches_the_map_without_fog_and_preserves_saved_cadence() {
+        let (mut sim, mut rules, viewer) = world();
+        sim.playfield_bounds = Some(
+            crate::sim::cell_rect::PlayfieldBounds::from_normalized_local_size(16, 0, 0, 16, 16),
+        );
+        sim.playfield_size_height = Some(16);
+        rules.general = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str("[AudioVisual]\nShroudGrow=yes\nShroudRate=4\n"),
+            &IniFile::empty(),
+        )
+        .unwrap()
+        .general;
+        sim.session.game_options_mut_for_test().fog_of_war = false;
+        sim.fog.set_ground_bits_for_test(viewer, 10, 10, 8);
+        sim.fog.set_ground_bits_for_test(viewer, 11, 10, 24);
+        sim.advance_tick(&[], Some(&rules), None, None, 67);
+        assert!(!sim.fog.is_ground_unshrouded(viewer, 10, 10));
+        assert!(sim.fog.is_ground_unshrouded(viewer, 11, 10));
+        let timer = crate::sim::timer::CdTimer::started(0, 3600);
+        assert_eq!(sim.session.shroud_growth_timer(), timer);
+        let saved = GameSnapshot::save(&sim, 0, 0, "shroud", 0);
+        let mut restored = GameSnapshot::load(&saved).unwrap().sim;
+        restored.session.set_binary_frame_for_test(3599);
+        restored.advance_tick(&[], Some(&rules), None, None, 67);
+        assert_eq!(restored.session.shroud_growth_timer(), timer);
+        assert!(restored.fog.is_ground_unshrouded(viewer, 11, 10));
+        restored.advance_tick(&[], Some(&rules), None, None, 67);
+        assert_eq!(restored.session.shroud_growth_timer().start_frame(), 3600);
+        assert!(!restored.fog.is_ground_unshrouded(viewer, 11, 10));
+    }
+
+    #[test]
+    fn disabled_zero_and_unordered_shroud_growth_do_not_rearm_the_timer() {
+        let (mut sim, mut rules, _) = world();
+        sim.session.set_binary_frame_for_test(7);
+        let initial = sim.session.shroud_growth_timer();
+        sim.tick_shroud_growth(UninitContext::with_rules(&rules));
+        assert_eq!(sim.session.shroud_growth_timer(), initial);
+        rules.general.shroud_grow = true;
+        rules.general.shroud_rate = crate::util::native_x87::NativeF64Bits::POSITIVE_ZERO;
+        sim.tick_shroud_growth(UninitContext::with_rules(&rules));
+        assert_eq!(sim.session.shroud_growth_timer(), initial);
+        rules.general.shroud_rate =
+            crate::util::native_x87::NativeF64Bits::from_bits(f64::NAN.to_bits());
+        sim.tick_shroud_growth(UninitContext::with_rules(&rules));
+        assert_eq!(sim.session.shroud_growth_timer(), initial);
+        rules.general.shroud_rate = crate::rules::ruleset::default_shroud_rate();
+        sim.tick_shroud_growth(UninitContext::with_rules(&rules));
+        assert_eq!(
+            sim.session.shroud_growth_timer(),
+            crate::sim::timer::CdTimer::started(7, 3600)
+        );
+    }
+
+    #[test]
     fn frozen_foundation_survives_damage_destruction_and_load_until_revealed() {
         let (mut sim, rules, viewer) = world();
         let id = place(&mut sim, &rules);

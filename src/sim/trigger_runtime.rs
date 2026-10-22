@@ -3307,7 +3307,7 @@ impl Simulation {
                     index: value.unwrap_or(0),
                 });
             }
-            31 => self.trigger_grow_shroud(
+            31 => self.grow_shroud(
                 crate::sim::world::UninitContext::new(rules, overlay_registry)
                     .with_effects(frame_effects),
             ),

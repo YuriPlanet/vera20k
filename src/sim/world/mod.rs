@@ -8086,6 +8086,7 @@ impl Simulation {
         }
         profile_phase!(TRIGGERS);
 
+        self.tick_shroud_growth(UninitContext::new(rules, overlay_registry).with_effects(effects));
         // Logic55B29A/55B2AD: consume prior pending conceal at the signed
         // pre-increment native frame boundary, before ore, Teams and live objects.
         self.tick_pending_shroud_conceal(
