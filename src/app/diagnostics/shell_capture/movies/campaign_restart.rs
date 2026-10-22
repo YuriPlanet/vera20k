@@ -115,6 +115,8 @@ struct Mission {
     menu_difficulty: Option<i32>,
     player_difficulty: Option<i32>,
     countdown: Option<(i32, String)>,
+    /// Wallet and native starting-credit baseline, read from their one owner.
+    money: Option<[i32; 2]>,
 }
 
 #[derive(Debug)]
@@ -157,6 +159,16 @@ impl Mission {
                 .campaign_mission_counter()
                 .context("runtime has no campaign mission counter")?,
             seed: sim.session().seed(),
+            money: sim
+                .session()
+                .current_house()
+                .and_then(|player| sim.houses().get(&player))
+                .map(|house| {
+                    [
+                        house.economy().available_money(),
+                        house.economy().scenario_credits(),
+                    ]
+                }),
             countdown: sim
                 .session()
                 .scenario_timer_view()
@@ -177,7 +189,8 @@ impl Mission {
         json!({"map_name": self.map_name, "campaign_index": self.campaign_index,
             "mission_counter": self.mission_counter, "seed": self.seed,
             "menu_difficulty_row": self.menu_difficulty,
-            "player_house_difficulty_row": self.player_difficulty, "countdown": self.countdown})
+            "player_house_difficulty_row": self.player_difficulty, "countdown": self.countdown,
+            "money": self.money})
     }
 }
 
@@ -207,7 +220,7 @@ impl RestartCapture {
         save_directory: &Path,
     ) -> Result<Self> {
         let before = Mission::observe(state)?;
-        let saved_win = state.match_state.map_basic.win.clone();
+        let saved_basic = state.match_state.map_basic.clone();
         route.push(
             json!({"frame": frame, "action": "first live observed", "mission": before.receipt()}),
         );
@@ -290,8 +303,8 @@ impl RestartCapture {
                 "save load did not commit"
             );
             ensure!(
-                state.match_state.map_basic.win == saved_win,
-                "save load lost Basic.Win"
+                state.match_state.map_basic == saved_basic,
+                "save load changed Basic metadata"
             );
             ensure!(
                 loaded.map_name == before.map_name
@@ -963,7 +976,8 @@ impl RestartCapture {
                         "scenario": startup.scenario(), "campaign_index": startup.campaign_index(),
                         "mission_counter": startup.mission_counter(),
                         "plays_action_movie": startup.plays_action_movie(),
-                        "incoming_countdown_frames": startup.carry_over().map(|record| record.countdown_frames())}));
+                        "incoming_countdown_frames": startup.carry_over().map(|record| record.countdown_frames()),
+                        "incoming_money": startup.carry_over().map(|record| record.money())}));
                     route.push(json!({"frame": frame, "action": "restart loading admitted"}));
                 }
                 if state.frontend.screen == GameScreen::InGame && self.after.is_none() {

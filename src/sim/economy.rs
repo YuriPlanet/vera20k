@@ -135,6 +135,13 @@ impl Economy {
         self.credits = self.credits.wrapping_add(amount);
     }
 
+    /// EvadeClass::Do @0x004C6272..0x004C6285 calls Add_Credits and then
+    /// adds the same signed amount to House+1DC. Score/spending stay unchanged.
+    pub(crate) fn add_campaign_carry_over(&mut self, amount: i32) {
+        self.add_credits(amount);
+        self.scenario_credits = self.scenario_credits.wrapping_add(amount);
+    }
+
     /// `HouseClass::Spend_Money @ 0x004F9790`. An amount the balance covers
     /// (signed `<=`) comes off it; otherwise the whole balance, even a
     /// negative one, is taken and zeroed, and the rest would drain the silos

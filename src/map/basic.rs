@@ -5,6 +5,7 @@
 //! useful metadata now and leave the broader scenario semantics for later work.
 
 use crate::rules::ini_parser::IniFile;
+use crate::util::native_x87::NativeF64Bits;
 
 /// Owner of the active `SpecialFlags::DestroyableBridges` bit during load.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,6 +67,13 @@ pub struct BasicSection {
     /// ReadBool68A0E9..68A101 uses the current value;
     /// fresh SetDefaults683875 clears it. The receiving map owns inheritance.
     pub timer_inherit: Option<bool>,
+    /// gamemd ScenarioClass::Read_INI_Basic: Scenario+1C78 ReadDouble68A175,
+    /// capped at1.0 at68A17A..68A199.
+    /// SetDefaults68381E..683824 supplies0. The receiving map owns this policy.
+    pub carry_over_money: Option<NativeF64Bits>,
+    /// Scenario+1C80: current-default ReadInt68A1B2; fresh68382A supplies0.
+    /// EvadeClass::Do4C623D treats only-1 as an unlimited cap.
+    pub carry_over_cap: Option<i32>,
     /// Scenario+0x34AE `SkipScore`, read from map `[Basic]` at
     /// `0x0068A1BD..0x0068A1D5`; a fresh Scenario defaults this byte to false
     /// (`Set_Defaults` `0x0068387B`). Campaign Victory uses it to bypass only
@@ -204,6 +212,17 @@ pub fn parse_basic_section(ini: &IniFile) -> BasicSection {
         // ReadBool with the current Scenario+0x34B4 as default (`0x0068A284`).
         ignore_global_ai_triggers: section.read_bool_value("IgnoreGlobalAITriggers"),
         timer_inherit: section.read_bool_value("TimerInherit"),
+        carry_over_money: section.is_present("CarryOverMoney").then(|| {
+            let value = section.read_double("CarryOverMoney", 0.0);
+            NativeF64Bits::from_bits(if value >= 1.0 {
+                NativeF64Bits::ONE.bits()
+            } else {
+                value.to_bits()
+            })
+        }),
+        carry_over_cap: section
+            .is_present("CarryOverCap")
+            .then(|| section.read_int("CarryOverCap", 0)),
         // ReadBool with the current Scenario+0x34AE as default. A fresh map
         // load resets that byte to false in Set_Defaults.
         skip_score: section.read_bool_value("SkipScore"),

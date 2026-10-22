@@ -20,15 +20,15 @@
 //!   to write/read all 0x44 bytes. ScenarioSession retains this incoming
 //!   record separately from the current mission's changing global flags.
 //!
-//! Residuals, inert on retail data: the money (every retail map has
-//! `CarryOverMoney=0.000000`) and
-//! Scenario+0x35A0 (read only by `SkipMapSelect=yes`, never set on retail
-//! maps) are not carried.
+//! Residual: Scenario+0x35A0 (read by `SkipMapSelect=yes`) is not carried.
+//! Money uses the existing Available_Money owner's represented storage domain;
+//! this does not add its separate, pre-existing nonempty-silo mechanism.
 
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_state::HouseDifficulty;
 use crate::sim::trigger_runtime::SCENARIO_GLOBAL_COUNT;
 use crate::sim::world::Simulation;
+use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct CampaignCarryOver {
@@ -39,6 +39,9 @@ pub struct CampaignCarryOver {
     /// Record+0x38; absent in older VERA saves, which did not carry timers.
     #[serde(default)]
     countdown_frames: i32,
+    /// Record+34: player IHouse+18 -> Available_Money4F6990.
+    #[serde(default)]
+    money: i32,
 }
 
 mod saved_globals {
@@ -88,6 +91,7 @@ impl CampaignCarryOver {
         globals: [false; SCENARIO_GLOBAL_COUNT],
         player_difficulty: HouseDifficulty::Normal,
         countdown_frames: 0,
+        money: 0,
     };
 
     pub const fn globals(&self) -> &[bool; SCENARIO_GLOBAL_COUNT] {
@@ -101,16 +105,21 @@ impl CampaignCarryOver {
     pub const fn countdown_frames(&self) -> i32 {
         self.countdown_frames
     }
+
+    pub const fn money(&self) -> i32 {
+        self.money
+    }
 }
 
 impl Simulation {
     /// `0x004C6180`: the record a won mission saves for the next one. A
     /// session without a player House keeps the cleared row.
     pub fn save_campaign_carry_over(&self) -> CampaignCarryOver {
-        let player_difficulty = self
+        let player = self
             .session
             .current_house()
-            .and_then(|player| self.houses.get(&player))
+            .and_then(|player| self.houses.get(&player));
+        let player_difficulty = player
             .map_or(CampaignCarryOver::CLEARED.player_difficulty, |house| {
                 house.difficulty()
             });
@@ -118,6 +127,7 @@ impl Simulation {
             globals: self.global_variables(),
             player_difficulty,
             countdown_frames: self.session.campaign_countdown_frames(),
+            money: player.map_or(0, |house| house.economy().available_money()),
         }
     }
 
@@ -141,6 +151,25 @@ impl Simulation {
         let Some(array_index) = self.houses.index_of(player) else {
             return;
         };
+        // EvadeClass::Do4C622F..4C6285: FILD saved Available_Money, multiply
+        // the receiving Scenario's double, cap unless-1, ftol low32, then
+        // wallet/baseline adds. Reuse the economy's deterministic masked
+        // arithmetic owner (including signed truncation and overflow).
+        let (multiplier, cap) = self.session.campaign_money_policy();
+        let mut amount = X87::mul(X87::load_i32(record.money), X87::load_f64(multiplier));
+        if cap != -1
+            && matches!(
+                X87::compare(amount, X87::load_i32(cap)),
+                MaskedX87Ordering::Equal | MaskedX87Ordering::Greater
+            )
+        {
+            amount = X87::load_i32(cap);
+        }
+        if let Some(house) = self.houses.get_mut(&player) {
+            house
+                .economy_mut()
+                .add_campaign_carry_over(X87::ftol_i32_low_masked(amount));
+        }
         let frame = self.session.binary_frame() as i32;
         let country = self
             .houses
@@ -169,11 +198,14 @@ impl Simulation {
 mod tests {
     use super::*;
     use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioTimerAction};
+    use crate::util::native_x87::NativeF64Bits;
 
     fn timer_campaign(ini: &crate::rules::ini_parser::IniFile) -> Simulation {
         let basic = crate::map::basic::parse_basic_section(ini);
         let mut sim = Simulation::from_descriptor(&ScenarioDescriptor {
             timer_inherit: basic.timer_inherit.unwrap_or(false),
+            carry_over_money: basic.carry_over_money,
+            carry_over_cap: basic.carry_over_cap,
             ..Default::default()
         });
         let player = sim.interner.intern("Player");
@@ -182,6 +214,94 @@ mod tests {
         });
         sim.session.set_current_house_for_test(Some(player));
         sim
+    }
+
+    #[test]
+    fn receiving_money_cap_survives_saved_campaign_restart() {
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str("")).unwrap();
+        let mut source = timer_campaign(&crate::rules::ini_parser::IniFile::from_str(""));
+        let player = source.session.current_house().unwrap();
+        source
+            .houses
+            .get_mut(&player)
+            .unwrap()
+            .economy_mut()
+            .add_credits(10_001);
+        let incoming = source.save_campaign_carry_over();
+        let mut next = timer_campaign(&crate::rules::ini_parser::IniFile::from_str(
+            "[Basic]\nCarryOverMoney=25%\nCarryOverCap=2000\n",
+        ));
+        let player = next.session.current_house().unwrap();
+        next.houses
+            .get_mut(&player)
+            .unwrap()
+            .economy_mut()
+            .initialize_scenario_credits(70, None, false, 0, 0);
+        next.session.initialize_campaign_for_test(3, 5, incoming);
+        let bytes = crate::sim::snapshot::GameSnapshot::save(&next, 0, 0, "", 0);
+        let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+            .unwrap()
+            .sim;
+        let incoming = restored.session.campaign_restart_carry_over().unwrap();
+        restored.restore_campaign_carry_over(&incoming, &rules);
+        let economy = restored.houses.get(&player).unwrap().economy();
+        assert_eq!(economy.credits(), 9000);
+        assert_eq!(economy.scenario_credits(), 9000);
+        assert_eq!(economy.score(), 0);
+        assert_eq!(economy.spent_credits(), 0);
+    }
+
+    #[test]
+    fn money_policy_uses_destination_defaults_and_signed_uncapped_amounts() {
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str("")).unwrap();
+        let mut source = timer_campaign(&crate::rules::ini_parser::IniFile::from_str(""));
+        let player = source.session.current_house().unwrap();
+        source
+            .houses
+            .get_mut(&player)
+            .unwrap()
+            .economy_mut()
+            .add_credits(10_001);
+        let incoming = source.save_campaign_carry_over();
+        let mut upper = timer_campaign(&crate::rules::ini_parser::IniFile::from_str(
+            "[Basic]\nCarryOverMoney=200%\nCarryOverCap=-1\n",
+        ));
+        upper.restore_campaign_carry_over(&incoming, &rules);
+        assert_eq!(upper.houses[&player].economy().credits(), 10_001);
+        let mut default_cap = timer_campaign(&crate::rules::ini_parser::IniFile::from_str(
+            "[Basic]\nCarryOverMoney=25%\n",
+        ));
+        default_cap.restore_campaign_carry_over(&incoming, &rules);
+        assert_eq!(default_cap.houses[&player].economy().credits(), 0);
+        let mut negative = timer_campaign(&crate::rules::ini_parser::IniFile::from_str(
+            "[Basic]\nCarryOverMoney=-25%\nCarryOverCap=-1\n",
+        ));
+        negative.restore_campaign_carry_over(&incoming, &rules);
+        assert_eq!(negative.houses[&player].economy().credits(), -2500);
+        assert_eq!(negative.houses[&player].economy().scenario_credits(), -2500);
+    }
+
+    #[test]
+    fn stock_sov02_keeps_its_money_when_carry_over_is_disabled() {
+        let Some(bytes) = crate::rules::retail_ini_fixture::retail_archive_bytes("SOV02SMD.MAP")
+        else {
+            return;
+        };
+        let map = crate::map::map_file::MapFile::from_bytes(&bytes).unwrap();
+        assert_eq!(
+            map.basic.carry_over_money,
+            Some(NativeF64Bits::POSITIVE_ZERO)
+        );
+        assert_eq!(map.basic.carry_over_cap, Some(0));
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str("")).unwrap();
+        let mut next = timer_campaign(&map.ini);
+        let player = next.session.current_house().unwrap();
+        let record = CampaignCarryOver {
+            money: 10_001,
+            ..CampaignCarryOver::CLEARED
+        };
+        next.restore_campaign_carry_over(&record, &rules);
+        assert_eq!(next.houses[&player].economy().credits(), 0);
     }
 
     #[test]

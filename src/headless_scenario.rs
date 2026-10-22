@@ -275,6 +275,8 @@ pub fn load_with_launch_and_ini(
         free_radar: map.basic.free_radar.unwrap_or(false),
         ignore_global_ai_triggers: map.basic.ignore_global_ai_triggers.unwrap_or(false),
         timer_inherit: map.basic.timer_inherit.unwrap_or(false),
+        carry_over_money: map.basic.carry_over_money,
+        carry_over_cap: map.basic.carry_over_cap,
         train_crate: map.basic.train_crate.unwrap_or(false),
         truck_crate: map.basic.truck_crate.unwrap_or(false),
         ice_growth_enabled: map.basic.ice_growth_enabled,

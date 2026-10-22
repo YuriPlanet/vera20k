@@ -639,6 +639,10 @@ pub struct ScenarioDescriptor {
     pub ignore_global_ai_triggers: bool,
     /// Map Basic.TimerInherit, reset false at683875.
     pub timer_inherit: bool,
+    /// Basic68A175/68A1B2, consumed by EvadeClass::Do4C6210 after startup.
+    /// None resolves to fresh SetDefaults68381E/68382A's zero values.
+    pub carry_over_money: Option<crate::util::native_x87::NativeF64Bits>,
+    pub carry_over_cap: Option<i32>,
     /// Map Basic.TrainCrate / TruckCrate, reset false by683842/68388D.
     pub train_crate: bool,
     pub truck_crate: bool,
@@ -778,6 +782,11 @@ pub struct ScenarioSession {
     /// belong to the countdown owner; UI consumes only its retained view.
     #[serde(default)]
     scenario_countdown: countdown::ScenarioCountdown,
+    /// Destination Scenario+1C78/+1C80; immutable after its Basic read.
+    #[serde(default)]
+    carry_over_money: Option<crate::util::native_x87::NativeF64Bits>,
+    #[serde(default)]
+    carry_over_cap: i32,
     /// Process scenario-active byte A8ED5C. StartScenario683E75 publishes1;
     /// MainGame48CEBF clears it on exit, and LoadGame67E6C4 republishes1.
     /// It is reconstructed by the committed load/start route, not inferred
@@ -1470,6 +1479,12 @@ impl ScenarioSession {
             b"scenario-countdown-v1".hash(hasher);
             s.scenario_countdown.hash(hasher);
         }
+        let (money, cap) = s.campaign_money_policy();
+        if money != crate::util::native_x87::NativeF64Bits::POSITIVE_ZERO || cap != 0 {
+            b"scenario-campaign-money-policy-v1".hash(hasher);
+            money.hash(hasher);
+            cap.hash(hasher);
+        }
         if !s.waypoints.is_empty() {
             b"scenario-waypoints-v1".hash(hasher);
             s.waypoints.hash(hasher);
@@ -1653,6 +1668,15 @@ impl ScenarioSession {
         self.ice_growth = value as u8;
     }
 
+    /// Destination Basic policy, retained with the scenario across save/load.
+    pub(crate) fn campaign_money_policy(&self) -> (crate::util::native_x87::NativeF64Bits, i32) {
+        (
+            self.carry_over_money
+                .unwrap_or(crate::util::native_x87::NativeF64Bits::POSITIVE_ZERO),
+            self.carry_over_cap,
+        )
+    }
+
     pub fn from_descriptor(desc: &ScenarioDescriptor) -> Self {
         Self {
             seed: u64::from(desc.seed),
@@ -1668,6 +1692,8 @@ impl ScenarioSession {
             chrono_screen: crate::sim::superweapon::chrono_screen::ChronoScreenState::default(),
             scenario_pause: pause::ScenarioPause::default(),
             scenario_countdown: countdown::ScenarioCountdown::new(desc.timer_inherit),
+            carry_over_money: desc.carry_over_money,
+            carry_over_cap: desc.carry_over_cap.unwrap_or(0),
             started: false,
             no_damage: desc.no_damage,
             free_radar: desc.free_radar,
