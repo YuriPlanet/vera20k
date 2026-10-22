@@ -459,9 +459,11 @@ pub(crate) fn airburst_launch_velocity(speed: i32, rng: &mut SimRng) -> Projecti
     let sine = round(trig.sin_from_table(heading));
     let cosine = round(trig.cos_from_table(heading));
     let speed = X::load_i32(speed / 10);
+    // 469FEC computes sin first, but 46A07D..46A092 copy the later cos
+    // product to Fire's vector X (+88), and the saved sin product to Y (+90).
     ProjectileVelocity::from_native([
-        store(X::mul(X::mul(trig.cos_from_table(d(PITCH)), sine), speed)),
         store(X::mul(X::mul(trig.cos_from_table(d(PITCH)), cosine), speed)),
+        store(X::mul(X::mul(trig.cos_from_table(d(PITCH)), sine), speed)),
         store(X::mul(trig.sin_from_table(d(PITCH)), speed)),
     ])
 }

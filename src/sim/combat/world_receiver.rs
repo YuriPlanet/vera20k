@@ -224,8 +224,6 @@ pub(crate) fn apply_area_damage(
     origin: (u64, Option<InternedId>, InternedId),
     effects: FrameEffects<'_>,
 ) -> bool {
-    #[cfg(test)]
-    super::receiver_fixture::observe_area_visit(world, impact, damage, warhead, origin);
     let area = collect_area_at(
         world,
         rules,
@@ -328,6 +326,10 @@ fn collect_area_at<'r>(
     warhead: &'r WarheadType,
     origin: (u64, Option<InternedId>, InternedId),
 ) -> AreaAtImpact<'r> {
+    // Observe the shared entry, including Bullet and nested receiver calls;
+    // an external-only wrapper misses those paths and must not double-count.
+    #[cfg(test)]
+    super::receiver_fixture::observe_area_visit(world, impact, damage, warhead, origin);
     let (rx, ry, sub_x, sub_y, z_leptons) = projectile_impact_cell(impact);
     let entered = damage != 0 && !world.session.no_damage();
     let routed_wall = entered && area_routes_to_wall(world, overlay_registry, (rx, ry), warhead);

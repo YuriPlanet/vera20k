@@ -188,7 +188,18 @@ fn stock_airburst_children_reach_shared_damage_and_expire() {
     assert!(
         visits
             .iter()
-            .any(|visit| visit["warhead"] == "CHILD_WH" && visit["damage"] == 37)
+            .any(|visit| visit["warhead"] == "CHILD_WH" && visit["damage"] == 37),
+        "actual area entries: {:?}; remaining Bullets: {}",
+        visits
+            .iter()
+            .map(|visit| (
+                &visit["frame"],
+                &visit["coord"],
+                &visit["warhead"],
+                &visit["damage"]
+            ))
+            .collect::<Vec<_>>(),
+        world.projectiles.iter().count(),
     );
     assert!(
         world
