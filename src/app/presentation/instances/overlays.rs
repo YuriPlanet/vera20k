@@ -999,7 +999,7 @@ pub(crate) fn build_overlay_instances(
         return;
     };
     for obj in sim.terrain_objects().objects().values() {
-        if !obj.is_live() || !obj.in_logic_vector() {
+        if !obj.is_live() {
             continue;
         }
         let name = sim.interner().resolve(obj.type_ref());

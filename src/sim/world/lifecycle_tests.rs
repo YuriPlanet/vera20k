@@ -6152,11 +6152,11 @@ fn gsi_05_02_tail_appends_run_same_pass_and_terminal_current_skips_successor() {
 }
 
 #[test]
-fn gsi_05_02_terrain_map_construction_registers_before_later_techno() {
+fn gsi_05_02_terrain_spawner_registers_before_later_techno() {
     let rules =
         crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
             "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
-             [TerrainTypes]\n0=TREE01\n[TREE01]\nStrength=10\n",
+             [TerrainTypes]\n0=TREE01\n[TREE01]\nStrength=10\nSpawnsTiberium=yes\n",
         ))
         .expect("terrain fixture rules");
     let mut sim = Simulation::new();
@@ -8581,7 +8581,7 @@ fn gsi_01_05_wave_reselects_live_cell_list_after_fatal_receiver_unmark() {
 }
 
 #[test]
-fn gsi_05_02_restore_rejects_each_live_modeled_family_missing_from_logic() {
+fn gsi_05_02_graph_restore_allows_static_terrain_and_requires_fired_objects() {
     let mut terrain = Simulation::new();
     let terrain_id = terrain.substrate.allocate_stable_id();
     terrain
@@ -8594,13 +8594,9 @@ fn gsi_05_02_restore_rejects_each_live_modeled_family_missing_from_logic() {
             terrain.set_max_health_for_test(1);
             terrain
         });
-    assert_eq!(
-        terrain.restore_after_snapshot_load(),
-        Err(SnapshotRestoreError::MissingRequiredLogicIdentity {
-            registry: "TerrainObjectStore",
-            object_id: terrain_id,
-        })
-    );
+    terrain
+        .restore_after_snapshot_load()
+        .expect("static Terrain has no required Logic slot");
 
     let mut projectile = Simulation::new();
     let projectile_id = projectile.substrate.allocate_stable_id();

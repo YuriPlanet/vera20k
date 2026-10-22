@@ -200,12 +200,12 @@ fn retail_comet_selects_a_terrain_head_and_copies_its_bounce_beam() {
     };
     // SpawnShrapnel46A4D7..46A509 accepts a houseless Terrain head. The
     // first CellSpread offset is (1,-1), before either existing E1 neighbor.
-    // Use the map Terrain owner, including its real cell and Logic admission.
+    // Use the map Terrain owner, including its real Cell/Display admission.
     let tree_id = scene.admit_tree(17, 15);
     let tree = &scene.world.terrain_objects.objects()[&tree_id];
     let tree_coord = tree.world_coord();
     let tree_health = tree.health();
-    assert!(tree.is_live() && tree.in_logic_vector());
+    assert!(tree.is_live() && !tree.in_logic_vector());
     assert_eq!(tree_health, 200, "retail TREE01 uses TreeStrength");
     assert_eq!(
         scene
@@ -516,14 +516,14 @@ fn stock_shock_repairs_the_live_prism_terrain_child_before_limbo() {
         })
         .expect("a live Prism child receives the Terrain expiry callback");
     let boundary = events.iter().position(|event| matches!(event,
-        LifecycleTestEvent::TerrainExpiryBoundary { stable_id, indexed: true, in_logic: true, live: true, .. }
-        if *stable_id == tree_id)).expect("expiry begins while Terrain is indexed and in Logic");
+        LifecycleTestEvent::TerrainExpiryBoundary { stable_id, indexed: true, in_logic: false, live: true, .. }
+        if *stable_id == tree_id)).expect("expiry begins while static Terrain is indexed outside Logic");
     let repaired = events.iter().position(|event| matches!(event,
         LifecycleTestEvent::ProjectilePointerExpiredVisited { expired_id, projectile_id, expired_resolvable: true, target: ProjectileTarget::Cell { rx: 17, ry: 15 }, .. }
         if *expired_id == tree_id && *projectile_id == child)).expect("live observer repairs before Limbo");
     assert!(boundary < repaired);
     assert_eq!(events.iter().filter(|event| matches!(event,
-        LifecycleTestEvent::TerrainExpiryBoundary { stable_id, indexed: true, in_logic: true, live: true, .. }
+        LifecycleTestEvent::TerrainExpiryBoundary { stable_id, indexed: true, in_logic: false, live: true, .. }
         if *stable_id == tree_id)).count(), 4);
     assert!(
         !scene
@@ -605,6 +605,10 @@ fn terrain_bullet_expiry_matches_original_live_observer() {
             .unwrap()
             .level = 2;
         let tree_id = scene.admit_tree(10, 20);
+        // This receiver-only native control explicitly supplies +98/Logic
+        // membership (terrain_debris_receiver.py), without running Unlimbo.
+        // Match that input here; stock admission is covered separately above.
+        assert!(scene.world.register_live_object(tree_id));
         let point = scene.world.terrain_objects.objects()[&tree_id].world_coord();
         assert_eq!(
             point,

@@ -4381,12 +4381,12 @@ impl RuleSet {
                 processed.side_projection(),
             ),
         )?;
-        for (name, reads) in processed.terrain_radar_color_read_states() {
+        for (name, state) in processed.terrain_type_read_states() {
             if let Some(terrain) = rules
                 .terrain_object_types
                 .get_mut(&name.to_ascii_uppercase())
             {
-                terrain.radar_color_read_passes = reads.to_vec();
+                state.project_into(terrain);
             }
         }
         let mut native_identity_counts = HashMap::new();
@@ -6306,6 +6306,20 @@ impl RuleSet {
         self.terrain_object_types
             .iter()
             .map(|(name, terrain)| (name.to_ascii_uppercase(), terrain.armor_id()))
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
+        // TerrainType71DEA0 retains its IsVeinhole post-read writes across
+        // Process calls. Equal current source text can admit different Logic
+        // members or targets, so the effective fields also identify rules.
+        b"terrain-logic-and-targeting-v1".hash(&mut hasher);
+        self.terrain_object_types
+            .iter()
+            .map(|(name, terrain)| {
+                (
+                    name.to_ascii_uppercase(),
+                    (terrain.is_logic(), terrain.legal_target),
+                )
+            })
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
         self.warheads

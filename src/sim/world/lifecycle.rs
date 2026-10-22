@@ -3162,14 +3162,18 @@ impl Simulation {
     }
 
     pub(crate) fn register_terrain_object(&mut self, stable_id: u64, rules: &RuleSet) -> bool {
-        if !self
+        let Some(terrain) = self
             .terrain_objects
-            .objects()
-            .get(&stable_id)
-            .is_some_and(|terrain| terrain.is_live())
-        {
+            .get(stable_id)
+            .filter(|terrain| terrain.is_live())
+        else {
             return false;
-        }
+        };
+        let joins_logic = rules
+            .terrain_object_type_case_insensitive(self.interner.resolve(terrain.type_ref()))
+            .is_some_and(|terrain_type| {
+                terrain.joins_logic_on_unlimbo(terrain_type, self.session.game_mode())
+            });
         // Terrain ctor71BC76 reveals at the retained type-adjusted coordinate;
         // Object5F4260 selects Ground even on elevated cells.
         Self::submit_object_display(
@@ -3180,7 +3184,12 @@ impl Simulation {
             DisplayLayer::GROUND,
             rules,
         );
-        self.register_logic_object(stable_id)
+        // ObjectUnlimbo5F4FE2 submits Display before the independent Logic
+        // admission5F4FEF..5F5040; ordinary trees still complete Unlimbo.
+        if joins_logic {
+            self.register_logic_object(stable_id);
+        }
+        true
     }
 
     pub fn register_projectile(&mut self, stable_id: u64, flat: bool) -> bool {

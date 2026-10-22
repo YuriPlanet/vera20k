@@ -205,6 +205,19 @@ impl TerrainObjectState {
         self.in_logic_vector
     }
 
+    /// ObjectClass::Unlimbo5F4FEF..5F5040 (original instructions): Terrain
+    /// joins Logic only for IsLogic/SpawnsTiberium types. Modes0/5 bypass
+    /// the native non-player identity (-2) exclusion; Display is independent.
+    pub(crate) fn joins_logic_on_unlimbo(
+        &self,
+        terrain_type: &TerrainObjectType,
+        game_mode: crate::sim::scenario_session::ScenarioGameMode,
+    ) -> bool {
+        terrain_type.is_logic()
+            && terrain_type.spawns_tiberium
+            && (game_mode.is_single_player() || self.native_unique_id != Some(-2))
+    }
+
     pub const fn type_ref(&self) -> InternedId {
         self.type_ref
     }

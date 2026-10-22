@@ -415,6 +415,8 @@ pub enum SnapshotRestoreError {
     MissingLogicIdentity { object_id: u64 },
     #[error("DisplayClass object id {object_id} has no restored registry identity")]
     MissingDisplayIdentity { object_id: u64 },
+    #[error("saved Terrain {object_id} references unresolved type {type_name}")]
+    MissingTerrainType { object_id: u64, type_name: String },
     #[error("live {registry} object id {object_id} is absent from LogicVector")]
     MissingRequiredLogicIdentity {
         registry: &'static str,
@@ -1837,12 +1839,6 @@ impl Simulation {
         for terrain in self.terrain_objects.objects().values() {
             let in_logic = seen_logic.contains(&terrain.stable_id());
             let pending_delete = pending_delete_ids.contains(&terrain.stable_id());
-            if terrain.is_live() && !in_logic {
-                return Err(SnapshotRestoreError::MissingRequiredLogicIdentity {
-                    registry: "TerrainObjectStore",
-                    object_id: terrain.stable_id(),
-                });
-            }
             if !terrain.is_live() && in_logic {
                 return Err(SnapshotRestoreError::InactiveLogicIdentity {
                     registry: "TerrainObjectStore",
@@ -1959,6 +1955,29 @@ impl Simulation {
         prepare_terrain_assets: Option<&mut SnapshotTerrainAssetPreparation<'_>>,
     ) -> Result<SnapshotMapRestoreOutput, SnapshotRestoreError> {
         self.validate_type_tech_levels(rules)?;
+        // TerrainLoad71CDA0 preserves the separately saved Display/Logic
+        // vectors. Only ObjectUnlimbo5F4FEF..5F5040's eligible spawners need
+        // Logic; validate with restored type state without rebuilding order.
+        for terrain in self.terrain_objects.objects().values() {
+            if !terrain.is_live() {
+                continue;
+            }
+            let type_name = self.interner.resolve(terrain.type_ref());
+            let terrain_type = rules
+                .terrain_object_type_case_insensitive(type_name)
+                .ok_or_else(|| SnapshotRestoreError::MissingTerrainType {
+                    object_id: terrain.stable_id(),
+                    type_name: type_name.to_owned(),
+                })?;
+            if !terrain.in_logic_vector()
+                && terrain.joins_logic_on_unlimbo(terrain_type, self.session.game_mode())
+            {
+                return Err(SnapshotRestoreError::MissingRequiredLogicIdentity {
+                    registry: "TerrainObjectStore",
+                    object_id: terrain.stable_id(),
+                });
+            }
+        }
         #[cfg(feature = "ares")]
         self.validate_attached_speed_after_restore(rules)
             .map_err(
@@ -2222,6 +2241,116 @@ mod tests {
         )
     }
 
+    #[test]
+    fn retail_static_tree_display_survives_load_without_logic_membership() {
+        use crate::sim::world::display_layers::DisplayLayer;
+
+        let Some(battle) =
+            crate::rules::retail_ini_fixture::retail_battle_rules_for_map("Dustbowl.mmx")
+        else {
+            return;
+        };
+        let rules = &battle.rules;
+        let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+            &battle.processed_rules,
+            Some(&battle.fixed_art),
+        );
+        let terrain = flat_terrain(8, 8);
+        let mut sim = Simulation::new();
+        sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
+        sim.install_resolved_terrain_for_new_map(terrain.clone());
+        crate::sim::terrain_spawn::construct_terrain_objects(
+            &mut sim,
+            &[
+                crate::map::overlay::TerrainObject {
+                    rx: 3,
+                    ry: 4,
+                    name: "TREE01".into(),
+                },
+                crate::map::overlay::TerrainObject {
+                    rx: 5,
+                    ry: 4,
+                    name: "TIBTRE01".into(),
+                },
+            ],
+            rules,
+            false,
+        );
+        let tree = sim.terrain_objects.id_at((3, 4)).unwrap();
+        let spawner = sim.terrain_objects.id_at((5, 4)).unwrap();
+        assert_eq!(sim.live_object_order_snapshot(), [spawner]);
+        assert_eq!(
+            sim.substrate.display.members(DisplayLayer::GROUND),
+            [tree, spawner]
+        );
+        let bytes = GameSnapshot::save(&sim, 0, 0, "terrain-membership", 0);
+        let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
+        loaded
+            .restore_after_snapshot_load()
+            .expect("a live static tree needs no Logic slot");
+        loaded.rebuild_caches_after_load(
+            terrain,
+            crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
+            rules,
+        );
+        loaded
+            .restore_map_authority_after_snapshot_load(rules, &registry, None)
+            .unwrap();
+        assert_eq!(loaded.live_object_order_snapshot(), [spawner]);
+        assert_eq!(
+            loaded.substrate.display.members(DisplayLayer::GROUND),
+            [tree, spawner]
+        );
+        assert!(!loaded.terrain_objects.get(tree).unwrap().in_logic_vector());
+        let warhead_ref = loaded.interner.intern("HE");
+        loaded.commit_direct_terrain_damage_receiver(
+            rules,
+            Some(&registry),
+            crate::sim::combat::TerrainDamageEvent {
+                stable_id: tree,
+                rx: 3,
+                ry: 4,
+                damage: loaded.terrain_objects.get(tree).unwrap().health(),
+                distance_leptons: 0,
+                warhead_ref,
+                near_center_ic_isolation_eligible: false,
+            },
+            crate::sim::world::FrameEffects::default(),
+        );
+        assert_eq!(
+            loaded.substrate.display.members(DisplayLayer::GROUND),
+            [spawner]
+        );
+        assert_eq!(loaded.live_object_order_snapshot(), [spawner]);
+        assert!(loaded.terrain_objects.id_at((3, 4)).is_none());
+        assert_eq!(loaded.substrate.pending_delete.object_ids(), [tree]);
+
+        loaded.set_logic_order_for_test(Vec::new());
+        loaded.rebuild_logic_membership();
+        assert_eq!(
+            loaded
+                .restore_map_authority_after_snapshot_load(rules, &registry, None)
+                .unwrap_err(),
+            SnapshotRestoreError::MissingRequiredLogicIdentity {
+                registry: "TerrainObjectStore",
+                object_id: spawner,
+            },
+        );
+        assert_eq!(
+            loaded
+                .restore_map_authority_after_snapshot_load(
+                    crate::rules::ruleset::RuleSet::empty_for_test(),
+                    &registry,
+                    None,
+                )
+                .unwrap_err(),
+            SnapshotRestoreError::MissingTerrainType {
+                object_id: spawner,
+                type_name: "TIBTRE01".into(),
+            },
+        );
+    }
+
     mod gsi_17_04_tests {
         use super::flat_terrain;
         use crate::map::basic::{BasicSection, SpecialFlagsSection};
@@ -2251,6 +2380,8 @@ mod tests {
                  [AircraftTypes]\n\
                  [BuildingTypes]\n\
                  [Warheads]\n\
+                 [TerrainTypes]\n0=TREE01\n\
+                 [TREE01]\nFixtureOnly=1\n\
                  [OverlayTypes]\n\
                  0=ORE\n\
                  [ORE]\n\
@@ -2341,17 +2472,12 @@ mod tests {
                 .insert(stable_id, {
                     let mut terrain =
                         TerrainObjectState::for_test(stable_id, type_ref, cell.0, cell.1);
-                    terrain.set_in_logic_vector_for_test(true);
                     terrain.set_occupation_bits_for_test(7);
                     terrain
                 });
             sim.terrain_objects
                 .cell_index_mut_for_test()
                 .insert(cell, stable_id);
-            sim.substrate
-                .logic
-                .try_push(stable_id)
-                .expect("fixture TerrainClass Logic registration");
         }
 
         fn seed_serialized_queue_state(
@@ -8312,10 +8438,7 @@ mod tests {
             sim.terrain_objects
                 .objects_mut_for_test()
                 .insert(terrain.stable_id(), terrain.clone());
-            assert!(sim.register_terrain_object(
-                terrain.stable_id(),
-                crate::rules::ruleset::RuleSet::empty_for_test()
-            ));
+            assert!(sim.register_terrain_object(terrain.stable_id(), &rules));
             sim.terrain_objects
                 .cell_index_mut_for_test()
                 .insert(terrain.cell(), terrain.stable_id());
@@ -8362,7 +8485,8 @@ mod tests {
             sim.resolved_terrain.as_mut(),
         );
         assert_eq!(result, TerrainDamageResult::Destroyed);
-        assert!(sim.unregister_non_entity_object(destroyed_id));
+        assert!(!sim.unregister_non_entity_object(destroyed_id));
+        assert_eq!(sim.substrate.display.layer_of(destroyed_id), None);
         sim.substrate.pending_delete.queue_object(destroyed_id);
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // destroyed-terrain persistence on that same post-load cursor.

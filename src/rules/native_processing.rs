@@ -602,14 +602,13 @@ impl ProcessedRulesLayers {
         self.native_type_construction_trace.registry_state()
     }
 
-    /// Ordered Image/RadarColor inputs from the existing retained Terrain
-    /// members. Each row is emitted only when that Type section is admitted.
-    pub(crate) fn terrain_radar_color_read_states(
+    /// Retained constructor and admitted reader state of the Terrain members.
+    pub(crate) fn terrain_type_read_states(
         &self,
     ) -> impl Iterator<
         Item = (
             &str,
-            &[crate::rules::terrain_object_type::TerrainRadarColorReadPass],
+            &crate::rules::terrain_object_type::TerrainTypeReadState,
         ),
     > {
         self.native_type_construction_trace
@@ -620,9 +619,9 @@ impl ProcessedRulesLayers {
             .flatten()
             .filter_map(|member| {
                 member
-                    .terrain_radar_color_reads
+                    .terrain_type_read_state
                     .as_ref()
-                    .map(|state| (member.native_stored_id.as_str(), state.reads()))
+                    .map(|state| (member.native_stored_id.as_str(), state))
             })
     }
 
@@ -3082,11 +3081,10 @@ struct ProcessedType {
     anim_art_read: bool,
     /// One owner for Bullet's two-phase Image/ART reads across rules passes.
     projectile_art: ProjectileArtState,
-    /// Terrain constructor Image ID plus each admitted ReadINI pass's
-    /// Image/RadarColor inputs; SHP frame colors bind in TerrainAssetCatalog.
+    /// Terrain constructor/current fields and ordered admitted reader inputs;
+    /// deferred SHP frame colors bind in TerrainAssetCatalog.
     #[serde(default)]
-    terrain_radar_color_reads:
-        Option<crate::rules::terrain_object_type::TerrainRadarColorReadState>,
+    terrain_type_read_state: Option<crate::rules::terrain_object_type::TerrainTypeReadState>,
     /// BuildingType45DF13 initializes +EF0 to zero; ReadINI461225..46125D
     /// updates it from fixed ART after ObjectType5F933B reads effective Image.
     building_foundation: u8,
@@ -3540,7 +3538,7 @@ impl ProcessedType {
             #[cfg(feature = "ares")]
             ares_side: None,
             anim_art_read: false,
-            terrain_radar_color_reads: None,
+            terrain_type_read_state: None,
             building_foundation: 0,
             building_target_coord_offset: [0; 3],
             building_half_damage_smoke_location1: [0; 3],
@@ -3983,10 +3981,8 @@ impl RulesPassProcessor {
         }
         if family == RulesTypeFamily::Terrain {
             members[index].armor_id = ArmorId::WOOD;
-            members[index].terrain_radar_color_reads = Some(
-                crate::rules::terrain_object_type::TerrainRadarColorReadState::new(
-                    &native_stored_id,
-                ),
+            members[index].terrain_type_read_state = Some(
+                crate::rules::terrain_object_type::TerrainTypeReadState::new(&native_stored_id),
             );
         }
         if crate::rules::ARES_ENABLED && family == RulesTypeFamily::Warhead {
@@ -5889,8 +5885,8 @@ impl RulesPassProcessor {
                 && family == RulesTypeFamily::Terrain
             {
                 let member = &mut self.family_mut(family)[index];
-                let state = member.terrain_radar_color_reads.get_or_insert_with(|| {
-                    crate::rules::terrain_object_type::TerrainRadarColorReadState::new(
+                let state = member.terrain_type_read_state.get_or_insert_with(|| {
+                    crate::rules::terrain_object_type::TerrainTypeReadState::new(
                         &member.native_stored_id,
                     )
                 });
