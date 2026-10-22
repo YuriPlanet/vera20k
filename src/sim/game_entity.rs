@@ -619,6 +619,10 @@ pub struct GameEntity {
     /// TemporalTargetingMe), written only by `temporal`.
     #[serde(default)]
     pub temporal: crate::sim::temporal::TemporalState,
+    /// Techno+270: shared by Temporal and Chronosphere, independently of +278.
+    /// Techno constructor6F2DB4 initializes the byte to zero.
+    #[serde(default)]
+    being_warped_out: bool,
     /// The Crazy Ivan bomb it carries (`ObjectClass+0x38` and its
     /// `BombClass`), written only by `bomb`.
     #[serde(default)]
@@ -857,6 +861,17 @@ fn default_build_rejects_saved_delivery_base_override_and_keeps_base_space() {
 }
 
 impl GameEntity {
+    /// TechnoClass::IsBeingWarpedOut70C5B0 reads the shared +270 byte.
+    pub fn is_warped_out(&self) -> bool {
+        self.being_warped_out
+    }
+
+    /// Explicit native stores by Temporal71B0EA/71AC17/71ACD0/71ADE0 and
+    /// Teleport::Process7192F0. Head transfer alone never writes this byte.
+    pub(crate) fn set_warped_out(&mut self, warped: bool) {
+        self.being_warped_out = warped;
+    }
+
     /// Infantry+6D9: building survivor identity, not Type.Nominal.
     /// Added_To_Game502C3C skips its active counter; UI-name51F2C0 uses
     /// TXT_TECHNICIAN. The flag persists across placement and capture.
@@ -1685,6 +1700,7 @@ impl GameEntity {
             airstrike_tint: Default::default(),
             mind_control: Default::default(),
             temporal: Default::default(),
+            being_warped_out: false,
             bomb: None,
             berserk: Default::default(),
             pending_entry: Default::default(),

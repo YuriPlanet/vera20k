@@ -551,7 +551,7 @@ mod tests {
     fn building_slot_anims_take_no_warp_from_their_building() {
         let mut building = entity();
         building.set_category_for_test(EntityCategory::Structure);
-        building.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(9);
+        building.set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(9));
         assert!(building.is_warped_out());
         let body = DrawState::for_entity(&building, 0, 3, ObserverDrawContext::default()).state;
         assert_eq!((body.fx_flags, body.fx_params[0]), (FX_WARP, 0.5));

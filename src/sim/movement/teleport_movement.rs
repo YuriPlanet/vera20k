@@ -232,9 +232,8 @@ impl ChronoWarpDelay {
 /// Foot's locomotor (`SuperClass::Launch 0x006CC989..0x006CCB6A`): Teleport
 /// Process's states (`+0x38`, `0x007197CC..0x00719BE2`, run by
 /// `movement::teleport_chrono`), its timer, and the Techno bytes those states
-/// write. Native keeps the bytes on the Techno; only the Teleport's states
-/// write them, and End_Piggyback waits until all are clear
-/// (`0x00719F30`), so they live and die with this Teleport.
+/// write. The shared BeingWarpedOut byte lives on GameEntity because Temporal
+/// also writes it. End_Piggyback719F30 waits for the latch and state to clear.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ChronoWarp {
     /// Teleport `+0x38`.
@@ -248,8 +247,6 @@ pub struct ChronoWarp {
     destination: DriveCoord,
     /// Techno `+0x27C`: set by case 4, cleared by state 2.
     latched: bool,
-    /// Techno `+0x270` BeingWarpedOut: set by state 0, cleared by state 2.
-    warped_out: bool,
     /// Techno `+0x271` WarpingIn: set by state 2, cleared by TimerCheck's
     /// expiry and state 7.
     warping_in: bool,
@@ -261,7 +258,9 @@ impl std::hash::Hash for ChronoWarp {
         self.timer.hash(state);
         self.destination.hash(state);
         self.latched.hash(state);
-        self.warped_out.hash(state);
+        // Retain the ordinary Chronosphere hash stream after moving the shared
+        // byte to GameEntity. Collision state is hashed by world_hash.
+        self.in_warp_out_phase().hash(state);
         self.warping_in.hash(state);
         // Existing Chronosphere warps have native pending0. Its absence and
         // zero have identical consumers; preserve their established hash fold.
@@ -285,7 +284,6 @@ impl ChronoWarp {
             timer: crate::sim::timer::CdTimer::started(frame as i32, 0),
             destination,
             latched: true,
-            warped_out: false,
             warping_in: false,
         }
     }
@@ -343,9 +341,9 @@ impl ChronoWarp {
         self.latched
     }
 
-    /// Techno `+0x270`.
-    pub(crate) fn warped_out(&self) -> bool {
-        self.warped_out
+    /// The Teleport's warp-out states, independent of shared Techno+270.
+    pub(crate) fn in_warp_out_phase(&self) -> bool {
+        matches!(self.state, 1 | 2)
     }
 
     /// Techno `+0x271`.
@@ -353,11 +351,10 @@ impl ChronoWarp {
         self.warping_in
     }
 
-    /// Techno `+0x27C`, `+0x270` and `+0x271` as warp states 0 and 2 store
-    /// them.
-    pub(crate) fn set_bytes(&mut self, latched: bool, warped_out: bool, warping_in: bool) {
+    /// Techno +27C and +271 as warp states 0 and 2 store them. The shared
+    /// +270 store goes through GameEntity separately.
+    pub(crate) fn set_bytes(&mut self, latched: bool, warping_in: bool) {
         self.latched = latched;
-        self.warped_out = warped_out;
         self.warping_in = warping_in;
     }
 

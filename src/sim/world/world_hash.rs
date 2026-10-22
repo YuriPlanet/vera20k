@@ -2215,6 +2215,16 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         0x274_u32.hash(hasher);
         entity.temporal.hash(hasher);
     }
+    // +270 is independent of +278 and the Teleport phase. Preserve the old
+    // ordinary hash fold while distinguishing either shared-writer collision.
+    let ordinary_warped_out = entity.temporal.is_warped()
+        || entity
+            .chrono_warp()
+            .is_some_and(|warp| warp.in_warp_out_phase());
+    if entity.is_warped_out() != ordinary_warped_out {
+        0x270_u32.hash(hasher);
+        entity.is_warped_out().hash(hasher);
+    }
     // A carried bomb (+38); an unbombed object folds nothing.
     if let Some(bomb) = &entity.bomb {
         0x38_u32.hash(hasher);

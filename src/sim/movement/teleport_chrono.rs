@@ -287,8 +287,11 @@ impl Simulation {
         }
         match warp.state() {
             0 => {
+                if let Some(entity) = self.substrate.entities.get_mut(id) {
+                    entity.set_warped_out(true); // Process7192F0 state0.
+                }
                 if let Some(warp) = self.substrate.chrono_warp_mut(id) {
-                    warp.set_bytes(true, true, false);
+                    warp.set_bytes(true, false);
                     warp.start_timer(frame, CHRONO_WARP_OUT_FRAMES);
                     warp.set_state(1);
                 }
@@ -314,8 +317,11 @@ impl Simulation {
                         locomotor.store_ground_layer(false);
                     }
                 }
+                if let Some(entity) = self.substrate.entities.get_mut(id) {
+                    entity.set_warped_out(false); // Process7192F0 state2, even with a head.
+                }
                 if let Some(warp) = self.substrate.chrono_warp_mut(id) {
-                    warp.set_bytes(false, false, true);
+                    warp.set_bytes(false, true);
                 }
                 let landed = self.chrono_update_position(
                     id,

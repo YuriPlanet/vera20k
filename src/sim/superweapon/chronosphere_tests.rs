@@ -22,7 +22,373 @@ use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::house_state::HouseState;
 use crate::sim::intern::InternedId;
 use crate::sim::superweapon::cell_receiver_tests::test_terrain_cell;
-use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation, TickLane};
+
+fn frame(sim: &mut Simulation, rules: &RuleSet) {
+    let commands = sim.take_due_commands();
+    sim.advance_app_frame(
+        &commands,
+        rules,
+        None,
+        67,
+        TickLane::Ordinary,
+        FrameEffects::default(),
+    )
+    .expect("ordinary skirmish frame");
+}
+/// Authored weapon override, not a bundled stock producer. A supplied enemy
+/// Attack order runs real FireAt/guided flight; the player runs both real
+/// Chronosphere commands. No supplied Temporal head or warp latch is used.
+fn delayed_temporal_missile_during_chrono_warp(
+    speed: i32,
+) -> Option<(RuleSet, Simulation, u64, u64)> {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::mission::{MissionId, MissionType};
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    fn launch(
+        sim: &mut Simulation,
+        rules: &RuleSet,
+        owner: InternedId,
+        name: &str,
+        at: (u16, u16),
+    ) {
+        let sw_type_id = sim.interner.intern(name);
+        sim.queue_command(CommandEnvelope::new(
+            owner,
+            sim.session.tick() + 1,
+            Command::LaunchSuperWeapon {
+                sw_type_id,
+                target_rx: at.0,
+                target_ry: at.1,
+            },
+        ));
+        frame(sim, rules);
+    }
+
+    let patch = IniFile::from_str(&format!(
+        "[NeutronRifle]\nProjectile=AAHeatSeeker2\nSpeed={speed}\n"
+    ));
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &patch,
+    ) else {
+        return None;
+    };
+    let mut rules = retail.rules;
+    for name in ["CHRONOAR", "CHRONOTG", "CHRONOFD", "WARPOUT", "CHRONOSK"] {
+        rules.bind_anim_frame_count_for_test(name, 20);
+    }
+    let (rules, mut sim, owner) = world_with(rules, 64, &[]);
+    let enemy = sim.interner.intern("Russians");
+    sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+    sim.session.set_current_house_for_test(Some(owner));
+    sim.set_input_delay_ticks(0);
+    sim.fog = crate::sim::vision::FogState::new(64, 64);
+    for house in [owner, enemy] {
+        sim.fog.reveal_all_for_owner(house);
+    }
+    spawn(&mut sim, &rules, "GACNST", "Americans", (5, 5));
+    spawn(&mut sim, &rules, "NACNST", "Russians", (5, 40));
+    for at in [(5, 10), (8, 10), (11, 10)] {
+        spawn(&mut sim, &rules, "GAPOWR", "Americans", at);
+    }
+    spawn(&mut sim, &rules, "GACSPH", "Americans", (15, 10));
+    for _ in 0..8 {
+        frame(&mut sim, &rules);
+    }
+    let sphere = sim.interner.intern("ChronoSphereSpecial");
+    let instance = &sim.super_weapons[&owner][&sphere];
+    assert!(instance.is_active() && !instance.is_suspended());
+    let deadline = instance
+        .charge_start_tick()
+        .wrapping_add(instance.charge_duration())
+        .wrapping_add(1);
+    sim.session.set_binary_frame_for_test(deadline as u32);
+    frame(&mut sim, &rules);
+    assert!(sim.super_weapons[&owner][&sphere].is_ready());
+
+    let victim = spawn(&mut sim, &rules, "MTNK", "Americans", SOURCE);
+    // A stationary authored scene avoids the victim shooting the experiment's
+    // firer; Sleep is a real mission, not a supplied immunity/health override.
+    sim.substrate
+        .mission_assign_exact(
+            victim,
+            MissionId::from_known(MissionType::Sleep),
+            sim.session.binary_frame(),
+        )
+        .expect("stationary victim Sleep mission");
+    launch(&mut sim, &rules, owner, "ChronoSphereSpecial", SOURCE);
+    let firer = spawn(&mut sim, &rules, "CLEG", "Russians", (17, 21));
+    // Supply the admitted enemy Attack order, without making that House a
+    // player-controlled command sender or claiming whole AI target selection.
+    assert!(sim.apply_command_with_overlays(
+        "Russians",
+        &Command::Attack {
+            attacker_id: firer,
+            target_id: victim,
+        },
+        &rules,
+        None,
+        FrameEffects::default(),
+    ));
+    let mut missile = None;
+    for _ in 0..120 {
+        frame(&mut sim, &rules);
+        missile = sim.projectiles.iter().find_map(|(&id, bullet)| {
+            bullet
+                .payload()
+                .installed_weapon()
+                .is_some_and(|weapon| sim.interner.resolve(weapon) == "NeutronRifle")
+                .then_some(id)
+        });
+        if missile.is_some() {
+            break;
+        }
+    }
+    missile.expect("a real delayed Temporal missile survives its first object pass");
+    assert!(
+        !sim.substrate
+            .entities
+            .get(victim)
+            .unwrap()
+            .temporal
+            .is_warped()
+    );
+    launch(&mut sim, &rules, owner, "ChronoWarpSpecial", TARGET);
+    assert!(
+        sim.substrate
+            .entities
+            .get(victim)
+            .unwrap()
+            .chrono_warp_latch()
+    );
+
+    Some((rules, sim, victim, firer))
+}
+
+/// A delayed authored Temporal missile survives the Attack exit, attaches
+/// during warp-out and retains its head while Process7192F0 clears +270.
+#[test]
+fn delayed_temporal_impact_keeps_its_head_after_chrono_clears_the_shared_byte() {
+    use crate::sim::mission::MissionType;
+    use crate::sim::movement::ground_pose::position_world_coord;
+    let Some((rules, mut sim, victim, firer)) = delayed_temporal_missile_during_chrono_warp(10)
+    else {
+        return;
+    };
+    let mut overlap = false;
+    let mut impact_after_attack_exit = false;
+    let mut after_state_two = None;
+    for _ in 0..150 {
+        frame(&mut sim, &rules);
+        let actor = sim
+            .substrate
+            .entities
+            .get(victim)
+            .expect("living warp target");
+        let Some(warp) = actor.chrono_warp() else {
+            continue;
+        };
+        if !overlap && warp.in_warp_out_phase() && actor.temporal.is_warped() {
+            let owner = sim.substrate.entities.get(firer).unwrap();
+            impact_after_attack_exit = owner.attack_target.target().is_none()
+                && [
+                    owner.mission.current().known(),
+                    owner.mission.queued().known(),
+                ]
+                .contains(&Some(MissionType::Guard));
+            overlap = true;
+        }
+        if overlap
+            && !warp.in_warp_out_phase()
+            && actor.is_warping_in()
+            && actor.temporal.is_warped()
+        {
+            after_state_two = Some((
+                sim.session.binary_frame(),
+                actor.is_warped_out(),
+                actor.ai_frozen(),
+            ));
+            break;
+        }
+    }
+    assert!(
+        overlap,
+        "the actual missile must establish its head during warp-out"
+    );
+    assert!(
+        impact_after_attack_exit,
+        "the delayed impact follows the normal Attack exit"
+    );
+    assert!(
+        sim.projectiles.iter().all(|(_, bullet)| {
+            bullet
+                .payload()
+                .installed_weapon()
+                .is_none_or(|weapon| sim.interner.resolve(weapon) != "NeutronRifle")
+        }),
+        "the observed missile impacted"
+    );
+    let (frame_two, being_warped_out, frozen) =
+        after_state_two.expect("state2 retains the Temporal head");
+    // TeleportProcess7192F0 state2 clears270 independently of Temporal's278.
+    // UnitAI's frozen return73635A still applies on WarpIn && head.
+    assert!(
+        !being_warped_out,
+        "frame{frame_two}: state2 cleared the shared byte"
+    );
+    assert!(
+        frozen,
+        "the Unit's independent warp-in/head gate remains active"
+    );
+
+    // Same-build save admission preserves the independent byte and head.
+    let terrain = sim.resolved_terrain.as_ref().unwrap().clone();
+    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
+    let overlays = crate::rules::overlay_types::OverlayTypeRegistry::empty();
+    sim.restore_map_authority_after_snapshot_load(&rules, &overlays, None)
+        .unwrap();
+    let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "shared warp byte", 0);
+    let mut loaded = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .sim;
+    loaded.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
+    loaded.restore_after_snapshot_load().unwrap();
+    loaded.rebuild_caches_after_load(
+        terrain,
+        crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
+        &rules,
+    );
+    loaded
+        .restore_map_authority_after_snapshot_load(&rules, &overlays, None)
+        .unwrap();
+    let actor = loaded.substrate.entities.get(victim).unwrap();
+    assert!(actor.temporal.is_warped() && !actor.is_warped_out() && actor.ai_frozen());
+    let saved_hash = loaded.state_hash();
+    loaded
+        .substrate
+        .entities
+        .get_mut(victim)
+        .unwrap()
+        .set_warped_out(true);
+    assert_ne!(
+        loaded.state_hash(),
+        saved_hash,
+        "the independent byte is hashed"
+    );
+    loaded
+        .substrate
+        .entities
+        .get_mut(victim)
+        .unwrap()
+        .set_warped_out(false);
+    assert_eq!(loaded.state_hash(), saved_hash);
+    sim = loaded;
+
+    for _ in 0..180 {
+        frame(&mut sim, &rules);
+        if sim
+            .substrate
+            .entities
+            .get(victim)
+            .unwrap()
+            .chrono_warp()
+            .is_none()
+        {
+            break;
+        }
+    }
+    let actor = sim.substrate.entities.get(victim).unwrap();
+    assert!(actor.chrono_warp().is_none() && actor.temporal.is_warped());
+    assert!(
+        !actor.ai_frozen(),
+        "the retained head alone no longer freezes the Unit"
+    );
+    assert_eq!(cell(&sim, victim), TARGET);
+    let before = position_world_coord(&actor.position);
+    assert!(sim.apply_command_with_overlays(
+        "Americans",
+        &Command::Move {
+            entity_id: victim,
+            target_rx: 41,
+            target_ry: 40,
+        },
+        &rules,
+        None,
+        FrameEffects::default(),
+    ));
+    for _ in 0..20 {
+        frame(&mut sim, &rules);
+    }
+    let actor = sim.substrate.entities.get(victim).unwrap();
+    assert!(actor.temporal.is_warped());
+    assert_ne!(position_world_coord(&actor.position), before);
+    // The head keeps running after thaw. The computer's later Guard->Hunt
+    // movement releases its link through PerCellTail6F50B4/LetGo71ABC0.
+    let remaining_before =
+        serde_json::to_value(&sim.substrate.entities.get(firer).unwrap().temporal).unwrap()["link"]
+            ["warp_remaining"]
+            .as_i64()
+            .unwrap();
+    let mut progressed = false;
+    let mut released = false;
+    for _ in 0..120 {
+        frame(&mut sim, &rules);
+        let actor = sim.substrate.entities.get(victim).unwrap();
+        let owner = sim.substrate.entities.get(firer).unwrap();
+        if actor.temporal.is_warped() {
+            let remaining =
+                serde_json::to_value(&owner.temporal).unwrap()["link"]["warp_remaining"]
+                    .as_i64()
+                    .unwrap();
+            progressed |= remaining < remaining_before;
+        } else {
+            assert!(actor.lifecycle.object_alive() && !actor.is_warped_out() && !actor.ai_frozen());
+            assert_eq!(owner.temporal.warp_target(), None);
+            assert_eq!(owner.mission.current().known(), Some(MissionType::Hunt));
+            released = true;
+            break;
+        }
+    }
+    assert!(
+        progressed && released,
+        "continued head Update and the later ordinary computer release"
+    );
+}
+
+/// Earlier impact attaches before the normal Attack->Guard exit. LetGo's
+/// lone-head clear71AC17 thaws the Unit during the remaining Chrono warp-out.
+#[test]
+fn temporal_let_go_clears_the_shared_byte_during_chrono_warp_out() {
+    let Some((rules, mut sim, victim, _)) = delayed_temporal_missile_during_chrono_warp(40) else {
+        return;
+    };
+    let mut attached = false;
+    let mut released = false;
+    for _ in 0..60 {
+        frame(&mut sim, &rules);
+        let actor = sim.substrate.entities.get(victim).unwrap();
+        let Some(warp) = actor.chrono_warp() else {
+            break;
+        };
+        if warp.in_warp_out_phase() && actor.temporal.is_warped() {
+            attached = true;
+        }
+        if attached && warp.in_warp_out_phase() && !actor.temporal.is_warped() {
+            assert!(
+                !actor.is_warped_out() && !actor.ai_frozen(),
+                "LetGo clears +270 independently of the Teleport phase"
+            );
+            released = true;
+            break;
+        }
+    }
+    assert!(
+        attached && released,
+        "actual impact and normal Attack-exit release occur during warp-out"
+    );
+}
 
 pub const SOURCE: (u16, u16) = (21, 21);
 const TARGET: (u16, u16) = (40, 40);

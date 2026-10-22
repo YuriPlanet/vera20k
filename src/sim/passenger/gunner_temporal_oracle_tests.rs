@@ -255,6 +255,11 @@ fn install_temporal_boundary(sim: &mut Simulation, actors: &Actors, native: &Val
         .get_mut(actors.victim)
         .unwrap()
         .temporal = serde_json::from_value(json!({"link": null, "head": head})).unwrap();
+    sim.substrate
+        .entities
+        .get_mut(actors.victim)
+        .unwrap()
+        .set_warped_out(native["link"]["victim_warped"].as_bool().unwrap());
 }
 
 fn assert_state(sim: &Simulation, actors: &Actors, native: &Value, label: &str) {
@@ -326,7 +331,7 @@ fn assert_state(sim: &Simulation, actors: &Actors, native: &Value, label: &str) 
         "{label} victim head owner"
     );
     assert_eq!(
-        victim.temporal.is_warped(),
+        victim.is_warped_out(),
         native["link"]["victim_warped"].as_bool().unwrap(),
         "{label} warped flag"
     );

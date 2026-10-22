@@ -256,6 +256,11 @@ fn chain(sim: &mut Simulation, target: u64, attackers: &[u64], warp_remaining: i
         .temporal
         .head = attackers.first().copied();
     sim.substrate
+        .entities
+        .get_mut(target)
+        .unwrap()
+        .set_warped_out(!attackers.is_empty());
+    sim.substrate
         .set_building_online_for_temporal(target, attackers.is_empty());
 }
 
@@ -523,7 +528,7 @@ fn native_update_corpus() {
             "{name}: the target's head"
         );
         assert_eq!(
-            entity(&sim, target).temporal.is_warped(),
+            entity(&sim, target).is_warped_out(),
             case.target_warped == 1,
             "{name}: +0x270"
         );
@@ -2547,6 +2552,11 @@ fn native_initiate_warp_corpus() {
                 .unwrap()
                 .temporal
                 .head = Some(u64::MAX);
+            sim.substrate
+                .entities
+                .get_mut(attackers[0])
+                .unwrap()
+                .set_warped_out(true);
         }
         if let Some(order) = input["chain"].as_array() {
             let order: Vec<u64> = order
@@ -2597,7 +2607,7 @@ fn native_initiate_warp_corpus() {
             "{name}: head"
         );
         assert_eq!(
-            entity(&sim, target).temporal.is_warped(),
+            entity(&sim, target).is_warped_out(),
             case.target_warped == 1,
             "{name}: +0x270"
         );
@@ -2623,11 +2633,7 @@ fn native_initiate_warp_corpus() {
                 head_of(&sim, other).is_none(),
                 "{name}: other head"
             );
-            assert_eq!(
-                entity(&sim, other).temporal.is_warped(),
-                warped == 1,
-                "{name}"
-            );
+            assert_eq!(entity(&sim, other).is_warped_out(), warped == 1, "{name}");
         }
         let native = |kind: &str| case.events.iter().any(|event| event[0] == kind);
         // `0x0071B10B`: UpdateGattlingStage(1) on the victim, the original's
