@@ -329,8 +329,8 @@ impl Simulation {
     /// LandType water (`+0xEC == 2`), and not being warped (`+0x271`, set by
     /// the Chronosphere at `0x0065F1F4` and the Teleport locomotor at
     /// `0x00719579`/`0x007198DA`). Such a unit sinks and never reaches
-    /// `Death_Explosion`; `world::sinking` owns its retained lifetime. VERA has no
-    /// Chronosphere unit warp, so a teleport in flight stands in for the byte.
+    /// `Death_Explosion`; `world::sinking` owns its retained lifetime. The shared
+    /// warp-in accessor reads both the Teleport and ChronoWarp state owners.
     pub(crate) fn unit_sinks_on_death(&self, rules: &RuleSet, unit_id: u64) -> bool {
         let Some(entity) = self.substrate.entities.get(unit_id) else {
             return false;
@@ -347,7 +347,7 @@ impl Simulation {
                     .cell(entity.position.rx(), entity.position.ry())
                     .is_some_and(|cell| cell.land_type == LandType::Water.as_index())
             })
-            && entity.teleport_state().is_none()
+            && !entity.is_warping_in()
     }
 
     /// `UnitClass::Death_Explosion @ 0x00738680`: one `Explosion=` anim and

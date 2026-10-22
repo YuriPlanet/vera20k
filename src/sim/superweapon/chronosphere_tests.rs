@@ -622,6 +622,102 @@ fn retail_chrono_warp_forces_a_sailing_ships_track_to_its_landing() {
     assert!(ended);
 }
 
+/// Unit::ReceiveDamage737E2A..737E32 checks WarpingIn(+271), not the
+/// ordinary teleport effect. A Chronosphere collision's own C4 receiver
+/// must explode the warping ship, rather than retain a sinking hull.
+#[test]
+fn retail_warping_ship_dies_on_an_iron_curtained_landing_without_sinking() {
+    let Some((rules, mut sim, americans)) = retail_water_world() else {
+        return;
+    };
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    sim.session.game_options_mut_for_test().short_game = false;
+    let ship = spawn(&mut sim, &rules, "DEST", "Americans", SOURCE);
+    let blocker = spawn(&mut sim, &rules, "DEST", "Americans", TARGET);
+    spawn(&mut sim, &rules, "SUB", "Russians", (6, 6));
+    let initial_health = sim.substrate.entities.get(ship).unwrap().health.current();
+    let blocker_health = sim
+        .substrate
+        .entities
+        .get(blocker)
+        .unwrap()
+        .health
+        .current();
+    assert!(
+        sim.unit_sinks_on_death(&rules, ship),
+        "an ordinary destroyer on water sinks"
+    );
+
+    charge_super(&mut sim, americans, "IronCurtainSpecial");
+    click(&mut sim, &rules, americans, "IronCurtainSpecial", TARGET);
+    assert!(super::invulnerability::is_invulnerable(
+        sim.substrate
+            .entities
+            .get(blocker)
+            .unwrap()
+            .invulnerability
+            .as_ref(),
+        sim.session.binary_frame(),
+    ));
+    charge_chronosphere(&mut sim, americans);
+    click(&mut sim, &rules, americans, "ChronoSphereSpecial", SOURCE);
+    click(&mut sim, &rules, americans, "ChronoWarpSpecial", TARGET);
+    let actor = sim.substrate.entities.get(ship).unwrap();
+    assert!(
+        actor.chrono_warp_latch(),
+        "the real destination event armed the warp"
+    );
+    assert!(
+        actor.teleport_state().is_none(),
+        "ChronoWarp has its own state owner"
+    );
+
+    let mut reached_fatal_collision = false;
+    for _ in 0..100 {
+        let commands = sim.take_due_commands();
+        let output = sim.advance_tick(&commands, Some(&rules), None, None, 33);
+        assert!(output.frame_committed, "the skirmish frame advances");
+        if sim
+            .substrate
+            .entities
+            .get(ship)
+            .is_none_or(|actor| actor.health.current() < initial_health)
+        {
+            reached_fatal_collision = true;
+            assert!(
+                sim.substrate
+                    .entities
+                    .get(ship)
+                    .is_none_or(|actor| !actor.sinking.is_active()),
+                "the collision must not enter the ordinary ship-sinking arm"
+            );
+            assert!(
+                sim.substrate
+                    .entities
+                    .get(ship)
+                    .is_none_or(|actor| !actor.lifecycle.object_alive()),
+                "the warp's fatal receiver uninitializes the ship immediately"
+            );
+            break;
+        }
+    }
+    assert!(
+        reached_fatal_collision,
+        "the Chronosphere reached the occupied landing"
+    );
+    let protected = sim
+        .substrate
+        .entities
+        .get(blocker)
+        .expect("the blocker survives");
+    assert_eq!(protected.health.current(), blocker_health);
+    assert!(super::invulnerability::is_invulnerable(
+        protected.invulnerability.as_ref(),
+        sim.session.binary_frame(),
+    ));
+}
+
 /// A Chrono Miner on its own Teleport warps on a tank's frames. Arming
 /// drops its NavCom (the warp's Teleport has no Marked coordinate), so the
 /// NULL destinations of states 5 and 7 return before the Unit setter's
