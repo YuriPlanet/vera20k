@@ -1359,6 +1359,22 @@ pub(super) fn retail_dustbowl_defence(
     u64,
     (u16, u16),
 ) {
+    retail_dustbowl_defence_with_power_assessment(kind, owner, enemy, mcv, west, false)
+}
+
+fn retail_dustbowl_defence_with_power_assessment(
+    kind: &str,
+    owner: &str,
+    enemy: &str,
+    mcv: &str,
+    west: u16,
+    assess_before_defence: bool,
+) -> (
+    crate::headless_scenario::HeadlessScenario,
+    u64,
+    u64,
+    (u16, u16),
+) {
     let mut scenario = retail_dustbowl_scenario();
     let crate::sim::runtime::SimRuntime {
         simulation: sim,
@@ -1401,8 +1417,8 @@ pub(super) fn retail_dustbowl_defence(
                 rules,
                 &resources.overlay_registry,
             )?;
-            let defence = sim
-                .spawn_object_with_overlay_registry(
+            let defence = (!assess_before_defence).then(|| {
+                sim.spawn_object_with_overlay_registry(
                     kind,
                     owner,
                     x,
@@ -1411,7 +1427,8 @@ pub(super) fn retail_dustbowl_defence(
                     rules,
                     &resources.overlay_registry,
                 )
-                .expect("the defence stands where the MCV does");
+                .expect("the defence stands where the MCV does")
+            });
             Some((defence, truck, x, y))
         })
         .expect("open level ground for the fight");
@@ -1444,6 +1461,21 @@ pub(super) fn retail_dustbowl_defence(
             .insert(ally.to_string());
     }
     sim.resolve_type_handles(rules);
+    let defence = defence.unwrap_or_else(|| {
+        // Logic (0x0055B610) precedes House power assessment (0x00508C30).
+        // Assess the real reactors before constructing this Powered defence.
+        // The unarmed MCV reserves the admitted arena; no defence exists yet.
+        // One committed first frame assesses power without a defeat pass.
+        assert!(retail_frame(&mut scenario, Vec::new()).tick.frame_committed);
+        for (house, output) in [("Americans", 200), ("Russians", 150)] {
+            let sim = scenario.sim();
+            let owner = sim.interner.get(house).unwrap();
+            let power = &sim.power_states()[&owner];
+            assert_eq!((power.total_output(), power.total_drain()), (output, 0));
+            assert!(power.has_full_power(), "{house} has assessed reactor power");
+        }
+        retail_spawn(&mut scenario, kind, owner, (x, y))
+    });
     (scenario, defence, truck, (x, y))
 }
 
@@ -1675,8 +1707,14 @@ fn retail_dustbowl_sentry_gun_guards_attacks_and_returns_to_guard() {
 #[test]
 #[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
 fn retail_dustbowl_tesla_coil_charges_before_each_shot() {
-    let (mut scenario, coil, truck, _) =
-        retail_dustbowl_defence("TESLA", "Russians", "Americans", "AMCV", 2);
+    let (mut scenario, coil, truck, _) = retail_dustbowl_defence_with_power_assessment(
+        "TESLA",
+        "Russians",
+        "Americans",
+        "AMCV",
+        2,
+        true,
+    );
     let slots = |scenario: &crate::headless_scenario::HeadlessScenario| {
         let sim = scenario.sim();
         let entity = sim.substrate.entities.get(coil).unwrap();
@@ -1693,7 +1731,29 @@ fn retail_dustbowl_tesla_coil_charges_before_each_shot() {
         let entity = scenario.sim().substrate.entities.get(coil).unwrap();
         entity.pending_building_fire.pending().is_some()
     };
-    retail_frame(&mut scenario, Vec::new());
+    assert!(retail_frame(&mut scenario, Vec::new()).tick.frame_committed);
+    // GrandOpening (0x004467E2) deletes Light-only Active3 even at full power;
+    // the first positive operational edge (0x0043FBEA) restores it (0x004545D0).
+    assert_eq!(
+        scenario
+            .sim()
+            .building_operational_state(coil, &scenario.runtime.resources.rules),
+        Some(true)
+    );
+    assert!(
+        scenario
+            .sim()
+            .substrate
+            .entities
+            .get(coil)
+            .unwrap()
+            .building_last_operational
+            .is_operational()
+    );
+    assert!(
+        !armed(&scenario),
+        "idle readiness precedes the first arming"
+    );
     assert_eq!(
         slots(&scenario),
         (Some("NATSLA_A".to_string()), None),
