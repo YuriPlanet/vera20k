@@ -84,7 +84,7 @@ pub(crate) use native_cell::{
 pub use native_cell::{NativeCellQuery, SharedCellDummy, SharedCellDummySnapshot};
 use recalc_catalog::BridgeRecalcCatalog;
 pub(crate) use recalc_catalog::BridgeRecalcCatalogError;
-pub use saved_terrain::{SavedTerrainError, SavedTerrainTemplate};
+pub use saved_terrain::{SavedCellLandValues, SavedTerrainError, SavedTerrainTemplate};
 #[cfg(any(test, feature = "test-support"))]
 pub use tests::{
     bridge_constructor_terrain, install_bridge_batch_test_catalog,

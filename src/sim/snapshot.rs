@@ -281,6 +281,8 @@ pub enum SnapshotError {
 /// Structural failures found before a deserialized simulation is admitted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SnapshotRestoreError {
+    #[error("invalid saved live Cell Land: {0}")]
+    InvalidSavedCellLand(String),
     #[error("invalid UnitDelivery snapshot state: {0}")]
     InvalidUnitDelivery(&'static str),
     #[error("invalid paid two-stage selection: {0}")]
@@ -1943,6 +1945,33 @@ impl Simulation {
         overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
         prepare_terrain_assets: Option<&mut SnapshotTerrainAssetPreparation<'_>>,
     ) -> Result<SnapshotMapRestoreOutput, SnapshotRestoreError> {
+        self.restore_map_authority_after_load(rules, overlay_registry, prepare_terrain_assets, None)
+    }
+
+    /// The app's user-file boundary only. Generic simulation continuations must
+    /// not run CellLoad4839F0 / Map no-init565190's crate resets.
+    pub fn restore_map_authority_after_user_load(
+        &mut self,
+        rules: &crate::rules::ruleset::RuleSet,
+        overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+        prepare_terrain_assets: Option<&mut SnapshotTerrainAssetPreparation<'_>>,
+        saved_land: crate::map::resolved_terrain::SavedCellLandValues,
+    ) -> Result<SnapshotMapRestoreOutput, SnapshotRestoreError> {
+        self.restore_map_authority_after_load(
+            rules,
+            overlay_registry,
+            prepare_terrain_assets,
+            Some(saved_land),
+        )
+    }
+
+    fn restore_map_authority_after_load(
+        &mut self,
+        rules: &crate::rules::ruleset::RuleSet,
+        overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+        prepare_terrain_assets: Option<&mut SnapshotTerrainAssetPreparation<'_>>,
+        saved_land: Option<crate::map::resolved_terrain::SavedCellLandValues>,
+    ) -> Result<SnapshotMapRestoreOutput, SnapshotRestoreError> {
         self.validate_type_tech_levels(rules)?;
         #[cfg(feature = "ares")]
         self.validate_factory_country_references(rules)
@@ -1999,6 +2028,25 @@ impl Simulation {
                 terrain_width,
                 terrain_height,
             });
+        }
+
+        if let Some(saved_land) = saved_land.as_ref() {
+            // MouseLoad restores Map+68/raw rows before LoadContent67E8CD's
+            // hierarchy pass. A user file cannot invent that saved topology
+            // from the Cell+4C values which CellLoad has just reset to zero.
+            let zones = self.zone_grid.as_ref().ok_or(
+                SnapshotRestoreError::MissingMapAuthorityComponent {
+                    component: "ZoneGrid",
+                },
+            )?;
+            if !zones.is_native_load_pending() {
+                return Err(SnapshotRestoreError::NavigationAuthorityPublicationFailed);
+            }
+            self.crate_authority.reset_coordinates_after_user_load();
+            self.overlay_grid
+                .as_mut()
+                .expect("validated overlay cache")
+                .reset_crate_fields_after_user_load(saved_land.allocated_cells());
         }
 
         // Reproject runtime isometric replacements onto the pristine
@@ -2073,6 +2121,14 @@ impl Simulation {
                     );
                 }
             }
+        }
+
+        if let Some(saved_land) = saved_land {
+            self.resolved_terrain
+                .as_mut()
+                .expect("validated terrain cache")
+                .restore_user_loaded_land(&saved_land)
+                .map_err(|error| SnapshotRestoreError::InvalidSavedCellLand(error.to_string()))?;
         }
 
         if !self.rebuild_dynamic_navigation(rules) {

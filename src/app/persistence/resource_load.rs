@@ -155,6 +155,9 @@ impl PreparedSavedGame {
             saved.processed_rules().ini(),
             Some(view.rules_owner.fixed_art()),
         );
+        // Only a live-value capture can run the native user-file Cell reset.
+        // Baseline-only headless payloads remain on their separate adapter.
+        let saved_land = saved.terrain().user_load_land_values()?;
         let (mut resources, processed_rules, map) =
             saved.into_restored_parts(rules, overlay_registry, SharedCellDummy::fresh())?;
         let rules = &resources.rules;
@@ -200,6 +203,7 @@ impl PreparedSavedGame {
             terrain_speed,
             overlay_types,
             Some(&mut bind_loaded_cells),
+            Some(saved_land),
         )?;
         resources
             .terrain_template
