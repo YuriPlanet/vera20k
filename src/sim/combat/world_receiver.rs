@@ -926,6 +926,17 @@ pub(crate) fn commit_terrain(
         // Terrain71BABF passes its retained Object Location, not a fresh
         // sample of the ground/deck after nested callbacks.
         let impact = world.terrain_objects.objects()[&lethal.stable_id].world_coord();
+        // TerrainClass::Take_Damage71BA2E..71BA85 selects with the raw
+        // cell LandType and damage100, then constructs the ordinary combat
+        // Anim (2600h/-15) BEFORE its nested C4. Original gamemd.exe
+        // instructions; use the shared selector and constructor so Start,
+        // sound, RNG, persistence and deferred cleanup keep their owners.
+        let land = detonation_anim::land_at(world, impact);
+        if let Some(effect) =
+            detonation_anim::effect(world, rules, c4_warhead, 100, land, impact, impact)
+        {
+            crate::sim::world::damage_consequences::admit_explosion_effect(world, rules, effect);
+        }
         let (nested, mut pings) = apply_area_damage_in_run(
             world,
             run,
@@ -938,6 +949,8 @@ pub(crate) fn commit_terrain(
         );
         effects.append(nested);
         under_attack_events.append(&mut pings);
+        // The following CellChainReaction request71BAD5 calls489270,
+        // whose complete active-YR body is RET; there is no queued effect.
     }
 
     world.terrain_lethal_uninit(

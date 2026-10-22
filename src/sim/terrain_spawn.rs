@@ -1074,6 +1074,133 @@ mod tests {
     }
 
     #[test]
+    fn destructible_retail_drill_constructs_its_c4_anim_and_restores_until_cleanup() {
+        use crate::map::overlay::TerrainObject;
+        use crate::sim::snapshot::GameSnapshot;
+        use crate::sim::world::SimSoundEvent;
+
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+            "XMP03T4.MAP",
+            &IniFile::from_str("[TIBTRE01]\nImmune=no\n"),
+        ) else {
+            return;
+        };
+        let (_, mut assets) = crate::rules::retail_ini_fixture::retail_scenario_assets().unwrap();
+        let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+        let mut rules = battle.rules;
+        rules.bind_terrain_assets(
+            &battle.processed_rules,
+            &assets,
+            theater.extension,
+            "TEMPERATE",
+        );
+        let roots = crate::rules::effect_asset_catalog::anim_class_roots(&rules);
+        rules.bind_anim_class_assets(&roots, &assets, theater.extension, "TEMPERATE");
+        let registry =
+            OverlayTypeRegistry::from_ini(&battle.processed_rules, Some(&battle.fixed_art));
+        let mut sim = crate::sim::world::Simulation::with_seed(0);
+        sim.session.set_map_width_for_test(8);
+        sim.session.set_map_height_for_test(8);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let template = resolved_grid(8, 8);
+        sim.install_resolved_terrain_for_new_map(template.clone());
+        sim.overlay_grid = Some(OverlayGrid::new(8, 8));
+        let objects = [
+            TerrainObject {
+                rx: 2,
+                ry: 2,
+                name: "TIBTRE01".into(),
+            },
+            TerrainObject {
+                rx: 4,
+                ry: 2,
+                name: "TIBTRE02".into(),
+            },
+        ];
+        assert_eq!(
+            construct_terrain_objects(&mut sim, &objects, &rules, false),
+            2
+        );
+        let doomed = sim.terrain_objects.id_at((2, 2)).unwrap();
+        let immune = sim.terrain_objects.id_at((4, 2)).unwrap();
+        let impact = sim.terrain_objects.get(doomed).unwrap().world_coord();
+        let he = rules.warhead("HE").unwrap();
+        let he_ref = sim.interner.intern("HE");
+        for id in [immune, doomed] {
+            let at = sim.terrain_objects.get(id).unwrap().world_coord();
+            crate::sim::combat::world_receiver::apply_area_damage(
+                &mut sim,
+                &rules,
+                Some(&registry),
+                at,
+                10000,
+                he,
+                (crate::sim::combat::RAD_NO_ATTACKER, None, he_ref),
+                crate::sim::world::FrameEffects::default(),
+            );
+            if id == immune {
+                assert_eq!(sim.terrain_objects.get(id).unwrap().health(), 200);
+                assert_eq!(
+                    sim.anims().count(),
+                    0,
+                    "stock immunity must not construct an explosion"
+                );
+            }
+        }
+        let (anim_id, anim) = sim
+            .anims()
+            .next()
+            .expect("Terrain71BA85 constructs before nested C4");
+        let anim_id = *anim_id;
+        // SelectAnim48A5EB..48A615: damage100 picks slot4 of the retail Super list.
+        assert_eq!(sim.interner.resolve(anim.type_id()), "XGRYMED2");
+        assert_eq!(
+            [
+                anim.world_coord().x,
+                anim.world_coord().y,
+                anim.world_coord().z
+            ],
+            [impact.x, impact.y, impact.z]
+        );
+        assert_eq!((anim.draw_flags(), anim.z_adjust()), (0x2600, -15));
+        assert!(sim.sound_events.iter().any(|event| matches!(event,
+            SimSoundEvent::AnimationStarted { anim_id: id, sound_id, .. }
+                if *id == anim_id && sound_id == "EXPLOSION12"
+        )));
+        assert!(!sim.terrain_objects.get(doomed).unwrap().is_live());
+        sim.scenario_rng = SimRng::new(0); // Native load resets this stream.
+        let saved = GameSnapshot::save_validated(
+            &sim,
+            1,
+            rules.simulation_config_hash(),
+            "drill explosion",
+            0,
+        );
+        let mut restored = GameSnapshot::load(&saved).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        restored.rebuild_caches_after_load(template, Default::default(), &rules);
+        restored
+            .restore_map_authority_after_snapshot_load(&rules, &registry, None)
+            .unwrap();
+        assert_eq!(sim.anim(anim_id), restored.anim(anim_id));
+        for _ in 0..200 {
+            sim.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
+            restored.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
+            assert_eq!(sim.anim(anim_id), restored.anim(anim_id));
+            if sim.anim(anim_id).is_none() {
+                break;
+            }
+        }
+        assert!(
+            sim.anim(anim_id).is_none(),
+            "the normal Anim lifecycle must retire the explosion"
+        );
+        assert!(sim.terrain_objects.get(doomed).is_none());
+        assert!(restored.terrain_objects.get(doomed).is_none());
+    }
+
+    #[test]
     fn wood_splash_reaches_both_overlapping_retail_trees_before_lethal_cleanup() {
         let Some((mut sim, rules, registry, _)) = retail_terrain_scene(&["TREE01", "TREE01"])
         else {
