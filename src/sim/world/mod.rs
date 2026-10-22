@@ -4903,10 +4903,10 @@ impl Simulation {
                 entity.in_playfield.store(member);
             }
         }
-        // FUN_006E21E0's false->true callback is the Techno reveal/update
-        // virtual (`0x0070ADC0`), only for human-owned live nonlimbo mobiles;
-        // Buildings are explicitly excluded. Rust's owned equivalent commits
-        // the sight reveal immediately, before this action returns.
+        // FUN_006E21E0's false->true callback is Object See (virtual+120):
+        // Aircraft41ADF0 or Techno70ADC0, only for human-owned live nonlimbo
+        // mobiles; Buildings are explicitly excluded. The shared dispatch
+        // commits the sight reveal before this action returns.
         for (stable_id, _, reveal) in membership_updates {
             if reveal {
                 self.reveal_uncached_object_sight(stable_id, UninitContext::new(rules, None));

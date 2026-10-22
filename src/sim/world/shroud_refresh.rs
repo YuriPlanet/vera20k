@@ -1060,7 +1060,7 @@ impl Simulation {
 
     /// Execute31 at6DE2B5 ->4ACAC0, then4ADFF0(0,0). The cell passes
     /// leave sight admissions/House240/241 alone. The Ground display vector
-    /// 8A0394 is re-read after each70ADC0 callback, whose discovery can raise
+    /// 8A0394 is re-read after each See callback, whose discovery can raise
     /// Tags. AbstractFlags14/1 admits every GameEntity, with no Alive90 gate.
     pub(crate) fn trigger_grow_shroud(&mut self, context: UninitContext<'_>) {
         if let (Some(viewer), Some(size)) = (self.session.current_house(), self.map_size_diamond())
@@ -1629,16 +1629,71 @@ impl Simulation {
         });
     }
 
-    /// Techno70ADC0, selected Action40 Map567230 vslot120 callback.
-    /// This is uncached conditional Map5673A0 plus its border, with no
-    ///250/254/260 admission.70AF13/15 push literal1,1;567886/893 selects
-    ///653830 leaf mode0. Active original Unit slot7F5D90=70ADC0.
+    /// Object See vslot120, called by Map567230 and Display4ADFF0.
+    /// Aircraft41ADF0 uses a Map5678E0 pair; Techno70ADC0 uses conditional
+    /// Map5673A0 plus its border. Neither replaces250/254/260 source state.
+    /// Active slots: Aircraft7E23C4=41ADF0, Unit7F5D90=70ADC0.
     pub(crate) fn reveal_uncached_object_sight(&mut self, id: u64, context: UninitContext<'_>) {
-        let notification_viewer = self.session.current_house();
-        let config = self.sight_reveal_config(context.rules());
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
+        if entity.category() == EntityCategory::Aircraft {
+            //41AE00 reads raw Type Sight before GetHeight;41AE10 forces1
+            //on the ground. Aircraft See has no Techno playfield/passive,
+            //elevation or veterancy gate, and no567DA0 border.
+            let mut radius = entity.sight.range();
+            if crate::sim::movement::air_movement::current_fly_height(
+                entity,
+                context.terrain().or(self.resolved_terrain.as_ref()),
+            ) == 0
+            {
+                radius = 1;
+            }
+            if radius == 0 {
+                //41AEA4..41AEAF returns with stock skirmish FogOfWar clear:
+                //6AD88F forces g_FOW=0,686BDE/687C16 installs it. Optional
+                //enabled-fog unreveal/fogged-object handling is not ported.
+                return;
+            }
+            for final_pass in [false, true] {
+                //41AE63..41AE95 recopies live Location/Owner after final0;
+                //a synchronous Cell notification may have changed either.
+                //The radius stays in EBX across both calls.
+                let Some(entity) = self.substrate.entities.get(id) else {
+                    return;
+                };
+                let owner = entity.owner();
+                let location = crate::sim::movement::ground_pose::object_location(
+                    entity,
+                    context.terrain().or(self.resolved_terrain.as_ref()),
+                );
+                let cell = ((location.x / 256) as u16, (location.y / 256) as u16);
+                let config = self.sight_reveal_config(context.rules());
+                let viewers = self.reveal_viewers.direct(
+                    &self.fog,
+                    self.house_alliances.as_map(),
+                    owner,
+                    &config,
+                    &self.interner,
+                );
+                let heights = self.sight_height_grid(&config);
+                let _ = self.reveal_area(
+                    &viewers,
+                    cell,
+                    location.z,
+                    radius.clamp(0, i32::from(vision::MAX_SIGHT_RANGE)) as u16,
+                    Some(&heights),
+                    final_pass,
+                    &config,
+                    context,
+                    vision::MapRevealProjection::Transient,
+                    self.session.current_house(),
+                );
+            }
+            return;
+        }
+        let notification_viewer = self.session.current_house();
+        let config = self.sight_reveal_config(context.rules());
         if (config.require_playfield_membership() && !entity.in_playfield())
             || (self.session.game_mode_nonzero() && config.passive_owner(entity.owner()))
         {
