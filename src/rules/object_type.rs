@@ -910,6 +910,9 @@ pub struct ObjectType {
     pub super_weapon: Option<String>,
     /// Secondary superweapon type ID, typically from an upgrade (SuperWeapon2= in rules.ini).
     pub super_weapon2: Option<String>,
+    /// BuildingTypeExt+178, ordered lookup-only `SuperWeapons=` references.
+    #[cfg(feature = "ares")]
+    additional_super_weapons: Vec<String>,
     /// `NukeSilo=` (BuildingType `+0x16BA`, ReadBool at `0x00460A45`,
     /// constructor clear at `0x0045E127`): `SuperClass::Launch @ 0x006CC390`
     /// fires a `MultiMissile` weapon from the first such type granting it,
@@ -2117,6 +2120,15 @@ fn native_minutes_to_ticks(value: f64) -> u32 {
 }
 
 impl ObjectType {
+    #[cfg(feature = "ares")]
+    pub(crate) fn additional_super_weapons(&self) -> &[String] {
+        &self.additional_super_weapons
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn project_additional_super_weapons(&mut self, names: &[String]) {
+        self.additional_super_weapons = names.to_vec();
+    }
     pub(crate) fn emp_rules(&self) -> Option<&crate::rules::ares_emp::EmpTypeRules> {
         self.emp.as_ref()
     }
@@ -3100,6 +3112,8 @@ impl ObjectType {
             death_weapon_damage_modifier: section.read_float("DeathWeaponDamageModifier", 1.0),
             super_weapon: section.read_name("SuperWeapon", 0x20).map(str::to_owned),
             super_weapon2: section.read_name("SuperWeapon2", 0x20).map(str::to_owned),
+            #[cfg(feature = "ares")]
+            additional_super_weapons: Vec::new(),
             nuke_silo: section.read_bool("NukeSilo", false),
             charged_anim_time: section.read_float("ChargedAnimTime", 999.0),
             spy_sat: section.read_bool("SpySat", false),

@@ -129,9 +129,7 @@ impl Simulation {
         // defense alerts and charge consumption. Stock-only commands retain
         // their native behavior, including native refused-click side effects.
         #[cfg(feature = "ares")]
-        if sw.building_requirements.is_some()
-            && !super::building_requirements_met(self, rules, owner, sw)
-        {
+        if !super::super_weapon_available(self, rules, owner, &sw.id) {
             return false;
         }
         #[cfg(feature = "ares")]
@@ -456,7 +454,7 @@ fn launch(
     match sw.kind {
         #[cfg(feature = "ares")]
         SuperWeaponKind::UnitDelivery => {
-            super::unit_delivery::launch(
+            if super::unit_delivery::launch(
                 sim,
                 rules,
                 owner,
@@ -465,7 +463,9 @@ fn launch(
                 (rx, ry),
                 overlay_registry,
                 frame_effects,
-            );
+            ) {
+                super::record_ares_launch(sim, rules, owner, sw_type_id);
+            }
         }
         #[cfg(not(feature = "ares"))]
         SuperWeaponKind::GenericWarhead | SuperWeaponKind::UnitDelivery => {}
@@ -551,7 +551,7 @@ fn launch(
         }
         #[cfg(feature = "ares")]
         SuperWeaponKind::GenericWarhead => {
-            super::generic_warhead::launch(
+            if super::generic_warhead::launch(
                 sim,
                 rules,
                 owner,
@@ -560,7 +560,9 @@ fn launch(
                 (rx, ry),
                 overlay_registry,
                 frame_effects,
-            );
+            ) {
+                super::record_ares_launch(sim, rules, owner, sw_type_id);
+            }
         }
     }
 }

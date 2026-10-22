@@ -31,6 +31,8 @@ use crate::rules::ruleset::{DetailRules, GeneralBuildingTypes, PrismSupportRules
 use crate::rules::superweapon_type::SuperWeaponBuildingRequirements;
 use crate::rules::superweapon_type::UnitDeliveryRules;
 #[cfg(feature = "ares")]
+use crate::rules::superweapon_type::{AresSuperWeaponAvailability, AresSuperWeaponMetadata};
+#[cfg(feature = "ares")]
 use crate::rules::superweapon_type::{DeliveryOwner, DeliveryType};
 use crate::util::native_x87::NativeF64Bits;
 use std::collections::{HashMap, HashSet};
@@ -66,6 +68,15 @@ pub(crate) fn house_type_index_of_name<'a>(
         .unwrap_or(-1)
 }
 
+/// ReadOwners4750D0/48DEB0's shared OR tail: only -1 is rejected;
+/// <random>'s -2 sets bit30 through the native masked shift. Used by both
+/// retained ordered readers and the immutable Rules projection.
+pub(crate) fn house_type_mask_from_indices(indices: impl Iterator<Item = i32>) -> u32 {
+    indices
+        .filter(|&index| index != -1)
+        .fold(0, |mask, index| mask | 1u32.wrapping_shl(index as u32))
+}
+
 /// Installed Ares Country Find1001BA90: reject none/<none> via10003950,
 /// then scan current source-order stored ID+24, returning the first stricmp hit.
 /// Name aliases, ParentCountry and whitespace trimming are not part of Find.
@@ -92,6 +103,17 @@ pub(crate) fn ares_type_index_of_name<'a>(
     if is_native_none_type_name(incoming) {
         return None;
     }
+    ids.position(|id| id.eq_ignore_ascii_case(incoming))
+}
+
+/// BuildingTypeExt's SuperWeapons IndexLookup1000D4D0: raw stored-ID
+/// comparison, including a registered sentinel-named entry. Unlike the
+/// pointer Find template, the none predicate runs only after a failed lookup.
+/// The immutable RuleSet array-index projection uses this same owner.
+pub(crate) fn super_weapon_index_of_name<'a>(
+    incoming: &str,
+    mut ids: impl Iterator<Item = &'a str>,
+) -> Option<usize> {
     ids.position(|id| id.eq_ignore_ascii_case(incoming))
 }
 
@@ -1283,6 +1305,26 @@ impl ProcessedRulesLayers {
     ) -> impl Iterator<Item = (&str, Option<&SuperWeaponBuildingRequirements>)> {
         self.member_states(RulesTypeFamily::SuperWeapon, |member| {
             member.super_weapon_building_requirements.as_ref()
+        })
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn super_weapon_availability_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, AresSuperWeaponMetadata)> {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            AresSuperWeaponMetadata::project(
+                &member.super_weapon_availability,
+                member.super_weapon_aux_building.as_deref(),
+                member.super_weapon_building_requirements.as_ref(),
+            )
+        })
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn additional_super_weapon_states(&self) -> impl Iterator<Item = (&str, &[String])> {
+        self.member_states(RulesTypeFamily::Building, |member| {
+            member.additional_super_weapons.as_slice()
         })
     }
 
@@ -2997,6 +3039,10 @@ struct ProcessedType {
     super_weapon_aux_building: Option<String>,
     #[serde(default)]
     super_weapon_building_requirements: Option<SuperWeaponBuildingRequirements>,
+    #[cfg(feature = "ares")]
+    super_weapon_availability: AresSuperWeaponAvailability,
+    #[cfg(feature = "ares")]
+    additional_super_weapons: Vec<String>,
     /// Ares `SW.Warhead=`, read only for Type=GenericWarhead.
     generic_super_weapon_warhead: Option<String>,
     unit_delivery: Option<UnitDeliveryRules>,
@@ -3384,6 +3430,10 @@ impl ProcessedType {
             super_weapon_aux_building: None,
             unit_delivery: None,
             super_weapon_building_requirements: None,
+            #[cfg(feature = "ares")]
+            super_weapon_availability: AresSuperWeaponAvailability::default(),
+            #[cfg(feature = "ares")]
+            additional_super_weapons: Vec::new(),
             generic_super_weapon_warhead: None,
             particle_warhead: None,
             voxel_anim_references: VoxelAnimTypeReferences::default(),
@@ -3910,14 +3960,17 @@ impl RulesPassProcessor {
                 .read_list(key, capacity)?
                 .into_iter()
                 .filter_map(|token| {
-                    ares_type_index_of_name(
-                        token,
-                        self.families
-                            .get(&family)
-                            .into_iter()
-                            .flatten()
-                            .map(|member| member.native_stored_id.as_str()),
-                    )
+                    let ids = self
+                        .families
+                        .get(&family)
+                        .into_iter()
+                        .flatten()
+                        .map(|member| member.native_stored_id.as_str());
+                    if family == RulesTypeFamily::SuperWeapon {
+                        super_weapon_index_of_name(token, ids)
+                    } else {
+                        ares_type_index_of_name(token, ids)
+                    }
                 })
                 .collect(),
         )
@@ -4639,6 +4692,21 @@ impl RulesPassProcessor {
                 }
                 #[cfg(feature = "ares")]
                 {
+                    // Same SWTypeExt owner and native read order: controller
+                    // flags, Country masks, building vectors, then shot limit.
+                    let mut availability = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_availability
+                        .clone();
+                    availability.read_allowance_pass(&raw);
+                    availability.read_house_pass(|key, prior| {
+                        raw.read_list(key, 128).map_or(prior, |tokens| {
+                            house_type_mask_from_indices(
+                                tokens
+                                    .into_iter()
+                                    .map(|token| self.country_index_of_name(token)),
+                            )
+                        })
+                    });
                     // Ares ValueableVector<BuildingTypeClass*> uses Find, not
                     // FindOrAllocate (Utilities/TemplateDef.h::parse_values and
                     // Utilities/Parser.h::Parser<T,1>, Ares 4f1d9299). Unknown
@@ -4666,6 +4734,9 @@ impl RulesPassProcessor {
                             requirements.negative = negative;
                         }
                     }
+                    availability.read_shots_pass(&raw);
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_availability = availability;
                     if effective
                         .read_name("Type", 0x28)
                         .is_some_and(|kind| kind.eq_ignore_ascii_case("GenericWarhead"))
@@ -4905,6 +4976,19 @@ impl RulesPassProcessor {
                 }
                 match family {
                     RulesTypeFamily::Building => {
+                        #[cfg(feature = "ares")]
+                        if let Some(supers) = self.resolve_existing_list_from(
+                            &raw,
+                            "SuperWeapons",
+                            RulesTypeFamily::SuperWeapon,
+                            2048,
+                        ) {
+                            // BuildingTypeExt1000E71B ->1000EC70: ordered
+                            // lookup-only ID vector, missing/empty retains,
+                            // unknown tokens are skipped, registered sentinel IDs
+                            // still match before none rejection, no allocation.
+                            self.family_mut(family)[index].additional_super_weapons = supers;
+                        }
                         let member = &mut self.families.get_mut(&family).unwrap()[index];
                         // ReadINI460F50..460F9C: exact Rules key, ReadCoord529CA0,
                         // current value as default, no clamp or conversion.

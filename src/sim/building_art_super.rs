@@ -80,16 +80,40 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
+        #[cfg(not(feature = "ares"))]
         let owner = entity.owner();
+        #[cfg(not(feature = "ares"))]
         let Some(index) = self
             .object_type(entity.type_ref(), rules)
             .and_then(|object| super_weapon_index(object, rules))
         else {
             return;
         };
-        for remaining in
-            crate::sim::superweapon::supers_of_kind_remaining(self, rules, owner, index)
-        {
+        #[cfg(not(feature = "ares"))]
+        let remaining =
+            crate::sim::superweapon::supers_of_kind_remaining(self, rules, owner, index);
+        #[cfg(feature = "ares")]
+        let remaining = {
+            // Installed Ares4463F0 ->10034A60 replaces the retail Type-vs-
+            // definition-index scan. No eligible Super still creates14 when
+            // the primary definition exists (10034A91..10034ACD).
+            let selected =
+                crate::sim::superweapon::first_available_building_super(self, rules, entity)
+                    .map(|instance| instance.charge_remaining(self.session.binary_frame() as i32));
+            if let Some(remaining) = selected {
+                vec![remaining]
+            } else {
+                let primary = self
+                    .object_type(entity.type_ref(), rules)
+                    .and_then(|object| super_weapon_index(object, rules))
+                    .is_some();
+                if primary {
+                    self.set_building_anim_slot(id, SUPER_ANIM, damaged, garrisoned, 0, rules);
+                }
+                return;
+            }
+        };
+        for remaining in remaining {
             let slot = if opens_charged(remaining) {
                 SUPER_ANIM_OPEN
             } else {
@@ -114,6 +138,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
+        #[cfg(not(feature = "ares"))]
         let owner = entity.owner();
         let health = entity.health;
         if matches!(
@@ -125,6 +150,7 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
+        #[cfg(not(feature = "ares"))]
         let Some(index) = super_weapon_index(object, rules) else {
             return;
         };
@@ -133,9 +159,21 @@ impl Simulation {
             return;
         }
         let strength = object.strength;
-        for remaining in
-            crate::sim::superweapon::supers_of_kind_remaining(self, rules, owner, index)
-        {
+        #[cfg(not(feature = "ares"))]
+        let remaining =
+            crate::sim::superweapon::supers_of_kind_remaining(self, rules, owner, index);
+        #[cfg(feature = "ares")]
+        let remaining = {
+            // Ares450F9E ->10034AF0: unavailable returns451145; only an
+            // actual selected instance reaches the shared retail timer body.
+            let Some(instance) =
+                crate::sim::superweapon::first_available_building_super(self, rules, entity)
+            else {
+                return;
+            };
+            [instance.charge_remaining(self.session.binary_frame() as i32)]
+        };
+        for remaining in remaining {
             let (occupied, replacement) = if near_charged(remaining, charged_anim_time) {
                 (SUPER_ANIM, SUPER_ANIM_OPENING)
             } else {
@@ -155,7 +193,7 @@ impl Simulation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "ares")))]
 mod tests {
     //! Native comparisons (`tools/superweapon_oracle.py` sections
     //! `super_anim` and `opening_super_anim`; `--check` regenerates them).

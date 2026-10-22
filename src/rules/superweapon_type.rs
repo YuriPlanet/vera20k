@@ -392,6 +392,103 @@ pub struct SuperWeaponBuildingRequirements {
     pub negative: Vec<String>,
 }
 
+/// SWTypeExt100329E0's non-building gates. Constructor1003173D..10031844;
+/// ordered reads1003349E..100334C5 and10033A0F..10033A8C. Building lists
+/// remain with their existing retained owner below. Native executed controls:
+/// tools/rules_oracle/ares_super_anims.json, fourth availability history.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresSuperWeaponAvailability {
+    allow_player: bool,
+    allow_ai: bool,
+    required_houses: u32,
+    forbidden_houses: u32,
+    shots: i32,
+}
+
+/// Immutable availability metadata for every registered definition, including
+/// Types whose effect dispatch is not implemented. ProcessedRules owns reads;
+/// RuleSet projects this one catalog independently of effect-body admission.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct AresSuperWeaponMetadata {
+    availability: AresSuperWeaponAvailability,
+    native_auxiliary: Option<String>,
+    buildings: Option<SuperWeaponBuildingRequirements>,
+}
+
+#[cfg(feature = "ares")]
+impl AresSuperWeaponMetadata {
+    pub(super) fn project(
+        availability: &AresSuperWeaponAvailability,
+        native_auxiliary: Option<&str>,
+        buildings: Option<&SuperWeaponBuildingRequirements>,
+    ) -> Self {
+        Self {
+            availability: availability.clone(),
+            native_auxiliary: native_auxiliary.map(str::to_owned),
+            buildings: buildings.cloned(),
+        }
+    }
+
+    pub(crate) fn availability(&self) -> &AresSuperWeaponAvailability {
+        &self.availability
+    }
+    pub(crate) fn native_auxiliary(&self) -> Option<&str> {
+        self.native_auxiliary.as_deref()
+    }
+    pub(crate) fn building_requirements(&self) -> Option<&SuperWeaponBuildingRequirements> {
+        self.buildings.as_ref()
+    }
+}
+
+#[cfg(feature = "ares")]
+impl Default for AresSuperWeaponAvailability {
+    fn default() -> Self {
+        Self {
+            allow_player: true,
+            allow_ai: true,
+            required_houses: u32::MAX,
+            forbidden_houses: 0,
+            shots: -1,
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl AresSuperWeaponAvailability {
+    pub(crate) fn read_allowance_pass(&mut self, section: &IniSection) {
+        self.allow_player = section.read_ares_bool("SW.AllowPlayer", self.allow_player);
+        self.allow_ai = section.read_ares_bool("SW.AllowAI", self.allow_ai);
+    }
+
+    pub(crate) fn read_house_pass(&mut self, mut read: impl FnMut(&str, u32) -> u32) {
+        self.required_houses = read("SW.RequiredHouses", self.required_houses);
+        self.forbidden_houses = read("SW.ForbiddenHouses", self.forbidden_houses);
+    }
+
+    pub(crate) fn read_shots_pass(&mut self, section: &IniSection) {
+        self.shots = section.read_ares_int("SW.Shots", self.shots);
+    }
+
+    pub(crate) fn allows_shots(&self, count: i32) -> bool {
+        self.shots < 0 || count < self.shots
+    }
+
+    pub(crate) fn allows_controller(&self, player: bool) -> bool {
+        if player {
+            self.allow_player
+        } else {
+            self.allow_ai
+        }
+    }
+
+    pub(crate) fn allows_country(&self, index: i32) -> bool {
+        let bit = 1u32.wrapping_shl(index as u32);
+        self.required_houses & bit != 0 && self.forbidden_houses & bit == 0
+    }
+}
+
 impl SuperWeaponBuildingRequirements {
     #[cfg(feature = "ares")]
     pub fn allows(&self, mut present: impl FnMut(&str) -> bool) -> bool {

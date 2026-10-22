@@ -4048,6 +4048,12 @@ pub struct RuleSet {
     /// with the RuleSet after every load/reset/pass. The catalog above is its
     /// only source of truth. This cache is not serialized or hashed separately.
     ares_prerequisite_alternates: HashSet<TypeHandle>,
+    /// All registered SW availability, independent of supported effect Types.
+    /// Immutable projection of the retained ProcessedRules registry; the typed
+    /// aux/list fields remain read-only compatibility views from that source.
+    #[cfg(feature = "ares")]
+    ares_super_weapon_metadata:
+        BTreeMap<String, crate::rules::superweapon_type::AresSuperWeaponMetadata>,
     /// Rules-driven terrain land-type semantics keyed by TMP land byte.
     pub terrain_rules: TerrainRules,
     /// Native `[Tiberiums]` definitions in GameMD type order.
@@ -4682,6 +4688,23 @@ impl RuleSet {
                 .find(|super_weapon| super_weapon.id.eq_ignore_ascii_case(name))
             {
                 super_weapon.building_requirements = requirements.cloned();
+            }
+        }
+        #[cfg(feature = "ares")]
+        {
+            rules.ares_super_weapon_metadata.clear();
+            for (name, metadata) in processed.super_weapon_availability_states() {
+                rules
+                    .ares_super_weapon_metadata
+                    .insert(name.to_ascii_uppercase(), metadata);
+            }
+            for (name, supers) in processed.additional_super_weapon_states() {
+                if let Some(building) = rules.object_list.iter_mut().find(|object| {
+                    object.category == ObjectCategory::Building
+                        && object.id.eq_ignore_ascii_case(name)
+                }) {
+                    building.project_additional_super_weapons(supers);
+                }
             }
         }
         for (name, delivery) in processed.unit_delivery_states() {
@@ -5444,6 +5467,8 @@ impl RuleSet {
             emp_sparkles: None,
             #[cfg(feature = "ares")]
             ares_global_controls: processed.ares_global_controls().clone(),
+            #[cfg(feature = "ares")]
+            ares_super_weapon_metadata: BTreeMap::new(),
             ares_prerequisite_alternates: HashSet::new(),
             terrain_rules,
             tiberium_types,
@@ -5950,6 +5975,14 @@ impl RuleSet {
         #[cfg(feature = "ares")]
         {
             b"ares-side-sidebar-v1".hash(&mut hasher);
+            b"ares-super-availability-v1".hash(&mut hasher);
+            self.ares_super_weapon_metadata.hash(&mut hasher);
+            self.object_list
+                .iter()
+                .filter(|object| !object.additional_super_weapons().is_empty())
+                .map(|object| (&object.id, object.additional_super_weapons()))
+                .collect::<Vec<_>>()
+                .hash(&mut hasher);
             self.side_ids.hash(&mut hasher);
             self.side_extensions.hash(&mut hasher);
         }
@@ -6954,14 +6987,11 @@ impl RuleSet {
     /// Native controls: tools/rules_oracle/session_country_starting_ownership.json
     /// and tools/rules_oracle/session_country_parent.json.
     pub fn house_type_mask(&self, tokens: &[String]) -> u32 {
-        tokens.iter().fold(0u32, |mask, token| {
-            let index = house_type_index_of_name(token, self.country_lookup_members());
-            if index == -1 {
-                mask
-            } else {
-                mask | 1u32.wrapping_shl(index as u32)
-            }
-        })
+        crate::rules::native_processing::house_type_mask_from_indices(
+            tokens
+                .iter()
+                .map(|token| house_type_index_of_name(token, self.country_lookup_members())),
+        )
     }
 
     /// Resolve a country name to its stable `[Countries]` registration index.
@@ -7161,13 +7191,23 @@ impl RuleSet {
         Self::lookup_ci(&self.super_weapons, id)
     }
 
+    #[cfg(feature = "ares")]
+    pub(crate) fn super_weapon_metadata(
+        &self,
+        id: &str,
+    ) -> Option<&crate::rules::superweapon_type::AresSuperWeaponMetadata> {
+        self.ares_super_weapon_metadata
+            .get(&id.to_ascii_uppercase())
+    }
+
     /// A superweapon type's `SuperWeaponTypeClass` array index (its
     /// `[SuperWeaponTypes]` position, case-insensitive), the value
     /// `SuperWeapon=` stores (BuildingType `+0x16F0`).
     pub fn super_weapon_index(&self, id: &str) -> Option<usize> {
-        self.super_weapon_order
-            .iter()
-            .position(|name| name.eq_ignore_ascii_case(id))
+        crate::rules::native_processing::super_weapon_index_of_name(
+            id,
+            self.super_weapon_order.iter().map(String::as_str),
+        )
     }
 
     /// Look up a particle type by ID. Panics if `id` is out of range.

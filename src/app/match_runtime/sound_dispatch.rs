@@ -854,9 +854,13 @@ pub(super) fn dispatch_sim_sound_events(
                 // the building's own house owns one
                 // (`CountOwnedInstances` on `Owner+0x5550`).
                 // Optional Ares lists use the same grant availability owner.
+                #[cfg(not(feature = "ares"))]
                 let aux_satisfied = rules.super_weapon(&type_name).is_none_or(|sw| {
-                    crate::sim::superweapon::building_requirements_met(sim, rules, owner, sw)
+                    crate::sim::superweapon::super_weapon_available(sim, rules, owner, &sw.id)
                 });
+                #[cfg(feature = "ares")]
+                let aux_satisfied =
+                    crate::sim::superweapon::super_weapon_available(sim, rules, owner, &type_name);
                 if !eva_producers::super_weapon_detected_allowed(
                     sim.house_alliances(),
                     &owner_name,

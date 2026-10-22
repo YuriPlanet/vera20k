@@ -45,7 +45,10 @@ pub(super) fn launch(
     cell: (u16, u16),
     overlays: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
-) {
+) -> bool {
+    if !can_launch(sim, rules, sw, cell) {
+        return false;
+    }
     // ClickFire validates these before consuming readiness.
     let settings = sw
         .generic_warhead
@@ -99,4 +102,5 @@ pub(super) fn launch(
         rx: cell.0,
         ry: cell.1,
     });
+    true
 }

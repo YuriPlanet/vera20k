@@ -179,12 +179,12 @@ pub(crate) fn launch(
     cell: (u16, u16),
     registry: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
-) {
+) -> bool {
     let Some(config) = sw.unit_delivery.as_ref() else {
-        return;
+        return false;
     };
     let Some(delivery_owner) = delivery_owner(sim, rules, owner, config.owner) else {
-        return;
+        return false;
     };
     let frame = sim.session.binary_frame();
     let request = PendingDelivery {
@@ -212,6 +212,7 @@ pub(crate) fn launch(
     } else {
         sim.unit_deliveries.pending.push(request);
     }
+    true
 }
 
 #[cfg(feature = "ares")]

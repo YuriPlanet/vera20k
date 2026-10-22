@@ -59,12 +59,7 @@ fn spawn(sim: &mut Simulation, rules: &RuleSet, name: &str, owner: &str, x: u16)
 }
 
 fn allowed(sim: &Simulation, rules: &RuleSet, owner: &str, name: &str) -> bool {
-    building_requirements_met(
-        sim,
-        rules,
-        sim.interner.get(owner).unwrap(),
-        rules.super_weapon(name).unwrap(),
-    )
+    super_weapon_available(sim, rules, sim.interner.get(owner).unwrap(), name)
 }
 
 fn active(sim: &Simulation, owner: &str, name: &str) -> bool {
