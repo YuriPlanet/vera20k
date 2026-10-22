@@ -31,7 +31,7 @@ fn advance(sim: &mut Simulation, rules: &RuleSet) -> super::SimFrameOutput {
     output
 }
 
-fn create_overlap(rules: &RuleSet, count: usize) -> (Simulation, u64) {
+fn create_overlap(rules: &RuleSet, count: usize, dog_cell: (u16, u16)) -> (Simulation, u64) {
     let mut sim = crate::sim::arena_fixture::rival_arena_with_size(rules, 31, 64);
     let mut desos = Vec::new();
     for (index, &(rx, ry)) in CENTERS[..count].iter().enumerate() {
@@ -96,7 +96,7 @@ fn create_overlap(rules: &RuleSet, count: usize) -> (Simulation, u64) {
     // Admit the fresh target after all direct self-shot damage has completed.
     // Field geometry and stock DOG health are the native comparison inputs.
     let dog = sim
-        .spawn_object("DOG", "Americans", DOG_CELL.0, DOG_CELL.1, 0, rules)
+        .spawn_object("DOG", "Americans", dog_cell.0, dog_cell.1, 0, rules)
         .unwrap();
     assert_eq!(
         sim.substrate.entities.get(dog).unwrap().health.current(),
@@ -105,7 +105,40 @@ fn create_overlap(rules: &RuleSet, count: usize) -> (Simulation, u64) {
     (sim, dog)
 }
 
+/// FootClass::AI @ 0x004DA5DE..0x004DA629 reads CellClass's combined F0
+/// once, then converts/scales it for one direct receiver call. The native
+/// two-site boundary here emits 11 damage; scaling the two sites separately
+/// loses a point. Both fields come from real deployed DESO Guard/Bullet AI.
+#[cfg(not(feature = "phobos"))]
 #[test]
+fn overlapping_stock_fields_apply_one_combined_damage_packet() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let native = crate::test_fixture::json("tools/spatial_oracle/radiation_overlap.json");
+    let row = native["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "two_sites")
+        .unwrap();
+    let sample = row["stages"][1]["samples"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|sample| sample["cell"] == serde_json::json!([24, 31]))
+        .unwrap();
+    let (mut sim, dog) = create_overlap(&fixture.rules, 2, (24, 31));
+    advance(&mut sim, &fixture.rules);
+    assert_eq!(
+        sim.substrate.entities.get(dog).unwrap().health.current(),
+        100 - sample["base_damage"].as_i64().unwrap() as i32,
+        "the stock aggregate reaches one concrete Infantry receiver"
+    );
+}
+
+#[test]
+#[cfg(not(feature = "phobos"))]
 fn stock_dog_survives_first_pulse_from_three_real_deso_fields() {
     let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
@@ -153,7 +186,7 @@ fn stock_dog_survives_first_pulse_from_three_real_deso_fields() {
             );
         }
         let expected_health = receiver["health"].as_i64().unwrap() as i32;
-        let (mut sim, dog) = create_overlap(&rules, count);
+        let (mut sim, dog) = create_overlap(&rules, count, DOG_CELL);
         let expected_bits = u64::from_str_radix(field["level_bits"].as_str().unwrap(), 16).unwrap();
         assert_eq!(
             sim.radiation.cell_level(DOG_CELL).to_bits(),
@@ -206,7 +239,7 @@ fn overlapping_stock_fields_preserve_serialized_bits_hash_and_decay() {
         return;
     };
     let rules = fixture.rules;
-    let (scene, _) = create_overlap(&rules, 3);
+    let (scene, _) = create_overlap(&rules, 3, DOG_CELL);
     let bytes = save_codec::serialize(&scene.radiation).unwrap();
     let mut reference = Simulation::with_seed(0);
     reference.radiation = scene.radiation.clone();

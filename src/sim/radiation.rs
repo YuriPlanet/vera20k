@@ -52,13 +52,10 @@ const FALLBACK_BOUNDS: (u16, u16) = (512, 512);
 /// One radiation site, keyed by its center cell. A second detonation on the
 /// same center MERGES into the existing site (level/duration reset); different
 /// centers stack additively per cell.
-///
-/// RESIDUAL — native `BulletClass::ApplyRadiation @ 0x46ADE0` creates a second
-/// `RadSiteClass` when the spread or the bound radiation type differs, so two
-/// fields of different types can cover one center. This model keeps one site
-/// per center: a differing type merges into the existing site, which retains
-/// its own type. Trigger: two weapons with different `RadType=` detonating on
-/// one cell. Effect: the second type's parameters do not apply there.
+/// Retail `BulletClass::DetonateAtCoord @ 0x004691AA..0x00469206` merges
+/// whenever CellClass has a site, without testing its spread. Phobos replaces
+/// that arm and can create multiple sites at one center for different spreads
+/// or types; that capability's same-center case remains a separate residual.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RadSite {
     /// Center cell.
@@ -140,11 +137,13 @@ impl RadSite {
     }
 
     /// The kept firing house, for the site's damage call.
+    #[cfg(feature = "phobos")]
     pub(crate) const fn firing_house(&self) -> Option<InternedId> {
         self.firing_house
     }
 
     /// The kept invoker object, for the site's damage call.
+    #[cfg(feature = "phobos")]
     pub(crate) const fn invoker(&self) -> Option<u64> {
         self.invoker
     }
@@ -292,15 +291,33 @@ fn bound_radiation_type(rules: &RuleSet, requested: Option<&str>) -> Option<Stri
     }
 }
 
+/// CellClass::GetRadLevel @ 0x00487CB0: cap the stored level for damage,
+/// retaining the stored operand on less-than or unordered, then Math::ftol.
+pub(crate) fn clamp_level(level: f64, level_max: i32) -> i32 {
+    let level = X87::load_f64(NativeF64Bits::from_bits(level.to_bits()));
+    let max = X87::load_i32(level_max);
+    let clamped = match X87::compare(level, max) {
+        MaskedX87Ordering::Less | MaskedX87Ordering::Unordered => level,
+        MaskedX87Ordering::Equal | MaskedX87Ordering::Greater => max,
+    };
+    X87::ftol_i32_low_masked(clamped)
+}
+
+// CellClass::RadLevel_Increase/Decrease @ 0x00487CE0/0x00487D00 mutate
+// one retained F0 total, including each operation's binary64 store. Phobos
+// replaces these with CellExt::RadLevels contributions attributed by site.
+#[cfg(not(feature = "phobos"))]
+type CellRadiation = f64;
+#[cfg(feature = "phobos")]
+type CellRadiation = BTreeMap<(u16, u16), f64>;
+
 /// The per-cell radiation field + site registry. Persisted and state-hashed.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RadiationState {
-    /// Sparse per-cell radiation level, attributed per contributing site:
-    /// cell -> (site center -> level), mirroring native `CellExt::RadLevels`
-    /// so the damage path can group a cell's sites by radiation type. The
-    /// cell's total is the sum. Entries are removed when they decay to
-    /// exactly 0 (the subtraction clamps negative results to 0).
-    cells: BTreeMap<(u16, u16), BTreeMap<(u16, u16), f64>>,
+    /// Sparse retained CellClass F0 totals. With Phobos, each cell instead
+    /// retains its CellExt::RadLevels contributions for damage attribution.
+    /// Exactly positive-zero entries are omitted; negative results clamp to 0.
+    cells: BTreeMap<(u16, u16), CellRadiation>,
     /// One site per center cell. For canonical real Cells, membership is the
     /// Cell487C70/487C80 center marker; deletion clears it while residual F0
     /// levels remain. This does not model arbitrary off-map/Dummy pointers.
@@ -431,18 +448,25 @@ impl RadiationState {
         }
     }
 
-    /// Raw level of one cell (un-clamped, may exceed `RadLevelMax`): the sum
-    /// over the cell's contributing sites.
+    /// Raw retained level of one cell (un-clamped, may exceed `RadLevelMax`).
     pub fn cell_level(&self, cell: (u16, u16)) -> f64 {
-        self.cells
-            .get(&cell)
-            .map(|sites| sites.values().sum())
-            .unwrap_or(0.0)
+        let Some(level) = self.cells.get(&cell) else {
+            return 0.0;
+        };
+        #[cfg(not(feature = "phobos"))]
+        {
+            *level
+        }
+        #[cfg(feature = "phobos")]
+        {
+            level.values().sum()
+        }
     }
 
     /// Per-site levels of one cell, in site-center order: the input the
     /// damage path groups by radiation type, as native `CellExt::RadLevels`
     /// is.
+    #[cfg(feature = "phobos")]
     pub(crate) fn cell_site_levels(
         &self,
         cell: (u16, u16),
@@ -456,18 +480,10 @@ impl RadiationState {
 
     /// The level a cell DAMAGES as: `trunc(min(level, RadLevelMax))`. The
     /// clamp caps damage only — the stored level itself is unbounded.
-    /// Single-type consumers keep this total; the Foot damage path groups
-    /// per site by type and clamps per group instead.
+    /// Retail Foot AI consumes this total. Phobos instead groups per-site
+    /// contributions by type and clamps each group through the same arithmetic.
     pub fn damaging_level(&self, cell: (u16, u16), level_max: i32) -> i32 {
-        // Cell487CB0 keeps the stored operand for less-than or unordered;
-        // otherwise it converts the cap. Math::ftol owns masked conversion.
-        let level = X87::load_f64(NativeF64Bits::from_bits(self.cell_level(cell).to_bits()));
-        let max = X87::load_i32(level_max);
-        let clamped = match X87::compare(level, max) {
-            MaskedX87Ordering::Less | MaskedX87Ordering::Unordered => level,
-            MaskedX87Ordering::Equal | MaskedX87Ordering::Greater => max,
-        };
-        X87::ftol_i32_low_masked(clamped)
+        clamp_level(self.cell_level(cell), level_max)
     }
     pub fn site_at(&self, center: (u16, u16)) -> Option<&RadSite> {
         self.sites.get(&center)
@@ -508,9 +524,13 @@ impl RadiationState {
     /// Deterministic iteration over irradiated cells (sorted by coord), for
     /// state hashing and the render glow layer.
     pub fn iter_cells(&self) -> impl Iterator<Item = ((u16, u16), f64)> {
-        self.cells
-            .iter()
-            .map(|(cell, sites)| (*cell, sites.values().sum()))
+        self.cells.iter().map(|(cell, level)| {
+            #[cfg(not(feature = "phobos"))]
+            let level = *level;
+            #[cfg(feature = "phobos")]
+            let level = level.values().sum();
+            (*cell, level)
+        })
     }
 
     /// True when nothing is irradiated and no site is alive.
@@ -529,28 +549,55 @@ impl RadiationState {
         site.remaining.wrapping_mul(site.level) / site.duration
     }
 
+    fn stored_cell_level(&self, cell: (u16, u16), site: (u16, u16)) -> f64 {
+        #[cfg(not(feature = "phobos"))]
+        {
+            let _ = site;
+            self.cell_level(cell)
+        }
+        #[cfg(feature = "phobos")]
+        {
+            self.cells
+                .get(&cell)
+                .and_then(|sites| sites.get(&site))
+                .copied()
+                .unwrap_or(0.0)
+        }
+    }
+
+    fn store_cell_level(&mut self, cell: (u16, u16), site: (u16, u16), value: NativeF64Bits) {
+        #[cfg(not(feature = "phobos"))]
+        {
+            let _ = site;
+            if value == NativeF64Bits::POSITIVE_ZERO {
+                self.cells.remove(&cell);
+            } else {
+                self.cells.insert(cell, f64::from_bits(value.bits()));
+            }
+        }
+        #[cfg(feature = "phobos")]
+        {
+            let entry = self.cells.entry(cell).or_default();
+            if value == NativeF64Bits::POSITIVE_ZERO {
+                entry.remove(&site);
+                if entry.is_empty() {
+                    self.cells.remove(&cell);
+                }
+            } else {
+                entry.insert(site, f64::from_bits(value.bits()));
+            }
+        }
+    }
+
     fn add_cell(&mut self, cell: (u16, u16), site: (u16, u16), amount: f64) {
         // Cell487CE0: FLD incoming, FADD stored, FSTP stored.
         let value = X87::store_f64_masked_chop(X87::add(
             X87::load_f64(NativeF64Bits::from_bits(amount.to_bits())),
             X87::load_f64(NativeF64Bits::from_bits(
-                self.cells
-                    .get(&cell)
-                    .and_then(|sites| sites.get(&site))
-                    .copied()
-                    .unwrap_or(0.0)
-                    .to_bits(),
+                self.stored_cell_level(cell, site).to_bits(),
             )),
         ));
-        let entry = self.cells.entry(cell).or_default();
-        if value == NativeF64Bits::POSITIVE_ZERO {
-            entry.remove(&site);
-            if entry.is_empty() {
-                self.cells.remove(&cell);
-            }
-        } else {
-            entry.insert(site, f64::from_bits(value.bits()));
-        }
+        self.store_cell_level(cell, site, value);
     }
 
     /// Subtract clamping at exactly 0 (negative results store 0; the entry is
@@ -560,12 +607,7 @@ impl RadiationState {
         // store; only a negative result clamps. Unordered is retained.
         let difference = X87::sub(
             X87::load_f64(NativeF64Bits::from_bits(
-                self.cells
-                    .get(&cell)
-                    .and_then(|sites| sites.get(&site))
-                    .copied()
-                    .unwrap_or(0.0)
-                    .to_bits(),
+                self.stored_cell_level(cell, site).to_bits(),
             )),
             X87::load_f64(NativeF64Bits::from_bits(amount.to_bits())),
         );
@@ -574,15 +616,7 @@ impl RadiationState {
         } else {
             X87::store_f64_masked_chop(difference)
         };
-        let entry = self.cells.entry(cell).or_default();
-        if value == NativeF64Bits::POSITIVE_ZERO {
-            entry.remove(&site);
-            if entry.is_empty() {
-                self.cells.remove(&cell);
-            }
-        } else {
-            entry.insert(site, f64::from_bits(value.bits()));
-        }
+        self.store_cell_level(cell, site, value);
     }
 
     /// Spread the site's full falloff into the field (runs at every
@@ -708,9 +742,14 @@ impl RadiationState {
         });
         match merged {
             None => {
-                // RadSiteExt::CreateInstance clamps with
-                // `min(radLevel, GetLevelMax())`.
-                let level = det.rad_level.min(effective.level_max);
+                // Retail SetRadLevel65B4F0 stores the supplied level without
+                // a cap; Cell487CB0 caps damage only. Phobos' replacement
+                // RadSiteExt::CreateInstance also caps the initial site level.
+                let level = if crate::rules::PHOBOS_ENABLED {
+                    det.rad_level.min(effective.level_max)
+                } else {
+                    det.rad_level
+                };
                 let duration = effective.duration_multiple.wrapping_mul(level);
                 // A site's bound type is the only input that changes every
                 // one of its parameters, so record the resolved values once

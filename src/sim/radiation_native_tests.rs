@@ -307,6 +307,7 @@ fn light_parameters_match_original_integer_and_update_controls() {
 }
 
 #[test]
+#[cfg(not(feature = "phobos"))]
 fn field_operations_match_native_overlap_controls() {
     let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
