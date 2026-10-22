@@ -284,10 +284,13 @@ fn stock_infested_tank_moves_and_fires_while_its_body_is_rocking() {
     scene.first_bite();
     scene.assert_impulse();
     let target = scene.sim.substrate.entities.get(scene.tank).unwrap();
-    let house = target.owner();
     let before = crate::sim::movement::ground_pose::position_world_coord(&target.position);
+    // The human Americans send the computer tank's Move: the DoList skips computer Houses' events
+    // (0x0064C4FB..0x0064C50D), and MegaMission never compares sender and actor
+    // (0x004C71F6..0x004C721F).
+    let sender = scene.sim.interner.get("Americans").unwrap();
     scene.sim.queue_command(CommandEnvelope::new(
-        house,
+        sender,
         scene.sim.session.tick() + 1,
         Command::Move {
             entity_id: scene.tank,
@@ -329,15 +332,10 @@ fn stock_infested_tank_moves_and_fires_while_its_body_is_rocking() {
         .sim
         .spawn_object("AMCV", "Americans", 22, 24, 0, &scene.rules)
         .expect("ordinary AMCV Unlimbo along the tank's acquired aim");
-    let house = scene
-        .sim
-        .substrate
-        .entities
-        .get(scene.tank)
-        .unwrap()
-        .owner();
+    // The human Americans send this order too.
+    let sender = scene.sim.interner.get("Americans").unwrap();
     scene.sim.queue_command(CommandEnvelope::new(
-        house,
+        sender,
         scene.sim.session.tick() + 1,
         Command::Attack {
             attacker_id: scene.tank,

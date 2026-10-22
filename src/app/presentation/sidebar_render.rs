@@ -349,22 +349,28 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         let house = simulation.and_then(|sim| sim.houses().get(&owner));
         let rules = state.rules();
         for item in &mut view.items {
-            item.alt_cameo = house.is_some_and(|house| {
-                rules.is_some_and(|rules| {
-                    rules.object(&item.type_id).is_some_and(|obj| {
-                        let country = simulation
-                            .map_or("", |sim| sim.interner().resolve(house.house_type_id()));
-                        shows_alt_cameo(
-                            house,
-                            obj,
-                            rules,
-                            country,
-                            atlas.has_alternate(&item.type_id),
-                        )
+            item.alt_cameo = !item.is_superweapon
+                && house.is_some_and(|house| {
+                    rules.is_some_and(|rules| {
+                        rules.object(&item.type_id).is_some_and(|obj| {
+                            let country = simulation
+                                .map_or("", |sim| sim.interner().resolve(house.house_type_id()));
+                            shows_alt_cameo(
+                                house,
+                                obj,
+                                rules,
+                                country,
+                                atlas.has_alternate(&item.type_id),
+                            )
+                        })
                     })
-                })
-            });
-            item.has_cameo_art = atlas.cameo(&item.type_id, item.alt_cameo).is_some();
+                });
+            item.has_cameo_art = if item.is_superweapon {
+                atlas.superweapon(&item.type_id)
+            } else {
+                atlas.cameo(&item.type_id, item.alt_cameo)
+            }
+            .is_some();
         }
     }
     // The rebuilt view takes its drawn cameo state from the same projection

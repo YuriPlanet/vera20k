@@ -42,7 +42,7 @@ pub struct WarheadType {
     pub verses_f64: [f64; 11],
     /// Immutable view of the separately retained Ares WH extension.
     ares_verses: Option<AresWarheadVerses>,
-    emp: Option<crate::rules::ares_emp::EmpWarheadRules>,
+    ares: Option<crate::rules::ares_warhead::AresWarheadRules>,
     /// Splash radius in cells (0 = direct hit only). Native `CellSpread=` is a
     /// **float** at `WarheadTypeClass+0x124` (ReadDouble `0x005283d0` called at
     /// `0x0075d3e6`, `FSTP float ptr` at `0x0075d3eb`, key string
@@ -307,14 +307,14 @@ pub struct WarheadType {
 }
 
 impl WarheadType {
-    pub(crate) fn emp_rules(&self) -> Option<&crate::rules::ares_emp::EmpWarheadRules> {
-        self.emp.as_ref()
+    pub(crate) fn ares_rules(&self) -> Option<&crate::rules::ares_warhead::AresWarheadRules> {
+        self.ares.as_ref()
     }
-    pub(crate) fn bind_emp_rules(
+    pub(crate) fn bind_ares_rules(
         &mut self,
-        rules: Option<&crate::rules::ares_emp::EmpWarheadRules>,
+        rules: Option<&crate::rules::ares_warhead::AresWarheadRules>,
     ) {
-        self.emp = rules.cloned();
+        self.ares = rules.cloned();
     }
 
     /// `InfDeath=`'s constructor value (`0x0075CF14`, the zeroed EBX of
@@ -394,7 +394,7 @@ impl WarheadType {
             id: id.to_string(),
             verses_f64,
             ares_verses: cfg!(feature = "ares").then(AresWarheadVerses::default),
-            emp: None,
+            ares: None,
             cell_spread_f64,
             percent_at_max_f64,
             causes_delay_kill: section.read_bool("CausesDelayKill", false),

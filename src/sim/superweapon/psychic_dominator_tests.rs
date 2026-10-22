@@ -795,8 +795,18 @@ fn retail_computer_dominator_sends_its_captives_hunting() {
     let russians: InternedId = sim.interner.intern("Russians");
     let tank = spawn(&mut sim, &rules, "MTNK", "Americans", TARGET);
     let gi = spawn(&mut sim, &rules, "E1", "Americans", (39, 40));
-    charge_super(&mut sim, russians, DOMINATOR);
-    click(&mut sim, &rules, russians, DOMINATOR, TARGET);
+    let sw_type = charge_super(&mut sim, russians, DOMINATOR);
+    // A computer House fires through its AI's Fire_SW (0x004FAE50), never an
+    // event: the DoList skips computer Houses' events (0x0064C4FB..0x0064C50D).
+    assert!(sim.fire_super_weapon(
+        &rules,
+        russians,
+        sw_type,
+        TARGET,
+        None,
+        crate::sim::world::FrameEffects::default(),
+        true,
+    ));
     let mut frames = 0;
     while sim.psychic_dominator.status_number() != 3 {
         step(&mut sim, &rules);

@@ -419,6 +419,27 @@ impl TerrainDrawRenderer {
         count
     }
 
+    /// Every pixel one composite reads or writes, colour and Z: its clipped
+    /// rect plus the displaced read halo. `None` when it draws nothing.
+    pub(crate) fn packed_footprint(
+        &self,
+        composite: &PackedComposite<'_>,
+        tactical: [u32; 4],
+    ) -> Option<[u32; 4]> {
+        let rect = composite_rect(&composite.pieces, self.camera, tactical)?;
+        let offset = effective_offset(composite.pieces.first()?.instance, composite.render_z);
+        if offset == 0 {
+            return Some(rect);
+        }
+        let size = self
+            .targets
+            .as_ref()
+            .expect("packed footprint after prepare")
+            .source_color
+            .size();
+        Some(read_halo(rect, offset, size.width, size.height))
+    }
+
     /// Pixel-local, equal-policy composites commute only when their complete
     /// conservative rectangles are disjoint. Reuse the destination-edit tile
     /// scheduler; displaced neighbor reads remain strict sequential fences.
@@ -438,12 +459,11 @@ impl TerrainDrawRenderer {
         let mut pieces = Vec::new();
         while cursor < composites.len() {
             let first = &composites[cursor];
-            let Some(piece) = first.pieces.first() else {
+            if first.pieces.is_empty() {
                 cursor += 1;
                 continue;
-            };
-            let selector = piece.instance.draw_state.native_selector_bits();
-            if effective_offset(piece.instance, first.render_z) != 0 {
+            }
+            let Some(key) = packed_wave_key(first) else {
                 stats.accumulate(self.draw_packed_composite(
                     encoder,
                     color,
@@ -456,18 +476,15 @@ impl TerrainDrawRenderer {
                 ));
                 cursor += 1;
                 continue;
-            }
+            };
             batches.begin_span([
                 self.camera.screen_size[0] as u32,
                 self.camera.screen_size[1] as u32,
             ]);
             let mut end = cursor;
             while let Some(composite) = composites.get(end) {
-                if let Some(piece) = composite.pieces.first() {
-                    if composite.render_z != first.render_z
-                        || piece.instance.draw_state.native_selector_bits() != selector
-                        || effective_offset(piece.instance, composite.render_z) != 0
-                    {
+                if !composite.pieces.is_empty() {
+                    if packed_wave_key(composite) != Some(key) {
                         break;
                     }
                     if let Some(rect) = composite_rect(&composite.pieces, self.camera, tactical) {
@@ -759,6 +776,19 @@ impl TerrainDrawRenderer {
             tile_dependencies: 0,
         }
     }
+}
+
+/// The wave a non-empty composite may share with others in
+/// [`TerrainDrawRenderer::draw_packed_span`]: equal native selector and Z
+/// policy. `None` for displaced reads, which replay alone.
+pub(crate) fn packed_wave_key(composite: &PackedComposite<'_>) -> Option<(u32, RenderZPolicy)> {
+    let piece = composite.pieces.first()?;
+    (effective_offset(piece.instance, composite.render_z) == 0).then(|| {
+        (
+            piece.instance.draw_state.native_selector_bits(),
+            composite.render_z,
+        )
+    })
 }
 
 fn effective_offset(instance: &SpriteInstance, render_z: RenderZPolicy) -> i32 {

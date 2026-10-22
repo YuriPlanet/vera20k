@@ -1,5 +1,5 @@
-//! Ordinary ground-victim Ares EMP. The Techno+504 counter and held Anim
-//! have one private owner; the existing powered-unit owner keeps +1C8.
+//! Ordinary ground-victim and independent powered-building Ares EMP.
+//! The Techno+504 counter and held Anim have one private owner; the existing powered-unit owner keeps +1C8.
 //! Installed Bullet46920B ->100536E0/10062320 and AI6FAF0D ->10053DF0.
 //! Evidence/transport bounds: tools/rules_oracle/ares_emp.{py,json,meta.json};
 //! full chain ownership and residuals: docs/ares-emp.md.
@@ -95,10 +95,30 @@ mod receiver {
         ))
     }
     fn advisable(entity: &GameEntity) -> bool {
+        // Installed10062D60 calls vt184: original5B3040 returns current+AC,
+        // or queued+B4 when current is NONE. LastMission separately saves rawAC.
         !matches!(
-            entity.mission.current().known(),
+            entity.mission.effective().known(),
             Some(MissionType::Unload | MissionType::Selling | MissionType::Construction)
         )
+    }
+    /// Supported Building dependencies, not a replacement immunity predicate.
+    /// Factories/providers and linked/managed effects need their own complete chains.
+    fn ordinary_building(object: &crate::rules::object_type::ObjectType) -> bool {
+        !object.has_factory()
+            && !object.radar
+            && !object.spy_sat
+            && !object.gap_generator
+            && object.super_weapon.is_none()
+            && object.super_weapon2.is_none()
+            && object.powers_unit.is_none()
+            && !object.laser_fence
+            && !object.laser_fence_post
+            && !object.cloning
+            && !object.construction_yard
+            && object.undeploys_into.is_none()
+            && !object.can_be_occupied
+            && !object.overpowerable
     }
     /// Installed10035C26..10035D74 ring/row cursor. The first ring differs
     /// from gamemd's static AreaDamage table, and this cursor extends to256.
@@ -177,17 +197,17 @@ mod receiver {
             rules: &RuleSet,
             effects: FrameEffects<'_>,
         ) {
-            if !warhead.emp_rules().is_some_and(|emp| emp.duration() != 0) {
+            if !warhead.ares_rules().is_some_and(|emp| emp.duration() != 0) {
                 return;
             }
-            for target in self.ares_emp_ground_targets(impact, warhead.cell_spread_f64, rules) {
+            for target in self.ares_effect_ground_targets(impact, warhead.cell_spread_f64, rules) {
                 let result = self.deliver_ares_emp(target, source, warhead, rules, effects);
                 if result == EmpDelivery::Unsupported {
                     log::debug!("Ares EMP victim {target} requires a later dependency chain");
                 }
             }
         }
-        fn ares_emp_ground_targets(
+        pub(crate) fn ares_effect_ground_targets(
             &self,
             impact: crate::sim::projectile::ProjectileCoord,
             spread: f64,
@@ -282,7 +302,7 @@ mod receiver {
             effects: FrameEffects<'_>,
         ) -> EmpDelivery {
             let Some(settings) = warhead
-                .emp_rules()
+                .ares_rules()
                 .filter(|settings| settings.duration() != 0)
             else {
                 return EmpDelivery::Rejected;
@@ -325,6 +345,14 @@ mod receiver {
             let default_immune = match victim.category() {
                 EntityCategory::Infantry => !object.cyborg,
                 EntityCategory::Unit => object.organic,
+                EntityCategory::Structure if ordinary_building(object) => {
+                    // Installed10062DC0..10062E32: invisible is ineligible;
+                    // ordinary powered Buildings need a positive native drain.
+                    object.invisible_in_game
+                        || !(object.powered
+                            && crate::sim::power_system::native_building_power_drain(object.power)
+                                > 0)
+                }
                 _ => return EmpDelivery::Unsupported,
             };
             if kind.immune().unwrap_or(default_immune) || kind.rank_immune(victim.veterancy.rank())
@@ -345,7 +373,7 @@ mod receiver {
                     .and_then(|name| rules.weapon(name))
                     .and_then(|weapon| weapon.warhead.as_deref())
                     .and_then(|name| rules.warhead(name))
-                    .and_then(|wh| wh.emp_rules())
+                    .and_then(|wh| wh.ares_rules())
                     .is_some_and(|emp| emp.duration() != 0)
                 }) {
                     return EmpDelivery::Rejected;
@@ -357,12 +385,24 @@ mod receiver {
             }
             // Restrict the new producer by actual dependency support, not a
             // fabricated immunity. An unsupported victim is observable to tests.
-            if !matches!(
-                victim.locomotor.as_ref().map(|loco| loco.active_kind()),
-                Some(LocomotorKind::Drive | LocomotorKind::Walk)
-            ) || (!self.owner_is_human(victim.owner())
-                && victim.locomotor.as_ref().map(|loco| loco.active_kind())
-                    != Some(LocomotorKind::Drive))
+            if (victim.category() != EntityCategory::Structure
+                && (!matches!(
+                    victim.locomotor.as_ref().map(|loco| loco.active_kind()),
+                    Some(LocomotorKind::Drive | LocomotorKind::Walk)
+                ) || (!self.owner_is_human(victim.owner())
+                    && victim.locomotor.as_ref().map(|loco| loco.active_kind())
+                        != Some(LocomotorKind::Drive))))
+                || (victim.category() == EntityCategory::Structure
+                    && (victim.prism_support_count.count() != 0
+                        || victim
+                            .pending_building_fire
+                            .pending()
+                            .is_some_and(|pending| {
+                                matches!(
+                                    pending.fire(),
+                                    crate::sim::world::DelayedFire::SupportBeam { .. }
+                                )
+                            })))
                 || victim.is_harvester()
                 || victim.is_falling_down()
                 || victim.spawn_manager.is_some()
@@ -462,6 +502,21 @@ mod receiver {
             EmpDelivery::Applied
         }
         fn enable_ares_emp(&mut self, target: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+            let building = self
+                .substrate
+                .entities
+                .get(target)
+                .is_some_and(|entity| entity.category() == EntityCategory::Structure);
+            if building {
+                //10062B58..98: House dirty, then DisableStuff452480. Online660
+                // is independent and must stay unchanged during EMP.
+                let owner = self.substrate.entities.get(target).unwrap().owner();
+                if let Some(house) = self.houses.get_mut(&owner) {
+                    house.request_tech_recheck();
+                }
+                Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false);
+                self.set_building_stuff_enabled(target, false, rules);
+            }
             if let Some(entity) = self.substrate.entities.get_mut(target) {
                 entity.emp.last_mission = entity.mission.current().raw();
             }
@@ -471,20 +526,99 @@ mod receiver {
                 .get(target)
                 .is_some_and(|entity| !entity.deactivated.is_offline() && advisable(entity))
             {
+                //10062C26..57 saves only a Building's Focus across the shared
+                //Deactivate -> ResetOrdersToGuard, which normally clears it.
+                let focus = building.then(|| {
+                    self.substrate
+                        .entities
+                        .get(target)
+                        .unwrap()
+                        .archive_target()
+                });
                 self.techno_deactivate(target, rules, effects);
+                if let Some(focus) = focus {
+                    self.substrate
+                        .entities
+                        .get_mut(target)
+                        .unwrap()
+                        .set_archive_target(focus);
+                }
             }
         }
         fn disable_ares_emp(&mut self, target: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
-            if self
+            let building = self
                 .substrate
                 .entities
                 .get(target)
-                .is_some_and(|entity| entity.deactivated.is_offline())
+                .is_some_and(|entity| entity.category() == EntityCategory::Structure);
+            let operational =
+                !building || self.building_operational_state(target, rules) == Some(true);
+            if building {
+                //1006280F..67 samples4555D0 before dirties; low power must not
+                //enable Stuff or Reactivate, but Anim retirement still follows.
+                let owner = self.substrate.entities.get(target).unwrap().owner();
+                if let Some(house) = self.houses.get_mut(&owner) {
+                    house.request_tech_recheck();
+                }
+                Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false);
+                if operational {
+                    self.set_building_stuff_enabled(target, true, rules);
+                }
+            }
+            if operational
+                && self
+                    .substrate
+                    .entities
+                    .get(target)
+                    .is_some_and(|entity| entity.deactivated.is_offline())
             {
+                let focus = building.then(|| {
+                    self.substrate
+                        .entities
+                        .get(target)
+                        .unwrap()
+                        .archive_target()
+                });
                 self.techno_reactivate(target, rules, effects);
+                if let Some(focus) = focus {
+                    self.substrate
+                        .entities
+                        .get_mut(target)
+                        .unwrap()
+                        .set_archive_target(focus);
+                }
             }
             self.retire_ares_emp_sparkle(target);
             self.recover_ares_emp_ai_mission(target, rules);
+        }
+        /// Installed common TechnoUpdate1004B528..575, before original tint:
+        /// an offline Building recovers on its next reached head after power
+        /// returns. This is not EnableStuff and does not restore saved Focus.
+        pub(crate) fn update_ares_emp_operability(
+            &mut self,
+            target: u64,
+            rules: &RuleSet,
+            effects: FrameEffects<'_>,
+        ) {
+            let Some(entity) = self.substrate.entities.get(target) else {
+                return;
+            };
+            if entity.category() != EntityCategory::Structure
+                || !entity.deactivated.is_offline()
+                || entity.emp_remaining() > 0
+                || !self
+                    .interner
+                    .object_type(entity.type_ref(), rules)
+                    .is_some_and(ordinary_building)
+                || self.building_operational_state(target, rules) != Some(true)
+            {
+                return;
+            }
+            let owner = entity.owner();
+            self.techno_reactivate(target, rules, effects);
+            if let Some(house) = self.houses.get_mut(&owner) {
+                house.request_tech_recheck();
+            }
         }
         /// Installed disable100627F0's final1006293A block, after the
         /// Reactivate/manager/Anim owners. Human control is50B730, not merely
@@ -493,7 +627,9 @@ mod receiver {
             let Some(entity) = self.substrate.entities.get(target) else {
                 return;
             };
-            if self.owner_is_human(entity.owner()) {
+            //100628B2 tests AbstractFlags bit4 before Foot recovery. Buildings
+            //never queue Hunt, even in a computer House.
+            if !entity.category().is_foot() || self.owner_is_human(entity.owner()) {
                 return;
             }
             let mission = rules
@@ -526,7 +662,11 @@ mod receiver {
             if remaining == 0 {
                 self.disable_ares_emp(target, rules, effects);
             } else if delayed {
-                self.enable_ares_emp(target, rules, effects);
+                // Installed10053E1A..3E: deferred deactivation saves rawAC then
+                // calls only Deactivate. First-hit House/Stuff writes and the
+                // Building Focus save/restore belong to10062B40, not this tail.
+                entity.emp.last_mission = entity.mission.current().raw();
+                self.techno_deactivate(target, rules, effects);
             }
         }
         fn ares_emp_sparkle(&mut self, target: u64, name: Option<&str>, rules: &RuleSet) {
@@ -851,6 +991,681 @@ mod receiver {
                 assert!(!emp_event_kinds(&sim).contains(&generic));
             }
         }
+        fn building_scene(extra: &str) -> (Simulation, RuleSet, u64, u64, u64) {
+            let ini = crate::sim::arena_fixture::clear_ground_ini(
+                "[VehicleTypes]\n0=EMITTER\n[BuildingTypes]\n0=TOWER\n[Warheads]\n0=EMPWH\n1=HURT\n[Animations]\n0=SPARK\n1=ELECTRO\n2=TOWER_B\n[General]\nEMPulseSparkles=SPARK\nPrismType=TOWER\n[EMITTER]\nStrength=400\nArmor=heavy\nSpeed=6\nPrimary=PULSE\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\nMovementZone=Normal\n[TOWER]\nImage=TOWERART\nStrength=1000\nArmor=steel\nPowered=yes\nPower=-75\nPrimary=BEAM\nCanPassiveAquire=no\nHasStupidGuardMode=no\n[PULSE]\nDamage=1\nROF=1\nRange=9.5\nSpeed=100\nProjectile=INVIS\nWarhead=EMPWH\n[BEAM]\nDamage=20\nROF=1\nRange=10\nSpeed=100\nProjectile=INVIS\nWarhead=HURT\n[INVIS]\nAirburst=yes\nInviso=yes\nAG=yes\nAA=no\n[EMPWH]\nCellSpread=.7\nVerses=0%,0%,0%,0%,0%,0%,3%,3%,3%,0%,0%\nEMP.Duration=5\nEMP.Cap=10\nAffectsAllies=yes\n[HURT]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+            );
+            let art = IniFile::from_str(
+                "[TOWERART]\nFoundation=1x1\nDelayedFireDelay=1\nActiveAnim=TOWER_B\nActiveAnimPowered=yes\n[TOWER_B]\nLoopCount=-1\nRate=1\nEnd=100\n[SPARK]\nLoopCount=-1\nRate=1\nEnd=4\n",
+            );
+            let mut layers = crate::rules::native_processing::RulesLayerStack::new(ini);
+            if !extra.is_empty() {
+                layers.push(
+                    crate::rules::native_processing::RulesLayerKind::Scenario,
+                    IniFile::from_str(&format!("[TOWER]\n{extra}")),
+                );
+            }
+            let processed = layers.process_with_fixed_art(&art).unwrap();
+            let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+            let mut registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
+            for name in ["SPARK", "TOWER_B"] {
+                registry
+                    .bind_anim_frame_count_for_test(name, if name == "TOWER_B" { 100 } else { 4 });
+            }
+            rules.install_art_data(registry);
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+            sim.intern_rule_type_ids(&rules);
+            let target = sim
+                .spawn_object("TOWER", "Russians", 10, 10, 0, &rules)
+                .unwrap();
+            let source = sim
+                .spawn_object("EMITTER", "Americans", 12, 10, 0, &rules)
+                .unwrap();
+            sim.resolve_type_handles(&rules);
+            let owner = sim.entities().get(target).unwrap().owner();
+            let power = sim
+                .power_states
+                .map_mut_for_test()
+                .entry(owner)
+                .or_default();
+            power.set_total_output_for_test(100);
+            power.set_total_drain_for_test(75);
+            let slot = sim
+                .set_building_anim_slot(target, 3, false, false, 0, &rules)
+                .unwrap();
+            sim.visit_building_operational(target, &rules, None, FrameEffects::empty());
+            sim.substrate
+                .entities
+                .get_mut(target)
+                .unwrap()
+                .mission
+                .set_current_for_test(
+                    crate::sim::mission::MissionId::from_known(MissionType::Guard),
+                    0,
+                );
+            (sim, rules, target, source, slot)
+        }
+
+        fn tower_fire_error(
+            sim: &Simulation,
+            rules: &RuleSet,
+            tower: u64,
+            target: u64,
+        ) -> crate::sim::combat::fire_error::FireError {
+            let firer = sim.entities().get(tower).unwrap();
+            crate::sim::combat::fire_error_world::FireSubject {
+                world: sim,
+                rules,
+                overlay_registry: None,
+                fog: None,
+                firer,
+                obj: rules.object("TOWER").unwrap(),
+                target: Some(crate::sim::combat::TargetKind::Entity(target)),
+                weapon_index: 0,
+            }
+            .fire_error(false)
+        }
+
+        #[test]
+        fn ares_emp_building_parent_bullet_actual_ai_fire_and_power_recovery() {
+            use crate::sim::{
+                combat::{TargetKind, fire_error::FireError, world_fire::FireVisit},
+                world::ObjectAiCtx,
+            };
+            let (mut sim, rules, target, source, slot) = building_scene("ImmuneToEMP=no\n");
+            let owner = sim.entities().get(target).unwrap().owner();
+            assert_eq!(
+                tower_fire_error(&sim, &rules, target, source),
+                FireError::Ok
+            );
+            let focus = Some(TargetKind::Entity(source));
+            sim.substrate
+                .entities
+                .get_mut(target)
+                .unwrap()
+                .set_archive_target(focus);
+            // The production FireAt/Bullet/receiver chain, not only direct EMP delivery.
+            sim.commit_fire_visit(
+                FireVisit::Direct {
+                    id: source,
+                    target: TargetKind::Entity(target),
+                    weapon_index: 0,
+                },
+                &rules,
+                None,
+                FrameEffects::empty(),
+            );
+            let bullets: Vec<_> = sim.projectiles.iter().map(|(&id, _)| id).collect();
+            assert_eq!(bullets.len(), 1);
+            let emp_bullet = bullets[0];
+            for bullet in bullets {
+                sim.object_ai_visit_one(bullet, Some(&rules), ObjectAiCtx::default());
+            }
+            assert_eq!(sim.entities().get(target).unwrap().emp_remaining(), 5);
+            assert_eq!(sim.building_operational_state(target, &rules), Some(false));
+            assert_eq!(
+                tower_fire_error(&sim, &rules, target, source),
+                FireError::Cant
+            );
+            assert!(sim.entities().get(target).unwrap().building_online());
+            assert!(
+                !sim.entities()
+                    .get(target)
+                    .unwrap()
+                    .building_art
+                    .stuff_enabled()
+            );
+            assert!(sim.anim(slot).unwrap().runtime().paused);
+            let sparkle = sim.entities().get(target).unwrap().emp_sparkle().unwrap();
+            // Low-power expiry still retires the sparkle, but cannot activate the tower.
+            sim.power_states
+                .map_mut_for_test()
+                .get_mut(&owner)
+                .unwrap()
+                .set_total_output_for_test(0);
+            for remaining in (0..5).rev() {
+                assert!(sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default()));
+                assert_eq!(
+                    sim.entities().get(target).unwrap().emp_remaining(),
+                    remaining
+                );
+            }
+            assert!(sim.entities().get(target).unwrap().deactivated.is_offline());
+            assert_eq!(sim.entities().get(target).unwrap().archive_target(), focus);
+            assert_eq!(
+                sim.entities().get(target).unwrap().mission.queued().raw(),
+                -1,
+                "AI Building is not Foot Hunt recovery"
+            );
+            assert!(sim.entities().get(target).unwrap().emp_sparkle().is_none());
+            assert_eq!(sim.anim(sparkle).unwrap().runtime().loop_remaining, 0);
+            sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+            assert!(sim.entities().get(target).unwrap().deactivated.is_offline());
+            sim.power_states
+                .map_mut_for_test()
+                .get_mut(&owner)
+                .unwrap()
+                .set_total_output_for_test(100);
+            // First operational edge resumes the existing powered slot. The reached
+            //Techno head then activates; it must not invent a delayed EnableStuff.
+            sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+            assert!(!sim.entities().get(target).unwrap().deactivated.is_offline());
+            assert!(
+                !sim.entities()
+                    .get(target)
+                    .unwrap()
+                    .building_art
+                    .stuff_enabled()
+            );
+            assert!(!sim.anim(slot).unwrap().runtime().paused);
+            assert_eq!(
+                sim.entities().get(target).unwrap().archive_target(),
+                None,
+                "delayed shared Guard clears Focus"
+            );
+            assert_eq!(
+                tower_fire_error(&sim, &rules, target, source),
+                FireError::Ok
+            );
+            // Re-enter the real tower attack handler after recovery and consume
+            //its emitted Bullet, so availability is observed as actual damage.
+            sim.assign_target_represented(
+                target,
+                Some(TargetKind::Entity(source)),
+                &rules,
+                None,
+                FrameEffects::empty(),
+            )
+            .unwrap();
+            sim.substrate
+                .mission_assign_exact(
+                    target,
+                    crate::sim::mission::MissionId::from_known(MissionType::Attack),
+                    sim.session.binary_frame(),
+                )
+                .unwrap();
+            let health = sim.entities().get(source).unwrap().health.current();
+            sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+            // UnInit removes the old EMP Bullet from Logic55BAE0 immediately,
+            // but its physical storage survives until the725C70 late drain.
+            // These direct object visits do not advance that drain. Advancing
+            // every stored Bullet here would detonate the retired EMP twice.
+            assert!(
+                sim.projectiles
+                    .get(emp_bullet)
+                    .is_some_and(|bullet| !bullet.in_logic_vector())
+            );
+            let bullets: Vec<_> = sim
+                .projectiles
+                .iter()
+                .filter(|(_, bullet)| bullet.in_logic_vector())
+                .map(|(&id, _)| id)
+                .collect();
+            assert!(
+                !bullets.is_empty(),
+                "restored real tower Mission_Attack emits a Bullet"
+            );
+            for bullet in bullets {
+                sim.object_ai_visit_one(bullet, Some(&rules), ObjectAiCtx::default());
+            }
+            assert!(sim.entities().get(source).unwrap().health.current() < health);
+            assert_eq!(sim.entities().get(target).unwrap().emp_remaining(), 0);
+            sim.notify_anim_pointer_expired(sparkle);
+            assert!(sim.entities().get(target).unwrap().emp_sparkle().is_none());
+        }
+
+        #[test]
+        fn ares_emp_building_native_admission_refresh_and_slot_lifecycle() {
+            use crate::sim::{
+                combat::TargetKind,
+                mission::{MissionId, state::MissionTestFixture, timer::MissionDispatchTimer},
+                power_system::PowerState,
+            };
+            let native = corpus();
+            for row in native["building_admission"].as_array().unwrap() {
+                let f = &row["fixture"];
+                let mut extra = String::new();
+                if let Some(immune) = f["immune"].as_bool() {
+                    extra.push_str(if immune {
+                        "ImmuneToEMP=yes\n"
+                    } else {
+                        "ImmuneToEMP=no\n"
+                    });
+                }
+                if f["powered"].as_bool() == Some(false) {
+                    extra.push_str("Powered=no\nPower=0\n");
+                }
+                if f["invisible"].as_bool() == Some(true) {
+                    extra.push_str("InvisibleInGame=yes\n");
+                }
+                let (mut sim, rules, target, source, _) = building_scene(&extra);
+                let result = sim.deliver_ares_emp(
+                    target,
+                    Some(source),
+                    rules.warhead("EMPWH").unwrap(),
+                    &rules,
+                    FrameEffects::empty(),
+                );
+                assert_eq!(
+                    result == EmpDelivery::Rejected,
+                    row["result"]["immune"].as_bool().unwrap(),
+                    "{}",
+                    row["name"]
+                );
+                assert_ne!(result, EmpDelivery::Unsupported, "{}", row["name"]);
+            }
+            for row in native["parent_impact_snap"].as_array().unwrap() {
+                let f = &row["fixture"];
+                let offset: Vec<_> = f["target_offset"]
+                    .as_array()
+                    .map(|values| values.iter().map(int).collect())
+                    .unwrap_or_else(|| vec![0; 3]);
+                let (mut sim, rules, tower, emitter, _) = building_scene(&format!(
+                    "TargetCoordOffset={},{},{}\n",
+                    offset[0], offset[1], offset[2]
+                ));
+                let target = match f["target_kind"].as_str().unwrap() {
+                    "building" => Some(tower),
+                    "unit" => Some(emitter),
+                    "none" => None,
+                    value => panic!("unhandled native snap target {value}"),
+                };
+                if let Some(target) = target {
+                    let entity = sim.substrate.entities.get_mut(target).unwrap();
+                    entity
+                        .position
+                        .put_world_xy([int(&f["target_coords"][0]), int(&f["target_coords"][1])]);
+                    entity
+                        .position
+                        .set_exact_z_leptons_for_test(Some(int(&f["target_coords"][2])));
+                }
+                // Production construction supplies the unique Bullet identity;
+                //case location/target/impact are declared native caller inputs.
+                sim.commit_fire_visit(
+                    crate::sim::combat::world_fire::FireVisit::Direct {
+                        id: emitter,
+                        target: crate::sim::combat::TargetKind::Entity(tower),
+                        weapon_index: 0,
+                    },
+                    &rules,
+                    None,
+                    FrameEffects::empty(),
+                );
+                let bullet_id = *sim.projectiles.iter().next().unwrap().0;
+                let target = target.map_or(
+                    crate::sim::projectile::ProjectileTarget::None,
+                    crate::sim::projectile::ProjectileTarget::Entity,
+                );
+                let coordinate = |value: &serde_json::Value| {
+                    ProjectileCoord::new(int(&value[0]), int(&value[1]), int(&value[2]))
+                };
+                let bullet = sim.projectiles.get_mut(bullet_id).unwrap();
+                bullet.set_position_for_test(coordinate(&f["location"]));
+                bullet.set_target_for_test(target);
+                let detonation = crate::sim::projectile::ProjectileDetonation {
+                    projectile_id: bullet_id,
+                    source_id: emitter,
+                    target,
+                    impact: coordinate(&f["impact"]),
+                    payload: bullet.payload(),
+                    reason: crate::sim::projectile::ProjectileDetonationReason::ReachedTarget,
+                };
+                let distance = match target {
+                    crate::sim::projectile::ProjectileTarget::Entity(id) => {
+                        crate::sim::combat::object_distance_to(
+                            bullet_id,
+                            &crate::sim::combat::TargetKind::Entity(id),
+                            &sim,
+                        )
+                    }
+                    _ => None,
+                };
+                assert_eq!(
+                    distance,
+                    row["result"]["distance"].as_i64().map(|value| value as i32),
+                    "{}",
+                    row["name"]
+                );
+                assert_eq!(
+                    crate::sim::combat::world_receiver::ares_warhead_effect_coordinate(
+                        &sim,
+                        &detonation
+                    ),
+                    coordinate(&row["result"]["impact"]),
+                    "{}",
+                    row["name"]
+                );
+                assert_eq!(
+                    detonation.impact,
+                    coordinate(&f["impact"]),
+                    "original receiver's impact stays separate"
+                );
+            }
+            for row in native["building_collectors"].as_array().unwrap() {
+                let (mut sim, rules, target, _, _) = building_scene("");
+                let f = &row["fixture"];
+                // The first tower was production-spawned from fixed ART's1x1
+                //foundation. Extra overlap/neighbor references are explicit
+                //structural inputs, not legal placement of overlapping towers.
+                let template = sim.entities().get(target).unwrap().clone();
+                for (index, input) in f["objects"].as_array().unwrap().iter().enumerate() {
+                    let id = if index == 0 {
+                        target
+                    } else {
+                        sim.substrate.allocate_stable_id()
+                    };
+                    let mut entity = template.clone();
+                    entity.set_stable_id_for_test(id);
+                    entity.set_native_unique_id_for_test(int(&input["uid"]));
+                    entity
+                        .position
+                        .put_world_xy([int(&input["coords"][0]), int(&input["coords"][1])]);
+                    entity
+                        .position
+                        .set_exact_z_leptons_for_test(Some(int(&input["coords"][2])));
+                    sim.substrate.entities.insert(entity);
+                    let rx = int(&input["cell"][0]) as u16;
+                    let ry = int(&input["cell"][1]) as u16;
+                    if index != 0 {
+                        sim.substrate.occupancy.add(
+                            rx,
+                            ry,
+                            id,
+                            MovementLayer::Ground,
+                            None,
+                            CellListInsertion::PrependNonBuilding,
+                        );
+                    }
+                    if f["duplicate_neighbor"].as_bool().unwrap() {
+                        sim.substrate.occupancy.add(
+                            11,
+                            10,
+                            id,
+                            MovementLayer::Ground,
+                            None,
+                            CellListInsertion::PrependNonBuilding,
+                        );
+                    }
+                }
+                let impact = ProjectileCoord {
+                    x: int(&f["impact"][0]),
+                    y: int(&f["impact"][1]),
+                    z: int(&f["impact"][2]),
+                };
+                let actual: Vec<_> = sim
+                    .ares_effect_ground_targets(impact, f["spread"].as_f64().unwrap(), &rules)
+                    .iter()
+                    .map(|id| sim.entities().get(*id).unwrap().native_unique_id())
+                    .collect();
+                let expected: Vec<_> = row["result"]["ordered_uids"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(int)
+                    .collect();
+                assert_eq!(actual, expected, "{}", row["name"]);
+            }
+            for row in native["building_chains"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .chain(native["building_deferred_deactivation"].as_array().unwrap())
+            {
+                let (mut sim, rules, target, source, slot) = building_scene("");
+                let owner = sim.entities().get(target).unwrap().owner();
+                sim.houses
+                    .get_mut(&owner)
+                    .unwrap()
+                    .set_is_human_for_test(row["fixture"]["human"].as_bool().unwrap_or(false));
+                let before = &row["result"][0];
+                let focus = Some(TargetKind::Entity(source));
+                {
+                    let victim = sim.substrate.entities.get_mut(target).unwrap();
+                    victim.emp.last_mission = int(&before["saved_mission"]);
+                    victim.set_archive_target(focus);
+                    victim.mission.apply_test_fixture(MissionTestFixture {
+                        current: MissionId::from_raw(int(&before["current_mission"])),
+                        queued: MissionId::from_raw(int(&before["queued_mission"])),
+                        suspended: MissionId::NONE,
+                        movement_bypass_latch: int(&before["bypass"]) as u8,
+                        handler_state: 0,
+                        mission_start_frame: 0,
+                        ai_counter: int(&before["mission_timer"][1]) as u32,
+                        dispatch_timer: MissionDispatchTimer::from_raw(
+                            int(&before["mission_timer"][0]),
+                            int(&before["mission_timer"][2]),
+                        ),
+                    });
+                }
+                // Match the native producer's supplied settled House prior; later
+                //ack_dirty is diagnostic input, not a simulated House scan.
+                let mut output = 1000;
+                let settle = |sim: &mut Simulation, output| {
+                    let mut state = PowerState::settled_for_test();
+                    state.set_total_output_for_test(output);
+                    state.set_total_drain_for_test(75);
+                    sim.power_states.map_mut_for_test().insert(owner, state);
+                    sim.houses.get_mut(&owner).unwrap().take_tech_recheck();
+                };
+                settle(&mut sim, output);
+                let timer = sim.anim(slot).unwrap().runtime().frame_timer;
+                let rng = sim.rng_state();
+                for (index, step) in row["steps"].as_array().unwrap().iter().enumerate() {
+                    match step["action"].as_str().unwrap() {
+                        "prepared" => {}
+                        "head" => {
+                            sim.update_ares_emp_operability(target, &rules, FrameEffects::empty())
+                        }
+                        "hit" => assert_eq!(
+                            sim.deliver_ares_emp(
+                                target,
+                                Some(source),
+                                rules.warhead("EMPWH").unwrap(),
+                                &rules,
+                                FrameEffects::empty()
+                            ),
+                            EmpDelivery::Applied
+                        ),
+                        "edge" => sim.visit_building_operational(
+                            target,
+                            &rules,
+                            None,
+                            FrameEffects::empty(),
+                        ),
+                        "tick" => sim.tick_ares_emp(target, &rules, FrameEffects::empty()),
+                        "power" => {
+                            output = int(&step["output"]);
+                            sim.power_states
+                                .map_mut_for_test()
+                                .get_mut(&owner)
+                                .unwrap()
+                                .set_total_output_for_test(output);
+                        }
+                        "mission" => sim
+                            .substrate
+                            .entities
+                            .get_mut(target)
+                            .unwrap()
+                            .mission
+                            .set_current_for_test(MissionId::from_raw(int(&step["value"])), 0),
+                        "ack_dirty" => settle(&mut sim, output),
+                        "queue_guard_and_ack" => {
+                            // Native producer input: queued+B4 changes without
+                            // Commence or QueueMission; House acknowledges dirty.
+                            let mission =
+                                &mut sim.substrate.entities.get_mut(target).unwrap().mission;
+                            mission.apply_test_fixture(MissionTestFixture {
+                                current: mission.current(),
+                                queued: MissionId::from_known(MissionType::Guard),
+                                suspended: MissionId::NONE,
+                                movement_bypass_latch: mission.movement_bypass_latch(),
+                                handler_state: 0,
+                                mission_start_frame: 0,
+                                ai_counter: mission.ai_counter(),
+                                dispatch_timer: mission.dispatch_timer(),
+                            });
+                            settle(&mut sim, output);
+                        }
+                        action => panic!("unhandled native Building action {action}"),
+                    }
+                    let expected = &row["result"][index];
+                    let victim = sim.entities().get(target).unwrap();
+                    let label = format!("{} step{index}", row["name"]);
+                    assert_eq!(victim.emp_remaining(), int(&expected["counter"]), "{label}");
+                    assert_eq!(
+                        victim.deactivated.is_offline(),
+                        expected["deactivated"].as_bool().unwrap(),
+                        "{label}"
+                    );
+                    assert_eq!(
+                        victim.emp.last_mission,
+                        int(&expected["saved_mission"]),
+                        "{label}"
+                    );
+                    assert_eq!(
+                        victim.archive_target(),
+                        (int(&expected["focus"]) != 0).then_some(focus.unwrap()),
+                        "{label}"
+                    );
+                    assert_eq!(
+                        victim.building_online(),
+                        expected["online"].as_bool().unwrap(),
+                        "{label}"
+                    );
+                    assert_eq!(
+                        victim.building_art.stuff_enabled(),
+                        expected["stuff"].as_bool().unwrap(),
+                        "{label}"
+                    );
+                    assert_eq!(
+                        victim.mission.current().raw(),
+                        int(&expected["current_mission"]),
+                        "{label}"
+                    );
+                    assert_eq!(
+                        victim.mission.queued().raw(),
+                        int(&expected["queued_mission"]),
+                        "{label}"
+                    );
+                    if let Some(effective) = expected["effective_mission"].as_i64() {
+                        assert_eq!(
+                            victim.mission.effective().raw(),
+                            effective as i32,
+                            "{label}"
+                        );
+                    }
+                    assert_eq!(
+                        i32::from(victim.mission.movement_bypass_latch()),
+                        int(&expected["bypass"]),
+                        "{label}"
+                    );
+                    assert_eq!(
+                        [
+                            victim.mission.dispatch_timer().start_frame(),
+                            victim.mission.ai_counter() as i32,
+                            victim.mission.dispatch_timer().delay()
+                        ],
+                        [
+                            int(&expected["mission_timer"][0]),
+                            int(&expected["mission_timer"][1]),
+                            int(&expected["mission_timer"][2])
+                        ],
+                        "{label}"
+                    );
+                    let power = sim.power_states.get(&owner).unwrap();
+                    assert_eq!(
+                        [
+                            sim.houses.get(&owner).unwrap().tech_recheck_pending(),
+                            power.power_recheck_for_test(),
+                            power.radar_recheck_for_test()
+                        ],
+                        [
+                            expected["house_dirty"][0].as_i64().unwrap() != 0,
+                            expected["house_dirty"][1].as_i64().unwrap() != 0,
+                            expected["house_dirty"][2].as_i64().unwrap() != 0
+                        ],
+                        "{label}"
+                    );
+                    assert_eq!(
+                        sim.building_operational_state(target, &rules),
+                        expected["operational"].as_bool(),
+                        "{label}"
+                    );
+                    assert_eq!(
+                        sim.anim(slot).unwrap().runtime().paused,
+                        expected["slot_paused"].as_bool().unwrap(),
+                        "{label}"
+                    );
+                    assert_eq!(
+                        sim.anim(slot).unwrap().runtime().frame_timer,
+                        timer,
+                        "{label}"
+                    );
+                    assert_eq!(victim.building_art.anim_slots()[3], Some(slot), "{label}");
+                }
+                assert_eq!(
+                    sim.rng_state(),
+                    rng,
+                    "bounded state/art services draw no RNG: {}",
+                    row["name"]
+                );
+                assert!(
+                    row["queue_calls"].as_array().unwrap().is_empty(),
+                    "native Structure skips Foot AI recovery"
+                );
+                assert_eq!(row["code_unchanged"], true);
+                assert_eq!(row["rng_streams_unchanged"], true);
+            }
+            for row in native["building_slot_timer"].as_array().unwrap() {
+                let (mut sim, rules, target, _, slot) = building_scene("");
+                let fixture = &row["fixture"];
+                let before = &row["result"]["before"];
+                {
+                    let runtime = sim
+                        .substrate
+                        .anims
+                        .get_mut(slot)
+                        .unwrap()
+                        .runtime_mut_for_test();
+                    runtime.current_frame = int(&before["frame"]);
+                    runtime.first_ai_guard = false;
+                    runtime.rate_reload = int(&fixture["rate_reload"]) as u16;
+                    runtime.frame_step = int(&fixture["frame_step"]);
+                    runtime.frame_timer = crate::sim::timer::CdTimer::started(
+                        int(&fixture["timer_start"]),
+                        int(&fixture["timer_duration"]),
+                    );
+                }
+                sim.session
+                    .set_binary_frame_for_test(int(&fixture["global_frame"]) as u32);
+                sim.set_building_stuff_enabled(target, false, &rules);
+                for (name, enabled) in [("paused", false), ("resumed", true)] {
+                    if enabled {
+                        sim.set_building_stuff_enabled(target, true, &rules);
+                    }
+                    sim.object_ai_visit_one(
+                        slot,
+                        Some(&rules),
+                        crate::sim::world::ObjectAiCtx::default(),
+                    );
+                    let runtime = sim.anim(slot).unwrap().runtime();
+                    let expected = &row["result"][name];
+                    assert_eq!(runtime.current_frame, int(&expected["frame"]));
+                    assert_eq!(runtime.paused, expected["paused"].as_bool().unwrap());
+                    assert_eq!(
+                        [
+                            runtime.frame_timer.start_frame(),
+                            runtime.frame_timer.duration()
+                        ],
+                        [
+                            int(&expected["timer_start"]),
+                            int(&expected["timer_duration"])
+                        ]
+                    );
+                }
+            }
+        }
+
         #[test]
         fn ares_emp_ai_recovery_queue_matches_native_post_reactivate_controls() {
             use crate::sim::mission::{
@@ -1551,7 +2366,7 @@ mod receiver {
                     }
                 }
                 let ids =
-                    sim.ares_emp_ground_targets(impact, f["spread"].as_f64().unwrap(), &rules);
+                    sim.ares_effect_ground_targets(impact, f["spread"].as_f64().unwrap(), &rules);
                 let uids: Vec<_> = ids
                     .iter()
                     .map(|id| sim.substrate.entities.get(*id).unwrap().native_unique_id())

@@ -1129,7 +1129,6 @@ pub struct SuperWeaponView {
     pub can_fire: bool,
     /// Derived from the same wallet predicate used at launch, not readiness.
     pub can_afford: bool,
-    pub sidebar_image: Option<String>,
 }
 
 /// Query active superweapons for a specific owner (for sidebar rendering).
@@ -1175,7 +1174,6 @@ pub fn superweapon_views_for_owner(
                     true
                 }
             },
-            sidebar_image: sw_type.sidebar_image.clone(),
         });
     }
     views

@@ -479,7 +479,9 @@ fn mission_plane(sim: &mut Simulation, rules: &RuleSet, row: &Value) -> u64 {
             plane.position.set_exact_z_leptons_for_test(Some(1500));
             let entities = &sim.substrate.entities;
             let plane = entities.get(id).unwrap();
-            if crate::sim::combat::object_distance_to(plane, &target, &sim) == Some(distance) {
+            if crate::sim::combat::object_distance_to(plane.stable_id(), &target, &sim)
+                == Some(distance)
+            {
                 placed = true;
                 break 'search;
             }

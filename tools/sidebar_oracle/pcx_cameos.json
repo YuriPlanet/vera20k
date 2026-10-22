@@ -1,0 +1,597 @@
+{
+  "blits": [
+    {
+      "after_words": [
+        4369,
+        0,
+        63518
+      ],
+      "before_words": [
+        4369,
+        4369,
+        4369
+      ],
+      "color_key": 63519,
+      "destination_size": [
+        3,
+        1
+      ],
+      "name": "key_black_and_neighbor",
+      "rectangle": [
+        0,
+        0,
+        3,
+        1
+      ],
+      "returned_al": 1,
+      "service_calls": [
+        {
+          "surface": "destination",
+          "vtable_slot": "0x5c"
+        },
+        {
+          "surface": "source",
+          "vtable_slot": "0x5c"
+        },
+        {
+          "surface": "source",
+          "vtable_slot": "0x7c"
+        },
+        {
+          "surface": "source",
+          "vtable_slot": "0x80"
+        },
+        {
+          "surface": "destination",
+          "vtable_slot": "0x74"
+        },
+        {
+          "surface": "destination",
+          "vtable_slot": "0x60"
+        },
+        {
+          "surface": "source",
+          "vtable_slot": "0x60"
+        }
+      ],
+      "source_size": [
+        3,
+        1
+      ],
+      "source_words": [
+        63519,
+        0,
+        63518
+      ]
+    },
+    {
+      "after_words": [
+        4369,
+        4369,
+        4369
+      ],
+      "before_words": [
+        4369,
+        4369,
+        4369
+      ],
+      "color_key": 63519,
+      "destination_size": [
+        3,
+        1
+      ],
+      "name": "fully_keyed_still_succeeds",
+      "rectangle": [
+        0,
+        0,
+        3,
+        1
+      ],
+      "returned_al": 1,
+      "service_calls": [
+        {
+          "surface": "destination",
+          "vtable_slot": "0x5c"
+        },
+        {
+          "surface": "source",
+          "vtable_slot": "0x5c"
+        },
+        {
+          "surface": "source",
+          "vtable_slot": "0x7c"
+        },
+        {
+          "surface": "source",
+          "vtable_slot": "0x80"
+        },
+        {
+          "surface": "destination",
+          "vtable_slot": "0x74"
+        },
+        {
+          "surface": "destination",
+          "vtable_slot": "0x60"
+        },
+        {
+          "surface": "source",
+          "vtable_slot": "0x60"
+        }
+      ],
+      "source_size": [
+        3,
+        1
+      ],
+      "source_words": [
+        63519,
+        63519,
+        63519
+      ]
+    },
+    {
+      "after_words": [
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4660,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        0,
+        63518,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369
+      ],
+      "before_words": [
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369,
+        4369
+      ],
+      "color_key": 63519,
+      "destination_size": [
+        8,
+        4
+      ],
+      "name": "source_extent_and_destination_pitch",
+      "rectangle": [
+        2,
+        1,
+        60,
+        48
+      ],
+      "returned_al": 1,
+      "service_calls": [
+        {
+          "surface": "destination",
+          "vtable_slot": "0x5c"
+        },
+        {
+          "surface": "source",
+          "vtable_slot": "0x5c"
+        },
+        {
+          "surface": "source",
+          "vtable_slot": "0x7c"
+        },
+        {
+          "surface": "source",
+          "vtable_slot": "0x80"
+        },
+        {
+          "surface": "destination",
+          "vtable_slot": "0x74"
+        },
+        {
+          "surface": "destination",
+          "vtable_slot": "0x60"
+        },
+        {
+          "surface": "source",
+          "vtable_slot": "0x60"
+        }
+      ],
+      "source_size": [
+        2,
+        2
+      ],
+      "source_words": [
+        63519,
+        4660,
+        0,
+        63518
+      ]
+    }
+  ],
+  "palette": {
+    "rgb": [
+      [
+        255,
+        0,
+        255
+      ],
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        248,
+        3,
+        248
+      ],
+      [
+        255,
+        4,
+        255
+      ],
+      [
+        17,
+        41,
+        83
+      ],
+      [
+        255,
+        255,
+        255
+      ]
+    ],
+    "unused_black_words": [
+      0
+    ],
+    "words": [
+      63519,
+      0,
+      63519,
+      63551,
+      4426,
+      65535
+    ]
+  },
+  "readers": [
+    {
+      "cached_surface": 0,
+      "filename": "prior.pcx",
+      "load_succeeds": false,
+      "name": "missing",
+      "returned_al": 0,
+      "service_calls": [
+        {
+          "capacity": 2048,
+          "default": "",
+          "key": "CameoPCX",
+          "section": "SYNTHETIC",
+          "service": "ReadString"
+        }
+      ],
+      "surface": 286331153,
+      "value": null
+    },
+    {
+      "cached_surface": 0,
+      "filename": "prior.pcx",
+      "load_succeeds": false,
+      "name": "empty",
+      "returned_al": 0,
+      "service_calls": [
+        {
+          "capacity": 2048,
+          "default": "",
+          "key": "CameoPCX",
+          "section": "SYNTHETIC",
+          "service": "ReadString"
+        }
+      ],
+      "surface": 286331153,
+      "value": ""
+    },
+    {
+      "cached_surface": 536899584,
+      "filename": "mixed.pcx",
+      "load_succeeds": false,
+      "name": "mixed_case",
+      "returned_al": 1,
+      "service_calls": [
+        {
+          "capacity": 2048,
+          "default": "",
+          "key": "CameoPCX",
+          "section": "SYNTHETIC",
+          "service": "ReadString"
+        },
+        {
+          "filename": "mixed.pcx",
+          "service": "GetSurface"
+        }
+      ],
+      "surface": 536899584,
+      "value": "MiXeD.PCX"
+    },
+    {
+      "cached_surface": 0,
+      "filename": "none",
+      "load_succeeds": false,
+      "name": "none_is_filename",
+      "returned_al": 1,
+      "service_calls": [
+        {
+          "capacity": 2048,
+          "default": "",
+          "key": "CameoPCX",
+          "section": "SYNTHETIC",
+          "service": "ReadString"
+        },
+        {
+          "filename": "none",
+          "service": "GetSurface"
+        },
+        {
+          "filename": "none",
+          "mode": 2,
+          "service": "LoadFile"
+        },
+        {
+          "filename": "none",
+          "service": "INIParseFailed"
+        }
+      ],
+      "surface": 0,
+      "value": "none"
+    },
+    {
+      "cached_surface": 0,
+      "filename": "<none>",
+      "load_succeeds": false,
+      "name": "angled_none_is_filename",
+      "returned_al": 1,
+      "service_calls": [
+        {
+          "capacity": 2048,
+          "default": "",
+          "key": "CameoPCX",
+          "section": "SYNTHETIC",
+          "service": "ReadString"
+        },
+        {
+          "filename": "<none>",
+          "service": "GetSurface"
+        },
+        {
+          "filename": "<none>",
+          "mode": 2,
+          "service": "LoadFile"
+        },
+        {
+          "filename": "<none>",
+          "service": "INIParseFailed"
+        }
+      ],
+      "surface": 0,
+      "value": "<none>"
+    },
+    {
+      "cached_surface": 536899584,
+      "filename": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "load_succeeds": false,
+      "name": "truncate_31_bytes",
+      "returned_al": 1,
+      "service_calls": [
+        {
+          "capacity": 2048,
+          "default": "",
+          "key": "CameoPCX",
+          "section": "SYNTHETIC",
+          "service": "ReadString"
+        },
+        {
+          "filename": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "service": "GetSurface"
+        }
+      ],
+      "surface": 536899584,
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.PCX"
+    },
+    {
+      "cached_surface": 536899584,
+      "filename": "icon",
+      "load_succeeds": false,
+      "name": "no_extension_added",
+      "returned_al": 1,
+      "service_calls": [
+        {
+          "capacity": 2048,
+          "default": "",
+          "key": "CameoPCX",
+          "section": "SYNTHETIC",
+          "service": "ReadString"
+        },
+        {
+          "filename": "icon",
+          "service": "GetSurface"
+        }
+      ],
+      "surface": 536899584,
+      "value": "ICON"
+    },
+    {
+      "cached_surface": 0,
+      "filename": "loaded.pcx",
+      "load_succeeds": true,
+      "name": "load_success",
+      "returned_al": 1,
+      "service_calls": [
+        {
+          "capacity": 2048,
+          "default": "",
+          "key": "CameoPCX",
+          "section": "SYNTHETIC",
+          "service": "ReadString"
+        },
+        {
+          "filename": "loaded.pcx",
+          "service": "GetSurface"
+        },
+        {
+          "filename": "loaded.pcx",
+          "mode": 2,
+          "service": "LoadFile"
+        },
+        {
+          "filename": "loaded.pcx",
+          "service": "GetSurface"
+        }
+      ],
+      "surface": 536899584,
+      "value": "Loaded.PCX"
+    },
+    {
+      "cached_surface": 0,
+      "filename": "missing.pcx",
+      "load_succeeds": false,
+      "name": "load_fails",
+      "returned_al": 1,
+      "service_calls": [
+        {
+          "capacity": 2048,
+          "default": "",
+          "key": "CameoPCX",
+          "section": "SYNTHETIC",
+          "service": "ReadString"
+        },
+        {
+          "filename": "missing.pcx",
+          "service": "GetSurface"
+        },
+        {
+          "filename": "missing.pcx",
+          "mode": 2,
+          "service": "LoadFile"
+        },
+        {
+          "filename": "missing.pcx",
+          "service": "INIParseFailed"
+        }
+      ],
+      "surface": 0,
+      "value": "Missing.PCX"
+    }
+  ],
+  "schema_version": 1,
+  "selectors": [
+    {
+      "elite": false,
+      "normal_surface": 0,
+      "promoted_surface": 0,
+      "selected_surface": 0,
+      "skip_shp_jump": 0
+    },
+    {
+      "elite": false,
+      "normal_surface": 536899584,
+      "promoted_surface": 0,
+      "selected_surface": 536899584,
+      "skip_shp_jump": 6986307
+    },
+    {
+      "elite": false,
+      "normal_surface": 0,
+      "promoted_surface": 536903680,
+      "selected_surface": 0,
+      "skip_shp_jump": 0
+    },
+    {
+      "elite": false,
+      "normal_surface": 536899584,
+      "promoted_surface": 536903680,
+      "selected_surface": 536899584,
+      "skip_shp_jump": 6986307
+    },
+    {
+      "elite": true,
+      "normal_surface": 0,
+      "promoted_surface": 0,
+      "selected_surface": 0,
+      "skip_shp_jump": 0
+    },
+    {
+      "elite": true,
+      "normal_surface": 536899584,
+      "promoted_surface": 0,
+      "selected_surface": 536899584,
+      "skip_shp_jump": 6986307
+    },
+    {
+      "elite": true,
+      "normal_surface": 0,
+      "promoted_surface": 536903680,
+      "selected_surface": 536903680,
+      "skip_shp_jump": 6986307
+    },
+    {
+      "elite": true,
+      "normal_surface": 536899584,
+      "promoted_surface": 536903680,
+      "selected_surface": 536903680,
+      "skip_shp_jump": 6986307
+    }
+  ],
+  "superweapons": [
+    {
+      "selected_surface": 0,
+      "surface": 0
+    },
+    {
+      "selected_surface": 536899584,
+      "surface": 536899584
+    }
+  ]
+}

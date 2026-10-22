@@ -1743,6 +1743,8 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         b"techno-deactivated-v1".hash(hasher);
     }
     entity.hash_emp_state(hasher);
+    #[cfg(feature = "ares")]
+    entity.hash_attach_effects(hasher);
     // Infantry gameplay reads its class-owned Doing/Stage fields.
     // A restored presentation component is not a second state owner.
     if entity.category() != crate::map::entities::EntityCategory::Infantry

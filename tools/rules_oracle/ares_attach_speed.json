@@ -1,0 +1,211 @@
+{
+  "schema_version": 1,
+  "controls": [
+    {
+      "name": "base_one_reapply_and_expire",
+      "descriptor": {
+        "duration": 60,
+        "speed_bits": "999999999999c93f",
+        "discard": true
+      },
+      "steps": [
+        {
+          "action": "prepared",
+          "crate_base_bits": "000000000000f03f",
+          "derived_speed_bits": "000000000000f03f",
+          "foot_current_speed": 10,
+          "remaining": []
+        },
+        {
+          "action": "first_hit",
+          "crate_base_bits": "000000000000f03f",
+          "derived_speed_bits": "999999999999c93f",
+          "foot_current_speed": 1,
+          "remaining": [
+            60
+          ]
+        },
+        {
+          "action": "tick_1",
+          "crate_base_bits": "000000000000f03f",
+          "derived_speed_bits": "999999999999c93f",
+          "foot_current_speed": 1,
+          "remaining": [
+            59
+          ]
+        },
+        {
+          "action": "noncumulative_reapply",
+          "crate_base_bits": "000000000000f03f",
+          "derived_speed_bits": "999999999999c93f",
+          "foot_current_speed": 1,
+          "remaining": [
+            60
+          ]
+        },
+        {
+          "action": "sixty_visits_expire",
+          "crate_base_bits": "000000000000f03f",
+          "derived_speed_bits": "000000000000f03f",
+          "foot_current_speed": 10,
+          "remaining": []
+        }
+      ]
+    },
+    {
+      "name": "existing_speed_crate_base",
+      "descriptor": {
+        "duration": 60,
+        "speed_bits": "999999999999c93f",
+        "discard": true
+      },
+      "steps": [
+        {
+          "action": "prepared",
+          "crate_base_bits": "000000000000f03f",
+          "derived_speed_bits": "000000000000f03f",
+          "foot_current_speed": 10,
+          "remaining": []
+        },
+        {
+          "action": "speed_crate_before_hit",
+          "crate_base_bits": "333333333333f33f",
+          "derived_speed_bits": "333333333333f33f",
+          "foot_current_speed": 11,
+          "remaining": [],
+          "crate": {
+            "picker_continuation": "00481D52",
+            "recipient_continuation": "00483078"
+          }
+        },
+        {
+          "action": "hit_after_crate",
+          "crate_base_bits": "333333333333f33f",
+          "derived_speed_bits": "b71e85eb51b8ce3f",
+          "foot_current_speed": 2,
+          "remaining": [
+            60
+          ]
+        },
+        {
+          "action": "sixty_visits_expire",
+          "crate_base_bits": "333333333333f33f",
+          "derived_speed_bits": "333333333333f33f",
+          "foot_current_speed": 11,
+          "remaining": []
+        }
+      ]
+    },
+    {
+      "name": "crate_during_slow_and_discard",
+      "descriptor": {
+        "duration": 60,
+        "speed_bits": "999999999999c93f",
+        "discard": true
+      },
+      "steps": [
+        {
+          "action": "prepared",
+          "crate_base_bits": "000000000000f03f",
+          "derived_speed_bits": "000000000000f03f",
+          "foot_current_speed": 10,
+          "remaining": []
+        },
+        {
+          "action": "first_hit",
+          "crate_base_bits": "000000000000f03f",
+          "derived_speed_bits": "999999999999c93f",
+          "foot_current_speed": 1,
+          "remaining": [
+            60
+          ]
+        },
+        {
+          "action": "accept_crate_while_slowed",
+          "crate_base_bits": "333333333333f33f",
+          "derived_speed_bits": "b71e85eb51b8ce3f",
+          "foot_current_speed": 2,
+          "remaining": [
+            60
+          ],
+          "crate": {
+            "picker_continuation": "00481D52",
+            "recipient_continuation": "00483078"
+          }
+        },
+        {
+          "action": "reject_duplicate_crate",
+          "crate_base_bits": "333333333333f33f",
+          "derived_speed_bits": "b71e85eb51b8ce3f",
+          "foot_current_speed": 2,
+          "remaining": [
+            60
+          ],
+          "crate": {
+            "picker_continuation": "00481C86",
+            "recipient_continuation": "00483081"
+          }
+        },
+        {
+          "action": "discard_on_entry_and_aggregate",
+          "crate_base_bits": "333333333333f33f",
+          "derived_speed_bits": "333333333333f33f",
+          "foot_current_speed": 11,
+          "remaining": []
+        }
+      ]
+    },
+    {
+      "name": "neutral_effect_coexists",
+      "descriptor": {
+        "duration": 60,
+        "speed_bits": "999999999999c93f",
+        "discard": true
+      },
+      "steps": [
+        {
+          "action": "prepared",
+          "crate_base_bits": "000000000000f03f",
+          "derived_speed_bits": "000000000000f03f",
+          "foot_current_speed": 10,
+          "remaining": []
+        },
+        {
+          "action": "neutral_hit",
+          "crate_base_bits": "000000000000f03f",
+          "derived_speed_bits": "000000000000f03f",
+          "foot_current_speed": 10,
+          "remaining": [
+            5
+          ]
+        },
+        {
+          "action": "slow_hit_with_neutral",
+          "crate_base_bits": "000000000000f03f",
+          "derived_speed_bits": "999999999999c93f",
+          "foot_current_speed": 1,
+          "remaining": [
+            5,
+            60
+          ]
+        },
+        {
+          "action": "five_visits_neutral_expired",
+          "crate_base_bits": "000000000000f03f",
+          "derived_speed_bits": "999999999999c93f",
+          "foot_current_speed": 1,
+          "remaining": [
+            55
+          ]
+        },
+        {
+          "action": "sixty_total_visits_all_expired",
+          "crate_base_bits": "000000000000f03f",
+          "derived_speed_bits": "000000000000f03f",
+          "foot_current_speed": 10,
+          "remaining": []
+        }
+      ]
+    }
+  ]
+}

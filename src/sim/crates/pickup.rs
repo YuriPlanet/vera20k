@@ -237,7 +237,7 @@ fn announce_upgrade(
 
 /// `0x00481C03..0x00481D6B`: the multiplayer eligibility switch on the
 /// selected slot and the over-water test. Returns the slot the arm runs.
-fn multiplayer_eligible_slot(
+pub(crate) fn multiplayer_eligible_slot(
     sim: &Simulation,
     rules: &RuleSet,
     actor_id: u64,
@@ -266,7 +266,9 @@ fn multiplayer_eligible_slot(
         // `0x00481CDE`: an actor already sped up, or an Aircraft.
         POWERUP_SPEED => {
             actor.foot_speed.crate_multiplier() == NativeF64Bits::ONE
-                && actor.category() != EntityCategory::Aircraft
+                // Ares Speed1@1005F9D0 returns481D52 directly after its
+                // Ext+90 check, bypassing the stock Aircraft(+2C==2) gate.
+                && (crate::rules::ARES_ENABLED || actor.category() != EntityCategory::Aircraft)
         }
         // `0x00481D0B`: an actor already boosted, or unarmed (`Is_Armed`).
         POWERUP_FIREPOWER => {
@@ -568,6 +570,8 @@ pub(crate) fn pickup_crate(
                 if super::speed::apply_speed_crate(
                     &mut sim.substrate,
                     &sim.houses,
+                    rules,
+                    &sim.interner,
                     center,
                     radius,
                     magnitude,

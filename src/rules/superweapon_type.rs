@@ -157,6 +157,9 @@ pub struct SuperWeaponType {
     pub action: Option<String>,
     /// SHP filename for sidebar cameo (e.g., "INTICON").
     pub sidebar_image: Option<String>,
+    /// Optional Ares PCX; the existing SHP remains the loading fallback.
+    #[cfg(feature = "ares")]
+    sidebar_pcx: Option<String>,
     /// Whether to show the charge timer countdown on the sidebar.
     pub show_timer: bool,
     /// Whether this SW can be disabled from the game lobby.
@@ -217,6 +220,12 @@ pub struct SuperWeaponType {
 }
 
 impl SuperWeaponType {
+    /// Ares3.0 SWType extension reader10033B50..10033B66, PCXFile100762C0.
+    #[cfg(feature = "ares")]
+    pub fn sidebar_pcx(&self) -> Option<&str> {
+        self.sidebar_pcx.as_deref()
+    }
+
     /// Parse a SuperWeaponType from a rules.ini section
     /// (`SuperWeaponTypeClass::ReadINI`, reads `0x006CEA6D`-`0x006CEDB1`).
     /// Ares extensions require the explicit `ares` build feature.
@@ -278,6 +287,8 @@ impl SuperWeaponType {
             sidebar_image: section
                 .read_name("SidebarImage", 0x100)
                 .map(|name| truncate_native_bytes(name, 0x18).to_string()),
+            #[cfg(feature = "ares")]
+            sidebar_pcx: section.read_ares_pcx_filename("SidebarPCX"),
             show_timer: section.read_bool("ShowTimer", false),
             disableable_from_shell: section.read_bool("DisableableFromShell", false),
             use_charge_drain: section.read_bool("UseChargeDrain", false),

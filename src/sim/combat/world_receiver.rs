@@ -2309,6 +2309,42 @@ fn continue_area_damage(
     )
 }
 
+/// Installed46920B ->100536E0's local extension-effect coordinate. The
+/// original receiver still consumes its unchanged impact argument. Kept here
+/// with the single pre-effect owner, using the shared5F6440 distance port.
+#[cfg(feature = "ares")]
+pub(crate) fn ares_warhead_effect_coordinate(
+    world: &Simulation,
+    detonation: &ProjectileDetonation,
+) -> ProjectileCoord {
+    //100536E0/10053738..70: the extension effects use a local coordinate.
+    //Ares10053660 jumps to the existing planar5F6440 Distance_To, including
+    //the target Building's foundation discount. Strict<64 snaps to+48,
+    //not Building+A4/TargetCoordOffset. Original damage retains its impact.
+    let target = match detonation.target {
+        ProjectileTarget::Entity(id) | ProjectileTarget::Terrain(id) => {
+            Some(TargetKind::Entity(id))
+        }
+        ProjectileTarget::Cell { rx, ry } => Some(TargetKind::Cell(rx, ry)),
+        ProjectileTarget::None | ProjectileTarget::DummyCell => None,
+    };
+    target
+        .filter(|target| {
+            object_distance_to(detonation.projectile_id, target, world)
+                .is_some_and(|distance| distance < 64)
+        })
+        .and_then(|target| {
+            let cells = world
+                .resolved_terrain
+                .as_ref()
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+            crate::sim::movement::ground_pose::target_get_coords(target, world, cells.as_ref())
+        })
+        .map_or(detonation.impact, |coord| {
+            ProjectileCoord::new(coord.x, coord.y, coord.z)
+        })
+}
+
 /// `BulletClass::DetonateAtCoord @ 0x004690B0` up to its receivers: the
 /// radiation site, then the special-warhead chain or, in its final else, the
 /// shrapnel (`0x00469A51`) and `Apply_area_damage` (`0x00489280`) records,
@@ -2359,13 +2395,23 @@ fn emit_detonation_receivers<'r>(
     // Installed Ares46920B ->100536E0/10052870 runs after radiation,
     // before the exclusive special/ordinary damage arms (including Damage=0).
     #[cfg(feature = "ares")]
-    world.apply_ares_emp_detonation(
-        detonation.impact,
-        Some(detonation.source_id),
-        warhead,
-        rules,
-        effects,
-    );
+    {
+        let coordinate = ares_warhead_effect_coordinate(world, detonation);
+        // Parent100536E0 captures OwnerHouse before EMP/tag callbacks.
+        let source_house = world
+            .substrate
+            .entities
+            .get(detonation.source_id)
+            .map(|source| source.owner());
+        world.apply_ares_emp_detonation(
+            coordinate,
+            Some(detonation.source_id),
+            warhead,
+            rules,
+            effects,
+        );
+        world.apply_ares_attach_effect_detonation(coordinate, source_house, warhead, rules);
+    }
 
     // `BulletClass::DetonateAtCoord @ 0x0046978e` is the chain's only
     // conditional arm and the only one that consults the target: it reads the

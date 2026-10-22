@@ -74,6 +74,11 @@ pub struct ArtEntry {
     pub cameo: Option<String>,
     /// Alternate sidebar cameo/image override from `AltCameo=`.
     pub alt_cameo: Option<String>,
+    /// Ares 3.0 TechnoType art read1003E81F..1003E856, from ImageFile.
+    #[cfg(feature = "ares")]
+    pub(crate) cameo_pcx: Option<String>,
+    #[cfg(feature = "ares")]
+    pub(crate) alt_cameo_pcx: Option<String>,
     /// Replace 2nd char of filename with theater-specific letter.
     pub new_theater: bool,
     /// Use theater file extension (e.g., `.tem`) instead of `.shp`.
@@ -1095,6 +1100,10 @@ impl ArtRegistry {
             let image: Option<String> = section.read_name("Image", 0x40).map(str::to_owned);
             let cameo: Option<String> = section.read_name("Cameo", 0x100).map(str::to_owned);
             let alt_cameo: Option<String> = section.read_name("AltCameo", 0x100).map(str::to_owned);
+            #[cfg(feature = "ares")]
+            let cameo_pcx = section.read_ares_pcx_filename("CameoPCX");
+            #[cfg(feature = "ares")]
+            let alt_cameo_pcx = section.read_ares_pcx_filename("AltCameoPCX");
             let new_theater: bool = section.read_bool("NewTheater", false);
             let theater: bool = section.read_bool("Theater", false);
             let scorch: bool = section.read_bool("Scorch", false);
@@ -1295,6 +1304,10 @@ impl ArtRegistry {
                     image,
                     cameo,
                     alt_cameo,
+                    #[cfg(feature = "ares")]
+                    cameo_pcx,
+                    #[cfg(feature = "ares")]
+                    alt_cameo_pcx,
                     new_theater,
                     theater,
                     scorch,
@@ -1845,6 +1858,23 @@ impl ArtRegistry {
         let resolved: ResolvedObjectArt<'_> = self.resolve_object_art(type_id, rules_image);
         self.get(&resolved.base_art_id)
             .and_then(|entry| normalize_id(entry.alt_cameo.as_deref().unwrap_or_default()))
+    }
+
+    /// Normal and promoted Ares PCX filenames, including their extensions.
+    /// Ares3.0 reads the rules ImageFile section1003E81F..1003E856, without
+    /// following the art section's own Image redirect or retrying the type ID.
+    #[cfg(feature = "ares")]
+    pub fn resolve_declared_pcx_cameos(
+        &self,
+        type_id: &str,
+        rules_image: &str,
+    ) -> [Option<&str>; 2] {
+        let resolved = self.resolve_object_art(type_id, rules_image);
+        let entry = self.get(&resolved.base_art_id);
+        [
+            entry.and_then(|entry| entry.cameo_pcx.as_deref()),
+            entry.and_then(|entry| entry.alt_cameo_pcx.as_deref()),
+        ]
     }
 
     /// Resolve the declared palette id for an asset, if any.

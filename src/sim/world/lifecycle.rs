@@ -3689,6 +3689,8 @@ impl Simulation {
         }
         self.substrate
             .release_foot_air_tracker_before_limbo(stable_id);
+        #[cfg(feature = "ares")]
+        self.limbo_ares_attach_effects(stable_id, context.rules());
         if self
             .substrate
             .entities
@@ -4333,6 +4335,8 @@ impl Simulation {
         if let Some(anim) = listener.emp_sparkle() {
             name(anim);
         }
+        #[cfg(feature = "ares")]
+        listener.attached_effect_anims().for_each(&mut name);
         for target in [
             listener.attack_target.target(),
             listener.suspended_attack_target.target(),
@@ -5196,6 +5200,8 @@ impl Simulation {
         for owner in holders {
             if let Some(entity) = self.substrate.entities.get_mut(owner) {
                 entity.emp_anim_pointer_expired(expired_id);
+                #[cfg(feature = "ares")]
+                entity.attached_effect_anim_expired(expired_id);
             }
             self.substrate
                 .parasite_anim_pointer_expired(owner, expired_id);
@@ -6254,6 +6260,8 @@ impl Simulation {
             stable_id,
             context.rules(),
         );
+        #[cfg(feature = "ares")]
+        self.destroy_ares_attach_effects(stable_id, context.rules());
         // Foot4D3701 delegates to Techno6F4500 only after its own sound
         // tail. Techno6F4607 destroys the distinct voice handle via405C00,
         // before its attached/deploy Anims6F468B. Keep the disposal marker in

@@ -391,7 +391,12 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // control on #2183's merge without that hash gave the previous value, with
 // every tripwire above green. Control removed.
 // Previous: 0x427A_48D7_ED16_244B.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x2B34_7F8A_A70F_EA3F;
+// #2543 removed the entity hash's determines_waypoint_edge input with the
+// frozen type fact it read; every object here hashed it as false. Hash
+// composition only: a temporary control restoring that false gave the
+// previous value, with every tripwire above green. Control removed.
+// Previous: 0x2B34_7F8A_A70F_EA3F.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x8BD4_EE67_3F59_0830;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so

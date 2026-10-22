@@ -541,12 +541,12 @@ fn collect_build_entries(
     let mut sw_entries: Vec<BuildEntry> = Vec::new();
     if category == ProductionCategory::Defense {
         for sw in sw_views {
-            // Use sidebar_image (e.g. "INTICON") as the type_id for cameo atlas lookup.
-            let type_id = sw
-                .sidebar_image
-                .as_deref()
-                .unwrap_or(&sw.display_name)
-                .to_string();
+            // The existing type identity selects its own atlas namespace. An
+            // image filename cannot identify two types with different fallbacks.
+            let type_id = interner.map_or_else(
+                || sw.display_name.clone(),
+                |interner| interner.resolve(sw.type_id).to_owned(),
+            );
             sw_entries.push(BuildEntry {
                 identity: CameoId::SuperWeapon(sw.type_id),
                 type_id,
@@ -665,7 +665,6 @@ mod tests {
                 is_online: online,
                 can_fire: online,
                 can_afford: affordable,
-                sidebar_image: None,
             }];
             let entries = super::collect_build_entries(
                 ProductionCategory::Defense,

@@ -102,6 +102,11 @@ impl PcxFile {
         rgba
     }
 
+    /// Whether pixels address the embedded 256-color palette rather than RGB.
+    pub fn is_indexed(&self) -> bool {
+        !self.direct_rgb
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn to_rgba_with_color_key(&self, transparent_rgb: [u8; 3]) -> Vec<u8> {
         if self.is_direct_rgb() {

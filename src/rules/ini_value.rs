@@ -496,6 +496,16 @@ impl IniSection {
         Some(strtrim_ascii(truncate_native_bytes(raw, payload)))
     }
 
+    /// Ares 3.0 PCXFile reader100762C0: ReadString through the shared 2048-byte
+    /// buffer, then copy31 bytes into char[32] and lowercase. An absent/empty
+    /// read retains the previous filename (the projected read_name policy).
+    /// Original reader controls: tools/sidebar_oracle/pcx_cameos.json.
+    #[cfg(feature = "ares")]
+    pub(crate) fn read_ares_pcx_filename(&self, key: &str) -> Option<String> {
+        self.read_name(key, 0x800)
+            .map(|name| truncate_native_bytes(name, 0x1f).to_ascii_lowercase())
+    }
+
     /// [`Self::read_name`] for a name a type factory resolves: `None` also for
     /// `none` and `<none>`, which the factories answer null
     /// ([`is_native_none_type_name`]).
@@ -1858,5 +1868,32 @@ mod tests {
             [0xA741, 0x41, 0x42]
         );
         assert_eq!(s.read_comma_hex_utf16("MISSING", &[1, 2, 0, 3], 8), [1, 2]);
+    }
+}
+
+#[cfg(all(test, feature = "ares"))]
+mod pcx_cameo_tests {
+    #[test]
+    fn filename_projection_matches_original_ares_reader_controls() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/sidebar_oracle/pcx_cameos.json",
+        ))
+        .unwrap();
+        for control in corpus["readers"].as_array().unwrap() {
+            let value = control["value"].as_str().unwrap_or("");
+            let ini = crate::rules::ini_parser::IniFile::from_str(&format!(
+                "[SYNTHETIC]\nDummy=1\nCameoPCX={value}\n"
+            ));
+            let section = ini.section("SYNTHETIC").unwrap();
+            let projected = section
+                .read_ares_pcx_filename("CameoPCX")
+                .unwrap_or_else(|| "prior.pcx".to_owned());
+            assert_eq!(
+                projected,
+                control["filename"].as_str().unwrap(),
+                "{}",
+                control["name"]
+            );
+        }
     }
 }

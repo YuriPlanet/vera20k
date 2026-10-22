@@ -1,10 +1,97 @@
-# Ares ordinary ground EMP
+# Ares ordinary ground and powered-tower EMP
 
 This optional chain requires the compile-time `ares` feature. Default builds do
 not read the extension keys or run its Bullet/AI producers. It covers ordinary
 human-controlled Drive/Walk and ordinary AI Drive victims without Team, Spawn, Slave, Capture, Temporal,
-war-factory contact, harvester or falling/death-threshold dependencies. Other
-victims are not treated as generic offline objects. This is partial EMP support.
+war-factory contact, harvester or falling/death-threshold dependencies. It also
+admits an independent ordinary powered defensive building without linked Prism
+support or factory/provider/occupant/undeploy dependencies. Other victims are not
+treated as generic offline objects. This is partial EMP support.
+
+## Independent powered building
+
+The Building path uses the same private `EmpState`, house and animation owners.
+Installed10062B40 dirties House+1FC/+5778, disables Stuff through original452480,
+and preserves Focus+218 across the shared Deactivate/ResetOrdersToGuard.
+`BuildingOnline`+660 remains independent and unchanged. Only the first activation
+performs those House/Stuff transitions and initially saves raw LastMission;
+nonzero refreshes and capped hits retain them. The existing4555D0 operational adapter now reads the shared EMP
+counter, so fire admission, target admission and powered-slot consumers see the
+same value. Existing Building GetFireError and delayed-fire callers remain the
+fire authorities. First-hit and deferred admission both use the existing
+Mission effective selector5B3040: current when present, otherwise queued.
+A freshly Unlimboed building with current=-1 and queued Construction18 retains
+that queue; LastMission still records raw current, not the effective mission.
+Once a deferred victim's effective mission permits deactivation, AI tail
+10053E1A..3E saves raw current and calls only the shared Deactivate. It does not
+repeat House invalidation/DisableStuff or the first-hit Building Focus
+save/restore; the shared Stun therefore clears Focus on that deferred path.
+
+Building43FE56 calls the common Techno AI. Its category branch6FABBC..C2 skips
+only generic Stage advancement (the existing UpdateAnimation4509DE owner already
+stepped it), then reaches flash6FAC31 and the tail. The Structure caller now
+uses the same post owner as Foots, replacing its former manual flash; it must
+neither advance Stage a second time nor flash twice. The installed Ares hook
+replaces original6FAF0D's counter tail at the same reached point, before the
+Building-specific Gattling/repair/factory tail. The original counter body alone
+does not establish an active retail positive-counter producer or a stock bug.
+
+Expiry100627F0 samples operational state before House invalidation. Full power
+enables Stuff through452410 and reactivates, preserving Focus. Low-power expiry
+retires the EMP sparkle but leaves Stuff disabled and Techno deactivated.
+Restored power resumes the retained powered slot via the next Building
+operational edge; the actual common Techno head1004B528..575 then reactivates.
+That later path does not EnableStuff or preserve Focus: the shared Guard reset
+clears it. Structure lacks the Foot flag tested at100628B2, so neither AI nor
+human buildings queue the ground-unit Hunt recovery mission.
+
+The pre-effect coordinate100536E0/10053727 is local to the extension effects;
+original damage keeps its own impact. Its10053660 trampoline calls the existing
+planar Distance_To5F6440 owner, ignoring Z and discounting the target building's
+foundation. Strict distance<64 rereads target GetCoords+48, not Building+A4 or
+TargetCoordOffset. The distance API now resolves source identity from the same
+Abstract ID space, including a Bullet's retained Location; all six former
+Techno source callers still read their original live receiver. No second distance
+kernel or coordinate cache is introduced. Eight original caller-slice controls
+pin63/64, high Z, foundation-discount boundaries, nonzero target offset, absent
+target and an incoming impact distinct from Bullet Location. They stop before
+the effect producers and establish no whole AttachEffect/weapon equivalence.
+Bare component detonations without a retained Bullet and the shared dummy-cell
+route retain their explicit impact; their remaining pointer/caller behavior is
+outside this ordinary live-parent chain (border/temporary-target frequency is
+unmeasured, with possible local effect-center differences).
+
+The [native corpus](../tools/rules_oracle/ares_emp.json) adds four immunity,
+three foundation/collector, four connected building histories and one bounded
+pause/timer control. The histories execute original Stun70F850, the selected
+Building navigation/target setters, AssignMission5B2FD0 and installed activation
+hooks, including nonempty powered slot3. The producer's supplied House dirty
+acknowledgement and mission input changes remain explicit fixture inputs. It
+bounds no RNG/Detach calls on this no-manager path, not whole weapon parity.
+`ares_emp_building_native_admission_refresh_and_slot_lifecycle` consumes those
+controls, plus two original effective-getter/deferred histories. Those use
+actual Construction18, contrast present Move2 with a queued Construction, and
+compare the acknowledged House dirty flags, raw LastMission, cleared Focus,
+mission timer, retained powered slot and untouched RNG. Their supplied queue
+change remains an explicit input, not a full player-placement replay. The
+existing production Unlimbo -> Enter_Idle_Mode44D6A0 queue owner establishes
+where current=-1/queued Construction arises. The parent-Bullet/actual-AI test
+additionally connects fire refusal,
+low-power expiry, next-head recovery and a restored tower shot; synthetic image
+bounds are not a retail drawing comparison. Server Rust checks and a release
+production capture are separate validation steps, not native-corpus claims.
+
+Airburst child fans and AttachEffect remain separate whole-weapon residuals.
+Parent `Airburst=yes` still enters the existing detonation receiver once, and
+EMP runs before ordinary damage and the later native Airburst tail; absence of
+a child-fan consumer is not a reason to suppress the parent's EMP. No complete
+Raccoon, factory, Radar/SpySat, Gap, superweapon, PowersUnit, LaserFence,
+Tesla charging, occupied building, undeploy or linked Prism behavior is claimed.
+Positive-output buildings (including explicit ImmuneToEMP=no providers and
+upgrade-added output) are not covered by the negative-power tower comparisons.
+Their EMP/output accounting and downstream House effects remain unproved;
+frequency is unknown and explicit use may expose incorrect power availability.
+No native immunity/output behavior is inferred from that coverage gap.
 
 ## Input and state ownership
 
@@ -88,8 +175,9 @@ read control-flow findings, with production regressions for source filtering,
 both event pairs, callback death/detachment and natural-expiry exclusion.
 
 The actual Techno AI tail6FAF0D ->10053DF0 decrements once per visited object.
-Unload, Construction and Selling defer deactivation. A later ordinary mission
-can deactivate without restoring selection. Expiry invokes the existing
+Effective Unload, Construction and Selling defer deactivation. A later ordinary
+mission can deactivate without restoring selection or repeating first-hit
+Building side effects. Expiry invokes the existing
 Reactivate/Guard behavior when powering permits; it does not resume an old human
 move or attack order. It ends the held Anim's remaining loops and releases the
 reference rather than hard-deleting the animation. Control, fire-error and cloak
@@ -216,7 +304,7 @@ can draw for authored RandomRate/bounce settings. Counter writes
 are delivery/cap and one decrement per actual AI visit; Deactivate/Reactivate keep
 their existing mission/destination timer writes. Anim expiry writes loop_remaining=0.
 
-Still open: AI Walk and Team/task resumption, buildings/aircraft and airborne half-distance
+Still open: AI Walk and Team/task resumption, other building mechanisms/aircraft and airborne half-distance
 collection, positive threshold death, managers/temporal/capture/harvester interactions.
 Their trigger is an EMP hit on those victims; the current producer omits the EMP
 effect there, which can change combat and scripted behavior whenever such victims

@@ -26,16 +26,18 @@ fn frame(kind: u8, seq: u32, data: &[u8]) -> Vec<u8> {
 }
 
 fn native_controls() -> serde_json::Value {
-    serde_json::from_str(include_str!(
-        "../../tools/storage_oracle/lan_udp_checksum.json"
+    serde_json::from_str(crate::test_fixture::text(
+        "tools/storage_oracle/lan_udp_checksum.json",
     ))
     .unwrap()
 }
 
 #[test]
 fn lan_start_timing_matches_original_arithmetic_and_conditional_response_reads() {
-    let corpus: serde_json::Value =
-        serde_json::from_str(include_str!("../../tools/storage_oracle/lan_messages.json")).unwrap();
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/storage_oracle/lan_messages.json",
+    ))
+    .unwrap();
     for case in corpus["start_timings"].as_array().unwrap() {
         let responses: Vec<_> = case["responses"]
             .as_array()
@@ -67,8 +69,8 @@ fn lan_start_timing_matches_original_arithmetic_and_conditional_response_reads()
 
 #[test]
 fn lan_handoff_timings_match_native_outputs_and_ordered_global_reads() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/storage_oracle/lan_manager_timing.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/storage_oracle/lan_manager_timing.json",
     ))
     .unwrap();
     for case in corpus["timing"].as_array().unwrap() {
@@ -104,8 +106,8 @@ fn lan_handoff_timings_match_native_outputs_and_ordered_global_reads() {
 
 #[test]
 fn response_history_reset_matches_native_clear_preserve_and_empty_controls() {
-    let corpus: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tools/storage_oracle/lan_manager_timing.json"
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/storage_oracle/lan_manager_timing.json",
     ))
     .unwrap();
     for case in corpus["reset"].as_array().unwrap() {

@@ -278,7 +278,9 @@ fn target_distance(
     let entities = &sim.substrate.entities;
     target
         .zip(entities.get(id))
-        .and_then(|(target, plane)| crate::sim::combat::object_distance_to(plane, &target, sim))
+        .and_then(|(target, plane)| {
+            crate::sim::combat::object_distance_to(plane.stable_id(), &target, sim)
+        })
         .unwrap_or(0)
 }
 

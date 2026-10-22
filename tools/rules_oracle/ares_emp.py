@@ -85,8 +85,6 @@ class EmpProbe(Probe):
             result = self.iron_curtain
         elif pc == 0x30000330:  # cell coordinate interface for ground factory gate
             result = self.cell
-        elif pc == 0x30000340:  # CurrentMission virtual query
-            result = self.read(self.actor + 0xac)
         elif pc == 0x30000350:  # selected-state interface
             self.services.append(dict(service='Select', selected=bool(u.mem_read(self.actor+0x83, 1)[0])))
             u.mem_write(self.actor+0x83, b'\1')
@@ -138,7 +136,7 @@ class EmpProbe(Probe):
         self.ext, self.firer, self.whext = ext, firer, whext
         vtable = self.alloc(0x400)
         for offset, sink in ((0x84,0x30000300),(0x2c,0x30000310),(0x160,0x30000320),
-                             (0x1bc,0x30000330),(0x184,0x30000340),(0x14c,0x30000350),
+                             (0x1bc,0x30000330),(0x184,0x5b3040),(0x14c,0x30000350),
                              (0x1e8,0x30000360),(0x54,0x30000370),
                              (0x1dc,0x30000370),(0x290,0x30000370),(0x37c,0x30000380),
                              (0x48,0x30000390)):
@@ -312,7 +310,8 @@ def sparkle_history(images, name, fixture):
     return dict(name=name,fixture=fixture,result=states,services=p.services)
 
 
-def collector_case(images,name,spread,objects,duplicate_neighbor=False,bridge=False):
+def collector_case(images,name,spread,objects,duplicate_neighbor=False,bridge=False,
+                   building_foundation=None):
     p=EmpProbe(images).subject({})
     table=p.alloc(0x100000);p.write(0x87f924,table)
     visits=[]
@@ -322,22 +321,30 @@ def collector_case(images,name,spread,objects,duplicate_neighbor=False,bridge=Fa
         visits.append([index%512,index//512])
     p.u.hook_add(UC_HOOK_MEM_READ,observe_cell,begin=table,end=table+0xfffff)
     coord=p.alloc(16);p.u.mem_write(coord,struct.pack('<iii',2688,2688,0))
-    vtable=p.read(p.actor);head=0;actors=[]
+    vtable=p.read(p.actor);heads={};actors=[]
+    if building_foundation is not None:
+        p.write(vtable+0x48, 0x447ac0)
+        p.write(p.typ+0xef0, building_foundation)
     # Native linked-cell backing is a declared world input; the original walker
     # and native UID-ordered red-black tree own admission/deduplication/order.
     for item in reversed(objects):
         actor=p.alloc(0x800);p.write(actor,vtable);p.write(actor+0x10,item['uid'])
         p.write(actor+0x14,1 if item.get('techno',True) else 0)
-        p.write(actor+0x30,head)
+        cell_key=tuple(item.get('cell',[10,10]))
+        p.write(actor+0x30,heads.get(cell_key,0))
         p.u.mem_write(actor+0x9c,struct.pack('<iii',*item['coords']))
-        head=actor;actors.append(actor)
-    cell=p.alloc(0x200);p.write(cell+0xe4,head)
-    if bridge:
-        p.write(cell+0x140,0x100);p.write(cell+0xe8,head)
-        p.write(cell+0xe4,p.actor);p.write(p.actor+0x10,999);p.write(p.actor+0x14,1)
-        p.u.mem_write(p.actor+0x9c,struct.pack('<iii',2688,2688,0))
-    p.write(table+(10+10*512)*4,cell)
-    if duplicate_neighbor:p.write(table+(11+10*512)*4,cell)
+        if building_foundation is not None:p.write(actor+0x520,p.typ)
+        heads[cell_key]=actor;actors.append(actor)
+    # Preserve the legacy empty center-cell input and each linked-list order.
+    if not heads:heads[(10,10)]=0
+    for (x,y),head in heads.items():
+        cell=p.alloc(0x200);p.write(cell+0xe4,head)
+        if bridge:
+            p.write(cell+0x140,0x100);p.write(cell+0xe8,head)
+            p.write(cell+0xe4,p.actor);p.write(p.actor+0x10,999);p.write(p.actor+0x14,1)
+            p.u.mem_write(p.actor+0x9c,struct.pack('<iii',2688,2688,0))
+        p.write(table+(x+y*512)*4,cell)
+        if duplicate_neighbor:p.write(table+(x+1+y*512)*4,cell)
     output=p.alloc(16);low,high=struct.unpack('<II',struct.pack('<d',spread))
     p.call(0x10076660,output,coord,low,high,1)
     sentinel=p.read(output);iterator=p.alloc(4);p.write(iterator,p.read(sentinel))
@@ -347,9 +354,20 @@ def collector_case(images,name,spread,objects,duplicate_neighbor=False,bridge=Fa
         actor=p.read(p.read(iterator)+0x10)
         ordered.append(signed(p.read(actor+0x10)))
         p.call(0x1001e560,ecx=iterator)
-    return dict(name=name,fixture=dict(spread=spread,impact=[2688,2688,0],objects=objects,
+    row=dict(name=name,fixture=dict(spread=spread,impact=[2688,2688,0],objects=objects,
                 duplicate_neighbor=duplicate_neighbor,bridge=bridge),
                 result=dict(ordered_uids=ordered,visited_cells=visits))
+    if building_foundation is not None:
+        row['fixture']['building_foundation']=building_foundation
+        row['result']['foundation_size']=[p.call(0x45ec90,ecx=p.typ),
+                                          p.call(0x45eca0,0,ecx=p.typ)]
+        destination=p.alloc(12)
+        coords=[]
+        for actor in reversed(actors):
+            p.call(0x447ac0,destination,ecx=actor)
+            coords.append(list(struct.unpack('<iii',p.u.mem_read(destination,12))))
+        row['result']['get_coords']=coords
+    return row
 
 
 def connected_case(images,name,duration):
@@ -580,6 +598,289 @@ def activation_case(images, name, counter, powered, center):
         return_address=f'{returned:08X}', services=p.services, order=p.activation_visits)
 
 
+class BuildingEmpProbe(AiEmpProbe):
+    """Ordinary unlinked building, retaining the existing VM/queue owners.
+
+    The adapter translates only the installed thiscall trampoline ABI to a
+    Syringe register frame. Original exports own all gates and state writes.
+    """
+
+    def __init__(self, images):
+        self.syringe_calls = []
+        self.syringe_returns = []
+        self.building_calls = []
+        super().__init__(images)
+
+    def hook(self, u, pc, size, data):
+        if pc in (0x1004b320,0x1004b568,0x10062b40,0x100627f0,
+                  0x1004ccb0,0x1004cdc0,0x70f850,0x5b2fd0,
+                  0x10013250,0x452480,0x452410,0x425260,0x425270,
+                  0x4549b0,0x4545d0,0x4547c0):
+            self.building_calls.append(f'{pc:08X}')
+        if self.world and pc in (0x10048690,0x100487d0):
+            sp=u.reg_read(UC_X86_REG_ESP)
+            frame=self.alloc(0x40)
+            self.write(frame+0x20,u.reg_read(UC_X86_REG_ECX))
+            self.syringe_calls.append((sp,self.read(sp),pc))
+            work_sp=sp-0x100
+            self.write(work_sp,0x30000400);self.write(work_sp+4,frame)
+            u.reg_write(UC_X86_REG_ESP,work_sp)
+            u.reg_write(UC_X86_REG_EIP,0x1004cdc0 if pc==0x10048690 else 0x1004ccb0)
+            return
+        if self.world and pc==0x30000400:
+            sp,return_to,entry=self.syringe_calls.pop()
+            self.syringe_returns.append(dict(entry=f'{entry:08X}',
+                resume=f'{u.reg_read(UC_X86_REG_EAX):08X}'))
+            u.reg_write(UC_X86_REG_ESP,sp+4)
+            u.reg_write(UC_X86_REG_EIP,return_to)
+            return
+        if self.world and pc==0x10011a60:
+            # The declared current cell contains this ordinary building.
+            return_from_sink(u,0,self.actor)
+            return
+        return super().hook(u,pc,size,data)
+
+    def building(self, fixture):
+        self.subject(dict(actor_kind=6,type_kind=7,duration=5,cap=10,verses=.03,
+                          immune=fixture.get('immune',False),selected=False,
+                          mission=2))
+        # Whole Ares Techno-head reads beyond the older scalar fixture's type
+        # extension prefix. Explicit empty manager backing is owned here only.
+        ext=self.alloc(0x800)
+        self.u.mem_write(ext,bytes(self.u.mem_read(self.ext,0x600)))
+        self.ext=ext;self.write(self.typ+0x2fc,ext)
+        self.write(self.actor+0x520,self.typ);self.write(self.actor+0x14,1)
+        self.write(self.read(self.actor+0x154),self.actor)
+        for offset in (0x16f0,0x16f4,0x5a8,0x5ac,0xe80,0xe84):
+            self.write(self.typ+offset,-1)
+        self.u.mem_write(self.typ+0x1573,bytes([fixture.get('powered',True)]))
+        self.write(self.typ+0xee4,fixture.get('drain',75))
+        self.u.mem_write(self.typ+0x1701,bytes([fixture.get('invisible',False)]))
+        for offset in (0x660,0x6ea,0x6c8):self.u.mem_write(self.actor+offset,b'\1')
+        self.write(self.actor+0x6c,1000);self.write(self.actor+0x218,0x12345678)
+        self.write(self.actor+0xb4,-1)
+        self.u.mem_write(self.actor+0xb8,b'\1')
+        self.u.mem_write(self.actor+0xc0,struct.pack('<III',101,202,303))
+        self.house=self.read(self.actor+0x21c)
+        self.u.mem_write(self.house+0x1ec,bytes([fixture.get('human',False),0]))
+        self.write(self.house+0x53a4,1000);self.write(self.house+0x53a8,100)
+        self.write(0xa8b238,3)
+        self.rules_extension()
+        vtable=self.alloc(0x600)
+        self.u.mem_write(vtable,bytes(self.u.mem_read(self.read(self.actor),0x400)))
+        self.write(self.actor,vtable)
+        # Actual selected Building virtuals, including Stun's target and
+        # navigation clears, mission assignment and the unselected deselect arm.
+        for offset in (0x350,0x37c,0x3d0,0x480,0x3c8,0x1f0,0x284,0x150):
+            self.write(vtable+offset,self.read(0x7e3ebc+offset))
+        self.update_frame=self.alloc(0x40);self.write(self.update_frame+0x20,self.actor)
+        self.tick_frame=self.alloc(0x40);self.write(self.tick_frame+0xc,self.actor)
+        self.slot_anim=self.alloc(0x200);self.write(self.slot_anim,0x7e3354)
+        self.write(self.actor+0x55c+3*4,self.slot_anim)
+        for slot in range(21):self.u.mem_write(self.typ+0xf8c+slot*0x44,bytes(4))
+        self.u.mem_write(self.typ+0xf8c+3*0x44,b'\1\0\0\0')
+        for offset,value in ((0xac,7),(0xb4,123),(0xb8,456),(0xbc,789),
+                             (0xc0,300),(0xc4,1),(0x184,22)):
+            self.write(self.slot_anim+offset,value)
+        self.slot_before=bytes(self.u.mem_read(self.slot_anim,0x200))
+        return self
+
+    def building_state(self):
+        now=bytes(self.u.mem_read(self.slot_anim,0x200))
+        return dict(**self.mission_state(),saved_mission=self.state()['saved_mission'],
+            focus=self.read(self.actor+0x218),stuff=bool(self.u.mem_read(self.actor+0x6ea,1)[0]),
+            online=bool(self.u.mem_read(self.actor+0x660,1)[0]),
+            house_dirty=list(self.u.mem_read(self.house+0x1fc,1))+
+                        list(self.u.mem_read(self.house+0x5778,2)),
+            operational=bool(self.call(0x4555d0,ecx=self.actor)&255),
+            operated_cached=bool(self.u.mem_read(self.read(self.actor+0x154)+0x9d,1)[0]),
+            slot_paused=bool(now[0x19e]),
+            slot_pointer_retained=self.read(self.actor+0x55c+3*4)==self.slot_anim,
+            slot_timer_unchanged=now[0xac:0xc8]==self.slot_before[0xac:0xc8] and
+                                  now[0x184:0x188]==self.slot_before[0x184:0x188])
+
+    def operational_edge(self):
+        sp=0x2000e000;self.write(sp,0x30000000)
+        self.u.reg_write(UC_X86_REG_ESP,sp)
+        self.u.reg_write(UC_X86_REG_ECX,self.actor)
+        run_checked(self.u,0x43fb20,0x43fc39,count=20000,
+                    required_addresses=(0x4555d0,))
+        self.check_code()
+
+
+def building_admission_cases(images):
+    rows=[]
+    for name,fixture in [('powered_drain_default',dict(immune=None)),
+            ('plain_default',dict(immune=None,powered=False,drain=0)),
+            ('invisible_default',dict(immune=None,invisible=True)),
+            ('invisible_explicit_no',dict(immune=False,invisible=True))]:
+        p=BuildingEmpProbe(images).building(fixture)
+        immune=p.call(0x10062d90,p.actor,p.read(p.firer+0x21c))
+        rows.append(dict(name=name,fixture=fixture,
+            result=dict(immune=bool(immune&255),cache=list(p.u.mem_read(p.ext+0x13a,2)))))
+    return rows
+
+
+def building_chain_case(images,name,human=False,lowpower=False,repeat=False):
+    fixture=dict(human=human,duration=5,cap=10,verses=.03,modifier=1.,
+                 initial_mission=2,initial_focus=0x12345678,powered=True,drain=75,
+                 slot=3,slot_flags=[1,0,0,0],lowpower=lowpower,repeat=repeat)
+    p=BuildingEmpProbe(images).building(fixture)
+    steps=[];states=[]
+    def step(action,**values):
+        start=len(p.building_calls)
+        if action=='head':p.call(0x1004b320,p.update_frame)
+        elif action=='hit':p.call(0x10062320,p.actor,p.firer,p.whext)
+        elif action=='tick':p.call(0x10053df0,p.tick_frame)
+        elif action=='edge':p.operational_edge()
+        elif action=='power':p.write(p.house+0x53a4,values['output'])
+        elif action=='mission':p.write(p.actor+0xac,values['value'])
+        elif action=='ack_dirty':
+            p.u.mem_write(p.house+0x1fc,b'\0');p.u.mem_write(p.house+0x5778,b'\0\0')
+        else:raise ValueError(action)
+        steps.append(dict(action=action,**values))
+        states.append(dict(**p.building_state(),calls=p.building_calls[start:]))
+    step('head');step('hit');step('edge')
+    if repeat:
+        step('mission',value=11)  # Explicit intervening diagnostic input.
+        step('ack_dirty');step('hit');step('ack_dirty');step('hit')
+        step('tick');step('tick');step('ack_dirty');step('hit');step('ack_dirty')
+        for _ in range(10):step('tick')
+    else:
+        if lowpower:step('power',output=50)
+        for _ in range(5):step('tick')
+        if lowpower:
+            step('head');step('power',output=1000)
+            # Building operational/art edge precedes common Techno-head.
+            step('edge');step('head')
+    return dict(name=name,fixture=fixture,steps=steps,result=states,
+                queue_calls=p.queues,syringe_returns=p.syringe_returns,
+                code_unchanged=True,rng_streams_unchanged=True)
+
+
+def building_slot_timer_case(images):
+    p=BuildingEmpProbe(images).building({});anim=p.slot_anim
+    p.write(anim+0xac,7);p.write(anim+0xb4,100);p.write(anim+0xb8,0);p.write(anim+0xbc,3)
+    p.write(0xa8ed84,104);p.call(0x425260,ecx=anim)
+    def state():
+        return dict(frame=signed(p.read(anim+0xac)),paused=bool(p.u.mem_read(anim+0x19e,1)[0]),
+                    timer_start=signed(p.read(anim+0xb4)),timer_state=signed(p.read(anim+0xb8)),
+                    timer_duration=signed(p.read(anim+0xbc)))
+    before=state();sp=0x2000e000;p.write(sp+0x40,0)
+    p.u.reg_write(UC_X86_REG_ESP,sp);p.u.reg_write(UC_X86_REG_ESI,anim)
+    run_checked(p.u,0x42449b,0x424b42,count=100)
+    paused=state();p.call(0x425270,ecx=anim)
+    p.u.reg_write(UC_X86_REG_ESP,sp);p.u.reg_write(UC_X86_REG_ESI,anim)
+    run_checked(p.u,0x42449b,0x424507,count=1000,required_addresses=(0x426630,))
+    resumed=state();p.check_code()
+    return dict(name='pause_keeps_absolute_timer',fixture=dict(global_frame=104,
+        timer_start=100,timer_duration=3,rate_reload=300,frame_step=1),
+        result=dict(before=before,paused=paused,resumed=resumed),
+        code_unchanged=True,rng_streams_unchanged=True)
+
+
+def building_deferred_deactivation_case(images, current):
+    """Actual effective-mission getter, first hit and delayed Deactivate tail."""
+    p=BuildingEmpProbe(images).building({})
+    # MissionClass5B3040 is also Building's actual virtual184. Construction is
+    # literal18; a present current mission must take priority over that queue.
+    assert p.read(0x7e3ebc+0x184)==0x5b3040
+    p.write(p.actor+0xac,current);p.write(p.actor+0xb4,18)
+    steps=[];states=[]
+    def step(action,**values):
+        start=len(p.building_calls)
+        if action=='head':p.call(0x1004b320,p.update_frame)
+        elif action=='hit':p.call(0x10062320,p.actor,p.firer,p.whext)
+        elif action=='tick':p.call(0x10053df0,p.tick_frame)
+        elif action=='queue_guard_and_ack':
+            # Explicit completion/House inputs; not a Construction producer.
+            p.write(p.actor+0xac,-1);p.write(p.actor+0xb4,5)
+            p.u.mem_write(p.house+0x1fc,b'\0');p.u.mem_write(p.house+0x5778,b'\0\0')
+        elif action!='prepared':raise ValueError(action)
+        steps.append(dict(action=action,**values))
+        states.append(dict(**p.building_state(),
+            effective_mission=signed(p.call(0x5b3040,ecx=p.actor)),
+            calls=p.building_calls[start:]))
+    step('prepared');step('head');step('hit')
+    if current==-1:
+        step('tick');step('queue_guard_and_ack');step('head');step('tick')
+    p.check_code()
+    return dict(name='current_none_queued_construction' if current==-1 else
+                'current_move_overrides_queued_construction',
+        fixture=dict(current=current,queued=18,duration=5,cap=10,
+                     initial_focus=0x12345678,mission_timer=[101,202,303]),
+        steps=steps,result=states,queue_calls=p.queues,
+        code_unchanged=True,rng_streams_unchanged=True)
+
+
+def building_groups(images):
+    return dict(building_admission=building_admission_cases(images),
+        building_collectors=[collector_case(images,name,.7,objects,
+            duplicate_neighbor=duplicate,building_foundation=0) for name,objects,duplicate in
+            [('single_cell_exact',[dict(uid=7,coords=[2688,2688,0],cell=[10,10])],False),
+             ('adjacent_center_outside',[dict(uid=7,coords=[2688,2688,0],cell=[10,10]),
+                                       dict(uid=8,coords=[2944,2688,0],cell=[11,10])],False),
+             ('structural_signed_uid_dedup',[dict(uid=7,coords=[2688,2688,0],cell=[10,10]),
+                                           dict(uid=-2,coords=[2688,2688,0],cell=[10,10])],True)]],
+        building_chains=[building_chain_case(images,'AI_fullpower'),
+            building_chain_case(images,'human_fullpower',human=True),
+            building_chain_case(images,'AI_lowpower_restore',lowpower=True),
+            building_chain_case(images,'AI_repeat_refresh',repeat=True)],
+        building_slot_timer=[building_slot_timer_case(images)])
+
+
+def parent_impact_snap_case(images,name,fixture):
+    """Actual parent pre-effect branch, stopping before any effect producer."""
+    p=EmpProbe(images)
+    bullet,target,typ=[p.alloc(n) for n in (0x200,0x800,0x2000)]
+    p.write(bullet,0x7e46e4)
+    p.u.mem_write(bullet+0x9c,struct.pack('<iii',*fixture['location']))
+    kind=fixture['target_kind']
+    p.write(bullet+0x10c,0 if kind=='none' else target)
+    p.write(target,0x7e3ebc if kind=='building' else 0x7f5c70)
+    p.u.mem_write(target+0x9c,struct.pack('<iii',*fixture['target_coords']))
+    if kind=='building':
+        p.write(target+0x520,typ)
+        p.write(typ+0xef0,fixture.get('foundation',0))
+        p.u.mem_write(typ+0xebc,struct.pack('<iii',*fixture.get('target_offset',[0,0,0])))
+    distance=None
+    if kind!='none':
+        # Ares10053660 is the unchanged trampoline to planar stock5F6440,
+        # not the 3-D distance5F6360 used by the original impact ladder.
+        distance=signed(p.call(0x10053660,target,ecx=bullet))
+    sp=0x2000e000
+    p.u.mem_write(sp+0x10,struct.pack('<iii',*fixture['impact']))
+    p.u.reg_write(UC_X86_REG_ESP,sp)
+    p.u.reg_write(UC_X86_REG_ESI,bullet)
+    required=() if kind=='none' else (0x10053660,0x5f6440,0x4cac40,0x7c5f00)
+    stop=run_checked(p.u,0x10053727,(0x10053770,0x100537f2),count=20000,
+                     required_addresses=required)
+    p.check_code()
+    return dict(name=name,fixture=fixture,result=dict(distance=distance,
+        snapped=stop==0x10053770,
+        impact=list(struct.unpack('<iii',p.u.mem_read(sp+0x10,12))),
+        stop_address=f'{stop:08X}'),code_unchanged=True,rng_streams_unchanged=True)
+
+
+def parent_impact_snap_cases(images):
+    rows=[]
+    for name,kind,dx,z,offset in [
+            ('unit_63','unit',63,0,None),('unit_64','unit',64,0,None),
+            ('unit_63_high_z','unit',63,9000,None),
+            ('building_discount_below64','building',191,0,None),
+            ('building_discount_64','building',192,0,None),
+            ('building_uses_getcoords_not_offset','building',191,0,[16,-8,300]),
+            ('no_target_keeps_input','none',63,0,None)]:
+        fixture=dict(target_kind=kind,location=[2688+dx,2688,z],
+                     impact=[2688+dx,2688,z],target_coords=[2688,2688,0])
+        if kind=='building':fixture.update(foundation=0,target_offset=offset or [0,0,0])
+        rows.append(parent_impact_snap_case(images,name,fixture))
+    rows.append(parent_impact_snap_case(images,'distance_uses_bullet_location',
+        dict(target_kind='unit',location=[2751,2688,0],impact=[3688,3688,300],
+             target_coords=[2688,2688,0])))
+    return rows
+
+
 def generate(ares):
     images=(ares,native.image_bytes())
     readers=[reader_case(images,'int',raw,71) for raw in (None,'','junk','120','-30','$10','10h','2147483648')]
@@ -685,15 +986,19 @@ def generate(ares):
                      ('EMPactive_center_live',1,True,0),('EMPexpired_center_missing',0,True,None),
                      ('EMPexpired_center_live',0,True,0),('EMPexpired_center_EMP',0,True,1)]],
                 registered_animation_readers=[registered_animation_reader_case(images,raw)
-                    for raw in ('SPARKLE_A','SPARKLE_B','UNREGISTERED')])
+                    for raw in ('SPARKLE_A','SPARKLE_B','UNREGISTERED')],
+                parent_impact_snap=parent_impact_snap_cases(images),
+                building_deferred_deactivation=[building_deferred_deactivation_case(images,current)
+                    for current in (-1,2)],
+                **building_groups(images))
 
 
 def metadata():
     return provenance(scope='Ares ordinary ground EMP admission, numeric conversion/cap, transition and per-visit expiry controls; not whole-game parity.',
         assumptions=[
-            'Synthetic ground victim/type/house/WarheadExtension and linked-cell backing are explicit inputs; no mod assets, physical INI loader or full type registration. Collector controls bound zero/half/unit/two-cell spread, ground/deck lists and signed UID order/dedup; air/building-specific paths are excluded.',
+            'Synthetic ground victim/type/house/WarheadExtension and linked-cell backing are explicit inputs; no mod assets, physical INI loader or full type registration. Baseline collector controls bound zero/half/unit/two-cell spread, ground/deck lists and signed UID order/dedup; separately declared building groups add selected ordinary structures, while air remains excluded.',
             'ReadString lexical transport supplies values, actual Ares int/double/threshold parser and CRT sscanf execute. CRT per-thread accessor10085F5C returns a supplied C-locale thread block; original locale initializer10085839 executes. No scanner result is supplied.',
-            'Original Ares deliver10062320, affect-house10051B70, immunity10062D90, enable10062B40, disable100627F0 and AI10053DF0 execute; synthetic virtual queries supply type/category/mission/ground/iron-curtain and empty-cell-building interfaces.',
+            'Original Ares deliver10062320, affect-house10051B70, immunity10062D90, enable10062B40, disable100627F0 and AI10053DF0 execute; synthetic virtual queries supply type/category/ground/iron-curtain and empty-cell-building interfaces; mission queries execute actual5B3040.',
             'Native Deactivate/Reactivate are existing downstream owner boundaries; supplied effects only update their deactivated/selection flags. Select and baseline QueueMission are recorded interfaces. Only ai_expiry redirects that virtual interface to unchanged native MissionClass QueueMission5B35E0, preserving arguments and recording its actual writes.',
             'Victims have no Team, Temporal, Capture, Spawn or Slave manager; threshold0. Spawn-manager is a sink. Actual sparkle selection/one-instance guard/expiry execute; animation storage/constructor/owner interface are supplied. Animation internal timers/RNG/rendering are not covered.',
             'FPCW0E7F is established explicitly. Original100772B0 conversion executes with declared CPU dispatch0 and selected SSE3 dispatch2 controls; out-of-i32 conversions yield INT_MIN, not a universal safe numeric input policy.',
@@ -709,6 +1014,13 @@ def metadata():
             'Sparkle refresh controls execute first activation, actual pointer expiry10046F20, then unchanged/changed positive delivery. Warhead-explicit versus Type/General fallback branches execute native1006256D/10062608/10062625; constructor/owner services remain supplied, not animation lifecycle/rendering parity.',
             'Activation controls execute actual Syringe export1004CCB0 with frame+20 victim and return70FC85; original PoweredUnit100454F0 and PoweredBy10045440 gates read supplied object/type/owner-list backing. Retail Unit vtable7F5C70+37C supplies actual746C90 (DeathFrame input-1 then signed-positive counter70EFD0), and Building vtable7E3EBC+37C supplies actual70EFD0. Virtual3D0 and locomotor COM activation are recorded downstream interfaces. No runtime hook installation or whole70FBE0 parity is claimed, and original Deactivate/Reactivate remain boundaries in the other groups.',
             'Registered-animation controls supply spare backing capacity for the native AnimType/AbstractType vectors, then actual constructor427530 writes IDs, registry entries, counts and indices. Actual Ares Valueable pointer reader1000EB20→1000C9C0→Find1000D3E0 resolves these constructed objects or rejects an unregistered name without allocation. Generic IDs are explicit inputs; physical registry enumeration, ART/image binding and animation lifetime are excluded. No returned pointer or lookup decision is supplied.',
+            'Building admission executes IsImmune10062D90, whose true result means immune, on explicit Powered1573/positive drainEE4/Invisible1701/nullable ImmuneToEMP backing. Building collectors extend the same collector owner with actual GetCoords447AC0 and foundation width45EC90/height45ECA0; foundation index0 is an input, not a new ART reader. The physical 1x1 footprint has one occupied cell; overlapping signed-ID/duplicate-cell rows are structural controls only.',
+            'Building chains execute actual shared Activate1004CCB0/Deactivate1004CDC0 through a thiscall-to-Syringe frame adapter. Actual Stun70F850, Building navigation455D50/target443B90, AssignMission5B2FD0 and unselected Deselect5F44A0 run. Empty targets/navigation, no Factory/manager/spotlight/light/gap/SW/Prism links and sound indices-1 bound the services; actual factory callback10013250 runs the no-factory arm. Current-cell GetBuilding returns the declared building, not an EMP decision.',
+            'Building chains bind one native-vtable powered slot3 Anim. Actual452480/452410 and43FB20..43FC39→4549B0 loss/restore execute Pause425260/Resume425270. Prepared frame/timer input bytes are retained; Anim construction, image/rendering, full AI and loop lifetime are excluded. The separate original42449B pause gate→426630→424507 stage slice establishes absolute timer retention and a single resumed stage commit.',
+            'Building AI and human controls execute the same reached EMP tail. Structure flags+14 lack Foot bit4, so actual100628B2 skips AI QueueMission recovery; no Hunt queue is supplied or expected. First delivery and full-power expiry preserve Focus around actual Stun, whereas later power recovery via whole Techno-head1004B320→1004B568→Activate clears Focus. House dirty acknowledge and changed-current-mission steps are explicit diagnostic input mutations, not a House scan or native command producer.',
+            'Building phase controls call selected native regions in their original order: early operational/art edge precedes Techno-head; per-reached Techno tail follows other common work. They do not execute whole Building/Techno AI or prove Logic scheduling. Original Building43FE56 calls6F9E50; category6 skips generic stage6FABC4 because4509DE already advanced it, but still reaches shared flash and stock EMP6FAF0D. Ares replaces the stock counter tail and returns6FAFFD; stock active-retail positive-counter production is not established here.',
+            'All victim virtual184 mission queries execute actual MissionClass5B3040: current+AC when present, otherwise queued+B4. Building deferred controls use raw current-1/queued Construction18 and a currentMove2 precedence control. Enable10062B98 and delayed tick10053E35 save raw current, not that effective value. Once an explicitly supplied queued Guard5 becomes advisable, actual10053DF0 calls only Deactivate10048690, not full enable10062B40: actual Stun clears Focus and mission timers while acknowledged House dirty bytes stay clear. Initial-hit Building enable instead preserves Focus and marks House/Stuff. Construction completion/House acknowledgement are explicit fixture inputs; no full Construction/Commence or whole AI is executed. Prepared slot timers retain their bytes; original code and all3 RNG states remain unchanged and guarded RNG/Detach entries are not reached.',
+            'Parent pre-effect controls execute Ares10053727..10053770/100537F2 from its supplied Bullet/local-impact frame. Actual10053660 jumps planar ObjectDistance_To5F6440: concrete Bullet/Unit/Building GetCoords, XY-only Sqrt_Approx4CAC40/ftol7C5F00 and target foundation discount run unchanged. The signed distance<64 branch copies target vt48 into the local impact; it does not use incoming impact for distance or Building TargetCoordOffset/vtA4. Missing target skips query. Stops before pre-effect callbacks, AttachEffect/Airburst and EMP producer; no whole Bullet caller or detonation execution claim.',
         ],substitutions=['Existing Probe VM/call/arena, optional CRT thread block, lexical ReadString and diagnostics; declared world and existing downstream owners only. Original code bytes checked unchanged after each run.'],
         entry_points=dict(deliver=0x10062320,affect_house=0x10051b70,immunity=0x10062d90,
             enable=0x10062b40,disable=0x100627f0,tick=0x10053df0,
@@ -722,7 +1034,19 @@ def metadata():
             activation_hook=0x1004ccb0,powered_unit_gate=0x100454f0,
             powered_by_gate=0x10045440,unit_under_emp=0x746c90,
             techno_under_emp=0x70efd0,animation_type_constructor=0x427530,
-            animation_pointer_reader=0x1000eb20,animation_pointer_find=0x1000d3e0))
+            animation_pointer_reader=0x1000eb20,animation_pointer_find=0x1000d3e0,
+            deactivation_hook=0x1004cdc0,techno_head=0x1004b320,
+            building_operational=0x4555d0,building_edge=0x43fb20,
+            building_enable_stuff=0x452410,building_disable_stuff=0x452480,
+            building_art_dispatch=0x4549b0,building_get_coords=0x447ac0,
+            foundation_width=0x45ec90,foundation_height=0x45eca0,
+            stun=0x70f850,assign_mission=0x5b2fd0,effective_mission=0x5b3040,
+            emp_deactivation_advisable=0x10062d60,building_navigation=0x455d50,
+            building_set_target=0x443b90,anim_pause=0x425260,anim_resume=0x425270,
+            anim_pause_stage=0x42449b,anim_pause_stage_end=0x424507,
+            parent_snap_entry=0x10053727,parent_snap_distance=0x10053660,
+            planar_object_distance=0x5f6440,parent_snap_end=0x10053770,
+            parent_no_snap_end=0x100537f2))
 
 
 def main():

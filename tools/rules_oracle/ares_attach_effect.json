@@ -1,0 +1,831 @@
+{
+  "controls": [
+    {
+      "anim_reset_on_reapply": false,
+      "discard_on_entry": false,
+      "name": "repeat_limbo_pause",
+      "steps": [
+        {
+          "action": "prepared",
+          "animations": [],
+          "ctor_count": 0,
+          "hidden": false,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 0
+        },
+        {
+          "action": "hit",
+          "animations": [
+            true
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "tick",
+          "animations": [
+            true
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            4
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "reapply_other_source",
+          "animations": [
+            true
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "limbo_on",
+          "animations": [
+            true
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "tick",
+          "animations": [
+            true
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "limbo_off",
+          "animations": [
+            true
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "tick",
+          "animations": [
+            true
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            4
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "tick",
+          "animations": [
+            true
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            3
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "tick",
+          "animations": [
+            true
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            2
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "tick",
+          "animations": [
+            true
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            1
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "tick",
+          "animations": [],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 1
+        }
+      ]
+    },
+    {
+      "anim_reset_on_reapply": false,
+      "discard_on_entry": false,
+      "name": "external_animation_expiry",
+      "steps": [
+        {
+          "action": "prepared",
+          "animations": [],
+          "ctor_count": 0,
+          "hidden": false,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 0
+        },
+        {
+          "action": "hit",
+          "animations": [
+            true
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "pointer_expiry",
+          "animations": [
+            false
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            null
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "tick",
+          "animations": [
+            false
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            null
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            4
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "tick",
+          "animations": [
+            false
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            null
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            3
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "tick",
+          "animations": [
+            false
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            null
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            2
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "tick",
+          "animations": [
+            false
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            null
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            1
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "tick",
+          "animations": [],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 0
+        }
+      ]
+    },
+    {
+      "anim_reset_on_reapply": false,
+      "discard_on_entry": false,
+      "name": "remove_unlimbo_destruct",
+      "steps": [
+        {
+          "action": "prepared",
+          "animations": [],
+          "ctor_count": 0,
+          "hidden": false,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 0
+        },
+        {
+          "action": "hit",
+          "animations": [
+            true
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "remove",
+          "animations": [
+            false
+          ],
+          "ctor_count": 1,
+          "hidden": true,
+          "iterations": [
+            null
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 1
+        },
+        {
+          "action": "limbo_on",
+          "animations": [
+            false
+          ],
+          "ctor_count": 1,
+          "hidden": true,
+          "iterations": [
+            null
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 1
+        },
+        {
+          "action": "tick",
+          "animations": [
+            false
+          ],
+          "ctor_count": 1,
+          "hidden": true,
+          "iterations": [
+            null
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 1
+        },
+        {
+          "action": "limbo_off",
+          "animations": [
+            false
+          ],
+          "ctor_count": 1,
+          "hidden": true,
+          "iterations": [
+            null
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 1
+        },
+        {
+          "action": "tick",
+          "animations": [
+            true
+          ],
+          "ctor_count": 2,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            4
+          ],
+          "uninit_count": 1
+        },
+        {
+          "action": "dtor",
+          "animations": [],
+          "ctor_count": 2,
+          "hidden": false,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 2
+        }
+      ]
+    },
+    {
+      "anim_reset_on_reapply": false,
+      "discard_on_entry": true,
+      "name": "discard_on_entry",
+      "steps": [
+        {
+          "action": "prepared",
+          "animations": [],
+          "ctor_count": 0,
+          "hidden": false,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 0
+        },
+        {
+          "action": "hit",
+          "animations": [
+            true
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "remove",
+          "animations": [],
+          "ctor_count": 1,
+          "hidden": true,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 1
+        },
+        {
+          "action": "limbo_on",
+          "animations": [],
+          "ctor_count": 1,
+          "hidden": true,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 1
+        },
+        {
+          "action": "tick",
+          "animations": [],
+          "ctor_count": 1,
+          "hidden": true,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 1
+        },
+        {
+          "action": "limbo_off",
+          "animations": [],
+          "ctor_count": 1,
+          "hidden": true,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 1
+        },
+        {
+          "action": "tick",
+          "animations": [],
+          "ctor_count": 1,
+          "hidden": true,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 1
+        },
+        {
+          "action": "dtor",
+          "animations": [],
+          "ctor_count": 1,
+          "hidden": true,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 1
+        }
+      ]
+    },
+    {
+      "anim_reset_on_reapply": false,
+      "discard_on_entry": true,
+      "name": "discard_then_hit_before_unhide",
+      "steps": [
+        {
+          "action": "prepared",
+          "animations": [],
+          "ctor_count": 0,
+          "hidden": false,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 0
+        },
+        {
+          "action": "hit",
+          "animations": [
+            true
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "remove",
+          "animations": [],
+          "ctor_count": 1,
+          "hidden": true,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 1
+        },
+        {
+          "action": "limbo_off",
+          "animations": [],
+          "ctor_count": 1,
+          "hidden": true,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 1
+        },
+        {
+          "action": "hit",
+          "animations": [
+            true
+          ],
+          "ctor_count": 2,
+          "hidden": true,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 1
+        },
+        {
+          "action": "tick",
+          "animations": [
+            true
+          ],
+          "ctor_count": 3,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            4
+          ],
+          "uninit_count": 2
+        },
+        {
+          "action": "dtor",
+          "animations": [],
+          "ctor_count": 3,
+          "hidden": false,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 3
+        }
+      ]
+    },
+    {
+      "anim_reset_on_reapply": true,
+      "discard_on_entry": false,
+      "name": "reset_reapply_and_cloak_transition",
+      "steps": [
+        {
+          "action": "prepared",
+          "animations": [],
+          "ctor_count": 0,
+          "hidden": false,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 0
+        },
+        {
+          "action": "hit",
+          "animations": [
+            true
+          ],
+          "ctor_count": 1,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 0
+        },
+        {
+          "action": "hit",
+          "animations": [
+            true
+          ],
+          "ctor_count": 2,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 1
+        },
+        {
+          "action": "cloak_on",
+          "animations": [
+            true
+          ],
+          "ctor_count": 2,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 1
+        },
+        {
+          "action": "hit",
+          "animations": [
+            true
+          ],
+          "ctor_count": 2,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            5
+          ],
+          "uninit_count": 1
+        },
+        {
+          "action": "tick",
+          "animations": [
+            false
+          ],
+          "ctor_count": 2,
+          "hidden": true,
+          "iterations": [
+            null
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            4
+          ],
+          "uninit_count": 2
+        },
+        {
+          "action": "cloak_off",
+          "animations": [
+            false
+          ],
+          "ctor_count": 2,
+          "hidden": true,
+          "iterations": [
+            null
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            4
+          ],
+          "uninit_count": 2
+        },
+        {
+          "action": "tick",
+          "animations": [
+            true
+          ],
+          "ctor_count": 3,
+          "hidden": false,
+          "iterations": [
+            255
+          ],
+          "owner_matches_source": [
+            true
+          ],
+          "remaining": [
+            3
+          ],
+          "uninit_count": 2
+        },
+        {
+          "action": "dtor",
+          "animations": [],
+          "ctor_count": 3,
+          "hidden": false,
+          "iterations": [],
+          "owner_matches_source": [],
+          "remaining": [],
+          "uninit_count": 3
+        }
+      ]
+    }
+  ],
+  "schema_version": 1
+}

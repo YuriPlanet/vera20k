@@ -877,7 +877,7 @@ fn techno_ai_shell(
                 return;
             }
             // The Gattling block after the Techno AI (`0x0043FE5B..0x0043FF8B`).
-            flash_step(&mut sim.substrate, id, sim.session.binary_frame());
+            techno_common_post(sim, id, rules, ctx.effects);
             building_missions::gattling_idle(
                 &sim.interner,
                 &sim.session,
@@ -1499,6 +1499,13 @@ fn techno_common_steps(
     effects: FrameEffects<'_>,
     turret_rotate_sample: Option<bool>,
 ) -> bool {
+    // Ares1004B434 updates attachments before1004B528 EMP recovery.
+    #[cfg(feature = "ares")]
+    sim.update_ares_attach_effects(id, rules);
+    // Installed6F9E50 ->1004B320 owns delayed Building reactivation before
+    //the stock head. EMP expiry itself must not invent a future-power sweep.
+    #[cfg(feature = "ares")]
+    sim.update_ares_emp_operability(id, rules, effects);
     iron_tint_step(&sim.session, &mut sim.scenario_rng, &mut sim.substrate, id);
     // Techno6F9EBB follows the tint head and precedes veterancy/drain work.
     // A queued voice probes its handle only when this actor really reaches
@@ -2168,12 +2175,13 @@ fn healer_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
 /// producer. The retained system and both native producers share particles::spawn.
 fn techno_common_post(sim: &mut Simulation, id: u64, rules: &RuleSet, _effects: FrameEffects<'_>) {
     // Techno6FABC4 follows Mission, passive acquisition and the reach slot.
-    // Native Buildings step at4509DE in UpdateAnimation before Techno and
-    // never enter this receiver. Their existing construction owner still
-    // steps in the late region; Sell steps at mission dispatch. Moving those
-    // clocks and completion effects to the native early slot remains the
-    // separate Building Update scheduling mechanism.
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+    // Buildings step at4509DE in their existing UpdateAnimation owner.
+    // Native6FABBC..C2 skips ONLY the generic Stage block to6FAC31; the
+    //shared flash/particle/EMP tail still precedes Building's Gattling code.
+    //Do not reset Stage.changed or flash twice when migrating this caller.
+    if let Some(entity) = sim.substrate.entities.get_mut(id)
+        && entity.category() != EntityCategory::Structure
+    {
         entity.tick_native_stage(sim.session.binary_frame() as i32);
     }
     flash_step(&mut sim.substrate, id, sim.session.binary_frame());
@@ -5376,6 +5384,36 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
                 .known(),
             Some(MissionType::Move),
         );
+    }
+
+    #[test]
+    fn ares_emp_building_common_post_preserves_early_stage() {
+        //Native43FE56 ->6F9E50, category6 branch6FABBC..C2 skips Stage only.
+        //The existing Stage corpus proves the early4509DE write; this catches
+        //a second advance clearing changed even when its timer has not expired.
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[BuildingTypes]\n0=B\n[B]\nStrength=100\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let mut entity = GameEntity::test_default_of_category(
+            1,
+            "B",
+            "Americans",
+            2,
+            2,
+            EntityCategory::Structure,
+        );
+        entity.set_type_ref_for_test(sim.interner.intern("B"));
+        entity.restart_native_stage(3, 0, 1);
+        assert!(entity.tick_native_stage(1));
+        let early = entity.native_stage().clone();
+        sim.substrate.entities.insert(entity);
+        sim.session.set_binary_frame_for_test(1);
+        let rng = sim.rng_state();
+        techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
+        assert_eq!(sim.entities().get(1).unwrap().native_stage(), &early);
+        assert_eq!(sim.rng_state(), rng);
     }
 
     // ===== Slice S4b — AI_Update damage-Spark scenario_rng consumption =====

@@ -1616,7 +1616,10 @@ fn an_attack_order_captures_without_damage() {
     let mind = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
     let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
     let health = sim.substrate.entities.get(gi).unwrap().health.current();
-    let owner_id = sim.interner.intern("YuriCountry");
+    // The human Americans send the computer Yuri's order: the DoList skips computer Houses' events
+    // (0x0064C4FB..0x0064C50D), and MegaMission never compares sender and actor
+    // (0x004C71F6..0x004C721F).
+    let owner_id = sim.interner.intern("Americans");
     sim.queue_command(CommandEnvelope::new(
         owner_id,
         sim.session.tick() + 1,
@@ -2035,7 +2038,10 @@ fn an_iron_curtained_target_refuses_the_capture_at_fire_time() {
         crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain,
     );
     let health = sim.substrate.entities.get(gi).unwrap().health.current();
-    let owner_id = sim.interner.intern("YuriCountry");
+    // The human Americans send the computer Yuri's order: the DoList skips computer Houses' events
+    // (0x0064C4FB..0x0064C50D), and MegaMission never compares sender and actor
+    // (0x004C71F6..0x004C721F).
+    let owner_id = sim.interner.intern("Americans");
     sim.queue_command(CommandEnvelope::new(
         owner_id,
         sim.session.tick() + 1,

@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "23 bounded PCX cameo controls: nine filename-reader, eight normal/promoted selector, two SW selector, three packed-word blit and one six-color palette conversion.",
+  "assumptions": [
+    "Synthetic TechnoType/SW extensions and Syringe register shells; the elite predicate result and SW extension lookup are supplied, not computed by a native House lifecycle.",
+    "Original Ares PCXFile100762C0, shared INI_EX10006010, bounded-copy CRT100039A0/1007B2E0 and C-locale lowercase CRT1007F1D7 execute. The CRT locale globals select the ordinary ASCII C locale; non-ASCII locale behavior is excluded.",
+    "Original palette loop6B9DAC..6B9E15 uses supplied RGB565 losses3/2/3 and shifts11/5/0, six synthetic colors and250black entries. No file decoder runs.",
+    "Whole original gamemd6BA580 blit runs against supplied BSurface interfaces and sufficient destination allocation. The source-extent control proves this routine uses source dimensions, not60x48 rectangle clipping.",
+    "No physical INI/MIX loading, PCX RLE decoding, DLL startup, whole-sidebar/device drawing, House elite qualification, non-indexed PCX behavior or full-mod parity is established. No RNG draw, simulation timer or detach call occurs in these bounded bodies."
+  ],
+  "substitutions": [
+    "ReadString528A10 supplies an already parsed ASCII payload or empty/absent result. Its callers, default argument, key, capacity and subsequent original reader instructions execute.",
+    "PCX GetSurface1002E110 and LoadFile1002E430 supply explicit cache/file-success results; INIParseFailed10061960 records the failed filename without logging externally.",
+    "CameoIsElite1003D800 supplies the declared Boolean; SW ExtMap lookup10057C70 returns the supplied type extension.",
+    "BSurface Lock/Unlock/Pitch/Width/Height virtual services supply synthetic memory and geometry. Their original caller and every packed-word comparison/store execute."
+  ],
+  "entry_points": {
+    "reader": "0x100762C0",
+    "techno_selector": "0x1005E430",
+    "sw_selector": "0x1005E410",
+    "shp_bypass": "0x1005E3E0",
+    "palette_loop": "0x006B9DAC",
+    "pcx_blit": "0x006BA580"
+  },
+  "binary_identities": {
+    "Ares.dll": {
+      "bytes": 875520,
+      "sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83"
+    }
+  },
+  "replay_command": "python -m tools.sidebar_oracle.pcx_cameos",
+  "payload_sha256": "0a053d4101d14de1e449e0940a4b3d962f2d29b7893b64aa09104b46de1dab9c"
+}
