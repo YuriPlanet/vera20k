@@ -1091,6 +1091,7 @@ mod receiver {
             );
             let bullets: Vec<_> = sim.projectiles.iter().map(|(&id, _)| id).collect();
             assert_eq!(bullets.len(), 1);
+            let emp_bullet = bullets[0];
             for bullet in bullets {
                 sim.object_ai_visit_one(bullet, Some(&rules), ObjectAiCtx::default());
             }
@@ -1179,7 +1180,21 @@ mod receiver {
                 .unwrap();
             let health = sim.entities().get(source).unwrap().health.current();
             sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
-            let bullets: Vec<_> = sim.projectiles.iter().map(|(&id, _)| id).collect();
+            // UnInit removes the old EMP Bullet from Logic55BAE0 immediately,
+            // but its physical storage survives until the725C70 late drain.
+            // These direct object visits do not advance that drain. Advancing
+            // every stored Bullet here would detonate the retired EMP twice.
+            assert!(
+                sim.projectiles
+                    .get(emp_bullet)
+                    .is_some_and(|bullet| !bullet.in_logic_vector())
+            );
+            let bullets: Vec<_> = sim
+                .projectiles
+                .iter()
+                .filter(|(_, bullet)| bullet.in_logic_vector())
+                .map(|(&id, _)| id)
+                .collect();
             assert!(
                 !bullets.is_empty(),
                 "restored real tower Mission_Attack emits a Bullet"
@@ -1188,6 +1203,7 @@ mod receiver {
                 sim.object_ai_visit_one(bullet, Some(&rules), ObjectAiCtx::default());
             }
             assert!(sim.entities().get(source).unwrap().health.current() < health);
+            assert_eq!(sim.entities().get(target).unwrap().emp_remaining(), 0);
             sim.notify_anim_pointer_expired(sparkle);
             assert!(sim.entities().get(target).unwrap().emp_sparkle().is_none());
         }
