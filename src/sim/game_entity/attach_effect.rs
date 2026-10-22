@@ -238,10 +238,19 @@ mod tests {
             sim.anim(anim).unwrap().owner_house(),
             Some(sim.entities().get(source).unwrap().owner())
         );
+        let attachments_before = victim.attach_effects.clone();
+        // Scenario full-load deliberately reseeds this stream to zero, as
+        // deserialize_scenario_rng_reset owns. Isolate that existing native
+        // load transition before comparing the complete saved state hash.
+        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let saved = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "AE", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&saved)
             .unwrap()
             .sim;
+        assert_eq!(
+            restored.entities().get(target).unwrap().attach_effects,
+            attachments_before
+        );
         assert_eq!(restored.state_hash(), sim.state_hash());
         restored.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
         assert_eq!(
