@@ -21,7 +21,8 @@ use crate::sim::command::{
     ArchiveRecord, BUILDING_OFF_LINE_OPCODE, BUILDING_ON_LINE_OPCODE, BuildingOnLineRecord,
     COMMAND_RECORD_LEN, Command, CommandEnvelope, CommandRecord, DeployRecord, ExitRecord,
     GameSpeedRecord, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, PlaceRecord,
-    ProductionEvent, ProductionRecord, ScatterRecord, SellWallAtCellRecord, StopRecord,
+    ProductionEvent, ProductionRecord, RepairRecord, ScatterRecord, SellWallAtCellRecord,
+    StopRecord,
 };
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::{InternedId, StringInterner};
@@ -243,6 +244,26 @@ impl Simulation {
         let mut record =
             self.encode_header_event(command_owner, crate::sim::command::DEPLOY_OPCODE)?;
         DeployRecord {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: i32::try_from(entity_id).ok()?,
+        }
+        .write_into(&mut record);
+        Some(record)
+    }
+
+    /// Display4AC0D3..4AC198 constructs REPAIR15 with PlayerPtr+30 and
+    /// the picked object's token. Preserve that token until execution;
+    /// constructor4C65E0 does not read its owner or repair eligibility.
+    /// Source: original gamemd.exe instructions.
+    pub fn encode_repair_record(
+        &self,
+        command_owner: InternedId,
+        entity_id: u64,
+    ) -> Option<CommandRecord> {
+        let mut record =
+            self.encode_header_event(command_owner, crate::sim::command::REPAIR_OPCODE)?;
+        RepairRecord {
             house_id: record.house_id(),
             frame: record.frame_stamp(),
             entity_id: i32::try_from(entity_id).ok()?,
@@ -693,6 +714,16 @@ impl Simulation {
         record: &CommandRecord,
         execute_tick: u64,
     ) -> Option<CommandEnvelope> {
+        if let Some(event) = RepairRecord::decode(record) {
+            let owner = *self
+                .houses
+                .order()
+                .get(usize::try_from(event.house_id).ok()?)?;
+            let entity_id = u64::try_from(event.entity_id).ok()?;
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(owner, execute_tick, Command::ToggleRepair { entity_id })
+            });
+        }
         if let Some(event) = ArchiveRecord::decode(record) {
             let owner = *self
                 .houses
@@ -1383,7 +1414,8 @@ impl Simulation {
         let ordinary_actor = match cmd {
             Command::Stop { entity_id }
             | Command::Scatter { entity_id }
-            | Command::DeployMcv { entity_id } => Some(*entity_id),
+            | Command::DeployMcv { entity_id }
+            | Command::ToggleRepair { entity_id } => Some(*entity_id),
             _ => cmd.megamission_actor(),
         };
         if !planned && let Some(actor) = ordinary_actor {
@@ -2047,15 +2079,16 @@ impl Simulation {
                 self.flag_house_to_die(owner);
                 true
             }
-            // `EventClass::Execute 0x004C6ED2..0x004C6F01`: a live target
-            // (`+0x90`) toggles (`ToggleRepair(-1)`).
+            // Event4C6ED2 resolves Techno and detaches planning6386E0 above,
+            // before its only admission: Object+90. Accepted events survive
+            // capture; neither sender ownership nor CanRepair is rechecked.
+            // Source: original gamemd.exe instructions4C6ED2..4C6F01.
             Command::ToggleRepair { entity_id } => {
-                if !self.entity_owned_by_id(command_owner, *entity_id)
-                    || !self
-                        .substrate
-                        .entities
-                        .get(*entity_id)
-                        .is_some_and(|entity| entity.lifecycle.object_alive())
+                if !self
+                    .substrate
+                    .entities
+                    .get(*entity_id)
+                    .is_some_and(|entity| entity.lifecycle.object_alive())
                 {
                     return false;
                 }
@@ -3231,6 +3264,70 @@ mod tests {
             sim.substrate.entities.get(42).unwrap().archive_target(),
             None
         );
+    }
+
+    #[test]
+    fn accepted_repair_resolves_the_captured_building_and_stale_target_at_dispatch() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = retail.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4C6ED2);
+        let old_owner = sim.interner.get("Americans").unwrap();
+        let new_owner = sim.interner.get("Russians").unwrap();
+        let building = sim
+            .spawn_object("GAPILE", "Americans", 8, 8, 0, &rules)
+            .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(building)
+            .unwrap()
+            .health
+            .set(300);
+        let record = sim.encode_repair_record(old_owner, building).unwrap();
+        assert!(sim.admit_native_command_record(record.clone()));
+        sim.change_owner_with_rules(building, new_owner, &rules, None, FrameEffects::default());
+        assert!(
+            !sim.substrate
+                .entities
+                .get(building)
+                .unwrap()
+                .repairing
+                .is_on()
+        );
+        let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "repair", 0);
+        let mut sim = crate::sim::snapshot::GameSnapshot::load(&bytes)
+            .unwrap()
+            .sim;
+        sim.restore_after_snapshot_load().unwrap();
+        let admitted = sim.take_frame_commands_for_test();
+        assert_eq!(admitted.len(), 1);
+        assert_eq!(admitted[0].owner, old_owner);
+        let (accepted, draws) = crate::sim::rng::trace_draws(|| {
+            sim.apply_command("Americans", &admitted[0].payload, Some(&rules))
+        });
+        assert!(accepted, "the old issuer is not receiver admission");
+        assert!(draws.is_empty());
+        assert!(
+            sim.substrate
+                .entities
+                .get(building)
+                .unwrap()
+                .repairing
+                .is_on()
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(building)
+                .unwrap()
+                .health
+                .current(),
+            300
+        );
+        sim.substrate.entities.remove(building);
+        let stale = sim.decode_native_command_record(&record, 0).unwrap();
+        assert!(!sim.apply_command("Americans", &stale.payload, Some(&rules)));
     }
 
     #[test]

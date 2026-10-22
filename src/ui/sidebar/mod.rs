@@ -139,10 +139,10 @@ pub enum SidebarAction {
     PlaceStarterBase,
     SpawnTestUnits,
     /// Toggle Repair-mode (cursor stays armed for clicking buildings to repair).
-    /// Mutually exclusive with `ToggleSellMode` and any active `TargetingMode`.
+    /// Clears Sell; pending building placement refuses the transition.
     ToggleRepairMode,
     /// Toggle Sell-mode (cursor stays armed for clicking buildings to sell).
-    /// Mutually exclusive with `ToggleRepairMode` and any active `TargetingMode`.
+    /// Clears Repair; pending building placement refuses the transition.
     ToggleSellMode,
     Deploy,
 }

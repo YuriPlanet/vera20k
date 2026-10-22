@@ -166,19 +166,30 @@ fn append(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, actor: u64, 
 }
 
 #[test]
-fn stop_or_uninit_detaches_only_its_actor_from_shared_nodes() {
-    for uninit in [false, true] {
+fn stop_repair_or_uninit_detaches_only_its_actor_from_shared_nodes() {
+    for action in ["stop", "repair_dead", "uninit"] {
         let (mut sim, rules, owner) = fixture();
         for actor in [1, 2] {
             append(&mut sim, &rules, owner, actor, (12, 15));
         }
-        if uninit {
+        if action == "uninit" {
             sim.uninit(1);
+        } else if action == "repair_dead" {
+            sim.substrate
+                .entities
+                .get_mut(1)
+                .unwrap()
+                .lifecycle
+                .set_object_alive_for_test(false);
+            // Event4C6EE0 detaches before the target's +90/alive refusal.
+            let record = sim.encode_repair_record(owner, 1).unwrap();
+            let envelope = sim.decode_native_command_record(&record, 0).unwrap();
+            assert!(!sim.apply_command("Americans", &envelope.payload, Some(&rules)));
         } else {
             assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 1 }, Some(&rules)));
         }
-        assert!(!sim.planning.paths.contains_key(&1), "uninit={uninit}");
-        assert!(sim.planning.paths.contains_key(&2), "uninit={uninit}");
+        assert!(!sim.planning.paths.contains_key(&1), "{action}");
+        assert!(sim.planning.paths.contains_key(&2), "{action}");
         assert_eq!(
             sim.planning.nodes[&0]
                 .orders
@@ -186,7 +197,7 @@ fn stop_or_uninit_detaches_only_its_actor_from_shared_nodes() {
                 .map(|(id, _)| *id)
                 .collect::<Vec<_>>(),
             vec![2],
-            "uninit={uninit}"
+            "{action}"
         );
     }
 }

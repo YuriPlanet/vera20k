@@ -69,6 +69,8 @@ pub const IDLE_OPCODE: u8 = 0x06;
 pub const DEPLOY_OPCODE: u8 = 0x09;
 /// Building443860/44363C: retain an object or prepared Cell as ArchiveTarget.
 pub const ARCHIVE_OPCODE: u8 = 0x1e;
+/// Display BandBox_LeftUp4AC0E7: toggle the clicked building's repair.
+pub const REPAIR_OPCODE: u8 = 0x15;
 pub const PLACE_OPCODE: u8 = 0x0b;
 pub const PRODUCE_OPCODE: u8 = 0x0e;
 pub const SUSPEND_OPCODE: u8 = 0x0f;
@@ -406,8 +408,8 @@ impl CommandRecord {
         self.bytes[COMMAND_RECORD_FLAGS_OFFSET] &= !COMMAND_RECORD_PROCESSED_FLAG;
     }
 
-    /// EventClass constructor4C65E0, shared by IDLE6, SCATTER7 and DEPLOY9 through
-    /// ClickedEvent6FFE34. Target6E6AB0 supplies the identifier and kind0x34;
+    /// EventClass constructor4C65E0, shared by IDLE6, SCATTER7, DEPLOY9 and
+    /// Display REPAIR15. Target6E6AB0 supplies the identifier and kind0x34;
     /// the constructor writes only the header and this five-byte token.
     /// Source: original gamemd.exe instructions4C6608..4C663D.
     fn write_object_target(&mut self, opcode: u8, house_id: i8, frame: i32, entity_id: i32) {
@@ -564,6 +566,30 @@ impl DeployRecord {
 
     pub fn decode(record: &CommandRecord) -> Option<Self> {
         (record.opcode() == DEPLOY_OPCODE).then_some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: record.object_target_id()?,
+        })
+    }
+}
+
+/// REPAIR15 uses the shared object-token constructor4C65E0. The current
+/// player's House is captured by Display4AC0EE, independently of its target.
+/// Source: original gamemd.exe instructions4AC0D3..4AC198.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RepairRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub entity_id: i32,
+}
+
+impl RepairRecord {
+    pub fn write_into(self, record: &mut CommandRecord) {
+        record.write_object_target(REPAIR_OPCODE, self.house_id, self.frame, self.entity_id);
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        (record.opcode() == REPAIR_OPCODE).then_some(Self {
             house_id: record.house_id(),
             frame: record.frame_stamp(),
             entity_id: record.object_target_id()?,
@@ -1371,8 +1397,8 @@ mod tests {
         ABSTRACT_OBJECT_TARGET_KIND, ArchiveRecord, COMMAND_RECORD_LEN, COMMAND_RECORD_PAYLOAD_LEN,
         CommandRecord, CommandRecordError, EXIT_OPCODE, ExitRecord, IDLE_OPCODE, MOVE_ACTION,
         MegaMissionCellTokenError, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget,
-        NULL_TARGET_KIND, SCATTER_OPCODE, SELL_WALL_AT_CELL_OPCODE, ScatterRecord,
-        SellWallAtCellRecord, StopRecord,
+        NULL_TARGET_KIND, REPAIR_OPCODE, RepairRecord, SCATTER_OPCODE, SELL_WALL_AT_CELL_OPCODE,
+        ScatterRecord, SellWallAtCellRecord, StopRecord,
     };
 
     fn native_record(value: &serde_json::Value) -> CommandRecord {
@@ -1432,10 +1458,10 @@ mod tests {
     }
 
     #[test]
-    fn idle_and_scatter_constructor_preserve_flags_and_unwritten_payload() {
+    fn idle_scatter_and_repair_constructor_preserve_flags_and_unwritten_payload() {
         // Original4C65E0 writes header plus one five-byte token. Negative
         // issuers instead write the null header, leaving the payload intact.
-        for opcode in [IDLE_OPCODE, SCATTER_OPCODE] {
+        for opcode in [IDLE_OPCODE, SCATTER_OPCODE, REPAIR_OPCODE] {
             for house_id in [-1, 3] {
                 for entity_id in [-17, 0x0102_0304] {
                     let mut actual =
@@ -1448,8 +1474,15 @@ mod tests {
                             entity_id,
                         }
                         .write_into(&mut actual);
-                    } else {
+                    } else if opcode == SCATTER_OPCODE {
                         ScatterRecord {
+                            house_id,
+                            frame,
+                            entity_id,
+                        }
+                        .write_into(&mut actual);
+                    } else {
+                        RepairRecord {
                             house_id,
                             frame,
                             entity_id,
@@ -1491,6 +1524,8 @@ mod tests {
         record.set_issue_header(SCATTER_OPCODE, 2, -19);
         assert!(StopRecord::decode(&record).is_none());
         assert_eq!(ScatterRecord::decode(&record).unwrap().entity_id, i32::MIN);
+        record.set_issue_header(REPAIR_OPCODE, 2, -19);
+        assert_eq!(RepairRecord::decode(&record).unwrap().entity_id, i32::MIN);
     }
 
     #[test]

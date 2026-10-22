@@ -143,9 +143,11 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
     // only renders on the tactical map. DetermineAction answers the armed
     // superweapon only with nothing selected (`0x00692610..0x00692673`); with
     // a selection the best object's What_Action answers below.
-    if let Some(section) = state.armed_super_weapon_type()
-        && selected.is_empty()
-    {
+    let pointer_mode = state.match_state.input.tactical_pointer_mode(
+        &state.match_state.match_presentation.sidebar_gadget_state,
+        selected.is_empty(),
+    );
+    if let super::state::TacticalPointerMode::SuperWeapon(section) = pointer_mode {
         if let Some(runtime) = state.match_state.sim_runtime.as_ref()
             && let Some(owner) = preferred_local_owner_name(state)
                 .and_then(|name| runtime.simulation.interner().get(&name))
@@ -194,16 +196,15 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
         .sim_runtime
         .as_ref()
         .map(|rt| &rt.simulation)?;
-    // Repair / Sell cursor modes take over the tactical map regardless of
-    // selection — the wrench/dollar shows over own buildings, no-repair/no-sell
-    // elsewhere. Placed before the empty-selection early return below because
-    // gamemd shows these cursors even with nothing selected.
-    let (repair_mode, sell_mode) =
-        crate::app::presentation::sidebar_render::current_sidebar_view(state)
-            .map(|view| (view.repair_button.active, view.sell_button.active))
-            .unwrap_or_default();
-    if repair_mode || sell_mode {
-        let repair = repair_mode;
+    // DetermineAction's no-selection path keeps Repair/Sell only when no
+    // armed Super overrides it. Use the same priority as the release owner;
+    // its target admission still supplies wrench/dollar or refusal feedback.
+    if matches!(pointer_mode, super::state::TacticalPointerMode::RepairSell) {
+        let repair = state
+            .match_state
+            .match_presentation
+            .sidebar_gadget_state
+            .repair_mode_on;
         let (wx, wy) = crate::app::match_runtime::sim_tick::screen_point_to_world(
             state,
             state.match_state.input.cursor_x,

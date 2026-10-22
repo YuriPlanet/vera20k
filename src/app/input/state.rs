@@ -13,6 +13,13 @@ use crate::sim::snapshot::saved_local_view::{
 use std::collections::HashSet;
 use winit::keyboard::{KeyCode, ModifiersState};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TacticalPointerMode<'a> {
+    Ordinary,
+    SuperWeapon(&'a str),
+    RepairSell,
+}
+
 /// Client-side handles installed by ManualPlace4FB840. The House factory
 /// remains the owner of the completed object; these are cursor references,
 /// not a second ready-object registry. Type is independent of product pointer
@@ -267,6 +274,67 @@ pub(crate) struct MatchInputState {
 mod ready_building_placement_tests;
 
 impl MatchInputState {
+    /// DetermineAction692610 returns the selected object's action early.
+    /// With no selection, its armed targeted Super overrides Repair/Sell
+    /// at692B06..692B24. Cursor feedback and release share this decision;
+    /// the existing Super producer still owns target admission and launch.
+    /// Source: original gamemd.exe instructions.
+    pub(crate) fn tactical_pointer_mode(
+        &self,
+        sidebar: &crate::ui::sidebar::gadget_flash::SidebarGadgetState,
+        selection_empty: bool,
+    ) -> TacticalPointerMode<'_> {
+        if !selection_empty {
+            return TacticalPointerMode::Ordinary;
+        }
+        if let Some(section) = self
+            .targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_super_weapon)
+        {
+            return TacticalPointerMode::SuperWeapon(section);
+        }
+        if sidebar.repair_mode_on || sidebar.sell_mode_on {
+            return TacticalPointerMode::RepairSell;
+        }
+        TacticalPointerMode::Ordinary
+    }
+
+    /// Display Cancel4AAD30 consumes one represented cursor rung: current
+    /// placement product, Repair/Sell, then Super. Repair/Sell setters still
+    /// refuse a retained placement TYPE after its product expires. The
+    /// caller's existing selection owner handles the final UnselectAll rung.
+    /// Power/Waypoint/Beacon remain unrepresented Display flags.
+    /// Source: original gamemd.exe4AAD34..4AAE84.
+    pub(crate) fn cancel_pointer_mode(
+        &mut self,
+        sidebar: &mut crate::ui::sidebar::gadget_flash::SidebarGadgetState,
+    ) -> bool {
+        if self.cancel_building_placement() {
+            return true;
+        }
+        if sidebar.repair_mode_on || sidebar.sell_mode_on {
+            let placement_armed = self
+                .targeting_mode
+                .as_ref()
+                .and_then(crate::app::types::TargetingMode::as_building_placement)
+                .is_some();
+            sidebar.disable_selection_modes(placement_armed);
+            return true;
+        }
+        if self
+            .targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_super_weapon)
+            .is_some()
+        {
+            self.targeting_mode = None;
+            self.building_placement_preview = None;
+            return true;
+        }
+        false
+    }
+
     /// Record physical window input in the current screen's coordinate space.
     pub(crate) fn set_cursor_from_window(
         &mut self,

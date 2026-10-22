@@ -3,12 +3,12 @@
 
 use super::*;
 use crate::app::input::entity_pick::PickSource;
-use crate::app::input::hotkeys::{HotkeyCommand, HotkeyResolution};
+use crate::app::input::hotkeys::{self, HotkeyCommand, HotkeyResolution};
 use crate::app::input::{commands, dispatch, keyboard};
 use crate::sim::combat::TargetKind;
 use crate::sim::command::{
     ArchiveRecord, Command, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, PlaceRecord,
-    ProductionEvent, ProductionRecord, StopRecord,
+    ProductionEvent, ProductionRecord, RepairRecord, StopRecord,
 };
 use crate::sim::production::{ProductionCategory, ProductionSelection};
 use crate::sim::world::Simulation;
@@ -53,6 +53,12 @@ enum Step {
     Disengaging {
         frame: u32,
     },
+    RepairReturning,
+    RepairDamaging,
+    RepairStopping,
+    RepairFirst,
+    RepairOff,
+    RepairFinishing,
     Done,
 }
 
@@ -65,6 +71,38 @@ struct GiProduct {
     rally_handoff: Option<Value>,
     rally_walk: Option<Value>,
     rally_arrival: Option<Value>,
+}
+
+/// Read-only observations of one Human's actual repair episode. These are
+/// journal receipts and frame snapshots, never inputs to the simulation.
+#[derive(Default)]
+struct RepairObservation {
+    attack: Option<MegaMissionRecord>,
+    attack_health: Option<i32>,
+    attack_execution: Option<Value>,
+    damage: Option<Value>,
+    stop: Option<StopRecord>,
+    stop_execution: Option<Value>,
+    records: Vec<RepairRecord>,
+    events: Vec<Value>,
+    executions: Vec<Value>,
+    payments: Vec<Value>,
+    previous: Option<RepairSnapshot>,
+    off: Option<RepairSnapshot>,
+    stopped: Option<RepairSnapshot>,
+    full: Option<RepairSnapshot>,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct RepairSnapshot {
+    native_frame: u32,
+    id: u64,
+    owner: String,
+    health: i32,
+    estimated_health: i32,
+    repairing: bool,
+    credits: i32,
+    spent: i32,
 }
 
 #[derive(Default)]
@@ -107,6 +145,7 @@ pub(super) struct BattleOpening {
     hit_observation: Option<Value>,
     stop_observation: Option<Value>,
     combat_events: Vec<Value>,
+    repair: [RepairObservation; 2],
 }
 
 struct FactorySnapshot {
@@ -133,6 +172,7 @@ impl BattleOpening {
         self.observe_fighters(state)?;
         self.observe_commands(state, frame)?;
         self.observe_due_orders(state, frame)?;
+        self.observe_repair(state, frame)?;
         self.observe_infantry(state, frame, actions)?;
         self.observe_hit(state, frame, actions)?;
         let mut action = None;
@@ -531,10 +571,96 @@ impl BattleOpening {
                             && entity.attack_target.target().is_none()
                     })
                 {
-                    self.step = Step::Done;
+                    let index = usize::from(!host);
+                    let id = self.fighter_ids()?[index];
+                    let building = sim
+                        .entities()
+                        .get(self.barracks_product.context("paid repair GAPILE")?)
+                        .context("paid repair GAPILE")?;
+                    let gi = sim.entities().get(id).context("returning paid GI")?;
+                    let desired = offset_toward(
+                        (building.position.rx(), building.position.ry()),
+                        (gi.position.rx(), gi.position.ry()),
+                        4,
+                    );
+                    let goal = legal_move_cell(state, id, desired)?;
+                    ground_order_with_mouse(state, id, goal)?;
+                    self.step = Step::RepairReturning;
                     action =
-                        Some("manual Attack, rifle damage and raw Stop observed; GIs separated");
+                        Some("GIs separated after Attack/Stop; real Move back to own paid GAPILE");
                 }
+            }
+            Step::RepairReturning => {
+                let id = self.fighter_ids()?[usize::from(!host)];
+                let sim = simulation(state)?;
+                let gi = sim.entities().get(id).context("returned paid GI")?;
+                let producer = self.barracks_product.context("paid repair GAPILE")?;
+                let building = sim.entities().get(producer).context("paid repair GAPILE")?;
+                if gi.navigation.nav_com().is_none()
+                    && gi
+                        .position
+                        .rx()
+                        .abs_diff(building.position.rx())
+                        .max(gi.position.ry().abs_diff(building.position.ry()))
+                        <= 6
+                {
+                    force_fire_with_mouse(state, id, producer)?;
+                    self.step = Step::RepairDamaging;
+                    action =
+                        Some("real Control force-fire click from paid GI onto own paid GAPILE");
+                }
+            }
+            Step::RepairDamaging => {
+                let index = usize::from(!host);
+                let rules = state.rules().context("retail repair rules")?;
+                let strength = rules.object("GAPILE").context("retail GAPILE")?.strength;
+                let damaged = simulation(state)?
+                    .entities()
+                    .get(self.barracks_product.context("paid repair GAPILE")?)
+                    .context("paid repair GAPILE")?
+                    .health
+                    .current();
+                if self.repair[index].damage.is_some()
+                    && damaged <= strength - 8 * rules.general.repair_step
+                {
+                    select_entity(state, self.fighter_ids()?[index])?;
+                    chat_key(state, KeyCode::KeyS, &Key::Character("s".into()), Some("s"));
+                    self.step = Step::RepairStopping;
+                    action = Some("real rifle damage accumulated; S-key Stop before paid repair");
+                }
+            }
+            Step::RepairStopping => {
+                let observation = &self.repair[usize::from(!host)];
+                let period = repair_period(state)?;
+                if observation.stop_execution.is_some()
+                    && let Some(stop) = observation.stop
+                    && frame >= u32::try_from(stop.frame)? + 1 + 2 * period
+                {
+                    repair_with_mouse(state, self.barracks_product.context("paid repair GAPILE")?)?;
+                    self.step = Step::RepairFirst;
+                    action =
+                        Some("verified Repair hotkey enables real cursor; damaged GAPILE click");
+                }
+            }
+            Step::RepairFirst if !self.repair[usize::from(!host)].payments.is_empty() => {
+                repair_with_mouse(state, self.barracks_product.context("paid repair GAPILE")?)?;
+                self.step = Step::RepairOff;
+                action =
+                    Some("first real paid heal observed; sticky Repair cursor click stops repair");
+            }
+            Step::RepairOff if self.repair[usize::from(!host)].stopped.is_some() => {
+                repair_with_mouse(state, self.barracks_product.context("paid repair GAPILE")?)?;
+                self.step = Step::RepairFinishing;
+                action = Some(
+                    "manual stop held health and cash across two periods; real repair restart",
+                );
+            }
+            Step::RepairFinishing if self.repair[usize::from(!host)].full.is_some() => {
+                repair_mode_key(state, false)?;
+                self.step = Step::Done;
+                action = Some(
+                    "paid repair reached full actual/estimated health and stopped; Repair key off",
+                );
             }
             _ => {}
         }
@@ -760,6 +886,187 @@ impl BattleOpening {
             }))
     }
 
+    /// Repair450821..4508D0 runs in Logic before Event15's4C6ED2 tail
+    /// dispatch. A paid Logic frameN is therefore observed at binary frameN+1;
+    /// the preceding snapshot must already have its repair byte enabled.
+    fn observe_repair(&mut self, state: &AppState, frame: u32) -> Result<()> {
+        let sim = simulation(state)?;
+        let rules = state.rules().context("retail repair rules")?;
+        let object = rules.object("GAPILE").context("retail GAPILE")?;
+        let cost = crate::sim::production::repair_step_cost(rules, object);
+        let period = repair_period(state)?;
+        for index in 0..2 {
+            let observation = &mut self.repair[index];
+            let Some(attack) = observation.attack else {
+                continue;
+            };
+            let producer = u64::try_from(
+                self.rally_records[index]
+                    .context("rallied repair GAPILE")?
+                    .entity_id,
+            )?;
+            let gi = sim
+                .entities()
+                .get(u64::try_from(attack.source_id)?)
+                .context("friendly-fire GI")?;
+            let current = repair_snapshot(state, producer, frame)?;
+            ensure!(
+                current.health > 0 && gi.is_alive(),
+                "repair episode destroyed a paid object"
+            );
+            let attack_due = u32::try_from(attack.frame)?
+                .checked_add(1)
+                .context("force-fire frame")?;
+            if observation.attack_execution.is_none() && frame >= attack_due {
+                ensure!(
+                    frame == attack_due,
+                    "capture missed friendly force-fire execution boundary"
+                );
+                ensure!(
+                    gi.attack_target.target() == Some(TargetKind::Entity(producer))
+                        && (gi.mission.current().raw() == 1 || gi.mission.queued().raw() == 1),
+                    "executed friendly force-fire did not install GAPILE target/Attack"
+                );
+                observation.attack_health = Some(current.health);
+                observation.attack_execution = Some(json!({"event_frame":attack.frame,
+                    "state":current,"combat":combat_snapshot(state,[gi.stable_id(),producer],frame)?}));
+            }
+            if observation.damage.is_none()
+                && observation
+                    .attack_health
+                    .is_some_and(|health| current.health < health)
+                && gi.rearm_timer.start_frame() >= attack_due as i32
+                && gi.rearm_timer.duration() > 0
+            {
+                ensure!(
+                    gi.attack_target.target() == Some(TargetKind::Entity(producer)),
+                    "GAPILE damage observed after losing friendly force-fire target"
+                );
+                observation.damage = Some(json!({"state":current,
+                    "combat":combat_snapshot(state,[gi.stable_id(),producer],frame)?}));
+            }
+            if observation.stop_execution.is_none()
+                && let Some(stop) = observation.stop
+            {
+                let due = u32::try_from(stop.frame)?
+                    .checked_add(1)
+                    .context("friendly-fire Stop frame")?;
+                if frame >= due {
+                    ensure!(
+                        frame == due,
+                        "capture missed friendly-fire Stop execution boundary"
+                    );
+                    ensure!(
+                        observation.damage.is_some(),
+                        "friendly-fire Stop preceded real rifle damage"
+                    );
+                    ensure!(
+                        gi.attack_target.target().is_none()
+                            && gi.suspended_attack_target.target().is_none()
+                            && gi.navigation.nav_com().is_none()
+                            && gi.navigation.suspended_nav_com().is_none()
+                            && gi.navigation.nav_queue().is_empty(),
+                        "executed friendly-fire Stop retained target/navigation references"
+                    );
+                    observation.stop_execution = Some(json!({"event_frame":stop.frame,
+                        "state":current,"combat":combat_snapshot(state,[gi.stable_id(),producer],frame)?}));
+                }
+            }
+            if let Some(record) = observation.records.get(observation.executions.len()) {
+                let due = u32::try_from(record.frame)?
+                    .checked_add(1)
+                    .context("REPAIR frame")?;
+                let toggle = observation.executions.len();
+                if frame < due {
+                    ensure!(
+                        current.repairing == (toggle == 1),
+                        "REPAIR changed its byte before synchronized execution"
+                    );
+                }
+                if frame >= due {
+                    ensure!(frame == due, "capture missed REPAIR execution boundary");
+                    ensure!(
+                        current.repairing == (toggle != 1) && current.health < object.strength,
+                        "raw REPAIR did not perform the expected damaged start/off/restart toggle"
+                    );
+                    observation
+                        .executions
+                        .push(json!({"event_frame":record.frame,"state":current}));
+                    if toggle == 1 {
+                        observation.off = Some(current.clone());
+                    }
+                }
+            }
+            if let Some(previous) = &observation.previous {
+                if current.health > previous.health {
+                    ensure!(
+                        !observation.executions.is_empty() && previous.repairing,
+                        "GAPILE healed before manual REPAIR was enabled for Logic"
+                    );
+                    ensure!(
+                        frame == previous.native_frame + 1 && (frame - 1) % period == 0,
+                        "paid repair did not occur on its global native Logic frame"
+                    );
+                    ensure!(
+                        current.health - previous.health
+                            == rules
+                                .general
+                                .repair_step
+                                .min(object.strength - previous.health),
+                        "paid repair changed actual health by the wrong retail step/clamp"
+                    );
+                    ensure!(
+                        previous.credits - current.credits == cost
+                            && current.spent - previous.spent == cost,
+                        "paid repair did not debit the existing owner's exact cost/statistics"
+                    );
+                    ensure!(
+                        current.estimated_health >= previous.estimated_health,
+                        "paid repair decreased estimated health"
+                    );
+                    observation.payments.push(json!({"logic_frame":frame-1,
+                        "cost":cost,"before":previous,"after":current}));
+                } else if !observation.executions.is_empty() {
+                    ensure!(
+                        current.credits == previous.credits && current.spent == previous.spent,
+                        "repair changed cash/statistics without a paid health step"
+                    );
+                }
+            }
+            if observation.stopped.is_none()
+                && let Some(off) = &observation.off
+                && frame >= off.native_frame + 2 * period
+            {
+                ensure!(
+                    frame == off.native_frame + 2 * period,
+                    "capture missed manual repair stop interval boundary"
+                );
+                ensure!(
+                    !current.repairing
+                        && current.health == off.health
+                        && current.credits == off.credits
+                        && current.spent == off.spent,
+                    "manually stopped repair changed health/cash during two periods"
+                );
+                observation.stopped = Some(current.clone());
+            }
+            if observation.full.is_none()
+                && observation.executions.len() == 3
+                && !current.repairing
+                && current.health == object.strength
+                && current.estimated_health == object.strength
+            {
+                ensure!(
+                    !observation.payments.is_empty(),
+                    "full repair had no paid visits"
+                );
+                observation.full = Some(current.clone());
+            }
+            observation.previous = Some(current);
+        }
+        Ok(())
+    }
+
     fn observe_commands(&mut self, state: &AppState, frame: u32) -> Result<()> {
         let Some(log) = &state.match_state.match_diagnostics.replay_log else {
             return Ok(());
@@ -781,8 +1088,9 @@ impl BattleOpening {
                                 | Command::Attack { .. }
                                 | Command::SetRally { .. }
                                 | Command::ArchiveObject { .. }
+                                | Command::ToggleRepair { .. }
                         ),
-                        "live Battle admitted a semantic mobile PLACE, Attack or rally"
+                        "live Battle admitted a semantic mobile PLACE, Attack, rally or Repair"
                     );
                     continue;
                 };
@@ -891,6 +1199,32 @@ impl BattleOpening {
                         "event_frame":record.frame_stamp(),"opcode":record.opcode(),
                         "house":record.house_id(),"bytes":record.as_bytes().as_slice()}));
                 }
+                if let Some(repair) = RepairRecord::decode(record) {
+                    let index = self
+                        .rally_records
+                        .iter()
+                        .position(|archive| {
+                            archive.is_some_and(|archive| archive.entity_id == repair.entity_id)
+                        })
+                        .context("raw REPAIR did not target an original paid GAPILE")?;
+                    ensure!(
+                        self.rally_records[index]
+                            .is_some_and(|archive| archive.house_id == repair.house_id),
+                        "manual REPAIR issuing House differs from its own paid GAPILE"
+                    );
+                    ensure!(
+                        self.repair[index].stop_execution.is_some(),
+                        "manual REPAIR preceded the friendly-fire Stop execution"
+                    );
+                    let observation = &mut self.repair[index];
+                    ensure!(observation.records.len() < 3, "extra manual REPAIR toggle");
+                    observation.records.push(repair);
+                    observation.events.push(json!({"kind":"REPAIR",
+                        "admission_tick":tick.tick,"admission_observed_frame":frame,
+                        "event_frame":repair.frame,"opcode":record.opcode(),
+                        "source":repair.entity_id,"house":repair.house_id,
+                        "bytes":record.as_bytes().as_slice()}));
+                }
                 let [Some(actor), Some(target)] = self.fighters else {
                     continue;
                 };
@@ -911,6 +1245,30 @@ impl BattleOpening {
                     {
                         self.staging[index] =
                             Some((u16::try_from(target_x)?, u16::try_from(target_y)?));
+                    }
+                    if self.rally_records[index].is_some_and(|archive| {
+                        mission.order
+                            == (MegaMissionOrder::Attack {
+                                target: MegaMissionTarget::Object {
+                                    id: archive.entity_id,
+                                },
+                            })
+                    }) {
+                        ensure!(
+                            self.stop_observation.is_some(),
+                            "friendly force-fire preceded opposing-GI Stop"
+                        );
+                        let observation = &mut self.repair[index];
+                        ensure!(
+                            observation.attack.is_none(),
+                            "duplicate friendly force-fire"
+                        );
+                        observation.attack = Some(mission);
+                        observation.events.push(json!({"kind":"FORCE_FIRE",
+                            "admission_tick":tick.tick,"admission_observed_frame":frame,
+                            "event_frame":mission.frame,"opcode":record.opcode(),
+                            "source":mission.source_id,"house":mission.house_id,
+                            "bytes":record.as_bytes().as_slice()}));
                     }
                     self.combat_events.push(json!({"admission_tick":tick.tick,"admission_observed_frame":frame,
                         "event_frame":mission.frame,
@@ -944,9 +1302,33 @@ impl BattleOpening {
                         self.pending_attack = Some(mission);
                     }
                 }
-                if let Some(stop) = StopRecord::decode(record)
-                    && stop.entity_id == i32::try_from(actor)?
-                {
+                if let Some(stop) = StopRecord::decode(record) {
+                    let index = [actor, target]
+                        .iter()
+                        .position(|&id| id == stop.entity_id as u64);
+                    if let Some(index) = index
+                        && self.repair[index].attack.is_some()
+                    {
+                        let entity = simulation(state)?
+                            .entities()
+                            .get([actor, target][index])
+                            .context("friendly-fire GI")?;
+                        ensure!(
+                            stop.house_id == house_id_for_owner(state, entity.owner())?,
+                            "friendly-fire Stop House differs from its GI"
+                        );
+                        let observation = &mut self.repair[index];
+                        ensure!(observation.stop.is_none(), "duplicate friendly-fire Stop");
+                        observation.stop = Some(stop);
+                        observation.events.push(json!({"kind":"STOP",
+                            "admission_tick":tick.tick,"admission_observed_frame":frame,
+                            "event_frame":stop.frame,"opcode":record.opcode(),
+                            "source":stop.entity_id,"house":stop.house_id,
+                            "bytes":record.as_bytes().as_slice()}));
+                    }
+                    if stop.entity_id != i32::try_from(actor)? || self.stop_observation.is_some() {
+                        continue;
+                    }
                     ensure!(
                         self.stop_observation.is_none() && self.pending_stop.is_none(),
                         "duplicate Host GI Stop"
@@ -1161,6 +1543,14 @@ impl BattleOpening {
             && self.attack_observation.is_some()
             && self.hit_observation.is_some()
             && self.stop_observation.is_some()
+            && self.repair.iter().all(|observation| {
+                observation.records.len() == 3
+                    && observation.executions.len() == 3
+                    && observation.damage.is_some()
+                    && observation.stop_execution.is_some()
+                    && observation.stopped.is_some()
+                    && observation.full.is_some()
+            })
             && ["GAPOWR", "GAPILE"].iter().all(|type_id| {
                 sim.entities()
                     .values_sorted()
@@ -1194,6 +1584,12 @@ impl BattleOpening {
                 "attack_input_frame":self.attack_input_frame,"attack":self.attack_observation,
                 "hit":self.hit_observation,"stop":self.stop_observation,"native_events":self.combat_events,
                 "final":combat_snapshot(state,self.fighter_ids()?,sim.session().binary_frame())?},
+            "repair":{"period":repair_period(state)?,"episodes":self.repair.iter().map(|observation|
+                json!({"native_events":observation.events,"attack":observation.attack_execution,
+                    "damage":observation.damage,"stop":observation.stop_execution,
+                    "executions":observation.executions,"payments":observation.payments,
+                    "stopped":observation.stopped,"full":observation.full,
+                    "final":observation.previous})).collect::<Vec<_>>()},
             "infantry":sim.entities().values_sorted().filter(|entity| sim.interner().resolve(entity.type_ref()) == "E1")
                 .map(|entity| json!({"id":entity.stable_id(),"owner":sim.interner().resolve(entity.owner()),
                     "alive":entity.is_alive(),"in_limbo":entity.in_limbo(),"position":entity.position,
@@ -1230,6 +1626,38 @@ fn wallet(state: &AppState) -> Result<(i32, i32)> {
         .context("local House")?;
     let economy = sim.houses().get(&owner).context("local House")?.economy();
     Ok((economy.credits(), economy.spent_credits()))
+}
+
+fn repair_period(state: &AppState) -> Result<u32> {
+    let rules = state.rules().context("retail repair rules")?;
+    let period = u32::try_from(crate::sim::combat::veterancy::self_heal_interval_frames(
+        rules.general.repair_rate_minutes,
+    ))?;
+    ensure!(period != 0, "retail repair period is zero");
+    Ok(period)
+}
+
+fn repair_snapshot(state: &AppState, id: u64, frame: u32) -> Result<RepairSnapshot> {
+    let sim = simulation(state)?;
+    let building = sim
+        .entities()
+        .get(id)
+        .context("repair observation GAPILE")?;
+    let economy = sim
+        .houses()
+        .get(&building.owner())
+        .context("repair House")?
+        .economy();
+    Ok(RepairSnapshot {
+        native_frame: frame,
+        id,
+        owner: sim.interner().resolve(building.owner()).into(),
+        health: building.health.current(),
+        estimated_health: building.estimated_health.get(),
+        repairing: building.repairing.is_on(),
+        credits: economy.credits(),
+        spent: economy.spent_credits(),
+    })
 }
 
 fn local_house_id(state: &AppState) -> Result<i8> {
@@ -1464,6 +1892,91 @@ fn ground_order_with_mouse(state: &mut AppState, id: u64, cell: (u16, u16)) -> R
     for edge in [ElementState::Pressed, ElementState::Released] {
         dispatch::handle_mouse_input(state, MouseButton::Left, edge);
     }
+    Ok(())
+}
+
+fn force_fire_with_mouse(state: &mut AppState, gi: u64, target: u64) -> Result<()> {
+    select_entity(state, gi)?;
+    ensure!(
+        state.match_state.input.hotkey_modifiers.is_empty(),
+        "force-fire began with held modifiers"
+    );
+    // The ordinary window handler and literal-key capture both enter this
+    // physical-key owner; no direct modifier-view assignment belongs here.
+    let modifier_edge = |state: &mut AppState, pressed| {
+        hotkeys::record_modifier_key(
+            &mut state.platform.held_modifier_keys,
+            &mut state.platform.live_modifiers,
+            &mut state.match_state.input.hotkey_modifiers,
+            KeyCode::ControlLeft,
+            pressed,
+            false,
+        );
+    };
+    modifier_edge(state, true);
+    ensure!(
+        state.match_state.input.hotkey_modifiers.control_key(),
+        "Control press was not retained"
+    );
+    let clicked = click_entity(state, target);
+    modifier_edge(state, false);
+    ensure!(
+        state.match_state.input.hotkey_modifiers.is_empty(),
+        "Control release stayed held"
+    );
+    clicked
+}
+
+fn repair_mode_key(state: &mut AppState, enabled: bool) -> Result<()> {
+    if state
+        .match_state
+        .match_presentation
+        .sidebar_gadget_state
+        .repair_mode_on
+        != enabled
+    {
+        let key = Key::Character("k".into());
+        let input = &state.match_state.input;
+        ensure!(
+            input.hotkey_bindings.resolve_event(
+                &key,
+                KeyLocation::Standard,
+                input.hotkey_modifiers
+            ) == HotkeyResolution::Command(HotkeyCommand::ToggleRepair),
+            "loaded K does not resolve Repair; current binding={:?}",
+            input.hotkey_bindings.first_key(HotkeyCommand::ToggleRepair)
+        );
+        chat_key(state, KeyCode::KeyK, &key, Some("k"));
+    }
+    ensure!(
+        state
+            .match_state
+            .match_presentation
+            .sidebar_gadget_state
+            .repair_mode_on
+            == enabled,
+        "real Repair key did not set the expected cursor mode"
+    );
+    if enabled {
+        ensure!(
+            projected_selection(state).is_empty(),
+            "Repair cursor did not clear projected selection"
+        );
+    }
+    Ok(())
+}
+
+fn repair_with_mouse(state: &mut AppState, producer: u64) -> Result<()> {
+    repair_mode_key(state, true)?;
+    click_entity(state, producer)?;
+    ensure!(
+        state
+            .match_state
+            .match_presentation
+            .sidebar_gadget_state
+            .repair_mode_on,
+        "GAPILE Repair click did not retain the sticky cursor mode"
+    );
     Ok(())
 }
 

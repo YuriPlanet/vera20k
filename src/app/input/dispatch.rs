@@ -355,15 +355,6 @@ pub(crate) fn band_box_left_up(state: &mut AppState, click: LeftUp) {
 }
 
 fn left_up_branches(state: &mut AppState, click: LeftUp) {
-    // Repair / Sell cursor modes consume the click — toggle repair or
-    // sell the own building under the cursor. The mode stays active
-    // (sticky) so the player can act on several buildings in a row. The
-    // radar's keep table has no repair or sell action.
-    if matches!(click, LeftUp::Tactical)
-        && crate::app::input::commands::try_repair_sell_mode_click(state)
-    {
-        return;
-    }
     // A pending placement takes the clicked Cell, whatever the action
     // (`0x004ABA16..0x004ABC67`).
     if let Some(type_id) = state.armed_building_type().map(str::to_owned) {
@@ -415,21 +406,31 @@ fn tactical_left_up(state: &mut AppState) {
     // best object's What_Action, which the click below dispatches. With
     // nothing selected the dispatch has no receiver, so SPECIAL_PLACE alone
     // remains.
-    if let Some(section) = state.armed_super_weapon_type().map(str::to_owned)
-        && selected_stable_ids_in_order(
-            state
-                .match_state
-                .sim_runtime
-                .as_ref()
-                .map(|rt| &rt.simulation),
-            state.rules(),
-            &state.match_state.input.selection_order,
-            state.match_state.input.selection_order_pending,
-        )
-        .is_empty()
-    {
-        crate::app::input::commands::launch_super_weapon_at_cursor(state, &section);
-        return;
+    let selection_empty = selected_stable_ids_in_order(
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation),
+        state.rules(),
+        &state.match_state.input.selection_order,
+        state.match_state.input.selection_order_pending,
+    )
+    .is_empty();
+    match state.match_state.input.tactical_pointer_mode(
+        &state.match_state.match_presentation.sidebar_gadget_state,
+        selection_empty,
+    ) {
+        super::state::TacticalPointerMode::SuperWeapon(section) => {
+            let section = section.to_owned();
+            crate::app::input::commands::launch_super_weapon_at_cursor(state, &section);
+            return;
+        }
+        super::state::TacticalPointerMode::RepairSell => {
+            crate::app::input::commands::try_repair_sell_mode_click(state);
+            return;
+        }
+        super::state::TacticalPointerMode::Ordinary => {}
     }
     if crate::app::input::planning_mode::connect_at_cursor(state) {
         return;
@@ -696,47 +697,14 @@ fn tactical_left_up(state: &mut AppState) {
 /// The right-release cancel ladder: cancel exactly one armed cursor mode, and
 /// clear the selection only when nothing was armed.
 ///
-/// gamemd walks seven mode flags in a fixed order and returns after the first
-/// one it cancels; VERA models the two it has (a targeting/placement cursor and
-/// the repair/sell cursor). The final rung — clear the selection — is retail
-/// behaviour, not a VERA deviation.
+/// Display4AAD30's represented cursor rungs belong to MatchInputState.
+/// This existing selection owner handles its final UnselectAll48DC90 rung.
 fn right_click_cancel_ladder(state: &mut AppState) {
-    if state.match_state.input.cancel_building_placement() {
-        return;
-    }
     if state
         .match_state
         .input
-        .targeting_mode
-        .as_ref()
-        .and_then(crate::app::types::TargetingMode::as_super_weapon)
-        .is_some()
+        .cancel_pointer_mode(&mut state.match_state.match_presentation.sidebar_gadget_state)
     {
-        state.match_state.input.targeting_mode = None;
-        state.match_state.input.building_placement_preview = None;
-        return;
-    }
-    if state
-        .match_state
-        .match_presentation
-        .sidebar_gadget_state
-        .repair_mode_on
-        || state
-            .match_state
-            .match_presentation
-            .sidebar_gadget_state
-            .sell_mode_on
-    {
-        state
-            .match_state
-            .match_presentation
-            .sidebar_gadget_state
-            .repair_mode_on = false;
-        state
-            .match_state
-            .match_presentation
-            .sidebar_gadget_state
-            .sell_mode_on = false;
         return;
     }
     queue_selection_snapshot_command(state, Vec::new(), false);
@@ -1328,22 +1296,30 @@ fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
         SidebarAction::SpawnTestUnits => {
             spawn_test_units_for_local_owner(state);
         }
-        SidebarAction::ToggleRepairMode => {
-            let g = &mut state.match_state.match_presentation.sidebar_gadget_state;
-            g.repair_mode_on = !g.repair_mode_on;
-            if g.repair_mode_on {
-                g.sell_mode_on = false;
-                state.match_state.input.targeting_mode = None;
-                state.match_state.input.building_placement_preview = None;
-            }
-        }
-        SidebarAction::ToggleSellMode => {
-            let g = &mut state.match_state.match_presentation.sidebar_gadget_state;
-            g.sell_mode_on = !g.sell_mode_on;
-            if g.sell_mode_on {
-                g.repair_mode_on = false;
-                state.match_state.input.targeting_mode = None;
-                state.match_state.input.building_placement_preview = None;
+        SidebarAction::ToggleRepairMode | SidebarAction::ToggleSellMode => {
+            use crate::ui::sidebar::gadget_flash::SelectionMode;
+            let mode = if matches!(action, SidebarAction::ToggleRepairMode) {
+                SelectionMode::Repair
+            } else {
+                SelectionMode::Sell
+            };
+            let owned_buildings = state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .and_then(|runtime| {
+                    let sim = &runtime.simulation;
+                    sim.houses().get(&sim.session().current_house()?)
+                })
+                .map_or(0, |house| house.tracking().buildings());
+            let placement_armed = state.armed_building_type().is_some();
+            if state
+                .match_state
+                .match_presentation
+                .sidebar_gadget_state
+                .toggle_selection_mode(mode, placement_armed, owned_buildings)
+            {
+                queue_selection_snapshot_command(state, Vec::new(), false);
             }
         }
         SidebarAction::Deploy => {

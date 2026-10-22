@@ -27,17 +27,14 @@
 //! draws over a repairing building (`app::presentation::ui_overlays`).
 //!
 //! RESIDUALS:
-//! - The wrench byte (`+0x6DE`: set when a repair starts below Strength,
-//!   flipped by every repair step) is read only by the Building CRC
-//!   (`0x00454260`); VERA does not keep it.
+//! - Repair phase `+6DE` is omitted: Building CRC4543EB reads it; the active
+//!   multiplayer checksum64DAB0 does not consume that class CRC.
 //! - Presentation: the repair step's redraw byte (`+0x80`, from
 //!   `BuildingClass::GetCurrentFrame 0x0043EF90`).
 //! - ToggleRepair's sounds and EVA play only for the owner's local player
 //!   (the app's `audible_to` gate), which is `IsHumanPlayer` outside
 //!   campaigns; in a campaign it reads `+0x1EC`/`+0x1ED` instead (dormant
 //!   while campaigns do not launch).
-//! - The REPAIR event resolves any target (`0x004C6ED5`) and needs only its
-//!   `+0x90`; VERA's command also requires the sender to own the building.
 //! - `UnitClass::Deploy` marks the deployed building AI-repairable when its
 //!   owner is not the local player (`IsHumanPlayer`, `0x007397E4`); VERA asks
 //!   whether a human controls the owner, the same in a skirmish. Another
@@ -316,7 +313,7 @@ pub fn can_repair_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
 /// `Strength / RepairStep` steps (both IDIV), times `RepairPercent=` under the
 /// ambient PC53/chop x87 word, through `ftol`, and at least 1. Retail 15% is
 /// just below .15, so per-step shares of 20, 40 and 100 cost 2, 5 and 14.
-pub(crate) fn repair_step_cost(rules: &RuleSet, object: &ObjectType) -> i32 {
+pub fn repair_step_cost(rules: &RuleSet, object: &ObjectType) -> i32 {
     let step = rules.general.repair_step;
     let steps = object.strength.checked_div(step).unwrap_or_else(|| {
         panic!(

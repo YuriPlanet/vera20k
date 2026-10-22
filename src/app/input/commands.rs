@@ -1224,6 +1224,10 @@ pub(crate) fn encode_ordinary_local_command(
             let record = sim.encode_stop_record(owner, entity_id)?;
             Some(CommandEnvelope::synchronized(record, execute_tick))
         }
+        Command::ToggleRepair { entity_id } => {
+            let record = sim.encode_repair_record(owner, entity_id)?;
+            Some(CommandEnvelope::synchronized(record, execute_tick))
+        }
         payload => Some(CommandEnvelope::new(owner, execute_tick, payload)),
     }
 }
@@ -1354,6 +1358,52 @@ mod tests {
     use crate::sim::house_state::HouseState;
     use crate::sim::intern::InternedId;
     use crate::sim::world::Simulation;
+
+    #[test]
+    fn repair_click_publishes_a_raw_target_and_still_handles_a_full_outlist() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = retail.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4AC0BE);
+        let building = sim
+            .spawn_object("GAPILE", "Americans", 8, 8, 0, &rules)
+            .unwrap();
+        sim.session_mut_for_test().set_tick_for_test(41);
+        sim.session_mut_for_test().set_binary_frame_for_test(77);
+        let command = Command::ToggleRepair {
+            entity_id: building,
+        };
+        let before = sim.state_hash();
+        assert_eq!(
+            schedule_command_in_sim(&mut sim, "Americans", command.clone()),
+            Some(41)
+        );
+        assert_eq!(
+            sim.state_hash(),
+            before,
+            "input cannot toggle before dispatch"
+        );
+        let record = sim.network_command_queues().local_records().unwrap()[0].clone();
+        assert_eq!(
+            (record.opcode(), record.house_id(), record.frame_stamp()),
+            (0x15, 1, 77)
+        );
+        assert_eq!(&record.payload()[..4], &(building as i32).to_le_bytes());
+        assert_eq!(record.payload()[4], 0x34);
+        for _ in 1..128 {
+            assert!(sim.issue_local_command(CommandEnvelope::synchronized(record.clone(), 41)));
+        }
+        assert_eq!(
+            schedule_command_in_sim(&mut sim, "Americans", command),
+            Some(41)
+        );
+        assert_eq!(
+            sim.network_command_queues().local_records().unwrap().len(),
+            128
+        );
+        assert_eq!(sim.state_hash(), before);
+    }
 
     #[test]
     fn ordinary_attacks_reach_the_raw_network_queue_before_stop() {

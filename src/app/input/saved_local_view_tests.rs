@@ -14,6 +14,50 @@ use crate::sim::world::Simulation;
 use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
 use crate::util::save_codec;
 
+#[test]
+fn repair_sell_keep_super_release_priority_and_cancel_before_the_super() {
+    use super::TacticalPointerMode;
+    use crate::ui::sidebar::gadget_flash::SelectionMode;
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    assert_eq!(
+        retail
+            .rules
+            .super_weapon("NukeSpecial")
+            .unwrap()
+            .action
+            .as_deref(),
+        Some("Nuke")
+    );
+    for mode in [SelectionMode::Repair, SelectionMode::Sell] {
+        let mut input = MatchInputState::new(Default::default());
+        input.targeting_mode = Some(TargetingMode::SuperWeapon("NukeSpecial".into()));
+        let mut sidebar = SidebarGadgetState::new();
+        assert!(
+            sidebar.toggle_selection_mode(mode, false, 1),
+            "entry requests UnselectAll"
+        );
+        assert_eq!(
+            input.tactical_pointer_mode(&sidebar, true),
+            TacticalPointerMode::SuperWeapon("NukeSpecial")
+        );
+        assert_eq!(
+            input.tactical_pointer_mode(&sidebar, false),
+            TacticalPointerMode::Ordinary
+        );
+        assert!(input.cancel_pointer_mode(&mut sidebar));
+        assert!(!sidebar.repair_mode_on && !sidebar.sell_mode_on);
+        assert_eq!(
+            input.targeting_mode,
+            Some(TargetingMode::SuperWeapon("NukeSpecial".into()))
+        );
+        assert!(input.cancel_pointer_mode(&mut sidebar));
+        assert_eq!(input.targeting_mode, None);
+        assert!(!input.cancel_pointer_mode(&mut sidebar));
+    }
+}
+
 fn fixture() -> (Simulation, RuleSet, MatchInputState) {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n1=UNIT\n[UNIT]\nStrength=100\n",

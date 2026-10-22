@@ -60,10 +60,8 @@ pub use self::production_queue::{
 };
 pub(crate) use self::production_refinery::spawn_building_free_unit;
 pub use self::production_repair::can_repair_building;
-pub use self::production_repair::{RepairControl, toggle_repair};
-pub(crate) use self::production_repair::{
-    engineer_repair, repair_step_cost, update_repair_and_power,
-};
+pub use self::production_repair::{RepairControl, repair_step_cost, toggle_repair};
+pub(crate) use self::production_repair::{engineer_repair, update_repair_and_power};
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use self::production_sell::begin_selling;
 pub(crate) use self::production_sell::sell_back;
