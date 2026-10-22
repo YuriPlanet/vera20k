@@ -281,6 +281,12 @@ pub enum SnapshotError {
 /// Structural failures found before a deserialized simulation is admitted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SnapshotRestoreError {
+    #[cfg(feature = "ares")]
+    #[error("object {object_id} has invalid attached speed: {reason}")]
+    InvalidAttachedSpeedState {
+        object_id: u64,
+        reason: &'static str,
+    },
     #[error("invalid UnitDelivery snapshot state: {0}")]
     InvalidUnitDelivery(&'static str),
     #[error("invalid paid two-stage selection: {0}")]
@@ -1944,6 +1950,14 @@ impl Simulation {
         prepare_terrain_assets: Option<&mut SnapshotTerrainAssetPreparation<'_>>,
     ) -> Result<SnapshotMapRestoreOutput, SnapshotRestoreError> {
         self.validate_type_tech_levels(rules)?;
+        #[cfg(feature = "ares")]
+        self.validate_attached_speed_after_restore(rules)
+            .map_err(
+                |(object_id, reason)| SnapshotRestoreError::InvalidAttachedSpeedState {
+                    object_id,
+                    reason,
+                },
+            )?;
         #[cfg(feature = "ares")]
         self.validate_factory_country_references(rules)
             .map_err(|reason| SnapshotRestoreError::InvalidFactoryCountry { reason })?;

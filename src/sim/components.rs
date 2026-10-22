@@ -539,8 +539,16 @@ pub struct FootSpeedState {
     /// Every speed query reads it (GetCurrentSpeed multiplies it in). Its only
     /// native writer is the Speed crate (`accept_speed_crate`), reached from
     /// `CellClass::PickupCrate` (`crates::pickup`) when a Foot commits to a
-    /// crate cell; saved and hashed (v181).
+    /// crate cell; saved and hashed (v181). With Ares this is the permanent
+    /// Ext+90 baseline; the separately owned derived Foot+580 is below.
     crate_multiplier: crate::util::native_x87::NativeF64Bits,
+    /// Ares100460A0's derived Foot+580, distinct from its permanent
+    /// TechnoExt+90 crate baseline above. None denotes an unchanged baseline.
+    /// The attachment owner updates it synchronously after native mutations;
+    /// snapshot restore validates it against that owner's ordered vector.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    attached_speed: Option<crate::util::native_x87::NativeF64Bits>,
     /// Foot+6B5, constructor0 at4D3444. Drive's straight/CrusherAll
     /// pre-entry arm4B1A2F sets it; Unit's admitted overlay tail73B067
     /// clears it. Both the Track speed prefix and RockingUpdate read it.
@@ -553,6 +561,8 @@ impl Default for FootSpeedState {
         Self {
             applied_fraction: crate::util::fixed_math::SIM_ZERO,
             crate_multiplier: crate::util::native_x87::NativeF64Bits::ONE,
+            #[cfg(feature = "ares")]
+            attached_speed: None,
             crush_slowdown: false,
         }
     }
@@ -582,6 +592,24 @@ impl FootSpeedState {
 
     pub fn crate_multiplier(&self) -> crate::util::native_x87::NativeF64Bits {
         self.crate_multiplier
+    }
+
+    /// Live Foot+580. Crate eligibility continues to read the permanent
+    /// baseline; GetCurrentSpeed reads this derived value under Ares.
+    pub fn effective_multiplier(&self) -> crate::util::native_x87::NativeF64Bits {
+        #[cfg(feature = "ares")]
+        if let Some(multiplier) = self.attached_speed {
+            return multiplier;
+        }
+        self.crate_multiplier
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_attached_speed(
+        &mut self,
+        multiplier: crate::util::native_x87::NativeF64Bits,
+    ) {
+        self.attached_speed = (multiplier != self.crate_multiplier).then_some(multiplier);
     }
 
     /// Foot `+0x578`, the applied speed fraction.

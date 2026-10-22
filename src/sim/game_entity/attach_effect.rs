@@ -4,6 +4,10 @@ use super::GameEntity;
 use crate::sim::intern::InternedId;
 use std::hash::{Hash, Hasher};
 
+#[cfg(test)]
+#[path = "attach_speed_tests.rs"]
+mod speed_tests;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 struct AttachedEffect {
     warhead: InternedId,
@@ -19,6 +23,47 @@ pub(super) struct AttachEffects {
 }
 
 impl GameEntity {
+    fn attached_speed_from_entries(
+        &self,
+        rules: &crate::rules::ruleset::RuleSet,
+        interner: &crate::sim::intern::StringInterner,
+    ) -> Result<crate::util::native_x87::NativeF64Bits, &'static str> {
+        use crate::util::native_x87::MaskedX87Chop53 as X;
+        //100460A0 seeds speed from the permanent Ext+90, retaining the
+        // ordered x87 accumulator until its final Foot+580 binary64 store.
+        let mut speed = X::load_f64(self.foot_speed.crate_multiplier());
+        if self.category().is_foot() {
+            for entry in &self.attach_effects.entries {
+                let settings = interner
+                    .try_resolve(entry.warhead)
+                    .and_then(|name| rules.warhead(name))
+                    .and_then(|wh| wh.ares_rules())
+                    .ok_or("attachment warhead is absent from restored rules")?;
+                speed = X::mul(
+                    speed,
+                    X::load_f64(settings.attach_effect().speed_multiplier()),
+                );
+            }
+        }
+        Ok(X::store_f64_masked_chop(speed))
+    }
+
+    /// The one100460A0 speed projection. The canonical ordered attachment
+    /// vector owns factors; FootSpeedState owns baseline and derived output.
+    pub(crate) fn recompute_ares_attached_speed(
+        &mut self,
+        rules: &crate::rules::ruleset::RuleSet,
+        interner: &crate::sim::intern::StringInterner,
+    ) {
+        if !self.category().is_foot() {
+            return; // Native only stores Foot+580 for the Foot flag.
+        }
+        let speed = self
+            .attached_speed_from_entries(rules, interner)
+            .expect("live attachment belongs to the scenario rules");
+        self.foot_speed.set_attached_speed(speed);
+    }
+
     pub(crate) fn attached_effect_anims(&self) -> impl Iterator<Item = u64> + '_ {
         self.attach_effects
             .entries
@@ -37,6 +82,10 @@ impl GameEntity {
         if !self.attach_effects.entries.is_empty() || self.attach_effects.animations_hidden {
             b"ares-attach-effects-v1".hash(hasher);
             self.attach_effects.hash(hasher);
+        }
+        if self.foot_speed.effective_multiplier() != self.foot_speed.crate_multiplier() {
+            b"ares-foot-effective-speed-v1".hash(hasher);
+            self.foot_speed.effective_multiplier().hash(hasher);
         }
     }
 }
@@ -349,10 +398,10 @@ mod receiver {
             if settings.duration() == 0 {
                 return;
             }
-            // The first complete chain is a neutral-stat ground WH attachment.
-            // Stat aggregation, decloak, Temporal and self-effects remain explicit
+            // Ground WH attachment and Foot speed share the existing owner.
+            // Other stat aggregation, decloak, Temporal and self-effects remain explicit
             // later mechanisms; never apply a misleading visual-only substitute.
-            if !settings.neutral_visual_path() {
+            if !settings.visual_speed_path() {
                 log::debug!(
                     "Ares AttachEffect {} requires a later dependency chain",
                     warhead.id
@@ -425,6 +474,11 @@ mod receiver {
                         source_house,
                     });
                     self.create_attached_effect_anim(target, index, rules);
+                    //1005869F follows animation creation; callbacks before
+                    //that call still see the previously committed speed.
+                    if let Some(victim) = self.substrate.entities.get_mut(target) {
+                        victim.recompute_ares_attached_speed(rules, &self.interner);
+                    }
                 }
             }
         }
@@ -533,6 +587,7 @@ mod receiver {
             }
             //10058EC0 decrements positive durations after the visibility work.
             let mut index = 0;
+            let mut expired = false;
             loop {
                 let Some(entry) = self
                     .substrate
@@ -546,6 +601,7 @@ mod receiver {
                     entry.remaining -= 1;
                 }
                 if entry.remaining == 0 {
+                    expired = true;
                     self.retire_attached_effect_anim(target, index, rules);
                     self.substrate
                         .entities
@@ -557,6 +613,11 @@ mod receiver {
                 } else {
                     index += 1;
                 }
+            }
+            //10058F70 compacts all expired entries before the single
+            //10058F79 aggregate. Visibility-only work never recomputes it.
+            if expired && let Some(victim) = self.substrate.entities.get_mut(target) {
+                victim.recompute_ares_attached_speed(rules, &self.interner);
             }
         }
 
@@ -580,18 +641,18 @@ mod receiver {
                 self.retire_attached_effect_anim(target, index, rules);
             }
             let interner = &self.interner;
-            self.substrate
-                .entities
-                .get_mut(target)
-                .unwrap()
-                .attach_effects
-                .entries
-                .retain(|entry| {
-                    !rules
-                        .warhead(interner.resolve(entry.warhead))
-                        .and_then(|wh| wh.ares_rules())
-                        .is_some_and(|extension| extension.attach_effect().discard_on_entry())
-                });
+            let victim = self.substrate.entities.get_mut(target).unwrap();
+            victim.attach_effects.entries.retain(|entry| {
+                !rules
+                    .warhead(interner.resolve(entry.warhead))
+                    .and_then(|wh| wh.ares_rules())
+                    .is_some_and(|extension| extension.attach_effect().discard_on_entry())
+            });
+            //100588E0's removal result gates1004B197. Merely hiding held
+            //animations leaves the previously committed speed untouched.
+            if victim.attach_effects.entries.len() != len {
+                victim.recompute_ares_attached_speed(rules, interner);
+            }
         }
 
         /// TechnoDTOR6F4500 ->10046FA0 ->10042C30, before the stock voice tail.
@@ -607,6 +668,28 @@ mod receiver {
             if let Some(victim) = self.substrate.entities.get_mut(target) {
                 victim.attach_effects.entries.clear();
             }
+        }
+
+        pub(crate) fn validate_attached_speed_after_restore(
+            &self,
+            rules: &RuleSet,
+        ) -> Result<(), (u64, &'static str)> {
+            for (id, victim) in self.substrate.entities.iter_sorted() {
+                // DTOR intentionally does not aggregate a retiring actor.
+                if self.substrate.pending_delete.contains_object(&id) {
+                    continue;
+                }
+                let expected = victim
+                    .attached_speed_from_entries(rules, &self.interner)
+                    .map_err(|reason| (id, reason))?;
+                if victim.foot_speed.effective_multiplier() != expected {
+                    return Err((
+                        id,
+                        "saved attached speed differs from its baseline and effects",
+                    ));
+                }
+            }
+            Ok(())
         }
     }
 }

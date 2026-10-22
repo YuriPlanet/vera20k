@@ -140,13 +140,15 @@ impl AttachEffectRules {
     pub(crate) fn penetrates_iron_curtain(&self) -> bool {
         self.penetrates_iron_curtain
     }
-    /// Selected WH chain has neutral aggregate stats. Other modifiers and
-    /// decloak/Temporal/self-effect consumers remain separate mechanisms.
-    pub(crate) fn neutral_visual_path(&self) -> bool {
+    pub(crate) fn speed_multiplier(&self) -> NativeF64Bits {
+        self.speed
+    }
+    /// Ground WH effects support their ordered Foot speed aggregate. Other
+    /// stat/decloak/Temporal/self-effect consumers remain separate mechanisms.
+    pub(crate) fn visual_speed_path(&self) -> bool {
         self.firepower == NativeF64Bits::ONE
             && self.armor == NativeF64Bits::ONE
             && self.rof == NativeF64Bits::ONE
-            && self.speed == NativeF64Bits::ONE
             && !self.cloakable
             && !self.force_decloak
             && !self.temporal_hides_anim
@@ -240,7 +242,7 @@ mod tests {
             assert_eq!(ae.speed, NativeF64Bits::from_bits(4.0_f64.to_bits()));
             assert!(ae.cloakable);
             assert_eq!((ae.delay, ae.initial_delay), (9, 11));
-            assert!(!ae.neutral_visual_path());
+            assert!(!ae.visual_speed_path());
             assert_eq!(
                 rules
                     .warhead("DEFAULT_WH")
