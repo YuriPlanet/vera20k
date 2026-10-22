@@ -1349,8 +1349,8 @@ mod tests {
         ABSTRACT_OBJECT_TARGET_KIND, COMMAND_RECORD_LEN, COMMAND_RECORD_PAYLOAD_LEN, CommandRecord,
         CommandRecordError, EXIT_OPCODE, ExitRecord, IDLE_OPCODE, MOVE_ACTION,
         MegaMissionCellTokenError, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget,
-        NULL_TARGET_KIND, REPAIR_OPCODE, RepairRecord, SCATTER_OPCODE, SELL_WALL_AT_CELL_OPCODE,
-        ScatterRecord, SellWallAtCellRecord, StopRecord,
+        NULL_TARGET_KIND, SCATTER_OPCODE, SELL_WALL_AT_CELL_OPCODE, ScatterRecord,
+        SellWallAtCellRecord, StopRecord,
     };
 
     fn native_record(value: &serde_json::Value) -> CommandRecord {
@@ -1365,10 +1365,10 @@ mod tests {
     }
 
     #[test]
-    fn object_target_constructors_preserve_flags_and_unwritten_payload() {
+    fn idle_and_scatter_constructor_preserve_flags_and_unwritten_payload() {
         // Original4C65E0 writes header plus one five-byte token. Negative
         // issuers instead write the null header, leaving the payload intact.
-        for opcode in [IDLE_OPCODE, SCATTER_OPCODE, REPAIR_OPCODE] {
+        for opcode in [IDLE_OPCODE, SCATTER_OPCODE] {
             for house_id in [-1, 3] {
                 for entity_id in [-17, 0x0102_0304] {
                     let mut actual =
@@ -1381,15 +1381,8 @@ mod tests {
                             entity_id,
                         }
                         .write_into(&mut actual);
-                    } else if opcode == SCATTER_OPCODE {
-                        ScatterRecord {
-                            house_id,
-                            frame,
-                            entity_id,
-                        }
-                        .write_into(&mut actual);
                     } else {
-                        RepairRecord {
+                        ScatterRecord {
                             house_id,
                             frame,
                             entity_id,
@@ -1431,25 +1424,6 @@ mod tests {
         record.set_issue_header(SCATTER_OPCODE, 2, -19);
         assert!(StopRecord::decode(&record).is_none());
         assert_eq!(ScatterRecord::decode(&record).unwrap().entity_id, i32::MIN);
-    }
-
-    #[test]
-    fn repair_decode_keeps_signed_identifier_and_requires_its_object_token() {
-        let typed = RepairRecord {
-            house_id: 1,
-            frame: -19,
-            entity_id: i32::MIN,
-        };
-        let mut record = CommandRecord::decode_exact(&[0xa5; COMMAND_RECORD_LEN]).unwrap();
-        typed.write_into(&mut record);
-        assert_eq!(RepairRecord::decode(&record), Some(typed));
-        for kind in [0, 0x0b, 0x33] {
-            let mut invalid = record.clone();
-            invalid.payload_mut()[4] = kind;
-            assert!(RepairRecord::decode(&invalid).is_none());
-        }
-        record.set_issue_header(IDLE_OPCODE, 1, -19);
-        assert!(RepairRecord::decode(&record).is_none());
     }
 
     #[test]

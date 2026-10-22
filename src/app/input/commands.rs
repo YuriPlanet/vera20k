@@ -209,20 +209,12 @@ fn own_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
         .as_ref()
         .map(|rt| &rt.simulation)?;
     let owner = preferred_local_owner(state)?;
-    own_building_id_for_owner(sim, &owner, stable_id)
-}
-
-fn own_building_id_for_owner(
-    sim: &crate::sim::world::Simulation,
-    owner: &str,
-    stable_id: u64,
-) -> Option<u64> {
     let entity = sim.entities().get(stable_id)?;
     (entity.category() == EntityCategory::Structure
         && sim
             .interner()
             .resolve(entity.owner())
-            .eq_ignore_ascii_case(owner))
+            .eq_ignore_ascii_case(&owner))
     .then_some(stable_id)
 }
 
@@ -241,19 +233,9 @@ pub(crate) fn own_repairable_building_under_point(
 }
 
 fn own_repairable_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
+    let id = own_building_id(state, stable_id)?;
     let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
-    let owner = preferred_local_owner(state)?;
-    own_repairable_building_id_for_owner(sim, state.rules()?, &owner, stable_id)
-}
-
-fn own_repairable_building_id_for_owner(
-    sim: &crate::sim::world::Simulation,
-    rules: &crate::rules::ruleset::RuleSet,
-    owner: &str,
-    stable_id: u64,
-) -> Option<u64> {
-    let id = own_building_id_for_owner(sim, owner, stable_id)?;
-    production::can_repair_building(sim, rules, id).then_some(id)
+    crate::sim::production::can_repair_building(sim, state.rules()?, id).then_some(id)
 }
 
 /// The local player's own building under the given world point when the sell
