@@ -1,6 +1,7 @@
-//! Authored skirmish Script30 through real recruitment and House Strategy.
+//! Authored skirmish scripts through real recruitment and their consumers.
 //! Original gamemd:6E9FEC ->6E99E1 writes House+250 and Team+80 only;
 //! due House4F9015/4FD7A0 consumes it through5013A0 then501400.
+//! Script12/38 at6E982B/6E9530 call Scenario SetGlobal689670.
 //! This is a supported map route, not an unchanged-stock AI frequency claim.
 
 use crate::headless_scenario::{SIM_TICK_MS, battle_session, load_session};
@@ -9,6 +10,16 @@ use crate::rules::team_ai_ini::TeamAiIniRegistry;
 use crate::sim::mission::MissionType;
 use crate::sim::world::{FrameEffects, SimSoundEvent, TickLane};
 use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam};
+
+fn insert_section_records(map: &mut String, section: &str, records: &str) {
+    let marker = format!("[{section}]");
+    if let Some(start) = map.find(&marker) {
+        let end = start + map[start..].find('\n').unwrap() + 1;
+        map.insert_str(end, records);
+    } else {
+        map.push_str(&format!("\n{marker}\n{records}"));
+    }
+}
 
 fn scenario(stock: &str, action: i32) -> String {
     let mut map = stock.to_owned();
@@ -51,15 +62,133 @@ fn scenario(stock: &str, action: i32) -> String {
         ("Actions", "F0520004=1,4,1,F0520001,0,0,0,0,A\n".to_owned()),
         ("Tags", "F0520005=0,FireSale,F0520004\n".to_owned()),
     ] {
-        let marker = format!("[{section}]");
-        if let Some(start) = map.find(&marker) {
-            let end = start + map[start..].find('\n').unwrap() + 1;
-            map.insert_str(end, &records);
-        } else {
-            map.push_str(&format!("\n{marker}\n{records}"));
-        }
+        insert_section_records(&mut map, section, &records);
     }
     map
+}
+
+#[test]
+fn authored_team_sets_then_clears_global_to_finish_the_battle() {
+    use crate::sim::house_state::HouseOutcomeKind;
+
+    let Some((root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let physical = assets.resolve_ref("XMP03T4.MAP").unwrap();
+    let stock = String::from_utf8(physical.bytes.to_vec()).unwrap();
+    let mut map = scenario(&stock, 2).replace(
+        "Name=FireSale step\n0=2,0\n1=2,0\n",
+        "Name=Set same then clear global\n0=12,7\n1=5,2\n2=12,7\n3=5,2\n4=38,7\n5=2,0\n",
+    );
+    for (section, records) in [
+        (
+            "Triggers",
+            "F0520006=Americans,<none>,Set observed,0,1,1,1,0\nF0520008=Americans,<none>,Clear after set,0,1,1,1,0\n",
+        ),
+        (
+            "Events",
+            "F0520006=2,27,0,7,13,0,1\nF0520008=2,28,0,7,27,0,8\n",
+        ),
+        (
+            "Actions",
+            "F0520006=1,28,0,8,0,0,0,0,A\nF0520008=1,67,0,0,0,0,0,0,A\n",
+        ),
+        (
+            "Tags",
+            "F0520007=0,Set watch,F0520006\nF0520009=0,Clear watch,F0520008\n",
+        ),
+    ] {
+        insert_section_records(&mut map, section, records);
+    }
+    let directory = crate::map::source::test_support::TestDirectory::new("team-global-battle");
+    let path = directory.path().join("global-battle.map");
+    std::fs::write(&path, map).unwrap();
+    let name = path.to_str().unwrap();
+    let mut launch = battle_session(name, &[(LaunchCountry::Russia, AiDifficulty::Easy)]);
+    launch.local_slot_mut().start_position = LaunchStartPosition::Position(2);
+    launch.opponents[0].start_position = LaunchStartPosition::Position(1);
+    launch.options.starting_credits = 5000;
+    launch.options.bases = true;
+    launch.options.unit_count = 0;
+    launch.options.tech_level = 10;
+    launch.options.short_game = false;
+    launch.options.crates = false;
+    launch.options.shroud = false;
+    let mut scene = load_session(&root, name, 0x1234_5678, launch).unwrap();
+    let sim = scene.sim();
+    let computer =
+        crate::sim::world::Simulation::scenario_house_named(&sim.houses, "Computer").unwrap();
+    let local = sim.session.current_house().unwrap();
+    let team_type = sim.interner.get("F0520001").unwrap();
+    let rifle = sim
+        .entities()
+        .values()
+        .find(|entity| {
+            entity.owner() == computer
+                && sim.interner.resolve(entity.type_ref()) == "E2"
+                && (entity.position.rx(), entity.position.ry()) == (30, 85)
+        })
+        .unwrap()
+        .stable_id();
+    assert!(!sim.global_variables()[7] && !sim.global_variables()[8]);
+    let mut created = std::collections::BTreeSet::new();
+    let mut steps = std::collections::BTreeSet::new();
+    let mut set_observed = false;
+    let mut finished = false;
+    // TeamClass::AI6E982B/6E9530 -> SetGlobal689670; the ordinary
+    // Global27/28 watches and Action67 supply the player-visible consumer.
+    for _ in 0..320 {
+        let commands = scene.runtime.simulation.take_due_commands();
+        let frame = scene
+            .runtime
+            .advance_frame(
+                &commands,
+                SIM_TICK_MS,
+                TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        let sim = scene.sim();
+        set_observed |= sim.global_variables()[7];
+        if let Some(team) = sim
+            .team_script_vm
+            .teams_in_order()
+            .find(|team| team.team_type_id() == Some(team_type))
+        {
+            created.insert(team.id());
+            assert_eq!(team.owner(), computer);
+            assert!(team.refusal().is_none(), "{:?}", team.refusal());
+            // The formed Team can still await its first Script visit at -1.
+            if team.formed() && team.cursor() >= 0 {
+                assert_eq!(team.members().collect::<Vec<_>>(), [rifle]);
+                steps.insert(team.cursor());
+            }
+        }
+        if !frame.tick.frame_committed {
+            assert_eq!(
+                sim.ready_outcome_for_owner(local)
+                    .map(|outcome| outcome.kind),
+                Some(HouseOutcomeKind::Victory)
+            );
+            finished = true;
+            break;
+        }
+    }
+    assert_eq!(created.len(), 1, "Trigger4 creates one real Team");
+    assert_eq!(
+        steps,
+        (0..=5).collect(),
+        "recruited Team executes both assignments and the clear"
+    );
+    assert!(set_observed && !scene.sim().global_variables()[7]);
+    assert!(
+        scene.sim().global_variables()[8],
+        "elapsed set-watch guards initial clear polling"
+    );
+    assert!(
+        finished,
+        "normal House result must terminate the Battle frame"
+    );
 }
 
 #[test]

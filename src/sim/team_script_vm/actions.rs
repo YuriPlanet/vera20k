@@ -17,7 +17,7 @@
 //! `deploy` rows (actions 14, 43, 8 and 9) in `transport_tests`.
 //!
 //! RESIDUALS:
-//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 10, 11, 14, 16, 17, 19, 20, 21, 24, 30, 37, 39, 40, 41, 42, 43,
+//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 10, 11, 12, 14, 16, 17, 19, 20, 21, 24, 30, 37, 38, 39, 40, 41, 42, 43,
 //!   46, 47, 49, 50, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63 and 64 are not ported. A team
 //!   that reaches one stays on it, as a native handler that has not
 //!   finished does, and records the first as its refusal; the rest of its
@@ -120,6 +120,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 9
             | 10
             | 11
+            | 12
             | 14
             | 16
             | 17
@@ -129,6 +130,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 24
             | 30
             | 37
+            | 38
             | 39
             | 40
             | 41
@@ -445,18 +447,19 @@ impl Simulation {
                     team.advance_pending = true;
                 }
             }
-            // Steam gamemd: Script39 at6E9BA1 and Script40 at6E9BBE
-            // call SetLocal689910(argument, true/false), respectively,
-            // then team+80=1 even if the variable index was rejected. The
-            // existing trigger owner keeps dirty admission and timer resets.
-            39 | 40 => {
+            // Retail TeamClass::AI6E9140's active table6E9F74 sends
+            // Script12/38 to6E982B/6E9530 -> SetGlobal689670;39/40 at
+            //6E9BA1/6E9BBE call SetLocal689910. All complete Team+80
+            // even for a rejected or unchanged value. The shared trigger
+            // owner retains dirty admission, linked timers and RNG order.
+            12 | 38 | 39 | 40 => {
                 Self::set_trigger_variable(
                     &self.session,
                     &mut self.scenario_rng,
                     &mut self.trigger_runtime,
-                    false,
+                    matches!(action.action_id, 12 | 38),
                     action.argument,
-                    action.action_id == 39,
+                    matches!(action.action_id, 12 | 39),
                 );
                 if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
                     team.advance_pending = true;

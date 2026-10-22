@@ -1077,22 +1077,24 @@ fn action128_retail_foots_use_reverse_shared_sweep_and_finish_the_warp() {
 }
 
 #[test]
-fn script40_clears_local_through_trigger_owner_and_advances_on_rejected_indices() {
+fn variable_scripts_use_shared_owner_and_advance_on_rejected_indices() {
     use crate::sim::team_script_vm::{TeamScriptAction, TeamScriptDefinition};
     let rules =
         crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
             "[InfantryTypes]\n0=E1\n[E1]\nStrength=125\nSpeed=4\n",
         ))
         .unwrap();
-    // Original Script40 @ 6E9BBE calls SetLocal689910 even without `first`
-    // and finishes after its unsigned index rejection. These are behavior
-    // regressions; the shared variable owner's native controls remain in
+    // Original TeamClass::AI Script12/38 @6E982B/6E9530 and 39/40
+    // @6E9BA1/6E9BBE call the shared Scenario setters and finish even after
+    // index rejection. The shared variable owner's native controls remain in
     // parsed_variable_actions_match_native_reader_dispatch_and_restore.
-    for (index, initially_set, changed) in [
-        (0, true, true),
-        (99, false, false),
-        (-1, false, false),
-        (100, false, false),
+    for (action_id, index, initially_set, changed) in [
+        (40, 0, true, true),
+        (40, 99, false, false),
+        (40, -1, false, false),
+        (40, 100, false, false),
+        (12, 50, false, false),
+        (38, -1, false, false),
     ] {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Russians");
@@ -1103,13 +1105,13 @@ fn script40_clears_local_through_trigger_owner_and_advances_on_rejected_indices(
         let member = sim
             .spawn_object("E1", "Russians", 10, 10, 0, &rules)
             .unwrap();
-        let script = sim.interner.intern("Clear local then wait");
+        let script = sim.interner.intern("Variable then wait");
         sim.team_script_vm.register_script(TeamScriptDefinition {
             id: script,
             source: crate::rules::team_ai_ini::TeamAiDefinitionSource::Scenario,
             actions: vec![
                 TeamScriptAction {
-                    action_id: 40,
+                    action_id,
                     argument: index,
                 },
                 TeamScriptAction {
@@ -1142,14 +1144,25 @@ fn script40_clears_local_through_trigger_owner_and_advances_on_rejected_indices(
         sim.trigger_runtime.dirty[0] = false;
         let rng = sim.rng_state();
         sim.run_team_ai_pass(&rules, None, FrameEffects::default());
-        assert!(sim.trigger_runtime.locals_set.is_empty(), "index {index}");
+        assert!(
+            sim.trigger_runtime.locals_set.is_empty(),
+            "action {action_id}, index {index}"
+        );
         assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([3]));
-        assert_eq!(sim.trigger_runtime.dirty[0], changed, "index {index}");
+        assert_eq!(
+            sim.trigger_runtime.dirty[0], changed,
+            "action {action_id}, index {index}"
+        );
         assert!(
             sim.team_script_vm.team(team).unwrap().advance_pending(),
-            "index {index}"
+            "action {action_id}, index {index}"
         );
-        assert_eq!(sim.rng_state(), rng, "clearing a local has no RNG draw");
+        assert!(sim.team_script_vm.team(team).unwrap().refusal().is_none());
+        assert_eq!(
+            sim.rng_state(),
+            rng,
+            "no Trigger timers watch these variables"
+        );
         sim.run_team_ai_pass(&rules, None, FrameEffects::default());
         assert_eq!(sim.team_script_vm.team(team).unwrap().cursor(), 1);
     }
