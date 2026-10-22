@@ -1055,6 +1055,8 @@ impl Simulation {
             }
             house.has_won().hash(hasher);
             house.has_lost().hash(hasher);
+            // Compatibility fold of the pending view derived from these
+            // flags; no separate result authority or session exit latch.
             house.outcome().hash(hasher);
             house.map_is_clear().hash(hasher);
             house.spy_sat_active().hash(hasher);

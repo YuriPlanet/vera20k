@@ -4121,6 +4121,9 @@ impl Simulation {
             }
             110 => {
                 effects.extend(self.session.pause_scenario(value.unwrap_or(0)));
+                // ScenarioPause684060 pauses elapsed time and Vox inline,
+                // before a following result action or House's Vox poll.
+                frame_effects.consume_prefix_effects(effects);
             }
             87 => {
                 // Steam gamemd, Execute6DDBD5..6DDBF3.
@@ -5161,6 +5164,10 @@ mod restore_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_scenario_pause_tests.rs"]
 mod scenario_pause_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_outcome_tests.rs"]
+mod outcome_tests;
 
 #[cfg(test)]
 #[path = "world/building_sale_trigger_tests.rs"]

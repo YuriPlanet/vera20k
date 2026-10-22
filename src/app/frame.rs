@@ -68,7 +68,7 @@ impl App {
                 // independent restart/EXIT/outcome priority after the modal.
                 Self::consume_scenario_restart_request(state);
                 Self::consume_executed_abort_exit(state, scenario_now_ms);
-                crate::app::match_runtime::sim_tick::drive_local_player_outcome_voice_wait(
+                crate::app::match_runtime::sim_tick::drive_local_player_outcome_exit(
                     state,
                     scenario_now_ms,
                 );
@@ -89,11 +89,33 @@ impl App {
                 ..Default::default()
             };
         }
+        if Self::house_outcome_wait_pending(state) {
+            // The native House wait services Network_ServiceLoop/audio before
+            // continuing this same House. Keep that service live while later
+            // House callbacks and MainTick's termination router remain held.
+            crate::app::match_runtime::sim_tick::pump_audio_service(state, scenario_now_ms);
+            main_tick_admitted = sim_tick::advance_in_game_runtime(state, scenario_now_ms);
+            if !Self::house_outcome_wait_pending(state)
+                && !crate::app::match_runtime::network_failure::pending(state)
+            {
+                Self::consume_scenario_restart_request(state);
+                Self::consume_executed_abort_exit(state, scenario_now_ms);
+                crate::app::match_runtime::sim_tick::drive_local_player_outcome_exit(
+                    state,
+                    scenario_now_ms,
+                );
+                Self::drive_scenario_exit(state, scenario_now_ms);
+            }
+            return RuntimeServiceResult {
+                main_tick_admitted,
+                ..Default::default()
+            };
+        }
         // Main_Tick55DE4F skips the frame while the restart byte is set and
         // Main_Game's router55CFD0 takes it before EXIT.
         Self::consume_scenario_restart_request(state);
         Self::consume_executed_abort_exit(state, scenario_now_ms);
-        crate::app::match_runtime::sim_tick::drive_local_player_outcome_voice_wait(
+        crate::app::match_runtime::sim_tick::drive_local_player_outcome_exit(
             state,
             scenario_now_ms,
         );
@@ -190,7 +212,9 @@ impl App {
                 };
             }
             main_tick_admitted = sim_tick::advance_in_game_runtime(state, now_ms);
-            if crate::app::match_runtime::network_failure::pending(state) {
+            if Self::house_outcome_wait_pending(state)
+                || crate::app::match_runtime::network_failure::pending(state)
+            {
                 return RuntimeServiceResult {
                     main_tick_admitted,
                     ..Default::default()
@@ -199,12 +223,9 @@ impl App {
             // EventClass EXIT is dispatched at the simulation tail. Consume
             // its terminal edge before any outcome route can claim teardown.
             Self::consume_executed_abort_exit(state, now_ms);
-            // The SavourDelay expiry is decided in the late house rung of this
-            // exact frame. Anchor its 0x78-bucket wall wait to the same observed
-            // wall time instead of delaying it to the next render pass.
-            crate::app::match_runtime::sim_tick::drive_local_player_outcome_voice_wait(
-                state, now_ms,
-            );
+            // The House's own Vox wait has finished before its result request.
+            // Route the retained request after all remaining frame callbacks.
+            crate::app::match_runtime::sim_tick::drive_local_player_outcome_exit(state, now_ms);
             Self::drive_scenario_exit(state, now_ms);
         }
         #[cfg(feature = "telemetry-dashboard")]
@@ -219,7 +240,8 @@ impl App {
     /// in-game and the configured focus freeze is not holding the world; a
     /// tactical capture never reaches the hidden service loop.
     pub(super) fn match_runs_while_hidden(state: &AppState) -> bool {
-        state.frontend.screen == GameScreen::InGame && !state.platform.focus_freeze_active()
+        state.frontend.screen == GameScreen::InGame
+            && (Self::house_outcome_wait_pending(state) || !state.platform.focus_freeze_active())
     }
 
     /// The one owner of the window's own cursor after the startup splash, set
@@ -340,6 +362,16 @@ impl App {
             tactical_capture.is_none() && !shell_capture_owns_simulation,
         );
         if runtime_pass.quit_requested {
+            return Ok(());
+        }
+        if Self::house_outcome_wait_pending(state)
+            || (state.frontend.screen == GameScreen::InGame
+                && state.match_state.scenario_exit.is_some()
+                && Self::local_outcome_exit_ready(state))
+        {
+            // House4F860B/4F8732 and outcome exits685670/685DC0 service
+            // audio/network without drawing Tactical again. Keep the surface
+            // presented before Won was cleared or later House flags changed.
             return Ok(());
         }
         // Native polls timed pause before Logic, then Manage55DDA5 afterwards.

@@ -245,10 +245,9 @@ fn native_flag_result_and_savour_controls() {
             supplied.map_or(-1, |timer| timer[0].as_i64().unwrap() as i32),
             supplied.map_or(0, |timer| timer[2].as_i64().unwrap() as i32),
         );
-        house.supply_outcome_state_for_test(
+        house.supply_result_flags_for_test(
             input["won"].as_i64().unwrap_or(0) != 0,
             input["lost"].as_i64().unwrap_or(0) != 0,
-            None,
             timer,
         );
         sim.houses.register(house);
@@ -329,25 +328,13 @@ fn native_house_result_zero_and_allow_win_heads() {
             input["timer"][2].as_i64().unwrap() as i32,
         );
         let mut house = HouseState::new(Default::default(), 0, None, true, 0, 10);
-        house.supply_outcome_state_for_test(
-            won,
-            !won,
-            Some(crate::sim::house_state::HouseOutcomeState {
-                kind: if won {
-                    crate::sim::house_state::HouseOutcomeKind::Victory
-                } else {
-                    crate::sim::house_state::HouseOutcomeKind::Defeat
-                },
-                exit_ready: false,
-            }),
-            timer,
-        );
+        house.supply_result_flags_for_test(won, !won, timer);
         house.supply_allow_win_tag_state(input["allow_win"].as_i64().unwrap() as i32, timer);
-        let ready = house.advance_outcome_savour(
+        let ready = house.pending_outcome(
             input["frame"].as_i64().unwrap() as i32,
             input["game_mode"].as_i64().unwrap() != 0,
         );
-        assert_eq!(ready, row["gate"] == "result_wait", "{name}");
+        assert_eq!(ready.is_some(), row["gate"] == "result_wait", "{name}");
     }
 }
 

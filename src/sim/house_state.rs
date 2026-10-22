@@ -164,11 +164,9 @@ pub enum HouseOutcomeKind {
     Defeat,
 }
 
-/// Persistent HouseClass result transition.
-///
-/// The countdown is the existing private House+298 CdTimer, shared with
-/// AllowWin-tag teardown. This is a result/exit latch, never a second timer.
-/// The wall-clock Vox drain that follows `exit_ready` belongs to the app.
+/// Read-only result projection. House flags describe a pending result;
+/// ScenarioSession owns the independent request after House's Vox wait.
+/// The countdown remains the sole private House+298 CdTimer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct HouseOutcomeState {
     pub kind: HouseOutcomeKind,
@@ -572,10 +570,6 @@ pub struct HouseState {
     has_won: bool,
     /// Defeat flag. Note: Flag_To_Lose clears HasWon first.
     has_lost: bool,
-    /// Accepted win/loss transition plus the deterministic SavourDelay target.
-    /// App-owned wall waits and audio teardown are intentionally excluded.
-    #[serde(default)]
-    outcome_state: Option<HouseOutcomeState>,
     /// HouseClass+0x241 map-clear byte folded by the retail multiplayer
     /// checksum. Distinct from the fog owner's+0x240 reveal guard, which
     /// TAction17 reads (6E0FE8) and gap re-admission clears independently.
@@ -2423,7 +2417,17 @@ impl HouseState {
     }
 
     pub const fn outcome(&self) -> Option<HouseOutcomeState> {
-        self.outcome_state
+        let kind = if self.has_won {
+            HouseOutcomeKind::Victory
+        } else if self.has_lost {
+            HouseOutcomeKind::Defeat
+        } else {
+            return None;
+        };
+        Some(HouseOutcomeState {
+            kind,
+            exit_ready: false,
+        })
     }
 
     /// Read the sole House+298 countdown in the native signed frame domain.
@@ -2442,10 +2446,6 @@ impl HouseState {
         if !skip_timer {
             self.allow_win_timer.start(frame, savour_frames);
         }
-        self.outcome_state = Some(HouseOutcomeState {
-            kind: HouseOutcomeKind::Victory,
-            exit_ready: false,
-        });
         true
     }
 
@@ -2465,10 +2465,6 @@ impl HouseState {
         if !skip_timer {
             self.allow_win_timer.start(frame, savour_frames);
         }
-        self.outcome_state = Some(HouseOutcomeState {
-            kind: HouseOutcomeKind::Defeat,
-            exit_ready: false,
-        });
         true
     }
 
@@ -2477,33 +2473,31 @@ impl HouseState {
         self.allow_win_timer.resume(frame);
     }
 
-    /// House4F85BE/4F86FE: exact zero on+298 admits the result's Vox wait.
-    /// Campaign Win also requires AllowWin-tags+27C<=0; Lose does not.
-    pub(crate) fn advance_outcome_savour(&mut self, frame: i32, game_mode_nonzero: bool) -> bool {
-        let Some(outcome) = self.outcome_state.as_mut() else {
-            return false;
-        };
-        if self.allow_win_timer.expired(frame)
-            && (outcome.kind == HouseOutcomeKind::Defeat
-                || game_mode_nonzero
-                || self.allow_win_tags <= 0)
-        {
-            outcome.exit_ready = true;
+    /// HouseClass::Update4F85BE/4F86FE admits the whole-Vox wait on
+    /// exact zero of+298. Campaign victory also requires AllowWin+27C<=0.
+    pub(crate) fn pending_outcome(
+        &self,
+        frame: i32,
+        game_mode_nonzero: bool,
+    ) -> Option<HouseOutcomeKind> {
+        let kind = self.outcome()?.kind;
+        (self.allow_win_timer.expired(frame)
+            && (kind == HouseOutcomeKind::Defeat || game_mode_nonzero || self.allow_win_tags <= 0))
+            .then_some(kind)
+    }
+
+    /// House4F8657 clears Won only after the Vox wait. The defeat path
+    /// 4F8780..4F87BB deliberately retains Lost; neither owns session flags.
+    pub(crate) fn complete_outcome(&mut self, kind: HouseOutcomeKind) {
+        if kind == HouseOutcomeKind::Victory {
+            self.has_won = false;
         }
-        outcome.exit_ready
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn supply_outcome_state_for_test(
-        &mut self,
-        won: bool,
-        lost: bool,
-        state: Option<HouseOutcomeState>,
-        timer: CdTimer,
-    ) {
+    pub(crate) fn supply_result_flags_for_test(&mut self, won: bool, lost: bool, timer: CdTimer) {
         self.has_won = won;
         self.has_lost = lost;
-        self.outcome_state = state;
         self.allow_win_timer = timer;
     }
 
@@ -2538,7 +2532,6 @@ impl HouseState {
             to_die: false,
             has_won: false,
             has_lost: false,
-            outcome_state: None,
             allow_win_tags: 0,
             allow_win_timer: CdTimer::default(),
             map_is_clear: false,
@@ -3050,10 +3043,9 @@ mod outcome_tests {
             if row["initial"][0] == 1 {
                 house.flag_to_die(frame);
             }
-            house.supply_outcome_state_for_test(
+            house.supply_result_flags_for_test(
                 row["initial"][1] == 1,
                 row["initial"][2] == 1,
-                None,
                 CdTimer::started(
                     row["initial_timer"][0].as_i64().unwrap() as i32,
                     row["initial_timer"][1].as_i64().unwrap() as i32,
@@ -3113,8 +3105,8 @@ mod outcome_tests {
     fn gsi_01_04_savour_gates_exact_frame_and_defeat_restarts_pending_victory() {
         let mut house = HouseState::new(Default::default(), 0, None, true, 0, 10);
         assert!(house.accept_win_result(100, 90, false));
-        assert!(!house.advance_outcome_savour(189, true));
-        assert!(house.advance_outcome_savour(190, true));
+        assert!(!house.pending_outcome(189, true).is_some());
+        assert!(house.pending_outcome(190, true).is_some());
 
         let mut replaced = HouseState::new(Default::default(), 0, None, true, 0, 10);
         assert!(replaced.accept_win_result(100, 90, false));
@@ -3122,7 +3114,7 @@ mod outcome_tests {
         assert!(!replaced.has_won);
         assert!(replaced.has_lost);
         assert_eq!(
-            replaced.outcome_state.expect("defeat outcome").kind,
+            replaced.outcome().expect("defeat outcome").kind,
             HouseOutcomeKind::Defeat
         );
         assert_eq!(
@@ -3144,22 +3136,22 @@ mod outcome_tests {
         house.supply_allow_win_tag_state(1, paused);
         assert!(house.accept_win_result(100, 90, true));
         assert_eq!(house.outcome_timer(), paused, "67 must not write a timer");
-        assert!(!house.advance_outcome_savour(1000, false));
+        assert!(!house.pending_outcome(1000, false).is_some());
         house.resume_result_timer(1000);
         assert_eq!(house.outcome_timer().duration(), 60);
         assert!(
-            !house.advance_outcome_savour(1060, false),
+            !house.pending_outcome(1060, false).is_some(),
             "AllowWin count blocks Win"
         );
         house.removed_allow_win_tag(1060);
-        assert!(!house.advance_outcome_savour(1119, false));
-        assert!(house.advance_outcome_savour(1120, false));
+        assert!(!house.pending_outcome(1119, false).is_some());
+        assert!(house.pending_outcome(1120, false).is_some());
 
         let mut loss = HouseState::new(Default::default(), 0, None, true, 0, 10);
         loss.supply_allow_win_tag_state(5, crate::sim::timer::CdTimer::default());
         assert!(loss.accept_lose_result(0, 90, true));
         assert!(
-            loss.advance_outcome_savour(0, false),
+            loss.pending_outcome(0, false).is_some(),
             "68 preserves expired ctor timer; no AllowWin gate"
         );
     }

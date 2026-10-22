@@ -12,13 +12,17 @@ use crate::audio::sfx::SfxPlayer;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::selection::SelectionState;
 use crate::sim::world::{
-    LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError, SimSoundEvent, Simulation,
-    SoundBoundary,
+    LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError, OutcomeWaitBoundary,
+    SimSoundEvent, Simulation, SoundBoundary,
 };
 
 #[cfg(test)]
 #[path = "planning_defeat_tests.rs"]
 mod planning_defeat_tests;
+
+#[cfg(test)]
+#[path = "outcome_wait_tests.rs"]
+mod outcome_wait_tests;
 
 /// A frame-local borrow of the existing app/audio owners. Native Gattling
 /// Stop405D40 must finish before Report's Main65C780 draw; Update70E000 and
@@ -27,6 +31,13 @@ mod planning_defeat_tests;
 /// Source: `tools/input_oracle/gattling_loop.json` and its native harness.
 type RadarAdmission<'a> =
     dyn FnMut(crate::sim::radar::RadarEventRequest, u64, &RuleSet) -> bool + 'a;
+
+struct ScenarioPauseOwners<'a> {
+    clock: &'a mut super::scenario_pause::ScenarioPauseClock,
+    elapsed: &'a RefCell<&'a mut super::frame_pacer::ScenarioElapsedClock>,
+    mode: super::session::SessionMode,
+    other_local_pause: bool,
+}
 
 pub(crate) struct FrameClientBoundary<'a> {
     delivered: Cell<usize>,
@@ -37,6 +48,8 @@ pub(crate) struct FrameClientBoundary<'a> {
     planning: Option<RefCell<(&'a mut PlanningInputState, &'a mut SelectionState)>>,
     network: Option<RefCell<&'a mut super::session::MatchSession>>,
     live_network: Option<RefCell<&'a mut crate::net::live_commands::LiveCommandSession>>,
+    outcome_wait: Option<RefCell<&'a mut Option<super::scenario_exit::ScenarioOutcomeVoiceWait>>>,
+    scenario_pause: Option<RefCell<ScenarioPauseOwners<'a>>>,
 }
 
 impl<'a> FrameClientBoundary<'a> {
@@ -55,6 +68,8 @@ impl<'a> FrameClientBoundary<'a> {
             planning: None,
             network: None,
             live_network: None,
+            outcome_wait: None,
+            scenario_pause: None,
         }
     }
 
@@ -81,6 +96,117 @@ impl<'a> FrameClientBoundary<'a> {
     ) -> Self {
         self.live_network = live.map(RefCell::new);
         self
+    }
+
+    pub(crate) fn with_outcome_wait(
+        mut self,
+        pending: &'a mut Option<super::scenario_exit::ScenarioOutcomeVoiceWait>,
+    ) -> Self {
+        self.outcome_wait = Some(RefCell::new(pending));
+        self
+    }
+
+    pub(crate) fn with_scenario_pause(
+        mut self,
+        clock: &'a mut super::scenario_pause::ScenarioPauseClock,
+        elapsed: &'a RefCell<&'a mut super::frame_pacer::ScenarioElapsedClock>,
+        mode: super::session::SessionMode,
+        other_local_pause: bool,
+    ) -> Self {
+        self.scenario_pause = Some(RefCell::new(ScenarioPauseOwners {
+            clock,
+            elapsed,
+            mode,
+            other_local_pause,
+        }));
+        self
+    }
+
+    fn apply_prefix_effect_at(
+        &self,
+        effect: &crate::sim::trigger_runtime::TriggerEffect,
+        wall_ms: u64,
+    ) -> bool {
+        use crate::sim::trigger_runtime::TriggerEffect;
+        if !matches!(
+            effect,
+            TriggerEffect::ScenarioPause { .. } | TriggerEffect::ScenarioResume
+        ) {
+            return false;
+        }
+        let Some(owners) = &self.scenario_pause else {
+            return false;
+        };
+        let mut owners = owners.borrow_mut();
+        let ScenarioPauseOwners {
+            clock,
+            elapsed,
+            mode,
+            other_local_pause,
+        } = &mut *owners;
+        let mut elapsed = elapsed.borrow_mut();
+        let mut playback = self.playback.borrow_mut();
+        let sfx = playback.as_mut().map(|(sfx, _)| &mut **sfx);
+        match *effect {
+            TriggerEffect::ScenarioPause {
+                duration,
+                outermost,
+            } => {
+                super::scenario_pause::enter_with_owners(
+                    clock,
+                    &mut elapsed,
+                    *mode,
+                    sfx,
+                    duration,
+                    outermost,
+                    wall_ms,
+                );
+            }
+            TriggerEffect::ScenarioResume => super::scenario_pause::resume_with_owners(
+                &mut elapsed,
+                sfx,
+                *other_local_pause,
+                wall_ms,
+            ),
+            _ => unreachable!(),
+        }
+        true
+    }
+}
+
+impl OutcomeWaitBoundary for FrameClientBoundary<'_> {
+    fn apply_prefix_effect(&self, effect: &crate::sim::trigger_runtime::TriggerEffect) -> bool {
+        self.apply_prefix_effect_at(effect, super::frame_pacer::wall_clock_ms())
+    }
+
+    fn wait_complete(
+        &self,
+        _owner: crate::sim::intern::InternedId,
+        kind: crate::sim::house_state::HouseOutcomeKind,
+    ) -> bool {
+        let Some(pending) = &self.outcome_wait else {
+            return true;
+        };
+        let wall_ms = super::frame_pacer::wall_clock_ms();
+        // The outer event loop services the existing AudioServiceClock and
+        // network owners between visits. This is only native7529E0's Vox poll.
+        let voices_active = self
+            .playback
+            .borrow_mut()
+            .as_mut()
+            .is_some_and(|(sfx, inputs)| {
+                sfx.pump_and_check_voices(
+                    inputs.catalog.eva(),
+                    inputs.assets,
+                    inputs.catalog.index(),
+                )
+            });
+        super::scenario_exit::ScenarioOutcomeVoiceWait::poll_pending(
+            &mut pending.borrow_mut(),
+            kind,
+            wall_ms,
+            voices_active,
+        )
     }
 }
 

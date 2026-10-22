@@ -4151,7 +4151,9 @@ fn flag_to_die_destroys_owned_objects_at_frame_zero_before_defeat_gate() {
         "Flag_To_Die has no RNG call"
     );
     assert!(sim.houses[&owner].is_to_die());
-    let generated = sim.house_rung(&rules, None, false, FrameEffects::default());
+    let generated = sim
+        .house_rung(&rules, None, false, FrameEffects::default(), None)
+        .expect("headless outcome waits complete synchronously");
     assert!(generated.is_empty());
     assert!(!sim.houses[&owner].is_to_die());
     assert!(
@@ -4251,14 +4253,18 @@ fn gsi_01_04_house_rung_owns_savour_deadline_and_emits_one_transition_edge() {
     sim.session.set_tick_for_test(35);
     sim.session.set_binary_frame_for_test(35);
     check_defeat_now(&mut sim, Some(&rules));
-    assert!(!sim.houses[&winner].outcome().unwrap().exit_ready);
+    assert!(sim.ready_outcome_for_owner(winner).is_none());
     assert!(!sim.termination_frame_requested());
     assert!(sim.sound_events.is_empty(), "accepted edges never replay");
 
     sim.session.set_tick_for_test(36);
     sim.session.set_binary_frame_for_test(36);
     check_defeat_now(&mut sim, Some(&rules));
-    assert!(sim.houses[&winner].outcome().unwrap().exit_ready);
+    assert_eq!(
+        sim.ready_outcome_for_owner(winner).unwrap().kind,
+        HouseOutcomeKind::Victory
+    );
+    assert!(!sim.houses[&winner].has_won());
     assert!(sim.houses[&loser].is_defeated());
     assert!(
         sim.houses[&loser].outcome().is_none(),

@@ -93,70 +93,35 @@ fn replay_flush_facts(state: &AppState) -> (u64, u64) {
     (session_tick, now)
 }
 
-/// Drive the app-owned Vox wait after serialized HouseState reaches its exact
-/// SavourDelay expiry frame. A loaded expiry latch reconstructs this wait but
-/// never reconstructs the already-consumed transition EVA edge.
-pub(crate) fn drive_local_player_outcome_voice_wait(state: &mut AppState, wall_ms: u64) {
+/// Route an admitted native result after its in-House Vox wait and callbacks.
+/// The pending wait is serviced through the suspended frame's client boundary.
+pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64) {
     if !matches!(state.frontend.screen, GameScreen::InGame)
         || state.match_state.scenario_exit.is_some()
     {
         return;
     }
-    if state.match_state.scenario_outcome.is_none() {
-        let Some(owner) = state.match_state.local_player_owner() else {
-            return;
-        };
-        let outcome = state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation)
-            .and_then(|sim| {
-                sim.interner()
-                    .get(owner)
-                    .and_then(|owner| sim.ready_outcome_for_owner(owner))
-            });
-        let Some(outcome) = outcome else {
-            return;
-        };
-        log::info!(
-            "Match end ready for local player '{owner}': {}",
-            crate::app::match_runtime::scenario_exit::outcome_title(outcome.kind)
-        );
-        state.match_state.scenario_outcome = Some(
-            crate::app::match_runtime::scenario_exit::ScenarioOutcomeVoiceWait::start(
-                wall_ms,
-                outcome.kind,
-            ),
-        );
-    }
-
-    let voices_active = match (
-        &mut state.audio.sfx_player,
-        state.process_assets.manager(),
-        state.process_assets.audio_catalog(),
-    ) {
-        (Some(sfx), Some(assets), Some(catalog)) => {
-            sfx.pump_and_check_voices(catalog.eva(), assets, catalog.index())
-        }
-        _ => false,
-    };
-    let finished = state
-        .match_state
-        .scenario_outcome
-        .as_ref()
-        .is_some_and(|outcome| outcome.tick(wall_ms, voices_active));
-    if !finished {
+    let Some(owner) = state.match_state.local_player_owner() else {
         return;
-    }
-
+    };
     let outcome = state
         .match_state
-        .scenario_outcome
+        .sim_runtime
         .as_ref()
-        .expect("finished outcome voice wait remains present")
-        .kind();
-    state.match_state.scenario_outcome = None;
+        .map(|rt| &rt.simulation)
+        .filter(|sim| sim.pending_outcome_wait().is_none())
+        .and_then(|sim| {
+            sim.interner()
+                .get(owner)
+                .and_then(|owner| sim.ready_outcome_for_owner(owner))
+        });
+    let Some(outcome) = outcome.map(|outcome| outcome.kind) else {
+        return;
+    };
+    log::info!(
+        "Match end ready for local player '{owner}': {}",
+        crate::app::match_runtime::scenario_exit::outcome_title(outcome)
+    );
     //685670/685DC0 clear5BF450 before either outcome fade.
     crate::app::radar_movie::retire(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);
@@ -768,6 +733,16 @@ fn advance_in_game_runtime_mode(
         super::network_failure::show(state);
         return false;
     }
+    if crate::app::App::house_outcome_wait_pending(state) {
+        // House4F8649/4F8772 services48D080 inside this Main_Tick;
+        // it never re-enters55D7C2's timed-pause/Chrono/input prelude.
+        return advance_one_simulation_frame(
+            state,
+            TickLane::Ordinary,
+            None,
+            FrameResume::OutcomeWait,
+        );
+    }
     crate::app::input::commands::reconcile_paid_super_weapon_cursor(state);
     let frame_stepping = matches!(mode, RuntimeAdvanceMode::WallClock { .. })
         && state.diag.debug_frame_step_requested;
@@ -873,6 +848,9 @@ fn advance_in_game_runtime_mode(
             FrameResume::None
         };
         let frame_committed = advance_one_simulation_frame(state, tick_lane, mouse_scroll, resume);
+        if crate::app::App::house_outcome_wait_pending(state) {
+            return false;
+        }
         if super::network_failure::pending(state) {
             super::network_failure::show(state);
             return false;
@@ -1002,6 +980,7 @@ enum FrameResume {
     ChecksumModal,
     NetworkWait,
     NetworkLeave,
+    OutcomeWait,
 }
 
 fn advance_one_simulation_frame(
@@ -1042,6 +1021,8 @@ fn advance_one_simulation_frame(
         // Cache local owner name before mutable sim borrow (avoids borrow conflict).
         let local_owner_name = crate::app::input::commands::preferred_local_owner_name(state);
         let sound_listener = crate::app::presentation::building_anim::sound_listener(state);
+        let session_mode = state.match_state.session_mode();
+        let other_local_pause = state.match_state.paused();
         let rules_owner = state.process_assets.native_rules();
         let initial_save = if !resuming && tick_lane == TickLane::Ordinary {
             crate::app::persistence::commands::prepare_initial_campaign_save(state, rules_owner)
@@ -1086,19 +1067,17 @@ fn advance_one_simulation_frame(
             // F07: the runtime is the one production frame API — bound
             // resources, no caller-substitutable inputs.
             let mut output = {
-                let initial_save = std::cell::RefCell::new((
-                    initial_save,
-                    &mut state.persistence,
-                    &mut state.match_state.scenario_elapsed_clock,
-                ));
+                let elapsed_clock =
+                    std::cell::RefCell::new(&mut state.match_state.scenario_elapsed_clock);
+                let initial_save = std::cell::RefCell::new((initial_save, &mut state.persistence));
                 let before_logic = |sim: &crate::sim::world::Simulation| {
                     let mut save = initial_save.borrow_mut();
-                    let (prepared, persistence, clock) = &mut *save;
+                    let (prepared, persistence) = &mut *save;
                     crate::app::persistence::commands::initial_campaign_save(
                         prepared.take(),
                         sim,
                         persistence,
-                        clock,
+                        &mut elapsed_clock.borrow_mut(),
                     );
                 };
                 let playback = match (
@@ -1133,21 +1112,36 @@ fn advance_one_simulation_frame(
                     &mut state.match_state.input.selection_state,
                 )
                 .with_network_session(&mut state.match_state.session)
-                .with_live_network(state.match_state.live_network.as_mut());
+                .with_live_network(state.match_state.live_network.as_mut())
+                .with_scenario_pause(
+                    &mut state.match_state.match_presentation.scenario_pause,
+                    &elapsed_clock,
+                    session_mode,
+                    other_local_pause,
+                )
+                .with_outcome_wait(&mut state.match_state.scenario_outcome);
                 let effects = FrameEffects::for_sound(&boundary)
                     .with_local_planning(&boundary)
                     .with_network_commands(&boundary)
+                    .with_outcome_wait(&boundary)
                     .with_before_logic(&before_logic);
                 match resume {
                     FrameResume::ChecksumModal => rt.resume_after_network_failure(effects),
                     FrameResume::NetworkWait => rt.resume_network_wait(effects),
                     FrameResume::NetworkLeave => rt.leave_network_wait(effects),
+                    FrameResume::OutcomeWait => rt.resume_outcome_wait(effects),
                     FrameResume::None => {
                         rt.advance_frame(&due_commands, SIM_TICK_MS, tick_lane, effects)
                     }
                 }
                 .expect("simulation frame failed; prior world mutations remain")
             };
+            if output.outcome_waiting {
+                // The simulation retains this frame's non-sound facts until
+                // the same House suffix finishes. Its sound prefix has already
+                // reached the synchronous boundary above exactly once.
+                return false;
+            }
             #[cfg(feature = "telemetry-dashboard")]
             {
                 let tick_ms = telemetry_advance_started.elapsed().as_secs_f32() * 1000.0;
@@ -1205,6 +1199,7 @@ fn advance_one_simulation_frame(
                 multiplayer_checksum,
                 network_failure,
                 network_waiting,
+                outcome_waiting,
                 ..
             } = output;
             // Queue_AI already published this checksum to the process session
@@ -1330,7 +1325,7 @@ fn advance_one_simulation_frame(
             if should_record_replay_tick(
                 &tick_result,
                 &admitted_commands,
-                network_failure.is_some() || network_waiting,
+                network_failure.is_some() || network_waiting || outcome_waiting,
             ) && let Some(log) = &mut state.match_state.match_diagnostics.replay_log
             {
                 log.record_tick(tick_result.tick, admitted_commands, tick_result.state_hash);

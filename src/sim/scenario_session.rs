@@ -860,6 +860,14 @@ pub struct ScenarioSession {
     /// the presentation viewer and cannot be rebound from selection each frame.
     /// Evidence: docs/research/PHASE3_CURRENT_HOUSE_IDENTITY_GHIDRA_REPORT.md.
     current_house: Option<InternedId>,
+    /// Process result requests A83D49/A8ECD0. HouseClass::AI @0x004F8440
+    /// clears Won at4F8657 before raising victory; later House flag/timer
+    /// writes cannot revoke it. Main_Game__Route_Scenario_Termination
+    /// @0x0055CFD0 selects victory first at55D059.
+    #[serde(default)]
+    victory_requested: bool,
+    #[serde(default)]
+    defeat_requested: bool,
     /// Scenario+34B8: saved signed Side, independent of current House and
     /// process Vox selection. SetDefaults68389F initializes0; Full_Init
     /// 687819/68782D/68792A/687938 installs the fresh value. Load67E75B
@@ -1390,6 +1398,28 @@ impl ScenarioSession {
         self.current_house
     }
 
+    pub(crate) const fn outcome_request(
+        &self,
+    ) -> Option<crate::sim::house_state::HouseOutcomeKind> {
+        use crate::sim::house_state::HouseOutcomeKind;
+        if self.victory_requested {
+            Some(HouseOutcomeKind::Victory)
+        } else if self.defeat_requested {
+            Some(HouseOutcomeKind::Defeat)
+        } else {
+            None
+        }
+    }
+
+    /// HouseClass::AI @0x004F8440 (4F8692/4F87B2) raises the request after
+    /// its Vox wait. Other House callbacks cannot revoke an admitted result.
+    pub(crate) fn admit_outcome(&mut self, kind: crate::sim::house_state::HouseOutcomeKind) {
+        match kind {
+            crate::sim::house_state::HouseOutcomeKind::Victory => self.victory_requested = true,
+            crate::sim::house_state::HouseOutcomeKind::Defeat => self.defeat_requested = true,
+        }
+    }
+
     pub const fn scenario_side(&self) -> i32 {
         self.scenario_side
     }
@@ -1442,8 +1472,9 @@ impl ScenarioSession {
             b"scenario-waypoints-v1".hash(hasher);
             s.waypoints.hash(hasher);
         }
-        // current_house and scenario_side are persisted process inputs, absent from
-        // the shared peer hash: native64DAB0 does not fold A83D4C, and different
+        // current_house, scenario_side and result requests A83D49/A8ECD0 are
+        // persisted process inputs, absent from the shared peer hash:
+        // native64DAB0 does not fold these globals, and different
         // participants legitimately select different current houses. Gameplay
         // mutations made by current-house callbacks retain their own hash owners.
         // This is not a claim that Rust's stronger hash equals native's CRC.
@@ -1658,6 +1689,8 @@ impl ScenarioSession {
             waypoints: BTreeMap::new(),
             start_slot_houses: BTreeMap::new(),
             current_house: None,
+            victory_requested: false,
+            defeat_requested: false,
             scenario_side: 0,
             game_options: GameOptions::default(),
             tick: 0,

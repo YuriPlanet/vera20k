@@ -707,6 +707,14 @@ impl ApplicationHandler for App {
                 // recorded before screen-specific dispatch own this state.
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                if Self::house_outcome_wait_pending(state) {
+                    if !event.state.is_pressed()
+                        && let PhysicalKey::Code(code) = event.physical_key
+                    {
+                        state.match_state.input.keys_held.remove(&code);
+                    }
+                    return;
+                }
                 if crate::app::match_runtime::network_failure::pending(state) {
                     crate::app::match_runtime::network_failure::key(state, &event);
                     return;
@@ -1075,6 +1083,9 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 state.set_cursor_from_window(position.x as f32, position.y as f32);
+                if Self::house_outcome_wait_pending(state) {
+                    return;
+                }
                 if crate::app::match_runtime::network_failure::pending(state) {
                     crate::app::match_runtime::network_failure::cursor_moved(state);
                     return;
@@ -1170,6 +1181,12 @@ impl ApplicationHandler for App {
                 button,
                 ..
             } => {
+                if Self::house_outcome_wait_pending(state) {
+                    if !btn_state.is_pressed() {
+                        Self::release_in_game_pointer_state(state);
+                    }
+                    return;
+                }
                 if crate::app::match_runtime::network_failure::pending(state) {
                     crate::app::match_runtime::network_failure::mouse(
                         state,
@@ -1349,6 +1366,9 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
+                if Self::house_outcome_wait_pending(state) {
+                    return;
+                }
                 if crate::app::match_runtime::network_failure::pending(state) {
                     return;
                 }

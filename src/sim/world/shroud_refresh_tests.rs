@@ -1753,7 +1753,8 @@ fn initial_house_sight_matches_original_update_tail() {
         sim.session.set_current_house_for_test(Some(player));
         if !input["pending"].as_bool().unwrap() {
             // Consume the first House visit before the supplied source exists.
-            sim.house_rung(&rules, None, false, FrameEffects::default());
+            sim.house_rung(&rules, None, false, FrameEffects::default(), None)
+                .expect("headless outcome waits complete synchronously");
         }
         let id = sim
             .spawn_object("SCOUT", "Americans", 40, 40, 0, &rules)
@@ -1812,7 +1813,8 @@ fn initial_house_sight_matches_original_update_tail() {
         }
         for visit in row["visits"].as_array().unwrap() {
             let (_, calls) = trace_reveal_calls(|| {
-                sim.house_rung(&rules, None, false, FrameEffects::default());
+                sim.house_rung(&rules, None, false, FrameEffects::default(), None)
+                    .expect("headless outcome waits complete synchronously");
             });
             let events = visit["events"].as_array().unwrap();
             assert_eq!(

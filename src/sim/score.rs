@@ -189,7 +189,7 @@ impl Simulation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::house_state::{HouseOutcomeKind, HouseOutcomeState, HouseState};
+    use crate::sim::house_state::{HouseOutcomeKind, HouseState};
 
     struct HouseFixture<'a> {
         name: &'a str,
@@ -440,13 +440,9 @@ mod tests {
         let mut human_house = HouseState::new(human, 0, None, true, 0, 10);
         human_house.set_is_defeated_for_test(true);
         human_house.economy_mut().set_score_for_test(200);
-        human_house.supply_outcome_state_for_test(
+        human_house.supply_result_flags_for_test(
             false,
             true,
-            Some(HouseOutcomeState {
-                kind: HouseOutcomeKind::Defeat,
-                exit_ready: true,
-            }),
             crate::sim::timer::CdTimer::default(),
         );
         sim.houses.register(human_house);
@@ -509,16 +505,21 @@ mod tests {
     }
 
     #[test]
-    fn another_humans_ready_result_does_not_finalize_the_current_players_score() {
+    fn another_humans_defeat_head_routes_victory_for_the_current_player() {
         let mut sim = natural_terminal_sim(0x51C0_9ABD);
         sim.session
             .set_current_house_for_test(sim.interner.get("Opponent"));
-        let cursor = sim.clone_scenario_rng().state();
         let tick = sim.advance_tick(&[], None, None, None, 67);
-        assert!(tick.frame_committed);
-        assert!(!tick.terminal_score_finalized);
-        assert!(sim.terminal_score_snapshot().is_none());
-        assert_eq!(sim.clone_scenario_rng().state(), cursor);
+        // HouseClass::Update4F87A5..4F87BB maps a nonlocal Lost head
+        // to the process victory request before MainTick's terminal gate.
+        assert!(!tick.frame_committed);
+        assert!(tick.terminal_score_finalized);
+        assert!(sim.terminal_score_snapshot().is_some());
+        assert_eq!(
+            sim.ready_outcome_for_owner(sim.interner.get("Opponent").unwrap())
+                .map(|outcome| outcome.kind),
+            Some(HouseOutcomeKind::Victory)
+        );
     }
 
     #[test]

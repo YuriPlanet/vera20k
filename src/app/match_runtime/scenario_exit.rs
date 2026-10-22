@@ -41,8 +41,8 @@ pub(crate) fn outcome_detail(kind: crate::sim::house_state::HouseOutcomeKind) ->
 }
 
 /// The termination bytes Main_Game samples once per loop: the local House's
-/// ready victory/loss (`0x00A83D49`/`0x00A8ECD0`, one House holds at most
-/// one), the campaign restart request (`0x008B41C0`) and an executed EXIT
+/// admitted victory/loss (`0x00A83D49`/`0x00A8ECD0`), the campaign restart
+/// request (`0x008B41C0`) and an executed EXIT
 /// (`0x00A83D48`). Main_Tick `0x0055DE4F..0x0055DE71` advances no frame while
 /// any is set.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -80,8 +80,8 @@ pub(crate) const fn route_scenario_termination(
     }
 }
 
-/// App-owned wall-clock Vox drain entered only after the serialized HouseClass
-/// SavourDelay state reaches its terminal late-frame boundary.
+/// App-owned wall-clock Vox drain at HouseClass's expired SavourDelay head.
+/// The simulation resumes that House only after this wait finishes.
 #[derive(Debug, Clone)]
 pub(crate) struct ScenarioOutcomeVoiceWait {
     kind: crate::sim::house_state::HouseOutcomeKind,
@@ -106,6 +106,28 @@ impl ScenarioOutcomeVoiceWait {
         !voices_active
             || wall_bucket(wall_ms).saturating_sub(self.started_bucket)
                 >= OUTCOME_VOICE_WAIT_BUCKETS
+    }
+
+    /// One wait owner across suspended visits. Native4F860B/4F8732 anchor the
+    /// 0x78-bucket timer once, then poll Vox before continuing the same House.
+    pub(crate) fn poll_pending(
+        pending: &mut Option<Self>,
+        kind: crate::sim::house_state::HouseOutcomeKind,
+        wall_ms: u64,
+        voices_active: bool,
+    ) -> bool {
+        let wait = pending.get_or_insert_with(|| Self::start(wall_ms, kind));
+        assert_eq!(
+            wait.kind(),
+            kind,
+            "suspended House outcome changed during its wait"
+        );
+        if wait.tick(wall_ms, voices_active) {
+            *pending = None;
+            true
+        } else {
+            false
+        }
     }
 }
 

@@ -1805,9 +1805,7 @@ mod tests {
 
         let due = sim.take_due_commands();
         let result = sim.advance_tick(&due, None, None, None, 33);
-        let local_outcome_exit_ready = sim.houses()[&local]
-            .outcome()
-            .is_some_and(|outcome| outcome.exit_ready);
+        let local_outcome_exit_ready = sim.ready_outcome_for_owner(local).is_some();
 
         assert!(!result.frame_committed);
         assert!(local_outcome_exit_ready, "House expiry happened this frame");

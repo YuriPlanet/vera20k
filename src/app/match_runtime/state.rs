@@ -62,8 +62,8 @@ pub(crate) struct MatchState {
     /// Deterministic digest of the parsed source map INI. `None` only for
     /// generated/fallback worlds without an authoritative source-map payload.
     pub(crate) loaded_map_hash: Option<u64>,
-    /// App-owned wall-clock outcome-EVA drain. The deterministic accepted
-    /// result and SavourDelay target live in serialized `HouseState`.
+    /// App-owned wall-clock House Vox drain. HouseState owns pending flags
+    /// and SavourDelay; ScenarioSession retains the admitted result request.
     pub(crate) scenario_outcome:
         Option<crate::app::match_runtime::scenario_exit::ScenarioOutcomeVoiceWait>,
     /// Active running-scenario audio teardown. While present the tactical

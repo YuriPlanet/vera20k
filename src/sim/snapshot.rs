@@ -343,6 +343,8 @@ pub enum SnapshotRestoreError {
     InvalidCurrentHouse {
         owner: crate::sim::intern::InternedId,
     },
+    #[error("invalid saved frame continuation: {reason}")]
+    InvalidFrameContinuation { reason: &'static str },
     #[error("invalid saved multiplayer session: {reason}")]
     InvalidMultiplayerSession { reason: &'static str },
     #[cfg(feature = "ares")]
@@ -1667,6 +1669,13 @@ impl Simulation {
         {
             return Err(SnapshotRestoreError::InvalidCurrentHouse { owner });
         }
+        if self.session.outcome_request().is_some() && self.session.current_house().is_none() {
+            return Err(SnapshotRestoreError::InvalidFrameContinuation {
+                reason: "scenario result request has no current House",
+            });
+        }
+        self.validate_frame_continuation_for_restore()
+            .map_err(|reason| SnapshotRestoreError::InvalidFrameContinuation { reason })?;
         if let Some(observer) = self.session.observer_house()
             && !self.houses.contains_key(&observer)
         {
@@ -1709,51 +1718,20 @@ impl Simulation {
             house.validate_production_history().map_err(|reason| {
                 SnapshotRestoreError::InvalidHouseProductionHistory { owner, reason }
             })?;
-            if house.is_to_die()
-                && (house.has_won() || house.has_lost() || house.outcome().is_some())
-            {
+            if house.is_to_die() && (house.has_won() || house.has_lost()) {
                 return Err(SnapshotRestoreError::InvalidHouseOutcomeState {
                     owner,
                     reason: "Flag_To_Die conflicts with a terminal result",
                 });
             }
-            // MPlayer_Defeated flags only PlayerPtr (4FC5AA..6B7); every other
-            // defeated House, and a local one still watching, has no result.
-            let Some(outcome) = house.outcome() else {
-                if house.has_won() || house.has_lost() {
-                    return Err(SnapshotRestoreError::InvalidHouseOutcomeState {
-                        owner,
-                        reason: "terminal flags require serialized outcome authority",
-                    });
-                }
-                continue;
-            };
-            let flags_match = match outcome.kind {
-                crate::sim::house_state::HouseOutcomeKind::Victory => {
-                    //FlagWin4FC9EE guards Won/FlagToDie/Lost, not Defeated.
-                    house.has_won() && !house.has_lost()
-                }
-                crate::sim::house_state::HouseOutcomeKind::Defeat => {
-                    house.has_lost() && !house.has_won()
-                }
-            };
-            if !flags_match {
+            // FlagWin4FC9EE refuses Lost, and FlagLose4FCBDE clears Won.
+            // House4F8657 also clears Won after its wait, independently of
+            // the sticky process result requests. A later Action2 may change
+            // the House flags and restart +298 after victory was admitted.
+            if house.has_won() && house.has_lost() {
                 return Err(SnapshotRestoreError::InvalidHouseOutcomeState {
                     owner,
-                    reason: "kind disagrees with terminal house flags",
-                });
-            }
-            // A pending result can legally have an expired timer: campaign
-            // AllowWin Tags still block it, or this frame's House rung has not
-            // visited it yet. Only the admitted exit latch requires zero.
-            if outcome.exit_ready
-                && !house
-                    .outcome_timer()
-                    .expired(self.session.binary_frame() as i32)
-            {
-                return Err(SnapshotRestoreError::InvalidHouseOutcomeState {
-                    owner,
-                    reason: "shared result timer disagrees with expiry latch",
+                    reason: "Won and Lost flags conflict",
                 });
             }
         }
@@ -5220,34 +5198,29 @@ mod tests {
             45
         );
 
-        let mut boundary = restored_house.clone();
-        assert!(!boundary.advance_outcome_savour(189, true));
-        assert!(boundary.advance_outcome_savour(190, true));
+        assert_eq!(restored_house.pending_outcome(189, true), None);
+        assert_eq!(
+            restored_house.pending_outcome(190, true),
+            Some(HouseOutcomeKind::Victory)
+        );
     }
 
     #[test]
-    fn gsi_01_04_malformed_current_snapshot_naked_terminal_flags_are_rejected() {
+    fn gsi_01_04_conflicting_native_house_result_flags_are_rejected() {
         use crate::sim::house_state::HouseState;
 
-        for terminal_flag in ["has_won", "has_lost"] {
+        for (won, lost, to_die) in [
+            (true, true, false),
+            (true, false, true),
+            (false, true, true),
+        ] {
             let mut malformed = Simulation::new();
             let owner = malformed.interner.intern("Americans");
             let mut house = HouseState::new(owner, 0, None, true, 10_000, 10);
-            match terminal_flag {
-                "has_won" => house.supply_outcome_state_for_test(
-                    true,
-                    false,
-                    None,
-                    crate::sim::timer::CdTimer::default(),
-                ),
-                "has_lost" => house.supply_outcome_state_for_test(
-                    false,
-                    true,
-                    None,
-                    crate::sim::timer::CdTimer::default(),
-                ),
-                _ => unreachable!(),
+            if to_die {
+                assert!(house.flag_to_die(0));
             }
+            house.supply_result_flags_for_test(won, lost, crate::sim::timer::CdTimer::default());
             malformed.houses.register(house);
 
             let bytes = GameSnapshot::save(&malformed, 11, 22, "", 33);
@@ -5256,9 +5229,13 @@ mod tests {
                 restored.restore_after_snapshot_load(),
                 Err(SnapshotRestoreError::InvalidHouseOutcomeState {
                     owner,
-                    reason: "terminal flags require serialized outcome authority",
+                    reason: if to_die {
+                        "Flag_To_Die conflicts with a terminal result"
+                    } else {
+                        "Won and Lost flags conflict"
+                    },
                 }),
-                "naked {terminal_flag} must not enter a world whose app bridge can only consume outcome_state"
+                "FlagWin/FlagLose cannot produce conflicting House flags"
             );
         }
     }

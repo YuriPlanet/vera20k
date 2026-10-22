@@ -166,11 +166,13 @@ impl App {
     /// local outcome outranks it, and an outcome or exit teardown already in
     /// progress has consumed the request with the other termination bytes.
     pub(super) fn consume_scenario_restart_request(state: &mut AppState) {
+        if Self::house_outcome_wait_pending(state) {
+            return;
+        }
         if !std::mem::take(&mut state.match_state.scenario_restart_requested) {
             return;
         }
-        let outcome_ready =
-            state.match_state.scenario_outcome.is_some() || Self::local_outcome_exit_ready(state);
+        let outcome_ready = Self::local_outcome_exit_ready(state);
         let route = crate::app::match_runtime::scenario_exit::route_scenario_termination(
             crate::app::match_runtime::scenario_exit::TerminationRequests {
                 outcome_ready,
@@ -187,7 +189,7 @@ impl App {
         Self::restart_campaign_scenario(state);
     }
 
-    fn local_outcome_exit_ready(state: &AppState) -> bool {
+    pub(super) fn local_outcome_exit_ready(state: &AppState) -> bool {
         let Some(sim) = state
             .match_state
             .sim_runtime
@@ -200,6 +202,16 @@ impl App {
             .as_deref()
             .and_then(|owner| sim.interner().get(owner))
             .is_some_and(|owner| sim.ready_outcome_for_owner(owner).is_some())
+    }
+
+    /// HouseClass4F860B/4F8732 services audio/network inside Main_Tick.
+    /// The retained frame owns this hold; ordinary modal/input dispatch waits.
+    pub(crate) fn house_outcome_wait_pending(state: &AppState) -> bool {
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .is_some_and(|rt| rt.simulation.pending_outcome_wait().is_some())
     }
 
     /// Apply one foreground-activation edge.
@@ -402,6 +414,9 @@ impl App {
     /// (`0x0048C8C6..0x0048C918`), before `EnterPause`; see
     /// [`Self::state_machine_admission`]. Writes the relatched value.
     fn state_machine_admits_modal(state: &mut AppState) -> bool {
+        if Self::house_outcome_wait_pending(state) {
+            return false;
+        }
         let sim = state
             .match_state
             .sim_runtime
@@ -538,6 +553,9 @@ impl App {
     /// battle-abort teardown. A repeated drain without another dispatch is a
     /// no-op because the simulation edge is taken.
     pub(super) fn consume_executed_abort_exit(state: &mut AppState, wall_ms: u64) {
+        if Self::house_outcome_wait_pending(state) {
+            return;
+        }
         // Remote EXIT senders run DestroyConnection first (0x0064C9B1).
         crate::app::match_runtime::network_match::drain_departures(state);
         let local_owner = crate::app::input::commands::preferred_local_owner(state);

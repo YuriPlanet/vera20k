@@ -1689,9 +1689,9 @@ impl MapCommandBarThumbState {
             local_player_defeated: sim.local_player_defeated(),
             input_locked: sim.session().input_locked(),
             has_lost: house.map(|house| house.has_lost()),
-            exit_ready: house
-                .and_then(|house| house.outcome())
-                .map(|outcome| outcome.exit_ready),
+            exit_ready: owner
+                .zip(house)
+                .map(|(owner, _)| sim.ready_outcome_for_owner(owner).is_some()),
         })
     }
 }

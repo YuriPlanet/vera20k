@@ -19,6 +19,23 @@ pub trait SoundBoundary {
     fn delivered(&self) -> usize;
 }
 
+/// HouseClass::Update4F860F/4F8736 waits before publishing its result
+/// and visiting later Houses. Audio and the 120-bucket clock stay with the
+/// process; a headless frame has idle Vox and completes immediately.
+pub trait OutcomeWaitBoundary {
+    /// Process effects that native applies before a later sound or House
+    /// wait. Return true only when its existing owner consumed the effect.
+    fn apply_prefix_effect(&self, _effect: &crate::sim::trigger_runtime::TriggerEffect) -> bool {
+        false
+    }
+
+    fn wait_complete(
+        &self,
+        owner: crate::sim::intern::InternedId,
+        kind: crate::sim::house_state::HouseOutcomeKind,
+    ) -> bool;
+}
+
 /// The local player's Planning Mode (`0x00AC4CF4`), owned by client input.
 /// House4FC1EE leaves it before the defeat announcement; its event joins the
 /// frame's existing post-Logic dispatcher. TechnoClass::Select's planning-node
@@ -88,6 +105,7 @@ impl NetworkCommandBoundary for std::cell::RefCell<crate::sim::command_queue::Fr
 #[derive(Clone, Copy, Default)]
 pub struct FrameEffects<'a> {
     sound: Option<&'a dyn SoundBoundary>,
+    outcome_wait: Option<&'a dyn OutcomeWaitBoundary>,
     local_planning: Option<&'a dyn LocalPlanningBoundary>,
     network_commands: Option<&'a dyn NetworkCommandBoundary>,
     overlay_registry: Option<&'a OverlayTypeRegistry>,
@@ -107,6 +125,7 @@ impl<'a> FrameEffects<'a> {
     pub const fn empty() -> Self {
         Self {
             sound: None,
+            outcome_wait: None,
             local_planning: None,
             network_commands: None,
             overlay_registry: None,
@@ -117,11 +136,37 @@ impl<'a> FrameEffects<'a> {
     pub fn for_sound(sound: &'a dyn SoundBoundary) -> Self {
         Self {
             sound: Some(sound),
+            outcome_wait: None,
             local_planning: None,
             network_commands: None,
             overlay_registry: None,
             before_logic: None,
         }
+    }
+
+    pub fn with_outcome_wait(self, boundary: &'a dyn OutcomeWaitBoundary) -> Self {
+        Self {
+            outcome_wait: Some(boundary),
+            ..self
+        }
+    }
+
+    pub(crate) fn consume_prefix_effects(
+        self,
+        effects: &mut Vec<crate::sim::trigger_runtime::TriggerEffect>,
+    ) {
+        if let Some(boundary) = self.outcome_wait {
+            effects.retain(|effect| !boundary.apply_prefix_effect(effect));
+        }
+    }
+
+    pub(crate) fn outcome_wait_complete(
+        self,
+        owner: crate::sim::intern::InternedId,
+        kind: crate::sim::house_state::HouseOutcomeKind,
+    ) -> bool {
+        self.outcome_wait
+            .is_none_or(|boundary| boundary.wait_complete(owner, kind))
     }
 
     pub fn with_local_planning(self, boundary: &'a dyn LocalPlanningBoundary) -> Self {
