@@ -465,6 +465,30 @@ impl OwnerVisibility {
         }
     }
 
+    /// CreateGap6FB170 updates the counter and both ground bits together.
+    /// Preserve cache/frame/pending state; later Map5673A0 fire disclosure
+    /// must see the erased ground bits and reach its ordinary reveal leaf.
+    fn add_gap_cell(&mut self, index: usize) {
+        if self.shroud_knowledge[index].add_gap() {
+            self.set_ground_bits(
+                index,
+                self.ground_flags[index] & !(GROUND_VISIBLE | GROUND_OPEN),
+            );
+        }
+        self.publish_knowledge(index);
+    }
+
+    /// DestroyGap6FB470 restores ground18 only on its SpySat/counter branch.
+    fn remove_gap_cell(&mut self, index: usize, spy_sat_active: bool) {
+        if self.shroud_knowledge[index].remove_gap(spy_sat_active) {
+            self.set_ground_bits(
+                index,
+                self.ground_flags[index] | GROUND_VISIBLE | GROUND_OPEN,
+            );
+        }
+        self.publish_knowledge(index);
+    }
+
     /// Panics unless a tracked grid holds what [`TrackedCells`] promises.
     #[cfg(any(test, feature = "test-support"))]
     fn assert_tracked(&self) {
@@ -2934,12 +2958,12 @@ pub(crate) fn apply_gap_generator_sources_with_spy_sat(
         // removal/admission executes6FB470/6FB170, preserving pending20.
         for &generator in previous.difference(&admitted) {
             for index in gap_footprint(generator, width, height) {
-                vis.shroud_knowledge[index].remove_gap(spy_sat_active_owners.contains(&viewer));
+                vis.remove_gap_cell(index, spy_sat_active_owners.contains(&viewer));
             }
         }
         for &generator in admitted.difference(previous) {
             for index in gap_footprint(generator, width, height) {
-                vis.shroud_knowledge[index].add_gap();
+                vis.add_gap_cell(index);
             }
         }
         for index in 0..vis.cells.len() {
@@ -2999,8 +3023,7 @@ pub(crate) fn publish_gap_generator_event(
             ) && receipts.insert(source)
             {
                 for index in gap_footprint(source, width, height) {
-                    vis.shroud_knowledge[index].add_gap();
-                    vis.publish_knowledge(index);
+                    vis.add_gap_cell(index);
                 }
             }
         } else {
@@ -3022,8 +3045,7 @@ pub(crate) fn publish_gap_generator_event(
             for old in removed {
                 receipts.remove(&old);
                 for index in gap_footprint(old, width, height) {
-                    vis.shroud_knowledge[index].remove_gap(spy_sat_active_owners.contains(&viewer));
-                    vis.publish_knowledge(index);
+                    vis.remove_gap_cell(index, spy_sat_active_owners.contains(&viewer));
                 }
             }
         }

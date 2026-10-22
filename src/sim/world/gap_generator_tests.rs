@@ -378,6 +378,30 @@ fn gap_operational_spy_sat_rechecks_live_candidates_per_viewer() {
     assert_eq!(sim.fog.gap_sources()[&a].len(), 1);
 }
 
+#[test]
+fn spy_sat_gap_reentry_and_removal_publish_the_native_ground_bits() {
+    let (mut sim, rules, viewer, owner, _) = fixture();
+    insert(&mut sim, 1, owner, "GAGAP", 12, 12);
+    insert(&mut sim, 2, owner, "POWER", 16, 12);
+    power(&mut sim, &rules);
+    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    insert(&mut sim, 3, viewer, "GASPYSAT", 1, 1);
+    sim.reconcile_active_vision_structures(&rules);
+    let ground =
+        |sim: &Simulation| sim.fog.by_owner()[&viewer].ground_flags_raw()[12 * 32 + 12] & 0x18;
+    assert!(!sim.fog.is_cell_revealed(viewer, 12, 12));
+    assert_eq!(ground(&sim), 0);
+
+    assert!(sim.go_building_offline(1, &rules, FrameEffects::default()));
+    assert!(sim.fog.is_cell_revealed(viewer, 12, 12));
+    assert_eq!(ground(&sim), 0x18);
+    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    assert!(sim.go_building_online(1, &rules, FrameEffects::default()));
+    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    assert!(!sim.fog.is_cell_revealed(viewer, 12, 12));
+    assert_eq!(ground(&sim), 0);
+}
+
 /// A lost Spy Sat's gap re-entry asks from the generator's house whether the
 /// viewer is its ally, as the add does (`0x006FB2CF`): the viewer's own
 /// one-way alliance with it still takes the gap.

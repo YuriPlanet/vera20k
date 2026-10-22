@@ -162,7 +162,7 @@ impl FogState {
             .get_mut(&owner)
             .expect("admitted map transition");
         for index in gap_footprint(gap, usize::from(self.width), usize::from(self.height)) {
-            vis.shroud_knowledge[index].remove_gap(old_spy_sat_active);
+            vis.remove_gap_cell(index, old_spy_sat_active);
         }
     }
 
@@ -199,8 +199,7 @@ impl FogState {
             .get_mut(&owner)
             .expect("admitted map transition");
         for index in gap_footprint(gap, usize::from(self.width), usize::from(self.height)) {
-            vis.shroud_knowledge[index].add_gap();
-            vis.publish_knowledge(index);
+            vis.add_gap_cell(index);
         }
         self.gap_sources.entry(owner).or_default().insert(gap);
         self.whole_map_revealed_owners.remove(&owner);

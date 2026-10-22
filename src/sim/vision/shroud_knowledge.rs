@@ -275,23 +275,29 @@ impl ShroudKnowledge {
             self.pending = true;
         }
     }
-    pub fn add_gap(&mut self) {
+    /// Whether6FB377..6FB3BB also clears the cell's ground bits18.
+    pub fn add_gap(&mut self) -> bool {
         if self.counter != 1 && self.counter >= 0 {
             self.counter = self.counter.wrapping_add(1);
         }
         self.gap_counter = self.gap_counter.wrapping_add(1);
         if self.counter > 0 {
             self.open = false;
+            return true;
         }
+        false
     }
-    pub fn remove_gap(&mut self, spy_sat_active: bool) {
+    /// Whether6FB603..6FB69C also restores the cell's ground bits18.
+    pub fn remove_gap(&mut self, spy_sat_active: bool) -> bool {
         self.gap_counter = self.gap_counter.wrapping_sub(1);
         if spy_sat_active && self.gap_counter <= 0 {
             self.counter = self.counter.wrapping_sub(1);
             if self.counter <= 0 {
                 self.open = true;
+                return true;
             }
         }
+        false
     }
     pub fn sweep(&mut self) {
         if self.pending {

@@ -553,6 +553,7 @@ fn test_gap_generator_preserves_admitted_enemy_sight() {
     // inside a hostile gap. Merely knowing the cell would not protect it.
     assert!(fog.is_cell_visible(intern::test_intern("Soviet"), 13, 10));
     assert!(!fog.is_cell_gap_covered(intern::test_intern("Soviet"), 13, 10));
+    assert!(fog.is_ground_unshrouded(intern::test_intern("Soviet"), 13, 10));
 }
 
 #[test]
