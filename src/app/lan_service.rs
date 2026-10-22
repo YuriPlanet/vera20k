@@ -461,6 +461,28 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
     }
     let message = LanMessage::decode(&incoming.payload)?;
     if state.match_state.live_network.is_some() {
+        if message.kind() == LanMessageKind::Departure {
+            //ProcessGlobalPackets48D81A uses the active private endpoint;
+            //the packet name is irrelevant. This is not a synchronized EXIT.
+            let matched = &mut state.match_state;
+            let destroyed = if let (Some(live), Some(runtime)) =
+                (matched.live_network.as_mut(), matched.sim_runtime.as_mut())
+            {
+                super::match_runtime::network_match::receive_departure(
+                    &mut matched.session,
+                    &mut runtime.simulation,
+                    live,
+                    &mut matched.network_wait,
+                    incoming.source,
+                )
+            } else {
+                None
+            };
+            if let Some(destroyed) = destroyed {
+                super::match_runtime::network_match::post_connection_line(state, destroyed);
+            }
+            return Ok(());
+        }
         if let Some(chat) = message.in_game_chat_fields() {
             super::input::chat::receive_packet(
                 state,

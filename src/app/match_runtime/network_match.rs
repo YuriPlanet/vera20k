@@ -23,7 +23,8 @@ use crate::ui::shell::connection::ConnectionPage;
 /// DestroyConnection's error argument (`EDX`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ConnectionError {
-    /// 0: the peer sent EXIT. `TXT_LEFT_GAME`, nothing queued.
+    /// 0: the peer left (global Departure or executed EXIT).
+    /// `TXT_LEFT_GAME`, nothing queued by DestroyConnection itself.
     Left,
     /// 1: the connection was lost. `TXT_CONNECTION_LOST`; Flag_To_Die at
     /// frame 0, REMOVEPLAYER otherwise.
@@ -81,7 +82,7 @@ pub(crate) enum NetworkMatchEvent {
 }
 
 /// `Network__DestroyConnection 0x005DA750` for participant `source_index`.
-/// Returns early, with no line, when the House is not human (`0x005DA77E`);
+/// Returns early, with no line, when the House is not human (`0x005DA78F`);
 /// a participant already disconnected has no connection record, so its
 /// caller never reaches here twice. The line itself is posted by
 /// [`post_connection_line`] once the simulation is installed.
@@ -90,6 +91,7 @@ pub(crate) fn destroy_connection(
     sim: &mut Simulation,
     source_index: usize,
     error: ConnectionError,
+    live: Option<&mut crate::net::live_commands::LiveCommandSession>,
 ) -> Option<ConnectionDestroyed> {
     let owner = sim
         .interner()
@@ -101,8 +103,20 @@ pub(crate) fn destroy_connection(
     {
         return None;
     }
+    let live = match live {
+        Some(live) => Some((
+            live,
+            i8::try_from(source_house(session, sim, source_index)?).ok()?,
+        )),
+        None => None,
+    };
     if !session.disconnect_network_participant(source_index, error.code()) {
         return None;
+    }
+    if let Some((live, house)) = live {
+        //5DA85D removes the private connection after the Human guard, before
+        //the reason-specific effects. Progress shares that connection's life.
+        live.remove_peer(house);
     }
     if error == ConnectionError::Lost {
         if sim.session().binary_frame() == 0 {
@@ -134,6 +148,22 @@ pub(crate) fn destroy_connection(
         owner,
         key: error.csf_key(),
     })
+}
+
+/// ProcessGlobalPackets48D81A identifies a type10 Departure by the active
+/// private connection's exact endpoint (540FA0/541000/53EE70), not its name.
+pub(crate) fn receive_departure(
+    session: &mut MatchSession,
+    sim: &mut Simulation,
+    live: &mut crate::net::live_commands::LiveCommandSession,
+    wait: &mut NetworkMatchWait,
+    endpoint: std::net::SocketAddrV4,
+) -> Option<ConnectionDestroyed> {
+    let house = live.connections().peer_id(endpoint)?;
+    let source = house_source(session, sim, house)?;
+    let destroyed = destroy_connection(session, sim, source, ConnectionError::Left, Some(live))?;
+    wait.stalled.retain(|peer| peer.source_index != source);
+    Some(destroyed)
 }
 
 /// DestroyConnection's line (`0x005DA7A9..0x005DA83E`): the template with the
@@ -586,21 +616,6 @@ fn kick(state: &mut AppState, source_index: usize, error: ConnectionError) {
         .network_wait
         .stalled
         .retain(|peer| peer.source_index != source_index);
-    let house = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
-        source_house(
-            &state.match_state.session,
-            &runtime.simulation,
-            source_index,
-        )
-    });
-    if let (Some(live), Some(house)) = (
-        &mut state.match_state.live_network,
-        house.and_then(|house| i8::try_from(house).ok()),
-    ) {
-        //64B240 compacts the progress row before5DA750 removes membership.
-        //The live owner removes the reliable connection and progress together.
-        live.remove_peer(house);
-    }
     let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
         return;
     };
@@ -609,6 +624,7 @@ fn kick(state: &mut AppState, source_index: usize, error: ConnectionError) {
         &mut runtime.simulation,
         source_index,
         error,
+        state.match_state.live_network.as_mut(),
     ) {
         post_connection_line(state, destroyed);
     }
@@ -1228,6 +1244,89 @@ mod tests {
         invalid = packet;
         invalid[0] = 0x19;
         assert!(decode_kick_proposal(&session, &sim, &invalid).is_none());
+    }
+
+    #[test]
+    fn global_departure_uses_active_endpoint_and_leaves_lan_house_alive() {
+        use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
+        use crate::net::udp::{LanUdpTransport, UdpBindConfig};
+        use std::net::{Ipv4Addr, SocketAddrV4};
+        let (mut session, mut sim) = vote_fixture();
+        let endpoint = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30123);
+        let name = session.network_setup().unwrap().humans[0].name.clone();
+        session.bind_network_endpoint(&name, endpoint).unwrap();
+        session.prepare_network_timing(2, || 0).unwrap();
+        session.freeze_network_start(19).unwrap();
+        sim.session_mut_for_test().set_game_mode(SessionMode::Lan);
+        let mut connections = LanConnections::new(
+            LanConnectionConfig::default(),
+            RetryTiming {
+                retry_delta: 20,
+                max_retries: u32::MAX,
+                timeout: 160,
+            },
+        );
+        // Fixture source0 is native House1; the local source1 is House0.
+        connections.add_peer(1, endpoint).unwrap();
+        let transport = LanUdpTransport::bind(
+            UdpBindConfig {
+                primary: SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0),
+                alternate: SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0),
+            },
+            connections,
+        )
+        .unwrap();
+        let mut live = crate::net::live_commands::LiveCommandSession::new(
+            transport,
+            0,
+            19,
+            std::num::NonZeroU32::new(2).unwrap(),
+        )
+        .unwrap();
+        let mut wait = NetworkMatchWait::default();
+        wait.stalled.push(StalledPeer {
+            source_index: 0,
+            frame: 3,
+        });
+        let wrong_port = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30124);
+        assert!(
+            receive_departure(&mut session, &mut sim, &mut live, &mut wait, wrong_port).is_none()
+        );
+        let remote = sim.houses().order()[1];
+        sim.houses_mut_for_test()
+            .get_mut(&remote)
+            .unwrap()
+            .set_is_human_for_test(false);
+        assert!(
+            receive_departure(&mut session, &mut sim, &mut live, &mut wait, endpoint).is_none()
+        );
+        assert_eq!(live.peers().len(), 1);
+        assert_eq!(session.network_connected_source_indices(), &[0, 1]);
+        assert_eq!(wait.stalled.len(), 1);
+        sim.houses_mut_for_test()
+            .get_mut(&remote)
+            .unwrap()
+            .set_is_human_for_test(true);
+        let removed =
+            receive_departure(&mut session, &mut sim, &mut live, &mut wait, endpoint).unwrap();
+        assert_eq!(removed.key, "TXT_LEFT_GAME");
+        assert_eq!(removed.owner, sim.houses().order()[1]);
+        assert_eq!(session.network_connected_source_indices(), &[1]);
+        assert!(live.connections().peers().next().is_none());
+        assert!(live.peers().is_empty());
+        assert!(wait.stalled.is_empty());
+        let house = sim.houses().get(&removed.owner).unwrap();
+        assert!(house.is_human());
+        assert!(!house.is_to_die());
+        assert!(!house.is_defeated());
+        assert_eq!(sim.network_command_queues().local_len(), 0);
+        assert!(sim.take_executed_exit_owner().is_none());
+        // The frozen roster keeps its binding; only the live connection is
+        // eligible for another Departure.
+        assert_eq!(session.network_endpoint_source(endpoint), Some(0));
+        assert!(
+            receive_departure(&mut session, &mut sim, &mut live, &mut wait, endpoint).is_none()
+        );
     }
 
     fn votes(entries: &[(usize, &[usize])]) -> BTreeMap<usize, Vec<usize>> {

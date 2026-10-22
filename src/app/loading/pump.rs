@@ -2331,7 +2331,7 @@ fn apply_network_loading_disconnects(
     };
     indices
         .iter()
-        .filter_map(|&index| destroy_connection(session, sim, index, ConnectionError::Lost))
+        .filter_map(|&index| destroy_connection(session, sim, index, ConnectionError::Lost, None))
         .collect()
 }
 

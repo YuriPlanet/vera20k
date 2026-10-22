@@ -121,18 +121,6 @@ fn initial_barrier_off_cadence_and_positive_frame_use_one_native_queue() {
     assert_eq!(right.sent_commands(), 0);
     assert_eq!(a.network_command_queues().local_len(), 0);
     assert_eq!(b.network_command_queues().local_len(), 0);
-    for world in [&a, &b] {
-        let records = world.pending_command_snapshot();
-        assert_eq!(
-            records
-                .iter()
-                .filter(|event| matches!(&event.payload,
-            crate::sim::command::Command::SynchronizedRecord { record }
-            if record.opcode() == 6 && record.frame_stamp() == 15 && record.house_id() == 0))
-                .count(),
-            1
-        );
-    }
     // The same frame result is idempotent and cannot create another send.
     assert_eq!(
         left.poll(
@@ -149,6 +137,25 @@ fn initial_barrier_off_cadence_and_positive_frame_use_one_native_queue() {
         NetworkQueuePass::Dispatch
     );
     assert_eq!(left.sent_commands(), 1);
+    // Frame5 still has credit from the frame0 packet, so it may dispatch
+    // before the other socket's frame5 packet arrives. At frame10 the strict
+    // minimum-frame gate6495F9 requires newer progress; its command count
+    // must also be satisfied before the delayed event can execute at15.
+    for frame in 6..=10 {
+        poll_pair(&mut left, &mut right, &mut a, &mut b, frame);
+    }
+    for world in [&a, &b] {
+        let records = world.pending_command_snapshot();
+        assert_eq!(
+            records
+                .iter()
+                .filter(|event| matches!(&event.payload,
+            crate::sim::command::Command::SynchronizedRecord { record }
+            if record.opcode() == 6 && record.frame_stamp() == 15 && record.house_id() == 0))
+                .count(),
+            1
+        );
+    }
 }
 
 #[test]

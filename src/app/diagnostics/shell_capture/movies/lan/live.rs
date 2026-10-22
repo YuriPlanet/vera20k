@@ -8,6 +8,7 @@ use crate::net::udp::UdpBindConfig;
 use crate::ui::multiplayer_setup::{SetupAction, SetupColumn};
 
 mod battle;
+mod failure;
 
 const HOST_NAME: &str = "LiveHost";
 const GUEST_NAME: &str = "LiveGuest";
@@ -46,6 +47,7 @@ pub(super) struct LiveLanCapture {
     entered_setup: bool,
     country_selected: bool,
     battle: Option<battle::BattleOpening>,
+    failure: Option<failure::FailureCapture>,
 }
 
 impl LiveLanCapture {
@@ -69,11 +71,24 @@ impl LiveLanCapture {
             country_selected: false,
             battle: matches!(target, LanTarget::BattleHost | LanTarget::BattleGuest)
                 .then(battle::BattleOpening::default),
+            failure: match target {
+                LanTarget::LiveTimeoutHost => {
+                    Some(failure::FailureCapture::new(failure::Mode::Timeout))
+                }
+                LanTarget::LiveQuitHost => Some(failure::FailureCapture::new(failure::Mode::Quit)),
+                _ => None,
+            },
         }
     }
 
     fn host(&self) -> bool {
-        matches!(self.target, LanTarget::LiveHost | LanTarget::BattleHost)
+        matches!(
+            self.target,
+            LanTarget::LiveHost
+                | LanTarget::LiveTimeoutHost
+                | LanTarget::LiveQuitHost
+                | LanTarget::BattleHost
+        )
     }
 
     fn required_frames(&self) -> u32 {
@@ -458,6 +473,13 @@ impl LiveLanCapture {
     }
 
     fn observe_run(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        if let Some(failure) = self.failure.as_mut().filter(|failure| failure.armed()) {
+            if failure.step(state, frame, &mut self.route)? {
+                MoviesCapture::restore_neutral_pointer(state);
+                self.phase = Phase::Finished;
+            }
+            return Ok(());
+        }
         ensure!(
             state.frontend.screen == GameScreen::InGame,
             "live LAN match left gameplay before completion"
@@ -488,7 +510,7 @@ impl LiveLanCapture {
             "native frame moved backwards"
         );
         ensure!(
-            committed - self.checksums.len() as u32 <= 256,
+            committed.min(self.required_frames()) - self.checksums.len() as u32 <= 256,
             "capture missed overwritten checksum history"
         );
         let required_frames = self.required_frames();
@@ -571,10 +593,14 @@ impl LiveLanCapture {
             .context("live transport")?;
         if self.checksums.len() >= REQUIRED_FRAMES as usize
             && self.stopped
-            && live
-                .peers()
-                .iter()
-                .all(|peer| peer.frame() >= REQUIRED_FRAMES as i32)
+            // The survivor must arm from its own committed prefix: the
+            // finishing guest may exit at300 before sending frame300's
+            // advertisement. The pair receipt compares both300-frame rings.
+            && (self.failure.is_some()
+                || live
+                    .peers()
+                    .iter()
+                    .all(|peer| peer.frame() >= REQUIRED_FRAMES as i32))
         {
             ensure!(
                 self.observed_movement,
@@ -594,7 +620,15 @@ impl LiveLanCapture {
                 "Stop did not retain a stable position through the final frames"
             );
             MoviesCapture::restore_neutral_pointer(state);
-            self.phase = Phase::Finished;
+            if let Some(failure) = self.failure.as_mut() {
+                failure.arm(state)?;
+                self.event(
+                    frame,
+                    "shared 300-frame prefix complete; host awaits real peer disappearance",
+                );
+            } else {
+                self.phase = Phase::Finished;
+            }
         }
         Ok(())
     }
@@ -692,20 +726,25 @@ impl LiveLanCapture {
             .as_ref()
             .context("simulation")?
             .simulation;
-        let live = state
-            .match_state
-            .live_network
-            .as_ref()
-            .context("live transport")?;
+        let live = state.match_state.live_network.as_ref();
+        ensure!(
+            live.is_some()
+                || self
+                    .failure
+                    .as_ref()
+                    .is_some_and(|failure| failure.returned()),
+            "finished live capture lost its transport"
+        );
         Ok(
             json!({"target":format!("{:?}",self.target),"service_boundary":"two independent App processes; real UDP/global/private queues; ordinary frame boundary",
-            "scope":if self.battle.is_some() { "kick/rejoin, Battle MCV deploy, production hold/resume/cancel/place; bounded same-machine validation, not whole-match/native parity" } else { "kick/rejoin, 300 native frames and local Move/Stop; bounded runtime validation, not whole-match/native parity" },
+            "scope":if self.failure.is_some() { "shared 300-frame prefix followed by real peer disappearance and ordinary wait recovery or Quit; bounded runtime validation, not whole-match/native parity" } else if self.battle.is_some() { "kick/rejoin, Battle MCV deploy, production hold/resume/cancel/place; bounded same-machine validation, not whole-match/native parity" } else { "kick/rejoin, 300 native frames and local Move/Stop; bounded runtime validation, not whole-match/native parity" },
             "required_frames":self.required_frames(),"battle":self.battle.as_ref().map(|battle| battle.receipt(state)).transpose()?,
+            "failure":self.failure.as_ref().map(|failure| failure.receipt()),
             "kick_observed":self.kick_observed,
             "bind":self.config.bind.to_string(),"peer":self.config.peer.to_string(),"startup":self.startup,
             "native_checksums":self.checksums,"actions":self.actions,"observed_movement":self.observed_movement,"stopped_position":self.stopped_position,"route":self.route,
             "final_native_frame":sim.session().binary_frame(),"checksum_failure":format!("{:?}",sim.pending_network_failure()),
-            "sent_commands":live.sent_commands(),"peers":live.peers().iter().map(|peer| json!({"house":peer.house_id(),"frame":peer.frame(),"advertised_commands":peer.advertised_commands(),"received_commands":peer.received_commands()})).collect::<Vec<_>>(),
+            "sent_commands":live.map(|live| live.sent_commands()),"peers":live.map(|live| live.peers().iter().map(|peer| json!({"house":peer.house_id(),"frame":peer.frame(),"advertised_commands":peer.advertised_commands(),"received_commands":peer.received_commands()})).collect::<Vec<_>>()),
             "mobile_objects":sim.entities().values_sorted().filter(|entity| matches!(entity.category(), crate::map::entities::EntityCategory::Infantry | crate::map::entities::EntityCategory::Unit)).map(|entity| json!({"id":entity.stable_id(),"owner":sim.interner().resolve(entity.owner()),"position":entity.position,"alive":entity.is_alive()})).collect::<Vec<_>>() }),
         )
     }
