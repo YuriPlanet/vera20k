@@ -546,6 +546,12 @@ impl AnimObject {
 
     /// No loops remain: the anim ends after its current pass. The
     /// parachute release and the ChronoPlacement release use it.
+    /// Hold the current loop until the owning effect explicitly destroys it.
+    /// Ares attached animation1005872F stores byte255 at Anim+195.
+    pub(crate) fn hold_loops(&mut self) {
+        self.runtime.loop_remaining = u8::MAX;
+    }
+
     pub(crate) fn end_loops(&mut self) {
         self.runtime.loop_remaining = 0;
     }

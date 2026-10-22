@@ -2395,6 +2395,12 @@ fn emit_detonation_receivers<'r>(
     #[cfg(feature = "ares")]
     {
         let coordinate = ares_warhead_effect_coordinate(world, detonation);
+        // Parent100536E0 captures OwnerHouse before EMP/tag callbacks.
+        let source_house = world
+            .substrate
+            .entities
+            .get(detonation.source_id)
+            .map(|source| source.owner());
         world.apply_ares_emp_detonation(
             coordinate,
             Some(detonation.source_id),
@@ -2402,6 +2408,7 @@ fn emit_detonation_receivers<'r>(
             rules,
             effects,
         );
+        world.apply_ares_attach_effect_detonation(coordinate, source_house, warhead, rules);
     }
 
     // `BulletClass::DetonateAtCoord @ 0x0046978e` is the chain's only

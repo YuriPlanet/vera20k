@@ -1433,9 +1433,9 @@ impl ProcessedRulesLayers {
                 })
             })
     }
-    pub(crate) fn emp_warhead_states(
+    pub(crate) fn ares_warhead_states(
         &self,
-    ) -> impl Iterator<Item = (&str, Option<&crate::rules::ares_emp::EmpWarheadRules>)> {
+    ) -> impl Iterator<Item = (&str, Option<&crate::rules::ares_warhead::AresWarheadRules>)> {
         self.native_type_construction_trace
             .registry_state()
             .families
@@ -1445,7 +1445,7 @@ impl ProcessedRulesLayers {
             .map(|member| {
                 (
                     member.native_stored_id.as_str(),
-                    member.emp_warhead.as_ref(),
+                    member.ares_warhead.as_ref(),
                 )
             })
     }
@@ -2980,7 +2980,7 @@ struct ProcessedType {
     warhead_verses: [NativeF64Bits; 11],
     /// Independent Ares10051D80 constructor/10006460 read vector.
     ares_verses: Option<AresWarheadVerses>,
-    emp_warhead: Option<crate::rules::ares_emp::EmpWarheadRules>,
+    ares_warhead: Option<crate::rules::ares_warhead::AresWarheadRules>,
     emp_type: Option<crate::rules::ares_emp::EmpTypeRules>,
     /// ObjectType4753F0 -> Ares10006E10 binds at each reached body read.
     armor_id: ArmorId,
@@ -3376,7 +3376,7 @@ impl ProcessedType {
             warhead_anim: WarheadAnimReadState::default(),
             warhead_verses: [NativeF64Bits::ONE; 11],
             ares_verses: None,
-            emp_warhead: None,
+            ares_warhead: None,
             emp_type: None,
             armor_id: ArmorId::NONE,
             holds_what: None,
@@ -3779,7 +3779,7 @@ impl RulesPassProcessor {
         }
         if crate::rules::ARES_ENABLED && family == RulesTypeFamily::Warhead {
             members[index].ares_verses = Some(AresWarheadVerses::default());
-            members[index].emp_warhead = Some(Default::default());
+            members[index].ares_warhead = Some(Default::default());
         }
         if family.object_category().is_some() {
             #[cfg(feature = "ares")]
@@ -5507,6 +5507,9 @@ impl RulesPassProcessor {
                 let sparkle = pass
                     .section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
                     .and_then(|raw| self.resolve_existing_anim_from(raw, "EMP.Sparkles"));
+                let animation = pass
+                    .section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
+                    .and_then(|raw| self.resolve_existing_anim_from(raw, "AttachEffect.Animation"));
                 let member = &mut self
                     .families
                     .get_mut(&RulesTypeFamily::Warhead)
@@ -5514,10 +5517,10 @@ impl RulesPassProcessor {
                 let section = pass.section(&member.native_stored_id);
                 if let Some(section) = section {
                     member
-                        .emp_warhead
+                        .ares_warhead
                         .as_mut()
-                        .expect("WH EMP extension")
-                        .read_pass(section, sparkle);
+                        .expect("WH Ares extension")
+                        .read_pass(section, sparkle, animation);
                 }
                 member
                     .ares_verses

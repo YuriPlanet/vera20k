@@ -6,64 +6,6 @@ use crate::rules::ini_parser::IniSection;
 use crate::util::native_x87::NativeF64Bits;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) struct EmpWarheadRules {
-    duration: i32,
-    cap: i32,
-    sparkles: Option<String>,
-    affects_enemies: bool,
-    affects_owner: Option<bool>,
-}
-impl Default for EmpWarheadRules {
-    fn default() -> Self {
-        Self {
-            duration: 0,
-            cap: -1,
-            sparkles: None,
-            affects_enemies: true,
-            affects_owner: None,
-        }
-    }
-}
-impl EmpWarheadRules {
-    pub(crate) fn duration(&self) -> i32 {
-        self.duration
-    }
-    pub(crate) fn cap(&self) -> i32 {
-        self.cap
-    }
-    pub(crate) fn can_affect_house(
-        &self,
-        source_exists: bool,
-        same_owner: bool,
-        allied: bool,
-        affects_allies: bool,
-    ) -> bool {
-        // Installed WarheadExt10051B70: the source tests the target's bit.
-        !source_exists
-            || if same_owner && self.affects_owner.is_some() {
-                self.affects_owner.expect("present owner override")
-            } else if allied {
-                affects_allies
-            } else {
-                self.affects_enemies
-            }
-    }
-    pub(crate) fn sparkles(&self) -> Option<&str> {
-        self.sparkles.as_deref()
-    }
-    #[cfg(feature = "ares")]
-    pub(crate) fn read_pass(&mut self, section: &IniSection, sparkle: Option<Option<String>>) {
-        self.duration = section.read_ares_int("EMP.Duration", self.duration);
-        self.cap = section.read_ares_int("EMP.Cap", self.cap);
-        if let Some(sparkle) = sparkle {
-            self.sparkles = sparkle;
-        }
-        self.affects_enemies = section.read_ares_bool("AffectsEnemies", self.affects_enemies);
-        self.affects_owner = section.read_ares_nullable_bool("AffectsOwner", self.affects_owner);
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct EmpTypeRules {
     modifier: NativeF64Bits,
     threshold: i32,
@@ -207,18 +149,18 @@ mod tests {
                     "{row}"
                 );
             } else {
-                let mut config = EmpWarheadRules::default();
-                config.read_pass(section, None);
+                let mut config = crate::rules::ares_warhead::AresWarheadRules::default();
+                config.read_pass(section, None, None);
                 if kind == "enemies" {
                     assert_eq!(
-                        config.affects_enemies,
+                        config.affects_enemies(),
                         expected[0].as_i64().unwrap() != 0,
                         "{row}"
                     );
                 } else {
                     let expected = (expected[1].as_i64().unwrap() != 0)
                         .then(|| expected[0].as_i64().unwrap() != 0);
-                    assert_eq!(config.affects_owner, expected, "{row}");
+                    assert_eq!(config.affects_owner(), expected, "{row}");
                 }
             }
         }
@@ -244,7 +186,7 @@ mod tests {
             assert_eq!(config.sparkles(), Some(Some("SPARK")));
             assert!(!config.rank_immune(100));
             assert!(config.rank_immune(200));
-            let wh = rules.warhead("EMPWH").unwrap().emp_rules().unwrap();
+            let wh = rules.warhead("EMPWH").unwrap().ares_rules().unwrap();
             assert_eq!(wh.duration(), 121);
             assert_eq!(wh.cap(), 0);
             assert!(wh.can_affect_house(true, true, true, false));
@@ -269,7 +211,7 @@ mod tests {
             assert_ne!(null_rules.simulation_config_hash(), hash);
         } else {
             assert!(object.emp_rules().is_none());
-            assert!(rules.warhead("EMPWH").unwrap().emp_rules().is_none());
+            assert!(rules.warhead("EMPWH").unwrap().ares_rules().is_none());
         }
     }
 }

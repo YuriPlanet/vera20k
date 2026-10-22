@@ -197,17 +197,17 @@ mod receiver {
             rules: &RuleSet,
             effects: FrameEffects<'_>,
         ) {
-            if !warhead.emp_rules().is_some_and(|emp| emp.duration() != 0) {
+            if !warhead.ares_rules().is_some_and(|emp| emp.duration() != 0) {
                 return;
             }
-            for target in self.ares_emp_ground_targets(impact, warhead.cell_spread_f64, rules) {
+            for target in self.ares_effect_ground_targets(impact, warhead.cell_spread_f64, rules) {
                 let result = self.deliver_ares_emp(target, source, warhead, rules, effects);
                 if result == EmpDelivery::Unsupported {
                     log::debug!("Ares EMP victim {target} requires a later dependency chain");
                 }
             }
         }
-        fn ares_emp_ground_targets(
+        pub(crate) fn ares_effect_ground_targets(
             &self,
             impact: crate::sim::projectile::ProjectileCoord,
             spread: f64,
@@ -302,7 +302,7 @@ mod receiver {
             effects: FrameEffects<'_>,
         ) -> EmpDelivery {
             let Some(settings) = warhead
-                .emp_rules()
+                .ares_rules()
                 .filter(|settings| settings.duration() != 0)
             else {
                 return EmpDelivery::Rejected;
@@ -373,7 +373,7 @@ mod receiver {
                     .and_then(|name| rules.weapon(name))
                     .and_then(|weapon| weapon.warhead.as_deref())
                     .and_then(|name| rules.warhead(name))
-                    .and_then(|wh| wh.emp_rules())
+                    .and_then(|wh| wh.ares_rules())
                     .is_some_and(|emp| emp.duration() != 0)
                 }) {
                     return EmpDelivery::Rejected;
@@ -1393,7 +1393,7 @@ mod receiver {
                     z: int(&f["impact"][2]),
                 };
                 let actual: Vec<_> = sim
-                    .ares_emp_ground_targets(impact, f["spread"].as_f64().unwrap(), &rules)
+                    .ares_effect_ground_targets(impact, f["spread"].as_f64().unwrap(), &rules)
                     .iter()
                     .map(|id| sim.entities().get(*id).unwrap().native_unique_id())
                     .collect();
@@ -2366,7 +2366,7 @@ mod receiver {
                     }
                 }
                 let ids =
-                    sim.ares_emp_ground_targets(impact, f["spread"].as_f64().unwrap(), &rules);
+                    sim.ares_effect_ground_targets(impact, f["spread"].as_f64().unwrap(), &rules);
                 let uids: Vec<_> = ids
                     .iter()
                     .map(|id| sim.substrate.entities.get(*id).unwrap().native_unique_id())

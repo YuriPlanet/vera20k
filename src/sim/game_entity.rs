@@ -34,6 +34,8 @@ use crate::sim::world::ObjectLifecycle;
 
 mod distributed_fire;
 mod emp;
+#[cfg(feature = "ares")]
+mod attach_effect;
 mod foot_air;
 mod pip_fill;
 pub(crate) use distributed_fire::DistributedFireCandidate;
@@ -109,6 +111,10 @@ pub struct GameEntity {
     /// constructor remains zero and only the feature-gated EMP producer writes it.
     #[serde(default)]
     emp: emp::EmpState,
+    /// Ares builtin attachments: ordered instance vector, owned by attach_effect.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    attach_effects: attach_effect::AttachEffects,
     /// Low word of the one raw Scenario RNG draw performed by the active-retail
     /// `TechnoClass` constructor (`0x006F3254`, stored at native `+0x3C8`).
     /// Later report-selection consumers read this persistent value; placement
@@ -1576,6 +1582,8 @@ impl GameEntity {
             native_unique_id,
             native_cloak_displacement: crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO,
             emp: Default::default(),
+            #[cfg(feature = "ares")]
+            attach_effects: Default::default(),
             techno_ctor_random_word,
             secret_lab_fallback: None,
             stage: crate::sim::stage::StageClass::constructed(construction_frame as i32),

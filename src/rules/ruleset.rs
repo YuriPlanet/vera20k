@@ -4360,13 +4360,13 @@ impl RuleSet {
                 object.bind_emp_rules(emp);
             }
         }
-        for (name, emp) in processed.emp_warhead_states() {
+        for (name, ares) in processed.ares_warhead_states() {
             if let Some(warhead) = rules
                 .warheads
                 .values_mut()
                 .find(|wh| wh.id.eq_ignore_ascii_case(name))
             {
-                warhead.bind_emp_rules(emp);
+                warhead.bind_ares_rules(ares);
             }
         }
         for (category, name, armor) in processed.object_armor_states() {
@@ -6045,7 +6045,7 @@ impl RuleSet {
                 .hash(&mut hasher);
             self.warheads
                 .iter()
-                .map(|(name, wh)| (name.to_ascii_uppercase(), wh.emp_rules()))
+                .map(|(name, wh)| (name.to_ascii_uppercase(), wh.ares_rules()))
                 .collect::<BTreeMap<_, _>>()
                 .hash(&mut hasher);
         }

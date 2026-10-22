@@ -1499,6 +1499,9 @@ fn techno_common_steps(
     effects: FrameEffects<'_>,
     turret_rotate_sample: Option<bool>,
 ) -> bool {
+    // Ares1004B434 updates attachments before1004B528 EMP recovery.
+    #[cfg(feature = "ares")]
+    sim.update_ares_attach_effects(id, rules);
     // Installed6F9E50 ->1004B320 owns delayed Building reactivation before
     //the stock head. EMP expiry itself must not invent a future-power sweep.
     #[cfg(feature = "ares")]

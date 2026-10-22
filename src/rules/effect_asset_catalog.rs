@@ -243,7 +243,17 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
         // Warhead sparkle as AnimClass421EA0. Existing-pointer lookup alone
         // does not bind its physical bounds for that constructor.
         #[cfg(feature = "ares")]
-        if let Some(name) = warhead.emp_rules().and_then(|emp| emp.sparkles()) {
+        if let Some(name) = warhead.ares_rules().and_then(|emp| emp.sparkles()) {
+            insert(name);
+        }
+        // AttachedEffect 100586E0 constructs the registered AnimClass with
+        // flags 0x600 and then attaches it to the victim. It needs physical
+        // bounds through this same loader closure before construction.
+        #[cfg(feature = "ares")]
+        if let Some(name) = warhead
+            .ares_rules()
+            .and_then(|wh| wh.attach_effect().animation())
+        {
             insert(name);
         }
     }
@@ -649,14 +659,14 @@ mod tests {
                 rules
                     .warhead("EMP")
                     .unwrap()
-                    .emp_rules()
+                    .ares_rules()
                     .and_then(|emp| emp.sparkles()),
                 expected,
                 "{row}"
             );
         }
         let root = TestRoot::new();
-        let names = ["WH_SPARK", "TYPE_SPARK", "GLOBAL_SPARK"];
+        let names = ["WH_SPARK", "TYPE_SPARK", "GLOBAL_SPARK", "AE_VISUAL"];
         for name in names {
             std::fs::write(
                 root.path().join(format!("{name}.SHP")),
@@ -669,10 +679,10 @@ mod tests {
         // index1 even without Ares. Reserve that slot so this fixture isolates
         // EMP roots rather than also binding TYPE_SPARK through electrocution.
         let ini = IniFile::from_str(
-            "[VehicleTypes]\n0=CONTROL\n[Warheads]\n0=EMP\n[Animations]\n0=WH_SPARK\n1=ELECTRO\n2=TYPE_SPARK\n3=GLOBAL_SPARK\n[General]\nEMPulseSparkles=GLOBAL_SPARK\n[CONTROL]\nStrength=100\nEMP.Sparkles=TYPE_SPARK\n[EMP]\nEMP.Duration=2\nEMP.Sparkles=WH_SPARK\n",
+            "[VehicleTypes]\n0=CONTROL\n[Warheads]\n0=EMP\n[Animations]\n0=WH_SPARK\n1=ELECTRO\n2=TYPE_SPARK\n3=GLOBAL_SPARK\n4=AE_VISUAL\n[General]\nEMPulseSparkles=GLOBAL_SPARK\n[CONTROL]\nStrength=100\nEMP.Sparkles=TYPE_SPARK\n[EMP]\nEMP.Duration=2\nEMP.Sparkles=WH_SPARK\nAttachEffect.Duration=5\nAttachEffect.Animation=ae_visual\n",
         );
         let art = IniFile::from_str(
-            "[WH_SPARK]\nLoopCount=-1\n[TYPE_SPARK]\nLoopCount=-1\n[GLOBAL_SPARK]\nLoopCount=-1\n",
+            "[WH_SPARK]\nLoopCount=-1\n[TYPE_SPARK]\nLoopCount=-1\n[GLOBAL_SPARK]\nLoopCount=-1\n[AE_VISUAL]\nLoopCount=-1\n",
         );
         let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art)
             .expect("production retained Rules/ART reads");
