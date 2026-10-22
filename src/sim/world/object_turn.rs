@@ -77,6 +77,12 @@ pub(crate) struct GroundLocomotorOutcome {
     track_owned: bool,
 }
 
+impl GroundLocomotorOutcome {
+    pub(crate) fn bridge_state_changed(&self) -> bool {
+        self.bridge_state_changed
+    }
+}
+
 #[derive(Default)]
 pub(super) struct ObjectTurnOutcome {
     movement: movement::MovementTickStats,

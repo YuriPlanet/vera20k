@@ -1133,7 +1133,7 @@ impl Simulation {
     ///    `0x007362A7..0x007362F5`, Infantry `0x0051BB7D..0x0051BBCB`,
     ///    Aircraft `0x00414C78..0x00414CC6`) and returns if that killed it.
     ///    The active Chronosphere warp uses `movement::teleport_chrono`
-    ///    (its residuals cover a Drive over it). Ordinary Teleport warp-in
+    ///    or the active Drive that temporarily suspends it. Ordinary Teleport warp-in
     ///    uses the existing Process's early TimerCheck arm (`0x00719322`),
     ///    including a hidden open-topped passenger;
     /// 3. a warped-out object ([`GameEntity::ai_frozen`]) drops its target
@@ -1187,6 +1187,25 @@ impl Simulation {
                 match self.process_chrono_warp(id, rules, ctx) {
                     Ok(changed) => *bridge_state_changed |= changed,
                     Err(error) => log::warn!("chrono warp {id} prologue Process: {}", error.cause),
+                }
+            } else if self
+                .substrate
+                .entities
+                .get(id)
+                .and_then(|entity| entity.locomotor.as_ref())
+                .is_some_and(|locomotor| {
+                    locomotor.active_kind() == crate::rules::locomotor_type::LocomotorKind::Drive
+                })
+            {
+                // Unit7362CD..7362EA calls the CURRENT controller, without
+                // FootAI's later sinking/falling/limbo admission or END.
+                // A pre-warp plan committed during WarpIn can install Drive
+                // over the suspended Chronosphere Teleport. Drive4B066C
+                // clears its same-cell NavCom before MissionMove4D4203;
+                // otherwise that mission takes an extra cadence draw4D4275.
+                match self.process_ground_locomotor_one(id, rules, registry, ctx.effects) {
+                    Ok(outcome) => *bridge_state_changed |= outcome.bridge_state_changed(),
+                    Err(error) => log::warn!("drive {id} prologue Process: {}", error.cause),
                 }
             } else {
                 // Infantry51BB81..51BBC0 runs the ordinary Teleport's extra

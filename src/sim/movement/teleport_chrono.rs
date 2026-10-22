@@ -54,19 +54,15 @@
 //!
 //! Evidence: instruction reading of the addresses cited here.
 //!
+//! A retained planning move committed during warp-in can run the Unit's
+//! Teleporter destination setter, suspending this warp under a fresh Drive.
+//! The class prologue processes that ACTIVE Drive (`0x007362EA`) before
+//! mission dispatch. It never advances a suspended Teleport; the normal
+//! EnterIdle or Foot tail restores it through the common piggyback owner.
+//! Drive's same-cell navigation cleanup (`0x004B066C`) must precede the
+//! Move mission's NavCom test (`0x004D4203`) and cadence draw (`0x004D4275`).
+//!
 //! RESIDUALS:
-//! - A destination given while warping in (states 2 to 7, the latch down)
-//!   runs the Unit setter's Teleporter arm, whose Drive suspends the warp's
-//!   Teleport (`locomotor_owner::begin_drive_for_teleporter`), refuses the
-//!   destination while its owner warps (`0x004AFD40`) and ends at the Foot
-//!   AI tail. The NavCom it published stays, so state 5's NULL destination,
-//!   which the prologue runs, installs another Drive: FootClass::AI's
-//!   Process runs that Drive, and state 6's TimerCheck with its scan draw
-//!   waits for the next prologue. That frame and draw order is read, not
-//!   executed. Natively the prologue also runs a Drive active at its call
-//!   (`0x007362A7..0x007362F5`); VERA runs none. Trigger: a destination for
-//!   a Chrono Miner in the warp's last frames. Effect: TimerCheck's draw
-//!   moves a frame and the warp's END up to one; the Drive goes nowhere.
 //! - A landed Aircraft that sinks keeps `+0x3CD` with nothing to end it:
 //!   VERA ports only the Unit's sinking (Unit AI `0x007364A1`); the Aircraft
 //!   AI's handling is not established. Triggers: an airfield's Harriers

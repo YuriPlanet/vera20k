@@ -1139,3 +1139,239 @@ fn retail_chrono_warp_destinations_match_native_rows() {
     }
     assert_eq!(rows.len(), 8);
 }
+
+/// PLANCOMMIT637E89 admits a retained Guard plan during warp-in. The extra
+/// active Drive Process7362EA clears a same-cell NavCom4B066C before
+/// MissionMove4D4203, so it idles instead of taking cadence RNG4D4275.
+#[test]
+fn planned_same_cell_move_during_chrono_warp_in_idles_before_move_cadence() {
+    use crate::sim::mission::MissionType;
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::sim::world::{FrameEffects, TickLane};
+
+    fn frame(sim: &mut Simulation, rules: &RuleSet) {
+        let commands = sim.take_due_commands();
+        sim.advance_app_frame(
+            &commands,
+            rules,
+            None,
+            67,
+            TickLane::Ordinary,
+            FrameEffects::default(),
+        )
+        .unwrap();
+    }
+    fn launch(
+        sim: &mut Simulation,
+        rules: &RuleSet,
+        owner: InternedId,
+        name: &str,
+        at: (u16, u16),
+    ) {
+        let sw_type_id = sim.interner.intern(name);
+        sim.queue_command(CommandEnvelope::new(
+            owner,
+            sim.session.tick() + 1,
+            Command::LaunchSuperWeapon {
+                sw_type_id,
+                target_rx: at.0,
+                target_ry: at.1,
+            },
+        ));
+        frame(sim, rules);
+    }
+    fn planning(sim: &mut Simulation, rules: &RuleSet, record: crate::sim::command::CommandRecord) {
+        let command = sim
+            .decode_native_command_record(&record, sim.session.tick())
+            .unwrap();
+        assert!(sim.apply_command("Americans", &command.payload, Some(rules)));
+    }
+    fn charged(sim: &mut Simulation, rules: &RuleSet, sphere: InternedId, owner: InternedId) {
+        let instance = &sim.super_weapons[&owner][&sphere];
+        assert!(instance.is_active() && !instance.is_suspended());
+        let deadline = instance
+            .charge_start_tick()
+            .wrapping_add(instance.charge_duration())
+            .wrapping_add(1);
+        sim.session.set_binary_frame_for_test(deadline as u32);
+        frame(sim, rules);
+        assert!(sim.super_weapons[&owner][&sphere].is_ready());
+    }
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let mut rules = retail.rules;
+    for name in ["CHRONOAR", "CHRONOTG", "CHRONOFD", "WARPOUT", "CHRONOSK"] {
+        rules.bind_anim_frame_count_for_test(name, 20);
+    }
+    // Physical retail rules/mode/map with supplied flat terrain, visibility,
+    // SHP counts and countdown time skips; no supplied warp/mission/plan state.
+    let (rules, mut sim, owner) = world_with(rules, 64, &[]);
+    sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+    sim.session.set_current_house_for_test(Some(owner));
+    sim.set_input_delay_ticks(0);
+    let enemy = sim.interner.intern("Russians");
+    sim.fog = crate::sim::vision::FogState::new(64, 64);
+    for house in [owner, enemy] {
+        sim.fog.reveal_all_for_owner(house);
+    }
+    spawn(&mut sim, &rules, "GACNST", "Americans", (5, 5));
+    spawn(&mut sim, &rules, "NACNST", "Russians", (5, 40));
+    for at in [(5, 10), (8, 10), (11, 10)] {
+        spawn(&mut sim, &rules, "GAPOWR", "Americans", at);
+    }
+    spawn(&mut sim, &rules, "GACSPH", "Americans", (15, 10));
+    spawn(&mut sim, &rules, "GAPOWR", "Russians", TARGET);
+    let miner = spawn(&mut sim, &rules, "CMIN", "Americans", SOURCE);
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Stop { entity_id: miner },
+        Some(&rules)
+    ));
+    for _ in 0..8 {
+        frame(&mut sim, &rules);
+    }
+    let sphere = sim.interner.intern("ChronoSphereSpecial");
+    charged(&mut sim, &rules, sphere, owner);
+    launch(&mut sim, &rules, owner, "ChronoSphereSpecial", SOURCE);
+    launch(&mut sim, &rules, owner, "ChronoWarpSpecial", TARGET);
+    assert!(
+        sim.substrate
+            .entities
+            .get(miner)
+            .unwrap()
+            .chrono_warp_latch()
+    );
+    for _ in 0..180 {
+        frame(&mut sim, &rules);
+        if sim
+            .substrate
+            .entities
+            .get(miner)
+            .unwrap()
+            .chrono_warp()
+            .is_none()
+        {
+            break;
+        }
+    }
+    let actor = sim.substrate.entities.get(miner).unwrap();
+    assert!(actor.chrono_warp().is_none());
+    assert_eq!(
+        actor.chrono_warp_delay(),
+        60,
+        "the first blocked warp supplies the real retained delay"
+    );
+    assert_eq!(chain(&sim, miner), [LocomotorKind::Teleport]);
+
+    charged(&mut sim, &rules, sphere, owner);
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Stop { entity_id: miner },
+        Some(&rules)
+    ));
+    frame(&mut sim, &rules);
+    let from = cell(&sim, miner);
+    const SECOND: (u16, u16) = (50, 50);
+    let record = sim
+        .encode_planning_order_record(
+            owner,
+            &Command::Move {
+                entity_id: miner,
+                target_rx: SECOND.0,
+                target_ry: SECOND.1,
+            },
+        )
+        .expect("controllable pre-warp miner can prepare the move");
+    planning(&mut sim, &rules, record);
+    assert_eq!(sim.planning_paths(owner)[0].cells, [SECOND]);
+    launch(&mut sim, &rules, owner, "ChronoSphereSpecial", from);
+    launch(&mut sim, &rules, owner, "ChronoWarpSpecial", SECOND);
+    let mut landed = false;
+    for _ in 0..90 {
+        frame(&mut sim, &rules);
+        let actor = sim.substrate.entities.get(miner).unwrap();
+        if actor.is_warping_in() && cell(&sim, miner) == SECOND {
+            landed = true;
+            break;
+        }
+    }
+    assert!(
+        landed
+            && sim
+                .substrate
+                .entities
+                .get(miner)
+                .unwrap()
+                .chrono_warp()
+                .is_some()
+    );
+    assert_eq!(
+        sim.planning_paths(owner)[0].cells,
+        [SECOND],
+        "warp preserved the prepared plan"
+    );
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(miner)
+            .unwrap()
+            .mission
+            .current()
+            .known(),
+        Some(MissionType::Guard)
+    );
+    let record = sim.encode_plan_commit_record(owner).unwrap();
+    planning(&mut sim, &rules, record);
+    let mut drive = false;
+    for _ in 0..5 {
+        frame(&mut sim, &rules);
+        let actor = sim.substrate.entities.get(miner).unwrap();
+        if chain(&sim, miner)[0] == LocomotorKind::Drive {
+            assert!(actor.is_warping_in());
+            assert_eq!(
+                actor.navigation.nav_com(),
+                Some(NavTargetRef::cell(SECOND.0, SECOND.1))
+            );
+            drive = true;
+            break;
+        }
+    }
+    assert!(
+        drive,
+        "actual planned event installed Drive over the still-active warp"
+    );
+    frame(&mut sim, &rules);
+    let actor = sim.substrate.entities.get(miner).unwrap();
+    assert!(actor.navigation.nav_com().is_none());
+    assert_eq!(
+        actor.mission.current().known(),
+        Some(MissionType::Guard),
+        "same-cell Drive must clear navigation before Move dispatch; current={:?} queued={:?}",
+        actor.mission.current(),
+        actor.mission.queued(),
+    );
+    assert!(
+        actor.is_warping_in() && actor.chrono_warp().is_some(),
+        "the warp remains live during the retained delay"
+    );
+    for _ in 0..90 {
+        frame(&mut sim, &rules);
+        if sim
+            .substrate
+            .entities
+            .get(miner)
+            .unwrap()
+            .chrono_warp()
+            .is_none()
+        {
+            break;
+        }
+    }
+    let actor = sim.substrate.entities.get(miner).unwrap();
+    assert!(actor.chrono_warp().is_none() && !actor.is_warping_in());
+    assert_eq!(cell(&sim, miner), SECOND);
+    assert_eq!(chain(&sim, miner), [LocomotorKind::Teleport]);
+}
