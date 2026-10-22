@@ -203,7 +203,9 @@ pub(super) fn overlay_radar_color(
     else {
         return Some([200, 200, 160]);
     };
-    if matches!(overlay_id, 100 | 101 | 231 | 232 | 239) {
+    // 47C108..47C136's nested 100/101 then 231/232 tests cannot both
+    // match. Those four IDs reach Overlay5FED00; only 239 skips it.
+    if overlay_id == 239 {
         return None;
     }
     let frame = if [Family::Low, Family::High]
@@ -508,7 +510,7 @@ mod radar_color_tests {
             ((147, 4), [40, 50, 60]),
         ]);
         assert_eq!(
-            overlay_radar_color(overlay(100, 9, false, false, false), &colors),
+            overlay_radar_color(overlay(239, 9, false, false, false), &colors),
             None
         );
         assert_eq!(
@@ -579,6 +581,23 @@ mod radar_color_tests {
             current_cell_radar_source(false, false, None, [4, 5, 6], &colors),
             None,
             "clearing an overlay restores the selected TMP source",
+        );
+    }
+
+    #[test]
+    fn terminal_bridge_overlays_use_the_current_header_frame_and_preserve_black() {
+        // Authored header colors distinguish current-frame admission from the
+        // standing bridge ranges' forced frame 1. Original47C060 controls also
+        // return the shipped terminal images' black for every valid frame.
+        let colors = HashMap::from([((100, 1), [11, 22, 33]), ((100, 4), [0, 0, 0])]);
+        assert_eq!(
+            overlay_radar_color(overlay(100, 1, false, false, false), &colors),
+            Some([11, 22, 33]),
+        );
+        assert_eq!(
+            overlay_radar_color(overlay(100, 4, false, false, false), &colors),
+            Some([0, 0, 0]),
+            "the terminal overlay retains its current frame and valid black",
         );
     }
 }
