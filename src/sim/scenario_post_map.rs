@@ -135,7 +135,7 @@ impl Simulation {
         // restore never enters this fresh-only owner or repeats its credits.
         if input.fill_silos {
             for owner in self.houses.order().to_vec() {
-                let income = crate::sim::house_state::income_ppm_for_owner(
+                let income = crate::sim::house_state::income_mult_for_owner(
                     &self.houses,
                     &self.interner,
                     input.rules,
@@ -160,6 +160,13 @@ impl Simulation {
                     .fill_silos_fresh_empty_store(value, capacity, income);
             }
         }
+
+        // Fill_In_Data684F81..684F89: Map4ADCD0(1,0) visits mobile sources
+        // before the later first-House full pass. This does not consume +24B.
+        self.initialize_scenario_sight(crate::sim::world::UninitContext::new(
+            input.rules,
+            Some(input.overlay_registry),
+        ));
 
         // Original684C30 performs586BF0 after the zone rebuilds and before its
         // particle/twinkle tail. This command is fresh-load-only: restore writes

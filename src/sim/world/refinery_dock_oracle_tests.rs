@@ -63,6 +63,205 @@ fn corpus() -> &'static Value {
     crate::test_fixture::json("tools/spatial_oracle/refinery_dock.json")
 }
 
+/// Native income rows supply raw Rules/cargo priors; the surrounding world,
+/// House, typed country/resource readers, construction and dispatch stay real.
+fn income_scene(row: &Value) -> Scene {
+    use crate::util::native_x87::NativeF32Bits;
+    let input = &row["input"];
+    let mut setup = corpus()["mission_unload"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "unload_gate_ore")
+        .unwrap()["input"]
+        .clone();
+    let income_bits = u32::from_str_radix(input["income_bits"].as_str().unwrap(), 16).unwrap();
+    let income = f32::from_bits(income_bits);
+    setup["income_mult"] = serde_json::json!(f64::from(income));
+    setup["human"] = false.into();
+    setup["balance"] = input["balance"].clone();
+    setup["stage"][0] = 123.into();
+    let mut storage = [0; 4];
+    if let Some(slot) = input["slot"].as_u64() {
+        storage[slot as usize] = input["bales"].as_i64().unwrap() as i32;
+    }
+    setup["storage"] = serde_json::json!(storage);
+    let mut text = String::from(RULES);
+    text.push_str(&format!(
+        "[Countries]\n0=Americans\n[Americans]\nIncomeMult={income}\n\
+         [InfantryTypes]\n0=SLAV\n[SLAV]\nStrength=125\nSpeed=4\nStorage=40\n\
+         Locomotor={{4A582744-9839-11D1-B709-00A024DDAFD1}}\n"
+    ));
+    for land in crate::rules::terrain_rules::LandType::ALL.iter().take(9) {
+        text.push_str(&format!(
+            "[{}]\nFoot=100%\nTrack=100%\nWheel=100%\nBuildable=yes\n",
+            land.section_name()
+        ));
+    }
+    let mut ini = IniFile::from_str(&text);
+    for (slot, name) in ["Riparius", "Cruentus", "Vinifera", "Aboreus"]
+        .iter()
+        .enumerate()
+    {
+        ini.merge(&IniFile::from_str(&format!(
+            "[{name}]\nValue={}\n",
+            input["values"][slot]
+        )));
+    }
+    let art = IniFile::from_str(
+        "[GAREFN]\nFoundation=4x3\nQueueingCell=4,1\n[GAREFX]\nFoundation=4x3\nQueueingCell=4,1\n[GAOREP]\nFoundation=2x2\n",
+    );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    assert_eq!(rules.country_income_mult("Americans").bits(), income_bits);
+    rules.general.purifier_bonus = NativeF32Bits::from_bits(
+        u32::from_str_radix(input["purifier_bits"].as_str().unwrap(), 16).unwrap(),
+    );
+    // The native interior begins after count selection. Use the real AI
+    // virtual-count owner to supply that same signed prior, with no plants.
+    rules.general.ai_virtual_purifiers = [input["effective_purifiers"].as_i64().unwrap() as i32; 3];
+    let mut scene = scene_with(&setup, rules, &ini);
+    let owner = scene.sim.interner.get("Americans").unwrap();
+    let wallet = scene.sim.houses.get_mut(&owner).unwrap().economy_mut();
+    wallet.set_score_for_test(input["score"].as_i64().unwrap() as i32);
+    wallet.set_spent_for_test(7);
+    // Cached pickup values deliberately disagree. Native payment must read
+    // the live signed32 Tiberium type, including negative/large Values.
+    let miner = scene
+        .sim
+        .substrate
+        .entities
+        .get_mut(scene.miner)
+        .unwrap()
+        .miner
+        .as_mut()
+        .unwrap();
+    let mut cargo = miner.cargo().to_vec();
+    for bale in &mut cargo {
+        bale.value = 1;
+    }
+    miner.set_cargo_for_test(cargo);
+    scene
+}
+
+#[test]
+fn native_income_controls_reach_unit_and_slave_payment_callers() {
+    let native = crate::test_fixture::json("tools/spatial_oracle/refinery_income.json");
+    let rows = native["unit_rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 258);
+    for row in rows {
+        for slave in [false, true] {
+            let mut scene = income_scene(row);
+            if slave {
+                let id = scene
+                    .sim
+                    .spawn_object("SLAV", "Americans", 14, 14, 0, &scene.rules)
+                    .unwrap();
+                let cargo = scene
+                    .sim
+                    .substrate
+                    .entities
+                    .get(scene.miner)
+                    .unwrap()
+                    .miner
+                    .as_ref()
+                    .unwrap()
+                    .cargo()
+                    .to_vec();
+                scene.sim.substrate.entities.get_mut(id).unwrap().slave =
+                    crate::sim::slave_manager::SlaveLink::for_test(Some(scene.refinery), cargo);
+                scene.sim.slave_deposit(id, scene.refinery, &scene.rules);
+                assert!(
+                    scene
+                        .sim
+                        .entities()
+                        .get(id)
+                        .unwrap()
+                        .slave
+                        .cargo()
+                        .is_empty()
+                );
+            } else {
+                crate::sim::miner::mission_unload(
+                    &mut scene.sim,
+                    &scene.rules,
+                    scene.miner,
+                    super::FrameEffects::default(),
+                );
+                let entity = scene.sim.entities().get(scene.miner).unwrap();
+                assert!(entity.miner.as_ref().unwrap().cargo().is_empty());
+                assert_eq!(
+                    i64::from(entity.native_stage().value()),
+                    row["output"]["stage"].as_i64().unwrap()
+                );
+            }
+            let owner = scene.sim.interner.get("Americans").unwrap();
+            let wallet = scene.sim.houses[&owner].economy();
+            assert_eq!(
+                (
+                    i64::from(wallet.credits()),
+                    i64::from(wallet.score()),
+                    i64::from(wallet.spent_credits())
+                ),
+                (
+                    row["output"]["balance"].as_i64().unwrap(),
+                    row["output"]["score"].as_i64().unwrap(),
+                    row["output"]["spent"].as_i64().unwrap()
+                ),
+                "{} slave={slave}",
+                row["input"]["name"]
+            );
+        }
+    }
+}
+
+#[test]
+fn virtual_purifier_wrap_and_saved_payment_use_native_inputs() {
+    let native = crate::test_fixture::json("tools/spatial_oracle/refinery_income.json");
+    let row = native["unit_rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["bales"] == 7 && row["input"]["effective_purifiers"] == i32::MIN)
+        .unwrap();
+    let mut scene = income_scene(row);
+    scene
+        .sim
+        .spawn_object("GAOREP", "Americans", 24, 24, 0, &scene.rules)
+        .unwrap();
+    scene.rules.general.ai_virtual_purifiers = [i32::MAX; 3];
+    assert_eq!(
+        crate::sim::miner::miner_system::effective_purifier_count(
+            &scene.sim,
+            &scene.rules,
+            "Americans"
+        ),
+        i32::MIN
+    );
+    let bytes = crate::sim::snapshot::GameSnapshot::save(&scene.sim, 0, 0, "native-income", 0);
+    let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .sim;
+    restored.restore_after_snapshot_load().unwrap();
+    let slot =
+        crate::rules::tiberium_type::TiberiumTypeId(row["input"]["slot"].as_u64().unwrap() as u8);
+    let bales = row["input"]["bales"].as_i64().unwrap() as i32;
+    for sim in [&mut scene.sim, &mut restored] {
+        crate::sim::miner::pay_refinery_owner(sim, &scene.rules, scene.refinery, slot, bales);
+        let owner = sim.interner.get("Americans").unwrap();
+        assert_eq!(
+            (
+                i64::from(sim.houses[&owner].economy().credits()),
+                i64::from(sim.houses[&owner].economy().score())
+            ),
+            (
+                row["output"]["balance"].as_i64().unwrap(),
+                row["output"]["score"].as_i64().unwrap()
+            )
+        );
+    }
+}
+
 pub(super) struct Scene {
     pub(super) sim: Simulation,
     pub(super) rules: RuleSet,
@@ -635,24 +834,11 @@ fn compare_unload(s: &Scene, row: &Value, context: &str) {
         i64::from(house.economy().credits()),
         i64::from(house.economy().score()),
     );
-    if row["input"]["name"] == "unload_gate_income_mult" {
-        // RESIDUAL (documented on `refinery_dock`): native 0.9f pays
-        // ftol(25 * 0.9f * 40) = 899, VERA's integer economy 900.
-        assert_eq!((balance, expected["balance"].as_i64().unwrap()), (900, 899));
-    } else if row["input"]["name"] == "unload_gate_income_mult_bonus" {
-        // Native 877 + ftol(243.37.. + 877) = 1096; VERA 877 + 219 = 1096.
-        assert_eq!(
-            balance,
-            expected["balance"].as_i64().unwrap(),
-            "{context}: balance"
-        );
-    } else {
-        assert_eq!(
-            balance,
-            expected["balance"].as_i64().unwrap(),
-            "{context}: balance"
-        );
-    }
+    assert_eq!(
+        balance,
+        expected["balance"].as_i64().unwrap(),
+        "{context}: balance"
+    );
     assert_eq!(
         score,
         expected["score"].as_i64().unwrap(),

@@ -64,7 +64,12 @@ pub(super) fn retail_dustbowl_rocketeer()
     for (name, side, human) in [("Americans", 0, true), ("Russians", 1, false)] {
         let house = sim.interner.intern(name);
         sim.houses.get_or_register_for_test(house, || {
-            HouseState::new(house, side, None, human, 10_000, 10)
+            let mut state = HouseState::new(house, side, None, human, 10_000, 10);
+            // These additional fixture Houses join an already admitted
+            // scenario, so they need the same bounded native name as every
+            // launch House before the mixed world can be saved/restored.
+            state.initialize_scenario_name(name);
+            state
         });
     }
     let (rocketeer, x, y) = (40..100_u16)
@@ -155,6 +160,159 @@ pub(super) fn retail_frame(
             crate::sim::world::FrameEffects::default(),
         )
         .expect("retail frame")
+}
+
+/// Foot4DA7B0..4DA806 is independent of the Jumpjet's arrival notification:
+/// the holding infantryman continues raising only59 at the absolute cadence.
+#[test]
+#[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
+fn retail_rocketeer_hover_raises_its_cell_tag_on_absolute_frames_after_restore() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::snapshot::GameSnapshot;
+    use crate::sim::trigger_runtime::TriggerEffect;
+
+    let (mut scenario, actor, x, y) = retail_dustbowl_rocketeer();
+    let target = (x + 8, y);
+    let sim = &mut scenario.runtime.simulation;
+    let map_text = format!(
+        "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+             [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
+             [Basic]\nNewINIFormat=4\n\
+             [Triggers]\nAIR=Americans,<none>,Airborne cell,0,1,1,1,0\n\
+             [Events]\nAIR=1,59,0,-1\n\
+             [Actions]\nAIR=1,11,4,Name:JUMPJET,0,0,0,0,A\n\
+             [Tags]\nAIR_TAG=2,Airborne cell,AIR\n[CellTags]\n{}=AIR_TAG\n",
+        u32::from(target.1) * 1000 + u32::from(target.0)
+    );
+    let map = crate::map::map_file::MapFile::from_bytes(map_text.as_bytes()).unwrap();
+    sim.initialize_trigger_definitions(
+        &map,
+        &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
+        None,
+        None,
+    );
+    sim.install_authored_cell_trigger_tags(&map);
+    sim.classify_map_triggers(&scenario.runtime.resources.rules);
+    let americans = sim.interner.intern("Americans");
+    let mut orders = vec![CommandEnvelope::new(
+        americans,
+        sim.session.tick() + 1,
+        Command::Move {
+            entity_id: actor,
+            target_rx: target.0,
+            target_ry: target.1,
+        },
+    )];
+    // Retail rules, physical construction, command admission, ascent and hold
+    // are the same production path as the adjacent flight regression.
+    for _ in 0..240 {
+        assert!(
+            retail_frame(&mut scenario, std::mem::take(&mut orders))
+                .tick
+                .frame_committed
+        );
+    }
+    let sim = &scenario.runtime.simulation;
+    let entity = sim.substrate.entities.get(actor).unwrap();
+    assert_eq!((entity.position.rx(), entity.position.ry()), target);
+    assert_eq!(pose(sim, actor).phase, 2, "the real Move finishes in hold");
+    assert!(entity.lifecycle.cell_marked());
+    assert!(crate::sim::movement::air_movement::is_high_flying(
+        entity,
+        sim.resolved_terrain.as_ref(),
+        Some((&scenario.runtime.resources.rules, &sim.interner)),
+    ));
+    let saved = GameSnapshot::save(sim, 0, 0, "Airborne cell", 0);
+    let mut histories = Vec::new();
+    for restore in [false, true] {
+        if restore {
+            let mut loaded = GameSnapshot::load(&saved).unwrap().sim;
+            loaded.bind_shared_cell_dummy(crate::map::resolved_terrain::SharedCellDummy::fresh());
+            loaded.reconstruct_cellclass_dummy_for_map_resize();
+            loaded.restore_after_snapshot_load().unwrap();
+            let resources = &scenario.runtime.resources;
+            loaded.rebuild_caches_after_load(
+                scenario
+                    .runtime
+                    .simulation
+                    .resolved_terrain
+                    .as_ref()
+                    .unwrap()
+                    .clone(),
+                crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
+                &resources.rules,
+            );
+            loaded
+                .restore_map_authority_after_snapshot_load(
+                    &resources.rules,
+                    &resources.overlay_registry,
+                    None,
+                )
+                .unwrap();
+            loaded.resolve_type_handles(&resources.rules);
+            scenario.runtime.replace_simulation(loaded);
+        }
+        let mut messages = Vec::new();
+        for _ in 0..64 {
+            let frame = scenario.runtime.simulation.session.binary_frame();
+            let output = retail_frame(&mut scenario, Vec::new());
+            assert!(output.tick.frame_committed);
+            for effect in output.trigger_effects {
+                if let TriggerEffect::LocalizedMessage { csf_label } = effect {
+                    assert_eq!(csf_label, "Name:JUMPJET");
+                    messages.push(frame);
+                }
+            }
+        }
+        assert_eq!(
+            messages.len(),
+            4,
+            "a holding Rocketeer raises its cell every sixteen frames"
+        );
+        assert!(messages.iter().all(|frame| frame % 16 == 0));
+        histories.push(messages);
+    }
+    assert_eq!(histories[0], histories[1]);
+    // Attach a fresh authored one-shot under the same naturally holding
+    // Rocketeer. The repeated later visits must observe immediate detach
+    // and the ordinary frame tail's shared Tag/Trigger deferred cleanup.
+    let once = crate::map::map_file::MapFile::from_bytes(
+        map_text
+            .replace("AIR_TAG=2,Airborne cell,AIR", "AIR_TAG=0,Airborne cell,AIR")
+            .as_bytes(),
+    )
+    .unwrap();
+    let sim = &mut scenario.runtime.simulation;
+    sim.initialize_trigger_definitions(
+        &once,
+        &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
+        None,
+        None,
+    );
+    sim.install_authored_cell_trigger_tags(&once);
+    sim.classify_map_triggers(&scenario.runtime.resources.rules);
+    let cell = sim
+        .resolved_terrain
+        .as_ref()
+        .unwrap()
+        .native_cell_identity((target.0 as i16, target.1 as i16));
+    assert!(sim.cell_trigger_tag_for_test(cell).is_some());
+    let mut count = 0;
+    for _ in 0..64 {
+        let output = retail_frame(&mut scenario, Vec::new());
+        assert!(output.tick.frame_committed);
+        count += output.trigger_effects.into_iter().filter(|effect| {
+            matches!(effect, TriggerEffect::LocalizedMessage { csf_label } if csf_label == "Name:JUMPJET")
+        }).count();
+    }
+    assert_eq!(count, 1);
+    assert!(
+        scenario
+            .runtime
+            .simulation
+            .cell_trigger_tag_for_test(cell)
+            .is_none()
+    );
 }
 
 /// A Rocketeer on Dustbowl flies to a cell eight cells away and holds there,

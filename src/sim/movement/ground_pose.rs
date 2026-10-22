@@ -606,7 +606,7 @@ pub fn target_get_coords(
 ) -> Option<DriveCoord> {
     match target {
         crate::sim::combat::TargetKind::Cell(rx, ry) => {
-            Some(super::navcom::target_cell_coord(rx, ry, cells))
+            Some(super::navcom::retained_cell_coord(rx, ry, cells))
         }
         crate::sim::combat::TargetKind::Entity(id) => {
             if let Some(entity) = world.substrate.entities.get(id) {

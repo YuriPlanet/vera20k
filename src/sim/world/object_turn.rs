@@ -49,6 +49,14 @@ mod teleport_anim_object_turn_tests;
 #[path = "per_cell_object_turn_tests.rs"]
 mod per_cell_object_turn_tests;
 
+#[cfg(test)]
+#[path = "airborne_cell_tag_tests.rs"]
+mod airborne_cell_tag_tests;
+
+#[cfg(test)]
+#[path = "periodic_cell_object_turn_tests.rs"]
+mod periodic_cell_object_turn_tests;
+
 #[derive(Default)]
 pub(super) struct LiveObjectPassOutcome {
     pub destroyed_structure: bool,
@@ -895,6 +903,10 @@ impl Simulation {
             // Process. Cruise crossing itself has no PerCell promotion.
             sim.promote_balloon_playfield_membership_before_process(stable_id, rules);
             sim.refresh_high_flying_sight_before_process(stable_id, rules, object_ctx.effects);
+            sim.dispatch_airborne_cell_tag_event(
+                stable_id,
+                super::UninitContext::new(rules, overlay_registry).with_effects(object_ctx.effects),
+            );
         }
 
         // Foot4DA80C captures +538 before locomotor Process. The sound tail

@@ -133,6 +133,7 @@ fn admission_owner_uses_actual_sparse_contact_slots() {
             &mut s.sim,
             &s.rules,
             s.miner,
+            &s.rules.object("HARV").unwrap().dock,
             false,
             false,
             crate::sim::world::FrameEffects::default(),

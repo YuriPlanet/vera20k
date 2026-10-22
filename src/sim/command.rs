@@ -731,11 +731,15 @@ impl MegaMissionRecord {
             (AREA_GUARD_ACTION, post, MegaMissionTarget::Null) => {
                 MegaMissionOrder::AreaGuard { post }
             }
-            (mission @ (7..=10 | 16 | 17 | 25), target, destination) => MegaMissionOrder::Mission {
-                mission: crate::sim::mission::MissionType::from_id(mission)?,
-                target,
-                destination,
-            },
+            // Event4C71F6 also accepts Repair20, preserving it through
+            // Foot4DF0E0 before the destination setter at Event4C74BA.
+            (mission @ (7..=10 | 16 | 17 | 20 | 25), target, destination) => {
+                MegaMissionOrder::Mission {
+                    mission: crate::sim::mission::MissionType::from_id(mission)?,
+                    target,
+                    destination,
+                }
+            }
             _ => return None,
         };
         Some(Self {
@@ -831,7 +835,8 @@ pub enum Command {
     /// Undeploy a structure back into its mobile unit (e.g. ConYard → MCV).
     /// Reads UndeploysInto from rules.ini to determine the spawned unit type.
     UndeployBuilding { entity_id: u64 },
-    /// Archive a rally cell on each selected factory the command owner owns.
+    /// Accepted ARCHIVE cell events for the selected factories. Input checks
+    /// ownership before issue; dispatch retains the actor through capture.
     SetRally {
         rx: u16,
         ry: u16,
@@ -1489,6 +1494,24 @@ mod tests {
         record.payload_mut()[12..16].copy_from_slice(&0_i32.to_le_bytes());
         record.payload_mut()[16] = NULL_TARGET_KIND;
         assert_eq!(MegaMissionRecord::decode(&record), None);
+    }
+
+    #[test]
+    fn megamission_repair_preserves_its_destination() {
+        let mut record = CommandRecord::decode_exact(&[0xcc; COMMAND_RECORD_LEN]).unwrap();
+        let typed = MegaMissionRecord {
+            house_id: 1,
+            frame: 9,
+            source_id: 7,
+            order: MegaMissionOrder::Mission {
+                mission: crate::sim::mission::MissionType::Repair,
+                target: MegaMissionTarget::Null,
+                destination: MegaMissionTarget::Object { id: 23 },
+            },
+        };
+        typed.write_into(&mut record).unwrap();
+        assert_eq!(record.payload()[5], 20);
+        assert_eq!(MegaMissionRecord::decode(&record), Some(typed));
     }
 
     #[test]

@@ -273,6 +273,12 @@ pub(crate) const DEFAULT_PARTICLE_SYSTEMS: [(&str, PublishPointer); 9] = [
 /// The kept lists. Each Rules offset is the constructor's empty vector and the
 /// read's store; the empty read keeps the vector at the address given.
 const LISTS: &[(&str, PublishList)] = &[
+    // RepairBay +850: ReadGeneral66F362..66F3F8, through the shared
+    // ReadString128/BuildingType4653C0 list reader. Omission/empty keeps
+    // the existing vector; the Rules constructor leaves it empty.
+    ("RepairBay", |rules, ids| {
+        rules.repair_bay_types = ids.to_vec()
+    }),
     // ReadGeneral: DamageFireTypes +2A0 (constructor `0x00665A1D`, read
     // `0x0066D573`, kept at `0x0066D609`) and DeadBodies +120 (`0x0066580B`,
     // `0x0066D9A2`, `0x0066DA38`), AnimTypes.

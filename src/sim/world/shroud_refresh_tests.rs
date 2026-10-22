@@ -1710,3 +1710,212 @@ fn no_edge_make_enemy_matches_native_human_source_controls() {
         assert!(sim.house_alliances.as_map().is_empty());
     }
 }
+
+/// The native constructor arms +24B. The first local House tail visits the
+/// shared map receiver, including border refresh when ordinary sight is held.
+/// Native cell traversal is a recorded boundary; this test runs VERA's cells.
+#[test]
+fn initial_house_sight_matches_original_update_tail() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::superweapon::chronosphere_tests::world_with;
+
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/house_initial_sight.json",
+    ))
+    .unwrap();
+    for row in corpus["cases"].as_array().unwrap() {
+        let input = &row["inputs"];
+        let rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(&format!(
+                "[General]\nLeptonsPerSightIncrease=2000\n[Clear]\nBuildable=yes\n\
+             [{}]\n0=SCOUT\n[SCOUT]\nStrength=100\nSight={}\n\
+             Locomotor={{4A582746-9839-11d1-B709-00A024DDAFD1}}\n",
+                if input["building"].as_bool().unwrap() {
+                    "BuildingTypes"
+                } else {
+                    "AircraftTypes"
+                },
+                input["sight"].as_i64().unwrap(),
+            )),
+            &IniFile::from_str("[SCOUT]\nFoundation=1x1\n"),
+        )
+        .expect("supplied source rules and art");
+        let (rules, mut sim, player) = world_with(rules, 64, &[]);
+        sim.fog = vision::FogState::new(64, 64);
+        let other = sim.interner.get("Russians").unwrap();
+        sim.houses
+            .get_mut(&other)
+            .unwrap()
+            .set_multiplay_passive_for_test(true);
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
+        sim.session.set_current_house_for_test(Some(player));
+        if !input["pending"].as_bool().unwrap() {
+            // Consume the first House visit before the supplied source exists.
+            sim.house_rung(&rules, None, false, FrameEffects::default());
+        }
+        let id = sim
+            .spawn_object("SCOUT", "Americans", 40, 40, 0, &rules)
+            .unwrap_or_else(|| panic!("source placement refused: {input}"));
+        sim.refresh_object_sight(id, &rules, 6, FrameEffects::default());
+        if !input["latched"].as_bool().unwrap() {
+            sim.fog.clear_sight_latch(id, player);
+        }
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        entity.position.set_rx_for_test(41);
+        entity
+            .discovery
+            .set_discovered_by_current_house_for_test(input["discovered"].as_bool().unwrap());
+        entity
+            .lifecycle
+            .set_in_limbo_for_test(input["limbo"].as_bool().unwrap());
+        entity.set_in_playfield(input["in_playfield"].as_bool().unwrap());
+        sim.houses
+            .get_mut(&player)
+            .unwrap()
+            .set_multiplay_passive_for_test(input["passive"].as_bool().unwrap());
+        if !input["current"].as_bool().unwrap() {
+            sim.session.set_current_house_for_test(Some(other));
+        }
+        if let Some(startup) = row["startup"].as_object() {
+            // Actual fresh post-map dispatcher; startup's mobile-only pass
+            // must not consume the House's later full pass.
+            let roster = crate::map::houses::HouseRoster::default();
+            let overlays = crate::rules::overlay_types::OverlayTypeRegistry::empty();
+            let (_, calls) = trace_reveal_calls(|| {
+                sim.finalize_scenario_post_map(
+                    crate::sim::scenario_post_map::ScenarioPostMapInput {
+                        map_width: 64,
+                        map_height: 64,
+                        fill_silos: false,
+                        rules: &rules,
+                        overlay_registry: &overlays,
+                        house_roster: &roster,
+                        skirmish_session: None,
+                        campaign_new_game_map: None,
+                    },
+                );
+            });
+            let events = startup["events"].as_array().unwrap();
+            assert_eq!(
+                calls.walks.len(),
+                events.iter().filter(|event| event[0] == "area").count(),
+                "startup {input}"
+            );
+            assert_eq!(
+                calls.border_scans.len(),
+                events.iter().filter(|event| event[0] == "border").count(),
+                "startup {input}"
+            );
+            assert!(sim.houses[&player].initial_sight_refresh_pending());
+        }
+        for visit in row["visits"].as_array().unwrap() {
+            let (_, calls) = trace_reveal_calls(|| {
+                sim.house_rung(&rules, None, false, FrameEffects::default());
+            });
+            let events = visit["events"].as_array().unwrap();
+            assert_eq!(
+                calls.walks.len(),
+                events.iter().filter(|event| event[0] == "area").count(),
+                "{input}"
+            );
+            assert_eq!(
+                calls.border_scans.len(),
+                events.iter().filter(|event| event[0] == "border").count(),
+                "{input}"
+            );
+            for (actual, expected) in calls
+                .border_scans
+                .iter()
+                .zip(events.iter().filter(|event| event[0] == "border"))
+            {
+                assert_eq!(
+                    *actual,
+                    (
+                        (
+                            (expected[1][0].as_i64().unwrap() / 256) as u16,
+                            (expected[1][1].as_i64().unwrap() / 256) as u16,
+                            0
+                        ),
+                        expected[3].as_i64().unwrap() as i32
+                    ),
+                    "{input}"
+                );
+            }
+            assert_eq!(
+                u8::from(sim.fog.sight_is_latched(id, player)),
+                visit["latch"].as_u64().unwrap() as u8,
+                "{input}"
+            );
+            assert_eq!(
+                i64::from(sim.fog.sight_admission(id, player).unwrap().radius),
+                visit["cached_radius"].as_i64().unwrap(),
+                "{input}"
+            );
+            let cached = sim.fog.sight_admission(id, player).unwrap().origin;
+            assert_eq!(
+                (
+                    i64::from(cached.0) * 256,
+                    i64::from(cached.1) * 256,
+                    i64::from(cached.2)
+                ),
+                (
+                    visit["cached_coord"][0].as_i64().unwrap(),
+                    visit["cached_coord"][1].as_i64().unwrap(),
+                    visit["cached_coord"][2].as_i64().unwrap()
+                ),
+                "{input}"
+            );
+            assert_eq!(
+                sim.houses[&player].initial_sight_refresh_pending(),
+                visit["pending"].as_u64().unwrap() != 0,
+                "{input}"
+            );
+        }
+    }
+}
+
+#[test]
+fn initial_house_sight_pending_survives_snapshot_and_current_house_change() {
+    use crate::sim::snapshot::GameSnapshot;
+    let mut sim = Simulation::new();
+    let player = sim.interner.intern("Player");
+    let other = sim.interner.intern("Other");
+    for owner in [player, other] {
+        sim.houses
+            .register(HouseState::new(owner, 0, None, true, 0, 10));
+    }
+    sim.session.set_current_house_for_test(Some(player));
+    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    for consumed in [false, true] {
+        if consumed {
+            sim.update_initial_house_sight(player, UninitContext::default());
+        }
+        let before = sim.state_hash();
+        let bytes = GameSnapshot::save(&sim, 0, 0, "initial-house-sight", 0);
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        assert_eq!(restored.state_hash(), before);
+        assert_eq!(
+            restored.houses[&player].initial_sight_refresh_pending(),
+            !consumed
+        );
+        assert!(restored.houses[&other].initial_sight_refresh_pending());
+        restored.update_initial_house_sight(other, UninitContext::default());
+        assert_eq!(
+            restored.state_hash(),
+            before,
+            "nonlocal House cannot consume its flag"
+        );
+        restored.update_initial_house_sight(player, UninitContext::default());
+        if !consumed {
+            assert_ne!(restored.state_hash(), before, "pending flag is hashed");
+        }
+        restored.session.set_current_house_for_test(Some(other));
+        restored.update_initial_house_sight(other, UninitContext::default());
+        assert!(!restored.houses[&other].initial_sight_refresh_pending());
+        let after = restored.state_hash();
+        restored.update_initial_house_sight(other, UninitContext::default());
+        assert_eq!(restored.state_hash(), after, "repeat is inert");
+    }
+}

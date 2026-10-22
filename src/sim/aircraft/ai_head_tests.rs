@@ -59,6 +59,7 @@ fn a_latch_left_by_a_restore_clears_at_the_next_ai_head() {
         plane,
         attacker,
         &rules,
+        Some(&registry),
         FrameEffects::default()
     ));
     // Mission_Attack's strike latches it (`0x004184DC`).

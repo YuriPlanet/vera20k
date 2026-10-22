@@ -478,6 +478,24 @@ pub(crate) fn target_cell_coord(
     }
 }
 
+/// Cell486840 through an already-retained pointer (virtual+48/+4C).
+/// Recover the allocation from the original command coordinate without a Map
+/// lookup: a later miss can have moved the shared Dummy, even onto a real
+/// cell's coordinate, while its own level and slope still belong to Dummy.
+pub(crate) fn retained_cell_coord(
+    rx: u16,
+    ry: u16,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+) -> DriveCoord {
+    let Some(cells) = cells else {
+        return target_cell_coord(rx, ry, None);
+    };
+    let identity = crate::sim::combat::TargetKind::Cell(rx, ry)
+        .cell_identity(cells.terrain())
+        .expect("Cell target has a Cell allocation identity");
+    crate::sim::cell_rect::native_cell_ref(cells, identity).get_coords()
+}
+
 /// Shared destination-setter adjustment (Drive4AFD40 / Ship69F450). Each call
 /// receives raw caller XYZ, including already elevated Infantry GetCoords.
 fn adjusted_destination(
@@ -588,7 +606,7 @@ pub(crate) fn nav_target_coordinate(
 ) -> Result<DriveCoord, String> {
     let id = match target {
         NavTargetRef::Cell { rx, ry } => {
-            return Ok(target_cell_coord(
+            return Ok(retained_cell_coord(
                 rx,
                 ry,
                 terrain

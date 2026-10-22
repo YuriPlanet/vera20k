@@ -592,6 +592,12 @@ pub struct HouseState {
     /// warp-out clears the latch; otherwise that provider sets it.
     #[serde(default)]
     spy_sat_active: bool,
+    /// House+24B: Constructor4F57A7 arms the first local Update's full
+    /// Map4ADCD0 sight pass. Update4F9353 clears it before the callback;
+    /// Fill_In_Data's earlier mobile-only pass leaves it armed. Save/Load
+    /// retains this byte with the House. Executed: house_initial_sight.
+    #[serde(default)]
+    initial_sight_refresh_pending: bool,
     /// The object counts the defeat gate reads (`house_tracking`), written by
     /// the lifecycle authority at construction, deletion, Limbo, Unlimbo and
     /// owner change.
@@ -1386,6 +1392,14 @@ impl HouseState {
 
     pub const fn spy_sat_active(&self) -> bool {
         self.spy_sat_active
+    }
+
+    pub(crate) const fn initial_sight_refresh_pending(&self) -> bool {
+        self.initial_sight_refresh_pending
+    }
+
+    pub(super) fn take_initial_sight_refresh(&mut self) -> bool {
+        std::mem::take(&mut self.initial_sight_refresh_pending)
     }
 
     pub const fn tracking(&self) -> &crate::sim::house_tracking::HouseTracking {
@@ -2529,6 +2543,7 @@ impl HouseState {
             allow_win_timer: CdTimer::default(),
             map_is_clear: false,
             spy_sat_active: false,
+            initial_sight_refresh_pending: true,
             tracking: Default::default(),
             tech_recheck: true,
             self_heal_infantry: 0,
@@ -2735,21 +2750,18 @@ pub fn house_state_for_owner_mut<'a>(
     houses.get_mut(&id)
 }
 
-/// Resolve an owner's ore-income `IncomeMult` (parts-per-million; 1_000_000 = 1.0×) by
-/// routing through its country: `HouseState.country` (InternedId) -> country name ->
-/// `RuleSet::country_income_ppm`. An owner with no house, no country, or an unknown
-/// country resolves to the neutral 1.0 (no income change) — so stock YR (all countries
-/// 1.0, the key commented out) is the identity.
-pub fn income_ppm_for_owner(
+/// Resolve the live owner's HouseType+148 float through its current country.
+/// Unknown diagnostic owners/countries use the constructor's neutral1.0.
+pub fn income_mult_for_owner(
     houses: &crate::sim::houses::Houses,
     interner: &crate::sim::intern::StringInterner,
     rules: &crate::rules::ruleset::RuleSet,
     owner: &str,
-) -> i64 {
+) -> crate::util::native_x87::NativeF32Bits {
     house_state_for_owner(houses, owner, interner)
         .and_then(|h| h.country)
-        .map(|c| rules.country_income_ppm(interner.resolve(c)))
-        .unwrap_or(crate::rules::ruleset::INCOME_PPM_SCALE)
+        .map(|c| rules.country_income_mult(interner.resolve(c)))
+        .unwrap_or(crate::util::native_x87::NativeF32Bits::ONE)
 }
 
 /// Map side name string to numeric index.

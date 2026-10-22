@@ -46,9 +46,14 @@ fn flash(
             ry: cell.1,
         },
     ));
+    assert_eq!(sim.pending_command_snapshot().len(), 1);
+    // Only local frame-ingress commands leave the queue here. Offline
+    // MoveFlash stays queued until the ordinary synchronized command tail.
     let commands = sim.take_due_commands();
-    assert_eq!(commands.len(), 1);
-    sim.advance_tick(&commands, Some(rules), None, None, 33);
+    let result = sim.advance_tick(&commands, Some(rules), None, None, 33);
+    assert!(result.frame_committed);
+    assert_eq!(result.executed_commands, 1);
+    assert!(sim.pending_command_snapshot().is_empty());
     sim.anims()
         .filter(|(id, _)| !before.contains(id))
         .map(|(_, anim)| {

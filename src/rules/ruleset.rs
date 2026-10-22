@@ -80,11 +80,9 @@ pub struct CountryRules {
     pub multiplay_passive: bool,
     /// `WallOwner=` allows this house type's buildings to claim nearby map walls.
     pub wall_owner: bool,
-    /// `IncomeMult=` ore-refining income multiplier, parts-per-million
-    /// (`round(value × 1e6)`); default `1_000_000` (=1.0, the stock value — the key is
-    /// commented out in stock rulesmd). Applied at ore/gem deposit time to BOTH the base
-    /// credits and the OrePurifier-bonus credits.
-    pub income_ppm: i64,
+    /// HouseType+148: ReadDouble511D0B -> FSTP float511D10, default1.0.
+    /// Both base and purifier deposits read these exact retained float bits.
+    pub income_mult: NativeF32Bits,
     /// Per-target category armor multipliers (HouseType `+0x100..+0x110`).
     /// Native stores these as f32 and `HouseClass::GetArmorMultForType @
     /// 0x0050BD30` reads the selected slot live for every receiver call.
@@ -140,10 +138,6 @@ pub struct CountryRules {
     pub name: Option<String>,
 }
 
-/// PPM scale for `IncomeMult` and `PurifierBonus` (1_000_000 = 1.0×), the
-/// divisor of `Economy::add_tiberium_credits`.
-pub const INCOME_PPM_SCALE: i64 = 1_000_000;
-
 /// The House factors [`RuleSet::cost_of`] multiplies in, each indexed by
 /// [`ObjectType::factor_slot`]: the country's `Cost*Mult=` and the
 /// House's FactoryPlant product (House `+0x5390..+0x53A0`).
@@ -168,9 +162,7 @@ impl HouseCostFactors {
 
 impl Default for CountryRules {
     fn default() -> Self {
-        // Hand-written (NOT derived): a derived Default would zero `income_ppm`, which would
-        // wipe out all ore income for any house built from the default. The neutral 1.0
-        // multiplier is `INCOME_PPM_SCALE`, not 0.
+        // The native multiplier defaults are neutral1.0, never derived zeros.
         Self {
             veteran_types: CountryVeterancyState::default(),
             color_scheme: 0,
@@ -178,7 +170,7 @@ impl Default for CountryRules {
             multiplay: false,
             multiplay_passive: false,
             wall_owner: true,
-            income_ppm: INCOME_PPM_SCALE,
+            income_mult: NativeF32Bits::ONE,
             armor_infantry_mult: 1.0,
             armor_units_mult: 1.0,
             armor_aircraft_mult: 1.0,
@@ -215,8 +207,7 @@ impl CountryRules {
             // drift; absent -> the neutral 1.0 (stock).
             // HouseTypeClass::ReadINI stores these as floats (`FSTP dword` at
             // 0x00511ADD..0x00511B59 and 0x00511D0B).
-            income_ppm: (f64::from(section.read_float("IncomeMult", 1.0)) * INCOME_PPM_SCALE as f64)
-                .round() as i64,
+            income_mult: section.read_double_to_float("IncomeMult", NativeF32Bits::ONE),
             armor_infantry_mult: section.read_float("ArmorInfantryMult", 1.0),
             armor_units_mult: section.read_float("ArmorUnitsMult", 1.0),
             armor_aircraft_mult: section.read_float("ArmorAircraftMult", 1.0),
@@ -1613,11 +1604,9 @@ pub struct GeneralRules {
     /// (ChronoRangeMinimum= in [General]). Default 0.
     pub chrono_range_minimum: i32,
 
-    /// Ore Purifier bonus as a fixed-point fraction in parts-per-million
-    /// (PurifierBonus= in [General]; `INCOME_PPM_SCALE` = 1.0×). Stored at full
-    /// precision so modded fractional percentages (e.g. `.333`) are not quantized
-    /// to whole percent. Stock `.25` -> 250_000 (25%). Default 250_000.
-    pub purifier_bonus_ppm: i64,
+    /// Rules+F3C: PurifierBonus ReadDouble66FC70 -> FSTP float66FC75.
+    /// Caller73E42B/522DCD multiplies count, these bits, then cargo amount.
+    pub purifier_bonus: NativeF32Bits,
     /// AI virtual purifier counts indexed by difficulty
     /// (AIVirtualPurifiers= in [General]). Each entry is added to the AI
     /// player's real purifier count when computing the deposit bonus. INI
@@ -2535,7 +2524,7 @@ impl Default for GeneralRules {
             chrono_trigger: true,
             chrono_minimum_delay: 16,
             chrono_range_minimum: 0,
-            purifier_bonus_ppm: 250_000,
+            purifier_bonus: NativeF32Bits::from_bits(0x3E80_0000),
             ai_virtual_purifiers: [4, 2, 0],
             disabled_disguise_detection_percent: Vec::new(),
             allied_survivor_divisor: DEFAULT_SURVIVOR_DIVISORS[0],
@@ -3689,12 +3678,7 @@ impl GeneralRules {
             chrono_trigger: general.read_bool("ChronoTrigger", true),
             chrono_minimum_delay: general.read_int("ChronoMinimumDelay", 16),
             chrono_range_minimum: general.read_int("ChronoRangeMinimum", 0),
-            // Parse-time float -> fixed-point ppm (mirrors the IncomeMult parse); the runtime
-            // bonus math is all integer. Full precision — no whole-percent quantize.
-            // A float field (`FSTP dword` at `0x0066FC70`).
-            purifier_bonus_ppm: (f64::from(general.read_float("PurifierBonus", 0.25))
-                * INCOME_PPM_SCALE as f64)
-                .round() as i64,
+            purifier_bonus: general.read_double_to_float("PurifierBonus", defaults.purifier_bonus),
             // An IntVector (`0x00475D70`) indexed by difficulty.
             ai_virtual_purifiers: general
                 .read_int_list("AIVirtualPurifiers")
@@ -3991,6 +3975,8 @@ pub struct RuleSet {
     pub ai_base_spacing: i32,
     /// Source-ordered `[General] Shipyard=` BuildingType identities.
     pub shipyard_types: Vec<String>,
+    /// Retained `[General] RepairBay=` BuildingType identities (Rules+850).
+    pub repair_bay_types: Vec<String>,
     /// Source-ordered resolved `[AI] BuildConst=` BuildingType identities.
     pub build_const_types: Vec<String>,
     /// Source-ordered resolved `[AI] BuildPower=` BuildingType identities.
@@ -5386,6 +5372,7 @@ impl RuleSet {
             // The ordered Rules processor publishes these lists
             // (`rules_type_references`).
             shipyard_types: Vec::new(),
+            repair_bay_types: Vec::new(),
             build_const_types: Vec::new(),
             build_power_types: Vec::new(),
             build_refinery_types: Vec::new(),
@@ -6345,6 +6332,7 @@ impl RuleSet {
             &general.base_unit_types,
             &general.pad_aircraft_types,
             &self.shipyard_types,
+            &self.repair_bay_types,
             &self.harvester_unit_types,
         )
             .hash(&mut hasher);
@@ -6812,11 +6800,10 @@ impl RuleSet {
             .is_none_or(|country| country.wall_owner)
     }
 
-    /// A country's `IncomeMult` as parts-per-million (default `INCOME_PPM_SCALE` = 1.0×).
-    /// Unknown/absent country -> the neutral multiplier (no income change).
-    pub fn country_income_ppm(&self, id: &str) -> i64 {
+    /// HouseType+148 income float; an unknown country has the neutral default.
+    pub fn country_income_mult(&self, id: &str) -> NativeF32Bits {
         self.country_rules(id)
-            .map_or(INCOME_PPM_SCALE, |country| country.income_ppm)
+            .map_or(NativeF32Bits::ONE, |country| country.income_mult)
     }
 
     /// A country's `Cost*Mult=` floats (`HouseType+0x114..+0x124`), the
@@ -8763,8 +8750,8 @@ CellSpread=0
     #[test]
     fn country_income_mult_parses_and_defaults() {
         assert_eq!(
-            CountryRules::default().income_ppm,
-            INCOME_PPM_SCALE,
+            CountryRules::default().income_mult,
+            NativeF32Bits::ONE,
             "default IncomeMult is 1.0x (a derived Default would zero it and wipe income)"
         );
 
@@ -8774,10 +8761,59 @@ CellSpread=0
         );
         let ini = IniFile::from_str(&src);
         let rules = RuleSet::from_ini(&ini).expect("Should parse");
-        assert_eq!(rules.country_income_ppm("Americans"), 1_200_000);
-        assert_eq!(rules.country_income_ppm("Russia"), INCOME_PPM_SCALE);
-        assert_eq!(rules.country_income_ppm("Nonexistent"), INCOME_PPM_SCALE);
-        assert_eq!(rules.country_income_ppm("americans"), 1_200_000); // case-insensitive
+        assert_eq!(rules.country_income_mult("Americans").bits(), 0x3F99_999A);
+        assert_eq!(rules.country_income_mult("Russia"), NativeF32Bits::ONE);
+        assert_eq!(rules.country_income_mult("Nonexistent"), NativeF32Bits::ONE);
+        assert_eq!(rules.country_income_mult("americans").bits(), 0x3F99_999A);
+    }
+
+    #[test]
+    fn native_income_and_purifier_field_readers_preserve_observed_bits() {
+        let corpus = crate::test_fixture::json("tools/spatial_oracle/refinery_income.json");
+        let rows = corpus["reader_rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 12);
+        for row in rows {
+            let input = &row["input"];
+            let field = input["field"].as_str().unwrap();
+            let section = input["section"].as_str().unwrap();
+            let current = NativeF32Bits::from_bits(
+                u32::from_str_radix(input["default_bits"].as_str().unwrap(), 16).unwrap(),
+            );
+            let expected = NativeF32Bits::from_bits(
+                u32::from_str_radix(row["output"]["bits"].as_str().unwrap(), 16).unwrap(),
+            );
+            let mut ini = IniFile::from_str(
+                "[Countries]\n0=SYNTHCOUNTRY\n[SYNTHCOUNTRY]\nFixtureOnly=1\n[General]\nFixtureOnly=1\n",
+            );
+            if let Some(prefix) = input["prefix_raw"].as_str() {
+                ini.merge(&IniFile::from_str(&format!(
+                    "[{section}]\n{field}={prefix}\n"
+                )));
+            }
+            if let Some(raw) = input["raw"].as_str() {
+                ini.merge(&IniFile::from_str(&format!("[{section}]\n{field}={raw}\n")));
+            }
+            let rules = RuleSet::from_ini(&ini).unwrap();
+            let actual = match field {
+                "IncomeMult" => rules.country_income_mult("SYNTHCOUNTRY"),
+                "PurifierBonus" => rules.general.purifier_bonus,
+                _ => unreachable!(),
+            };
+            assert_eq!(actual, expected, "{} {}", field, input["name"]);
+            // Also compare the actual retained-default reader input, not just
+            // the immutable view reconstructed from the processed layers.
+            let raw = input["raw"]
+                .as_str()
+                .map_or(String::new(), |raw| format!("{field}={raw}\n"));
+            let direct = IniFile::from_str(&format!("[{section}]\nFixtureOnly=1\n{raw}"));
+            assert_eq!(
+                direct
+                    .section(section)
+                    .unwrap()
+                    .read_double_to_float(field, current),
+                expected
+            );
+        }
     }
 
     #[test]
@@ -9683,7 +9719,7 @@ MutateWarhead=MyMutate\n\
             "ReadInt takes `$` hex"
         );
         assert_eq!(rules.general.chrono_harv_too_far_distance, 40);
-        assert_eq!(rules.general.purifier_bonus_ppm, 300_000);
+        assert_eq!(rules.general.purifier_bonus.bits(), 0x3E99_999A);
     }
 
     #[test]
@@ -9710,13 +9746,11 @@ MutateWarhead=MyMutate\n\
         assert_eq!(rules.general.harvester_too_far_distance, 5);
         assert_eq!(rules.general.maximum_queued_objects, 5);
         assert_eq!(rules.general.chrono_harv_too_far_distance, 50);
-        assert_eq!(rules.general.purifier_bonus_ppm, 250_000);
+        assert_eq!(rules.general.purifier_bonus.bits(), 0x3E80_0000);
     }
 
-    /// Fractional-percent PurifierBonus survives at full fixed-point precision
-    /// (parts-per-million), NOT quantized to whole percent. `.333` -> 333_000 ppm,
-    /// not 330_000. Stock `.25` stays exactly 250_000 (byte-identical to the old
-    /// integer-percent form).
+    /// ReadDouble -> FSTP float retains the exact stored binary32, including
+    /// fractions that neither whole percent nor PPM represent exactly.
     #[test]
     fn purifier_bonus_keeps_fractional_precision() {
         let ini = IniFile::from_str(
@@ -9728,9 +9762,8 @@ MutateWarhead=MyMutate\n\
              PurifierBonus=.333\n",
         );
         let rules = RuleSet::from_ini(&ini).expect("Should parse");
-        assert_eq!(rules.general.purifier_bonus_ppm, 333_000);
-        // The old integer-percent path would have rounded to 33% (330_000) — the drift.
-        assert_ne!(rules.general.purifier_bonus_ppm, 330_000);
+        assert_eq!(rules.general.purifier_bonus.bits(), 0x3EAA_7EFA);
+        assert_ne!(rules.general.purifier_bonus.bits(), 0x3EA8_F5C2);
     }
 
     #[test]

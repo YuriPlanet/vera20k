@@ -56,6 +56,7 @@ impl SightHeights {
 #[derive(Default)]
 struct RevealCalls {
     walks: Vec<Vec<(u16, u16)>>,
+    border_scans: Vec<((u16, u16, i32), i32)>,
     /// Actual567DA0 receiver calls, in order.
     border_receivers: Vec<(u16, u16)>,
     border_ground_after: Vec<i8>,
@@ -1202,10 +1203,10 @@ impl Simulation {
                 .get(&owner)
                 .is_some_and(|house| house.spy_sat_active());
             let (gaps, admitted_gap) = self.prepare_spy_sat_gap_reentry(owner, rules);
-            // Live diplomacy uses walk_alliance_sight's full visitor.
+            // Live diplomacy uses walk_map_sight's full visitor.
             // This bulk transition still uses its bounded source/gap plan.
-            // The first House update (`0x004F935A`) is not migrated here;
-            // stock skirmish maps place no RevealToAll building at launch.
+            // The first House update uses the shared visitor directly;
+            // this bulk transition's bounded plan remains separate.
             // Fill_In_Data's call (`0x00684F89`) skips buildings. ALL01's live
             // SpySat_Boom061FF03C uses action51/577C90, so its represented
             // release/store/reentry path runs here; occupied discovery and
@@ -1602,6 +1603,12 @@ impl Simulation {
         radius: i32,
         context: UninitContext<'_>,
     ) {
+        #[cfg(any(test, feature = "test-support"))]
+        REVEAL_CALLS.with_borrow_mut(|trace| {
+            if let Some(trace) = trace {
+                trace.border_scans.push((origin, radius));
+            }
+        });
         let border = vision::sight_border_cells(origin, radius, 0);
         let cells = context
             .terrain()
@@ -1915,14 +1922,40 @@ impl Simulation {
     /// Map4ADEE0 before a live diplomacy write. The matching4ADCD0 walk
     /// must run even if MakeEnemy finds no ally bit to clear.
     pub(crate) fn release_alliance_sight(&mut self, context: UninitContext<'_>) {
-        self.walk_alliance_sight(context, true);
+        self.walk_map_sight(context, true, None, false);
     }
 
     /// Map4ADCD0 after diplomacy, including the Human41B arm's ordinary
     /// Sight admission and cached-radius border. No source state lives here:
     /// Techno sight and gap event owners retain their own caches/latches.
     pub(crate) fn admit_alliance_sight(&mut self, context: UninitContext<'_>) {
-        self.walk_alliance_sight(context, false);
+        self.walk_map_sight(context, false, None, false);
+    }
+
+    /// Fill_In_Data684F89 -> Map4ADCD0(1,0), before the first Logic frame.
+    /// The native map is the current player's; skip Buildings at this caller.
+    pub(crate) fn initialize_scenario_sight(&mut self, context: UninitContext<'_>) {
+        if let Some(viewer) = self.session.current_house() {
+            self.walk_map_sight(context, false, Some(viewer), true);
+        }
+    }
+
+    /// House4F9338..4F935F: only PlayerPtr consumes +24B, before entering
+    /// Map4ADCD0(0,0). Keep the clear synchronous with the shared callbacks.
+    /// Native constructor/caller controls: tools/spatial_oracle/house_initial_sight.
+    pub(super) fn update_initial_house_sight(
+        &mut self,
+        owner: InternedId,
+        context: UninitContext<'_>,
+    ) {
+        if self.session.current_house() == Some(owner)
+            && self
+                .houses
+                .get_mut(&owner)
+                .is_some_and(|house| house.take_initial_sight_refresh())
+        {
+            self.walk_map_sight(context, false, Some(owner), false);
+        }
     }
 
     /// Original4ADEE0..4ADFEC /4ADCD0..4ADED5, arguments(0,0) from
@@ -1939,9 +1972,16 @@ impl Simulation {
     /// ex-ally mobile release gates remain the source owner's residual
     /// (#2414). Bulk map transitions retain their separately bounded
     /// projection; this live walk does not certify whole-map/FogOfWar parity.
-    fn walk_alliance_sight(&mut self, context: UninitContext<'_>, release: bool) {
+    fn walk_map_sight(
+        &mut self,
+        context: UninitContext<'_>,
+        release: bool,
+        only_viewer: Option<InternedId>,
+        skip_buildings: bool,
+    ) {
         let count = self.substrate.entities.techno_registry_len();
-        let viewers: Vec<_> = self.houses.order().to_vec();
+        let viewers =
+            only_viewer.map_or_else(|| self.houses.order().to_vec(), |viewer| vec![viewer]);
         let config = self.sight_reveal_config(context.rules());
         for ordinal in 0..count {
             let Some(id) = self.substrate.entities.techno_registry_at(ordinal) else {
@@ -1952,7 +1992,9 @@ impl Simulation {
                 let Some(entity) = self.substrate.entities.get(id) else {
                     break;
                 };
-                if !Self::in_ally_bracket_walk(entity) {
+                if !Self::in_ally_bracket_walk(entity)
+                    || (skip_buildings && entity.category() == EntityCategory::Structure)
+                {
                     break;
                 }
                 let human = Some(viewer) == current && self.house_is_human_player(entity.owner());

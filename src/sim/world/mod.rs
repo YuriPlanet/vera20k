@@ -71,6 +71,8 @@ mod aircraft_attack;
 mod aircraft_enter;
 mod aircraft_fire_location;
 mod aircraft_move;
+#[cfg(test)]
+pub(crate) use aircraft_move::tests::fixture as aircraft_search_fixture;
 mod building_working_sound;
 pub(crate) mod damage_consequences;
 pub mod display_layers;
