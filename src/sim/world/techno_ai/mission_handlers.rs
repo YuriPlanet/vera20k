@@ -268,6 +268,11 @@ pub(crate) fn dispatch_foot_mission(
                 MissionHandlerEvaluation::cadence(1)
             }
         }
+        (EntityCategory::Unit | EntityCategory::Infantry, Some(MissionType::Patrol)) => {
+            MissionHandlerEvaluation::cadence(super::foot_patrol::mission_patrol(
+                sim, id, rules, ctx,
+            ))
+        }
         // Unit does not override Foot Enter4D9290, and Infantry inherit it
         // too (InfantryClass vt+0x240 is `0x004D9290`). Depot, refinery,
         // transport, absorber and tank-bunker entries use the same body

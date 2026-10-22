@@ -37,7 +37,10 @@ pub(crate) enum ZoneQueryCell {
 }
 
 impl ZoneQueryCell {
-    fn coord(self, cells: &crate::map::resolved_terrain::NativeCellQuery<'_>) -> (i16, i16) {
+    pub(crate) fn coord(
+        self,
+        cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
+    ) -> (i16, i16) {
         match self {
             Self::Copied(coord) => coord,
             Self::Retained(cell) => cells.coord(cell),

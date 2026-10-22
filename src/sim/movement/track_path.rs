@@ -823,7 +823,12 @@ impl Simulation {
         {
             return false;
         }
-        if actor.navigation.nav_com() == Some(requested) && !actor.setter_force_reassign.raised {
+        if actor
+            .navigation
+            .nav_com()
+            .is_some_and(|held| held.same_pointer(requested, self.resolved_terrain.as_ref()))
+            && !actor.setter_force_reassign.raised
+        {
             return true;
         }
         let actor = self

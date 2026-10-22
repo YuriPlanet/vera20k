@@ -262,6 +262,22 @@ impl Simulation {
         id: u64,
         rules: &crate::rules::ruleset::RuleSet,
     ) -> Result<(i16, i16), String> {
+        let cell = self.object_navigation_cell_identity(id, rules)?;
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or("Object navigation-cell query requires the native map")?;
+        Ok(terrain.native_cell_coord(cell))
+    }
+
+    /// The same Object+1C4 lookup when the caller retains its Cell pointer.
+    /// Patrol's post and return-leg inputs must keep this allocation across
+    /// subsequent bridge, archive and zone-cost queries which can move Dummy.
+    pub(crate) fn object_navigation_cell_identity(
+        &self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Result<NativeCellIdentity, String> {
         let coordinate = self.navigation_target_coordinate(
             crate::sim::components::NavTargetRef::object(id),
             None,
@@ -272,8 +288,7 @@ impl Simulation {
             .as_ref()
             .ok_or("Object navigation-cell query requires the native map")?;
         let cells = NativeCellQuery::canonical(terrain);
-        let cell = cells.lookup(((coordinate.x / 256) as i16, (coordinate.y / 256) as i16));
-        Ok(cells.coord(cell))
+        Ok(cells.lookup(((coordinate.x / 256) as i16, (coordinate.y / 256) as i16)))
     }
 
     /// ObjectClass::SetZ5F6060 writes only Object+A4. A marked owner runs
