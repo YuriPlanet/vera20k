@@ -25,6 +25,10 @@ pub enum OpeningTarget {
     LoadUnlockedWhileLocked,
     /// A fixed committed production tick, for opening aircraft raster diagnosis.
     AlliedTick(u64),
+    /// Observe the ordinary SOV01 simulation after its opening unlock.
+    SovietTick(u64),
+    /// Issue ordinary naval attack orders, then observe the committed tick.
+    SovietNavy(u64),
     /// SOV01 timer actions replayed after opening unlock, then ordinary expiry.
     TimerRunning,
     TimerExpired,
@@ -46,6 +50,8 @@ impl OpeningTarget {
             Self::RestoreUnlocked => "opening-restore-unlocked",
             Self::LoadUnlockedWhileLocked => "opening-load-unlocked-while-locked",
             Self::AlliedTick(_) => "opening-allied-tick",
+            Self::SovietTick(_) => "opening-soviet-tick",
+            Self::SovietNavy(_) => "soviet-naval-encounter",
             Self::TimerRunning => "opening-timer-running",
             Self::TimerExpired => "opening-timer-expired",
             Self::RadarAlert => "radar-alert",
@@ -63,6 +69,7 @@ impl OpeningTarget {
     fn step_limit(self) -> usize {
         match self {
             Self::LoadUnlockedWhileLocked => 6_000,
+            Self::SovietTick(tick) | Self::SovietNavy(tick) => tick as usize + 1,
             Self::TimerRunning | Self::TimerExpired => 8_000,
             _ => 2_500,
         }
@@ -130,7 +137,9 @@ impl OpeningCapture {
 
     pub(super) fn timeout(&self) -> Duration {
         Duration::from_secs(match self.target {
-            OpeningTarget::LoadUnlockedWhileLocked => 600,
+            OpeningTarget::LoadUnlockedWhileLocked
+            | OpeningTarget::SovietTick(_)
+            | OpeningTarget::SovietNavy(_) => 600,
             OpeningTarget::TimerRunning | OpeningTarget::TimerExpired => 600,
             _ => 180,
         })
@@ -196,7 +205,9 @@ impl OpeningCapture {
                 OpeningTarget::LoadUnlockedWhileLocked => {
                     self.load_while_locked.is_some() && self.steps_after_load >= STEPS_AFTER_LOAD
                 }
-                OpeningTarget::AlliedTick(tick) => sim.session().tick() == tick,
+                OpeningTarget::AlliedTick(tick)
+                | OpeningTarget::SovietTick(tick)
+                | OpeningTarget::SovietNavy(tick) => sim.session().tick() == tick,
                 OpeningTarget::TimerRunning => sim.session().scenario_timer_view().is_some(),
                 OpeningTarget::TimerExpired => {
                     self.saw_countdown && sim.session().scenario_timer_view().is_none()
@@ -267,6 +278,9 @@ impl OpeningCapture {
         }
         if self.target == OpeningTarget::RealtimeUnlocked {
             return Ok(());
+        }
+        if matches!(self.target, OpeningTarget::SovietNavy(_)) && self.saw_unlock && !locked {
+            self.issue_naval_orders(state)?;
         }
         if matches!(
             self.target,
@@ -545,6 +559,18 @@ impl OpeningCapture {
                 "timer": facts["scenario_timer"],
             }));
         }
+        if matches!(
+            self.target,
+            OpeningTarget::SovietTick(_) | OpeningTarget::SovietNavy(_)
+        ) && self.saw_unlock
+            && facts["tick"].as_u64().is_some_and(|tick| tick % 120 != 0)
+            && self
+                .observations
+                .last()
+                .is_some_and(|last| last["input_locked"] == facts["input_locked"])
+        {
+            return Ok(());
+        }
         // Simulation time is attached to changes; it does not make every
         // moving pixel or every countdown visit into a new observation row.
         let mut projection = facts.clone();
@@ -602,6 +628,84 @@ impl OpeningCapture {
         Ok(())
     }
 
+    /// A bounded play input for the first retail objective. It uses the client
+    /// command queue; damage, navigation, reinforcements and triggers remain
+    /// entirely in the ordinary simulation.
+    fn issue_naval_orders(&mut self, state: &mut AppState) -> Result<()> {
+        use crate::sim::command::Command;
+        let sim = &mut state
+            .match_state
+            .sim_runtime
+            .as_mut()
+            .context("naval runtime")?
+            .simulation;
+        let tick = sim.session().tick();
+        if tick < 1100 || tick % 30 != 0 {
+            return Ok(());
+        }
+        let viewer = sim.session().current_house().context("campaign player")?;
+        let cells = sim
+            .resolved_terrain()
+            .map(crate::map::resolved_terrain::NativeCellQuery::isolated)
+            .context("campaign terrain")?;
+        let mut orders = Vec::new();
+        for (id, actor) in sim.entities().iter_sorted() {
+            if !actor.is_active()
+                || actor.lifecycle.in_limbo()
+                || sim.interner().resolve(actor.owner()) != "Russians"
+                || actor.attack_target.target().is_some()
+            {
+                continue;
+            }
+            let kind = sim.interner().resolve(actor.type_ref());
+            if !matches!(kind, "SUB" | "SQD" | "DRED") {
+                continue;
+            }
+            let target = sim
+                .entities()
+                .iter_sorted()
+                .filter(|(_, enemy)| enemy.is_active() && !enemy.lifecycle.in_limbo())
+                .filter(|(_, enemy)| {
+                    !crate::sim::vision::cell_is_shrouded(
+                        sim.fog(),
+                        &cells,
+                        viewer,
+                        (enemy.position.rx(), enemy.position.ry()),
+                    )
+                })
+                .filter(|(_, enemy)| {
+                    let owner = sim.interner().resolve(enemy.owner());
+                    let ty = sim.interner().resolve(enemy.type_ref());
+                    if kind == "DRED" {
+                        owner == "Alliance" && ty == "GTGCAN"
+                    } else {
+                        owner == "Americans" && matches!(ty, "CARRIER" | "DEST")
+                    }
+                })
+                .min_by_key(|(_, enemy)| {
+                    let dx = i64::from(actor.position.rx()) - i64::from(enemy.position.rx());
+                    let dy = i64::from(actor.position.ry()) - i64::from(enemy.position.ry());
+                    dx * dx + dy * dy
+                })
+                .map(|(id, _)| id);
+            if let Some(target_id) = target {
+                orders.push(Command::Attack {
+                    attacker_id: id,
+                    target_id,
+                });
+            }
+        }
+        for order in orders {
+            log::info!("SOV01 capture ordinary player order at {tick}: {order:?}");
+            ensure!(
+                crate::app::input::commands::schedule_command_in_sim(sim, "Russians", order)
+                    .is_some(),
+                "naval order rejected"
+            );
+        }
+        Ok(())
+    }
+
     pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
         ensure!(
             self.ready(state)?,
@@ -624,7 +728,19 @@ impl OpeningCapture {
                     "minimap_visible": radar.is_minimap_visible()})),
             "pre_lock_save": self.pre_lock_save, "unlocked_save": self.unlocked_save,
             "load_while_locked": self.load_while_locked,
-            "requested_tick": match self.target { OpeningTarget::AlliedTick(tick) => Some(tick), _ => None },
+            "requested_tick": match self.target { OpeningTarget::AlliedTick(tick) | OpeningTarget::SovietTick(tick) | OpeningTarget::SovietNavy(tick) => Some(tick), _ => None },
+            "encounter_entities": if matches!(self.target, OpeningTarget::SovietTick(_) | OpeningTarget::SovietNavy(_)) {
+                let sim = &state.match_state.sim_runtime.as_ref().context("encounter runtime")?.simulation;
+                Some(sim.entities().iter_sorted().map(|(_, entity)| json!({
+                    "id": entity.stable_id(), "type": sim.interner().resolve(entity.type_ref()),
+                    "owner": sim.interner().resolve(entity.owner()), "active": entity.is_active(),
+                    "limbo": entity.lifecycle.in_limbo(),
+                    "cell": [entity.position.rx(), entity.position.ry()],
+                    "health": entity.health.current(), "mission": format!("{:?}", entity.mission),
+                    "target": format!("{:?}", entity.attack_target),
+                    "spawn_manager": entity.spawn_manager,
+                })).collect::<Vec<_>>())
+            } else { None },
             "aircraft_raster": if matches!(self.target, OpeningTarget::AlliedTick(_)) {
                 Some(aircraft::observe(state, &self.save_directory)?)
             } else { None },

@@ -71,6 +71,7 @@ const CHECKPOINT_CAMPAIGN_SOV1_OPENING_RESTORE_UNLOCKED: &str =
     "campaign-sov1-opening-restore-unlocked";
 const CHECKPOINT_CAMPAIGN_ALL1_OPENING_LOAD_UNLOCKED: &str = "campaign-all1-opening-load-unlocked";
 const CHECKPOINT_CAMPAIGN_ALL1_OPENING_TICK_PREFIX: &str = "campaign-all1-opening-tick-";
+const CHECKPOINT_CAMPAIGN_SOV1_OPENING_TICK_PREFIX: &str = "campaign-sov1-opening-tick-";
 const CHECKPOINT_CAMPAIGN_BACK_RETURN: &str = "campaign-back-return";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY: &str = "load-saved-game-0xb7-steady";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX: &str = "load-saved-game-0xb7-entry-tick-";
@@ -395,6 +396,30 @@ impl ShellCaptureCheckpoint {
                 "campaign opening tick must be 1..=2500"
             );
             return Ok(Self::CampaignOpening(movies::OpeningTarget::AlliedTick(
+                tick,
+            )));
+        }
+        if let Some(tick) = value.strip_prefix(CHECKPOINT_CAMPAIGN_SOV1_OPENING_TICK_PREFIX) {
+            let tick: u64 = tick
+                .parse()
+                .context("campaign encounter tick is not an integer")?;
+            ensure!(
+                (1..=10000).contains(&tick),
+                "campaign encounter tick must be 1..=10000"
+            );
+            return Ok(Self::CampaignOpening(movies::OpeningTarget::SovietTick(
+                tick,
+            )));
+        }
+        if let Some(tick) = value.strip_prefix("campaign-sov1-navy-tick-") {
+            let tick: u64 = tick
+                .parse()
+                .context("campaign encounter tick is not an integer")?;
+            ensure!(
+                (1100..=10000).contains(&tick),
+                "campaign encounter tick must be 1100..=10000"
+            );
+            return Ok(Self::CampaignOpening(movies::OpeningTarget::SovietNavy(
                 tick,
             )));
         }
@@ -832,6 +857,12 @@ impl ShellCaptureCheckpoint {
             }
             Self::CampaignOpening(movies::OpeningTarget::AlliedTick(_)) => {
                 "campaign-all1-opening-tick"
+            }
+            Self::CampaignOpening(movies::OpeningTarget::SovietTick(_)) => {
+                "campaign-sov1-opening-tick"
+            }
+            Self::CampaignOpening(movies::OpeningTarget::SovietNavy(_)) => {
+                "campaign-sov1-navy-tick"
             }
             Self::CampaignOpening(movies::OpeningTarget::TimerRunning) => {
                 "campaign-sov1-opening-timer-running"
@@ -1734,9 +1765,17 @@ impl ShellCaptureSession {
             .started_at
             .context("shell capture was not initialized")?;
         self.frames_seen = self.frames_seen.saturating_add(1);
+        // Campaign movies/menu frames precede the requested simulation tick.
+        // Keep that presentation overhead separate from the bounded play run.
+        let frame_limit = match self.request.checkpoint {
+            ShellCaptureCheckpoint::CampaignOpening(
+                movies::OpeningTarget::SovietTick(tick) | movies::OpeningTarget::SovietNavy(tick),
+            ) => MAX_CAPTURE_FRAMES + tick as u32,
+            _ => MAX_CAPTURE_FRAMES,
+        };
         ensure!(
-            self.frames_seen <= MAX_CAPTURE_FRAMES,
-            "shell capture exceeded {MAX_CAPTURE_FRAMES} frames"
+            self.frames_seen <= frame_limit,
+            "shell capture exceeded {frame_limit} frames"
         );
         ensure!(
             started_at.elapsed() <= self.timeout(),
@@ -2899,6 +2938,37 @@ mod tests {
                 ShellCaptureCheckpoint::parse(&format!("campaign-all1-opening-tick-{value}"))
                     .is_err()
             );
+        }
+    }
+
+    #[test]
+    fn soviet_encounter_captures_select_the_real_campaign_and_bound_play_inputs() {
+        use crate::ui::campaign_shell::CampaignSide;
+        for (name, target) in [
+            (
+                "campaign-sov1-opening-tick-1500",
+                movies::OpeningTarget::SovietTick(1500),
+            ),
+            (
+                "campaign-sov1-navy-tick-6500",
+                movies::OpeningTarget::SovietNavy(6500),
+            ),
+        ] {
+            assert_eq!(
+                ShellCaptureCheckpoint::parse(name).unwrap().movies_target(),
+                Some(movies::MoviesTarget::CampaignStart {
+                    side: CampaignSide::Soviet,
+                    target: movies::CampaignStartTarget::Opening(target),
+                })
+            );
+        }
+        for invalid in [
+            "campaign-sov1-opening-tick-0",
+            "campaign-sov1-navy-tick-1099",
+            "campaign-sov1-navy-tick-10001",
+            "campaign-sov1-navy-tick-not-a-tick",
+        ] {
+            assert!(ShellCaptureCheckpoint::parse(invalid).is_err());
         }
     }
 
