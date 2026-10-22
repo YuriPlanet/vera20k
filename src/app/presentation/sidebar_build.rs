@@ -513,7 +513,12 @@ pub(crate) fn build_sidebar_cameo_instances(
     let gclock_frames: &[SidebarChromeEntry] =
         chrome.map(|a| a.gclock_frames.as_slice()).unwrap_or(&[]);
     for item in &view.items {
-        let Some(entry) = atlas.cameo(&item.type_id, item.alt_cameo) else {
+        let entry = if item.is_superweapon {
+            atlas.superweapon(&item.type_id)
+        } else {
+            atlas.cameo(&item.type_id, item.alt_cameo)
+        };
+        let Some(entry) = entry else {
             continue;
         };
         let slot = item.cameo_rect();

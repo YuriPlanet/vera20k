@@ -279,6 +279,25 @@ fn declared_cameo_comes_from_the_rules_image_section_before_the_type_section() {
     assert_eq!(reg.resolve_declared_cameo_id("UNKNOWN", "FOO"), "FOO");
 }
 
+#[cfg(feature = "ares")]
+#[test]
+fn pcx_cameos_read_only_the_rules_image_art_section() {
+    let ini = IniFile::from_str(
+        "[TYPE]\nCameoPCX=wrong-type.pcx\n\
+         [IMAGE]\nImage=BODY\nCameoPCX=Normal.PCX\nAltCameoPCX=Elite.PCX\n\
+         [BODY]\nCameoPCX=wrong-body.pcx\n",
+    );
+    let registry = ArtRegistry::from_ini(&ini);
+    assert_eq!(
+        registry.resolve_declared_pcx_cameos("TYPE", "IMAGE"),
+        [Some("normal.pcx"), Some("elite.pcx")]
+    );
+    assert_eq!(
+        registry.resolve_declared_pcx_cameos("TYPE", "MISSING"),
+        [None, None]
+    );
+}
+
 #[test]
 #[ignore = "slow; run when changing what it covers"]
 fn retail_sidebar_cameos_follow_the_rules_image_section() {
