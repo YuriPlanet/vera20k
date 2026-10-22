@@ -85,7 +85,8 @@ pub struct RadSite {
     level_timer: CdTimer,
     /// Independent source clock and retained output, owned by this site.
     /// A before-AI activation decrements lifetime on its creation frame but
-    /// does not advance this timer. Neither rendering nor load restarts it.
+    /// does not advance this timer. Load restarts both decay clocks at zero
+    /// duration; rendering never advances them.
     light: RadiationLight,
     /// Phobos `RadSiteExt::Type`: the bound `[RadiationTypes]` entry's
     /// canonical name, resolved from the detonating weapon's `RadType=`.
@@ -418,6 +419,17 @@ fn for_each_square_cell(
 }
 
 impl RadiationState {
+    /// Original `RadSiteClass::Load @ 0x0065B3D0`: after AbstractLoad reads
+    /// the saved body,65B3F7..65B40F restart both clocks at the loaded frame
+    /// with duration0. Field levels, lifetime and LightSource members remain
+    /// retained (LightSourceClass::Load @ 0x005550C0). No RNG or detach call.
+    pub(crate) fn restart_timers_after_load(&mut self, frame: u32) {
+        for site in self.sites.values_mut() {
+            site.level_timer.start(frame as i32, 0);
+            site.light.timer.start(frame as i32, 0);
+        }
+    }
+
     /// A native component fixture supplies retained site words without
     /// claiming to have executed a detonation or field activation.
     #[cfg(any(test, feature = "test-support"))]

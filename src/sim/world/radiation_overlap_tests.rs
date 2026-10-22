@@ -137,6 +137,83 @@ fn overlapping_stock_fields_apply_one_combined_damage_packet() {
     );
 }
 
+/// RadSiteClass::Load @ 0x0065B3F7..0x0065B40F retains the saved field
+/// and source but restarts both decay clocks with duration zero. The first
+/// ordinary resumed frame must therefore apply a level and light step.
+#[cfg(not(feature = "phobos"))]
+#[test]
+fn saved_deso_fields_decay_on_the_first_resumed_frame() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = fixture.rules;
+    let (sim, dog) = create_overlap(&rules, 3, DOG_CELL);
+    let frame = sim.session.binary_frame();
+    let field = sim.radiation.cell_level(DOG_CELL).to_bits();
+    let before = sim.radiation.site_at(CENTERS[0]).unwrap().clone();
+    let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "DESO load", 0);
+    let mut loaded = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .sim;
+    loaded.restore_after_snapshot_load().unwrap();
+    // PreparedLoad reattaches these skipped map/rule caches before resuming.
+    loaded.rebuild_caches_after_load(
+        sim.resolved_terrain.clone().unwrap(),
+        sim.terrain_speed_config().clone(),
+        &rules,
+    );
+    loaded.resolve_type_handles(&rules);
+    assert_eq!(loaded.radiation.cell_level(DOG_CELL).to_bits(), field);
+    let site = loaded.radiation.site_at(CENTERS[0]).unwrap();
+    assert_eq!(site.remaining(), before.remaining());
+    assert_eq!(site.light_source(), before.light_source());
+    assert_eq!(
+        site.level_timer(),
+        crate::sim::timer::CdTimer::started(frame as i32, 0)
+    );
+
+    let output = advance(&mut loaded, &rules);
+    let site = loaded.radiation.site_at(CENTERS[0]).unwrap();
+    assert_eq!(site.remaining(), before.remaining() - 1);
+    assert_eq!(
+        site.level_timer(),
+        crate::sim::timer::CdTimer::started(frame as i32, rules.radiation.level_delay)
+    );
+    assert!(site.light_source().unwrap().intensity < before.light_source().unwrap().intensity);
+    let changed: Vec<_> = output
+        .lighting_events
+        .iter()
+        .filter_map(|event| match event {
+            crate::sim::light_sources::LightingEvent::Radiation {
+                center,
+                source: Some(_),
+            } => Some(*center),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(changed, CENTERS.into_iter().rev().collect::<Vec<_>>());
+
+    // The first decrement uses the same stored fields and reverse order as
+    // the original first-decay control; the load advances that step to16.
+    let native = crate::test_fixture::json("tools/spatial_oracle/radiation_overlap.json");
+    let decay = native["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "overlap_first_decay")
+        .unwrap();
+    let sample = &decay["stages"].as_array().unwrap().last().unwrap()["samples"][0];
+    assert_eq!(sample["cell"], serde_json::json!([DOG_CELL.0, DOG_CELL.1]));
+    assert_eq!(
+        format!("{:016x}", loaded.radiation.cell_level(DOG_CELL).to_bits()),
+        sample["level_bits"]
+    );
+    assert_eq!(
+        loaded.substrate.entities.get(dog).unwrap().health.current(),
+        100 - sample["base_damage"].as_i64().unwrap() as i32
+    );
+}
+
 #[test]
 #[cfg(not(feature = "phobos"))]
 fn stock_dog_survives_first_pulse_from_three_real_deso_fields() {

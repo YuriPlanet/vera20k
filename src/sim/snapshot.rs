@@ -1920,6 +1920,9 @@ impl Simulation {
         // ParasiteClass Load 6295DB..6295F3 does the same for its suppression
         // and bite timers: a bite is due at once and suppression is dropped.
         let frame = self.session.binary_frame();
+        // RadSiteClass::Load65B3D0 also restarts its level/light clocks;
+        // the saved field and source stay intact until ordinary RadSite AI.
+        self.radiation.restart_timers_after_load(frame);
         for id in self.substrate.entities.keys_sorted() {
             self.substrate.restore_move_sound_state_after_load(id);
             if let Some(entity) = self.substrate.entities.get_mut(id) {
