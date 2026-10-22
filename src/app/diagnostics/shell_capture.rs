@@ -609,6 +609,9 @@ impl ShellCaptureCheckpoint {
             "campaign-sov6-alternate-home-victory" => Ok(Self::CampaignRestart(
                 movies::RestartTarget::AlternateHomeVictory,
             )),
+            "campaign-sov1-inherited-timer-victory" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::InheritedTimerVictory,
+            )),
             CHECKPOINT_CAMPAIGN_ALL1_SAVED_RESTART => Ok(Self::CampaignRestart(
                 movies::RestartTarget::SavedAbortRestarted,
             )),
@@ -772,6 +775,9 @@ impl ShellCaptureCheckpoint {
             }
             Self::CampaignRestart(movies::RestartTarget::AlternateHomeVictory) => {
                 "campaign-sov6-alternate-home-victory"
+            }
+            Self::CampaignRestart(movies::RestartTarget::InheritedTimerVictory) => {
+                "campaign-sov1-inherited-timer-victory"
             }
             Self::CampaignRestart(movies::RestartTarget::SavedAbortRestarted) => {
                 CHECKPOINT_CAMPAIGN_ALL1_SAVED_RESTART
@@ -957,7 +963,8 @@ impl ShellCaptureCheckpoint {
             },
             Self::CampaignRestart(
                 target @ (movies::RestartTarget::ObjectiveExpiry
-                | movies::RestartTarget::AlternateHomeVictory),
+                | movies::RestartTarget::AlternateHomeVictory
+                | movies::RestartTarget::InheritedTimerVictory),
             ) => movies::MoviesTarget::CampaignStart {
                 side: crate::ui::campaign_shell::CampaignSide::Soviet,
                 target: movies::CampaignStartTarget::Restart(target),

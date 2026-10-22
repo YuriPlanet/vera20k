@@ -637,6 +637,8 @@ pub struct ScenarioDescriptor {
     pub free_radar: bool,
     /// Map `[Basic] IgnoreGlobalAITriggers`, native Scenario+34B4.
     pub ignore_global_ai_triggers: bool,
+    /// Map Basic.TimerInherit, reset false at683875.
+    pub timer_inherit: bool,
     /// Map Basic.TrainCrate / TruckCrate, reset false by683842/68388D.
     pub train_crate: bool,
     pub truck_crate: bool,
@@ -1665,7 +1667,7 @@ impl ScenarioSession {
             input_locked: false,
             chrono_screen: crate::sim::superweapon::chrono_screen::ChronoScreenState::default(),
             scenario_pause: pause::ScenarioPause::default(),
-            scenario_countdown: countdown::ScenarioCountdown::default(),
+            scenario_countdown: countdown::ScenarioCountdown::new(desc.timer_inherit),
             started: false,
             no_damage: desc.no_damage,
             free_radar: desc.free_radar,

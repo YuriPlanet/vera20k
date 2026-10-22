@@ -15,7 +15,7 @@
 //! Residuals:
 //! - VERA has no replay playback, so the bit-2 branch that skips the prompt is
 //!   not modeled.
-//! - The record restore's money, TimerInherit and Scenario+0x35A0 are not
+//! - The record restore's money and Scenario+0x35A0 are not
 //!   carried (inert on retail data; see `sim::campaign_carry_over`).
 //! Saved campaigns use the retained Scenario index and incoming carry-over
 //! through the same retry path as freshly started campaigns.

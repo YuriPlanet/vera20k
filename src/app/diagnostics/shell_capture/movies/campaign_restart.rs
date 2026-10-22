@@ -33,11 +33,23 @@ pub enum RestartTarget {
     /// SetGlobal0 in SOV06, save/load, win, then observe SOV07 AltHomeCell.
     /// The diagnostic supplies the flag/outcome, not preceding objective play.
     AlternateHomeVictory,
+    /// Replay SOV01's parsed timer actions, save/load, win and enter SOV02.
+    /// Requires an isolated SOV02 map with TimerInherit=yes.
+    InheritedTimerVictory,
     /// SOV02's authored objective, held behind B5 past its wall deadline.
     ObjectiveExpiry,
 }
 
 impl RestartTarget {
+    pub(super) fn next_scenario(self) -> Option<&'static str> {
+        match self {
+            Self::SavedVictory => Some("ALL02UMD.MAP"),
+            Self::AlternateHomeVictory => Some("SOV07TMD.MAP"),
+            Self::InheritedTimerVictory => Some("SOV02SMD.MAP"),
+            _ => None,
+        }
+    }
+
     fn return_key(self) -> Option<(winit::keyboard::KeyCode, bool)> {
         use winit::keyboard::KeyCode;
         match self {
@@ -86,6 +98,7 @@ struct Mission {
     /// which the carry-over restore (`0x004C6295`) may replace.
     menu_difficulty: Option<i32>,
     player_difficulty: Option<i32>,
+    countdown: Option<(i32, String)>,
 }
 
 #[derive(Debug)]
@@ -116,6 +129,10 @@ impl Mission {
                 .campaign_mission_counter()
                 .context("runtime has no campaign mission counter")?,
             seed: sim.session().seed(),
+            countdown: sim
+                .session()
+                .scenario_timer_view()
+                .map(|(frames, caption)| (frames, caption.to_owned())),
             menu_difficulty: sim
                 .session()
                 .campaign_house_difficulties()
@@ -132,7 +149,7 @@ impl Mission {
         json!({"map_name": self.map_name, "campaign_index": self.campaign_index,
             "mission_counter": self.mission_counter, "seed": self.seed,
             "menu_difficulty_row": self.menu_difficulty,
-            "player_house_difficulty_row": self.player_difficulty})
+            "player_house_difficulty_row": self.player_difficulty, "countdown": self.countdown})
     }
 }
 
@@ -186,12 +203,40 @@ impl RestartCapture {
             target != RestartTarget::AlternateHomeVictory,
             "alternate home capture needs dev-overlays"
         );
+        if target == RestartTarget::InheritedTimerVictory {
+            #[cfg(feature = "dev-overlays")]
+            {
+                let runtime = state
+                    .match_state
+                    .sim_runtime
+                    .as_mut()
+                    .context("SOV01 runtime")?;
+                ensure!(
+                    before.map_name.eq_ignore_ascii_case("SOV01UMD.MAP"),
+                    "timer carry-over needs SOV01"
+                );
+                let count = runtime
+                    .simulation
+                    .dev_replay_scenario_timer_actions(&runtime.resources.rules, "0952F87C")
+                    .context("SOV01 timer actions")?;
+                ensure!(
+                    count == 3
+                        && runtime.simulation.session().scenario_timer_view()
+                            == Some((1800, "MISSION:TmeTimer")),
+                    "SOV01 timer actions did not start the authored countdown"
+                );
+                route.push(json!({"frame":frame,"action":"controlled replay of SOV01 timer actions27/23/103; preceding objectives not played"}));
+            }
+            #[cfg(not(feature = "dev-overlays"))]
+            bail!("timer carry-over capture needs dev-overlays");
+        }
         let restored = if matches!(
             target,
             RestartTarget::SavedAbortRestarted
                 | RestartTarget::MenuDefeatReplayed
                 | RestartTarget::SavedVictory
                 | RestartTarget::AlternateHomeVictory
+                | RestartTarget::InheritedTimerVictory
         ) {
             state.persistence.isolate_capture_saves(save_directory)?;
             let path =
@@ -256,7 +301,9 @@ impl RestartCapture {
             | RestartTarget::MenuDefeatReplayed => {
                 capture.step = Step::AwaitBattleTheme;
             }
-            RestartTarget::SavedVictory | RestartTarget::AlternateHomeVictory => {
+            RestartTarget::SavedVictory
+            | RestartTarget::AlternateHomeVictory
+            | RestartTarget::InheritedTimerVictory => {
                 Self::complete_current_house(
                     state,
                     route,
@@ -689,17 +736,14 @@ impl RestartCapture {
                     && self.observed_restart_loading.is_none()
                 {
                     ensure!(
-                        startup.plays_action_movie()
-                            == matches!(
-                                self.target,
-                                RestartTarget::SavedVictory | RestartTarget::AlternateHomeVictory
-                            ),
+                        startup.plays_action_movie() == self.target.next_scenario().is_some(),
                         "the continuation passed the wrong Start_Scenario movie flag"
                     );
                     self.observed_restart_loading = Some(json!({"frame": frame,
                         "scenario": startup.scenario(), "campaign_index": startup.campaign_index(),
                         "mission_counter": startup.mission_counter(),
-                        "plays_action_movie": startup.plays_action_movie()}));
+                        "plays_action_movie": startup.plays_action_movie(),
+                        "incoming_countdown_frames": startup.carry_over().map(|record| record.countdown_frames())}));
                     route.push(json!({"frame": frame, "action": "restart loading admitted"}));
                 }
                 if state.frontend.screen == GameScreen::InGame && self.after.is_none() {
@@ -710,17 +754,9 @@ impl RestartCapture {
                     let after = Mission::observe(state)?;
                     ensure!(
                         after.campaign_index == self.before.campaign_index
-                            && if matches!(
-                                self.target,
-                                RestartTarget::SavedVictory | RestartTarget::AlternateHomeVictory
-                            ) {
-                                after.map_name.eq_ignore_ascii_case(
-                                    if self.target == RestartTarget::SavedVictory {
-                                        "ALL02UMD.MAP"
-                                    } else {
-                                        "SOV07TMD.MAP"
-                                    },
-                                ) && after.mission_counter == self.before.mission_counter + 1
+                            && if let Some(next) = self.target.next_scenario() {
+                                after.map_name.eq_ignore_ascii_case(next)
+                                    && after.mission_counter == self.before.mission_counter + 1
                             } else {
                                 after.map_name.eq_ignore_ascii_case(&self.before.map_name)
                                     && after.mission_counter == self.before.mission_counter
@@ -744,6 +780,22 @@ impl RestartCapture {
                         }
                         self.opening_view = Some(
                             json!({"incoming_global0":true,"bookmarks":views.saved_cells(),"tactical_view":crate::app::input::camera::saved_tactical_view(state)}),
+                        );
+                    }
+                    if self.target == RestartTarget::InheritedTimerVictory {
+                        let frames = self.observed_restart_loading.as_ref().unwrap()["incoming_countdown_frames"]
+                            .as_i64().context("no incoming countdown")? as i32;
+                        ensure!(
+                            frames > 0 && frames <= 1800,
+                            "countdown expired before victory"
+                        );
+                        ensure!(
+                            state.match_state.map_basic.timer_inherit == Some(true),
+                            "isolated SOV02 must enable TimerInherit"
+                        );
+                        ensure!(
+                            after.countdown == Some((frames, String::new())),
+                            "SOV02 did not inherit time with its own caption"
                         );
                     }
                     ensure!(
@@ -844,7 +896,8 @@ impl RestartCapture {
             | RestartTarget::DefeatReplayed
             | RestartTarget::SavedAbortRestarted
             | RestartTarget::MenuDefeatReplayed
-            | RestartTarget::SavedVictory => {
+            | RestartTarget::SavedVictory
+            | RestartTarget::InheritedTimerVictory => {
                 self.step == Step::Done && state.frontend.screen == GameScreen::InGame
             }
             RestartTarget::AlternateHomeVictory => {

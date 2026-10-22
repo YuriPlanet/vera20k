@@ -11,8 +11,8 @@
 //! MapSelect writes the next map into Scenario+0x125C, the carry-over record
 //! `0x004C6180` saves the 50 globals, the mission counter Scenario+0x1254
 //! increments (`0x00685AAF`) and Start_Scenario `0x00683AB0` runs with the
-//! retained campaign index (`0x00685C47`). The record (globals and the
-//! player House's difficulty row) is written back by `0x004C6210` once
+//! retained campaign index (`0x00685C47`). The record (globals, the
+//! player House's difficulty row and remaining countdown) is written back by `0x004C6210` once
 //! Start_Scenario has read the next map; see `sim::campaign_carry_over`.
 //!
 //! Residuals, all inert on the retail campaign maps:
@@ -21,9 +21,8 @@
 //!   the outcome router: yes skips only `0x103`, then follows this continuation;
 //!   retail campaign maps use `SkipScore=no`.
 //! - the record's money (`CarryOverMoney` x the House's money, capped by
-//!   `CarryOverCap`, also added to House+0x1DC) and the mission timer
-//!   (`TimerInherit`) are not carried; every retail map has
-//!   `CarryOverMoney=0.000000` and `TimerInherit=no`.
+//!   `CarryOverCap`, also added to House+0x1DC) is not carried; every retail
+//!   map has `CarryOverMoney=0.000000`.
 //! - the calls after the restore (`0x00685D7F..0x00685DAE`: `0x007241A0`,
 //!   `0x004F4480`, `0x004A3C30`) are not ported.
 //! - Session+0x3C0 bit 2 (`0x00685934`) skips the score, movies and

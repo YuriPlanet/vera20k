@@ -132,6 +132,7 @@ impl CampaignStartTarget {
             }
             Self::Restart(RestartTarget::ObjectiveExpiry) => Some("SOV02SMD.MAP"),
             Self::Restart(RestartTarget::AlternateHomeVictory) => Some("SOV06LMD.MAP"),
+            Self::Restart(RestartTarget::InheritedTimerVictory) => Some("SOV01UMD.MAP"),
             _ => None,
         }
     }
@@ -1604,6 +1605,8 @@ impl MoviesCapture {
                     "saved-victory-next-mission",
                 CampaignStartTarget::Restart(RestartTarget::AlternateHomeVictory) =>
                     "alternate-home-victory-next-mission",
+                CampaignStartTarget::Restart(RestartTarget::InheritedTimerVictory) =>
+                    "inherited-timer-victory-next-mission",
                 CampaignStartTarget::Restart(RestartTarget::SavedAbortRestarted) =>
                     "saved-abort-restarted",
                 CampaignStartTarget::Restart(RestartTarget::MenuDefeatReplayed) =>
@@ -1621,12 +1624,8 @@ impl MoviesCapture {
                     .context("campaign route has no first-live runtime observation")?,
                 CampaignStartTarget::Opening(_) => installed_campaign_runtime_receipt(state)?,
             };
-            if matches!(
-                target,
-                CampaignStartTarget::Restart(
-                    RestartTarget::SavedVictory | RestartTarget::AlternateHomeVictory
-                )
-            ) {
+            if matches!(target, CampaignStartTarget::Restart(target) if target.next_scenario().is_some())
+            {
                 // This readback presents the next mission. The restart receipt
                 // separately retains the initial and loaded mission identities.
                 manifest["startup"] = campaign_startup_receipt(

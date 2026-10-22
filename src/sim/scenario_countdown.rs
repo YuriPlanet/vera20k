@@ -19,15 +19,43 @@ pub(crate) enum ScenarioTimerAction {
 pub(super) struct ScenarioCountdown {
     timer: CdTimer,
     caption: String,
+    #[serde(default)]
+    inherit: bool,
 }
 
 impl ScenarioCountdown {
+    pub(super) fn new(inherit: bool) -> Self {
+        Self {
+            inherit,
+            ..Self::default()
+        }
+    }
+
     pub(super) fn is_default(&self) -> bool {
         self == &Self::default()
     }
 }
 
 impl ScenarioSession {
+    /// gamemd.exe FUN_004c6180 @0x004C6180, 4C61B4..4C61DD, stores the
+    /// signed remainder even when the countdown is stopped.
+    pub(crate) fn campaign_countdown_frames(&self) -> i32 {
+        self.scenario_countdown
+            .timer
+            .remaining(self.binary_frame as i32)
+    }
+
+    /// gamemd.exe EvadeClass__Do @0x004C6210, 4C629A..4C62DB: the receiving
+    /// map opts in, positive time starts running at its current frame, and
+    /// its caption is retained. Zero/negative time leaves its timer alone.
+    pub(crate) fn inherit_campaign_countdown(&mut self, frames: i32) {
+        if self.scenario_countdown.inherit && frames > 0 {
+            self.scenario_countdown
+                .timer
+                .start(self.binary_frame as i32, frames);
+        }
+    }
+
     /// Reset683610 leaves the shared timer stopped. Set/extend/shorten use
     /// the original constructor's running timer, even when previously paused.
     /// Native seconds are signed wrapping *15; shortening compares signed
