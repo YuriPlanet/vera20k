@@ -56,6 +56,8 @@ mod spy_plane_tests;
 mod targeting;
 pub(crate) mod unit_delivery;
 #[cfg(test)]
+mod upgrade_provider_tests;
+#[cfg(test)]
 mod view_admission_tests;
 
 use crate::rules::ruleset::RuleSet;
@@ -1369,20 +1371,30 @@ pub fn building_requirements_met(
     owner: InternedId,
     sw: &SuperWeaponType,
 ) -> bool {
-    let native = aux_building_present(sim, rules, owner, sw);
+    aux_building_present(sim, rules, owner, sw)
+        && extension_building_requirements_met(sim, rules, owner, sw)
+}
+
+/// Keep the optional extension lists separate: native House upgrade scans
+/// bypass AuxBuilding, while base-building provider readers require it.
+fn extension_building_requirements_met(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw: &SuperWeaponType,
+) -> bool {
     #[cfg(feature = "ares")]
     {
-        native
-            && sw
-                .building_requirements
-                .as_ref()
-                .is_none_or(|requirements| {
-                    requirements.allows(|id| owned_building_present(sim, rules, owner, id))
-                })
+        sw.building_requirements
+            .as_ref()
+            .is_none_or(|requirements| {
+                requirements.allows(|id| owned_building_present(sim, rules, owner, id))
+            })
     }
     #[cfg(not(feature = "ares"))]
     {
-        native
+        let _ = (sim, rules, owner, sw);
+        true
     }
 }
 
@@ -1392,10 +1404,8 @@ pub fn building_requirements_met(
 /// ([`building_requirements_met`]). The grant pass, the hold pass and the
 /// building destructor (`0x0043BE47..0x0043BEEA`) share it.
 ///
-/// RESIDUAL: the passes also count the `SuperWeapon=`/`SuperWeapon2=` of a
-/// building's upgrades (`+0x5EC`; `0x0050B242..0x0050B267`,
-/// `0x0050AFF2..0x0050B02A`), without the `AuxBuilding=` test. Retail has
-/// no upgrade building (`PowersUpBuilding=`), so it never decides.
+/// Installed upgrade providers belong to the House scans below; launcher
+/// selection and the synchronous destructor callback read only this base type.
 pub(crate) fn provided_supers<'r>(
     sim: &Simulation,
     rules: &'r RuleSet,
@@ -1417,7 +1427,10 @@ pub(crate) fn provided_supers<'r>(
 }
 
 /// Shared provider facts for one reached House pass. Source authority is the
-/// retained House building list and the existing457630/457690 provider readers.
+/// retained House building list, all three installed type pointers, and the
+/// existing457630/457690 base-provider readers. House50B1D0 at50B242..50B267
+/// and House50AF10 at50AFF2..50B02A read both upgrade Super fields without
+/// AuxBuilding or an UpgradeLevel/count gate. Online status belongs to the host.
 fn provider_supers(
     sim: &Simulation,
     rules: &RuleSet,
@@ -1429,7 +1442,25 @@ fn provider_supers(
     let mut provided = std::collections::BTreeSet::new();
     let mut online = std::collections::BTreeSet::new();
     for building in owned_live_buildings(sim, owner) {
-        for name in provided_supers(sim, rules, building) {
+        let upgrades = building
+            .building_upgrades()
+            .types()
+            .iter()
+            .flatten()
+            .filter_map(|&type_id| sim.object_type(type_id, rules))
+            .flat_map(|object| {
+                [
+                    object.super_weapon.as_deref(),
+                    object.super_weapon2.as_deref(),
+                ]
+            })
+            .flatten()
+            .filter(|name| {
+                rules
+                    .super_weapon(name)
+                    .is_some_and(|sw| extension_building_requirements_met(sim, rules, owner, sw))
+            });
+        for name in upgrades.chain(provided_supers(sim, rules, building)) {
             if let Some(id) = sim.interner.get(name) {
                 provided.insert(id);
                 if building.building_online() {
@@ -1547,10 +1578,10 @@ pub(super) fn super_hold(
     }
 }
 
-/// House50B1D0: grant provided stock instances in the existing type registry
+/// House50B1D0: grant provided retained instances in the existing type registry
 /// order. Native dirty-tail callers run hold/revoke before this pass. Ordinary
-/// placement merely requests that tail; upgrade attachment is a separate,
-/// currently unported synchronous caller. Never construct a missing Super here.
+/// placement merely requests that tail; upgrade attachment4409EF calls this
+/// synchronously before consuming the temporary. Never construct a missing Super here.
 pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
     let Some(house) = sim.houses.get(&owner) else {
         return;
