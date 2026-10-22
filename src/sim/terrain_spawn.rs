@@ -1275,7 +1275,7 @@ mod tests {
 
         // Real map syntax: the `[Terrain]` key is `ry * 1000 + rx`.
         let map_ini = IniFile::from_str("[Terrain]\n5010=TREE01\n");
-        let terrain_objects = parse_terrain_objects(&map_ini);
+        let terrain_objects = parse_terrain_objects(&map_ini, 4);
         assert_eq!(terrain_objects.len(), 1);
         assert_eq!((terrain_objects[0].rx, terrain_objects[0].ry), (10, 5));
 
@@ -1509,9 +1509,10 @@ mod tests {
         };
         let rules = battle.rules;
         let registry = OverlayTypeRegistry::empty();
-        let objects = crate::map::overlay::parse_terrain_objects(&IniFile::from_str(
-            "[Terrain]\n2002=TREE01\n",
-        ));
+        let objects = crate::map::overlay::parse_terrain_objects(
+            &IniFile::from_str("[Terrain]\n2002=TREE01\n"),
+            4,
+        );
         // Native Mark_Occupation71C17B..71C199 tests only bits1/2/4.
         // These two authored boundaries distinguish both old clamp errors.
         for (snow, mask, marked) in [(false, 8, 0xA3), (true, -1, 0xBF)] {

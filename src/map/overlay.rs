@@ -5,7 +5,8 @@
 //!   Each byte is an overlay type ID (0xFF = no overlay).
 //! - `[OverlayDataPack]`: same format. Each byte is a frame/value for the overlay
 //!   (e.g., ore density 0-11, wall connection frame).
-//! - `[Terrain]`: INI key-value pairs. Key = `ry * 1000 + rx`, value = object name
+//! - `[Terrain]`: key = `ry * radix + rx` (128 before format4, otherwise1000),
+//!   value = object name
 //!   (e.g., "INTREE01", "CACTUS01").
 //!
 //! ## Dependency rules
@@ -215,9 +216,11 @@ pub fn parse_overlay_packs(ini: &IniFile) -> ParsedOverlayPacks {
 
 /// Parse terrain objects from the [Terrain] INI section.
 ///
-/// Keys are encoded positions: `ry * 1000 + rx` (decimal string).
+/// Keys are decimal encoded positions. Terrain Read_Map_Section @0x0071CA70
+/// selects radix128 for signed NewINIFormat<4, otherwise1000 (71CAE3..71CB44).
+/// The caller supplies ReadBasic's retained format, whose native default is0.
 /// Values are object names like "INTREE01", "CACTUS01", "ROCK01".
-pub fn parse_terrain_objects(ini: &IniFile) -> Vec<TerrainObject> {
+pub fn parse_terrain_objects(ini: &IniFile, signed_new_ini_format: i32) -> Vec<TerrainObject> {
     let section = match ini.section("Terrain") {
         Some(s) => s,
         None => {
@@ -227,6 +230,7 @@ pub fn parse_terrain_objects(ini: &IniFile) -> Vec<TerrainObject> {
     };
 
     let mut objects: Vec<TerrainObject> = Vec::new();
+    let radix = if signed_new_ini_format < 4 { 128 } else { 1000 };
 
     // `TerrainClass__Read_Map_Section @ 0x0071CA70`: the cell is `atoi` of the
     // entry name, the type a 0x80-byte ReadString. Rust skips a negative cell.
@@ -240,8 +244,8 @@ pub fn parse_terrain_objects(ini: &IniFile) -> Vec<TerrainObject> {
         };
         let name = name.to_uppercase();
 
-        let ry: u16 = (pos / 1000) as u16;
-        let rx: u16 = (pos % 1000) as u16;
+        let ry: u16 = (pos / radix) as u16;
+        let rx: u16 = (pos % radix) as u16;
 
         objects.push(TerrainObject { rx, ry, name });
     }
@@ -432,7 +436,7 @@ mod tests {
 72015=ROCK01
 ";
         let ini: IniFile = IniFile::from_str(text);
-        let objects: Vec<TerrainObject> = parse_terrain_objects(&ini);
+        let objects: Vec<TerrainObject> = parse_terrain_objects(&ini, 4);
         assert_eq!(objects.len(), 3);
 
         // Key 35042 → ry=35, rx=42
