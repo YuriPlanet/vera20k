@@ -1066,7 +1066,7 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
                 .unwrap()
                 .position
                 .set_exact_z_leptons_for_test(Some(-400));
-            assert!(sim.tick_ship_sinking(
+            assert!(sim.tick_sinking(
                 ship,
                 &rules,
                 None,

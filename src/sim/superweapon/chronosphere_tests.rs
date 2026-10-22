@@ -149,6 +149,99 @@ fn retail_water_world() -> Option<(RuleSet, Simulation, InternedId)> {
     ))
 }
 
+/// A landed retail Harrier is a ground-list Foot for ChronoWarp. Arrival
+/// over water raises Techno+3CD; Aircraft AI must then own its full sinking
+/// lifetime, just as Unit AI owns a retained hull's lifetime.
+#[test]
+fn landed_harrier_chronoshifted_to_water_sinks_and_is_removed() {
+    use crate::rules::terrain_rules::LandType;
+    use crate::sim::movement::ground_pose::position_world_coord;
+
+    let Some(rules) = retail_rules_binding(&[
+        ("CHRONOAR", 20),
+        ("CHRONOTG", 20),
+        ("CHRONOFD", 20),
+        ("WARPOUT", 20),
+        ("CHRONOSK", 20),
+        ("WAKE1", 20),
+    ]) else {
+        return;
+    };
+    let (rules, mut sim, owner) =
+        world_with_cells(rules, 64, ("aircraft sink coast", Vec::new()), |x, y| {
+            let mut cell = test_terrain_cell(x, y);
+            if x >= 32 {
+                cell.land_type = LandType::Water.as_index();
+                cell.base_land_type = LandType::Water.as_index();
+            }
+            cell
+        });
+    let harrier = rules.object("ORCA").unwrap();
+    assert!(!harrier.naval && !harrier.organic && !harrier.teleporter);
+    assert_ne!(
+        harrier.speed_type,
+        crate::rules::locomotor_type::SpeedType::Hover
+    );
+    assert_eq!(rules.general.wake.name, "WAKE1");
+    let victim_owner = sim.interner.get("Russians").unwrap();
+    let aircraft = spawn(&mut sim, &rules, "ORCA", "Russians", SOURCE);
+    let health = sim
+        .substrate
+        .entities
+        .get(aircraft)
+        .unwrap()
+        .health
+        .current();
+    let losses = sim.houses[&victim_owner].stats().units_lost();
+    let warper = owner;
+    let kills = sim.houses[&warper].stats().units_killed();
+    charge_super(&mut sim, warper, "ChronoSphereSpecial");
+    click(&mut sim, &rules, warper, "ChronoSphereSpecial", SOURCE);
+    click(&mut sim, &rules, warper, "ChronoWarpSpecial", TARGET);
+    assert_eq!(
+        locomotors(&sim, aircraft),
+        (LocomotorKind::Teleport, Some(LocomotorKind::Fly))
+    );
+    let mut initial_sink_z = None;
+    for _ in 0..600 {
+        step(&mut sim, &rules);
+        if let Some(entity) = sim.substrate.entities.get(aircraft)
+            && entity.sinking.is_active()
+        {
+            assert_eq!(entity.health.current(), health);
+            assert!(entity.is_object_alive());
+            assert_eq!((entity.position.rx(), entity.position.ry()), TARGET);
+            initial_sink_z = Some(position_world_coord(&entity.position).z);
+            break;
+        }
+    }
+    let initial_sink_z = initial_sink_z.expect("Chrono arrival enters living sinking");
+    assert_eq!(sim.houses[&victim_owner].stats().units_lost(), losses + 1);
+    assert_eq!(sim.houses[&warper].stats().units_killed(), kills + 1);
+    step(&mut sim, &rules);
+    assert!(
+        position_world_coord(&sim.substrate.entities.get(aircraft).unwrap().position).z
+            < initial_sink_z
+    );
+    for _ in 0..200 {
+        step(&mut sim, &rules);
+        if !sim.substrate.entities.contains(aircraft) {
+            assert_eq!(sim.houses[&victim_owner].stats().units_lost(), losses + 2);
+            assert_eq!(sim.houses[&warper].stats().units_killed(), kills + 1);
+            assert!(
+                !sim.occupancy()
+                    .contains_entity(TARGET.0, TARGET.1, aircraft)
+            );
+            assert!(
+                !sim.occupancy()
+                    .contains_entity(SOURCE.0, SOURCE.1, aircraft)
+            );
+            return;
+        }
+    }
+    panic!("Aircraft AI must terminate the retained sink");
+}
+
 fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, owner: &str, at: (u16, u16)) -> u64 {
     sim.spawn_object_at_height(kind, owner, at.0, at.1, 0, 0, rules)
         .unwrap_or_else(|| panic!("{kind} stands at {at:?}"))

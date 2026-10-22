@@ -1098,7 +1098,7 @@ impl Simulation {
             stable_id,
             rules,
         );
-        if sim.tick_ship_sinking(stable_id, rules, overlay_registry, object_ctx.effects) {
+        if sim.tick_sinking(stable_id, rules, overlay_registry, object_ctx.effects) {
             return Ok(outcome);
         }
         // Infantry51BDE7..51BF80 follows the Foot tail: rate-zero fire

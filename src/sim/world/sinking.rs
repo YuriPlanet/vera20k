@@ -1,12 +1,13 @@
-//! Retained surface-ship death: Unit ReceiveDamage737E43 and AI7364A1.
+//! Retained sinking: Unit ReceiveDamage737E43/AI7364A1 and Aircraft AI414DB6.
 //!
 //! This owner alone mutates Techno+3CD/+3CE. The fatal receiver still runs
 //! Mark(UP), passenger/crew work and its ordinary tail; +3CD then suppresses
 //! immediate UnInit. PostWarpValidation and Squid culling also sink a living,
-//! still-marked hull through [`Simulation::begin_living_ship_sinking`]. Foot AI
-//! skips Process, observes the sound edge, and Unit AI lowers the raw
+//! still-marked Foot through [`Simulation::begin_living_ship_sinking`]. Foot AI
+//! skips Process, observes the sound edge, and Unit/Aircraft AI lowers the raw
 //! coordinate until its terminal RecordKill/UnInit.
-//! Native execution: tools/spatial_oracle/naval_occupants and naval_sink_tick.
+//! Native execution: tools/spatial_oracle/naval_occupants, naval_sink_tick and
+//! aircraft_sink_tick (the latter stops at RecordKill/Anim constructor entries).
 
 use super::{SimSoundEvent, Simulation, UninitContext};
 use crate::map::entities::EntityCategory;
@@ -14,7 +15,8 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::components::AnimClassSpawnDescriptor;
 use crate::sim::intern::StringInterner;
-use crate::sim::movement::ground_pose::{ground_surface_z_at, position_world_coord};
+use crate::sim::movement::air_movement::current_fly_height;
+use crate::sim::movement::ground_pose::position_world_coord;
 use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
@@ -165,12 +167,13 @@ impl Simulation {
         }
     }
 
-    /// Unit7364A1..7365BB, after Foot AI and before the class Alive/fire
-    /// suffix. Returns true only when the terminal arm UnInit'd the hull.
+    /// Unit7364A1..7365BB and Aircraft414DB6..414ED0, after Foot AI.
+    /// The object-turn owner has already admitted the live Aircraft at the
+    /// post-Foot Alive gate414DA8. Returns true only after terminal UnInit.
     /// Every reached visit lowers raw Z by five; GetHeight subtracts the live
     /// floor (and OnBridge height). Strictly below -400 records another kill
     /// with no attacker, then UnInit, before the frame-mod-four wake gate.
-    pub(crate) fn tick_ship_sinking(
+    pub(crate) fn tick_sinking(
         &mut self,
         id: u64,
         rules: &RuleSet,
@@ -180,25 +183,25 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return false;
         };
-        if entity.category() != EntityCategory::Unit || !entity.sinking.active {
+        if !matches!(
+            entity.category(),
+            EntityCategory::Unit | EntityCategory::Aircraft
+        ) || !entity.sinking.active
+        {
             return false;
         }
         let mut coord = position_world_coord(&entity.position);
-        let floor = ground_surface_z_at(
-            [coord.x, coord.y],
-            entity.on_bridge(),
-            self.resolved_terrain.as_ref(),
-            None,
-        )
-        .unwrap_or(0);
         coord.z = coord.z.wrapping_sub(5);
-        // Unit7364E3 calls vt+1B4, Foot SetLocation4DB810. The fatal
+        // Unit7364E3/Aircraft414DF8 call vt+1B4, Foot SetLocation4DB810. The fatal
         // receiver's Mark(UP) makes its unmarked arm4DB868 applicable; a
         // Chrono Warp's sink leaves the hull marked, so it takes the marked
         // arm. Both rejoin the changed-coordinate/OpenTopped tail, not a
         // separate raw-Z setter. Native execution: naval_sink_tick.json.
         self.foot_set_location_marked(id, coord, rules, registry, frame_effects);
-        if coord.z.wrapping_sub(floor) < -400 {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        if current_fly_height(entity, self.resolved_terrain.as_ref()) < -400 {
             // UnitAI736500's terminal RecordKill(NULL) is a second callback,
             // not a second accounting implementation. Native naval_sink_tick
             // retains Health1 and records two total losses across both calls.
@@ -221,10 +224,19 @@ impl Simulation {
             // is observable (seed zero spends three raw draws for this pair).
             let y = self.scenario_rng.next_range_i32_inclusive(-170, 170);
             let x = self.scenario_rng.next_range_i32_inclusive(-170, 170);
+            let entity = self
+                .substrate
+                .entities
+                .get(id)
+                .expect("retained sinking Foot");
+            let coord = position_world_coord(&entity.position);
+            // Both class bodies reread GetHeight after the two draws. Keep
+            // the shared live height owner and derive the wake's surface Z.
+            let height = current_fly_height(entity, self.resolved_terrain.as_ref());
             let wake = AnimWorldCoord {
                 x: coord.x.wrapping_add(x),
                 y: coord.y.wrapping_add(y),
-                z: floor,
+                z: coord.z.wrapping_sub(height),
             };
             let type_id = self.interner.intern(&rules.general.wake.name);
             let (rx, ry, sub_x, sub_y, z) = wake.to_cell_sub_z();

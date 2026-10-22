@@ -54,6 +54,11 @@
 //!
 //! Evidence: instruction reading of the addresses cited here.
 //!
+//! Landed Aircraft refused over water retain `+0x3CD` through the shared
+//! sinking owner (`world::sinking`), then Aircraft AI414DB6 lowers them to
+//! its terminal RecordKill(NULL)/UnInit. The ordinary-water validation arm's
+//! immediate credit and the terminal callback are distinct native calls.
+//!
 //! RESIDUALS:
 //! - A destination given while warping in (states 2 to 7, the latch down)
 //!   runs the Unit setter's Teleporter arm, whose Drive suspends the warp's
@@ -67,11 +72,6 @@
 //!   (`0x007362A7..0x007362F5`); VERA runs none. Trigger: a destination for
 //!   a Chrono Miner in the warp's last frames. Effect: TimerCheck's draw
 //!   moves a frame and the warp's END up to one; the Drive goes nowhere.
-//! - A landed Aircraft that sinks keeps `+0x3CD` with nothing to end it:
-//!   VERA ports only the Unit's sinking (Unit AI `0x007364A1`); the Aircraft
-//!   AI's handling is not established. Triggers: an airfield's Harriers
-//!   chronoshifted onto water, or a Magnetron dropping a lifted Aircraft over
-//!   water it is refused (`jumpjet_flight::state5_crash`'s sink).
 
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::NativeCellQuery;

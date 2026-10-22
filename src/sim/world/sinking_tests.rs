@@ -10,6 +10,114 @@ use crate::sim::movement::ShipLocomotionRuntime;
 use crate::sim::rng::SimRng;
 use crate::util::fixed_math::SimFixed;
 
+/// The Aircraft suffix shares the Unit owner, but has its own native
+/// witnesses. These sparse unmarked states compare coordinates, wake
+/// arguments and every RNG byte; the Chronosphere test covers real admission
+/// and terminal lifecycle through production frames.
+#[test]
+fn aircraft_sink_suffix_matches_original_coordinates_wakes_and_rng() {
+    let Some(mut rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
+    else {
+        return;
+    };
+    rules.bind_anim_frame_count_for_test("WAKE1", 20);
+    let corpus = crate::test_fixture::json("tools/spatial_oracle/aircraft_sink_tick.json");
+    for row in corpus["cases"].as_array().unwrap() {
+        let input = &row["input"];
+        let expected = &row["output"];
+        let name = input["name"].as_str().unwrap();
+        // Alive admission414DA8 belongs to object_turn, outside tick_sinking.
+        if input["alive"] == 0 {
+            continue;
+        }
+        let mut sim = Simulation::new();
+        let floor = input["floor"].as_i64().unwrap_or(0) as i32;
+        super::super::lifecycle_tests::install_common_raw_terrain(
+            &mut sim,
+            32,
+            32,
+            (floor / 104) as u8,
+            None,
+        );
+        let owner = sim.interner.intern("Americans");
+        sim.houses
+            .register(HouseState::new(owner, 0, None, false, 0, 10));
+        let id = sim.substrate.allocate_stable_id();
+        let mut entity = GameEntity::test_default(id, "ORCA", "Americans", 10, 10);
+        entity.set_type_ref_for_test(sim.interner.intern("ORCA"));
+        entity.set_owner_for_test(owner);
+        entity.set_category_for_test(EntityCategory::Aircraft);
+        entity.health.set_for_test(150);
+        entity.lifecycle.set_in_limbo_for_test(false);
+        entity.lifecycle.set_cell_marked_for_test(false);
+        entity
+            .position
+            .put_location(crate::sim::components::DriveCoord {
+                x: 2688,
+                y: 2688,
+                z: floor + input["relative_z"].as_i64().unwrap() as i32,
+            });
+        entity.sinking.active = input["sinking"].as_i64().unwrap_or(1) != 0;
+        sim.substrate.entities.insert(entity);
+        // Rust executes the cleanup beyond the native RecordKill boundary;
+        // supply its normal successful-Unlimbo threat publication as well.
+        sim.spatial_threat_after_unlimbo(id, &rules, None);
+        sim.session
+            .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
+        let seed = input["seed"].as_u64().unwrap_or(1);
+        sim.main_rng = SimRng::new(seed).into();
+        sim.scenario_rng = SimRng::new(seed);
+        sim.mapgen_rng = SimRng::new(seed);
+        let terminal = sim.tick_sinking(id, &rules, None, FrameEffects::default());
+        let entity = sim.substrate.entities.get(id).unwrap();
+        let coord = position_world_coord(&entity.position);
+        assert_eq!(
+            serde_json::json!([coord.x, coord.y, coord.z]),
+            expected["coord"],
+            "{name}"
+        );
+        assert_eq!(terminal, expected["endpoint"] == "0x702d40", "{name}");
+        assert_eq!(
+            sim.houses[&owner].stats().units_lost(),
+            u32::from(terminal),
+            "{name}"
+        );
+        assert_eq!(entity.health.current(), 150, "{name}");
+        for (stream, state) in [
+            ("main", sim.main_rng.native_state_hex()),
+            ("scenario", sim.scenario_rng.native_state_hex()),
+            ("mapgen", sim.mapgen_rng.native_state_hex()),
+        ] {
+            assert_eq!(
+                state,
+                expected["rng"][stream]["after"].as_str().unwrap(),
+                "{name} {stream}"
+            );
+        }
+        let wake = expected["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["kind"] == "wake");
+        assert_eq!(
+            sim.substrate.anims.len(),
+            usize::from(wake.is_some()),
+            "{name}"
+        );
+        if let Some(wake) = wake {
+            let (_, anim) = sim.substrate.anims.iter().next().unwrap();
+            let at = anim.world_coord();
+            assert_eq!(
+                serde_json::json!([at.x, at.y, at.z]),
+                wake["coord"],
+                "{name}"
+            );
+            assert_eq!(wake["args"], serde_json::json!([0, 1, 0x600, 0, 0]));
+            assert_eq!(anim.draw_flags(), 0x600, "{name}");
+        }
+    }
+}
+
 fn fixture(relative_z: i32) -> (Simulation, RuleSet, u64) {
     let mut rules = RuleSet::from_ini(&IniFile::from_str(
         "[General]\nWake=WAKE1\n[VehicleTypes]\n0=TEST\n\
@@ -68,7 +176,7 @@ fn native_sink_suffix_preserves_cadence_coordinates_and_complete_rng_states() {
         sim.substrate.entities.get_mut(id).unwrap().sinking.active =
             input["sinking"].as_u64().unwrap_or(1) != 0;
         let terminal =
-            sim.tick_ship_sinking(id, &rules, None, crate::sim::world::FrameEffects::default());
+            sim.tick_sinking(id, &rules, None, crate::sim::world::FrameEffects::default());
         let entity = sim.substrate.entities.get(id).unwrap();
         let coord = position_world_coord(&entity.position);
         assert_eq!(
@@ -179,9 +287,9 @@ fn sinking_state_is_hashed_and_survives_snapshot() {
         sim.session.set_binary_frame_for_test(frame);
         loaded.session.set_binary_frame_for_test(frame);
         let terminal =
-            sim.tick_ship_sinking(id, &rules, None, crate::sim::world::FrameEffects::default());
+            sim.tick_sinking(id, &rules, None, crate::sim::world::FrameEffects::default());
         assert_eq!(
-            loaded.tick_ship_sinking(id, &rules, None, crate::sim::world::FrameEffects::default()),
+            loaded.tick_sinking(id, &rules, None, crate::sim::world::FrameEffects::default()),
             terminal
         );
         assert_eq!(loaded.state_hash(), sim.state_hash(), "frame {frame}");
