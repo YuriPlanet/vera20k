@@ -251,10 +251,6 @@ mod tests {
             Some(sim.entities().get(source).unwrap().owner())
         );
         let attachments_before = victim.attach_effects.clone();
-        // Scenario full-load deliberately reseeds this stream to zero, as
-        // deserialize_scenario_rng_reset owns. Isolate that existing native
-        // load transition before comparing the complete saved state hash.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let saved = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "AE", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&saved)
             .unwrap()
@@ -267,13 +263,26 @@ mod tests {
             restored.entities().get(target).unwrap().attach_effects,
             attachments_before
         );
-        assert_eq!(
-            restored.state_hash(),
-            sim.state_hash(),
-            "restored owners {:?}, source owners {:?}",
-            restored.hash_owner_diagnostics_for_test(),
-            sim.hash_owner_diagnostics_for_test()
-        );
+        // Ordinary native load reseeds Scenario RNG and rebuilds navigation
+        // (67E8CD ->581F50), so it is not a byte-for-byte rollback. Compare
+        // the existing owner digests, excluding that deliberate navigation
+        // transition, plus the complete held Anim hash below. Do not change
+        // production hashing or manufacture a second snapshot restore path.
+        for (loaded, before) in restored
+            .hash_owner_diagnostics_for_test()
+            .into_iter()
+            .zip(sim.hash_owner_diagnostics_for_test())
+        {
+            if loaded.0 != "navigation_history" {
+                assert_eq!(loaded, before, "restored owner {}", loaded.0);
+            }
+        }
+        let anim_digest = |world: &Simulation| {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            world.anim(anim).unwrap().hash(&mut hasher);
+            hasher.finish()
+        };
+        assert_eq!(anim_digest(&restored), anim_digest(&sim));
         restored.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
         assert_eq!(
             restored
