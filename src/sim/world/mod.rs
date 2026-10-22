@@ -4657,10 +4657,9 @@ impl Simulation {
         if self.session.current_house() != Some(owner) || !self.houses.contains_key(&owner) {
             return None;
         }
-        self.session.outcome_request().map(|kind| crate::sim::house_state::HouseOutcomeState {
-            kind,
-            exit_ready: true,
-        })
+        self.session
+            .outcome_request()
+            .map(|kind| crate::sim::house_state::HouseOutcomeState { kind })
     }
 
     fn natural_outcome_exit_ready(&self) -> bool {

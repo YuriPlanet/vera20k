@@ -170,7 +170,6 @@ pub enum HouseOutcomeKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct HouseOutcomeState {
     pub kind: HouseOutcomeKind,
-    pub exit_ready: bool,
 }
 
 /// Persistent HouseClass strategy-emergency state.
@@ -2424,10 +2423,7 @@ impl HouseState {
         } else {
             return None;
         };
-        Some(HouseOutcomeState {
-            kind,
-            exit_ready: false,
-        })
+        Some(HouseOutcomeState { kind })
     }
 
     /// Read the sole House+298 countdown in the native signed frame domain.

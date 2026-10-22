@@ -5190,7 +5190,7 @@ mod tests {
         let restored_house = restored.houses.get(&owner).expect("restored house");
         let outcome = restored_house.outcome().expect("accepted outcome");
         assert_eq!(outcome.kind, HouseOutcomeKind::Victory);
-        assert!(!outcome.exit_ready);
+        assert!(restored.session().outcome_request().is_none());
         assert_eq!(
             restored_house
                 .outcome_timer()

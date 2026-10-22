@@ -166,10 +166,9 @@ fn retail_local_defeat_leaves_planning_in_the_same_house_frame() {
                     .has_lost()
             );
             assert!(
-                !rt.simulation.houses()[&rt.simulation.session().current_house().unwrap()]
-                    .outcome()
-                    .unwrap()
-                    .exit_ready
+                rt.simulation
+                    .ready_outcome_for_owner(rt.simulation.session().current_house().unwrap())
+                    .is_none()
             );
             defeat_tick = Some(tick);
         }

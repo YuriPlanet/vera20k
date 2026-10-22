@@ -4239,7 +4239,7 @@ fn gsi_01_04_house_rung_owns_savour_deadline_and_emits_one_transition_edge() {
         sim.houses[&winner].outcome_timer(),
         crate::sim::timer::CdTimer::started(10, 26)
     );
-    assert!(!winner_outcome.exit_ready);
+    assert!(sim.session.outcome_request().is_none());
     assert_eq!(
         sim.sound_events
             .iter()
