@@ -767,6 +767,12 @@ pub enum LifecycleOutput {
     ObjectSelected {
         stable_id: u64,
     },
+    /// Building UpdateBunker459315 writes the installed Unit's Group+214=-1
+    /// before Deselect, without owner or selection admission. The app owns
+    /// group membership; later assignment may put this same Unit in a group.
+    ControlGroupCleared {
+        stable_id: u64,
+    },
     /// DispatchPointerExpired7258D0 reaches navigation733160 at7259B1
     /// for a Techno abstract pointer, regardless of announce-control or Alive.
     ObjectPointerExpired {

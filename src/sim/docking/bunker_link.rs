@@ -109,8 +109,8 @@ pub fn can_auto_deploy_here(sim: &Simulation, unit_id: u64, rules: &RuleSet) -> 
 /// Bunker install state 5 (459301..459337): reciprocal links, deselection,
 /// state 6, then Guard5/1. Unit virtual+150 is Object deselect5F44A0, not
 /// Limbo: preserve coordinates, track, radio contacts and Logic membership.
-/// Native +214=-1 also removes control-group membership; that owner currently
-/// lives only in app input and is an explicit missing integration here.
+/// Native459315 clears Group+214 before Deselect; the app consumes that fact
+/// through its existing control-group owner.
 pub fn install_bunker_link(sim: &mut Simulation, building_id: u64, unit_id: u64, rules: &RuleSet) {
     if !sim
         .substrate
@@ -126,6 +126,8 @@ pub fn install_bunker_link(sim: &mut Simulation, building_id: u64, unit_id: u64,
     }
     if let Some(u) = sim.substrate.entities.get_mut(unit_id) {
         u.bunker.link = BunkerLink::Installed(building_id);
+        sim.lifecycle_outputs
+            .emit(crate::sim::world::LifecycleOutput::ControlGroupCleared { stable_id: unit_id });
         u.selection.deselect();
     }
     if let Some(rt) = sim

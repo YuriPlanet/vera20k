@@ -47,6 +47,10 @@ mod area_guard_tests;
 #[path = "player_scatter_tests.rs"]
 mod player_scatter_tests;
 
+#[cfg(test)]
+#[path = "bunker_control_group_tests.rs"]
+mod bunker_control_group_tests;
+
 /// Handle mouse button press/release for selection and move commands.
 ///
 /// The in-game gadget walk runs FIRST (study G22/A8): chrome buttons + cameos
@@ -2277,7 +2281,7 @@ pub(crate) fn reconcile_selection_order_after_sim(
         &mut state.match_state.input,
         &runtime.simulation,
         Some(&runtime.resources.rules),
-        &logic_selects(outputs),
+        outputs,
     );
 }
 
@@ -2287,8 +2291,9 @@ fn reconcile_selection_order_for_sim(
     input: &mut crate::app::input::state::MatchInputState,
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    logic_selects: &[u64],
+    outputs: &[crate::sim::world::LifecycleOutput],
 ) {
+    apply_control_group_clears(&mut input.control_groups, outputs);
     // Navigation733160 consumes actual pointer expiry through LifecycleOutput,
     // independently of this membership ledger. Alive/Health/Deselect alone
     // do not remove an entry from its retained vector.
@@ -2297,7 +2302,7 @@ fn reconcile_selection_order_for_sim(
         rules,
         &input.selection_order,
         input.selection_order_pending,
-        logic_selects,
+        &logic_selects(outputs),
     );
     input.selection_order = order;
     input.selection_order_pending = pending;
@@ -3668,6 +3673,21 @@ fn assign_control_group(groups: &mut [Vec<u64>], slot: usize, ids: Vec<u64>) {
         }
     }
     groups[slot] = ids;
+}
+
+/// UpdateBunker459315 clears Group before Deselect. Consume the exact write,
+/// rather than filtering installed tanks out of later assignment or recall.
+fn apply_control_group_clears(
+    groups: &mut [Vec<u64>],
+    outputs: &[crate::sim::world::LifecycleOutput],
+) {
+    for output in outputs {
+        if let crate::sim::world::LifecycleOutput::ControlGroupCleared { stable_id } = output {
+            for group in groups.iter_mut() {
+                group.retain(|member| member != stable_id);
+            }
+        }
+    }
 }
 
 /// TeamClear7310D0, reached by the command bar at6D0990. Eligibility is
