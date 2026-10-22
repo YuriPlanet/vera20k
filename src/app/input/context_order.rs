@@ -836,13 +836,17 @@ fn unit_repair_branch_orders(
                 } else {
                     modifier
                 };
-                object_click_payload(
+                let Some(command) = object_click_payload(
+                    sim,
+                    rules,
                     order_mode,
                     attack_modifier,
-                    entity_can_attack_move(sim, Some(rules), id),
                     id,
                     target.stable_id,
-                )
+                ) else {
+                    continue;
+                };
+                command
             }
             UnitRepairAction::Move => {
                 output.consumed = true;
@@ -1011,13 +1015,19 @@ fn attack_branch_orders(
                                 select_fallback = true;
                                 continue;
                             }
-                            _ => object_click_payload(
-                                order_mode,
-                                OrderModifier::Normal,
-                                entity_can_attack_move(sim, Some(rules), id),
-                                id,
-                                target_id,
-                            ),
+                            _ => {
+                                let Some(command) = object_click_payload(
+                                    sim,
+                                    rules,
+                                    order_mode,
+                                    OrderModifier::Normal,
+                                    id,
+                                    target_id,
+                                ) else {
+                                    continue;
+                                };
+                                command
+                            }
                         }
                     }
                 };
@@ -1588,30 +1598,51 @@ fn move_click_command(
 /// Attack is promoted too: in the attack-move mode (`0x00B0FE58`, set by
 /// `0x00731AF0`) `Is_Attack_Move_Chord_Active @ 0x00731BF0` passes before
 /// it reads any key, so Ctrl there attack-moves onto the object.
-pub(crate) fn object_click_payload(
+fn object_click_payload(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
     order_mode: OrderMode,
     modifier: OrderModifier,
-    can_attack_move: bool,
     attacker_id: u64,
     target_id: u64,
-) -> Command {
+) -> Option<Command> {
     if modifier == OrderModifier::GuardArea {
-        return Command::Guard {
+        return Some(Command::Guard {
             entity_id: attacker_id,
             target: Some(TargetKind::Entity(target_id)),
-        };
+        });
     }
-    match order_mode {
-        OrderMode::AttackMove if can_attack_move => Command::AttackMove {
-            entity_id: attacker_id,
-            target: Some(TargetKind::Entity(target_id)),
-            destination: None,
-        },
+    let actor = sim.entities().get(attacker_id)?;
+    // gamemd.exe InfantryClass::ClickedAction_Object 0x0051F190 (51F1C7)
+    // and UnitClass::ClickedAction_Object 0x00738890 (7388D5) reject self Attack.
+    if attacker_id == target_id
+        && matches!(
+            actor.category(),
+            EntityCategory::Infantry | EntityCategory::Unit
+        )
+    {
+        return None;
+    }
+    // gamemd.exe FootClass::ClickedAction_Object 0x004D769F..0x004D76C1:
+    // the resulting Attack5 asks IsActive7010D0 before ClickedMission.
+    // Infantry capture/sabotage return before this owner; Cell Attack4D80B1
+    // and Building44343C do not have this Foot gate. Never recheck on receipt.
+    if actor.category() != EntityCategory::Structure && !sim.techno_is_active(attacker_id, rules) {
+        return None;
+    }
+    Some(match order_mode {
+        OrderMode::AttackMove if entity_can_attack_move(sim, Some(rules), attacker_id) => {
+            Command::AttackMove {
+                entity_id: attacker_id,
+                target: Some(TargetKind::Entity(target_id)),
+                destination: None,
+            }
+        }
         _ => Command::Attack {
             attacker_id,
             target_id,
         },
-    }
+    })
 }
 
 /// The order one receiver commits for a click on another house's object:
@@ -1717,13 +1748,7 @@ fn object_attack_click_command(
         }
         _ => {}
     }
-    Some(object_click_payload(
-        order_mode,
-        modifier,
-        entity_can_attack_move(sim, Some(rules), attacker_id),
-        attacker_id,
-        target_id,
-    ))
+    object_click_payload(sim, rules, order_mode, modifier, attacker_id, target_id)
 }
 
 /// What `DisplayClass::BandBox_LeftUp @ 0x004AB9B0` does with the action
@@ -6070,47 +6095,64 @@ mod tests {
     /// plain attack.
     #[test]
     fn chorded_click_on_an_enemy_object_attack_moves() {
+        let Some((retail, _)) = retail_entry_tests::retail() else {
+            return;
+        };
+        let rules = &retail.rules;
+        let mut sim = retail_entry_tests::arena(rules);
+        let tank = sim
+            .spawn_object("MTNK", "Americans", 16, 16, 0, rules)
+            .unwrap();
+        let target = sim
+            .spawn_object("E1", "Russians", 20, 16, 0, rules)
+            .unwrap();
+        let helicopter = sim
+            .spawn_object("SHAD", "Americans", 16, 20, 0, rules)
+            .unwrap();
+        let click = |mode, modifier, actor| {
+            object_click_payload(&sim, rules, mode, modifier, actor, target)
+        };
         assert_eq!(
-            object_click_payload(OrderMode::AttackMove, OrderModifier::Normal, true, 1, 2),
-            Command::AttackMove {
-                entity_id: 1,
-                target: Some(TargetKind::Entity(2)),
+            click(OrderMode::AttackMove, OrderModifier::Normal, tank),
+            Some(Command::AttackMove {
+                entity_id: tank,
+                target: Some(TargetKind::Entity(target)),
                 destination: None,
-            }
+            })
         );
         assert_eq!(
-            object_click_payload(OrderMode::AttackMove, OrderModifier::Normal, false, 1, 2),
-            Command::Attack {
-                attacker_id: 1,
-                target_id: 2,
-            }
+            click(OrderMode::AttackMove, OrderModifier::Normal, helicopter),
+            Some(Command::Attack {
+                attacker_id: helicopter,
+                target_id: target,
+            })
         );
         // Plain click and guard area are untouched by the promotion; force
         // fire is promoted only in the attack-move mode, whose chord test
         // passes before any key read (`0x00731BF0`).
         for modifier in [OrderModifier::Normal, OrderModifier::ForceFire] {
             assert_eq!(
-                object_click_payload(OrderMode::Move, modifier, true, 1, 2),
-                Command::Attack {
-                    attacker_id: 1,
-                    target_id: 2,
-                }
+                click(OrderMode::Move, modifier, tank),
+                Some(Command::Attack {
+                    attacker_id: tank,
+                    target_id: target,
+                })
             );
         }
         assert_eq!(
-            object_click_payload(OrderMode::AttackMove, OrderModifier::ForceFire, true, 1, 2),
-            Command::AttackMove {
-                entity_id: 1,
-                target: Some(TargetKind::Entity(2)),
+            click(OrderMode::AttackMove, OrderModifier::ForceFire, tank),
+            Some(Command::AttackMove {
+                entity_id: tank,
+                target: Some(TargetKind::Entity(target)),
                 destination: None,
-            }
+            })
         );
         assert_eq!(
-            object_click_payload(OrderMode::Move, OrderModifier::GuardArea, true, 1, 2),
-            Command::Guard {
-                entity_id: 1,
-                target: Some(TargetKind::Entity(2)),
-            }
+            click(OrderMode::Move, OrderModifier::GuardArea, tank),
+            Some(Command::Guard {
+                entity_id: tank,
+                target: Some(TargetKind::Entity(target)),
+            })
         );
     }
 

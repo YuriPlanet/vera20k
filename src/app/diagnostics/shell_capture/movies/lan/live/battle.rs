@@ -2,8 +2,13 @@
 //! mutates the simulation, fabricates a peer command, or advances a frame.
 
 use super::*;
+use crate::app::input::entity_pick::PickSource;
 use crate::app::input::{commands, dispatch};
-use crate::sim::command::{Command, PlaceRecord, ProductionEvent, ProductionRecord};
+use crate::sim::combat::TargetKind;
+use crate::sim::command::{
+    Command, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, PlaceRecord, ProductionEvent,
+    ProductionRecord, StopRecord,
+};
 use crate::sim::production::{ProductionCategory, ProductionSelection};
 use crate::sim::world::Simulation;
 use crate::ui::sidebar::SidebarAction;
@@ -39,6 +44,13 @@ enum Step {
     GiSettling {
         frame: u32,
     },
+    Rendezvous,
+    Approaching,
+    Attacking,
+    Stopping,
+    Disengaging {
+        frame: u32,
+    },
     Done,
 }
 
@@ -68,6 +80,21 @@ pub(super) struct BattleOpening {
     gi_places: Vec<PlaceRecord>,
     gi_produces: Vec<ProductionRecord>,
     gi_events: Vec<Value>,
+    /// Actual first held paid identities, observed from the two House Factories.
+    /// Index0 is Host, index1 Guest; neither starting infantry nor a guessed ID.
+    fighters: [Option<u64>; 2],
+    /// First accepted ordinary Move destination per fighter; receipt-derived,
+    /// including a remote admission before the local staging input begins.
+    staging: [Option<(u16, u16)>; 2],
+    attack_input_frame: Option<u32>,
+    pending_attack: Option<MegaMissionRecord>,
+    pending_stop: Option<StopRecord>,
+    attack_frame: Option<u32>,
+    attack_health: Option<i32>,
+    attack_observation: Option<Value>,
+    hit_observation: Option<Value>,
+    stop_observation: Option<Value>,
+    combat_events: Vec<Value>,
 }
 
 struct FactorySnapshot {
@@ -91,8 +118,11 @@ impl BattleOpening {
         host: bool,
         actions: &mut Vec<Value>,
     ) -> Result<()> {
-        self.observe_commands(state)?;
+        self.observe_fighters(state)?;
+        self.observe_commands(state, frame)?;
+        self.observe_due_orders(state, frame)?;
         self.observe_infantry(state, frame, actions)?;
+        self.observe_hit(state, frame, actions)?;
         let mut action = None;
         match self.step {
             Step::Select if frame >= 10 => {
@@ -359,8 +389,109 @@ impl BattleOpening {
                     "empty GI Factory constructed a third product"
                 );
                 self.final_credits = Some(credits(state)?);
-                self.step = Step::Done;
-                action = Some("paid E1 delivery remained stable for60 frames");
+                if self.all_gi_orders_admitted(state)? {
+                    let desired = staging_centres(state)?;
+                    let index = usize::from(!host);
+                    let id = self.fighter_ids()?[index];
+                    ensure!(
+                        Some(id) == self.gi_products.first().map(|product| product.id),
+                        "encounter actor is not the first original local paid GI"
+                    );
+                    let cell = legal_move_cell(state, id, desired[index])?;
+                    move_with_mouse(state, id, cell)?;
+                    self.step = Step::Rendezvous;
+                    action = Some("paid E1 delivery stable; tactical Move to encounter staging");
+                }
+            }
+            Step::Rendezvous if host => {
+                let ids = self.fighter_ids()?;
+                if let [Some(host_cell), Some(guest_cell)] = self.staging
+                    && ids.iter().zip([host_cell, guest_cell]).all(|(&id, cell)| {
+                        simulation(state)
+                            .ok()
+                            .and_then(|sim| sim.entities().get(id))
+                            .is_some_and(|entity| {
+                                entity.navigation.nav_com().is_none()
+                                    && entity.position.rx().abs_diff(cell.0) <= 1
+                                    && entity.position.ry().abs_diff(cell.1) <= 1
+                            })
+                    })
+                {
+                    let target = simulation(state)?
+                        .entities()
+                        .get(ids[1])
+                        .context("opposing paid GI")?;
+                    let target_cell = (target.position.rx(), target.position.ry());
+                    let approach = offset_toward(target_cell, host_cell, 3);
+                    let approach = legal_move_cell(state, ids[0], approach)?;
+                    move_with_mouse(state, ids[0], approach)?;
+                    self.step = Step::Approaching;
+                    action = Some("both paid GIs staged; Host approaches through tactical Move");
+                }
+            }
+            Step::Approaching if host => {
+                let [actor, target] = self.fighter_ids()?;
+                if mouse_can_pick(state, target)? {
+                    select_entity(state, actor)?;
+                    click_entity(state, target)?;
+                    self.attack_input_frame = Some(frame);
+                    self.step = Step::Attacking;
+                    action =
+                        Some("Host selected paid GI and object-clicked visible opposing paid GI");
+                }
+            }
+            Step::Attacking if host && self.hit_observation.is_some() => {
+                let actor = self.fighter_ids()?[0];
+                select_entity(state, actor)?;
+                chat_key(state, KeyCode::KeyS, &Key::Character("s".into()), Some("s"));
+                self.step = Step::Stopping;
+                action = Some("observed post-command rifle hit; Host S-key Stop");
+            }
+            Step::Rendezvous | Step::Attacking | Step::Stopping
+                if self.stop_observation.is_some() =>
+            {
+                // Stop's immediate clear was observed before these later inputs.
+                // Guard may legitimately reacquire while an enemy remains nearby.
+                let index = usize::from(!host);
+                let id = self.fighter_ids()?[index];
+                let staging = [
+                    self.staging[0].context("accepted Host staging Move")?,
+                    self.staging[1].context("accepted Guest staging Move")?,
+                ];
+                let cell = if host {
+                    staging[0]
+                } else {
+                    offset_toward(staging[1], staging[0], -6)
+                };
+                let cell = legal_move_cell(state, id, cell)?;
+                if !host {
+                    select_entity(state, id)?;
+                    chat_key(state, KeyCode::KeyS, &Key::Character("s".into()), Some("s"));
+                }
+                move_with_mouse(state, id, cell)?;
+                self.step = Step::Disengaging { frame };
+                action = Some("raw Stop cleared orders; tactical Move separates the surviving GIs");
+            }
+            Step::Disengaging { frame: stopped } if frame >= stopped + 180 => {
+                let [actor, target] = self.fighter_ids()?;
+                let sim = simulation(state)?;
+                let actor = sim.entities().get(actor).context("surviving attacker")?;
+                let target = sim.entities().get(target).context("surviving target")?;
+                if actor
+                    .position
+                    .rx()
+                    .abs_diff(target.position.rx())
+                    .max(actor.position.ry().abs_diff(target.position.ry()))
+                    >= 10
+                    && [actor, target].iter().all(|entity| {
+                        entity.navigation.nav_com().is_none()
+                            && entity.attack_target.target().is_none()
+                    })
+                {
+                    self.step = Step::Done;
+                    action =
+                        Some("manual Attack, rifle damage and raw Stop observed; GIs separated");
+                }
             }
             _ => {}
         }
@@ -372,7 +503,178 @@ impl BattleOpening {
         Ok(())
     }
 
-    fn observe_commands(&mut self, state: &AppState) -> Result<()> {
+    fn fighter_ids(&self) -> Result<[u64; 2]> {
+        Ok([
+            self.fighters[0].context("Host's first paid GI")?,
+            self.fighters[1].context("Guest's first paid GI")?,
+        ])
+    }
+
+    fn observe_fighters(&mut self, state: &AppState) -> Result<()> {
+        let sim = simulation(state)?;
+        for (index, name) in [HOST_NAME, GUEST_NAME].into_iter().enumerate() {
+            if self.fighters[index].is_some() {
+                continue;
+            }
+            let Some(owner) = sim.interner().get(name) else {
+                continue;
+            };
+            if let Some(id) = sim
+                .production()
+                .factories()
+                .view(owner, ProductionCategory::Infantry)
+                .and_then(|factory| factory.object.and_then(|object| object.entity_id))
+            {
+                let entity = sim.entities().get(id).context("first held GI")?;
+                ensure!(
+                    entity.owner() == owner
+                        && entity.in_limbo()
+                        && sim.interner().resolve(entity.type_ref()) == "E1",
+                    "encounter Factory held a different object"
+                );
+                self.fighters[index] = Some(id);
+            }
+        }
+        Ok(())
+    }
+
+    fn observe_hit(
+        &mut self,
+        state: &AppState,
+        frame: u32,
+        actions: &mut Vec<Value>,
+    ) -> Result<()> {
+        if self.hit_observation.is_some() {
+            return Ok(());
+        }
+        let Some(admitted) = self.attack_frame else {
+            return Ok(());
+        };
+        let [actor, target] = self.fighter_ids()?;
+        let sim = simulation(state)?;
+        let actor = sim.entities().get(actor).context("firing paid GI")?;
+        let target = sim.entities().get(target).context("shot paid GI")?;
+        if target.health.current() < self.attack_health.context("Attack health baseline")?
+            && actor.rearm_timer.start_frame() >= admitted as i32
+            && actor.rearm_timer.duration() > 0
+        {
+            ensure!(
+                actor.attack_target.target() == Some(TargetKind::Entity(target.stable_id())),
+                "observed damage after the attacker lost its manual target"
+            );
+            let snapshot = combat_snapshot(state, self.fighter_ids()?, frame)?;
+            actions.push(json!({"native_frame":frame,"observation":"post-manual-Attack rearm and opposing GI health reduction",
+                "combat":snapshot}));
+            self.hit_observation = Some(snapshot);
+        }
+        Ok(())
+    }
+
+    /// Replay records DoList admission, which differs between peers and can
+    /// precede execution by MaxAhead. DoList dispatches raw frameN after Logic;
+    /// MainTick's late commit makes its first observable state binary_frameN+1.
+    /// Source: command_schedule::admit_queued_command and commit_frame_tail.
+    /// The capture handler renders one runtime service pass (handler.rs), whose
+    /// advance_one_simulation_frame loop is0..1. If a failed presentation ever
+    /// skips the required boundary, refuse the capture instead of labelling a
+    /// later mutable state as the command's immediate effect.
+    fn observe_due_orders(&mut self, state: &AppState, frame: u32) -> Result<()> {
+        if let Some(attack) = self.pending_attack {
+            let after_execution = u32::try_from(attack.frame)?
+                .checked_add(1)
+                .context("Attack frame")?;
+            if frame >= after_execution {
+                ensure!(
+                    frame == after_execution,
+                    "capture missed Attack execution boundary: expected{after_execution}, observed{frame}"
+                );
+                let [actor, target] = self.fighter_ids()?;
+                let sim = simulation(state)?;
+                let entity = sim.entities().get(actor).context("manual Attack actor")?;
+                ensure!(
+                    !entity.is_deployed() && !entity.infantry_deploy_doing(),
+                    "manual Attack actor was not an upright GI"
+                );
+                ensure!(
+                    entity.attack_target.target() == Some(TargetKind::Entity(target))
+                        && (entity.mission.current().raw() == 1
+                            || entity.mission.queued().raw() == 1),
+                    "executed raw Attack did not install its target and current/queued mission"
+                );
+                self.attack_frame = Some(after_execution);
+                self.attack_health = Some(
+                    sim.entities()
+                        .get(target)
+                        .context("manual Attack target")?
+                        .health
+                        .current(),
+                );
+                self.attack_observation = Some(combat_snapshot(state, [actor, target], frame)?);
+                self.pending_attack = None;
+                self.step = Step::Attacking;
+            }
+        }
+        if let Some(stop) = self.pending_stop {
+            let after_execution = u32::try_from(stop.frame)?
+                .checked_add(1)
+                .context("Stop frame")?;
+            if frame >= after_execution {
+                ensure!(
+                    frame == after_execution,
+                    "capture missed Stop execution boundary: expected{after_execution}, observed{frame}"
+                );
+                let [actor, target] = self.fighter_ids()?;
+                ensure!(
+                    self.hit_observation.is_some(),
+                    "Host Stop executed before the manual Attack's shot"
+                );
+                let entity = simulation(state)?
+                    .entities()
+                    .get(actor)
+                    .context("stopped GI")?;
+                ensure!(
+                    entity.attack_target.target().is_none()
+                        && entity.navigation.nav_com().is_none()
+                        && entity.navigation.suspended_nav_com().is_none()
+                        && entity.suspended_attack_target.target().is_none()
+                        && entity.navigation.nav_queue().is_empty(),
+                    "executed raw Stop did not clear the ordinary GI's target/navigation references"
+                );
+                self.stop_observation = Some(combat_snapshot(state, [actor, target], frame)?);
+                self.pending_stop = None;
+            }
+        }
+        Ok(())
+    }
+
+    fn all_gi_orders_admitted(&self, state: &AppState) -> Result<bool> {
+        let sim = simulation(state)?;
+        Ok(sim
+            .houses()
+            .order()
+            .iter()
+            .enumerate()
+            .filter(|(_, owner)| {
+                sim.houses()
+                    .get(owner)
+                    .is_some_and(|house| house.is_human())
+            })
+            .all(|(index, _)| {
+                self.gi_places
+                    .iter()
+                    .filter(|event| i32::from(event.house_id) == index as i32)
+                    .count()
+                    == 2
+                    && self
+                        .gi_produces
+                        .iter()
+                        .filter(|event| i32::from(event.house_id) == index as i32)
+                        .count()
+                        == 2
+            }))
+    }
+
+    fn observe_commands(&mut self, state: &AppState, frame: u32) -> Result<()> {
         let Some(log) = &state.match_state.match_diagnostics.replay_log else {
             return Ok(());
         };
@@ -387,8 +689,11 @@ impl BattleOpening {
             for command in &tick.commands {
                 let Command::SynchronizedRecord { record } = &command.payload else {
                     ensure!(
-                        !matches!(&command.payload, Command::PlaceProducedMobile { .. }),
-                        "live Battle admitted semantic mobile PLACE"
+                        !matches!(
+                            &command.payload,
+                            Command::PlaceProducedMobile { .. } | Command::Attack { .. }
+                        ),
+                        "live Battle admitted semantic mobile PLACE or Attack"
                     );
                     continue;
                 };
@@ -430,6 +735,82 @@ impl BattleOpening {
                         "a House admitted an extra GI PRODUCE"
                     );
                     self.gi_events.push(json!({"admission_tick":tick.tick,"kind":"PRODUCE","house":produce.house_id,"issue_frame":produce.frame,"bytes":record.as_bytes().as_slice()}));
+                }
+                let [Some(actor), Some(target)] = self.fighters else {
+                    continue;
+                };
+                if let Some(mission) = MegaMissionRecord::decode(record)
+                    && [actor, target].contains(&(mission.source_id as u64))
+                {
+                    let index = usize::from(mission.source_id == i32::try_from(target)?);
+                    let entity = simulation(state)?
+                        .entities()
+                        .get([actor, target][index])
+                        .context("ordinary GI Move/Attack source")?;
+                    ensure!(
+                        mission.house_id == house_id_for_owner(state, entity.owner())?,
+                        "raw GI Move/Attack issuing House differs from its source"
+                    );
+                    if self.staging[index].is_none()
+                        && let MegaMissionOrder::Move { target_x, target_y } = mission.order
+                    {
+                        self.staging[index] =
+                            Some((u16::try_from(target_x)?, u16::try_from(target_y)?));
+                    }
+                    self.combat_events.push(json!({"admission_tick":tick.tick,"admission_observed_frame":frame,
+                        "event_frame":mission.frame,
+                        "opcode":record.opcode(),"source":mission.source_id,"house":mission.house_id,
+                        "order":format!("{:?}",mission.order),"bytes":record.as_bytes().as_slice()}));
+                    if mission.source_id == i32::try_from(actor)?
+                        && mission.order
+                            == (MegaMissionOrder::Attack {
+                                target: MegaMissionTarget::Object {
+                                    id: i32::try_from(target)?,
+                                },
+                            })
+                    {
+                        ensure!(
+                            self.attack_observation.is_none() && self.pending_attack.is_none(),
+                            "duplicate manual GI Attack"
+                        );
+                        let sim = simulation(state)?;
+                        let entity = sim.entities().get(actor).context("manual Attack actor")?;
+                        ensure!(
+                            mission.house_id == house_id_for_owner(state, entity.owner())?,
+                            "raw Attack issuing House differs from the Host"
+                        );
+                        if local_owner(state)? == HOST_NAME {
+                            ensure!(
+                                self.attack_input_frame
+                                    .is_some_and(|issued| mission.frame >= issued as i32),
+                                "Attack did not follow the actual object click"
+                            );
+                        }
+                        self.pending_attack = Some(mission);
+                    }
+                }
+                if let Some(stop) = StopRecord::decode(record)
+                    && stop.entity_id == i32::try_from(actor)?
+                {
+                    ensure!(
+                        self.stop_observation.is_none() && self.pending_stop.is_none(),
+                        "duplicate Host GI Stop"
+                    );
+                    let entity = simulation(state)?
+                        .entities()
+                        .get(actor)
+                        .context("stopped GI")?;
+                    ensure!(
+                        stop.house_id == house_id_for_owner(state, entity.owner())?,
+                        "raw Stop issuing House differs from the Host"
+                    );
+                    self.combat_events.push(
+                        json!({"admission_tick":tick.tick,"admission_observed_frame":frame,
+                        "event_frame":stop.frame,
+                        "opcode":record.opcode(),"source":stop.entity_id,"house":stop.house_id,
+                        "bytes":record.as_bytes().as_slice()}),
+                    );
+                    self.pending_stop = Some(stop);
                 }
             }
         }
@@ -558,6 +939,9 @@ impl BattleOpening {
     pub(super) fn finished(&self, state: &AppState) -> Result<bool> {
         let sim = simulation(state)?;
         Ok(matches!(self.step, Step::Done)
+            && self.attack_observation.is_some()
+            && self.hit_observation.is_some()
+            && self.stop_observation.is_some()
             && ["GAPOWR", "GAPILE"].iter().all(|type_id| {
                 sim.entities()
                     .values_sorted()
@@ -570,29 +954,7 @@ impl BattleOpening {
                     .count()
                     == 2
             })
-            && sim
-                .houses()
-                .order()
-                .iter()
-                .enumerate()
-                .filter(|(_, owner)| {
-                    sim.houses()
-                        .get(owner)
-                        .is_some_and(|house| house.is_human())
-                })
-                .all(|(index, _)| {
-                    self.gi_places
-                        .iter()
-                        .filter(|event| i32::from(event.house_id) == index as i32)
-                        .count()
-                        == 2
-                        && self
-                            .gi_produces
-                            .iter()
-                            .filter(|event| i32::from(event.house_id) == index as i32)
-                            .count()
-                            == 2
-                }))
+            && self.all_gi_orders_admitted(state)?)
     }
 
     pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
@@ -605,9 +967,14 @@ impl BattleOpening {
             "gi_products":self.gi_products.iter().map(|product| json!({"id":product.id,"first_progress":product.first_progress,
                 "completed_frame":product.completed_frame,"delivered_frame":product.delivered_frame})).collect::<Vec<_>>(),
             "successor_promotions":self.successor_promotions,"gi_native_events":self.gi_events,
+            "combat":{"fighters":self.fighters,"staging":self.staging,
+                "attack_input_frame":self.attack_input_frame,"attack":self.attack_observation,
+                "hit":self.hit_observation,"stop":self.stop_observation,"native_events":self.combat_events,
+                "final":combat_snapshot(state,self.fighter_ids()?,sim.session().binary_frame())?},
             "infantry":sim.entities().values_sorted().filter(|entity| sim.interner().resolve(entity.type_ref()) == "E1")
                 .map(|entity| json!({"id":entity.stable_id(),"owner":sim.interner().resolve(entity.owner()),
-                    "alive":entity.is_alive(),"in_limbo":entity.in_limbo(),"position":entity.position})).collect::<Vec<_>>(),
+                    "alive":entity.is_alive(),"in_limbo":entity.in_limbo(),"position":entity.position,
+                    "health":entity.health.current()})).collect::<Vec<_>>(),
             "buildings":sim.entities().values_sorted().filter(|entity|
                 entity.is_alive() && !entity.in_limbo() && entity.category() == crate::map::entities::EntityCategory::Structure
             ).map(|entity| json!({"id":entity.stable_id(),"owner":sim.interner().resolve(entity.owner()),
@@ -648,6 +1015,11 @@ fn local_house_id(state: &AppState) -> Result<i8> {
         .interner()
         .get(&local_owner(state)?)
         .context("local House")?;
+    house_id_for_owner(state, owner)
+}
+
+fn house_id_for_owner(state: &AppState, owner: crate::sim::intern::InternedId) -> Result<i8> {
+    let sim = simulation(state)?;
     Ok(i8::try_from(
         sim.houses()
             .order()
@@ -655,6 +1027,191 @@ fn local_house_id(state: &AppState) -> Result<i8> {
             .position(|candidate| *candidate == owner)
             .context("local native House index")?,
     )?)
+}
+
+fn combat_snapshot(state: &AppState, ids: [u64; 2], frame: u32) -> Result<Value> {
+    let sim = simulation(state)?;
+    let mut entities = Vec::new();
+    for id in ids {
+        let entity = sim.entities().get(id).context("paid encounter GI")?;
+        entities.push(json!({"id":id,"owner":sim.interner().resolve(entity.owner()),
+            "alive":entity.is_alive(),"position":entity.position,"health":entity.health.current(),
+            "deployed":entity.is_deployed(),"deploying":entity.infantry_deploy_doing(),
+            "mission":entity.mission.current().raw(),"queued_mission":entity.mission.queued().raw(),
+            "target":entity.attack_target.target(),"destination":entity.navigation.nav_com(),
+            "suspended_target":entity.suspended_attack_target.target(),
+            "suspended_destination":entity.navigation.suspended_nav_com(),
+            "nav_queue":entity.navigation.nav_queue(),
+            "rearm_start":entity.rearm_timer.start_frame(),"rearm_duration":entity.rearm_timer.duration()}));
+    }
+    Ok(json!({"native_frame":frame,"entities":entities}))
+}
+
+/// Diagnostic rendezvous geometry only; actual Cell admission/pathing remains
+/// in the existing click owner and each ordinary synchronized Move receiver.
+fn offset_toward(from: (u16, u16), toward: (u16, u16), cells: i32) -> (u16, u16) {
+    let dx = i32::from(toward.0) - i32::from(from.0);
+    let dy = i32::from(toward.1) - i32::from(from.1);
+    let (x, y) = if dx.abs() > dy.abs() {
+        (i32::from(from.0) + dx.signum() * cells, i32::from(from.1))
+    } else {
+        (i32::from(from.0), i32::from(from.1) + dy.signum() * cells)
+    };
+    (
+        x.clamp(0, i32::from(u16::MAX)) as u16,
+        y.clamp(0, i32::from(u16::MAX)) as u16,
+    )
+}
+
+fn staging_centres(state: &AppState) -> Result<[(u16, u16); 2]> {
+    let sim = simulation(state)?;
+    let mut yards = [(0, 0); 2];
+    for (index, name) in [HOST_NAME, GUEST_NAME].into_iter().enumerate() {
+        let owner = sim.interner().get(name).context("encounter House")?;
+        let yard = sim
+            .entities()
+            .values_sorted()
+            .find(|entity| {
+                entity.owner() == owner
+                    && entity.is_alive()
+                    && !entity.in_limbo()
+                    && sim.interner().resolve(entity.type_ref()) == "GACNST"
+            })
+            .context("encounter yard")?;
+        yards[index] = (yard.position.rx(), yard.position.ry());
+    }
+    let middle = (
+        ((u32::from(yards[0].0) + u32::from(yards[1].0)) / 2) as u16,
+        ((u32::from(yards[0].1) + u32::from(yards[1].1)) / 2) as u16,
+    );
+    Ok([
+        offset_toward(middle, yards[0], 6),
+        offset_toward(middle, yards[1], 6),
+    ])
+}
+
+fn legal_move_cell(state: &AppState, actor: u64, desired: (u16, u16)) -> Result<(u16, u16)> {
+    let sim = simulation(state)?;
+    let owner = sim.entities().get(actor).context("moving GI")?.owner();
+    ensure!(
+        sim.session().current_house() == Some(owner),
+        "diagnostic attempted a remote House's local Move query"
+    );
+    let rules = state.rules().context("retail rules")?;
+    for (dx, dy) in [
+        (0, 0),
+        (2, 0),
+        (-2, 0),
+        (0, 2),
+        (0, -2),
+        (2, 2),
+        (-2, -2),
+        (2, -2),
+        (-2, 2),
+    ] {
+        let (Ok(x), Ok(y)) = (
+            u16::try_from(i32::from(desired.0) + dx),
+            u16::try_from(i32::from(desired.1) + dy),
+        ) else {
+            continue;
+        };
+        if let Some(cell) = commands::ordinary_cell_move_goal(
+            sim,
+            rules,
+            state.overlay_registry(),
+            owner,
+            actor,
+            (x, y),
+            false,
+        ) && cell == (x, y)
+        {
+            return Ok(cell);
+        }
+    }
+    anyhow::bail!("no ordinary GI Move goal near {desired:?}")
+}
+
+fn mouse_can_pick(state: &AppState, id: u64) -> Result<bool> {
+    let sim = simulation(state)?;
+    let entity = sim.entities().get(id).context("opposing GI")?;
+    let presented = crate::app::input::entity_pick::presented(state, sim);
+    let world = presented.screen_position(entity);
+    Ok(crate::app::input::entity_pick::hover_object_at_point(
+        presented,
+        world.0,
+        world.1,
+        &local_owner(state)?,
+        false,
+    )
+    .and_then(|object| object.techno())
+    .is_some_and(|target| target.stable_id == id))
+}
+
+fn move_with_mouse(state: &mut AppState, id: u64, cell: (u16, u16)) -> Result<()> {
+    select_entity(state, id)?;
+
+    let z = state
+        .resolved_terrain()
+        .and_then(|terrain| terrain.cell(cell.0, cell.1))
+        .context("Move terrain cell")?
+        .level;
+    let world = crate::app::input::camera::cell_centre_world_point(cell.0, cell.1, z);
+    crate::app::input::camera::center_camera_on_cell(state, cell.0, cell.1);
+    let input = &mut state.match_state.input;
+    input.cursor_x = (world.0 - input.camera_x) * input.zoom_level;
+    input.cursor_y = (world.1 - input.camera_y) * input.zoom_level;
+    dispatch::handle_cursor_moved_in_game(state);
+    for edge in [ElementState::Pressed, ElementState::Released] {
+        dispatch::handle_mouse_input(state, MouseButton::Left, edge);
+    }
+    Ok(())
+}
+
+fn select_entity(state: &mut AppState, id: u64) -> Result<()> {
+    // Clicking an already-selected GI is a Deploy action. Preserve the actual
+    // input selection, including its pending frame-ingress projection, which
+    // is also what the following Move/Attack/Stop input consumes.
+    if projected_selection(state) != [id] {
+        // The prior command may have left a building selected; clear it through
+        // the tactical cancel ladder before a GI click can mean Building Rally.
+        // Point first: a right-click over the last E1 cameo is production input.
+        point_at_entity(state, id)?;
+        for edge in [ElementState::Pressed, ElementState::Released] {
+            dispatch::handle_mouse_input(state, MouseButton::Right, edge);
+        }
+        ensure!(
+            projected_selection(state).is_empty(),
+            "tactical cancel did not clear selection before GI{id}: projected={:?}, pending={}, targeting={:?}",
+            projected_selection(state),
+            state.match_state.input.selection_order_pending,
+            state.match_state.input.targeting_mode
+        );
+        click_entity(state, id)?;
+    }
+    ensure!(
+        projected_selection(state) == [id],
+        "tactical input did not retain GI{id}: projected={:?}, pending={}, position={:?}",
+        projected_selection(state),
+        state.match_state.input.selection_order_pending,
+        simulation(state)?
+            .entities()
+            .get(id)
+            .map(|entity| entity.position)
+    );
+    Ok(())
+}
+
+fn projected_selection(state: &AppState) -> Vec<u64> {
+    dispatch::selected_stable_ids_in_order(
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|runtime| &runtime.simulation),
+        state.rules(),
+        &state.match_state.input.selection_order,
+        state.match_state.input.selection_order_pending,
+    )
 }
 
 fn factory(state: &AppState, category: ProductionCategory) -> Result<Option<FactorySnapshot>> {
@@ -734,21 +1291,45 @@ fn cameo(state: &mut AppState, type_id: &str, right: bool) -> Result<()> {
 }
 
 fn click_entity(state: &mut AppState, id: u64) -> Result<()> {
+    let picked = point_at_entity(state, id)?;
+    ensure!(
+        picked == Some(id),
+        "tactical pointer missed object{id}: picked={picked:?}, projected={:?}, pending={}, position={:?}",
+        projected_selection(state),
+        state.match_state.input.selection_order_pending,
+        simulation(state)?
+            .entities()
+            .get(id)
+            .map(|entity| entity.position)
+    );
+    for edge in [ElementState::Pressed, ElementState::Released] {
+        dispatch::handle_mouse_input(state, MouseButton::Left, edge);
+    }
+    Ok(())
+}
+
+fn point_at_entity(state: &mut AppState, id: u64) -> Result<Option<u64>> {
     let entity = simulation(state)?
         .entities()
         .get(id)
         .context("mouse actor")?;
     let cell = (entity.position.rx(), entity.position.ry());
-    let world = crate::render::locomotor_visual::screen_position(entity);
+    let world = crate::app::input::entity_pick::presented(state, simulation(state)?)
+        .screen_position(entity);
     crate::app::input::camera::center_camera_on_cell(state, cell.0, cell.1);
     let input = &mut state.match_state.input;
     input.cursor_x = (world.0 - input.camera_x) * input.zoom_level;
     input.cursor_y = (world.1 - input.camera_y) * input.zoom_level;
     dispatch::handle_cursor_moved_in_game(state);
-    for edge in [ElementState::Pressed, ElementState::Released] {
-        dispatch::handle_mouse_input(state, MouseButton::Left, edge);
-    }
-    Ok(())
+    let sim = simulation(state)?;
+    Ok(crate::app::input::entity_pick::hover_object_at_point(
+        crate::app::input::entity_pick::presented(state, sim),
+        world.0,
+        world.1,
+        &local_owner(state)?,
+        false,
+    )
+    .map(|object| object.id()))
 }
 
 fn placement_cursor(state: &AppState, yard: u64, type_id: &str) -> Result<(u16, u16)> {

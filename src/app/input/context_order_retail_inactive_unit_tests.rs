@@ -8,6 +8,100 @@ use super::*;
 use crate::app::types::CursorId;
 use crate::sim::world::Simulation;
 
+/// Infantry51F190 reaches Foot4D769F's IsActive gate only for the final
+/// object Attack. Cell Attack4D80B1 does not repeat that gate.
+#[test]
+fn retail_inactive_gi_refuses_object_attack_but_keeps_cell_attack() {
+    let Some((retail, registry)) = retail() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = arena(rules);
+    let owner = sim.interner().get("Americans").unwrap();
+    let gi = sim
+        .spawn_object("E1", "Americans", 16, 16, 0, rules)
+        .unwrap();
+    let enemy = sim
+        .spawn_object("E1", "Russians", 17, 16, 0, rules)
+        .unwrap();
+    sim.entities_mut_for_test()
+        .get_mut(gi)
+        .unwrap()
+        .deactivated
+        .set_for_test(true);
+    assert_eq!(
+        object_attack_click_command(
+            &sim,
+            rules,
+            &registry,
+            owner,
+            OrderMode::Move,
+            OrderModifier::ForceFire,
+            false,
+            gi,
+            enemy
+        ),
+        None
+    );
+    let forced_object = attack_branch_orders(
+        &sim,
+        rules,
+        &[gi],
+        TargetKind::Entity(enemy),
+        true,
+        OrderMode::Move,
+        &registry,
+    );
+    assert!(forced_object.consumed && forced_object.commands.is_empty());
+    let cell = attack_branch_orders(
+        &sim,
+        rules,
+        &[gi],
+        TargetKind::Cell(17, 16),
+        true,
+        OrderMode::Move,
+        &registry,
+    );
+    assert_eq!(
+        cell.commands,
+        [Command::ForceAttackCell {
+            attacker_id: gi,
+            target_rx: 17,
+            target_ry: 16
+        }]
+    );
+    sim.entities_mut_for_test()
+        .get_mut(gi)
+        .unwrap()
+        .deactivated
+        .set_for_test(false);
+    assert_eq!(
+        object_click_payload(
+            &sim,
+            rules,
+            OrderMode::Move,
+            OrderModifier::ForceFire,
+            gi,
+            gi
+        ),
+        None
+    );
+    assert_eq!(
+        object_click_payload(
+            &sim,
+            rules,
+            OrderMode::Move,
+            OrderModifier::Normal,
+            gi,
+            enemy
+        ),
+        Some(Command::Attack {
+            attacker_id: gi,
+            target_id: enemy
+        })
+    );
+}
+
 /// The cursor of the lone selected `actor` over `target`.
 fn hover_cursor(
     sim: &Simulation,

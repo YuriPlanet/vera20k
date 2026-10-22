@@ -1191,10 +1191,11 @@ pub(crate) fn object_move_destination(
 /// Make ordinary local mission bytes authoritative at issue time.
 ///
 /// Active YR routes a cell click through `ClickedAction` (`0x004D7D50`), and a
-/// Move over an object through `0x004D74E0`, to
-/// `EventClass__BuildMegaMissionEnvelope` (`0x004C6860`). Guard key730D60
-/// reaches the same producer through QueueMegaMission6FFBE0. Move, to a Cell
-/// or an object, AreaGuard and self-click Unload share this codec. The D key
+/// Move or Attack over an object through `0x004D74E0`, to
+/// `EventClass__BuildMegaMissionEnvelope` (`0x004C6860`). ClickedMission6FFBE0
+/// promotes Move/Attack to attack-move before QueueMission646E90 appends.
+/// Move, Attack, attack-move, AreaGuard and self-click Unload share this codec.
+/// Guard key730D60 reaches the same producer. The D key
 /// constructs its distinct Event9 before reaching this boundary. Other
 /// semantic commands pass through until their native record is established.
 pub(crate) fn encode_ordinary_local_command(
@@ -1209,6 +1210,9 @@ pub(crate) fn encode_ordinary_local_command(
     match payload {
         Command::Move { .. }
         | Command::MoveToObject { .. }
+        | Command::Attack { .. }
+        | Command::ForceAttackCell { .. }
+        | Command::AttackMove { .. }
         | Command::Guard { .. }
         | Command::DeployMcv { .. }
         | Command::ToggleInfantryDeploy { .. }
@@ -1352,13 +1356,71 @@ mod tests {
     use crate::sim::world::Simulation;
 
     #[test]
-    fn stress_march_queues_one_attack_move_per_object_through_the_local_gate() {
-        let mut sim = Simulation::new();
-        let local = sim.intern("Local");
-        sim.houses_mut_for_test()
-            .register(HouseState::new(local, 0, None, true, 0, 10));
+    fn ordinary_attacks_reach_the_raw_network_queue_before_stop() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let (mut sim, rules, _) = Simulation::walk_cell_input_test_scene_with(retail.rules, false);
+        let gi = sim.spawn_object("E1", "Local", 3, 5, 0, &rules).unwrap();
+        let target = sim.spawn_object("E1", "Local", 5, 5, 0, &rules).unwrap();
+        sim.session_mut_for_test().set_tick_for_test(41);
+        sim.session_mut_for_test().set_binary_frame_for_test(77);
+        let commands = [
+            Command::Attack {
+                attacker_id: gi,
+                target_id: target,
+            },
+            Command::ForceAttackCell {
+                attacker_id: gi,
+                target_rx: 6,
+                target_ry: 5,
+            },
+            Command::AttackMove {
+                entity_id: gi,
+                target: Some(TargetKind::Entity(target)),
+                destination: None,
+            },
+            Command::Stop { entity_id: gi },
+        ];
+        for command in &commands {
+            assert_eq!(
+                schedule_command_in_sim(&mut sim, "Local", command.clone()),
+                Some(41)
+            );
+        }
+        let records = sim
+            .network_command_queues()
+            .local_records()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            records
+                .iter()
+                .map(|record| record.opcode())
+                .collect::<Vec<_>>(),
+            [4, 4, 4, 6]
+        );
+        for (record, command) in records.iter().zip(commands) {
+            assert_eq!(record.frame_stamp(), 77);
+            assert_eq!(
+                sim.decode_native_command_record(record, 41)
+                    .unwrap()
+                    .payload,
+                command
+            );
+        }
+    }
 
-        let accepted = schedule_stress_attack_moves(&mut sim, "Local", &[11, 12, 13], (40, 60));
+    #[test]
+    fn stress_march_queues_one_attack_move_per_object_through_the_local_gate() {
+        let (mut sim, rules, first) = Simulation::walk_cell_input_test_scene(false);
+        let second = sim.spawn_object("E1", "Local", 3, 5, 0, &rules).unwrap();
+        let third = sim.spawn_object("E1", "Local", 4, 5, 0, &rules).unwrap();
+
+        let accepted =
+            schedule_stress_attack_moves(&mut sim, "Local", &[first, second, third], (40, 60));
         assert_eq!(
             accepted, 3,
             "every object of the stress army gets its own order"
