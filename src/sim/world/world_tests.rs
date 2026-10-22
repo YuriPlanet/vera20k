@@ -314,6 +314,41 @@ fn building_on_off_line_opcodes_decode_direction_and_target() {
     assert!(!sim.substrate.entities.get(7).unwrap().building_online());
 }
 
+/// Native opcode 0x11 (EventClass::Execute branch 0x004C718C): a factory
+/// target as the Abstract token at payload[0..4] (kind 0x34) maps to
+/// `TogglePrimaryFactory`. A non-Object kind byte decodes to nothing.
+#[test]
+fn primary_opcode_decodes_to_toggle_primary_factory() {
+    let (mut sim, owner) = game_speed_command_sim();
+    let mut building = GameEntity::test_default(7, "GAPOWR", "Local", 30, 40);
+    building.set_owner_for_test(owner);
+    sim.substrate.entities.insert(building);
+
+    let record = crate::sim::command::PrimaryFactoryRecord {
+        house_id: 0,
+        frame: 1,
+        entity_id: 7,
+    }
+    .encode()
+    .expect("encode 0x11");
+    assert_eq!(record.opcode(), crate::sim::command::PRIMARY_OPCODE);
+
+    let decoded = sim
+        .decode_native_command_record(&record, 1)
+        .expect("0x11 decodes");
+    assert_eq!(decoded.owner, owner);
+    assert_eq!(
+        decoded.payload,
+        Command::TogglePrimaryFactory { entity_id: 7 }
+    );
+
+    // A kind byte other than 0x34 (e.g. a Cell) must decode to nothing: the
+    // native resolver answers null, so the branch drops it.
+    let mut cell = record;
+    cell.payload_mut()[4] = 0x0b; // Cell kind, not the 0x34 Abstract.
+    assert!(sim.decode_native_command_record(&cell, 1).is_none());
+}
+
 /// A launch hashes every frame and a test world none until the caller asks.
 /// Then only a frame whose tick is a multiple of the interval hashes, and its
 /// hash is the state's.

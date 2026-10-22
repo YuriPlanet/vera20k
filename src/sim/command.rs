@@ -121,6 +121,13 @@ impl GameSpeedRecord {
 /// `EVA_BuildingOnLine` / `EVA_BuildingOffLine` name the pair.
 pub const BUILDING_ON_LINE_OPCODE: u8 = 0x01;
 pub const BUILDING_OFF_LINE_OPCODE: u8 = 0x02;
+/// Native `EventClass` opcode 0x11 (PRIMARY): toggles the primary factory of a
+/// building. The dispatch branch (`0x004C718C`) reads the target as the
+/// Abstract token at payload `[0..4]` with kind `0x34` at `[4]` (the
+/// 5-byte payload, `table[0x11]=5` at `.rdata 0x8208EC`, is the same shape as
+/// 0x01/0x02), guards it through `0x006386E0`, then runs the selected object's
+/// virtual `+0x4F0` (Building448241). Maps to `Command::TogglePrimaryFactory`.
+pub const PRIMARY_OPCODE: u8 = 0x11;
 
 /// Typed view of native opcodes 0x01 / 0x02 (Building On Line / Off Line).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,6 +175,54 @@ impl BuildingOnLineRecord {
             frame: record.frame_stamp(),
             entity_id: id,
             on,
+        })
+    }
+}
+
+/// Native `EventClass` opcode 0x11 (PRIMARY): toggle the primary factory of a
+/// building. `EventClass::Execute`'s 0x11 branch (`0x004C718C`) resolves the
+/// target Abstract token at payload `[0..4]` (kind `0x34` at `[4]`, the same
+/// 5-byte shape as 0x01/0x02), guards it through `0x006386E0`, then runs the
+/// selected object's virtual `+0x4F0` (Building448241).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrimaryFactoryRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub entity_id: i32,
+}
+
+impl PrimaryFactoryRecord {
+    pub fn encode(self) -> Result<CommandRecord, CommandRecordError> {
+        let mut payload = [0u8; 5];
+        let (value, kind) = MegaMissionTarget::Object { id: self.entity_id }
+            .token()
+            .expect("an Object token encodes a 0x34 Abstract");
+        payload[..4].copy_from_slice(&value.to_le_bytes());
+        payload[4] = kind;
+        CommandRecord::encode(
+            PRIMARY_OPCODE,
+            i32::from(self.house_id),
+            self.frame,
+            &payload,
+        )
+    }
+
+    /// Decode. A non-`0x34` kind byte decodes to nothing: the native resolver
+    /// answers null for anything else, which the dispatch drops.
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != PRIMARY_OPCODE {
+            return None;
+        }
+        let value = i32::from_le_bytes(record.payload()[..4].try_into().ok()?);
+        let MegaMissionTarget::Object { id } =
+            MegaMissionTarget::from_token(value, record.payload()[4])?
+        else {
+            return None;
+        };
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: id,
         })
     }
 }

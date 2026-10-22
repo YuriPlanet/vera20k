@@ -20,8 +20,8 @@ use crate::sim::combat::combat_aoe::CellTargetDetach;
 use crate::sim::command::{
     BUILDING_OFF_LINE_OPCODE, BUILDING_ON_LINE_OPCODE, BuildingOnLineRecord, COMMAND_RECORD_LEN,
     Command, CommandEnvelope, CommandRecord, DeployRecord, ExitRecord, GameSpeedRecord,
-    MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, PlaceRecord, ProductionEvent,
-    ProductionRecord, ScatterRecord, SellWallAtCellRecord, StopRecord,
+    MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, PlaceRecord, PrimaryFactoryRecord,
+    ProductionEvent, ProductionRecord, ScatterRecord, SellWallAtCellRecord, StopRecord,
 };
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::{InternedId, StringInterner};
@@ -916,6 +916,26 @@ impl Simulation {
                         entity_id,
                         on: typed.on,
                     },
+                )
+            });
+        }
+
+        // Native opcode 0x11 (EventClass::Execute branch 0x004C718C): the target
+        // is the Abstract token at payload[0..4] (kind 0x34), resolved to the
+        // factory, guarded through 0x006386E0, then its virtual +0x4F0
+        // (Building448241) toggles the primary. No owner check here -- input
+        // gating is the client's job, as in native.
+        if record.opcode() == crate::sim::command::PRIMARY_OPCODE {
+            let typed = PrimaryFactoryRecord::decode(record)?;
+            let house_index = usize::try_from(typed.house_id).ok()?;
+            let owner = *self.houses.order().get(house_index)?;
+            let entity_id = u64::try_from(typed.entity_id).ok()?;
+            self.substrate.entities.get(entity_id)?;
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(
+                    owner,
+                    execute_tick,
+                    Command::TogglePrimaryFactory { entity_id },
                 )
             });
         }
