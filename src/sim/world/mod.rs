@@ -23,6 +23,8 @@ mod building_after_destruction;
 mod building_after_destruction_tests;
 pub(crate) mod building_anim;
 mod building_scatter;
+#[cfg(test)]
+mod building_sam_tests;
 mod building_upgrade_art;
 mod camera_home;
 mod cell_content;

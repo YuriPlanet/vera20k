@@ -36,10 +36,11 @@
 //! frame once `GuardAreaTargetingDelay + 5` frames have passed since its last
 //! shot.
 //!
-//! The Update's two FireAts, Mission_Attack's (`0x0044B6D0`) and
-//! ProcessDelayedFire's (`0x00450492`), enter the existing live combat
-//! receiver synchronously. Rearm, Main/Scenario draws and object appends
-//! finish before the following Gattling work or the next Logic object.
+//! The Update's FireAts, ordinary Mission_Attack's (`0x0044B6D0`), its SAM
+//! arm's ordered slots (`0x0044ADDC`/`0x0044ADEF`) and ProcessDelayedFire's
+//! (`0x00450492`), enter the existing live combat receiver synchronously.
+//! Rearm, Main/Scenario draws and object appends finish before the following
+//! mission work or the next Logic object.
 //!
 //! A Prism tower (`[General] PrismType=`) never takes Mission_Attack's FireAt
 //! arm: it recruits one charged tower of its House per visit to beam at it,
@@ -91,8 +92,8 @@
 //!   barrel-only arm); a separate barrel uses frame0. Native component
 //!   comparisons live in tools/voxel_oracle/building_barrel.json. This does
 //!   not close the other building Attack residuals in #757.
-//! - Dormant with retail data: the SAM arm (`0x0044AD07`, `SAM=` unset), the
-//!   upgrade arm (`0x0044B2BC`, no `PowersUpBuilding=`), Mission_Guard's
+//! - Dormant with retail data: the upgrade arm (`0x0044B2BC`, no
+//!   `PowersUpBuilding=`), Mission_Guard's
 //!   SuperWeapon gate (`0x00449716..0x00449753`, no armed type sets
 //!   `SuperWeapon=`) and BuildingClass::SetTarget's TickTank/Artillary
 //!   undeploy (`0x00443C07..0x00443C54`, neither key set).
@@ -232,6 +233,54 @@ const STUPID_GUARD_DELAY: i32 = 100;
 /// `+0x55C` + 4 x slot; their names at BuildingType `+0x1018` and `+0x11F4`).
 const ACTIVE_ANIM_SLOT: u8 = 3;
 const SPECIAL_ANIM_SLOT: u8 = 10;
+
+/// BuildingClass::Update43FDF1..43FE20, after ProduceCash and before
+/// UpdateAnimation. SAM asks the target's actual IsHighFlying virtual;
+/// Mission_Attack's later Aircraft/GetCoordZ check is a separate predicate.
+pub(super) fn sam_target_clear(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    ctx: ObjectAiCtx<'_>,
+) {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    if !sim
+        .object_type(entity.type_ref(), rules)
+        .is_some_and(|object| object.sam)
+    {
+        return;
+    }
+    let Some(target) = entity.attack_target.target() else {
+        return;
+    };
+    let high = match target {
+        TargetKind::Entity(target_id) => {
+            if let Some(target) = sim.substrate.entities.get(target_id) {
+                crate::sim::movement::air_movement::is_high_flying(
+                    target,
+                    sim.resolved_terrain.as_ref(),
+                    Some((rules, &sim.interner)),
+                )
+            } else {
+                let cells = sim
+                    .resolved_terrain
+                    .as_ref()
+                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                sim.terrain_objects
+                    .objects()
+                    .get(&target_id)
+                    .is_some_and(|target| target.is_high_flying_in_query(cells.as_ref()))
+            }
+        }
+        // CellClass virtual54/410530 is false, without a height query.
+        TargetKind::Cell(..) => false,
+    };
+    if !high {
+        let _ = sim.assign_target_represented(id, None, rules, ctx.overlay_registry, ctx.effects);
+    }
+}
 
 ///4509D0 runs once before Techno AI. The native type/control owner decides
 /// Stage/ready, including idle and sale; neither mission steps its own clock.
@@ -873,6 +922,12 @@ fn mission_attack(
     ctx: ObjectAiCtx<'_>,
     bridge_state_changed: &mut bool,
 ) -> i32 {
+    if sim.substrate.entities.get(id).is_some_and(|entity| {
+        sim.object_type(entity.type_ref(), rules)
+            .is_some_and(|object| object.sam)
+    }) {
+        return mission_attack_sam(sim, id, rules, ctx, bridge_state_changed);
+    }
     let Some((target, weapon)) = attack_prelude(sim, id, rules) else {
         return 1;
     };
@@ -906,6 +961,131 @@ fn mission_attack(
         ctx,
         bridge_state_changed,
     )
+}
+
+/// BuildingClass::Mission_Attack44AD07..44AF85. This branch precedes the
+/// ordinary Attack prelude and never enters its planning, ready-latch,
+/// Gattling, Prism, delayed-fire or turret-animation tails.
+fn mission_attack_sam(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    ctx: ObjectAiCtx<'_>,
+    bridge_state_changed: &mut bool,
+) -> i32 {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return 1;
+    };
+    let state = entity.mission.handler_state();
+    if state != 0 && state != 1 {
+        //44AD26..44AD50: only this fallback uses AARate and a Scenario draw.
+        let current = entity
+            .mission
+            .current()
+            .known()
+            .unwrap_or(MissionType::Attack);
+        let frames = rules.mission_control.aa_rate_frames(current);
+        return rate_delay(&mut sim.scenario_rng, frames, 1);
+    }
+    if state == 0
+        && !crate::sim::power_system::is_building_powered(
+            sim.power_states.as_map(),
+            rules,
+            entity,
+            &sim.interner,
+        )
+    {
+        //44AE44..44AE6C: Powered && signed drain>0 && current House ratio<1.
+        return 1;
+    }
+    let Some(target) = sam_aircraft_target(sim, id) else {
+        let _ = sim.assign_target_represented(id, None, rules, ctx.overlay_registry, ctx.effects);
+        if let Some(entity) = sim.substrate.entities.get_mut(id) {
+            entity.mission.set_handler_state(0);
+        }
+        if state == 0 {
+            //44AF51..44AF73: state1's invalid-target tail does not Commence.
+            queue_and_commence(sim, id, MissionType::Guard, rules);
+        }
+        return 1;
+    };
+    if state == 0 {
+        let now = sim.session.binary_frame();
+        let Some(entity) = sim.substrate.entities.get(id) else {
+            return 1;
+        };
+        if entity.body_facing.is_rotating(now) {
+            return 1;
+        }
+        let Some(desired) = fire_coord::building_direction_to(sim, rules, entity, target) else {
+            return 1;
+        };
+        let delta = i32::from(entity.body_facing.current(now).wrapping_sub(desired) as i16);
+        if delta.abs() <= 0x2000 {
+            if let Some(entity) = sim.substrate.entities.get_mut(id) {
+                entity.mission.set_handler_state(1);
+            }
+        } else {
+            //44AF26..44AF3F queries direction again before SetDesired.
+            aim_turret(sim, id, rules, target);
+        }
+        return 1;
+    }
+    //44ADAE asks only slot0, with range enabled. There is no voxel snap retry.
+    match fire_error_at(sim, rules, id, Some(target), 0, true, ctx.overlay_registry) {
+        FireError::Ok => {
+            for weapon in [0, 1] {
+                //44ADDC/44ADEF: commit each FireAt inline, then reread TarCom.
+                // A cleared target makes the native next FireAt return before
+                // any shot effects; do not retain the first call's target.
+                let target = sim
+                    .substrate
+                    .entities
+                    .get(id)
+                    .and_then(|entity| entity.attack_target.target());
+                if let Some(target) = target {
+                    *bridge_state_changed |= sim
+                        .commit_fire_visit(
+                            crate::sim::combat::world_fire::FireVisit::Building {
+                                id,
+                                shot: BuildingShot::Mission { weapon, target },
+                            },
+                            rules,
+                            ctx.overlay_registry,
+                            ctx.effects,
+                        )
+                        .bridge_state_changed;
+                }
+            }
+        }
+        FireError::Illegal | FireError::Cant | FireError::Range => {
+            let _ =
+                sim.assign_target_represented(id, None, rules, ctx.overlay_registry, ctx.effects);
+        }
+        FireError::Facing => {}
+        // All other errors retain both state1 and target (44ADCA ->44B17A).
+        _ => return 1,
+    }
+    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+        entity.mission.set_handler_state(0);
+    }
+    1
+}
+
+///44AD5A/44AE72: RTTI2, then Aircraft virtual1D0=ObjectGetCoordZ5F5F30.
+/// This reads total Location_Z, not ground-relative height or flight state.
+fn sam_aircraft_target(sim: &Simulation, id: u64) -> Option<TargetKind> {
+    let target = sim.substrate.entities.get(id)?.attack_target.target()?;
+    let TargetKind::Entity(target_id) = target else {
+        return None;
+    };
+    let aircraft = sim.substrate.entities.get(target_id)?;
+    (aircraft.category() == EntityCategory::Aircraft
+        && crate::sim::movement::ground_pose::object_world_z_leptons(
+            aircraft,
+            sim.resolved_terrain.as_ref(),
+        ) != 0)
+        .then_some(target)
 }
 
 /// Mission_Attack up to its GetFireError (`0x0044B00F`): with no target, the

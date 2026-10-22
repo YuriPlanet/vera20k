@@ -1333,6 +1333,10 @@ pub struct ObjectType {
     /// Native BuildingType `WeaponsFactory=` classification used by Unit
     /// ReadyToCommence. Independent from `Factory=` and `Naval=`.
     pub weapons_factory: bool,
+    /// BuildingType+16B8: ctor45E11B=false; ReadINI460A04..460A1E reads
+    /// exact-case SAM with the current byte as default. Update43FDF1 and
+    /// Mission_Attack44AD07 use its separate high-flight/aircraft machine.
+    pub sam: bool,
     /// BuildingType+16C2: constructor45E157 clears it. Rules45FE50 reads
     /// exact-case Armory via ReadBool5295F0 at460B03, using the current byte
     /// as default, then stores AL460B08 before GDIBarracks. Exit4440A6 uses it.
@@ -3318,6 +3322,7 @@ impl ObjectType {
             },
             // `BuildingTypeClass::ReadINI` alone reads it (`0x00460A79`).
             weapons_factory: building_bool(section, category, "WeaponsFactory"),
+            sam: building_bool(section, category, "SAM"),
             armory,
             gdi_barracks,
             nod_barracks,
