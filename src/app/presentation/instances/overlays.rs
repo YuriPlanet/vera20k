@@ -441,25 +441,38 @@ pub(crate) fn build_display_effect_instances(
         let Ok(frame) = u16::try_from(anim.runtime().current_frame.wrapping_add(start)) else {
             continue;
         };
-        let tint = if is_parachute {
+        let remap_color =
+            crate::render::sprite_atlas::anim_remap_color(anim, sim.interner(), input.house_colors);
+        // DrawIt422CA0's +D4 arm reads the retained +FC copy, unless
+        // UseNormalLight selects1000. The pointer gate and instance cell
+        // drawer remain independent of the SQDG type's UseCellDrawer key.
+        let retained_top = input.lighting.retained_anim_top(stable_id);
+        let retained_scheme = retained_top.is_some()
+            && remap_color.is_some()
+            && !anim.use_cell_drawer()
+            && super::anim_draw::ordinary_anim_type(type_name, config);
+        let tint = if is_parachute || retained_scheme {
             [1.0; 3]
         } else {
             input.lighting.anim_tint_at((rx, ry), config)
         };
-        let remap_color =
-            crate::render::sprite_atlas::anim_remap_color(anim, sim.interner(), input.house_colors);
-        let palette_light = if remap_color.is_some() && !is_parachute {
+        let palette_light = if remap_color.is_some() && !is_parachute && !retained_scheme {
             Default::default()
         } else {
             // Keep the canopy's instance Convert/53-row scheme transport,
             // including shroud selection, when joining the ordinary Anim draw.
-            crate::app::presentation::lighting::anim_palette_light(
+            let light = crate::app::presentation::lighting::anim_palette_light(
                 input.lighting,
                 (rx, ry),
                 config,
                 anim.use_cell_drawer(),
                 anim.remap().as_ref(),
-            )
+            );
+            if retained_scheme && !config.is_some_and(|c| c.use_normal_light) {
+                light.with_brightness(retained_top.unwrap())
+            } else {
+                light
+            }
         };
         let key = ShpSpriteKey {
             palette_context: if anim.use_cell_drawer() {
@@ -491,7 +504,7 @@ pub(crate) fn build_display_effect_instances(
         // Ordinary DrawIt422CA0 -> 4AED70 carries Convert's selector into
         // the packed RGB565 blitter, rather than alpha-blending the source.
         // Original full draw controls: spatial_oracle/anim_translucency.
-        let (alpha, draw_state) = if remap_color.is_none()
+        let (alpha, draw_state) = if (remap_color.is_none() || retained_scheme)
             && super::anim_draw::ordinary_anim_type(type_name, config)
         {
             (

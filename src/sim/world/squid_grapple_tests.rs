@@ -18,6 +18,7 @@ struct Encounter {
     squid: u64,
     ship: u64,
     elite: bool,
+    lighting_events: Vec<crate::sim::light_sources::LightingEvent>,
 }
 
 impl Encounter {
@@ -172,6 +173,7 @@ impl Encounter {
             squid,
             ship,
             elite,
+            lighting_events: Vec::new(),
         })
     }
 
@@ -189,6 +191,7 @@ impl Encounter {
             )
             .expect("ordinary open-water Squid combat frame");
         assert!(output.tick.frame_committed);
+        self.lighting_events.extend(output.lighting_events);
         output.fire_events
     }
 
@@ -592,6 +595,41 @@ fn stock_squid_grapple_keeps_depth_separate_from_cell_lighting() {
             scene.step();
         }
     }
+}
+
+#[test]
+fn stock_squid_publishes_retained_light_only_at_owner_assignment() {
+    use crate::sim::light_sources::LightingEvent;
+    let Some(mut scene) = Encounter::retail(false) else {
+        return;
+    };
+    scene.attach_after_actual_shot();
+    let id = scene.wait_for_roll();
+    let captures = |events: &[LightingEvent]| {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                LightingEvent::RetainAnimTop { anim, cell } if *anim == id => Some(*cell),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(captures(&scene.lighting_events), [(25, 24)]);
+    scene.lighting_events.clear();
+    for _ in 0..12 {
+        scene.step();
+    }
+    assert!(
+        captures(&scene.lighting_events).is_empty(),
+        "same-owner629DBF retains FC"
+    );
+    assert_eq!(scene.sim.anim(id).unwrap().z_adjust(), 0);
+    // Controlled native owner-change arm after the actual stock launch and
+    // attachment. This does not claim a new stock command that detaches it.
+    scene.sim.set_anim_owner_object(id, None, &scene.rules);
+    scene.step();
+    assert_eq!(scene.sim.anim(id).unwrap().owner_entity(), Some(scene.ship));
+    assert_eq!(captures(&scene.lighting_events), [(25, 24)]);
 }
 
 #[test]

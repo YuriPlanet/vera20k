@@ -22,14 +22,16 @@ use crate::sim::snapshot::{GameSnapshot, SnapshotError};
 use crate::sim::world::{Simulation, SnapshotProcessState};
 use crate::ui::sidebar::power_bar_anim::PowerBarAnimState;
 
-/// Borrowed preparation capabilities. Outgoing app presentation/input is not
-/// available to the fallible candidate; both menu and game supply this view.
+/// Borrowed preparation capabilities. The candidate may project the retained
+/// process palette through an immutable lighting borrow; outgoing input and
+/// presentation mutation remain unavailable on both menu and game routes.
 pub(crate) struct SavedGamePreparationView<'a> {
     pub(crate) repository: &'a SaveRepository,
     pub(crate) current_simulation: Option<&'a Simulation>,
     pub(crate) frontend_main: &'a MainRng,
     pub(crate) rules_owner: &'a NativeRulesProcessOwner,
     pub(crate) tile_cache: &'a TileVariantSelectorCache,
+    pub(crate) lighting: &'a crate::app::presentation::lighting::MatchLighting,
     pub(crate) load_clock: &'a dyn Fn() -> u64,
 }
 
@@ -48,6 +50,8 @@ struct PreparedSavedResources {
     map: SavedMapMetadata,
     local_view: PreparedSavedLocalView,
     power_bar_anim: PowerBarAnimState,
+    lighting: crate::map::lighting::SavedCellLighting,
+    scheme_normal_rgb: [i32; 3],
     tile_cache: TileVariantSelectorCache,
     theater: theater::TheaterData,
     elapsed_clock: crate::app::match_runtime::frame_pacer::ScenarioElapsedClock,
@@ -101,6 +105,11 @@ impl PreparedSavedGame {
         let power_bar_anim = PowerBarAnimState::from_saved(saved_view.take_power_bar().ok_or(
             crate::sim::snapshot::saved_local_view::SavedLocalViewError::MissingPowerBar,
         )?)?;
+        let lighting = saved_view.take_lighting().ok_or(
+            crate::sim::snapshot::saved_local_view::SavedLocalViewError::InvalidLighting {
+                field: "missing value authority",
+            },
+        )?;
         if saved.fixed_art_hash() != view.rules_owner.fixed_art().content_hash() {
             return Err(PreparedLoadError::Resources(
                 "fixed ARTMD differs from the saved game".into(),
@@ -188,7 +197,7 @@ impl PreparedSavedGame {
             SnapshotProcessState::Cold(view.frontend_main),
             SnapshotProcessState::Live,
         );
-        let world = PreparedLoad::prepare_snapshot(
+        let mut world = PreparedLoad::prepare_snapshot(
             snapshot,
             process,
             rules,
@@ -223,6 +232,14 @@ impl PreparedSavedGame {
             theater.rmg_tiles.water_set,
         );
         let local_view = PreparedSavedLocalView::new(saved_view, &world.simulation, rules)?;
+        crate::app::presentation::lighting::validate_saved_lighting(&lighting, &world.simulation)?;
+        //685120 ->53AB50 invokes the canonical core selector after restore.
+        // Its local Cell/Convert refresh is consumed by the staged grid; no
+        // outgoing world or process palette is mutated during preparation.
+        world.simulation.reinitialize_lighting_after_user_load();
+        let scheme_normal_rgb = view
+            .lighting
+            .normal_scheme_for_user_load(view.current_simulation, &theater_name);
         Ok(PreparedSavedResources {
             world,
             resources,
@@ -230,6 +247,8 @@ impl PreparedSavedGame {
             map,
             local_view,
             power_bar_anim,
+            lighting,
+            scheme_normal_rgb,
             tile_cache,
             theater,
             elapsed_clock,
@@ -251,6 +270,8 @@ impl PreparedSavedGame {
             processed_rules,
             map,
             theater,
+            lighting,
+            scheme_normal_rgb,
             ..
         } = &candidate;
         let rules = &resources.rules;
@@ -302,7 +323,7 @@ impl PreparedSavedGame {
             Some(&theater.unit_palette),
             Some(&theater.tiberium_palette),
         );
-        let presentation = init_helpers::finish_presentation_assets(
+        let mut presentation = init_helpers::finish_presentation_assets(
             gpu,
             batch,
             assets,
@@ -318,6 +339,9 @@ impl PreparedSavedGame {
             csf,
         )
         .map_err(|error| PreparedLoadError::Resources(error.to_string()))?;
+        presentation
+            .lighting_grid
+            .stage_saved_local_lighting(lighting, *scheme_normal_rgb);
         Ok(Self {
             candidate,
             presentation,

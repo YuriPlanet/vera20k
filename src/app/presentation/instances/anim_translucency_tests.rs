@@ -100,6 +100,17 @@ fn emit_with_house_colors(
     atlas: &SpriteAtlas,
     house_colors: &HouseColorMap,
 ) -> Vec<PlannedObjectInstance> {
+    emit_with_lighting(sim, rules, id, atlas, house_colors, &CellLightGrid::new())
+}
+
+fn emit_with_lighting(
+    sim: &Simulation,
+    rules: &RuleSet,
+    id: u64,
+    atlas: &SpriteAtlas,
+    house_colors: &HouseColorMap,
+    lighting: &CellLightGrid,
+) -> Vec<PlannedObjectInstance> {
     // Meteor's real constructor changes its launch coordinate. Follow the
     // resulting location with the camera; do not overwrite the instance.
     let coord = sim.anim_absolute_coord(id).unwrap();
@@ -112,7 +123,6 @@ fn emit_with_house_colors(
     }
     detail.throttle_tail(0);
     let detail = RefCell::new(detail);
-    let lighting = CellLightGrid::new();
     let hidden = Default::default();
     let order = NativeDisplayOrder::from_display(sim.display_layers());
     let before_hash = sim.state_hash();
@@ -131,7 +141,7 @@ fn emit_with_house_colors(
             atlas: Some(atlas),
             detail: &detail,
             detail_level: 2,
-            lighting: &lighting,
+            lighting,
             house_colors,
             hidden_super_anims: &hidden,
             show_hidden: false,
@@ -145,6 +155,183 @@ fn emit_with_house_colors(
     assert_eq!(sim.state_hash(), before_hash);
     assert_eq!(sim.rng_state(), before_rng);
     out
+}
+
+#[test]
+fn retained_squid_light_follows_event_order_and_keeps_live_palette_colours() {
+    use crate::app::presentation::lighting::MatchLighting;
+    use crate::map::lighting::{LightingConfig, radiation_point_light};
+    use crate::sim::light_sources::{LightingEvent, PaletteUpdate};
+    // This is an asset-free transport history, using the actual free-Anim
+    // emitter. The stock attack/owner gate is exercised in squid_grapple_tests.
+    let (mut sim, rules, id, global_atlas) = fixture("SQDG", "UseCellDrawer=yes\n", 0x600, 0);
+    let terrain = crate::map::resolved_terrain::test_flat_ground_grid(128);
+    sim.install_resolved_terrain_for_new_map(terrain);
+    let house = sim.intern("RemapOwner");
+    sim.anims_mut_for_test().set_anim_house_remap(id, house);
+    assert!(
+        !sim.anim(id).unwrap().use_cell_drawer(),
+        "instance flag is independent of type"
+    );
+    let global_key = ShpSpriteKey {
+        palette_context: ShpPaletteContext::GlobalAnim,
+        type_id: "SQDG".into(),
+        facing: 0,
+        frame: 0,
+        house_color: HouseColorIndex(0),
+    };
+    let remap_atlas = SpriteAtlas::from_test_entries(HashMap::from([(
+        ShpSpriteKey {
+            palette_context: ShpPaletteContext::SelectedScheme,
+            house_color: HouseColorIndex(3),
+            ..global_key.clone()
+        },
+        ShpSpriteEntry {
+            source_palette: 9,
+            ..*global_atlas.get(&global_key).unwrap()
+        },
+    )]));
+    let colors = HashMap::from([("RemapOwner".into(), HouseColorIndex(3))]);
+    let cell = (64, 64);
+    let mut high = MatchLighting::default();
+    let mut low = MatchLighting::default();
+    for (owner, detail) in [(&mut high, 2), (&mut low, 0)] {
+        owner.install(
+            CellLightGrid::new(),
+            LightingConfig::default(),
+            detail,
+            Some((sim.resolved_terrain().unwrap(), &sim)),
+        );
+    }
+    let lamp = radiation_point_light(cell.0, cell.1, 512, 200, [0; 3]);
+    let capture = LightingEvent::RetainAnimTop { anim: id, cell };
+    let events = [
+        LightingEvent::Building {
+            id: 42,
+            source: Some(lamp),
+        },
+        capture.clone(),
+    ];
+    let before = (sim.state_hash(), sim.rng_state());
+    high.apply_events(sim.resolved_terrain().unwrap(), &events);
+    low.apply_events(sim.resolved_terrain().unwrap(), &events);
+    assert_eq!(high.grid().retained_anim_top(id), Some(1150));
+    assert_eq!(low.grid().retained_anim_top(id), Some(950));
+    assert_eq!(
+        (sim.state_hash(), sim.rng_state()),
+        before,
+        "local detail cannot affect synchronization"
+    );
+
+    // A raw height store changes later samples, and source removal must finish
+    // before the global retained refresh. No operation recaptures an owner.
+    sim.resolved_terrain_mut_for_test()
+        .as_mut()
+        .unwrap()
+        .cell_mut_for_test(cell.0, cell.1)
+        .unwrap()
+        .level = 2;
+    let frame = sim.session().binary_frame() as i32;
+    sim.start_nuke_flash_for_test(frame);
+    sim.publish_global_lighting(PaletteUpdate::from_scenario(sim.session().lighting()));
+    let global = sim.lighting_sources().pending().last().unwrap().clone();
+    high.apply_events(
+        sim.resolved_terrain().unwrap(),
+        &[
+            LightingEvent::CellLevels {
+                cells: vec![(cell, 2)],
+            },
+            LightingEvent::Building {
+                id: 42,
+                source: None,
+            },
+            global,
+        ],
+    );
+    assert_eq!(high.grid().cell_light_at(cell).unwrap().top_scalar, 1100);
+    let drawn = emit_with_lighting(&sim, &rules, id, &remap_atlas, &colors, high.grid());
+    let body = drawn[0].pieces[0].instance;
+    assert_eq!(
+        body.palette_light,
+        crate::render::palette_light::PaletteLight::color_scheme([1750, 1500, 1250], 1150)
+    );
+    assert_eq!(body.source_palette, 9);
+    assert_eq!(body.alpha, 1.);
+    assert_eq!(body.draw_state.native_selector_bits(), 4);
+    let mut normal_rules = rules.clone();
+    normal_rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str(
+        "[SQDG]\nEnd=20\nTranslucency=50\nUseNormalLight=yes\n",
+    )));
+    let normal = emit_with_lighting(&sim, &normal_rules, id, &remap_atlas, &colors, high.grid());
+    assert_eq!(
+        normal[0].pieces[0].instance.palette_light,
+        crate::render::palette_light::PaletteLight::color_scheme([1750, 1500, 1250], 1000)
+    );
+    high.apply_events(
+        sim.resolved_terrain().unwrap(),
+        &[LightingEvent::Global {
+            state: *sim.session().lighting(),
+            cell_profile: sim.lighting_cell_profile(),
+            palette: PaletteUpdate::Normal([1200, 800, 600]),
+            constructor_rgb: sim.palette_constructor_rgb(),
+        }],
+    );
+    high.refresh(sim.resolved_terrain().unwrap(), &sim, 0);
+    assert_eq!(
+        high.grid().retained_anim_top(id),
+        Some(1150),
+        "detail refresh preserves FC"
+    );
+    let after_detail = emit_with_lighting(&sim, &rules, id, &remap_atlas, &colors, high.grid());
+    assert_eq!(
+        after_detail[0].pieces[0].instance.palette_light,
+        crate::render::palette_light::PaletteLight::color_scheme([1200, 800, 600], 1150)
+    );
+    assert_eq!(
+        high.grid()
+            .palette_rgb(high.grid().profiles().default_profile_id()),
+        [1750, 1500, 1250],
+        "Cell Convert is reconstructed independently"
+    );
+    high.apply_events(sim.resolved_terrain().unwrap(), &[capture]);
+    assert_eq!(
+        high.grid().retained_anim_top(id),
+        Some(1100),
+        "later owner assignment recaptures"
+    );
+    assert_eq!(
+        high.normal_scheme_for_user_load(None, sim.session().theater()),
+        [1200, 800, 600],
+        "same-theater menu load retains the process normal cache"
+    );
+    assert_eq!(
+        high.normal_scheme_for_user_load(Some(&sim), "different-theater"),
+        [1000; 3],
+        "Init_Theater recreates schemes on a theater change"
+    );
+    let mut restarted = high.clone();
+    restarted.install(
+        CellLightGrid::new(),
+        LightingConfig::default(),
+        0,
+        Some((sim.resolved_terrain().unwrap(), &sim)),
+    );
+    assert_eq!(restarted.grid().color_scheme_normal_rgb(), [1000; 3]);
+    assert_eq!(
+        restarted.grid().retained_anim_top(id),
+        None,
+        "fresh/restart Rules reset recreates schemes even in the same theater"
+    );
+
+    // A null instance Convert takes the ordinary current-cell branch even
+    // when the old retained copy still exists; it must not activate FC alone.
+    sim.anims_mut_for_test()
+        .set_cell_anim_draw_authority(id, None, 0);
+    let plain = emit_with_lighting(&sim, &rules, id, &global_atlas, &colors, high.grid());
+    assert_eq!(
+        plain[0].pieces[0].instance.palette_light,
+        crate::render::palette_light::PaletteLight::plain(53, 1100)
+    );
 }
 
 #[test]

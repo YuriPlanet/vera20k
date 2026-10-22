@@ -300,6 +300,15 @@ impl Simulation {
         else {
             return;
         };
+        //629DAC retains GetOccupiedCell's result before SetOwner/remap.
+        // The admitted real-cell path uses the victim's stored physical XY.
+        let occupied_cell = self.substrate.entities.get(victim).and_then(|entity| {
+            let cell = (entity.position.rx(), entity.position.ry());
+            self.resolved_terrain
+                .as_ref()
+                .and_then(|terrain| terrain.cell(cell.0, cell.1))
+                .map(|_| cell)
+        });
         if self
             .anim(anim)
             .is_some_and(|anim| anim.owner_entity() != Some(victim))
@@ -310,10 +319,17 @@ impl Simulation {
                     .anims
                     .set_anim_house_remap(anim, source.owner());
             }
-            //629DE5 copies Cell+10A light into Anim+FC, not ZAdjust+100.
-            // Preserve the constructor's depth. Retaining that copied light
-            // needs the current Cell light authority, which is not yet part
-            // of Simulation; a normal-profile estimate is not that history.
+            //629DDE/629DE5 copies occupied Cell+10A into Anim+FC. This is a
+            // local drawing value (484180 admits lights by graphics detail),
+            // so preserve its position in the existing lighting timeline,
+            // rather than importing a client option into Simulation's hash.
+            if let Some(cell) = occupied_cell {
+                self.lighting_sources.publish(
+                    crate::sim::light_sources::LightingEvent::RetainAnimTop { anim, cell },
+                );
+            }
+            // Keep constructor/type depth+100 independent. Missing real-cell
+            // authority is not replaced by an estimate of the process Dummy.
         }
     }
 

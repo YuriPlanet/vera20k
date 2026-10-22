@@ -12,7 +12,7 @@
 //! ## Dependency rules
 //! - Part of map/ — depends on rules/ini_parser for IniFile, map/entities for MapEntity.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[cfg(any(test, feature = "test-support"))]
 use crate::map::entities::{EntityCategory, MapEntity};
@@ -243,6 +243,16 @@ impl Default for LightProfileCache {
 }
 
 impl LightProfile {
+    fn neutral_scheme() -> Self {
+        Self {
+            id: LightProfileId(0),
+            rgb_key: [1000; 3],
+            normal_rgb_key: [1000; 3],
+            alternate_rgb_key: [1000; 3],
+            use_alternate: false,
+        }
+    }
+
     fn palette_rgb(&self) -> LightRgbKey {
         if self.use_alternate {
             self.alternate_rgb_key
@@ -355,12 +365,42 @@ impl CellLight {
     }
 }
 
+/// Coordinates of578350/578290's actual Cell-lighting traversal. Keep the
+/// shared native cursor in its core owner; app drawing needs only coordinates.
+pub fn native_lighting_cells(
+    terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
+    size_width: i32,
+) -> impl Iterator<Item = (u16, u16)> {
+    terrain
+        .native_cell_iterator(size_width)
+        .map(|cell| (cell.rx, cell.ry))
+}
+
 /// Map-level cell lighting container with compatibility tint accessors.
 #[derive(Debug, Clone)]
 pub struct CellLightGrid {
     cells: HashMap<(u16, u16), CellLight>,
     profiles: LightProfileCache,
     detail_level: u32,
+    /// ColorScheme Converts survive545000's separate Cell-Convert cache
+    /// destruction. Their mutable normal/alternate colours stay independent.
+    scheme_profile: LightProfile,
+    /// Anim+FC is a local drawing value: source detail admission can differ
+    /// between clients. Keep it outside Simulation and its sync hash.
+    retained_anim_top: BTreeMap<u64, i32>,
+    /// Detached user-load staging also carries the process ColorScheme normal
+    /// cache. It is deliberately absent from the saved file's value history.
+    restore_history: Option<LightRgbKey>,
+}
+
+/// Native Cell+104/+108/+10A and Anim+FC values in VERA's saved local view.
+/// This is value authority, independent of palette pointers or renderer state.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SavedCellLighting {
+    /// Allocation coordinate, retained104 normalization, signed108 additive,
+    /// and10A top. Post-load refresh replaces top only for iterator members.
+    pub cells: Vec<((u16, u16), i32, i32, i32)>,
+    pub anims: Vec<(u64, i32)>,
 }
 
 impl CellLightGrid {
@@ -369,6 +409,9 @@ impl CellLightGrid {
             cells: HashMap::new(),
             profiles: LightProfileCache::new(),
             detail_level: 2,
+            scheme_profile: LightProfile::neutral_scheme(),
+            retained_anim_top: BTreeMap::new(),
+            restore_history: None,
         }
     }
 
@@ -378,6 +421,9 @@ impl CellLightGrid {
             cells: HashMap::with_capacity(capacity),
             profiles: LightProfileCache::new(),
             detail_level: 2,
+            scheme_profile: LightProfile::neutral_scheme(),
+            retained_anim_top: BTreeMap::new(),
+            restore_history: None,
         }
     }
 
@@ -386,7 +432,78 @@ impl CellLightGrid {
             cells: HashMap::new(),
             profiles: LightProfileCache::new(),
             detail_level: detail_level.min(2),
+            scheme_profile: LightProfile::neutral_scheme(),
+            retained_anim_top: BTreeMap::new(),
+            restore_history: None,
         }
+    }
+
+    /// Parasite629DDE/629DE5 reads the occupied cell only when the anim's
+    /// owner changes. A later light refresh must not overwrite this copy.
+    pub fn retain_anim_top(&mut self, id: u64, cell: (u16, u16)) {
+        if let Some(light) = self.cells.get(&cell) {
+            self.retained_anim_top.insert(id, light.top_scalar);
+        }
+    }
+
+    pub fn retained_anim_top(&self, id: u64) -> Option<i32> {
+        self.retained_anim_top.get(&id).copied()
+    }
+
+    pub fn retire_anim_lighting(&mut self, mut exists: impl FnMut(u64) -> bool) {
+        self.retained_anim_top.retain(|id, _| exists(*id));
+    }
+
+    pub fn saved_local_lighting(&self) -> SavedCellLighting {
+        let mut cells: Vec<_> = self
+            .cells()
+            .map(|(cell, light)| {
+                (
+                    cell,
+                    light.scale16,
+                    i32::from(light.additive_intensity as i16),
+                    light.top_scalar,
+                )
+            })
+            .collect();
+        cells.sort_by_key(|row| row.0);
+        SavedCellLighting {
+            cells,
+            anims: self
+                .retained_anim_top
+                .iter()
+                .map(|(&id, &top)| (id, top))
+                .collect(),
+        }
+    }
+
+    /// The app validates allocation and IDs before staging this on its
+    /// detached load candidate. Ordinary palette construction stays live.
+    pub fn stage_saved_local_lighting(
+        &mut self,
+        saved: &SavedCellLighting,
+        process_normal_rgb: LightRgbKey,
+    ) {
+        self.apply_saved_local_lighting(saved);
+        self.restore_history = Some(process_normal_rgb);
+    }
+
+    pub fn take_saved_local_lighting(&mut self) -> Option<(SavedCellLighting, LightRgbKey)> {
+        self.restore_history
+            .take()
+            .map(|normal| (self.saved_local_lighting(), normal))
+    }
+
+    pub fn apply_saved_local_lighting(&mut self, saved: &SavedCellLighting) {
+        for &(cell, scale16, additive, top) in &saved.cells {
+            if let Some(light) = self.cells.get_mut(&cell) {
+                light.scale16 = scale16;
+                light.additive_intensity = additive;
+                light.raw_additive_intensity = additive;
+                light.top_scalar = top;
+            }
+        }
+        self.retained_anim_top = saved.anims.iter().copied().collect();
     }
 
     pub fn profiles(&self) -> &LightProfileCache {
@@ -396,7 +513,12 @@ impl CellLightGrid {
     /// LightConvert556090 retains normal RGB/row identity while selecting
     /// Ion alternate table RGB; neither normalization nor Cell104 changes.
     pub fn set_alternate_rgb(&mut self, rgb: Option<LightRgbKey>) {
-        for profile in &mut self.profiles.profiles {
+        for profile in self
+            .profiles
+            .profiles
+            .iter_mut()
+            .chain(std::iter::once(&mut self.scheme_profile))
+        {
             if let Some(rgb) = rgb {
                 profile.alternate_rgb_key = rgb.map(|v| v.clamp(0, 2000));
             }
@@ -420,7 +542,12 @@ impl CellLightGrid {
     /// compares the mutable normal cache, so rebuild that derived index.
     pub fn retint_normal_rgb(&mut self, rgb: LightRgbKey) {
         let rgb = rgb.map(|v| v.clamp(0, 2000));
-        for profile in &mut self.profiles.profiles {
+        for profile in self
+            .profiles
+            .profiles
+            .iter_mut()
+            .chain(std::iter::once(&mut self.scheme_profile))
+        {
             profile.normal_rgb_key = rgb;
             profile.use_alternate = false;
         }
@@ -442,6 +569,37 @@ impl CellLightGrid {
         self.profiles
             .get(id)
             .map_or([1000; 3], LightProfile::palette_rgb)
+    }
+
+    pub fn color_scheme_rgb(&self) -> LightRgbKey {
+        self.scheme_profile.palette_rgb()
+    }
+
+    pub fn color_scheme_normal_rgb(&self) -> LightRgbKey {
+        self.scheme_profile.normal_rgb_key
+    }
+
+    /// Same-theater LoadContent leaves this process cache alive. Post-load
+    /// 685120 ->53AB50 ->53C280 selects its mode separately; no saved mode
+    /// bit or loaded Scenario normal-RGB field overwrites this cache.
+    pub fn restore_color_scheme_normal_rgb(&mut self, rgb: LightRgbKey) {
+        self.scheme_profile.normal_rgb_key = rgb;
+    }
+
+    /// Display4AE450 ->545000 resets only ISO Cell Converts, then null-
+    /// Convert483E30 synchronously rebuilds iterated cells. Existing house
+    /// schemes and Anim+FC survive; new Cell Converts use555DA0's current
+    /// constructor profile rather than a prior global normal-cache retint.
+    pub fn reset_cell_converts(&mut self, constructor_rgb: Option<LightRgbKey>) {
+        self.profiles = LightProfileCache::new();
+        self.set_constructor_alternate_rgb(constructor_rgb);
+        if let Some(rgb) = self.profiles.constructor_alternate_rgb {
+            self.profiles.profiles[0].alternate_rgb_key = rgb;
+            self.profiles.profiles[0].use_alternate = true;
+        }
+        for light in self.cells.values_mut() {
+            light.profile_id = LightProfileId(0);
+        }
     }
 
     pub fn palette_rows(&self, id: LightProfileId) -> u32 {

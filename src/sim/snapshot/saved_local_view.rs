@@ -43,6 +43,9 @@ pub struct SavedLocalView {
     /// The save coordinator attaches the Power owner's projection after the
     /// input owner supplies its own facts. App loads require this payload.
     power_bar: Option<SavedPowerBar>,
+    /// Graphics-detail-dependent Cell/Anim drawing values. They are saved
+    /// beside the local view, outside Simulation's replay/sync hash.
+    lighting: Option<crate::map::lighting::SavedCellLighting>,
 }
 
 /// The Display's armed cursor modes. MouseLoad5BDF70 reads the whole Display
@@ -87,6 +90,8 @@ pub enum SavedLocalViewError {
     MissingPowerBar,
     #[error("saved Power bar has invalid {field}")]
     InvalidPowerState { field: &'static str },
+    #[error("saved local lighting has invalid {field}")]
+    InvalidLighting { field: &'static str },
 }
 
 impl SavedLocalView {
@@ -106,6 +111,7 @@ impl SavedLocalView {
             follow_target,
             modes,
             power_bar: None,
+            lighting: None,
         };
         saved.validate_structure()?;
         Ok(saved)
@@ -160,6 +166,14 @@ impl SavedLocalView {
 
     pub fn take_power_bar(&mut self) -> Option<SavedPowerBar> {
         self.power_bar.take()
+    }
+
+    pub fn set_lighting(&mut self, lighting: crate::map::lighting::SavedCellLighting) {
+        self.lighting = Some(lighting);
+    }
+
+    pub fn take_lighting(&mut self) -> Option<crate::map::lighting::SavedCellLighting> {
+        self.lighting.take()
     }
 
     pub fn into_local_input(

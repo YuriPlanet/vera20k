@@ -42,6 +42,16 @@ pub enum LightingEvent {
         center: (u16, u16),
         source: Option<PointLight>,
     },
+    /// Raw Cell+11B stores change future sampling, without refreshing +10A.
+    CellLevels {
+        cells: Vec<((u16, u16), u8)>,
+    },
+    /// Parasite629DDE/629DE5, after owner/remap assignment. Resolve this at
+    /// its ordered position, before any later source/global light operation.
+    RetainAnimTop {
+        anim: u64,
+        cell: (u16, u16),
+    },
     /// A global refresh (`ScenarioClass::RecalcLighting @ 0x0053AD00`, the
     /// ambient fade's `UpdateCellLighting @ 0x004AE4C0`): the scenario's
     /// lighting, and the profile whose Ground/Level each cell's refresh reads
@@ -86,6 +96,13 @@ impl LightingSources {
         self.pending.push(event);
     }
 
+    /// Test clients may supply an ordered producer event without exposing a
+    /// general production mutation across the core/client crate boundary.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn publish_for_test(&mut self, event: LightingEvent) {
+        self.publish(event);
+    }
+
     /// Drops the events no consumer took.
     pub fn discard_pending(&mut self) {
         self.pending.clear();
@@ -124,6 +141,43 @@ impl LightingSources {
 }
 
 impl Simulation {
+    /// Saved local-light ID admission for the Anim type captured by629DE5.
+    /// Keep the canonical type name and actual instance remap in core; this
+    /// read-only query does not substitute for the producer's Cell/owner gates.
+    pub fn is_retained_light_anim(&self, id: crate::sim::anim_class::AnimId) -> bool {
+        self.anim(id).is_some_and(|anim| {
+            self.interner.resolve(anim.type_id())
+                == crate::rules::effect_asset_catalog::SQUID_GRAPPLE_ANIM
+                && anim.remap().is_some()
+        })
+    }
+
+    /// Client lighting regressions enter the existing native flash-state
+    /// operation without exposing its production state mutator generally.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn start_nuke_flash_for_test(&mut self, frame: i32) {
+        self.session.lighting_mut().start_nuke_flash(frame);
+    }
+
+    pub(crate) fn publish_cell_lighting_levels(
+        &mut self,
+        cells: impl IntoIterator<Item = (u16, u16)>,
+    ) {
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return;
+        };
+        let cells = cells
+            .into_iter()
+            .filter_map(|coord| {
+                terrain
+                    .cell(coord.0, coord.1)
+                    .map(|cell| (coord, cell.level))
+            })
+            .collect();
+        self.lighting_sources
+            .publish(LightingEvent::CellLevels { cells });
+    }
+
     /// Preserve the existing eager restore projection while resetting the
     /// outgoing timeline. Native lazy post-load reconstruction remains open.
     /// VERA-only: the light cache, rebuilt from each alive (`+0x90`), unlimboed
@@ -288,5 +342,14 @@ impl Simulation {
         };
         self.session.lighting_mut().select(profile);
         self.publish_global_lighting(PaletteUpdate::from_scenario(&self.session.lighting()));
+    }
+
+    /// Successful user-load685120 ->53AB50 reselects the target/palette from
+    /// the loaded effect globals, rather than trusting the saved selection.
+    /// The detached app load consumes its one refresh during installation.
+    pub fn reinitialize_lighting_after_user_load(&mut self) {
+        debug_assert!(self.lighting_sources.pending().is_empty());
+        self.update_lighting();
+        self.lighting_sources.discard_pending();
     }
 }
