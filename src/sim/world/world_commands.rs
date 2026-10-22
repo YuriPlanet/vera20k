@@ -1836,13 +1836,30 @@ impl Simulation {
                 if !self.houses.contains_key(&owner) {
                     return false;
                 }
-                // `0x004C6CF0`/`0x004C6D4D`: a null, dead (`+0x90`) or limboed
-                // (`+0x81`) target is dropped before GoOnline/GoOffline.
-                if !self
-                    .substrate
-                    .entities
-                    .get(*entity_id)
-                    .is_some_and(|e| e.lifecycle.object_alive() && !e.lifecycle.in_limbo())
+                // `0x004C6D09`/`0x004C6D17` (and `0x004C6D68`/`0x004C6D76` on the
+                // 0x02 branch): a null target, one whose ObjectClass IsAlive
+                // (`+0x90`) is clear, or one in Limbo (`+0x81`) is dropped
+                // before GoOnline/GoOffline. `+0x81` is Limbo, not a busy flag:
+                // `0x005438DB` sets it while clearing `+0x80` and detaching the
+                // object's cells (Limbo), `0x00543805` clears it (Unlimbo), and
+                // the create path at `0x0044EC68`/`0x0044ECC4` brackets object
+                // construction with a save/set/restore of the same byte.
+                let Some(entity) = self.substrate.entities.get(*entity_id) else {
+                    return false;
+                };
+                if !entity.lifecycle.object_alive() || entity.lifecycle.in_limbo() {
+                    return false;
+                }
+                let type_ref = entity.type_ref();
+                // The branch's last gate reads `[target+0x520]+0x16C0`, and
+                // `+0x520` is `BuildingClass::pType` (docs/ghidra-workflow.md):
+                // the target TYPE's `FirestormWall=` byte
+                // (`ObjectType.firestorm_wall`). A Firestorm Wall building is
+                // driven by the firestorm logic, not an On/Off Line event, so
+                // the record is dropped. Stock rules leave the key unset.
+                if self
+                    .object_type(type_ref, rules)
+                    .is_some_and(|object| object.firestorm_wall)
                 {
                     return false;
                 }

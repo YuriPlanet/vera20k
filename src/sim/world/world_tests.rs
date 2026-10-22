@@ -314,6 +314,45 @@ fn building_on_off_line_opcodes_decode_direction_and_target() {
     assert!(!sim.substrate.entities.get(7).unwrap().building_online());
 }
 
+/// Native's last 0x01/0x02 gate (`0x004C6D2D`/`0x004C6D8A`) reads
+/// `[target+0x520]+0x16C0`, and `+0x520` is `BuildingClass::pType`
+/// (docs/ghidra-workflow.md): the target TYPE's `FirestormWall=` byte
+/// (`ObjectType.firestorm_wall`). A Firestorm Wall building is driven by the
+/// firestorm logic, so the record is dropped before GoOnline/GoOffline; stock
+/// rules leave the key unset and the gate is open.
+#[test]
+fn building_on_off_line_dropped_for_a_firestorm_wall_type() {
+    let (mut sim, owner) = game_speed_command_sim();
+    let mut building = GameEntity::test_default(7, "GAPOWR", "Local", 30, 40);
+    building.set_owner_for_test(owner);
+    building.set_type_ref_for_test(sim.interner.intern("GAPOWR"));
+    building.set_category_for_test(EntityCategory::Structure);
+    building.lifecycle.set_object_alive_for_test(true);
+    building.lifecycle.set_in_limbo_for_test(false);
+    sim.substrate.entities.insert(building);
+
+    let off = Command::SetBuildingOnLine {
+        entity_id: 7,
+        on: false,
+    };
+
+    // A `FirestormWall=yes` type is dropped; the online latch stays set.
+    let firestorm = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n1=GAPOWR\n[GAPOWR]\nPower=-20\nFirestormWall=yes\n",
+    ))
+    .unwrap();
+    assert!(!sim.apply_command("Local", &off, Some(&firestorm)));
+    assert!(sim.substrate.entities.get(7).unwrap().building_online());
+
+    // The stock (keyless) type passes the gate and the latch clears.
+    let stock = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n1=GAPOWR\n[GAPOWR]\nPower=-20\n",
+    ))
+    .unwrap();
+    assert!(sim.apply_command("Local", &off, Some(&stock)));
+    assert!(!sim.substrate.entities.get(7).unwrap().building_online());
+}
+
 /// A launch hashes every frame and a test world none until the caller asks.
 /// Then only a frame whose tick is a multiple of the interval hashes, and its
 /// hash is the state's.

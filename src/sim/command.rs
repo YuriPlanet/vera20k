@@ -1149,7 +1149,9 @@ pub enum Command {
     /// `EventClass::Execute` branches `0x004C6CF0`/`0x004C6D4D` -> GoOnline
     /// `0x00452260` / GoOffline `0x00452360`). The direction rides `on`.
     /// Native admits only a live (`+0x90`), non-limbo (`+0x81`) object whose
-    /// owner's `+0x16C0` byte is clear; that House byte is not ported.
+    /// TYPE's `+0x16C0` byte is clear: the branch reads `[target+0x520]+0x16C0`
+    /// (`+0x520` is `BuildingClass::pType`, so the byte is the
+    /// `BuildingTypeClass+0x16C0` `FirestormWall=` flag, `ObjectType.firestorm_wall`).
     /// Appended to preserve existing serialized variant indices.
     SetBuildingOnLine { entity_id: u64, on: bool },
     /// ARCHIVE (native opcode 0x1E) naming an object: a non-factory
