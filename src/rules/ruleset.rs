@@ -6330,16 +6330,22 @@ impl RuleSet {
             .map(|(name, terrain)| (name.to_ascii_uppercase(), terrain.armor_id()))
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
-        // TerrainType71DEA0 retains its IsVeinhole post-read writes across
-        // Process calls. Equal current source text can admit different Logic
-        // members or targets, so the effective fields also identify rules.
-        b"terrain-logic-and-targeting-v1".hash(&mut hasher);
+        // TerrainTypeReadINI71DEA0 retains post-read writes and ReadInt
+        // defaults across Process calls. Equal current text can admit
+        // different Logic members, targets or occupation, so identify the
+        // effective fields as well as the current source layers.
+        b"terrain-logic-targeting-and-occupation-v2".hash(&mut hasher);
         self.terrain_object_types
             .iter()
             .map(|(name, terrain)| {
                 (
                     name.to_ascii_uppercase(),
-                    (terrain.is_logic(), terrain.legal_target),
+                    (
+                        terrain.is_logic(),
+                        terrain.legal_target,
+                        terrain.raw_occupation_bits(false),
+                        terrain.raw_occupation_bits(true),
+                    ),
                 )
             })
             .collect::<BTreeMap<_, _>>()

@@ -70,10 +70,10 @@ pub struct TerrainObjectType {
     pub water_bound: bool,
     /// `IsVeinhole=`; when true, gamemd also forces `LegalTarget=true`.
     pub is_veinhole: bool,
-    /// `TemperateOccupationBits=`.
-    pub temperate_occupation_bits: u8,
-    /// `SnowOccupationBits=`.
-    pub snow_occupation_bits: u8,
+    /// Raw `TemperateOccupationBits=` ReadInt, including signed/high bits.
+    temperate_occupation_bits: i32,
+    /// Raw `SnowOccupationBits=` ReadInt, including signed/high bits.
+    snow_occupation_bits: i32,
     /// Art `Foundation=`. Defaults to 1x1 until art.ini merge patches it.
     pub foundation: String,
 }
@@ -136,9 +136,11 @@ impl TerrainObjectType {
             radar_color_read_passes: Vec::new(),
             water_bound: section.read_bool("WaterBound", false),
             is_veinhole: read_state.is_veinhole,
-            temperate_occupation_bits: section.read_int("TemperateOccupationBits", 7).clamp(0, 7)
-                as u8,
-            snow_occupation_bits: section.read_int("SnowOccupationBits", 7).clamp(0, 7) as u8,
+            // TerrainTypeCtor71DAB7/71DABD starts both dwords at7.
+            // TerrainTypeReadINI71E079..71E0A0 stores ReadInt directly,
+            // without clamps; the shared reader folds prior rule passes.
+            temperate_occupation_bits: section.read_int("TemperateOccupationBits", 7),
+            snow_occupation_bits: section.read_int("SnowOccupationBits", 7),
             foundation: foundation::foundation_name("1x1").to_string(),
         }
     }
@@ -149,6 +151,14 @@ impl TerrainObjectType {
 
     pub fn armor_id(&self) -> crate::rules::armor::ArmorId {
         self.armor_id
+    }
+
+    pub fn raw_occupation_bits(&self, snow_theater: bool) -> i32 {
+        if snow_theater {
+            self.snow_occupation_bits
+        } else {
+            self.temperate_occupation_bits
+        }
     }
 
     pub(crate) fn is_logic(&self) -> bool {
@@ -386,6 +396,36 @@ mod tests {
     }
 
     #[test]
+    fn occupation_reads_retain_signed_values_across_rule_passes() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let mut layers = RulesLayerStack::new((*battle.authored_rules).clone());
+        layers.push(
+            RulesLayerKind::GameMode,
+            IniFile::from_str("[TREE01]\nTemperateOccupationBits=8\nSnowOccupationBits=-1\n"),
+        );
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str(
+                "[TREE01]\nTemperateOccupationBits=$invalid\nSnowOccupationBits=$invalid\n",
+            ),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).unwrap();
+        let tree = rules
+            .terrain_object_type_case_insensitive("TREE01")
+            .unwrap();
+        // TerrainTypeReadINI71E079..71E0A0 stores each ReadInt over its
+        // current dword, without clamping. ReadInt527856..527874 leaves
+        // that current value when a later hexadecimal scan fails.
+        assert_eq!(tree.raw_occupation_bits(false), 8);
+        assert_eq!(tree.raw_occupation_bits(true), -1);
+    }
+
+    #[test]
     fn terrain_veinhole_logic_disable_survives_later_rule_passes() {
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
         use crate::rules::ruleset::RuleSet;
@@ -424,6 +464,55 @@ mod tests {
             false,
         );
         assert!(sim.live_object_order_snapshot().is_empty());
+    }
+
+    #[test]
+    fn retained_occupation_defaults_change_configuration_identity() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let continued = |initial: i32| {
+            let mut layers = RulesLayerStack::new((*battle.authored_rules).clone());
+            layers.push(
+                RulesLayerKind::GameMode,
+                IniFile::from_str(&format!("[TREE01]\nTemperateOccupationBits={initial}\n")),
+            );
+            let first = layers.process_with_fixed_art(&battle.fixed_art).unwrap();
+            let (_, trace) = first.into_ini_and_native_type_construction_trace();
+            let next = RulesLayerStack::new(IniFile::from_str(
+                "[TREE01]\nTemperateOccupationBits=$invalid\n",
+            ))
+            .process_with_fixed_art_and_registry_state(
+                &battle.fixed_art,
+                trace.into_registry_state_discarding_events(),
+            )
+            .unwrap();
+            RuleSet::from_processed_rules(&next).unwrap()
+        };
+        let zero_mask = continued(8);
+        let one_mask = continued(9);
+        assert_eq!(zero_mask.source_ini_hash(), one_mask.source_ini_hash());
+        assert_eq!(
+            zero_mask
+                .terrain_object_type_case_insensitive("TREE01")
+                .unwrap()
+                .raw_occupation_bits(false),
+            8
+        );
+        assert_eq!(
+            one_mask
+                .terrain_object_type_case_insensitive("TREE01")
+                .unwrap()
+                .raw_occupation_bits(false),
+            9
+        );
+        assert_ne!(
+            zero_mask.simulation_config_hash(),
+            one_mask.simulation_config_hash()
+        );
     }
 
     #[test]

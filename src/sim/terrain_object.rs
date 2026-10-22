@@ -50,7 +50,9 @@ pub struct TerrainObjectState {
     world_z_leptons: i32,
     health: i32,
     max_health: i32,
-    occupation_bits: u8,
+    /// Immutable current-theater type projection. Keep the full dword for
+    /// CellClass::RecalcZoneType483C80; Mark/Unmark use only bits1/2/4.
+    occupation_bits: i32,
     lifecycle: TerrainObjectLifecycle,
 }
 
@@ -95,7 +97,7 @@ impl TerrainObjectState {
             world_z_leptons,
             health: terrain_type.strength,
             max_health: terrain_type.strength,
-            occupation_bits: occupation_bits_for(terrain_type, snow_theater),
+            occupation_bits: terrain_type.raw_occupation_bits(snow_theater),
             lifecycle: TerrainObjectLifecycle::Live,
         }
     }
@@ -230,8 +232,8 @@ impl TerrainObjectState {
         self.max_health
     }
 
-    /// The type's occupation bits for the theater (`1|2|4`).
-    pub const fn occupation_bits(&self) -> u8 {
+    /// The type's full signed occupation value for the theater.
+    pub const fn occupation_bits(&self) -> i32 {
         self.occupation_bits
     }
 
@@ -257,7 +259,7 @@ impl TerrainObjectState {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_occupation_bits_for_test(&mut self, occupation_bits: u8) {
-        self.occupation_bits = occupation_bits;
+        self.occupation_bits = i32::from(occupation_bits);
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -743,24 +745,17 @@ impl TerrainAreaState {
     }
 }
 
-pub fn occupation_bits_for(terrain_type: &TerrainObjectType, snow_theater: bool) -> u8 {
-    (if snow_theater {
-        terrain_type.snow_occupation_bits
-    } else {
-        terrain_type.temperate_occupation_bits
-    }) & 0x07
-}
-
-/// Terrain-object INI occupation bits (`1|2|4`) shifted into the cell
-/// occupation plane (`0x04|0x08|0x10`).
-pub(crate) fn terrain_raw_occupation_mask(source_mask: u8) -> u8 {
-    (source_mask & 0x07) << 2
+/// TerrainClass::Mark_Occupation71C110 / Unmark_Occupation71C070,
+/// original instructions: TEST BL,1/2/4 maps only those bits from the raw
+/// signed INI dword into Cell+124 (`0x04|0x08|0x10`), without clamping.
+pub(crate) fn terrain_raw_occupation_mask(source_mask: i32) -> u8 {
+    ((source_mask & 0x07) as u8) << 2
 }
 
 pub(crate) fn mark_terrain_raw_occupation(
     raw_occupation: &mut RawCellOccupationGrid,
     cell: (u16, u16),
-    source_mask: u8,
+    source_mask: i32,
 ) {
     raw_occupation.mark_ground(cell.0, cell.1, terrain_raw_occupation_mask(source_mask));
 }
@@ -768,7 +763,7 @@ pub(crate) fn mark_terrain_raw_occupation(
 fn unmark_terrain_raw_occupation(
     raw_occupation: &mut RawCellOccupationGrid,
     cell: (u16, u16),
-    source_mask: u8,
+    source_mask: i32,
 ) {
     raw_occupation.clear_ground(cell.0, cell.1, terrain_raw_occupation_mask(source_mask));
 }

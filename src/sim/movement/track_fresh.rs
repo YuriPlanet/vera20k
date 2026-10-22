@@ -1451,6 +1451,9 @@ mod tests {
         );
         let tree = sim.terrain_objects.cell_index()[&(11, 10)];
         assert!(!sim.substrate.entities.contains(tree));
+        // ObjectClass::Unlimbo5F4FEF..5F5045 admits only spawners to
+        // Logic; an ordinary TREE01 remains indexed and displayed without it.
+        assert!(!sim.terrain_objects.objects()[&tree].in_logic_vector());
         let cell = sim
             .resolved_terrain
             .as_ref()
@@ -1555,7 +1558,7 @@ mod tests {
                     .iter()
                     .filter(|event| matches!(
                         event, crate::sim::world::LifecycleTestEvent::TerrainExpiryBoundary {
-                            stable_id, indexed: true, in_logic: true, live: true, ..
+                            stable_id, indexed: true, in_logic: false, live: true, ..
                         } if *stable_id == tree
                     ))
                     .count(),

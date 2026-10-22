@@ -1203,7 +1203,7 @@ fn tree_speed_test_cell(
     bits: u8,
 ) -> crate::map::resolved_terrain::ResolvedTerrainCell {
     crate::map::resolved_terrain::ResolvedTerrainCell {
-        terrain_object_occupation: Some(bits),
+        terrain_object_occupation: Some(i32::from(bits)),
         terrain_object_blocks: bits != 0,
         ground_walk_blocked: bits != 0,
         base_ground_walk_blocked: false,

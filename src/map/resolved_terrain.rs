@@ -111,12 +111,14 @@ pub(crate) fn overlay_reduced_zone_type(flags: Option<&OverlayTypeFlags>) -> Opt
 }
 
 /// Shared RecalcZoneType priority writer for load and runtime attribute changes.
+/// CellClass::RecalcZoneType483C80, original instructions483DFB/483E12:
+/// compare the full theater-selected type dword with7, not its low-bit mask.
 pub(crate) fn recalc_zone_type(
     outside: bool,
     overlay_zone_type: Option<u8>,
     land_type: u8,
     wheel_speed: Option<u8>,
-    terrain_object_occupation: Option<u8>,
+    terrain_object_occupation: Option<i32>,
 ) -> u8 {
     if outside {
         zone_class::OUTSIDE
@@ -249,9 +251,9 @@ pub struct ResolvedTerrainCell {
     pub canonical_ramp: Option<RampDirection>,
     pub ground_walk_blocked: bool,
     pub terrain_object_blocks: bool,
-    /// Selected current-theater occupation byte for a present terrain object.
-    /// `Some(0)` preserves presence without physical blockage.
-    pub terrain_object_occupation: Option<u8>,
+    /// Full current-theater occupation dword for a present terrain object.
+    /// Low bits1/2/4 decide blockage; only raw7 selects the WALL zone.
+    pub terrain_object_occupation: Option<i32>,
     pub overlay_blocks: bool,
     /// Explicit terminal overlay result used by RecalcZoneType. In particular,
     /// `Some(GROUND)` preserves IsRubble priority across later mutations.

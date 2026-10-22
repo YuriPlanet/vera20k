@@ -350,7 +350,7 @@ impl ResolvedTerrainGrid {
             final_cells.iter().map(|c| ((c.rx, c.ry), c)).collect();
 
         let snow_theater = map.header.theater.eq_ignore_ascii_case("SNOW");
-        let terrain_objects: HashMap<(u16, u16), u8> = projection
+        let terrain_objects: HashMap<(u16, u16), i32> = projection
             .is_eager()
             .then_some(map.terrain_objects.iter())
             .into_iter()
@@ -358,15 +358,8 @@ impl ResolvedTerrainGrid {
             .map(|obj| {
                 let occupation = terrain_object_types
                     .and_then(|types| types.get(&obj.name.to_ascii_uppercase()))
-                    .map(|terrain_type| {
-                        if snow_theater {
-                            terrain_type.snow_occupation_bits
-                        } else {
-                            terrain_type.temperate_occupation_bits
-                        }
-                    })
-                    .unwrap_or(7)
-                    & 0x07;
+                    .map(|terrain_type| terrain_type.raw_occupation_bits(snow_theater))
+                    .unwrap_or(7);
                 ((obj.rx, obj.ry), occupation)
             })
             .collect();
@@ -500,7 +493,7 @@ impl ResolvedTerrainGrid {
                 );
                 let terrain_object_occupation = terrain_objects.get(&(rx, ry)).copied();
                 let terrain_object_blocks =
-                    terrain_object_occupation.is_some_and(|occupation| occupation != 0);
+                    terrain_object_occupation.is_some_and(|occupation| occupation & 0x07 != 0);
                 let overlay_effects = classify_overlay_effects(
                     overlays_by_cell.get(&(rx, ry)),
                     overlay_registry,

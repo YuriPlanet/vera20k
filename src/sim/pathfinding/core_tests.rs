@@ -1267,7 +1267,7 @@ fn gsi_04_10_resolved_zero_occupation_is_walkable_path_input() {
 /// terrain types are `=4`, i.e. a single sub-cell bit.
 fn tree_cell(rx: u16, ry: u16, bits: u8) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
-        terrain_object_occupation: Some(bits),
+        terrain_object_occupation: Some(i32::from(bits)),
         terrain_object_blocks: bits != 0,
         // Resolved terrain folds the terrain object into ground_walk_blocked;
         // base_ground_walk_blocked is the value without it.

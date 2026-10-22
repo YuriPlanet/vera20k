@@ -1128,7 +1128,7 @@ mod tests {
                 );
                 let stable_id = sim.terrain_objects.cell_index()[&(object.rx, object.ry)];
                 let terrain = &sim.terrain_objects.objects()[&stable_id];
-                assert_eq!(terrain.occupation_bits(), source_mask);
+                assert_eq!(terrain.occupation_bits(), i32::from(source_mask));
                 assert_eq!(terrain.lifecycle(), TerrainObjectLifecycle::Live);
             }
 
@@ -1147,6 +1147,138 @@ mod tests {
                     0
                 );
             }
+        }
+    }
+
+    #[test]
+    fn retail_tree_signed_masks_survive_authored_mark_restore_and_limbo() {
+        use crate::sim::world::Simulation;
+        let assert_movement_zone = |sim: &Simulation| {
+            let zone = crate::sim::pathfinding::zone_build::movement_class_for_cell(
+                sim.resolved_terrain.as_ref().unwrap(),
+                2,
+                2,
+            );
+            // CellClass::RecalcZoneType483DFB/483E12 compares the full
+            // selected dword with exactly7, independently of occupation.
+            assert_eq!(zone, crate::map::resolved_terrain::zone_class::BUILDING);
+            use crate::rules::locomotor_type::MovementZone;
+            use crate::sim::pathfinding::passability::is_passable_for_zone;
+            assert!(is_passable_for_zone(zone, MovementZone::Infantry));
+            assert!(!is_passable_for_zone(zone, MovementZone::Destroyer));
+        };
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
+            &IniFile::from_str("[TREE01]\nTemperateOccupationBits=8\nSnowOccupationBits=-1\n"),
+        ) else {
+            return;
+        };
+        let rules = battle.rules;
+        let registry = OverlayTypeRegistry::empty();
+        let objects = crate::map::overlay::parse_terrain_objects(&IniFile::from_str(
+            "[Terrain]\n2002=TREE01\n",
+        ));
+        // Native Mark_Occupation71C17B..71C199 tests only bits1/2/4.
+        // These two authored boundaries distinguish both old clamp errors.
+        for (snow, mask, marked) in [(false, 8, 0xA3), (true, -1, 0xBF)] {
+            let template = resolved_grid(4, 4);
+            let mut sim = Simulation::new();
+            sim.session_mut_for_test().set_map_width_for_test(4);
+            sim.session_mut_for_test().set_map_height_for_test(4);
+            sim.intern_rule_type_ids(&rules);
+            sim.resolve_type_handles(&rules);
+            sim.install_resolved_terrain_for_new_map(template.clone());
+            sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(4, 4));
+            sim.native_unique_ids = Some(
+                crate::sim::native_identity::build_noncampaign_fresh_id_prefix(
+                    0, 0, 0, 0, 0, 0, 1, 1,
+                )
+                .into_cursor(),
+            );
+            sim.substrate.raw_cell_occupation.mark_ground(2, 2, 0xA3);
+            assert_eq!(
+                construct_authored_terrain_objects(&mut sim, &objects, &rules, snow, &registry)
+                    .unwrap(),
+                1
+            );
+            let id = sim.terrain_objects.cell_index()[&(2, 2)];
+            assert_eq!(sim.terrain_objects.objects()[&id].occupation_bits(), mask);
+            assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(2, 2), marked);
+            assert_eq!(
+                sim.resolved_terrain
+                    .as_ref()
+                    .unwrap()
+                    .cell(2, 2)
+                    .unwrap()
+                    .terrain_object_occupation,
+                Some(mask)
+            );
+            assert_movement_zone(&sim);
+
+            let bytes = crate::sim::snapshot::GameSnapshot::save_validated(
+                &sim,
+                1,
+                rules.simulation_config_hash(),
+                "terrain mask",
+                0,
+            );
+            let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+                .unwrap()
+                .sim;
+            restored.restore_after_snapshot_load().unwrap();
+            restored.rebuild_caches_after_load(template, Default::default(), &rules);
+            restored
+                .restore_map_authority_after_snapshot_load(&rules, &registry, None)
+                .unwrap();
+            restored.resolve_type_handles(&rules);
+            assert_eq!(
+                restored.substrate.raw_cell_occupation.ground_bits(2, 2),
+                marked
+            );
+            assert_eq!(
+                restored.terrain_objects.objects()[&id].occupation_bits(),
+                mask
+            );
+            assert_eq!(
+                restored
+                    .resolved_terrain
+                    .as_ref()
+                    .unwrap()
+                    .cell(2, 2)
+                    .unwrap()
+                    .terrain_object_occupation,
+                Some(mask)
+            );
+            assert_movement_zone(&restored);
+            // Stock HE takes the real area receiver through Terrain's lethal
+            // owner, whose Limbo clears the selected occupation bits.
+            let impact = restored.terrain_objects.objects()[&id].world_coord();
+            let warhead = rules.warhead("HE").unwrap();
+            let warhead_ref = restored.intern("HE");
+            crate::sim::combat::world_receiver::apply_area_damage(
+                &mut restored,
+                &rules,
+                Some(&registry),
+                impact,
+                10000,
+                warhead,
+                (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
+                crate::sim::world::FrameEffects::default(),
+            );
+            assert_eq!(
+                restored.substrate.raw_cell_occupation.ground_bits(2, 2),
+                0xA3
+            );
+            assert!(!restored.terrain_objects.cell_index().contains_key(&(2, 2)));
+            assert_eq!(
+                restored
+                    .resolved_terrain
+                    .as_ref()
+                    .unwrap()
+                    .cell(2, 2)
+                    .unwrap()
+                    .terrain_object_occupation,
+                None
+            );
         }
     }
 
