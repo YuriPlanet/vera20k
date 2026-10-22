@@ -322,16 +322,27 @@ fn admit_attacker_fire<'r>(
     match snap.category {
         // The table at `0x00737148`.
         EntityCategory::Unit => match code {
-            // Case 2 (`0x00736F78..0x0073701C`): a turretless vehicle
+            // Case 2 (`0x00736F78..0x0073701C`): a turret first sets its aim
+            // directly, before Facing_Update and without its +6AF gate.
+            // Homing projectiles can reach FACING while that latch is set.
+            // A turretless vehicle
             // (`UnitType+0xE11`, which ReadINI sets to !`Turret=` at
             // `0x00747759`) with no NavCom (`+0x5A4`, `0x00736FB6`) whose
             // locomotor's Is_Moving (ILocomotion+0x10, `0x00736FE1`) is false
             // turns its hull toward the target at its own `ROT=` (`0x00737004`)
             // and copies the hull's destination into the turret slot
-            // (`0x0073701C`). A pending order is neither. A turret follows its
-            // target through the turret sweep.
+            // (`0x0073701C`). A pending order is neither.
             fire_error::FireError::Facing => {
-                if snap.barrel_facing.is_none()
+                if let Some(barrel) = world
+                    .substrate
+                    .entities
+                    .get_mut(snap.stable_id)
+                    .and_then(|firer| firer.barrel_facing.as_mut())
+                {
+                    // Set_Desired(+3A0)736FAC retains ROT and +6AF. Apply it
+                    // now so the later Facing_Update samples this new arc.
+                    barrel.set(direction, binary_frame);
+                } else if snap.barrel_facing.is_none()
                     && world
                         .substrate
                         .entities

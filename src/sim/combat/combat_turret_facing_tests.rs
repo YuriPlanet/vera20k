@@ -17,6 +17,141 @@ use crate::sim::movement::turret::{body_facing_to_turret, facing_update};
 use crate::sim::power_system::PowerState;
 use crate::sim::world::Simulation;
 
+/// Unit736F78..736FAC re-aims a turret on FACING before Facing_Update,
+/// including when +6AF blocks that later routine's ordinary aiming arm.
+/// A retail IFV's homing projectile bypasses the ROTATING refusal.
+#[test]
+fn retail_ifv_retargets_its_turret_during_an_unfinished_turn() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x736f78);
+    sim.session.game_options_mut_for_test().short_game = false;
+    let ifv = sim
+        .spawn_object("FV", "Americans", 12, 12, 0, rules)
+        .unwrap();
+    let first = sim
+        .spawn_object("MTNK", "Russians", 15, 12, 0, rules)
+        .unwrap();
+    let second = sim
+        .spawn_object("MTNK", "Russians", 9, 12, 0, rules)
+        .unwrap();
+    let owner = sim.substrate.entities.get(ifv).unwrap().owner();
+    sim.refresh_object_sight(ifv, rules, 0, crate::sim::world::FrameEffects::default());
+    let actor = sim.substrate.entities.get(ifv).unwrap();
+    let obj = rules.object("FV").unwrap();
+    let weapon = super::combat_weapon::current_weapon(
+        actor,
+        obj,
+        &sim.substrate.entities,
+        rules,
+        &sim.interner,
+    )
+    .unwrap();
+    let projectile = weapon
+        .projectile
+        .as_deref()
+        .and_then(|id| rules.projectile(id))
+        .unwrap();
+    assert!(projectile.rot > 0, "the real selected IFV weapon is homing");
+
+    let advance = |sim: &mut Simulation, order: Option<Command>| {
+        let orders: Vec<_> = order
+            .into_iter()
+            .map(|payload| CommandEnvelope::new(owner, sim.session.tick() + 1, payload))
+            .collect();
+        let grid = sim.path_grid_snapshot();
+        let output = sim.advance_tick(&orders, Some(rules), grid.as_deref(), None, 67);
+        assert!(output.frame_committed, "the ordinary frame advances");
+        output
+    };
+    // Orders execute at the frame tail; the next visit starts the turn.
+    advance(
+        &mut sim,
+        Some(Command::Attack {
+            attacker_id: ifv,
+            target_id: first,
+        }),
+    );
+    advance(&mut sim, None);
+    let actor = sim.substrate.entities.get(ifv).unwrap();
+    let first_aim =
+        crate::sim::movement::turret::facing_toward_target(actor, &TargetKind::Entity(first), &sim)
+            .unwrap();
+    assert_eq!(
+        actor.barrel_facing.as_ref().unwrap().destination(),
+        first_aim
+    );
+    assert!(actor.turret_rotation_latch.is_set());
+    assert!(
+        actor
+            .barrel_facing
+            .as_ref()
+            .unwrap()
+            .is_rotating(sim.session.binary_frame())
+    );
+
+    advance(
+        &mut sim,
+        Some(Command::Attack {
+            attacker_id: ifv,
+            target_id: second,
+        }),
+    );
+    let actor = sim.substrate.entities.get(ifv).unwrap();
+    assert_eq!(
+        actor.attack_target.target(),
+        Some(TargetKind::Entity(second))
+    );
+    assert!(
+        actor.turret_rotation_latch.is_set(),
+        "retargeting did not clear the live latch"
+    );
+    assert!(
+        actor
+            .barrel_facing
+            .as_ref()
+            .unwrap()
+            .is_rotating(sim.session.binary_frame())
+    );
+    let expected = crate::sim::movement::turret::facing_toward_target(
+        actor,
+        &TargetKind::Entity(second),
+        &sim,
+    )
+    .unwrap();
+    assert_ne!(expected, first_aim);
+    assert_eq!(
+        super::fire_error_world::FireSubject {
+            world: &sim,
+            rules,
+            overlay_registry: None,
+            fog: None,
+            firer: actor,
+            obj,
+            target: Some(TargetKind::Entity(second)),
+            weapon_index: 0,
+        }
+        .fire_error(true),
+        super::fire_error::FireError::Facing
+    );
+    advance(&mut sim, None);
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(ifv)
+            .unwrap()
+            .barrel_facing
+            .as_ref()
+            .unwrap()
+            .destination(),
+        expected,
+        "Fire_At_Target re-aims before Facing_Update's latched aiming arm",
+    );
+}
+
 /// Minimal rules with MTNK at the given ROT byte.
 fn rules_with_mtnk_rot(rot: u32) -> RuleSet {
     let ini_str: String = format!(
