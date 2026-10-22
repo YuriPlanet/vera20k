@@ -171,7 +171,8 @@ impl EventPacketCodec {
     /// is already stamped by the shared send policy; `current_frame` separately
     /// ages compression slots. The caller bounds this slice by the native
     /// 2000h local-mirror allowance and commits/removes only `mirrors.len()`.
-    /// Local timestamps remain with that existing queue owner.
+    /// Residual: the queues do not yet retain local issue/admission timestamps
+    /// for ExecuteDoList64C6FD's debug latency display. They are not wire bytes.
     pub fn encode_packet(
         &mut self,
         records: &[&CommandRecord],

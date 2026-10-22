@@ -7,7 +7,7 @@ use super::{
     BuildingPlacementError, ProductionCategory, ProductionPlacement, credits_for_owner,
     cycle_active_producer_for_owner_category, place_production_with_overlays,
     placement_preview_for_owner_with_overlays, producer_candidates_for_owner_category,
-    publish_production_changes, ready_building_entity_for_owner, ready_buildings_for_owner,
+    ready_building_entity_for_owner, ready_buildings_for_owner,
 };
 use crate::map::entities::EntityCategory;
 use crate::map::overlay_mark::OverlayMarkOutcome;
@@ -681,7 +681,7 @@ fn a_completed_building_waits_in_its_factory_for_placement() {
             .test_arm_ready(americans, ProductionCategory::Building)
     );
 
-    publish_production_changes(&mut sim, &rules);
+    super::publish_production_changes_for_tests(&mut sim, &rules, americans);
     let held = sim
         .production
         .factories()
@@ -699,7 +699,7 @@ fn a_completed_building_waits_in_its_factory_for_placement() {
     let held_id = held.object.unwrap().entity_id.unwrap();
     let rng = sim.scenario_rng.logical_state();
     for _ in 0..3 {
-        publish_production_changes(&mut sim, &rules);
+        super::publish_production_changes_for_tests(&mut sim, &rules, americans);
     }
     // Record_Last_Built waits for the placement (`0x004FB4B7`).
     assert_eq!(sim.houses[&americans].stats().built(), built_before);

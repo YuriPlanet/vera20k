@@ -255,6 +255,16 @@ fn prepare_save<'a>(
 }
 
 impl PreparedSave<'_> {
+    /// Refresh the process-owned Strip state after input/automatic PLACE and
+    /// before MainTick55DBCD writes the save. The prepared resource borrows
+    /// and the simulation snapshot keep their existing owners.
+    pub(crate) fn refresh_sidebar_order(
+        &mut self,
+        order: Option<crate::sim::snapshot::SavedSidebarOrder>,
+    ) {
+        self.sidebar_order = order;
+    }
+
     fn write(
         mut self,
         sim: &crate::sim::world::Simulation,

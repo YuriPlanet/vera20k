@@ -174,8 +174,18 @@ fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
         } else {
             Vec::new()
         };
+        let visits = runtime
+            .simulation
+            .production
+            .factories()
+            .strip_visits_for_test(owner);
         runtime
-            .advance_frame(&commands, 67, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &commands,
+                67,
+                TickLane::Ordinary,
+                FrameEffects::default().with_production_strip(&visits, &|_| {}),
+            )
             .expect("ordinary paid ship production frame");
         let sim = &runtime.simulation;
         let id = *product.get_or_insert_with(|| held_id(sim, owner, ProductionCategory::Ship));
@@ -1389,8 +1399,18 @@ fn paid_boris_delivery_requests_its_creation_cue_once_at_the_delivered_location(
         } else {
             Vec::new()
         };
+        let visits = runtime
+            .simulation
+            .production
+            .factories()
+            .strip_visits_for_test(owner);
         let output = runtime
-            .advance_frame(&commands, 67, TickLane::Ordinary, FrameEffects::default())
+            .advance_frame(
+                &commands,
+                67,
+                TickLane::Ordinary,
+                FrameEffects::default().with_production_strip(&visits, &|_| {}),
+            )
             .expect("ordinary paid production frame");
         for event in output.sound_events {
             if let SimSoundEvent::VocAt {
@@ -2470,7 +2490,7 @@ fn ready_manager_is_refunded_and_disposed_by_another_buildings_produce() {
             .factories_mut()
             .test_arm_ready(owner, ProductionCategory::Building)
     );
-    super::publish_production_changes(&mut sim, &rules);
+    super::publish_production_changes_for_tests(&mut sim, &rules, owner);
     assert_eq!(
         crate::sim::production::ready_buildings_for_owner(&sim, &rules, "Americans").len(),
         1
@@ -2928,7 +2948,7 @@ fn a_ready_building_goes_with_the_last_construction_yard() {
             .factories_mut()
             .test_arm_ready(owner, ProductionCategory::Building)
     );
-    super::publish_production_changes(&mut sim, &rules);
+    super::publish_production_changes_for_tests(&mut sim, &rules, owner);
     assert_eq!(
         crate::sim::production::ready_buildings_for_owner(&sim, &rules, "Americans").len(),
         1
@@ -3183,15 +3203,14 @@ fn occupied_barracks_radio_refunds_discards_and_promotes_one_gi() {
             .balance(),
         0
     );
-    super::publish_production_changes(&mut sim, &rules);
+    super::publish_production_changes_for_tests(&mut sim, &rules, owner);
     let pending = sim.pending_command_snapshot();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].owner, owner);
     assert!(matches!(
-        pending[0].payload,
-        crate::sim::command::Command::PlaceProducedMobile {
-            category: ProductionCategory::Infantry
-        }
+        &pending[0].payload,
+        crate::sim::command::Command::SynchronizedRecord { record }
+            if crate::sim::command::PlaceRecord::decode(record).is_some()
     ));
     assert_eq!(held_id(&sim, owner, category), refused);
     assert!(

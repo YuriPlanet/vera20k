@@ -110,7 +110,7 @@ fn network_move_flash_ingress_and_replay_do_not_touch_animation_state() {
             ),
             1
         );
-        sim.admit_frame_commands(&due, RuleSet::empty_for_test());
+        sim.admit_frame_commands(&due, RuleSet::empty_for_test(), FrameEffects::default());
         let tail = sim
             .dispatch_owned_commands(
                 &due,

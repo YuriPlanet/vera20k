@@ -368,7 +368,7 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
             .test_arm_ready(owner_id, category)
     );
     // The Strip's publish accounts the completion once.
-    crate::sim::production::publish_production_changes(&mut sim, &rules);
+    crate::sim::production::publish_production_changes_for_tests(&mut sim, &rules, owner_id);
     let completed = sim
         .production()
         .factories()

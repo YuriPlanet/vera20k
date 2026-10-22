@@ -954,8 +954,7 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
 /// Original Strip6A8DD3 consumes Factory4C9C60's change flag, then queues
 /// PLACE6A8EB8; Event4C710B -> House4FB0E0 reveals the held GI next frame.
 /// Joined active-retail controls observe completion267/484 and PLACE268/485.
-/// Source: basic-factory-output-prerequisites-research, construction-primary,
-/// raw SHA9ff9c219b81c93fe5671b6a153073c09aa4d14c04472baeff0a5680977c1963d.
+/// Source: original instructions at Strip6A8DD3..6A8F42 and House4FB0E0.
 #[test]
 fn human_mobile_completion_retains_identity_until_next_frame_place() {
     let rules = factory_constructor_rules();
@@ -964,6 +963,7 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
     sim.resolve_type_handles(&rules);
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAPILE", 14, 14);
     let owner = sim.interner.get("Americans").unwrap();
+    sim.session.set_current_house_for_test(Some(owner));
     assert!(enqueue_by_type(
         &mut sim,
         &rules,
@@ -994,7 +994,7 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
         .find(|&frame| {
             sim.session.set_binary_frame_for_test(frame);
             sim.session.set_tick_for_test(u64::from(frame));
-            super::publish_production_changes(&mut sim, &rules);
+            super::publish_production_changes_for_tests(&mut sim, &rules, owner);
             super::step_factories(&mut sim);
 
             sim.production
@@ -1007,7 +1007,7 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
     sim.session.set_tick_for_test(sim.session.tick() + 1);
     sim.session
         .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
-    super::publish_production_changes(&mut sim, &rules);
+    super::publish_production_changes_for_tests(&mut sim, &rules, owner);
     let entity = sim.substrate.entities.get(held).unwrap();
     assert!(
         entity.lifecycle.in_limbo(),
@@ -1025,8 +1025,8 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
     assert_eq!(pending.len(), 1);
     // The next frame's prefix appends PLACE for its own event tail, after
     // already accepted player events and before that frame's Factory sweep.
-    assert_eq!(pending[0].execute_tick, u64::from(completed_frame) + 2);
-    super::publish_production_changes(&mut sim, &rules);
+    assert_eq!(pending[0].execute_tick, u64::from(completed_frame) + 1);
+    super::publish_production_changes_for_tests(&mut sim, &rules, owner);
     assert_eq!(sim.pending_command_snapshot().len(), 1);
 }
 
@@ -1040,6 +1040,7 @@ fn ready_infantry_prefix_world(
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAPILE", 14, 14);
     let owner = sim.interner.get("Americans").unwrap();
+    sim.session.set_current_house_for_test(Some(owner));
     assert!(enqueue_by_type(
         &mut sim,
         &rules,
@@ -1097,6 +1098,10 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
             producer_ids: vec![1],
         },
     );
+    let visits = live.production.factories().strip_visits_for_test(owner);
+    let expected_place = live
+        .encode_place_mobile_record(owner, ProductionCategory::Infantry, &rules)
+        .unwrap();
     let mut output = live
         .advance_app_frame(
             std::slice::from_ref(&rally),
@@ -1104,7 +1109,7 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
             None,
             67,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {}),
         )
         .unwrap();
     let admitted = output.take_admitted_commands();
@@ -1113,13 +1118,7 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
         [
             future.clone(),
             rally,
-            crate::sim::command::CommandEnvelope::new(
-                owner,
-                1,
-                crate::sim::command::Command::PlaceProducedMobile {
-                    category: ProductionCategory::Infantry,
-                },
-            )
+            crate::sim::command::CommandEnvelope::synchronized(expected_place, 0)
         ]
     );
     assert!(
@@ -1164,7 +1163,7 @@ fn completion_prefix_records_one_place_and_playback_consumes_its_copy() {
             None,
             67,
             crate::sim::world::TickLane::Ordinary,
-            crate::sim::world::FrameEffects::default(),
+            crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {}),
         )
         .unwrap();
     assert_eq!(replay_output.take_admitted_commands(), admitted);
@@ -1228,6 +1227,16 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
         Command::LiveGameSpeed { speed: 6 },
     )));
 
+    let visits = live.production.factories().strip_visits_for_test(owner);
+    let clears = std::cell::Cell::new(0);
+    let clear = |_| clears.set(clears.get() + 1);
+    let before_logic = |_: &Simulation| {
+        assert_eq!(
+            clears.get(),
+            1,
+            "request clear precedes the save boundary even after rejected append"
+        )
+    };
     let mut output = live
         .advance_app_frame(
             &due,
@@ -1235,7 +1244,9 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
             None,
             67,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            FrameEffects::default()
+                .with_production_strip(&visits, &clear)
+                .with_before_logic(&before_logic),
         )
         .unwrap();
     let admitted = output.take_admitted_commands();
@@ -1269,7 +1280,7 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
             None,
             67,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            FrameEffects::default().with_production_strip(&visits, &|_| {}),
         )
         .unwrap();
     assert_eq!(replay_output.take_admitted_commands(), admitted);
@@ -1299,7 +1310,7 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
                 None,
                 67,
                 TickLane::Ordinary,
-                FrameEffects::default(),
+                FrameEffects::default().with_production_strip(&visits, &|_| {}),
             )
             .unwrap();
         assert!(next.take_admitted_commands().is_empty());
@@ -2857,4 +2868,91 @@ fn a_computer_barracks_sends_its_infantry_to_a_listed_post() {
         }
     }
     assert_ne!(final_rng[0], final_rng[1], "House500200 draws the post");
+}
+
+/// Local Strip6A8DC6 consumes only its validated Factory references. Actual
+/// completed-object facts, not a stale cameo's type, select EventCtor4C6AE0.
+#[test]
+fn local_strip_raw_place_preserves_remote_change_and_shared_hash() {
+    use crate::sim::command::PlaceRecord;
+    use crate::sim::world::FrameEffects;
+    let rules = factory_constructor_rules();
+    let (mut sim, owner, _) = ready_infantry_prefix_world(&rules);
+    spawn_structure(&mut sim, &rules, 9, "Russians", "GAPILE", 28, 28);
+    let remote = sim.interner.get("Russians").unwrap();
+    arm_build_via(
+        &mut sim,
+        &rules,
+        "Russians",
+        "E1",
+        ProductionCategory::Infantry,
+        99,
+    );
+    assert!(
+        sim.production
+            .factories_mut()
+            .test_arm_ready(remote, ProductionCategory::Infantry)
+    );
+    let hash = sim.state_hash();
+    super::publish_production_changes(&mut sim, &rules, FrameEffects::default());
+    assert!(
+        sim.network_command_queues()
+            .local_records()
+            .unwrap()
+            .is_empty(),
+        "no inferred local strip"
+    );
+    let mut local = sim.production.factories().strip_visits_for_test(owner)[0];
+    local.type_id = sim.interner.get("E2").unwrap(); // A retained older cameo may share this Factory.
+    let mut stale = local;
+    stale.construction_order = stale.construction_order.wrapping_add(1);
+    let visits = [stale, local, local];
+    let cleared = std::cell::RefCell::new(Vec::new());
+    let clear = |id| cleared.borrow_mut().push(id);
+    super::publish_production_changes(
+        &mut sim,
+        &rules,
+        FrameEffects::default().with_production_strip(&visits, &clear),
+    );
+    assert_eq!(*cleared.borrow(), [local.type_id]);
+    let raw = sim.network_command_queues().local_records().unwrap()[0].clone();
+    let place = PlaceRecord::decode(&raw).unwrap();
+    assert_eq!(
+        (
+            place.house_id,
+            place.frame,
+            place.rtti,
+            place.type_index,
+            place.naval,
+            (place.x, place.y)
+        ),
+        (0, 0, 15, -1, 0, (0, 0))
+    );
+    assert_eq!(sim.network_command_queues().local_len(), 1);
+    assert_eq!(
+        sim.state_hash(),
+        hash,
+        "local notification latches are not shared gameplay state"
+    );
+    sim.session.set_current_house_for_test(Some(remote));
+    let remote_visits = sim.production.factories().strip_visits_for_test(remote);
+    super::publish_production_changes(
+        &mut sim,
+        &rules,
+        FrameEffects::default().with_production_strip(&remote_visits, &|_| {}),
+    );
+    let records = sim
+        .network_command_queues()
+        .local_records()
+        .unwrap()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
+    assert_eq!(
+        records.len(),
+        2,
+        "the remote change was untouched by local publication"
+    );
+    assert_eq!(PlaceRecord::decode(&records[1]).unwrap().house_id, 1);
+    assert_eq!(sim.state_hash(), hash);
 }

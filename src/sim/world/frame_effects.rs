@@ -110,6 +110,8 @@ pub struct FrameEffects<'a> {
     network_commands: Option<&'a dyn NetworkCommandBoundary>,
     overlay_registry: Option<&'a OverlayTypeRegistry>,
     before_logic: Option<&'a dyn Fn(&Simulation)>,
+    production_factories: &'a [crate::sim::production::ProductionFactoryVisit],
+    production_request_cleared: Option<&'a dyn Fn(crate::sim::intern::InternedId)>,
 }
 
 impl<'a> FrameEffects<'a> {
@@ -130,6 +132,8 @@ impl<'a> FrameEffects<'a> {
             network_commands: None,
             overlay_registry: None,
             before_logic: None,
+            production_factories: &[],
+            production_request_cleared: None,
         }
     }
 
@@ -141,6 +145,8 @@ impl<'a> FrameEffects<'a> {
             network_commands: None,
             overlay_registry: None,
             before_logic: None,
+            production_factories: &[],
+            production_request_cleared: None,
         }
     }
 
@@ -190,6 +196,34 @@ impl<'a> FrameEffects<'a> {
         Self {
             before_logic: Some(boundary),
             ..self
+        }
+    }
+
+    /// Sidebar6A6140's retained links, in Strip AI6A8DC6 order. A headless
+    /// frame has no local strip and publishes no automatic PLACE. Clear the
+    /// same entry's request synchronously at6A8F42, even if OutList is full,
+    /// before MainTick55DBCD can save the process-owned sidebar.
+    pub fn with_production_strip(
+        self,
+        visits: &'a [crate::sim::production::ProductionFactoryVisit],
+        clear_request: &'a dyn Fn(crate::sim::intern::InternedId),
+    ) -> Self {
+        Self {
+            production_factories: visits,
+            production_request_cleared: Some(clear_request),
+            ..self
+        }
+    }
+
+    pub(crate) fn production_factories(
+        self,
+    ) -> &'a [crate::sim::production::ProductionFactoryVisit] {
+        self.production_factories
+    }
+
+    pub(crate) fn clear_production_request(self, type_id: crate::sim::intern::InternedId) {
+        if let Some(clear) = self.production_request_cleared {
+            clear(type_id);
         }
     }
 

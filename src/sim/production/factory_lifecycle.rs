@@ -910,7 +910,7 @@ pub fn complete_held_building_for_test(
             .factories_mut()
             .test_arm_ready(owner, category)
     );
-    super::production_queue::publish_production_changes(sim, rules);
+    super::production_queue::publish_production_changes_for_tests(sim, rules, owner);
     assert!(
         sim.production
             .factories()

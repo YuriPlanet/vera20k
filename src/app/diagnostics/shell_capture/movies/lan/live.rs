@@ -93,7 +93,9 @@ impl LiveLanCapture {
 
     fn required_frames(&self) -> u32 {
         if self.battle.is_some() {
-            1800
+            // Diagnostic bound includes paid GAPILE and two automatic GI
+            // exits. Production frame/Factory timers are unchanged.
+            3600
         } else {
             REQUIRED_FRAMES
         }
@@ -737,7 +739,7 @@ impl LiveLanCapture {
         );
         Ok(
             json!({"target":format!("{:?}",self.target),"service_boundary":"two independent App processes; real UDP/global/private queues; ordinary frame boundary",
-            "scope":if self.failure.is_some() { "shared 300-frame prefix followed by real peer disappearance and ordinary wait recovery or Quit; bounded runtime validation, not whole-match/native parity" } else if self.battle.is_some() { "kick/rejoin, Battle MCV deploy, production hold/resume/cancel/place; bounded same-machine validation, not whole-match/native parity" } else { "kick/rejoin, 300 native frames and local Move/Stop; bounded runtime validation, not whole-match/native parity" },
+            "scope":if self.failure.is_some() { "shared 300-frame prefix followed by real peer disappearance and ordinary wait recovery or Quit; bounded runtime validation, not whole-match/native parity" } else if self.battle.is_some() { "kick/rejoin, Battle MCV deploy, production hold/resume/cancel/place, paid GAPILE and two automatic raw GI PLACE deliveries per Human; bounded runtime validation, not whole-match/native parity" } else { "kick/rejoin, 300 native frames and local Move/Stop; bounded runtime validation, not whole-match/native parity" },
             "required_frames":self.required_frames(),"battle":self.battle.as_ref().map(|battle| battle.receipt(state)).transpose()?,
             "failure":self.failure.as_ref().map(|failure| failure.receipt()),
             "kick_observed":self.kick_observed,

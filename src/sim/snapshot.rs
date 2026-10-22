@@ -72,6 +72,7 @@ pub struct SavedSidebarOrder {
     flash_deadlines: [Vec<i32>; 4],
     redraw_until: i32,
     request_states: [Vec<u8>; 4],
+    factory_links: [Vec<Option<crate::sim::production::ProductionFactoryVisit>>; 4],
     prediction_categories: Vec<crate::sim::production::ProductionCategory>,
 }
 
@@ -79,6 +80,7 @@ impl SavedSidebarOrder {
     pub fn new(owner: InternedId, strips: [Vec<SavedCameoId>; 4], scroll_rows: [usize; 4]) -> Self {
         let flash_deadlines = std::array::from_fn(|index| vec![0; strips[index].len()]);
         let request_states = std::array::from_fn(|index| vec![0; strips[index].len()]);
+        let factory_links = std::array::from_fn(|index| vec![None; strips[index].len()]);
         Self {
             owner,
             strips,
@@ -86,6 +88,7 @@ impl SavedSidebarOrder {
             flash_deadlines,
             redraw_until: 0,
             request_states,
+            factory_links,
             prediction_categories: Vec::new(),
         }
     }
@@ -107,6 +110,24 @@ impl SavedSidebarOrder {
 
     pub fn requests(&self) -> &[Vec<u8>; 4] {
         &self.request_states
+    }
+
+    /// Mouse Save5BE6D0 retains each entry's Factory pointer (+64), including
+    /// associations to a Factory whose current product differs from the cameo.
+    /// VERA saves that foreign identity; the app validates it against the loaded
+    /// registry before installing the retained strips.
+    pub fn with_factory_links(
+        mut self,
+        links: [Vec<Option<crate::sim::production::ProductionFactoryVisit>>; 4],
+    ) -> Self {
+        self.factory_links = links;
+        self
+    }
+
+    pub fn factory_links(
+        &self,
+    ) -> &[Vec<Option<crate::sim::production::ProductionFactoryVisit>>; 4] {
+        &self.factory_links
     }
 
     /// HouseSave504080/Load503040 retain the independent category gates;

@@ -117,51 +117,64 @@ pub fn has_build_option_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str
         .any(|o| o.enabled)
 }
 
-/// StripClass::AI6A8DD3 consumes Factory::HasChanged4C9C60, announces a
-/// completed building, and issues mobile PLACE6A8EB8 without releasing its head.
-/// The next frame's input prefix visits Strip before Logic/Factory and appends
-/// PLACE after already accepted OutList events, for that frame's
-/// Event4C710B -> House4FB0E0 tail. Native controls observe completion267/484
-/// and PLACE268/485; admitted SetRally then PLACE inherits the new Archive.
-///
-/// Sidebar6A77B6 visits tabs0..3: Infantry(tab2) precedes Unit/Aircraft(tab3).
-/// Within tab3, native entry-array order and saturated OutList transport remain
-/// recorded residuals; one infantry factory has no cross-category ambiguity.
-pub fn publish_production_changes(sim: &mut Simulation, rules: &RuleSet) {
-    let mut completed = sim.production.factories_mut().take_changed_completed_keys();
-    completed.sort_by_key(|(_, category)| match category {
-        ProductionCategory::Building => 0,
-        ProductionCategory::Defense => 1,
-        ProductionCategory::Infantry => 2,
-        ProductionCategory::Vehicle | ProductionCategory::Aircraft | ProductionCategory::Ship => 3,
-    });
-    for (owner, category) in completed {
-        let Some(type_id) = sim
+/// StripClass::AI6A8DC6 visits the local sidebar's retained Factory links.
+/// HasChanged4C9C60 is consumed before IsComplete4CA130, in entry order; a
+/// remote or absent strip never consumes that Factory's notification. Mobile
+/// completion6A8EB8 emits the existing EventCtor_Place4C6AE0 raw record and
+/// clears the visited cameo request6A8F42 even when OutList's128 slots are full.
+/// The held identity stays with the receiver Event4C710B -> House4FB0E0.
+pub fn publish_production_changes(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    effects: FrameEffects<'_>,
+) {
+    let Some(owner) = sim.session.current_house() else {
+        return;
+    };
+    for &visit in effects.production_factories() {
+        if !sim
             .production
-            .factories()
-            .view(owner, category)
-            .and_then(|factory| factory.object.map(|object| object.type_id))
-        else {
+            .factories_mut()
+            .take_changed_complete(owner, visit)
+        {
             continue;
-        };
+        }
         factory_lifecycle::publish_completion(
             &sim.interner,
             &mut sim.production,
             &mut sim.sound_events,
             rules,
             owner,
-            category,
+            visit.category,
         );
-        if sim.object_type(type_id, rules).is_some_and(|object| {
-            object.category != crate::rules::object_type::ObjectCategory::Building
-        }) {
-            let _ = sim.issue_local_command(crate::sim::command::CommandEnvelope::new(
-                owner,
-                sim.session.tick().saturating_add(1),
-                crate::sim::command::Command::PlaceProducedMobile { category },
-            ));
-        }
+        let Some(record) = sim.encode_place_mobile_record(owner, visit.category, rules) else {
+            continue;
+        };
+        let _ = sim.issue_local_command(crate::sim::command::CommandEnvelope::synchronized(
+            record,
+            sim.session.tick(),
+        ));
+        effects.clear_production_request(visit.type_id);
     }
+}
+
+/// Supply an explicit local strip in headless owner fixtures. App production
+/// uses its actual retained sidebar, never this registry-derived fixture.
+#[cfg(any(test, feature = "test-support"))]
+pub fn publish_production_changes_for_tests(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+) {
+    let previous = sim.session.current_house();
+    sim.session.set_current_house_for_test(Some(owner));
+    let visits = sim.production.factories().strip_visits_for_test(owner);
+    publish_production_changes(
+        sim,
+        rules,
+        FrameEffects::default().with_production_strip(&visits, &|_| {}),
+    );
+    sim.session.set_current_house_for_test(previous);
 }
 
 /// Exercise the next frame's prefix publication and its event tail in focused owner tests,
@@ -177,7 +190,10 @@ pub fn dispatch_production_changes_for_tests(
         .set_tick_for_test(sim.session.tick().saturating_add(1));
     sim.session
         .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
-    publish_production_changes(sim, rules);
+    let owners: Vec<_> = sim.houses.iter().map(|(&owner, _)| owner).collect();
+    for owner in owners {
+        publish_production_changes_for_tests(sim, rules, owner);
+    }
     let due = sim.take_due_commands();
     sim.transfer_local_commands();
     let (_, spawned) = sim.apply_due_commands(

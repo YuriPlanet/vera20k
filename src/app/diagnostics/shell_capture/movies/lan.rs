@@ -513,7 +513,15 @@ impl LanCapture {
     }
     pub(super) fn timeout(&self) -> Duration {
         if self.target.live() {
-            return Duration::from_secs(180);
+            // Only the extended diagnostic opening gets more wall time;
+            // network and production deadlines remain their ordinary owners.
+            return Duration::from_secs(
+                if matches!(self.target, LanTarget::BattleHost | LanTarget::BattleGuest) {
+                    300
+                } else {
+                    180
+                },
+            );
         }
         // Original peer wait is3600 wall-clock buckets (57.6s). Only this
         // diagnostic budget grows; loading retains its production timer.

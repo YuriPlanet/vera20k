@@ -2016,6 +2016,9 @@ fn joined_two_paid_gi(route: OutputRoute) {
         }
         // The ordinary app drains player ingress before advancing each frame.
         let due = sim.take_due_commands();
+        let visits = sim.production.factories().strip_visits_for_test(owner);
+        let effects =
+            crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {});
         if route == OutputRoute::RallyBetweenCompletionAndPlace {
             let mut output = sim
                 .advance_app_frame(
@@ -2024,7 +2027,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
                     Some(&registry),
                     TICK_MS,
                     super::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    effects,
                 )
                 .expect("the ordinary app frame completes");
             let admitted = output.take_admitted_commands();
@@ -2037,7 +2040,11 @@ fn joined_two_paid_gi(route: OutputRoute) {
                     .iter()
                     .map(|command| match command.payload {
                         Command::SetRally { .. } => 0x1E,
-                        Command::PlaceProducedMobile { .. } => 0x0B,
+                        Command::SynchronizedRecord { ref record }
+                            if crate::sim::command::PlaceRecord::decode(record).is_some() =>
+                        {
+                            0x0B
+                        }
                         _ => panic!("unexpected admitted race command: {command:?}"),
                     })
                     .collect();
@@ -2064,7 +2071,16 @@ fn joined_two_paid_gi(route: OutputRoute) {
                 );
             }
         } else {
-            sim.advance_tick(&due, Some(&rules), None, Some(&registry), TICK_MS);
+            sim.advance_master_frame(
+                &due,
+                &rules,
+                Some(&registry),
+                TICK_MS,
+                super::TickLane::Ordinary,
+                false,
+                effects,
+            )
+            .unwrap();
         }
         let log = radio::take_transmit_log();
         if let Some(view) = sim
@@ -2106,7 +2122,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
                 assert!(entity.lifecycle.in_limbo() && !entity.in_logic_vector.is_member());
                 assert!(
                     !sim.pending_command_snapshot().iter().any(|command| {
-                        matches!(command.payload, Command::PlaceProducedMobile { .. })
+                        matches!(&command.payload, Command::SynchronizedRecord { record } if crate::sim::command::PlaceRecord::decode(record).is_some())
                     }),
                     "Factory completion retains its change flag until the next Strip prefix"
                 );

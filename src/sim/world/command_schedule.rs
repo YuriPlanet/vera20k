@@ -367,8 +367,9 @@ impl Simulation {
         &mut self,
         commands: &[CommandEnvelope],
         rules: &RuleSet,
+        effects: FrameEffects<'_>,
     ) -> Vec<CommandEnvelope> {
-        crate::sim::production::publish_production_changes(self, rules);
+        crate::sim::production::publish_production_changes(self, rules, effects);
         for command in commands {
             if Self::command_uses_frame_ingress(
                 &command.payload,

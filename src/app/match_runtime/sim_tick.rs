@@ -1067,12 +1067,29 @@ fn advance_one_simulation_frame(
             // F07: the runtime is the one production frame API — bound
             // resources, no caller-substitutable inputs.
             let mut output = {
+                let sidebar = std::cell::RefCell::new(
+                    &mut state.match_state.match_presentation.sidebar_projection,
+                );
+                let production_visits = sidebar.borrow().production_factory_visits(&rt.simulation);
+                let clear_production_request = |type_id| {
+                    sidebar.borrow_mut().clear_production_request(type_id);
+                };
                 let elapsed_clock =
                     std::cell::RefCell::new(&mut state.match_state.scenario_elapsed_clock);
                 let initial_save = std::cell::RefCell::new((initial_save, &mut state.persistence));
                 let before_logic = |sim: &crate::sim::world::Simulation| {
                     let mut save = initial_save.borrow_mut();
                     let (prepared, persistence) = &mut *save;
+                    if let Some(Ok(prepared)) = prepared.as_mut() {
+                        // Strip6A8F42 clears requests before MainTick55DBCD.
+                        // Preparation preceded the input prefix; snapshot the
+                        // same sidebar owner again at the actual save boundary.
+                        let mut sidebar = sidebar.borrow_mut();
+                        if let Some(owner) = sim.session().current_house() {
+                            sidebar.reconcile_factory_links(sim, owner);
+                        }
+                        prepared.refresh_sidebar_order(sidebar.saved_order());
+                    }
                     crate::app::persistence::commands::initial_campaign_save(
                         prepared.take(),
                         sim,
@@ -1124,6 +1141,7 @@ fn advance_one_simulation_frame(
                     .with_local_planning(&boundary)
                     .with_network_commands(&boundary)
                     .with_outcome_wait(&boundary)
+                    .with_production_strip(&production_visits, &clear_production_request)
                     .with_before_logic(&before_logic);
                 match resume {
                     FrameResume::ChecksumModal => rt.resume_after_network_failure(effects),

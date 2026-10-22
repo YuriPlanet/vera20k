@@ -210,6 +210,9 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
             false
         ));
     }
+    for output in sim.take_lifecycle_outputs_for_test() {
+        projection.apply_lifecycle_output(&output, Some(owner));
+    }
     projection.reconcile_factory_links(&sim, owner);
     assert_eq!(projection.ready_building_tabs(&sim, owner), [false; 2]);
     for category in [ProductionCategory::Building, ProductionCategory::Defense] {
@@ -835,6 +838,9 @@ fn building_production_darkens_other_cameos_until_cancelled() {
         crate::sim::world::FrameEffects::default(),
         false,
     ));
+    for output in sim.take_lifecycle_outputs_for_test() {
+        projection.apply_lifecycle_output(&output, Some(owner));
+    }
     projection.reconcile_factory_links(&sim, owner);
     projection.refresh_cameo_draw_state(&sim, &rules, owner, None);
     let items = &projection.view().unwrap().items;
@@ -933,6 +939,9 @@ fn building_production_darkens_other_cameos_until_cancelled() {
         false,
         crate::sim::world::FrameEffects::default(),
     ));
+    for output in sim.take_lifecycle_outputs_for_test() {
+        projection.apply_lifecycle_output(&output, Some(owner));
+    }
     projection.reconcile_factory_links(&sim, owner);
     projection.refresh_cameo_draw_state(&sim, &rules, owner, None);
     assert!(
@@ -1055,6 +1064,9 @@ fn busy_strip_draw_matches_native_pending_and_linked_controls() {
                 ),
                 "{control}"
             );
+        }
+        for output in sim.take_lifecycle_outputs_for_test() {
+            projection.apply_lifecycle_output(&output, Some(owner));
         }
         projection.reconcile_factory_links(&sim, owner);
         let tab = SidebarTab::all()[control["tab"].as_u64().unwrap() as usize];

@@ -313,10 +313,11 @@ impl Simulation {
             .factories()
             .view(command_owner, category)?
             .complete_object()?;
-        let selection = production::ProductionSelection::for_type(
-            rules,
-            self.object_type(held.type_id, rules)?,
-        )?;
+        let object = self.object_type(held.type_id, rules)?;
+        if object.category == crate::rules::object_type::ObjectCategory::Building {
+            return None;
+        }
+        let selection = production::ProductionSelection::for_type(rules, object)?;
         self.encode_place_record(
             command_owner,
             production::ProductionSelection {

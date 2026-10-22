@@ -16,6 +16,17 @@ use crate::sim::production::factory::FactoryRegistry;
 #[cfg(any(test, feature = "test-support"))]
 pub const STARTING_CREDITS: i32 = 5000;
 
+/// A borrowed local strip entry's foreign Factory identity. Sidebar LinkFactory
+/// 6A6140 retains this association independently of the Factory's current head;
+/// Strip AI6A8DC6 visits entries in their retained order. The registry remains
+/// the sole owner of the referenced Factory and validates its lifetime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProductionFactoryVisit {
+    pub type_id: InternedId,
+    pub category: ProductionCategory,
+    pub construction_order: u64,
+}
+
 /// One queued item formatted for UI rendering.
 #[derive(Debug, Clone)]
 pub struct QueueItemView {

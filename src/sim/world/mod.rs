@@ -8000,7 +8000,7 @@ impl Simulation {
         profile_phase!(COMMANDS_INGRESS);
 
         let mut commands = if lane == TickLane::Ordinary {
-            self.admit_frame_commands(commands, rules)
+            self.admit_frame_commands(commands, rules, effects)
         } else {
             Vec::new()
         };

@@ -153,13 +153,17 @@ fn paid_ready_fixture() -> Option<Fixture> {
         overlays,
         owner,
         input,
-        projection,
+        mut projection,
     } = stock_base_fixture(
         "Americans",
         &[("GACNST", 4), ("GAPOWR", 11), ("GAPILE", 18)],
         false,
     )?;
 
+    let options = production::all_build_options_for_owner(&sim, &rules, "Americans");
+    let candidates = cameo_candidates(&sim, &rules, None, owner, &options, &[], &[]);
+    let additions = production::initial_construction_options(&sim, &rules);
+    projection.reconcile_cameos(owner, &candidates, 12, &additions);
     let starting_credits = production::credits_for_owner(&sim, "Americans");
     let total_cost: i32 = ["GAPOWR", "GAPILL"]
         .iter()
@@ -184,15 +188,19 @@ fn paid_ready_fixture() -> Option<Fixture> {
     // A fixture timeout, not an expected native completion frame. Both strips
     // run their real timers and charge the same House economy during these frames.
     for _ in 0..4096 {
-        sim.advance_app_frame(
-            &[],
-            &rules,
-            Some(&overlays),
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
-        .expect("ordinary paid production frame");
+        let output = sim
+            .advance_app_frame(
+                &[],
+                &rules,
+                Some(&overlays),
+                67,
+                TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .expect("ordinary paid production frame");
+        for fact in output.lifecycle_outputs {
+            projection.apply_lifecycle_output(&fact, Some(owner));
+        }
         if production::ready_buildings_for_owner(&sim, &rules, "Americans").len() == 2 {
             break;
         }
@@ -599,6 +607,9 @@ fn cancel_envelope(fixture: &Fixture, name: &str) -> CommandEnvelope {
 fn advance_commands(fixture: &mut Fixture, commands: &[CommandEnvelope]) -> SimFrameOutput {
     fixture.sim.queue_commands(commands.iter().cloned());
     let due = fixture.sim.take_due_commands();
+    let visits = fixture.projection.production_factory_visits(&fixture.sim);
+    let projection = std::cell::RefCell::new(&mut fixture.projection);
+    let clear_request = |type_id| projection.borrow_mut().clear_production_request(type_id);
     fixture
         .sim
         .advance_app_frame(
@@ -607,7 +618,7 @@ fn advance_commands(fixture: &mut Fixture, commands: &[CommandEnvelope]) -> SimF
             Some(&fixture.overlays),
             67,
             TickLane::Ordinary,
-            FrameEffects::default(),
+            FrameEffects::default().with_production_strip(&visits, &clear_request),
         )
         .expect("ordinary authoritative command frame")
 }
@@ -2671,6 +2682,8 @@ fn unlinked_abandon_clears_current_before_product_expiry() {
     // links, an independent Defense link, and the real completed product
     // still current. This is not whole UI/scenario reset coverage. Other
     // regressions cover actual gadget Select through the same input owner.
+    fixture.projection.reset_cameo_seed();
+    refresh_fixture_sidebar(&mut fixture, SidebarTab::Building);
     let _ = fixture.projection.apply_lifecycle_output(
         &LifecycleOutput::ProductionFactoryLinked {
             owner,

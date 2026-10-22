@@ -981,6 +981,13 @@ impl Simulation {
         self.lifecycle_test_events.clear();
     }
 
+    /// Let client fixtures consume actual Begin/Abandon facts without running
+    /// unrelated Logic. The ordinary frame collects this same channel.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn take_lifecycle_outputs_for_test(&mut self) -> Vec<LifecycleOutput> {
+        self.lifecycle_outputs.take_for_test()
+    }
+
     /// The Location Z Object Unlimbo 0x5F4EC0 commits (SetLocation at
     /// `0x005F4FA8`), adapted from the level-based placement API. It passes its
     /// input coordinate through the type's virtual +0x6C (`0x005F4F88`):
