@@ -271,12 +271,25 @@ mod tests {
                 cleared.simulation_config_hash()
             );
         } else {
-            assert!(rules.warhead("ATTACH_WH").unwrap().ares_rules().is_none());
-            assert_eq!(
+            for candidate in [&rules, &changed, &cleared] {
+                assert!(
+                    candidate
+                        .warhead("ATTACH_WH")
+                        .unwrap()
+                        .ares_rules()
+                        .is_none()
+                );
+            }
+            // The whole configuration hash deliberately includes raw source
+            // identity, even for unconsumed keys (RuleSet::source_ini_hash).
+            // Ignoring extension state does not erase different INI inputs.
+            assert_ne!(rules.source_ini_hash(), changed.source_ini_hash());
+            assert_ne!(rules.source_ini_hash(), cleared.source_ini_hash());
+            assert_ne!(
                 rules.simulation_config_hash(),
                 changed.simulation_config_hash()
             );
-            assert_eq!(
+            assert_ne!(
                 rules.simulation_config_hash(),
                 cleared.simulation_config_hash()
             );
