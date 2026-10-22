@@ -225,8 +225,11 @@ impl SuperWeaponType {
         // owns the zero defaults; keep the same current-value defaults here.
         let range = section.read_float("Range", 0.0);
         let line_multiplier = section.read_int("LineMultiplier", 0);
-        // ReadString 0x28 ahead of the kind lookup (`0x006CEC2D`).
-        let kind = SuperWeaponKind::from_ini_str(section.read_name("Type", 0x28)?)?;
+        // ReadINI6CEC2D..6CEC7E: each 0x28-byte ReadString is compared
+        // against the kind names; a rejected name leaves the prior field.
+        let kind = section.read_string_with("Type", 0x28, None, |current, value| {
+            SuperWeaponKind::from_ini_str(value).or(current)
+        })?;
         #[cfg(feature = "ares")]
         let extension_kind = matches!(
             kind,
@@ -285,15 +288,16 @@ impl SuperWeaponType {
             // not user tags. GenericWarhead is an ordinary one-click type.
             pre_click: !extension_kind && section.read_bool("PreClick", false),
             post_click: !extension_kind && section.read_bool("PostClick", false),
-            // ReadString 0x28 (`0x006CEC98`).
+            // ReadINI6CEC98..6CECE9 keeps the prior pair index when its
+            // 0x28-byte ReadString does not match one of the 12 native names.
             pre_dependent: if extension_kind {
                 -1
             } else {
-                section
-                    .read_name("PreDependent", 0x28)
-                    .and_then(SuperWeaponKind::from_ini_str)
-                    .filter(|kind| (0..12).contains(&kind.native_index()))
-                    .map_or(-1, SuperWeaponKind::native_index)
+                section.read_string_with("PreDependent", 0x28, -1, |current, value| {
+                    SuperWeaponKind::from_ini_str(value)
+                        .filter(|kind| (0..12).contains(&kind.native_index()))
+                        .map_or(current, SuperWeaponKind::native_index)
+                })
             },
             // Constructor nulls; only the ordered Process owner reads them.
             weapon_type: None,

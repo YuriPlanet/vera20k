@@ -95,3 +95,154 @@ fn charged_super_held_by_low_power_stays_charged_but_cannot_fire() {
     assert!(!sim.super_weapons[&owner][&type_id].is_suspended);
     assert!(nuke_view(&sim, &rules, owner).can_fire);
 }
+
+mod layered_enum_history {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+    use crate::rules::ruleset::RuleSet;
+    use crate::rules::superweapon_type::SuperWeaponKind;
+    use crate::sim::command::Command;
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::sim::superweapon::{
+        construct_house_supers, pre_dependent, superweapon_views_for_owner,
+    };
+    use crate::sim::world::{FrameEffects, Simulation};
+
+    const OWNER: &str = "Americans";
+    const REVEAL: &str = "RetainedReveal";
+
+    fn processed_rules(layers: &RulesLayerStack) -> RuleSet {
+        let art = IniFile::from_str("[PROVIDER]\nFoundation=1x1\n");
+        let processed = layers.process_with_fixed_art(&art).unwrap();
+        RuleSet::from_processed_rules(&processed).unwrap()
+    }
+
+    fn world(rules: &RuleSet) -> Simulation {
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 23);
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+        sim.session.game_options_mut_for_test().super_weapons = true;
+        sim.fog.set_width_for_test(32);
+        sim.fog.set_height_for_test(32);
+        for name in [OWNER, "Russians"] {
+            let owner = sim.interner.get(name).unwrap();
+            let house = sim.houses.get_mut(&owner).unwrap();
+            house.set_is_human_for_test(true);
+            house.set_player_control_for_test(true);
+            construct_house_supers(&mut sim, rules, owner, false);
+        }
+        sim.session
+            .set_current_house_for_test(sim.interner.get(OWNER));
+        sim.spawn_object("PROVIDER", OWNER, 10, 10, 0, rules)
+            .unwrap();
+        sim.spawn_object("PROVIDER", "Russians", 27, 27, 0, rules)
+            .unwrap();
+        sim
+    }
+
+    #[test]
+    fn unknown_later_type_keeps_the_provider_charge_and_reveal_command() {
+        let mut layers = RulesLayerStack::new(crate::sim::arena_fixture::clear_ground_ini(
+            "[Countries]\n0=Americans\n1=Russians\n\
+             [InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
+             [BuildingTypes]\n0=PROVIDER\n\
+             [PROVIDER]\nStrength=1000\nTurret=no\nSight=0\nSuperWeapon=RetainedReveal\n\
+             [SuperWeaponTypes]\n0=RetainedReveal\n1=UnknownOnly\n\
+             [RetainedReveal]\nType=MultiMissile\nRechargeTime=0.1\nIsPowered=no\n\
+             [UnknownOnly]\nType=NoSuchKind\n\
+             [CombatDamage]\nPsychicRevealRadius=2\n",
+        ));
+        // ReadINI6CEC2D copies39 characters before trimming: the X is
+        // outside the buffer, so this pass accepts a different known kind.
+        layers.push(
+            RulesLayerKind::GameMode,
+            IniFile::from_str(&format!(
+                "[RetainedReveal]\nType=pSyChIcReVeAl{}X\n",
+                " ".repeat(26)
+            )),
+        );
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str(
+                "[RetainedReveal]\nType=NoSuchKind\n[UnknownOnly]\nType=StillUnknown\n",
+            ),
+        );
+        let rules = processed_rules(&layers);
+        assert_eq!(
+            rules.super_weapon(REVEAL).unwrap().kind,
+            SuperWeaponKind::PsychicReveal
+        );
+        // Preserve the existing typed-projection boundary for a type that
+        // never had a recognized value. This does not model native Type=-1.
+        assert_eq!(rules.super_weapon_order[1], "UnknownOnly");
+        assert!(rules.super_weapon("UnknownOnly").is_none());
+
+        let mut sim = world(&rules);
+        let owner = sim.interner.get(OWNER).unwrap();
+        let sw_type_id = sim.interner.get(REVEAL).unwrap();
+        // Ordinary Building Unlimbo requests the real House grant suffix.
+        sim.recheck_house_tech_tree(owner, &rules);
+        assert!(sim.super_weapons[&owner][&sw_type_id].is_active());
+        assert!(!sim.super_weapons[&owner][&sw_type_id].is_ready());
+        let duration = rules.super_weapon(REVEAL).unwrap().recharge_time_frames;
+        assert!(duration > 0 && duration < 100);
+        for _ in 0..=duration {
+            sim.advance_tick(&[], Some(&rules), None, None, 33);
+        }
+        assert!(
+            superweapon_views_for_owner(&sim, &rules, &owner)
+                .iter()
+                .any(|view| view.type_id == sw_type_id && view.can_fire)
+        );
+        assert!(!sim.fog.is_cell_revealed(owner, 20, 20));
+        assert!(sim.apply_command_with_overlays(
+            OWNER,
+            &Command::LaunchSuperWeapon {
+                sw_type_id,
+                target_rx: 20,
+                target_ry: 20,
+            },
+            &rules,
+            None,
+            FrameEffects::default(),
+        ));
+        assert!(sim.fog.is_cell_revealed(owner, 20, 20));
+        assert!(!sim.super_weapons[&owner][&sw_type_id].is_ready());
+    }
+
+    #[test]
+    fn unknown_later_predependent_keeps_the_last_accepted_registry_pair() {
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [SuperWeaponTypes]\n0=First\n1=Second\n2=Third\n3=Source\n4=Destination\n\
+             [First]\nType=PsychicReveal\n[Second]\nType=PsychicReveal\n[Third]\nType=PsychicReveal\n\
+             [Source]\nType=ChronoSphere\nPreClick=yes\nRechargeTime=0.1\n\
+             [Destination]\nType=ChronoWarp\nPostClick=yes\nPreDependent=MultiMissile\n",
+        ));
+        // The same40-byte reader at6CEC98 cuts the X, then trims the
+        // remaining spaces. This accepted replacement changes0 to3.
+        layers.push(
+            RulesLayerKind::GameMode,
+            IniFile::from_str(&format!(
+                "[Destination]\nPreDependent=cHrOnOsPhErE{}X\n",
+                " ".repeat(27)
+            )),
+        );
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[Destination]\nPreDependent=NoSuchKind\n"),
+        );
+        let rules = processed_rules(&layers);
+        let destination = rules.super_weapon("Destination").unwrap();
+        assert_eq!(destination.pre_dependent, 3);
+        // Fire_SW4FAE6C indexes the registry by this field; it does not
+        // search for a type with a matching dispatch kind. Lookup only,
+        // without claiming a complete two-click warp execution.
+        let (name, source) = pre_dependent(&rules, destination).unwrap();
+        assert_eq!(name, rules.super_weapon_order[3]);
+        assert_eq!(name, "Source");
+        assert_eq!(source.kind, SuperWeaponKind::ChronoSphere);
+        assert!(source.pre_click && destination.post_click);
+    }
+}
