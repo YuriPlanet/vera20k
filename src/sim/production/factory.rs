@@ -644,6 +644,25 @@ pub(super) fn time_to_build_inputs(
     }
 }
 
+/// Techno6F47A0 reads the held object's owner (+21C), independently of the
+/// Factory's owner (+6C). Action36 can transfer a limbo product while its
+/// original House retains the Factory and a producer. Both GetRate4C9FB0
+/// and Resume4C9EEF/UpdateBuildRate4CA705 call this same Techno receiver.
+pub(super) fn held_time_to_build(
+    sim: &crate::sim::world::Simulation,
+    rules: &RuleSet,
+    held: &PendingObject,
+) -> i32 {
+    held.entity_id
+        .and_then(|id| sim.substrate.entities.get(id))
+        .and_then(|entity| {
+            sim.object_type(entity.type_ref(), rules).map(|object| {
+                time_to_build(&time_to_build_inputs(sim, rules, entity.owner(), object))
+            })
+        })
+        .unwrap_or(0)
+}
+
 /// Map an object type to the `ProductionCategory` whose factory produces it — the Rust
 /// analog of the engine's begin-production factory-slot resolution. A thin tested
 /// delegate over `production_category_for_object`: ONE routing source, not a fork. Its
@@ -755,14 +774,7 @@ impl<'a> FactoryView<'a> {
     pub fn build_step_rate(&self, sim: &crate::sim::world::Simulation, rules: &RuleSet) -> u16 {
         let duration = self
             .object
-            .and_then(|object| object.entity_id)
-            .and_then(|id| sim.substrate.entities.get(id))
-            .and_then(|entity| {
-                sim.object_type(entity.type_ref(), rules).map(|object| {
-                    time_to_build(&time_to_build_inputs(sim, rules, entity.owner(), object))
-                })
-            })
-            .unwrap_or(0);
+            .map_or(0, |held| held_time_to_build(sim, rules, held));
         build_step_rate(duration)
     }
 
@@ -1392,10 +1404,7 @@ impl FactoryRegistry {
             let rate = factory
                 .object
                 .as_ref()
-                .and_then(|object| sim.object_type(object.type_id, rules))
-                .map_or(1, |object| {
-                    time_to_build(&time_to_build_inputs(sim, rules, owner, object))
-                });
+                .map_or(0, |held| held_time_to_build(sim, rules, held));
             factory.set_rate(rate);
         }
     }
@@ -1966,13 +1975,36 @@ mod tests {
                     i32::from_le_bytes(bytes)
                 };
                 assert_eq!(word(8), 0, "supplied native middle timer dword");
+                let head_owner = if status == "foreign" { foreign } else { owner };
+                // The native non-null +58 calls its actual Techno receiver.
+                let entity_id = (status != "null").then(|| {
+                    let id = 1000 + index as u64;
+                    sim.substrate
+                        .entities
+                        .insert(GameEntity::new_at_frame_zero_for_test(
+                            id,
+                            0,
+                            0,
+                            0,
+                            0,
+                            head_owner,
+                            Health::new(100),
+                            type_id,
+                            EntityCategory::Unit,
+                            0,
+                            5,
+                            false,
+                        ));
+                    id
+                });
                 registry.factories.insert(
                     FactoryHolder::Building(100 + index as u64),
                     Factory {
-                        owner: if status == "foreign" { foreign } else { owner },
+                        owner: head_owner,
                         category: ProductionCategory::Vehicle,
                         object: (status != "null").then_some(PendingObject {
                             type_id,
+                            entity_id,
                             ..Default::default()
                         }),
                         progress: if status == "complete" {

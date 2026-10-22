@@ -10,7 +10,8 @@
 use super::CancelOutcome;
 use super::can_build::{check_build_limit, find_factory};
 use super::factory::{
-    AbandonedObject, EnqueueOutcome, FactoryHolder, time_to_build, time_to_build_inputs,
+    AbandonedObject, EnqueueOutcome, FactoryHolder, held_time_to_build, time_to_build,
+    time_to_build_inputs,
 };
 use super::production_tech::{
     factory_category_for_building, production_category_for_object, strip_keeps,
@@ -192,7 +193,12 @@ pub(crate) fn enqueue_selected(
         //4FA5A8/+70 bypasses construction even at stage54. Resume4C9EA0
         // then refuses a complete product, but House ignores its AL and
         // still links/returns0. Source: factory_hold_resume.md.
-        let time_to_build = time_to_build(&time_to_build_inputs(sim, rules, owner_id, obj));
+        let time_to_build = sim
+            .production
+            .factories()
+            .view(owner_id, category)
+            .and_then(|factory| factory.object)
+            .map_or(0, |held| held_time_to_build(sim, rules, held));
         let frame = sim.session.binary_frame();
         let money = crate::sim::credit_income::available_money(&sim.houses, owner_id);
         sim.production.factories_mut().resume(
@@ -379,7 +385,7 @@ pub(super) fn settle_abandoned(
     let category = sim
         .object_type(abandoned.type_id, rules)
         .map(|object| object.category);
-    refund_abandoned(sim, rules, owner_id, abandoned.type_id, abandoned.balance);
+    refund_abandoned(sim, rules, owner_id, &abandoned);
     sim.production
         .factories_mut()
         .reset_for_abandon(holder, sim.session.binary_frame());
@@ -450,13 +456,24 @@ fn refund_abandoned(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner_id: InternedId,
-    type_id: InternedId,
-    balance: i32,
+    abandoned: &AbandonedObject,
 ) {
+    //4CA02E passes the actual held Techno's owner to CostOf;4CA040
+    // still credits the Factory's owner. Transferring the product does not
+    // reprice its retained balance. Identity-free registry fixtures retain
+    // their original type/owner inputs.
+    let (cost_owner, type_id) = abandoned
+        .entity_id
+        .and_then(|id| sim.substrate.entities.get(id))
+        .map_or((owner_id, abandoned.type_id), |entity| {
+            (entity.owner(), entity.type_ref())
+        });
     let Some(object) = sim.object_type(type_id, rules) else {
         return;
     };
-    let refund = sim.cost_of(owner_id, object, rules).wrapping_sub(balance);
+    let refund = sim
+        .cost_of(cost_owner, object, rules)
+        .wrapping_sub(abandoned.balance);
     crate::sim::credit_income::add_credits(&mut sim.houses, owner_id, refund);
 }
 
@@ -1017,7 +1034,12 @@ pub(in crate::sim) fn update_factory_queue(
             .factories()
             .automatic_resume_pending(owner, category)
         {
-            let time_to_build = time_to_build(&time_to_build_inputs(sim, rules, owner, object));
+            let time_to_build = sim
+                .production
+                .factories()
+                .view(owner, category)
+                .and_then(|factory| factory.object)
+                .map_or(0, |held| held_time_to_build(sim, rules, held));
             let frame = sim.session.binary_frame();
             let money = crate::sim::credit_income::available_money(&sim.houses, owner);
             sim.production.factories_mut().resume(
@@ -1306,10 +1328,12 @@ pub fn validate_restored_factory_state(
                 "constructed identity is absent from the entity store",
             )
         })?;
-        if entity.owner() != owner || entity.type_ref() != held.type_id {
+        // Limbo ChangeOwner7014A0 reached by Action36 can transfer the
+        // product without its House Factory. The two owners need not agree.
+        if entity.type_ref() != held.type_id {
             return Err(fail(
                 owner,
-                "constructed identity disagrees with factory owner or type",
+                "constructed identity disagrees with factory type",
             ));
         }
         let expected_category = EntityCategory::from(object.category);

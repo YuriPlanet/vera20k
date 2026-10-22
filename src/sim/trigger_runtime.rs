@@ -4938,6 +4938,10 @@ fn count_techtype(sim: &Simulation, type_id: &str) -> usize {
 mod tests;
 
 #[cfg(test)]
+#[path = "trigger_runtime_factory_owner_tests.rs"]
+mod factory_owner_tests;
+
+#[cfg(test)]
 #[path = "trigger_runtime_zone_entry_tests.rs"]
 mod zone_entry_tests;
 
