@@ -283,6 +283,85 @@ fn ack_from_unrelated_source_retires_send_and_updates_one_response_history() {
 }
 
 #[test]
+fn response_reset_preserves_global_delivery_sequence_and_receive_dedup() {
+    let data = corpus();
+    let source = endpoint(&data["endpoints"]["a"]);
+    let destination = endpoint(&data["endpoints"]["b"]);
+    let mut sender = channel(8, 8);
+    let mut ack = bytes(&data["wrong_source_ack"]["ack_frame"]);
+    assert!(sender.send(
+        b"history",
+        GlobalDestination::direct(destination),
+        Delivery::Reliable,
+        0
+    ));
+    sender.service(1000, &mut |_, _| {});
+    sender
+        .receive(source, 0, &ack, 1004, &mut |_, _| {})
+        .unwrap();
+    sender.service(1004, &mut |_, _| {});
+    assert_eq!(sender.mean_response_time(), 4);
+    assert!(sender.send(
+        b"pending",
+        GlobalDestination::direct(destination),
+        Delivery::Reliable,
+        0
+    ));
+    let mut first_send = Vec::new();
+    sender.service(1005, &mut |_, frame| first_send.push(frame.to_vec()));
+    let incoming = bytes(&data["basic"]["native_frame"]["frame"]);
+    assert_eq!(
+        sender
+            .receive(source, 0, &incoming, 1005, &mut |_, _| {})
+            .unwrap(),
+        GlobalReceiveOutcome::Queued
+    );
+    let before = format!("{sender:?}");
+    sender.reset_response_time(false);
+    assert_eq!(format!("{sender:?}"), before);
+    sender.reset_response_time(true);
+    assert_eq!(sender.mean_response_time(), 0);
+    assert_eq!(sender.queued_send_count(), 1);
+    assert_eq!(sender.queued_receive_count(), 1);
+    assert_eq!(sender.send.total_enqueued(), 2);
+    assert_eq!(sender.total_received, 1);
+    assert_eq!(sender.receive[0].arrived, 1005);
+    let mut retried = Vec::new();
+    sender.service(1010, &mut |_, frame| retried.push(frame.to_vec()));
+    assert_eq!(retried, first_send);
+    ack[4..8].copy_from_slice(&1_u32.to_le_bytes());
+    sender
+        .receive(source, 0, &ack, 1011, &mut |_, _| {})
+        .unwrap();
+    sender.service(1011, &mut |_, _| {
+        panic!("ACKed global message retransmitted")
+    });
+    assert_eq!(
+        sender.mean_response_time(),
+        6,
+        "ACK uses first send, not reset or retry time"
+    );
+    assert_eq!(sender.queued_send_count(), 0);
+    assert_eq!(
+        sender
+            .receive(source, 0, &incoming, 1011, &mut |_, _| {})
+            .unwrap(),
+        GlobalReceiveOutcome::DuplicateAcknowledged
+    );
+    assert_eq!(sender.pop_received().unwrap().payload, b"global-A");
+    assert!(sender.pop_received().is_none());
+    assert!(sender.send(
+        b"next",
+        GlobalDestination::direct(destination),
+        Delivery::Reliable,
+        0
+    ));
+    let mut next = Vec::new();
+    sender.service(1012, &mut |_, frame| next.push(frame.to_vec()));
+    assert_eq!(sequence(&next[0]), 2);
+}
+
+#[test]
 fn aggregate_sequence_overrides_retry_and_failed_cleanup_match_original() {
     let data = corpus();
     let mut sender = channel(3, 8);

@@ -260,12 +260,22 @@ impl LanUdpTransport {
         Ok(())
     }
 
-    /// Manager542450 takes an unsigned maximum over private and global RTTs.
+    /// Manager542450 takes an unsigned maximum over private RTTs and its
+    /// optional +50 channel; it never reads the primary +48 global channel.
+    /// The optional channel is not represented by this direct-LAN transport.
     pub fn response_time(&self) -> u32 {
         self.connections
             .peers()
             .filter_map(|(id, _)| self.connections.mean_response_time(id))
-            .fold(self.global.mean_response_time(), u32::max)
+            .fold(0, u32::max)
+    }
+
+    /// IPXManager::ResetResponseTime542EC0 forwards the caller's flag to
+    /// private peers and always clears the primary-global history. Socket,
+    /// raw datagram and reliable delivery ownership are unaffected.
+    pub fn reset_response_time(&mut self, clear: bool) {
+        self.connections.reset_response_time(clear);
+        self.global.reset_response_time(true);
     }
 
     pub fn set_retry_timing(

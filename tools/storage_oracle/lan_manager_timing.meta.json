@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original LAN handoff timing, manager response-history reset and private response maximum",
+  "assumptions": [
+    "The existing GlobalMachine and shell_relayout.Machine load retail PE bytes through native_oracle.load_image. No Windows process, socket or whole-session comparison is claimed.",
+    "Supplied manager storage uses original7EC16C vtable, two private common connections, primary1236 and alternateCDEF globals, and one extra common connection. Original constructors and48B410/48B750 admit occupied send/receive queues; complete heap/manager comparison rejects writes outside declared timing/stat fields.",
+    "LAN prepare52E9DF..52EA54 enters with EAX3/EBP-1; guest5DD9AC..5DDA02 executes signed private timing plus primary-global override. Raw CommBuffer+1C observations change at declared5424C0 entries; both native getters run, including conditional second reads. Nonconstant schedules are branch controls, not claims of ordinary concurrent writes.",
+    "Original48BA10 seeds response history;647B2B..647B35 executes the successful-wait reset call after the peer-field clear, and direct542EC0 controls cover preserved high private means and empty histories. Only Rust-consumed sum/count/mean outputs are retained; the native peak has no current Rust consumer. Mode4 periodic scheduling and alternate/extra-channel lifecycle remain outside the Rust integration.",
+    "Full542450 controls seed original48BA10 private histories, with primaryFFFFFFFF and alternateFFFFFFFE histories deliberately larger than ordinary private values. Manager+50 is absent. Exact private leaf-call order and a no-write heap/manager guard cover empty and unsigned-high inputs; no expected result is calculated in Python. Extra-channel participation remains outside the direct-LAN Rust owner."
+  ],
+  "substitutions": [
+    "Existing shared allocator/deallocator and fail-closed Windows import adapters. Debug4068E0 is an output sink. Declared manager/channel configuration and caller registers are supplied; original constructor, getter, setter and reset bodies execute.",
+    "Successive raw response means and initial sample sequences are controlled inputs. No timing arithmetic, response result, socket I/O or gameplay body is substituted. Stack writes are allowed and exact native caller stack balance is required."
+  ],
+  "entry_points": {
+    "global_ctor": "0x0053FA90",
+    "connection_ctor": "0x0048BE60",
+    "comm_ctor": "0x0048B0E0",
+    "queue_send": "0x0048B410",
+    "queue_receive": "0x0048B750",
+    "prepare_begin": "0x0052E9DF",
+    "prepare_end": "0x0052EA54",
+    "guest_begin": "0x005DD9AC",
+    "guest_end": "0x005DDA02",
+    "initial_reset_begin": "0x00647B2B",
+    "initial_reset_end": "0x00647B35",
+    "manager_set_timing": "0x00540C60",
+    "global_set_timing": "0x00540D10",
+    "global_mean": "0x005424C0",
+    "private_response_maximum": "0x00542450",
+    "mean": "0x0048BA80",
+    "reset_all": "0x00542EC0",
+    "reset_stats": "0x0048BAA0",
+    "record_response": "0x0048BA10"
+  },
+  "replay_command": "python -m tools.storage_oracle.lan_lobby --manager-timing",
+  "payload_sha256": "1b07e79bca29d78739aa3a8b026cfff4f5d0eb5d7f8f42f6ce9c245175de6fd9"
+}

@@ -66,8 +66,17 @@ kick, while its departure removes the admitted participant and endpoint.
   head; WouldBlock retires that raw attempt. The reliable owner still controls its
   retry. Portable polling supplies write opportunities in place of Win32 events.
 - LAN pre/post-GO timing preserves the distinct host and guest paths, including
-  conditional response-time reads and signed versus unsigned arithmetic. New
-  private connections inherit those settings.
+  conditional primary-global response-time reads and signed versus unsigned
+  arithmetic. Guest GO completion gives the primary global channel its separate
+  timing. After gameplay peers are installed, `52EA18`/`52EA4F` select independent
+  private and primary-global retry intervals.
+- The initial successful player barrier resets response history through the
+  shared `48BAA0` owner. This preserves pending traffic, original send timestamps,
+  sequence counters and receive history. WOL's periodic reset scheduling and its
+  additional channels remain outside the current LAN path.
+- Ordinary waits use the private response maximum from `542450`; primary-global
+  acknowledgement history is excluded. The native optional extra channel at
+  manager `+50` remains an unimplemented dependency.
 - Setup Back retains transport history within a lobby visit. A fresh post-match
   visit resets queues, sequence history, observations and lobby timing while
   retaining the portable socket bindings.
@@ -81,9 +90,9 @@ on all relevant state and arithmetic.
 The active audit follows player-visible chains and their dependencies. Completing
 a ledger row or recording a gap does not complete an unimplemented behavior.
 
-- Complete the normal Battle opening and subsequent command producers, including
-  distinct keyboard/self-click deploy paths, production, placement, building
-  actions, targeting, special weapons and simulation-generated publication.
+- Complete the command producers beyond the bounded AMCV-to-Power-Plant opening:
+  wider deploy paths, mobile production, building actions, targeting, special
+  weapons and simulation-generated publication.
 - Complete map/preview transfer, random-map and cooperative handoffs, plus the
   Internet session and router paths. Preserve shared session and transport owners.
 - Establish source filtering, interface selection, extra-socket/router handling

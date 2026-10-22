@@ -210,7 +210,8 @@ impl LiveCommandSession {
         self.exchange.sent_commands()
     }
 
-    ///Manager ResponseTime542450 includes private and global queue histories.
+    ///Manager ResponseTime542450 uses private histories, excluding primary
+    ///global traffic. Its optional extra channel has no direct-LAN owner.
     pub fn response_time(&self) -> u32 {
         self.transport.response_time()
     }
@@ -405,6 +406,9 @@ impl LiveCommandSession {
                         return Ok(NetworkQueuePass::Waiting);
                     }
                     self.exchange.finish_initial_barrier();
+                    //647B2E/647B32: only a successful initial wait clears
+                    //manager response histories, after the peer-frame clear.
+                    self.transport.reset_response_time(true);
                     self.current.as_mut().unwrap().phase = FramePhase::Sending;
                 }
                 FramePhase::Sending => {
