@@ -381,16 +381,13 @@ impl RuntimeDefinitions {
         // ignoring case, and ReadINI727240/6E6080 read every record by that
         // Type's own ID, exact case. A key differing from an earlier one only
         // in case revisits that Type and reads the earlier key's records.
-        // Residual, exact duplicate keys: LoadFromStraw525A60 keeps every
-        // copy (526177 appends each to the entry list and CRC index without
-        // a duplicate check) and 7275D0/6E5ED0/4AD1B3 visit each copy by
-        // index, so native reads that Type once per copy: a duplicated
-        // [Triggers] key prepends its events again. ReadString finds the key
-        // through the qsorted CRC index (526B10), so the copy whose value it
-        // returns is the sort's. IniFile keeps the first copy only, so each
-        // Type is read once here. No extracted retail map has a duplicate.
+        // LoadFromStraw525A60/526177 retains every physical entry. The
+        // 7275D0/6E5ED0 loops revisit a Type for each copy, reading its header
+        // through the shared CRC lookup526B10: events prepend again while
+        // actions replace. No new RNG/timer/detach owner belongs to the read;
+        // the existing Fill/LiveTrigger constructor consumes those events.
         if let Some(section) = map.ini.section("Triggers") {
-            for key in section.keys() {
+            for key in section.physical_keys() {
                 if section.read_name(key, 24).is_none() {
                     continue;
                 }
@@ -446,7 +443,7 @@ impl RuntimeDefinitions {
             }
         }
         if let Some(section) = map.ini.section("Tags") {
-            for key in section.keys() {
+            for key in section.physical_keys() {
                 if section.read_name(key, 24).is_none() {
                     continue;
                 }
@@ -4936,6 +4933,10 @@ fn count_techtype(sim: &Simulation, type_id: &str) -> usize {
 #[cfg(test)]
 #[path = "trigger_runtime_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_duplicate_ini_tests.rs"]
+mod duplicate_ini_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_zone_entry_tests.rs"]

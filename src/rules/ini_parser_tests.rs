@@ -178,11 +178,37 @@ fn omitted_fixture_key_preserves_source_order_case_and_reader_defaults() {
 }
 
 #[test]
-fn duplicate_key_compatibility_lookup_keeps_first_definition() {
-    let ini = IniFile::from_str("[General]\nBuildSpeed=.7\nBuildSpeed=.58\n");
+fn fresh_duplicate_lookup_keeps_physical_bytes_and_projection_copy_separate() {
+    // FindEntryByNames526B10 -> signed CRC qsort52B6A0 and midpoint52B6D0.
+    // The original physical ROOT/ROOT/SHOW control selects the second ROOT;
+    // SaveToPipe526470 still writes both original values, in physical order.
+    let ini = IniFile::from_str("[Triggers]\nROOT=First\nROOT=Second\nSHOW=Show\n");
+    let section = ini.section("Triggers").unwrap();
+    assert_eq!(section.read_string("ROOT", "", 32), "Second");
     assert_eq!(
-        ini.section("General").unwrap().get("BuildSpeed"),
-        Some(".7")
+        ini.save_to_pipe(None),
+        b"[Triggers]\r\nROOT=First\r\nROOT=Second\r\nSHOW=Show\r\n"
+    );
+
+    // Include copies remain the existing compatibility policy; an ordered
+    // Rules pass instead projects the value the physical native reader saw.
+    let mut included = IniFile::empty();
+    included.merge(&ini);
+    assert_eq!(
+        included
+            .section("Triggers")
+            .unwrap()
+            .read_string("ROOT", "", 32),
+        "First"
+    );
+    let mut projected = IniFile::empty();
+    projected.merge_rules_projection(&ini);
+    assert_eq!(
+        projected
+            .section("Triggers")
+            .unwrap()
+            .read_string("ROOT", "", 32),
+        "Second"
     );
 }
 

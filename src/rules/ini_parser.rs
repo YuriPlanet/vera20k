@@ -12,9 +12,9 @@
 //!
 //! Active `gamemd.exe` treats raw section and key names as case-sensitive.
 //! A fresh load retains duplicate nonempty section bodies, and later copies
-//! of a key for `SaveToPipe` (lookups see the first). Empty keys, values,
-//! and physical section bodies are not inserted. Arbitrary duplicate-name
-//! lookup remains a native CRC/qsort exactification residual.
+//! of a key for `SaveToPipe`. Fresh entry reads use the native CRC index;
+//! compatibility projections keep their explicit exact-key overlay policy.
+//! Empty keys, values, and physical section bodies are not inserted.
 //! Native registry allocation and ordered RulesClass passes live in
 //! `rules::native_processing`; typed gameplay projection lives in `ruleset`.
 
@@ -37,7 +37,7 @@ use self::ini_value::strtrim_ascii;
 const READ_LINE_PAYLOAD: usize = 511;
 
 /// One physical section occurrence in an INI file.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct IniSection {
     /// Exact section spelling from the file.
     pub name: String,
@@ -52,11 +52,35 @@ pub struct IniSection {
     projected_values: HashMap<String, Vec<String>>,
     /// Later copies of a key in a fresh load, which native keeps in its
     /// entry list (`LoadFromStraw` `0x00525A60`) and `SaveToPipe` writes:
-    /// `(physical index, key, value)`. Lookups never see them, and a saved
-    /// game does not keep them: only a fresh load is hashed.
+    /// `(physical index, key, value)`. Fresh CRC lookups may select them.
+    /// Saved compatibility projections do not retain this raw-file history.
     #[serde(skip)]
     duplicate_entries: Vec<(usize, String, String)>,
+    /// Built once after a fresh physical load. None denotes a compatibility
+    /// projection, including saved typed-reader bodies; it is not PutString's
+    /// mutable index/cache. The physical payload remains in the fields above.
+    #[serde(skip)]
+    fresh_index: Option<Vec<(i32, PhysicalEntry)>>,
 }
+
+#[derive(Debug, Clone, Copy)]
+enum PhysicalEntry {
+    First(usize),
+    Duplicate(usize),
+}
+
+// Source-store equality excludes the derived fresh lookup index, just as
+// IniFile excludes its derived section index from persistence.
+impl PartialEq for IniSection {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.entries == other.entries
+            && self.key_order == other.key_order
+            && self.projected_values == other.projected_values
+            && self.duplicate_entries == other.duplicate_entries
+    }
+}
+impl Eq for IniSection {}
 
 // A standalone retained Type reader body uses this same admission as a whole
 // IniFile. Accept neither duplicate order entries nor orphaned reader history.
@@ -87,6 +111,7 @@ impl<'de> serde::Deserialize<'de> for IniSection {
             key_order: saved.key_order,
             projected_values: saved.projected_values,
             duplicate_entries: Vec::new(),
+            fresh_index: None,
         })
     }
 }
@@ -99,6 +124,7 @@ impl IniSection {
             key_order: Vec::new(),
             projected_values: HashMap::new(),
             duplicate_entries: Vec::new(),
+            fresh_index: None,
         }
     }
 
@@ -111,6 +137,7 @@ impl IniSection {
     }
 
     fn set_projected(&mut self, key: &str, value: &str) {
+        self.fresh_index = None;
         if !self.entries.contains_key(key) {
             self.key_order.push(key.to_string());
         }
@@ -121,9 +148,7 @@ impl IniSection {
             .push(value.to_string());
     }
 
-    /// Insert during a fresh file load. The Rust compatibility lookup keeps
-    /// the first exact duplicate; native multi-duplicate CRC/qsort selection
-    /// is intentionally outside the ordinary-retail contract.
+    /// Insert during a fresh file load, before building its lookup index.
     fn insert_initial(&mut self, key: &str, value: &str) {
         if self.entries.contains_key(key) {
             let index = self.key_order.len() + self.duplicate_entries.len();
@@ -138,6 +163,7 @@ impl IniSection {
     /// Apply a later load/rules pass. Existing exact keys are replaced and new
     /// keys retain layer source order.
     pub fn set(&mut self, key: &str, value: &str) {
+        self.fresh_index = None;
         if !self.entries.contains_key(key) {
             self.key_order.push(key.to_string());
         }
@@ -148,28 +174,59 @@ impl IniSection {
     /// [`Self::set`] each of a later layer's entries in its source order.
     pub(crate) fn overlay(&mut self, patch: &IniSection) {
         for key in patch.keys() {
-            if let Some(value) = patch.get(key) {
+            if let Some(value) = patch.entries.get(key) {
                 self.set(key, value);
             }
         }
     }
 
-    /// Every loaded entry in file order, later copies of a key included.
-    fn physical_entries(&self) -> impl Iterator<Item = (&str, &str)> {
-        let mut first = self
-            .key_order
-            .iter()
-            .map(|key| (key.as_str(), self.get(key).unwrap_or_default()));
-        let mut duplicates = self.duplicate_entries.iter().peekable();
+    fn physical_slots(&self) -> impl Iterator<Item = PhysicalEntry> {
+        let mut first = 0..self.key_order.len();
+        let mut duplicates = self.duplicate_entries.iter().enumerate().peekable();
         (0..self.key_order.len() + self.duplicate_entries.len()).filter_map(move |index| {
-            if duplicates.peek().is_some_and(|(at, ..)| *at == index) {
+            if duplicates.peek().is_some_and(|(_, (at, ..))| *at == index) {
                 duplicates
                     .next()
-                    .map(|(_, key, value)| (key.as_str(), value.as_str()))
+                    .map(|(at, _)| PhysicalEntry::Duplicate(at))
             } else {
-                first.next()
+                first.next().map(PhysicalEntry::First)
             }
         })
+    }
+
+    fn physical_entry(&self, slot: PhysicalEntry) -> (&str, &str) {
+        match slot {
+            PhysicalEntry::First(at) => {
+                let key = self.key_order[at].as_str();
+                (key, self.entries[key].as_str())
+            }
+            PhysicalEntry::Duplicate(at) => {
+                let (_, key, value) = &self.duplicate_entries[at];
+                (key, value)
+            }
+        }
+    }
+
+    /// Every loaded entry in file order, without resolving lookup winners.
+    fn physical_entries(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.physical_slots().map(|slot| self.physical_entry(slot))
+    }
+
+    /// GetEntryCount/GetEntryName's physical walk, including duplicate keys
+    /// (LoadFromStraw525A60/526177). Value readers still query by name.
+    pub fn physical_keys(&self) -> impl Iterator<Item = &str> {
+        self.physical_entries().map(|(key, _)| key)
+    }
+
+    fn build_fresh_index(&mut self) {
+        let mut index: Vec<_> = self
+            .physical_slots()
+            .map(|slot| (entry_name_crc(self.physical_entry(slot).0), slot))
+            .collect();
+        // FindEntryByNames526B10 sorts the physical pair array using signed
+        // CRC only (CompareINIEntryNameHashes52B6A0), with no identity tie-break.
+        crate::util::retail_pointer_sort::sort_by(&mut index, |a, b| a.0.cmp(&b.0));
+        self.fresh_index = Some(index);
     }
 
     /// The section every reader sees when the named section is absent: no
@@ -183,6 +240,23 @@ impl IniSection {
     /// The raw stored text of an exact-case key, private to the store and its
     /// readers.
     fn get(&self, key: &str) -> Option<&str> {
+        if let Some(index) = &self.fresh_index {
+            // FindINIEntryIndexPair52B6D0 returns the first equal midpoint it
+            // visits. Fresh loads have no intervening mutable cache history.
+            let crc = entry_name_crc(key);
+            let mut remaining = index.as_slice();
+            while !remaining.is_empty() {
+                let middle = remaining.len() / 2;
+                match remaining[middle].0.cmp(&crc) {
+                    std::cmp::Ordering::Equal => {
+                        return Some(self.physical_entry(remaining[middle].1).1);
+                    }
+                    std::cmp::Ordering::Greater => remaining = &remaining[..middle],
+                    std::cmp::Ordering::Less => remaining = &remaining[middle + 1..],
+                }
+            }
+            return None;
+        }
         self.entries.get(key).map(String::as_str)
     }
 
@@ -192,9 +266,9 @@ impl IniSection {
         self.get(key)
     }
 
-    /// Whether an exact-case key is stored, whatever its value.
+    /// Whether the section's reader can find the key, whatever its value.
     pub fn is_present(&self, key: &str) -> bool {
-        self.entries.contains_key(key)
+        self.get(key).is_some()
     }
 
     fn projected_values(&self, key: &str) -> Option<&[String]> {
@@ -343,6 +417,9 @@ impl IniFile {
         // Active read mode destroys a candidate section unless at least one
         // accepted nonempty entry was linked into it.
         ini.discard_entryless_sections();
+        for section in &mut ini.sections {
+            section.build_fresh_index();
+        }
         ini
     }
 
@@ -426,6 +503,7 @@ impl IniFile {
         let mut ini = self.clone();
         for body in &mut ini.sections {
             if body.name == section {
+                body.fresh_index = None;
                 body.entries.remove(key);
                 body.key_order.retain(|stored| stored.as_str() != key);
                 body.projected_values.remove(key);
@@ -435,8 +513,12 @@ impl IniFile {
         ini
     }
 
-    /// Load another INI into an already populated INI object. This models the
-    /// native PutString path: later nonempty exact keys replace earlier ones.
+    /// Compatibility overlay: later exact keys replace earlier ones. This is
+    /// also the include extension's policy, not native PutString528660 parity.
+    /// Residual: overlapping loose PKT files (699B58) can retain a cached
+    /// duplicate pair across insertion, then change selection on a later sort.
+    /// That separate map-catalog merge needs native index/capacity/cache history
+    /// rather than this dictionary overlay. It has no own RNG/timer/detach.
     pub fn merge(&mut self, patch: &IniFile) {
         for (patch_index, patch_section) in patch.sections.iter().enumerate() {
             if patch.first_section.get(&patch_section.name) != Some(&patch_index) {
@@ -471,7 +553,9 @@ impl IniFile {
             self.sections[index].overlay(patch_section);
         } else {
             let index = self.sections.len();
-            self.sections.push(patch_section.clone());
+            let mut copied = patch_section.clone();
+            copied.fresh_index = None;
+            self.sections.push(copied);
             self.first_section.insert(patch_section.name.clone(), index);
         }
         patch_section.entry_count()
@@ -556,6 +640,16 @@ impl IniFile {
     pub fn digest_checked_crc(&self) -> u32 {
         crc_of_pipe(&self.save_to_pipe(Some("Digest")))
     }
+}
+
+/// CRCEngine4A1DE0 over the native name bytes, without case folding.
+fn entry_name_crc(name: &str) -> i32 {
+    let bytes = crate::util::native_string::narrow_widened(name);
+    let end = bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(bytes.len());
+    crate::assets::mix_hash::crc_engine(&bytes[..end]) as i32
 }
 
 fn crc_of_pipe(bytes: &[u8]) -> u32 {
