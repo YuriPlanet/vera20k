@@ -5185,6 +5185,10 @@ mod scenario_pause_tests;
 mod outcome_tests;
 
 #[cfg(test)]
+#[path = "trigger_runtime_digest_ini_tests.rs"]
+mod digest_ini_tests;
+
+#[cfg(test)]
 #[path = "world/building_sale_trigger_tests.rs"]
 mod building_sale_trigger_tests;
 

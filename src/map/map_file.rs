@@ -332,7 +332,11 @@ impl MapFile {
         Self::from_ini(IniFile::from_bytes(data)?)
     }
 
-    pub(super) fn from_ini(ini: IniFile) -> Result<Self, MapError> {
+    pub(super) fn from_ini(mut ini: IniFile) -> Result<Self, MapError> {
+        // Read_Scenario_INI6867BE calls ReadCCFile4741F0(checkDigest=1)
+        // before any scenario readers; both matched and stale digests admit
+        // the file. Metadata readers use the unchecked physical INI instead.
+        ini.remove_digest_for_checked_load();
         let header: MapHeader = parse_header(&ini)?;
         let basic: BasicSection = basic::parse_basic_section(&ini);
         let ranking: crate::map::ranking::RankingSection =

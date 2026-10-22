@@ -69,8 +69,8 @@ enum PhysicalEntry {
     Duplicate(usize),
 }
 
-// Source-store equality excludes the derived fresh lookup index, just as
-// IniFile excludes its derived section index from persistence.
+// Source-store equality compares the physical payload. Compatibility reader
+// persistence does not retain raw-file index/cache history.
 impl PartialEq for IniSection {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
@@ -221,7 +221,7 @@ impl IniSection {
     fn build_fresh_index(&mut self) {
         let mut index: Vec<_> = self
             .physical_slots()
-            .map(|slot| (entry_name_crc(self.physical_entry(slot).0), slot))
+            .map(|slot| (ini_name_crc(self.physical_entry(slot).0), slot))
             .collect();
         // FindEntryByNames526B10 sorts the physical pair array using signed
         // CRC only (CompareINIEntryNameHashes52B6A0), with no identity tie-break.
@@ -243,19 +243,8 @@ impl IniSection {
         if let Some(index) = &self.fresh_index {
             // FindINIEntryIndexPair52B6D0 returns the first equal midpoint it
             // visits. Fresh loads have no intervening mutable cache history.
-            let crc = entry_name_crc(key);
-            let mut remaining = index.as_slice();
-            while !remaining.is_empty() {
-                let middle = remaining.len() / 2;
-                match remaining[middle].0.cmp(&crc) {
-                    std::cmp::Ordering::Equal => {
-                        return Some(self.physical_entry(remaining[middle].1).1);
-                    }
-                    std::cmp::Ordering::Greater => remaining = &remaining[..middle],
-                    std::cmp::Ordering::Less => remaining = &remaining[middle + 1..],
-                }
-            }
-            return None;
+            return find_crc_index_value(index, ini_name_crc(key))
+                .map(|slot| self.physical_entry(*slot).1);
         }
         self.entries.get(key).map(String::as_str)
     }
@@ -306,13 +295,18 @@ impl IniSection {
     }
 }
 
-/// Parsed section occurrences plus Rust's deterministic exact-name lookup index
-/// for the supported ordinary INI contract.
+/// Physical section occurrences and their native fresh-load CRC lookup order.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct IniFile {
     sections: Vec<IniSection>,
+    /// Exact first occurrences used by explicit compatibility projections.
     #[serde(skip)]
     first_section: HashMap<String, usize>,
+    /// FindPair52B620 sorts signed hashes through52B720/CRT7C8B48. Removing
+    /// a section preserves this permutation instead of sorting survivors.
+    /// None denotes a compatibility projection, including saved reader views.
+    #[serde(skip)]
+    fresh_section_index: Option<Vec<(i32, usize)>>,
 }
 
 impl<'de> serde::Deserialize<'de> for IniFile {
@@ -329,6 +323,7 @@ impl<'de> serde::Deserialize<'de> for IniFile {
         Ok(Self {
             sections: saved.sections,
             first_section,
+            fresh_section_index: None,
         })
     }
 }
@@ -338,6 +333,7 @@ impl IniFile {
         Self {
             sections: Vec::new(),
             first_section: HashMap::new(),
+            fresh_section_index: None,
         }
     }
 
@@ -420,11 +416,24 @@ impl IniFile {
         for section in &mut ini.sections {
             section.build_fresh_index();
         }
+        let mut index: Vec<_> = ini
+            .sections
+            .iter()
+            .enumerate()
+            .map(|(ordinal, section)| (ini_name_crc(&section.name), ordinal))
+            .collect();
+        crate::util::retail_pointer_sort::sort_by(&mut index, |a, b| a.0.cmp(&b.0));
+        ini.fresh_section_index = Some(index);
         ini
     }
 
     fn discard_entryless_sections(&mut self) {
+        self.fresh_section_index = None;
         self.sections.retain(|section| section.entry_count() != 0);
+        self.rebuild_first_sections();
+    }
+
+    fn rebuild_first_sections(&mut self) {
         self.first_section.clear();
         for (index, section) in self.sections.iter().enumerate() {
             self.first_section
@@ -471,11 +480,18 @@ impl IniFile {
         }
     }
 
-    /// Exact raw INI lookup.
+    fn section_position(&self, name: &str) -> Option<usize> {
+        if let Some(index) = &self.fresh_section_index {
+            find_crc_index_value(index, ini_name_crc(name)).copied()
+        } else {
+            self.first_section.get(name).copied()
+        }
+    }
+
+    /// Native fresh-file lookup, or the explicit compatibility projection.
     pub fn section(&self, name: &str) -> Option<&IniSection> {
-        self.first_section
-            .get(name)
-            .and_then(|index| self.sections.get(*index))
+        self.section_position(name)
+            .and_then(|index| self.sections.get(index))
     }
 
     /// [`Self::section`] for reading: an absent section is
@@ -489,6 +505,36 @@ impl IniFile {
             .iter()
             .map(|section| section.name.as_str())
             .collect()
+    }
+
+    /// ReadCCFile4741F0: a positive ReadUUBlock526FB0("Digest",20) removes
+    /// the selected section before scenario initialization, even on mismatch.
+    /// Base64Pipe42DDB0/42DF40 emits at least one byte for every nonempty raw
+    /// group (Decode42FE50,42FF14); only that predicate is needed here. Short
+    /// or invalid text must not be rejected through the strict map decoder.
+    pub(crate) fn remove_digest_for_checked_load(&mut self) {
+        let Some(position) = self.section_position("Digest") else {
+            return;
+        };
+        if self.sections[position].read_packed_text().is_empty() {
+            return;
+        }
+        // Clear5257C0 -> RemoveKey52B2B0 compacts the sorted pair array and
+        // clears its cached pair, without resetting the sorted flag. Retain
+        // the other physical sections and their lookup order unchanged.
+        self.sections.remove(position);
+        self.rebuild_first_sections();
+        if let Some(index) = &mut self.fresh_section_index {
+            index.retain_mut(|(_, ordinal)| {
+                if *ordinal == position {
+                    return false;
+                }
+                if *ordinal > position {
+                    *ordinal -= 1;
+                }
+                true
+            });
+        }
     }
 
     #[cfg(test)]
@@ -520,6 +566,7 @@ impl IniFile {
     /// That separate map-catalog merge needs native index/capacity/cache history
     /// rather than this dictionary overlay. It has no own RNG/timer/detach.
     pub fn merge(&mut self, patch: &IniFile) {
+        self.fresh_section_index = None;
         for (patch_index, patch_section) in patch.sections.iter().enumerate() {
             if patch.first_section.get(&patch_section.name) != Some(&patch_index) {
                 continue;
@@ -532,14 +579,18 @@ impl IniFile {
     ///
     /// Retail provenance: sequential typed defaults — `RulesClass__Process` @ `0x00668BF0`.
     pub(super) fn merge_rules_projection(&mut self, patch: &IniFile) {
-        for (patch_index, patch_section) in patch.sections.iter().enumerate() {
-            if patch.first_section.get(&patch_section.name) != Some(&patch_index) {
+        self.fresh_section_index = None;
+        for (patch_index, physical) in patch.sections.iter().enumerate() {
+            if patch.first_section.get(&physical.name) != Some(&patch_index) {
                 continue;
             }
-            if let Some(index) = self.first_section.get(&patch_section.name).copied() {
+            // The typed pass must consume the same section as its native
+            // readers, even when the CRC index selects a later occurrence.
+            let patch_section = patch.section(&physical.name).unwrap();
+            if let Some(index) = self.first_section.get(&physical.name).copied() {
                 self.sections[index].overlay_rules_pass(patch_section);
             } else {
-                let mut section = IniSection::new(patch_section.name.clone());
+                let mut section = IniSection::new(physical.name.clone());
                 section.overlay_rules_pass(patch_section);
                 let index = self.sections.len();
                 self.first_section.insert(section.name.clone(), index);
@@ -565,6 +616,7 @@ impl IniFile {
     /// Native processing owns which values enter it; INI owns storage/order.
     #[cfg(any(test, feature = "test-support"))]
     pub(super) fn projection_section_mut(&mut self, name: &str) -> &mut IniSection {
+        self.fresh_section_index = None;
         let index = if let Some(&index) = self.first_section.get(name) {
             index
         } else {
@@ -577,6 +629,7 @@ impl IniFile {
     }
 
     pub(super) fn replace_first_section(&mut self, section: IniSection) {
+        self.fresh_section_index = None;
         if let Some(index) = self.first_section.get(&section.name).copied() {
             self.sections[index] = section;
         } else {
@@ -607,7 +660,7 @@ impl IniFile {
     /// per entry, in list order, with `\r\n` before every section but the
     /// first. `skip` names a section the load removed first.
     fn save_to_pipe(&self, skip: Option<&str>) -> Vec<u8> {
-        let skipped = skip.and_then(|name| self.first_section.get(name).copied());
+        let skipped = skip.and_then(|name| self.section_position(name));
         let mut bytes = Vec::new();
         for (index, section) in self.sections.iter().enumerate() {
             if Some(index) == skipped {
@@ -638,18 +691,35 @@ impl IniFile {
     /// GetCRC after a digest-checked load (`ReadCCFile(file, 1, 0)`,
     /// `0x0047424A..0x004742E3`): `[Digest]` is removed before the hash.
     pub fn digest_checked_crc(&self) -> u32 {
-        crc_of_pipe(&self.save_to_pipe(Some("Digest")))
+        let mut checked = self.clone();
+        checked.remove_digest_for_checked_load();
+        checked.native_crc()
     }
 }
 
 /// CRCEngine4A1DE0 over the native name bytes, without case folding.
-fn entry_name_crc(name: &str) -> i32 {
+fn ini_name_crc(name: &str) -> i32 {
     let bytes = crate::util::native_string::narrow_widened(name);
     let end = bytes
         .iter()
         .position(|byte| *byte == 0)
         .unwrap_or(bytes.len());
     crate::assets::mix_hash::crc_engine(&bytes[..end]) as i32
+}
+
+/// SectionIndex::FindPair52B620 and FindINIEntryIndexPair52B6D0 use the
+/// same signed midpoint search, returning the first equal pair visited.
+fn find_crc_index_value<T>(pairs: &[(i32, T)], crc: i32) -> Option<&T> {
+    let mut remaining = pairs;
+    while !remaining.is_empty() {
+        let middle = remaining.len() / 2;
+        match remaining[middle].0.cmp(&crc) {
+            std::cmp::Ordering::Equal => return Some(&remaining[middle].1),
+            std::cmp::Ordering::Greater => remaining = &remaining[..middle],
+            std::cmp::Ordering::Less => remaining = &remaining[middle + 1..],
+        }
+    }
+    None
 }
 
 fn crc_of_pipe(bytes: &[u8]) -> u32 {

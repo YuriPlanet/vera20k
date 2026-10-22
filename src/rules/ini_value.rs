@@ -882,11 +882,12 @@ impl IniSection {
     }
 
     /// `ReadINIBase64BinarySectionSourceOrder @ 0x00526FB0` (IsoMapPack5,
-    /// OverlayPack, OverlayDataPack, PreviewPack): every entry's value in
-    /// source order, each cut to 127 bytes and trimmed, joined for the Base64
-    /// decoder. Entry names are not parsed or sorted.
+    /// OverlayPack, OverlayDataPack, PreviewPack, Digest): each physical entry
+    /// name queries the shared value index, including duplicate occurrences.
+    /// Values are cut to 127 bytes and trimmed, then joined for Base64Pipe.
+    /// Entry names are not parsed or sorted.
     pub fn read_packed_text(&self) -> String {
-        self.keys()
+        self.physical_keys()
             .filter_map(|key| self.get(key))
             .map(|value| strtrim_ascii(truncate_native_bytes(value, 0x7F)))
             .collect()

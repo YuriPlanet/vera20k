@@ -304,7 +304,7 @@ fn inherit(
         // parent's partially resolved branch. The first parent supplying a
         // key wins; child-authored values always win, even for later parents.
         let parent = ini.section(&parent).unwrap().clone();
-        let index = ini.first_section[name];
+        let index = ini.section_position(name).unwrap();
         let child = &mut ini.sections[index];
         for key in &parent.key_order {
             if !matches!(key.as_str(), INHERITS | PHOBOS | ARES) && !child.is_present(key) {

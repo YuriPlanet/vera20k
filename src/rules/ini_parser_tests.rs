@@ -4,6 +4,61 @@ use super::*;
 use crate::util::save_codec;
 
 #[test]
+fn checked_digest_removal_preserves_the_sorted_duplicate_section_order() {
+    // ReadCCFile47425B sorts the section index through ReadUUBlock526FB0;
+    // Clear47427D/RemoveKey52B2B0 compacts that sorted array without sorting
+    // its survivors again. Base64_Decode42FF14 emits a byte even for "A".
+    let text = concat!(
+        "[Map]\nTheater=NEWURBAN\n",
+        "[IsoMapPack5]\n1=AAAA\n",
+        "[Basic]\nName=Digest history\n",
+        "[Triggers]\nROOT=First\n",
+        "[Events]\nROOT=1,13,0,5\n",
+        "[Actions]\nROOT=1,67,0,0,0,0,0,0,A\n",
+        "[Tags]\nROOT_TAG=0,Announce victory,ROOT\n",
+        "[Triggers]\nROOT=Second\n",
+        "[Digest]\n1=A\n",
+    );
+    let mut checked = IniFile::from_str(text);
+    assert_eq!(checked.section_count(), 9);
+    assert_eq!(
+        checked
+            .section_or_empty("Triggers")
+            .read_string("ROOT", "", 32),
+        "Second"
+    );
+
+    checked.remove_digest_for_checked_load();
+
+    assert!(checked.section("Digest").is_none());
+    assert_eq!(checked.section_count(), 8);
+    assert_eq!(
+        checked
+            .section_or_empty("Triggers")
+            .read_string("ROOT", "", 32),
+        "Second"
+    );
+    let fresh = IniFile::from_str(text.strip_suffix("[Digest]\n1=A\n").unwrap());
+    assert_eq!(
+        fresh
+            .section_or_empty("Triggers")
+            .read_string("ROOT", "", 32),
+        "First"
+    );
+}
+
+#[test]
+fn packed_reader_visits_duplicate_physical_keys_through_the_value_index() {
+    // ReadUUBlock526FB0 uses the physical entry count at52708C and walks
+    // each physical key at5270C5, then resolves its value at527108.
+    let ini = IniFile::from_str("[PreviewPack]\nROOT=QQ==\nROOT=Qg==\nSHOW=Qw==\n");
+    assert_eq!(
+        ini.section_or_empty("PreviewPack").read_packed_text(),
+        "Qg==Qg==Qw=="
+    );
+}
+
+#[test]
 fn saved_standalone_reader_body_rejects_inconsistent_indexes() {
     let ini = IniFile::from_str("[E1]\nCost=100\nStrength=125\n");
     let section = ini.section("E1").unwrap();

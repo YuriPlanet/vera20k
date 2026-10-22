@@ -223,7 +223,11 @@ impl TeamAiIniRegistry {
         game_mode_nonzero: bool,
     ) -> Result<Self, String> {
         let name = assets.ini_roots().ai();
-        let fixed = crate::rules::retail_sources::select_ini(assets, name)?.ini;
+        let mut fixed = crate::rules::retail_sources::select_ini(assets, name)?.ini;
+        // Load_Game_Rules52D378 reads AIMD through ReadCCFile4741F0 with
+        // checkDigest=1 before Full_Init68797F..6879DA consumes its registries.
+        // Raw source inspection and metadata keep their unchecked INI view.
+        fixed.remove_digest_for_checked_load();
         let registry = Self::from_sources(&fixed, scenario, game_mode_nonzero);
         if !registry.fixed_source_is_complete() {
             return Err(format!(
