@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Full original CanMakeMoney4F6540 and three joined whole CheckBuildNeed4FD9A0 controls with real helper/cost bodies.",
+  "assumptions": [
+    "Data-shaped House, Country registry, Rules vectors, Unit/Building types, PadAircraft/Dock shell and preallocated active-Unit CounterClass are supplied. No relevant return or original instruction is replaced. Real vtable cost targets, country/plant factors, raw/actual/free-unit costs and money query execute.",
+    "COUNTRIES order is PARENT0/CHILD1 with Name aliases. Raw masks/factors, signed costs/counts/money, lists and type array_index are explicit priors. retail_shaped means ordinary whole-count and2000/1400/FreeUnit/plant.75 shapes; actual retail country/type/config discovery is not established by these synthetic identities. Custom wrap, negative counter and missing-refinery controls are labeled separately.",
+    "House storage is four zero float slots, IncomeMult finite1; AvailableMoney therefore uses its cash arm through original6C9600/4F6990. Invalid BaseUnit, missing war-factory/null-cost branches, native saves and nonempty stores are excluded.",
+    "Yard-vector lengths are0/1. Counter capacity8 covers selected BaseUnit index; growth49FAF0, locale slow path7C8D73, allocator7C8E17 and RNG draw entries are guarded and fail instead of supplying results. ASCII C-locale data and FPCW0E7F are declared platform priors.",
+    "The original65C6D0 seeds complete1012-byte Main/Scenario/MapGen buffers before measurement. All executable sections match original mapping before/after; the whole supplied arena, complete RNG buffers, timer sentinel, registry and locale globals remain unchanged. Native stack cleanup and control word are checked.",
+    "Three CheckBuildNeed controls use human flags0, mode1, choices-1, empty Factory registry, valid two-entry refinery list and no destinations. They join strict CanMakeMoney threshold with recovery admission, not factory balance-owed or whole strategic sale/rebuild behavior.",
+    "Full call traces retain EAX receipts, which are not semantic values for x87 factor-returning functions. Output AL is the boolean contract. No native constructors/readers, world admission, timers/scheduler, broad AI parity or actual retail identity/type-price reader join is claimed."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "can_make_money": "0x004F6540",
+    "check_build_need": "0x004FD9A0",
+    "country_lookup": "0x005117D0",
+    "active_count": "0x0049FAE0",
+    "first_buildable": "0x005051E0",
+    "available_money": "0x004F6990",
+    "building_cost": "0x0045EDD0",
+    "type_cost": "0x00711F00",
+    "building_actual_cost": "0x0045ED50",
+    "raw_cost": "0x00711EB0",
+    "country_factor": "0x0050BDF0",
+    "plant_factor": "0x0050BEB0"
+  },
+  "row_counts": {
+    "can_make_money": 82,
+    "check_build_need": 3,
+    "retail_shaped": 60,
+    "custom_arithmetic": 11,
+    "identity": 11
+  },
+  "replay_command": "python -m tools.spatial_oracle.house_can_make_money",
+  "payload_sha256": "333dbb459e8f430b535618193d0d93a8070cce34cbf7b655567dff49fc7606b5"
+}

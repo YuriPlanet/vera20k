@@ -78,6 +78,50 @@ fn stock_scene(root: &std::path::Path) -> HeadlessScenario {
     load_session(root, "XMP03T4.MAP", 0x1234_5678, launch).expect("stock Battle loads")
 }
 
+/// Wait for the actual poor held-production prior. Build and miner-delivery
+/// timing decide when this exists; an elapsed frame is not evidence of it.
+fn preparation_entities(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    local: InternedId,
+    original: u64,
+) -> Option<(u64, u64)> {
+    let miner = sim.entities().get(original)?;
+    if !sim
+        .fog
+        .is_cell_visible(local, miner.position.rx(), miner.position.ry())
+    {
+        return None;
+    }
+    let war_factory = sim.entities().iter_sorted().find(|(_, entity)| {
+        entity.owner() == owner
+            && entity.is_active()
+            && entity.is_alive()
+            && !entity.lifecycle.in_limbo()
+            && sim
+                .object_type(entity.type_ref(), rules)
+                .is_some_and(|object| object.weapons_factory)
+    })?;
+    let factories = sim.production.factories().iter_insertion_ordered();
+    let factory = factories.into_iter().find(|factory| {
+        factory.owner() == owner
+            && factory
+                .object()
+                .as_ref()
+                .and_then(|object| sim.object_type(object.type_id, rules))
+                .is_some_and(|object| {
+                    object.category == ObjectCategory::Vehicle && object.resource_gatherer
+                })
+    })?;
+    if available_money(&sim.houses, owner) >= factory.balance() {
+        return None;
+    }
+    let held = factory.object().as_ref()?.entity_id?;
+    let entity = sim.entities().get(held)?;
+    (entity.owner() == owner && entity.lifecycle.in_limbo()).then_some((held, war_factory.0))
+}
+
 /// The scene supplies only lobby settings and ordinary local Move/Attack
 /// envelopes. AI deployment, base plan, spending, free/held units, loss, sales,
 /// destruction, replacement and income must come from their production owners.
@@ -114,6 +158,7 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
         let mut recovered_unloaded = false;
         let mut recovered_income = false;
         let mut first_recovery = false;
+        let mut prepared_at = None;
 
         for step in 0..10_000 {
             let sim = scene.sim();
@@ -145,7 +190,18 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
                     },
                 ));
             }
-            if step == 4910 {
+            let preparation = if prepared_at.is_none()
+                && step > 3000
+                && live.first().copied() == original
+                && live.len() == 1
+            {
+                original
+                    .and_then(|original| preparation_entities(sim, rules, owner, local, original))
+            } else {
+                None
+            };
+            if let Some((prepared_held, prepared_war_factory)) = preparation {
+                prepared_at = Some(step);
                 let original = original.expect("the AI generated a free miner");
                 assert_eq!(live, [original], "one on-map gatherer before the attack");
                 let house = &sim.houses[&owner];
@@ -186,6 +242,7 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
                     .collect();
                 assert_eq!(held_candidates.len(), 1, "one actual limbo replacement");
                 held = held_candidates.first().copied();
+                assert_eq!(held, Some(prepared_held), "the debt belongs to this miner");
                 war_factory = sim
                     .entities()
                     .iter_sorted()
@@ -197,7 +254,8 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
                                 .is_some_and(|object| object.weapons_factory)
                     })
                     .map(|(id, _)| id);
-                assert!(war_factory.is_some());
+                assert_eq!(war_factory, Some(prepared_war_factory));
+                eprintln!("stock recovery preparation: attack={attack}, step={step}");
                 if attack {
                     commands.extend(tanks.iter().map(|&attacker_id| {
                         CommandEnvelope::new(
@@ -232,7 +290,10 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
             let live = gatherers(sim, rules, owner);
             if let Some(id) = original {
                 if !live.contains(&id) {
-                    assert!(attack && step > 4910, "healthy miner must keep earning");
+                    assert!(
+                        attack && prepared_at.is_some_and(|prepared| step >= prepared),
+                        "healthy miner must keep earning"
+                    );
                     lost = true;
                 } else if !attack {
                     let miner = sim.entities().get(id).unwrap();
@@ -282,6 +343,13 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
                 }
             }
         }
+        assert!(
+            prepared_at.is_some(),
+            "the AI never reached the required poor held-miner prior: economy={:?}, production={:?}, factories={:?}",
+            scene.sim().houses[&owner].economy(),
+            scene.sim().houses[&owner].ai_production(),
+            scene.sim().production.factories().iter_insertion_ordered()
+        );
         if attack {
             assert!(lost && first_recovery && calls.count() > 0);
             assert_ne!(original, recovered, "a new production identity recovered");
