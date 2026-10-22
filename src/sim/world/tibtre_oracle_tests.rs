@@ -114,10 +114,11 @@ fn fixture(input: &Value, stock: &Value) -> (Scene, Vec<(u16, u16)>) {
             animation = serde_json::from_value(retained).unwrap();
         }
         // Retained controls deliberately include a non-animated active Stage.
+        let terrain_id = s.sim.terrain_objects.cell_index()[&at];
         s.sim
             .terrain_objects
             .animations_mut_for_test()
-            .insert(at, animation);
+            .insert(terrain_id, animation);
     }
     for blocked in input["blocked"].as_array().into_iter().flatten() {
         let at = cell(blocked);
@@ -201,7 +202,10 @@ fn fixture(input: &Value, stock: &Value) -> (Scene, Vec<(u16, u16)>) {
 
 fn compare(s: &Scene, coords: &[(u16, u16)], native: &Value, context: &str) {
     for (at, expected) in coords.iter().zip(native["actors"].as_array().unwrap()) {
-        let state = serde_json::to_value(&s.sim.terrain_objects.animations()[at]).unwrap();
+        let state = serde_json::to_value(
+            &s.sim.terrain_objects.animations()[&s.sim.terrain_objects.cell_index()[at]],
+        )
+        .unwrap();
         assert_eq!(
             state["current_frame"], expected["stage"],
             "{context}: Stage"
@@ -279,7 +283,6 @@ fn terrain_ai_timelines_match_native_stage_timers_ore_queues_and_rng() {
                 id,
                 &s.rules,
                 Some(registry()),
-                None,
             );
             compare(
                 &s,
@@ -418,13 +421,7 @@ fn same_frame_ore_terrain_ai_publishes_the_path_view_before_return() {
         .find(|(_, object)| object.cell() == (16, 16))
         .map(|(&id, _)| id)
         .unwrap();
-    crate::sim::terrain_spawn::tick_terrain_object_ai(
-        &mut s.sim,
-        tree,
-        &s.rules,
-        Some(&registry),
-        None,
-    );
+    crate::sim::terrain_spawn::tick_terrain_object_ai(&mut s.sim, tree, &s.rules, Some(&registry));
     let (x, y, _) = s
         .sim
         .overlay_grid
@@ -621,12 +618,14 @@ fn tibtre_active_stage_survives_snapshot_and_removal_clears_its_owner() {
         let path = s.sim.path_grid_snapshot();
         s.sim
             .advance_tick(&[], Some(&s.rules), path.as_deref(), Some(registry()), 67);
-        let a = &s.sim.terrain_objects.animations()[&at];
+        let a = &s.sim.terrain_objects.animations()[&s.sim.terrain_objects.cell_index()[&at]];
         if a.is_active() && a.current_frame() >= 3 {
             break;
         }
     }
-    assert!(s.sim.terrain_objects.animations()[&at].is_active());
+    assert!(
+        s.sim.terrain_objects.animations()[&s.sim.terrain_objects.cell_index()[&at]].is_active()
+    );
     // Save loading intentionally reseeds Scenario RNG; compare both
     // continuations under that existing owner policy.
     s.sim.scenario_rng = SimRng::new(0);
@@ -664,14 +663,9 @@ fn tibtre_active_stage_survives_snapshot_and_removal_clears_its_owner() {
         assert_eq!(ore(&s.sim), ore(&restored));
     }
     let id = s.sim.terrain_objects.cell_index()[&at];
-    assert!(crate::sim::terrain_object::limbo_terrain_object_at_cell(
-        &mut s.sim.terrain_objects,
-        at,
-        &mut s.sim.substrate.raw_cell_occupation,
-        s.sim.resolved_terrain.as_mut()
-    ));
-    s.sim.unregister_non_entity_object(id);
-    assert!(!s.sim.terrain_objects.animations().contains_key(&at));
+    s.sim
+        .uninit_with_context(id, super::UninitContext::new(&s.rules, Some(registry())));
+    assert!(!s.sim.terrain_objects.animations().contains_key(&id));
     assert!(!s.sim.terrain_objects.spawning_cells().contains(&at));
 }
 

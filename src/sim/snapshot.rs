@@ -1851,6 +1851,9 @@ impl Simulation {
                 }
             }
         }
+        self.terrain_objects
+            .validate_membership()
+            .map_err(|reason| SnapshotRestoreError::InvalidCellMembership { reason })?;
         for terrain in self.terrain_objects.objects().values() {
             let in_logic = seen_logic.contains(&terrain.stable_id());
             let pending_delete = pending_delete_ids.contains(&terrain.stable_id());
@@ -8451,12 +8454,8 @@ mod tests {
         };
         for terrain in [&damaged, &destroyed, &spawner] {
             sim.terrain_objects
-                .objects_mut_for_test()
-                .insert(terrain.stable_id(), terrain.clone());
+                .insert_constructed(terrain.clone(), terrain.stable_id() == spawner_id);
             assert!(sim.register_terrain_object(terrain.stable_id(), &rules));
-            sim.terrain_objects
-                .cell_index_mut_for_test()
-                .insert(terrain.cell(), terrain.stable_id());
             mark_terrain_raw_occupation(
                 &mut sim.substrate.raw_cell_occupation,
                 terrain.cell(),
@@ -8465,7 +8464,7 @@ mod tests {
         }
         sim.set_next_stable_object_id_for_test(spawner_id + 1);
         sim.terrain_objects.animations_mut_for_test().insert(
-            spawner_cell,
+            spawner_id,
             TerrainAnimationState::new(
                 spawner_type,
                 crate::util::native_x87::NativeF32Bits::from_bits(0x3b44_9ba6),
@@ -8549,7 +8548,7 @@ mod tests {
             spawner_id
         );
         assert_eq!(
-            restored.terrain_objects.animations()[&spawner_cell].type_ref(),
+            restored.terrain_objects.animations()[&spawner_id].type_ref(),
             spawner_type
         );
         assert!(

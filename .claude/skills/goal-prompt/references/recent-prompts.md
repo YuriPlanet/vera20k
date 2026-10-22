@@ -9,10 +9,10 @@ Prefer the current user's request and latest corrections over any example.
 ## Prime example: exhaustive class/function gameplay parity
 
 Provided directly by the user on October 22, 2026 as a prime example for this
-skill. Verbatim user wording:
+skill. User wording, with the home directory abbreviated to `~`:
 
 ```text
-Reproduce active-retail gamemd.exe gameplay in VERA20k by auditing every skirmish-reachable gameplay-visible class function by function in player-visibility order, starting with CellClass; implement dependencies and cohesive chains, validate and critic-review, commit/publish/merge each validated chain, and maintain /Users/halvor/Documents/vera20k-dev/class-parity/CHECKPOINT.md. Complete only when every relevant function is reproduced or its absence justified with evidence.
+Reproduce active-retail gamemd.exe gameplay in VERA20k by auditing every skirmish-reachable gameplay-visible class function by function in player-visibility order, starting with CellClass; implement dependencies and cohesive chains, validate and critic-review, commit/publish/merge each validated chain, and maintain ~/Documents/vera20k-dev/class-parity/CHECKPOINT.md. Complete only when every relevant function is reproduced or its absence justified with evidence.
 ```
 
 What to carry forward: exhaustive function coverage, player-visibility order,

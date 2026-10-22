@@ -529,8 +529,7 @@ pub(crate) fn collect_area(
             impact_z,
         },
         include_terrain_objects.then_some(combat_aoe::TerrainCollectionView {
-            objects: world.terrain_objects.objects(),
-            cells: world.terrain_objects.cell_index(),
+            store: &world.terrain_objects,
         }),
         world.session.no_damage(),
         Some(prelude),

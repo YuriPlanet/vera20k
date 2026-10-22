@@ -1,6 +1,6 @@
 //! TIBTRE-style terrain object ore spawning.
 //!
-//! Per-cell retained animation state for terrain objects with `IsAnimated=yes`.
+//! Per-object retained animation state for terrain objects with `IsAnimated=yes`.
 //! Idle animations roll `AnimationProbability`; a hit starts the native timer.
 //! `SpawnsTiberium=yes` resets the animation and emits ore at its midpoint.
 //!
@@ -55,7 +55,7 @@ fn probability_accepts_raw(probability: NativeF32Bits, raw: u32) -> bool {
 
 /// One live TerrainClass animation, retained by the terrain animation owner.
 /// Type data is immutable; frame/rate/timer are mutated only by this module.
-/// Terrain removal/limbo removes the cell index with the live terrain object.
+/// Terrain removal/limbo removes only that instance's animation.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TerrainAnimationState {
     type_ref: InternedId,
@@ -87,8 +87,7 @@ impl TerrainAnimationState {
         }
     }
 
-    #[cfg(test)]
-    pub fn type_ref(&self) -> InternedId {
+    pub(crate) fn type_ref(&self) -> InternedId {
         self.type_ref
     }
 
@@ -278,19 +277,14 @@ fn tick_terrain_spawner_one_inner(
     ctx: &mut TerrainSpawnContext<'_>,
 ) -> Option<TiberiumPlacement> {
     let source_cells = ctx.spawning_terrain_cells.unwrap_or(spawner_cells);
-    let is_animated = ctx
-        .interner
-        .and_then(|interner| {
-            ctx.rules
-                .terrain_object_type_case_insensitive(interner.resolve(spawner.type_ref))
-        })
-        .is_none_or(|ty| ty.is_animated);
-    if !spawner.tick(
-        ctx.binary_frame,
-        is_animated,
-        source_cells.contains(&cell),
-        ctx.rng,
-    ) {
+    let terrain_type = ctx.interner.and_then(|interner| {
+        ctx.rules
+            .terrain_object_type_case_insensitive(interner.resolve(spawner.type_ref))
+    });
+    let is_animated = terrain_type.is_none_or(|ty| ty.is_animated);
+    let spawns_tiberium =
+        terrain_type.map_or_else(|| source_cells.contains(&cell), |ty| ty.spawns_tiberium);
+    if !spawner.tick(ctx.binary_frame, is_animated, spawns_tiberium, ctx.rng) {
         return None;
     }
     let rules = ctx.rules;
@@ -334,7 +328,6 @@ pub(crate) fn tick_terrain_object_ai(
     stable_id: u64,
     rules: &crate::rules::ruleset::RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
-    spawner_cells: Option<&BTreeSet<(u16, u16)>>,
 ) {
     let Some(cell) = sim
         .terrain_objects
@@ -345,31 +338,15 @@ pub(crate) fn tick_terrain_object_ai(
     else {
         return;
     };
-    if !sim.terrain_objects.animations().contains_key(&cell) {
-        return;
-    }
-
-    let fallback_spawner_cells;
-    let spawner_cells = if let Some(spawner_cells) = spawner_cells {
-        spawner_cells
-    } else {
-        fallback_spawner_cells = sim
-            .terrain_objects
-            .animations()
-            .keys()
-            .copied()
-            .collect::<BTreeSet<_>>();
-        &fallback_spawner_cells
-    };
     let Some((spawner, spawning_cells, cell_index)) =
-        sim.terrain_objects.animation_with_indexes_mut(cell)
+        sim.terrain_objects.animation_with_indexes_mut(stable_id)
     else {
         return;
     };
     let placed = tick_terrain_spawner_stateful_one(
         spawner,
         cell,
-        spawner_cells,
+        spawning_cells,
         TerrainSpawnContext::new(sim.overlay_grid.as_mut(), rules, &mut sim.scenario_rng)
             .with_growth_queue(
                 &mut sim.ore_growth_state,
@@ -559,20 +536,15 @@ pub fn seed_terrain_spawner_animation(
 ) -> usize {
     terrain_objects.clear_animations();
 
-    let candidates: Vec<(u64, (u16, u16), InternedId)> = terrain_objects
+    let candidates: Vec<(u64, InternedId)> = terrain_objects
         .objects()
         .values()
         .filter(|terrain| terrain.is_live())
-        .map(|terrain| (terrain.stable_id(), terrain.cell(), terrain.type_ref()))
+        .map(|terrain| (terrain.stable_id(), terrain.type_ref()))
         .collect();
 
     let mut seeded = 0usize;
-    for (stable_id, cell, type_ref) in candidates {
-        // Two entries can name the same cell; only the object the cell index
-        // points at owns that cell's spawner.
-        if terrain_objects.cell_index().get(&cell) != Some(&stable_id) {
-            continue;
-        }
+    for (stable_id, type_ref) in candidates {
         let name = interner.resolve(type_ref).to_string();
         let Some(t) = rules.terrain_object_type_case_insensitive(&name) else {
             continue;
@@ -582,7 +554,7 @@ pub fn seed_terrain_spawner_animation(
         }
         let frame_count = rules.terrain_spawner_frame_count(&name).unwrap_or(0);
         terrain_objects.seed_animation(
-            cell,
+            stable_id,
             TerrainAnimationState::new(
                 type_ref,
                 t.animation_probability,
@@ -862,9 +834,289 @@ mod tests {
         assert_eq!(a, b, "same seed must produce identical state");
     }
 
-    /// A `[Terrain]` entry read straight out of a map INI must become a live
-    /// object that a player can force-fire, damage and destroy — the whole
-    /// chain from map section to `TerrainClass::Take_Damage`.
+    fn retail_terrain_scene(
+        names: &[&str],
+    ) -> Option<(
+        crate::sim::world::Simulation,
+        RuleSet,
+        OverlayTypeRegistry,
+        ResolvedTerrainGrid,
+    )> {
+        use crate::map::overlay::TerrainObject;
+        let battle = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
+            &IniFile::from_str(
+                "[TIBTRE01]\nAnimationProbability=1\nAnimationRate=1\n\
+                 [TIBTRE02]\nAnimationProbability=1\nAnimationRate=2\n",
+            ),
+        )?;
+        let (_, mut assets) = crate::rules::retail_ini_fixture::retail_scenario_assets()?;
+        let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+        let mut rules = battle.rules;
+        rules.bind_terrain_assets(
+            &battle.processed_rules,
+            &assets,
+            theater.extension,
+            "TEMPERATE",
+        );
+        assert!(rules.terrain_spawner_frame_count("TIBTRE01").is_some());
+        let registry =
+            OverlayTypeRegistry::from_ini(&battle.processed_rules, Some(&battle.fixed_art));
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.session_mut_for_test().set_map_width_for_test(8);
+        sim.session_mut_for_test().set_map_height_for_test(8);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let template = resolved_grid(8, 8);
+        sim.install_resolved_terrain_for_new_map(template.clone());
+        sim.overlay_grid = Some(OverlayGrid::new(8, 8));
+        let objects: Vec<_> = names
+            .iter()
+            .map(|name| TerrainObject {
+                rx: 2,
+                ry: 2,
+                name: (*name).into(),
+            })
+            .collect();
+        assert_eq!(
+            construct_terrain_objects(&mut sim, &objects, &rules, false),
+            names.len()
+        );
+        seed_terrain_spawner_animation(
+            &sim.interner,
+            &mut sim.terrain_objects,
+            &sim.session,
+            &rules,
+        );
+        // The generated constructor funnel receives an already materialized
+        // grid; the ordinary fixture supplies that same derived projection.
+        for &id in sim.terrain_objects.cell_index().values() {
+            crate::sim::terrain_object::mark_terrain_occupation(
+                sim.terrain_objects.get(id).unwrap(),
+                sim.resolved_terrain.as_mut(),
+            );
+        }
+        Some((sim, rules, registry, template))
+    }
+
+    #[test]
+    fn overlapping_retail_drills_keep_independent_ai_and_snapshot_continuations() {
+        use crate::sim::snapshot::GameSnapshot;
+        use crate::sim::world::Simulation;
+        let Some((mut sim, rules, registry, template)) =
+            retail_terrain_scene(&["TIBTRE01", "TIBTRE02"])
+        else {
+            return;
+        };
+        assert_eq!(
+            sim.terrain_objects.animations().len(),
+            2,
+            "Terrain ctor71BB90 and AI71C730 retain one Stage/timer per object"
+        );
+        let mut expected_rng = sim.scenario_rng.clone();
+        expected_rng.next_u32();
+        expected_rng.next_u32();
+        sim.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
+        assert_eq!(
+            sim.scenario_rng.logical_state(),
+            expected_rng.logical_state()
+        );
+        for _ in 0..2 {
+            sim.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
+        }
+        let stages = |world: &Simulation| {
+            world
+                .terrain_objects
+                .objects()
+                .values()
+                .map(|object| {
+                    (
+                        world.interner.resolve(object.type_ref()).to_owned(),
+                        world.terrain_objects.animations()[&object.stable_id()].current_frame(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            stages(&sim),
+            [("TIBTRE01".into(), 2), ("TIBTRE02".into(), 1)]
+        );
+        sim.scenario_rng = SimRng::new(0);
+        let bytes = GameSnapshot::save_validated(
+            &sim,
+            1,
+            rules.simulation_config_hash(),
+            "overlapping drills",
+            0,
+        );
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        restored.rebuild_caches_after_load(template, Default::default(), &rules);
+        restored
+            .restore_map_authority_after_snapshot_load(&rules, &registry, None)
+            .unwrap();
+        for _ in 0..8 {
+            sim.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
+            restored.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
+            assert_eq!(stages(&sim), stages(&restored));
+            assert_eq!(
+                sim.scenario_rng.logical_state(),
+                restored.scenario_rng.logical_state()
+            );
+        }
+    }
+
+    #[test]
+    fn overlapping_terrain_uninit_preserves_successors_and_native_cell_projections() {
+        use crate::sim::occupancy::CellObjectMember::Terrain;
+        use crate::sim::snapshot::GameSnapshot;
+        use crate::sim::world::{Simulation, UninitContext};
+        let Some((mut sim, rules, registry, template)) =
+            retail_terrain_scene(&["TIBTRE01", "TIBTRE02", "TREE01"])
+        else {
+            return;
+        };
+        let ids: Vec<_> = sim.terrain_objects.objects().keys().copied().collect();
+        let (older, middle, head) = (ids[0], ids[1], ids[2]);
+        let count = |sim: &mut Simulation| {
+            let grid = crate::sim::pathfinding::PathGrid::new(8, 8);
+            sim.movement_pass_cache
+                .blocker_plane(
+                    &mut sim.substrate.entities,
+                    &grid,
+                    sim.resolved_terrain.as_ref(),
+                    &sim.terrain_objects,
+                    sim.overlay_grid.as_ref(),
+                    &sim.interner,
+                    &rules,
+                )
+                .count_at(1, 2)
+        };
+        assert_eq!(count(&mut sim), 3);
+        assert_eq!(
+            sim.cell_objects(
+                (2, 2),
+                crate::sim::movement::locomotor::MovementLayer::Ground
+            )
+            .collect::<Vec<_>>(),
+            [Terrain(head), Terrain(middle), Terrain(older)]
+        );
+        assert!(
+            !sim.terrain_objects.spawning_cells().contains(&(2, 2)),
+            "CanPlaceTiberium4838E0 reads the first Terrain type"
+        );
+        // Controlled inherited UnInit, not a claim that stock immune drills
+        // can be killed by a weapon. Expiry bypasses the non-head middle ID.
+        sim.uninit_with_context(middle, UninitContext::new(&rules, Some(&registry)));
+        assert_eq!(
+            sim.terrain_objects.members_at((2, 2)).collect::<Vec<_>>(),
+            [head, older]
+        );
+        assert_eq!(
+            sim.terrain_objects.next_in_cell(middle),
+            Some(older),
+            "RemoveContent47EAF7 retains Next on the already-bypassed arm"
+        );
+        assert_eq!(sim.next_cell_object(Terrain(head)), Some(Terrain(older)));
+        assert_eq!(sim.next_cell_object(Terrain(middle)), Some(Terrain(older)));
+        assert!(!sim.terrain_objects.animations().contains_key(&middle));
+        assert!(sim.substrate.pending_delete.contains_object(&middle));
+        assert_eq!(
+            sim.substrate.raw_cell_occupation.ground_bits(2, 2),
+            0,
+            "Unmark literally AND-clears bits, without overlap reference counts"
+        );
+        assert!(
+            sim.resolved_terrain
+                .as_ref()
+                .unwrap()
+                .cell(2, 2)
+                .unwrap()
+                .terrain_object_occupation
+                .is_some()
+        );
+        assert_eq!(count(&mut sim), 2);
+        let bytes = GameSnapshot::save_validated(
+            &sim,
+            1,
+            rules.simulation_config_hash(),
+            "Terrain successor",
+            0,
+        );
+        let mut sim = GameSnapshot::load(&bytes).unwrap().sim;
+        sim.restore_after_snapshot_load().unwrap();
+        sim.rebuild_caches_after_load(template, Default::default(), &rules);
+        sim.restore_map_authority_after_snapshot_load(&rules, &registry, None)
+            .unwrap();
+        assert_eq!(
+            sim.terrain_objects.members_at((2, 2)).collect::<Vec<_>>(),
+            [head, older]
+        );
+        assert_eq!(count(&mut sim), 2);
+        sim.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
+        assert!(
+            sim.terrain_objects.get(middle).is_none(),
+            "common late drain removes only the retired instance"
+        );
+        let retained_stage = sim.terrain_objects.animations()[&older].clone();
+        sim.uninit_with_context(head, UninitContext::new(&rules, Some(&registry)));
+        assert_eq!(sim.terrain_objects.id_at((2, 2)), Some(older));
+        assert!(sim.terrain_objects.spawning_cells().contains(&(2, 2)));
+        assert_eq!(sim.terrain_objects.animations()[&older], retained_stage);
+        assert!(sim.terrain_objects.get(older).unwrap().in_logic_vector());
+        assert!(sim.substrate.display.layer_of(older).is_some());
+        assert_eq!(count(&mut sim), 1);
+        sim.uninit_with_context(older, UninitContext::new(&rules, Some(&registry)));
+        assert_eq!(sim.terrain_objects.id_at((2, 2)), None);
+        assert!(sim.terrain_objects.spawning_cells().is_empty());
+        assert_eq!(count(&mut sim), 0);
+        sim.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
+        assert!(sim.terrain_objects.objects().is_empty());
+    }
+
+    #[test]
+    fn wood_splash_reaches_both_overlapping_retail_trees_before_lethal_cleanup() {
+        let Some((mut sim, rules, registry, _)) = retail_terrain_scene(&["TREE01", "TREE01"])
+        else {
+            return;
+        };
+        let ids: Vec<_> = sim.terrain_objects.members_at((2, 2)).collect();
+        let impact = sim.terrain_objects.get(ids[0]).unwrap().world_coord();
+        let warhead = rules.warhead("HE").unwrap();
+        let warhead_ref = sim.interner.intern("HE");
+        crate::sim::combat::world_receiver::apply_area_damage(
+            &mut sim,
+            &rules,
+            Some(&registry),
+            impact,
+            10,
+            warhead,
+            (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
+            crate::sim::world::FrameEffects::default(),
+        );
+        for &id in &ids {
+            let tree = sim.terrain_objects.get(id).unwrap();
+            assert!(
+                tree.health() > 0 && tree.health() < tree.max_health(),
+                "the non-head receiver must not be skipped"
+            );
+        }
+        crate::sim::combat::world_receiver::apply_area_damage(
+            &mut sim,
+            &rules,
+            Some(&registry),
+            impact,
+            10000,
+            warhead,
+            (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
+            crate::sim::world::FrameEffects::default(),
+        );
+        assert_eq!(sim.terrain_objects.id_at((2, 2)), None);
+        assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(2, 2), 0);
+        sim.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
+        assert!(sim.terrain_objects.objects().is_empty());
+    }
+
+    /// A map entry becomes a live force-fire target through the real weapon.
     #[test]
     fn gsi_17_01_map_terrain_entry_becomes_a_force_fireable_object() {
         use crate::map::overlay::parse_terrain_objects;

@@ -205,14 +205,15 @@ impl EntryCell {
         };
         let at = (p.0 as u16, p.1 as u16);
         let sim = live.sim;
-        let terrain_object = terrain_object
-            .then(|| sim.terrain_objects.cell_index().get(&at).copied())
-            .flatten();
+        let terrain_objects = sim
+            .terrain_objects
+            .members_at(at)
+            .filter(move |_| terrain_object);
         listed
             .then(|| {
                 sim.substrate
                     .occupancy
-                    .cell_objects(at.0, at.1, layer, terrain_object)
+                    .cell_objects(at.0, at.1, layer, terrain_objects)
             })
             .into_iter()
             .flatten()

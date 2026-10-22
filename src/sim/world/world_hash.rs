@@ -3636,17 +3636,17 @@ mod particle_hash_tests {
         sim_a
             .terrain_objects
             .animations_mut_for_test()
-            .insert((10, 10), state.clone());
+            .insert(10, state.clone());
         sim_b
             .terrain_objects
             .animations_mut_for_test()
-            .insert((10, 10), state);
+            .insert(10, state);
         assert_eq!(sim_a.state_hash(), sim_b.state_hash());
 
         let spawner_b = sim_b
             .terrain_objects
             .animations_mut_for_test()
-            .get_mut(&(10, 10))
+            .get_mut(&10)
             .unwrap();
         spawner_b.advance_for_test(0, &mut crate::sim::rng::SimRng::new(0));
         assert_ne!(

@@ -21,6 +21,7 @@ use crate::sim::anim_class::{AnimStore, AnimTouchReader};
 use crate::sim::entity_store::{EntityStore, TouchReader};
 use crate::sim::particles::ParticleSystemStore;
 use crate::sim::projectile::ProjectileStore;
+use crate::sim::terrain_object::TerrainObjectStore;
 use crate::sim::touch_log::Touched;
 use crate::sim::wave::WaveStore;
 use crate::util::lookup_hash::LookupMap;
@@ -35,6 +36,7 @@ pub(crate) struct ListenerStores<'a> {
     pub(crate) particle_systems: &'a mut ParticleSystemStore,
     pub(crate) projectiles: &'a mut ProjectileStore,
     pub(crate) waves: &'a mut WaveStore,
+    pub(crate) terrain: &'a mut TerrainObjectStore,
 }
 
 /// What one listener holds that an expiry can change.
@@ -75,6 +77,7 @@ pub(crate) struct ExpiryListeners {
     particle_systems: StoreIndex,
     projectiles: StoreIndex,
     waves: StoreIndex,
+    terrain: StoreIndex,
 }
 
 /// The listeners of one store.
@@ -108,6 +111,7 @@ impl ExpiryListeners {
             particle_systems,
             projectiles,
             waves,
+            terrain,
         } = stores;
         self.refresh_entities(entities);
         let entities = &*entities;
@@ -138,6 +142,16 @@ impl ExpiryListeners {
         self.waves.reread(ids, |id, names| {
             waves.get(id).map(|wave| named(names, wave.expiry_names()))
         });
+        let ids = self
+            .terrain
+            .rereads(terrain.take_touched(), terrain.objects().len(), || {
+                terrain.objects().keys().copied().collect()
+            });
+        self.terrain.reread(ids, |id, names| {
+            terrain
+                .get(id)
+                .map(|_| named(names, [terrain.next_in_cell(id)]))
+        });
 
         let mut reached: Vec<(u64, ObjectKind)> = self
             .entities
@@ -152,6 +166,7 @@ impl ExpiryListeners {
             (&self.particle_systems, ObjectKind::ParticleSystem),
             (&self.projectiles, ObjectKind::Projectile),
             (&self.waves, ObjectKind::Wave),
+            (&self.terrain, ObjectKind::Terrain),
         ] {
             reached.extend(index.reaching(expired).map(|id| (id, kind)));
         }
@@ -202,6 +217,14 @@ impl ExpiryListeners {
                 .iter()
                 .filter(|(_, wave)| names(&wave.expiry_names()))
                 .map(|(&id, _)| (id, ObjectKind::Wave)),
+        );
+        reached.extend(
+            stores
+                .terrain
+                .objects()
+                .keys()
+                .filter(|&&id| stores.terrain.next_in_cell(id) == Some(expired))
+                .map(|&id| (id, ObjectKind::Terrain)),
         );
         reached.sort_unstable_by_key(|&(id, _)| id);
         reached
@@ -409,6 +432,7 @@ mod tests {
         particle_systems: ParticleSystemStore,
         projectiles: ProjectileStore,
         waves: WaveStore,
+        terrain: TerrainObjectStore,
     }
 
     impl Stores {
@@ -419,6 +443,7 @@ mod tests {
                 particle_systems: &mut self.particle_systems,
                 projectiles: &mut self.projectiles,
                 waves: &mut self.waves,
+                terrain: &mut self.terrain,
             }
         }
     }

@@ -118,8 +118,7 @@ fn bridge_neighbor_terrain_retains_native_surface_coords_through_damage_and_rest
                 ..AoELayerContext::default()
             },
             Some(TerrainCollectionView {
-                objects: restored.terrain_objects.objects(),
-                cells: restored.terrain_objects.cell_index(),
+                store: &restored.terrain_objects,
             }),
         );
         let terrain_hit = result

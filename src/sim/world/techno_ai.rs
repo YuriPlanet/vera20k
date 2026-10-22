@@ -55,15 +55,14 @@ use crate::sim::world::FrameChannel;
 use crate::sim::world::SimSoundEvent;
 
 /// Non-rules world context the mission handler bodies dispatched from the
-/// host need (overlay types and the terrain spawner cells the spine already
-/// owns; handlers read navigation from the Simulation). Empty in
+/// host need (overlay types and frame effects; handlers read navigation
+/// and Terrain state from the Simulation). Empty in
 /// barebones fixtures — handlers that need an absent piece degrade the same
 /// way the legacy global phases did with `None` arguments.
 #[derive(Default, Clone, Copy)]
 pub(crate) struct ObjectAiCtx<'a> {
     pub(crate) effects: super::FrameEffects<'a>,
     pub(crate) overlay_registry: Option<&'a OverlayTypeRegistry>,
-    pub(crate) terrain_spawner_cells: Option<&'a std::collections::BTreeSet<(u16, u16)>>,
 }
 
 /// Ephemeral outputs of a single live AI visit, forwarded to the frame result.
@@ -567,7 +566,6 @@ impl Simulation {
                     id,
                     rules,
                     ctx.overlay_registry,
-                    ctx.terrain_spawner_cells,
                 );
                 return outcome;
             }

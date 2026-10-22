@@ -1031,7 +1031,7 @@ pub(crate) fn build_overlay_instances(
         let stage = is_animated.then(|| {
             sim.terrain_objects()
                 .animations()
-                .get(&obj.cell())
+                .get(&obj.stable_id())
                 .map_or(0, |animation| animation.current_frame())
         });
         let Some(frame) = terrain_draw_frame(stage, obj.health()) else {

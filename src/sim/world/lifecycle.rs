@@ -3233,6 +3233,24 @@ impl Simulation {
         if !represented {
             return false;
         }
+        if self
+            .terrain_objects
+            .get(stable_id)
+            .is_some_and(|terrain| terrain.object_alive())
+        {
+            let cell = self.terrain_objects.get(stable_id).unwrap().cell();
+            // ObjectUnInit5F6616 and ObjectLimbo5F4D61 announce while this
+            // instance is retained. TerrainLimbo71C930 unlinks only its ID;
+            // a successor keeps its own Logic/Display, Stage and cell query.
+            self.notify_pointer_expired(stable_id, context);
+            self.notify_pointer_expired(stable_id, context);
+            self.terrain_objects.uninit(
+                stable_id,
+                &mut self.substrate.raw_cell_occupation,
+                self.resolved_terrain.as_mut(),
+            );
+            self.finish_terrain_navigation_changes(context.rules(), &[cell]);
+        }
         if self.classify_object(stable_id) == Some(ObjectKind::Projectile) {
             // `ObjectClass::UnInit @ 0x005F65F0` broadcasts the bullet's
             // expiry before it leaves Logic; an anim riding it ends
@@ -4498,19 +4516,18 @@ impl Simulation {
                 ObjectKind::Wave => {
                     listeners.extend(self.waves.iter().map(|(&id, _)| (id, kind)));
                 }
+                ObjectKind::Terrain => {
+                    listeners.extend(self.terrain_objects.objects().keys().map(|&id| (id, kind)));
+                }
                 ObjectKind::Smudge => {
                     if let Some(grid) = &self.smudge_grid {
                         listeners.extend(grid.objects().map(|(id, _)| (id, kind)));
                     }
                 }
                 // ObjectClass's PointerExpired (`0x005F5230`), which these
-                // inherit, and Terrain's (`0x0071CFD0`), which adds only its
-                // type, clear nothing these stores hold. A Spotlight's
+                // inherit, clears nothing these stores hold. A Spotlight's
                 // (`0x00436A00`) runs apart, for every expiry.
-                ObjectKind::VoxelAnim
-                | ObjectKind::Particle
-                | ObjectKind::Terrain
-                | ObjectKind::Spotlight => {}
+                ObjectKind::VoxelAnim | ObjectKind::Particle | ObjectKind::Spotlight => {}
             }
         }
         // Each store yields its IDs in order: the run-adaptive stable sort
@@ -5111,9 +5128,9 @@ impl Simulation {
     ///   for its trailing global-vector erase; the `+0x10C` target repair that
     ///   substitutes `Get_CellClass` at the expired object's last cell — the arm
     ///   `ProjectileStore::pointer_expired` receives — is unguarded.
-    /// * `ObjectClass::PointerExpired @ 0x005F5230` itself gates only the
-    ///   `+0x30` chain relink on a nonzero control; VERA models no `+0x30`
-    ///   chain, so it is correct by omission.
+    /// * `ObjectClass::PointerExpired @ 0x005F5230` gates the `+0x30`
+    ///   successor relink on a nonzero control. Terrain's retained cell
+    ///   subsequence follows that gate through the same listener index.
     ///
     /// So a torpedo already in flight at a diving submarine falling to the sub's
     /// last cell instead of tracking it is native behavior, not an approximation.
@@ -5274,6 +5291,7 @@ impl Simulation {
                 particle_systems: &mut self.substrate.particle_systems,
                 projectiles: &mut self.projectiles,
                 waves: &mut self.waves,
+                terrain: &mut self.terrain_objects,
             },
         )
     }
@@ -5513,16 +5531,14 @@ impl Simulation {
                 }
                 ObjectKind::Projectile => self.projectiles.get(listener_id).is_some(),
                 ObjectKind::Wave => self.waves.get(listener_id).is_some(),
+                ObjectKind::Terrain => self.terrain_objects.get(listener_id).is_some(),
                 ObjectKind::Smudge => self
                     .smudge_grid
                     .as_ref()
                     .and_then(|grid| grid.object(listener_id))
                     .is_some(),
                 // Not on the roster ([`ObjectKind`]'s pointer-expiry column).
-                ObjectKind::VoxelAnim
-                | ObjectKind::Particle
-                | ObjectKind::Terrain
-                | ObjectKind::Spotlight => false,
+                ObjectKind::VoxelAnim | ObjectKind::Particle | ObjectKind::Spotlight => false,
             };
             if !present {
                 continue;
@@ -5750,6 +5766,19 @@ impl Simulation {
                         },
                     );
                 }
+            } else if kind == ObjectKind::Terrain {
+                // Both Terrain constructors call ObjectCtor5F3900, whose
+                // 5F3A76..8B registers this listener and5F3B34 sets flag2;
+                // Dispatch725938..95F reaches TerrainPointerExpired71CFD0.
+                let changed = self.terrain_objects.pointer_expired(
+                    listener_id,
+                    expired_id,
+                    control == PointerExpiryControl::Uninit,
+                );
+                debug_assert!(
+                    found || !changed,
+                    "Terrain expiry index missed listener {listener_id}"
+                );
             } else if kind == ObjectKind::Wave {
                 let (owner_cleared, target_cleared) = self
                     .waves
@@ -5811,6 +5840,10 @@ impl Simulation {
     }
 
     pub fn uninit_with_context(&mut self, stable_id: u64, context: UninitContext<'_>) {
+        if self.classify_object(stable_id) == Some(ObjectKind::Terrain) {
+            self.retire_non_entity_object(stable_id, context);
+            return;
+        }
         self.planning_detach_actor(stable_id);
         let kind = match self.classify_object(stable_id) {
             Some(kind @ (ObjectKind::Entity | ObjectKind::Spotlight | ObjectKind::Smudge)) => kind,
@@ -6034,7 +6067,7 @@ impl Simulation {
                 .terrain_objects
                 .objects()
                 .get(&stable_id)
-                .is_some_and(|terrain| !terrain.is_live() && !terrain.in_logic_vector()),
+                .is_some_and(|terrain| !terrain.object_alive() && !terrain.in_logic_vector()),
             ObjectKind::Projectile => self
                 .projectiles
                 .get(stable_id)

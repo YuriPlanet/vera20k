@@ -1040,22 +1040,29 @@ impl OccupancyGrid {
     /// Terrain precedes buildings and follows mobile objects for the current
     /// terrain-first scenario registration. Generic native AddContent prepends
     /// every nonbuilding; this projection does not model later Terrain insertion.
-    pub(crate) fn cell_objects(
-        &self,
+    pub(crate) fn cell_objects<'a, I>(
+        &'a self,
         rx: u16,
         ry: u16,
         layer: MovementLayer,
-        terrain_id: Option<u64>,
-    ) -> impl Iterator<Item = CellObjectMember> + '_ {
-        let mut terrain = terrain_id.filter(|_| layer == MovementLayer::Ground);
+        terrain_ids: I,
+    ) -> impl Iterator<Item = CellObjectMember> + 'a
+    where
+        I: IntoIterator<Item = u64> + 'a,
+        I::IntoIter: 'a,
+    {
+        let mut terrain = terrain_ids
+            .into_iter()
+            .filter(move |_| layer == MovementLayer::Ground)
+            .peekable();
         let mut entities = self
             .get(rx, ry)
             .into_iter()
             .flat_map(move |cell| cell.iter_layer(layer))
             .peekable();
         std::iter::from_fn(move || {
-            if terrain.is_some() && entities.peek().is_none_or(|member| member.is_building) {
-                return terrain.take().map(CellObjectMember::Terrain);
+            if terrain.peek().is_some() && entities.peek().is_none_or(|member| member.is_building) {
+                return terrain.next().map(CellObjectMember::Terrain);
             }
             entities
                 .next()

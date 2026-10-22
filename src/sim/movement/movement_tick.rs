@@ -581,6 +581,7 @@ struct BlockerPlaneEntry {
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct BlockerPlaneKey {
     terrain_epoch: Option<u64>,
+    terrain_membership_epoch: u64,
     /// Whether an overlay grid retains the wall/Foot bytes: with one, only
     /// buildings are entity sources.
     retained_foot: bool,
@@ -619,6 +620,7 @@ impl MovementPassCache {
         entities: &mut EntityStore,
         grid: &PathGrid,
         resolved_terrain: Option<&ResolvedTerrainGrid>,
+        terrain_objects: &crate::sim::terrain_object::TerrainObjectStore,
         overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
         interner: &crate::sim::intern::StringInterner,
         rules: &crate::rules::ruleset::RuleSet,
@@ -626,6 +628,7 @@ impl MovementPassCache {
         let blocker = &mut self.blocker;
         let key = BlockerPlaneKey {
             terrain_epoch: resolved_terrain.map(ResolvedTerrainGrid::mutation_epoch),
+            terrain_membership_epoch: terrain_objects.membership_epoch(),
             retained_foot: overlay_grid.is_some(),
             width: grid.width(),
             height: grid.height(),
@@ -700,7 +703,7 @@ impl MovementPassCache {
                 let mut plane = bump_crush::blocker_plane_base(
                     grid.width(),
                     grid.height(),
-                    resolved_terrain,
+                    terrain_objects,
                     overlay_grid,
                 );
                 let mut sources = BTreeMap::new();
@@ -744,6 +747,7 @@ impl MovementPassCache {
                         grid.width(),
                         grid.height(),
                         resolved_terrain,
+                        terrain_objects,
                         overlay_grid,
                         interner,
                         rules,
@@ -1013,6 +1017,7 @@ mod pass_cache_tests {
                     &mut entities,
                     &grid,
                     Some(&terrain),
+                    &Default::default(),
                     Some(&overlays),
                     &interner,
                     crate::rules::ruleset::RuleSet::empty_for_test()
@@ -1028,6 +1033,7 @@ mod pass_cache_tests {
                     &mut entities,
                     &grid,
                     Some(&terrain),
+                    &Default::default(),
                     Some(&overlays),
                     &interner,
                     crate::rules::ruleset::RuleSet::empty_for_test()
@@ -1042,6 +1048,7 @@ mod pass_cache_tests {
             &mut entities,
             &grid,
             Some(&terrain),
+            &Default::default(),
             Some(&overlays),
             &interner,
             crate::rules::ruleset::RuleSet::empty_for_test(),
@@ -1061,6 +1068,7 @@ mod pass_cache_tests {
             5,
             5,
             Some(&terrain),
+            &Default::default(),
             Some(&overlays),
             &interner,
             crate::rules::ruleset::RuleSet::empty_for_test(),
@@ -1070,6 +1078,7 @@ mod pass_cache_tests {
                 &mut entities,
                 &grid,
                 Some(&terrain),
+                &Default::default(),
                 Some(&overlays),
                 &interner,
                 crate::rules::ruleset::RuleSet::empty_for_test()
@@ -1105,6 +1114,7 @@ mod pass_cache_tests {
                 &mut entities,
                 &grid,
                 None,
+                &Default::default(),
                 None,
                 &interner,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
@@ -1121,6 +1131,7 @@ mod pass_cache_tests {
                 &mut entities,
                 &grid,
                 None,
+                &Default::default(),
                 None,
                 &interner,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
@@ -1135,6 +1146,7 @@ mod pass_cache_tests {
                 &mut entities,
                 &grid,
                 None,
+                &Default::default(),
                 None,
                 &interner,
                 crate::rules::ruleset::RuleSet::empty_for_test(),
@@ -1171,6 +1183,7 @@ mod pass_cache_tests {
                     &mut entities,
                     &grid,
                     None,
+                    &Default::default(),
                     Some(overlays),
                     &interner,
                     crate::rules::ruleset::RuleSet::empty_for_test(),
@@ -1261,10 +1274,25 @@ Foundation=2x2
             }
             if step % 3 == 0 {
                 let kept = cache
-                    .blocker_plane(&mut entities, &grid, None, None, &interner, &rules)
+                    .blocker_plane(
+                        &mut entities,
+                        &grid,
+                        None,
+                        &Default::default(),
+                        None,
+                        &interner,
+                        &rules,
+                    )
                     .clone();
                 let built = bump_crush::build_blocker_neighbor_counts_with_overlays(
-                    &entities, 12, 12, None, None, &interner, &rules,
+                    &entities,
+                    12,
+                    12,
+                    None,
+                    &Default::default(),
+                    None,
+                    &interner,
+                    &rules,
                 );
                 assert_eq!(kept, built, "step {step}");
             }

@@ -49,7 +49,7 @@ impl Simulation {
             cell.0,
             cell.1,
             layer,
-            self.terrain_objects.cell_index().get(&cell).copied(),
+            self.terrain_objects.members_at(cell),
         )
     }
 
@@ -76,18 +76,35 @@ impl Simulation {
             }
             CellObjectMember::Terrain(id) => {
                 let terrain = self.terrain_objects.objects().get(&id)?;
-                (terrain.is_live()
-                    && self.terrain_objects.cell_index().get(&terrain.cell()) == Some(&id))
-                .then_some((terrain.cell(), MovementLayer::Ground))
+                terrain
+                    .is_live()
+                    .then_some((terrain.cell(), MovementLayer::Ground))
             }
         }
     }
 
-    /// Read Object+30 from the current list. Removal clears the link; movement
-    /// replaces it with the successor in the new list. Never retain a snapshot
+    /// Read Object+30 at the caller's before/after-hit continuation. Movement
+    /// replaces the link; a found removal clears it. Never retain a snapshot
     /// of all targets across a synchronous receiver.
     pub(crate) fn next_cell_object(&self, object: CellObjectMember) -> Option<CellObjectMember> {
+        if let CellObjectMember::Terrain(id) = object {
+            // A non-head Terrain bypassed by PointerExpired5F5262 can
+            // retain Next after Limbo (RemoveContent47EAF7). An after-hit
+            // walker still follows that retained Terrain successor.
+            if let Some(next) = self.terrain_objects.next_in_cell(id) {
+                return Some(CellObjectMember::Terrain(next));
+            }
+        }
         let (cell, layer) = self.cell_object_list_location(object)?;
+        if matches!(object, CellObjectMember::Terrain(_)) {
+            // The represented Terrain-before-Techno subsequence ends at
+            // the first appended Building on a live object's ground list.
+            return self
+                .substrate
+                .occupancy
+                .first_building_on_layer(cell.0, cell.1, layer)
+                .map(CellObjectMember::Entity);
+        }
         let mut members = self.cell_objects(cell, layer);
         members.find(|candidate| *candidate == object)?;
         members.next()

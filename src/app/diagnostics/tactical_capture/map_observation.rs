@@ -4174,7 +4174,14 @@ impl TacticalCaptureSession {
             let overlay = sim.overlay_grid().map(|grid| grid.cell(rx, ry));
             let terrain_object = sim.terrain_objects().cell_index().get(&at)
                 .and_then(|id| sim.terrain_objects().objects().get(id));
-            let animation = sim.terrain_objects().animations().get(&at);
+            let animation = terrain_object.and_then(|object| sim.terrain_objects().animations().get(&object.stable_id()));
+            let terrain_members: Vec<_> = sim.terrain_objects().members_at(at).map(|id| {
+                let object = sim.terrain_objects().get(id).expect("indexed Terrain remains represented");
+                let animation = sim.terrain_objects().animations().get(&id);
+                json!({"id": id, "name": sim.interner().resolve(object.type_ref()),
+                    "frame": animation.map(|animation| animation.current_frame()),
+                    "active": animation.map(|animation| animation.is_active())})
+            }).collect();
             // Observe the same viewer plane consumed by drawing and picking;
             // never reveal a cell or create missing visibility state for capture.
             let local_visibility = local_visibility_owner.map(|(owner, id)| json!({
@@ -4193,6 +4200,7 @@ impl TacticalCaptureSession {
                 })),
                 "local_visibility": local_visibility,
                 "overlay": overlay.map(|overlay| json!({"id": overlay.overlay_id, "density": overlay.overlay_data})),
+                "terrain_objects": terrain_members,
                 "terrain_object": terrain_object.map(|object| json!({"name": sim.interner().resolve(object.type_ref()),
                     "frame": animation.map(|animation| animation.current_frame()),
                     "active": animation.map(|animation| animation.is_active())})),

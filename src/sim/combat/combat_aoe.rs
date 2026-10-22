@@ -37,7 +37,7 @@ use crate::sim::overlay_grid::{
 };
 use crate::sim::pathfinding::zone_incremental::ZoneRepairKind;
 use crate::sim::rng::SimRng;
-use crate::sim::terrain_object::{TerrainObjectLifecycle, TerrainObjectState};
+use crate::sim::terrain_object::TerrainObjectState;
 use crate::util::fixed_math::SimFixed;
 use crate::util::lepton::{CELL_CENTER_LEPTON, LEPTONS_PER_LEVEL, ground_height_leptons};
 use crate::util::native_x87::distance_3d_leptons;
@@ -375,8 +375,7 @@ pub(crate) enum AreaDamageReceiver {
 
 #[derive(Clone, Copy)]
 pub(crate) struct TerrainCollectionView<'a> {
-    pub objects: &'a BTreeMap<u64, TerrainObjectState>,
-    pub cells: &'a BTreeMap<(u16, u16), u64>,
+    pub store: &'a crate::sim::terrain_object::TerrainObjectStore,
 }
 
 impl AoEDamageResult {
@@ -470,7 +469,8 @@ pub(crate) fn apply_aoe_damage_with_terrain<O: Into<AoEDamageOrigin>>(
         rules, interner,
     ));
     let no_terrain_objects = BTreeMap::new();
-    let target_terrain_objects = terrain_objects.map_or(&no_terrain_objects, |view| view.objects);
+    let target_terrain_objects =
+        terrain_objects.map_or(&no_terrain_objects, |view| view.store.objects());
     apply_aoe_damage_with_terrain_and_scenario(
         entities,
         target_terrain_objects,
@@ -1115,43 +1115,37 @@ fn push_terrain_aoe_damage(
     let Some(view) = terrain_objects else {
         return;
     };
-    let Some(&stable_id) = view.cells.get(&(scan_rx, scan_ry)) else {
-        return;
-    };
-    let Some(object) = view.objects.get(&stable_id) else {
-        return;
-    };
-    if object.lifecycle() != TerrainObjectLifecycle::Live
-        || object.cell().0 != scan_rx
-        || object.cell().1 != scan_ry
-    {
-        return;
+    // Apply_area_damage489280 walks every Cell member; GetTerrain's first
+    // matching object is insufficient when generated constructors overlap.
+    for stable_id in view.store.members_at((scan_rx, scan_ry)) {
+        let object = &view.store.objects()[&stable_id];
+        if !object.is_live() {
+            continue;
+        }
+        let impact_point = impact.world_point(impact_rx, impact_ry);
+        let target_coord = object.world_coord();
+        let distance_leptons = distance_3d_leptons(
+            [impact_point.x, impact_point.y, impact.z_leptons],
+            [target_coord.x, target_coord.y, target_coord.z],
+        );
+        if i64::from(distance_leptons) > spread_leptons {
+            continue;
+        }
+        result.push_terrain(TerrainDamageEvent {
+            stable_id,
+            rx: scan_rx,
+            ry: scan_ry,
+            damage: base_damage,
+            distance_leptons,
+            warhead_ref,
+            near_center_ic_isolation_eligible: false,
+        });
     }
-
-    let impact_point = impact.world_point(impact_rx, impact_ry);
-    let (impact_x, impact_y) = (impact_point.x, impact_point.y);
-    let target_coord = object.world_coord();
-    let distance_leptons = distance_3d_leptons(
-        [impact_x, impact_y, impact.z_leptons],
-        [target_coord.x, target_coord.y, target_coord.z],
-    );
-    if i64::from(distance_leptons) > spread_leptons {
-        return;
-    }
-
-    result.push_terrain(TerrainDamageEvent {
-        stable_id,
-        rx: scan_rx,
-        ry: scan_ry,
-        damage: base_damage,
-        distance_leptons,
-        warhead_ref,
-        near_center_ic_isolation_eligible: false,
-    });
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::sim::terrain_object::TerrainObjectLifecycle;
     use std::collections::BTreeMap;
 
     use super::*;
@@ -1588,10 +1582,8 @@ mod tests {
             }
             let mut overlays = OverlayGrid::new(32, 32);
             overlays.place_overlay(20, 20, 0, 0);
-            let mut objects = BTreeMap::new();
-            objects.insert(8, TerrainObjectState::for_test(8, tree_ref, 20, 20));
-            let mut object_cells = BTreeMap::new();
-            object_cells.insert((20, 20), 8);
+            let mut objects = crate::sim::terrain_object::TerrainObjectStore::default();
+            objects.insert_constructed(TerrainObjectState::for_test(8, tree_ref, 20, 20), false);
             let mut rng = SimRng::new(0x489608);
             let mut prelude = ObserveDummy::default();
             let result = apply_aoe_damage_with_terrain_and_scenario(
@@ -1611,10 +1603,7 @@ mod tests {
                     scenario_rng: Some(&mut rng),
                     ..native_lists(&occupancy, &mut terrain, Some(0))
                 },
-                Some(TerrainCollectionView {
-                    objects: &objects,
-                    cells: &object_cells,
-                }),
+                Some(TerrainCollectionView { store: &objects }),
                 false,
                 Some(&mut prelude),
             );
@@ -4469,15 +4458,16 @@ mod tests {
         prepend_ground(&mut occupancy, 5, 5, 20);
         append_building(&mut occupancy, 5, 5, 30);
 
-        let mut terrain_objects = BTreeMap::new();
-        let mut terrain_cells = BTreeMap::new();
+        let mut terrain_objects = crate::sim::terrain_object::TerrainObjectStore::default();
         for (stable_id, rx) in [(100, 5), (101, 6), (102, 8)] {
-            terrain_objects.insert(stable_id, {
-                let mut terrain = TerrainObjectState::for_test(stable_id, tree_ref, rx, 5);
-                terrain.set_occupation_bits_for_test(4);
-                terrain
-            });
-            terrain_cells.insert((rx, 5), stable_id);
+            terrain_objects.insert_constructed(
+                {
+                    let mut terrain = TerrainObjectState::for_test(stable_id, tree_ref, rx, 5);
+                    terrain.set_occupation_bits_for_test(4);
+                    terrain
+                },
+                false,
+            );
         }
 
         let mut terrain = crate::map::resolved_terrain::test_grid(12, 12, test_terrain_cell);
@@ -4492,8 +4482,7 @@ mod tests {
             (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
             native_lists(&occupancy, &mut terrain, Some(1)),
             Some(TerrainCollectionView {
-                objects: &terrain_objects,
-                cells: &terrain_cells,
+                store: &terrain_objects,
             }),
         );
 

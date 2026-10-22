@@ -37,11 +37,12 @@ pub(crate) fn build_blocker_neighbor_counts_with_overlays(
     width: u16,
     height: u16,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
+    terrain_objects: &crate::sim::terrain_object::TerrainObjectStore,
     overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
     interner: &crate::sim::intern::StringInterner,
     rules: &crate::rules::ruleset::RuleSet,
 ) -> BlockerNeighborCounts {
-    let mut counts = blocker_plane_base(width, height, resolved_terrain, overlay_grid);
+    let mut counts = blocker_plane_base(width, height, terrain_objects, overlay_grid);
     let retained_foot = overlay_grid.is_some();
     for entity in entities.values() {
         if let Some(source) =
@@ -59,7 +60,7 @@ pub(crate) fn build_blocker_neighbor_counts_with_overlays(
 pub(crate) fn blocker_plane_base(
     width: u16,
     height: u16,
-    resolved_terrain: Option<&ResolvedTerrainGrid>,
+    terrain_objects: &crate::sim::terrain_object::TerrainObjectStore,
     overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
 ) -> BlockerNeighborCounts {
     let retained_wall_counts = overlay_grid.map(|grid| {
@@ -74,17 +75,16 @@ pub(crate) fn blocker_plane_base(
         .map(|plane| BlockerNeighborCounts::from_retained_wall_plane(width, height, plane))
         .unwrap_or_else(|| BlockerNeighborCounts::new(width, height));
 
-    if let Some(terrain) = resolved_terrain {
-        for y in 0..height {
-            for x in 0..width {
-                let Some(cell) = terrain.cell(x, y) else {
-                    continue;
-                };
-                if cell.terrain_object_occupation.is_some() {
-                    counts.add_single_cell_neighbor_source(x, y);
-                }
-            }
-        }
+    // TerrainUnlimbo71D000 / Limbo71C930 increment/decrement the eight
+    // neighbouring Cell+122 bytes once per instance, including overlaps.
+    // This derived plane reads the live owner; raw occupation is independent.
+    for object in terrain_objects
+        .objects()
+        .values()
+        .filter(|object| object.is_live())
+    {
+        let (x, y) = object.cell();
+        counts.add_single_cell_neighbor_source(x, y);
     }
 
     counts

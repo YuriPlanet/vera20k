@@ -706,8 +706,7 @@ pub(crate) fn emit_projectile_detonations(
             world.session.set_no_damage_for_test(scenario_no_damage);
             world.receiver_fixture.as_mut().unwrap().terrain_collection = terrain_objects.is_some();
             if let Some(view) = terrain_objects {
-                *world.terrain_objects.objects_mut_for_test() = view.objects.clone();
-                *world.terrain_objects.cell_index_mut_for_test() = view.cells.clone();
+                world.terrain_objects = view.store.clone();
             }
             *world.house_alliances_mut_for_test() = house_alliances.clone();
             world.bridge_state = bridge_state.cloned();
@@ -766,8 +765,7 @@ pub(crate) fn resolve_attacker_fire(
             world.session.set_no_damage_for_test(scenario_no_damage);
             world.receiver_fixture.as_mut().unwrap().terrain_collection = terrain_objects.is_some();
             if let Some(view) = terrain_objects {
-                *world.terrain_objects.objects_mut_for_test() = view.objects.clone();
-                *world.terrain_objects.cell_index_mut_for_test() = view.cells.clone();
+                world.terrain_objects = view.store.clone();
             }
             world.session.set_binary_frame_for_test(binary_frame);
             world.receiver_fixture.as_mut().unwrap().current_tick = u64::from(binary_frame);

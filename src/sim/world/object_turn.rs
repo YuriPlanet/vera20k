@@ -4,8 +4,6 @@
 //! before the live Logic cursor advances; no lifecycle work is deferred to a
 //! batch tail. Native order and coordinate evidence remain beside each seam.
 
-use std::collections::BTreeSet;
-
 use super::{Simulation, techno_ai};
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -734,16 +732,9 @@ impl Simulation {
     ) -> Result<LiveObjectPassOutcome, super::FrameAdvanceError> {
         self.answer_batched_path_searches(rules, overlay_registry);
         self.answer_batched_scans(rules, overlay_registry);
-        let terrain_spawner_cells = self
-            .terrain_objects
-            .animations()
-            .keys()
-            .copied()
-            .collect::<BTreeSet<_>>();
         let object_ctx = techno_ai::ObjectAiCtx {
             effects,
             overlay_registry,
-            terrain_spawner_cells: Some(&terrain_spawner_cells),
         };
 
         let mut outcome = LiveObjectPassOutcome::default();

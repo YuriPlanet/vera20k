@@ -44,6 +44,10 @@ pub struct TerrainObjectState {
     type_ref: InternedId,
     rx: u16,
     ry: u16,
+    /// Terrain-relative CellClass list order. CellAddContent47E91C prepends
+    /// each constructor; OccupancyGrid merges this subsequence with Technos
+    /// for the supported Terrain-before-Techno scenario loading boundary.
+    next_in_cell: Option<u64>,
     /// Retained ObjectClass Location.Z after TerrainType+6C (71E0D0)
     /// clamps the constructor coordinate to Map578080 ground height.
     /// Ground changes do not relocate the object. See terrain_coordinate.json.
@@ -53,6 +57,8 @@ pub struct TerrainObjectState {
     /// Immutable current-theater type projection. Keep the full dword for
     /// CellClass::RecalcZoneType483C80; Mark/Unmark use only bits1/2/4.
     occupation_bits: i32,
+    /// Immutable type projection used to maintain cell admission after unlink.
+    spawns_tiberium: bool,
     lifecycle: TerrainObjectLifecycle,
 }
 
@@ -62,10 +68,12 @@ impl std::hash::Hash for TerrainObjectState {
         self.type_ref.hash(state);
         self.rx.hash(state);
         self.ry.hash(state);
+        self.next_in_cell.hash(state);
         self.world_z_leptons.hash(state);
         self.health.hash(state);
         self.max_health.hash(state);
         self.occupation_bits.hash(state);
+        self.spawns_tiberium.hash(state);
         self.lifecycle.hash(state);
     }
 }
@@ -94,10 +102,12 @@ impl TerrainObjectState {
             type_ref,
             rx: cell.0,
             ry: cell.1,
+            next_in_cell: None,
             world_z_leptons,
             health: terrain_type.strength,
             max_health: terrain_type.strength,
             occupation_bits: terrain_type.raw_occupation_bits(snow_theater),
+            spawns_tiberium: terrain_type.spawns_tiberium,
             lifecycle: TerrainObjectLifecycle::Live,
         }
     }
@@ -183,10 +193,12 @@ impl TerrainObjectState {
             type_ref,
             rx,
             ry,
+            next_in_cell: None,
             world_z_leptons: 0,
             health: 100,
             max_health: 100,
             occupation_bits: 0,
+            spawns_tiberium: false,
             lifecycle: TerrainObjectLifecycle::Live,
         }
     }
@@ -320,17 +332,23 @@ pub(crate) enum TerrainAreaReceiveResult {
 /// snapshot's `TerrainObjectStore` identity registry).
 ///
 /// Besides the objects by stable id it keeps three indexes of live objects:
-/// the object on each cell (the non-Techno half of `Cell+0xE4`), the retained
+/// the Terrain head on each cell (the non-Techno half of `Cell+0xE4`), the retained
 /// animation of each IsAnimated object (TIBTRE ore spawners among them), and
-/// the cells of objects whose type has `SpawnsTiberium=yes`. Construction,
+/// the cells whose first Terrain has `SpawnsTiberium=yes`. Construction,
 /// Limbo and disposal keep the indexes in step with the objects; nothing
 /// outside this owner writes them.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct TerrainObjectStore {
-    animations: BTreeMap<(u16, u16), TerrainAnimationState>,
+    animations: BTreeMap<u64, TerrainAnimationState>,
     objects: BTreeMap<u64, TerrainObjectState>,
     cells: BTreeMap<(u16, u16), u64>,
     tiberium_spawning_cells: BTreeSet<(u16, u16)>,
+    #[serde(skip)]
+    touched: crate::sim::touch_log::TouchLogs<1>,
+    /// Derived movement-cache invalidation; membership changes count even
+    /// when a surviving cell head has the same occupation mask.
+    #[serde(skip)]
+    membership_epoch: u64,
 }
 
 impl TerrainObjectStore {
@@ -343,7 +361,7 @@ impl TerrainObjectStore {
         self.objects.get(&stable_id)
     }
 
-    /// The live object standing on each cell.
+    /// First Terrain on each cell, as GetTerrain47C550 selects it.
     pub fn cell_index(&self) -> &BTreeMap<(u16, u16), u64> {
         &self.cells
     }
@@ -352,12 +370,105 @@ impl TerrainObjectStore {
         self.cells.get(&cell).copied()
     }
 
-    /// The retained animation of each IsAnimated live object, by cell.
-    pub fn animations(&self) -> &BTreeMap<(u16, u16), TerrainAnimationState> {
+    /// CellAddContent47E8A0 / RemoveContent47EA90 retain every Terrain in
+    /// latest-first cell order, independently of constructor/Logic order.
+    pub fn members_at(&self, cell: (u16, u16)) -> impl Iterator<Item = u64> + '_ {
+        let mut next = self.id_at(cell);
+        std::iter::from_fn(move || {
+            let id = next?;
+            let object = self.objects.get(&id)?;
+            next = object.next_in_cell;
+            Some(id)
+        })
+    }
+
+    pub(crate) fn next_in_cell(&self, id: u64) -> Option<u64> {
+        self.objects.get(&id)?.next_in_cell
+    }
+
+    pub(crate) fn take_touched(&mut self) -> crate::sim::touch_log::Touched {
+        self.touched.take(0)
+    }
+
+    pub(crate) fn membership_epoch(&self) -> u64 {
+        self.membership_epoch
+    }
+
+    /// TerrainPointerExpired71CFD0 delegates ObjectPointerExpired5F5230.
+    /// The inherited removed=true callback bypasses an expired successor
+    /// before its later Limbo, retaining that successor's own Next for now.
+    pub(crate) fn pointer_expired(&mut self, listener: u64, expired: u64, removed: bool) -> bool {
+        if !removed || self.next_in_cell(listener) != Some(expired) {
+            return false;
+        }
+        let next = self.next_in_cell(expired);
+        self.objects.get_mut(&listener).unwrap().next_in_cell = next;
+        self.touched.note(listener, self.objects.len());
+        true
+    }
+
+    /// Validate serialized links before any iterator can follow them. Native
+    /// ObjectLoad5F5E80 swizzles the saved Next; it does not reconstruct order.
+    pub(crate) fn validate_membership(&self) -> Result<(), String> {
+        let mut seen = BTreeSet::new();
+        for (&cell, &head) in &self.cells {
+            let mut next = Some(head);
+            while let Some(id) = next {
+                let Some(object) = self.objects.get(&id) else {
+                    return Err(format!("Terrain cell {cell:?} links missing object {id}"));
+                };
+                if !object.is_live() || object.cell() != cell || !seen.insert(id) {
+                    return Err(format!(
+                        "Terrain cell {cell:?} has invalid or repeated member {id}"
+                    ));
+                }
+                next = object.next_in_cell;
+            }
+        }
+        for (&id, object) in &self.objects {
+            if object.is_live() != seen.contains(&id) {
+                return Err(format!("Terrain {id} lifetime and cell membership differ"));
+            }
+            let mut links = BTreeSet::new();
+            let mut next = object.next_in_cell;
+            while let Some(link) = next {
+                let Some(successor) = self.objects.get(&link) else {
+                    return Err(format!("Terrain {id} links missing successor {link}"));
+                };
+                if link == id || successor.cell() != object.cell() || !links.insert(link) {
+                    return Err(format!("Terrain {id} has invalid successor {link}"));
+                }
+                next = successor.next_in_cell;
+            }
+        }
+        for (&id, animation) in &self.animations {
+            if !self
+                .objects
+                .get(&id)
+                .is_some_and(|object| object.is_live() && object.type_ref == animation.type_ref())
+            {
+                return Err(format!("Terrain animation {id} has no matching live owner"));
+            }
+        }
+        let spawning: BTreeSet<_> = self
+            .cells
+            .iter()
+            .filter(|(_, id)| self.objects[id].spawns_tiberium)
+            .map(|(&cell, _)| cell)
+            .collect();
+        if spawning != self.tiberium_spawning_cells {
+            return Err("Terrain spawner-cell index differs from live types".into());
+        }
+        Ok(())
+    }
+
+    /// The retained animation of each IsAnimated live object. TerrainAI71C730
+    /// and Save71CF30 address Stage/rate/timer on the instance, never its cell.
+    pub fn animations(&self) -> &BTreeMap<u64, TerrainAnimationState> {
         &self.animations
     }
 
-    /// Cells of live objects whose type has `SpawnsTiberium=yes`. This is a
+    /// Cells whose first Terrain has `SpawnsTiberium=yes`. This is a
     /// different gate from [`Self::animations`]: a non-animated spawner
     /// rejects new ore, while an animated non-spawner still draws RNG.
     pub fn spawning_cells(&self) -> &BTreeSet<(u16, u16)> {
@@ -366,9 +477,8 @@ impl TerrainObjectStore {
 
     /// The world hash's terrain fold, in its established order.
     pub(crate) fn hash_state(&self, hasher: &mut impl std::hash::Hasher) {
-        for (&(rx, ry), spawner) in &self.animations {
-            rx.hash(hasher);
-            ry.hash(hasher);
+        for (&stable_id, spawner) in &self.animations {
+            stable_id.hash(hasher);
             spawner.hash(hasher);
         }
         for (&stable_id, terrain) in &self.objects {
@@ -388,21 +498,28 @@ impl TerrainObjectStore {
 
     /// `[Terrain]` construction starts from an empty store.
     pub(crate) fn clear(&mut self) {
+        let next_epoch = self.membership_epoch.wrapping_add(1);
         *self = Self::default();
+        self.membership_epoch = next_epoch;
     }
 
     /// A constructed object takes its cell, and a `SpawnsTiberium=` type its
     /// spawner cell.
     pub(crate) fn insert_constructed(
         &mut self,
-        terrain: TerrainObjectState,
+        mut terrain: TerrainObjectState,
         spawns_tiberium: bool,
     ) {
         let cell = terrain.cell();
-        self.cells.insert(cell, terrain.stable_id);
+        terrain.spawns_tiberium = spawns_tiberium;
+        terrain.next_in_cell = self.cells.insert(cell, terrain.stable_id);
+        self.membership_epoch = self.membership_epoch.wrapping_add(1);
+        self.touched.note(terrain.stable_id, self.objects.len());
         self.objects.insert(terrain.stable_id, terrain);
         if spawns_tiberium {
             self.tiberium_spawning_cells.insert(cell);
+        } else {
+            self.tiberium_spawning_cells.remove(&cell);
         }
     }
 
@@ -412,21 +529,21 @@ impl TerrainObjectStore {
         self.animations.clear();
     }
 
-    pub(crate) fn seed_animation(&mut self, cell: (u16, u16), animation: TerrainAnimationState) {
-        self.animations.insert(cell, animation);
+    pub(crate) fn seed_animation(&mut self, stable_id: u64, animation: TerrainAnimationState) {
+        self.animations.insert(stable_id, animation);
     }
 
-    /// The TerrainClass AI leaf's view: `cell`'s animation to advance, beside
+    /// The TerrainClass AI leaf's view: the instance's animation to advance, beside
     /// the spawner cells and the cell index its ore placement reads.
     pub(crate) fn animation_with_indexes_mut(
         &mut self,
-        cell: (u16, u16),
+        stable_id: u64,
     ) -> Option<(
         &mut TerrainAnimationState,
         &BTreeSet<(u16, u16)>,
         &BTreeMap<(u16, u16), u64>,
     )> {
-        let animation = self.animations.get_mut(&cell)?;
+        let animation = self.animations.get_mut(&stable_id)?;
         Some((animation, &self.tiberium_spawning_cells, &self.cells))
     }
 
@@ -448,47 +565,119 @@ impl TerrainObjectStore {
         }
     }
 
-    /// Storage disposal: the object goes, and with it the indexes of the cell
-    /// it still held.
-    pub(crate) fn remove(&mut self, stable_id: u64) -> Option<TerrainObjectState> {
-        let terrain = self.objects.remove(&stable_id)?;
-        let cell = terrain.cell();
-        if self.cells.get(&cell) == Some(&stable_id) {
-            self.cells.remove(&cell);
-            self.animations.remove(&cell);
-            self.tiberium_spawning_cells.remove(&cell);
+    /// RemoveContent47EA90 replaces only this member's head/predecessor link.
+    fn unlink(&mut self, stable_id: u64) {
+        let Some(object) = self.objects.get(&stable_id) else {
+            return;
+        };
+        let cell = object.cell();
+        let successor = object.next_in_cell;
+        let predecessor = self
+            .members_at(cell)
+            .find(|&id| self.next_in_cell(id) == Some(stable_id));
+        let found = if self.id_at(cell) == Some(stable_id) {
+            if let Some(successor) = successor {
+                self.cells.insert(cell, successor);
+            } else {
+                self.cells.remove(&cell);
+            }
+            true
+        } else if let Some(predecessor) = predecessor {
+            self.objects.get_mut(&predecessor).unwrap().next_in_cell = successor;
+            self.touched.note(predecessor, self.objects.len());
+            true
+        } else {
+            false
+        };
+        // RemoveContent47EAF0 clears Next only on a found member. A prior
+        // removed=true expiry may already have bypassed a non-head object;
+        // its retained Next still participates in later expiry while deferred.
+        if found {
+            self.objects.get_mut(&stable_id).unwrap().next_in_cell = None;
+            self.touched.note(stable_id, self.objects.len());
         }
+    }
+
+    /// Storage disposal cannot erase the successor's animation or membership.
+    pub(crate) fn remove(&mut self, stable_id: u64) -> Option<TerrainObjectState> {
+        self.unlink(stable_id);
+        self.animations.remove(&stable_id);
+        let terrain = self.objects.remove(&stable_id)?;
+        self.refresh_spawning_cell(terrain.cell());
+        self.membership_epoch = self.membership_epoch.wrapping_add(1);
+        self.touched.note(stable_id, self.objects.len());
         Some(terrain)
     }
 
-    /// Limbo of the live object on `cell`: it leaves the cell index, its raw
-    /// and resolved occupation, and the animation and spawner indexes, and
-    /// becomes Limbo. Returns its id.
-    pub(crate) fn limbo_at(
+    fn refresh_spawning_cell(&mut self, cell: (u16, u16)) {
+        // CanPlaceTiberium483969..48399A stops at the first Terrain and
+        // reads only that type's Spawns flag. Older spawners do not veto it.
+        if self
+            .id_at(cell)
+            .is_some_and(|id| self.objects[&id].spawns_tiberium)
+        {
+            self.tiberium_spawning_cells.insert(cell);
+        } else {
+            self.tiberium_spawning_cells.remove(&cell);
+        }
+    }
+
+    /// TerrainLimbo71C930 / Unmark71C070 remove the requested instance.
+    /// Raw bits are literally AND-cleared even with another Terrain present;
+    /// RecalcZone483C80 instead reads the first surviving Terrain's full mask.
+    pub(crate) fn limbo(
         &mut self,
-        cell: (u16, u16),
+        stable_id: u64,
         raw_occupation: &mut RawCellOccupationGrid,
         resolved_terrain: Option<&mut ResolvedTerrainGrid>,
-    ) -> Option<u64> {
-        let stable_id = *self.cells.get(&cell)?;
-        let snapshot = self.objects.get(&stable_id)?.clone();
+    ) -> bool {
+        let Some(snapshot) = self.objects.get(&stable_id).cloned() else {
+            return false;
+        };
         if !snapshot.is_live() {
-            return None;
+            return false;
         }
 
         let source_cell = snapshot.cell();
         raw_occupation.clear_ground(source_cell.0, source_cell.1, TERRAIN_LIMBO_CLEAR_BIT);
-        self.cells.remove(&cell);
+        self.unlink(stable_id);
         unmark_terrain_raw_occupation(raw_occupation, source_cell, snapshot.occupation_bits);
         if let Some(grid) = resolved_terrain {
-            grid.set_terrain_object_occupation(source_cell, None);
+            let occupation = self
+                .id_at(source_cell)
+                .map(|id| self.objects[&id].occupation_bits);
+            grid.set_terrain_object_occupation(source_cell, occupation);
         }
         if let Some(terrain) = self.objects.get_mut(&stable_id) {
             terrain.lifecycle = TerrainObjectLifecycle::Limbo;
         }
-        self.animations.remove(&source_cell);
-        self.tiberium_spawning_cells.remove(&source_cell);
-        Some(stable_id)
+        self.membership_epoch = self.membership_epoch.wrapping_add(1);
+        self.animations.remove(&stable_id);
+        // The cell admission index represents the first Terrain type, not animation state.
+        // Immutable type projection on every instance keeps its invalidation
+        // local to this owner even for non-animated SpawnsTiberium types.
+        self.refresh_spawning_cell(source_cell);
+        true
+    }
+
+    /// ObjectUnInit5F661F..5F6625 delegates Limbo and clears Alive even when
+    /// the caller is not a lethal damage receiver.
+    pub(crate) fn uninit(
+        &mut self,
+        stable_id: u64,
+        raw_occupation: &mut RawCellOccupationGrid,
+        resolved_terrain: Option<&mut ResolvedTerrainGrid>,
+    ) -> bool {
+        if !self
+            .objects
+            .get(&stable_id)
+            .is_some_and(TerrainObjectState::object_alive)
+        {
+            return false;
+        }
+        self.limbo(stable_id, raw_occupation, resolved_terrain);
+        self.objects.get_mut(&stable_id).unwrap().lifecycle = TerrainObjectLifecycle::Destroyed;
+        true
     }
 
     /// Receive against the live objects. The recursion guard belongs to the
@@ -506,7 +695,7 @@ impl TerrainObjectStore {
         scenario_no_damage: bool,
         ignore_defenses: bool,
     ) -> TerrainAreaReceiveResult {
-        if finalizing_terrain.contains(&stable_id) || self.cells.get(&cell) != Some(&stable_id) {
+        if finalizing_terrain.contains(&stable_id) {
             return TerrainAreaReceiveResult::Ignored;
         }
 
@@ -590,17 +779,8 @@ impl TerrainObjectStore {
         if !finalizing_terrain.contains(&lethal.stable_id) {
             return false;
         }
-        if self.cells.get(&lethal.cell) != Some(&lethal.stable_id) {
-            finalizing_terrain.remove(&lethal.stable_id);
-            return false;
-        }
-
-        let removed_id = self.limbo_at(lethal.cell, raw_occupation, resolved_terrain);
-        let finalized = removed_id == Some(lethal.stable_id);
+        let finalized = self.uninit(lethal.stable_id, raw_occupation, resolved_terrain);
         if finalized {
-            if let Some(terrain) = self.objects.get_mut(&lethal.stable_id) {
-                terrain.lifecycle = TerrainObjectLifecycle::Destroyed;
-            }
             if !navigation_changed_cells.contains(&lethal.cell) {
                 navigation_changed_cells.push(lethal.cell);
             }
@@ -611,6 +791,8 @@ impl TerrainObjectStore {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn objects_mut_for_test(&mut self) -> &mut BTreeMap<u64, TerrainObjectState> {
+        self.touched.note_all();
+        self.membership_epoch = self.membership_epoch.wrapping_add(1);
         &mut self.objects
     }
 
@@ -620,7 +802,7 @@ impl TerrainObjectStore {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub fn animations_mut_for_test(&mut self) -> &mut BTreeMap<(u16, u16), TerrainAnimationState> {
+    pub fn animations_mut_for_test(&mut self) -> &mut BTreeMap<u64, TerrainAnimationState> {
         &mut self.animations
     }
 
@@ -784,18 +966,6 @@ pub fn unmark_terrain_occupation(
     if let Some(grid) = resolved_terrain {
         grid.set_terrain_object_occupation(terrain.cell(), None);
     }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-pub(crate) fn limbo_terrain_object_at_cell(
-    store: &mut TerrainObjectStore,
-    cell: (u16, u16),
-    raw_occupation: &mut RawCellOccupationGrid,
-    resolved_terrain: Option<&mut ResolvedTerrainGrid>,
-) -> bool {
-    store
-        .limbo_at(cell, raw_occupation, resolved_terrain)
-        .is_some()
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -1207,7 +1377,7 @@ mod tests {
         );
         assert_eq!(area.raw_occupation.ground_bits(0, 0), 0);
         assert!(!area.store.cell_index().contains_key(&(0, 0)));
-        assert!(!area.store.animations().contains_key(&(0, 0)));
+        assert!(!area.store.animations().contains_key(&stable_id));
         assert!(!area.store.spawning_cells().contains(&(0, 0)));
         let cell = grid.cell(0, 0).unwrap();
         assert_eq!(cell.terrain_object_occupation, None);
@@ -1329,7 +1499,7 @@ mod tests {
 
         assert_eq!(result, TerrainDamageResult::Destroyed);
         assert!(!sim.terrain_objects.cell_index().contains_key(&(0, 0)));
-        assert!(!sim.terrain_objects.animations().contains_key(&(0, 0)));
+        assert!(!sim.terrain_objects.animations().contains_key(&stable_id));
         assert!(!sim.terrain_objects.spawning_cells().contains(&(0, 0)));
         assert_eq!(
             sim.terrain_objects.objects()[&stable_id].lifecycle,

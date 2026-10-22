@@ -1779,6 +1779,18 @@ def _terrain_render(value: Any, label: str) -> None:
             _finite_number(component, f'{label}.{key}')
 
 
+def _terrain_object(value: Any, label: str, *, member: bool = False) -> int | None:
+    obj = require_object(value, label)
+    require_exact_keys(obj, ('name', 'frame', 'active', *(('id',) if member else ())), label)
+    if not isinstance(obj['name'], str) or not obj['name']:
+        raise ValidationError(f'{label}.name must be nonempty')
+    if obj['frame'] is not None:
+        _bounded_int(obj['frame'], f'{label}.frame', -(1 << 31), (1 << 31) - 1)
+    if obj['active'] is not None and type(obj['active']) is not bool:
+        raise ValidationError(f'{label}.active must be boolean or null')
+    return _bounded_int(obj['id'], f'{label}.id', 1, (1 << 64) - 1) if member else None
+
+
 def _terrain(value: Any, expected_cell: Any, label: str) -> None:
     cell = require_object(value, label)
     fields = ('final_tile_index', 'final_sub_tile', 'presentation_tile', 'level', 'slope',
@@ -1787,8 +1799,9 @@ def _terrain(value: Any, expected_cell: Any, label: str) -> None:
     visibility_extension = ('local_visibility',) if 'local_visibility' in cell else ()
     path_extension = ('path_grid',) if 'path_grid' in cell else ()
     render_extension = ('render',) if 'render' in cell else ()
+    members_extension = ('terrain_objects',) if 'terrain_objects' in cell else ()
     require_exact_keys(cell, ('cell', 'allocated', *fields, *extension, *visibility_extension,
-                              *path_extension, *render_extension), label)
+                              *path_extension, *render_extension, *members_extension), label)
     if render_extension:
         _terrain_render(cell['render'], f'{label}.render')
     # PathGrid is a separate current projection. Null means no current grid or
@@ -1818,13 +1831,18 @@ def _terrain(value: Any, expected_cell: Any, label: str) -> None:
             _bounded_int(overlay['density'], f'{label}.overlay.density', 0, 255)
         obj = cell['terrain_object']
         if obj is not None:
-            require_exact_keys(require_object(obj, f'{label}.terrain_object'), ('name', 'frame', 'active'), f'{label}.terrain_object')
-            if not isinstance(obj['name'], str) or not obj['name']:
-                raise ValidationError(f'{label}.terrain_object.name must be nonempty')
-            if obj['frame'] is not None:
-                _bounded_int(obj['frame'], f'{label}.terrain_object.frame', -(1 << 31), (1 << 31) - 1)
-            if obj['active'] is not None and type(obj['active']) is not bool:
-                raise ValidationError(f'{label}.terrain_object.active must be boolean or null')
+            _terrain_object(obj, f'{label}.terrain_object')
+    if members_extension:
+        members = require_array(cell['terrain_objects'], f'{label}.terrain_objects')
+        seen = set()
+        for index, obj in enumerate(members):
+            identity = _terrain_object(obj, f'{label}.terrain_objects[{index}]', member=True)
+            if identity in seen:
+                raise ValidationError(f'{label}.terrain_objects repeats id {identity}')
+            seen.add(identity)
+        if extension:
+            head = {key: members[0][key] for key in ('name', 'frame', 'active')} if members else None
+            _require_equal(cell['terrain_object'], head, f'{label}.terrain_object head')
     _require_equal(cell['cell'], expected_cell, f'{label}.cell')
     if type(cell['allocated']) is not bool:
         raise ValidationError(f'{label}.allocated must be a boolean')

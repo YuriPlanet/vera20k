@@ -3081,7 +3081,6 @@ mod tests {
                 crate::sim::world::ObjectAiCtx {
                     effects: crate::sim::world::FrameEffects::default(),
                     overlay_registry: None,
-                    terrain_spawner_cells: None,
                 },
             );
         }

@@ -5866,15 +5866,16 @@ fn gsi_05_02_mixed_fixture() -> (Simulation, [u64; 6]) {
     sim.register_live_object(particle_id);
 
     let terrain_id = sim.substrate.allocate_stable_id();
-    sim.terrain_objects
-        .objects_mut_for_test()
-        .insert(terrain_id, {
+    sim.terrain_objects.insert_constructed(
+        {
             let mut terrain =
                 TerrainObjectState::for_test(terrain_id, sim.interner.intern("TREE01"), 8, 9);
             terrain.set_health_for_test(10);
             terrain.set_max_health_for_test(10);
             terrain
-        });
+        },
+        false,
+    );
     assert!(
         sim.register_terrain_object(terrain_id, crate::rules::ruleset::RuleSet::empty_for_test())
     );
@@ -8584,16 +8585,16 @@ fn gsi_01_05_wave_reselects_live_cell_list_after_fatal_receiver_unmark() {
 fn gsi_05_02_graph_restore_allows_static_terrain_and_requires_fired_objects() {
     let mut terrain = Simulation::new();
     let terrain_id = terrain.substrate.allocate_stable_id();
-    terrain
-        .terrain_objects
-        .objects_mut_for_test()
-        .insert(terrain_id, {
+    terrain.terrain_objects.insert_constructed(
+        {
             let mut terrain =
                 TerrainObjectState::for_test(terrain_id, terrain.interner.intern("TREE01"), 1, 1);
             terrain.set_health_for_test(1);
             terrain.set_max_health_for_test(1);
             terrain
-        });
+        },
+        false,
+    );
     terrain
         .restore_after_snapshot_load()
         .expect("static Terrain has no required Logic slot");

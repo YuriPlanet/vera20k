@@ -1931,7 +1931,8 @@ fn scan_cell_for_target(
 fn walk_cell_list(ctx: &ScanContext<'_>, rx: u16, ry: u16, layer: MovementLayer) -> Option<u64> {
     let terrain = ctx
         .fire_world
-        .and_then(|world| world.terrain_objects.cell_index().get(&(rx, ry)).copied());
+        .into_iter()
+        .flat_map(|world| world.terrain_objects.members_at((rx, ry)));
     let mut held = None;
     for member in ctx.cells.cell_objects(rx, ry, layer, terrain) {
         let CellObjectMember::Entity(id) = member else {

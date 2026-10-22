@@ -4263,6 +4263,23 @@ class MapObservationTests(unittest.TestCase):
         observation._terrain(cell, [74, 32], 'terrain')
         cell['terrain_object'] = None
         observation._terrain(cell, [74, 32], 'terrain')
+        cell['terrain_objects'] = [dict(id=20, name='TIBTRE01', frame=2, active=True),
+                                   dict(id=19, name='TIBTRE02', frame=1, active=True)]
+        cell['terrain_object'] = dict(name='TIBTRE01', frame=2, active=True)
+        observation._terrain(cell, [74, 32], 'terrain')
+        for key, value in (('id', True), ('id', 0), ('frame', True), ('active', 1)):
+            bad = deepcopy(cell)
+            bad['terrain_objects'][0][key] = value
+            with self.assertRaises(observation.ValidationError):
+                observation._terrain(bad, [74, 32], 'terrain')
+        bad = deepcopy(cell)
+        bad['terrain_objects'][1]['id'] = 20
+        with self.assertRaises(observation.ValidationError):
+            observation._terrain(bad, [74, 32], 'terrain')
+        bad = deepcopy(cell)
+        bad['terrain_object']['frame'] = 9
+        with self.assertRaises(observation.ValidationError):
+            observation._terrain(bad, [74, 32], 'terrain')
 
     def test_unit_extension_retains_animation_lifetime_and_compares_observations(self):
         self.scripted_profile()

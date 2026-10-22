@@ -576,6 +576,7 @@ impl Simulation {
                     &mut self.substrate.entities,
                     grid,
                     self.resolved_terrain.as_ref(),
+                    &self.terrain_objects,
                     self.overlay_grid.as_ref(),
                     &self.interner,
                     rules,

@@ -279,7 +279,6 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
             let ai = super::techno_ai::ObjectAiCtx {
                 effects: FrameEffects::default(),
                 overlay_registry: None,
-                terrain_spawner_cells: None,
             };
             if ordinary {
                 compare_native_phase(&scene, native_phase(row, "after_schedule_start"));

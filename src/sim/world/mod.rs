@@ -2505,13 +2505,13 @@ impl Simulation {
         /// bridge layer's when its height test picks it), in its current order.
         fn current_order(
             occupancy: &crate::sim::occupancy::OccupancyGrid,
-            terrain_cells: &BTreeMap<(u16, u16), u64>,
+            terrain_objects: &crate::sim::terrain_object::TerrainObjectStore,
             rx: u16,
             ry: u16,
             layer: MovementLayer,
         ) -> Vec<CellObject> {
             occupancy
-                .cell_objects(rx, ry, layer, terrain_cells.get(&(rx, ry)).copied())
+                .cell_objects(rx, ry, layer, terrain_objects.members_at((rx, ry)))
                 .collect()
         }
 
@@ -2578,7 +2578,7 @@ impl Simulation {
 
                 let mut current = current_order(
                     &self.substrate.occupancy,
-                    self.terrain_objects.cell_index(),
+                    &self.terrain_objects,
                     rx,
                     ry,
                     layer,
@@ -2601,7 +2601,7 @@ impl Simulation {
                             if !eligible {
                                 let order = current_order(
                                     &self.substrate.occupancy,
-                                    self.terrain_objects.cell_index(),
+                                    &self.terrain_objects,
                                     rx,
                                     ry,
                                     layer,
@@ -2694,7 +2694,7 @@ impl Simulation {
                     // list link is gone and this walk terminates.
                     let order = current_order(
                         &self.substrate.occupancy,
-                        self.terrain_objects.cell_index(),
+                        &self.terrain_objects,
                         rx,
                         ry,
                         layer,
@@ -6626,20 +6626,19 @@ impl Simulation {
         // serialized Terrain objects must overwrite that derived projection.
         // Clear every known source first so Limbo/Destroyed objects stay absent,
         // then replay only live objects through the shared occupation writer.
-        let terrain_objects: Vec<_> = self.terrain_objects.objects().values().cloned().collect();
-        for terrain in &terrain_objects {
+        for object in self.terrain_objects.objects().values() {
             crate::sim::terrain_object::unmark_terrain_occupation(
-                terrain,
+                object,
                 Some(&mut resolved_terrain),
             );
         }
-        for terrain in &terrain_objects {
-            if terrain.is_live() {
-                crate::sim::terrain_object::mark_terrain_occupation(
-                    terrain,
-                    Some(&mut resolved_terrain),
-                );
-            }
+        // RecalcZone483C80 selects the first Terrain in saved cell order.
+        // Replaying storage order would select the wrong surviving mask.
+        for &head in self.terrain_objects.cell_index().values() {
+            crate::sim::terrain_object::mark_terrain_occupation(
+                &self.terrain_objects.objects()[&head],
+                Some(&mut resolved_terrain),
+            );
         }
         self.resolved_terrain = Some(resolved_terrain);
         self.terrain_speed_config = terrain_speed_config;
