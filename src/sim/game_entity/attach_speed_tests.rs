@@ -251,14 +251,20 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
         "stale derived speed is rejected, not silently repaired"
     );
 
-    // Actual object-turn Drive Process consumes the same derived Foot value;
-    // the comparator is a fresh identical arena with no attachment. This is
-    // Rust production integration, not a native movement-distance golden.
-    let (mut ordinary, _, normal_target, _) = scene();
+    // The frame fixture reaches the actual object-turn Drive Process. Keep
+    // the real hit's attachment, but limbo both emitters through the lifecycle
+    // owner so passive enemy fire cannot refresh it during the comparison.
+    // This is Rust integration, not a native movement-distance golden.
+    let (mut ordinary, _, normal_target, normal_source) = scene();
+    sim.techno_limbo_with_rules(source, &rules, None);
+    ordinary.techno_limbo_with_rules(normal_source, &rules, None);
     let start = crate::sim::movement::ground_pose::position_world_coord(
         &sim.entities().get(target).unwrap().position,
     );
-    for (world, id) in [(&mut sim, target), (&mut ordinary, normal_target)] {
+    for (world, id, attached) in [
+        (&mut sim, target, true),
+        (&mut ordinary, normal_target, false),
+    ] {
         assert!(world.apply_command(
             "Russians",
             &crate::sim::command::Command::Move {
@@ -268,12 +274,21 @@ fn attached_speed_parent_bullet_reaches_drive_and_validated_snapshot() {
             },
             Some(&rules)
         ));
-        for frame in 1..=16 {
-            world.session.set_binary_frame_for_test(frame);
-            world.session.set_tick_for_test(u64::from(frame));
-            world
-                .advance_live_object_turn(id, &rules, ObjectAiCtx::default())
-                .unwrap();
+        let first_tick = world.session.tick();
+        for visit in 1..=16_u64 {
+            let result = world.advance_tick(&[], Some(&rules), None, None, 67);
+            assert!(
+                result.frame_committed,
+                "movement frame {visit} was admitted"
+            );
+            assert_eq!(result.tick, first_tick + visit);
+            if attached {
+                assert_eq!(
+                    world.entities().get(id).unwrap().attach_effects.entries[0].remaining,
+                    60 - visit as i32,
+                    "one attachment update per admitted Drive visit"
+                );
+            }
         }
     }
     let distance = |world: &Simulation, id| {
