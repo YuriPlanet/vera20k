@@ -36,6 +36,13 @@ class PrGuardTest(unittest.TestCase):
         self.assertEqual(pr_guard.risky_hits('a.json', [(1, '"sha256": "' + 'ab' * 64 + '"')]), [])
         self.assertIn('[hidden unicode]', pr_guard.risky_hits('a.rs', [(1, 'let x = 1; ‮')])[0])
 
+    def test_large_additions_and_line_split(self):
+        files = {'tools/big.json': {'added': [(1, 'x' * 99)] * 1100, 'binary': False},
+                 'src/sim/a.rs': {'added': [(1, 'let a = 1;')] * 3, 'binary': False},
+                 'src/sim/a_tests.rs': {'added': [(1, 'assert!(a);')] * 5, 'binary': False}}
+        self.assertEqual(pr_guard.large_additions(files), ['tools/big.json: 107 KB added'])
+        self.assertEqual(pr_guard.added_line_split(files), 'code 3, tests 5, other 1100')
+
     def test_agents_md_is_maintainer_only_at_any_depth(self):
         paths = ['src/AGENTS.md', 'src/lib.rs']
         self.assertEqual(pr_guard.maintainer_only_findings(paths, 'hrusten', {'hrusten'}, 'hrusten'), [])

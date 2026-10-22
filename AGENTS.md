@@ -2,9 +2,11 @@
 
 **Outside contributors and their agents:** follow the README's
 [Contributing](README.md#contributing) section and your issue, and skip the rest of this file.
-It is the contract for the maintainer's own agents: its build runner, retail-data checks,
-critic reviews, checkpoints, evidence levels and native comparisons don't apply to you. Where
-the two differ, the README wins.
+In short: one small fix per PR, one to three regression tests that fail without it, the
+native function address cited next to the code, no native-execution corpora, and a PR
+description of about 15 lines. The rest is the contract for the maintainer's own agents:
+its build runner, retail-data checks, critic reviews, checkpoints and native comparisons
+don't apply to you. Where the two differ, the README wins.
 
 VERA20k is a cross-platform Rust reimplementation of the Command & Conquer:
 Yuri's Revenge engine (`gamemd.exe`), using original retail rules and assets.
@@ -45,36 +47,31 @@ one-line residual, not investigation; when a visual detail matters, port the dra
 code instead of fitting captures.
 Missing or unproven required behavior keeps an exhaustive task open.
 
-Distinguish and cite:
+Native evidence is the instructions you read: cite the native function name and
+address next to the Rust. That is enough for control flow, ordering, gameplay rules,
+timers and plain arithmetic; compare with retail play side by side when it matters.
+Avoid unqualified “VERIFIED”/“complete”.
 
-- **Native behavior established:** body/caller/data evidence, or retail play
-  observed side by side.
-- **Rust regression tested:** named implementation checks.
-- **Parity demonstrated:** gamemd-derived executable comparison or exhaustive proof,
-  bounded by stated coverage. A sample cannot certify the whole mechanism.
+Tests are regression tests: per fix, one to three focused tests through production code
+that fail without the fix. Use boundary cases, not sweeps or grids, and keep tests
+proportional to the change: a 20-line fix gets tens of test lines, not hundreds.
 
-Parity goldens come from native execution/emulation, capture or retail bytes,
-not hand calculations or prior Rust; inputs a comparison takes from VERA need
-their own native evidence. Avoid unqualified “VERIFIED”/“complete”.
+Execute native code ([Unicorn](tools/native_oracle.md) or capture) only for a shared
+numeric kernel (lookup tables, fixed-point conversion, distance and angle math), RNG
+draws (count, order, stream), arithmetic with a known trap (x87 precision, rounding,
+overflow, signed division or shifts) that retail data reaches, or behavior a playtest or
+bug report shows differing. Goldens come from that execution, a capture or retail
+bytes, never hand calculations or prior Rust. Commit at most about 20 cases holding only
+the inputs and outputs a Rust test asserts: no call traces, addresses, registers or
+stack values, and under 100 KB per file. Keep a harness only while a Rust test consumes
+its output, with a sidecar recording the command.
 
-Execute native code ([Unicorn](tools/native_oracle.md) or capture) and pin the results
-as golden values in Rust tests only where a misread is likely and spreads: shared numeric
-kernels (lookup tables, fixed-point conversion, distance and angle math), RNG draws
-(count, order, stream), arithmetic with a known trap (x87 precision, rounding, overflow,
-signed division or shifts), or behavior a playtest or bug report shows differing.
-Everything else, including control flow, ordering, gameplay rules, timers and plain
-arithmetic, may rest on instruction-level reading, a behavior test through the
-production code and side-by-side play against retail. Each PR states the evidence level
-each claim reached.
-
-Keep a native comparison only while a Rust test or tool consumes it: its harness and a
-small corpus of controls rather than bulk replays, with a sidecar recording the command.
 Every gamemd.exe build is treated as the same game: code, tests and comments neither
 check nor cite its hash. Sidecars pin no hashes of repository sources; those go stale
-without any change in native output. Validation results (test counts, captures, critic
-findings) go in the PR description and the checkpoint, not the tree: do not
-commit receipts, run logs, capture screenshots, critic reviews or static disassembly
-packets.
+without any change in native output. Do not commit receipts, run logs, capture
+screenshots, critic reviews or static disassembly packets. A PR description says what
+changed, why (native address) and how it was tested, in about 15 lines; no
+evidence-level sections, templates or run logs.
 
 Each cohesive gamemd-derived Rust behavior carries nearby native function name/address
 and source; sim-behavior commits cite their evidence.

@@ -265,6 +265,597 @@
       "services": []
     }
   ],
+  "ai_expiry": [
+    {
+      "after": {
+        "bypass": 0,
+        "counter": 0,
+        "current_mission": 5,
+        "deactivated": false,
+        "mission_timer": [
+          286331153,
+          572662306,
+          858993459
+        ],
+        "queued_mission": 15
+      },
+      "before": {
+        "bypass": 1,
+        "counter": 1,
+        "current_mission": 5,
+        "deactivated": true,
+        "mission_timer": [
+          286331153,
+          572662306,
+          858993459
+        ],
+        "queued_mission": -1
+      },
+      "code_unchanged": true,
+      "fixture": {
+        "house_1ec": 0,
+        "house_1ed": 0,
+        "mode": 3,
+        "raw": null,
+        "stored_old_mission": 2
+      },
+      "name": "skirmish_AI_default",
+      "order": [
+        "100627F0",
+        "100487D0",
+        "10063070",
+        "10062FD0",
+        "1006293C",
+        "005B35E0",
+        "005B3614",
+        "005B3641"
+      ],
+      "parsed": {
+        "present": false,
+        "raw": null,
+        "success": false,
+        "value": 0
+      },
+      "queue_calls": [
+        {
+          "force_low_byte": 0,
+          "mission": 15
+        }
+      ],
+      "rng_streams_unchanged": true,
+      "services": [
+        {
+          "service": "Reactivate"
+        },
+        {
+          "firer_present": false,
+          "service": "SpawnManagerBoundary"
+        }
+      ]
+    },
+    {
+      "after": {
+        "bypass": 1,
+        "counter": 0,
+        "current_mission": 5,
+        "deactivated": false,
+        "mission_timer": [
+          286331153,
+          572662306,
+          858993459
+        ],
+        "queued_mission": -1
+      },
+      "before": {
+        "bypass": 1,
+        "counter": 1,
+        "current_mission": 5,
+        "deactivated": true,
+        "mission_timer": [
+          286331153,
+          572662306,
+          858993459
+        ],
+        "queued_mission": -1
+      },
+      "code_unchanged": true,
+      "fixture": {
+        "house_1ec": 0,
+        "house_1ed": 0,
+        "mode": 3,
+        "raw": "Guard",
+        "stored_old_mission": 2
+      },
+      "name": "skirmish_AI_Guard",
+      "order": [
+        "100627F0",
+        "100487D0",
+        "10063070",
+        "10062FD0",
+        "1006293C",
+        "005B35E0",
+        "005B3641"
+      ],
+      "parsed": {
+        "present": true,
+        "raw": "Guard",
+        "success": true,
+        "value": 5
+      },
+      "queue_calls": [
+        {
+          "force_low_byte": 0,
+          "mission": 5
+        }
+      ],
+      "rng_streams_unchanged": true,
+      "services": [
+        {
+          "service": "Reactivate"
+        },
+        {
+          "firer_present": false,
+          "service": "SpawnManagerBoundary"
+        }
+      ]
+    },
+    {
+      "after": {
+        "bypass": 0,
+        "counter": 0,
+        "current_mission": 5,
+        "deactivated": false,
+        "mission_timer": [
+          286331153,
+          572662306,
+          858993459
+        ],
+        "queued_mission": 11
+      },
+      "before": {
+        "bypass": 1,
+        "counter": 1,
+        "current_mission": 5,
+        "deactivated": true,
+        "mission_timer": [
+          286331153,
+          572662306,
+          858993459
+        ],
+        "queued_mission": -1
+      },
+      "code_unchanged": true,
+      "fixture": {
+        "house_1ec": 0,
+        "house_1ed": 0,
+        "mode": 3,
+        "raw": "Area Guard",
+        "stored_old_mission": 2
+      },
+      "name": "skirmish_AI_AreaGuard",
+      "order": [
+        "100627F0",
+        "100487D0",
+        "10063070",
+        "10062FD0",
+        "1006293C",
+        "005B35E0",
+        "005B3614",
+        "005B3641"
+      ],
+      "parsed": {
+        "present": true,
+        "raw": "Area Guard",
+        "success": true,
+        "value": 11
+      },
+      "queue_calls": [
+        {
+          "force_low_byte": 0,
+          "mission": 11
+        }
+      ],
+      "rng_streams_unchanged": true,
+      "services": [
+        {
+          "service": "Reactivate"
+        },
+        {
+          "firer_present": false,
+          "service": "SpawnManagerBoundary"
+        }
+      ]
+    },
+    {
+      "after": {
+        "bypass": 1,
+        "counter": 0,
+        "current_mission": 5,
+        "deactivated": false,
+        "mission_timer": [
+          286331153,
+          572662306,
+          858993459
+        ],
+        "queued_mission": -1
+      },
+      "before": {
+        "bypass": 1,
+        "counter": 1,
+        "current_mission": 5,
+        "deactivated": true,
+        "mission_timer": [
+          286331153,
+          572662306,
+          858993459
+        ],
+        "queued_mission": -1
+      },
+      "code_unchanged": true,
+      "fixture": {
+        "house_1ec": 1,
+        "house_1ed": 0,
+        "mode": 3,
+        "raw": null,
+        "stored_old_mission": 2
+      },
+      "name": "skirmish_human",
+      "order": [
+        "100627F0",
+        "100487D0",
+        "10063070",
+        "10062FD0"
+      ],
+      "parsed": {
+        "present": false,
+        "raw": null,
+        "success": false,
+        "value": 0
+      },
+      "queue_calls": [],
+      "rng_streams_unchanged": true,
+      "services": [
+        {
+          "service": "Reactivate"
+        },
+        {
+          "firer_present": false,
+          "service": "SpawnManagerBoundary"
+        }
+      ]
+    },
+    {
+      "after": {
+        "bypass": 1,
+        "counter": 0,
+        "current_mission": 5,
+        "deactivated": false,
+        "mission_timer": [
+          286331153,
+          572662306,
+          858993459
+        ],
+        "queued_mission": -1
+      },
+      "before": {
+        "bypass": 1,
+        "counter": 1,
+        "current_mission": 5,
+        "deactivated": true,
+        "mission_timer": [
+          286331153,
+          572662306,
+          858993459
+        ],
+        "queued_mission": -1
+      },
+      "code_unchanged": true,
+      "fixture": {
+        "house_1ec": 0,
+        "house_1ed": 1,
+        "mode": 0,
+        "raw": null,
+        "stored_old_mission": 2
+      },
+      "name": "campaign_flagB_control",
+      "order": [
+        "100627F0",
+        "100487D0",
+        "10063070",
+        "10062FD0"
+      ],
+      "parsed": {
+        "present": false,
+        "raw": null,
+        "success": false,
+        "value": 0
+      },
+      "queue_calls": [],
+      "rng_streams_unchanged": true,
+      "services": [
+        {
+          "service": "Reactivate"
+        },
+        {
+          "firer_present": false,
+          "service": "SpawnManagerBoundary"
+        }
+      ]
+    },
+    {
+      "after": {
+        "bypass": 0,
+        "counter": 0,
+        "current_mission": 5,
+        "deactivated": false,
+        "mission_timer": [
+          286331153,
+          572662306,
+          858993459
+        ],
+        "queued_mission": 15
+      },
+      "before": {
+        "bypass": 1,
+        "counter": 1,
+        "current_mission": 5,
+        "deactivated": true,
+        "mission_timer": [
+          286331153,
+          572662306,
+          858993459
+        ],
+        "queued_mission": -1
+      },
+      "code_unchanged": true,
+      "fixture": {
+        "house_1ec": 0,
+        "house_1ed": 1,
+        "mode": 3,
+        "raw": null,
+        "stored_old_mission": 2
+      },
+      "name": "skirmish_flagB_not_human",
+      "order": [
+        "100627F0",
+        "100487D0",
+        "10063070",
+        "10062FD0",
+        "1006293C",
+        "005B35E0",
+        "005B3614",
+        "005B3641"
+      ],
+      "parsed": {
+        "present": false,
+        "raw": null,
+        "success": false,
+        "value": 0
+      },
+      "queue_calls": [
+        {
+          "force_low_byte": 0,
+          "mission": 15
+        }
+      ],
+      "rng_streams_unchanged": true,
+      "services": [
+        {
+          "service": "Reactivate"
+        },
+        {
+          "firer_present": false,
+          "service": "SpawnManagerBoundary"
+        }
+      ]
+    }
+  ],
+  "ai_mission_readers": [
+    {
+      "code_unchanged": true,
+      "fixture": {
+        "raw_steps": [
+          null
+        ]
+      },
+      "initial": {
+        "present": false,
+        "value": 0
+      },
+      "name": "missing_default",
+      "result": [
+        {
+          "present": false,
+          "raw": null,
+          "success": false,
+          "value": 0
+        }
+      ],
+      "rng_streams_unchanged": true
+    },
+    {
+      "code_unchanged": true,
+      "fixture": {
+        "raw_steps": [
+          "Guard",
+          null,
+          "",
+          "junk",
+          "Hunt"
+        ]
+      },
+      "initial": {
+        "present": false,
+        "value": 0
+      },
+      "name": "guard_retention_then_hunt",
+      "result": [
+        {
+          "present": true,
+          "raw": "Guard",
+          "success": true,
+          "value": 5
+        },
+        {
+          "present": true,
+          "raw": null,
+          "success": false,
+          "value": 5
+        },
+        {
+          "present": true,
+          "raw": "",
+          "success": false,
+          "value": 5
+        },
+        {
+          "present": true,
+          "raw": "junk",
+          "success": false,
+          "value": 5
+        },
+        {
+          "present": true,
+          "raw": "Hunt",
+          "success": true,
+          "value": 15
+        }
+      ],
+      "rng_streams_unchanged": true
+    },
+    {
+      "code_unchanged": true,
+      "fixture": {
+        "raw_steps": [
+          "Area Guard"
+        ]
+      },
+      "initial": {
+        "present": false,
+        "value": 0
+      },
+      "name": "area_guard",
+      "result": [
+        {
+          "present": true,
+          "raw": "Area Guard",
+          "success": true,
+          "value": 11
+        }
+      ],
+      "rng_streams_unchanged": true
+    },
+    {
+      "code_unchanged": true,
+      "fixture": {
+        "raw_steps": [
+          "Move"
+        ]
+      },
+      "initial": {
+        "present": false,
+        "value": 0
+      },
+      "name": "move",
+      "result": [
+        {
+          "present": true,
+          "raw": "Move",
+          "success": true,
+          "value": 2
+        }
+      ],
+      "rng_streams_unchanged": true
+    },
+    {
+      "code_unchanged": true,
+      "fixture": {
+        "raw_steps": [
+          "Attack"
+        ]
+      },
+      "initial": {
+        "present": false,
+        "value": 0
+      },
+      "name": "attack",
+      "result": [
+        {
+          "present": true,
+          "raw": "Attack",
+          "success": true,
+          "value": 1
+        }
+      ],
+      "rng_streams_unchanged": true
+    },
+    {
+      "code_unchanged": true,
+      "fixture": {
+        "raw_steps": [
+          "2"
+        ]
+      },
+      "initial": {
+        "present": false,
+        "value": 0
+      },
+      "name": "numeric_rejected",
+      "result": [
+        {
+          "present": false,
+          "raw": "2",
+          "success": false,
+          "value": 0
+        }
+      ],
+      "rng_streams_unchanged": true
+    },
+    {
+      "code_unchanged": true,
+      "fixture": {
+        "raw_steps": [
+          "none"
+        ]
+      },
+      "initial": {
+        "present": false,
+        "value": 0
+      },
+      "name": "none_rejected",
+      "result": [
+        {
+          "present": false,
+          "raw": "none",
+          "success": false,
+          "value": 0
+        }
+      ],
+      "rng_streams_unchanged": true
+    },
+    {
+      "code_unchanged": true,
+      "fixture": {
+        "raw_steps": [
+          "hUnT"
+        ]
+      },
+      "initial": {
+        "present": false,
+        "value": 0
+      },
+      "name": "case_insensitive_hunt",
+      "result": [
+        {
+          "present": true,
+          "raw": "hUnT",
+          "success": true,
+          "value": 15
+        }
+      ],
+      "rng_streams_unchanged": true
+    }
+  ],
   "animation_readers": [
     {
       "fixture": {

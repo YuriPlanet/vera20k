@@ -1341,6 +1341,17 @@ impl BatchRenderer {
         )
     }
 
+    /// Keep an indexed page's existing index plane when its shared palette
+    /// row texture grows. The source bind-group constructor remains shared.
+    pub(crate) fn rebind_indexed_palette(
+        &self,
+        device: &wgpu::Device,
+        page: &mut BatchTexture,
+        palette: &wgpu::TextureView,
+    ) {
+        page.bind_group = self.source_bind_group(device, palette, &page.view);
+    }
+
     fn batch_texture(
         &self,
         device: &wgpu::Device,

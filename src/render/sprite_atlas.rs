@@ -225,7 +225,7 @@ fn insert_building_anim_frame_keys(
 /// Palette ownership comes from the draw producer, not an animation's name.
 /// Global ANIM and explicit selected ColorScheme may coexist for identical
 /// type/frame/house keys (AnimClass DrawIt 00423280..00423354).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub enum ShpPaletteContext {
     #[default]
     Legacy,
@@ -238,9 +238,9 @@ pub enum ShpPaletteContext {
     BulletAnim,
     /// Caller supplies BulletClass's retained ColorScheme identity (+114).
     BulletFirer,
-    /// AnimClass `+0xD4` holding a house's scheme from the extra building
-    /// palette (`AnimRemap::ExtraBuildingScheme`).
-    ExtraScheme,
+    /// AnimClass `+0xD4` holding a house's scheme from this frozen palette
+    /// name. The interner and atlas both have scenario lifetime.
+    ExtraScheme(crate::sim::intern::InternedId),
 }
 
 /// One remapped AnimClass palette variant: the anim type, its remap's atlas
@@ -342,9 +342,8 @@ pub struct SpriteAtlasPage {
     pub texture: BatchTexture,
 }
 
-/// Most render palettes one atlas holds. Rows exist only for palettes its
-/// sprites use: the unit, effect, cell and projectile palettes, each plain or
-/// with one `[Colors]` scheme's team band.
+/// Initial palette capacity. Distinct names/house colours grow this texture
+/// without changing row identities, bounded by the device's actual 2D limit.
 const SHP_PALETTE_ROWS: u32 = 256;
 
 /// The palettes an SHP atlas's index pages resolve through, so the atlas
@@ -365,16 +364,14 @@ struct ShpPalettes {
 }
 
 impl ShpPalettes {
-    /// The row `palette` resolves through, registering it; None once the rows
-    /// are full.
+    /// Register a stable row identity. Physical texture limits are checked
+    /// after the refresh has collected every row, before publishing it.
     fn row(&mut self, palette: &Palette) -> Option<u32> {
         let colors = palette.to_rgba_bytes();
         if let Some(&row) = self.rows.get(&colors) {
             return Some(row);
         }
-        let row = u32::try_from(self.colors.len())
-            .ok()
-            .filter(|&row| row < SHP_PALETTE_ROWS)?;
+        let row = u32::try_from(self.colors.len()).ok()?;
         self.rows.insert(colors.clone(), row);
         self.colors.push(colors);
         Some(row)
@@ -383,12 +380,28 @@ impl ShpPalettes {
     /// Upload the rows registered since the last upload, creating the row
     /// texture on first use, and return its view for page bind groups.
     fn upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::TextureView {
-        let (texture, view) = self.texture.get_or_insert_with(|| {
+        let required = u32::try_from(self.colors.len())
+            .expect("palette rows fit u32")
+            .max(1);
+        let max_rows = device.limits().max_texture_dimension_2d;
+        assert!(
+            required <= max_rows,
+            "atlas validated the palette texture limit"
+        );
+        if self
+            .texture
+            .as_ref()
+            .is_none_or(|(texture, _)| texture.height() < required)
+        {
+            let height = required
+                .next_power_of_two()
+                .max(SHP_PALETTE_ROWS)
+                .min(max_rows);
             let texture = device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("SHP atlas palette rows"),
                 size: wgpu::Extent3d {
                     width: 256,
-                    height: SHP_PALETTE_ROWS,
+                    height,
                     depth_or_array_layers: 1,
                 },
                 mip_level_count: 1,
@@ -401,8 +414,10 @@ impl ShpPalettes {
                 view_formats: &[],
             });
             let view = texture.create_view(&Default::default());
-            (texture, view)
-        });
+            self.texture = Some((texture, view));
+            self.uploaded = 0;
+        }
+        let (texture, view) = self.texture.as_ref().expect("palette texture installed");
         for (row, colors) in self.colors.iter().enumerate().skip(self.uploaded) {
             atlas_growth::write_texels(queue, texture, [0, row as u32], [256, 1], 4, colors);
         }
@@ -668,7 +683,25 @@ impl SpriteAtlas {
     ) {
         let max_dim = device.limits().max_texture_dimension_2d;
         self.palettes = palettes;
+        let old_rows = self
+            .palettes
+            .texture
+            .as_ref()
+            .map(|(texture, _)| texture.height());
         let palette_rows = self.palettes.upload(device, queue);
+        if old_rows
+            != self
+                .palettes
+                .texture
+                .as_ref()
+                .map(|(texture, _)| texture.height())
+        {
+            // All resident pages keep their index planes/row IDs and bind the
+            // replacement palette texture. Nothing needs repacking.
+            for page in &mut self.pages {
+                batch.rebind_indexed_palette(device, &mut page.texture, &palette_rows);
+            }
+        }
         let (pages, growth_indices) = (&mut self.pages, &mut self.growth_indices);
         let (placed, unplaced) = atlas_growth::place_on_growth_pages(
             &mut self.growth,
@@ -901,7 +934,7 @@ pub(crate) fn anim_remap_color(
     use crate::sim::anim_class::AnimRemap;
     Some(match anim.remap()? {
         AnimRemap::ColorScheme(color) => color,
-        AnimRemap::House(house) | AnimRemap::ExtraBuildingScheme(house) => house_colors
+        AnimRemap::House(house) | AnimRemap::ExtraBuildingScheme { house, .. } => house_colors
             .get(interner.resolve(house))
             .copied()
             .unwrap_or(crate::rules::house_colors::NO_REMAP),
@@ -912,8 +945,8 @@ pub(crate) fn anim_remap_color(
 /// the extra building palette for a custom-palette producer's scheme.
 pub(crate) fn anim_remap_context(anim: &crate::sim::anim_class::AnimObject) -> ShpPaletteContext {
     match anim.remap() {
-        Some(crate::sim::anim_class::AnimRemap::ExtraBuildingScheme(_)) => {
-            ShpPaletteContext::ExtraScheme
+        Some(crate::sim::anim_class::AnimRemap::ExtraBuildingScheme { palette, .. }) => {
+            ShpPaletteContext::ExtraScheme(palette)
         }
         _ => ShpPaletteContext::SelectedScheme,
     }
@@ -1024,13 +1057,12 @@ fn sprite_palette_for_key(
                 SpritePaletteChoice::Anim
             }
         }
-        ShpPaletteContext::ExtraScheme if extra_palette_type_ids.is_some() => {
+        ShpPaletteContext::ExtraScheme(_) if extra_palette_type_ids.is_some() => {
             SpritePaletteChoice::ExtraBuilding
         }
-        // RESIDUAL: without the file gamemd leaves +0xD4 unset (0x00441D2F),
-        // so the anim draws AltPalette's scheme 0 in cell light; this draws
-        // the owner's ramp. Retail ships every LIB*.PAL.
-        ShpPaletteContext::ExtraScheme => SpritePaletteChoice::Unit,
+        // Production creates this context only for a successfully bound name.
+        // An unavailable diagnostic resource keeps the ordinary house scheme.
+        ShpPaletteContext::ExtraScheme(_) => SpritePaletteChoice::Unit,
         ShpPaletteContext::Legacy => {
             let upper = key.type_id.to_ascii_uppercase();
             if !cell_palette_type_ids.contains(&upper)
@@ -1352,10 +1384,10 @@ fn insert_new_object_keys<'a>(
 }
 
 /// Groups keys by type, so each type's SHP is decoded whole once, in a stable order.
-fn sprite_key_order(key: &ShpSpriteKey) -> (&str, u8, u8, u16, u8) {
+fn sprite_key_order(key: &ShpSpriteKey) -> (&str, ShpPaletteContext, u8, u16, u8) {
     (
         key.type_id.as_str(),
-        key.palette_context as u8,
+        key.palette_context,
         key.house_color.0,
         key.frame,
         key.facing,
@@ -1444,8 +1476,9 @@ fn register_projectile_frames(
 /// shelf-packed into new pages. With one, only the object (type, house
 /// colour) pairs and AnimClass colour remaps it has not collected are
 /// expanded to keys; those it neither holds nor has found unrenderable are
-/// rendered and appended to a growth page. Resident pages are not touched,
-/// and the world effects registered at map load are not read again.
+/// rendered and appended to a growth page. Resident index pages are not
+/// repacked; their bindings follow shared palette-texture growth. The world
+/// effects registered at map load are not read again.
 ///
 /// 1. Collects the keys of new object pairs (bodies, infantry sequences,
 ///    building and make animations) and new remaps, plus at map load the
@@ -1915,41 +1948,63 @@ pub fn build_sprite_atlas(
 
     // BuildingType TerrainPalette (004612B4, DrawSHP 00705EC7) has the same
     // palette owner as cell-drawer animations. Resolve the rules Image alias.
-    let extra_palette =
-        rules.and_then(|rules| rules.load_extra_building_palette(asset_manager, theater_ext));
+    // Refresh-local decoding cache; the existing atlas owns all resulting
+    // rows and retires them with the scenario. No final-ART Palette reread.
+    let mut extra_palettes: HashMap<&str, Option<Palette>> = HashMap::new();
+    let mut extra_palette_names = HashMap::new();
     let mut cell_palette_type_ids = cell_drawer_type_ids.clone();
     let mut extra_palette_type_ids = HashSet::new();
     let new_types: HashSet<&str> = new_keys.iter().map(|key| key.type_id.as_str()).collect();
     for type_id in new_types {
         let base = type_id.strip_suffix("_MAKE").unwrap_or(type_id);
-        let object = rules.and_then(|r| r.object(base));
-        let image = object.map_or(base, |o| o.image.as_str());
+        let object = rules.and_then(|rules| rules.object(base));
+        let image = object.map_or(base, |object| object.image.as_str());
         if art
-            .and_then(|a| a.resolve_metadata_entry(base, image))
-            .is_some_and(|a| a.terrain_palette)
+            .and_then(|art| art.resolve_metadata_entry(base, image))
+            .is_some_and(|entry| entry.terrain_palette)
         {
             cell_palette_type_ids.insert(type_id.to_ascii_uppercase());
         }
-        if object
-            .and_then(|o| o.custom_palette_name())
-            .is_some_and(|name| {
-                extra_palette
-                    .as_ref()
-                    .is_some_and(|(loaded, _)| name == *loaded)
-            })
+        if let Some(name) = object.and_then(|object| object.custom_palette_name()) {
+            let palette = extra_palettes.entry(name).or_insert_with(|| {
+                rules?
+                    .load_extra_building_palette(asset_manager, theater_ext, Some(name))
+                    .map(|(_, palette)| palette)
+            });
+            if palette.is_some() {
+                extra_palette_type_ids.insert(type_id.to_ascii_uppercase());
+                extra_palette_names.insert(type_id.to_ascii_uppercase(), name);
+            }
+        }
+    }
+    // DestroyAnim outlives its source. Its own retained group, rather than
+    // any currently visible building or singleton, supplies the palette key.
+    for key in &new_keys {
+        if let ShpPaletteContext::ExtraScheme(palette) = key.palette_context
+            && let Some(name) = interner.map(|interner| interner.resolve(palette))
         {
-            extra_palette_type_ids.insert(type_id.to_ascii_uppercase());
+            extra_palettes.entry(name).or_insert_with(|| {
+                rules?
+                    .load_extra_building_palette(asset_manager, theater_ext, Some(name))
+                    .map(|(_, palette)| palette)
+            });
         }
     }
     let palette_choices: Vec<SpritePaletteChoice> = new_keys
         .iter()
         .map(|key| {
+            let extra_available = match key.palette_context {
+                ShpPaletteContext::ExtraScheme(palette) => interner
+                    .and_then(|interner| extra_palettes.get(interner.resolve(palette)))
+                    .is_some_and(Option::is_some),
+                _ => !extra_palette_type_ids.is_empty(),
+            };
             sprite_palette_for_key(
                 key,
                 art,
                 &effects.type_ids,
                 &cell_palette_type_ids,
-                extra_palette.as_ref().map(|_| &extra_palette_type_ids),
+                extra_available.then_some(&extra_palette_type_ids),
             )
         })
         .collect();
@@ -2032,7 +2087,15 @@ pub fn build_sprite_atlas(
                 bullet_palette.as_ref().expect("bullet palette validated")
             }
             SpritePaletteChoice::ExtraBuilding => {
-                &extra_palette.as_ref().expect("chosen only when loaded").1
+                let name = match key.palette_context {
+                    ShpPaletteContext::ExtraScheme(palette) => interner
+                        .expect("custom animation palette was resolved through the interner")
+                        .resolve(palette),
+                    _ => extra_palette_names[key.type_id.to_ascii_uppercase().as_str()],
+                };
+                extra_palettes[name]
+                    .as_ref()
+                    .expect("chosen only when loaded")
             }
         };
         // 0x00627590 builds each scheme with ColorScheme's constructor
@@ -2081,6 +2144,17 @@ pub fn build_sprite_atlas(
             );
             rendered.extend(oregath_sprites);
         }
+    }
+
+    if palettes.colors.len() > device.limits().max_texture_dimension_2d as usize {
+        return abort_sprite_atlas_refresh(
+            previous_atlas,
+            format!(
+                "SHP atlas requires {} palette rows; device supports {}",
+                palettes.colors.len(),
+                device.limits().max_texture_dimension_2d,
+            ),
+        );
     }
 
     // Step 3: shelf-pack into new pages at map load; afterwards append to a

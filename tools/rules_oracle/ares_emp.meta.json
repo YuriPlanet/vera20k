@@ -11,7 +11,7 @@
     "Synthetic ground victim/type/house/WarheadExtension and linked-cell backing are explicit inputs; no mod assets, physical INI loader or full type registration. Collector controls bound zero/half/unit/two-cell spread, ground/deck lists and signed UID order/dedup; air/building-specific paths are excluded.",
     "ReadString lexical transport supplies values, actual Ares int/double/threshold parser and CRT sscanf execute. CRT per-thread accessor10085F5C returns a supplied C-locale thread block; original locale initializer10085839 executes. No scanner result is supplied.",
     "Original Ares deliver10062320, affect-house10051B70, immunity10062D90, enable10062B40, disable100627F0 and AI10053DF0 execute; synthetic virtual queries supply type/category/mission/ground/iron-curtain and empty-cell-building interfaces.",
-    "Native Deactivate/Reactivate are existing downstream owner boundaries; supplied effects only update their deactivated/selection flags. Select and QueueMission are recorded interfaces; actual queue execution is excluded.",
+    "Native Deactivate/Reactivate are existing downstream owner boundaries; supplied effects only update their deactivated/selection flags. Select and baseline QueueMission are recorded interfaces. Only ai_expiry redirects that virtual interface to unchanged native MissionClass QueueMission5B35E0, preserving arguments and recording its actual writes.",
     "Victims have no Team, Temporal, Capture, Spawn or Slave manager; threshold0. Spawn-manager is a sink. Actual sparkle selection/one-instance guard/expiry execute; animation storage/constructor/owner interface are supplied. Animation internal timers/RNG/rendering are not covered.",
     "FPCW0E7F is established explicitly. Original100772B0 conversion executes with declared CPU dispatch0 and selected SSE3 dispatch2 controls; out-of-i32 conversions yield INT_MIN, not a universal safe numeric input policy.",
     "SSE3 out-of-range FISTTP is deliberately excluded: Unicorn2.1.4 returned INT_MAX where an isolated actual-host execution of the original opcode returned INT_MIN. Software dispatch overflow rows are bounded to that executed original branch; no complete hardware/game numeric equivalence claim.",
@@ -20,6 +20,8 @@
     "Collector UID ordering is signed native Abstract+10; negative-ID row is structural comparator evidence, not ID-allocation reachability. Full3D FSQRT compare rejects dx128,z1 at radius128 whereas integer-truncated distance would incorrectly admit it.",
     "Connected controls execute actual pre-effect10052870\u2192Create10062240\u2192collector10076660\u2192deliver10062320 and two AI visits on one ground victim; full Bullet detonation and original downstream Deactivate/Anim internals remain excluded.",
     "Pointer-expiry10046F20 controls clear only the matching TechnoExt sparkle reference, retaining counter and animation iteration byte. The animation is an external already-expiring owner input; whole retirement/destructor/detach scheduling is excluded.",
+    "AI mission controls execute RulesExt constructor1002A360 and nullable mission reader1002B4F0 with ReadString2048 lexical inputs for [CombatDamage] EMPAIRecoverMission; native MissionNameToType5B3910 parses named missions. Missing/empty/invalid retention is executed, not supplied. Physical INI layers and the full rules loader are excluded.",
+    "AI expiry controls bound an ordinary unteamed Drive victim with no complex managers: actual10053DF0\u2192100627F0\u2192QueueMission5B35E0 executes. Configured/default mission selection, human-mode gates, queue/current distinction and explicit mission-timer input bytes are recorded; ReadyToCommence/Commence and subsequent mission AI are not executed. Existing Reactivate/SpawnManager/Anim boundaries still apply, and no Team/harvester/air/building or whole-game AI parity is claimed.",
     "Sparkle refresh controls execute first activation, actual pointer expiry10046F20, then unchanged/changed positive delivery. Warhead-explicit versus Type/General fallback branches execute native1006256D/10062608/10062625; constructor/owner services remain supplied, not animation lifecycle/rendering parity.",
     "Activation controls execute actual Syringe export1004CCB0 with frame+20 victim and return70FC85; original PoweredUnit100454F0 and PoweredBy10045440 gates read supplied object/type/owner-list backing. Retail Unit vtable7F5C70+37C supplies actual746C90 (DeathFrame input-1 then signed-positive counter70EFD0), and Building vtable7E3EBC+37C supplies actual70EFD0. Virtual3D0 and locomotor COM activation are recorded downstream interfaces. No runtime hook installation or whole70FBE0 parity is claimed, and original Deactivate/Reactivate remain boundaries in the other groups.",
     "Registered-animation controls supply spare backing capacity for the native AnimType/AbstractType vectors, then actual constructor427530 writes IDs, registry entries, counts and indices. Actual Ares Valueable pointer reader1000EB20\u21921000C9C0\u2192Find1000D3E0 resolves these constructed objects or rejects an unregistered name without allocation. Generic IDs are explicit inputs; physical registry enumeration, ART/image binding and animation lifetime are excluded. No returned pointer or lookup decision is supplied."
@@ -44,6 +46,10 @@
     "create": "0x10062240",
     "sparkle": "0x10062FD0",
     "pointer_expiry": "0x10046F20",
+    "rules_constructor": "0x1002A360",
+    "nullable_mission_reader": "0x1002B4F0",
+    "mission_name_lookup": "0x005B3910",
+    "queue_mission": "0x005B35E0",
     "activation_hook": "0x1004CCB0",
     "powered_unit_gate": "0x100454F0",
     "powered_by_gate": "0x10045440",
@@ -54,5 +60,5 @@
     "animation_pointer_find": "0x1000D3E0"
   },
   "replay_command": "python -m tools.rules_oracle.ares_emp",
-  "payload_sha256": "83dc8801cb6db10d8b894aede0f3774b035eeca0852b6d8a61cb5bd5c3b6dc1c"
+  "payload_sha256": "ec927335dfcc0f40fa2588f6fd07f1019ff34d2f8f69f7c96ec396fccee43ba3"
 }

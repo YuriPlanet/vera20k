@@ -270,8 +270,8 @@ mod receiver {
             candidates.dedup_by_key(|(uid, _)| *uid);
             candidates.into_iter().map(|(_, id)| id).collect()
         }
-        /// One actual10062320 delivery. The initial supported chain is human
-        /// Drive/Walk, with no Team/managers/harvester/positive death threshold.
+        /// One actual10062320 delivery. Supported victims are human
+        /// Drive/Walk and ordinary AI Drive, with no Team/managers/harvester/positive death threshold.
         /// Their distinct detach/AI/aircraft/building paths remain explicit residuals.
         fn deliver_ares_emp(
             &mut self,
@@ -360,7 +360,9 @@ mod receiver {
             if !matches!(
                 victim.locomotor.as_ref().map(|loco| loco.active_kind()),
                 Some(LocomotorKind::Drive | LocomotorKind::Walk)
-            ) || !self.owner_is_human(victim.owner())
+            ) || (!self.owner_is_human(victim.owner())
+                && victim.locomotor.as_ref().map(|loco| loco.active_kind())
+                    != Some(LocomotorKind::Drive))
                 || victim.is_harvester()
                 || victim.is_falling_down()
                 || victim.spawn_manager.is_some()
@@ -482,6 +484,28 @@ mod receiver {
                 self.techno_reactivate(target, rules, effects);
             }
             self.retire_ares_emp_sparkle(target);
+            self.recover_ares_emp_ai_mission(target, rules);
+        }
+        /// Installed disable100627F0's final1006293A block, after the
+        /// Reactivate/manager/Anim owners. Human control is50B730, not merely
+        /// LocalPlayer. Keep QueueMission5B35E0's same-current and timer guards.
+        fn recover_ares_emp_ai_mission(&mut self, target: u64, rules: &RuleSet) {
+            let Some(entity) = self.substrate.entities.get(target) else {
+                return;
+            };
+            if self.owner_is_human(entity.owner()) {
+                return;
+            }
+            let mission = rules
+                .ares_emp_ai_recover_mission()
+                .unwrap_or(MissionType::Hunt);
+            let _ = self.mission_queue_exact(
+                target,
+                crate::sim::mission::MissionId::from_known(mission),
+                0,
+                self.session.binary_frame(),
+                &crate::sim::mission::authority::LiveReadyInputProvider { rules },
+            );
         }
         /// Installed10053DF0 is reached once per actual Techno AI visit.
         pub(crate) fn tick_ares_emp(
@@ -826,6 +850,261 @@ mod receiver {
                 assert!(!sim.trigger_local_is_set_for_test(0));
                 assert!(!emp_event_kinds(&sim).contains(&generic));
             }
+        }
+        #[test]
+        fn ares_emp_ai_recovery_queue_matches_native_post_reactivate_controls() {
+            use crate::sim::mission::{
+                MissionId, state::MissionTestFixture, timer::MissionDispatchTimer,
+            };
+            for row in corpus()["ai_expiry"].as_array().unwrap() {
+                let fixture = &row["fixture"];
+                let extra = fixture["raw"].as_str().map_or(String::new(), |raw| {
+                    format!("[CombatDamage]\nEMPAIRecoverMission={raw}\n")
+                });
+                let rules = rules(&extra);
+                let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+                sim.intern_rule_type_ids(&rules);
+                let target = sim
+                    .spawn_object_at_height("TANK", "Russians", 10, 10, 0, 0, &rules)
+                    .unwrap();
+                let owner = sim.substrate.entities.get(target).unwrap().owner();
+                let house = sim.houses.get_mut(&owner).unwrap();
+                house.set_is_human_for_test(int(&fixture["house_1ec"]) != 0);
+                house.set_player_control_for_test(int(&fixture["house_1ed"]) != 0);
+                sim.session.set_game_mode(
+                    crate::sim::scenario_session::ScenarioGameMode::from_game_mode(int(
+                        &fixture["mode"],
+                    )),
+                );
+                let before = &row["before"];
+                let expected = &row["after"];
+                // The native corpus substitutes Reactivate. Start this comparison
+                // at its declared post-Reactivate boundary: only the final Ares
+                // mission decision and actual QueueMission5B35E0 are compared.
+                let victim = sim.substrate.entities.get_mut(target).unwrap();
+                victim.emp.remaining = int(&expected["counter"]);
+                victim
+                    .deactivated
+                    .set_for_test(expected["deactivated"].as_bool().unwrap());
+                victim.mission.apply_test_fixture(MissionTestFixture {
+                    current: MissionId::from_raw(int(&before["current_mission"])),
+                    queued: MissionId::from_raw(int(&before["queued_mission"])),
+                    suspended: MissionId::NONE,
+                    movement_bypass_latch: int(&before["bypass"]) as u8,
+                    handler_state: 0,
+                    mission_start_frame: 0,
+                    ai_counter: int(&before["mission_timer"][1]) as u32,
+                    dispatch_timer: MissionDispatchTimer::from_raw(
+                        int(&before["mission_timer"][0]),
+                        int(&before["mission_timer"][2]),
+                    ),
+                });
+                let rng = sim.rng_state();
+                sim.recover_ares_emp_ai_mission(target, &rules);
+                let victim = sim.substrate.entities.get(target).unwrap();
+                let mission = &victim.mission;
+                assert_eq!(
+                    mission.current().raw(),
+                    int(&expected["current_mission"]),
+                    "{}",
+                    row["name"]
+                );
+                assert_eq!(
+                    mission.queued().raw(),
+                    int(&expected["queued_mission"]),
+                    "{}",
+                    row["name"]
+                );
+                assert_eq!(
+                    i32::from(mission.movement_bypass_latch()),
+                    int(&expected["bypass"]),
+                    "{}",
+                    row["name"]
+                );
+                assert_eq!(
+                    [
+                        mission.dispatch_timer().start_frame(),
+                        mission.ai_counter() as i32,
+                        mission.dispatch_timer().delay()
+                    ],
+                    [
+                        int(&expected["mission_timer"][0]),
+                        int(&expected["mission_timer"][1]),
+                        int(&expected["mission_timer"][2])
+                    ],
+                    "{}",
+                    row["name"]
+                );
+                assert_eq!(sim.rng_state(), rng, "{}", row["name"]);
+            }
+        }
+        #[test]
+        fn ares_emp_ai_drive_hit_and_actual_visits_queue_recovery_after_sparkle() {
+            use crate::sim::{mission::MissionId, world::ObjectAiCtx};
+            let rules = rules("[CombatDamage]\nEMPAIRecoverMission=Area Guard\n");
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+            sim.intern_rule_type_ids(&rules);
+            sim.resolve_type_handles(&rules);
+            let target = sim
+                .spawn_object_at_height("TANK", "Russians", 10, 10, 0, 0, &rules)
+                .unwrap();
+            let source = sim
+                .spawn_object_at_height("TANK", "Americans", 12, 10, 0, 0, &rules)
+                .unwrap();
+            sim.substrate
+                .entities
+                .get_mut(target)
+                .unwrap()
+                .mission
+                .set_current_for_test(MissionId::from_raw(5), 0);
+            assert_eq!(
+                sim.deliver_ares_emp(
+                    target,
+                    Some(source),
+                    rules.warhead("EMPWH").unwrap(),
+                    &rules,
+                    FrameEffects::empty()
+                ),
+                EmpDelivery::Applied
+            );
+            let sparkle = sim
+                .substrate
+                .entities
+                .get(target)
+                .unwrap()
+                .emp_sparkle()
+                .unwrap();
+            assert!(
+                sim.substrate
+                    .entities
+                    .get(target)
+                    .unwrap()
+                    .deactivated
+                    .is_offline()
+            );
+            assert!(sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default()));
+            assert_eq!(
+                sim.substrate.entities.get(target).unwrap().emp_remaining(),
+                1
+            );
+            assert!(sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default()));
+            let victim = sim.substrate.entities.get(target).unwrap();
+            assert_eq!(victim.emp_remaining(), 0);
+            assert!(!victim.deactivated.is_offline());
+            assert_eq!(
+                victim.mission.current().raw(),
+                5,
+                "queue(false) must not Commence"
+            );
+            assert_eq!(victim.mission.queued().raw(), 11);
+            assert!(victim.emp_sparkle().is_none());
+            assert_eq!(
+                sim.substrate
+                    .anims
+                    .get(sparkle)
+                    .unwrap()
+                    .runtime()
+                    .loop_remaining,
+                0
+            );
+        }
+        #[test]
+        fn ares_emp_ai_mcv_cannot_deploy_until_expiry_then_recovers_through_hunt() {
+            use crate::sim::{
+                base_plan::BasePlanNode, house_state::HouseAiActivationLatches, world::ObjectAiCtx,
+            };
+            let (mut sim, rules, target, source) = mcv_emp_scene();
+            let owner = sim.substrate.entities.get(target).unwrap().owner();
+            let house = sim.houses.get_mut(&owner).unwrap();
+            house.set_is_human_for_test(false);
+            house.set_ai_activation_for_test(HouseAiActivationLatches {
+                auto_base_building: true,
+                ..house.ai_activation()
+            });
+            // The existing MCV fixture prior: reanchor an already filled
+            // yard plan, without introducing base-plan generation here.
+            house.base_plan_mut().set_nodes_for_test(vec![BasePlanNode {
+                type_or_control: 0,
+                packed_cell: 0,
+                filled: true,
+                retry_count: 0,
+            }]);
+            assert!(sim.can_deploy_slash_unload(target, &rules));
+            assert_eq!(
+                sim.deliver_ares_emp(
+                    target,
+                    Some(source),
+                    rules.warhead("EMPWH").unwrap(),
+                    &rules,
+                    FrameEffects::empty()
+                ),
+                EmpDelivery::Applied
+            );
+            let sparkle = sim
+                .substrate
+                .entities
+                .get(target)
+                .unwrap()
+                .emp_sparkle()
+                .unwrap();
+            for frame in 1..=3 {
+                assert!(!sim.can_deploy_slash_unload(target, &rules));
+                sim.session.set_binary_frame_for_test(frame);
+                assert!(sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default()));
+                assert!(
+                    sim.substrate
+                        .entities
+                        .get(target)
+                        .is_some_and(|entity| entity.lifecycle.object_alive()),
+                    "MCV converted during EMP visit{frame}"
+                );
+                assert!(
+                    !sim.substrate
+                        .entities
+                        .values()
+                        .any(|entity| sim.interner.resolve(entity.type_ref()) == "YARD")
+                );
+            }
+            let mcv = sim.substrate.entities.get(target).unwrap();
+            assert_eq!(mcv.emp_remaining(), 0);
+            assert!(!mcv.deactivated.is_offline());
+            assert!(mcv.emp_sparkle().is_none());
+            assert_eq!(
+                mcv.mission.queued().raw(),
+                15,
+                "native default AI recovery is queued Hunt"
+            );
+            assert_eq!(
+                sim.substrate
+                    .anims
+                    .get(sparkle)
+                    .unwrap()
+                    .runtime()
+                    .loop_remaining,
+                0
+            );
+            assert!(sim.can_deploy_slash_unload(target, &rules));
+            for frame in 4..=20 {
+                sim.session.set_binary_frame_for_test(frame);
+                sim.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
+                if sim
+                    .substrate
+                    .entities
+                    .get(target)
+                    .is_none_or(|entity| !entity.lifecycle.object_alive())
+                {
+                    break;
+                }
+            }
+            assert!(
+                sim.substrate
+                    .entities
+                    .values()
+                    .any(|entity| entity.owner() == owner
+                        && sim.interner.resolve(entity.type_ref()) == "YARD"
+                        && entity.lifecycle.object_alive()),
+                "ordinary recovered AI Hunt must reach the shared MCV conversion owner"
+            );
         }
         #[test]
         fn ares_emp_native_cap_and_conversion_goldens() {

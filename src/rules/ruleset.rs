@@ -4191,6 +4191,21 @@ impl RuleSet {
         }
     }
 
+    /// RulesExt+160/+164 retained nullable named mission. Default builds
+    /// neither read this extension key nor supply an AI EMP recovery producer.
+    pub(crate) fn ares_emp_ai_recover_mission(
+        &self,
+    ) -> Option<crate::rules::mission_data::MissionType> {
+        #[cfg(feature = "ares")]
+        {
+            self.ares_global_controls.emp_ai_recover_mission()
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            None
+        }
+    }
+
     pub(crate) fn bind_emp_sparkles(&mut self, name: Option<String>) {
         self.emp_sparkles = name;
     }
@@ -5844,34 +5859,49 @@ impl RuleSet {
         self.source_ini_hash
     }
 
-    /// Resolve the original singleton's first successfully loaded retained
-    /// request, returning the binding identity with its palette. A failed
-    /// request must not shadow another type's valid group:626DA0 counts
-    /// non-null groups (626F47..626F62), not request names. This covers the
-    /// legal one-successful-group path; multiple successful groups and cache
-    /// history retain the documented compatibility-policy residual.
-    /// Shared by the client atlas and authoritative effect-asset binding.
-    pub fn load_extra_building_palette(
-        &self,
+    /// Resolve one retained palette request. Ares715857->715876 removes
+    /// only the original successful-group limit: a supplied request resolves
+    /// its own file; a failed file never inherits another type's group.
+    /// Without Ares, retain the original one-successful-group compatibility
+    /// policy and admit a supplied request only if it matches that group.
+    /// None selects the singleton for the original effect/legacy consumers.
+    /// This is the sole resource lookup/decoder used by core and client.
+    pub fn load_extra_building_palette<'a>(
+        &'a self,
         assets: &crate::assets::asset_manager::AssetManager,
         theater_ext: &str,
-    ) -> Option<(&str, crate::assets::pal_file::Palette)> {
-        self.object_list.iter().find_map(|object| {
-            let name = object.custom_palette_name()?;
+        requested_name: Option<&'a str>,
+    ) -> Option<(&'a str, crate::assets::pal_file::Palette)> {
+        let load = |name: &'a str| {
             let data = assets.get_ref(&format!("{name}{theater_ext}.pal"))?;
             crate::assets::pal_file::Palette::from_bytes(data)
                 .ok()
                 .map(|palette| (name, palette))
-        })
+        };
+        #[cfg(feature = "ares")]
+        if let Some(name) = requested_name {
+            return load(name);
+        }
+        let selected = self
+            .object_list
+            .iter()
+            .find_map(|object| load(object.custom_palette_name()?));
+        if requested_name.is_some_and(|name| {
+            selected
+                .as_ref()
+                .is_none_or(|(loaded, _)| !name.eq_ignore_ascii_case(loaded))
+        }) {
+            return None;
+        }
+        selected
     }
 
-    /// Building441D25 tests this type's actual DF0 group, not DD0 text or
-    /// whether an unrelated type loaded a palette. The immutable asset owner
-    /// records the selected successful name for the active scenario/theater.
-    pub(crate) fn has_loaded_custom_palette(&self, object: &ObjectType) -> bool {
-        object.custom_palette_name().is_some_and(|name| {
-            self.effect_assets.loaded_extra_building_palette_name() == Some(name)
-        })
+    /// Techno705D70 reads this type's actual DF0 group, not DD0 text or
+    /// another type's success. The immutable asset owner qualifies and
+    /// returns the retained name for a producer to freeze on its animation.
+    pub(crate) fn loaded_custom_palette_name(&self, object: &ObjectType) -> Option<&str> {
+        self.effect_assets
+            .loaded_extra_building_palette_name(object.custom_palette_name()?)
     }
 
     /// Compatibility identity for processed rules plus the resolved animation,
@@ -8072,6 +8102,60 @@ fn parse_particle_system_types(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ares_emp_ai_global_mission_uses_production_layers_and_config_hash() {
+        use crate::rules::{
+            mission_data::MissionType,
+            native_processing::{RulesLayerKind, RulesLayerStack},
+        };
+        let root = "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=400\n[CombatDamage]\nEMPAIRecoverMission=Guard\n";
+        let make = |language: &str| {
+            let mut layers = RulesLayerStack::new(IniFile::from_str(root));
+            layers.push(
+                RulesLayerKind::LangRule,
+                IniFile::from_str(&format!("[CombatDamage]\nEMPAIRecoverMission={language}\n")),
+            );
+            layers.push(
+                RulesLayerKind::GameMode,
+                IniFile::from_str("[CombatDamage]\nEMPAIRecoverMission=junk\n"),
+            );
+            layers.push(
+                RulesLayerKind::Scenario,
+                IniFile::from_str("[CombatDamage]\nEMPAIRecoverMission=\n"),
+            );
+            RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap()
+        };
+        let rules = make("Area Guard");
+        let expected = crate::rules::ARES_ENABLED.then_some(MissionType::AreaGuard);
+        assert_eq!(rules.ares_emp_ai_recover_mission(), expected);
+        let retained_hash = rules.simulation_config_hash();
+        let mut changed = make("Hunt");
+        // Source identity deliberately includes layer history, even when the
+        // final merged text agrees. Normalize only this private test input to
+        // isolate the retained extension state in the compatibility hash.
+        assert_ne!(rules.source_ini_hash(), changed.source_ini_hash());
+        changed.source_ini_hash = rules.source_ini_hash;
+        assert_eq!(
+            changed.ares_emp_ai_recover_mission(),
+            crate::rules::ARES_ENABLED.then_some(MissionType::Hunt)
+        );
+        assert_eq!(
+            retained_hash == changed.simulation_config_hash(),
+            !crate::rules::ARES_ENABLED
+        );
+        let fresh = RuleSet::from_processed_rules(
+            &RulesLayerStack::new(IniFile::from_str(
+                "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=400\n",
+            ))
+            .process()
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(
+            fresh.ares_emp_ai_recover_mission().is_none(),
+            "new RulesClass constructor"
+        );
+    }
     #[test]
     fn infantry_occupy_pip_uses_each_admitted_rules_section_pass() {
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};

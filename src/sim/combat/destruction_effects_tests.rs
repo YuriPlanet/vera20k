@@ -758,7 +758,7 @@ fn gsi_08_11_killing_hits_play_the_types_death_anims() {
 
 /// `0x00441D2F..0x00441D61`: a custom-palette type (`+0xDF0`) gives its
 /// DestroyAnim GetRemapColour's scheme from that palette for its owner; the
-/// same anim from an ordinary type keeps no remap.
+/// same anim from an ordinary type gains a house remap only with Ares.
 #[test]
 fn a_custom_palette_building_gives_its_destroy_anim_the_palette_scheme() {
     use crate::assets::asset_manager::{AssetManager, test_support::TestDirectory};
@@ -784,18 +784,27 @@ fn a_custom_palette_building_gives_its_destroy_anim_the_palette_scheme() {
                 )
             })
             .collect();
-        (remaps, owner)
+        (remaps, owner, sim.interner.get("lib"))
     };
-    let (statue, owner) = remaps("STATUE");
+    let (statue, owner, palette) = remaps("STATUE");
     assert_eq!(
         statue,
         [(
             "DESTA".to_string(),
-            Some(AnimRemap::ExtraBuildingScheme(owner))
+            Some(AnimRemap::ExtraBuildingScheme {
+                house: owner,
+                palette: palette.unwrap()
+            })
         )]
     );
-    let (hall, _) = remaps("HALL");
-    assert_eq!(hall, [("DESTA".to_string(), None)]);
+    let (hall, owner, _) = remaps("HALL");
+    assert_eq!(
+        hall,
+        [(
+            "DESTA".to_string(),
+            crate::rules::ARES_ENABLED.then_some(AnimRemap::House(owner))
+        )]
+    );
 }
 
 /// Through the production receiver: DestructionEffects draws each foundation
@@ -1111,7 +1120,7 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
 /// 1x1, 2x1 and 1x2 types (no 2x2 fits: (74, 117) is not Morphable), and at
 /// (81, 123) among the preferred 2x2 types; the mark's type, cells and
 /// SmudgeData are compared. An art-less `gtpowexp` pick constructs an End=0
-/// anim as native does. At the fixture's plant an MCV then
+/// anim as native does. An independently placed MCV then
 /// plays one of its own `Explosion=` anims and throws `MetallicDebris=`
 /// chunks, all with `0x600`/0. Ignored: needs the retail install (`RA2_DIR`
 /// or `config.toml`).
@@ -1173,34 +1182,62 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
             })
         };
         let ore = map_cell(cell_x, cell_y).unwrap()["overlay"].is_i64();
-        let (plant, mcv) = if !ore {
-            let plant = sim
-                .spawn_object("GAPOWR", "Americans", cell_x, cell_y, 0, rules)
-                .expect("a power plant on the clean cells");
-            (plant, None)
+        // The native corpus fixes this location and the footprint's terrain.
+        // Keep the independent MCV smoke check from choosing the plant's site.
+        for (x, y) in (cell_y..cell_y + 2).flat_map(|y| (cell_x..cell_x + 2).map(move |x| (x, y))) {
+            assert!(
+                sim.cell_objects(
+                    (x, y),
+                    crate::sim::movement::locomotor::MovementLayer::Ground
+                )
+                .next()
+                .is_none(),
+                "the native prior has no object in the plant's footprint"
+            );
+        }
+        // Every native row supplies an already-placed Building and Location,
+        // including the clean cells; no row executes construction admission.
+        // Use the shared preplaced A8E7AC scope (Cell47C632 and Object Reveal)
+        // for that prior without changing terrain or clearing its overlays.
+        let plant = sim
+            .with_object_placement_scope(|sim| {
+                sim.spawn_object_with_overlay_registry(
+                    "GAPOWR",
+                    "Americans",
+                    cell_x,
+                    cell_y,
+                    0,
+                    rules,
+                    &resources.overlay_registry,
+                )
+            })
+            .unwrap_or_else(|| {
+                panic!("preplaced native corpus power plant at ({cell_x}, {cell_y})")
+            });
+        let mcv = if ore {
+            Some(
+                (40..100_u16)
+                    .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
+                    .find_map(|(x, y)| {
+                        let grid = sim.path_grid()?;
+                        let terrain = sim.resolved_terrain.as_ref()?;
+                        let level = terrain.cell(x.checked_sub(3)?, y)?.level;
+                        let (x0, y0) = (x.checked_sub(4)?, y.checked_sub(1)?);
+                        let open = (x0..=x + 1).all(|cx| {
+                            (y0..=y + 2).all(|cy| {
+                                terrain.cell(cx, cy).is_some_and(|cell| cell.level == level)
+                                    && grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable)
+                            })
+                        });
+                        if !open {
+                            return None;
+                        }
+                        sim.spawn_object("AMCV", "Americans", x, y, 0, rules)
+                    })
+                    .expect("an independent clear MCV cell"),
+            )
         } else {
-            let (plant, mcv) = (40..100_u16)
-                .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
-                .find_map(|(x, y)| {
-                    let grid = sim.path_grid()?;
-                    let terrain = sim.resolved_terrain.as_ref()?;
-                    let level = terrain.cell(x.checked_sub(3)?, y)?.level;
-                    let (x0, y0) = (x.checked_sub(4)?, y.checked_sub(1)?);
-                    let open = (x0..=x + 1).all(|cx| {
-                        (y0..=y + 2).all(|cy| {
-                            terrain.cell(cx, cy).is_some_and(|cell| cell.level == level)
-                                && grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable)
-                        })
-                    });
-                    if !open {
-                        return None;
-                    }
-                    let mcv = sim.spawn_object("AMCV", "Americans", x, y, 0, rules)?;
-                    let plant = sim.spawn_object("GAPOWR", "Americans", x - 3, y, 0, rules)?;
-                    Some((plant, mcv))
-                })
-                .expect("an MCV cell with room for a power plant");
-            (plant, Some(mcv))
+            None
         };
         sim.resolve_type_handles(rules);
 
@@ -1662,8 +1699,8 @@ fn a_power_plant_killed_while_selling_outlives_the_blow_until_its_update() {
     assert!(retired(&sim, plant));
 }
 
-/// A retained request must not give DestroyAnim a house remap when the
-/// native group loader would return null (441D25 /6276AA).
+/// A retained request with no loaded group keeps the original null remap;
+/// Ares441D25->441D37 instead assigns the ordinary house conversion.
 #[test]
 fn palette_binding_missing_file_keeps_destroy_anim_unremapped() {
     use crate::assets::asset_manager::{AssetManager, test_support::TestDirectory};
@@ -1695,7 +1732,14 @@ fn palette_binding_missing_file_keeps_destroy_anim_unremapped() {
         .iter()
         .map(|(_, anim)| (sim.interner.resolve(anim.type_id()), anim.remap()))
         .collect();
-    assert_eq!(remaps, [("DESTA", None)]);
+    let owner = sim.interner.get("Americans").unwrap();
+    assert_eq!(
+        remaps,
+        [(
+            "DESTA",
+            crate::rules::ARES_ENABLED.then_some(crate::sim::anim_class::AnimRemap::House(owner))
+        )]
+    );
 }
 
 /// Legal original one-successful-group case: A's failed request is retained
@@ -1736,12 +1780,16 @@ fn palette_binding_failed_request_does_not_shadow_or_inherit_loaded_group() {
     );
     // The public body/MAKE resolver skips A's missing file and names B's
     // actual group, instead of a first-request marker shared by every type.
-    let (name, _palette) = rules.load_extra_building_palette(&assets, "tem").unwrap();
+    let (name, _palette) = rules
+        .load_extra_building_palette(&assets, "tem", None)
+        .unwrap();
     assert_eq!(name, "lib");
     rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
     for (kind, loaded) in [("HALL", false), ("STATUE", true)] {
         assert_eq!(
-            rules.has_loaded_custom_palette(rules.object(kind).unwrap()),
+            rules
+                .loaded_custom_palette_name(rules.object(kind).unwrap())
+                .is_some(),
             loaded
         );
         let mut sim = sim(5);
@@ -1758,9 +1806,113 @@ fn palette_binding_failed_request_does_not_shadow_or_inherit_loaded_group() {
             remaps,
             [(
                 "DESTA",
-                loaded.then_some(AnimRemap::ExtraBuildingScheme(owner))
+                if loaded {
+                    Some(AnimRemap::ExtraBuildingScheme {
+                        house: owner,
+                        palette: sim.interner.get("lib").unwrap(),
+                    })
+                } else {
+                    crate::rules::ARES_ENABLED.then_some(AnimRemap::House(owner))
+                }
             )],
             "{kind}"
         );
     }
+}
+
+/// Ares441D25->441D37 assigns GetRemapColour for every DestroyAnim. Two
+/// successful groups must remain distinct after their donor buildings leave
+/// the world, including a TerrainPalette donor whose body uses the ISO palette.
+#[test]
+fn destroy_anim_retains_each_loaded_palette_and_house_fallback_after_save() {
+    use crate::assets::asset_manager::{AssetManager, test_support::TestDirectory};
+    use crate::rules::art_data::ArtRegistry;
+    use crate::sim::anim_class::AnimRemap;
+    let mut ini = IniFile::from_str(RULES);
+    ini.merge(&IniFile::from_str(
+        "[BuildingTypes]\n5=NORMAL\n[HALL]\nImage=FIRST\n\
+         [SHED]\nImage=MISSING\nDestroyAnim=DESTA\n\
+         [NORMAL]\nStrength=100\nDestroyAnim=DESTA\n",
+    ));
+    let art = IniFile::from_str(&format!(
+        "{ART}\n[FIRST]\nPalette=first\nTerrainPalette=yes\nFoundation=1x1\n\
+         [MISSING]\nPalette=absent\nFoundation=1x1\n[NORMAL]\nFoundation=1x1\n"
+    ));
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    let mut registry = ArtRegistry::from_ini(&art);
+    registry.bind_anim_frame_count_for_test("DESTA", 10);
+    rules.install_art_data(registry);
+    let root = TestDirectory::new("destroy-anim-per-type-palettes");
+    std::fs::write(root.path().join("FIRSTTEM.PAL"), [1u8; 768]).unwrap();
+    let assets = AssetManager::from_loose_root_for_test(root.path());
+    rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
+    let one_group_hash = rules.simulation_config_hash();
+    std::fs::write(root.path().join("LIBTEM.PAL"), [2u8; 768]).unwrap();
+    let assets = AssetManager::from_loose_root_for_test(root.path());
+    rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
+    assert_eq!(
+        one_group_hash != rules.simulation_config_hash(),
+        crate::rules::ARES_ENABLED
+    );
+    assert!(rules.art().get("FIRST").unwrap().terrain_palette);
+
+    let mut sim = sim(5);
+    let owner = sim.interner.get("Americans").unwrap();
+    // The shared interner preserves first spelling; palette lookup is still
+    // case-insensitive after this identity is frozen and later rendered.
+    let first = sim.interner.intern("FIRST");
+    let lib = sim.interner.intern("lib");
+    let fallback = crate::rules::ARES_ENABLED.then_some(AnimRemap::House(owner));
+    let expected = [
+        Some(AnimRemap::ExtraBuildingScheme {
+            house: owner,
+            palette: first,
+        }),
+        if crate::rules::ARES_ENABLED {
+            Some(AnimRemap::ExtraBuildingScheme {
+                house: owner,
+                palette: lib,
+            })
+        } else {
+            None
+        },
+        fallback,
+        fallback,
+    ];
+    for (index, kind) in ["HALL", "STATUE", "SHED", "NORMAL"].into_iter().enumerate() {
+        let building = spawn(&mut sim, &rules, kind, 10 + index as u16 * 3, 20);
+        kill(&mut sim, &rules, building);
+        sim.flush_pending_delete();
+        assert!(
+            sim.entities().get(building).is_none(),
+            "donor {kind} retired"
+        );
+    }
+    let remaps: Vec<_> = sim.anims().map(|(_, anim)| anim.remap()).collect();
+    assert_eq!(remaps, expected);
+    let bytes = crate::util::save_codec::serialize(&sim).unwrap();
+    let restored: Simulation = crate::util::save_codec::deserialize(&bytes).unwrap();
+    assert_eq!(
+        restored
+            .anims()
+            .map(|(_, anim)| anim.remap())
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(restored.interner.resolve(first), "FIRST");
+    assert_eq!(restored.interner.resolve(lib), "lib");
+    let id = *sim.anims().next().unwrap().0;
+    let before = sim.state_hash();
+    sim.substrate.anims.set_anim_remap(
+        id,
+        AnimRemap::ExtraBuildingScheme {
+            house: owner,
+            palette: lib,
+        },
+    );
+    assert_ne!(
+        sim.state_hash(),
+        before,
+        "the frozen palette enters simulation hashing"
+    );
 }
