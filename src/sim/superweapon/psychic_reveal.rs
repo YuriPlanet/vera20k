@@ -25,12 +25,12 @@
 //! `psychic_reveal_tests.rs`; RevealArea's walk and house gate against
 //! `tools/spatial_oracle/reveal_area.py` in `vision/reveal_area_tests.rs`.
 //!
-//! RESIDUALS:
-//! - A negative `PsychicRevealRadius=` indexes before RevealArea's count
-//!   table natively; VERA reveals nothing. No retail value is negative.
-//! - The activate sound plays at the cell's ground-level centre (the launch
-//!   event carries the cell); native's coordinate has the cell's height.
-//!   Presentation only.
+//! Activation carries the original signed ground coordinate to the existing
+//! retained PlayAtCoord owner; no structural deck or reveal-centre lift is
+//! added. The later launch fact owns selection and Ready removal.
+//!
+//! RESIDUAL: a negative PsychicRevealRadius indexes before RevealArea's
+//! count table natively; VERA reveals nothing. No retail value is negative.
 //!
 //! Ledger: no Scenario draws, timer writes or detach calls.
 //!
@@ -43,9 +43,10 @@
 mod tests;
 
 use crate::rules::ruleset::RuleSet;
+use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
 use crate::sim::vision;
-use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
 /// What [`launch`] called, in the oracle's terms (observation only).
 #[cfg(any(test, feature = "test-support"))]
@@ -81,6 +82,7 @@ pub fn launch(
     target_rx: u16,
     target_ry: u16,
     sw_type: InternedId,
+    frame_effects: FrameEffects<'_>,
 ) -> bool {
     if !super::is_charged(sim, owner, sw_type) {
         return false;
@@ -119,6 +121,19 @@ pub fn launch(
             sim.session.current_house(),
         );
     }
+    //6CD7A1..6CD7BF samples GetCoords again after RevealArea. A bridge does
+    // not add its deck and the sound has no animation/reveal-centre lift.
+    let crate::sim::projectile::ProjectileCoord { x, y, z } =
+        crate::sim::projectile::cell_ground_coord(
+            sim.resolved_terrain.as_ref(),
+            target_rx,
+            target_ry,
+        );
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponActivation {
+        sw_type,
+        coordinate: DriveCoord { x, y, z },
+    });
+    frame_effects.flush_sound(sim, rules);
     sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,

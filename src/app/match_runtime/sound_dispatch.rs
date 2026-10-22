@@ -21,6 +21,10 @@ mod selection_voice_tests;
 #[path = "sound_boundary_tests.rs"]
 mod sound_boundary_tests;
 
+#[cfg(test)]
+#[path = "super_launch_audio_tests.rs"]
+mod super_launch_audio_tests;
+
 /// Adapt the Simulation-owned normal Select voice request to the existing
 /// audio event queue. Its Main RNG admission and draw belong to Simulation;
 /// device playback and pending voice replacement remain in audio.
@@ -328,14 +332,7 @@ pub(super) fn dispatch_sim_sound_events(
                     sound_id,
                     coordinate: [coordinate.x, coordinate.y, coordinate.z],
                     flags,
-                    source: SoundSource::new(
-                        crate::util::lepton::absolute_leptons_to_screen(
-                            coordinate.x,
-                            coordinate.y,
-                            coordinate.z,
-                        ),
-                        ((coordinate.x >> 8) as u16, (coordinate.y >> 8) as u16),
-                    ),
+                    source: coordinate_sound_source(coordinate),
                 }
             }
             SimSoundEvent::VocStopAtCoord { coordinate, flags } => GameSoundEvent::VocStopAtCoord {
@@ -353,6 +350,47 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
+            SimSoundEvent::SuperWeaponActivation {
+                sw_type,
+                coordinate,
+            } => {
+                let Some(sw) = rules.super_weapon(sim.interner().resolve(sw_type)) else {
+                    continue;
+                };
+                if !has_captured_launch_activation(sw.kind) {
+                    continue;
+                }
+                let cue =
+                    superweapon_launch_cue(sw.kind, &rules.general, sw.start_sound.as_deref());
+                // These original launch sites issue EVA before the sound.
+                // Separate typed events preserve that actual playback order.
+                if let Some(event) = cue
+                    .eva_event
+                    .filter(|_| local_owner_name.is_some() && !sim.local_player_defeated())
+                {
+                    output.push(GameSoundEvent::Eva {
+                        event: event.to_string(),
+                        type_override: None,
+                    });
+                }
+                if let Some(sound_id) = cue.sound_id {
+                    let source = coordinate_sound_source(coordinate);
+                    if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::ForceShield {
+                        output.push(GameSoundEvent::VocAt {
+                            sound_id,
+                            source: Some(source),
+                        });
+                    } else {
+                        output.push(GameSoundEvent::VocAtCoord {
+                            sound_id,
+                            coordinate: [coordinate.x, coordinate.y, coordinate.z],
+                            flags: 0,
+                            source,
+                        });
+                    }
+                }
+                continue;
+            }
             SimSoundEvent::SuperWeaponLaunched {
                 owner,
                 sw_type,
@@ -368,6 +406,18 @@ pub(super) fn dispatch_sim_sound_events(
                 let Some(sw) = rules.super_weapon(type_name) else {
                     continue;
                 };
+                // Cases7/9/10/11 already emitted activation at their native
+                // producer point. This final fact owns only the local tail.
+                if has_captured_launch_activation(sw.kind) {
+                    if let Some(ready) = launch_drops_ready_line(sw.kind)
+                        && owner_is_local(sim.interner(), owner, local_owner_name)
+                    {
+                        output.push(GameSoundEvent::EvaRemove {
+                            event: ready.to_string(),
+                        });
+                    }
+                    continue;
+                }
                 let cue =
                     superweapon_launch_cue(sw.kind, &rules.general, sw.start_sound.as_deref());
                 // The EVA column is picked for the *listening* client's
@@ -1015,6 +1065,21 @@ fn outcome_eva_event(
         (crate::sim::house_state::HouseOutcomeKind::Victory, false) => "EVA_YouAreVictorious",
         (crate::sim::house_state::HouseOutcomeKind::Defeat, false) => "EVA_YouHaveLost",
     }
+}
+
+fn coordinate_sound_source(coordinate: crate::sim::components::DriveCoord) -> SoundSource {
+    SoundSource::new(
+        crate::util::lepton::absolute_leptons_to_screen(coordinate.x, coordinate.y, coordinate.z),
+        ((coordinate.x >> 8) as u16, (coordinate.y >> 8) as u16),
+    )
+}
+
+fn has_captured_launch_activation(kind: crate::rules::superweapon_type::SuperWeaponKind) -> bool {
+    use crate::rules::superweapon_type::SuperWeaponKind as K;
+    matches!(
+        kind,
+        K::ForceShield | K::GeneticConverter | K::PsychicReveal | K::PsychicDominator
+    )
 }
 
 fn anim_world_sound_source(world: crate::sim::anim_class::AnimWorldCoord) -> SoundSource {
@@ -1916,13 +1981,22 @@ mod tests {
         };
         let mut admitted = Vec::new();
         let mut output = SoundEventQueue::new();
+        let mut facts = vec![radar(21, 21), radar(40, 40)];
+        for owner in [remote, local] {
+            if has_captured_launch_activation(rules.super_weapon(name).unwrap().kind) {
+                facts.push(SimSoundEvent::SuperWeaponActivation {
+                    sw_type,
+                    coordinate: crate::sim::components::DriveCoord {
+                        x: 10368,
+                        y: 10368,
+                        z: 0,
+                    },
+                });
+            }
+            facts.push(launched(owner));
+        }
         dispatch_sim_sound_events(
-            [
-                radar(21, 21),
-                radar(40, 40),
-                launched(remote),
-                launched(local),
-            ],
+            facts,
             &sim,
             &rules,
             Some("LOCAL"),
@@ -1933,19 +2007,27 @@ mod tests {
             &mut output,
         );
         assert_eq!(admitted, [(21, 21), (40, 40)]);
-        let emitted = output.drain();
-        assert!(
-            matches!(
-                emitted.as_slice(),
-                [
-                    GameSoundEvent::SuperWeaponActivated { eva_event: Some(remote_line), .. },
-                    GameSoundEvent::SuperWeaponActivated { eva_event: Some(local_line), .. },
-                    GameSoundEvent::EvaRemove { event },
-                ] if remote_line == activated
-                    && local_line == activated
-                    && event == ready
-            ),
-            "{emitted:?}"
+        let emitted: Vec<_> = output
+            .drain()
+            .into_iter()
+            .map(|event| match event {
+                GameSoundEvent::Eva { event, .. } => ("eva", event),
+                GameSoundEvent::SuperWeaponActivated {
+                    sound_id,
+                    eva_event: Some(event),
+                    ..
+                } if sound_id.is_empty() => ("eva", event),
+                GameSoundEvent::EvaRemove { event } => ("remove", event),
+                other => panic!("unexpected launch line {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            emitted,
+            [
+                ("eva", activated.to_owned()),
+                ("eva", activated.to_owned()),
+                ("remove", ready.to_owned())
+            ]
         );
     }
 
@@ -2026,12 +2108,26 @@ mod tests {
                     "Remote"
                 });
                 let sw_type = sim.intern(name);
-                let launched = launches.then_some(SimSoundEvent::SuperWeaponLaunched {
-                    owner,
-                    sw_type,
-                    rx: 40,
-                    ry: 40,
-                });
+                let mut launched = Vec::new();
+                if launches {
+                    if has_captured_launch_activation(rules.super_weapon(name).unwrap().kind) {
+                        let coord = &events.iter().find(|event| event[0] == "play_at").unwrap()[2];
+                        launched.push(SimSoundEvent::SuperWeaponActivation {
+                            sw_type,
+                            coordinate: crate::sim::components::DriveCoord {
+                                x: coord[0].as_i64().unwrap() as i32,
+                                y: coord[1].as_i64().unwrap() as i32,
+                                z: coord[2].as_i64().unwrap() as i32,
+                            },
+                        });
+                    }
+                    launched.push(SimSoundEvent::SuperWeaponLaunched {
+                        owner,
+                        sw_type,
+                        rx: 40,
+                        ry: 40,
+                    });
+                }
                 let mut output = SoundEventQueue::new();
                 dispatch_sim_sound_events(
                     launched,
@@ -2055,6 +2151,11 @@ mod tests {
                             .chain((!sound_id.is_empty()).then(|| format!("play {sound_id}")))
                             .collect::<Vec<_>>(),
                         GameSoundEvent::EvaRemove { event } => vec![format!("remove {event}")],
+                        GameSoundEvent::Eva { event, .. } => vec![format!("eva {event}")],
+                        GameSoundEvent::VocAt { sound_id, .. }
+                        | GameSoundEvent::VocAtCoord { sound_id, .. } => {
+                            vec![format!("play {sound_id}")]
+                        }
                         other => panic!("{other:?}"),
                     })
                     .collect();

@@ -38,8 +38,6 @@
 //! for a captive a controller held, and the perma ring's SetOwnerObject.
 //!
 //! RESIDUALS:
-//! - Launch's EVA line is skipped natively while `0x00A8B538` is set (a
-//!   defeated client); VERA always plays it.
 //! - The anim Process follows (`0x00A9FAC4`) has no pointer expiry natively;
 //!   VERA treats a missing anim as finished. Dormant: the retail anims stay
 //!   on their last stage for three frames (`Rate=300`), longer than Process
@@ -51,6 +49,7 @@
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::anim_class::AnimId;
+use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellObjectMember;
@@ -129,10 +128,10 @@ pub(crate) fn tints_scenario(sim: &Simulation) -> bool {
 /// Launch case 7 for `owner`'s Super of `sw_type` at `cell`: a charged Super
 /// (`+0x6F`, which ClickFire's launch always is) raises a type-13 radar event
 /// at the cell on every client (`0x006CCDD7`) and starts the Dominator
-/// ([`start`]). The launch event carries the rest, which the app plays:
+/// ([`start`]). Activation carries its signed ground coordinate to the app:
 /// `EVA_PsychicDominatorActivated` (`0x006CCDFA`), `[AudioVisual]
 /// PsychicDominatorActivateSound=` at the cell's GetCoords (`0x006CCE28`) and,
-/// for the local player, the dropped selection and queued
+/// the separate final launch fact carries, for the local player, the dropped selection and queued
 /// `EVA_PsychicDominatorReady` (`0x006CCE41..0x006CCE52`).
 pub(super) fn launch(
     sim: &mut Simulation,
@@ -140,6 +139,7 @@ pub(super) fn launch(
     owner: InternedId,
     sw_type: InternedId,
     (rx, ry): (u16, u16),
+    frame_effects: FrameEffects<'_>,
 ) -> bool {
     if !super::is_charged(sim, owner, sw_type) {
         return false;
@@ -148,6 +148,15 @@ pub(super) fn launch(
         radar: RadarEventRequest::new(RadarEventType::ImpactSilent, rx, ry),
     });
     start(sim, rules, owner, (rx as i16, ry as i16));
+    //6CCE04..6CCE28: a fresh ground coordinate after Start, without the
+    // first animation's750-lepton lift or a structural bridge deck.
+    let crate::sim::projectile::ProjectileCoord { x, y, z } =
+        crate::sim::projectile::cell_ground_coord(sim.resolved_terrain.as_ref(), rx, ry);
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponActivation {
+        sw_type,
+        coordinate: DriveCoord { x, y, z },
+    });
+    frame_effects.flush_sound(sim, rules);
     sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,

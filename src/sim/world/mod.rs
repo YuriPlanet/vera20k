@@ -869,6 +869,15 @@ pub enum SimSoundEvent {
         line: bool,
         eva: Option<AllianceEva>,
     },
+    /// Launch cases7/9/10/11 reached their activation calls. Capture the
+    /// signed native coordinate before later callbacks can change the map.
+    /// The client expands EVA before the sound, preserving PlayAt for Force
+    /// Shield and retained PlayAtCoord for the other three cases. Their
+    /// separate SuperWeaponLaunched fact owns the later selection/Ready tail.
+    SuperWeaponActivation {
+        sw_type: InternedId,
+        coordinate: DriveCoord,
+    },
     /// A superweapon fired. `sw_type` is the interned `[SuperWeaponTypes]`
     /// section name of the launched weapon — the discriminator the app layer
     /// needs to pick the cue, and the same object gamemd switches on.
@@ -883,7 +892,9 @@ pub enum SimSoundEvent {
     /// (`0x006CD7BF`); and both for `MultiMissile`, `PsychicDominator` and
     /// `GeneticConverter`. Carrying the type rather than a per-case flag is
     /// what lets the app read both the case index and `StartSound=` off one
-    /// object, as `param_1[10]` does.
+    /// object, as `param_1[10]` does. Cases7/9/10/11 carry activation through
+    /// SuperWeaponActivation at the original call site; this later event
+    /// supplies only their common launch tail.
     SuperWeaponLaunched {
         owner: InternedId,
         sw_type: InternedId,

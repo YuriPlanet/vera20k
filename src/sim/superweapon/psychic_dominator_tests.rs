@@ -327,7 +327,12 @@ fn retail_start_matches_native() {
         let lighting_before = global_lighting_events(&sim);
 
         assert!(super::psychic_dominator::launch(
-            &mut sim, &rules, americans, sw_type, cell
+            &mut sim,
+            &rules,
+            americans,
+            sw_type,
+            cell,
+            crate::sim::world::FrameEffects::default()
         ));
 
         let state = sim.psychic_dominator;
@@ -791,12 +796,26 @@ fn retail_computer_dominator_sends_its_captives_hunting() {
     let Some(rules) = retail_rules() else {
         return;
     };
-    let (rules, mut sim, _) = world_with(rules, 64, &[]);
+    let (rules, mut sim, americans) = world_with(rules, 64, &[]);
     let russians: InternedId = sim.interner.intern("Russians");
+    sim.houses
+        .get_mut(&russians)
+        .unwrap()
+        .set_enemy_house_for_test(Some(americans));
     let tank = spawn(&mut sim, &rules, "MTNK", "Americans", TARGET);
     let gi = spawn(&mut sim, &rules, "E1", "Americans", (39, 40));
     charge_super(&mut sim, russians, DOMINATOR);
-    click(&mut sim, &rules, russians, DOMINATOR, TARGET);
+    // A computer's command sender is not player-controlled. Use its actual
+    // AI entry point, retaining the computer flags that select Hunt below.
+    super::ai_fire::try_fire(
+        &mut sim,
+        &rules,
+        russians,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(sim.psychic_dominator.status_number(), 1);
+    assert_eq!(sim.psychic_dominator.owner(), Some(russians));
     let mut frames = 0;
     while sim.psychic_dominator.status_number() != 3 {
         step(&mut sim, &rules);

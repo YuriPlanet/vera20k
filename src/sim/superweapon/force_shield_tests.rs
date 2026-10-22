@@ -168,9 +168,31 @@ fn the_launch_matches_native() {
         let russians = sim.interner.intern("Russians");
         let sw_type = charge_super(&mut sim, russians, FORCE_SHIELD);
         let frame = sim.session.binary_frame();
-        assert!(launch(&mut sim, &rules, russians, cell.0, cell.1, sw_type));
+        assert!(launch(
+            &mut sim,
+            &rules,
+            russians,
+            cell.0,
+            cell.1,
+            sw_type,
+            crate::sim::world::FrameEffects::default()
+        ));
 
         let native_anim = events(row, "anim").next().unwrap();
+        let captured: Vec<_> = sim
+            .sound_events
+            .iter()
+            .filter_map(|event| match event {
+                SimSoundEvent::SuperWeaponActivation {
+                    sw_type: kind,
+                    coordinate,
+                } if *kind == sw_type => Some([coordinate.x, coordinate.y, coordinate.z]),
+                _ => None,
+            })
+            .collect();
+        // Even an unset StartSound still carries the activation point; the
+        // client owns the original invalid-index silence at that point.
+        assert_eq!(captured, vec![coord(&row["fade_coords"])], "{row}");
         let invoke = sim.interner.intern("FORCSHLD");
         let anims: Vec<_> = sim
             .substrate
@@ -222,6 +244,11 @@ fn retail_force_shield_shields_allied_buildings_and_fades() {
         let (world_rules, mut sim, _) = world_with(rules, 64, &[]);
         rules = world_rules;
         let russians = sim.interner.intern("Russians");
+        // This fixture sends a player click through Execute_DoList.
+        sim.houses
+            .get_mut(&russians)
+            .unwrap()
+            .set_player_control_for_test(true);
         if americans_list_russians {
             sim.house_alliances_mut_for_test()
                 .entry("AMERICANS".to_string())
@@ -246,6 +273,10 @@ fn retail_force_shield_shields_allied_buildings_and_fades() {
         let north = spawn(&mut sim, "GAPOWR", "Russians", (40, 36));
         let american = spawn(&mut sim, "GAPOWR", "Americans", (40, 43));
         let far = spawn(&mut sim, "GAPOWR", "Russians", (44, 40));
+        // Supply settled power before the launch-only charged fixture.
+        // Building registration already counts the lab's native drain.
+        sim.assess_power_for_test(&rules);
+        assert!(!sim.power_states[&russians].is_low_power());
         charge_super(&mut sim, russians, FORCE_SHIELD);
         let launch_frame = sim.session.binary_frame();
         click(&mut sim, &rules, russians, FORCE_SHIELD, (40, 40));
@@ -304,12 +335,20 @@ fn a_bridge_cell_walks_from_the_ground_centre() {
     terrain.cells_mut_for_test()[index].bridge_facts.raw_flags =
         crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
     let russians = sim.interner.intern("Russians");
+    // Supply a controlled sender for the queued player click.
+    sim.houses
+        .get_mut(&russians)
+        .unwrap()
+        .set_player_control_for_test(true);
     sim.spawn_object_at_height("NATECH", "Russians", 10, 10, 0, 0, &rules)
         .unwrap();
     // The 2x2 foundation's centre (11264, 10752).
     let plant = sim
         .spawn_object_at_height("GAPOWR", "Russians", 43, 41, 0, 0, &rules)
         .unwrap();
+    // This sparse geometry fixture supplies assessed power, then charge.
+    sim.assess_power_for_test(&rules);
+    assert!(!sim.power_states[&russians].is_low_power());
     let sw_type = charge_super(&mut sim, russians, FORCE_SHIELD);
     click(&mut sim, &rules, russians, FORCE_SHIELD, (40, 40));
 

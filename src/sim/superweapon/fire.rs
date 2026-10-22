@@ -488,7 +488,7 @@ fn launch(
             );
         }
         SuperWeaponKind::ForceShield => {
-            super::force_shield::launch(sim, rules, owner, rx, ry, sw_type_id);
+            super::force_shield::launch(sim, rules, owner, rx, ry, sw_type_id, frame_effects);
         }
         SuperWeaponKind::GeneticConverter => {
             super::genetic_converter::launch(
@@ -503,7 +503,7 @@ fn launch(
             );
         }
         SuperWeaponKind::PsychicReveal => {
-            super::psychic_reveal::launch(sim, rules, owner, rx, ry, sw_type_id);
+            super::psychic_reveal::launch(sim, rules, owner, rx, ry, sw_type_id, frame_effects);
         }
         SuperWeaponKind::ParaDrop => {
             super::paradrop::launch(
@@ -544,7 +544,14 @@ fn launch(
             );
         }
         SuperWeaponKind::PsychicDominator => {
-            super::psychic_dominator::launch(sim, rules, owner, sw_type_id, (rx, ry));
+            super::psychic_dominator::launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                (rx, ry),
+                frame_effects,
+            );
         }
         SuperWeaponKind::SpyPlane => {
             super::spy_plane::launch(sim, rules, owner, sw_type_id, (rx, ry), frame_effects);

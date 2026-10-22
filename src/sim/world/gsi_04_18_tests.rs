@@ -447,7 +447,13 @@ fn shroud_current_sight_psychic_under_existing_gap_waits_for_native_boundary() {
     sim.reconcile_active_vision_structures(&rules);
     assert!(!sim.fog.is_cell_revealed(owner, 12, 12));
     assert!(crate::sim::superweapon::psychic_reveal::launch(
-        &mut sim, &rules, owner, 12, 12, sw
+        &mut sim,
+        &rules,
+        owner,
+        12,
+        12,
+        sw,
+        crate::sim::world::FrameEffects::default()
     ));
     sim.reconcile_active_vision_structures(&rules);
     assert!(sim.fog.is_cell_revealed(owner, 12, 12));
@@ -487,7 +493,13 @@ fn shroud_current_sight_fresh_direct_allied_psychic_reaches_authoritative_view()
     sim.reconcile_active_vision_structures(&rules);
     assert!(!sim.fog.is_cell_revealed(a, 12, 12));
     assert!(crate::sim::superweapon::psychic_reveal::launch(
-        &mut sim, &rules, a, 12, 12, sw
+        &mut sim,
+        &rules,
+        a,
+        12,
+        12,
+        sw,
+        crate::sim::world::FrameEffects::default()
     ));
     sim.reconcile_active_vision_structures(&rules);
     assert!(sim.fog.is_cell_revealed(b, 12, 12));
@@ -496,7 +508,13 @@ fn shroud_current_sight_fresh_direct_allied_psychic_reaches_authoritative_view()
         "A's fresh reveal may reach B, never B's ally C"
     );
     assert!(crate::sim::superweapon::psychic_reveal::launch(
-        &mut sim, &rules, b, 12, 12, sw
+        &mut sim,
+        &rules,
+        b,
+        12,
+        12,
+        sw,
+        crate::sim::world::FrameEffects::default()
     ));
     sim.reconcile_active_vision_structures(&rules);
     assert!(
@@ -509,7 +527,13 @@ fn shroud_current_sight_fresh_direct_allied_psychic_reaches_authoritative_view()
     sim.reconcile_active_vision_structures(&rules);
     assert!(!sim.fog.is_cell_revealed(a, 12, 12));
     assert!(crate::sim::superweapon::psychic_reveal::launch(
-        &mut sim, &rules, b, 12, 12, sw
+        &mut sim,
+        &rules,
+        b,
+        12,
+        12,
+        sw,
+        crate::sim::world::FrameEffects::default()
     ));
     sim.reconcile_active_vision_structures(&rules);
     assert!(
@@ -552,7 +576,13 @@ fn shroud_current_sight_psychic_never_gapped_and_mixed_views_are_nontransitive()
         }
         sim.reconcile_active_vision_structures(&rules);
         assert!(crate::sim::superweapon::psychic_reveal::launch(
-            &mut sim, &rules, a, 16, 12, sw
+            &mut sim,
+            &rules,
+            a,
+            16,
+            12,
+            sw,
+            crate::sim::world::FrameEffects::default()
         ));
         for _ in 0..3 {
             sim.reconcile_active_vision_structures(&rules);

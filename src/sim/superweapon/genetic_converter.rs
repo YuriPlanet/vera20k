@@ -33,11 +33,11 @@
 //! `infantry_mutate_death` and `make_infantry` (Unicorn on gamemd.exe: case 9,
 //! the InfDeath 9 arm and the MakeInfantry block), replayed in
 //! `genetic_converter_tests.rs`.
+//! Activation carries the original signed deck coordinate to retained
+//! PlayAtCoord and delivers EVA/sound before synchronous receivers. The
+//! separate final launch fact clears selection/Ready only after those calls.
 //!
 //! RESIDUALS:
-//! - The EVA line is skipped natively while `0x00A8B538` is set
-//!   (`HouseClass::MPlayer_Defeated @ 0x004FC205`), on every client after the
-//!   local player's multiplayer defeat; VERA always plays it.
 //! - Apply_area_damage gets affectsTiberium 0 here (`0x006CD8FE`); the shared
 //!   [`apply_area_damage`] passes 1, as its other callers do (`0x00423E7D`,
 //!   `0x0053A5BE`, `0x0053B157`, `0x006632BD`). Dormant: retail
@@ -67,6 +67,7 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::RAD_NO_ATTACKER;
 use crate::sim::combat::world_receiver::apply_area_damage;
+use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
 use crate::sim::radar::{RadarEventRequest, RadarEventType};
 use crate::sim::superweapon::cell_grid::{live_successor, native_cells_3x3, selected_cell_list};
@@ -121,79 +122,95 @@ pub(crate) fn launch(
         return false;
     }
     let general = &rules.general;
-    super::spawn_cell_anim(sim, rules, &general.ion_blast_anim, target_rx, target_ry);
+    let [x, y, z] = super::deck_coords(sim, (target_rx, target_ry));
+    let _ = super::spawn_super_anim(
+        sim,
+        rules,
+        &general.ion_blast_anim,
+        [x, y, z.wrapping_add(super::INVOKE_ANIM_Z_LIFT_LEPTONS)],
+    );
+    //6CD8BD/6CD8D3: EVA then retained PlayAtCoord, before radar/damage.
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponActivation {
+        sw_type,
+        coordinate: DriveCoord { x, y, z },
+    });
+    // Native admits the listening client's EVA/sound now. A synchronous
+    // receiver may defeat that client or change its visibility before return.
+    frame_effects.flush_sound(sim, rules);
+    sim.sound_events.emit(SimSoundEvent::RadarEvent {
+        radar: RadarEventRequest::new(RadarEventType::ImpactSilent, target_rx, target_ry),
+    });
+
+    if general.mutate_explosion {
+        if let Some(warhead) = rules.warhead(&general.mutate_explosion_warhead) {
+            let origin = (
+                RAD_NO_ATTACKER,
+                Some(owner),
+                sim.interner.intern(&general.mutate_explosion_warhead),
+            );
+            #[cfg(any(test, feature = "test-support"))]
+            observe(Observed::AreaDamage(
+                [x, y, z],
+                MUTATE_EXPLOSION_DAMAGE,
+                origin,
+            ));
+            apply_area_damage(
+                sim,
+                rules,
+                overlay_registry,
+                crate::sim::projectile::ProjectileCoord::new(x, y, z),
+                MUTATE_EXPLOSION_DAMAGE,
+                warhead,
+                origin,
+                frame_effects,
+            );
+        }
+    } else {
+        for (x, y) in native_cells_3x3(target_rx, target_ry) {
+            let Some(((rx, ry), layer)) = selected_cell_list(sim, x, y) else {
+                continue;
+            };
+            let mut next = sim
+                .substrate
+                .occupancy
+                .get(rx, ry)
+                .and_then(|cell| cell.first_on_layer(layer));
+            while let Some(id) = next {
+                next = live_successor(sim, id, (rx, ry), layer);
+                let infantry = sim
+                    .substrate
+                    .entities
+                    .get(id)
+                    .is_some_and(|entity| entity.category() == EntityCategory::Infantry);
+                if !infantry {
+                    continue;
+                }
+                if let Some(event) = super::strength_receiver_event(
+                    &mut sim.interner,
+                    &sim.substrate,
+                    rules,
+                    id,
+                    &general.mutate_warhead,
+                    Some(owner),
+                    true,
+                ) {
+                    #[cfg(any(test, feature = "test-support"))]
+                    observe(Observed::ReceiveDamage((x, y), event));
+                    sim.commit_direct_damage_receiver(
+                        rules,
+                        overlay_registry,
+                        event,
+                        frame_effects,
+                    );
+                }
+            }
+        }
+    }
     sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
         rx: target_rx,
         ry: target_ry,
     });
-    sim.sound_events.emit(SimSoundEvent::RadarEvent {
-        radar: RadarEventRequest::new(RadarEventType::ImpactSilent, target_rx, target_ry),
-    });
-
-    if general.mutate_explosion {
-        let Some(warhead) = rules.warhead(&general.mutate_explosion_warhead) else {
-            return true;
-        };
-        let [x, y, z] = super::deck_coords(sim, (target_rx, target_ry));
-        let origin = (
-            RAD_NO_ATTACKER,
-            Some(owner),
-            sim.interner.intern(&general.mutate_explosion_warhead),
-        );
-        #[cfg(any(test, feature = "test-support"))]
-        observe(Observed::AreaDamage(
-            [x, y, z],
-            MUTATE_EXPLOSION_DAMAGE,
-            origin,
-        ));
-        apply_area_damage(
-            sim,
-            rules,
-            overlay_registry,
-            crate::sim::projectile::ProjectileCoord::new(x, y, z),
-            MUTATE_EXPLOSION_DAMAGE,
-            warhead,
-            origin,
-            frame_effects,
-        );
-        return true;
-    }
-
-    for (x, y) in native_cells_3x3(target_rx, target_ry) {
-        let Some(((rx, ry), layer)) = selected_cell_list(sim, x, y) else {
-            continue;
-        };
-        let mut next = sim
-            .substrate
-            .occupancy
-            .get(rx, ry)
-            .and_then(|cell| cell.first_on_layer(layer));
-        while let Some(id) = next {
-            next = live_successor(sim, id, (rx, ry), layer);
-            let infantry = sim
-                .substrate
-                .entities
-                .get(id)
-                .is_some_and(|entity| entity.category() == EntityCategory::Infantry);
-            if !infantry {
-                continue;
-            }
-            if let Some(event) = super::strength_receiver_event(
-                &mut sim.interner,
-                &sim.substrate,
-                rules,
-                id,
-                &general.mutate_warhead,
-                Some(owner),
-                true,
-            ) {
-                #[cfg(any(test, feature = "test-support"))]
-                observe(Observed::ReceiveDamage((x, y), event));
-                sim.commit_direct_damage_receiver(rules, overlay_registry, event, frame_effects);
-            }
-        }
-    }
     true
 }

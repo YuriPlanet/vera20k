@@ -224,7 +224,7 @@ fn the_launch_matches_native() {
             assert_eq!((anim.draw_flags(), anim.z_adjust()), (0x600, 0), "{row}");
         }
 
-        // PlayEVA and PlayAtCoord (one launch event), then
+        // PlayEVA and PlayAtCoord (one captured activation), then
         // CreateRadarEvent(13, cell).
         let lines: Vec<String> = row["events"]
             .as_array()
@@ -243,12 +243,7 @@ fn the_launch_matches_native() {
             .sound_events
             .iter()
             .filter_map(|event| match event {
-                SimSoundEvent::SuperWeaponLaunched {
-                    owner: by,
-                    sw_type: kind,
-                    rx,
-                    ry,
-                } if *by == owner && *kind == sw_type && (*rx, *ry) == cell => {
+                SimSoundEvent::SuperWeaponActivation { sw_type: kind, .. } if *kind == sw_type => {
                     Some("launched".to_string())
                 }
                 SimSoundEvent::RadarEvent { radar } => Some(format!(
@@ -259,6 +254,25 @@ fn the_launch_matches_native() {
             })
             .collect();
         assert_eq!(pushed, lines, "{row}");
+        let sound_coords: Vec<_> = sim
+            .sound_events
+            .iter()
+            .filter_map(|event| match event {
+                SimSoundEvent::SuperWeaponActivation {
+                    sw_type: kind,
+                    coordinate,
+                } if *kind == sw_type => Some([coordinate.x, coordinate.y, coordinate.z]),
+                _ => None,
+            })
+            .collect();
+        let native_coords: Vec<_> = row["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|event| event[0] == "play_at")
+            .map(|event| coord(&event[2]))
+            .collect();
+        assert_eq!(sound_coords, native_coords, "{row}");
 
         let warhead = sim.interner.intern("Mutate");
         let explosion = sim.interner.intern("MutateExplosion");

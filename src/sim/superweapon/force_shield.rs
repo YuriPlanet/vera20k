@@ -20,11 +20,10 @@
 //! Evidence: `tools/superweapon_oracle.py` sections `force_shield_launch` and
 //! `super_fade` (Unicorn on gamemd.exe), replayed in `force_shield_tests.rs`.
 //!
-//! RESIDUAL: `StartSound=` plays at the launch cell's centre at height 0
-//! (`SuperWeaponLaunched` carries only the cell), natively at the deck
-//! coordinate (`0x006CD172`), which carries the cell's ground height and,
-//! over a bridge, 416 more leptons. Trigger: a Force Shield on a raised,
-//! sloped or bridge cell. Effect: the cue's position on screen, so its pan.
+//! StartSound carries the original signed deck coordinate through
+//! SuperWeaponActivation before blackout/curtain callbacks. The client uses
+//! the existing PlayAt owner, while the later launch fact owns Ready removal.
+//! Original cue boundary: Launch6CD176 calls PlayAt7509E0 before blackout.
 //!
 //! Ledger: no RNG draws and no detach calls. Timer writes: the house's
 //! blackout (`0x0050BC90`); each shielded building's curtain
@@ -45,9 +44,10 @@ mod tests;
 use crate::map::entities::EntityCategory;
 use crate::map::houses::is_allied_with;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
 use crate::sim::superweapon::invulnerability::{InvulnKind, apply_invulnerability};
-use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
 /// The coordinates the walk skips (`0x006CD1C8..0x006CD1FF`): `0x00B0C020`,
 /// zeroed by its static initializer `0x006CADC0`, and `0x00B0C070`, which
@@ -64,21 +64,21 @@ pub fn launch(
     target_rx: u16,
     target_ry: u16,
     sw_type: InternedId,
+    frame_effects: FrameEffects<'_>,
 ) -> bool {
     let general = &rules.general;
     let frame = sim.session.binary_frame();
 
     // `0x006CD07D..0x006CD130`: the anim 5 leptons over the deck coordinate.
-    super::spawn_cell_anim(
+    let deck @ [x, y, z] = super::deck_coords(sim, (target_rx, target_ry));
+    let _ = super::spawn_super_anim(
         sim,
         rules,
         &general.force_shield_invoke_anim,
-        target_rx,
-        target_ry,
+        [x, y, z.wrapping_add(super::INVOKE_ANIM_Z_LIFT_LEPTONS)],
     );
 
     // `0x006CD135..0x006CD162`: the countdown and where its sound plays.
-    let deck = super::deck_coords(sim, (target_rx, target_ry));
     if let Some(instance) = sim.super_weapons.instance_mut(&owner, &sw_type) {
         instance.arm_fade(
             general
@@ -87,6 +87,14 @@ pub fn launch(
             deck,
         );
     }
+
+    //6CD16B..6CD176: the type's StartSound at the retained deck coordinate,
+    // before blackout and synchronous curtain receivers.
+    sim.sound_events.emit(SimSoundEvent::SuperWeaponActivation {
+        sw_type,
+        coordinate: DriveCoord { x, y, z },
+    });
+    frame_effects.flush_sound(sim, rules);
 
     // `0x006CD17B..0x006CD18B` calls the shared House50BC90 replacement
     // setter, even when its duration is shorter than the previous outage.
