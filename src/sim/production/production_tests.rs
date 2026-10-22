@@ -573,7 +573,7 @@ pub(super) fn spawn_structure(
         sid,
         crate::sim::house_tracking::HouseTracking::add_tracking,
     );
-    Simulation::house_added_to_game(&sim.substrate, &mut sim.houses, sid);
+    sim.house_added_to_game(sid, rules);
     Simulation::update_house_tracking(
         &mut sim.substrate,
         &mut sim.houses,

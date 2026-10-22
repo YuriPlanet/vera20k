@@ -2043,6 +2043,9 @@ impl SfxPlayer {
             .entry_by_index(index)
             .is_none_or(|entry| self.vox.entry_done(&entry.name))
     }
+    pub(crate) fn current_eva_event(&self) -> Option<&str> {
+        self.vox.current().map(|node| node.event.as_str())
+    }
     pub(crate) fn mixer(&self) -> &rodio::mixer::Mixer {
         self._device.mixer()
     }

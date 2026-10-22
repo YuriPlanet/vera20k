@@ -630,6 +630,9 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_SOV1_OPENING_UNLOCKED => {
                 Ok(Self::CampaignOpening(movies::OpeningTarget::Unlocked))
             }
+            "campaign-sov1-opening-realtime-unlocked" => Ok(Self::CampaignOpening(
+                movies::OpeningTarget::RealtimeUnlocked,
+            )),
             "campaign-sov1-opening-timer-running" => {
                 Ok(Self::CampaignOpening(movies::OpeningTarget::TimerRunning))
             }
@@ -781,6 +784,9 @@ impl ShellCaptureCheckpoint {
             }
             Self::CampaignOpening(movies::OpeningTarget::Unlocked) => {
                 CHECKPOINT_CAMPAIGN_SOV1_OPENING_UNLOCKED
+            }
+            Self::CampaignOpening(movies::OpeningTarget::RealtimeUnlocked) => {
+                "campaign-sov1-opening-realtime-unlocked"
             }
             Self::CampaignOpening(movies::OpeningTarget::RestoreUnlocked) => {
                 CHECKPOINT_CAMPAIGN_SOV1_OPENING_RESTORE_UNLOCKED

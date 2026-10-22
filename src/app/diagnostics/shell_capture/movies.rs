@@ -1697,6 +1697,15 @@ impl MoviesCapture {
         if let Some(restart) = self.restart.as_ref() {
             return restart.owns_simulation_steps(state);
         }
+        if matches!(
+            self.target,
+            MoviesTarget::CampaignStart {
+                target: CampaignStartTarget::Opening(opening::OpeningTarget::RealtimeUnlocked),
+                ..
+            }
+        ) {
+            return false;
+        }
 
         matches!(
             self.target,
