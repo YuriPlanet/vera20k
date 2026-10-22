@@ -48,6 +48,7 @@ struct PreparedSavedResources {
     map: SavedMapMetadata,
     local_view: PreparedSavedLocalView,
     power_bar_anim: PowerBarAnimState,
+    super_timer_blinks: crate::app::presentation::super_timers::TimerBlinks,
     tile_cache: TileVariantSelectorCache,
     theater: theater::TheaterData,
     elapsed_clock: crate::app::match_runtime::frame_pacer::ScenarioElapsedClock,
@@ -59,6 +60,7 @@ pub(crate) struct CommittedSavedGame {
     pub(crate) terrain_grid: Option<TerrainGrid>,
     pub(crate) local_view: PreparedSavedLocalView,
     pub(crate) power_bar_anim: PowerBarAnimState,
+    pub(crate) super_timer_blinks: crate::app::presentation::super_timers::TimerBlinks,
     pub(crate) details: CommittedLoadPresentation,
     pub(crate) elapsed_clock: crate::app::match_runtime::frame_pacer::ScenarioElapsedClock,
 }
@@ -101,6 +103,7 @@ impl PreparedSavedGame {
         let power_bar_anim = PowerBarAnimState::from_saved(saved_view.take_power_bar().ok_or(
             crate::sim::snapshot::saved_local_view::SavedLocalViewError::MissingPowerBar,
         )?)?;
+        let saved_timer_blinks = saved_view.take_super_timer_blinks();
         if saved.fixed_art_hash() != view.rules_owner.fixed_art().content_hash() {
             return Err(PreparedLoadError::Resources(
                 "fixed ARTMD differs from the saved game".into(),
@@ -223,6 +226,10 @@ impl PreparedSavedGame {
             theater.rmg_tiles.water_set,
         );
         let local_view = PreparedSavedLocalView::new(saved_view, &world.simulation, rules)?;
+        let super_timer_blinks = crate::app::presentation::super_timers::prepare_timer_blinks(
+            saved_timer_blinks,
+            &world.simulation,
+        )?;
         Ok(PreparedSavedResources {
             world,
             resources,
@@ -230,6 +237,7 @@ impl PreparedSavedGame {
             map,
             local_view,
             power_bar_anim,
+            super_timer_blinks,
             tile_cache,
             theater,
             elapsed_clock,
@@ -347,6 +355,7 @@ impl PreparedSavedGame {
             map,
             local_view,
             power_bar_anim,
+            super_timer_blinks,
             tile_cache,
             elapsed_clock,
             ..
@@ -378,6 +387,7 @@ impl PreparedSavedGame {
             terrain_grid: self.terrain_grid,
             local_view,
             power_bar_anim,
+            super_timer_blinks,
             details,
             elapsed_clock,
         }

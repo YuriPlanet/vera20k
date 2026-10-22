@@ -13,6 +13,18 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
+use crate::sim::intern::InternedId;
+
+/// SuperSave6CDFD0 preserves +40; Load6CDEF0 clears only the wall-clock
+/// deadline. The grant/list identity prevents an old phase crossing a regrant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedSuperTimerBlink {
+    pub owner: InternedId,
+    pub sw_type: InternedId,
+    pub place: u32,
+    pub on: bool,
+}
+
 /// Ten native team-selection slots; an object belongs to at most one slot.
 pub const CONTROL_GROUP_SLOTS: usize = 10;
 
@@ -43,6 +55,7 @@ pub struct SavedLocalView {
     /// The save coordinator attaches the Power owner's projection after the
     /// input owner supplies its own facts. App loads require this payload.
     power_bar: Option<SavedPowerBar>,
+    super_timer_blinks: Vec<SavedSuperTimerBlink>,
 }
 
 /// The Display's armed cursor modes. MouseLoad5BDF70 reads the whole Display
@@ -87,6 +100,11 @@ pub enum SavedLocalViewError {
     MissingPowerBar,
     #[error("saved Power bar has invalid {field}")]
     InvalidPowerState { field: &'static str },
+    #[error("saved Super timer phase has duplicate or invalid identity {owner:?}/{sw_type:?}")]
+    InvalidSuperTimerBlink {
+        owner: InternedId,
+        sw_type: InternedId,
+    },
 }
 
 impl SavedLocalView {
@@ -106,6 +124,7 @@ impl SavedLocalView {
             follow_target,
             modes,
             power_bar: None,
+            super_timer_blinks: Vec::new(),
         };
         saved.validate_structure()?;
         Ok(saved)
@@ -160,6 +179,14 @@ impl SavedLocalView {
 
     pub fn take_power_bar(&mut self) -> Option<SavedPowerBar> {
         self.power_bar.take()
+    }
+
+    pub fn set_super_timer_blinks(&mut self, blinks: Vec<SavedSuperTimerBlink>) {
+        self.super_timer_blinks = blinks;
+    }
+
+    pub fn take_super_timer_blinks(&mut self) -> Vec<SavedSuperTimerBlink> {
+        std::mem::take(&mut self.super_timer_blinks)
     }
 
     pub fn into_local_input(

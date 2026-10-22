@@ -194,15 +194,115 @@ fn each_line_prints_as_native() {
 /// deadline (`+0x48`).
 #[test]
 fn a_new_grant_clears_the_blink_but_not_its_deadline() {
+    let (mut sim, owner, sw_type) = timer_phase_world();
     let mut blinks = TimerBlinks::default();
-    let grant =
-        |place| SuperTimerView::for_test(house(0), InternedId::from_index(1), 0, false, 900, place);
+    let grant = |place| SuperTimerView::for_test(owner, sw_type, 0, false, 900, place);
     let view = grant(4);
     assert!(TimerBlink::of(&mut blinks, &view).step(0, 5000));
     assert!(TimerBlink::of(&mut blinks, &view).step(0, 5999));
+    let saved = capture_timer_blinks(&blinks, &sim);
+    let mut loaded = prepare_timer_blinks(saved.clone(), &sim).unwrap();
+    let blink = TimerBlink::of(&mut loaded, &view);
+    assert!(!blink.step(5, 5000));
+    assert!(blink.on, "nonzero seconds preserve the retained phase");
+    assert!(
+        !blink.step(0, 5000),
+        "load clears the deadline and toggles saved-on"
+    );
+    sim.super_weapons_mut_for_test()
+        .get_mut(&owner)
+        .unwrap()
+        .get_mut(&sw_type)
+        .unwrap()
+        .set_timer_place_for_test(Some(7));
+    let reconciled = reconcile_saved_timer_blinks(&saved, &sim);
+    assert_eq!((reconciled[0].place, reconciled[0].on), (7, false));
+    loaded = prepare_timer_blinks(Vec::new(), &sim).unwrap();
+    assert!(
+        loaded.is_empty(),
+        "an empty incoming map replaces outgoing phases"
+    );
     let regranted = grant(7);
     let blink = TimerBlink::of(&mut blinks, &regranted);
     assert_eq!((blink.on, blink.deadline_ms), (false, 6000));
     assert!(!blink.step(0, 5999));
     assert!(blink.step(0, 6000));
+}
+
+/// Supplied retained list identity; the tests exercise presentation/envelope
+/// ownership rather than replaying the already-owned House grant producer.
+fn timer_phase_world() -> (crate::sim::world::Simulation, InternedId, InternedId) {
+    let mut sim = crate::sim::world::Simulation::new();
+    let owner = sim.intern("Americans");
+    let sw_type = sim.intern("NukeSpecial");
+    sim.houses_mut_for_test()
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    let mut instance = crate::sim::superweapon::SuperWeaponInstance::new(sw_type, owner, 0);
+    instance.set_is_active_for_test(true);
+    instance.set_timer_place_for_test(Some(4));
+    sim.super_weapons_mut_for_test()
+        .entry(owner)
+        .or_default()
+        .insert(sw_type, instance);
+    (sim, owner, sw_type)
+}
+
+#[test]
+fn saved_timer_phase_round_trips_then_toggles_at_the_first_zero_draw() {
+    use crate::sim::snapshot::{GameSnapshot, saved_local_view::SavedLocalView};
+    let (sim, owner, sw_type) = timer_phase_world();
+    let round_trip = |on| {
+        let mut blinks = TimerBlinks::default();
+        blinks.insert(
+            (owner, sw_type),
+            TimerBlink {
+                on,
+                deadline_ms: u64::MAX,
+                place: 4,
+            },
+        );
+        let phases = capture_timer_blinks(&blinks, &sim);
+        let mut local = SavedLocalView::new(
+            [[0; 2]; 4],
+            Vec::new(),
+            false,
+            std::array::from_fn(|_| Vec::new()),
+            None,
+            Default::default(),
+        )
+        .unwrap();
+        local.set_super_timer_blinks(phases);
+        let bytes = GameSnapshot::save_validated_with_presentation(
+            &sim,
+            0,
+            0,
+            "phase",
+            0,
+            &[],
+            None,
+            None,
+            Some(&local),
+            None,
+        );
+        let mut saved = GameSnapshot::load(&bytes).unwrap();
+        let before = saved.sim.state_hash();
+        let phases = saved.take_local_view().unwrap().take_super_timer_blinks();
+        let mut restored = prepare_timer_blinks(phases, &saved.sim).unwrap();
+        assert_eq!(
+            saved.sim.state_hash(),
+            before,
+            "phase restoration cannot alter lockstep state"
+        );
+        let blink = restored.get_mut(&(owner, sw_type)).unwrap();
+        assert_eq!((blink.on, blink.deadline_ms), (on, 0));
+        let visible = blink.step(0, 5000);
+        assert_eq!(blink.deadline_ms, 6000);
+        visible
+    };
+    // SuperLoad6CDFB6/BD preserves +40 and resets +48/+4C. DrawTimer6D4C75
+    // immediately toggles: saved-on shows owner colour, saved-off blink colour.
+    assert!(!round_trip(true));
+    assert!(round_trip(false));
 }

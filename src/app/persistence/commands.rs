@@ -209,6 +209,12 @@ fn prepare_save<'a>(
         &presentation.sidebar_gadget_state,
     )?;
     local_view.set_power_bar(presentation.power_bar_anim.saved());
+    local_view.set_super_timer_blinks(
+        crate::app::presentation::super_timers::capture_timer_blinks(
+            &presentation.super_timer_blinks,
+            sim,
+        ),
+    );
     log::debug!(
         "Save: captured Power at {}ms: {:?}",
         state.radar_presentation_ms(),
@@ -261,6 +267,13 @@ impl PreparedSave<'_> {
         let clock_save = clock.begin_save(crate::app::match_runtime::frame_pacer::wall_clock_ms());
         self.resources
             .set_elapsed_buckets(clock_save.accumulated_buckets());
+        let timer_phases = self.local_view.take_super_timer_blinks();
+        self.local_view.set_super_timer_blinks(
+            crate::app::presentation::super_timers::reconcile_saved_timer_blinks(
+                &timer_phases,
+                sim,
+            ),
+        );
         let bytes = crate::sim::snapshot::GameSnapshot::save_validated_with_presentation(
             sim,
             self.map_hash,

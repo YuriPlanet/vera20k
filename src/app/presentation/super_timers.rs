@@ -16,6 +16,7 @@ use crate::assets::csf_file::{CsfFile, type_ui_name};
 use crate::render::batch::SpriteInstance;
 use crate::rules::house_colors::{HouseColorIndex, NO_REMAP, house_text_rgb};
 use crate::sim::intern::InternedId;
+use crate::sim::snapshot::saved_local_view::{SavedLocalViewError, SavedSuperTimerBlink};
 use crate::sim::superweapon::SuperTimerView;
 use crate::ui::game_screen::GameScreen;
 
@@ -194,6 +195,87 @@ impl TimerBlink {
 
 /// The Supers' timer blinks, by owner and type.
 pub(crate) type TimerBlinks = HashMap<(InternedId, InternedId), TimerBlink>;
+
+fn saved_timer_phases(
+    sim: &crate::sim::world::Simulation,
+    on: impl Fn((InternedId, InternedId), u32) -> bool,
+) -> Vec<SavedSuperTimerBlink> {
+    let mut saved = Vec::new();
+    for (&owner, weapons) in sim.super_weapons() {
+        for (&sw_type, instance) in weapons {
+            if let Some(place) = instance.active_timer_place() {
+                saved.push(SavedSuperTimerBlink {
+                    owner,
+                    sw_type,
+                    place,
+                    on: on((owner, sw_type), place),
+                });
+            }
+        }
+    }
+    saved.sort_by_key(|blink| blink.place);
+    saved
+}
+
+pub(crate) fn capture_timer_blinks(
+    blinks: &TimerBlinks,
+    sim: &crate::sim::world::Simulation,
+) -> Vec<SavedSuperTimerBlink> {
+    saved_timer_phases(sim, |key, place| {
+        blinks
+            .get(&key)
+            .is_some_and(|blink| blink.place == place && blink.on)
+    })
+}
+
+/// Automatic-save preparation precedes frame work. A grant changing before
+/// the actual write clears its old phase, as native Grant6CB580 does.
+pub(crate) fn reconcile_saved_timer_blinks(
+    saved: &[SavedSuperTimerBlink],
+    sim: &crate::sim::world::Simulation,
+) -> Vec<SavedSuperTimerBlink> {
+    let phases: HashMap<_, _> = saved
+        .iter()
+        .map(|blink| ((blink.owner, blink.sw_type), blink))
+        .collect();
+    saved_timer_phases(sim, |key, place| {
+        phases
+            .get(&key)
+            .is_some_and(|blink| blink.place == place && blink.on)
+    })
+}
+
+/// Prepare against the incoming world before any app replacement. Native
+/// SuperLoad6CDFB6/BD clears both deadline words, preserving only the bit.
+pub(crate) fn prepare_timer_blinks(
+    saved: Vec<SavedSuperTimerBlink>,
+    sim: &crate::sim::world::Simulation,
+) -> Result<TimerBlinks, SavedLocalViewError> {
+    let mut blinks = TimerBlinks::default();
+    for blink in saved {
+        let key = (blink.owner, blink.sw_type);
+        let place = sim
+            .super_weapons()
+            .get(&blink.owner)
+            .and_then(|weapons| weapons.get(&blink.sw_type))
+            .and_then(|instance| instance.active_timer_place());
+        if place != Some(blink.place) || blinks.contains_key(&key) {
+            return Err(SavedLocalViewError::InvalidSuperTimerBlink {
+                owner: blink.owner,
+                sw_type: blink.sw_type,
+            });
+        }
+        blinks.insert(
+            key,
+            TimerBlink {
+                on: blink.on,
+                deadline_ms: 0,
+                place: blink.place,
+            },
+        );
+    }
+    Ok(blinks)
+}
 
 /// The string table's text for `key` (`0x00734E60`); the key itself only
 /// without a string table (an assetless run).

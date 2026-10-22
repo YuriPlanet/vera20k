@@ -410,6 +410,12 @@ fn default_can_lose() -> bool {
 }
 
 impl SuperWeaponInstance {
+    /// Existing active ShowTimers membership; presentation saves use this
+    /// read-only identity without adding wall-clock state to the simulation.
+    pub fn active_timer_place(&self) -> Option<u32> {
+        self.timer_place.filter(|_| self.is_active)
+    }
+
     /// The SuperWeaponType this instance represents.
     pub fn type_id(&self) -> InternedId {
         self.type_id
@@ -468,6 +474,11 @@ impl SuperWeaponInstance {
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_is_active_for_test(&mut self, value: bool) {
         self.is_active = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_timer_place_for_test(&mut self, value: Option<u32>) {
+        self.timer_place = value;
     }
 
     #[cfg(any(test, feature = "test-support"))]

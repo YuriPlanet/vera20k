@@ -8,7 +8,9 @@ use crate::map::source::{LoadedMap, test_support::TestDirectory};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::retail_ini_fixture::{retail_assets, retail_rules_owner};
 use crate::sim::rng::SimRng;
-use crate::sim::snapshot::saved_local_view::{SavedLocalView, SavedLocalViewError, SavedPowerBar};
+use crate::sim::snapshot::saved_local_view::{
+    SavedLocalView, SavedLocalViewError, SavedPowerBar, SavedSuperTimerBlink,
+};
 use crate::sim::snapshot::scenario_resources::SavedScenarioResourcesRef;
 use crate::util::save_codec;
 
@@ -210,6 +212,17 @@ fn snapshot_bytes(
     follow: Option<u64>,
     rules_hash: u64,
 ) -> Vec<u8> {
+    snapshot_bytes_with_timer_phases(runtime, owner, map, follow, rules_hash, Vec::new())
+}
+
+fn snapshot_bytes_with_timer_phases(
+    runtime: &SimRuntime,
+    owner: &NativeRulesProcessOwner,
+    map: &SavedMapMetadata,
+    follow: Option<u64>,
+    rules_hash: u64,
+    timer_phases: Vec<SavedSuperTimerBlink>,
+) -> Vec<u8> {
     let terrain = runtime
         .resources
         .terrain_template
@@ -234,6 +247,7 @@ fn snapshot_bytes(
     )
     .unwrap();
     view.set_power_bar(native_saved_power());
+    view.set_super_timer_blinks(timer_phases);
     GameSnapshot::save_validated_with_presentation(
         &runtime.simulation,
         map.map_hash(),
@@ -559,6 +573,91 @@ fn retail_saved_resources_prepare_cold() {
         "uncommitted candidate cannot warm the process cache"
     );
     assert!(cold_owner.saved_scenario_rules().is_none());
+}
+
+#[test]
+fn saved_timer_phases_prepare_against_incoming_world_and_reject_bad_grants() {
+    let Some(save) = incoming_save() else {
+        return;
+    };
+    let IncomingSave {
+        mut assets,
+        mut incoming,
+        map,
+        owner,
+        warm_cache,
+        repository,
+        rules_hash,
+        ..
+    } = save;
+    let sim = &mut incoming.simulation;
+    let house = sim.intern("Americans");
+    let sw_type = sim.intern("NukeSpecial");
+    sim.houses_mut_for_test()
+        .register(crate::sim::house_state::HouseState::new(
+            house, 0, None, true, 0, 10,
+        ));
+    // Supplied retained ShowTimers identity; the production preparation below
+    // must use this incoming world, not the unrelated outgoing interner/map.
+    let mut instance = crate::sim::superweapon::SuperWeaponInstance::new(sw_type, house, 0);
+    instance.set_is_active_for_test(true);
+    instance.set_timer_place_for_test(Some(4));
+    sim.super_weapons_mut_for_test()
+        .entry(house)
+        .or_default()
+        .insert(sw_type, instance);
+    let phase = SavedSuperTimerBlink {
+        owner: house,
+        sw_type,
+        place: 4,
+        on: true,
+    };
+    let bytes =
+        snapshot_bytes_with_timer_phases(&incoming, &owner, &map, None, rules_hash, vec![phase]);
+    let outgoing = Simulation::new();
+    let outgoing_hash = outgoing.state_hash();
+    let incoming_hash = incoming.simulation.state_hash();
+    let frontend = frontend_main();
+    let clock = || LOAD_CLOCK_MS;
+    let view = SavedGamePreparationView {
+        repository: &repository,
+        current_simulation: Some(&outgoing),
+        frontend_main: &frontend,
+        rules_owner: &owner,
+        tile_cache: &warm_cache,
+        load_clock: &clock,
+    };
+    let prepared = assets
+        .prepare_saved_load(|assets| PreparedSavedGame::prepare_resources(&bytes, &view, assets))
+        .unwrap();
+    assert_eq!(
+        crate::app::presentation::super_timers::capture_timer_blinks(
+            &prepared.super_timer_blinks,
+            &prepared.world.simulation
+        ),
+        vec![phase]
+    );
+    let archives = assets.registered_archive_names();
+    let mut reject = |records| {
+        let bytes =
+            snapshot_bytes_with_timer_phases(&incoming, &owner, &map, None, rules_hash, records);
+        let result = assets.prepare_saved_load(|assets| {
+            PreparedSavedGame::prepare_resources(&bytes, &view, assets)
+        });
+        assert!(matches!(
+            result,
+            Err(PreparedLoadError::LocalView(
+                SavedLocalViewError::InvalidSuperTimerBlink { .. }
+            ))
+        ));
+        assert_eq!(assets.registered_archive_names(), archives);
+        assert_eq!(outgoing.state_hash(), outgoing_hash);
+        assert_eq!(incoming.simulation.state_hash(), incoming_hash);
+    };
+    let mut stale = phase;
+    stale.place = 7;
+    reject(vec![stale]);
+    reject(vec![phase, phase]);
 }
 
 #[test]
