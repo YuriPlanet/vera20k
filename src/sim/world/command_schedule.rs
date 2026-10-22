@@ -1007,10 +1007,13 @@ impl FormationCommand for QueuedCommand {
         self.semantic().map(|entry| &entry.payload)
     }
     fn set_formation_destination(&mut self, destination: (i16, i16)) {
-        if let Some(record) = self.record_mut() {
-            write_formation_destination(record, destination);
-        } else if let Some(command) = self.semantic_mut() {
-            command.set_formation_destination(destination);
+        match self {
+            QueuedCommand::Native { record, .. } => {
+                write_formation_destination(record, destination)
+            }
+            QueuedCommand::Semantic { envelope, .. } => {
+                envelope.set_formation_destination(destination)
+            }
         }
     }
 }

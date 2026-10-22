@@ -207,6 +207,9 @@ impl<T> DoList<T> {
         self.entries.iter()
     }
 
+    /// Fixture access to queued entries. Gameplay mutates them only through
+    /// admission, dispatch and retirement; this invalidates the occupancy cache.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
         self.native_count = None;
         self.entries.iter_mut()

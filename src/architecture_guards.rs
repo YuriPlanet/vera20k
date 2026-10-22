@@ -1262,6 +1262,18 @@ fn mutable_handouts_and_setters_are_owner_operations() {
     // lives in the cited native caller, which the Rust caller ports.
     const PINNED_SETTERS: &[(&str, &str, &str)] = &[
         (
+            "net/global.rs",
+            "set_timing",
+            "Set_Timing (0x00540C60) forwards its timing to the global channel's +0x28..+0x30 \
+             through vt+0x38 (0x00540D10) only when its bool argument is set",
+        ),
+        (
+            "net/reliable.rs",
+            "set_timing",
+            "Set_Timing (0x00540C60) stores the manager's +0x58..+0x60 and copies them into \
+             every private connection's +0x28..+0x30 (0x00540CBE..0x00540CE1)",
+        ),
+        (
             "rules/object_type.rs",
             "set_voxel_shadow_index",
             "runs only inside RuleSet's load",
@@ -1404,6 +1416,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "set_fixed_alliance",
             "Scenario flag 0x400: Apply_Squad_Alliances clears it in GameMode 4 (0x0069B19B) \
              and sets it after the squad alliances (0x0069B4E2)",
+        ),
+        (
+            "sim/snapshot/scenario_resources.rs",
+            "set_elapsed_buckets",
+            "ScenarioSave stops +0x614 into the +0x61C accumulator (0x00689360..0x0068936F) \
+             before its stream write (0x00689378); the save boundary stores that value",
         ),
         (
             "sim/stage.rs",

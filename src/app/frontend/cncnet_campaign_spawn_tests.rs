@@ -118,8 +118,8 @@ fn cncnet_campaign_spawn_explicit_scenario_keeps_first_record_and_physical_ident
 
 #[test]
 fn cncnet_campaign_spawn_native_start_prefix_keeps_filename_index_and_cd_independent() {
-    let native: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tools/input_oracle/campaign_start_prefix.json"
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/input_oracle/campaign_start_prefix.json",
     ))
     .unwrap();
     let catalog = catalog(CUSTOM_CATALOG);

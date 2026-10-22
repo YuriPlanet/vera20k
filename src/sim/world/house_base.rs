@@ -512,12 +512,9 @@ impl Simulation {
         if origin == (0, 0) {
             return [0, 0, 0];
         }
-        let coord = crate::sim::movement::ground_pose::target_get_coords(
-            crate::sim::combat::TargetKind::Cell(origin.0, origin.1),
-            self,
-            cells,
-        )
-        .expect("Cell GetCoords always returns a coordinate");
+        // A fresh Map5657A0 lookup, which stamps the Dummy on a miss; not the
+        // retained-Cell GetCoords that target_get_coords dispatches.
+        let coord = crate::sim::movement::navcom::target_cell_coord(origin.0, origin.1, cells);
         [coord.x, coord.y, coord.z]
     }
 

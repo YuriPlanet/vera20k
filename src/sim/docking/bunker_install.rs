@@ -818,9 +818,12 @@ mod tests {
         let flyer_id = sim
             .spawn_object(air_type, air_owner, 14, 10, 0, &rules)
             .unwrap();
-        let air_owner_id = sim.interner.intern(air_owner);
+        // The human Americans send the flyer's Move: the DoList skips computer Houses' events
+        // (0x0064C4FB..0x0064C50D), and MegaMission never compares sender and actor
+        // (0x004C71F6..0x004C721F).
+        let sender = sim.interner.intern("Americans");
         sim.queue_command(CommandEnvelope::new(
-            air_owner_id,
+            sender,
             sim.session.tick() + 1,
             Command::Move {
                 entity_id: flyer_id,

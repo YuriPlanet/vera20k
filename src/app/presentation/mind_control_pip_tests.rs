@@ -478,9 +478,13 @@ fn stock_fatal_overload_releases_real_captives_and_retires_rings_and_sparks() {
     );
     // Released AI units receive real Stop inputs so their native fate/Hunt
     // does not turn the cleanup observation into a second distant battle.
+    // The human Americans send them: the DoList skips computer Houses' events
+    // (0x0064C4FB..0x0064C50D), and IDLE never compares sender and actor
+    // (0x004C74CB..0x004C76BB).
+    let sender = scene.simulation().interner().get("Americans").unwrap();
     for &id in &scene.targets() {
         scene.queue_command(CommandEnvelope::new(
-            original,
+            sender,
             scene.simulation().session().tick() + 1,
             Command::Stop { entity_id: id },
         ));

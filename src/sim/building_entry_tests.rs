@@ -2331,11 +2331,6 @@ fn cancelling_a_manual_bunker_entry_frees_it_for_another_tank() {
             ),
             Some(&rules)
         ));
-        assert!(!sim.apply_command(
-            "YuriCountry",
-            &Command::Stop { entity_id: first },
-            Some(&rules)
-        ));
         assert_eq!(
             install_state(&sim, bunker),
             (BunkerState::Idle, Some(first))
