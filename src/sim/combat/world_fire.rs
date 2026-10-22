@@ -461,9 +461,16 @@ fn admit_attacker_fire<'r>(
         //5208FE may refuse unchanged/noninterruptible/absent actions.520912
         // raises+68D regardless of AL; the retained Doing/Stage still decides
         // when this attempt can discharge.
-        // Infantry520866..520884: an Airstrike owner firing secondary
-        // restarts only +F8, even when its existing action is noninterruptible.
-        if actor.airstrike_link().is_some() && matches!(requested, 40 | 41) {
+        // gamemd Infantry::Fire_At_Target52083E..520884 checks retained
+        // Doing40/41 before selecting a new ground firing action. FireFly
+        // precedes this ladder. The direct restart changes only Stage+F8.
+        if !fire_fly
+            && actor.airstrike_link().is_some()
+            && actor
+                .mission_leaf
+                .as_infantry()
+                .is_some_and(|leaf| matches!(leaf.doing(), 40 | 41))
+        {
             world
                 .substrate
                 .entities

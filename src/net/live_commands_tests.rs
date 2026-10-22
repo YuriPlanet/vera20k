@@ -152,6 +152,220 @@ fn initial_barrier_off_cadence_and_positive_frame_use_one_native_queue() {
 }
 
 #[test]
+fn initial_response_histories_clear_only_on_successful_barrier_once() {
+    use crate::net::global::GlobalDestination;
+    use crate::net::reliable::connection_prefix;
+
+    fn seed_history(
+        live: &mut LiveCommandSession,
+        endpoint: SocketAddrV4,
+        sequence: u32,
+        now: u32,
+    ) {
+        assert!(live.transport.connections_mut().send_to(
+            1,
+            b"private history",
+            Delivery::Reliable
+        ));
+        live.transport
+            .connections_mut()
+            .service(now, &mut |_, _| {});
+        live.transport
+            .connections_mut()
+            .receive(
+                endpoint,
+                &connection_prefix(0xaa04, 2, sequence, 0),
+                &mut |_, _| {},
+            )
+            .unwrap();
+        live.transport
+            .connections_mut()
+            .service(now + 11, &mut |_, _| {});
+        assert!(live.global_mut().send(
+            b"global history",
+            GlobalDestination::direct(endpoint),
+            Delivery::Reliable,
+            0
+        ));
+        live.global_mut().service(now, &mut |_, _| {});
+        live.global_mut()
+            .receive(
+                endpoint,
+                0,
+                &connection_prefix(0x1236, 2, sequence, 2),
+                now + 22,
+                &mut |_, _| {},
+            )
+            .unwrap();
+        live.global_mut().service(now + 22, &mut |_, _| {});
+    }
+
+    let mut wire = transport();
+    let peer_socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let std::net::SocketAddr::V4(peer) = peer_socket.local_addr().unwrap() else {
+        unreachable!()
+    };
+    wire.connections_mut().add_peer(1, peer).unwrap();
+    let mut live = LiveCommandSession::new(wire, 0, 73, NonZeroU32::new(5).unwrap()).unwrap();
+    seed_history(&mut live, peer, 0, 100);
+    let mut sim = Simulation::new();
+    let context = NetworkQueueContext {
+        frame: 0,
+        checksum: 0x12345678,
+    };
+    for now in [1000, 1001] {
+        assert_eq!(
+            live.poll(
+                &mut sim.network_command_queues(),
+                context,
+                10,
+                now,
+                now * 16
+            )
+            .unwrap(),
+            NetworkQueuePass::Waiting
+        );
+        assert_eq!(live.connections().mean_response_time(1), Some(11));
+        assert_eq!(live.global().mean_response_time(), 22);
+    }
+    let probe = live
+        .exchange
+        .frame_probe(1, 0, 10, 73, live.policy)
+        .unwrap();
+    live.exchange
+        .receive(1, &probe, 73, &mut sim.network_command_queues(), 1)
+        .unwrap();
+    assert_eq!(
+        live.poll(&mut sim.network_command_queues(), context, 10, 1002, 16032)
+            .unwrap(),
+        NetworkQueuePass::SkipDispatch
+    );
+    assert_eq!(live.connections().mean_response_time(1), Some(0));
+    assert_eq!(live.global().mean_response_time(), 0);
+    assert_eq!(live.peers()[0].frame(), 0);
+
+    seed_history(&mut live, peer, 1, 1100);
+    for next in [
+        context,
+        NetworkQueueContext {
+            frame: 1,
+            ..context
+        },
+    ] {
+        assert_eq!(
+            live.poll(&mut sim.network_command_queues(), next, 10, 1200, 19200)
+                .unwrap(),
+            NetworkQueuePass::SkipDispatch
+        );
+        assert_eq!(live.connections().mean_response_time(1), Some(11));
+        assert_eq!(live.global().mean_response_time(), 22);
+    }
+}
+
+#[test]
+fn ordinary_wait_uses_private_response_history_with_larger_primary_global_mean() {
+    use crate::net::global::GlobalDestination;
+    use crate::net::reliable::connection_prefix;
+
+    let mut wire = transport();
+    let receiver = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let std::net::SocketAddr::V4(peer) = receiver.local_addr().unwrap() else {
+        unreachable!()
+    };
+    wire.connections_mut().add_peer(1, peer).unwrap();
+    let mut live = LiveCommandSession::new(wire, 0, 73, NonZeroU32::new(5).unwrap()).unwrap();
+    let mut sim = Simulation::new();
+    let context = NetworkQueueContext {
+        frame: 0,
+        checksum: 0x12345678,
+    };
+    assert_eq!(
+        live.poll(&mut sim.network_command_queues(), context, 5, 1000, 16000)
+            .unwrap(),
+        NetworkQueuePass::Waiting
+    );
+    let probe = live.exchange.frame_probe(1, 0, 5, 73, live.policy).unwrap();
+    live.exchange
+        .receive(1, &probe, 73, &mut sim.network_command_queues(), 1)
+        .unwrap();
+    assert_eq!(
+        live.poll(&mut sim.network_command_queues(), context, 5, 1001, 16016)
+            .unwrap(),
+        NetworkQueuePass::SkipDispatch
+    );
+
+    assert!(
+        live.transport
+            .connections_mut()
+            .send_to(1, b"private sample", Delivery::Reliable)
+    );
+    live.transport
+        .connections_mut()
+        .service(1100, &mut |_, _| {});
+    live.transport
+        .connections_mut()
+        .receive(peer, &connection_prefix(0xaa04, 2, 0, 0), &mut |_, _| {})
+        .unwrap();
+    live.transport
+        .connections_mut()
+        .service(1110, &mut |_, _| {});
+    assert!(live.global_mut().send(
+        b"global sample",
+        GlobalDestination::direct(peer),
+        Delivery::Reliable,
+        0
+    ));
+    live.global_mut().service(1100, &mut |_, _| {});
+    live.global_mut()
+        .receive(
+            peer,
+            0,
+            &connection_prefix(0x1236, 2, 0, 2),
+            1300,
+            &mut |_, _| {},
+        )
+        .unwrap();
+    live.global_mut().service(1300, &mut |_, _| {});
+    assert_eq!(live.connections().mean_response_time(1), Some(10));
+    assert_eq!(live.global().mean_response_time(), 200);
+    for frame in 1..5 {
+        assert_eq!(
+            live.poll(
+                &mut sim.network_command_queues(),
+                NetworkQueueContext { frame, ..context },
+                5,
+                1300 + frame,
+                (1300 + frame) * 16
+            )
+            .unwrap(),
+            NetworkQueuePass::SkipDispatch
+        );
+    }
+    assert_eq!(
+        live.poll(
+            &mut sim.network_command_queues(),
+            NetworkQueueContext {
+                frame: 5,
+                ..context
+            },
+            5,
+            1305,
+            20880
+        )
+        .unwrap(),
+        NetworkQueuePass::Waiting
+    );
+    assert_eq!(
+        live.wait_info(),
+        Some(LiveWaitInfo {
+            kind: LiveWaitKind::Ordinary,
+            entered_at: 1305,
+            response_time_at_entry: 10,
+        })
+    );
+}
+
+#[test]
 fn initial_probe_repeats_only_at_the_native_wall_clock_boundary() {
     let mut wire = transport();
     let receiver = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();

@@ -1,0 +1,350 @@
+{
+  "reset": [
+    {
+      "after": {
+        "global": [
+          0,
+          0,
+          0
+        ],
+        "private0": [
+          0,
+          0,
+          0
+        ],
+        "private1": [
+          0,
+          0,
+          0
+        ]
+      },
+      "before": {
+        "global": [
+          29,
+          3,
+          9
+        ],
+        "private0": [
+          0,
+          1,
+          0
+        ],
+        "private1": [
+          13,
+          1,
+          13
+        ]
+      },
+      "clear": true,
+      "input_samples": [
+        [
+          9,
+          17,
+          3
+        ],
+        [
+          0
+        ],
+        [
+          13
+        ]
+      ],
+      "name": "initial_all_channels_clear"
+    },
+    {
+      "after": {
+        "global": [
+          0,
+          0,
+          0
+        ],
+        "private0": [
+          4294967294,
+          1,
+          4294967294
+        ],
+        "private1": [
+          4294967295,
+          1,
+          4294967295
+        ]
+      },
+      "before": {
+        "global": [
+          29,
+          3,
+          9
+        ],
+        "private0": [
+          4294967294,
+          1,
+          4294967294
+        ],
+        "private1": [
+          4294967295,
+          1,
+          4294967295
+        ]
+      },
+      "clear": false,
+      "input_samples": [
+        [
+          9,
+          17,
+          3
+        ],
+        [
+          4294967294
+        ],
+        [
+          4294967295
+        ]
+      ],
+      "name": "direct_false_high_private"
+    },
+    {
+      "after": {
+        "global": [
+          0,
+          0,
+          0
+        ],
+        "private0": [
+          0,
+          1,
+          0
+        ],
+        "private1": [
+          0,
+          1,
+          0
+        ]
+      },
+      "before": {
+        "global": [
+          0,
+          0,
+          0
+        ],
+        "private0": [
+          0,
+          0,
+          0
+        ],
+        "private1": [
+          0,
+          0,
+          0
+        ]
+      },
+      "clear": false,
+      "input_samples": [
+        [],
+        [],
+        []
+      ],
+      "name": "direct_false_empty_history"
+    }
+  ],
+  "response_maximum": [
+    {
+      "name": "empty_private",
+      "primary": 4294967295,
+      "private": [],
+      "result": 0
+    },
+    {
+      "name": "one_private",
+      "primary": 4294967295,
+      "private": [
+        13
+      ],
+      "result": 13
+    },
+    {
+      "name": "unsigned_high_private",
+      "primary": 4294967295,
+      "private": [
+        2147483647,
+        2147483648
+      ],
+      "result": 2147483648
+    },
+    {
+      "name": "maximum_private",
+      "primary": 4294967295,
+      "private": [
+        4294967295,
+        1
+      ],
+      "result": 4294967295
+    }
+  ],
+  "timing": [
+    {
+      "global_timing": [
+        60,
+        4294967295,
+        600
+      ],
+      "input_responses": [
+        0,
+        0
+      ],
+      "name": "prepare_mean_00000000",
+      "private": [
+        15,
+        4294967295,
+        600
+      ],
+      "role": "prepare"
+    },
+    {
+      "global_timing": [
+        61,
+        4294967295,
+        600
+      ],
+      "input_responses": [
+        59,
+        59,
+        59,
+        59
+      ],
+      "name": "prepare_mean_0000003b",
+      "private": [
+        61,
+        4294967295,
+        600
+      ],
+      "role": "prepare"
+    },
+    {
+      "global_timing": [
+        60,
+        4294967295,
+        600
+      ],
+      "input_responses": [
+        4294967294,
+        4294967294
+      ],
+      "name": "prepare_mean_fffffffe",
+      "private": [
+        15,
+        4294967295,
+        600
+      ],
+      "role": "prepare"
+    },
+    {
+      "global_timing": [
+        60,
+        4294967295,
+        600
+      ],
+      "input_responses": [
+        13,
+        4294967294,
+        0
+      ],
+      "name": "prepare_private_equal_floor_second_wrap",
+      "private": [
+        0,
+        4294967295,
+        600
+      ],
+      "role": "prepare"
+    },
+    {
+      "global_timing": [
+        0,
+        4294967295,
+        600
+      ],
+      "input_responses": [
+        0,
+        58,
+        4294967294
+      ],
+      "name": "prepare_global_equal_floor_second_wrap",
+      "private": [
+        15,
+        4294967295,
+        600
+      ],
+      "role": "prepare"
+    },
+    {
+      "global_timing": [
+        4,
+        4294967295,
+        600
+      ],
+      "input_responses": [
+        14,
+        1,
+        59,
+        2
+      ],
+      "name": "prepare_two_independent_second_reads",
+      "private": [
+        3,
+        4294967295,
+        600
+      ],
+      "role": "prepare"
+    },
+    {
+      "global_timing": [
+        60,
+        4294967295,
+        600
+      ],
+      "input_responses": [
+        0
+      ],
+      "name": "guest_mean_00000000",
+      "private": [
+        20,
+        4294967295,
+        160
+      ],
+      "role": "guest"
+    },
+    {
+      "global_timing": [
+        60,
+        4294967295,
+        600
+      ],
+      "input_responses": [
+        268435456
+      ],
+      "name": "guest_mean_10000000",
+      "private": [
+        268435456,
+        4294967295,
+        120
+      ],
+      "role": "guest"
+    },
+    {
+      "global_timing": [
+        60,
+        4294967295,
+        600
+      ],
+      "input_responses": [
+        4294967295
+      ],
+      "name": "guest_mean_ffffffff",
+      "private": [
+        20,
+        4294967295,
+        160
+      ],
+      "role": "guest"
+    }
+  ]
+}

@@ -171,7 +171,11 @@ pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
             description: localized(state, metadata.description_key, metadata.parameter),
         })
         .collect();
-    state.frontend.keyboard_dialog = Some(KeyboardState::new(parent, commands));
+    state.frontend.keyboard_dialog = Some(KeyboardState::new(
+        parent,
+        commands,
+        vec![localized(state, hotkeys::catalog::VERA_CATEGORY_KEY, None)],
+    ));
     state.platform.window.request_redraw();
 }
 fn reload(state: &mut AppState, reset: bool) {

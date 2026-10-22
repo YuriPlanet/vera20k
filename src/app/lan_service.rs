@@ -230,8 +230,15 @@ impl LanService {
 
     fn apply_start_timing(&mut self, host: bool, completed: bool) {
         if let Some(transport) = self.transport.as_mut() {
-            let timing = RetryTiming::lan_start(host, completed, || transport.response_time());
+            let timing =
+                RetryTiming::lan_start(host, completed, || transport.global().mean_response_time());
             transport.set_retry_timing(timing, true);
+            if !host && completed {
+                //5DD9FD ->540D10 overrides only the primary-global channel.
+                transport
+                    .global_mut()
+                    .set_timing(RetryTiming::LAN_GUEST_COMPLETED_GLOBAL);
+            }
         }
     }
 
@@ -1216,6 +1223,11 @@ pub(crate) fn install_gameplay(state: &mut AppState) -> anyhow::Result<()> {
         .take()
         .ok_or_else(|| anyhow::anyhow!("LAN startup transport is already owned by a match"))?;
     *transport.connections_mut() = connections;
+    // MainPrepareSession52EA18/52EA4F selects these after CreateConnections.
+    // Keep validation above transactional: a failed binding retains the socket.
+    let (private, global) = RetryTiming::lan_gameplay(|| transport.global().mean_response_time());
+    transport.set_retry_timing(private, true);
+    transport.global_mut().set_timing(global);
     // LAN5DD2DF/5DD49F, independent of the game-speed options field.
     let live = crate::net::live_commands::LiveCommandSession::new(
         transport,
@@ -1647,7 +1659,7 @@ pub(crate) fn prepare_host_timing(state: &mut AppState) -> anyhow::Result<()> {
         .as_ref()
         .and_then(|service| service.transport.as_ref())
     {
-        let response = transport.response_time();
+        let response = transport.global().mean_response_time();
         state
             .match_state
             .session
@@ -1969,14 +1981,82 @@ mod tests {
         service.apply_start_timing(false, true);
         let timing = service.transport.as_ref().unwrap().retry_timing();
         assert_eq!((timing.retry_delta, timing.timeout), (20, 160));
+        let destination = direct(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30123));
+        assert!(service.send(b"pending after GO", destination, true));
         // A fresh BB visit explicitly restores lobby settings for both
         // channels; returning through Setup Back does not reset them.
         service.clear_setup();
         assert_eq!(service.transport.as_ref().unwrap().retry_timing(), timing);
+        let global = service.transport.as_mut().unwrap().global_mut();
+        // Guest5DD9FD leaves primary-global at60/-1/600, separately from
+        // the private20/-1/160 above. Back must preserve that timing too.
+        global.service(21, &mut |_, _| panic!("private timing leaked into global"));
+        let mut sends = 0;
+        global.service(61, &mut |_, _| sends += 1);
+        assert_eq!(sends, 1);
         service.restart_visit();
         assert_eq!(
             service.transport.as_ref().unwrap().retry_timing(),
             LOBBY_RETRY_TIMING
+        );
+        assert!(service.send(b"fresh visit", destination, true));
+        let mut sends = 0;
+        service
+            .transport
+            .as_mut()
+            .unwrap()
+            .global_mut()
+            .service(LOBBY_RETRY_TIMING.retry_delta + 1, &mut |_, _| sends += 1);
+        assert_eq!(sends, 1);
+    }
+
+    #[test]
+    fn lan_start_timing_reads_primary_global_history_not_the_private_maximum() {
+        use crate::net::reliable::Delivery;
+
+        let mut service = service();
+        let transport = service.transport.as_mut().unwrap();
+        let local = transport.primary_addr().unwrap();
+        let remote = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 30123);
+        let connections = transport.connections_mut();
+        connections.add_peer(7, remote).unwrap();
+        assert!(connections.send_to(7, b"prior private traffic", Delivery::Reliable));
+        let mut sent = Vec::new();
+        connections.service(31, &mut |_, bytes| sent.push(bytes.to_vec()));
+        assert_eq!(sent.len(), 1);
+
+        let mut peer = LanConnections::new(LanConnectionConfig::default(), LOBBY_RETRY_TIMING);
+        peer.add_peer(0, local).unwrap();
+        let mut acks = Vec::new();
+        peer.receive(local, &sent[0], &mut |_, bytes| acks.push(bytes.to_vec()))
+            .unwrap();
+        connections
+            .receive(remote, &acks[0], &mut |_, _| {})
+            .unwrap();
+        connections.service(131, &mut |_, _| {});
+        assert_eq!(connections.mean_response_time(7), Some(100));
+        assert_eq!(transport.global().mean_response_time(), 0);
+        assert_eq!(transport.response_time(), 100);
+
+        // The native GO callers use5424C0, not the aggregate542450 getter
+        // used by Wait_For_Players. A slower private channel is irrelevant.
+        service.apply_start_timing(true, false);
+        assert_eq!(
+            service.transport.as_ref().unwrap().retry_timing(),
+            RetryTiming {
+                retry_delta: 30,
+                max_retries: u32::MAX,
+                timeout: 600,
+            }
+        );
+        service.apply_start_timing(false, true);
+        assert_eq!(
+            service.transport.as_ref().unwrap().retry_timing(),
+            RetryTiming {
+                retry_delta: 20,
+                max_retries: u32::MAX,
+                timeout: 160,
+            }
         );
     }
 
@@ -2095,7 +2175,7 @@ fn advance_go(state: &mut AppState, now: u32, service_ok: bool) {
         return;
     };
     let queued = transport.global().queued_send_count();
-    let response = transport.response_time();
+    let response = transport.global().mean_response_time();
     if !super::shell_network_setup::observe_lan_go_transport(state, now, queued, service_ok) {
         return;
     }

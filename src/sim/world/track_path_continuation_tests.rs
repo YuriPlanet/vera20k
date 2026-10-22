@@ -1239,6 +1239,7 @@ fn null_destination_mid_track_stops_the_tank_at_its_track_end() {
                     id,
                     attacker,
                     &rules,
+                    Some(&registry),
                     crate::sim::world::FrameEffects::default()
                 ));
                 assert_eq!(
@@ -1343,6 +1344,7 @@ fn restore_mid_track_heads_for_the_restored_order_at_the_track_end() {
         id,
         attacker,
         &rules,
+        Some(&registry),
         crate::sim::world::FrameEffects::default()
     ));
     sim.session.set_binary_frame_for_test(frame);

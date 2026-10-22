@@ -1407,6 +1407,49 @@ impl ProcessedRulesLayers {
             })
     }
 
+    pub(crate) fn emp_type_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            Option<&crate::rules::ares_emp::EmpTypeRules>,
+        ),
+    > {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        member.emp_type.as_ref(),
+                    )
+                })
+            })
+    }
+    pub(crate) fn emp_warhead_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, Option<&crate::rules::ares_emp::EmpWarheadRules>)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Warhead)
+            .into_iter()
+            .flatten()
+            .map(|member| {
+                (
+                    member.native_stored_id.as_str(),
+                    member.emp_warhead.as_ref(),
+                )
+            })
+    }
+
     pub(crate) fn object_armor_states(
         &self,
     ) -> impl Iterator<Item = (Option<ObjectCategory>, &str, ArmorId)> {
@@ -2062,6 +2105,9 @@ impl CountryVeterancyState {
 pub(crate) struct AresGlobalControls {
     phase: i32,
     allow_bypass_build_limit: [bool; 3],
+    // RulesExt+160/+164: constructor zero/unset; retained by the global
+    // Rules owner, independently of per-Type reset.
+    emp_ai_recover_mission: Option<crate::rules::mission_data::MissionType>,
 }
 
 #[cfg(feature = "ares")]
@@ -2071,6 +2117,23 @@ impl AresGlobalControls {
             .get(difficulty_index)
             .copied()
             .unwrap_or(false)
+    }
+
+    pub(crate) fn emp_ai_recover_mission(&self) -> Option<crate::rules::mission_data::MissionType> {
+        self.emp_ai_recover_mission
+    }
+
+    /// Installed679A15 ->1002C9C0/1002B356 ->1002AB60/1002AECF.
+    /// Unlike the Process-entry controls above, this unconditional reader
+    /// runs immediately before Type data. The native named lookup is5B3910.
+    fn read_before_type_data(&mut self, pass: &IniFile) {
+        if let Some(mission) = pass
+            .section("CombatDamage")
+            .and_then(|section| section.read_name("EMPAIRecoverMission", 2048))
+            .and_then(crate::rules::mission_data::MissionType::from_map_name)
+        {
+            self.emp_ai_recover_mission = Some(mission);
+        }
     }
 
     fn read_pass(&mut self, pass: &IniFile) {
@@ -2917,6 +2980,8 @@ struct ProcessedType {
     warhead_verses: [NativeF64Bits; 11],
     /// Independent Ares10051D80 constructor/10006460 read vector.
     ares_verses: Option<AresWarheadVerses>,
+    emp_warhead: Option<crate::rules::ares_emp::EmpWarheadRules>,
+    emp_type: Option<crate::rules::ares_emp::EmpTypeRules>,
     /// ObjectType4753F0 -> Ares10006E10 binds at each reached body read.
     armor_id: ArmorId,
     /// ParticleSystemType+294, the bound ParticleType's index: constructor -1
@@ -2964,6 +3029,14 @@ pub(crate) struct TechnoTypeReferences {
     /// over a copy of the retained text, which starts as the type's ID. It
     /// names the type's fixed ART section and its asset.
     image: String,
+    /// Last nonempty fixed ART Palette request bound by717820. Constructor
+    /// store711680 clears DF0;71582B reads DD0 with empty default/capacity32.
+    ///717820..71783E keeps DF0 on an empty read, and otherwise replaces it
+    /// with6263D0's answer. Asset resolution, not this request, proves load
+    /// success (627590 returns null for a missing file). See
+    /// tools/rules_oracle/techno_palette_binding.md.
+    #[serde(default)]
+    palette_binding: Option<String>,
     /// `DeathWeapon=` (+D18): TechnoType ReadINI `0x007122D8..0x00712311`
     /// over the constructor's null (`0x007114AE`).
     death_weapon: Option<String>,
@@ -3020,6 +3093,7 @@ impl TechnoTypeReferences {
     fn new(native_stored_id: &str) -> Self {
         Self {
             image: native_stored_id.to_owned(),
+            palette_binding: None,
             death_weapon: None,
             debris_types: Vec::new(),
             debris_anims: Vec::new(),
@@ -3049,6 +3123,7 @@ impl TechnoTypeReferences {
     /// stored IDs.
     pub(crate) fn apply_to(&self, object: &mut crate::rules::object_type::ObjectType) {
         object.image.clone_from(&self.image);
+        object.project_custom_palette(self.palette_binding.as_deref());
         object.death_weapon.clone_from(&self.death_weapon);
         object.debris_types.clone_from(&self.debris_types);
         object.debris_anims.clone_from(&self.debris_anims);
@@ -3301,6 +3376,8 @@ impl ProcessedType {
             warhead_anim: WarheadAnimReadState::default(),
             warhead_verses: [NativeF64Bits::ONE; 11],
             ares_verses: None,
+            emp_warhead: None,
+            emp_type: None,
             armor_id: ArmorId::NONE,
             holds_what: None,
             super_weapon_weapon: None,
@@ -3477,6 +3554,8 @@ impl RulesPassProcessor {
         self.allocate_ai_references(pass);
         self.read_prerequisite_lists(pass);
         self.allocate_general_references(pass);
+        #[cfg(feature = "ares")]
+        self.ares_global_controls.read_before_type_data(pass);
         self.process_type_data(pass, fixed_art, fixed_eva, primary_rules);
 
         // ReadDifficulty66D270 skips an absent section. Once present, each
@@ -3700,8 +3779,13 @@ impl RulesPassProcessor {
         }
         if crate::rules::ARES_ENABLED && family == RulesTypeFamily::Warhead {
             members[index].ares_verses = Some(AresWarheadVerses::default());
+            members[index].emp_warhead = Some(Default::default());
         }
         if family.object_category().is_some() {
+            #[cfg(feature = "ares")]
+            {
+                members[index].emp_type = Some(Default::default());
+            }
             #[cfg(feature = "ares")]
             {
                 members[index].factory_owners = Some(AresFactoryOwners::default());
@@ -3786,6 +3870,28 @@ impl RulesPassProcessor {
                     .map(|index| self.families[&family][index].native_stored_id.clone())
                     .collect()
             })
+    }
+
+    /// Installed Ares Anim pointer Parser1000C9C0/Find1000D3E0: look up
+    /// only registered AnimTypes. A successful none clears; unknown retains.
+    #[cfg(feature = "ares")]
+    fn resolve_existing_anim_from(
+        &self,
+        section: &IniSection,
+        key: &str,
+    ) -> Option<Option<String>> {
+        let name = section.read_name(key, 2048)?;
+        if is_native_none_type_name(name) {
+            return Some(None);
+        }
+        let members = self.families.get(&RulesTypeFamily::Animation)?;
+        let index = ares_type_index_of_name(
+            name,
+            members
+                .iter()
+                .map(|member| member.native_stored_id.as_str()),
+        )?;
+        Some(Some(members[index].native_stored_id.clone()))
     }
 
     /// Shared Ares pointer-vector reader: Building specialization10010850 uses
@@ -4769,6 +4875,16 @@ impl RulesPassProcessor {
                 let references = &mut self.family_mut(family)[index].techno_references;
                 let image = raw.read_string("Image", &references.image, 0x19);
                 references.image.clone_from(&image);
+                // ReadINI712170 reaches715852 on every admitted Rules layer,
+                // after ObjectType's Image read. Empty/missing Palette keeps
+                // the previous binding even when this pass changes Image.
+                // A missing Rules [Type] never reaches this block (712194).
+                if let Some(name) = fixed_art
+                    .section_or_empty(&image)
+                    .read_name("Palette", 0x20)
+                {
+                    references.palette_binding = Some(name.to_ascii_lowercase());
+                }
                 let member = &mut self.families.get_mut(&family).unwrap()[index];
                 member.voxel_shadow_index = fixed_art
                     .section_or_empty(&image)
@@ -4777,6 +4893,16 @@ impl RulesPassProcessor {
                 // reach the common TechnoType extension before subclass reads.
                 #[cfg(feature = "ares")]
                 self.process_factory_owners(family, index, &raw);
+                #[cfg(feature = "ares")]
+                {
+                    // Find only: this nullable Anim reader never allocates.
+                    let sparkle = self.resolve_existing_anim_from(&raw, "EMP.Sparkles");
+                    self.family_mut(family)[index]
+                        .emp_type
+                        .as_mut()
+                        .expect("TechnoType EMP extension")
+                        .read_pass(&raw, sparkle);
+                }
                 match family {
                     RulesTypeFamily::Building => {
                         let member = &mut self.families.get_mut(&family).unwrap()[index];
@@ -5378,11 +5504,21 @@ impl RulesPassProcessor {
             }
             #[cfg(feature = "ares")]
             {
+                let sparkle = pass
+                    .section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
+                    .and_then(|raw| self.resolve_existing_anim_from(raw, "EMP.Sparkles"));
                 let member = &mut self
                     .families
                     .get_mut(&RulesTypeFamily::Warhead)
                     .expect("Warhead family exists during its reader")[index];
                 let section = pass.section(&member.native_stored_id);
+                if let Some(section) = section {
+                    member
+                        .emp_warhead
+                        .as_mut()
+                        .expect("WH EMP extension")
+                        .read_pass(section, sparkle);
+                }
                 member
                     .ares_verses
                     .as_mut()

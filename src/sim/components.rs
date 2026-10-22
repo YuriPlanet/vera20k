@@ -43,9 +43,10 @@ pub use crate::sim::building_construction::BuildingUp;
 /// and snapshot restore rejects an ID that two registries claim), so the ID
 /// alone says which store holds the object and what kind it is.
 ///
-/// A Cell compares by its coordinates, not as the native Dummy cell pointer
-/// (`0x00ABDC50`) that stands for any cell the map lacks: see the residuals
-/// in `sim::aircraft::leave_map` and `Per_Cell_Process` (`movement::per_cell`).
+/// Derived coordinate equality compares cells by coordinates. Consumers that
+/// require native allocation identity (including Aircraft AI's dummy clear)
+/// use `TargetKind::cell_identity` after conversion; see the remaining
+/// `Per_Cell_Process` residual in `movement::per_cell`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum NavTargetRef {
     /// A `CellClass*`, by its cell.

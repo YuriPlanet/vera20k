@@ -4330,6 +4330,9 @@ impl Simulation {
     /// VERA-only: feeds the expiry-listener index (`ExpiryListeners`) so the
     /// `0x007258D0` broadcast skips entities; the listener's fields are the truth.
     pub(super) fn entity_expiry_holds(listener: &GameEntity, mut name: impl FnMut(u64)) -> bool {
+        if let Some(anim) = listener.emp_sparkle() {
+            name(anim);
+        }
         for target in [
             listener.attack_target.target(),
             listener.suspended_attack_target.target(),
@@ -5181,7 +5184,7 @@ impl Simulation {
     /// Anim4's dedicated holder announcement725A16..725A4C, before Anim
     /// conceal/removal (UnInit42561F, destructor422906). It does not enter
     /// the generic Object/bomb/factory/team broadcast. This dispatches the
-    /// Bullet and Parasite-holder subsets; Building receivers stay at their existing boundaries,
+    /// Bullet, Parasite and Ares EMP-holder subsets; Building receivers stay at their existing boundaries,
     /// including their distinct ordinary-UnInit versus scalar slot handling.
     pub(crate) fn notify_anim_pointer_expired(&mut self, expired_id: u64) {
         if !self.substrate.anims.contains_key(expired_id) {
@@ -5191,6 +5194,9 @@ impl Simulation {
             .expiry_listeners
             .entities_reached_by(&mut self.substrate.entities, expired_id);
         for owner in holders {
+            if let Some(entity) = self.substrate.entities.get_mut(owner) {
+                entity.emp_anim_pointer_expired(expired_id);
+            }
             self.substrate
                 .parasite_anim_pointer_expired(owner, expired_id);
         }

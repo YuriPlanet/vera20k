@@ -30,7 +30,7 @@
 //!
 //! RESIDUALS
 //! - A newly allied Building still opens one bracket earlier than native's
-//!   shared250 latch permits (#2415); see shroud_refresh::walk_alliance_sight.
+//!   shared250 latch permits (#2415); see shroud_refresh::walk_map_sight.
 //! - Only the session's current House has the native Human41B history.
 //!   Additional multiplayer clients' independent discovery is unrepresented.
 //! - Native's ReReveal on an ex-ally's mobile leaves this map's counters

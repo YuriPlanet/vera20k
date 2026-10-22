@@ -107,6 +107,15 @@ To launch single-player YR skirmishes or campaigns from a CnCNet client, see the
 
 Help is welcome. You can write code, refactor the engine, test the game, share ideas, or play
 it next to the original and tell us what feels wrong. Open a PR and we'll take it from there.
+
+Keep PRs small:
+
+- One fix per PR, with the native function name and address cited next to the code.
+- One to three regression tests that fail without the fix. No parameter sweeps.
+- No native-execution corpora or harnesses. If you think one is needed (numeric math, RNG
+  order), ask first; at most about 20 cases and 100 KB.
+- A PR description of about 15 lines: what changed, why, how you tested it.
+
 Discussion is on [Discord](https://discord.gg/kmjRUn5m5F) and in the QQ group (1097193563).
 
 ## Support

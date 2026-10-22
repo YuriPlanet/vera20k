@@ -530,6 +530,12 @@ impl RuntimeDefinitions {
 // Original jump-table bytes71F700/71F744/71F780/71F7C0 and6E3F08.
 // These are classification only, never substitutes for event predicates.
 fn event_classification(kind: i32) -> u8 {
+    // Ares3.0 GetFlags1004F6A0: EMP62..65 are attached-object events;
+    // Persistable1004F610 returns false for every one of them.
+    #[cfg(feature = "ares")]
+    if matches!(kind, 62..=65) {
+        return 2;
+    }
     let mut flags = 0;
     if matches!(kind, 0 | 1 | 4 | 8 | 24 | 25 | 26 | 31 | 53 | 54 | 59) {
         flags |= 1;
@@ -1483,6 +1489,29 @@ impl Simulation {
             .condition
             .clone();
         match condition.kind {
+            #[cfg(feature = "ares")]
+            62..=65 => {
+                // Installed HasOccurred71E949 ->100503E0/1004F7DC..870.
+                // The actor is the affected Techno. House-specific63/65
+                // compare the source's raw House+30, without Country/MP
+                // lookup; no mutable persistence or shared House is written.
+                if input.kind != condition.kind {
+                    return false;
+                }
+                let Some(actor) = input.actor.and_then(|id| self.substrate.entities.get(id)) else {
+                    return false;
+                };
+                if matches!(condition.kind, 63 | 65)
+                    && !input
+                        .source
+                        .and_then(|id| self.substrate.entities.get(id))
+                        .and_then(|source| self.base_reservation_house_index(source.owner()))
+                        .is_some_and(|index| index == condition.value)
+                {
+                    return false;
+                }
+                (actor.emp_remaining() > 0) == matches!(condition.kind, 62 | 63)
+            }
             53 => {
                 // HasOccurred71ECF5..71ED56, original gamemd: raised53
                 // and clear A8ED6B admit a forced GetDisplayOwner(+D0,1).
@@ -2139,6 +2168,75 @@ impl Simulation {
         true
     }
 
+    /// FootAI4DA7B0..4DA80C, after high-flight sight and before Process.
+    /// Every signed frame divisible by16 raises CellTag59 for a +54 high
+    /// flyer, including stationary actors hostile to the local viewer.
+    /// Original Unit/Infantry/Aircraft +1B8=41BEA0 and +1BC=5F6960 use
+    /// physical Location, independently of the locomotor navigation head.
+    /// Source: original retail gamemd instructions and actual class tables;
+    /// shared query comparisons: spatial_oracle/object_get_cell and
+    /// object_flight_height; caller/getter and live Tag histories:
+    /// spatial_oracle/tag_lifecycle.py --periodic-cell-events.
+    /// No own RNG, timer or detach operation.
+    pub(crate) fn dispatch_airborne_cell_tag_event(
+        &mut self,
+        actor: u64,
+        context: crate::sim::world::UninitContext<'_>,
+    ) {
+        if self.session.binary_frame() & 15 != 0 {
+            return;
+        }
+        let (tag, cell) = {
+            let Some(entity) = self.substrate.entities.get(actor) else {
+                return;
+            };
+            if !entity.category().is_foot() {
+                return;
+            }
+            let Some(terrain) = context.terrain().or(self.resolved_terrain.as_ref()) else {
+                return;
+            };
+            let cells = NativeCellQuery::canonical(terrain);
+            if !crate::sim::movement::air_movement::is_high_flying_in_query(
+                entity,
+                &cells,
+                Some((context.rules(), &self.interner)),
+            ) {
+                return;
+            }
+            let physical =
+                || crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+            //4DA7D2 tests the first Cell's Tag;4DA7F8 obtains the receiver
+            //again after41BEA0 packs Location XY. Each5F6960 preserves both
+            //Map565730 lookups and the canonical Dummy's retained fields.
+            let first = crate::sim::movement::ground_pose::query_object_cell(&cells, physical());
+            if !self.trigger_runtime.cell_tags.contains_key(&first) {
+                return;
+            }
+            let cell = crate::sim::movement::coord_cell(physical());
+            let second = crate::sim::movement::ground_pose::query_object_cell(&cells, physical());
+            let Some(&tag) = self.trigger_runtime.cell_tags.get(&second) else {
+                return;
+            };
+            (tag, cell)
+        };
+        let mut effects = Vec::new();
+        self.dispatch_live_tag_event(
+            tag,
+            TagEventInput {
+                kind: 59,
+                actor: Some(actor),
+                cell,
+                ..Default::default()
+            },
+            &mut effects,
+            context.rules(),
+            context.registry(),
+            context.effects(),
+        );
+        self.publish_trigger_effects(effects);
+    }
+
     /// Bridge575EE0's per-cell ingress: each visited CellClass whose +3C Tag
     /// is nonnull calls Tag6E53A0(31, null actor, Cell ABD480, unforced,
     /// null source). ABD480 is the zero Cell (startup5618B0). The raise is
@@ -2349,9 +2447,93 @@ impl Simulation {
                 );
             }
         }
+        // Foot4D8B66..4D8CA5 scans the live Map tag vector with the shared
+        // A83DBC cursor. Actions may detach a tag, destroy one (adjusting this
+        // cursor), or enter another cell synchronously. Neither a snapshot of
+        // the vector nor a local index preserves those callbacks' behavior.
+        self.trigger_runtime.map_cursor = 0;
+        while let Some(&tag) = self
+            .trigger_runtime
+            .map_tags
+            .get(self.trigger_runtime.map_cursor as usize)
+        {
+            let attached = self.trigger_runtime.tag(tag).and_then(|live| {
+                self.trigger_runtime
+                    .definitions
+                    .has_event(live.type_index, 24)
+                    .then_some(live.attached_cell)
+            });
+            if let Some(attached) = attached {
+                let reachable = (|| {
+                    //4D8BAA copies vt+4C's Head_To coordinate before +BC
+                    //obtains its own coordinate/layer. A paid head is not
+                    //the object's physical Location.
+                    let destination = crate::sim::movement::coord_cell(
+                        self.foot_navigation_coordinate(actor).ok()?,
+                    );
+                    let entity = self.substrate.entities.get(actor)?;
+                    let current =
+                        crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+                    let in_tube = entity.low_bridge_tube_state.is_some();
+                    let head = if in_tube {
+                        current
+                    } else {
+                        self.foot_navigation_coordinate(actor).ok()?
+                    };
+                    let terrain = context.terrain().or(self.resolved_terrain.as_ref())?;
+                    let cells = NativeCellQuery::canonical(terrain);
+                    let destination_bridge =
+                        crate::sim::movement::ground_pose::navigation_should_be_on_bridge(
+                            &cells,
+                            head,
+                            current,
+                            entity.on_bridge(),
+                            in_tube,
+                        )
+                        .ok()?;
+                    //4D8BF4..4D8C39: the Tag's cell is the SOURCE, with its
+                    //raw structural bridge bit. Map56D100's fringe shortcuts
+                    //are asymmetric; do not reverse these endpoints.
+                    let source_bridge = cells.flags(cells.lookup(attached)) & 0x100 != 0;
+                    let movement_zone = self.object_type(entity.type_ref(), rules)?.movement_zone;
+                    self.zone_grid.as_ref()?.can_reach_native(
+                        &cells,
+                        crate::sim::pathfinding::zone_map::ZoneQueryCell::Copied(attached),
+                        crate::sim::pathfinding::zone_map::ZoneQueryCell::Copied(destination),
+                        movement_zone,
+                        source_bridge,
+                        destination_bridge,
+                        false,
+                        self.playfield_bounds()?,
+                        self.map_size_diamond()?,
+                    )
+                })();
+                if reachable == Some(true) {
+                    //4D8C4D re-reads vt+4C for the event payload. Do not
+                    //add an Alive gate: earlier callbacks may have changed a
+                    //retained actor. Stop only when its storage is gone.
+                    let Ok(coordinate) = self.foot_navigation_coordinate(actor) else {
+                        break;
+                    };
+                    self.dispatch_live_tag_event(
+                        tag,
+                        TagEventInput {
+                            kind: 24,
+                            actor: Some(actor),
+                            cell: crate::sim::movement::coord_cell(coordinate),
+                            ..Default::default()
+                        },
+                        &mut effects,
+                        rules,
+                        context.registry(),
+                        context.effects(),
+                    );
+                }
+            }
+            self.trigger_runtime.map_cursor = self.trigger_runtime.map_cursor.wrapping_add(1);
+        }
         self.publish_trigger_effects(effects);
-        //The later Map24 zone scan and ordinary Fly ingress retain their
-        //existing residuals.
+        // Ordinary Fly ingress remains unproven.
     }
 
     fn trigger_action_context(
@@ -4756,6 +4938,10 @@ fn count_techtype(sim: &Simulation, type_id: &str) -> usize {
 mod tests;
 
 #[cfg(test)]
+#[path = "trigger_runtime_zone_entry_tests.rs"]
+mod zone_entry_tests;
+
+#[cfg(test)]
 #[path = "trigger_runtime_native_tests.rs"]
 mod native_tests;
 
@@ -4846,6 +5032,10 @@ mod movement_event_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_shroud_spy_tests.rs"]
 mod shroud_spy_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_periodic_cell_tests.rs"]
+mod periodic_cell_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_infantry_psycho_tests.rs"]

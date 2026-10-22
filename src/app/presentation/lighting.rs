@@ -190,7 +190,7 @@ pub(crate) fn anim_palette_light(
         PaletteLight::cell(grid, cell, false).with_brightness(brightness)
     } else if matches!(
         remap,
-        Some(AnimRemap::House(_) | AnimRemap::ExtraBuildingScheme(_))
+        Some(AnimRemap::House(_) | AnimRemap::ExtraBuildingScheme { .. })
     ) {
         // `0x004232A3..0x004232C9` selects the instance Convert and jumps to the
         // draw, so the `AltPalette` swap at `0x004232E2` never runs for it.

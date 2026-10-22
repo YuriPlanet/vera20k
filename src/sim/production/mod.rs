@@ -34,8 +34,8 @@ pub use self::factory::{
     PendingObject, STEP_RATE_MAX, STEP_RATE_MIN, StepOutcome, TimeToBuildInputs,
     category_for_object, time_to_build, type_base_build_time,
 };
+pub(crate) use self::factory_lifecycle::enqueue_selected;
 pub(crate) use self::factory_lifecycle::suspend_production;
-pub use self::production_spawn::mark_war_factory_spawn_contact;
 pub use self::factory_lifecycle::{
     FactoryRestoreError, ready_building_entity_for_owner, validate_restored_factory_state,
 };
@@ -73,6 +73,7 @@ pub(crate) use self::production_sell::{
     archive_less_sale, sell_after_owner_change, sell_complete, sell_stage_one, techno_refund,
     type_refund, undeploy_target,
 };
+pub use self::production_spawn::mark_war_factory_spawn_contact;
 pub use self::production_tech::{
     CameoDrawState, all_build_options_for_owner, cameo_draw_state, construction_options_for_owner,
     initial_construction_options,
@@ -133,3 +134,6 @@ mod lifecycle_tests;
 
 #[cfg(test)]
 mod manual_primary_tests;
+
+#[cfg(test)]
+mod native_event_tests;

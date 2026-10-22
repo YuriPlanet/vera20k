@@ -25,6 +25,7 @@ mod leave_map;
 mod leave_map_tests;
 pub(crate) mod move_mission;
 pub mod paradrop_mission;
+mod patrol_mission;
 mod retreat_mission;
 pub(crate) mod spyplane_mission;
 
@@ -189,7 +190,7 @@ pub(crate) fn restart_patrol_after_restore(entity: &mut GameEntity) {
 /// 29 for an aircraft: its type refuses to attack-move, so
 /// `Assign_Target_Command` answers Move.
 ///
-/// RESIDUAL: Patrol (`0x00417300`) and the Foot handlers of Capture
+/// RESIDUAL: the Foot handlers of Capture
 /// and Sabotage (`0x004D4B20`), Eaten (`0x004D4CB0`) and Rescue
 /// (`0x004DDF90`) are not run: the timer stays due and nothing happens.
 /// Trigger: a map or trigger giving an aircraft one of those missions; no
@@ -236,6 +237,7 @@ pub(crate) fn dispatch_mission(
         Some(MissionType::AreaGuard) => sim.aircraft_mission_area_guard(id, rules, ctx),
         Some(MissionType::Enter) => sim.aircraft_mission_enter(id, rules, registry, ctx.effects),
         Some(MissionType::Hunt) => sim.aircraft_mission_hunt(id, rules, ctx),
+        Some(MissionType::Patrol) => sim.aircraft_mission_patrol(id, rules, ctx),
         Some(MissionType::Retreat) => retreat_mission::retreat(sim, id, rules, ctx.effects),
         Some(MissionType::Unload) => {
             crate::sim::transport_unload::mission_unload(sim, id, rules, registry, ctx.effects)
@@ -253,8 +255,7 @@ pub(crate) fn dispatch_mission(
             spyplane_mission::overfly(sim, id, rules, ctx.effects)
         }
         Some(
-            MissionType::Patrol
-            | MissionType::Capture
+            MissionType::Capture
             | MissionType::Sabotage
             | MissionType::Eaten
             | MissionType::Rescue,

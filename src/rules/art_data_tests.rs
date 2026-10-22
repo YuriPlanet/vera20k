@@ -1158,23 +1158,21 @@ fn techno_palette_reads_the_named_section() {
     assert_eq!(reg.techno_palette("MISSING"), None);
 }
 
-/// `RuleSet::project_art_data` reads `Palette=` under the rules `Image=`
-/// (ImageFile `+0x1F8`), not the type ID, and keeps the one extra building
-/// palette name.
+/// A reached TechnoType reader binds the ART Palette under Rules Image,
+/// not under the type's own ID. ART installation only projects other visuals.
 #[test]
 fn custom_palette_projects_through_the_rules_image() {
-    let mut rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+    let ini = IniFile::from_str(
         "[BuildingTypes]\n0=STATUE\n1=COPY\n2=PLAIN\n\
          [STATUE]\nStrength=10\n[COPY]\nStrength=10\nImage=STATUE\n\
          [PLAIN]\nStrength=10\nImage=OWN\n",
-    ))
-    .expect("rules");
-    rules.install_art_fixture(ArtRegistry::from_ini(&IniFile::from_str(
-        "[STATUE]\nPalette=lib\n[PLAIN]\nPalette=other\n[OWN]\n",
-    )));
-    let custom = |id: &str| rules.object(id).unwrap().custom_palette;
-    assert!(custom("STATUE"));
-    assert!(custom("COPY"), "the rules Image= names the section");
-    assert!(!custom("PLAIN"), "the type ID's section is not read");
-    assert_eq!(rules.extra_building_palette(), Some("lib"));
+    );
+    let art = IniFile::from_str("[STATUE]\nPalette=lib\n[PLAIN]\nPalette=other\n[OWN]\n");
+    let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(&ini, &art)
+        .expect("rules");
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+    let custom = |id: &str| rules.object(id).unwrap().custom_palette_name();
+    assert_eq!(custom("STATUE"), Some("lib"));
+    assert_eq!(custom("COPY"), Some("lib"), "Rules Image names the section");
+    assert_eq!(custom("PLAIN"), None, "the type ID's section is not read");
 }

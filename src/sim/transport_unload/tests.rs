@@ -867,6 +867,282 @@ fn hover_transport_on_water_is_sent_to_a_raised_bank() {
     );
 }
 
+/// Original73D7B5 ->741970 ->514D90 controls: failed FNPC still passes
+/// Map(0,0), and the Unload setter's west-cell lookup may restamp that same
+/// Dummy before Foot reads its +4C. These states start stopped with no path.
+#[test]
+fn hover_unload_failed_shore_search_assigns_the_retained_fallback_cell() {
+    use crate::sim::components::{DriveCoord, NavTargetRef};
+    use crate::sim::world::FrameEffects;
+
+    let native = crate::test_fixture::json("tools/spatial_oracle/unit_unload_shore.json");
+    let coord = |value: &serde_json::Value| DriveCoord {
+        x: value[0].as_i64().unwrap() as i32,
+        y: value[1].as_i64().unwrap() as i32,
+        z: value[2].as_i64().unwrap() as i32,
+    };
+    for row in native.as_array().unwrap() {
+        let input = &row["input"];
+        let expected = &row["output"];
+        let missing_zero = input["missing_zero"].as_bool().unwrap();
+        let missing_west = input["missing_west"].as_bool().unwrap();
+        let mut fx = Fixture::new(|_, _| true);
+        let lcrf = fx.spawn("LCRF", 10, 10, 0x40);
+        let passengers = fx.board(lcrf, 2);
+        let allocated: Vec<_> = (0..MAP)
+            .flat_map(|y| (0..MAP).map(move |x| (x, y)))
+            .filter(|&cell| !(missing_zero && cell == (0, 0) || missing_west && cell == (9, 10)))
+            .collect();
+        fx.sim
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .test_set_native_allocated_cells(&allocated);
+        let frame = fx.frame();
+        let entity = fx.sim.substrate.entities.get_mut(lcrf).unwrap();
+        entity
+            .mission
+            .set_current_for_test(MissionId::from_known(MissionType::Unload), frame);
+        entity
+            .position
+            .set_exact_z_leptons_for_test(Some(input["height"].as_i64().unwrap() as i32));
+        let rng = serde_json::to_value(&fx.sim.scenario_rng).unwrap();
+        assert_eq!(
+            super::unit_mission_unload(&mut fx.sim, &fx.rules, lcrf, None, FrameEffects::default(),),
+            expected["delay"].as_i64().unwrap() as i32
+        );
+        let entity = fx.sim.substrate.entities.get(lcrf).unwrap();
+        assert_eq!(entity.navigation.nav_com(), Some(NavTargetRef::cell(0, 0)));
+        let hover = entity.locomotor.as_ref().unwrap().hover_runtime().unwrap();
+        assert_eq!(
+            serde_json::to_value(hover).unwrap()["destination"],
+            serde_json::to_value(coord(&expected["destination"])).unwrap()
+        );
+        assert_eq!(hover.head(), None);
+        assert!(
+            entity
+                .navigation
+                .path_replay()
+                .remaining_directions()
+                .is_empty()
+        );
+        assert_eq!(
+            entity
+                .navigation
+                .path_runtime()
+                .movement_timer()
+                .start_frame(),
+            frame as i32
+        );
+        assert_eq!(
+            entity.navigation.path_runtime().movement_timer().duration(),
+            expected["movement_timer"][1].as_i64().unwrap() as i32
+        );
+        assert_eq!(
+            entity.mission.handler_state(),
+            expected["handler_state"].as_u64().unwrap() as u32
+        );
+        assert_eq!(
+            fx.cargo_ids(lcrf),
+            passengers.iter().copied().rev().collect::<Vec<_>>()
+        );
+        assert!(passengers.iter().all(|&id| !fx.revealed(id)));
+        assert_eq!(serde_json::to_value(&fx.sim.scenario_rng).unwrap(), rng);
+
+        // Later missing lookups change only a retained Dummy's virtual coord;
+        // the already-copied Hover destination stays where MoveTo put it.
+        let terrain = fx.sim.resolved_terrain.as_ref().unwrap();
+        terrain.native_cell_identity((40, 41));
+        assert_eq!(
+            crate::sim::movement::nav_target_coordinate(
+                NavTargetRef::cell(0, 0),
+                Some(lcrf),
+                &fx.sim,
+                Some(terrain),
+                Some((&fx.rules, &fx.sim.interner)),
+            )
+            .unwrap(),
+            coord(&expected["later_coordinate"])
+        );
+        assert_eq!(
+            serde_json::to_value(
+                fx.sim
+                    .substrate
+                    .entities
+                    .get(lcrf)
+                    .unwrap()
+                    .locomotor
+                    .as_ref()
+                    .unwrap()
+                    .hover_runtime()
+                    .unwrap()
+            )
+            .unwrap()["destination"],
+            serde_json::to_value(coord(&expected["destination_after_later_lookup"])).unwrap()
+        );
+    }
+}
+
+#[test]
+fn retail_hover_transport_fallback_assignment_survives_save_and_continues() {
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::world::FrameEffects;
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    for kind in ["LCRF", "SAPC", "YHVR"] {
+        let mut fx = Fixture::new(|_, _| true);
+        fx.rules = retail.rules.clone();
+        let carrier = fx.spawn(kind, 20, 20, 0);
+        let passengers = fx.board(carrier, 2);
+        let allocated: Vec<_> = (0..MAP)
+            .flat_map(|y| (0..MAP).map(move |x| (x, y)))
+            .filter(|&cell| cell != (0, 0))
+            .collect();
+        fx.sim
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .test_set_native_allocated_cells(&allocated);
+        assert!(fx.apply(Command::UnloadPassengers {
+            transport_id: carrier
+        }));
+        // Observe an ordinary Unload frame first. Hover's same-frame path
+        // precheck rejects destination cell(0,0), clearing this assignment.
+        for _ in 0..120 {
+            let result = fx
+                .sim
+                .advance_tick(&[], Some(&fx.rules), Some(&fx.grid), None, 66);
+            assert!(result.frame_committed, "{kind}: {result:?}");
+            if fx
+                .sim
+                .substrate
+                .entities
+                .get(carrier)
+                .unwrap()
+                .mission
+                .current()
+                == MissionId::from_known(MissionType::Unload)
+            {
+                break;
+            }
+        }
+        let entity = fx.sim.substrate.entities.get(carrier).unwrap();
+        assert_eq!(
+            entity.mission.current(),
+            MissionId::from_known(MissionType::Unload)
+        );
+        assert_eq!(entity.navigation.nav_com(), None, "{kind}: completed frame");
+        assert_eq!(entity.mission.handler_state(), super::STATE_PICK_EXIT);
+        assert!(passengers.iter().all(|&id| !fx.revealed(id)));
+        // Supply the next handler dispatch boundary explicitly to save the
+        // nonnull handoff BEFORE Hover Process consumes it. This is not an
+        // assertion that the target survives a completed ordinary frame.
+        assert_eq!(
+            super::unit_mission_unload(
+                &mut fx.sim,
+                &fx.rules,
+                carrier,
+                None,
+                FrameEffects::default()
+            ),
+            10
+        );
+        assert_eq!(
+            fx.sim
+                .substrate
+                .entities
+                .get(carrier)
+                .unwrap()
+                .navigation
+                .nav_com(),
+            Some(NavTargetRef::cell(0, 0)),
+            "{kind}: handler handoff"
+        );
+        let bytes = crate::sim::snapshot::GameSnapshot::save_validated(&fx.sim, 17, 23, "shore", 0);
+        let mut restored = crate::sim::snapshot::GameSnapshot::load_validated(&bytes, 17, 23, "")
+            .unwrap()
+            .sim;
+        restored
+            .retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&fx.sim));
+        restored.resolved_terrain = fx.sim.resolved_terrain.clone();
+        restored.restore_after_snapshot_load().unwrap();
+        restored.rebuild_caches_after_load(
+            fx.sim.resolved_terrain.as_ref().unwrap().clone(),
+            fx.sim.terrain_speed_config().clone(),
+            &fx.rules,
+        );
+        assert!(restored.rebuild_dynamic_navigation(&fx.rules));
+        // Two continuation controls need independent mutable Dummy cells;
+        // cloning terrain and retaining Live process state alone aliases it.
+        let control_dummy = fx.sim.effective_shared_cell_dummy();
+        restored.bind_shared_cell_dummy(control_dummy.fork_query_identity());
+        assert!(
+            !restored
+                .effective_shared_cell_dummy()
+                .same_identity(&control_dummy)
+        );
+        fx.sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        for id in fx.sim.substrate.entities.keys_sorted() {
+            fx.sim.substrate.restore_move_sound_state_after_load(id);
+        }
+        assert_eq!(
+            restored.state_hash(),
+            fx.sim.state_hash(),
+            "{kind}: restored assignment"
+        );
+        for sim in [&mut fx.sim, &mut restored] {
+            sim.resolved_terrain
+                .as_ref()
+                .unwrap()
+                .native_cell_identity((40, 41));
+            assert_eq!(
+                crate::sim::movement::nav_target_coordinate(
+                    NavTargetRef::cell(0, 0),
+                    Some(carrier),
+                    sim,
+                    sim.resolved_terrain.as_ref(),
+                    Some((&fx.rules, &sim.interner))
+                )
+                .unwrap()
+                .x,
+                40 * 256 + 128
+            );
+            // The current handler waits on the existing Hover destination;
+            // it does not search again or drop cargo into the water.
+            assert_eq!(
+                super::unit_mission_unload(sim, &fx.rules, carrier, None, FrameEffects::default()),
+                10
+            );
+        }
+        for _ in 0..8 {
+            for sim in [&mut fx.sim, &mut restored] {
+                let result = sim.advance_tick(&[], Some(&fx.rules), Some(&fx.grid), None, 66);
+                assert!(result.frame_committed, "{kind}: {result:?}");
+            }
+            assert_eq!(
+                restored.state_hash(),
+                fx.sim.state_hash(),
+                "{kind}: continued fallback"
+            );
+        }
+        assert!(passengers.iter().all(|&id| !fx.revealed(id)));
+        assert_eq!(
+            fx.sim
+                .substrate
+                .entities
+                .get(carrier)
+                .unwrap()
+                .navigation
+                .nav_com(),
+            None,
+            "{kind}: Hover rejected cell(0,0) on continuation"
+        );
+    }
+}
+
 /// A Move order re-assigns the mission and interrupts the unload.
 #[test]
 fn move_order_cancels_a_running_unload() {

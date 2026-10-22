@@ -1294,6 +1294,7 @@ pub struct ObjectType {
     pub immune: bool,
     /// Nullifies damage from an exact same-type, same-owner source object.
     pub type_immune: bool,
+    emp: Option<crate::rules::ares_emp::EmpTypeRules>,
     /// Psychedelic/mind-control immunity. Buildings default true natively.
     pub immune_to_psionics: bool,
     /// `Warpable=` (`TechnoTypeClass+0xD3A`, ReadINI `0x00714F65..0x00714F79`;
@@ -1907,13 +1908,11 @@ pub struct ObjectType {
     /// Gates the Behind indicator (`TechnoClass::AI_Update @ 0x006FA2A2`).
     pub can_be_hidden: bool,
 
-    /// Whether the type draws from the scenario's extra building palette
-    /// ([`RuleSet::extra_building_palette`](crate::rules::ruleset::RuleSet::extra_building_palette)):
-    /// art `Palette=` named one, so ReadINI (`0x00715852`, `0x00717820`)
-    /// pointed `+0xDF0` at its generated colour schemes. Set by
-    /// `RuleSet::project_art_data` from
-    /// [`ArtRegistry::techno_palette`](crate::rules::art_data::ArtRegistry::techno_palette).
-    pub custom_palette: bool,
+    /// Last nonempty Palette request from the reached TechnoType ReadINI
+    /// passes. This is binding metadata, not proof that its asset loaded:
+    /// native717820 stores null if6263D0 cannot load the named group.
+    /// The registered type's Image/reference owner supplies this projection.
+    custom_palette: Option<String>,
 
     /// `RevealToAll=` (TechnoType `+0x5EE`): constructor `0x00710FFC` writes
     /// false; ReadINI (`0x00714382..0x00714396`) reads it with ReadBool
@@ -2118,6 +2117,13 @@ fn native_minutes_to_ticks(value: f64) -> u32 {
 }
 
 impl ObjectType {
+    pub(crate) fn emp_rules(&self) -> Option<&crate::rules::ares_emp::EmpTypeRules> {
+        self.emp.as_ref()
+    }
+    pub(crate) fn bind_emp_rules(&mut self, rules: Option<&crate::rules::ares_emp::EmpTypeRules>) {
+        self.emp = rules.cloned();
+    }
+
     /// Retained TechnoType+C9E; building crew admission reads this input
     /// separately from the constructed Infantry's survivor marker.
     pub const fn nominal(&self) -> bool {
@@ -2221,6 +2227,16 @@ impl ObjectType {
         {
             false
         }
+    }
+
+    /// Retained custom palette request; the asset loader remains responsible
+    /// for resolving it. Empty ART Palette reads retain this name (717820).
+    pub fn custom_palette_name(&self) -> Option<&str> {
+        self.custom_palette.as_deref()
+    }
+
+    pub(crate) fn project_custom_palette(&mut self, name: Option<&str>) {
+        self.custom_palette = name.map(str::to_owned);
     }
 
     #[cfg(feature = "ares")]
@@ -3258,6 +3274,7 @@ impl ObjectType {
             damage_self: section.read_bool("DamageSelf", false),
             immune: section.read_bool("Immune", false),
             type_immune: section.read_bool("TypeImmune", false),
+            emp: None,
             immune_to_psionics: section
                 .read_bool("ImmuneToPsionics", category == ObjectCategory::Building),
             warpable: section.read_bool("Warpable", true),
@@ -3476,7 +3493,7 @@ impl ObjectType {
             is_selectable_combatant: section.read_bool("IsSelectableCombatant", false),
             // The constructor's value; ART supplies the key (`project_art_data`).
             can_be_hidden: true,
-            custom_palette: false,
+            custom_palette: None,
             reveal_to_all: section.read_bool("RevealToAll", false),
 
             // Naval flags

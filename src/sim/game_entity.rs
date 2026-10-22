@@ -33,21 +33,13 @@ use crate::sim::superweapon::invulnerability::InvulnerabilityState;
 use crate::sim::world::ObjectLifecycle;
 
 mod distributed_fire;
+mod emp;
 mod foot_air;
 mod pip_fill;
 pub(crate) use distributed_fire::DistributedFireCandidate;
 pub use pip_fill::rounded_pip_quantity;
 
-/// ObjectClass's retained fall words: +2C, +84, +8D and +8F.
-/// DropAsBomb5F4160 preserves the rate and parachute byte; landing5F3F86
-/// clears only falling. Constructor5F3900 initializes all four to zero.
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
-struct ObjectFallState {
-    rate: i32,
-    parachuted: bool,
-    falling: bool,
-    dropped_as_bomb: bool,
-}
+use crate::sim::object_fall::ObjectFallState;
 
 /// The barrel elevation's rate: the TechnoClass constructor passes 3
 /// (`PUSH 3` at `0x006F2EDE`) to `FacingClass(int) @ 0x004C91E0`.
@@ -113,6 +105,10 @@ pub struct GameEntity {
     /// this displacement through70BE50; no simulation/RNG/timer consumer.
     /// Retain the raw datum, not a renderer-owned reconstructed animation.
     native_cloak_displacement: crate::util::native_x87::NativeF32Bits,
+    /// Techno+504 and Ares held sparkle. One private counter owner; stock
+    /// constructor remains zero and only the feature-gated EMP producer writes it.
+    #[serde(default)]
+    emp: emp::EmpState,
     /// Low word of the one raw Scenario RNG draw performed by the active-retail
     /// `TechnoClass` constructor (`0x006F3254`, stored at native `+0x3C8`).
     /// Later report-selection consumers read this persistent value; placement
@@ -1579,6 +1575,7 @@ impl GameEntity {
             stable_id,
             native_unique_id,
             native_cloak_displacement: crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO,
+            emp: Default::default(),
             techno_ctor_random_word,
             secret_lab_fallback: None,
             stage: crate::sim::stage::StageClass::constructed(construction_frame as i32),
@@ -1819,66 +1816,50 @@ impl GameEntity {
     /// (`0x005F5940`) raises it at `0x005F5965`, and `ObjectClass::AI`
     /// clears it when the fall grounds (`0x005F3F86`).
     pub(crate) fn is_falling_down(&self) -> bool {
-        self.fall.falling
+        self.fall.falling()
     }
 
     pub(crate) fn was_dropped_as_bomb(&self) -> bool {
-        self.fall.dropped_as_bomb
+        self.fall.dropped_as_bomb()
     }
 
     pub(crate) fn fall_rate(&self) -> i32 {
-        self.fall.rate
+        self.fall.rate()
     }
 
     pub(crate) fn is_parachuted(&self) -> bool {
-        self.fall.parachuted
+        self.fall.parachuted()
     }
 
     /// Paradrop5F5940 raises +84/+8D and resets +2C before placement.
     pub(crate) fn begin_parachute_fall(&mut self, z: i32) {
         self.position.put_z(z);
-        self.fall.parachuted = true;
-        self.fall.falling = true;
-        self.fall.rate = 0;
+        self.fall.begin_parachute();
     }
 
     /// DropAsBomb5F416A/71 writes neither Location nor FallRate nor +84.
     pub(crate) fn begin_bomb_fall(&mut self) {
-        self.fall.falling = true;
-        self.fall.dropped_as_bomb = true;
+        self.fall.begin_bomb();
     }
 
     pub(crate) fn finish_fall(&mut self) {
-        self.fall.falling = false;
+        self.fall.finish();
     }
 
     /// ObjectAI5F3FBC..3FFA updates even the grounding frame's rate.
     pub(crate) fn advance_fall_rate(&mut self, parachute_cap: i32, free_fall_cap: i32) {
-        self.fall.rate = if self.fall.parachuted {
-            self.fall.rate.wrapping_sub(1).max(parachute_cap)
-        } else {
-            use crate::util::native_x87::{NativeF64Bits, X87Chop53};
-            let gravity = X87Chop53::load_f64(NativeF64Bits::from_bits(0x3ff6_6666_6666_6666))
-                .expect("finite ObjectAI free-fall gravity 7EF248");
-            X87Chop53::ftol_i32_low_masked(X87Chop53::sub(
-                X87Chop53::load_i32(self.fall.rate),
-                gravity,
-            ))
-            .max(free_fall_cap)
-        };
+        self.fall.advance_rate(parachute_cap, free_fall_cap);
     }
 
     /// Put a fixture into a fall where it is, with a FallRate of 0.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_falling_down_for_test(&mut self, falling: bool) {
-        self.fall.falling = falling;
-        self.fall.parachuted = falling;
-        self.fall.rate = 0;
+        self.fall.set_falling_for_test(falling);
     }
 
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_fall_rate_for_test(&mut self, rate: i32) {
-        self.fall.rate = rate;
+        self.fall.set_rate_for_test(rate);
     }
 
     /// Mark a live RadioClass-style contact with another entity.

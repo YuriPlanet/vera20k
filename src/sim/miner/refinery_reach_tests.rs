@@ -28,6 +28,7 @@ fn pick(water: impl IntoIterator<Item = (u16, u16)>) -> Option<(Option<u64>, u64
         &mut sim,
         &rules,
         miner,
+        &rules.object("HARV").unwrap().dock,
         false,
         false,
         crate::sim::world::FrameEffects::default(),

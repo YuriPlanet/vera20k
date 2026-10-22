@@ -15,7 +15,47 @@ validation, settings, RNG, progress rendering, file receiver and handoff execute
 Socket/listen globals remain zero: this is an excluded transport difference.
 This fixture does not implement or establish a working transport/backend.
 
-## Preparation
+## Read an existing normal game
+
+`read-existing` samples explicit native state spans from an already running game
+owned by the caller. It does not launch a game or require the LAN fixture marker,
+environment or mailbox. The caller must identify its own normal game and supply
+its Windows PID and absolute Windows-visible `gamemd.exe` path. Under Wine, run
+the helper in the game's existing prefix and use a Windows PID from that prefix,
+not the host Linux PID or a window ID.
+
+```
+NativeLanProbe.exe read-existing PID "C:\game\gamemd.exe" 00400000:2
+```
+
+Addresses are unsigned 32-bit hexadecimal, optionally prefixed with `0x`; counts
+are decimal. One invocation accepts 1..64 spans, each 1..4096 bytes, totalling at
+most 64 KiB. A span may not cross the end of the 32-bit address space. All arguments
+are checked before opening the process. The expected image path is normalized
+and must name `gamemd.exe`; the existing identity check compares the full path,
+ignoring case.
+
+The command requests only `PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION`
+(`0x1010`). It checks image identity and creation time before and after the reads,
+closes the handle, then writes one ASCII result containing a `pid`/`created`
+header and ordered `address`/`count`/`hex` rows. Any failed or partial read or
+identity check produces no result on standard output. It performs one pass;
+there is no polling, process control, window input or memory write in this path.
+Every LAN control command retains its isolated-fixture checks below.
+
+These reads are not an atomic snapshot: state can change between spans. Wine's
+`ReadProcessMemory` backend may briefly stop a target thread internally before
+resuming it; see the [Wine read implementation](https://github.com/ValveSoftware/wine/blob/proton_11.0/server/ptrace.c).
+Use the bytes to diagnose native state, with separately established field
+addresses. This observation does not establish wall-clock timing, rendered HUD
+output or gameplay parity.
+
+`read-existing` requires a 64-bit CLR. Compile the same C# source with the existing
+Framework compiler described below, using `/platform:x64` for this command; keep
+the helper executable and observations in scratch. No LAN hooks are needed for
+`read-existing`.
+
+## LAN preparation
 
 Use a separate game copy and Wine prefix. Set Windows-visible paths:
 
@@ -24,7 +64,7 @@ VERA20K_NATIVE_FIXTURE_ROOT=C:\lan-fixture
 VERA20K_NATIVE_IMAGE=C:\isolated-game\gamemd.exe
 ```
 
-The helper requires a `.vera20k-native-fixture` marker file beside that copied
+LAN commands require a `.vera20k-native-fixture` marker file beside that copied
 executable. It checks path, creation time and mailbox
 identity before controlling an existing process. It never stops a Wine prefix.
 

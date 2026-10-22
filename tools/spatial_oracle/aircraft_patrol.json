@@ -1,0 +1,1682 @@
+{
+  "mission_patrol": [
+    {
+      "calls": [
+        [
+          "enter_idle_mode",
+          0,
+          1
+        ]
+      ],
+      "delay": 15,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "moving": false,
+        "name": "s0_None_False",
+        "param": null,
+        "state": 0
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 0
+    },
+    {
+      "calls": [
+        [
+          "enter_idle_mode",
+          0,
+          1
+        ]
+      ],
+      "delay": 15,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "moving": true,
+        "name": "s0_None_True",
+        "param": null,
+        "state": 0
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 0
+    },
+    {
+      "calls": [
+        [
+          "assign_destination",
+          [
+            "cell",
+            64,
+            64
+          ],
+          1
+        ]
+      ],
+      "delay": 15,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "moving": false,
+        "name": "s0_[64, 64]_False",
+        "param": [
+          64,
+          64
+        ],
+        "state": 0
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 1
+    },
+    {
+      "calls": [
+        [
+          "assign_destination",
+          [
+            "cell",
+            64,
+            64
+          ],
+          1
+        ]
+      ],
+      "delay": 15,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "moving": true,
+        "name": "s0_[64, 64]_True",
+        "param": [
+          64,
+          64
+        ],
+        "state": 0
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 1
+    },
+    {
+      "calls": [
+        [
+          "assign_destination",
+          "blocker",
+          1
+        ]
+      ],
+      "delay": 14,
+      "draws": [
+        [
+          "ring",
+          3
+        ],
+        [
+          "ring",
+          5
+        ],
+        [
+          "ring",
+          0
+        ],
+        [
+          "ring",
+          6
+        ],
+        [
+          "ring",
+          3
+        ],
+        [
+          "ring",
+          0
+        ],
+        [
+          "ring",
+          1
+        ],
+        [
+          "ring",
+          5
+        ],
+        [
+          "ring",
+          3
+        ],
+        [
+          "ring",
+          4
+        ],
+        [
+          "ring",
+          4
+        ],
+        [
+          "ring",
+          5
+        ],
+        [
+          "ring",
+          1
+        ],
+        [
+          "ring",
+          4
+        ],
+        [
+          "ring",
+          3
+        ],
+        [
+          "ring",
+          0
+        ],
+        [
+          "ring",
+          1
+        ],
+        [
+          "ring",
+          6
+        ],
+        [
+          "ring",
+          6
+        ],
+        [
+          "ring",
+          6
+        ],
+        [
+          "ring",
+          5
+        ],
+        [
+          "ring",
+          2
+        ],
+        [
+          "ring",
+          2
+        ],
+        [
+          "ring",
+          0
+        ],
+        [
+          "ring",
+          6
+        ],
+        [
+          "ring",
+          3
+        ],
+        [
+          "ring",
+          0
+        ],
+        [
+          "ring",
+          0
+        ],
+        [
+          "ring",
+          2
+        ],
+        [
+          "ring",
+          5
+        ],
+        [
+          "ring",
+          7
+        ],
+        [
+          "ring",
+          1
+        ],
+        [
+          "epilogue",
+          0
+        ]
+      ],
+      "input": {
+        "moving": false,
+        "name": "s0_blocker_False",
+        "param": "blocker",
+        "state": 0
+      },
+      "next_random": 3319594766,
+      "raw": [
+        2026076499,
+        2287577493,
+        2225548056,
+        1502837926,
+        107402731,
+        577279072,
+        1766806041,
+        2171444653,
+        789772035,
+        777716780,
+        55574052,
+        3334067941,
+        389688841,
+        2376448012,
+        4147418851,
+        3042792480,
+        183592897,
+        2792085758,
+        986540598,
+        2766527462,
+        4114579597,
+        2904356034,
+        1919808386,
+        3966697744,
+        1495721670,
+        3059159243,
+        3752923360,
+        1597212104,
+        4236688850,
+        1337380893,
+        4042047207,
+        3540914553,
+        825721040
+      ],
+      "state": 1
+    },
+    {
+      "calls": [
+        [
+          "assign_destination",
+          "blocker",
+          1
+        ]
+      ],
+      "delay": 14,
+      "draws": [
+        [
+          "ring",
+          3
+        ],
+        [
+          "ring",
+          5
+        ],
+        [
+          "ring",
+          0
+        ],
+        [
+          "ring",
+          6
+        ],
+        [
+          "ring",
+          3
+        ],
+        [
+          "ring",
+          0
+        ],
+        [
+          "ring",
+          1
+        ],
+        [
+          "ring",
+          5
+        ],
+        [
+          "ring",
+          3
+        ],
+        [
+          "ring",
+          4
+        ],
+        [
+          "ring",
+          4
+        ],
+        [
+          "ring",
+          5
+        ],
+        [
+          "ring",
+          1
+        ],
+        [
+          "ring",
+          4
+        ],
+        [
+          "ring",
+          3
+        ],
+        [
+          "ring",
+          0
+        ],
+        [
+          "ring",
+          1
+        ],
+        [
+          "ring",
+          6
+        ],
+        [
+          "ring",
+          6
+        ],
+        [
+          "ring",
+          6
+        ],
+        [
+          "ring",
+          5
+        ],
+        [
+          "ring",
+          2
+        ],
+        [
+          "ring",
+          2
+        ],
+        [
+          "ring",
+          0
+        ],
+        [
+          "ring",
+          6
+        ],
+        [
+          "ring",
+          3
+        ],
+        [
+          "ring",
+          0
+        ],
+        [
+          "ring",
+          0
+        ],
+        [
+          "ring",
+          2
+        ],
+        [
+          "ring",
+          5
+        ],
+        [
+          "ring",
+          7
+        ],
+        [
+          "ring",
+          1
+        ],
+        [
+          "epilogue",
+          0
+        ]
+      ],
+      "input": {
+        "moving": true,
+        "name": "s0_blocker_True",
+        "param": "blocker",
+        "state": 0
+      },
+      "next_random": 3319594766,
+      "raw": [
+        2026076499,
+        2287577493,
+        2225548056,
+        1502837926,
+        107402731,
+        577279072,
+        1766806041,
+        2171444653,
+        789772035,
+        777716780,
+        55574052,
+        3334067941,
+        389688841,
+        2376448012,
+        4147418851,
+        3042792480,
+        183592897,
+        2792085758,
+        986540598,
+        2766527462,
+        4114579597,
+        2904356034,
+        1919808386,
+        3966697744,
+        1495721670,
+        3059159243,
+        3752923360,
+        1597212104,
+        4236688850,
+        1337380893,
+        4042047207,
+        3540914553,
+        825721040
+      ],
+      "state": 1
+    },
+    {
+      "calls": [
+        [
+          "enter_idle_mode",
+          0,
+          1
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": false,
+        "name": "s1_None_False",
+        "param": null,
+        "state": 1
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 1
+    },
+    {
+      "calls": [
+        [
+          "enter_idle_mode",
+          0,
+          1
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": true,
+        "name": "s1_None_True",
+        "param": null,
+        "state": 1
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 1
+    },
+    {
+      "calls": [
+        [
+          "move_to",
+          [
+            16512,
+            16512,
+            0
+          ]
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": false,
+        "name": "s1_[64, 64]_False",
+        "param": [
+          64,
+          64
+        ],
+        "state": 1
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 2
+    },
+    {
+      "calls": [
+        [
+          "move_to",
+          [
+            16512,
+            16512,
+            0
+          ]
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": true,
+        "name": "s1_[64, 64]_True",
+        "param": [
+          64,
+          64
+        ],
+        "state": 1
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 2
+    },
+    {
+      "calls": [
+        [
+          "move_to",
+          [
+            384,
+            384,
+            0
+          ]
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": false,
+        "name": "s1_blocker_False",
+        "param": "blocker",
+        "state": 1
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 2
+    },
+    {
+      "calls": [
+        [
+          "move_to",
+          [
+            384,
+            384,
+            0
+          ]
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": true,
+        "name": "s1_blocker_True",
+        "param": "blocker",
+        "state": 1
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 2
+    },
+    {
+      "calls": [
+        [
+          "scan",
+          2,
+          0
+        ],
+        [
+          "is_moving"
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": false,
+        "name": "s2_None_False",
+        "param": null,
+        "state": 2
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 3
+    },
+    {
+      "calls": [
+        [
+          "scan",
+          2,
+          0
+        ],
+        [
+          "is_moving"
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": true,
+        "name": "s2_None_True",
+        "param": null,
+        "state": 2
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 4
+    },
+    {
+      "calls": [
+        [
+          "scan",
+          2,
+          0
+        ],
+        [
+          "is_moving"
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": false,
+        "name": "s2_[64, 64]_False",
+        "param": [
+          64,
+          64
+        ],
+        "state": 2
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 3
+    },
+    {
+      "calls": [
+        [
+          "scan",
+          2,
+          0
+        ],
+        [
+          "is_moving"
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": true,
+        "name": "s2_[64, 64]_True",
+        "param": [
+          64,
+          64
+        ],
+        "state": 2
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 0
+    },
+    {
+      "calls": [
+        [
+          "scan",
+          2,
+          0
+        ],
+        [
+          "is_moving"
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": false,
+        "name": "s2_blocker_False",
+        "param": "blocker",
+        "state": 2
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 3
+    },
+    {
+      "calls": [
+        [
+          "scan",
+          2,
+          0
+        ],
+        [
+          "is_moving"
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": true,
+        "name": "s2_blocker_True",
+        "param": "blocker",
+        "state": 2
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 4
+    },
+    {
+      "calls": [
+        [
+          "enter_idle_mode",
+          0,
+          1
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": false,
+        "name": "s3_None_False",
+        "param": null,
+        "state": 3
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 3
+    },
+    {
+      "calls": [
+        [
+          "enter_idle_mode",
+          0,
+          1
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": true,
+        "name": "s3_None_True",
+        "param": null,
+        "state": 3
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 3
+    },
+    {
+      "calls": [
+        [
+          "enter_idle_mode",
+          0,
+          1
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": false,
+        "name": "s3_[64, 64]_False",
+        "param": [
+          64,
+          64
+        ],
+        "state": 3
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 3
+    },
+    {
+      "calls": [
+        [
+          "enter_idle_mode",
+          0,
+          1
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": true,
+        "name": "s3_[64, 64]_True",
+        "param": [
+          64,
+          64
+        ],
+        "state": 3
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 3
+    },
+    {
+      "calls": [
+        [
+          "enter_idle_mode",
+          0,
+          1
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": false,
+        "name": "s3_blocker_False",
+        "param": "blocker",
+        "state": 3
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 3
+    },
+    {
+      "calls": [
+        [
+          "enter_idle_mode",
+          0,
+          1
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": true,
+        "name": "s3_blocker_True",
+        "param": "blocker",
+        "state": 3
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 3
+    },
+    {
+      "calls": [
+        [
+          "is_moving"
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": false,
+        "name": "s4_None_False",
+        "param": null,
+        "state": 4
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 3
+    },
+    {
+      "calls": [
+        [
+          "is_moving"
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": true,
+        "name": "s4_None_True",
+        "param": null,
+        "state": 4
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 4
+    },
+    {
+      "calls": [
+        [
+          "is_moving"
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": false,
+        "name": "s4_[64, 64]_False",
+        "param": [
+          64,
+          64
+        ],
+        "state": 4
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 3
+    },
+    {
+      "calls": [
+        [
+          "is_moving"
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": true,
+        "name": "s4_[64, 64]_True",
+        "param": [
+          64,
+          64
+        ],
+        "state": 4
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 0
+    },
+    {
+      "calls": [
+        [
+          "is_moving"
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": false,
+        "name": "s4_blocker_False",
+        "param": "blocker",
+        "state": 4
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 3
+    },
+    {
+      "calls": [
+        [
+          "is_moving"
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": true,
+        "name": "s4_blocker_True",
+        "param": "blocker",
+        "state": 4
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 4
+    },
+    {
+      "calls": [],
+      "delay": 15,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "moving": false,
+        "name": "s5_None_False",
+        "param": null,
+        "state": 5
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 5
+    },
+    {
+      "calls": [],
+      "delay": 15,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "moving": true,
+        "name": "s5_None_True",
+        "param": null,
+        "state": 5
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 5
+    },
+    {
+      "calls": [],
+      "delay": 15,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "moving": false,
+        "name": "s5_[64, 64]_False",
+        "param": [
+          64,
+          64
+        ],
+        "state": 5
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 5
+    },
+    {
+      "calls": [],
+      "delay": 15,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "moving": true,
+        "name": "s5_[64, 64]_True",
+        "param": [
+          64,
+          64
+        ],
+        "state": 5
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 5
+    },
+    {
+      "calls": [],
+      "delay": 15,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "moving": false,
+        "name": "s5_blocker_False",
+        "param": "blocker",
+        "state": 5
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 5
+    },
+    {
+      "calls": [],
+      "delay": 15,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "moving": true,
+        "name": "s5_blocker_True",
+        "param": "blocker",
+        "state": 5
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 5
+    },
+    {
+      "calls": [],
+      "delay": 15,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "moving": false,
+        "name": "s4294967295_None_False",
+        "param": null,
+        "state": 4294967295
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 4294967295
+    },
+    {
+      "calls": [],
+      "delay": 15,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "moving": true,
+        "name": "s4294967295_None_True",
+        "param": null,
+        "state": 4294967295
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 4294967295
+    },
+    {
+      "calls": [],
+      "delay": 15,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "moving": false,
+        "name": "s4294967295_[64, 64]_False",
+        "param": [
+          64,
+          64
+        ],
+        "state": 4294967295
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 4294967295
+    },
+    {
+      "calls": [],
+      "delay": 15,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "moving": true,
+        "name": "s4294967295_[64, 64]_True",
+        "param": [
+          64,
+          64
+        ],
+        "state": 4294967295
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 4294967295
+    },
+    {
+      "calls": [],
+      "delay": 15,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "moving": false,
+        "name": "s4294967295_blocker_False",
+        "param": "blocker",
+        "state": 4294967295
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 4294967295
+    },
+    {
+      "calls": [],
+      "delay": 15,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "moving": true,
+        "name": "s4294967295_blocker_True",
+        "param": "blocker",
+        "state": 4294967295
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 4294967295
+    },
+    {
+      "calls": [
+        [
+          "find_dock"
+        ],
+        [
+          "override",
+          7,
+          null,
+          "blocker"
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "ammo": 0,
+        "dock": true,
+        "moving": true,
+        "name": "empty_dock",
+        "param": [
+          64,
+          64
+        ],
+        "state": 2,
+        "threat": true
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 0
+    },
+    {
+      "calls": [
+        [
+          "find_dock"
+        ],
+        [
+          "is_moving"
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "ammo": 0,
+        "moving": true,
+        "name": "empty_no_dock",
+        "param": [
+          64,
+          64
+        ],
+        "state": 2,
+        "threat": true
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 0
+    },
+    {
+      "calls": [
+        [
+          "find_dock"
+        ],
+        [
+          "scan",
+          2,
+          0
+        ],
+        [
+          "override",
+          1,
+          "blocker",
+          null
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "ammo": 0,
+        "dock_ammo": 1,
+        "moving": true,
+        "name": "dock_callback_ammo",
+        "param": [
+          64,
+          64
+        ],
+        "state": 2,
+        "threat": true
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 0
+    },
+    {
+      "calls": [
+        [
+          "scan",
+          2,
+          0
+        ],
+        [
+          "override",
+          1,
+          "blocker",
+          null
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "ammo": -1,
+        "moving": true,
+        "name": "negative_ammo",
+        "param": [
+          64,
+          64
+        ],
+        "state": 2,
+        "threat": true
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 0
+    },
+    {
+      "calls": [
+        [
+          "scan",
+          2,
+          0
+        ],
+        [
+          "override",
+          1,
+          "blocker",
+          null
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": true,
+        "name": "attack",
+        "param": [
+          64,
+          64
+        ],
+        "state": 2,
+        "threat": true
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 0
+    },
+    {
+      "calls": [
+        [
+          "scan",
+          2,
+          0
+        ],
+        [
+          "is_moving"
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": true,
+        "name": "non_techno",
+        "param": [
+          64,
+          64
+        ],
+        "state": 2,
+        "techno": false,
+        "threat": true
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 0
+    },
+    {
+      "calls": [
+        [
+          "scan",
+          2,
+          0
+        ],
+        [
+          "is_moving"
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "moving": true,
+        "name": "reserved",
+        "param": [
+          64,
+          64
+        ],
+        "reserved": [
+          [
+            64,
+            64
+          ]
+        ],
+        "state": 2
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 0
+    },
+    {
+      "calls": [
+        [
+          "is_moving"
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "ammo": 0,
+        "dock": true,
+        "moving": true,
+        "name": "state4_no_scan",
+        "param": [
+          64,
+          64
+        ],
+        "state": 4,
+        "threat": true
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 0
+    },
+    {
+      "calls": [
+        [
+          "enter_idle_mode",
+          0,
+          1
+        ]
+      ],
+      "delay": 1,
+      "draws": [],
+      "input": {
+        "idle_guard": true,
+        "moving": true,
+        "name": "state3_idle_guard",
+        "param": [
+          64,
+          64
+        ],
+        "state": 3
+      },
+      "next_random": 2026076499,
+      "raw": [],
+      "state": 0
+    },
+    {
+      "calls": [
+        [
+          "enter_idle_mode",
+          0,
+          1
+        ]
+      ],
+      "delay": 27,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "idle_guard": true,
+        "moving": true,
+        "name": "idle_current_rate",
+        "state": 0
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 0
+    },
+    {
+      "calls": [
+        [
+          "assign_destination",
+          [
+            "cell",
+            64,
+            64
+          ],
+          1
+        ],
+        [
+          "team_target",
+          "blocker"
+        ]
+      ],
+      "delay": 15,
+      "draws": [
+        [
+          "epilogue",
+          1
+        ]
+      ],
+      "input": {
+        "attach_team": true,
+        "moving": true,
+        "name": "team_live_nav",
+        "param": [
+          64,
+          64
+        ],
+        "state": 0
+      },
+      "next_random": 2225548056,
+      "raw": [
+        2026076499,
+        2287577493
+      ],
+      "state": 1
+    },
+    {
+      "calls": [
+        [
+          "assign_destination",
+          [
+            "cell",
+            63,
+            63
+          ],
+          1
+        ]
+      ],
+      "delay": 28,
+      "draws": [
+        [
+          "ring",
+          7
+        ],
+        [
+          "ring",
+          7
+        ],
+        [
+          "epilogue",
+          2
+        ]
+      ],
+      "input": {
+        "moving": true,
+        "name": "search_ring",
+        "occupied": [
+          [
+            64,
+            64
+          ]
+        ],
+        "param": [
+          64,
+          64
+        ],
+        "rate": 0.03,
+        "seed": 99,
+        "state": 0
+      },
+      "next_random": 1497533942,
+      "raw": [
+        2362401807,
+        3466270631,
+        394029038
+      ],
+      "state": 1
+    }
+  ]
+}

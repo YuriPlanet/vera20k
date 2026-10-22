@@ -71,6 +71,8 @@ use crate::util::native_x87::{NativeF64Bits, NativeX87Error, X87Chop53};
 
 pub type AnimId = u64;
 
+mod flaming_guy;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AnimWorldCoord {
     pub x: i32,
@@ -333,9 +335,13 @@ impl AnimDisplayState {
 pub enum AnimRemap {
     ColorScheme(HouseColorIndex),
     House(InternedId),
-    /// The house's scheme from the extra building palette
-    /// (`RuleSet::extra_building_palette`), Techno705D70's `+0xDF0` arm.
-    ExtraBuildingScheme(InternedId),
+    /// Techno705D70's loaded `+0xDF0` group and house colour, frozen when
+    /// the producer assigns the Convert. The palette name survives the
+    /// source building's destruction and distinguishes simultaneous groups.
+    ExtraBuildingScheme {
+        house: InternedId,
+        palette: InternedId,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -401,6 +407,9 @@ pub struct AnimObject {
     /// is `+0x194` for the ported arm (the `IsMeteor=` arm is not built).
     #[serde(default)]
     bounce: Option<BounceState>,
+    /// Anim+108/+114/+19A and Object falling words for IsFlamingGuy AI.
+    #[serde(default)]
+    flaming_guy: Option<flaming_guy::FlamingGuyState>,
     /// `AnimClass+0x180`, the owning House (`SetOwnerHouse @ 0x00424CA0`).
     /// Its expiry also ends the anim (`0x004251D5`). The PsiWarning
     /// visibility test reads it against the local player (`0x0043B4C0`).
@@ -688,6 +697,7 @@ impl AnimObject {
             stop_sound_id: None,
             display: AnimDisplayState::default(),
             bounce: None,
+            flaming_guy: None,
             owner_house: None,
             attached_bullet: None,
         }
@@ -748,6 +758,10 @@ impl AnimObject {
             b"anim-owner-house-bullet-v1".hash(hasher);
             self.owner_house.hash(hasher);
             self.attached_bullet.hash(hasher);
+        }
+        if let Some(state) = &self.flaming_guy {
+            b"anim-flaming-guy-v1".hash(hasher);
+            state.hash(hasher);
         }
     }
 }
@@ -878,21 +892,16 @@ impl AnimStore {
     /// the house's colour scheme's (`0x00518AB5..0x00518AC9`,
     /// `0x00518AE4..0x00518AF9`).
     pub fn set_anim_house_remap(&mut self, id: AnimId, house: InternedId) -> bool {
-        let Some(anim) = self.get_mut(id) else {
-            return false;
-        };
-        anim.remap = Some(AnimRemap::House(house));
-        true
+        self.set_anim_remap(id, AnimRemap::House(house))
     }
 
-    /// [`Self::set_anim_house_remap`] from a custom-palette type: the
-    /// house's scheme from the extra building palette, as
-    /// `BuildingClass::DestructionEffects` writes it (`0x00441D2F..0x00441D41`).
-    pub fn set_anim_extra_building_remap(&mut self, id: AnimId, house: InternedId) -> bool {
+    /// Assign the producer's frozen Convert identity (`Anim+0xD4`). Custom
+    /// groups also retain their resource name, independently of any owner.
+    pub fn set_anim_remap(&mut self, id: AnimId, remap: AnimRemap) -> bool {
         let Some(anim) = self.get_mut(id) else {
             return false;
         };
-        anim.remap = Some(AnimRemap::ExtraBuildingScheme(house));
+        anim.remap = Some(remap);
         true
     }
 
@@ -1585,6 +1594,7 @@ impl Simulation {
                 y_sort_adjust: config.y_sort_adjust,
             },
             bounce: None,
+            flaming_guy: None,
             owner_house: None,
             attached_bullet: None,
         };
@@ -1763,19 +1773,26 @@ impl Simulation {
         // HideIfNoOre and the MakeInfantry mark read the stored Location
         // (`+0x9C`, `0x00423BD6..0x00423BFD`), not GetCoords: an owner-attached
         // anim stores an owner-relative delta there.
-        let Some((type_id, first_guard, inactive, location)) = self.anim(id).map(|anim| {
-            (
-                anim.type_id,
-                anim.runtime.first_ai_guard,
-                anim.runtime.inactive,
-                anim.world_coord,
-            )
-        }) else {
+        let Some(type_id) = self.anim(id).map(|anim| anim.type_id) else {
             return false;
         };
         let type_name = self.interner.resolve(type_id).to_ascii_uppercase();
         let Some(config) = rules.art().anim_runtime_config(&type_name).cloned() else {
             self.destroy_anim(id, rules);
+            return false;
+        };
+
+        //423B17/423B1E precede the ordinary first-AI, delay and timer gates.
+        if config.is_flaming_guy {
+            self.anim_flaming_guy_ai(id, &config, rules, overlay_registry);
+        }
+        let Some((first_guard, inactive, location)) = self.anim(id).map(|anim| {
+            (
+                anim.runtime.first_ai_guard,
+                anim.runtime.inactive,
+                anim.world_coord,
+            )
+        }) else {
             return false;
         };
 
@@ -1910,6 +1927,11 @@ impl Simulation {
             }
         }
 
+        // AnimAI4243AE..4243B6 checks Object+90 after first-AI/delay.
+        // FlamingGuyAI can retire this receiver before the ordinary tail.
+        if self.substrate.pending_delete.contains_object(&id) {
+            return false;
+        }
         let mut action = VisitAction::None;
         let mut random_loop_delay = None;
         let current_frame = self.session.binary_frame() as i32;

@@ -29,6 +29,7 @@ PRODUCERS = tuple('tools.projectile_oracle.' + name for name in (
      'tools.spatial_oracle.campaign_hunt',
      'tools.spatial_oracle.building_anim_detail',
      'tools.spatial_oracle.squid_grapple_light',
+     'tools.spatial_oracle.flaming_guy',
      'tools.procedural_drawing_oracle.airstrike_beam',
      'tools.storage_oracle.ini_crc')
 HELPERS = ('tools.native_slope', 'tools.projectile_oracle.collision_fixture',
@@ -134,6 +135,13 @@ class OracleLifecycleTests(unittest.TestCase):
             for optimized in (False, True):
                 with self.subTest(operation=operation, optimized=optimized):
                     self.check_lifecycle(operation, 'tools.spatial_oracle.anim_translucency',
+                                         optimized)
+
+    def test_flaming_guy_import_and_help_are_inert(self):
+        for operation in ('import', 'help'):
+            for optimized in (False, True):
+                with self.subTest(operation=operation, optimized=optimized):
+                    self.check_lifecycle(operation, 'tools.spatial_oracle.flaming_guy',
                                          optimized)
 
     def test_building_anim_translucency_import_and_help_are_inert(self):

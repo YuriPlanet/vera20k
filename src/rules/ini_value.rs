@@ -301,18 +301,35 @@ impl IniSection {
     /// out-of-range Ares CRT behavior is not claimed equivalent.
     pub fn read_ares_int(&self, key: &str, default: i32) -> i32 {
         self.read_string_with(key, 2048, default, |current, value| {
-            let parsed = if let Some(decimal) = value.strip_prefix('$') {
-                scan_decimal_i32(&mut decimal.as_bytes())
-            } else if value
-                .as_bytes()
-                .last()
-                .is_some_and(|last| last.eq_ignore_ascii_case(&b'h'))
-            {
-                scan_hex_u32(value.as_bytes()).map(|value| value as i32)
+            parse_ares_int(value).unwrap_or(current)
+        })
+    }
+
+    /// Ares Valueable<double>1000EB00/10076B60: the native string-sized
+    /// reader scans binary64, not ReadDouble's intermediate binary32. An
+    /// unsuccessful scan retains the old field; a percent anywhere scales it.
+    /// The shared scanner/percent kernel also serves the stock reader.
+    pub fn read_ares_double_bits(&self, key: &str, default: NativeF64Bits) -> NativeF64Bits {
+        self.read_string_with(key, 2048, default, |current, value| {
+            try_parse_leading_f64(value, FloatScanRounding::AresChop).map_or(current, |number| {
+                NativeF64Bits::from_bits(if value.contains('%') {
+                    scale_percent(number).to_bits()
+                } else {
+                    number.to_bits()
+                })
+            })
+        })
+    }
+
+    /// Ares TechnoType EMP.Threshold: inair, int TryParse, then a boolean
+    /// scratch initialized false. Missing/empty keeps the current field.
+    pub fn read_ares_emp_threshold(&self, key: &str, default: i32) -> i32 {
+        self.read_string_with(key, 2048, default, |_, value| {
+            if value.eq_ignore_ascii_case("inair") {
+                -1
             } else {
-                scan_decimal_i32(&mut value.as_bytes())
-            };
-            parsed.unwrap_or(current)
+                parse_ares_int(value).unwrap_or_else(|| i32::from(parse_read_bool(false, value)))
+            }
         })
     }
 
@@ -1223,10 +1240,100 @@ pub(crate) fn parse_leading_f32(s: &str) -> f32 {
 /// bridge_landing_inputs.json; arbitrary extreme CRT rounding/range behavior
 /// is not certified here.
 pub(crate) fn parse_leading_f64(s: &str) -> f64 {
+    try_parse_leading_f64(s, FloatScanRounding::Nearest).unwrap_or(0.0)
+}
+
+#[derive(Clone, Copy)]
+enum FloatScanRounding {
+    /// Keep the existing stock atof projection independently of Ares %lf.
+    Nearest,
+    AresChop,
+}
+
+fn try_parse_leading_f64(s: &str, rounding: FloatScanRounding) -> Option<f64> {
     let s = s.trim_start_matches(['\t', '\n', '\x0b', '\x0c', '\r', ' ']);
-    leading_float_token(s)
-        .and_then(|token| token.parse::<f64>().ok())
-        .unwrap_or(0.0)
+    let token = leading_float_token(s)?;
+    let nearest = token.parse::<f64>().ok()?;
+    Some(match rounding {
+        FloatScanRounding::Nearest => nearest,
+        FloatScanRounding::AresChop => chop_decimal_f64(token, nearest),
+    })
+}
+
+/// Ares ValueableDouble1000EB00 ->10076B60 ->CRT10010040/10083A57
+/// retains ambient PC53/chop (WinMain6BBFB7..6BBFCE; canonical startup
+/// producer tools/rules_oracle/read_double_percent.py). Reuse the one lexical
+/// prefix and binary64 parser, comparing its nearest result exactly against
+/// the decimal magnitude before adjusting toward zero. This deterministic
+/// numerical policy matches the bounded native EMP reader corpus; arbitrary
+/// long-decimal/legacy CRT intermediate double rounding is not certified.
+/// It deliberately does not change the existing stock atof reader mode.
+fn chop_decimal_f64(token: &str, nearest: f64) -> f64 {
+    use num_bigint::BigUint;
+    if !nearest.is_finite() || nearest == 0.0 {
+        // Native scanner overflow remains infinity (not maximum finite),
+        // and a signed zero must retain its original sign bit.
+        return nearest;
+    }
+    let unsigned = token.trim_start_matches(['+', '-']);
+    let (mantissa, exponent) =
+        unsigned
+            .split_once(['e', 'E'])
+            .map_or((unsigned, 0), |(mantissa, exponent)| {
+                // A nonzero finite parse bounds this exponent by the token's
+                // digit count plus the binary64 range. It fits the native scanner.
+                (
+                    mantissa,
+                    scan_decimal_i32(&mut exponent.as_bytes()).expect("valid float exponent"),
+                )
+            });
+    let fractional_digits = mantissa.find('.').map_or(0, |dot| mantissa.len() - dot - 1);
+    let digits: Vec<u8> = mantissa.bytes().filter(|byte| *byte != b'.').collect();
+    let mut decimal = BigUint::parse_bytes(&digits, 10).expect("validated float mantissa");
+    let decimal_exponent = exponent - fractional_digits as i32;
+    let ten = BigUint::from(10u8);
+    let denominator = if decimal_exponent < 0 {
+        ten.pow(decimal_exponent.unsigned_abs())
+    } else {
+        decimal *= ten.pow(decimal_exponent as u32);
+        BigUint::from(1u8)
+    };
+    let bits = nearest.to_bits();
+    let exponent_bits = ((bits >> 52) & 0x7ff) as i32;
+    let fraction = bits & ((1u64 << 52) - 1);
+    let (significand, binary_exponent) = if exponent_bits == 0 {
+        (fraction, -1074)
+    } else {
+        (fraction | (1u64 << 52), exponent_bits - 1023 - 52)
+    };
+    let mut binary = BigUint::from(significand) * denominator;
+    if binary_exponent >= 0 {
+        binary <<= binary_exponent as usize;
+    } else {
+        decimal <<= binary_exponent.unsigned_abs() as usize;
+    }
+    if binary > decimal {
+        // Decreasing the magnitude bits moves either sign toward zero,
+        // including a subnormal's transition to its signed zero.
+        f64::from_bits(bits - 1)
+    } else {
+        nearest
+    }
+}
+
+/// The single Ares Parser<int> core, also used by compound int/bool readers.
+fn parse_ares_int(value: &str) -> Option<i32> {
+    if let Some(decimal) = value.strip_prefix('$') {
+        scan_decimal_i32(&mut decimal.as_bytes())
+    } else if value
+        .as_bytes()
+        .last()
+        .is_some_and(|last| last.eq_ignore_ascii_case(&b'h'))
+    {
+        scan_hex_u32(value.as_bytes()).map(|value| value as i32)
+    } else {
+        scan_decimal_i32(&mut value.as_bytes())
+    }
 }
 
 fn leading_float_token(s: &str) -> Option<&str> {

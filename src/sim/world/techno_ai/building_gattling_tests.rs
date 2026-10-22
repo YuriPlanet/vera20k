@@ -654,6 +654,7 @@ fn gattling_cadence_matches_the_original() {
                         building,
                         target,
                         &rules,
+                        None,
                         crate::sim::world::FrameEffects::default()
                     ));
                 }

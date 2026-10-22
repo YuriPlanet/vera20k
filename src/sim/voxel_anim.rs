@@ -116,7 +116,9 @@ impl VoxelAnimObject {
     ///
     /// `VoxelAnimClass::AI` refreshes `ObjectClass`'s own coordinate from the
     /// physics body every tick via `CoordStruct::FromDoubles`, so the body is
-    /// the authority and this is the conversion.
+    /// the authority after a flight update and this is the conversion. Native
+    /// retains the constructor Location separately until that first update;
+    /// expiry before it remains outside this body-only representation.
     pub fn world_coord(&self) -> IVec3 {
         self.bounce.position_leptons()
     }
@@ -303,7 +305,10 @@ pub fn spawn_debris_piece(
 pub enum VoxelAnimAiOutcome {
     /// Still flying. The object stays in the store and in the LogicVector.
     Alive,
-    /// The AI reached `vtable+0xF8` (`Delete`). The world retires the object.
+    /// Natural duration expiry. The world emits supported expiry effects,
+    /// then retires the object through `vtable+0xF8` (`Delete`).
+    Expire,
+    /// Retire without the natural expiry effects, including marked deletion.
     Delete,
 }
 
@@ -318,9 +323,12 @@ pub enum VoxelAnimAiOutcome {
 ///    `BounceClass::Update`, then the `IsMeteor` extra gravity, then the
 ///    contact arms; a `Bounced` on WATER sets `duration = 0` instead of playing
 ///    the `BounceAnim=`, and a `Stopped` sets `duration = 0` outright.
-/// 5. Otherwise the expiry arm, ending in `Delete`.
+/// 5. Otherwise `Expire`: the world owns the expiry effects and deletion.
 ///
-/// RESIDUAL (GSI-05.14) — three arms of the native AI are not built here:
+/// The world visitor implements the nonmeteor Water Wake/Splash pair used by
+/// stock TIREs (`0x00749FA2..0x0074A13E`).
+///
+/// RESIDUAL (GSI-05.14) — two arms of the native AI are not built here:
 /// - The `BounceAnim=`/`ExpireAnim=`/`TrailerAnim=` `AnimClass` spawns and the
 ///   expiry `Apply_area_damage` (`+0x2F0`/`+0x2F4`/`+0x2F8`). Every stock
 ///   `DebrisTypes=` line names `[TIRE]`, which authors none of the four keys,
@@ -332,12 +340,10 @@ pub enum VoxelAnimAiOutcome {
 ///   need the combat AoE transaction, so wiring it belongs with that owner.
 /// - The `IsMeteor` arms — the extra per-tick gravity add at `+0xDC`, the
 ///   `Spawns=`/`SpawnCount=` child burst (two `RandomRanged(0, SpawnCount)`
-///   draws, summed), and the `IsTiberium` ore-laying ring. `IsMeteor` types
+///   draws, summed), the last-SplashList expiry at Z+5, and the `IsTiberium`
+///   ore-laying ring. `IsMeteor` types
 ///   reach the field through scenario meteor storms, never through a death.
 ///   Frequency: zero on this path.
-/// - The water splash pair at expiry (`Rules+0x94`, `Rules+0xBC4`). Trigger:
-///   debris expiring over water while below the deck. Player effect: no splash
-///   ring. Frequency: only when a piece scatters off a shoreline.
 pub fn voxel_anim_ai(
     object: &mut VoxelAnimObject,
     terrain: &impl BounceTerrain,
@@ -349,7 +355,7 @@ pub fn voxel_anim_ai(
         object.duration -= 1;
     }
     if object.duration <= 0 {
-        return Ok(VoxelAnimAiOutcome::Delete);
+        return Ok(VoxelAnimAiOutcome::Expire);
     }
 
     match object.bounce.update(terrain)? {
@@ -1102,7 +1108,7 @@ mod tests {
         for _ in 0..150 {
             match voxel_anim_ai(&mut piece, &ground).expect("in domain") {
                 VoxelAnimAiOutcome::Alive => {}
-                VoxelAnimAiOutcome::Delete => break,
+                VoxelAnimAiOutcome::Expire | VoxelAnimAiOutcome::Delete => break,
             }
             ticks_alive += 1;
             peak = peak.max(piece.world_coord().z);
@@ -1123,7 +1129,7 @@ mod tests {
         // The AI zeroes the duration on a stop; the next visit deletes.
         assert_eq!(
             voxel_anim_ai(&mut piece, &ground).expect("in domain"),
-            VoxelAnimAiOutcome::Delete
+            VoxelAnimAiOutcome::Expire
         );
     }
 

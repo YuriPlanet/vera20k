@@ -80,11 +80,9 @@ pub struct CountryRules {
     pub multiplay_passive: bool,
     /// `WallOwner=` allows this house type's buildings to claim nearby map walls.
     pub wall_owner: bool,
-    /// `IncomeMult=` ore-refining income multiplier, parts-per-million
-    /// (`round(value × 1e6)`); default `1_000_000` (=1.0, the stock value — the key is
-    /// commented out in stock rulesmd). Applied at ore/gem deposit time to BOTH the base
-    /// credits and the OrePurifier-bonus credits.
-    pub income_ppm: i64,
+    /// HouseType+148: ReadDouble511D0B -> FSTP float511D10, default1.0.
+    /// Both base and purifier deposits read these exact retained float bits.
+    pub income_mult: NativeF32Bits,
     /// Per-target category armor multipliers (HouseType `+0x100..+0x110`).
     /// Native stores these as f32 and `HouseClass::GetArmorMultForType @
     /// 0x0050BD30` reads the selected slot live for every receiver call.
@@ -140,10 +138,6 @@ pub struct CountryRules {
     pub name: Option<String>,
 }
 
-/// PPM scale for `IncomeMult` and `PurifierBonus` (1_000_000 = 1.0×), the
-/// divisor of `Economy::add_tiberium_credits`.
-pub const INCOME_PPM_SCALE: i64 = 1_000_000;
-
 /// The House factors [`RuleSet::cost_of`] multiplies in, each indexed by
 /// [`ObjectType::factor_slot`]: the country's `Cost*Mult=` and the
 /// House's FactoryPlant product (House `+0x5390..+0x53A0`).
@@ -168,9 +162,7 @@ impl HouseCostFactors {
 
 impl Default for CountryRules {
     fn default() -> Self {
-        // Hand-written (NOT derived): a derived Default would zero `income_ppm`, which would
-        // wipe out all ore income for any house built from the default. The neutral 1.0
-        // multiplier is `INCOME_PPM_SCALE`, not 0.
+        // The native multiplier defaults are neutral1.0, never derived zeros.
         Self {
             veteran_types: CountryVeterancyState::default(),
             color_scheme: 0,
@@ -178,7 +170,7 @@ impl Default for CountryRules {
             multiplay: false,
             multiplay_passive: false,
             wall_owner: true,
-            income_ppm: INCOME_PPM_SCALE,
+            income_mult: NativeF32Bits::ONE,
             armor_infantry_mult: 1.0,
             armor_units_mult: 1.0,
             armor_aircraft_mult: 1.0,
@@ -215,8 +207,7 @@ impl CountryRules {
             // drift; absent -> the neutral 1.0 (stock).
             // HouseTypeClass::ReadINI stores these as floats (`FSTP dword` at
             // 0x00511ADD..0x00511B59 and 0x00511D0B).
-            income_ppm: (f64::from(section.read_float("IncomeMult", 1.0)) * INCOME_PPM_SCALE as f64)
-                .round() as i64,
+            income_mult: section.read_double_to_float("IncomeMult", NativeF32Bits::ONE),
             armor_infantry_mult: section.read_float("ArmorInfantryMult", 1.0),
             armor_units_mult: section.read_float("ArmorUnitsMult", 1.0),
             armor_aircraft_mult: section.read_float("ArmorAircraftMult", 1.0),
@@ -1613,11 +1604,9 @@ pub struct GeneralRules {
     /// (ChronoRangeMinimum= in [General]). Default 0.
     pub chrono_range_minimum: i32,
 
-    /// Ore Purifier bonus as a fixed-point fraction in parts-per-million
-    /// (PurifierBonus= in [General]; `INCOME_PPM_SCALE` = 1.0×). Stored at full
-    /// precision so modded fractional percentages (e.g. `.333`) are not quantized
-    /// to whole percent. Stock `.25` -> 250_000 (25%). Default 250_000.
-    pub purifier_bonus_ppm: i64,
+    /// Rules+F3C: PurifierBonus ReadDouble66FC70 -> FSTP float66FC75.
+    /// Caller73E42B/522DCD multiplies count, these bits, then cargo amount.
+    pub purifier_bonus: NativeF32Bits,
     /// AI virtual purifier counts indexed by difficulty
     /// (AIVirtualPurifiers= in [General]). Each entry is added to the AI
     /// player's real purifier count when computing the deposit bonus. INI
@@ -2535,7 +2524,7 @@ impl Default for GeneralRules {
             chrono_trigger: true,
             chrono_minimum_delay: 16,
             chrono_range_minimum: 0,
-            purifier_bonus_ppm: 250_000,
+            purifier_bonus: NativeF32Bits::from_bits(0x3E80_0000),
             ai_virtual_purifiers: [4, 2, 0],
             disabled_disguise_detection_percent: Vec::new(),
             allied_survivor_divisor: DEFAULT_SURVIVOR_DIVISORS[0],
@@ -3689,12 +3678,7 @@ impl GeneralRules {
             chrono_trigger: general.read_bool("ChronoTrigger", true),
             chrono_minimum_delay: general.read_int("ChronoMinimumDelay", 16),
             chrono_range_minimum: general.read_int("ChronoRangeMinimum", 0),
-            // Parse-time float -> fixed-point ppm (mirrors the IncomeMult parse); the runtime
-            // bonus math is all integer. Full precision — no whole-percent quantize.
-            // A float field (`FSTP dword` at `0x0066FC70`).
-            purifier_bonus_ppm: (f64::from(general.read_float("PurifierBonus", 0.25))
-                * INCOME_PPM_SCALE as f64)
-                .round() as i64,
+            purifier_bonus: general.read_double_to_float("PurifierBonus", defaults.purifier_bonus),
             // An IntVector (`0x00475D70`) indexed by difficulty.
             ai_virtual_purifiers: general
                 .read_int_list("AIVirtualPurifiers")
@@ -3991,6 +3975,8 @@ pub struct RuleSet {
     pub ai_base_spacing: i32,
     /// Source-ordered `[General] Shipyard=` BuildingType identities.
     pub shipyard_types: Vec<String>,
+    /// Retained `[General] RepairBay=` BuildingType identities (Rules+850).
+    pub repair_bay_types: Vec<String>,
     /// Source-ordered resolved `[AI] BuildConst=` BuildingType identities.
     pub build_const_types: Vec<String>,
     /// Source-ordered resolved `[AI] BuildPower=` BuildingType identities.
@@ -4055,6 +4041,7 @@ pub struct RuleSet {
     ares_prerequisites: Option<GenericPrerequisites>,
     /// Immutable projection of NativeRulesRegistryState's ordered armor catalog.
     ares_armors: Option<crate::rules::ares_armor::ArmorCatalog>,
+    emp_sparkles: Option<String>,
     #[cfg(feature = "ares")]
     ares_global_controls: crate::rules::native_processing::AresGlobalControls,
     /// Derived type-membership index for the lifecycle hooks; rebuilt together
@@ -4156,12 +4143,6 @@ pub struct RuleSet {
     /// active AssetManager with effect assets. Gameplay and rendering share
     /// the GPU-independent physical model loader.
     voxel_assets: crate::rules::voxel_asset_catalog::VoxelAssetCatalog,
-    /// The one TechnoType custom palette name (art `Palette=`, lowercase,
-    /// without theater suffix or `.pal`). gamemd keeps one generated palette
-    /// per name and exits when a second exists ("only one extra building
-    /// palette", `0x00715857..0x00715871`), so every type with
-    /// `ObjectType::custom_palette` shares it. Projected from ART.
-    extra_building_palette: Option<String>,
     /// Every building type's construction control from its Buildup SHP,
     /// bound once from the active assets (`bind_building_buildup_assets`).
     buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog,
@@ -4208,6 +4189,28 @@ impl RuleSet {
             let _ = difficulty_index;
             false
         }
+    }
+
+    /// RulesExt+160/+164 retained nullable named mission. Default builds
+    /// neither read this extension key nor supply an AI EMP recovery producer.
+    pub(crate) fn ares_emp_ai_recover_mission(
+        &self,
+    ) -> Option<crate::rules::mission_data::MissionType> {
+        #[cfg(feature = "ares")]
+        {
+            self.ares_global_controls.emp_ai_recover_mission()
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            None
+        }
+    }
+
+    pub(crate) fn bind_emp_sparkles(&mut self, name: Option<String>) {
+        self.emp_sparkles = name;
+    }
+    pub(crate) fn emp_sparkles(&self) -> Option<&str> {
+        self.emp_sparkles.as_deref()
     }
 
     pub(crate) fn reveal_trigger_radius(&self) -> i32 {
@@ -4346,6 +4349,24 @@ impl RuleSet {
                 warhead.debris_types = debris_types.to_vec();
                 warhead.verses_f64 = verses.map(|value| f64::from_bits(value.bits()));
                 warhead.install_ares_verses(ares_verses);
+            }
+        }
+        for (category, name, emp) in processed.emp_type_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == category && object.id == name)
+            {
+                object.bind_emp_rules(emp);
+            }
+        }
+        for (name, emp) in processed.emp_warhead_states() {
+            if let Some(warhead) = rules
+                .warheads
+                .values_mut()
+                .find(|wh| wh.id.eq_ignore_ascii_case(name))
+            {
+                warhead.bind_emp_rules(emp);
             }
         }
         for (category, name, armor) in processed.object_armor_states() {
@@ -5392,6 +5413,7 @@ impl RuleSet {
             // The ordered Rules processor publishes these lists
             // (`rules_type_references`).
             shipyard_types: Vec::new(),
+            repair_bay_types: Vec::new(),
             build_const_types: Vec::new(),
             build_power_types: Vec::new(),
             build_refinery_types: Vec::new(),
@@ -5419,6 +5441,7 @@ impl RuleSet {
             prerequisite_lists: Default::default(),
             ares_prerequisites: None,
             ares_armors: processed.ares_armors().cloned(),
+            emp_sparkles: None,
             #[cfg(feature = "ares")]
             ares_global_controls: processed.ares_global_controls().clone(),
             ares_prerequisite_alternates: HashSet::new(),
@@ -5458,7 +5481,6 @@ impl RuleSet {
                 .collect(),
             effect_assets: crate::rules::effect_asset_catalog::EffectAssetCatalog::default(),
             voxel_assets: crate::rules::voxel_asset_catalog::VoxelAssetCatalog::default(),
-            extra_building_palette: None,
             buildup_assets: crate::rules::buildup_asset_catalog::BuildupAssetCatalog::default(),
             rubble_assets: crate::rules::building_rubble::RubbleAssetCatalog::default(),
             terrain_spawner_assets:
@@ -5837,11 +5859,49 @@ impl RuleSet {
         self.source_ini_hash
     }
 
-    /// The one TechnoType custom palette name, lowercase, without theater
-    /// suffix or `.pal`; every type with `ObjectType::custom_palette` draws
-    /// from it (`TechnoClass::GetRemapColour @ 0x00705D70`).
-    pub fn extra_building_palette(&self) -> Option<&str> {
-        self.extra_building_palette.as_deref()
+    /// Resolve one retained palette request. Ares715857->715876 removes
+    /// only the original successful-group limit: a supplied request resolves
+    /// its own file; a failed file never inherits another type's group.
+    /// Without Ares, retain the original one-successful-group compatibility
+    /// policy and admit a supplied request only if it matches that group.
+    /// None selects the singleton for the original effect/legacy consumers.
+    /// This is the sole resource lookup/decoder used by core and client.
+    pub fn load_extra_building_palette<'a>(
+        &'a self,
+        assets: &crate::assets::asset_manager::AssetManager,
+        theater_ext: &str,
+        requested_name: Option<&'a str>,
+    ) -> Option<(&'a str, crate::assets::pal_file::Palette)> {
+        let load = |name: &'a str| {
+            let data = assets.get_ref(&format!("{name}{theater_ext}.pal"))?;
+            crate::assets::pal_file::Palette::from_bytes(data)
+                .ok()
+                .map(|palette| (name, palette))
+        };
+        #[cfg(feature = "ares")]
+        if let Some(name) = requested_name {
+            return load(name);
+        }
+        let selected = self
+            .object_list
+            .iter()
+            .find_map(|object| load(object.custom_palette_name()?));
+        if requested_name.is_some_and(|name| {
+            selected
+                .as_ref()
+                .is_none_or(|(loaded, _)| !name.eq_ignore_ascii_case(loaded))
+        }) {
+            return None;
+        }
+        selected
+    }
+
+    /// Techno705D70 reads this type's actual DF0 group, not DD0 text or
+    /// another type's success. The immutable asset owner qualifies and
+    /// returns the retained name for a producer to freeze on its animation.
+    pub(crate) fn loaded_custom_palette_name(&self, object: &ObjectType) -> Option<&str> {
+        self.effect_assets
+            .loaded_extra_building_palette_name(object.custom_palette_name()?)
     }
 
     /// Compatibility identity for processed rules plus the resolved animation,
@@ -5855,6 +5915,20 @@ impl RuleSet {
         // v34: Country starting-veterancy; optional extensions add domains below.
         b"rules-simulation-config-v34".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        // Bullet46BEE0 retains this byte even when a later raw value is
+        // invalid. Equal flattened INIs can therefore have different flight
+        // damage. Preserve the previous hash domain for all-false stock rules.
+        let mut degenerating_projectiles: Vec<_> = self
+            .projectiles
+            .values()
+            .filter(|projectile| projectile.degenerates)
+            .map(|projectile| projectile.id.to_ascii_uppercase())
+            .collect();
+        if !degenerating_projectiles.is_empty() {
+            degenerating_projectiles.sort();
+            b"projectile-degenerates-v1".hash(&mut hasher);
+            degenerating_projectiles.hash(&mut hasher);
+        }
         b"country-parent-v1".hash(&mut hasher);
         // The native parent lookup scans registration order and checks Name
         // aliases as well as IDs. These retained inputs can differ after an
@@ -5955,6 +6029,27 @@ impl RuleSet {
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
 
+        #[cfg(feature = "ares")]
+        {
+            b"ares-emp-rules-v1".hash(&mut hasher);
+            self.emp_sparkles.hash(&mut hasher);
+            self.object_list
+                .iter()
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.emp_rules(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>()
+                .hash(&mut hasher);
+            self.warheads
+                .iter()
+                .map(|(name, wh)| (name.to_ascii_uppercase(), wh.emp_rules()))
+                .collect::<BTreeMap<_, _>>()
+                .hash(&mut hasher);
+        }
+
         // UnitType747734 retains CarriesCrate across later absent/invalid
         // keys; equal current source text can still mean different cargo.
         self.object_list
@@ -6044,11 +6139,10 @@ impl RuleSet {
         // palette type's DestroyAnim its scheme (0x00441D2F).
         self.object_list
             .iter()
-            .filter(|o| o.custom_palette)
-            .map(|o| &o.id)
+            .filter(|o| o.custom_palette_name().is_some())
+            .map(|o| (&o.id, o.custom_palette_name()))
             .collect::<Vec<_>>()
             .hash(&mut hasher);
-        self.extra_building_palette.hash(&mut hasher);
         self.general.default_mirage_disguises.hash(&mut hasher);
         self.general.infantry_disguises.hash(&mut hasher);
         if self
@@ -6316,6 +6410,7 @@ impl RuleSet {
             &general.base_unit_types,
             &general.pad_aircraft_types,
             &self.shipyard_types,
+            &self.repair_bay_types,
             &self.harvester_unit_types,
         )
             .hash(&mut hasher);
@@ -6783,11 +6878,10 @@ impl RuleSet {
             .is_none_or(|country| country.wall_owner)
     }
 
-    /// A country's `IncomeMult` as parts-per-million (default `INCOME_PPM_SCALE` = 1.0×).
-    /// Unknown/absent country -> the neutral multiplier (no income change).
-    pub fn country_income_ppm(&self, id: &str) -> i64 {
+    /// HouseType+148 income float; an unknown country has the neutral default.
+    pub fn country_income_mult(&self, id: &str) -> NativeF32Bits {
         self.country_rules(id)
-            .map_or(INCOME_PPM_SCALE, |country| country.income_ppm)
+            .map_or(NativeF32Bits::ONE, |country| country.income_mult)
     }
 
     /// A country's `Cost*Mult=` floats (`HouseType+0x114..+0x124`), the
@@ -7230,7 +7324,6 @@ impl RuleSet {
         let mut buildings_checked: u32 = 0;
         let mut infantry_checked: u32 = 0;
         let mut crawls_patched: u32 = 0;
-        self.extra_building_palette = None;
         for obj in self.object_list.iter_mut() {
             // Resolve the art.ini section: use Image= override if present,
             // otherwise fall back to the object ID itself.
@@ -7239,20 +7332,6 @@ impl RuleSet {
             // Every TechnoType's ReadINI reads CanBeHidden from the ART
             // section of its own ID (0x007121EB); art is not layered.
             obj.can_be_hidden = art.can_be_hidden(&obj.id);
-            // ...and Palette= from its ImageFile's section (0x0071582B).
-            let palette = art.techno_palette(art_key);
-            obj.custom_palette = palette.is_some();
-            if let Some(name) = palette {
-                match &self.extra_building_palette {
-                    None => self.extra_building_palette = Some(name.to_owned()),
-                    Some(first) if first != name => log::error!(
-                        "[{}] Palette={name}: gamemd allows one extra building palette \
-                         and exits; Palette={first} is kept",
-                        obj.id
-                    ),
-                    Some(_) => {}
-                }
-            }
             if obj.category == crate::rules::object_type::ObjectCategory::Infantry {
                 infantry_checked += 1;
                 if let Some(entry) = entry {
@@ -8024,6 +8103,60 @@ fn parse_particle_system_types(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn ares_emp_ai_global_mission_uses_production_layers_and_config_hash() {
+        use crate::rules::{
+            mission_data::MissionType,
+            native_processing::{RulesLayerKind, RulesLayerStack},
+        };
+        let root = "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=400\n[CombatDamage]\nEMPAIRecoverMission=Guard\n";
+        let make = |language: &str| {
+            let mut layers = RulesLayerStack::new(IniFile::from_str(root));
+            layers.push(
+                RulesLayerKind::LangRule,
+                IniFile::from_str(&format!("[CombatDamage]\nEMPAIRecoverMission={language}\n")),
+            );
+            layers.push(
+                RulesLayerKind::GameMode,
+                IniFile::from_str("[CombatDamage]\nEMPAIRecoverMission=junk\n"),
+            );
+            layers.push(
+                RulesLayerKind::Scenario,
+                IniFile::from_str("[CombatDamage]\nEMPAIRecoverMission=\n"),
+            );
+            RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap()
+        };
+        let rules = make("Area Guard");
+        let expected = crate::rules::ARES_ENABLED.then_some(MissionType::AreaGuard);
+        assert_eq!(rules.ares_emp_ai_recover_mission(), expected);
+        let retained_hash = rules.simulation_config_hash();
+        let mut changed = make("Hunt");
+        // Source identity deliberately includes layer history, even when the
+        // final merged text agrees. Normalize only this private test input to
+        // isolate the retained extension state in the compatibility hash.
+        assert_ne!(rules.source_ini_hash(), changed.source_ini_hash());
+        changed.source_ini_hash = rules.source_ini_hash;
+        assert_eq!(
+            changed.ares_emp_ai_recover_mission(),
+            crate::rules::ARES_ENABLED.then_some(MissionType::Hunt)
+        );
+        assert_eq!(
+            retained_hash == changed.simulation_config_hash(),
+            !crate::rules::ARES_ENABLED
+        );
+        let fresh = RuleSet::from_processed_rules(
+            &RulesLayerStack::new(IniFile::from_str(
+                "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=400\n",
+            ))
+            .process()
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(
+            fresh.ares_emp_ai_recover_mission().is_none(),
+            "new RulesClass constructor"
+        );
+    }
+    #[test]
     fn infantry_occupy_pip_uses_each_admitted_rules_section_pass() {
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
         // Original Infantry5240D1..524125 calls ReadPip4748A0 on every
@@ -8749,8 +8882,8 @@ CellSpread=0
     #[test]
     fn country_income_mult_parses_and_defaults() {
         assert_eq!(
-            CountryRules::default().income_ppm,
-            INCOME_PPM_SCALE,
+            CountryRules::default().income_mult,
+            NativeF32Bits::ONE,
             "default IncomeMult is 1.0x (a derived Default would zero it and wipe income)"
         );
 
@@ -8760,10 +8893,59 @@ CellSpread=0
         );
         let ini = IniFile::from_str(&src);
         let rules = RuleSet::from_ini(&ini).expect("Should parse");
-        assert_eq!(rules.country_income_ppm("Americans"), 1_200_000);
-        assert_eq!(rules.country_income_ppm("Russia"), INCOME_PPM_SCALE);
-        assert_eq!(rules.country_income_ppm("Nonexistent"), INCOME_PPM_SCALE);
-        assert_eq!(rules.country_income_ppm("americans"), 1_200_000); // case-insensitive
+        assert_eq!(rules.country_income_mult("Americans").bits(), 0x3F99_999A);
+        assert_eq!(rules.country_income_mult("Russia"), NativeF32Bits::ONE);
+        assert_eq!(rules.country_income_mult("Nonexistent"), NativeF32Bits::ONE);
+        assert_eq!(rules.country_income_mult("americans").bits(), 0x3F99_999A);
+    }
+
+    #[test]
+    fn native_income_and_purifier_field_readers_preserve_observed_bits() {
+        let corpus = crate::test_fixture::json("tools/spatial_oracle/refinery_income.json");
+        let rows = corpus["reader_rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 12);
+        for row in rows {
+            let input = &row["input"];
+            let field = input["field"].as_str().unwrap();
+            let section = input["section"].as_str().unwrap();
+            let current = NativeF32Bits::from_bits(
+                u32::from_str_radix(input["default_bits"].as_str().unwrap(), 16).unwrap(),
+            );
+            let expected = NativeF32Bits::from_bits(
+                u32::from_str_radix(row["output"]["bits"].as_str().unwrap(), 16).unwrap(),
+            );
+            let mut ini = IniFile::from_str(
+                "[Countries]\n0=SYNTHCOUNTRY\n[SYNTHCOUNTRY]\nFixtureOnly=1\n[General]\nFixtureOnly=1\n",
+            );
+            if let Some(prefix) = input["prefix_raw"].as_str() {
+                ini.merge(&IniFile::from_str(&format!(
+                    "[{section}]\n{field}={prefix}\n"
+                )));
+            }
+            if let Some(raw) = input["raw"].as_str() {
+                ini.merge(&IniFile::from_str(&format!("[{section}]\n{field}={raw}\n")));
+            }
+            let rules = RuleSet::from_ini(&ini).unwrap();
+            let actual = match field {
+                "IncomeMult" => rules.country_income_mult("SYNTHCOUNTRY"),
+                "PurifierBonus" => rules.general.purifier_bonus,
+                _ => unreachable!(),
+            };
+            assert_eq!(actual, expected, "{} {}", field, input["name"]);
+            // Also compare the actual retained-default reader input, not just
+            // the immutable view reconstructed from the processed layers.
+            let raw = input["raw"]
+                .as_str()
+                .map_or(String::new(), |raw| format!("{field}={raw}\n"));
+            let direct = IniFile::from_str(&format!("[{section}]\nFixtureOnly=1\n{raw}"));
+            assert_eq!(
+                direct
+                    .section(section)
+                    .unwrap()
+                    .read_double_to_float(field, current),
+                expected
+            );
+        }
     }
 
     #[test]
@@ -9669,7 +9851,7 @@ MutateWarhead=MyMutate\n\
             "ReadInt takes `$` hex"
         );
         assert_eq!(rules.general.chrono_harv_too_far_distance, 40);
-        assert_eq!(rules.general.purifier_bonus_ppm, 300_000);
+        assert_eq!(rules.general.purifier_bonus.bits(), 0x3E99_999A);
     }
 
     #[test]
@@ -9696,13 +9878,11 @@ MutateWarhead=MyMutate\n\
         assert_eq!(rules.general.harvester_too_far_distance, 5);
         assert_eq!(rules.general.maximum_queued_objects, 5);
         assert_eq!(rules.general.chrono_harv_too_far_distance, 50);
-        assert_eq!(rules.general.purifier_bonus_ppm, 250_000);
+        assert_eq!(rules.general.purifier_bonus.bits(), 0x3E80_0000);
     }
 
-    /// Fractional-percent PurifierBonus survives at full fixed-point precision
-    /// (parts-per-million), NOT quantized to whole percent. `.333` -> 333_000 ppm,
-    /// not 330_000. Stock `.25` stays exactly 250_000 (byte-identical to the old
-    /// integer-percent form).
+    /// ReadDouble -> FSTP float retains the exact stored binary32, including
+    /// fractions that neither whole percent nor PPM represent exactly.
     #[test]
     fn purifier_bonus_keeps_fractional_precision() {
         let ini = IniFile::from_str(
@@ -9714,9 +9894,8 @@ MutateWarhead=MyMutate\n\
              PurifierBonus=.333\n",
         );
         let rules = RuleSet::from_ini(&ini).expect("Should parse");
-        assert_eq!(rules.general.purifier_bonus_ppm, 333_000);
-        // The old integer-percent path would have rounded to 33% (330_000) — the drift.
-        assert_ne!(rules.general.purifier_bonus_ppm, 330_000);
+        assert_eq!(rules.general.purifier_bonus.bits(), 0x3EAA_7EFA);
+        assert_ne!(rules.general.purifier_bonus.bits(), 0x3EA8_F5C2);
     }
 
     #[test]

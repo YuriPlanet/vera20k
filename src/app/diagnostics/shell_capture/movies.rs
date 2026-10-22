@@ -92,7 +92,7 @@ pub(super) enum MoviesTarget {
         entry_tick: Option<u32>,
         /// Rest the pointer here instead of at the neutral point.
         hover: Option<(i32, i32)>,
-        /// The page captured: VERA's is reached by pressing VERA20K Options on
+        /// The page captured: VERA's is reached by pressing Vera Options on
         /// the settled main page.
         page: crate::ui::main_menu_dialogs::options::OptionsPage,
     },
@@ -773,7 +773,7 @@ impl MoviesCapture {
                         .iter()
                         .find(|(button, _)| *button == LauncherButton::Page(OptionsPage::Vera))
                         .map(|(_, rect)| *rect)
-                        .context("D5 VERA20K Options button")?;
+                        .context("D5 Vera Options button")?;
                     state.match_state.input.cursor_x = (rect.x + rect.w / 2) as f32;
                     state.match_state.input.cursor_y = (rect.y + rect.h / 2) as f32;
                     App::handle_launcher_options_mouse(state, None);
@@ -781,10 +781,10 @@ impl MoviesCapture {
                     App::handle_launcher_options_mouse(state, Some(false));
                     ensure!(
                         state.frontend.shell_exit.is_some(),
-                        "VERA20K Options must run the main page's teardown slide"
+                        "Vera Options must run the main page's teardown slide"
                     );
                     self.route.push(json!({"dialog": 0xd5, "frame": frame,
-                        "action": "VERA20K Options through ordinary pointer handler"}));
+                        "action": "Vera Options through ordinary pointer handler"}));
                 } else if rendered == PresentedShell::Options
                     && showing == Some(page)
                     && state.frontend.shell_exit.is_none()

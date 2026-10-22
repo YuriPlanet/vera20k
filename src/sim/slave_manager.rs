@@ -1549,8 +1549,8 @@ impl Simulation {
             return;
         };
         let mut paid = false;
-        while let Some((value, bales)) = crate::sim::miner::drain_first_slot(&mut cargo) {
-            crate::sim::miner::pay_refinery_owner(self, rules, master, value, bales);
+        while let Some((slot, bales)) = crate::sim::miner::drain_first_slot(&mut cargo) {
+            crate::sim::miner::pay_refinery_owner(self, rules, master, slot, bales);
             paid = true;
         }
         if paid

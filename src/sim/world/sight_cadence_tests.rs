@@ -22,6 +22,216 @@ fn retail_arena() -> Option<(Simulation, RuleSet, PathGrid)> {
     Some((sim, rules, grid))
 }
 
+/// GrowShroud4ADFF0 calls the object's See slot, not UpdateReveal488.
+/// Aircraft41ADF0 forces radius1 at GetHeight==0, even for raw Sight0;
+/// its Map5678E0 final0/final1 pair has no border or retained source write.
+#[test]
+fn aircraft_uncached_ground_sight_uses_one_cell_radius_without_replacing_its_source() {
+    for (kind, sight, resize) in [
+        ("ORCA", 8, false),
+        ("SPYP", 0, false),
+        ("ORCA", 8, true),
+        ("SPYP", 0, true),
+    ] {
+        let Some((mut sim, rules, _)) = retail_arena() else {
+            return;
+        };
+        sim.session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+        sim.fog = vision::FogState::new(32, 32);
+        assert_eq!(rules.object(kind).unwrap().sight, sight);
+        let owner = sim.intern("Americans");
+        let id = sim
+            .spawn_object(kind, "Americans", 16, 16, 0, &rules)
+            .unwrap();
+        let entity = sim.entities().get(id).unwrap();
+        assert_eq!(entity.category(), EntityCategory::Aircraft);
+        assert_eq!(
+            crate::sim::movement::air_movement::current_fly_height(
+                entity,
+                sim.resolved_terrain.as_ref()
+            ),
+            0
+        );
+        assert!(entity.discovery.discovered_by_current_house());
+        assert!(
+            sim.substrate
+                .display
+                .members(super::super::display_layers::DisplayLayer::GROUND)
+                .contains(&id)
+        );
+        //4ADFF0 admits a known Ground object without consulting3D5;
+        //Aircraft See itself has no Techno70ADC0 playfield gate either.
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .in_playfield
+            .store(false);
+        let held = sim.fog.sight_admissions_for_test().clone();
+        let rng = sim.scenario_rng.native_state_hex();
+        let ((), trace) = trace_reveal_calls(|| {
+            if resize {
+                assert!(sim.change_visible_map_area([2, 2, 16, 12], &rules));
+                assert!(sim.entities().get(id).unwrap().in_playfield());
+            } else {
+                sim.trigger_grow_shroud(UninitContext::with_rules(&rules));
+            }
+        });
+        // Native radius1 offset order, also consumed by reveal_area_tests.
+        let cells = vec![
+            (16, 16),
+            (17, 15),
+            (16, 15),
+            (15, 15),
+            (15, 16),
+            (17, 16),
+            (15, 17),
+            (16, 17),
+            (17, 17),
+        ];
+        assert_eq!(
+            trace.walks,
+            [cells.clone(), cells],
+            "{kind}, resize={resize}"
+        );
+        assert!(
+            trace.border_receivers.is_empty(),
+            "Aircraft See has no567DA0"
+        );
+        assert!(sim.fog.is_ground_unshrouded(owner, 17, 17));
+        assert_eq!(sim.fog.sight_admissions_for_test(), &held);
+        assert_eq!(sim.scenario_rng.native_state_hex(), rng);
+    }
+}
+
+/// Aircraft41AE00 retains raw Type Sight: no Techno elevation scaling.
+/// An airborne zero-Sight plane returns with ordinary skirmish fog disabled.
+#[test]
+fn aircraft_uncached_airborne_sight_uses_raw_type_range_and_skips_zero() {
+    for (kind, sight) in [("ORCA", 8), ("SPYP", 0)] {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
+        else {
+            return;
+        };
+        let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 1, 128);
+        sim.session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+        let owner = sim.intern("Americans");
+        sim.session.set_current_house_for_test(Some(owner));
+        sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
+            base: 50,
+            ..crate::sim::arena_fixture::OPEN_PLAYFIELD
+        }));
+        sim.set_playfield_size_height_for_test(Some(50));
+        sim.fog = vision::FogState::new(128, 128);
+        let id = sim
+            .spawn_object(kind, "Americans", 75, 50, 0, &rules)
+            .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .position
+            .put_z(4000);
+        assert_eq!(rules.object(kind).unwrap().sight, sight);
+        assert!(!sim.session.game_options().fog_of_war);
+        let held = sim.fog.sight_admissions_for_test().clone();
+        let ((), trace) = trace_reveal_calls(|| {
+            sim.reveal_uncached_object_sight(id, UninitContext::with_rules(&rules));
+        });
+        if sight == 0 {
+            assert!(trace.walks.is_empty());
+        } else {
+            assert_eq!(trace.walks.len(), 2);
+            assert_eq!(trace.walks[0], trace.walks[1]);
+            // Original See+Map execution:4000 shifts19 cells, radius8
+            //visits205 cells; Techno's elevation scaling would produce9.
+            assert_eq!(trace.walks[0][0], (56, 31));
+            assert_eq!(trace.walks[0].len(), 205);
+            assert!(trace.walks[0].contains(&(64, 31)));
+            assert!(
+                !trace.walks[0].contains(&(65, 31)),
+                "no elevation-added ninth ring"
+            );
+        }
+        assert!(trace.border_receivers.is_empty());
+        assert_eq!(sim.fog.sight_admissions_for_test(), &held);
+    }
+}
+
+///41AE63..41AE95 rereads live Location and Owner for the second map call,
+/// retaining the first raw radius even if a synchronous notification changes
+/// the source. The supplied callback isolates that transport boundary.
+#[test]
+fn aircraft_uncached_sight_rereads_its_location_between_map_passes() {
+    let Some((mut sim, rules, _)) = retail_arena() else {
+        return;
+    };
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    let id = sim
+        .spawn_object("ORCA", "Americans", 16, 16, 0, &rules)
+        .unwrap();
+    // Make the first pass produce a fresh CellChangeNotify callback.
+    sim.fog = vision::FogState::new(32, 32);
+    let rng = sim.scenario_rng.native_state_hex();
+    let ((), trace) = trace_reveal_calls(|| {
+        with_first_cell_receiver(
+            move |sim| {
+                let entity = sim.substrate.entities.get_mut(id).unwrap();
+                entity.position.set_rx_for_test(20);
+                entity.position.put_z(416);
+                entity.sight.set_vision_range_for_test(10);
+            },
+            || sim.reveal_uncached_object_sight(id, UninitContext::with_rules(&rules)),
+        )
+    });
+    assert_eq!(trace.walks.len(), 2);
+    assert_eq!(trace.walks[0][0], (16, 16));
+    assert_eq!(trace.walks[1][0], (18, 14));
+    assert_eq!(trace.walks[0].len(), 9);
+    assert_eq!(
+        trace.walks[1].len(),
+        9,
+        "radius1 was retained before the callback"
+    );
+    assert!(trace.border_receivers.is_empty());
+    assert!(sim.fog.sight_admissions_for_test().is_empty());
+    assert_eq!(sim.scenario_rng.native_state_hex(), rng);
+}
+
+/// The two Map5678E0 calls independently apply their owner/player gate.
+/// The supplied callback changes only the owner-store boundary, without
+/// claiming that native discovery naturally performs an ownership transfer.
+#[test]
+fn aircraft_uncached_sight_rereads_owner_before_the_second_house_admission() {
+    let Some((mut sim, rules, _)) = retail_arena() else {
+        return;
+    };
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    let other = add_computer_house(&mut sim, "Russians");
+    let id = sim
+        .spawn_object("ORCA", "Americans", 16, 16, 0, &rules)
+        .unwrap();
+    sim.fog = vision::FogState::new(32, 32);
+    let ((), trace) = trace_reveal_calls(|| {
+        with_first_cell_receiver(
+            move |sim| sim.substrate.entities.change_owner(id, other),
+            || sim.reveal_uncached_object_sight(id, UninitContext::with_rules(&rules)),
+        )
+    });
+    assert_eq!(trace.walks.len(), 2);
+    assert_eq!(
+        trace.notifications.len(),
+        9,
+        "the nonallied second owner cannot notify the player"
+    );
+    assert_eq!(sim.entities().get(id).unwrap().owner(), other);
+    assert!(sim.fog.sight_admissions_for_test().is_empty());
+}
+
 /// The cell source `id`'s own sight was last revealed around.
 fn sight_origin(sim: &Simulation, id: u64) -> (u16, u16) {
     let owner = sim.substrate.entities.get(id).unwrap().owner();

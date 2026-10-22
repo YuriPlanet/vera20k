@@ -193,6 +193,12 @@ impl GlobalChannel {
         self.send.mean_response_time()
     }
 
+    /// Shared CommBuffer48BAA0 operation; unlike global reset540B40 this
+    /// preserves queued messages, aggregate sequence and receive dedup state.
+    pub fn reset_response_time(&mut self, clear: bool) {
+        self.send.reset_response_time(clear);
+    }
+
     pub fn queued_send_count(&self) -> usize {
         self.send.len()
     }

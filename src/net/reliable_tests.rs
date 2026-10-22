@@ -66,6 +66,130 @@ fn lan_start_timing_matches_original_arithmetic_and_conditional_response_reads()
 }
 
 #[test]
+fn lan_handoff_timings_match_native_outputs_and_ordered_global_reads() {
+    let corpus: serde_json::Value = serde_json::from_str(include_str!(
+        "../../tools/storage_oracle/lan_manager_timing.json"
+    ))
+    .unwrap();
+    for case in corpus["timing"].as_array().unwrap() {
+        let observations = case["input_responses"].as_array().unwrap();
+        let mut observations = observations.iter();
+        let mut read = || {
+            observations
+                .next()
+                .expect("unexpected native response observation")
+                .as_u64()
+                .unwrap() as u32
+        };
+        let (private, global) = if case["role"] == "prepare" {
+            RetryTiming::lan_gameplay(&mut read)
+        } else {
+            (
+                RetryTiming::lan_start(false, true, &mut read),
+                RetryTiming::LAN_GUEST_COMPLETED_GLOBAL,
+            )
+        };
+        let tuple = |timing: RetryTiming| {
+            serde_json::json!([timing.retry_delta, timing.max_retries, timing.timeout])
+        };
+        assert_eq!(tuple(private), case["private"], "{}", case["name"]);
+        assert_eq!(tuple(global), case["global_timing"], "{}", case["name"]);
+        assert!(
+            observations.next().is_none(),
+            "{} did not consume every native read",
+            case["name"]
+        );
+    }
+}
+
+#[test]
+fn response_history_reset_matches_native_clear_preserve_and_empty_controls() {
+    let corpus: serde_json::Value = serde_json::from_str(include_str!(
+        "../../tools/storage_oracle/lan_manager_timing.json"
+    ))
+    .unwrap();
+    for case in corpus["reset"].as_array().unwrap() {
+        for (index, &role) in ["global", "private0", "private1"].iter().enumerate() {
+            let mut response = ResponseTime::default();
+            for elapsed in case["input_samples"][index].as_array().unwrap() {
+                response.record(elapsed.as_u64().unwrap() as u32);
+            }
+            let state = |response: &ResponseTime| [response.total, response.samples, response.mean];
+            let expected = |field: &str| {
+                std::array::from_fn::<_, 3, _>(|i| case[field][role][i].as_u64().unwrap() as u32)
+            };
+            assert_eq!(
+                state(&response),
+                expected("before"),
+                "{} {role}",
+                case["name"]
+            );
+            if index == 0 {
+                response.reset(true);
+            } else {
+                response.reset(case["clear"].as_bool().unwrap());
+            }
+            assert_eq!(
+                state(&response),
+                expected("after"),
+                "{} {role}",
+                case["name"]
+            );
+        }
+    }
+}
+
+#[test]
+fn private_response_reset_preserves_pending_delivery_and_original_ack_time() {
+    let mut sender = connections(LanConnectionConfig::default(), &[2]);
+    sender.peers[0].send.response_time.record(10);
+    assert!(sender.send_to(2, b"first", Delivery::Reliable));
+    assert!(sender.send_to(2, b"second", Delivery::Reliable));
+    let mut emitted = Vec::new();
+    sender.service(100, &mut |_, frame| emitted.push(frame.to_vec()));
+    sender
+        .receive(endpoint(2), &frame(2, 0, &[]), &mut |_, _| {})
+        .unwrap();
+    let incoming = frame(0, 0, b"incoming");
+    sender
+        .receive(endpoint(2), &incoming, &mut |_, _| {})
+        .unwrap();
+    let before = format!("{:?}", sender.peers[0]);
+    sender.reset_response_time(false);
+    assert_eq!(format!("{:?}", sender.peers[0]), before);
+    sender.reset_response_time(true);
+    assert_eq!(sender.mean_response_time(2), Some(0));
+    assert_eq!(sender.queued_send_count(2), Some(2));
+    assert_eq!(sender.peers[0].send.total_enqueued(), 2);
+    assert_eq!(sender.peers[0].next_reliable, 2);
+    assert_eq!(sender.peers[0].receive.len(), 1);
+    for (entry, original) in sender.peers[0].send.entries.iter().zip(&emitted) {
+        assert_eq!(&entry.frame, original);
+        assert_eq!(
+            (entry.first_sent, entry.last_sent, entry.attempts),
+            (100, 100, 1)
+        );
+    }
+    assert!(sender.peers[0].send.entries[0].completed);
+    sender.service(120, &mut |_, _| panic!("retry before native interval"));
+    assert_eq!(sender.mean_response_time(2), Some(20));
+    assert_eq!(sender.queued_send_count(2), Some(1));
+    sender
+        .receive(endpoint(2), &frame(2, 1, &[]), &mut |_, _| {})
+        .unwrap();
+    sender.service(130, &mut |_, _| panic!("completed entry retransmitted"));
+    assert_eq!(sender.mean_response_time(2), Some(25));
+    assert_eq!(sender.pop_received().unwrap().payload, b"incoming");
+    assert_eq!(
+        sender.receive(endpoint(2), &incoming, &mut |_, _| {}),
+        Ok(ReceiveOutcome::DuplicateAcknowledged)
+    );
+    assert!(sender.pop_received().is_none());
+    assert!(sender.send_to(2, b"next", Delivery::Reliable));
+    assert_eq!(sequence(&sender.peers[0].send.entries[0].frame), 2);
+}
+
+#[test]
 fn rolling_checksum_matches_original_udp_send_for_all_tail_lengths() {
     let corpus = native_controls();
     for case in corpus["cases"].as_array().unwrap() {

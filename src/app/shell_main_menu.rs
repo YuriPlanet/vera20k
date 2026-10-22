@@ -922,7 +922,7 @@ Details: {details}"
             }
             None => {
                 state.frontend.options_dialog = Some(dialog);
-                // VERA20K Options or Back: the showing page slides out first.
+                // Vera Options or Back: the showing page slides out first.
                 if let Some(page) = output.page {
                     Self::leave_shell_dialog(
                         state,

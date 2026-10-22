@@ -684,6 +684,125 @@ fn retail_spy_plane_photographs_the_target_and_leaves() {
     assert!(!sim.fog.is_cell_revealed(americans, 60, 5));
 }
 
+/// Aircraft AI414FDF..415046 clears a retained Dummy CellClass pointer
+/// after Foot AI. The next Overfly visit must make a fresh edge choice.
+/// The stock launch and live object turn run normally; only the retained
+/// pointer at this boundary is supplied, rather than a whole native flight.
+#[test]
+fn retail_spy_plane_drops_dummy_cells_and_picks_another_exit() {
+    for (bad_nav, bad_target) in [(true, false), (false, true), (true, true)] {
+        let Some(rules) = retail_rules() else {
+            return;
+        };
+        let (rules, mut sim, americans) = world(rules);
+        charge_super(&mut sim, americans, SPY_PLANE);
+        click(&mut sim, &rules, americans, SPY_PLANE, TARGET);
+        let [plane] = spy_planes(&sim)[..] else {
+            panic!("one stock Spy Plane");
+        };
+        let mut approach_frames = 0;
+        while sim.substrate.entities.get(plane).unwrap().mission.current()
+            != MissionId::from_known(MissionType::SpyplaneOverfly)
+        {
+            step(&mut sim, &rules);
+            approach_frames += 1;
+            assert!(approach_frames < 3000, "Spy Plane must reach Overfly");
+        }
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(plane)
+                .unwrap()
+                .mission_leaf
+                .as_aircraft()
+                .unwrap()
+                .action_latch(),
+            1,
+            "Approach must latch the straight Overfly heading"
+        );
+        let dummy = (700, 700);
+        assert_eq!(
+            TargetKind::Cell(dummy.0, dummy.1)
+                .cell_identity(sim.resolved_terrain.as_ref().unwrap()),
+            Some(crate::map::cell_index::NativeCellIdentity::Dummy)
+        );
+        let nav = if bad_nav { dummy } else { TARGET };
+        sim.assign_aircraft_destination(
+            plane,
+            Some(NavTargetRef::cell(nav.0, nav.1)),
+            &rules,
+            FrameEffects::default(),
+        );
+        let target = if bad_target { dummy } else { TARGET };
+        sim.assign_target_represented(
+            plane,
+            Some(TargetKind::Cell(target.0, target.1)),
+            &rules,
+            None,
+            FrameEffects::default(),
+        )
+        .unwrap();
+        let now = sim.session.binary_frame();
+        let entity = sim.substrate.entities.get_mut(plane).unwrap();
+        // Keep the mission handler out of this first visit so it cannot
+        // replace the supplied pointers before the class AI reaches them.
+        entity.mission.write_dispatch_epilogue(now as i32, 100);
+
+        step(&mut sim, &rules);
+        let entity = sim.substrate.entities.get(plane).unwrap();
+        assert_eq!(entity.navigation.nav_com(), None, "{bad_nav}/{bad_target}");
+        assert_eq!(
+            entity.attack_target.target(),
+            None,
+            "{bad_nav}/{bad_target}"
+        );
+        assert_eq!(
+            entity.mission.current(),
+            MissionId::from_known(MissionType::SpyplaneOverfly)
+        );
+
+        let mut expected_rng = sim.scenario_rng.clone();
+        let edge = Edge::opposite_edge(sim.aircraft_house_waypoint_edge(plane));
+        let expected = find_paradrop_edge_cell(
+            sim.playfield_bounds(),
+            sim.resolved_terrain.as_ref(),
+            edge,
+            &mut expected_rng,
+        )
+        .unwrap();
+        let now = sim.session.binary_frame();
+        sim.substrate
+            .entities
+            .get_mut(plane)
+            .unwrap()
+            .mission
+            .write_dispatch_epilogue(now as i32, 0);
+        crate::sim::aircraft::tick_aircraft_missions(&mut sim, &rules);
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(plane)
+                .unwrap()
+                .navigation
+                .nav_com(),
+            Some(NavTargetRef::cell(expected.0, expected.1))
+        );
+        assert_eq!(
+            sim.scenario_rng.logical_state(),
+            expected_rng.logical_state()
+        );
+        let mut frames = 0;
+        while sim.substrate.entities.contains(plane) {
+            step(&mut sim, &rules);
+            frames += 1;
+            assert!(
+                frames < 3000,
+                "Spy Plane must still leave the map: {bad_nav}/{bad_target}"
+            );
+        }
+    }
+}
+
 /// Computer MCV Deploy7398D9 -> House505180 -> Paranoid501640 calls
 /// MakeEnemy4F9F90 even without an ally edge. Its4ADEE0/4ADCD0 bracket
 /// replaces the human SPYP's camera radius with its ordinary Sight=0.

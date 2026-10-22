@@ -71,6 +71,8 @@ mod aircraft_attack;
 mod aircraft_enter;
 mod aircraft_fire_location;
 mod aircraft_move;
+#[cfg(test)]
+pub(crate) use aircraft_move::tests::fixture as aircraft_search_fixture;
 mod building_working_sound;
 pub(crate) mod damage_consequences;
 pub mod display_layers;
@@ -185,6 +187,8 @@ mod lifecycle_tests;
 #[cfg(test)]
 mod mastermind_overload_tests;
 #[cfg(test)]
+mod projectile_degenerates_tests;
+#[cfg(test)]
 mod projectile_trailer_tests;
 #[cfg(test)]
 mod squid_grapple_tests;
@@ -194,6 +198,8 @@ mod suicide_fire_tests;
 pub use lifecycle_tests::common_raw_terrain_cell as common_raw_test_terrain_cell;
 #[cfg(test)]
 mod team_script_vm_tests;
+#[cfg(test)]
+mod voxel_water_expiry_tests;
 
 pub(crate) use crash::CrashLatch;
 pub(crate) use display_registry::entity_layer;
@@ -4903,10 +4909,10 @@ impl Simulation {
                 entity.in_playfield.store(member);
             }
         }
-        // FUN_006E21E0's false->true callback is the Techno reveal/update
-        // virtual (`0x0070ADC0`), only for human-owned live nonlimbo mobiles;
-        // Buildings are explicitly excluded. Rust's owned equivalent commits
-        // the sight reveal immediately, before this action returns.
+        // FUN_006E21E0's false->true callback is Object See (virtual+120):
+        // Aircraft41ADF0 or Techno70ADC0, only for human-owned live nonlimbo
+        // mobiles; Buildings are explicitly excluded. The shared dispatch
+        // commits the sight reveal before this action returns.
         for (stable_id, _, reveal) in membership_updates {
             if reveal {
                 self.reveal_uncached_object_sight(stable_id, UninitContext::new(rules, None));

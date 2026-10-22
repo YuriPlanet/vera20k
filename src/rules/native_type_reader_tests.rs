@@ -7,6 +7,58 @@ use super::*;
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::ruleset::RuleSet;
 
+/// ReadGeneral66F362..66F3F8 retains the BuildingType list at Rules+850.
+#[test]
+fn repair_bay_list_retains_resolved_identities_across_layers() {
+    let base = IniFile::from_str(
+        "[BuildingTypes]\n0=GADEPT\n1=NADEPT\n[General]\nRepairBay=gadept,none,nadept,gadept\n",
+    );
+    let mut layers = RulesLayerStack::new(base.clone());
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[General]\nRepairBay=\n"),
+    );
+    let retained = RuleSet::from_rules_layers(&layers).unwrap();
+    assert_eq!(retained.repair_bay_types, ["GADEPT", "NADEPT", "GADEPT"]);
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[General]\nRepairBay=nadept\n"),
+    );
+    assert_eq!(
+        RuleSet::from_rules_layers(&layers)
+            .unwrap()
+            .repair_bay_types,
+        ["NADEPT"]
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[General]\nRepairBay=<none>\n"),
+    );
+    assert!(
+        RuleSet::from_rules_layers(&layers)
+            .unwrap()
+            .repair_bay_types
+            .is_empty()
+    );
+    assert!(
+        RuleSet::from_ini(&IniFile::from_str("[General]\n"))
+            .unwrap()
+            .repair_bay_types
+            .is_empty()
+    );
+}
+
+#[test]
+fn retail_repair_bay_list_uses_the_stock_depots() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    assert_eq!(
+        retail.rules.repair_bay_types,
+        ["GADEPT", "NADEPT", "CAOUTP"]
+    );
+}
+
 /// TechnoType ReadINI's weapon block (`0x0071284A..0x00712AAD`) runs on every
 /// reached pass with the live TurretCount, WeaponCount and ClearAllWeapons as
 /// its defaults, and its ClearAllWeapons clear (`0x00712A8F`) follows either

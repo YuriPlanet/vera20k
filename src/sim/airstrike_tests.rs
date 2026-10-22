@@ -62,6 +62,81 @@ impl Fixture {
 }
 
 #[test]
+fn retail_boris_building_attack_enters_designation_pose_and_starts_sortie() {
+    let Some(mut f) = Fixture::new() else { return };
+    let boris_type = f.rules.object("BORIS").unwrap();
+    assert_eq!(boris_type.primary(), Some("AKM"));
+    assert_eq!(boris_type.secondary(), Some("Flare"));
+    assert_eq!(boris_type.airstrike.normal_count, 2);
+    assert_eq!(boris_type.secondary_fire_frame, 0);
+    assert_eq!(
+        f.rules
+            .animation_sequence("BORIS")
+            .unwrap()
+            .infantry_action(40)
+            .unwrap()
+            .start_frame,
+        401
+    );
+    let health = f
+        .sim
+        .substrate
+        .entities
+        .get(f.target)
+        .unwrap()
+        .health
+        .current();
+    assert!(f.sim.apply_command_with_overlays(
+        "Americans",
+        &crate::sim::command::Command::Attack {
+            attacker_id: f.boris,
+            target_id: f.target,
+        },
+        &f.rules,
+        None,
+        FrameEffects::default(),
+    ));
+    f.sim.advance_tick(&[], Some(&f.rules), None, None, 67);
+    let boris = f.sim.substrate.entities.get(f.boris).unwrap();
+    // Original Infantry52083E..5208FE requests SecondaryFire on the first
+    // designation; the existing Doing40/41 alone admits the Stage-only restart.
+    assert_eq!(boris.mission_leaf.as_infantry().unwrap().doing(), 40);
+    assert_eq!(boris.infantry_sprite_pose(), Some((40, 0)));
+    for _ in 0..120 {
+        if f.sim.substrate.airstrike_manager(f.boris).unwrap().active {
+            break;
+        }
+        f.sim.advance_tick(&[], Some(&f.rules), None, None, 67);
+    }
+    let manager = f.sim.substrate.airstrike_manager(f.boris).unwrap();
+    assert!(manager.active && manager.busy);
+    assert_eq!(manager.target, Some(f.target));
+    assert_eq!(manager.aircraft.len(), 2);
+    assert!(
+        f.sim
+            .airstrike_designation_coordinates(f.boris, &f.rules)
+            .is_some()
+    );
+    assert_eq!(
+        f.sim
+            .substrate
+            .entities
+            .get(f.target)
+            .unwrap()
+            .health
+            .current(),
+        health
+    );
+    f.sim
+        .airstrike_clear_target(f.boris, &f.rules, FrameEffects::default());
+    assert!(
+        f.sim
+            .airstrike_designation_coordinates(f.boris, &f.rules)
+            .is_none()
+    );
+}
+
+#[test]
 #[ignore = "slow; run when changing what it covers"]
 fn retail_flare_starts_two_aircraft_and_preserves_special_damage_suppression() {
     let Some(mut f) = Fixture::new() else { return };

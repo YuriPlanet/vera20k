@@ -142,7 +142,7 @@ impl ShellSlideKind {
     /// The dialog's slide column with the panel's `rows` tile rows. Every
     /// rendered shell has a `slide` table entry, so a miss is a programming
     /// error. Options' two pages adjust `0xD5`'s retail column to VERA's
-    /// buttons: the main page slides VERA20K Options under Network too, and
+    /// buttons: the main page slides Vera Options under Network too, and
     /// VERA's page has only Back, as on the Keyboard page `0xA3`.
     pub(crate) fn column(self, rows: u32) -> SlideColumn {
         let spec = crate::ui::shell::slide::slide_spec_for(self.dialog_id())
@@ -1432,7 +1432,7 @@ mod tests {
         assert_eq!(top_and_bottom(ShellSlideKind::MovieList), (1, true, false));
         assert_eq!(top_and_bottom(ShellSlideKind::Skirmish), (2, true, true));
         // Retail `0xD5` slides Keyboard and Network; VERA's main page adds
-        // VERA20K Options under them, and VERA's page slides only Back.
+        // Vera Options under them, and VERA's page slides only Back.
         assert_eq!(
             crate::ui::shell::slide::slide_spec_for(DialogId(0x00D5))
                 .unwrap()

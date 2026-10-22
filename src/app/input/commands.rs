@@ -69,13 +69,24 @@ pub(crate) fn queue_build_by_type(state: &mut AppState, type_id: &str, repeat: u
     );
 }
 
-pub(crate) fn suspend_build(state: &mut AppState, category: production::ProductionCategory) {
+pub(crate) fn suspend_build(state: &mut AppState, type_id: &str) {
     let owner: String = resolve_owner(state);
-    schedule_command(state, &owner, Command::SuspendProduction { category });
+    let record = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+        let sim = &runtime.simulation;
+        sim.encode_production_record(
+            sim.interner().get(&owner)?,
+            crate::sim::command::ProductionEvent::Suspend,
+            sim.interner().get(type_id)?,
+            &runtime.resources.rules,
+        )
+    });
+    if let Some(record) = record {
+        schedule_command(state, &owner, Command::SynchronizedRecord { record });
+    }
     log::info!(
-        "Build hold command queued: owner={} category={} issue_frame=current",
+        "Build hold command queued: owner={} type={} issue_frame=current",
         owner,
-        category.label()
+        type_id
     );
 }
 
@@ -1177,14 +1188,15 @@ pub(crate) fn object_move_destination(
         })
 }
 
-/// Make ordinary local Move and AreaGuard bytes authoritative at issue time.
+/// Make ordinary local mission bytes authoritative at issue time.
 ///
 /// Active YR routes a cell click through `ClickedAction` (`0x004D7D50`), and a
 /// Move over an object through `0x004D74E0`, to
 /// `EventClass__BuildMegaMissionEnvelope` (`0x004C6860`). Guard key730D60
 /// reaches the same producer through QueueMegaMission6FFBE0. Move, to a Cell
-/// or an object, and AreaGuard share this codec; other semantic commands pass
-/// through until their native record is established.
+/// or an object, AreaGuard and self-click Unload share this codec. The D key
+/// constructs its distinct Event9 before reaching this boundary. Other
+/// semantic commands pass through until their native record is established.
 pub(crate) fn encode_ordinary_local_command(
     sim: &crate::sim::world::Simulation,
     envelope: CommandEnvelope,
@@ -1195,7 +1207,12 @@ pub(crate) fn encode_ordinary_local_command(
         payload,
     } = envelope;
     match payload {
-        Command::Move { .. } | Command::MoveToObject { .. } | Command::Guard { .. } => {
+        Command::Move { .. }
+        | Command::MoveToObject { .. }
+        | Command::Guard { .. }
+        | Command::DeployMcv { .. }
+        | Command::ToggleInfantryDeploy { .. }
+        | Command::UnloadPassengers { .. } => {
             let record = sim.encode_megamission_record(owner, &payload)?;
             Some(CommandEnvelope::synchronized(record, execute_tick))
         }
@@ -1232,12 +1249,39 @@ pub(crate) fn try_schedule_command(
     owner: &str,
     payload: Command,
 ) -> Option<u64> {
-    state
-        .match_state
-        .sim_runtime
-        .as_mut()
-        .map(|rt| &mut rt.simulation)
-        .and_then(|sim| schedule_command_in_sim(sim, owner, payload))
+    let runtime = state.match_state.sim_runtime.as_mut()?;
+    let sim = &mut runtime.simulation;
+    let rules = &runtime.resources.rules;
+    //6AAD00's selected cameo determines RTTI/type-array index/Naval when
+    //the event is issued. The raw queue retains those bytes until execution;
+    //the existing production owner resolves the then-current held object.
+    let record = match &payload {
+        Command::QueueProduction { type_id } => Some(sim.encode_production_record(
+            sim.interner().get(owner)?,
+            crate::sim::command::ProductionEvent::Produce,
+            *type_id,
+            rules,
+        )?),
+        Command::CancelProductionByType { type_id, all } => Some(sim.encode_production_record(
+            sim.interner().get(owner)?,
+            if *all {
+                crate::sim::command::ProductionEvent::AbandonAll
+            } else {
+                crate::sim::command::ProductionEvent::Abandon
+            },
+            *type_id,
+            rules,
+        )?),
+        Command::PlaceReadyBuilding { type_id, rx, ry } => Some(sim.encode_place_building_record(
+            sim.interner().get(owner)?,
+            *type_id,
+            (*rx, *ry),
+            rules,
+        )?),
+        _ => None,
+    };
+    let payload = record.map_or(payload, |record| Command::SynchronizedRecord { record });
+    schedule_command_in_sim(sim, owner, payload)
 }
 
 /// Preserve the existing unit-returning command boundary for ordinary callers.
@@ -1944,10 +1988,11 @@ mod tests {
         let mut sim = Simulation::new();
         sim.session_mut_for_test().set_tick_for_test(41);
         sim.set_input_delay_ticks(7);
+        let command = Command::CycleProducerFocus {
+            category: crate::sim::production::ProductionCategory::Building,
+        };
 
-        let execute_tick =
-            schedule_command_in_sim(&mut sim, "Russians", Command::DeployMcv { entity_id: 99 })
-                .unwrap();
+        let execute_tick = schedule_command_in_sim(&mut sim, "Russians", command.clone()).unwrap();
 
         assert_eq!(execute_tick, 41);
         assert_eq!(sim.pending_command_snapshot().len(), 1);
@@ -1957,10 +2002,7 @@ mod tests {
                 .resolve(sim.pending_command_snapshot()[0].owner),
             "Russians"
         );
-        assert_eq!(
-            sim.pending_command_snapshot()[0].payload,
-            Command::DeployMcv { entity_id: 99 }
-        );
+        assert_eq!(sim.pending_command_snapshot()[0].payload, command);
     }
 
     #[test]

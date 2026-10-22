@@ -230,31 +230,68 @@ pub(crate) fn place_production_with_overlays(
     overlay_registry: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) -> bool {
-    // House4FB197..4FB1BE sends the CRT-initialized empty cell (0,0) and
-    // CellStruct(-1,-1) through the same producer exit as a mobile PLACE.
-    // They never enter tactical Unlimbo or its retry/EVA tail. Source:
-    // cameo_order.md, ordinary early-cell executed controls.
-    let request = match request {
-        ProductionPlacement::Building {
-            type_id,
-            cell: (0, 0) | (u16::MAX, u16::MAX),
-        } => {
-            let Some(object_type) = rules.object(type_id) else {
+    //4FB0FE..4FB191 uses the requested type only to choose a Factory slot.
+    // The completed object in that slot supplies the actual placement type;
+    // there is no requested-type/held-type equality test.
+    let (category, cell, selection) = match request {
+        ProductionPlacement::Building { type_id, cell } => {
+            let Some(object) = rules.object(type_id) else {
                 return false;
             };
-            if object_type.category != ObjectCategory::Building {
+            if object.category != ObjectCategory::Building {
                 return false;
             }
-            ProductionPlacement::Mobile {
-                category: production_category_for_object(object_type),
-            }
+            let Some(mut selection) = super::ProductionSelection::for_type(rules, object) else {
+                return false;
+            };
+            selection.rtti = selection.object_rtti();
+            (
+                production_category_for_object(object),
+                cell,
+                Some(selection),
+            )
         }
-        request => request,
+        ProductionPlacement::Mobile { category } => (category, (u16::MAX, u16::MAX), None),
+        ProductionPlacement::Selected { selection, cell } => {
+            let Some(category) = selection.category(rules) else {
+                return false;
+            };
+            (category, cell, Some(selection))
+        }
+    };
+    let Some(owner_id) = sim.interner.get(owner) else {
+        return false;
+    };
+    let Some(complete) = sim
+        .production
+        .factories()
+        .view(owner_id, category)
+        .and_then(|factory| factory.complete_object())
+    else {
+        return false;
+    };
+    let actual_type = sim.interner.resolve(complete.type_id).to_owned();
+    // Empty Cell and Cell(-1,-1) take the same producer-exit arm4FB520,
+    // regardless of the requested RTTI. Keep that decision in this owner.
+    let request = if matches!(cell, (0, 0) | (u16::MAX, u16::MAX)) {
+        ProductionPlacement::Mobile { category }
+    } else {
+        ProductionPlacement::Building {
+            type_id: &actual_type,
+            cell,
+        }
     };
     let (type_id, (rx, ry)) = match request {
         ProductionPlacement::Building { type_id, cell } => (type_id, cell),
         ProductionPlacement::Mobile { category } => {
             use crate::sim::ai_base_building::BuildingExit;
+            //4FB5B5 and4FB663 retain the original event selector even after
+            // Complete clears the product. Only legacy semantic callers have
+            // no selector and request the category's wildcard cleanup.
+            let cancellation = selection.map_or(
+                super::ProductionCancellation::Category(category),
+                super::ProductionCancellation::Selected,
+            );
             let Some(owner_id) = sim.interner.get(owner) else {
                 return false;
             };
@@ -272,9 +309,6 @@ pub(crate) fn place_production_with_overlays(
             let Some(obj) = sim.object_type(object.type_id, rules) else {
                 return false;
             };
-            if production_category_for_object(obj) != category {
-                return false;
-            }
             let is_building = obj.category == ObjectCategory::Building;
             // Native wrapper5F5C20 -> TypeFindFactory5F7900 with (0,1); an
             // aircraft (`What_Am_I` 2) alone retries with the busy-airfield
@@ -331,7 +365,12 @@ pub(crate) fn place_production_with_overlays(
                         });
                 }
                 super::factory_lifecycle::release_delivered_mobile(
-                    sim, rules, owner_id, category, effects,
+                    sim,
+                    rules,
+                    owner_id,
+                    category,
+                    cancellation,
+                    effects,
                 );
             } else if is_building {
                 // House4FB5BA returns immediately for a refused building
@@ -339,14 +378,19 @@ pub(crate) fn place_production_with_overlays(
                 // only refused mobile products enter the refund tail.
                 return false;
             } else {
-                // Exit0 or Exit1 with producer+524zero: refund the actually
-                // charged complete object, destroy it and start the queued head.
+                // Exit0 or Exit1 with producer+524zero: the original selector
+                // decides whether Abandon refunds/disposes the held object.
                 super::factory_lifecycle::refund_failed_delivery(
-                    sim, rules, owner_id, category, effects,
+                    sim,
+                    rules,
+                    owner_id,
+                    cancellation,
+                    effects,
                 );
             }
             return accepted;
         }
+        ProductionPlacement::Selected { .. } => unreachable!("normalized the selector above"),
     };
     let Some(obj) = rules.object(type_id) else {
         return false;
@@ -357,9 +401,7 @@ pub(crate) fn place_production_with_overlays(
 
     let owner_id = sim.interner.intern(owner);
     let type_interned = sim.interner.intern(type_id);
-    // The type's factory (Defenses for `BuildCat=Combat`, else Buildings)
-    // must hold its completed object.
-    let category = production_category_for_object(obj);
+    // Retain the selected Factory even if its held type's own category differs.
     let Some(held) = super::factory_lifecycle::ready_object(sim, owner_id, category, type_interned)
     else {
         return false;
@@ -501,7 +543,12 @@ pub(crate) fn place_production_with_overlays(
         rules,
         effects,
     );
-    held.abandon_after_placement(sim, rules, effects);
+    held.abandon_after_placement(
+        sim,
+        rules,
+        selection.expect("tactical PLACE has a selector"),
+        effects,
+    );
     // `0x004FB2CC..0x004FB314`: BuildingSlam follows every successful
     // Unlimbo, before the yard's FirstContact BREAK, whatever the release.
     sim.sound_events

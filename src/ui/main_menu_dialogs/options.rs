@@ -85,7 +85,7 @@ pub(crate) const DISPLAY_HELP: &str = "Which screen the game opens on. Auto foll
 /// The Display list's first row: the window system's own choice.
 pub(crate) const DISPLAY_AUTO_LABEL: &str = "Auto";
 /// The main page's button to VERA's page, and that page's heading.
-pub(crate) const VERA_OPTIONS_LABEL: &str = "VERA20K Options";
+pub(crate) const VERA_OPTIONS_LABEL: &str = "Vera Options";
 pub(crate) const VERA_OPTIONS_HELP: &str =
     "Settings VERA20K adds: full screen, sidebar size, smooth motion and more.";
 /// The VERA page's Back reuses retail's caption; its status help is the
@@ -95,7 +95,7 @@ const VERA_PAGE_BACK_LABEL: (&str, &str) = ("GUI:Back", "Back");
 
 /// Which page of Options shows. The main page keeps retail's controls, with
 /// VERA's Zoom in the resolution combo's place; VERA's own controls are on a
-/// page of their own behind the VERA20K Options button, so the main page looks
+/// page of their own behind the Vera Options button, so the main page looks
 /// like retail's. Both pages are one dialog with one set of values: switching
 /// pages applies, saves and resets nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,7 +109,7 @@ pub(crate) enum OptionsPage {
 pub(crate) enum LauncherButton {
     /// Keyboard, Network or Main Menu: one of gamemd's parent exits.
     Exit(LauncherParentResult),
-    /// VERA20K Options on the main page, Back on VERA's: shows that page.
+    /// Vera Options on the main page, Back on VERA's: shows that page.
     Page(OptionsPage),
 }
 

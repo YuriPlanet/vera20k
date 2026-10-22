@@ -268,7 +268,11 @@ impl Simulation {
     /// the deferred finalization list; here the object leaves the LogicVector
     /// and the store in the same step, because nothing resolves debris by id
     /// between the two points.
+    /// Natural expiry constructs its children while the parent is registered;
+    /// marked deletion and the x87-domain fallback skip those effects.
     pub fn visit_voxel_anim(&mut self, id: u64, rules: &RuleSet) {
+        use crate::sim::voxel_anim::VoxelAnimAiOutcome;
+
         let Some(mut debris) = self.substrate.voxel_anims.remove(id) else {
             return;
         };
@@ -280,14 +284,47 @@ impl Simulation {
             Ok(outcome) => outcome,
             Err(error) => {
                 log::warn!("voxel debris {id} left the verified x87 domain: {error}");
-                crate::sim::voxel_anim::VoxelAnimAiOutcome::Delete
+                VoxelAnimAiOutcome::Delete
             }
         };
         // Reinsert before the verdict is acted on: the LogicVector dispatch
         // classifies by store membership, and native's object is likewise still
         // registered when `vtable+0xF8` runs.
         self.substrate.voxel_anims.insert(debris);
-        if outcome == crate::sim::voxel_anim::VoxelAnimAiOutcome::Delete {
+        if outcome == VoxelAnimAiOutcome::Expire {
+            let debris = self.substrate.voxel_anims.get(id).unwrap();
+            let position = debris.world_coord();
+            let is_meteor = rules.voxel_anim_type(debris.type_id()).is_meteor;
+            // VoxelAnim749FA2..74A13E: retained Location selects Water first,
+            // then Map578080 supplies the floor for the strict deck test.
+            // Stock TIREs construct Wake then the FIRST SplashList entry;
+            // the SHP-Anim landing producer uses a different splash Z lift.
+            let water = self.bounce_cell_is_water(position, rules);
+            let ground = crate::sim::projectile::projectile_ground_z(
+                self.resolved_terrain.as_ref(),
+                &self.effective_shared_cell_dummy(),
+                crate::sim::projectile::ProjectileCoord::new(position.x, position.y, position.z),
+            );
+            if water
+                && position.z < ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
+                && !is_meteor
+            {
+                let location = crate::sim::anim_class::AnimWorldCoord {
+                    x: position.x,
+                    y: position.y,
+                    z: position.z,
+                };
+                self.spawn_named_anim(rules, &rules.general.wake.name, location, 0, 0x600, 0);
+                if let Some(splash) = rules.combat_damage.splash_list.first() {
+                    let splash_location = crate::sim::anim_class::AnimWorldCoord {
+                        z: location.z.wrapping_add(10),
+                        ..location
+                    };
+                    self.spawn_named_anim(rules, splash, splash_location, 0, 0x600, 0);
+                }
+            }
+        }
+        if outcome != VoxelAnimAiOutcome::Alive {
             self.unregister_non_entity_object(id);
             self.substrate.voxel_anims.remove(id);
         }
@@ -329,15 +366,15 @@ impl Simulation {
         // Bullet466826..4668B8 constructs at the old Location after its
         // visual update, before target/floor queries or flight. Registering
         // an Anim here also preserves the live Logic cursor on impact.
-        let trailer = self
+        let projectile_type = self
             .projectiles
             .get(id)
             .and_then(|projectile| projectile.payload().projectile_type())
-            .and_then(|type_id| rules.projectile(self.interner.resolve(type_id)))
-            .and_then(|kind| {
-                self.projectiles
-                    .trailer(&head, kind, self.session.binary_frame())
-            });
+            .and_then(|type_id| rules.projectile(self.interner.resolve(type_id)));
+        let trailer = projectile_type.and_then(|kind| {
+            self.projectiles
+                .trailer(&head, kind, self.session.binary_frame())
+        });
         if let Some((name, position)) = trailer {
             self.spawn_named_anim(
                 rules,
@@ -416,6 +453,7 @@ impl Simulation {
                 source_is_jumpjet,
                 target_is_aircraft,
                 rules.general.safety_altitude,
+                projectile_type.is_some_and(|kind| kind.degenerates),
                 |projectile, candidate, phase| {
                     collision_world.collide(projectile, candidate, phase)
                 },
@@ -787,7 +825,7 @@ fn techno_ai_shell(
                 return;
             }
             target_reach_step(sim, id, rules, ctx.overlay_registry, ctx.effects);
-            techno_common_post(sim, id, rules);
+            techno_common_post(sim, id, rules, ctx.effects);
         }
         EntityCategory::Structure => {
             // Building43FC39 damage-fire (run above, before the warp
@@ -1026,7 +1064,7 @@ fn techno_ai_shell(
             if !techno_after_acquisition(sim, id, rules, ctx, outcome) {
                 return;
             }
-            techno_common_post(sim, id, rules);
+            techno_common_post(sim, id, rules, ctx.effects);
         }
     }
 }
@@ -2128,7 +2166,7 @@ fn healer_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
 
 /// The common Techno post-mission stage and the stock-dormant Cyborg Spark
 /// producer. The retained system and both native producers share particles::spawn.
-fn techno_common_post(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+fn techno_common_post(sim: &mut Simulation, id: u64, rules: &RuleSet, _effects: FrameEffects<'_>) {
     // Techno6FABC4 follows Mission, passive acquisition and the reach slot.
     // Native Buildings step at4509DE in UpdateAnimation before Techno and
     // never enter this receiver. Their existing construction owner still
@@ -2141,6 +2179,10 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     flash_step(&mut sim.substrate, id, sim.session.binary_frame());
 
     sim.update_damage_spark_after_ai(id, rules);
+    // Installed Ares6FAF0D ->10053DF0, after the ordinary Techno tail.
+    // No global frame sweep: limbo/skipped/dead visits never reach this slot.
+    #[cfg(feature = "ares")]
+    sim.tick_ares_emp(id, rules, _effects);
 }
 
 /// Shared late Techno6FAC31..6FAC79 slot for every represented category.
@@ -2215,7 +2257,7 @@ fn unit_techno_bracket(
         return BracketReach::Dispatched;
     }
     target_reach_step(sim, id, rules, ctx.overlay_registry, ctx.effects);
-    techno_common_post(sim, id, rules);
+    techno_common_post(sim, id, rules, ctx.effects);
     BracketReach::Dispatched
 }
 
@@ -5481,7 +5523,7 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
             }
             let mut expect = sim.scenario_rng.clone();
             let main = sim.main_rng.state();
-            techno_common_post(&mut sim, 1, &rules);
+            techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
             for &max in draws {
                 expect.next_range_u32_inclusive(0, max);
             }
@@ -5501,7 +5543,7 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
         insert_cyborg_unit(&mut sim, 1, 20);
         let mut expect = sim.scenario_rng.clone();
         let main = sim.main_rng.state();
-        techno_common_post(&mut sim, 1, &rules);
+        techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
         expect.next_range_u32_inclusive(0, DAMAGE_SPARK_ROLL_MAX); // roll
         expect.next_range_u32_inclusive(0, 1); // list-pick over 2 sparks
         assert_eq!(
@@ -5529,12 +5571,12 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
         let rules = cyborg_rules("1.0", "1.0", "SparkA,SparkB", TWO_SPARK_SYSTEMS);
         let mut sim = Simulation::new();
         insert_cyborg_unit(&mut sim, 1, 20);
-        techno_common_post(&mut sim, 1, &rules);
+        techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
         let first = spark_system(&sim, 1).unwrap();
         let frozen = sim.scenario_rng.state();
         // Advancing the session clock alone must never expire a live link.
         sim.session.set_tick_for_test(1_000_000);
-        techno_common_post(&mut sim, 1, &rules);
+        techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
         assert_eq!(sim.scenario_rng.state(), frozen);
         assert_eq!(spark_system(&sim, 1), Some(first));
 
@@ -5548,7 +5590,7 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
         let mut expect = sim.scenario_rng.clone();
         expect.next_range_u32_inclusive(0, DAMAGE_SPARK_ROLL_MAX);
         expect.next_range_u32_inclusive(0, 1);
-        techno_common_post(&mut sim, 1, &rules);
+        techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
         assert_eq!(sim.scenario_rng.state(), expect.state());
         assert_ne!(spark_system(&sim, 1), Some(first));
         assert!(spark_system(&sim, 1).is_some());
@@ -5564,7 +5606,7 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
         );
         let mut sim = Simulation::new();
         insert_cyborg_unit(&mut sim, 1, 20);
-        techno_common_post(&mut sim, 1, &rules);
+        techno_common_post(&mut sim, 1, &rules, FrameEffects::empty());
         let system_id = spark_system(&sim, 1).unwrap();
         assert_eq!(
             sim.particle_systems().get(system_id).unwrap().lifetime(),

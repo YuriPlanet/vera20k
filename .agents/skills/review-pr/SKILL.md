@@ -31,7 +31,9 @@ oracles, scripts) until steps 1 and 2 are clean.
    - New crates come from crates.io at a pinned version. Git, path or registry
      dependencies need a reason.
    - Large JSON or binary additions must be data that a test or tool reads, not
-     encoded payloads.
+     encoded payloads. Hold them to AGENTS.md's test limits (about 20 cases, under
+     100 KB, only asserted fields): ask the contributor to trim, or trim on
+     integration. The guard lists files over 100 KB.
    - Python tools read retail inputs and write only their own outputs: no network,
      subprocess, home-directory or credential access.
 3. **Authenticity.** Choose the 1–3 claims the behavior depends on most.

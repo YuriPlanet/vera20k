@@ -103,8 +103,8 @@ pub(super) fn bullet_type<'r>(
 ///   stock user `[ChemMissile]` has `ROT=4`.
 /// - `Degenerates=` (`+0x2A6`) IS live code — `BulletClass::AI 0x00467C86`
 ///   decrements the bullet's damage on every non-detonating frame while it
-///   exceeds 5 — but stock `rulesmd.ini` has zero users, so it is recorded and
-///   not implemented.
+///   exceeds 5. The live Bullet AI reads this flag from its retained type;
+///   unchanged stock `rulesmd.ini` has zero users, but map overrides can enable it.
 /// - `Elasticity=` (`+0x2C8`) is live in the ARM B reflection block but has
 ///   zero stock projectile users (the `[PIECE]`/`[TIRE]` hits are VoxelAnims).
 ///

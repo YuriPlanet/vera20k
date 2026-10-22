@@ -147,10 +147,10 @@ const AIRCRAFT_PROTECTED: [MissionId; 5] = [
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct OverridePacket {
-    mission: MissionId,
-    combat_target: Option<TargetKind>,
-    destination: Option<NavTargetRef>,
+pub(crate) struct OverridePacket {
+    pub(crate) mission: MissionId,
+    pub(crate) combat_target: Option<TargetKind>,
+    pub(crate) destination: Option<NavTargetRef>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -553,9 +553,9 @@ impl Simulation {
         self.mission_restore_exact_with_effects(receiver, &mut effects)
     }
 
-    /// The overlay registry and frame effects serve the Infantry setter's
-    /// `Infiltrate=` arm, the one that sets a destination
-    /// ([`Simulation::infiltrator_target_building`]).
+    /// The overlay registry serves Building target admission's line of fire
+    /// and, with frame effects, the Infantry setter's `Infiltrate=` destination
+    /// arm ([`Simulation::infiltrator_target_building`]).
     pub fn assign_target_represented(
         &mut self,
         receiver: u64,
@@ -656,6 +656,22 @@ impl Simulation {
         self.mission_restore_exact_with_effects(receiver, &mut effects)
     }
 
+    /// Concrete Override_Mission (Aircraft41BB30 -> Foot4D8F40 ->
+    /// Techno7013A0 -> Mission5B3650). The transaction owns suspended
+    /// mission/target/navigation and dispatches both live class setters.
+    pub(crate) fn mission_override_represented(
+        &mut self,
+        receiver: u64,
+        packet: OverridePacket,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> Result<bool, MissionAuthorityError> {
+        let mut effects =
+            RepresentedConcreteMissionEffects::new(rules, overlay_registry, frame_effects);
+        self.mission_override_exact_with_effects(receiver, packet, &mut effects)
+    }
+
     /// `Override(Attack, attacker, NULL)` from the synchronous ReceiveDamage
     /// retaliation.
     ///
@@ -671,6 +687,7 @@ impl Simulation {
         receiver: u64,
         attacker: u64,
         rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         if !self.substrate.entities.contains(attacker)
@@ -678,18 +695,19 @@ impl Simulation {
         {
             return false;
         }
-        let mut effects = RepresentedConcreteMissionEffects::new(rules, None, frame_effects);
         //7013CB dispatches the class target setter AFTER the mission writes.
         // A dying source or a refused Building target still takes the override;
         // target admission belongs to that live setter, not this caller.
-        self.mission_override_exact_with_effects(
+        self.mission_override_represented(
             receiver,
             OverridePacket {
                 mission: MISSION_ATTACK,
                 combat_target: Some(TargetKind::Entity(attacker)),
                 destination: None,
             },
-            &mut effects,
+            rules,
+            overlay_registry,
+            frame_effects,
         )
         .expect("present represented retaliation receiver has concrete setters")
     }
@@ -711,17 +729,18 @@ impl Simulation {
         if !self.substrate.entities.contains(mover) {
             return false;
         }
-        let mut effects = RepresentedConcreteMissionEffects::new(rules, None, frame_effects);
         // The locomotor caller owns its later head/Stop suffix. A refused
         // class destination must retain navigation through this transaction.
-        self.mission_override_exact_with_effects(
+        self.mission_override_represented(
             mover,
             OverridePacket {
                 mission: MISSION_ATTACK,
                 combat_target: Some(target),
                 destination: None,
             },
-            &mut effects,
+            rules,
+            None,
+            frame_effects,
         )
         .expect("present represented blocker receiver has concrete setters")
     }
@@ -1457,6 +1476,7 @@ mod tests {
                         1,
                         2,
                         rules,
+                        None,
                         crate::sim::world::FrameEffects::default(),
                     )
                 } else {

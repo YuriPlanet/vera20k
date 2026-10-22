@@ -1058,6 +1058,9 @@ impl Simulation {
             house.outcome().hash(hasher);
             house.map_is_clear().hash(hasher);
             house.spy_sat_active().hash(hasher);
+            if house.initial_sight_refresh_pending() {
+                b"house-initial-sight-refresh-v1".hash(hasher);
+            }
             house.tracking().hash_defeat_counters(hasher);
             if house.tech_recheck_pending() {
                 b"house-tech-recheck-v1".hash(hasher);
@@ -1739,6 +1742,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     if entity.deactivated.is_offline() {
         b"techno-deactivated-v1".hash(hasher);
     }
+    entity.hash_emp_state(hasher);
     // Infantry gameplay reads its class-owned Doing/Stage fields.
     // A restored presentation component is not a second state owner.
     if entity.category() != crate::map::entities::EntityCategory::Infantry

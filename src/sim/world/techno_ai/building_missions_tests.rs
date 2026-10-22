@@ -19,6 +19,9 @@ use crate::sim::mission::MissionDispatchTimer;
 use crate::sim::mission::state::MissionTestFixture;
 use crate::sim::rng::SimRng;
 
+#[path = "building_wall_target_tests.rs"]
+mod wall_targets;
+
 /// The oracle fixture's frame.
 pub(super) const FRAME: u32 = 200;
 
@@ -473,7 +476,7 @@ fn set_target_matches_the_original() {
             "{name}"
         );
         assert_eq!(
-            sim.building_admits_target(building, requested, &rules),
+            sim.building_admits_target(building, requested, &rules, None),
             row["target"].is_string() || requested.is_none(),
             "{name} admission"
         );

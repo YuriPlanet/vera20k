@@ -75,7 +75,7 @@ const CHECKPOINT_CAMPAIGN_BACK_RETURN: &str = "campaign-back-return";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY: &str = "load-saved-game-0xb7-steady";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX: &str = "load-saved-game-0xb7-entry-tick-";
 const CHECKPOINT_OPTIONS_0XD5_STEADY: &str = "options-0xd5-steady";
-/// VERA20K Options pressed on the settled `0xD5`: VERA's page settled.
+/// Vera Options pressed on the settled `0xD5`: VERA's page settled.
 const CHECKPOINT_OPTIONS_VERA_STEADY: &str = "options-vera-steady";
 const NETWORK_OPTIONS_CHECKPOINTS: [(&str, movies::NetworkOptionsTarget); 7] = [
     (
@@ -261,7 +261,7 @@ pub enum ShellCaptureCheckpoint {
     LoadSavedGame0xB7Entry(u32),
     /// Main Menu -> Options: `0xD5` settled.
     Options0xD5Steady,
-    /// Then VERA20K Options: VERA's page settled.
+    /// Then Vera Options: VERA's page settled.
     OptionsVeraSteady,
     /// Ordinary D5 -> D7 with explicit service/settings inputs.
     NetworkOptions(movies::NetworkOptionsTarget),
@@ -2404,6 +2404,10 @@ mod tests {
             })
         );
         values[1] = "lan-live-guest".into();
+        assert!(parse_launch_args(values.clone()).is_ok());
+        values[1] = "lan-battle-host".into();
+        assert!(parse_launch_args(values.clone()).is_ok());
+        values[1] = "lan-battle-guest".into();
         assert!(parse_launch_args(values.clone()).is_ok());
         values[1] = "lan-0xbb-steady".into();
         assert!(parse_launch_args(values).is_err());

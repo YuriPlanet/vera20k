@@ -32,6 +32,15 @@ pub(crate) fn registered_commands() -> &'static [CommandMetadata] {
     &REGISTERED_COMMANDS
 }
 
+/// VERA's own hotkey category, listed after every retail one.
+///
+/// A category appears in the keyboard page because some command carries its
+/// `category_key`; VERA's is declared here instead, so the category exists —
+/// and keeps its place at the end — before any command is registered in it.
+/// Ares-style enhancements add their keys here rather than among the original
+/// commands. The CSF has no entry, so the page shows the key itself.
+pub(crate) const VERA_CATEGORY_KEY: &str = "vera20k";
+
 const REGISTERED_COMMANDS: [CommandMetadata; 87] = [
     command!(
         HotkeyCommand::Follow,

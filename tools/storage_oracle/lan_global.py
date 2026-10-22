@@ -5,13 +5,18 @@ substituted. Original constructor, framing, receive, queue and route bodies run.
 No Python encoder or expected frame bytes. See generated .meta.json.
 """
 from collections import Counter
-from pathlib import Path
 import struct
 
-from unicorn import UC_HOOK_CODE
-from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ESP, UC_X86_REG_FPCW
+from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
+from unicorn.x86_const import (
+    UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_ECX, UC_X86_REG_EIP,
+    UC_X86_REG_ESP, UC_X86_REG_FPCW,
+)
 
-from tools.native_oracle import NATIVE_FPCW, OracleError, STACK_BASE, STACK_SIZE, finish_vectors, provenance
+from tools.native_oracle import (
+    NATIVE_FPCW, NativeCallTrace, OracleError, STACK_BASE, STACK_SIZE,
+    provenance, run_checked,
+)
 from tools.storage_oracle.shell_relayout import Machine, HEAP, HEAP_SIZE
 
 ENTRIES = {
@@ -195,6 +200,247 @@ class GlobalMachine(Machine):
                     ring_cursor=self.r32(c + 0xD8), ring=ring, sends=sends, receives=receives)
 
 
+MANAGER = 0xA8E9C0
+STATS = (0x14, 0x18, 0x1C, 0x20)
+MANAGER_ENTRIES = {
+    'prepare_begin': 0x52E9DF, 'prepare_end': 0x52EA54,
+    'guest_begin': 0x5DD9AC, 'guest_end': 0x5DDA02,
+    'initial_reset_begin': 0x647B2B, 'initial_reset_end': 0x647B35,
+    'manager_set_timing': 0x540C60,
+    'global_set_timing': 0x540D10, 'global_mean': 0x5424C0,
+    'private_response_maximum': 0x542450,
+    'mean': 0x48BA80, 'reset_all': 0x542EC0,
+    'reset_stats': 0x48BAA0, 'record_response': 0x48BA10,
+}
+
+
+class ManagerTimingMachine(GlobalMachine):
+    def __init__(self):
+        super().__init__(send_capacity=4, receive_capacity=4)
+        self.channels = {'global': self.connection}
+        for role in ('private0', 'private1', 'alternate', 'extra'):
+            connection = self.alloc(0xDC)
+            if role == 'alternate':
+                self.native(0x53FA90, connection, (4, 4, 455, 0xAA04, 0xCDEF))
+                self.native(0x53F4E0, connection)
+            else:
+                # Original common connection/CommBuffer constructors; endpoint
+                # and protocol-specific subclass fields are outside these calls.
+                self.native(0x48BE60, connection,
+                            (4, 4, 558, 0xAA04, 11, 0xFFFFFFFF, 999, 12))
+                self.native(0x48BF10, connection)
+            self.channels[role] = connection
+        self.uc.mem_write(MANAGER, bytes(0xB0))
+        self.w32(MANAGER, 0x7EC16C)  # Original manager vtable, not a hook.
+        self.uc.mem_write(MANAGER + 4, b'\1\1')
+        self.w32(MANAGER + 0x28, self.channels['private0'])
+        self.w32(MANAGER + 0x2C, self.channels['private1'])
+        self.w32(MANAGER + 0x44, 2)
+        self.w32(MANAGER + 0x48, self.channels['global'])
+        self.w32(MANAGER + 0x4C, self.channels['alternate'])
+        self.w32(MANAGER + 0x50, self.channels['extra'])
+        self.w32(MANAGER + 0x58, 111)
+        self.w32(MANAGER + 0x5C, 222)
+        self.w32(MANAGER + 0x60, 333)
+        self.comm = {role: self.r32(c + 4) for role, c in self.channels.items()}
+        for index, (role, comm) in enumerate(self.comm.items()):
+            payload = bytes([0x20 + index, 0x70, 0x80, 0xFF, index])
+            data = self.alloc(len(payload))
+            auxiliary = self.alloc(12)
+            self.uc.mem_write(data, payload)
+            self.uc.mem_write(auxiliary, bytes([index + 1]) * 12)
+            if self.native(0x48B410, comm, (data, len(payload), auxiliary, 12, 1234)) != 1:
+                raise OracleError('native send fixture was not admitted')
+            if self.native(0x48B750, comm, (data, len(payload), auxiliary, 12)) != 1:
+                raise OracleError('native receive fixture was not admitted')
+        self.response_schedule = None
+        self.getters = []
+        self.leaf_reads = []
+        self.leaf_roles = []
+        self.expected_response_roles = None
+        self.calls = []
+        self.trace = NativeCallTrace(self.uc, self.r32, self.calls)
+        self.capture = False
+        self.allowed = []
+        self.uc.hook_add(UC_HOOK_CODE, self.observe_timing)
+        self.uc.hook_add(UC_HOOK_MEM_WRITE, self.observe_write)
+
+    def observe_timing(self, uc, address, _size, _data):
+        if not self.capture:
+            return
+        sp = uc.reg_read(UC_X86_REG_ESP)
+        self.trace.returned(address, sp)
+        names = {
+            0x540C60: ('manager_set_timing', 4, 16),
+            0x540D10: ('global_set_timing', 3, 12),
+            0x542EC0: ('manager_reset', 1, 4),
+            0x48BAA0: ('response_reset', 1, 4),
+        }
+        if address in names:
+            self.trace.entered(address, sp, names[address])
+        if address == 0x5424C0:
+            if uc.reg_read(UC_X86_REG_ECX) != MANAGER:
+                raise OracleError('wrong manager response receiver')
+            if self.response_schedule is not None:
+                if len(self.getters) >= len(self.response_schedule):
+                    raise OracleError('unexpected extra native response read')
+                self.w32(self.comm['global'] + 0x1C,
+                         self.response_schedule[len(self.getters)])
+            self.getters.append(dict(value=self.r32(self.comm['global'] + 0x1C),
+                                     caller=hex(self.r32(sp))))
+        if address == 0x48BA80:
+            receiver = uc.reg_read(UC_X86_REG_ECX)
+            role = next((role for role, comm in self.comm.items() if comm == receiver), None)
+            expected = ('global',) if self.expected_response_roles is None else self.expected_response_roles
+            if role not in expected:
+                raise OracleError('wrong response leaf receiver')
+            self.leaf_roles.append(role)
+            self.leaf_reads.append(self.r32(receiver + 0x1C))
+
+    def observe_write(self, _uc, _access, address, size, _value, _data):
+        if not self.capture or STACK_BASE <= address < STACK_BASE + STACK_SIZE:
+            return
+        if not any(start <= address and address + size <= end
+                   for start, end in self.allowed):
+            raise OracleError(f'unexpected native write at {address:#x}+{size}')
+
+    def timing_state(self):
+        return dict(default=list(struct.unpack('<3I', self.uc.mem_read(MANAGER + 0x58, 12))),
+                    channels={role: list(struct.unpack('<3I', self.uc.mem_read(c + 0x28, 12)))
+                              for role, c in self.channels.items()})
+
+    def response_state(self):
+        return {role: [self.r32(comm + offset) for offset in STATS]
+                for role, comm in self.comm.items()}
+
+    def check_queues(self):
+        for role, comm in self.comm.items():
+            if [self.r32(comm + x) for x in (0x28, 0x38, 0x2C, 0x3C)] != [1] * 4:
+                raise OracleError(f'queue counters changed: {role}')
+
+    def run_slice(self, begin, ends, *, allowed, required=(), eax=0, ebp=0,
+                  response_schedule=None, direct_args=None, response_roles=None):
+        self.allowed = allowed
+        self.response_schedule = response_schedule
+        self.expected_response_roles = response_roles
+        old_heap = bytes(self.uc.mem_read(HEAP, self.heap - HEAP))
+        old_manager = bytes(self.uc.mem_read(MANAGER, 0xB0))
+        self.uc.reg_write(UC_X86_REG_EAX, eax)
+        self.uc.reg_write(UC_X86_REG_EBP, ebp)
+        self.capture = True
+        try:
+            if direct_args is None:
+                sp = STACK_BASE + STACK_SIZE - 0x2000
+                self.uc.mem_write(sp - 0x1000, b'\xA5' * 0x2000)
+                self.uc.reg_write(UC_X86_REG_ESP, sp)
+                reached = run_checked(self.uc, begin, ends, count=50_000,
+                                      timeout_us=1_000_000, required_addresses=required)
+                self.trace.returned(reached, self.uc.reg_read(UC_X86_REG_ESP))
+                if self.uc.reg_read(UC_X86_REG_ESP) != sp:
+                    raise OracleError('caller slice did not balance stack')
+            else:
+                ecx, args = direct_args
+                self.native(begin, ecx, args)
+                reached = self.uc.reg_read(UC_X86_REG_EIP)
+                self.trace.returned(reached, self.uc.reg_read(UC_X86_REG_ESP))
+        finally:
+            self.capture = False
+        if self.trace.pending:
+            raise OracleError(f'call trace did not return: {self.trace.pending}')
+        if response_schedule is not None and len(self.getters) != len(response_schedule):
+            raise OracleError('not all supplied successive response inputs were read')
+        if response_roles is not None and self.leaf_roles != list(response_roles):
+            raise OracleError('unexpected response maximum leaf order')
+        if response_roles is None and len(self.getters) != len(self.leaf_reads):
+            raise OracleError('original response getter leaf was bypassed')
+        exclusions = list(allowed)
+        if response_schedule is not None:
+            exclusions.append((self.comm['global'] + 0x1C, self.comm['global'] + 0x20))
+        for base, old in ((HEAP, old_heap), (MANAGER, old_manager)):
+            after = bytes(self.uc.mem_read(base, len(old)))
+            for index, (a, b) in enumerate(zip(old, after)):
+                address = base + index
+                if a != b and not any(start <= address < end for start, end in exclusions):
+                    raise OracleError(f'unrelated state changed at {address:#x}')
+        self.check_queues()
+
+
+def timing_case(name, role, responses):
+    m = ManagerTimingMachine()
+    begin, end = (0x52E9DF, 0x52EA54) if role == 'prepare' else (0x5DD9AC, 0x5DDA02)
+    allowed = [(MANAGER + 0x58, MANAGER + 0x64)]
+    allowed += [(c + 0x28, c + 0x34) for c in m.channels.values()]
+    m.run_slice(begin, end, allowed=allowed,
+                required=(0x5424C0, 0x48BA80, 0x540C60, 0x540D10),
+                eax=3, ebp=0xFFFFFFFF, response_schedule=responses)
+    after = m.timing_state()
+    return dict(name=name, role=role, input_responses=responses,
+                private=after['default'], global_timing=after['channels']['global'])
+
+
+def reset_case(name, kind, samples):
+    m = ManagerTimingMachine()
+    for index, comm in enumerate(m.comm.values()):
+        for sample in samples[index % len(samples)]:
+            m.native(0x48BA10, comm, (sample,))
+    before = m.response_state()
+    allowed = [(comm + 0x14, comm + 0x24) for comm in m.comm.values()]
+    if kind == 'initial':
+        m.run_slice(0x647B2B, 0x647B35, allowed=allowed, ebp=MANAGER,
+                    required=(0x542EC0, 0x48BAA0))
+    else:
+        m.run_slice(0x542EC0, (), allowed=allowed,
+                    direct_args=(MANAGER, (0,)))
+    def consumed(state):
+        return {role: state[role][:3] for role in ('global', 'private0', 'private1')}
+    return dict(name=name, input_samples=samples[:3], clear=kind == 'initial',
+                before=consumed(before), after=consumed(m.response_state()))
+
+
+def response_maximum_case(name, private):
+    m = ManagerTimingMachine()
+    m.w32(MANAGER + 0x44, len(private))
+    m.w32(MANAGER + 0x50, 0)  # Extra channel has no ordinary-LAN owner.
+    for index, mean in enumerate(private):
+        m.native(0x48BA10, m.comm[f'private{index}'], (mean,))
+    primary = 0xFFFFFFFF
+    m.native(0x48BA10, m.comm['global'], (primary,))
+    m.native(0x48BA10, m.comm['alternate'], (0xFFFFFFFE,))
+    m.run_slice(0x542450, (), allowed=[], direct_args=(MANAGER, ()),
+                response_roles=tuple(f'private{i}' for i in range(len(private))))
+    return dict(name=name, private=private, primary=primary,
+                result=m.uc.reg_read(UC_X86_REG_EAX))
+
+
+def manager_timing_controls():
+    # Exact boundary read counts come from the native branch, not a Python
+    # implementation of the selected timing result.
+    stable = [(0, 2), (59, 4), (0xFFFFFFFE, 2)]
+    timing = [timing_case(f'prepare_mean_{mean:08x}', 'prepare', [mean] * count)
+              for mean, count in stable]
+    timing += [
+        timing_case('prepare_private_equal_floor_second_wrap', 'prepare', [13, 0xFFFFFFFE, 0]),
+        timing_case('prepare_global_equal_floor_second_wrap', 'prepare', [0, 58, 0xFFFFFFFE]),
+        timing_case('prepare_two_independent_second_reads', 'prepare', [14, 1, 59, 2]),
+    ]
+    timing += [timing_case(f'guest_mean_{mean:08x}', 'guest', [mean])
+               for mean in (0, 0x10000000, 0xFFFFFFFF)]
+    samples = [[9, 17, 3], [0], [13], [0xFFFFFFFE], [0xFFFFFFFF]]
+    reset = [
+        reset_case('initial_all_channels_clear', 'initial', samples),
+        reset_case('direct_false_high_private', 'direct',
+                   [[9, 17, 3], [0xFFFFFFFE], [0xFFFFFFFF], [0], [13]]),
+        reset_case('direct_false_empty_history', 'direct', [[], [], [], [], []]),
+    ]
+    response = [response_maximum_case(name, private) for name, private in (
+        ('empty_private', []), ('one_private', [13]),
+        ('unsigned_high_private', [0x7FFFFFFF, 0x80000000]),
+        ('maximum_private', [0xFFFFFFFF, 1]),
+    )]
+    return dict(timing=timing, reset=reset, response_maximum=response)
+
+
+
 def generate():
     machines = []
     def machine(**kwargs):
@@ -334,3 +580,22 @@ def metadata():
         ], entry_points=ENTRIES)
     return result
 
+
+
+def manager_metadata():
+    return provenance(
+        scope='Original LAN handoff timing, manager response-history reset and private response maximum',
+        assumptions=[
+            'The existing GlobalMachine and shell_relayout.Machine load retail PE bytes through native_oracle.load_image. No Windows process, socket or whole-session comparison is claimed.',
+            'Supplied manager storage uses original7EC16C vtable, two private common connections, primary1236 and alternateCDEF globals, and one extra common connection. Original constructors and48B410/48B750 admit occupied send/receive queues; complete heap/manager comparison rejects writes outside declared timing/stat fields.',
+            'LAN prepare52E9DF..52EA54 enters with EAX3/EBP-1; guest5DD9AC..5DDA02 executes signed private timing plus primary-global override. Raw CommBuffer+1C observations change at declared5424C0 entries; both native getters run, including conditional second reads. Nonconstant schedules are branch controls, not claims of ordinary concurrent writes.',
+            'Original48BA10 seeds response history;647B2B..647B35 executes the successful-wait reset call after the peer-field clear, and direct542EC0 controls cover preserved high private means and empty histories. Only Rust-consumed sum/count/mean outputs are retained; the native peak has no current Rust consumer. Mode4 periodic scheduling and alternate/extra-channel lifecycle remain outside the Rust integration.',
+            'Full542450 controls seed original48BA10 private histories, with primaryFFFFFFFF and alternateFFFFFFFE histories deliberately larger than ordinary private values. Manager+50 is absent. Exact private leaf-call order and a no-write heap/manager guard cover empty and unsigned-high inputs; no expected result is calculated in Python. Extra-channel participation remains outside the direct-LAN Rust owner.',
+        ],
+        substitutions=[
+            'Existing shared allocator/deallocator and fail-closed Windows import adapters. Debug4068E0 is an output sink. Declared manager/channel configuration and caller registers are supplied; original constructor, getter, setter and reset bodies execute.',
+            'Successive raw response means and initial sample sequences are controlled inputs. No timing arithmetic, response result, socket I/O or gameplay body is substituted. Stack writes are allowed and exact native caller stack balance is required.',
+        ],
+        entry_points={**{key: ENTRIES[key] for key in (
+            'global_ctor', 'connection_ctor', 'comm_ctor', 'queue_send', 'queue_receive',
+        )}, **MANAGER_ENTRIES})
