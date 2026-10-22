@@ -10,19 +10,19 @@
 //!
 //! A house that can no longer make money ([`can_make_money`]) and cannot pay
 //! for its next refinery, war factory or harvester ([`check_build_need`])
-//! picks one to rebuild, sells buildings from the end of its base plan until
-//! its balance and the refunds to come exceed the price, abandons all its
-//! production and chooses again: the harvester (production mode 2), or the
-//! building at its first open plan node (mode 1, through
+//! picks one to rebuild, removes upgrades or sells buildings from the end of
+//! its base plan until its balance and the refunds to come exceed the price,
+//! abandons all its production and chooses again: the harvester (production
+//! mode 2), or the building at its first open plan node (mode 1, through
 //! `AI_Choose_Building`). A house that sells down to its first node, or
 //! cannot pay even then, sends everything to hunt ([`manage_build_queue`]).
 //!
 //! Draws: none of their own; `AI_Choose_Building` draws as ported, and
 //! All_To_Hunt's damage through ReceiveDamage. Timers: each sale starts the
-//! Selling mission (`production::sell_back`), and the deleted factories'
-//! step timers go with them. Detaches: each abandoned object's destruction
-//! (`production::abandon_house_factories`) and a sold wall's cell
-//! (`Simulation::sell_wall_at_cell`).
+//! Selling mission (`production::sell_back`); upgrade removal is immediate.
+//! The deleted factories' step timers go with them. Detaches: each abandoned
+//! object's destruction (`production::abandon_house_factories`) and a sold
+//! wall's cell (`Simulation::sell_wall_at_cell`).
 //!
 //! Evidence: instruction reading of the three bodies and the callees named
 //! on each function.
@@ -40,8 +40,8 @@
 //!   take the arms without a harvester.
 //! - Check_Build_Need reads `BuildRefinery=`'s second entry unchecked
 //!   (`0x004FDA8F`); VERA matches no entry past the list. Retail lists three.
-//! - The sale's upgrade arm (`0x004FDEDE..0x004FDF27`) is dormant: no retail
-//!   type sets `PowersUpBuilding=`, and VERA keeps no upgrade.
+//! - Turret upgrade removal has a separate native PowerDown451690 arm;
+//!   the shared removal owner currently handles ordinary Turret=no upgrades.
 //! - Dormant in retail data, where every country can build a refinery:
 //!   Can_Make_Money's arms without one, Manage_Build_Queue's harvester for a
 //!   house with a war factory and no buildable refinery, and its war factory
@@ -62,12 +62,12 @@ use crate::sim::ai_buildable::{
 };
 use crate::sim::ai_unit_choice::UnitChoiceKind;
 use crate::sim::base_plan::{BasePlanNode, unpack_base_plan_cell};
-use crate::sim::credit_income::available_money;
+use crate::sim::credit_income::{add_credits, available_money};
 use crate::sim::house_state::HouseState;
 use crate::sim::houses::Houses;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
-use crate::sim::production::{SellOrder, can_sell_building, sell_back, techno_refund};
+use crate::sim::production::{SellOrder, can_sell_building, sell_back, techno_refund, type_refund};
 use crate::sim::world::{FrameEffects, Simulation};
 
 #[cfg(any(test, feature = "test-support"))]
@@ -380,6 +380,7 @@ struct Sale {
 
 /// One node of Manage_Build_Queue's sale (`0x004FDEB4..0x004FE01C`), at
 /// `index`. A node building (`0x0042E820`) that may be sold (CanSell, vt+0x98)
+/// first loses its last installed upgrade for an immediate type refund, or
 /// gets the computer's sale (`Sell_Back(1)`, vt+0x1A0), its `Gate=` node goes
 /// (`Type+0x16B7`) and its refund ([`techno_refund`]) joins the sale's,
 /// even when the sale stood down. Otherwise a built node (`0x0042E780`) has
@@ -397,6 +398,47 @@ fn sell_node(
     let building =
         node_building(&sim.substrate, owner, &node).filter(|&id| can_sell_building(sim, rules, id));
     if let Some(id) = building {
+        if let Some(upgrades) = sim
+            .substrate
+            .entities
+            .get(id)
+            .map(|building| building.building_upgrades())
+            && upgrades.count() != 0
+        {
+            // AI_Manage_Build_Queue4FDEDE..4FDF27 refunds the last TYPE
+            // through711F60(full=true), then PowerDown451690. It leaves
+            // this host/node intact and never adds the cash to Sale.refunds.
+            let last = usize::try_from(i32::from(upgrades.count()) - 1)
+                .ok()
+                .and_then(|slot| upgrades.types().get(slot))
+                .copied()
+                .flatten();
+            let Some(upgrade) = last.and_then(|type_id| sim.object_type(type_id, rules)) else {
+                // Native dereferences a missing/out-of-range top pointer.
+                // Keep the represented stack and wallet intact instead.
+                return;
+            };
+            let Some(house) = sim.houses.get(&owner) else {
+                return;
+            };
+            let Some(factors) = Simulation::house_cost_factors(&sim.houses, owner) else {
+                return;
+            };
+            let refund = type_refund(
+                rules,
+                upgrade,
+                house,
+                &factors,
+                sim.session.game_mode_nonzero(),
+                true,
+            );
+            // The inline Balance+30C ADD at4FDF03 is the same wrapping
+            // balance operation as Add_Credits4F9950; no income stats change.
+            add_credits(&mut sim.houses, owner, refund);
+            let _ = sim.power_down_building_upgrade(id, rules);
+            Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, true);
+            return;
+        }
         sell_back(sim, rules, id, SellOrder::Computer, registry, effects);
         let gate = sim
             .substrate

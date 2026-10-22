@@ -143,6 +143,52 @@ fn yard_builds(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, yard: u
     assert!(sim.production.factories().building_factory(yard).is_some());
 }
 
+fn upgrade_recovery_rules() -> RuleSet {
+    let source = RULES
+        .replace("5=BUNKER\n", "5=BUNKER\n6=UPRICH\n7=UPBOTTOM\n8=UPTOP\n")
+        .replace("[PLAIN]\n", "[PLAIN]\nUpgrades=2\nTurret=no\n");
+    rules_from(&format!(
+        "{source}\n\
+         [UPRICH]\nStrength=100\nCost=900\nSoylent=1000\nOwner=Americans\nPowersUpBuilding=PLAIN\nTurret=no\n\
+         [UPBOTTOM]\nStrength=100\nCost=400\nSoylent=400\nOwner=Americans\nPowersUpBuilding=PLAIN\nTurret=no\n\
+         [UPTOP]\nStrength=100\nCost=900\nSoylent=700\nOwner=Americans\nPowersUpBuilding=PLAIN\nTurret=no\n"
+    ))
+}
+
+/// The real constructor and Building Unlimbo at 0x004408DF consume the
+/// temporary; these authored upgrades have no Super or turret dependency.
+fn install_recovery_upgrade(sim: &mut Simulation, rules: &RuleSet, host: u64, kind: &str) {
+    let building = sim.substrate.entities.get(host).unwrap();
+    let (x, y) = (building.position.rx(), building.position.ry());
+    let temporary = sim
+        .construct_object_limbo_at_height(
+            kind,
+            "AIHouse",
+            x,
+            y,
+            0,
+            0,
+            rules,
+            FrameEffects::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        sim.reveal_constructed_object_at_height(
+            temporary,
+            x,
+            y,
+            0,
+            0,
+            crate::sim::world::PlacementEvidence::EvaluateMark,
+            rules,
+            FrameEffects::default(),
+        ),
+        Some(temporary)
+    );
+    let consumed = sim.substrate.entities.get(temporary).unwrap();
+    assert!(!consumed.is_object_alive() && consumed.lifecycle.in_limbo());
+}
+
 #[test]
 fn a_house_with_a_refinery_and_a_miner_needs_nothing() {
     let (mut sim, rules, owner) = fixture(0);
@@ -402,6 +448,199 @@ fn a_house_with_a_refinery_and_a_war_factory_rebuilds_its_harvester() {
     assert_eq!(house.ai_production().mode(), 2);
     assert_eq!(house.ai_production().building_choice(), -1);
     assert_eq!(house.base_plan().nodes().len(), 5, "no node is planned");
+    assert!(!hunting(&sim, owner));
+}
+
+/// Manage_Build_Queue at 0x004FDEDE refunds the last installed type immediately,
+/// leaving its host and node alone when cash exceeds the harvester price.
+#[test]
+fn an_installed_upgrade_refund_preserves_the_host_and_restarts_harvester_production() {
+    let (mut sim, rules, owner) = fixture_with(upgrade_recovery_rules(), 500);
+    let ids = plan(
+        &mut sim,
+        &rules,
+        owner,
+        &[
+            ("YARD", (10, 10)),
+            ("REFN", (14, 10)),
+            ("WEAP", (18, 10)),
+            ("PLAIN", (22, 10)),
+            ("PLAIN", (26, 10)),
+        ],
+    );
+    let host = ids[4];
+    install_recovery_upgrade(&mut sim, &rules, host, "UPRICH");
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(host)
+            .unwrap()
+            .building_upgrades()
+            .count(),
+        1
+    );
+    assert!(check_build_need(&sim, &rules, owner));
+    assert!(can_sell_building(&sim, &rules, host));
+    let nodes = sim.houses[&owner].base_plan().nodes().to_vec();
+    let mission = sim.substrate.entities.get(host).unwrap().mission;
+    let rng = sim.scenario_rng.logical_state();
+    let identities = (
+        sim.next_stable_object_id(),
+        sim.native_unique_ids().unwrap().current_raw(),
+        sim.substrate.entities.keys_sorted(),
+    );
+    let stats = *sim.houses[&owner].stats();
+    let accounting = (
+        sim.houses[&owner].economy().spent_credits(),
+        sim.houses[&owner].economy().score(),
+    );
+
+    manage_build_queue(&mut sim, &rules, owner, None, FrameEffects::default());
+
+    // UPRICH's Soylent=1000 differs from its cost=900 and the host's cost=600.
+    assert_eq!(sim.houses[&owner].economy().credits(), 1500);
+    assert_eq!(sim.houses[&owner].base_plan().nodes(), nodes);
+    let building = sim.substrate.entities.get(host).unwrap();
+    assert!(building.is_object_alive() && !building.lifecycle.in_limbo());
+    assert_eq!(building.mission, mission);
+    assert_eq!(building.building_upgrades().count(), 0);
+    assert_eq!(building.building_upgrades().types(), &[None; 3]);
+    assert!(ids.iter().all(|&id| !selling(&sim, id)));
+    assert_eq!(sim.scenario_rng.logical_state(), rng);
+    assert_eq!(
+        (
+            sim.next_stable_object_id(),
+            sim.native_unique_ids().unwrap().current_raw(),
+            sim.substrate.entities.keys_sorted()
+        ),
+        identities
+    );
+    assert_eq!(*sim.houses[&owner].stats(), stats);
+    assert_eq!(
+        (
+            sim.houses[&owner].economy().spent_credits(),
+            sim.houses[&owner].economy().score()
+        ),
+        accounting
+    );
+    let house = &sim.houses[&owner];
+    assert_eq!(house.ai_production().mode(), 2);
+    assert_eq!(house.ai_production().building_choice(), -1);
+    assert_eq!(
+        house.ai_unit_choices().get(UnitChoiceKind::Unit),
+        rules
+            .type_array_index(ObjectCategory::Vehicle, "HARV")
+            .unwrap()
+    );
+    assert!(!hunting(&sim, owner));
+
+    // The resumed choice feeds the real standing war factory. Constructor
+    // identities/draws here are deliberately after the removal comparisons.
+    crate::sim::production::factory_ai(&mut sim, &rules, ids[2], None, FrameEffects::default());
+    let product = sim
+        .production
+        .factories()
+        .building_factory(ids[2])
+        .unwrap()
+        .object()
+        .unwrap();
+    assert_eq!(product.type_id, sim.interner.get("HARV").unwrap());
+    let held = sim
+        .substrate
+        .entities
+        .get(product.entity_id.unwrap())
+        .unwrap();
+    assert!(held.is_object_alive() && held.lifecycle.in_limbo());
+}
+
+/// Equality at 0x004FE030 continues to the previous node. Only one upgrade is
+/// removed per visited host; its immediate cash is not a pending host refund.
+#[test]
+fn an_exact_upgrade_refund_keeps_the_bottom_upgrade_and_sells_the_previous_node() {
+    let (mut sim, rules, owner) = fixture_with(upgrade_recovery_rules(), 700);
+    let ids = plan(
+        &mut sim,
+        &rules,
+        owner,
+        &[
+            ("YARD", (10, 10)),
+            ("REFN", (14, 10)),
+            ("WEAP", (18, 10)),
+            ("PLAIN", (22, 10)),
+            ("PLAIN", (26, 10)),
+        ],
+    );
+    let host = ids[4];
+    install_recovery_upgrade(&mut sim, &rules, host, "UPBOTTOM");
+    install_recovery_upgrade(&mut sim, &rules, host, "UPTOP");
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(host)
+            .unwrap()
+            .building_upgrades()
+            .count(),
+        2
+    );
+    assert!(check_build_need(&sim, &rules, owner));
+    let nodes = sim.houses[&owner].base_plan().nodes().to_vec();
+    let mission = sim.substrate.entities.get(host).unwrap().mission;
+    let rng = sim.scenario_rng.logical_state();
+    let identities = (
+        sim.next_stable_object_id(),
+        sim.native_unique_ids().unwrap().current_raw(),
+        sim.substrate.entities.keys_sorted(),
+    );
+    let stats = *sim.houses[&owner].stats();
+    let accounting = (
+        sim.houses[&owner].economy().spent_credits(),
+        sim.houses[&owner].economy().score(),
+    );
+
+    manage_build_queue(&mut sim, &rules, owner, None, FrameEffects::default());
+
+    // The 700 cash plus top Soylent=700 equals 1400, so the previous plain's
+    // pending 600 is needed. Neither its cash nor the bottom 400 is credited.
+    assert_eq!(sim.houses[&owner].economy().credits(), 1400);
+    assert_eq!(
+        ids.iter().map(|&id| selling(&sim, id)).collect::<Vec<_>>(),
+        [false, false, false, true, false]
+    );
+    assert_eq!(sim.houses[&owner].base_plan().nodes(), nodes);
+    let building = sim.substrate.entities.get(host).unwrap();
+    assert!(building.is_object_alive() && !building.lifecycle.in_limbo());
+    assert_eq!(building.mission, mission);
+    assert_eq!(building.building_upgrades().count(), 1);
+    assert_eq!(
+        building.building_upgrades().types(),
+        &[sim.interner.get("UPBOTTOM"), None, None]
+    );
+    assert_eq!(sim.scenario_rng.logical_state(), rng);
+    assert_eq!(
+        (
+            sim.next_stable_object_id(),
+            sim.native_unique_ids().unwrap().current_raw(),
+            sim.substrate.entities.keys_sorted()
+        ),
+        identities
+    );
+    assert_eq!(*sim.houses[&owner].stats(), stats);
+    assert_eq!(
+        (
+            sim.houses[&owner].economy().spent_credits(),
+            sim.houses[&owner].economy().score()
+        ),
+        accounting
+    );
+    let house = &sim.houses[&owner];
+    assert_eq!(house.ai_production().mode(), 2);
+    assert_eq!(house.ai_production().building_choice(), -1);
+    assert_eq!(
+        house.ai_unit_choices().get(UnitChoiceKind::Unit),
+        rules
+            .type_array_index(ObjectCategory::Vehicle, "HARV")
+            .unwrap()
+    );
     assert!(!hunting(&sim, owner));
 }
 
