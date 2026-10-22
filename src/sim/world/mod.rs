@@ -181,6 +181,8 @@ mod gsi_04_18_tests;
 #[cfg(test)]
 mod house_ai_activation_tests;
 #[cfg(test)]
+mod house_power_admission_tests;
+#[cfg(test)]
 mod jumpjet_infantry_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod lifecycle_tests;
@@ -5603,32 +5605,35 @@ impl Simulation {
     }
 
     /// `HouseClass::Added_To_Game @ 0x00502A80` for an object on its owner's
-    /// house, priced with that house's current `Cost_Of` factors. It counts
-    /// no powered center and invalidates no power; the first GrandOpening
-    /// owns that invalidation.
-    ///
-    /// RESIDUAL: a Building's arm also adds its `GetPowerDrain @ 0x0044E880`
-    /// to the House's retained drain (`+0x53A8`) at once
-    /// (`0x00502B4A..0x00502B52`, `0x005018C0`, whose remaining redraw and
-    /// COM notify have no sim reader). Here the drain counts from the House's
-    /// next power reassessment, which native also runs after the building's
-    /// first health sample ([`crate::sim::power_system::PowerHealthSample`],
-    /// `0x00440055`) or OnConstructionComplete (`0x00446A77`) sets
-    /// RecheckPower. Trigger: every building placement or capture. Effect:
-    /// for about one frame GetPowerRatio readers (production rate,
-    /// `Powered=`, AI power conditions) miss the new consumer. Invisible.
-    pub(crate) fn house_added_to_game(
-        substrate: &ObjectSubstrate,
-        houses: &mut Houses,
-        stable_id: u64,
-    ) {
-        let Some(entity) = substrate.entities.get(stable_id) else {
+    /// house, priced with that house's current `Cost_Of` factors. A Building
+    /// immediately adds its live GetPowerDrain44E880 through5018C0 after
+    /// its active/factory counters and before capacity. This does not reassess
+    /// output or dirty power; GrandOpening and the health sample retain their
+    /// own phases.
+    pub(crate) fn house_added_to_game(&mut self, stable_id: u64, rules: &RuleSet) {
+        let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };
-        if let Some(house) = houses.get_mut(&entity.owner()) {
-            let factors = house.cost_factors();
-            house.tracking_mut().added_to_game(entity, &factors);
+        let owner = entity.owner();
+        let Some(house) = self.houses.get_mut(&owner) else {
+            return;
+        };
+        house.tracking_mut().added_to_game_prefix(entity);
+        if entity.category() == EntityCategory::Structure
+            && let Some(object) = self.interner.object_type(entity.type_ref(), rules)
+        {
+            let drain = crate::sim::power_system::building_power_drain(
+                entity,
+                object,
+                rules,
+                &self.interner,
+            );
+            self.power_states.house_mut(owner).add_building_drain(drain);
         }
+        let factors = house.cost_factors();
+        house
+            .tracking_mut()
+            .added_to_game_after_power(entity, &factors);
     }
 
     /// `HouseClass::Removed_From_Game @ 0x005025F0` for an object on its
@@ -6185,7 +6190,7 @@ impl Simulation {
         }
         // Techno701757..70178E: Added_To_Game on the new house (not in limbo).
         if on_map {
-            Self::house_added_to_game(&self.substrate, &mut self.houses, stable_id);
+            self.house_added_to_game(stable_id, rules);
         }
         // TechnoChangeOwner7017A0 clears only the trigger-held original
         // House; the controlling House+2CC survives an ordinary capture.

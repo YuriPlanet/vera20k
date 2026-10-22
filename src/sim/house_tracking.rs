@@ -105,8 +105,7 @@
 //! original counter readers (21 cases). `tag_lifecycle.py --naval-land-events`
 //! replays the tracking payload on the Steam image and executes TEvent55/56;
 //! its metadata distinguishes the old payload's provenance from this replay.
-//! Whole Added_To_Game and Removed_From_Game are read, not executed; only
-//! their capacity/amount transfer slices have executable controls here.
+//! Capacity/amount transfer slices have separate executable controls.
 //!
 //! The retained survivor flag `+0x6D9` is written by SpawnSurvivors
 //! (`0x00443111..0x00443127`), before the survivor's Unlimbo, on a `Nominal=`
@@ -780,21 +779,40 @@ impl HouseTracking {
         wrapping_total(&self.active_aircraft_types)
     }
 
-    /// `HouseClass::Added_To_Game @ 0x00502A80`, pricing with this house's
-    /// `factors`.
-    pub(crate) fn added_to_game(&mut self, entity: &GameEntity, factors: &HouseCostFactors) {
+    /// Added_To_Game502A80's economy counters precede the Building's
+    /// synchronous power receiver.
+    pub(crate) fn added_to_game_prefix(&mut self, entity: &GameEntity) {
         if entity.tracking_facts.resource_gatherer {
             self.resource_gatherers = self.resource_gatherers.wrapping_add(1);
         }
         if entity.tracking_facts.resource_destination {
             self.resource_destinations = self.resource_destinations.wrapping_add(1);
         }
-        if entity.tracking_facts.war_factory {
-            self.war_factories = self.war_factories.wrapping_add(1);
+        if entity.category() == EntityCategory::Structure {
+            //502B0B increments the active Building before502B42's factory
+            //counter and the synchronous power receiver502B52.
+            if !entity.tracking_facts.dont_score() {
+                let count = self
+                    .active_building_types
+                    .entry(entity.type_ref())
+                    .or_default();
+                *count = count.wrapping_add(1);
+            }
+            if entity.tracking_facts.war_factory {
+                self.war_factories = self.war_factories.wrapping_add(1);
+            }
         }
+    }
+
+    /// Added_To_Game's counters after the Building power receiver502B52,
+    /// priced with this House's current factors. The Simulation entry point
+    /// runs the prefix and immediate drain before entering this phase.
+    pub(crate) fn added_to_game_after_power(
+        &mut self,
+        entity: &GameEntity,
+        factors: &HouseCostFactors,
+    ) {
         // Added502B57..502B78: independent of DontScore/Insignificant.
-        // Current Added's live power/COM prelude remains deferred to the
-        // existing power owner; no callback occurs inside this counter phase.
         if entity.category() == EntityCategory::Structure {
             self.storage_capacity = self
                 .storage_capacity
@@ -809,7 +827,7 @@ impl HouseTracking {
             // The Unit case (increment at `0x00502CF9`) has no DontScore test.
             EntityCategory::Unit => &mut self.active_unit_types,
             EntityCategory::Aircraft if !dont_score => &mut self.active_aircraft_types,
-            EntityCategory::Structure if !dont_score => &mut self.active_building_types,
+            EntityCategory::Structure => return,
             //502C3C..502C7A: force value above still changes. Removed does
             //not test6D9, so repeated placement can retain negative counts.
             EntityCategory::Infantry if !dont_score && !entity.is_nominal_survivor() => {

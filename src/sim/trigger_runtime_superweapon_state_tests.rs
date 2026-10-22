@@ -174,6 +174,13 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
         let silo = sim
             .spawn_object("NAMISL", "YuriCountry", 48, 89, 0, &rules)
             .unwrap();
+        // The native sequence supplies an unheld Grant6CB560(0,0,0), not
+        // silo admission. Establish that powered prior through real generation
+        // and assessment before reseeding the measured sequence's RNGs.
+        sim.spawn_object("NANRCT", "YuriCountry", 56, 89, 0, &rules)
+            .unwrap();
+        sim.assess_power_for_test(&rules);
+        assert!(!sim.power_states[&owner].low_power());
         let tag_type = sim.trigger_runtime.definitions.tag_type(tag_name).unwrap();
         let tag = sim.shared_trigger_tag(tag_type);
         let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];

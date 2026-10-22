@@ -252,6 +252,17 @@ fn a_robot_tank_stops_on_entering_the_first_cell_with_its_target_in_range() {
     // `PoweredUnit=` wants a powered Robot Control Center.
     spawn(&mut sim, &rules, "GAPOWR", "Americans", (2, 20));
     spawn(&mut sim, &rules, "GAROBO", "Americans", (6, 20));
+    // Admission publishes drain before generation is assessed. Let the
+    // ordinary House and Building turns establish the working center before
+    // constructing a PoweredUnit or issuing its attack.
+    let owner = sim.interner.get("Americans").unwrap();
+    for _ in 0..60 {
+        if sim.has_powered_center(owner) {
+            break;
+        }
+        step(&mut sim, &rules);
+    }
+    assert!(sim.has_powered_center(owner), "the base powers its center");
     let robot = spawn(&mut sim, &rules, "ROBO", "Americans", (4, 10));
     let tank = spawn(&mut sim, &rules, "MTNK", "Russians", (24, 13));
     order(

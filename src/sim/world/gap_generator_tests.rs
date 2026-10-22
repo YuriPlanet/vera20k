@@ -411,6 +411,11 @@ fn spy_sat_gap_reentry_asks_the_generators_house_about_the_viewer() {
 fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes() {
     let (mut sim, rules, a, owner, _) = fixture();
     insert(&mut sim, 1, owner, "GAGAP", 12, 12);
+    // Both owners can power this gap. ChangeOwner's new-owner admission adds
+    // its drain before 448C52 rechecks operation and reapplies the gap.
+    insert(&mut sim, 2, owner, "POWER", 25, 25);
+    insert(&mut sim, 3, a, "POWER", 27, 25);
+    power(&mut sim, &rules);
     refresh(&mut sim, &rules);
     sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
     sim.change_owner_with_rules(

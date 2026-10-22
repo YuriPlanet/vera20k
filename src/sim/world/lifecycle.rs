@@ -1289,7 +1289,7 @@ impl Simulation {
         // (`0x006F6D8F`), behind its alive gate (`0x006F6D04`: a dead Techno
         // returns success before it).
         if techno_alive_on_entry {
-            Self::house_added_to_game(&self.substrate, &mut self.houses, stable_id);
+            self.house_added_to_game(stable_id, context.rules());
         }
         // Techno6F6DAA: the admitted successful Techno snaps
         // the body to this call's direction, before barrel elevation and idle.
