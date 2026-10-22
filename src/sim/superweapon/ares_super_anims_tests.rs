@@ -29,7 +29,13 @@ fn fixture(extra: &str) -> (Simulation, RuleSet, InternedId, u64) {
     let art = IniFile::from_str(
         "[PROVIDER]\nFoundation=1x1\nSuperAnim=SLOT14V0\nSuperAnimTwo=SLOT15V0\nSuperAnimThree=SLOT16V0\nSuperAnimFour=SLOT17V0\n[SUPPORT]\nFoundation=1x1\n[SLOT14V0]\n[SLOT15V0]\n[SLOT16V0]\n[SLOT17V0]\n",
     );
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    // The native comparison records PlayAnim calls rather than loading SHPs.
+    // This Rust scene also allocates real AnimClass members, so provide their
+    // asset bounds separately; parsing fixed ART does not perform binding.
+    for name in ["SLOT14V0", "SLOT15V0", "SLOT16V0", "SLOT17V0"] {
+        rules.bind_anim_frame_count_for_test(name, 1);
+    }
     let mut sim = Simulation::with_seed(31);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);

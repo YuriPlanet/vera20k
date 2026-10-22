@@ -480,6 +480,9 @@ fn successful_ares_launch_history_limits_commands_survives_save_and_keeps_fallba
         "[Strike]\nSW.Shots=2\n[Animations]\n0=RESTING\n",
     ));
     rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    // Fixed-ART parsing registers the type; real AnimClass allocation also
+    // needs asset bounds. A one-frame fixture is enough to observe the slot.
+    rules.bind_anim_frame_count_for_test("RESTING", 1);
     restored.intern_rule_type_ids(&rules);
     let building = restored.houses[&owner].base_projection().buildings()[0];
     restored.open_super_weapon_anims(building, false, false, &rules);
