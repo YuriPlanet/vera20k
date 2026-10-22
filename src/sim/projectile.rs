@@ -2066,6 +2066,7 @@ impl ProjectileStore {
             source_is_jumpjet,
             target_is_aircraft,
             safety_altitude,
+            false,
             collides_at,
             nuke,
         )
@@ -2085,6 +2086,7 @@ impl ProjectileStore {
         source_is_jumpjet: bool,
         target_is_aircraft: bool,
         safety_altitude: i32,
+        degenerates: bool,
         mut collides_at: impl FnMut(
             &Projectile,
             ProjectileCoord,
@@ -2366,6 +2368,13 @@ impl ProjectileStore {
         fuse_mode = projectile_fuse_mode(fuse_mode, source_is_jumpjet);
 
         if !projectile_impact_admitted(impact_flag, fuse_mode, projectile.collision.dropping) {
+            // BulletClass::AI467C86..467CA4, gamemd: only the continuing
+            // flight reads current BulletType+2A6 and decrements Health+6C.
+            // Damage is the existing saved/hashed payload authority; impacts,
+            // early retirement and NUKE waits never enter this branch.
+            if degenerates && projectile.payload.base_damage > 5 {
+                projectile.payload.base_damage -= 1;
+            }
             projectile.position = candidate;
             projectile.previous_cell = ((candidate.x / 256) as i16, (candidate.y / 256) as i16);
             return Some(result);
@@ -3147,6 +3156,55 @@ mod tests {
             tracks_target: true,
             target_expiry: TargetExpiryPolicy::DetonateAtLastKnown,
             collision: ProjectileCollisionPolicy::NONE,
+        }
+    }
+
+    #[test]
+    fn degenerates_obeys_collision_and_dropping_fuse_admission() {
+        // Original467C70..467CA4: Dropping suppresses a detector-only
+        // detonation, making that visit eligible for degeneration. A real
+        // collision still detonates without decrementing the impact damage.
+        for (dropping, collision, continues) in [
+            (false, false, false),
+            (true, false, true),
+            (true, true, false),
+        ] {
+            let mut store = ProjectileStore::new();
+            let mut shot = spawn(ProjectileTarget::Entity(99));
+            shot.origin = ProjectileCoord::new(0, 0, 100);
+            shot.speed_leptons_per_frame = 128;
+            shot.payload.base_damage = 6;
+            shot.ranged_fuse = true;
+            shot.collision.dropping = dropping;
+            let id = store.spawn(1, shot);
+            let head = store.begin_ai_visit(id).unwrap();
+            let result = store
+                .advance_after_head(
+                    head,
+                    1,
+                    |_, _| Some(ProjectileCoord::new(128, 0, 0)),
+                    None,
+                    &SharedCellDummy::fresh(),
+                    6,
+                    false,
+                    false,
+                    0,
+                    true,
+                    |_, candidate, phase| {
+                        (collision && matches!(phase, ProjectileCollisionPhase::Shared))
+                            .then_some(ProjectileCollisionResponse::TargetZClamp(candidate))
+                    },
+                    None,
+                )
+                .unwrap();
+            assert_eq!(result.detonations.is_empty(), continues);
+            assert_eq!(
+                store.get(id).unwrap().payload.base_damage,
+                if continues { 5 } else { 6 }
+            );
+            if let Some(impact) = result.detonations.first() {
+                assert_eq!(impact.payload.base_damage, 6);
+            }
         }
     }
 

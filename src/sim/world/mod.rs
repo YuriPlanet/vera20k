@@ -185,6 +185,8 @@ mod lifecycle_tests;
 #[cfg(test)]
 mod mastermind_overload_tests;
 #[cfg(test)]
+mod projectile_degenerates_tests;
+#[cfg(test)]
 mod projectile_trailer_tests;
 #[cfg(test)]
 mod squid_grapple_tests;

@@ -76,8 +76,8 @@ pub struct ProjectileType {
     pub rotates: bool,
     /// Scatters like flak — random spread pattern for AA. (+0x2A3)
     pub flak_scatter: bool,
-    /// Projectile loses health over time. (+0x2A6)
-    #[cfg(test)]
+    /// Bullet AI467C86 decrements raw damage on continuing flights above five.
+    /// ReadBooleanByte46BEE0 retains the previous value across Rules passes.
     pub degenerates: bool,
     /// Bounces off terrain on impact. (+0x2A7)
     #[cfg(test)]
@@ -162,7 +162,7 @@ pub struct ProjectileImageLoad {
     pub new_theater: bool,
 }
 
-/// Process-resident Bullet image, Color and ART values, owned by
+/// Process-resident Bullet image, Color, ART and Degenerates values, owned by
 /// native_processing::ProcessedType.
 /// Native constructors46BBC0/5F7090 and full ReadINI46BEE0; executable inputs:
 /// tools/projectile_oracle/bridge_render_art_state.{py,json}.
@@ -175,6 +175,9 @@ pub(crate) struct ProjectileArtState {
     /// Bullet ctor46BCA4 and ReadColor474A90 at46BFA5.
     #[serde(default)]
     color_scheme: i32,
+    /// Rules Degenerates (+2A6) shares this retained Bullet reader owner.
+    #[serde(default)]
+    degenerates: bool,
     inviso: bool,
     voxel: bool,
     theater: bool,
@@ -199,6 +202,7 @@ impl ProjectileArtState {
             image_load: None,
             voxel_image_load: None,
             color_scheme: 0,
+            degenerates: false,
             inviso: false,
             voxel: false,
             theater: false,
@@ -243,6 +247,9 @@ impl ProjectileArtState {
             self.color_scheme,
             color_names.iter().map(String::as_str),
         );
+        // Bullet46BEE0 reads with the constructor/current byte as default;
+        // a flattened invalid later token cannot replace a prior true value.
+        self.degenerates = rules.read_bool("Degenerates", self.degenerates);
         // Bullet46C1CC clears absent Image. Later unguarded animation reads use
         // that same address, hence the ART section cached by ObjectType above.
         // Active retail's preceding Anim sweep679A5D..679A82 resets this cache:
@@ -322,6 +329,7 @@ impl ProjectileArtState {
         projectile.image_load = self.image_load.clone();
         projectile.voxel_image_load = self.voxel_image_load.clone();
         projectile.color_scheme = self.color_scheme;
+        projectile.degenerates = self.degenerates;
         projectile.inviso = self.inviso;
         projectile.voxel = self.voxel;
         projectile.theater = self.theater;
@@ -391,7 +399,6 @@ impl ProjectileType {
             ranged: section.read_bool("Ranged", false),
             rotates: true,
             flak_scatter: section.read_bool("FlakScatter", false),
-            #[cfg(test)]
             degenerates: section.read_bool("Degenerates", false),
             #[cfg(test)]
             bouncy: section.read_bool("Bouncy", false),
@@ -439,6 +446,7 @@ impl ProjectileType {
         }
         art.image = section.read_string("Image", "", 25);
         art.inviso = section.read_bool("Inviso", false);
+        art.degenerates = result.degenerates;
         art.read_bullet_fields(image_section, |incoming| {
             (!incoming.eq_ignore_ascii_case("none") && !incoming.eq_ignore_ascii_case("<none>"))
                 .then(|| incoming.chars().take(24).collect())
@@ -453,6 +461,72 @@ impl ProjectileType {
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
+
+    #[test]
+    fn degenerates_retains_reader_defaults_through_layers_and_save() {
+        use crate::rules::native_processing::{NativeRulesRegistryState, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+        use crate::util::save_codec;
+
+        let first = RulesLayerStack::new(IniFile::from_str(
+            "[VehicleTypes]\n0=UNIT\n[UNIT]\nPrimary=GUN\n[GUN]\nProjectile=SHOT\n[SHOT]\nDegenerates=yes\n",
+        )).process().unwrap();
+        let (_, trace) = first.into_ini_and_native_type_construction_trace();
+        let mut registry = trace.into_registry_state_discarding_events();
+        for (body, expected) in [
+            ("[SHOT]\nDegenerates=invalid\n", true),
+            ("[SHOT]\nName=no key\n", true),
+            ("[Other]\nName=no section\n", true),
+            ("[SHOT]\nDegenerates=no\n", false),
+            ("[SHOT]\nDegenerates=invalid\n", false),
+        ] {
+            // SavedScenarioResources retains this same process registry;
+            // loading must not reparse an invalid token against false.
+            let bytes = save_codec::serialize(&registry).unwrap();
+            let loaded: NativeRulesRegistryState = save_codec::deserialize(&bytes).unwrap();
+            let next = RulesLayerStack::new(IniFile::from_str(body))
+                .process_with_fixed_art_and_registry_state(&IniFile::empty(), loaded)
+                .unwrap();
+            assert_eq!(
+                RuleSet::from_processed_rules(&next)
+                    .unwrap()
+                    .projectile("SHOT")
+                    .unwrap()
+                    .degenerates,
+                expected,
+                "{body}"
+            );
+            let (_, trace) = next.into_ini_and_native_type_construction_trace();
+            registry = trace.into_registry_state_discarding_events();
+        }
+    }
+
+    #[test]
+    fn degenerates_retained_value_changes_effective_rules_hash() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let rules = |initial| {
+            let first = IniFile::from_str(&format!(
+                "[VehicleTypes]\n0=UNIT\n[UNIT]\nPrimary=GUN\n[GUN]\nProjectile=SHOT\n[SHOT]\nDegenerates={initial}\n",
+            ));
+            let mut layers = RulesLayerStack::new(first);
+            layers.push(
+                RulesLayerKind::Scenario,
+                IniFile::from_str("[SHOT]\nDegenerates=invalid\n"),
+            );
+            RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap()
+        };
+        let enabled = rules("yes");
+        let disabled = rules("no");
+        assert!(enabled.projectile("SHOT").unwrap().degenerates);
+        assert!(!disabled.projectile("SHOT").unwrap().degenerates);
+        assert_ne!(
+            enabled.simulation_config_hash(),
+            disabled.simulation_config_hash(),
+            "equal final raw tokens do not erase retained gameplay inputs"
+        );
+    }
 
     #[test]
     fn projectile_art_binding_does_not_reread_after_retained_processing() {

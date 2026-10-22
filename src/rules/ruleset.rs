@@ -5871,6 +5871,20 @@ impl RuleSet {
         // v34: Country starting-veterancy; optional extensions add domains below.
         b"rules-simulation-config-v34".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        // Bullet46BEE0 retains this byte even when a later raw value is
+        // invalid. Equal flattened INIs can therefore have different flight
+        // damage. Preserve the previous hash domain for all-false stock rules.
+        let mut degenerating_projectiles: Vec<_> = self
+            .projectiles
+            .values()
+            .filter(|projectile| projectile.degenerates)
+            .map(|projectile| projectile.id.to_ascii_uppercase())
+            .collect();
+        if !degenerating_projectiles.is_empty() {
+            degenerating_projectiles.sort();
+            b"projectile-degenerates-v1".hash(&mut hasher);
+            degenerating_projectiles.hash(&mut hasher);
+        }
         b"country-parent-v1".hash(&mut hasher);
         // The native parent lookup scans registration order and checks Name
         // aliases as well as IDs. These retained inputs can differ after an

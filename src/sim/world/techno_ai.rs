@@ -366,15 +366,15 @@ impl Simulation {
         // Bullet466826..4668B8 constructs at the old Location after its
         // visual update, before target/floor queries or flight. Registering
         // an Anim here also preserves the live Logic cursor on impact.
-        let trailer = self
+        let projectile_type = self
             .projectiles
             .get(id)
             .and_then(|projectile| projectile.payload().projectile_type())
-            .and_then(|type_id| rules.projectile(self.interner.resolve(type_id)))
-            .and_then(|kind| {
-                self.projectiles
-                    .trailer(&head, kind, self.session.binary_frame())
-            });
+            .and_then(|type_id| rules.projectile(self.interner.resolve(type_id)));
+        let trailer = projectile_type.and_then(|kind| {
+            self.projectiles
+                .trailer(&head, kind, self.session.binary_frame())
+        });
         if let Some((name, position)) = trailer {
             self.spawn_named_anim(
                 rules,
@@ -453,6 +453,7 @@ impl Simulation {
                 source_is_jumpjet,
                 target_is_aircraft,
                 rules.general.safety_altitude,
+                projectile_type.is_some_and(|kind| kind.degenerates),
                 |projectile, candidate, phase| {
                     collision_world.collide(projectile, candidate, phase)
                 },
