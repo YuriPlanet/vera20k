@@ -480,6 +480,7 @@ fn successful_ares_launch_history_limits_commands_survives_save_and_keeps_fallba
         "[Strike]\nSW.Shots=2\n[Animations]\n0=RESTING\n",
     ));
     rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     // Fixed-ART parsing registers the type; real AnimClass allocation also
     // needs asset bounds. A one-frame fixture is enough to observe the slot.
     rules.bind_anim_frame_count_for_test("RESTING", 1);

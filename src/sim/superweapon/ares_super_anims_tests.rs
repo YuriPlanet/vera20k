@@ -30,11 +30,12 @@ fn fixture(extra: &str) -> (Simulation, RuleSet, InternedId, u64) {
         "[PROVIDER]\nFoundation=1x1\nSuperAnim=SLOT14V0\nSuperAnimTwo=SLOT15V0\nSuperAnimThree=SLOT16V0\nSuperAnimFour=SLOT17V0\n[SUPPORT]\nFoundation=1x1\n[SLOT14V0]\nEnd=1\n[SLOT15V0]\nEnd=1\n[SLOT16V0]\nEnd=1\n[SLOT17V0]\nEnd=1\n",
     );
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     // The native comparison records PlayAnim calls rather than loading SHPs.
     // This Rust scene also allocates real AnimClass members, so provide their
     // asset bounds separately; parsing fixed ART does not perform binding.
-    // End=1 keeps each single-frame ART body present: fresh INI loading
-    // discards empty sections before the animation reader sees them.
+    // Processing fixed ART resolves type fields; installing the registry above
+    // supplies the runtime animation metadata, as the production loader does.
     for name in ["SLOT14V0", "SLOT15V0", "SLOT16V0", "SLOT17V0"] {
         rules.bind_anim_frame_count_for_test(name, 1);
     }
