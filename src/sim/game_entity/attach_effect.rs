@@ -254,7 +254,7 @@ mod tests {
                 .remaining,
             4
         );
-        restored.techno_limbo_with_rules(target, &rules);
+        restored.techno_limbo_with_rules(target, &rules, None);
         assert!(
             restored
                 .entities()
@@ -277,12 +277,9 @@ mod tests {
                 .remaining,
             4
         );
-        // Constructor-complete limbo disposal reaches the shared Techno DTOR.
-        restored.finalize_and_remove_common(
-            target,
-            crate::sim::world::UninitContext::new(&rules, None),
-            0,
-        );
+        // Ordinary UnInit and its deferred drain reach the shared Techno DTOR.
+        restored.uninit_with_rules(target, &rules);
+        restored.process_pending_delete_with(&rules, None, FrameEffects::empty(), 1, false);
         assert!(restored.entities().get(target).is_none());
     }
 }
@@ -466,7 +463,7 @@ mod receiver {
             };
             if victim.lifecycle.in_limbo()
                 || victim.chrono_warp_latch()
-                || victim.inside_transport_id().is_some()
+                || victim.passenger_role.inside_transport_id().is_some()
             {
                 return;
             }
