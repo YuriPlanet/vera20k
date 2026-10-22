@@ -5607,27 +5607,22 @@ impl Simulation {
     /// no powered center and invalidates no power; the first GrandOpening
     /// owns that invalidation.
     ///
-    /// RESIDUAL: a Building's arm also adds its `GetPowerDrain @ 0x0044E880`
-    /// to the House's retained drain (`+0x53A8`) at once
-    /// (`0x00502B4A..0x00502B52`, `0x005018C0`, whose remaining redraw and
-    /// COM notify have no sim reader). Here the drain counts from the House's
-    /// next power reassessment, which native also runs after the building's
-    /// first health sample ([`crate::sim::power_system::PowerHealthSample`],
-    /// `0x00440055`) or OnConstructionComplete (`0x00446A77`) sets
-    /// RecheckPower. Trigger: every building placement or capture. Effect:
-    /// for about one frame GetPowerRatio readers (production rate,
-    /// `Powered=`, AI power conditions) miss the new consumer. Invisible.
-    pub(crate) fn house_added_to_game(
-        substrate: &ObjectSubstrate,
-        houses: &mut Houses,
-        stable_id: u64,
-    ) {
-        let Some(entity) = substrate.entities.get(stable_id) else {
+    /// Building registration502B48..502B52 also adds GetPowerDrain44E880
+    /// immediately via5018C0. Earlier Houses may query the retained totals
+    /// before this House's first assessment (SOV01's Event58, for example).
+    pub(crate) fn house_added_to_game(&mut self, stable_id: u64, rules: &RuleSet) {
+        let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };
-        if let Some(house) = houses.get_mut(&entity.owner()) {
+        if let Some(house) = self.houses.get_mut(&entity.owner()) {
             let factors = house.cost_factors();
             house.tracking_mut().added_to_game(entity, &factors);
+            if entity.category() == EntityCategory::Structure {
+                let drain = power_system::building_power_drain(entity, rules, &self.interner);
+                self.power_states
+                    .house_mut(entity.owner())
+                    .add_building_drain(drain);
+            }
         }
     }
 
@@ -6185,7 +6180,7 @@ impl Simulation {
         }
         // Techno701757..70178E: Added_To_Game on the new house (not in limbo).
         if on_map {
-            Self::house_added_to_game(&self.substrate, &mut self.houses, stable_id);
+            self.house_added_to_game(stable_id, rules);
         }
         // TechnoChangeOwner7017A0 clears only the trigger-held original
         // House; the controlling House+2CC survives an ordinary capture.

@@ -17,6 +17,8 @@ pub enum OpeningTarget {
     Flash,
     Arrows,
     Unlocked,
+    /// Let the normal wall-clock pacer and audio device run through SOV01.
+    RealtimeUnlocked,
     RestoreUnlocked,
     /// ALL01, whose first authored action locks input: an unlocked save
     /// loaded from the Esc menu while a replay of the opening holds the lock.
@@ -36,6 +38,7 @@ impl OpeningTarget {
             Self::Flash => "opening-flash",
             Self::Arrows => "opening-arrows",
             Self::Unlocked => "opening-unlocked",
+            Self::RealtimeUnlocked => "opening-realtime-unlocked",
             Self::RestoreUnlocked => "opening-restore-unlocked",
             Self::LoadUnlockedWhileLocked => "opening-load-unlocked-while-locked",
             Self::AlliedTick(_) => "opening-allied-tick",
@@ -143,7 +146,9 @@ impl OpeningCapture {
                     .iter_sorted()
                     .any(|(_, entity)| entity.is_active() && entity.flashing.flashed()),
                 OpeningTarget::Arrows => sim.anims().any(|(_, anim)| anim.no_effects()),
-                OpeningTarget::Unlocked => self.saw_unlock && !locked,
+                OpeningTarget::Unlocked | OpeningTarget::RealtimeUnlocked => {
+                    self.saw_unlock && !locked
+                }
                 OpeningTarget::RestoreUnlocked => {
                     self.saw_unlock && !locked && self.restored.is_some()
                 }
@@ -160,7 +165,17 @@ impl OpeningCapture {
 
     pub(super) fn after_present(&mut self, state: &mut AppState) -> Result<()> {
         if self.initial_runtime.is_none() {
-            self.initial_runtime = Some(campaign_runtime_receipt(state)?);
+            if self.target == OpeningTarget::RealtimeUnlocked {
+                ensure!(
+                    state.audio.sfx_player.is_some(),
+                    "realtime opening requires audio output"
+                );
+            }
+            self.initial_runtime = Some(if self.target == OpeningTarget::RealtimeUnlocked {
+                installed_campaign_runtime_receipt(state)?
+            } else {
+                campaign_runtime_receipt(state)?
+            });
             // A real pointer press before the first authored lock. Action46
             // must cancel its capture while preserving physical button state.
             crate::app::input::dispatch::handle_mouse_input(
@@ -181,6 +196,9 @@ impl OpeningCapture {
         // Readback is submitted before this hook. Keep its receipt on the
         // exact state that was drawn, including the first unlocked frame.
         if self.ready(state)? {
+            return Ok(());
+        }
+        if self.target == OpeningTarget::RealtimeUnlocked {
             return Ok(());
         }
         if matches!(
@@ -361,6 +379,16 @@ impl OpeningCapture {
 
     fn observe(&mut self, state: &AppState) -> Result<()> {
         let facts = opening_observation(state)?;
+        if self.target == OpeningTarget::RealtimeUnlocked {
+            ensure!(
+                facts["game_speed"] == 2,
+                "ordinary campaign lost its native speed"
+            );
+            ensure!(
+                facts["eva_event"].as_str().is_none_or(|event| !event.eq_ignore_ascii_case("EVA_PsychicDominatorDetected")),
+                "unpowered SOV01 Dominator warning interrupted the opening"
+            );
+        }
         let locked = facts["input_locked"]
             .as_bool()
             .context("lock observation missing")?;
@@ -384,6 +412,10 @@ impl OpeningCapture {
             .as_object_mut()
             .expect("observation object")
             .remove("binary_frame");
+        projection
+            .as_object_mut()
+            .expect("observation object")
+            .remove("wall_ms");
         if let Some(timer) = projection["scenario_timer"].as_object_mut() {
             timer.remove("remaining");
         }
@@ -448,7 +480,11 @@ impl OpeningCapture {
             "aircraft_raster": if matches!(self.target, OpeningTarget::AlliedTick(_)) {
                 Some(aircraft::observe(state, &self.save_directory)?)
             } else { None },
-            "clock_domain": "one exact production sim/app frame per presented game frame; audio/message service uses its ordinary wall clock",
+            "clock_domain": if self.target == OpeningTarget::RealtimeUnlocked {
+                "ordinary wall-clock frame pacing and audio service"
+            } else {
+                "one exact production sim/app frame per presented game frame; audio/message service uses its ordinary wall clock"
+            },
         }))
     }
 }
@@ -592,6 +628,9 @@ fn opening_observation(state: &AppState) -> Result<Value> {
                 .collect::<Vec<_>>()).unwrap_or_default(),
         "teams": teams, "messages": messages,
         "eva_active": state.audio.sfx_player.as_ref().is_some_and(|sfx| sfx.voices_active()),
+        "eva_event": state.audio.sfx_player.as_ref().and_then(|sfx| sfx.current_eva_event()),
+        "game_speed": sim.session().game_options().game_speed,
+        "wall_ms": crate::app::match_runtime::frame_pacer::wall_clock_ms(),
     }))
 }
 

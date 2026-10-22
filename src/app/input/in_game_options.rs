@@ -102,8 +102,8 @@ pub(crate) fn on_open(state: &mut AppState) {
 /// MPlayer_Defeated (4FC205) sets only for the local House.
 ///
 /// Residual: `startup_options` accepts `-SPEEDCONTROL` and drops it, so a
-/// campaign launched with it hides the row where native shows it. Its other
-/// reader, Main_Tick's campaign GameSpeed=2 (0x55D767), is not ported either.
+/// campaign launched with it hides the row where native shows it. Ordinary
+/// campaign startup installs Main_Tick's speed2 in the session owner.
 fn game_speed_hidden(
     mode: crate::app::match_runtime::session::SessionMode,
     local_defeated: bool,
