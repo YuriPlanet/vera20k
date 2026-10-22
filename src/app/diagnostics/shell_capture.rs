@@ -612,6 +612,15 @@ impl ShellCaptureCheckpoint {
             "campaign-sov1-inherited-timer-victory" => Ok(Self::CampaignRestart(
                 movies::RestartTarget::InheritedTimerVictory,
             )),
+            "campaign-mapselect-failure-prompt" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::MapSelectFailurePrompt,
+            )),
+            "campaign-mapselect-failure-replayed" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::MapSelectFailureReplayed,
+            )),
+            "campaign-mapselect-failure-escape" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::MapSelectFailureEscape,
+            )),
             CHECKPOINT_CAMPAIGN_ALL1_SAVED_RESTART => Ok(Self::CampaignRestart(
                 movies::RestartTarget::SavedAbortRestarted,
             )),
@@ -778,6 +787,15 @@ impl ShellCaptureCheckpoint {
             }
             Self::CampaignRestart(movies::RestartTarget::InheritedTimerVictory) => {
                 "campaign-sov1-inherited-timer-victory"
+            }
+            Self::CampaignRestart(movies::RestartTarget::MapSelectFailurePrompt) => {
+                "campaign-mapselect-failure-prompt"
+            }
+            Self::CampaignRestart(movies::RestartTarget::MapSelectFailureReplayed) => {
+                "campaign-mapselect-failure-replayed"
+            }
+            Self::CampaignRestart(movies::RestartTarget::MapSelectFailureEscape) => {
+                "campaign-mapselect-failure-escape"
             }
             Self::CampaignRestart(movies::RestartTarget::SavedAbortRestarted) => {
                 CHECKPOINT_CAMPAIGN_ALL1_SAVED_RESTART

@@ -65,7 +65,7 @@ impl PersistenceState {
         true
     }
 
-    fn initial_campaign_save_pending(&self, campaign: bool) -> bool {
+    pub(crate) fn initial_campaign_save_pending(&self, campaign: bool) -> bool {
         campaign && !self.initial_campaign_save_attempted
     }
 
@@ -484,9 +484,7 @@ impl SaveRepository {
         path: &Path,
         bytes: &[u8],
     ) -> Result<(), SaveWriteError> {
-        if path.parent() != Some(self.directory.as_path())
-            || !Self::is_save_file(path)
-        {
+        if path.parent() != Some(self.directory.as_path()) || !Self::is_save_file(path) {
             return Err(SaveWriteError::write_file(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "overwrite target is not a save in this repository",
@@ -506,7 +504,9 @@ impl SaveRepository {
 
     fn replace_file(&self, path: &Path, bytes: &[u8]) -> Result<(), SaveWriteError> {
         static NEXT_STAGE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let directory = path.parent().filter(|parent| !parent.as_os_str().is_empty())
+        let directory = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
         let stage = loop {
             let id = NEXT_STAGE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -564,7 +564,10 @@ impl SaveRepository {
     }
 
     fn is_save_file(path: &Path) -> bool {
-        matches!(path.extension().and_then(|ext| ext.to_str()), Some("bin" | "sav"))
+        matches!(
+            path.extension().and_then(|ext| ext.to_str()),
+            Some("bin" | "sav")
+        )
     }
 
     pub(crate) fn delete(&self, path: &Path) -> std::io::Result<()> {

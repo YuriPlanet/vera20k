@@ -893,8 +893,8 @@ const EXIT_CONFIRM_MODAL_DEPTHS: shell_paint::ModalDepths = shell_paint::ModalDe
     text: 0.00040,
 };
 
-/// Build the shell message box (0x120) SHP modal overlay when it is open: the centered
-/// PUDLGBGN panel + MNBTTN OK/Cancel buttons + body/OK/Cancel labels, sourced from
+/// Build the shell message box (0xCE/0x120) SHP modal overlay when it is open: the centered
+/// PUDLGBGN panel + populated MNBTTN buttons and labels, sourced from
 /// the skirmish chrome atlas (the only atlas that loads PUDLGBGN/MNBTTN). The
 /// pressed button is read from the shared shell controller (its top dialog is the
 /// modal while open). Returns `None` when the modal is closed or its art is absent.
@@ -902,7 +902,8 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
     use crate::ui::shell::modal;
     let modal_state = &state.frontend.shell_message_box.as_ref()?.labels;
     let atlas = state.frontend.skirmish_shell_chrome.as_ref()?;
-    let layout = modal::quit_confirm_layout(
+    let layout = modal::message_box_layout(
+        modal_state.kind(),
         state.renderer.gpu.config.width as i32,
         state.renderer.gpu.config.height as i32,
     );
@@ -910,21 +911,14 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
     let ok_pressed = pressed == Some(modal::control::OK);
     let cancel_pressed = pressed == Some(modal::control::CANCEL);
     let frames = crate::app::frontend::skirmish_shell_render::type3_button_frames(atlas);
-    let buttons = [
-        shell_paint::ModalButton {
-            rect: layout.ok,
-            pressed: ok_pressed,
-            enabled: true,
-        },
-        shell_paint::ModalButton {
-            rect: layout.cancel,
-            pressed: cancel_pressed,
-            enabled: true,
-        },
-    ];
+    let mut buttons = vec![shell_paint::ModalButton {
+        rect: layout.ok,
+        pressed: ok_pressed,
+        enabled: true,
+    }];
     // Body left-top wrapped; OK/Cancel centered on their buttons with the MNBTTN
     // press sink — same conventions as the skirmish validation modal.
-    let labels = [
+    let mut labels = vec![
         PaintLabel {
             text: (&modal_state.title).into(),
             rect: layout.body,
@@ -939,14 +933,21 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: None,
         },
-        PaintLabel {
+    ];
+    if let Some(rect) = layout.cancel {
+        buttons.push(shell_paint::ModalButton {
+            rect,
+            pressed: cancel_pressed,
+            enabled: true,
+        });
+        labels.push(PaintLabel {
             text: (&modal_state.cancel).into(),
-            rect: owner_draw_button_label_rect(layout.cancel, cancel_pressed),
+            rect: owner_draw_button_label_rect(rect, cancel_pressed),
             align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: None,
-        },
-    ];
+        });
+    }
     Some(shell_paint::paint_modal_shp(
         &state.renderer.bit_font,
         atlas.mode_two_dialog_background(None),

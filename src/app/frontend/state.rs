@@ -237,4 +237,6 @@ pub(crate) enum ShellMessageBoxPurpose {
     /// GameExit::Defeat `0x006860E5`: Yes restarts this start, if VERA can
     /// rebuild one; No returns to the shell.
     CampaignReplay(Option<Box<crate::app::match_bootstrap::PreparedCampaignStartup>>),
+    /// MapSelect's failed Init message returns to the victory continuation.
+    CampaignVictory(Box<crate::app::campaign_victory::CampaignVictory>),
 }

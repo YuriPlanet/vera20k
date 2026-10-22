@@ -93,7 +93,6 @@ impl ModalKind {
 /// (The three target modals only ever populate up to `third`, so the
 /// fourth-without-third ordering is not produced in practice; the cascade follows
 /// the "fourth slot present -> 0x121" rule regardless.)
-#[cfg(test)]
 pub fn message_box_kind(third_slot: Option<&str>, fourth_slot: Option<&str>) -> ModalKind {
     if slot_populated(fourth_slot) {
         ModalKind::ThreeButton
@@ -106,9 +105,8 @@ pub fn message_box_kind(third_slot: Option<&str>, fourth_slot: Option<&str>) -> 
 
 /// A CSF slot is populated iff present with a non-null first char (the native test
 /// is a non-null pointer AND `*ptr != 0`).
-#[cfg(test)]
 fn slot_populated(slot: Option<&str>) -> bool {
-    matches!(slot, Some(s) if !s.is_empty())
+    matches!(slot, Some(s) if !s.is_empty() && !s.starts_with('\0'))
 }
 
 /// The native result convention a modal resolves under.
@@ -305,12 +303,43 @@ pub struct BodyOkLayout {
     pub ok: RectPx,
 }
 
-pub fn body_ok_layout(screen_w: i32, screen_h: i32) -> BodyOkLayout {
+/// One pixel projection of the existing count-rule RT_DIALOG layouts.
+/// ShellMessageBox__Run5D3490 selects CE/120/121; the button rows are
+/// respectively175,155,135 DLU (the parsed template rectangles above).
+#[derive(Debug, Clone, Copy)]
+pub struct MessageBoxLayout {
+    pub dialog: RectPx,
+    pub body: RectPx,
+    pub ok: RectPx,
+    pub cancel: Option<RectPx>,
+    pub third: Option<RectPx>,
+}
+
+pub fn message_box_layout(kind: ModalKind, screen_w: i32, screen_h: i32) -> MessageBoxLayout {
     let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
-    BodyOkLayout {
+    let ok_y = match kind {
+        ModalKind::BodyOk => 175,
+        ModalKind::Confirm => 155,
+        ModalKind::ThreeButton => 135,
+        ModalKind::InGameOptions => panic!("Options is not a count-rule message box"),
+    };
+    MessageBoxLayout {
         dialog,
         body: modal_child(dialog, geom::child_window(40, 40, 220, 50)),
-        ok: modal_child(dialog, geom::child_window(207, 175, 83, 15)),
+        ok: modal_child(dialog, geom::child_window(207, ok_y, 83, 15)),
+        cancel: includes_cancel(kind)
+            .then(|| modal_child(dialog, geom::child_window(207, 175, 83, 15))),
+        third: includes_third(kind)
+            .then(|| modal_child(dialog, geom::child_window(207, 155, 83, 15))),
+    }
+}
+
+pub fn body_ok_layout(screen_w: i32, screen_h: i32) -> BodyOkLayout {
+    let layout = message_box_layout(ModalKind::BodyOk, screen_w, screen_h);
+    BodyOkLayout {
+        dialog: layout.dialog,
+        body: layout.body,
+        ok: layout.ok,
     }
 }
 
@@ -318,12 +347,12 @@ pub fn body_ok_layout(screen_w: i32, screen_h: i32) -> BodyOkLayout {
 /// dialog-relative DLU rect (the native modal-centered policy: no fullscreen
 /// re-anchor).
 pub fn quit_confirm_layout(screen_w: i32, screen_h: i32) -> QuitConfirmLayout {
-    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let layout = message_box_layout(ModalKind::Confirm, screen_w, screen_h);
     QuitConfirmLayout {
-        dialog,
-        body: modal_child(dialog, geom::child_window(40, 40, 220, 50)),
-        ok: modal_child(dialog, geom::child_window(207, 155, 83, 15)),
-        cancel: modal_child(dialog, geom::child_window(207, 175, 83, 15)),
+        dialog: layout.dialog,
+        body: layout.body,
+        ok: layout.ok,
+        cancel: layout.cancel.expect("Confirm has Cancel"),
     }
 }
 
@@ -604,6 +633,7 @@ mod tests {
     fn count_rule_selects_template_by_populated_optional_slots() {
         // The three reachable rows of the native count-rule table.
         assert_eq!(message_box_kind(None, None), ModalKind::BodyOk);
+        assert_eq!(message_box_kind(Some("\0Cancel"), None), ModalKind::BodyOk);
         assert_eq!(message_box_kind(Some("Cancel"), None), ModalKind::Confirm);
         assert_eq!(
             message_box_kind(Some("Cancel"), Some("Maybe")),

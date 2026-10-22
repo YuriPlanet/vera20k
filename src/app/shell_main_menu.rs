@@ -1119,33 +1119,43 @@ Details: {details}"
         }
     }
 
-    /// The quit-confirm (0x120) modal's OK/Cancel button feed: resource-id'd pixel
-    /// rects from the centered modal layout at the live screen size.
-    fn shell_message_box_feed(state: &AppState) -> Vec<crate::ui::shell::layout::LaidOutControl> {
+    /// Count-rule message-box controls share the rendered template and geometry.
+    fn shell_message_box_feed(
+        state: &AppState,
+    ) -> Option<(
+        crate::ui::shell::descriptor::DialogId,
+        Vec<crate::ui::shell::layout::LaidOutControl>,
+    )> {
         use crate::ui::shell::layout::LaidOutControl;
         use crate::ui::shell::modal;
-        let layout = modal::quit_confirm_layout(
+        let kind = state.frontend.shell_message_box.as_ref()?.labels.kind();
+        let layout = modal::message_box_layout(
+            kind,
             state.renderer.gpu.config.width as i32,
             state.renderer.gpu.config.height as i32,
         );
-        vec![
-            LaidOutControl {
-                id: modal::control::OK,
-                rect: layout.ok,
-            },
-            LaidOutControl {
+        let mut feed = vec![LaidOutControl {
+            id: modal::control::OK,
+            rect: layout.ok,
+        }];
+        if let Some(rect) = layout.cancel {
+            feed.push(LaidOutControl {
                 id: modal::control::CANCEL,
-                rect: layout.cancel,
-            },
-        ]
+                rect,
+            });
+        }
+        Some((
+            crate::ui::shell::descriptor::DialogId(kind.template_id(false)),
+            feed,
+        ))
     }
 
     pub(super) fn handle_shell_message_box_mouse_down(state: &mut AppState) {
-        let feed = Self::shell_message_box_feed(state);
+        let Some((dialog, feed)) = Self::shell_message_box_feed(state) else {
+            return;
+        };
         let (x, y) = state.match_state.input.cursor_px();
-        if state.frontend.shell_controller.top_id()
-            != Some(crate::ui::shell::descriptor::DialogId(0x0120))
-        {
+        if state.frontend.shell_controller.top_id() != Some(dialog) {
             return;
         }
         state.frontend.shell_controller.on_pointer_down(x, y, &feed);
@@ -1158,11 +1168,11 @@ Details: {details}"
     }
 
     pub(super) fn handle_shell_message_box_mouse_up(state: &mut AppState) {
-        let feed = Self::shell_message_box_feed(state);
+        let Some((dialog, feed)) = Self::shell_message_box_feed(state) else {
+            return;
+        };
         let (x, y) = state.match_state.input.cursor_px();
-        if state.frontend.shell_controller.top_id()
-            != Some(crate::ui::shell::descriptor::DialogId(0x0120))
-        {
+        if state.frontend.shell_controller.top_id() != Some(dialog) {
             return;
         }
         let activated = state.frontend.shell_controller.on_pointer_up(x, y, &feed);
@@ -1207,6 +1217,10 @@ Details: {details}"
                     retry,
                     crate::app::campaign_defeat::replay_route(result),
                 );
+            }
+            ShellMessageBoxPurpose::CampaignVictory(victory) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::advance_campaign_victory(state, *victory);
             }
         }
     }
@@ -1481,7 +1495,10 @@ Details: {details}"
                 .shell_message_box
                 .as_ref()
                 .map(|message| &message.purpose),
-            Some(crate::app::frontend::state::ShellMessageBoxPurpose::CampaignReplay(_))
+            Some(
+                crate::app::frontend::state::ShellMessageBoxPurpose::CampaignReplay(_)
+                    | crate::app::frontend::state::ShellMessageBoxPurpose::CampaignVictory(_)
+            )
         ) {
             return;
         }
@@ -1623,13 +1640,10 @@ Details: {details}"
         // teardown pops back to it with focus restored. (ensure_active would
         // reset_to-clobber the stack — the prior "0x120 over 0xE2" comment
         // described behavior that never happened.)
-        if state.frontend.shell_controller.top_id()
-            != Some(crate::ui::shell::descriptor::DialogId(0x0120))
-        {
-            state
-                .frontend
-                .shell_controller
-                .push(crate::ui::shell::descriptor::DialogId(0x0120), true);
+        let dialog =
+            crate::ui::shell::descriptor::DialogId(message_box.labels.kind().template_id(false));
+        if state.frontend.shell_controller.top_id() != Some(dialog) {
+            state.frontend.shell_controller.push(dialog, true);
         }
         state.frontend.shell_message_box = Some(message_box);
         state.platform.window.request_redraw();
@@ -1655,9 +1669,10 @@ Details: {details}"
     /// and mouse close path converges here.
     pub(super) fn close_shell_message_box_from_controller(state: &mut AppState) {
         state.frontend.shell_message_box = None;
-        if state.frontend.shell_controller.top_id()
-            == Some(crate::ui::shell::descriptor::DialogId(0x0120))
-        {
+        if matches!(
+            state.frontend.shell_controller.top_id(),
+            Some(crate::ui::shell::descriptor::DialogId(0x00CE | 0x0120))
+        ) {
             state.frontend.shell_controller.pop();
         }
     }

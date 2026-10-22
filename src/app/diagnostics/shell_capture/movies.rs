@@ -1607,6 +1607,12 @@ impl MoviesCapture {
                     "alternate-home-victory-next-mission",
                 CampaignStartTarget::Restart(RestartTarget::InheritedTimerVictory) =>
                     "inherited-timer-victory-next-mission",
+                CampaignStartTarget::Restart(RestartTarget::MapSelectFailurePrompt) =>
+                    "mapsel-failure-prompt",
+                CampaignStartTarget::Restart(RestartTarget::MapSelectFailureReplayed) =>
+                    "mapsel-failure-replayed",
+                CampaignStartTarget::Restart(RestartTarget::MapSelectFailureEscape) =>
+                    "mapsel-failure-escape",
                 CampaignStartTarget::Restart(RestartTarget::SavedAbortRestarted) =>
                     "saved-abort-restarted",
                 CampaignStartTarget::Restart(RestartTarget::MenuDefeatReplayed) =>
