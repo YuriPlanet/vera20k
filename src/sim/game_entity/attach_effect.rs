@@ -247,11 +247,21 @@ mod tests {
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&saved)
             .unwrap()
             .sim;
+        // Anim's Logic membership byte is deliberately not serialized. Use
+        // the production post-read owner to reconstruct it from Logic's saved
+        // order before hashing or resuming an actor (AnimObject::hash_state).
+        restored.restore_after_snapshot_load().unwrap();
         assert_eq!(
             restored.entities().get(target).unwrap().attach_effects,
             attachments_before
         );
-        assert_eq!(restored.state_hash(), sim.state_hash());
+        assert_eq!(
+            restored.state_hash(),
+            sim.state_hash(),
+            "restored owners {:?}, source owners {:?}",
+            restored.hash_owner_diagnostics_for_test(),
+            sim.hash_owner_diagnostics_for_test()
+        );
         restored.object_ai_visit_one(target, Some(&rules), ObjectAiCtx::default());
         assert_eq!(
             restored
