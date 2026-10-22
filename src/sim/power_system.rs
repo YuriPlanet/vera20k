@@ -13,7 +13,6 @@
 use std::collections::BTreeMap;
 
 use crate::map::entities::EntityCategory;
-use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
@@ -130,10 +129,8 @@ impl PowerState {
         self.total_drain
     }
 
-    /// Added_To_Game at 502B4A calls Update_Power_And_EVA5018C0 before its
-    /// capacity counter. 5018DD/E1 adds the live Building drain now,
-    /// without clamping or requesting an assessment. Keep VERA's derived
-    /// ratio flag consistent with the changed retained totals as well.
+    /// House::Update_Power_And_EVA5018DD..5018E1 adds retained drain
+    /// immediately; it neither clamps nor sets the assessment dirty byte.
     pub(crate) fn add_building_drain(&mut self, drain: i32) {
         self.total_drain = self.total_drain.wrapping_add(drain);
         self.is_low_power = !self.retained_full_power();
@@ -409,18 +406,20 @@ pub(crate) fn native_building_power_drain(power: i32) -> i32 {
     if power < 0 { power.wrapping_neg() } else { 0 }
 }
 
-/// BuildingClass::GetPowerDrain44E880, shared by Added_To_Game502B4A and
-/// AI_AssessPower508C30. Read the live online/warp, gap and installed-upgrade
-/// state; neither HP nor cached tracking facts determine this contribution.
+/// BuildingClass::GetPowerDrain44E880: both immediate House registration
+/// and the later assessment read this same live contribution. Health does
+/// not scale drain; a nonzero upgrade count admits all three type slots.
 pub(crate) fn building_power_drain(
     entity: &GameEntity,
-    object: &ObjectType,
     rules: &RuleSet,
     interner: &crate::sim::intern::StringInterner,
 ) -> i32 {
     if entity.is_warped_out() || !entity.building_online() {
         return 0;
     }
+    let Some(object) = interner.object_type(entity.type_ref(), rules) else {
+        return 0;
+    };
     let mut drain = native_building_power_drain(object.power);
     if entity.gap_generator.supercharged() {
         drain = drain.wrapping_add(object.extra_power.drain());
@@ -550,7 +549,6 @@ fn recalculate_power_for_owner(
         // for InfantryAbsorb/UnitAbsorb buildings (gate is strict on all
         // three conditions, matching gamemd's GetPowerOutput).
         let mut output_contribution: i32 = obj.power.max(0);
-        let drain_contribution = building_power_drain(entity, obj, rules, interner);
         let extra_output = obj.extra_power.output();
         if obj.absorbs_passengers() && extra_output > 0 {
             let occupants = entity.passenger_role.cargo().map_or(0, |c| c.count()) as i32;
@@ -590,7 +588,7 @@ fn recalculate_power_for_owner(
 
         // Drain branch: always full rated value regardless of health.
         // Parser46108A NEG and House508D16 ADD both consume dwords.
-        drained = drained.wrapping_add(drain_contribution);
+        drained = drained.wrapping_add(building_power_drain(entity, rules, interner));
     }
 
     //508D4A stores the assessment byte;508D79 forces output to zero for

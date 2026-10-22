@@ -591,6 +591,15 @@ if __name__ == "__main__":
                        argv=[arg for arg in sys.argv[1:] if arg != "--ingame-messages"],
                        source_paths=lan_ingame_messages.SOURCE_PATHS)
         raise SystemExit
+    if "--manager-timing" in sys.argv:
+        from tools.storage_oracle import lan_global
+        finish_vectors(lan_global.manager_timing_controls, Path(__file__).with_name("lan_manager_timing.json"),
+                       provenance=lan_global.manager_metadata,
+                       argv=[arg for arg in sys.argv[1:] if arg != "--manager-timing"],
+                       source_paths={"global": Path(lan_global.__file__),
+                                     "native_oracle": Path(__import__("tools.native_oracle", fromlist=["x"]).__file__),
+                                     "shared_machine": Path(__import__("tools.storage_oracle.shell_relayout", fromlist=["x"]).__file__)})
+        raise SystemExit
     if "--global-connection" in sys.argv:
         from tools.storage_oracle import lan_global
         finish_vectors(lan_global.generate, Path(__file__).with_name("lan_global.json"),

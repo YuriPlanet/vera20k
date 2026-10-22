@@ -30,6 +30,49 @@ fn spawn(sim: &mut Simulation, rules: &RuleSet, name: &str, house: &str, x: u16)
     sim.spawn_object(name, house, x, 15, 0, rules).unwrap()
 }
 
+#[test]
+fn new_building_drain_blocks_an_earlier_houses_full_power_trigger() {
+    // SOV01's Americans queries Arabs before Arabs' first assessment.
+    // Added_To_Game502B48 -> GetPowerDrain44E880 ->5018C0 must already
+    // affect Event58's retained power ratio (71F0BD ->4FCE30).
+    let (mut sim, rules, registry, houses) = fixture();
+    tests::install_event_ingress_map(
+        &mut sim,
+        &rules,
+        "[Triggers]\nPOWER=Country0,<none>,Power,0,1,1,1,0\n\
+         [Tags]\nPOWER_TAG=0,Power,POWER\n[Events]\nPOWER=1,58,0,7\n\
+         [Actions]\nPOWER=1,28,0,42,0,0,0,0,A\n",
+    );
+    spawn(&mut sim, &rules, "LOAD", "House1", 15);
+    assert_eq!(sim.power_states[&houses[1]].total_drain(), 10);
+    sim.raise_house_tags(houses[0], &rules, Some(&registry), FrameEffects::default());
+    assert!(!sim.trigger_runtime.globals_set.contains(&42));
+
+    spawn(&mut sim, &rules, "PRODUCER", "House1", 17);
+    sim.assess_power_for_test(&rules);
+    sim.raise_house_tags(houses[0], &rules, Some(&registry), FrameEffects::default());
+    assert!(sim.trigger_runtime.globals_set.contains(&42));
+}
+
+#[test]
+fn captured_building_adds_new_owner_drain_before_old_owner_reassessment() {
+    let (mut sim, rules, registry, houses) = fixture();
+    let load = spawn(&mut sim, &rules, "LOAD", "House1", 15);
+    sim.change_owner_with_rules(
+        load,
+        houses[2],
+        &rules,
+        Some(&registry),
+        FrameEffects::default(),
+    );
+    // Removed_From_Game5027FA only invalidates; Added_To_Game adds at once.
+    assert_eq!(sim.power_states[&houses[1]].total_drain(), 10);
+    assert_eq!(sim.power_states[&houses[2]].total_drain(), 10);
+    sim.assess_power_for_test(&rules);
+    assert_eq!(sim.power_states[&houses[1]].total_drain(), 0);
+    assert_eq!(sim.power_states[&houses[2]].total_drain(), 10);
+}
+
 fn run(
     sim: &mut Simulation,
     rules: &RuleSet,

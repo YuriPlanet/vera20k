@@ -356,7 +356,8 @@ fn unknown_source_global_admission_and_private_gameplay_share_the_same_udp_owner
         assert!(Instant::now() < deadline, "global ACK did not arrive");
         std::thread::yield_now();
     }
-    assert_eq!(left.response_time(), 1);
+    assert_eq!(left.global().mean_response_time(), 1);
+    assert_eq!(left.response_time(), 0);
     // Admission hands the same physical endpoint to the private channel;
     // neither side rebinds or opens a second independent socket transport.
     left.connections_mut().add_peer(1, right_address).unwrap();
@@ -371,6 +372,159 @@ fn unknown_source_global_admission_and_private_gameplay_share_the_same_udp_owner
     assert_eq!(message.payload, b"command");
     assert_eq!(left.primary_addr().unwrap(), left_address);
     assert_eq!(right.primary_addr().unwrap(), right_address);
+}
+
+#[test]
+fn manager_response_reset_keeps_sockets_raw_queues_and_pending_channel_traffic() {
+    let mut wire = transport();
+    let peer = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 4321);
+    wire.connections_mut().add_peer(1, peer).unwrap();
+    assert!(
+        wire.connections_mut()
+            .send_to(1, b"private history", Delivery::Reliable)
+    );
+    wire.connections_mut().service(100, &mut |_, _| {});
+    wire.connections_mut()
+        .receive(peer, &connection_frame(2, 0, &[]), &mut |_, _| {})
+        .unwrap();
+    wire.connections_mut().service(111, &mut |_, _| {});
+    assert!(wire.global_mut().send(
+        b"global history",
+        GlobalDestination::direct(peer),
+        Delivery::Reliable,
+        0
+    ));
+    let mut global_frame = Vec::new();
+    wire.global_mut()
+        .service(100, &mut |_, frame| global_frame = frame.to_vec());
+    let mut global_ack = global_frame.clone();
+    global_ack[2] = 2;
+    wire.global_mut()
+        .receive(peer, 0, &global_ack, 122, &mut |_, _| {})
+        .unwrap();
+    wire.global_mut().service(122, &mut |_, _| {});
+    assert_eq!(wire.connections().mean_response_time(1), Some(11));
+    assert_eq!(wire.global().mean_response_time(), 22);
+    assert!(
+        wire.connections_mut()
+            .send_to(1, b"private pending", Delivery::Reliable)
+    );
+    assert!(wire.global_mut().send(
+        b"global pending",
+        GlobalDestination::direct(peer),
+        Delivery::Reliable,
+        0
+    ));
+    wire.connections_mut()
+        .receive(
+            peer,
+            &connection_frame(0, 0, b"private receive"),
+            &mut |_, _| {},
+        )
+        .unwrap();
+    wire.global_mut()
+        .receive(peer, 0, &global_frame, 123, &mut |_, _| {})
+        .unwrap();
+    wire.primary_send.send(
+        peer,
+        &connection_frame(2, 9, &[]),
+        UdpChannel::Primary,
+        &mut UdpServiceReport::default(),
+        &mut |_, _| Err(io::ErrorKind::PermissionDenied.into()),
+    );
+    wire.alternate_send.send(
+        peer,
+        &connection_frame(2, 10, &[]),
+        UdpChannel::Alternate,
+        &mut UdpServiceReport::default(),
+        &mut |_, _| Err(io::ErrorKind::PermissionDenied.into()),
+    );
+    wire.set_broadcast_targets(&[peer]).unwrap();
+    let sockets = (wire.primary_addr().unwrap(), wire.alternate_addr().unwrap());
+    let raw = (
+        format!("{:?}", wire.primary_send),
+        format!("{:?}", wire.alternate_send),
+    );
+    wire.reset_response_time(false);
+    assert_eq!(wire.connections().mean_response_time(1), Some(11));
+    assert_eq!(
+        wire.global().mean_response_time(),
+        0,
+        "manager always clears primary-global"
+    );
+    wire.reset_response_time(true);
+    assert_eq!(wire.response_time(), 0);
+    assert_eq!(wire.connections().queued_send_count(1), Some(1));
+    assert_eq!(wire.global().queued_send_count(), 1);
+    assert_eq!(
+        (wire.primary_addr().unwrap(), wire.alternate_addr().unwrap()),
+        sockets
+    );
+    assert_eq!(
+        (
+            format!("{:?}", wire.primary_send),
+            format!("{:?}", wire.alternate_send)
+        ),
+        raw
+    );
+    assert_eq!(wire.broadcast_targets, [peer]);
+    assert_eq!(wire.pop_received().unwrap().payload, b"private receive");
+    assert_eq!(
+        wire.pop_global_received().unwrap().payload,
+        b"global history"
+    );
+}
+
+#[test]
+fn response_time_matches_native_private_maximum_excluding_primary_global() {
+    let corpus: serde_json::Value = serde_json::from_str(include_str!(
+        "../../tools/storage_oracle/lan_manager_timing.json"
+    ))
+    .unwrap();
+    for case in corpus["response_maximum"].as_array().unwrap() {
+        let mut wire = transport();
+        for (index, mean) in case["private"].as_array().unwrap().iter().enumerate() {
+            let id = index as i32;
+            let peer = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 10000 + index as u16);
+            let mean = mean.as_u64().unwrap() as u32;
+            wire.connections_mut().add_peer(id, peer).unwrap();
+            assert!(
+                wire.connections_mut()
+                    .send_to(id, b"sample", Delivery::Reliable)
+            );
+            wire.connections_mut().service(1, &mut |_, _| {});
+            wire.connections_mut()
+                .receive(peer, &connection_frame(2, 0, &[]), &mut |_, _| {})
+                .unwrap();
+            wire.connections_mut()
+                .service(1_u32.wrapping_add(mean), &mut |_, _| {});
+            assert_eq!(wire.connections().mean_response_time(id), Some(mean));
+        }
+        let primary = case["primary"].as_u64().unwrap() as u32;
+        let endpoint = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 20000);
+        assert!(wire.global_mut().send(
+            b"primary sample",
+            GlobalDestination::direct(endpoint),
+            Delivery::Reliable,
+            0
+        ));
+        let mut ack = Vec::new();
+        wire.global_mut()
+            .service(1, &mut |_, frame| ack = frame.to_vec());
+        ack[2] = 2;
+        wire.global_mut()
+            .receive(endpoint, 0, &ack, 1, &mut |_, _| {})
+            .unwrap();
+        wire.global_mut()
+            .service(1_u32.wrapping_add(primary), &mut |_, _| {});
+        assert_eq!(wire.global().mean_response_time(), primary);
+        assert_eq!(
+            u64::from(wire.response_time()),
+            case["result"].as_u64().unwrap(),
+            "{}",
+            case["name"]
+        );
+    }
 }
 
 #[test]

@@ -5619,15 +5619,8 @@ impl Simulation {
             return;
         };
         house.tracking_mut().added_to_game_prefix(entity);
-        if entity.category() == EntityCategory::Structure
-            && let Some(object) = self.interner.object_type(entity.type_ref(), rules)
-        {
-            let drain = crate::sim::power_system::building_power_drain(
-                entity,
-                object,
-                rules,
-                &self.interner,
-            );
+        if entity.category() == EntityCategory::Structure {
+            let drain = power_system::building_power_drain(entity, rules, &self.interner);
             self.power_states.house_mut(owner).add_building_drain(drain);
         }
         let factors = house.cost_factors();

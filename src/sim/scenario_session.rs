@@ -1329,6 +1329,11 @@ impl ScenarioSession {
         // existing session remains the sole live owner of per-match options.
         if let Some(options) = game_options {
             self.game_options = options.clone();
+        } else {
+            // Main_Tick55D767..55D796 forces ordinary campaigns to two
+            // 16-ms buckets, independently of the multiplayer default.
+            // Explicit external launch settings retain their selected speed.
+            self.game_options.game_speed = 2;
         }
         self.campaign = Some(CampaignScenarioState {
             campaign_index,
@@ -1681,6 +1686,11 @@ mod tests {
                     crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
                 )
                 .unwrap();
+            assert_eq!(
+                sim.projected_in_game_options_speed(),
+                Some(2),
+                "ordinary campaigns use Main_Tick's two-bucket speed"
+            );
             assert_eq!(sim.session.campaign_mission_counter(), Some(7));
             assert_eq!(
                 sim.session.campaign_house_difficulties(),

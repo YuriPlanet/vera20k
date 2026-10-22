@@ -46,6 +46,34 @@ pub struct RetryTiming {
 }
 
 impl RetryTiming {
+    /// Guest GO completion5DD9FD overrides only the primary global channel
+    /// through IPXManager540D10; the private/default timing stays independent.
+    pub const LAN_GUEST_COMPLETED_GLOBAL: Self = Self {
+        retry_delta: 60,
+        max_retries: u32::MAX,
+        timeout: 600,
+    };
+
+    /// MainPrepareSession52E9DF..52EA4F, after CreateConnections697B70 in
+    /// LAN mode. Returns private/default timing followed by primary-global
+    /// timing. Each unsigned threshold branch re-reads5424C0 on equality;
+    /// the replacement observation is neither saturated nor floored again.
+    pub fn lan_gameplay(mut global_response: impl FnMut() -> u32) -> (Self, Self) {
+        let mut select = |floor| {
+            let retry_delta = if global_response().wrapping_add(2) >= floor {
+                global_response().wrapping_add(2)
+            } else {
+                floor
+            };
+            Self {
+                retry_delta,
+                max_retries: u32::MAX,
+                timeout: 600,
+            }
+        };
+        (select(15), select(60))
+    }
+
     /// LAN GO timing from original5DD541/5DD819 (host) and5DD8A0/5DD9AC
     /// (guest). ResponseTime5424C0 is re-read only on the native branches;
     /// a second observation replaces the first without another clamp.
@@ -198,6 +226,16 @@ struct ResponseTime {
 }
 
 impl ResponseTime {
+    /// CommBuffer::ResetResponseTime48BAA0. This changes response history
+    /// only; an in-flight ACK still samples its original first-send time.
+    fn reset(&mut self, clear: bool) {
+        self.total = if clear { 0 } else { self.mean };
+        self.samples = u32::from(!clear);
+        if clear {
+            self.mean = 0;
+        }
+    }
+
     fn record(&mut self, elapsed: u32) {
         if self.samples == 256 {
             self.total = self.total.wrapping_add(elapsed.wrapping_sub(self.mean));
@@ -254,6 +292,10 @@ impl<D: Copy> SendQueue<D> {
 
     pub(super) fn mean_response_time(&self) -> u32 {
         self.response_time.mean
+    }
+
+    pub(super) fn reset_response_time(&mut self, clear: bool) {
+        self.response_time.reset(clear);
     }
 
     /// Both `0x0048C040` and `0x0053FCB0` mark the first reliable sequence
@@ -433,6 +475,14 @@ impl LanConnections {
             .iter()
             .find(|peer| peer.id == peer_id)
             .map(|peer| peer.send.mean_response_time())
+    }
+
+    /// Private-channel part of IPXManager::ResetResponseTime542EC0. Keep
+    /// queues, delivery cursors, sequence counters and retry state intact.
+    pub fn reset_response_time(&mut self, clear: bool) {
+        for peer in &mut self.peers {
+            peer.send.reset_response_time(clear);
+        }
     }
 
     /// `0x005414C0`: reserve every peer's send slot before admitting any copy.
