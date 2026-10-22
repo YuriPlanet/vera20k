@@ -3239,11 +3239,16 @@ impl Simulation {
             .is_some_and(|terrain| terrain.object_alive())
         {
             let cell = self.terrain_objects.get(stable_id).unwrap().cell();
+            let was_live = self.terrain_objects.get(stable_id).unwrap().is_live();
             // ObjectUnInit5F6616 and ObjectLimbo5F4D61 announce while this
             // instance is retained. TerrainLimbo71C930 unlinks only its ID;
             // a successor keeps its own Logic/Display, Stage and cell query.
             self.notify_pointer_expired(stable_id, context);
-            self.notify_pointer_expired(stable_id, context);
+            // ObjectLimbo5F4D45 returns before DetachAll when already in
+            // Limbo, including the retained zero-cell Terrain constructor.
+            if was_live {
+                self.notify_pointer_expired(stable_id, context);
+            }
             self.terrain_objects.uninit(
                 stable_id,
                 &mut self.substrate.raw_cell_occupation,
@@ -6181,6 +6186,19 @@ impl Simulation {
             // Terrain destructor71B7D6 repeats expiry before leaving its
             // registry. This is later than the live lethal/UnInit callbacks.
             self.notify_pointer_expired(stable_id, context);
+            // TerrainDtor71B7B0 at71B824..71B840 repeats Limbo while GameActive,
+            // even for a never-placed or previously UnInit'd object. Its
+            // suffix still queries/recalculates the retained cell; the
+            // already-InLimbo prefix performs no unmark or extra expiry.
+            if (game_state as u8) != 0 {
+                let cell = self.terrain_objects.get(stable_id).unwrap().cell();
+                self.terrain_objects.limbo(
+                    stable_id,
+                    &mut self.substrate.raw_cell_occupation,
+                    self.resolved_terrain.as_mut(),
+                );
+                self.finish_terrain_navigation_changes(rules, &[cell]);
+            }
         }
         if kind == Some(ObjectKind::Projectile) {
             // BulletDtor466581 announces expiry before clearing construction

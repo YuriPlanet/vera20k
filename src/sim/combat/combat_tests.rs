@@ -9584,9 +9584,13 @@ fn projectile_shrapnel_is_admitted_by_a_tree_heading_the_bullets_cell() {
         vec![make_entity_owned(1, "MTNK", 2, 2, 100, "Soviet")],
     );
     assert!(commit_shrapnel_at_5_5(&mut sim, &rules).is_empty());
-    sim.terrain_objects
-        .cell_index_mut_for_test()
-        .insert((5, 5), 900);
+    // The cell walker follows represented Terrain instances, not dangling
+    // head IDs. This fixture isolates admission rather than map construction.
+    let tree_type = sim.interner.intern("TREE01");
+    sim.terrain_objects.insert_constructed(
+        crate::sim::terrain_object::TerrainObjectState::for_test(900, tree_type, 5, 5),
+        false,
+    );
     assert_eq!(commit_shrapnel_at_5_5(&mut sim, &rules).len(), 1);
 }
 

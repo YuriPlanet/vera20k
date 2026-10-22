@@ -30,6 +30,15 @@ pub enum TerrainObjectLifecycle {
     Destroyed,
 }
 
+/// Object Location survives Limbo and UnInit. The null constructor never
+/// centers its cell or queries the floor (TerrainCtor71BC34..71BC86,
+/// original instructions); ObjectCtor5F3993 retains the zero XYZ instead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+enum TerrainLocation {
+    Null,
+    Centered { cell: (u16, u16), z_leptons: i32 },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TerrainObjectState {
     stable_id: u64,
@@ -42,16 +51,12 @@ pub struct TerrainObjectState {
     #[serde(skip)]
     in_logic_vector: bool,
     type_ref: InternedId,
-    rx: u16,
-    ry: u16,
+    /// Retained placement, independent of the current Alive/InLimbo state.
+    location: TerrainLocation,
     /// Terrain-relative CellClass list order. CellAddContent47E91C prepends
     /// each constructor; OccupancyGrid merges this subsequence with Technos
     /// for the supported Terrain-before-Techno scenario loading boundary.
     next_in_cell: Option<u64>,
-    /// Retained ObjectClass Location.Z after TerrainType+6C (71E0D0)
-    /// clamps the constructor coordinate to Map578080 ground height.
-    /// Ground changes do not relocate the object. See terrain_coordinate.json.
-    world_z_leptons: i32,
     health: i32,
     max_health: i32,
     /// Immutable current-theater type projection. Keep the full dword for
@@ -66,10 +71,8 @@ impl std::hash::Hash for TerrainObjectState {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.stable_id.hash(state);
         self.type_ref.hash(state);
-        self.rx.hash(state);
-        self.ry.hash(state);
+        self.location.hash(state);
         self.next_in_cell.hash(state);
-        self.world_z_leptons.hash(state);
         self.health.hash(state);
         self.max_health.hash(state);
         self.occupation_bits.hash(state);
@@ -87,37 +90,58 @@ impl TerrainObjectState {
         snow_theater: bool,
         terrain: Option<&ResolvedTerrainGrid>,
     ) -> Self {
-        let WorldCoordinate { x, y, .. } = cell_center((cell.0 as i16, cell.1 as i16).into(), 0);
-        // Terrain ctor71BC4A..71BC76 passes centered signed XY and Z0;
-        // Object Unlimbo5F4F9C dispatches TerrainType71E0D0 before the raw
-        // coordinate write5F6940. The type callback retains max(0, ground).
-        let world_z_leptons =
-            crate::sim::movement::ground_pose::ground_surface_z_at([x, y], false, terrain, None)
-                .unwrap_or(0)
-                .max(0);
+        let (location, lifecycle) = if cell == (0, 0) {
+            // TerrainCtor71BC34..71BC86 skips Unlimbo for CellStruct::Empty,
+            // but still enrolls the constructed identity at71BCA5..71BDD0.
+            // ObjectCtor5F392A/5F3930 starts Alive and InLimbo.
+            (TerrainLocation::Null, TerrainObjectLifecycle::Limbo)
+        } else {
+            let WorldCoordinate { x, y, .. } =
+                cell_center((cell.0 as i16, cell.1 as i16).into(), 0);
+            // TerrainCtor71BC4A..71BC76 passes centered signed XY and Z0;
+            // ObjectUnlimbo5F4F9C dispatches TerrainType71E0D0 before the raw
+            // coordinate write5F6940, retaining max(0, ground).
+            let z_leptons = crate::sim::movement::ground_pose::ground_surface_z_at(
+                [x, y],
+                false,
+                terrain,
+                None,
+            )
+            .unwrap_or(0)
+            .max(0);
+            (
+                TerrainLocation::Centered { cell, z_leptons },
+                TerrainObjectLifecycle::Live,
+            )
+        };
         Self {
             stable_id,
             native_unique_id: None,
             in_logic_vector: false,
             type_ref,
-            rx: cell.0,
-            ry: cell.1,
+            location,
             next_in_cell: None,
-            world_z_leptons,
             health: terrain_type.strength,
             max_health: terrain_type.strength,
             occupation_bits: terrain_type.raw_occupation_bits(snow_theater),
             spawns_tiberium: terrain_type.spawns_tiberium,
-            lifecycle: TerrainObjectLifecycle::Live,
+            lifecycle,
         }
     }
 
     /// Terrain VT7F522C+48 inherits Object GetCoords5F65A0. Its XY is
-    /// the authored cell center; Z is the coordinate retained at construction.
+    /// the authored cell center (or retained null XYZ); Z stays at construction.
     pub fn world_coord(&self) -> crate::sim::projectile::ProjectileCoord {
-        let (rx, ry) = self.cell();
-        let WorldCoordinate { x, y, .. } = cell_center((rx as i16, ry as i16).into(), 0);
-        crate::sim::projectile::ProjectileCoord::new(x, y, self.world_z_leptons)
+        match self.location {
+            TerrainLocation::Null => crate::sim::projectile::ProjectileCoord::new(0, 0, 0),
+            TerrainLocation::Centered {
+                cell: (rx, ry),
+                z_leptons,
+            } => {
+                let WorldCoordinate { x, y, .. } = cell_center((rx as i16, ry as i16).into(), 0);
+                crate::sim::projectile::ProjectileCoord::new(x, y, z_leptons)
+            }
+        }
     }
 
     /// Terrain retains Object5F5F40/5F6B90/5F4260. Its live admitted
@@ -191,10 +215,11 @@ impl TerrainObjectState {
             native_unique_id: None,
             in_logic_vector: false,
             type_ref,
-            rx,
-            ry,
+            location: TerrainLocation::Centered {
+                cell: (rx, ry),
+                z_leptons: 0,
+            },
             next_in_cell: None,
-            world_z_leptons: 0,
             health: 100,
             max_health: 100,
             occupation_bits: 0,
@@ -204,7 +229,10 @@ impl TerrainObjectState {
     }
 
     pub fn cell(&self) -> (u16, u16) {
-        (self.rx, self.ry)
+        match self.location {
+            TerrainLocation::Null => (0, 0),
+            TerrainLocation::Centered { cell, .. } => cell,
+        }
     }
 
     pub const fn stable_id(&self) -> u64 {
@@ -503,8 +531,8 @@ impl TerrainObjectStore {
         self.membership_epoch = next_epoch;
     }
 
-    /// A constructed object takes its cell, and a `SpawnsTiberium=` type its
-    /// spawner cell.
+    /// Only an Unlimbo'd constructor takes a cell; the null-cell constructor
+    /// retains its identity without Cell/Logic/Display admission (71BC34).
     pub(crate) fn insert_constructed(
         &mut self,
         mut terrain: TerrainObjectState,
@@ -512,14 +540,15 @@ impl TerrainObjectStore {
     ) {
         let cell = terrain.cell();
         terrain.spawns_tiberium = spawns_tiberium;
-        terrain.next_in_cell = self.cells.insert(cell, terrain.stable_id);
-        self.membership_epoch = self.membership_epoch.wrapping_add(1);
+        let live = terrain.is_live();
+        if live {
+            terrain.next_in_cell = self.cells.insert(cell, terrain.stable_id);
+            self.membership_epoch = self.membership_epoch.wrapping_add(1);
+        }
         self.touched.note(terrain.stable_id, self.objects.len());
         self.objects.insert(terrain.stable_id, terrain);
-        if spawns_tiberium {
-            self.tiberium_spawning_cells.insert(cell);
-        } else {
-            self.tiberium_spawning_cells.remove(&cell);
+        if live {
+            self.refresh_spawning_cell(cell);
         }
     }
 
@@ -1067,8 +1096,8 @@ mod tests {
         );
         let mut sim = Simulation::new();
         sim.session.set_no_damage_for_test(true);
-        seed_one_at(&mut sim, &rules, "TREE01", (0, 0));
-        let stable_id = sim.terrain_objects.cell_index()[&(0, 0)];
+        seed_one_at(&mut sim, &rules, "TREE01", (1, 1));
+        let stable_id = sim.terrain_objects.cell_index()[&(1, 1)];
         let health = sim.terrain_objects.objects()[&stable_id].health;
         let warhead_ref = sim.interner.intern("WH");
         sim.commit_direct_terrain_damage_receiver(
@@ -1076,8 +1105,8 @@ mod tests {
             None,
             crate::sim::combat::TerrainDamageEvent {
                 stable_id,
-                rx: 0,
-                ry: 0,
+                rx: 1,
+                ry: 1,
                 damage: health,
                 distance_leptons: 512,
                 warhead_ref,
@@ -1092,8 +1121,8 @@ mod tests {
             !terrain.in_logic_vector,
             "direct receiver finishes retirement before returning"
         );
-        assert!(!sim.terrain_objects.cell_index().contains_key(&(0, 0)));
-        assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(0, 0), 0);
+        assert!(!sim.terrain_objects.cell_index().contains_key(&(1, 1)));
+        assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(1, 1), 0);
     }
 
     #[test]
@@ -1101,8 +1130,8 @@ mod tests {
         for (wood, section) in [(false, ""), (true, "Immune=yes\n")] {
             let rules = terrain_rules("TREE01", wood, section);
             let mut sim = Simulation::new();
-            seed_one_at(&mut sim, &rules, "TREE01", (0, 0));
-            let stable_id = sim.terrain_objects.cell_index()[&(0, 0)];
+            seed_one_at(&mut sim, &rules, "TREE01", (1, 1));
+            let stable_id = sim.terrain_objects.cell_index()[&(1, 1)];
             let health = sim.terrain_objects.objects()[&stable_id].health;
             let warhead_ref = sim.interner.intern("WH");
             sim.commit_direct_terrain_damage_receiver(
@@ -1110,8 +1139,8 @@ mod tests {
                 None,
                 crate::sim::combat::TerrainDamageEvent {
                     stable_id,
-                    rx: 0,
-                    ry: 0,
+                    rx: 1,
+                    ry: 1,
                     damage: health,
                     distance_leptons: 0,
                     warhead_ref,
@@ -1121,7 +1150,7 @@ mod tests {
             );
             assert_eq!(sim.terrain_objects.objects()[&stable_id].health, health);
             assert!(sim.terrain_objects.objects()[&stable_id].is_live());
-            assert_eq!(sim.terrain_objects.cell_index()[&(0, 0)], stable_id);
+            assert_eq!(sim.terrain_objects.cell_index()[&(1, 1)], stable_id);
         }
     }
 
@@ -1129,8 +1158,8 @@ mod tests {
     fn bridge_direct_terrain_receiver_rejects_zero_health_during_nested_death() {
         let rules = terrain_rules("TREE01", true, "");
         let mut sim = Simulation::new();
-        seed_one_at(&mut sim, &rules, "TREE01", (0, 0));
-        let stable_id = sim.terrain_objects.cell_index()[&(0, 0)];
+        seed_one_at(&mut sim, &rules, "TREE01", (1, 1));
+        let stable_id = sim.terrain_objects.cell_index()[&(1, 1)];
         // During a nested death callback, Health is zero before outer Limbo.
         sim.terrain_objects
             .objects_mut_for_test()
@@ -1143,8 +1172,8 @@ mod tests {
             None,
             crate::sim::combat::TerrainDamageEvent {
                 stable_id,
-                rx: 0,
-                ry: 0,
+                rx: 1,
+                ry: 1,
                 damage: -10,
                 distance_leptons: 0,
                 warhead_ref,
@@ -1186,7 +1215,7 @@ mod tests {
     }
 
     fn resolved_clear_grid() -> ResolvedTerrainGrid {
-        ResolvedTerrainGrid::from_cells(1, 1, vec![ResolvedTerrainCell::clear_for_test(0, 0)])
+        crate::map::resolved_terrain::test_grid(2, 2, ResolvedTerrainCell::clear_for_test)
     }
 
     #[cfg(feature = "ares")]
@@ -1199,8 +1228,8 @@ mod tests {
         ))
         .unwrap();
         let mut sim = Simulation::new();
-        seed_one_at(&mut sim, &rules, "TREE01", (0, 0));
-        let stable_id = sim.terrain_objects.cell_index()[&(0, 0)];
+        seed_one_at(&mut sim, &rules, "TREE01", (1, 1));
+        let stable_id = sim.terrain_objects.cell_index()[&(1, 1)];
         assert!(
             rules
                 .terrain_object_type_case_insensitive("TREE01")
@@ -1217,7 +1246,7 @@ mod tests {
         assert_eq!(
             area.receive_area_damage(
                 stable_id,
-                (0, 0),
+                (1, 1),
                 101,
                 0,
                 rules.warhead("WH").unwrap(),
@@ -1241,8 +1270,8 @@ mod tests {
             10_000,
         );
         let mut fractional = Simulation::new();
-        seed_one_at(&mut fractional, &fractional_rules, "TREE01", (0, 0));
-        let stable_id = fractional.terrain_objects.cell_index()[&(0, 0)];
+        seed_one_at(&mut fractional, &fractional_rules, "TREE01", (1, 1));
+        let stable_id = fractional.terrain_objects.cell_index()[&(1, 1)];
         let warhead = fractional_rules.warhead("WH").expect("warhead");
         let mut area = TerrainAreaState::take_from(
             &mut fractional.terrain_objects,
@@ -1251,7 +1280,7 @@ mod tests {
         assert_eq!(
             area.receive_area_damage(
                 stable_id,
-                (0, 0),
+                (1, 1),
                 99,
                 128,
                 warhead,
@@ -1272,8 +1301,8 @@ mod tests {
             25,
         );
         let mut capped = Simulation::new();
-        seed_one_at(&mut capped, &capped_rules, "TREE01", (0, 0));
-        let stable_id = capped.terrain_objects.cell_index()[&(0, 0)];
+        seed_one_at(&mut capped, &capped_rules, "TREE01", (1, 1));
+        let stable_id = capped.terrain_objects.cell_index()[&(1, 1)];
         let warhead = capped_rules.warhead("WH").expect("warhead");
         let mut area = TerrainAreaState::take_from(
             &mut capped.terrain_objects,
@@ -1282,7 +1311,7 @@ mod tests {
         assert_eq!(
             area.receive_area_damage(
                 stable_id,
-                (0, 0),
+                (1, 1),
                 8_000,
                 0,
                 warhead,
@@ -1301,8 +1330,8 @@ mod tests {
     fn gsi_04_10_terrain_area_receive_heals_near_and_clamps_to_max() {
         let rules = terrain_rules("TREE01", true, "TemperateOccupationBits=7\n");
         let mut sim = Simulation::new();
-        seed_one_at(&mut sim, &rules, "TREE01", (0, 0));
-        let stable_id = sim.terrain_objects.cell_index()[&(0, 0)];
+        seed_one_at(&mut sim, &rules, "TREE01", (1, 1));
+        let stable_id = sim.terrain_objects.cell_index()[&(1, 1)];
         let warhead = rules.warhead("WH").expect("warhead");
         let mut area = TerrainAreaState::take_from(
             &mut sim.terrain_objects,
@@ -1315,7 +1344,7 @@ mod tests {
             .health = 4;
 
         assert_eq!(
-            area.receive_area_damage(stable_id, (0, 0), -50, 7, warhead, &rules, &sim.interner,),
+            area.receive_area_damage(stable_id, (1, 1), -50, 7, warhead, &rules, &sim.interner,),
             TerrainAreaReceiveResult::Damaged { remaining: 10 }
         );
         area.store
@@ -1324,7 +1353,7 @@ mod tests {
             .unwrap()
             .health = 4;
         assert_eq!(
-            area.receive_area_damage(stable_id, (0, 0), -50, 8, warhead, &rules, &sim.interner,),
+            area.receive_area_damage(stable_id, (1, 1), -50, 8, warhead, &rules, &sim.interner,),
             TerrainAreaReceiveResult::Ignored
         );
         assert_eq!(area.store.objects()[&stable_id].health, 4);
@@ -1338,8 +1367,8 @@ mod tests {
     fn gsi_04_10_terrain_area_lethal_is_exact_zero_guarded_then_finalized_once() {
         let rules = rules("Immune=no\nTemperateOccupationBits=7\n");
         let mut sim = Simulation::new();
-        seed_one_at(&mut sim, &rules, "TIBTRE01", (0, 0));
-        let stable_id = sim.terrain_objects.cell_index()[&(0, 0)];
+        seed_one_at(&mut sim, &rules, "TIBTRE01", (1, 1));
+        let stable_id = sim.terrain_objects.cell_index()[&(1, 1)];
         let terrain = sim.terrain_objects.objects()[&stable_id].clone();
         let mut grid = resolved_clear_grid();
         mark_terrain_occupation(&terrain, Some(&mut grid));
@@ -1350,7 +1379,7 @@ mod tests {
         );
 
         let TerrainAreaReceiveResult::Lethal(lethal) =
-            area.receive_area_damage(stable_id, (0, 0), 100, 0, warhead, &rules, &sim.interner)
+            area.receive_area_damage(stable_id, (1, 1), 100, 0, warhead, &rules, &sim.interner)
         else {
             panic!("expected lethal Terrain receiver");
         };
@@ -1362,7 +1391,7 @@ mod tests {
         );
         assert!(area.is_finalizing(stable_id));
         assert_eq!(
-            area.receive_area_damage(stable_id, (0, 0), 100, 0, warhead, &rules, &sim.interner,),
+            area.receive_area_damage(stable_id, (1, 1), 100, 0, warhead, &rules, &sim.interner,),
             TerrainAreaReceiveResult::Ignored,
             "nested Wood=yes C4 reentry must not receive or finalize twice"
         );
@@ -1370,16 +1399,16 @@ mod tests {
         assert!(area.finalize_lethal(lethal, Some(&mut grid)));
         assert!(!area.finalize_lethal(lethal, Some(&mut grid)));
         assert!(!area.is_finalizing(stable_id));
-        assert_eq!(area.navigation_changed_cells(), &[(0, 0)]);
+        assert_eq!(area.navigation_changed_cells(), &[(1, 1)]);
         assert_eq!(
             area.store.objects()[&stable_id].lifecycle,
             TerrainObjectLifecycle::Destroyed
         );
-        assert_eq!(area.raw_occupation.ground_bits(0, 0), 0);
-        assert!(!area.store.cell_index().contains_key(&(0, 0)));
+        assert_eq!(area.raw_occupation.ground_bits(1, 1), 0);
+        assert!(!area.store.cell_index().contains_key(&(1, 1)));
         assert!(!area.store.animations().contains_key(&stable_id));
-        assert!(!area.store.spawning_cells().contains(&(0, 0)));
-        let cell = grid.cell(0, 0).unwrap();
+        assert!(!area.store.spawning_cells().contains(&(1, 1)));
+        let cell = grid.cell(1, 1).unwrap();
         assert_eq!(cell.terrain_object_occupation, None);
         assert!(!cell.terrain_object_blocks);
 
@@ -1387,7 +1416,7 @@ mod tests {
             &mut sim.terrain_objects,
             &mut sim.substrate.raw_cell_occupation,
         );
-        assert_eq!(changed, vec![(0, 0)]);
+        assert_eq!(changed, vec![(1, 1)]);
         assert_eq!(
             sim.terrain_objects.objects()[&stable_id].lifecycle,
             TerrainObjectLifecycle::Destroyed
@@ -1402,17 +1431,17 @@ mod tests {
             .expect("terrain type");
         let mut interner = StringInterner::default();
         let type_ref = interner.intern("TIBTRE01");
-        let mut terrain = TerrainObjectState::new(1, type_ref, (0, 0), terrain_type, false, None);
+        let mut terrain = TerrainObjectState::new(1, type_ref, (1, 1), terrain_type, false, None);
         let mut grid = resolved_clear_grid();
 
         mark_terrain_occupation(&terrain, Some(&mut grid));
-        let cell = grid.cell(0, 0).unwrap();
+        let cell = grid.cell(1, 1).unwrap();
         assert_eq!(cell.terrain_object_occupation, Some(7));
         assert!(cell.terrain_object_blocks);
         assert_eq!(cell.zone_type, zone_class::WALL);
 
         unmark_terrain_occupation(&terrain, Some(&mut grid));
-        let cell = grid.cell(0, 0).unwrap();
+        let cell = grid.cell(1, 1).unwrap();
         assert_eq!(cell.terrain_object_occupation, None);
         assert!(!cell.terrain_object_blocks);
         assert_eq!(cell.zone_type, zone_class::GROUND);
@@ -1420,22 +1449,22 @@ mod tests {
 
         terrain.occupation_bits = 4;
         mark_terrain_occupation(&terrain, Some(&mut grid));
-        assert_eq!(grid.cell(0, 0).unwrap().zone_type, zone_class::BUILDING);
+        assert_eq!(grid.cell(1, 1).unwrap().zone_type, zone_class::BUILDING);
         unmark_terrain_occupation(&terrain, Some(&mut grid));
 
         terrain.occupation_bits = 0;
         mark_terrain_occupation(&terrain, Some(&mut grid));
-        let cell = grid.cell(0, 0).unwrap();
+        let cell = grid.cell(1, 1).unwrap();
         assert_eq!(cell.terrain_object_occupation, Some(0));
         assert!(!cell.terrain_object_blocks);
         assert_eq!(cell.zone_type, zone_class::BUILDING);
 
-        let cell = grid.cell_mut_for_test(0, 0).unwrap();
+        let cell = grid.cell_mut_for_test(1, 1).unwrap();
         cell.overlay_zone_type = Some(zone_class::GROUND);
         terrain.occupation_bits = 7;
         mark_terrain_occupation(&terrain, Some(&mut grid));
         assert_eq!(
-            grid.cell(0, 0).unwrap().zone_type,
+            grid.cell(1, 1).unwrap().zone_type,
             zone_class::GROUND,
             "terminal rubble result outranks terrain occupation"
         );
@@ -1446,8 +1475,8 @@ mod tests {
         for (wood, type_section) in [(false, ""), (true, "Immune=yes\n")] {
             let rules = terrain_rules("TREE01", wood, type_section);
             let mut sim = Simulation::new();
-            seed_one_at(&mut sim, &rules, "TREE01", (0, 0));
-            let stable_id = sim.terrain_objects.cell_index()[&(0, 0)];
+            seed_one_at(&mut sim, &rules, "TREE01", (1, 1));
+            let stable_id = sim.terrain_objects.cell_index()[&(1, 1)];
             let terrain = sim.terrain_objects.objects()[&stable_id].clone();
             let mut grid = resolved_clear_grid();
             mark_terrain_occupation(&terrain, Some(&mut grid));
@@ -1459,7 +1488,7 @@ mod tests {
                 &mut sim.substrate.raw_cell_occupation,
                 &rules,
                 &sim.interner,
-                (0, 0),
+                (1, 1),
                 5,
                 warhead,
                 Some(&mut grid),
@@ -1467,8 +1496,8 @@ mod tests {
 
             assert_eq!(result, TerrainDamageResult::Ignored);
             assert_eq!(sim.terrain_objects.objects()[&stable_id], before);
-            assert_eq!(sim.terrain_objects.cell_index()[&(0, 0)], stable_id);
-            let cell = grid.cell(0, 0).unwrap();
+            assert_eq!(sim.terrain_objects.cell_index()[&(1, 1)], stable_id);
+            let cell = grid.cell(1, 1).unwrap();
             assert_eq!(cell.terrain_object_occupation, Some(7));
             assert!(cell.terrain_object_blocks);
         }
@@ -1478,12 +1507,12 @@ mod tests {
     fn gsi_04_10_lethal_ordinary_tree_uninits_and_clears_spatial_authority_same_call() {
         let rules = terrain_rules("TREE01", true, "");
         let mut sim = Simulation::new();
-        seed_one_at(&mut sim, &rules, "TREE01", (0, 0));
-        let stable_id = sim.terrain_objects.cell_index()[&(0, 0)];
+        seed_one_at(&mut sim, &rules, "TREE01", (1, 1));
+        let stable_id = sim.terrain_objects.cell_index()[&(1, 1)];
         let terrain = sim.terrain_objects.objects()[&stable_id].clone();
         let mut grid = resolved_clear_grid();
         mark_terrain_occupation(&terrain, Some(&mut grid));
-        assert!(grid.cell(0, 0).unwrap().terrain_object_blocks);
+        assert!(grid.cell(1, 1).unwrap().terrain_object_blocks);
         let warhead = rules.warhead("WH").expect("warhead");
 
         let result = damage_terrain_object_at_cell(
@@ -1491,21 +1520,21 @@ mod tests {
             &mut sim.substrate.raw_cell_occupation,
             &rules,
             &sim.interner,
-            (0, 0),
+            (1, 1),
             10,
             warhead,
             Some(&mut grid),
         );
 
         assert_eq!(result, TerrainDamageResult::Destroyed);
-        assert!(!sim.terrain_objects.cell_index().contains_key(&(0, 0)));
+        assert!(!sim.terrain_objects.cell_index().contains_key(&(1, 1)));
         assert!(!sim.terrain_objects.animations().contains_key(&stable_id));
-        assert!(!sim.terrain_objects.spawning_cells().contains(&(0, 0)));
+        assert!(!sim.terrain_objects.spawning_cells().contains(&(1, 1)));
         assert_eq!(
             sim.terrain_objects.objects()[&stable_id].lifecycle,
             TerrainObjectLifecycle::Destroyed
         );
-        let cell = grid.cell(0, 0).unwrap();
+        let cell = grid.cell(1, 1).unwrap();
         assert_eq!(cell.terrain_object_occupation, None);
         assert!(!cell.terrain_object_blocks);
         assert!(!cell.ground_walk_blocked);
@@ -1516,10 +1545,10 @@ mod tests {
     fn gsi_04_12_terrain_raw_occupation_damage_preserves_until_lethal_limbo() {
         let rules = terrain_rules("TREE01", true, "TemperateOccupationBits=7\n");
         let mut sim = Simulation::new();
-        sim.substrate.raw_cell_occupation.mark_ground(0, 0, 0xE0);
-        sim.substrate.raw_cell_occupation.mark_deck(0, 0, 0x5A);
-        seed_one_at(&mut sim, &rules, "TREE01", (0, 0));
-        let stable_id = sim.terrain_objects.cell_index()[&(0, 0)];
+        sim.substrate.raw_cell_occupation.mark_ground(1, 1, 0xE0);
+        sim.substrate.raw_cell_occupation.mark_deck(1, 1, 0x5A);
+        seed_one_at(&mut sim, &rules, "TREE01", (1, 1));
+        let stable_id = sim.terrain_objects.cell_index()[&(1, 1)];
         let warhead = rules.warhead("WH").expect("warhead");
 
         let ignored = damage_terrain_object_at_cell(
@@ -1527,42 +1556,42 @@ mod tests {
             &mut sim.substrate.raw_cell_occupation,
             &rules,
             &sim.interner,
-            (0, 0),
+            (1, 1),
             0,
             warhead,
             None,
         );
         assert_eq!(ignored, TerrainDamageResult::Ignored);
-        assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(0, 0), 0xFC);
-        assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(0, 0), 0x5A);
+        assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(1, 1), 0xFC);
+        assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(1, 1), 0x5A);
 
         let damaged = damage_terrain_object_at_cell(
             &mut sim.terrain_objects,
             &mut sim.substrate.raw_cell_occupation,
             &rules,
             &sim.interner,
-            (0, 0),
+            (1, 1),
             4,
             warhead,
             None,
         );
         assert_eq!(damaged, TerrainDamageResult::Damaged { remaining: 6 });
-        assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(0, 0), 0xFC);
-        assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(0, 0), 0x5A);
+        assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(1, 1), 0xFC);
+        assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(1, 1), 0x5A);
 
         let destroyed = damage_terrain_object_at_cell(
             &mut sim.terrain_objects,
             &mut sim.substrate.raw_cell_occupation,
             &rules,
             &sim.interner,
-            (0, 0),
+            (1, 1),
             6,
             warhead,
             None,
         );
         assert_eq!(destroyed, TerrainDamageResult::Destroyed);
-        assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(0, 0), 0xA0);
-        assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(0, 0), 0x5A);
+        assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(1, 1), 0xA0);
+        assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(1, 1), 0x5A);
         assert_eq!(
             sim.terrain_objects.objects()[&stable_id].lifecycle,
             TerrainObjectLifecycle::Destroyed

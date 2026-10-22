@@ -6919,7 +6919,7 @@ impl Simulation {
     /// receipts publish their Recalc only. A destroyed terrain object follows
     /// `TerrainClass::Limbo` @ `0x0071C930`: Recalc (`0x0071CA2A`), then
     /// AssignOrphanedCellZone (`0x0071CA42`) and the local graph update
-    /// (`0x0071CA51`) while `g_MapEditorMode` is zero. Deaths are published
+    /// (`0x0071CA51`) outside the ScenarioInit scope. Deaths are published
     /// after the receiver batch, not inside each Limbo.
     fn finish_terrain_navigation_changes(
         &mut self,
@@ -6935,6 +6935,13 @@ impl Simulation {
             .iter()
             .chain(terrain_changed_cells)
             .copied()
+            // Dummy Recalc47D2B8 has no path publication or structure scan.
+            // Test allocation without performing the ordered lookup early.
+            .filter(|&(x, y)| {
+                self.resolved_terrain
+                    .as_ref()
+                    .is_none_or(|grid| grid.cell(x, y).is_some())
+            })
             .collect();
         let blocked = navigation::structure_blocked_among(
             &self.substrate.entities,
@@ -6945,10 +6952,33 @@ impl Simulation {
         self.publish_recalculated_cells_with_presence(rules, &overlay_cells, &blocked);
         // Each Limbo's AssignOrphaned sees later deaths' cells unpublished.
         for &cell in terrain_changed_cells {
-            self.publish_cell_and_assign_orphaned_zone(rules, cell, &blocked);
+            // TerrainLimbo71C9F9..71CA2A reaches this suffix even when
+            // already InLimbo. Its canonical lookup must stamp the shared
+            // Dummy, whose Recalc47D2B0 immediately returns (47D2B8).
+            // Resize565C10's allocation diamond excludes cell0, so the
+            // never-Unlimbo'd zero constructor has no real-cell Recalc work.
+            let dummy = self.resolved_terrain.as_ref().is_some_and(|terrain| {
+                terrain.native_cell_identity((cell.0 as i16, cell.1 as i16))
+                    == crate::map::cell_index::NativeCellIdentity::Dummy
+            });
+            let initializing = self.object_placement_scope_active();
+            if !dummy {
+                if initializing {
+                    self.publish_recalculated_cells_with_presence(rules, &[cell], &blocked);
+                } else {
+                    self.publish_cell_and_assign_orphaned_zone(rules, cell, &blocked);
+                }
+            }
+            // Zero's retained zone class7 returns at56D4E8..56D51B;
+            // hierarchy58456A..584571 independently rejects its playfield.
+            // Do not turn absent Dummy cache input into a global rebuild.
+            if !initializing {
+                // 71CA2F..71CA60 gates zone repair and radar6551C0 on
+                // ScenarioInit==0, independently of the InLimbo prefix.
+                self.dirty_cells.mark_radar([cell]);
+            }
         }
     }
-
     /// One Recalc'd cell's navigation publication, then
     /// AssignOrphanedCellZone (`0x0056D460`) and the local graph update
     /// (`0x00584550`): the per-cell tail `TerrainClass::Limbo` and

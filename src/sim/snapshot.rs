@@ -1863,13 +1863,16 @@ impl Simulation {
                     object_id: terrain.stable_id(),
                 });
             }
-            if terrain.is_live() && pending_delete {
+            if terrain.object_alive() && pending_delete {
                 return Err(SnapshotRestoreError::DeferredDeleteLogicIdentity {
                     registry: "TerrainObjectStore",
                     object_id: terrain.stable_id(),
                 });
             }
-            if !terrain.is_live() && !pending_delete {
+            // ObjectCtor5F3930 starts Alive even while InLimbo. A zero-cell
+            // TerrainCtor71BC34 skips Unlimbo without scheduling deletion;
+            // ObjectUnInit5F6625, rather than Limbo, clears Alive.
+            if !terrain.object_alive() && !pending_delete {
                 return Err(SnapshotRestoreError::MissingDeferredDeleteIdentity {
                     registry: "TerrainObjectStore",
                     object_id: terrain.stable_id(),

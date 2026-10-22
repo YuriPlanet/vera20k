@@ -397,7 +397,7 @@ fn live_object_context<'a>(
     ))
 }
 
-/// `TerrainClass::Read_Map_Section` — construct one live terrain object per
+/// `TerrainClass::Read_Map_Section` — construct one retained terrain object per
 /// map `[Terrain]` entry.
 ///
 /// gamemd reads `[Terrain]` while the map sections are being walked, *before*
@@ -480,6 +480,12 @@ fn construct_terrain_objects_inner(
         let occupation_bits = terrain_state.occupation_bits();
         sim.terrain_objects
             .insert_constructed(terrain_state, t.spawns_tiberium);
+        constructed += 1;
+        // TerrainCtor71BC34..71BC86 (original instructions) retains the
+        // zero-cell identity but skips Unlimbo, including resource clearing.
+        if !sim.terrain_objects.get(stable_id).unwrap().is_live() {
+            continue;
+        }
         let registered = sim.register_terrain_object(stable_id, rules);
         debug_assert!(registered);
         mark_terrain_raw_occupation(
@@ -515,7 +521,6 @@ fn construct_terrain_objects_inner(
                 }
             }
         }
-        constructed += 1;
     }
     Ok(constructed)
 }
@@ -1616,6 +1621,174 @@ mod tests {
                 None
             );
         }
+    }
+
+    #[test]
+    fn retail_zero_cell_terrain_retains_limbo_identity_through_restore_and_cleanup() {
+        use crate::map::overlay::OverlayEntry;
+        use crate::sim::snapshot::GameSnapshot;
+        use crate::sim::world::{LifecycleTestEvent, Simulation, UninitContext};
+
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = battle.rules;
+        let registry =
+            OverlayTypeRegistry::from_ini(&battle.processed_rules, Some(&battle.fixed_art));
+        let ore = registry.id_for_name("TIB01").unwrap();
+        let objects = crate::map::overlay::parse_terrain_objects(
+            &IniFile::from_str("[Terrain]\n0=TIBTRE01\n2002=TREE01\n"),
+            4,
+        );
+        let mut sim = Simulation::with_seed(31);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let mut grid = resolved_grid(4, 4);
+        // Resize565C10 never allocates cell0 in a legal authored map.
+        grid.test_set_native_allocated_cells(&[(2, 2)]);
+        sim.install_resolved_terrain_for_new_map(grid.clone());
+        sim.overlay_grid = Some(OverlayGrid::from_overlay_entries(
+            &[OverlayEntry {
+                rx: 0,
+                ry: 0,
+                overlay_id: ore,
+                frame: 7,
+            }],
+            4,
+            4,
+        ));
+        sim.substrate.raw_cell_occupation.mark_ground(0, 0, 0xE0);
+        sim.native_unique_ids = Some(
+            crate::sim::native_identity::build_noncampaign_fresh_id_prefix(0, 0, 0, 0, 0, 0, 1, 1)
+                .into_cursor(),
+        );
+        let before_id = sim.native_unique_ids.as_ref().unwrap().current_raw();
+        let rng = sim.scenario_rng.native_state_hex();
+        assert_eq!(
+            construct_authored_terrain_objects(&mut sim, &objects, &rules, false, &registry,)
+                .unwrap(),
+            2
+        );
+        let zero = sim
+            .terrain_objects
+            .objects()
+            .values()
+            .find(|object| object.cell() == (0, 0))
+            .unwrap();
+        let id = zero.stable_id();
+        assert_eq!(
+            zero.world_coord(),
+            crate::sim::projectile::ProjectileCoord::new(0, 0, 0)
+        );
+        assert_eq!(
+            zero.native_unique_id(),
+            Some(before_id.wrapping_add(1) as i32)
+        );
+        assert!(zero.object_alive() && !zero.is_live() && !zero.in_logic_vector());
+        assert_eq!(
+            zero.health(),
+            rules
+                .terrain_object_type_case_insensitive("TIBTRE01")
+                .unwrap()
+                .strength
+        );
+        assert_eq!(sim.terrain_objects.cell_index().len(), 1);
+        assert!(sim.terrain_objects.id_at((0, 0)).is_none());
+        assert!(sim.substrate.display.layer_of(id).is_none());
+        seed_terrain_spawner_animation(
+            &sim.interner,
+            &mut sim.terrain_objects,
+            &sim.session,
+            &rules,
+        );
+        assert!(sim.terrain_objects.animations().is_empty());
+        assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(0, 0), 0xE0);
+        assert_eq!(
+            sim.overlay_grid.as_ref().unwrap().cell(0, 0).overlay_id,
+            Some(ore)
+        );
+        assert_eq!(sim.scenario_rng.native_state_hex(), rng);
+
+        let bytes = GameSnapshot::save(&sim, 0, 0, "zero terrain", 0);
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        restored.rebuild_caches_after_load(grid.clone(), Default::default(), &rules);
+        assert!(restored.rebuild_dynamic_navigation(&rules));
+        // Bare simulations have other load-time timer resets; compare the
+        // retained Terrain owner rather than that unrelated whole-world hash.
+        assert_eq!(
+            restored.terrain_objects.objects(),
+            sim.terrain_objects.objects()
+        );
+        assert!(restored.terrain_objects.get(id).unwrap().object_alive());
+        let mut initializing = GameSnapshot::load(&bytes).unwrap().sim;
+        initializing.restore_after_snapshot_load().unwrap();
+        initializing.rebuild_caches_after_load(grid.clone(), Default::default(), &rules);
+        assert!(initializing.rebuild_dynamic_navigation(&rules));
+        let path = initializing.path_grid_snapshot().unwrap();
+        initializing.with_object_placement_scope(|sim| {
+            sim.uninit_with_context(id, UninitContext::with_rules(&rules));
+        });
+        assert!(initializing.dirty_cells.radar().is_empty());
+        assert!(std::sync::Arc::ptr_eq(
+            &path,
+            &initializing.path_grid_snapshot().unwrap()
+        ));
+        restored.clear_lifecycle_test_events_for_test();
+        restored.dirty_cells.clear_radar_for_test();
+        restored
+            .resolved_terrain
+            .as_ref()
+            .unwrap()
+            .native_cell_identity((9, 9));
+        let path = restored.path_grid_snapshot().unwrap();
+        restored.uninit_with_context(id, UninitContext::with_rules(&rules));
+        assert!(std::sync::Arc::ptr_eq(
+            &path,
+            &restored.path_grid_snapshot().unwrap()
+        ));
+        let dead = restored.terrain_objects.get(id).unwrap();
+        assert!(!dead.object_alive());
+        assert_eq!(
+            dead.world_coord(),
+            crate::sim::projectile::ProjectileCoord::new(0, 0, 0)
+        );
+        assert_eq!(
+            restored.substrate.raw_cell_occupation.ground_bits(0, 0),
+            0xE0
+        );
+        assert_eq!(restored.lifecycle_test_events_for_test().iter()
+            .filter(|event| matches!(event, LifecycleTestEvent::TerrainExpiryBoundary { stable_id, .. } if *stable_id == id)).count(), 1);
+        assert_eq!(restored.dirty_cells.radar(), vec![(0, 0)]);
+        assert_eq!(
+            restored
+                .resolved_terrain
+                .as_ref()
+                .unwrap()
+                .shared_cell_dummy()
+                .snapshot()
+                .coord,
+            (0, 0)
+        );
+        let bytes = GameSnapshot::save(&restored, 0, 0, "dead zero terrain", 0);
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        restored.rebuild_caches_after_load(grid, Default::default(), &rules);
+        assert!(restored.rebuild_dynamic_navigation(&rules));
+        assert_eq!(
+            restored.terrain_objects.get(id).unwrap().world_coord(),
+            crate::sim::projectile::ProjectileCoord::new(0, 0, 0)
+        );
+        restored.dirty_cells.clear_radar_for_test();
+        let path = restored.path_grid_snapshot().unwrap();
+        restored.process_pending_delete_with(&rules, Some(&registry), Default::default(), 1, true);
+        assert!(std::sync::Arc::ptr_eq(
+            &path,
+            &restored.path_grid_snapshot().unwrap()
+        ));
+        assert!(restored.terrain_objects.get(id).is_none());
+        assert_eq!(restored.terrain_objects.cell_index().len(), 1);
+        assert_eq!(restored.dirty_cells.radar(), vec![(0, 0)]);
     }
 
     #[test]
