@@ -1442,7 +1442,8 @@ fn advance_one_simulation_frame(
                 | LifecycleOutput::BuildingPlacementSucceeded { .. }
                 | LifecycleOutput::BuildingProductionAbandoned { .. }
                 | LifecycleOutput::FollowReleased { .. }
-                | LifecycleOutput::ObjectSelected { .. } => {}
+                | LifecycleOutput::ObjectSelected { .. }
+                | LifecycleOutput::ControlGroupConverted { .. } => {}
                 LifecycleOutput::ObjectPointerExpired { stable_id } => {
                     state
                         .match_state

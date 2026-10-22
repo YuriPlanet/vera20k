@@ -767,6 +767,14 @@ pub enum LifecycleOutput {
     ObjectSelected {
         stable_id: u64,
     },
+    /// Unit7397C6/7397CC and Building44A04C/44A052 copy +214 after a
+    /// successful conversion. The app owns control-group membership; retain
+    /// the identity handoff in native call order, without selection or owner
+    /// admission, even when another conversion follows in the same frame.
+    ControlGroupConverted {
+        source_id: u64,
+        replacement_id: u64,
+    },
     /// DispatchPointerExpired7258D0 reaches navigation733160 at7259B1
     /// for a Techno abstract pointer, regardless of announce-control or Alive.
     ObjectPointerExpired {

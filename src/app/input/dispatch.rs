@@ -47,6 +47,10 @@ mod area_guard_tests;
 #[path = "player_scatter_tests.rs"]
 mod player_scatter_tests;
 
+#[cfg(test)]
+#[path = "mcv_conversion_group_tests.rs"]
+mod mcv_conversion_group_tests;
+
 /// Handle mouse button press/release for selection and move commands.
 ///
 /// The in-game gadget walk runs FIRST (study G22/A8): chrome buttons + cameos
@@ -2273,6 +2277,7 @@ pub(crate) fn reconcile_selection_order_after_sim(
         state.match_state.input.type_select.reset_scope();
         return;
     };
+    apply_control_group_conversions(&mut state.match_state.input.control_groups, outputs);
     reconcile_selection_order_for_sim(
         &mut state.match_state.input,
         &runtime.simulation,
@@ -3668,6 +3673,31 @@ fn assign_control_group(groups: &mut [Vec<u64>], slot: usize, ids: Vec<u64>) {
         }
     }
     groups[slot] = ids;
+}
+
+/// Unit7397C6/7397CC and Building44A04C/44A052 copy the object's group
+/// without owner/selection admission. Recall7311C0 scans TechnoArray, where
+/// the fresh replacement follows surviving members. Apply facts in order:
+/// an intermediate replacement may already have converted again this frame.
+fn apply_control_group_conversions(
+    groups: &mut [Vec<u64>],
+    outputs: &[crate::sim::world::LifecycleOutput],
+) {
+    for output in outputs {
+        let crate::sim::world::LifecycleOutput::ControlGroupConverted {
+            source_id,
+            replacement_id,
+        } = *output
+        else {
+            continue;
+        };
+        for group in groups.iter_mut() {
+            if group.contains(&source_id) {
+                group.retain(|id| *id != source_id);
+                group.push(replacement_id);
+            }
+        }
+    }
 }
 
 /// TeamClear7310D0, reached by the command bar at6D0990. Eligibility is
