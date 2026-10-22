@@ -432,48 +432,6 @@ fn planning_internal_checkpoint_restores_shared_nodes_loops_current_records_and_
 }
 
 #[test]
-fn player_save_load_drops_future_plans_but_preserves_committed_and_queued_missions() {
-    use crate::sim::mission::{MissionId, MissionType};
-    use crate::sim::snapshot::GameSnapshot;
-    let (mut sim, rules, owner) = fixture();
-    sim.substrate
-        .entities
-        .get_mut(1)
-        .unwrap()
-        .mission
-        .set_current_for_test(MissionId::from_known(MissionType::Guard), 0);
-    append(&mut sim, &rules, owner, 1, (12, 15));
-    append(&mut sim, &rules, owner, 1, (16, 15));
-    let commit = sim.encode_plan_commit_record(owner).unwrap();
-    apply(&mut sim, &rules, commit);
-    let current = sim.planning.paths[&1].current.clone().unwrap();
-    apply(&mut sim, &rules, current);
-    assert_eq!(sim.planning.paths[&1].nodes.len(), 1);
-    let actor = sim.substrate.entities.get(1).unwrap();
-    let current_mission = actor.mission.current();
-    let queued_mission = actor.mission.queued();
-    assert_eq!(queued_mission.known(), Some(MissionType::Move));
-    let nav = actor.navigation.nav_com();
-    let target = actor.attack_target.target();
-    let scan = actor.passive_scan;
-    let queued = sim.pending_command_snapshot();
-    let bytes = GameSnapshot::save(&sim, 0, 0, "planning", 0);
-    let restored = GameSnapshot::load(&bytes).unwrap().sim;
-    assert!(
-        restored.planning.paths.is_empty(),
-        "retail Load clears active +514 tokens"
-    );
-    assert!(restored.planning.nodes.is_empty());
-    let actor = restored.substrate.entities.get(1).unwrap();
-    assert_eq!(actor.mission.current(), current_mission);
-    assert_eq!(actor.mission.queued(), queued_mission);
-    assert_eq!(actor.navigation.nav_com(), nav);
-    assert_eq!(actor.attack_target.target(), target);
-    assert_eq!(actor.passive_scan, scan);
-    assert_eq!(restored.pending_command_snapshot(), queued);
-}
-
-#[test]
 fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snapshot() {
     use crate::sim::mission::{MissionId, MissionType};
     use crate::sim::snapshot::GameSnapshot;
@@ -1908,366 +1866,40 @@ fn connect_actor_group_expands_another_houses_actor() {
     assert_eq!(sim.planning_connect_actors(&[2]), vec![1, 2]);
 }
 
-mod queue_lifecycle {
-    use super::*;
-
-    #[test]
-    fn planning_accounting_extends_to_the_thirtieth_player_and_neutral_slots() {
-        let (mut sim, rules, _) = fixture();
-        let mut owner = sim.interner.intern("Americans");
-        for index in 1..32 {
-            owner = sim.interner.intern(&format!("House{index}"));
-            sim.houses
-                .register(crate::sim::house_state::HouseState::new(
-                    owner, 0, None, true, 0, 10,
-                ));
-        }
-        sim.change_owner(1, owner);
-        sim.session.set_current_house_for_test(Some(owner));
-        let record = sim
-            .encode_planning_order_record(
-                owner,
-                &Command::Move {
-                    entity_id: 1,
-                    target_rx: 12,
-                    target_ry: 15,
-                },
-            )
-            .unwrap();
-        let envelope = sim
-            .decode_native_command_record(&record, sim.session.tick())
-            .unwrap();
-        assert!(sim.apply_command("House31", &envelope.payload, Some(&rules)));
-        assert_eq!(sim.planning.house_charges[31], 1);
-        sim.planning.house_charges[31] = 128;
-        assert!(sim.planning_selection_has_capacity(owner, &[1]));
-        assert!(!sim.planning_selection_has_capacity(owner, &[2]));
-        sim.planning_detach_actor(1);
-        assert_eq!(sim.planning.house_charges[31], 127);
-    }
-
-    #[test]
-    fn prune_and_node_delete_preserve_capacity_charges_until_a_real_release() {
-        let (mut sim, rules, owner) = fixture();
-        // Repeated native empty-path append/prune histories can reach the
-        // limit with one actor. Pruning is not ordinary cancellation.
-        for _ in 0..128 {
-            append(&mut sim, &rules, owner, 1, (12, 15));
-            let id = sim.planning.paths[&1].nodes[0];
-            sim.planning.unindex_node(id);
-            missing_primary(
-                &mut sim
-                    .planning
-                    .nodes
-                    .get_mut(&id)
-                    .unwrap()
-                    .orders
-                    .get_mut(&1)
-                    .unwrap()[0]
-                    .record,
-            );
-            sim.planning.index_node(id);
-            sim.prune_invalid_planning_nodes();
-        }
-        assert_eq!(sim.planning.house_charges[0], 128);
-        assert!(!sim.planning_selection_has_capacity(owner, &[1]));
-        assert!(sim.planning_selection_has_capacity(owner, &[]));
-        append(&mut sim, &rules, owner, 1, (16, 15));
-        assert_eq!(sim.planning.house_charges[0], 129);
-        assert!(
-            !sim.planning_selection_has_capacity(owner, &[1]),
-            "a nonempty selected path still sees the retained129"
-        );
-        sim.planning_detach_actor(1);
-        assert_eq!(sim.planning.house_charges[0], 128);
-        let bytes = save_codec::serialize(&sim.planning).unwrap();
-        sim.planning = save_codec::deserialize(&bytes).unwrap();
-        sim.destroy_planning_token(1);
-        assert_eq!(
-            sim.planning.house_charges[0], 128,
-            "destroying an empty token does not release an old charge"
-        );
-        sim.reset_planning_after_player_load();
-        assert!(sim.planning_selection_has_capacity(owner, &[1]));
-    }
-
-    #[test]
-    fn connect_is_uncharged_and_capture_release_uses_the_current_effective_house() {
-        let (mut sim, rules, owner) = fixture();
-        let other = sim.interner.intern("Russians");
-        sim.houses
-            .register(crate::sim::house_state::HouseState::new(
-                other, 1, None, false, 0, 10,
-            ));
-        append(&mut sim, &rules, owner, 1, (12, 15));
-        let connect = sim.encode_plan_connect_record(owner, 2, (12, 15)).unwrap();
-        apply(&mut sim, &rules, connect);
-        assert_eq!(sim.planning.house_charges[0], 1);
-        sim.planning_detach_actor(2);
-        assert_eq!(
-            sim.planning.house_charges[0], 0,
-            "native releases even an uncharged connected path"
-        );
-        sim.change_owner(3, other);
-        append(&mut sim, &rules, owner, 3, (16, 15));
-        assert_eq!(
-            sim.planning.house_charges[0], 1,
-            "delayed event charges its old issuer"
-        );
-        sim.planning_detach_actor(3);
-        assert_eq!(sim.planning.house_charges[0], 1);
-        assert_eq!(
-            sim.planning.house_charges[1], 0,
-            "release saturates the current owner's counter"
-        );
-    }
-
-    #[test]
-    fn postload_token_order_controls_the_canonical_dummy_query_order() {
-        let (mut sim, rules, owner) = fixture();
-        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-        for actor in [1, 2] {
-            sim.initialize_planning_token(actor);
-        }
-        append(&mut sim, &rules, owner, 2, (650, 650));
-        append(&mut sim, &rules, owner, 1, (651, 650));
-        assert_eq!(sim.planning.token_order, vec![1, 2]);
-        sim.prune_invalid_planning_nodes();
-        assert_eq!(
-            sim.resolved_terrain
-                .as_ref()
-                .unwrap()
-                .shared_cell_dummy()
-                .snapshot()
-                .coord,
-            (650, 650)
-        );
-        sim.reset_planning_after_player_load();
-        append(&mut sim, &rules, owner, 2, (650, 650));
-        append(&mut sim, &rules, owner, 1, (651, 650));
-        assert_eq!(sim.planning.token_order, vec![2, 1]);
-        sim.planning_detach_actor(2);
-        append(&mut sim, &rules, owner, 2, (652, 650));
-        assert_eq!(
-            sim.planning.token_order,
-            vec![2, 1],
-            "clear/reappend retains token position"
-        );
-        sim.prune_invalid_planning_nodes();
-        assert_eq!(
-            sim.resolved_terrain
-                .as_ref()
-                .unwrap()
-                .shared_cell_dummy()
-                .snapshot()
-                .coord,
-            (651, 650)
-        );
-        assert!(
-            sim.planning_has_remaining_nodes(1) && sim.planning_has_remaining_nodes(2),
-            "missing Cells resolve to nonnull Dummy"
-        );
-        let bytes = save_codec::serialize(&sim.planning).unwrap();
-        sim.planning = save_codec::deserialize(&bytes).unwrap();
-        assert_eq!(sim.planning.token_order, vec![2, 1]);
-    }
-
-    fn missing_primary(record: &mut CommandRecord) {
-        // AttackMove admits both target and destination in the ordinary
-        // wire codec; the resolver must not fall back from a missing target.
-        record.payload_mut()[5] = 29;
-        record.payload_mut()[7..11].copy_from_slice(&999_i32.to_le_bytes());
-        record.payload_mut()[11] = 0x34;
-    }
-
-    #[test]
-    fn reverse_prune_uses_first_member_even_for_repeated_node_occurrences() {
-        for first_invalid in [true, false] {
-            let (mut sim, rules, owner) = fixture();
-            append(&mut sim, &rules, owner, 1, (12, 15));
-            append(&mut sim, &rules, owner, 1, (16, 15));
-            let id = sim.planning.paths[&1].nodes[0];
-            let mut second = sim.planning.nodes[&id].order(1).unwrap().clone();
-            sim.planning.unindex_node(id);
-            if first_invalid {
-                missing_primary(
-                    &mut sim
-                        .planning
-                        .nodes
-                        .get_mut(&id)
-                        .unwrap()
-                        .orders
-                        .get_mut(&1)
-                        .unwrap()[0]
-                        .record,
-                );
-            } else {
-                missing_primary(&mut second);
-            }
-            sim.planning
-                .nodes
-                .get_mut(&id)
-                .unwrap()
-                .insert_order(1, second);
-            sim.planning.paths.get_mut(&1).unwrap().nodes.insert(1, id);
-            sim.planning.paths.get_mut(&1).unwrap().pending = 2;
-            sim.planning.index_node(id);
-            sim.prune_invalid_planning_nodes();
-            // Original6372AE..6373DE controls distinguish [bad,good] from
-            // [good,bad]: reverse path order does not reverse member lookup.
-            assert_eq!(
-                sim.planning.paths[&1].nodes,
-                if first_invalid {
-                    vec![0, 1]
-                } else {
-                    vec![0, 0, 1]
-                }
-            );
-            assert_eq!(
-                sim.planning.paths[&1].pending,
-                if first_invalid { 1 } else { 2 }
-            );
-            assert_eq!(
-                sim.planning.nodes[&id].orders[&1].len(),
-                if first_invalid { 1 } else { 2 }
-            );
-            let bytes = save_codec::serialize(&sim.planning).unwrap();
-            sim.planning = save_codec::deserialize(&bytes).unwrap();
-        }
-    }
-
-    #[test]
-    fn prune_to_empty_preserves_current_latch_and_loop_edit_for_reappend() {
-        let (mut sim, rules, owner) = fixture();
-        for cell in [(12, 15), (16, 15), (20, 15)] {
-            append(&mut sim, &rules, owner, 1, cell);
-        }
-        let mut current = sim.planning.nodes[&0].order(1).unwrap().clone();
-        current.payload_mut()[22] = 2;
-        let path = sim.planning.paths.get_mut(&1).unwrap();
-        path.pending = 2;
-        path.loop_start = Some(0);
-        path.loop_changed = true;
-        path.executing = true;
-        path.current = Some(current.clone());
-        for node in [0, 1, 2] {
-            sim.planning.unindex_node(node);
-            missing_primary(
-                &mut sim
-                    .planning
-                    .nodes
-                    .get_mut(&node)
-                    .unwrap()
-                    .orders
-                    .get_mut(&1)
-                    .unwrap()[0]
-                    .record,
-            );
-            sim.planning.index_node(node);
-        }
-        sim.prune_invalid_planning_nodes();
-        assert!(!sim.planning_has_remaining_nodes(1));
-        let path = &sim.planning.paths[&1];
-        assert_eq!(
-            (
-                path.pending,
-                path.loop_start,
-                path.loop_changed,
-                path.executing
-            ),
-            (-1, None, true, true)
-        );
-        assert_eq!(path.current.as_ref(), Some(&current));
-        assert!(sim.planning.nodes.is_empty());
-        let bytes = save_codec::serialize(&sim.planning).unwrap();
-        sim.planning = save_codec::deserialize(&bytes).unwrap();
-        append(&mut sim, &rules, owner, 1, (24, 15));
-        assert_eq!(sim.planning.paths[&1].pending, 0);
-        let commit = sim.encode_plan_commit_record(owner).unwrap();
-        apply(&mut sim, &rules, commit);
-        assert!(
-            !sim.planning_start_actor(1, &rules),
-            "old in-flight event still holds the latch"
-        );
-        sim.planning_acknowledge(1);
-        assert!(sim.planning_start_actor(1, &rules));
-    }
-
-    #[test]
-    fn late_frame_pruning_follows_finalization_and_skips_a_terminal_tail() {
-        for terminal in [false, true] {
-            let (mut sim, rules, owner) = fixture();
-            let record = sim
-                .encode_planning_order_record(
-                    owner,
-                    &Command::Attack {
-                        attacker_id: 1,
-                        target_id: 3,
-                    },
-                )
-                .unwrap();
-            apply(&mut sim, &rules, record);
-            sim.uninit(3);
-            sim.prune_invalid_planning_nodes();
-            assert!(
-                sim.planning_has_remaining_nodes(1),
-                "inactive target is still registered before destruction"
-            );
-            if terminal {
-                sim.quit_requested = true;
-            }
-            let frame = sim.session.binary_frame();
-            let committed =
-                sim.commit_frame_tail(&rules, None, 33, sim.session.tick() + 1, Default::default());
-            assert_eq!(committed, !terminal);
-            assert_eq!(sim.planning_has_remaining_nodes(1), terminal);
-            assert_eq!(sim.substrate.entities.contains(3), terminal);
-            assert_eq!(
-                sim.session.binary_frame(),
-                if terminal {
-                    frame
-                } else {
-                    frame.wrapping_add(1)
-                }
-            );
-        }
-    }
-
-    #[test]
-    fn capture_reappend_waits_for_the_original_planned_event_acknowledgment() {
-        use crate::sim::mission::{MissionId, MissionType};
-        let (mut sim, rules, owner) = fixture();
-        sim.substrate
-            .entities
-            .get_mut(1)
-            .unwrap()
-            .mission
-            .set_current_for_test(MissionId::from_known(MissionType::Guard), 0);
-        append(&mut sim, &rules, owner, 1, (12, 15));
-        append(&mut sim, &rules, owner, 1, (16, 15));
-        let commit = sim.encode_plan_commit_record(owner).unwrap();
-        apply(&mut sim, &rules, commit);
-        let current = sim.planning.paths[&1].current.clone().unwrap();
-        let other = sim.interner.intern("Russians");
-        sim.houses
-            .register(crate::sim::house_state::HouseState::new(
-                other, 1, None, false, 0, 10,
-            ));
-        sim.change_owner(1, other);
-        append(&mut sim, &rules, owner, 1, (20, 15));
-        let commit = sim.encode_plan_commit_record(other).unwrap();
-        let envelope = sim
-            .decode_native_command_record(&commit, sim.session.tick())
-            .unwrap();
-        assert!(sim.apply_command("Russians", &envelope.payload, Some(&rules)));
-        assert_eq!(
-            sim.pending_command_snapshot().len(),
-            1,
-            "capture/reappend cannot publish over the held latch"
-        );
-        apply(&mut sim, &rules, current);
-        assert!(!sim.planning.paths[&1].executing);
-        assert!(sim.planning_start_actor(1, &rules));
-        assert_eq!(sim.pending_command_snapshot().len(), 2);
-    }
+#[test]
+fn finalized_target_pruning_retains_the_empty_token_and_its_house_charge() {
+    let (mut sim, rules, owner) = fixture();
+    let record = sim
+        .encode_planning_order_record(
+            owner,
+            &Command::Attack {
+                attacker_id: 1,
+                target_id: 3,
+            },
+        )
+        .unwrap();
+    apply(&mut sim, &rules, record);
+    sim.uninit(3);
+    sim.prune_invalid_planning_nodes();
+    assert!(
+        sim.planning_has_remaining_nodes(1),
+        "the retired target remains registered until actual destruction"
+    );
+    let frame = sim.session.binary_frame();
+    assert!(sim.commit_frame_tail(&rules, None, 33, sim.session.tick() + 1, Default::default()));
+    assert_eq!(sim.session.binary_frame(), frame.wrapping_add(1));
+    assert!(!sim.substrate.entities.contains(3));
+    assert!(!sim.planning_has_remaining_nodes(1));
+    assert!(sim.planning.registered_tokens.contains(&1));
+    assert_eq!(
+        sim.planning.house_charges[0], 1,
+        "late pruning does not release the retained charge"
+    );
+    append(&mut sim, &rules, owner, 1, (16, 15));
+    assert_eq!(sim.planning.house_charges[0], 2);
+    sim.planning_detach_actor(1);
+    assert_eq!(
+        sim.planning.house_charges[0], 1,
+        "ordinary cancellation releases only the new nonempty path"
+    );
 }

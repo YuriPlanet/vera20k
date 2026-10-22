@@ -17,6 +17,5 @@
     "passive_acquire_gate": "0x00709290",
     "can_acquire_target": "0x007091D0"
   },
-  "replay_command": "python -m tools.spatial_oracle.passive_acquire_gate",
-  "payload_sha256": "7dc139579819d655037d4f83fe7026635191cb5a44c135f91c5b24ab64ad7e7e"
+  "payload_sha256": "6ae7927fba95b547defa4767a05bd681fdcd74e9a56e096a742f1c47b08495fa"
 }

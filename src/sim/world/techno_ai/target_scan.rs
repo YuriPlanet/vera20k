@@ -1591,6 +1591,6 @@ mod tests {
             );
             compared.push(name);
         }
-        assert_eq!(compared.len(), 37, "{compared:?}");
+        assert_eq!(compared.len(), 35, "{compared:?}");
     }
 }

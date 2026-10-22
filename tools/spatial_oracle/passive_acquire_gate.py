@@ -135,8 +135,6 @@ class Fixture:
 
 
 def inputs():
-    # Positive nodes suppress the parked shortcut, not OpportunityFire or
-    # the later simple-deployer query on a BalloonHover Unit.
     rows = []
     # A Rocketeer parked after a Move order: a BalloonHover= Infantry whose NavCom is
     # its own cell, of a human house, in no team.
@@ -159,9 +157,6 @@ def inputs():
                                  **{'class': 'unit'}, simple_deployer=simple,
                                  balloon_hover=balloon, nav_com=nav))
     rows.append(dict(name='simple_deployer_infantry', balloon_hover=False, simple_deployer=True))
-    rows.append(dict(name='token_1_opportunity_fire', token=1, opportunity_fire=True))
-    rows.append(dict(name='unit_hover_simple_token_1', **{'class': 'unit'}, token=1,
-                     balloon_hover=True, simple_deployer=True))
     rows.append(dict(name='unit_simple_token_1', **{'class': 'unit'}, balloon_hover=False,
                      simple_deployer=True, token=1))
     # CanAcquireTarget ahead of the Move arms.

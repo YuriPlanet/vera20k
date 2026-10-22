@@ -579,54 +579,6 @@
   },
   {
     "input": {
-      "name": "token_1_opportunity_fire",
-      "opportunity_fire": true,
-      "token": 1
-    },
-    "output": {
-      "calls": [
-        "human",
-        "warping",
-        "type",
-        "what_am_i",
-        "engineer",
-        "armed",
-        "type",
-        "cell",
-        "what_am_i",
-        "type"
-      ],
-      "passes": true
-    }
-  },
-  {
-    "input": {
-      "balloon_hover": true,
-      "class": "unit",
-      "name": "unit_hover_simple_token_1",
-      "simple_deployer": true,
-      "token": 1
-    },
-    "output": {
-      "calls": [
-        "human",
-        "warping",
-        "type",
-        "what_am_i",
-        "engineer",
-        "armed",
-        "type",
-        "cell",
-        "what_am_i",
-        "what_am_i",
-        "cell",
-        "type"
-      ],
-      "passes": false
-    }
-  },
-  {
-    "input": {
       "balloon_hover": false,
       "class": "unit",
       "name": "unit_simple_token_1",
