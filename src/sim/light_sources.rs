@@ -34,6 +34,13 @@ impl PaletteUpdate {
 
 #[derive(Debug, Clone)]
 pub enum LightingEvent {
+    /// OverlayMark5FD1ED, ObjectParadrop5F5B29 and SquidGrapple629DE5
+    /// copy signed Cell+10A into Anim+FC. Sample in this ordered stream,
+    /// before a later source/global operation changes the same cell.
+    RetainAnimIntensity {
+        anim: u64,
+        cell: Option<(u16, u16)>,
+    },
     Building {
         id: u64,
         source: Option<PointLight>,
@@ -124,6 +131,16 @@ impl LightingSources {
 }
 
 impl Simulation {
+    /// Transfer the lighting transaction once, including fresh map creation.
+    pub fn take_lighting_events(&mut self) -> Vec<LightingEvent> {
+        self.lighting_sources.take_pending()
+    }
+
+    pub(crate) fn retain_anim_cell_light(&mut self, anim: u64, cell: Option<(u16, u16)>) {
+        self.lighting_sources
+            .publish(LightingEvent::RetainAnimIntensity { anim, cell });
+    }
+
     /// Preserve the existing eager restore projection while resetting the
     /// outgoing timeline. Native lazy post-load reconstruction remains open.
     /// VERA-only: the light cache, rebuilt from each alive (`+0x90`), unlimboed

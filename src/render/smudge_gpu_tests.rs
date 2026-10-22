@@ -551,6 +551,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
         crate::map::lighting::parse_lighting(&scene.map.ini),
         2,
         Some((scene.sim().resolved_terrain().unwrap(), scene.sim())),
+        None,
     );
     // Declared neutral-A viewport for the live producer, not a native whole-map
     // camera or a replacement for the actual App capture.

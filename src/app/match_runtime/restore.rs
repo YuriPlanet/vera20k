@@ -123,6 +123,7 @@ pub(crate) fn commit_prepared_load(
         terrain_objects: committed.map.terrain_objects().to_vec(),
         house_roster: committed.map.house_roster().clone(),
         lighting_config: committed.map.lighting().clone(),
+        lighting_events: None,
         theater_name,
         theater_ext,
     };
@@ -166,6 +167,11 @@ pub(crate) fn commit_prepared_load(
         .sinking_waterlines
         .borrow_mut()
         .restore(committed.details.sinking_waterlines);
+    state
+        .match_state
+        .match_presentation
+        .lighting
+        .restore_anim_intensities(committed.details.anim_intensities);
     // MouseLoad5BDF70->no-init5BE9B0 preserves the saved entry lists; their
     // display keys refresh below against incoming rules/CSF without reordering.
     state

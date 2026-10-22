@@ -184,6 +184,7 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
                 detail: &detail,
                 detail_level: 2,
                 lighting: &lighting,
+                retained_anim_intensities: None,
                 house_colors: &colors,
                 hidden_super_anims: &hidden,
                 show_hidden: false,

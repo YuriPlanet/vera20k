@@ -1292,8 +1292,12 @@ pub fn finalize_constructed_scenario(
             skirmish_session,
             campaign_map,
         });
-    sim.initialize_fog_of_war(crate::sim::world::UninitContext::new(rules, Some(overlay_registry)));
-    sim.lighting_sources.discard_pending();
+    sim.initialize_fog_of_war(crate::sim::world::UninitContext::new(
+        rules,
+        Some(overlay_registry),
+    ));
+    // Fresh source changes and Anim intensity reads transfer together to the
+    // lighting owner. Discarding this prefix loses pre-building CellAnim light.
     output
 }
 #[test]

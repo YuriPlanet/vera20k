@@ -162,13 +162,8 @@ impl Simulation {
             tiberium_types: Some(&rules.tiberium_types),
             crate_images: MarkCrateImages::resolve(&rules.crate_rules, registry),
         };
-        let lighting = self
-            .session
-            .lighting()
-            .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
-            .into();
         let outcome = match mark_overlay(
-            &mut SimulationMarkHost::new(self, rules, registry, lighting),
+            &mut SimulationMarkHost::new(self, rules, registry),
             &request,
         ) {
             Ok(outcome) => outcome,

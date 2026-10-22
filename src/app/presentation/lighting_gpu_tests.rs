@@ -105,6 +105,7 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
         parse_lighting(&scenario.map.ini),
         2,
         Some((terrain, &scenario.runtime.simulation)),
+        None,
     );
     let lit_scalar = lighting
         .grid()

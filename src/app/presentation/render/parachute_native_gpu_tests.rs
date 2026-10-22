@@ -87,10 +87,11 @@ struct Scene {
     canopy: u64,
     visits: u32,
     height: i32,
+    retained_intensities: std::collections::BTreeMap<u64, i32>,
 }
 
 impl Scene {
-    fn new(rules: RuleSet, height: i32) -> Self {
+    fn new(rules: RuleSet, height: i32, light: &CellLightGrid) -> Self {
         let mut sim = Simulation::with_seed(0x5F59_4004);
         sim.session_mut_for_test().set_binary_frame_for_test(1000);
         let owner = sim.intern(OWNER);
@@ -148,6 +149,14 @@ impl Scene {
         assert!(sim.display_layers().layer_of(canopy).is_some());
         let mut resources = SimResources::empty();
         resources.rules = rules;
+        // This fixture starts at the admitted Paradrop suffix. Its public
+        // constructor/remap calls above also require that suffix's Cell+10A
+        // copy (5F5B29..5F5B30), now carried by the presentation owner. Derive
+        // that declared input from the real grid, never the measured output.
+        let retained_intensities = std::collections::BTreeMap::from([(
+            canopy,
+            i32::from(light.cell_light_at((10, 20)).unwrap().top_scalar as i16),
+        )]);
         Self {
             runtime: SimRuntime {
                 simulation: sim,
@@ -157,6 +166,7 @@ impl Scene {
             canopy,
             visits: 0,
             height,
+            retained_intensities,
         }
     }
 
@@ -258,6 +268,7 @@ impl Scene {
             detail: &detail,
             detail_level: 2,
             lighting: light,
+            retained_anim_intensities: Some(&self.retained_intensities),
             house_colors: colors,
             hidden_super_anims: &hidden,
             show_hidden: false,
@@ -343,7 +354,7 @@ fn retail_parachute_actual_emitter_matches_original_component_planes() {
         );
         let height = integer(&case["supplied_owner_height"]);
         assert!([104, 232].contains(&height));
-        let mut scene = Scene::new(rules.clone(), height);
+        let mut scene = Scene::new(rules.clone(), height, &light);
         let remaps = collect_anim_remap_base_keys(&scene.runtime.simulation, &colors);
         let mut formats: Vec<_> = [
             wgpu::TextureFormat::Bgra8UnormSrgb,

@@ -275,6 +275,7 @@ impl Probe {
             parse_lighting(&scene.map.ini),
             2,
             Some((&terrain, scene.sim())),
+            None,
         );
         let palette = assets.resolve_ref(fixture.theater().3).unwrap();
         let profile = crate::map::lighting::normal_profile_units(&parse_lighting(&scene.map.ini));

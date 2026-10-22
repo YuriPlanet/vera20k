@@ -23,7 +23,6 @@
 //! Part of `sim/` — depends on `rules/`, `map/` grid types and other `sim/`
 //! modules only. Never on render/, ui/, audio/, net/.
 
-use crate::map::lighting::LightingProfileUnits;
 use crate::rules::crate_rules::CrateRules;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -200,7 +199,6 @@ pub(crate) fn tick_crate_regeneration(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: &OverlayTypeRegistry,
-    lighting_profile: LightingProfileUnits,
 ) -> CrateRegeneration {
     let mut result = CrateRegeneration::default();
     if !sim.session.game_mode_nonzero() || !sim.session.game_options().crates {
@@ -222,7 +220,6 @@ pub(crate) fn tick_crate_regeneration(
             sim,
             rules,
             overlay_registry,
-            lighting_profile,
             ForcedPostPrecheckFailure::None,
         ) {
             OneCrateResult::HardRejected => {}
@@ -240,14 +237,9 @@ pub(crate) fn tick_crate_regeneration(
 mod tests {
     use super::*;
 
-    use crate::map::lighting::ParsedLightingProfiles;
     use crate::sim::crates::state::CrateSlot;
 
     use super::super::tests::{crate_cells, crate_registry, crate_ruleset, sim_with_grid};
-
-    fn lighting() -> LightingProfileUnits {
-        ParsedLightingProfiles::default().normal
-    }
 
     #[test]
     fn pickup_removal_matches_original_cell_pickup_outputs() {
@@ -447,7 +439,8 @@ mod tests {
             let grid = sim.overlay_grid.as_mut().expect("grid");
             grid.place_overlay(15, 15, wood, 0xFF);
             grid.place_overlay(16, 15, tiberium, 3);
-            grid.cell_mut_for_test(15, 15).wall_owner = Some(crate::sim::intern::InternedId::from_index(5));
+            grid.cell_mut_for_test(15, 15).wall_owner =
+                Some(crate::sim::intern::InternedId::from_index(5));
             let _ = grid.take_dirty_cells();
         }
 
@@ -534,7 +527,7 @@ mod tests {
             };
             let rng_before = sim.scenario_rng.state();
 
-            let regen = tick_crate_regeneration(&mut sim, &rules, &registry, lighting());
+            let regen = tick_crate_regeneration(&mut sim, &rules, &registry);
 
             assert_eq!(regen, CrateRegeneration::default());
             assert_eq!(sim.crate_authority.slots()[0].cell_x, 8);
@@ -575,7 +568,7 @@ mod tests {
         };
         let untouched = sim.crate_authority.slots()[0];
 
-        let regen = tick_crate_regeneration(&mut sim, &rules, &registry, lighting());
+        let regen = tick_crate_regeneration(&mut sim, &rules, &registry);
 
         assert_eq!(regen.expired, 1, "only the due slot expires");
         assert_eq!(regen.accepted, 1, "one replacement placer call");
@@ -622,7 +615,7 @@ mod tests {
             cell_y: 15,
         };
 
-        let regen = tick_crate_regeneration(&mut sim, &rules, &registry, lighting());
+        let regen = tick_crate_regeneration(&mut sim, &rules, &registry);
 
         assert_eq!(regen.expired, 1);
         assert_eq!(regen.visible, 1);
@@ -775,5 +768,4 @@ mod tests {
             "a paused-crates session never regenerates"
         );
     }
-
 }

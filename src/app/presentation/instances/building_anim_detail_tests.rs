@@ -210,6 +210,7 @@ fn emit(
             detail,
             detail_level,
             lighting: &light,
+            retained_anim_intensities: None,
             house_colors: &house_colors,
             hidden_super_anims: &hidden,
             show_hidden: false,

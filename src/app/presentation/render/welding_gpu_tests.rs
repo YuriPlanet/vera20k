@@ -154,6 +154,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
                 detail,
                 detail_level: 2,
                 lighting: &lighting,
+                retained_anim_intensities: None,
                 house_colors: &house_colors,
                 hidden_super_anims: &hidden,
                 show_hidden: false,

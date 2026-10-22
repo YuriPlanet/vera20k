@@ -216,6 +216,7 @@ impl Probe {
             crate::map::lighting::parse_lighting(&scene.map.ini),
             2,
             Some((scene.sim().resolved_terrain().unwrap(), scene.sim())),
+            None,
         );
         Self {
             gpu,

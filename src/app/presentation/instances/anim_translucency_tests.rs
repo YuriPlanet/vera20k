@@ -132,6 +132,7 @@ fn emit_with_house_colors(
             detail: &detail,
             detail_level: 2,
             lighting: &lighting,
+            retained_anim_intensities: None,
             house_colors,
             hidden_super_anims: &hidden,
             show_hidden: false,
@@ -194,7 +195,10 @@ fn remapped_free_anim_keeps_its_existing_material_and_replay_route() {
     let piece = &remapped[0].pieces[0];
     assert_eq!(piece.target, ObjectTexture::ShpPage(3));
     assert_eq!(piece.instance.source_palette, 9);
-    assert_eq!(piece.instance.palette_light, Default::default());
+    assert_eq!(
+        piece.instance.palette_light,
+        crate::render::palette_light::PaletteLight::color_scheme([1000; 3], 1000)
+    );
     assert_eq!(piece.instance.alpha, 0.5);
     assert_eq!(piece.instance.draw_state, DrawState::default());
     assert_eq!(

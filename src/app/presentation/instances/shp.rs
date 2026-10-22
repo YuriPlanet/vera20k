@@ -1651,6 +1651,7 @@ fn emit_building_anims(
                     config,
                     false,
                     instance.remap().as_ref(),
+                    1000,
                 ),
             )
         };

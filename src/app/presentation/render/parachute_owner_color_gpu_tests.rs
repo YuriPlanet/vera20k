@@ -241,6 +241,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
         detail: &detail,
         detail_level: 2,
         lighting: &lighting,
+        retained_anim_intensities: None,
         house_colors: &house_colors,
         hidden_super_anims: &hidden,
         show_hidden: false,

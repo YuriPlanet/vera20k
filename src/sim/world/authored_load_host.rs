@@ -242,21 +242,12 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
         )?;
         let ground = OverlayCellAnimGround::read(terrain, &request);
         let native_unique_id = self.next_native_id()?;
-        // Residual: the load-time CellClass+0x10A the tint copies is read
-        // from the Normal profile; its initialization order against
-        // ReadMapOverlayPacks is unverified. Retail OverlayTypes declare no
-        // CellAnim.
-        let lighting = self
-            .sim
-            .session
-            .lighting()
-            .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
-            .into();
+        // The common constructor publishes the original cell's light read
+        // into the same ordered initialization timeline as later buildings.
         self.sim.construct_overlay_cell_anim(
             self.rules,
             request,
             ground,
-            lighting,
             AnimConstructorInput::AssignedIdentity(native_unique_id),
         )?;
         Ok(())

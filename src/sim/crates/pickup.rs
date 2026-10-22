@@ -426,18 +426,7 @@ pub(crate) fn pickup_crate(
     // `0x00481D86`: removal, then the replacement crate.
     let _ = remove_pickup_crate(sim, rules, registry, cell);
     if multiplayer && sim.session.game_options().crates {
-        let lighting = sim
-            .session
-            .lighting()
-            .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
-            .into();
-        let _ = place_one_random_crate(
-            sim,
-            rules,
-            registry,
-            lighting,
-            ForcedPostPrecheckFailure::None,
-        );
+        let _ = place_one_random_crate(sim, rules, registry, ForcedPostPrecheckFailure::None);
     }
     if powerup == POWERUP_SQUAD {
         powerup = POWERUP_MONEY;

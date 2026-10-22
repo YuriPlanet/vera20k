@@ -135,6 +135,7 @@ fn offscreen_first_sinking_draw_survives_descent_camera_pan_and_save_load() {
             "offscreen sinking",
             3,
             &cache.saved(),
+            &[],
             None,
             None,
             None,

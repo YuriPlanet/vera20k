@@ -893,23 +893,6 @@ impl AnimStore {
         Some(anim)
     }
 
-    /// Apply OverlayClass's post-constructor CellAnim writes: `+0xD4` selects
-    /// the Tiberium ConvertClass when present and `+0xFC` receives CellClass's
-    /// current ground Z-adjust (`+0x10A`).
-    pub fn set_cell_anim_draw_authority(
-        &mut self,
-        id: AnimId,
-        remap_color: Option<HouseColorIndex>,
-        z_adjust: i32,
-    ) -> bool {
-        let Some(anim) = self.get_mut(id) else {
-            return false;
-        };
-        anim.remap = remap_color.map(AnimRemap::ColorScheme);
-        anim.z_adjust = z_adjust;
-        true
-    }
-
     /// A house's colour conversion as the anim's remap (`+0xD4`), frozen at
     /// the write; later disguise or owner changes must not recolor the anim.
     /// Unit deploy739C1A/739DFE store the one Techno705D70 returns (its
@@ -1354,8 +1337,7 @@ impl Simulation {
     /// `0x004D7FA6..0x004D8062`), which VERA does not model, so it spawns
     /// nothing there. False when nothing is constructed.
     pub(crate) fn spawn_move_flash(&mut self, rules: &RuleSet, cell: (u16, u16)) -> bool {
-        if !self.session.game_mode().is_single_player()
-            || rules.general.move_flash.name.is_empty()
+        if !self.session.game_mode().is_single_player() || rules.general.move_flash.name.is_empty()
         {
             return false;
         }
@@ -3065,11 +3047,6 @@ impl Simulation {
         if first > radius {
             return;
         }
-        let lighting = self
-            .session
-            .lighting()
-            .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
-            .into();
         for x in first..=radius {
             for y in first..=radius {
                 if crate::util::native_x87::sqrt_approx_length([x, y]) > radius {
@@ -3120,7 +3097,6 @@ impl Simulation {
                         registry,
                         cell,
                         selected,
-                        lighting,
                     );
                 }
                 //424140 executes even when Overlay Unlimbo refused the cell.

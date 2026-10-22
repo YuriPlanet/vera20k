@@ -258,6 +258,7 @@ fn snapshot_bytes(
         "retail resources",
         123,
         &[],
+        &[],
         None,
         None,
         Some(&view),

@@ -168,9 +168,8 @@ impl crate::sim::world::Simulation {
     /// Native copies the owner's drawer (`vtable+0x1E4`) to Anim+0xD4; the
     /// House remap below retains that selection. It also copies the owner's
     /// Cell+0x10A light intensity to Anim+0xFC, separately from the instance
-    /// ZAdjust at+0x100. RESIDUAL: that frozen scalar is not retained here;
-    /// presentation derives canopy light from the current cell grid. The flat,
-    /// unchanged-light component comparison does not cover later relighting.
+    /// ZAdjust at+0x100. Publish the read at this producer boundary; the
+    /// existing lighting owner samples it before later relights.
     pub(crate) fn attach_parachute_anim(
         &mut self,
         rules: &crate::rules::ruleset::RuleSet,
@@ -204,6 +203,11 @@ impl crate::sim::world::Simulation {
                 self.substrate
                     .anims
                     .set_anim_house_remap(anim_id, owner_house);
+                let owner = self.substrate.entities.get(owner_id)?;
+                self.retain_anim_cell_light(
+                    anim_id,
+                    Some((owner.position.rx(), owner.position.ry())),
+                );
                 Some(anim_id)
             }
             Err(error) => {
@@ -405,6 +409,14 @@ mod canopy_tests {
         let lower = sim.anim_owner_coords(id).unwrap().z;
         assert!(lower < 600);
         assert_eq!(sim.anim_absolute_coord(anim_id).unwrap().z, lower + 75);
+        let cell = sim.entities().get(id).unwrap().position;
+        assert!(
+            matches!(sim.lighting_sources.pending().as_ref(),
+            [crate::sim::light_sources::LightingEvent::RetainAnimIntensity {
+                anim, cell: Some(sampled),
+            }] if *anim == anim_id && *sampled == (cell.rx(), cell.ry())),
+            "Paradrop samples once at attachment; descent never resamples"
+        );
     }
 
     /// `0x005F3F9D`: landing zeroes the canopy's remaining loops; it is not

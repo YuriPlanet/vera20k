@@ -431,6 +431,7 @@ fn free_anim_draw_with(
             detail: &detail,
             detail_level: 2,
             lighting: &lighting,
+            retained_anim_intensities: None,
             house_colors: &house_colors,
             hidden_super_anims: &hidden,
             show_hidden: false,

@@ -310,10 +310,16 @@ impl Simulation {
                     .anims
                     .set_anim_house_remap(anim, source.owner());
             }
-            //629DE5 copies Cell+10A light into Anim+FC, not ZAdjust+100.
-            // Preserve the constructor's depth. Retaining that copied light
-            // needs the current Cell light authority, which is not yet part
-            // of Simulation; a normal-profile estimate is not that history.
+            // Original ParasiteUpdateSquidGrapple629DE5 copies Cell+10A
+            // into Anim+FC only at this owner-change edge, not on later ticks.
+            let cell = self
+                .substrate
+                .entities
+                .get(victim)
+                .map(|entity| (entity.position.rx(), entity.position.ry()));
+            if let Some(cell) = cell {
+                self.retain_anim_cell_light(anim, Some(cell));
+            }
         }
     }
 

@@ -179,6 +179,7 @@ fn assert_paid_deso_light_lifecycle(packet_path: &'static str, profile_path: &'s
                 crate::map::lighting::parse_lighting(&scene.map.ini),
                 2,
                 Some((scene.sim().resolved_terrain().unwrap(), scene.sim())),
+                None,
             );
             a = Some(ShroudBuffer::new(
                 &gpu.device,
@@ -490,6 +491,7 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
         crate::map::lighting::parse_lighting(&scene.map.ini),
         2,
         Some((scene.sim().resolved_terrain().unwrap(), scene.sim())),
+        None,
     );
     let mut renderers = [
         wgpu::TextureFormat::Bgra8UnormSrgb,
@@ -1020,6 +1022,7 @@ fn assert_retail_tmp_rasters(packet: &Value, filename: &str, sub_tile: u8) {
                 crate::map::lighting::parse_lighting(&scene.map.ini),
                 2,
                 Some((scene.sim().resolved_terrain().unwrap(), scene.sim())),
+                None,
             );
             (scene, lighting, hash)
         });

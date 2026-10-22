@@ -172,11 +172,15 @@ pub(crate) fn anim_palette_light(
     config: Option<&crate::rules::art_data::AnimTypeRuntimeConfig>,
     cell_drawer: bool,
     remap: Option<&crate::sim::anim_class::AnimRemap>,
+    retained_intensity: i32,
 ) -> crate::render::palette_light::PaletteLight {
     use crate::render::palette_light::PaletteLight;
-    use crate::sim::anim_class::AnimRemap;
     let brightness = if config.is_some_and(|c| c.use_normal_light) {
         1000
+    } else if !cell_drawer && remap.is_some() {
+        // AnimDrawIt4232BF reads the retained signed dword+FC, not the
+        // current draw cell. Constructor421F06 starts it at1000.
+        retained_intensity
     } else {
         grid.cell_light_at(cell).map_or(1000, |l| {
             if cell_drawer {
@@ -188,22 +192,16 @@ pub(crate) fn anim_palette_light(
     };
     if cell_drawer {
         PaletteLight::cell(grid, cell, false).with_brightness(brightness)
-    } else if matches!(
-        remap,
-        Some(AnimRemap::House(_) | AnimRemap::ExtraBuildingScheme { .. })
-    ) {
+    } else if remap.is_some() {
         // `0x004232A3..0x004232C9` selects the instance Convert and jumps to the
         // draw, so the `AltPalette` swap at `0x004232E2` never runs for it.
         // `ObjectClass::Paradrop @ 0x005F5940` (`0x005F5AFE..0x005F5B19`) stores
         // the owner's `Techno705D70` scheme there — the same 53-row ColorScheme
-        // Convert [`body_palette_light`] gives a body — so the shroud's A still
-        // picks a row and a descending canopy darkens with its cell.
-        //
-        // RESIDUAL: `AnimRemap::ColorScheme` takes the same native branch but
-        // carries OverlayClass's Tiberium Convert, whose row count is
-        // unmeasured, so a CellAnim whose art sets `AltPalette=` still draws one
-        // row and stays undarkened at a shroud edge. Trigger: every such draw.
-        // Presentation only; no simulation or determinism risk.
+        // Convert [`body_palette_light`] gives a body. Named Tiberium colors
+        // also select N53: TiberiumReadINI721B35 calls CCINI474A90, whose
+        //474AF2..474AF9 skips the same-name N1 scheme. Original instructions.
+        // Invalid-name retained fallback and custom-palette load rebinding
+        // are separate reader/load residuals, not encoded by ColorScheme.
         PaletteLight::color_scheme(
             grid.palette_rgb(grid.profiles().default_profile_id()),
             brightness,
@@ -494,6 +492,7 @@ use crate::sim::light_sources::{LightingEvent, PaletteUpdate};
 use crate::sim::scenario_session::ScenarioLightingState;
 use std::collections::{BTreeMap, BTreeSet};
 
+#[derive(Clone)]
 pub(crate) struct MatchLighting {
     grid: CellLightGrid,
     config: LightingConfig,
@@ -510,6 +509,11 @@ pub(crate) struct MatchLighting {
     /// last applied, kept like `buildings`.
     scenario: Option<ScenarioLightingState>,
     detail_level: u32,
+    /// Free Anim+FC copies, independent of cell refreshes and depth+100.
+    /// Sparse: absent means constructor421F06's1000. Building slots retain
+    /// their existing BuildingTintSample owner and do not populate this map.
+    /// No value is fed back to simulation decisions, Hash or RNG.
+    anim_intensities: BTreeMap<u64, i32>,
 }
 
 impl Default for MatchLighting {
@@ -522,6 +526,7 @@ impl Default for MatchLighting {
             profile: lighting::normal_profile_units(&LightingConfig::default()).into(),
             scenario: None,
             detail_level: 2,
+            anim_intensities: BTreeMap::new(),
         }
     }
 }
@@ -535,12 +540,35 @@ impl MatchLighting {
         &self.grid
     }
 
+    pub(crate) fn anim_intensities(&self) -> &BTreeMap<u64, i32> {
+        &self.anim_intensities
+    }
+
+    pub(crate) fn restore_anim_intensities(&mut self, saved: Vec<(u64, i32)>) {
+        self.anim_intensities = saved.into_iter().collect();
+    }
+
+    /// The actual pre-Logic save boundary can follow ingress producers but
+    /// precede ordinary event publication. Replay that pending prefix into a
+    /// temporary copy of this owner, leaving live state and the queue alone.
+    /// AnimSave4253B0 -> AbstractSave410320 retains FC in the raw object.
+    pub(crate) fn saved_anim_intensities(mut self, sim: &Simulation) -> Vec<(u64, i32)> {
+        if let Some(terrain) = sim.resolved_terrain() {
+            self.apply_events(terrain, sim.lighting_sources().pending());
+        }
+        self.anim_intensities
+            .into_iter()
+            .filter(|(id, _)| sim.anim(*id).is_some())
+            .collect()
+    }
+
     pub(crate) fn install(
         &mut self,
         grid: CellLightGrid,
         config: LightingConfig,
         detail_level: u32,
         live: Option<(&ResolvedTerrainGrid, &Simulation)>,
+        initial_events: Option<&[LightingEvent]>,
     ) {
         *self = Self {
             grid,
@@ -550,22 +578,43 @@ impl MatchLighting {
         };
         self.profile = lighting::normal_profile_units(&self.config).into();
         if let Some((terrain, sim)) = live {
-            let view = derive_lighting_view(&self.config, Some(sim), detail_level);
+            let mut view = derive_lighting_view(&self.config, Some(sim), detail_level);
+            if initial_events.is_some() {
+                // Fresh Fill starts with the installed normal profile before
+                // authored overlays and later building source creation. Seed
+                // no final sources ahead of their ordered events.
+                view.point_lights.clear();
+            }
             self.grid = build_lighting_grid_from_view(terrain, &view);
             self.profile = view.profile;
             self.scenario = Some(*sim.session().lighting());
-            (self.buildings, self.radiation) = source_maps(sim);
+            if let Some(events) = initial_events {
+                self.apply_events(terrain, events);
+                self.refresh(terrain, sim, detail_level);
+            } else {
+                (self.buildings, self.radiation) = source_maps(sim);
+            }
         }
     }
 
     /// Replay native source/global ordering before a draw. Source changes can
-    /// coalesce only between global operations; their entire dirty-area union
+    /// coalesce only between global operations or retained Anim reads; their dirty-area union
     /// survives even if the source registry returns to identical final values.
     pub(crate) fn apply_events(&mut self, terrain: &ResolvedTerrainGrid, events: &[LightingEvent]) {
         let mut dirty = BTreeSet::new();
         let mut rad_centers: Vec<(u16, u16)> = Vec::new();
         for event in events {
             match event {
+                LightingEvent::RetainAnimIntensity { anim, cell } => {
+                    self.commit_source_cells(terrain, &mut dirty);
+                    // Original OverlayMark5FD1ED/Paradrop5F5B29 use MOVSX
+                    // word. A dummy/missing cell keeps ctor47BC9F's1000;
+                    // its separate unmodeled Recalc history remains open.
+                    let intensity = cell
+                        .and_then(|cell| self.grid.cell_light_at(cell))
+                        .map_or(1000, |light| i32::from(light.top_scalar as i16));
+                    self.anim_intensities.insert(*anim, intensity);
+                }
                 LightingEvent::Building { id, source } => {
                     let old = match source {
                         Some(source) => self.buildings.insert(*id, source.clone()),
@@ -670,15 +719,22 @@ impl MatchLighting {
         sim: &Simulation,
         detail_level: u32,
     ) {
+        // Retire only at physical disposal, never merely UnInit, detach or
+        // loss of Logic/Display membership. Save uses the same store check.
+        self.anim_intensities
+            .retain(|id, _| sim.anim(*id).is_some());
         if self.detail_level != detail_level.min(2) {
             // Existing detail-change full reconstruction is retained as a
             // compatibility boundary; no claim to native option-history parity.
+            let retained = std::mem::take(&mut self.anim_intensities);
             self.install(
                 CellLightGrid::new(),
                 self.config.clone(),
                 detail_level,
                 Some((terrain, sim)),
+                None,
             );
+            self.anim_intensities = retained;
             return;
         }
         let (buildings, radiation) = source_maps(sim);
@@ -888,6 +944,10 @@ mod curtain_tint_tests;
 #[cfg(test)]
 #[path = "lighting_tint_tests.rs"]
 mod tint_tests;
+
+#[cfg(test)]
+#[path = "anim_lighting_tests.rs"]
+mod anim_lighting_tests;
 
 #[cfg(test)]
 #[path = "unit_light_tests.rs"]

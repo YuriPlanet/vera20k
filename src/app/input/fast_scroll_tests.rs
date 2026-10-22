@@ -480,6 +480,7 @@ fn cinematic_focus_matches_native_frame_gates_projection_cleanup_and_restored_st
                         "native camera lifecycle",
                         0,
                         &[],
+                        &[],
                         None,
                         Some(&saved_view),
                         None,

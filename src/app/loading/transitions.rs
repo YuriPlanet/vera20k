@@ -110,6 +110,8 @@ pub(crate) struct MapPresentationInputs {
     pub(crate) terrain_objects: Vec<crate::map::overlay::TerrainObject>,
     pub(crate) house_roster: HouseRoster,
     pub(crate) lighting_config: crate::map::lighting::LightingConfig,
+    /// Present only for a fresh map, from before authored Overlay admission.
+    pub(crate) lighting_events: Option<Vec<crate::sim::light_sources::LightingEvent>>,
     pub(crate) theater_name: String,
     pub(crate) theater_ext: String,
 }
@@ -236,6 +238,7 @@ pub(crate) fn install_world_presentation(
         map.lighting_config,
         presentation.in_game_options.detail_level,
         live,
+        map.lighting_events.as_deref(),
     );
     // Current MapClass authority, including restored/triggered LocalSize,
     // reaches camera and minimap before either route positions its view.
@@ -449,6 +452,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     if let Some(manager) = result.asset_manager {
         state.process_assets.return_from_loading(manager);
     }
+    let lighting_events = state
+        .match_state
+        .sim_runtime
+        .as_mut()
+        .map(|runtime| runtime.simulation.take_lighting_events());
     install_world_presentation(
         state,
         MapPresentationInputs {
@@ -462,6 +470,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             terrain_objects: result.scenario.terrain_objects,
             house_roster: result.scenario.house_roster,
             lighting_config: result.scenario.map_lighting_config,
+            lighting_events,
             theater_name: result.scenario.theater_name,
             theater_ext: result.scenario.theater_ext,
         },

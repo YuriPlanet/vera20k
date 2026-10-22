@@ -7947,7 +7947,7 @@ impl Simulation {
             network_waiting,
             outcome_waiting,
         } = frame;
-        let lighting_events = if outcome_waiting { Vec::new() } else { self.lighting_sources.take_pending() };
+        let lighting_events = if outcome_waiting { Vec::new() } else { self.take_lighting_events() };
         let trigger_effects = if outcome_waiting { Vec::new() } else { std::mem::take(&mut self.trigger_effects) };
         // Preserve the established terminal-frame gate: these are committed
         // light-vector facts and the next admitted frame clears the producer
@@ -8223,16 +8223,10 @@ impl Simulation {
         if let Some(overlay_registry) = overlay_registry {
             #[cfg(any(test, feature = "test-support"))]
             self.trace_master_frame_rung(MasterFrameTestRung::CrateRegen);
-            let normal_lighting = self
-                .session
-                .lighting()
-                .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
-                .into();
             let regen = crate::sim::crates::tick_crate_regeneration(
                 self,
                 rules,
                 overlay_registry,
-                normal_lighting,
             );
             if regen.visible != 0 {
                 // Native Mark mutates live CellClass land/zone/bridge state

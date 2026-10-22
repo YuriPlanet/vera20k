@@ -239,6 +239,7 @@ pub(crate) struct DisplayEffectInputs<'a> {
     pub detail: &'a std::cell::RefCell<crate::app::presentation::detail::DetailState>,
     pub detail_level: u32,
     pub lighting: &'a crate::map::lighting::CellLightGrid,
+    pub retained_anim_intensities: Option<&'a BTreeMap<u64, i32>>,
     pub house_colors: &'a crate::map::houses::HouseColorMap,
     pub hidden_super_anims: &'a std::collections::BTreeSet<crate::sim::anim_class::AnimId>,
     /// The local Show Hidden option (`Options+0x1F`).
@@ -455,19 +456,18 @@ pub(crate) fn build_display_effect_instances(
         };
         let remap_color =
             crate::render::sprite_atlas::anim_remap_color(anim, sim.interner(), input.house_colors);
-        let palette_light = if remap_color.is_some() && !is_parachute {
-            Default::default()
-        } else {
-            // Keep the canopy's instance Convert/53-row scheme transport,
-            // including shroud selection, when joining the ordinary Anim draw.
-            crate::app::presentation::lighting::anim_palette_light(
-                input.lighting,
-                (rx, ry),
-                config,
-                anim.use_cell_drawer(),
-                anim.remap().as_ref(),
-            )
-        };
+        let palette_light = crate::app::presentation::lighting::anim_palette_light(
+            input.lighting,
+            (rx, ry),
+            config,
+            anim.use_cell_drawer(),
+            anim.remap().as_ref(),
+            input
+                .retained_anim_intensities
+                .and_then(|samples| samples.get(&stable_id))
+                .copied()
+                .unwrap_or(1000),
+        );
         let key = ShpSpriteKey {
             palette_context: if anim.use_cell_drawer() {
                 crate::render::sprite_atlas::ShpPaletteContext::Cell

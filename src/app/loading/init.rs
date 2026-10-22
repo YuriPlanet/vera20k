@@ -695,6 +695,7 @@ mod map_wall_owner_candidate_tests {
             LightingConfig::default(),
             2,
             Some((&terrain, &sim)),
+            None,
         );
         let before =
             crate::render::palette_light::PaletteLight::cell(lighting.grid(), (24, 24), false);
@@ -745,6 +746,7 @@ mod map_wall_owner_candidate_tests {
             LightingConfig::default(),
             2,
             Some((&terrain, &sim)),
+            None,
         );
         let tint_a = lights.grid().terrain_tile_tint_at((1, 1));
         lights.refresh(&terrain, &sim, 2);
@@ -805,6 +807,7 @@ mod map_wall_owner_candidate_tests {
             LightingConfig::default(),
             2,
             Some((&terrain, &sim)),
+            None,
         );
         let restored_tint = lights.grid().terrain_tile_tint_at((1, 1));
         sim.session_mut_for_test()
@@ -846,6 +849,7 @@ mod map_wall_owner_candidate_tests {
             LightingConfig::default(),
             2,
             Some((&terrain, &sim)),
+            None,
         );
         for _ in 0..3 {
             assert_eq!(lights.grid().terrain_tile_tint_at((1, 1)), restored_tint);
@@ -867,6 +871,7 @@ mod map_wall_owner_candidate_tests {
             LightingConfig::default(),
             1,
             Some((&terrain, &sim)),
+            None,
         );
         assert_eq!(
             lights
@@ -989,6 +994,7 @@ mod map_wall_owner_candidate_tests {
                 LightingConfig::default(),
                 2,
                 Some((&terrain, &sim)),
+                None,
             );
             sim.lighting_sources_mut_for_test().discard_pending();
             (sim, lights)
@@ -1075,6 +1081,7 @@ mod map_wall_owner_candidate_tests {
             LightingConfig::default(),
             2,
             Some((&terrain, &sim)),
+            None,
         );
         sim.lighting_sources_mut_for_test().discard_pending();
 
@@ -1182,6 +1189,7 @@ mod map_wall_owner_candidate_tests {
             LightingConfig::default(),
             2,
             Some((&terrain, &sim)),
+            None,
         );
         sim.lighting_sources_mut_for_test().discard_pending();
         sim.lighting_sources_mut_for_test()
@@ -1271,6 +1279,7 @@ mod map_wall_owner_candidate_tests {
             LightingConfig::default(),
             2,
             Some((&terrain, &sim)),
+            None,
         );
         let original_key = lights.grid().cell_light_at((4, 5)).unwrap().rgb_key;
         //555E50 reads the live storm flag when constructing a new Convert;

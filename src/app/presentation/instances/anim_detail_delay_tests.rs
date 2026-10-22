@@ -40,6 +40,7 @@ fn render(
             detail,
             detail_level: 2,
             lighting: &lighting,
+            retained_anim_intensities: None,
             house_colors: &colors,
             hidden_super_anims: &hidden,
             show_hidden: false,

@@ -209,6 +209,9 @@ pub struct GameSnapshot {
     /// and no-init Foot4D3540 preserve this short (naval_lifetime_controls).
     /// Kept in the neutral envelope so sim never depends on a render owner.
     pub sinking_waterlines: Vec<(u64, i16)>,
+    /// Presentation-owned Anim+FC copies. AnimSave4253B0/AbstractSave410320
+    /// retain the signed dword independently of depth+100; no lockstep input.
+    pub anim_intensities: Vec<(u64, i32)>,
     /// Retained local sidebar order is presentation state, outside the lockstep
     /// simulation hash. The app validates/hydrates it before committing a load.
     sidebar_order: Option<SavedSidebarOrder>,
@@ -522,6 +525,7 @@ pub type SnapshotTerrainAssetPreparation<'a> = dyn FnMut(
 /// The app presentation saved beside the simulation, in `GameSnapshotRef` order.
 type SavedPresentationRef<'a> = (
     &'a [(u64, i16)],
+    &'a [(u64, i32)],
     Option<&'a SavedSidebarOrder>,
     Option<&'a SavedTacticalView>,
     Option<&'a SavedLocalView>,
@@ -543,6 +547,7 @@ struct GameSnapshotRef<'a> {
     compatibility: RulesCompatibility,
     sim: &'a Simulation,
     sinking_waterlines: &'a [(u64, i16)],
+    anim_intensities: &'a [(u64, i32)],
     sidebar_order: Option<&'a SavedSidebarOrder>,
     tactical_view: Option<&'a SavedTacticalView>,
     local_view: Option<&'a SavedLocalView>,
@@ -565,8 +570,14 @@ impl GameSnapshot {
         // Description. The active list admits only an exact internal-version
         // match at 0x00559ED0..0x0055A04A. VERA keeps its Rust-native bincode
         // body while making the same load-bearing envelope identities explicit.
-        let (sinking_waterlines, sidebar_order, tactical_view, local_view, scenario_resources) =
-            presentation;
+        let (
+            sinking_waterlines,
+            anim_intensities,
+            sidebar_order,
+            tactical_view,
+            local_view,
+            scenario_resources,
+        ) = presentation;
         let snapshot = GameSnapshotRef {
             product_magic: SNAPSHOT_PRODUCT_MAGIC,
             envelope_version: SNAPSHOT_ENVELOPE_VERSION,
@@ -583,6 +594,7 @@ impl GameSnapshot {
                 }),
             sim,
             sinking_waterlines,
+            anim_intensities,
             sidebar_order,
             tactical_view,
             local_view,
@@ -612,6 +624,7 @@ impl GameSnapshot {
             description,
             save_timestamp,
             &[],
+            &[],
             None,
             None,
             None,
@@ -628,6 +641,7 @@ impl GameSnapshot {
         description: &str,
         save_timestamp: u64,
         sinking_waterlines: &[(u64, i16)],
+        anim_intensities: &[(u64, i32)],
         sidebar_order: Option<&SavedSidebarOrder>,
         tactical_view: Option<&SavedTacticalView>,
         local_view: Option<&SavedLocalView>,
@@ -642,6 +656,7 @@ impl GameSnapshot {
             save_timestamp,
             (
                 sinking_waterlines,
+                anim_intensities,
                 sidebar_order,
                 tactical_view,
                 local_view,
@@ -682,7 +697,7 @@ impl GameSnapshot {
             map_name,
             map_name,
             save_timestamp,
-            (&[], None, None, None, None),
+            (&[], &[], None, None, None, None),
         )
     }
 

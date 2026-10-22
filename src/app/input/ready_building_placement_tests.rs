@@ -114,6 +114,7 @@ fn roundtrip_fixture_save(fixture: &mut Fixture, label: &str) {
         label,
         0,
         &[],
+        &[],
         saved_order.as_ref(),
         None,
         None,

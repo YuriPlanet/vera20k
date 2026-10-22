@@ -70,17 +70,11 @@ impl Simulation {
             {
                 skirmish_order[0] = Some(ScenarioPostMapStep::StartupCrates);
             }
-            let normal_lighting = self
-                .session
-                .lighting()
-                .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
-                .into();
-            let placement = crate::sim::crates::place_scenario_start_crates_with_lighting(
+            let placement = crate::sim::crates::place_scenario_start_crates(
                 self,
                 input.rules,
                 input.overlay_registry,
                 player_count,
-                normal_lighting,
             );
             // Startup OverlayClass::Mark completes synchronously before native
             // proceeds to AI credits; the placement refreshed the bridge

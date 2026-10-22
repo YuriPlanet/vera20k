@@ -1874,11 +1874,10 @@ fn deployed_anim_palette_and_atlas_coverage_share_the_frozen_house() {
         sim.anims_mut_for_test()
             .set_anim_house_remap(deployed, house)
     );
-    assert!(sim.anims_mut_for_test().set_cell_anim_draw_authority(
-        cell,
-        Some(HouseColorIndex(5)),
-        0
-    ));
+    assert!(
+        sim.anims_mut_for_test()
+            .set_anim_remap(cell, AnimRemap::ColorScheme(HouseColorIndex(5)),)
+    );
     assert!(
         sim.anims_mut_for_test()
             .set_anim_remap(wreck, AnimRemap::ExtraBuildingScheme { house, palette })
