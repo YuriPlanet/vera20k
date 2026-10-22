@@ -113,6 +113,9 @@ pub struct SpecialFlagsSection {
     /// Campaign/editor `ScenarioFlags` bit 0x20. While set, direct and area
     /// damage return before mutating world state (`Inert=`).
     pub inert: Option<bool>,
+    /// Campaign/editor ScenarioFlags bit 0x1000, read by
+    /// `ScenarioClass::Read_SpecialFlags @ 0x006B8E69..0x006B8E89`.
+    pub fog_of_war: Option<bool>,
     /// Campaign/editor `ScenarioFlags` bit 0x800 (`HarvesterImmune=`,
     /// `ScenarioClass::Read_SpecialFlags @ 0x006B8EBF..0x006B8ED7`, the
     /// reader's last key). While set, `Evaluate_Candidate`
@@ -129,6 +132,9 @@ impl SpecialFlagsSection {
     /// initializes0x8088: Inert/grows false, spreads/destroyable bridges true.
     /// The passed snapshot is a projection of the existing live authorities.
     pub fn resolve_campaign_defaults(&mut self, prior: Option<&Self>) {
+        // Full_Init686BA2 clears this bit before Read_SpecialFlags, even
+        // when the outgoing campaign retained FogOfWar=yes.
+        self.fog_of_war.get_or_insert(false);
         self.inert
             .get_or_insert(prior.and_then(|flags| flags.inert).unwrap_or(false));
         self.tiberium_grows.get_or_insert(
@@ -262,6 +268,7 @@ pub fn parse_special_flags_section(ini: &IniFile) -> SpecialFlagsSection {
         tiberium_spreads: section.read_bool_value("TiberiumSpreads"),
         destroyable_bridges: section.read_bool_value("DestroyableBridges"),
         inert: section.read_bool_value("Inert"),
+        fog_of_war: section.read_bool_value("FogOfWar"),
         // `0x006B8EBF..0x006B8ED7`, the reader's last key; every read takes
         // the current bit as its default, which the campaign retention pass
         // (`resolve_campaign_defaults`) models.

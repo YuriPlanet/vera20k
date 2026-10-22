@@ -1292,6 +1292,7 @@ pub fn finalize_constructed_scenario(
             skirmish_session,
             campaign_map,
         });
+    sim.initialize_fog_of_war(crate::sim::world::UninitContext::new(rules, Some(overlay_registry)));
     sim.lighting_sources.discard_pending();
     output
 }

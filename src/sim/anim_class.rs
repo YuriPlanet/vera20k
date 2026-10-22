@@ -2297,6 +2297,9 @@ impl Simulation {
         }
         self.conceal_anim(id);
         self.substrate.pending_delete.remove_object(id);
+        // Scalar slot deletion451A2C ends its inherited FoggedOut199 flag;
+        // the immutable FoggedObject record does not retain this Anim pointer.
+        self.fog.forget_fogged_live_object(id);
         self.substrate.anims.remove(id);
     }
 

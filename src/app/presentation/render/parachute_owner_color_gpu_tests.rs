@@ -177,6 +177,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
         &[],
         &live_remap_keys,
         &no_cell_drawers,
+        &Default::default(),
         None,
         None,
         Some(sim.interner()),

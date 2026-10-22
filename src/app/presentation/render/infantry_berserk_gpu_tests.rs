@@ -237,6 +237,7 @@ fn compare_original_body_pixels(join_viewport: bool) {
             &[],
             &HashSet::new(),
             &HashSet::new(),
+            &Default::default(),
             None,
             None,
             Some(sim.interner()),

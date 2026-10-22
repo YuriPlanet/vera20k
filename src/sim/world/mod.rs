@@ -113,6 +113,7 @@ pub use world_orders::UnitRepairAction;
 pub use world_orders::{EntryBaseAction, EntryClickAction};
 mod projectile_collision;
 mod shroud_refresh;
+mod fog_objects;
 mod substrate;
 mod techno_ai;
 mod track_cell_recalc;
@@ -4977,7 +4978,7 @@ impl Simulation {
         // commits the sight reveal before this action returns.
         for (stable_id, _, reveal) in membership_updates {
             if reveal {
-                self.reveal_uncached_object_sight(stable_id, UninitContext::new(rules, None));
+                self.reveal_uncached_object_sight(stable_id, false, false, None, UninitContext::new(rules, None));
             }
         }
 
@@ -8090,6 +8091,7 @@ impl Simulation {
         self.tick_pending_shroud_conceal(
             UninitContext::new(rules, overlay_registry).with_effects(effects),
         );
+        self.tick_fog_regrowth(UninitContext::new(rules, overlay_registry).with_effects(effects));
         profile_phase!(SHROUD);
 
         // Interleaved object-AI pass: each object's mission precedes its own

@@ -2742,6 +2742,9 @@ impl ScenarioBootstrapRng {
                     campaign_index,
                     restart_carry_over,
                 )?;
+                simulation.session.install_campaign_fog_of_war(
+                    map_data.special_flags.fog_of_war.unwrap_or(false),
+                );
                 simulation.install_native_unique_id_cursor(
                     crate::sim::native_identity::NativeUniqueIdCursor::begin_campaign_prefix(
                         early_events.len(),

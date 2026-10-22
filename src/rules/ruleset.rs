@@ -1408,6 +1408,10 @@ pub struct GeneralRules {
     /// 6DE0EF..6DE100 converts MessageDelay*900 through the native ftol into
     /// MessageList's 16ms buckets, independently of simulation pacing.
     pub message_delay_minutes: crate::util::native_x87::NativeF64Bits,
+    /// `[AudioVisual] FogRate=` in minutes, Rules+1648. Constructor
+    /// 66740C/667416 stores binary64 .05; ReadAudioVisual66B4CA..66B4E4
+    /// reads the current default through ReadDouble5283D0 (f32 widened).
+    pub fog_rate: NativeF64Bits,
     /// `[AudioVisual] SpeakDelay=` in MINUTES (retail `2`): the EVA advice
     /// repeat interval. `RulesClass::ReadAudioVisual` reads key
     /// `"SpeakDelay"` (`0x0083A270`) through `INIClass::ReadDouble @
@@ -2246,6 +2250,11 @@ pub(crate) const DEFAULT_AMBIENT_CHANGE_RATE: NativeF64Bits =
 pub(crate) const DEFAULT_AMBIENT_CHANGE_STEP: NativeF64Bits =
     NativeF64Bits::from_bits(0x3fb9_9999_9999_999a);
 
+pub(crate) const fn default_fog_rate() -> NativeF64Bits {
+    // RulesClass constructor66740C/667416, before any authored f32 read.
+    NativeF64Bits::from_bits(0x3fa9_9999_9999_999a)
+}
+
 impl Default for GeneralRules {
     fn default() -> Self {
         let (ambient_change_rate_nonzero, ambient_change_interval_frames, ambient_change_step) =
@@ -2511,6 +2520,7 @@ impl Default for GeneralRules {
             message_delay_minutes: crate::util::native_x87::NativeF64Bits::from_bits(
                 0x3FE3_3333_3333_3333,
             ),
+            fog_rate: default_fog_rate(),
             speak_delay_minutes: 0.0,
             gui_combo_open_sound: None,
             gui_combo_close_sound: None,
@@ -3060,6 +3070,12 @@ pub(crate) fn ambient_change_terms(rate: f64, step: f64) -> (bool, i32, i32) {
 }
 
 impl GeneralRules {
+    /// LogicClass::AI55B304..55B310 converts the retained FogRate through
+    /// the shared native minute-to-frame conversion before restarting its timer.
+    pub fn fog_regrowth_interval_frames(&self) -> i32 {
+        native_minutes_to_frames(f64::from_bits(self.fog_rate.bits()))
+    }
+
     /// Original Rules+D00/D1C/D38 in Infantry, Unit, Building order.
     /// Retained canonical identities, including duplicate entries.
     pub fn secret_lab_choices(&self) -> &[Vec<String>; 3] {
@@ -3712,6 +3728,7 @@ impl GeneralRules {
             game_forming_sound: None,
             game_closed_sound: None,
             message_delay_minutes,
+            fog_rate: audio_visual.read_double_bits("FogRate", defaults.fog_rate),
             speak_delay_minutes: audio_visual.read_double("SpeakDelay", 0.0),
             gui_combo_open_sound: audio_visual
                 .read_name("GUIComboOpenSound", 0x80)
@@ -4446,6 +4463,7 @@ impl RuleSet {
         );
         rules.general.prism_support = processed.prism_support();
         rules.general.patrol_scan_minutes = processed.patrol_scan_minutes();
+        rules.general.fog_rate = processed.fog_rate();
         rules.general.prism_type = processed.prism_type().map(str::to_owned);
         let (drop_zone_anim, drop_zone_radius) = processed.drop_zone_controls();
         rules.general.drop_zone_anim = drop_zone_anim.map(str::to_owned);
@@ -6384,6 +6402,10 @@ impl RuleSet {
         self.general.maximum_cheer_rate.hash(&mut hasher);
         self.general.comp_easy_bonus.hash(&mut hasher);
         self.general.patrol_scan_minutes.hash(&mut hasher);
+        if self.general.fog_rate != default_fog_rate() {
+            b"fog-regrowth-rate-v1".hash(&mut hasher);
+            self.general.fog_rate.hash(&mut hasher);
+        }
         // Earlier Process passes can retain these despite identical current text.
         if self.general.drop_zone_anim.is_some() || self.general.drop_zone_radius != 1024 {
             b"drop-zone-controls-v1".hash(&mut hasher);
@@ -9951,6 +9973,46 @@ MutateWarhead=MyMutate\n\
             (0.1_f32 as f64).to_bits()
         );
         assert_eq!(native_minutes_to_frames(parsed.savour_delay_minutes), 90);
+    }
+
+    #[test]
+    fn fog_configuration_preserves_native_read_defaults_and_campaign_reset() {
+        use crate::map::basic::parse_special_flags_section;
+
+        assert_eq!(GeneralRules::default().fog_rate, default_fog_rate());
+        let mut layers = RulesLayerStack::new(IniFile::from_str("[AudioVisual]\nFogRate=.05\n"));
+        layers.push(
+            crate::rules::native_processing::RulesLayerKind::Scenario,
+            IniFile::from_str("[AudioVisual]\nfograte=invalid\n"),
+        );
+        let processed = layers.process().unwrap();
+        let (_, trace) = processed.into_ini_and_native_type_construction_trace();
+        let retained = trace
+            .into_registry_state_discarding_events()
+            .destructive_reset();
+        let after_reset = RulesLayerStack::new(IniFile::empty())
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), retained)
+            .unwrap();
+        let rules = RuleSet::from_processed_rules(&after_reset).unwrap();
+        assert_eq!(rules.general.fog_rate.bits(), (0.05_f32 as f64).to_bits());
+
+        let prior =
+            parse_special_flags_section(&IniFile::from_str("[SpecialFlags]\nFogOfWar=yes\n"));
+        assert_eq!(prior.fog_of_war, Some(true));
+        let mut fresh = parse_special_flags_section(&IniFile::empty());
+        fresh.resolve_campaign_defaults(Some(&prior));
+        assert_eq!(fresh.fog_of_war, Some(false));
+        let mut authored = prior.clone();
+        authored.resolve_campaign_defaults(Some(&fresh));
+        assert_eq!(authored.fog_of_war, Some(true));
+
+        if let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() {
+            assert_eq!(
+                retail.rules.general.fog_rate.bits(),
+                (0.01_f32 as f64).to_bits(),
+            );
+            assert_eq!(retail.rules.general.fog_regrowth_interval_frames(), 8);
+        }
     }
 
     #[test]

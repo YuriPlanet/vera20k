@@ -28,6 +28,7 @@ fn grow_shroud_captures_frontier_before_neighbors_lose_open_and_preserves_counte
             initialized: true,
             fog_open: true,
             frames: [17, 23],
+            ..Default::default()
         };
         vis.publish_knowledge(index);
     }
@@ -92,6 +93,7 @@ fn grow_shroud_uses_the_shared_dummy_without_clearing_its_cache() {
         initialized: true,
         fog_open: true,
         frames: [12, 31],
+        ..Default::default()
     };
     let cache = vis.dummy_visibility.cache;
     fog.by_owner.insert(viewer, vis);
@@ -219,6 +221,7 @@ fn seed_cell(view: &mut OwnerVisibility, key: VisibilityCell, input: &Value) {
             input["cache"][0].as_i64().unwrap() as i8,
             input["cache"][1].as_i64().unwrap() as i8,
         ],
+        ..Default::default()
     };
     if let VisibilityCell::Real(index) = key {
         view.publish_knowledge(index);

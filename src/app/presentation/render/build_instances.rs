@@ -39,6 +39,8 @@ pub(super) struct WorldInstances {
     pub cell_body_draws: Vec<instances::CellBodyDraw>,
     /// Represented Display parents in their five retained native layer orders.
     pub object_layers: [super::draw_plan_lowering::ObjectLayerPass; 5],
+    /// Native separate FoggedObject drawing pass before live building bases.
+    pub fogged_objects: super::draw_plan_lowering::ObjectLayerPass,
     /// One BuildingClass::Array-ordered text sweep after Ground2 bodies.
     pub building_status_text: crate::app::presentation::ui_overlays::BuildingStatusTextInstances,
     /// Static smudge decals (craters, scorches) — drawn between terrain and entities.
@@ -411,6 +413,7 @@ pub(super) fn build_world_instances(
         .collect();
     let building_status_text = build_building_status_instances(state, &building_body_opportunities);
     let object_layers = super::draw_plan_lowering::lower_object_instances(planned_objects);
+    let fogged_objects = instances::build_fogged_instances(state);
 
     // PixelFX water/ore sparkles — per-frame 1-pixel cell dots.
     let cell_sparkles: Vec<SpriteInstance> = build_pixel_fx_sparkle_instances(state, sw, sh);
@@ -441,6 +444,7 @@ pub(super) fn build_world_instances(
         cell_bodies,
         cell_body_draws,
         object_layers,
+        fogged_objects,
         building_status_text,
         smudge,
         bridge_body_shadow,

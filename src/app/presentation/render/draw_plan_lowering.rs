@@ -586,6 +586,21 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
     layers
 }
 
+/// FoggedObjectClass::DrawAll4D1890 has its own sorted index, outside
+/// Display. Lower in supplied order using the same primitive GPU writers.
+pub(crate) fn lower_fogged_object_pieces(
+    entries: impl IntoIterator<Item = (DrawId, Vec<ObjectPieceInstance>)>,
+) -> ObjectLayerPass {
+    let mut pass = ObjectLayerPass::default();
+    for (id, pieces) in entries {
+        for piece in pieces {
+            let run = push_object_piece(&mut pass, id, piece);
+            append_object_run(&mut pass.runs, run);
+        }
+    }
+    pass
+}
+
 fn push_combat_light(
     pass: &mut ObjectLayerPass,
     record: crate::render::combat_light::CombatLightDrawRecord,

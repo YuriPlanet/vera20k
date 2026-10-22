@@ -230,6 +230,9 @@ pub enum ShpPaletteContext {
     #[default]
     Legacy,
     GlobalAnim,
+    /// FoggedObject4D2176 selects the literal ANIM.PAL Convert without
+    /// AnimClass's AltPalette override or a producer-specific palette.
+    AnimPalette,
     SelectedScheme,
     Cell,
     /// BulletClass::Draw 46838D: global PALETTE.PAL Convert87F6C4.
@@ -291,6 +294,26 @@ pub(crate) fn attached_anim_palette_context(
         ShpPaletteContext::SelectedScheme
     } else {
         ShpPaletteContext::GlobalAnim
+    }
+}
+
+/// Frozen DrawAll4D2176 keeps the captured owner's ordinary ColorScheme
+/// only for ShouldUseCellDrawer. The other arm ignores AltPalette.
+pub(crate) fn frozen_anim_palette_context(
+    config: Option<&art_data::AnimTypeRuntimeConfig>,
+) -> ShpPaletteContext {
+    if config.is_none_or(|config| config.should_use_cell_drawer) {
+        ShpPaletteContext::SelectedScheme
+    } else {
+        ShpPaletteContext::AnimPalette
+    }
+}
+
+pub(crate) fn building_art_palette_context(art: &art_data::ArtEntry) -> ShpPaletteContext {
+    if art.terrain_palette {
+        ShpPaletteContext::Cell
+    } else {
+        ShpPaletteContext::SelectedScheme
     }
 }
 
@@ -894,6 +917,105 @@ pub fn collect_anim_remap_base_keys(
     anim_remap_base_keys(sim, house_colors).collect()
 }
 
+/// Immutable FoggedObject4D1890 inputs also survive the last live source.
+/// Their ordinary building/Anim palettes are separate atlas variants, with
+/// their exact recorded frames rather than a reconstructed live animation.
+pub(crate) fn collect_fogged_sprite_keys(
+    sim: &crate::sim::world::Simulation,
+    rules: &RuleSet,
+    house_colors: &HouseColorMap,
+) -> HashSet<ShpSpriteKey> {
+    use crate::sim::vision::FoggedDrawKind;
+    let mut keys = HashSet::new();
+    for frozen in sim
+        .fog()
+        .fogged_objects()
+        .values()
+        .filter_map(|record| record.drawing.as_ref())
+    {
+        let color = house_colors
+            .get(sim.interner().resolve(frozen.owner))
+            .copied()
+            .unwrap_or(crate::rules::house_colors::NO_REMAP);
+        for record in &frozen.records {
+            let Ok(frame) = u16::try_from(record.frame) else {
+                continue;
+            };
+            let name = sim.interner().resolve(record.type_ref);
+            let context = match record.kind {
+                FoggedDrawKind::Building => {
+                    let Some(object) = rules.object(name) else {
+                        continue;
+                    };
+                    let art = rules.art().resolve_metadata_entry(name, &object.image);
+                    let context = art.map_or(
+                        ShpPaletteContext::SelectedScheme,
+                        building_art_palette_context,
+                    );
+                    if let Some(bib) = art.and_then(|art| art.bib_shape.as_deref()) {
+                        keys.insert(ShpSpriteKey {
+                            palette_context: context,
+                            type_id: bib.to_ascii_uppercase(),
+                            facing: 0,
+                            frame,
+                            house_color: color,
+                        });
+                    }
+                    context
+                }
+                FoggedDrawKind::Animation => {
+                    frozen_anim_palette_context(rules.art().anim_runtime_config(name))
+                }
+            };
+            keys.insert(ShpSpriteKey {
+                palette_context: context,
+                type_id: name.to_string(),
+                facing: 0,
+                frame,
+                house_color: if context == ShpPaletteContext::AnimPalette {
+                    HouseColorIndex(0)
+                } else {
+                    color
+                },
+            });
+        }
+    }
+    keys
+}
+
+/// A recorded frame or palette can first appear without any object spawn.
+/// A source which could not supply that frame must not trigger rebuild loops.
+pub(crate) fn atlas_covers_sprite_keys(
+    atlas: Option<&SpriteAtlas>,
+    keys: &HashSet<ShpSpriteKey>,
+    rules: Option<&RuleSet>,
+) -> bool {
+    let Some(atlas) = atlas else {
+        return keys.is_empty();
+    };
+    let resolved =
+        |key: &ShpSpriteKey| atlas.entries.contains_key(key) || atlas.unrenderable.contains(key);
+    keys.iter().all(|key| {
+        resolved(key)
+            && (!rules
+                .and_then(|rules| rules.object(&key.type_id))
+                .is_some_and(|object| {
+                    object.category == crate::rules::object_type::ObjectCategory::Building
+                })
+                || atlas
+                    .object_shp_frame_count(&key.type_id)
+                    .and_then(|count| fogged_shadow_key(key, count))
+                    .is_none_or(|shadow| resolved(&shadow)))
+    })
+}
+
+fn fogged_shadow_key(body: &ShpSpriteKey, count: u16) -> Option<ShpSpriteKey> {
+    Some(ShpSpriteKey {
+        frame: body.frame.checked_add(count / 2)?,
+        ..body.clone()
+    })
+}
+
 /// Anim construction and producer palette assignment can occur without an
 /// entity spawn or ownership change. Check their coverage on committed ticks
 /// so those variants reach the ordinary AnimClass draw before its first frame.
@@ -1042,6 +1164,7 @@ fn sprite_palette_for_key(
     match key.palette_context {
         ShpPaletteContext::BulletDefault => SpritePaletteChoice::Bullet,
         ShpPaletteContext::BulletAnim => SpritePaletteChoice::Anim,
+        ShpPaletteContext::AnimPalette => SpritePaletteChoice::Anim,
         ShpPaletteContext::BulletFirer => SpritePaletteChoice::Unit,
         ShpPaletteContext::SelectedScheme => SpritePaletteChoice::Unit,
         ShpPaletteContext::Cell => SpritePaletteChoice::CellIso,
@@ -1507,6 +1630,7 @@ pub fn build_sprite_atlas(
     extra_building_types: &[&str],
     anim_remap_keys: &HashSet<AnimRemapKey>,
     cell_drawer_type_ids: &HashSet<String>,
+    additional_keys: &HashSet<ShpSpriteKey>,
     cell_palette: Option<&Palette>,
     existing: Option<SpriteAtlas>,
     interner: Option<&crate::sim::intern::StringInterner>,
@@ -1574,6 +1698,40 @@ pub fn build_sprite_atlas(
             shp_files.insert(key, source.found_name.clone());
         }
     }
+    // Frozen DrawAll4D1890 uses a saved body frame and the physical image's
+    // second half as its shadow, even when the live Building no longer exists.
+    // Reuse the decoded-source owner for both registration and rendering.
+    needed.extend(additional_keys.iter().cloned());
+    for key in additional_keys {
+        let source = object_sources
+            .entry(key.type_id.clone())
+            .or_insert_with(|| {
+                load_shp_source(
+                    asset_manager,
+                    &key.type_id,
+                    None,
+                    theater_ext,
+                    theater_name,
+                    rules,
+                    art,
+                )
+            });
+        let Some(source) = source else { continue };
+        let Ok(count) = u16::try_from(source.shp.frames.len()) else {
+            continue;
+        };
+        object_shp_frame_counts.insert(key.type_id.to_ascii_uppercase(), count);
+        shp_files.insert(key.type_id.to_ascii_uppercase(), source.found_name.clone());
+        if rules
+            .and_then(|rules| rules.object(&key.type_id))
+            .is_some_and(|object| {
+                object.category == crate::rules::object_type::ObjectCategory::Building
+            })
+            && let Some(shadow) = fogged_shadow_key(key, count)
+        {
+            needed.insert(shadow);
+        }
+    }
     let mut projectile_files = previous_atlas
         .as_ref()
         .map(|atlas| atlas.projectile_files.clone())
@@ -1638,17 +1796,34 @@ pub fn build_sprite_atlas(
             // BibShape: ground-level pad SHP (e.g., refinery dock GAREFNBB).
             // Use bib name directly as atlas key so render can look it up.
             if let Some(ref bib) = entry.bib_shape {
-                needed.insert(ShpSpriteKey {
-                    palette_context: if entry.terrain_palette {
-                        ShpPaletteContext::Cell
-                    } else {
-                        ShpPaletteContext::SelectedScheme
-                    },
-                    type_id: bib.to_uppercase(),
-                    facing: 0,
-                    frame: 0,
-                    house_color: *house_color,
+                let name = bib.to_ascii_uppercase();
+                let source = object_sources.entry(name.clone()).or_insert_with(|| {
+                    load_shp_source(
+                        asset_manager,
+                        &name,
+                        None,
+                        theater_ext,
+                        theater_name,
+                        rules,
+                        art,
+                    )
                 });
+                if let Some(source) = source {
+                    let Ok(count) = u16::try_from(source.shp.frames.len()) else {
+                        continue;
+                    };
+                    shp_files.insert(name.clone(), source.found_name.clone());
+                    object_shp_frame_counts.insert(name.clone(), count);
+                    for frame in 0..count {
+                        needed.insert(ShpSpriteKey {
+                            palette_context: building_art_palette_context(entry),
+                            type_id: name.clone(),
+                            facing: 0,
+                            frame,
+                            house_color: *house_color,
+                        });
+                    }
+                }
             }
         }
     }
@@ -2019,13 +2194,16 @@ pub fn build_sprite_atlas(
         );
     }
     if effect_palette.is_none()
-        && new_keys
-            .iter()
-            .any(|key| key.palette_context == ShpPaletteContext::BulletAnim)
+        && new_keys.iter().any(|key| {
+            matches!(
+                key.palette_context,
+                ShpPaletteContext::BulletAnim | ShpPaletteContext::AnimPalette
+            )
+        })
     {
         return abort_sprite_atlas_refresh(
             previous_atlas,
-            "AnimPalette projectiles require ANIM.PAL".to_string(),
+            "literal animation palettes require ANIM.PAL".to_string(),
         );
     }
 

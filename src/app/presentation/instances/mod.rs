@@ -34,6 +34,9 @@ pub(crate) use shp::*;
 mod overlays;
 pub(crate) use overlays::*;
 
+mod fogged;
+pub(crate) use fogged::build_fogged_instances;
+
 mod cell_bodies;
 pub(crate) use cell_bodies::*;
 

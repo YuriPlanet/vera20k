@@ -286,6 +286,8 @@ fn assert_paid_deso_light_lifecycle(packet_path: &'static str, profile_path: &'s
             size[0],
             size[1],
             1.0,
+            None,
+            Default::default(),
         );
         let actual_a: Vec<_> = gpu
             .read_float_texels(a.gpu_source().0, [0, 0], size)
@@ -655,6 +657,8 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
             size[0],
             size[1],
             1.0,
+            None,
+            Default::default(),
         );
         let actual_a: Vec<_> = gpu
             .read_float_texels(source.gpu_source().0, [0, 0], size)

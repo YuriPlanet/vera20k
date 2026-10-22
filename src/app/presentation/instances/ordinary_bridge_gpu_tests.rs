@@ -792,6 +792,8 @@ impl Probe {
             self.size[0],
             self.size[1],
             1.0,
+            None,
+            Default::default(),
         );
         let actual_a = self
             .gpu

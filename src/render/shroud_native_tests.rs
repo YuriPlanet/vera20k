@@ -37,6 +37,111 @@ fn stock_frames(native: &Value) -> Option<(Vec<Vec<u8>>, [u32; 2])> {
 }
 
 #[test]
+#[ignore = "requires GPU and retail assets; FogOfWar A-buffer source/blend/defeat"]
+fn retail_fog_source_and_defeat_gate_reach_the_shared_a_texture() {
+    use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainCell, ResolvedTerrainGrid};
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let decode = |name| {
+        let bytes = assets.get(name).unwrap();
+        let shp = crate::assets::shp_file::ShpFile::from_bytes(&bytes).unwrap();
+        extract_shp_brightness(&shp)
+    };
+    let (shroud, width, height) = decode("shroud.shp");
+    let (fog_frames, fog_width, fog_height) = decode("fog.shp");
+    let center = (fog_height / 2 * fog_width + fog_width / 2) as usize;
+    let bright = fog_frames[0][center];
+    let dim = fog_frames[15][center];
+    assert_eq!((bright, dim), (0x7f, 0x42)); // Physical FOG.SHP bytes.
+    let dark = shroud[15][(height / 2 * width + width / 2) as usize];
+    let terrain = ResolvedTerrainGrid::from_cells(
+        16,
+        16,
+        (0..16)
+            .flat_map(|y| (0..16).map(move |x| ResolvedTerrainCell::clear_for_test(x, y)))
+            .collect(),
+    );
+    let before = terrain.shared_cell_dummy().snapshot();
+    let cells = NativeCellQuery::isolated(&terrain);
+    let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
+    let size = [640, 360];
+    let mut source = ShroudBuffer::new(
+        &gpu.device,
+        &gpu.queue,
+        size,
+        [16, 16],
+        shroud,
+        [width, height],
+        SHROUD_EDGE_LUT,
+    );
+    source.install_fog_frames(fog_frames, [fog_width, fog_height]);
+    let mut names = crate::sim::intern::StringInterner::new();
+    let owner = names.intern("Local");
+    let mut fog = FogState::new(16, 16);
+    // Ground remains explored after regrowth clears the separate Cell140
+    // fog channel. The center's selectors are -1 (ground), -2 (fog).
+    for y in 7..=9 {
+        for x in 7..=9 {
+            fog.set_ground_bits_for_test(owner, x, y, 0x18);
+        }
+    }
+    assert_eq!(
+        fog.map_cell_edge_frame(owner, (8, 8), false, Some(&cells)),
+        -1
+    );
+    assert_eq!(
+        fog.map_cell_edge_frame(owner, (8, 8), true, Some(&cells)),
+        -2
+    );
+    let pixel = |cell: (u16, u16)| {
+        let (x, y) = iso_to_screen(cell.0, cell.1, 0);
+        ((y as u32 + 15) * size[0] + (x as i32 + 320 + 30) as u32) as usize
+    };
+    //47EFE0's source changes with the flag. 47F250 blends only before
+    //defeat; expected intensities here are retail source bytes, not a model.
+    for (options, explored, unexplored) in [
+        (FogDrawOptions::default(), bright, Some(dark)),
+        (
+            FogDrawOptions {
+                fog_of_war: true,
+                current_house_defeated: false,
+            },
+            dim,
+            None,
+        ),
+        (
+            FogDrawOptions {
+                fog_of_war: true,
+                current_house_defeated: true,
+            },
+            bright,
+            Some(dim),
+        ),
+    ] {
+        source.rebuild_if_needed(
+            &gpu.device,
+            &gpu.queue,
+            &fog,
+            owner,
+            -320.0,
+            0.0,
+            size[0],
+            size[1],
+            1.0,
+            Some(&cells),
+            options,
+        );
+        let pixels = gpu.read_float_texels(source.gpu_source().0, [0, 0], size);
+        assert_eq!((pixels[pixel((8, 8))][0] * 255.0).round() as u8, explored);
+        if let Some(expected) = unexplored {
+            assert_eq!((pixels[pixel((4, 4))][0] * 255.0).round() as u8, expected);
+        }
+    }
+    assert_eq!(terrain.shared_cell_dummy().snapshot(), before);
+}
+
+#[test]
 fn retail_shroud_pixels_and_clipping_match_original_47efe0() {
     let native = fixture();
     let Some((frames, canvas)) = stock_frames(&native) else {
@@ -68,6 +173,7 @@ fn retail_shroud_pixels_and_clipping_match_original_47efe0() {
                 [(right - x) as u32, (bottom - y) as u32],
                 &frames[draw["frame"].as_u64().unwrap() as usize],
                 [location[0] - x, location[1] - y],
+                BrightnessWrite::Copy,
             );
         }
         assert_eq!(
@@ -162,6 +268,8 @@ fn production_shroud_rebuild_matches_original_tactical_scenes() {
             size[0],
             size[1],
             1.0,
+            None,
+            Default::default(),
         );
         let pixels = gpu
             .read_float_texels(source.gpu_source().0, [0, 0], size)
@@ -227,7 +335,7 @@ fn production_shroud_rebuild_workload_timing() {
                 source.last_cam_x = -(size[0] as f32) / 2.0 + frame as f32;
                 source.last_cam_y = 3840.0 - size[1] as f32 / 2.0;
                 let started = Instant::now();
-                source.rasterize(&fog, owner);
+                source.rasterize(&fog, owner, None, Default::default());
                 let raster_ms = started.elapsed().as_secs_f64() * 1000.0;
                 let writing = Instant::now();
                 source.upload(&gpu.queue);
@@ -319,6 +427,7 @@ fn clear_tile_shroud_edge_matches_original_a_producer() {
         size,
         &frame,
         point(&edge["point"]),
+        BrightnessWrite::Copy,
     );
     let row = packet["rows"]
         .as_array()

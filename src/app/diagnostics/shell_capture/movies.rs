@@ -2014,6 +2014,17 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
         "game_mode_nonzero": sim.session().game_mode_nonzero(), "campaign_mission_counter": mission_counter,
         "campaign_difficulty_rows": {"player": player_difficulty as i32, "computer": computer_difficulty as i32},
         "current_house": {"name": sim.interner().resolve(current), "native_unique_id": current_native_id},
+        "fog": {"enabled": sim.session().game_options().fog_of_war,
+            "regrow_timer": {"start": sim.session().fog_regrow_timer().start_frame(),
+                "duration": sim.session().fog_regrow_timer().duration()},
+            "snapshots": sim.fog().fogged_objects().values().filter_map(|record| {
+                let drawing = record.drawing.as_ref()?;
+                Some(json!({"id": record.id, "viewer": sim.interner().resolve(record.viewer),
+                    "source": record.source_entity_id, "owner": sim.interner().resolve(drawing.owner),
+                    "location": drawing.location, "records": drawing.records.iter().map(|row| {
+                        json!({"type": sim.interner().resolve(row.type_ref), "frame": row.frame})
+                    }).collect::<Vec<_>>()}))
+            }).collect::<Vec<_>>()},
         "flags": {"inert": flags.inert, "tiberium_grows": flags.tiberium_grows,
             "tiberium_spreads": flags.tiberium_spreads, "destroyable_bridges": flags.destroyable_bridges,
             "free_radar": sim.session().free_radar(), "ignore_global_ai_triggers": sim.session().ignore_global_ai_triggers()},

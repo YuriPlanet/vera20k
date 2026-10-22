@@ -23,7 +23,7 @@ use crate::render::draw_state::DrawState;
 use crate::render::native_z::{
     self, SHP_DRAW_Z_ADJUST_PX, ZGradient, ZSHAPE_MAX_FOUNDATION_WIDTH, pack_z_gradient,
 };
-use crate::render::sprite_atlas::ShpSpriteKey;
+use crate::render::sprite_atlas::{ShpSpriteKey, building_art_palette_context};
 use crate::render::tactical_draw_plan::{BlitPolicy, BuildingPieceKind, SpriteEncoding};
 use crate::render::unit_atlas::{UnitSpriteKey, VxlLayer, canonical_turret_facing};
 use crate::rules::house_colors::HouseColorIndex;
@@ -359,16 +359,9 @@ pub(crate) fn build_shp_instances_from_inputs(
         } else {
             match entity.category() {
                 EntityCategory::Structure => {
-                    let obj = rules.and_then(|r| r.object(type_str));
-                    let frame = if let Some(obj) = obj {
-                        let occupant_count = entity
-                            .passenger_role
-                            .cargo()
-                            .map(|c| c.count())
-                            .unwrap_or(0);
-                        let (cy, cr) = rules
-                            .map(|r| (r.general.condition_yellow, r.general.condition_red))
-                            .unwrap_or((0.5, 0.25));
+                    let frame = if let Some((rules, obj)) =
+                        rules.and_then(|rules| rules.object(type_str).map(|obj| (rules, obj)))
+                    {
                         let art = art_reg.and_then(|registry| {
                             registry.resolve_metadata_entry(type_str, &obj.image)
                         });
@@ -379,7 +372,7 @@ pub(crate) fn build_shp_instances_from_inputs(
                                 entity,
                                 art.map_or(9, |entry| entry.building_gate_stages),
                                 obj.strength,
-                                cy,
+                                rules.general.condition_yellow,
                                 sim.session().binary_frame(),
                             )
                         });
@@ -388,29 +381,11 @@ pub(crate) fn build_shp_instances_from_inputs(
                         // damaged frame is base+1, including the first frame
                         // after Construction; it is not always body frame0.
                         let frame = gate_frame.flatten().unwrap_or_else(|| {
-                            crate::sim::building_art::body_frame(
-                                crate::sim::building_art::BodyFrameInput {
-                                    state: entity.building_body_state().unwrap_or(1),
-                                    base_frame: entity.construction_stage_value(),
-                                    laser_frame: obj.laser_fence.then_some(0),
-                                    firestorm_frame: obj.firestorm_wall.then_some(0),
-                                    gate_stages: obj.gate.then_some(
-                                        art.map_or(9, |entry| entry.building_gate_stages),
-                                    ),
-                                    occupants: obj.can_be_occupied.then_some(occupant_count as i32),
-                                    tech_level: sim.object_tech_level(obj),
-                                    selling: entity.building_down(),
-                                    buildup: [0, 1],
-                                    ordinary: art.map_or([[0, 1]; 4], |entry| {
-                                        entry
-                                            .building_body_ranges
-                                            .map(|[start, count, _]| [start, count])
-                                    }),
-                                },
-                                entity.health,
-                                obj.strength,
-                                cy,
-                                cr,
+                            crate::sim::building_art::current_body_frame(
+                                entity,
+                                obj,
+                                rules,
+                                sim.object_tech_level(obj),
                             )
                         });
                         u16::try_from(frame).unwrap_or(0)
@@ -1233,18 +1208,6 @@ fn factory_unload_art<'a>(
         under_door,
         palette: building_art_palette_context(art),
     })
-}
-
-/// A building's own SHP pieces (bib, war-factory door art) draw through its
-/// DrawSHP palette: the theater's with `TerrainPalette=`, else its scheme's.
-fn building_art_palette_context(
-    art: &crate::rules::art_data::ArtEntry,
-) -> crate::render::sprite_atlas::ShpPaletteContext {
-    if art.terrain_palette {
-        crate::render::sprite_atlas::ShpPaletteContext::Cell
-    } else {
-        crate::render::sprite_atlas::ShpPaletteContext::SelectedScheme
-    }
 }
 
 /// `UnderDoorAnim=` (or the roof variant) after the bib

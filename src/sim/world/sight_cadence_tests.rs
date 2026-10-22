@@ -138,7 +138,13 @@ fn aircraft_uncached_airborne_sight_uses_raw_type_range_and_skips_zero() {
         assert!(!sim.session.game_options().fog_of_war);
         let held = sim.fog.sight_admissions_for_test().clone();
         let ((), trace) = trace_reveal_calls(|| {
-            sim.reveal_uncached_object_sight(id, UninitContext::with_rules(&rules));
+            sim.reveal_uncached_object_sight(
+                id,
+                false,
+                false,
+                None,
+                UninitContext::with_rules(&rules),
+            );
         });
         if sight == 0 {
             assert!(trace.walks.is_empty());
@@ -184,7 +190,15 @@ fn aircraft_uncached_sight_rereads_its_location_between_map_passes() {
                 entity.position.put_z(416);
                 entity.sight.set_vision_range_for_test(10);
             },
-            || sim.reveal_uncached_object_sight(id, UninitContext::with_rules(&rules)),
+            || {
+                sim.reveal_uncached_object_sight(
+                    id,
+                    false,
+                    false,
+                    None,
+                    UninitContext::with_rules(&rules),
+                )
+            },
         )
     });
     assert_eq!(trace.walks.len(), 2);
@@ -219,7 +233,15 @@ fn aircraft_uncached_sight_rereads_owner_before_the_second_house_admission() {
     let ((), trace) = trace_reveal_calls(|| {
         with_first_cell_receiver(
             move |sim| sim.substrate.entities.change_owner(id, other),
-            || sim.reveal_uncached_object_sight(id, UninitContext::with_rules(&rules)),
+            || {
+                sim.reveal_uncached_object_sight(
+                    id,
+                    false,
+                    false,
+                    None,
+                    UninitContext::with_rules(&rules),
+                )
+            },
         )
     });
     assert_eq!(trace.walks.len(), 2);
@@ -1329,7 +1351,13 @@ fn retail_goldst_uncached_reveal_border_matches_native_admission_and_transport()
             sim.mapgen_rng.native_state_hex(),
         );
         let ((), trace) = trace_reveal_calls(|| {
-            sim.reveal_uncached_object_sight(id, UninitContext::with_rules(rules));
+            sim.reveal_uncached_object_sight(
+                id,
+                false,
+                false,
+                None,
+                UninitContext::with_rules(rules),
+            );
         });
         assert_eq!(
             trace.walks.len(),

@@ -136,6 +136,7 @@ fn retail_smkpuff_effect_builder_matches_original_translucency() {
             &[],
             &Default::default(),
             &Default::default(),
+            &Default::default(),
             None,
             None,
             Some(empty.interner()),

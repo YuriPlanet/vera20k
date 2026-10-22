@@ -1,9 +1,9 @@
 //! Shared tactical ABuffer — native per-pixel palette-row input.
 //!
-//! The original engine writes SHROUD.SHP values into a 16-bit circular buffer;
+//! The original engine writes SHROUD.SHP/FOG.SHP into a 16-bit circular buffer;
 //! each tile/sprite blitter uses A to select a palette row. Our GPU source:
 //!
-//! 1. CPU-side: blit SHROUD.SHP raw brightness pixels into a screen-res R8 buffer
+//! 1. CPU-side: copy/blend the raw brightness pixels into a screen-res R8 buffer
 //! 2. Upload to an R8Unorm GPU texture
 //! 3. Every world blitter reads this same texture before storing its source color
 //!
@@ -19,6 +19,7 @@
 //! ## Dependency rules
 //! - Part of render/ — reads FogState (no mutation), uploads through Device/Queue.
 
+use crate::map::resolved_terrain::NativeCellQuery;
 use crate::map::terrain::{iso_to_screen, screen_to_iso};
 use crate::sim::intern::InternedId;
 use crate::sim::vision::FogState;
@@ -31,6 +32,13 @@ const NEUTRAL: u8 = 0x7F;
 /// SHP transparent pixel marker — skip (don't overwrite buffer).
 const TRANSPARENT: u8 = 0xFE;
 const SHROUD_CELL_PAD: i32 = 8;
+
+/// Inputs retained by the scenario/House owners, sampled for this draw.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FogDrawOptions {
+    pub fog_of_war: bool,
+    pub current_house_defeated: bool,
+}
 
 /// What the shroud brightness buffer writes for one cell.
 ///
@@ -145,6 +153,9 @@ pub struct ShroudBuffer {
     /// Original SHROUD bytes plus immutable derived visible row spans.
     /// Recreated only with the source frame set, not on viewport/fog changes.
     frames: Vec<BrightnessFrame>,
+    /// FOG.SHP is a second source for the same A plane, not an RGB overlay.
+    fog_frames: Vec<BrightnessFrame>,
+    fog_canvas: [u32; 2],
     /// SHP canvas width (typically 60).
     canvas_w: u32,
     /// SHP canvas height (typically 30).
@@ -157,6 +168,7 @@ pub struct ShroudBuffer {
     last_fog_gen: u64,
     /// The same fog generation can be sampled for a different local viewer.
     last_owner: Option<InternedId>,
+    last_fog_options: FogDrawOptions,
     /// Cached screen width for resize detection.
     last_screen_w: u32,
     /// Cached screen height for resize detection.
@@ -202,8 +214,8 @@ impl ShroudBuffer {
         vp_w: i32,
         vp_h: i32,
     ) -> Option<((u16, u16), (u16, u16))> {
-        let pad_x = self.canvas_w as f32;
-        let pad_y = self.canvas_h as f32;
+        let pad_x = self.canvas_w.max(self.fog_canvas[0]) as f32;
+        let pad_y = self.canvas_h.max(self.fog_canvas[1]) as f32;
         let left = cam_x - pad_x;
         let right = cam_x + vp_w as f32 + pad_x;
         let top = cam_y - pad_y;
@@ -272,12 +284,15 @@ impl ShroudBuffer {
                 .into_iter()
                 .map(|pixels| BrightnessFrame::new(pixels, [canvas_w, canvas_h]))
                 .collect(),
+            fog_frames: Vec::new(),
+            fog_canvas: [0, 0],
             canvas_w,
             canvas_h,
             last_cam_x: f32::NAN,
             last_cam_y: f32::NAN,
             last_fog_gen: u64::MAX,
             last_owner: None,
+            last_fog_options: FogDrawOptions::default(),
             last_screen_w: screen_w,
             last_screen_h: screen_h,
             last_zoom: 1.0,
@@ -289,6 +304,17 @@ impl ShroudBuffer {
         result
     }
 
+    /// Cell47EFE0/47F250 load the literal FOG.SHP at81CE10. Keep its raw
+    /// brightness bytes with the existing A-buffer source owner.
+    pub(crate) fn install_fog_frames(&mut self, pixels: Vec<Vec<u8>>, canvas: [u32; 2]) {
+        self.fog_frames = pixels
+            .into_iter()
+            .map(|pixels| BrightnessFrame::new(pixels, canvas))
+            .collect();
+        self.fog_canvas = canvas;
+        self.mark_stale();
+    }
+
     /// Invalidate the fog dirty-gate so the next frame rebuilds regardless of
     /// generation (F10): the view-cache generation restarts from zero after a
     /// load, so an equal counter value no longer proves an unchanged view.
@@ -298,8 +324,8 @@ impl ShroudBuffer {
 
     /// Rebuild the shroud buffer if camera moved, fog changed, or screen resized.
     ///
-    /// Blits SHROUD.SHP bytes into the CPU buffer, then uploads it once.
-    /// Disjoint stock frame masks establish equivalence to native traversal.
+    /// Copy/blend the selected SHROUD.SHP/FOG.SHP bytes into the CPU buffer,
+    /// then upload it once. Native per-cell ordering is retained.
     pub fn rebuild_if_needed(
         &mut self,
         device: &wgpu::Device,
@@ -311,6 +337,8 @@ impl ShroudBuffer {
         screen_w: u32,
         screen_h: u32,
         zoom: f32,
+        native_cells: Option<&NativeCellQuery<'_>>,
+        fog_options: FogDrawOptions,
     ) {
         // Render shroud at virtual resolution (screen / zoom) so diamond blits
         // stay at fixed world-pixel sizes. Blitters address it from the uploaded
@@ -349,6 +377,7 @@ impl ShroudBuffer {
         let cam_y_r = cam_y.floor();
         if fog.view_generation() == self.last_fog_gen
             && self.last_owner == Some(owner)
+            && self.last_fog_options == fog_options
             && cam_x_r == self.last_cam_x
             && cam_y_r == self.last_cam_y
             && (zoom - self.last_zoom).abs() < 1e-6
@@ -357,11 +386,12 @@ impl ShroudBuffer {
         }
         self.last_fog_gen = fog.view_generation();
         self.last_owner = Some(owner);
+        self.last_fog_options = fog_options;
         self.last_cam_x = cam_x_r;
         self.last_cam_y = cam_y_r;
         self.last_zoom = zoom;
 
-        self.rasterize(fog, owner);
+        self.rasterize(fog, owner, native_cells, fog_options);
 
         // Debug: dump the CPU brightness buffer as a grayscale PNG when
         // RA2_DUMP_SHROUD names a path. Diagnostic only — no gamemd counterpart.
@@ -413,7 +443,13 @@ impl ShroudBuffer {
 
     /// Shared full-rebuild CPU owner, separated from upload for direct native
     /// scene comparisons. Empty bounds still retain the authoritative reset.
-    fn rasterize(&mut self, fog: &FogState, owner: InternedId) {
+    fn rasterize(
+        &mut self,
+        fog: &FogState,
+        owner: InternedId,
+        native_cells: Option<&NativeCellQuery<'_>>,
+        fog_options: FogDrawOptions,
+    ) {
         // Fill bright, then darken unrevealed cells and blit edge transitions.
         // Blitting in world-pixel coordinates at virtual resolution
         // means diamond tiles match the world grid exactly at every zoom.
@@ -432,13 +468,17 @@ impl ShroudBuffer {
             return;
         };
 
-        // Native6D71E0 visits these cells on screen diagonals. All47 stock
-        // LUT-selected SHROUD frames share a disjoint 900-pixel lattice mask;
-        // therefore this bounded row-major traversal produces identical stores.
-        // The executable/retail proof is tools/procedural_drawing_oracle/shroud.
-        // Alpha/fog overlays and nonstock overlapping masks are outside it.
-        for ry in ry_start..=ry_end {
-            for rx in rx_start..=rx_end {
+        // Native6D7312..6D7532 visits increasing screen diagonals, then
+        // increasing X/decreasing Y within each diagonal. Each cell copies
+        // its ground source before blending fog (4801F0); preserve that order.
+        for diagonal in
+            u32::from(rx_start) + u32::from(ry_start)..=u32::from(rx_end) + u32::from(ry_end)
+        {
+            let start = u32::from(rx_start).max(diagonal.saturating_sub(u32::from(ry_end)));
+            let end = u32::from(rx_end).min(diagonal - u32::from(ry_start));
+            for x in start..=end {
+                let rx = x as u16;
+                let ry = (diagonal - x) as u16;
                 // The shroud lattice is FLAT: gamemd's per-cell edge blit
                 // (`Tactical_layer_shroud_edges @ 0x006D3660`) takes
                 // `CellClass::Get_Center_Coords`, forces the coord's Z to 0,
@@ -451,18 +491,45 @@ impl ShroudBuffer {
                 let vx = sx as i32 - cam_xi;
                 let vy = sy as i32 - cam_yi;
 
-                if vx + self.canvas_w as i32 <= 0
+                if vx + self.canvas_w.max(self.fog_canvas[0]) as i32 <= 0
                     || vx >= vp_w
-                    || vy + self.canvas_h as i32 <= 0
+                    || vy + self.canvas_h.max(self.fog_canvas[1]) as i32 <= 0
                     || vy >= vp_h
                 {
                     continue;
                 }
 
-                let fill = cell_fill(fog, owner, rx, ry, &self.lut);
-                match fill {
-                    CellFill::None => continue,
-                    CellFill::Frame(idx) => self.blit_frame(idx, vx, vy, vp_w, vp_h),
+                if fog_options.fog_of_war {
+                    //47F018..47F038 selects FOG.SHP for the ground copy too.
+                    //480210/480266 map -2 to15 and -1 to0 for both channels.
+                    let ground = fog.map_cell_edge_frame(owner, (rx, ry), false, native_cells);
+                    if let Some(frame) = self.fog_frames.get(native_frame_index(ground)) {
+                        blit_frame_pixels(
+                            &mut self.pixels,
+                            self.row_stride as usize,
+                            [vp_w as u32, vp_h as u32],
+                            frame,
+                            [vx, vy],
+                            BrightnessWrite::Copy,
+                        );
+                    }
+                    //480249..480290 skips only this blend for a defeated
+                    //current House (+1F5); the ground copy still used FOG.
+                    if !fog_options.current_house_defeated {
+                        let edge = fog.map_cell_edge_frame(owner, (rx, ry), true, native_cells);
+                        if let Some(frame) = self.fog_frames.get(native_frame_index(edge)) {
+                            blit_frame_pixels(
+                                &mut self.pixels,
+                                self.row_stride as usize,
+                                [vp_w as u32, vp_h as u32],
+                                frame,
+                                [vx, vy],
+                                BrightnessWrite::FogBlend,
+                            );
+                        }
+                    }
+                } else if let CellFill::Frame(idx) = cell_fill(fog, owner, rx, ry, &self.lut) {
+                    self.blit_frame(idx, vx, vy, vp_w, vp_h);
                 }
             }
         }
@@ -482,6 +549,7 @@ impl ShroudBuffer {
             [vp_w as u32, vp_h as u32],
             frame,
             [vx, vy],
+            BrightnessWrite::Copy,
         );
     }
 
@@ -537,14 +605,32 @@ impl ShroudBuffer {
     }
 }
 
-/// Original47EFE0 copies raw A bytes and skips FE; palette or RGB conversion
-/// does not participate. Native frame headers are expanded by the SHP owner.
+///480210/480266 normalize the signed selector before the native blitters.
+fn native_frame_index(frame: i8) -> usize {
+    match frame {
+        -2 => 15,
+        -1 => 0,
+        value => value as usize,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum BrightnessWrite {
+    Copy,
+    FogBlend,
+}
+
+/// Original47EFE0 copies raw A bytes and skips FE. 47F250 instead ignores
+/// source bytes above127, then stores source for neutral127 or
+/// max(destination + source -127, 0). Both share the native clipped spans;
+/// palette or RGB conversion does not participate.
 fn blit_frame_pixels(
     pixels: &mut [u8],
     stride: usize,
     size: [u32; 2],
     frame: &BrightnessFrame,
     origin: [i32; 2],
+    write: BrightnessWrite,
 ) {
     let [vx, vy] = origin;
     let [vp_w, vp_h] = size.map(|v| v as i32);
@@ -568,8 +654,19 @@ fn blit_frame_pixels(
         let count = (right - x) as usize;
         let source = span.source.start as usize + (x - left) as usize;
         let destination = y as usize * stride + x as usize;
-        pixels[destination..destination + count]
-            .copy_from_slice(&frame.pixels[source..source + count]);
+        let src = &frame.pixels[source..source + count];
+        let dst = &mut pixels[destination..destination + count];
+        match write {
+            BrightnessWrite::Copy => dst.copy_from_slice(src),
+            BrightnessWrite::FogBlend => {
+                for (dst, &src) in dst.iter_mut().zip(src) {
+                    //47F403..47F43D /47F4A2..47F4DE.
+                    if src <= NEUTRAL {
+                        *dst = (u16::from(*dst) + u16::from(src)).saturating_sub(127) as u8;
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -37,6 +37,8 @@
 //! visibility grid so each cell lookup is O(1) instead of iterating all owners.
 
 mod cell_reveal;
+mod fog_objects;
+pub use fog_objects::{FoggedDrawKind, FoggedDrawRecord, FrozenBuilding};
 mod map_reveal;
 pub(crate) use map_reveal::MapTransition;
 mod planes;
@@ -348,11 +350,9 @@ impl OwnerVisibility {
 
     /// Mark a cell visible and revealed in this frame's sight, and set its
     /// ground bits.
-    ///
-    /// RESIDUAL: a cell's first mapping runs `CellClass::CleanFog` when
-    /// `FogOfWar=` is on, freeing the cell's fogged objects. VERA keeps no
-    /// fogged-object records in production (the footprint store is test-only),
-    /// so there is nothing to clean; a fogged-object port needs that call here.
+    /// Production MapCell mapping delivers CleanFog after its synchronous
+    /// notification through the world sight owner; this derived frame mark
+    /// changes no native Cell visibility or fog-object lifecycle.
     fn mark_sight(&mut self, rx: u16, ry: u16) {
         if let Some(i) = self.index(rx, ry) {
             self.set_ground_bits(i, self.ground_flags[i] | GROUND_VISIBLE | GROUND_OPEN);
@@ -620,9 +620,8 @@ impl OwnerVisibility {
 /// Stable Rust identity for one native FoggedObjectClass allocation.
 pub type FoggedObjectId = u64;
 
-/// Shared frozen-building footprint ownership. Rendering payload is
-/// deliberately absent until `FreezeInFog`'s draw-record fields are closed;
-/// this record only represents the proven cross-cell lifetime contract.
+/// One shared FoggedObjectClass allocation and its ordered Cell links.
+/// The diagnostic source ID never controls the snapshot lifetime.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FoggedObjectFootprintRecord {
     pub id: FoggedObjectId,
@@ -632,6 +631,8 @@ pub struct FoggedObjectFootprintRecord {
     /// Occupy-list order, with the anchor already applied and invalid cells
     /// omitted by the caller that owns map bounds.
     pub occupied_cells: Vec<(u16, u16)>,
+    #[serde(default)]
+    pub drawing: Option<FrozenBuilding>,
 }
 
 /// Last admitted generator identity/geometry, retained to distinguish a new
@@ -740,6 +741,10 @@ pub struct FogState {
     /// Owning allocation table for shared fogged-object IDs.
     #[serde(default)]
     fogged_objects: BTreeMap<FoggedObjectId, FoggedObjectFootprintRecord>,
+    /// Building+6E7 / attached Anim+199, projected per viewer. Native freeze
+    /// and reveal cleanup own these independently of the remembered picture.
+    #[serde(default)]
+    fogged_live_objects: std::collections::BTreeSet<(InternedId, u64)>,
     /// Allocation cursor for the Rust-stable counterpart of native pointers.
     #[serde(default)]
     next_fogged_object_id: FoggedObjectId,
@@ -882,6 +887,10 @@ impl FogState {
         self.next_fogged_object_id.hash(hasher);
         self.fogged_object_cells.hash(hasher);
         self.fogged_objects.hash(hasher);
+        if !self.fogged_live_objects.is_empty() {
+            b"fogged-live-objects-v1".hash(hasher);
+            self.fogged_live_objects.hash(hasher);
+        }
         self.sensors_by_house.hash(hasher);
         // `CellClass+0xAC[house]` disguise-detect counters.
         // Behaviour-affecting like their `SensorsOfHouses` sibling above:
@@ -1141,15 +1150,34 @@ impl FogState {
         footprint
     }
 
-    /// Insert one shared frozen-building footprint record. Named location:
-    /// `BuildingClass::FreezeInFog` installs the same FoggedObjectClass pointer
-    /// into every occupy-list cell, not one allocation per cell.
+    /// Building457AA0 / FoggedObject4D0EF0: one remembered picture shared by
+    /// its foundation cells. No Scenario unique ID or RNG draw is consumed.
+    pub(crate) fn insert_frozen_building(
+        &mut self,
+        viewer: InternedId,
+        source_entity_id: u64,
+        occupied_cells: Vec<(u16, u16)>,
+        drawing: FrozenBuilding,
+    ) -> FoggedObjectId {
+        self.insert_fogged_object(viewer, source_entity_id, occupied_cells, Some(drawing))
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn insert_fogged_object_footprint(
         &mut self,
         viewer: InternedId,
         source_entity_id: u64,
         occupied_cells: Vec<(u16, u16)>,
+    ) -> FoggedObjectId {
+        self.insert_fogged_object(viewer, source_entity_id, occupied_cells, None)
+    }
+
+    fn insert_fogged_object(
+        &mut self,
+        viewer: InternedId,
+        source_entity_id: u64,
+        occupied_cells: Vec<(u16, u16)>,
+        drawing: Option<FrozenBuilding>,
     ) -> FoggedObjectId {
         let id = self.next_fogged_object_id.max(1);
         self.next_fogged_object_id = id.wrapping_add(1);
@@ -1158,6 +1186,7 @@ impl FogState {
             viewer,
             source_entity_id,
             occupied_cells,
+            drawing,
         };
         for &(rx, ry) in &record.occupied_cells {
             self.fogged_object_cells
@@ -1169,20 +1198,39 @@ impl FogState {
         id
     }
 
+    /// Native live fog flag, independent of a snapshot's source identity.
+    pub fn is_object_fogged(&self, viewer: InternedId, id: u64) -> bool {
+        self.fogged_live_objects.contains(&(viewer, id))
+    }
+
+    pub(crate) fn set_object_fogged(&mut self, viewer: InternedId, id: u64, fogged: bool) {
+        if fogged {
+            self.fogged_live_objects.insert((viewer, id));
+        } else {
+            self.fogged_live_objects.remove(&(viewer, id));
+        }
+    }
+
+    pub(crate) fn forget_fogged_live_object(&mut self, id: u64) {
+        self.fogged_live_objects.retain(|(_, candidate)| *candidate != id);
+    }
+
+    /// Building4519A8..B2 copies its fog flag to a replacement slot Anim.
+    pub(crate) fn inherit_object_fog(&mut self, parent: u64, child: u64) {
+        let viewers: Vec<_> = self.fogged_live_objects.iter()
+            .filter_map(|&(viewer, id)| (id == parent).then_some(viewer)).collect();
+        for viewer in viewers {
+            self.set_object_fogged(viewer, child, true);
+        }
+    }
+
     /// Clear one cell's vector in native reverse order. Each shared record is
     /// first unlinked by exact ID from all footprint cells, then returned to
     /// the caller in destruction/invalidation order. Other empty vectors stay
     /// allocated.
     ///
-    /// **Provenance UNKNOWN.** The address this used to cite, `0x004802D0`, is
-    /// not a function entry — it lands mid-`CALL` inside `FUN_004802A0`, which
-    /// is a tile blitter (it reads `g_IsometricTileTypeClass_Array`, calls
-    /// `IsometricTileTypeClass::SubtileHasDamagedData` and blits to
-    /// `g_PrimarySurface`) and has nothing to do with fogged objects. And
-    /// `ClearFoggedObjects` is not a symbol in this program. The address stays
-    /// unbound rather than swapped for a positive match against an unrelated
-    /// function.
-    #[cfg(any(test, feature = "test-support"))]
+    /// Original CellClass::ClearFoggedObjects486C50, reached from
+    /// CleanFog486BF0; shared references unlink before the allocation dies.
     pub fn clear_fogged_objects_at(
         &mut self,
         viewer: InternedId,
@@ -1986,6 +2034,7 @@ impl FogState {
             self.whole_map_revealed_owners.clear();
             self.fogged_object_cells.clear();
             self.fogged_objects.clear();
+            self.fogged_live_objects.clear();
             self.next_fogged_object_id = 0;
             self.reset_sensor_counts();
             self.width = width;

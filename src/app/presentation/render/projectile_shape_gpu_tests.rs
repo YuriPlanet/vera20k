@@ -230,6 +230,7 @@ fn compare_shape_corpus(
                 &[],
                 &HashSet::new(),
                 &HashSet::new(),
+                &Default::default(),
                 None,
                 atlas,
                 None,

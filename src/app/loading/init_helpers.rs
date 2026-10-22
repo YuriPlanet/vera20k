@@ -507,6 +507,9 @@ pub(crate) fn build_presentation_manifest(
         .flat_map(|terrain| terrain.tile_animations())
         .map(|anim| anim.anim_name.to_ascii_uppercase())
         .collect();
+    let frozen_keys = rules.map_or_else(HashSet::new, |rules| {
+        sprite_atlas::collect_fogged_sprite_keys(sim, rules, house_colors)
+    });
     let shp_atlas: Option<SpriteAtlas> = palette.and_then(|pal| {
         sprite_atlas::build_sprite_atlas(
             &gpu.device,
@@ -523,6 +526,7 @@ pub(crate) fn build_presentation_manifest(
             &extra_buildings,
             &anim_remap_keys,
             &cell_drawer_type_ids,
+            &frozen_keys,
             theater_iso_palette,
             None, // initial build — no existing cache
             Some(sim.interner()),

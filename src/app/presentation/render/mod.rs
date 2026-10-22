@@ -267,6 +267,19 @@ pub(crate) fn render_game(
     {
         let view = rt.view();
         let owner_id = view.interner().get(owner).unwrap_or_default();
+        // Rendering may perform native Dummy lookups without changing the
+        // simulation's retained Dummy coordinate or its fog cache bytes.
+        let cells = view
+            .resolved_terrain()
+            .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+        let fog_options = crate::render::shroud_buffer::FogDrawOptions {
+            fog_of_war: view.session().game_options().fog_of_war,
+            current_house_defeated: view
+                .session()
+                .current_house()
+                .and_then(|house| view.houses().get(&house))
+                .is_some_and(|house| house.is_defeated()),
+        };
         shroud_buf.rebuild_if_needed(
             &state.renderer.gpu.device,
             &state.renderer.gpu.queue,
@@ -277,6 +290,8 @@ pub(crate) fn render_game(
             rw,
             rh,
             state.match_state.input.zoom_level,
+            cells.as_ref(),
+            fog_options,
         );
     }
 
@@ -615,6 +630,7 @@ pub(crate) fn render_game(
             cell_body_draws: &world.cell_body_draws,
             bridge_shadows: &world.bridge_body_shadow,
             object_layers: &world.object_layers,
+            fogged_objects: &world.fogged_objects,
             building_status_text: &world.building_status_text,
             surface_effects,
             tactical_lines,
@@ -720,6 +736,11 @@ fn upload_to_gpu(
         &state.renderer.gpu,
         "building_status_text",
         &world.building_status_text.instances,
+    );
+    pool.upload(
+        &state.renderer.gpu,
+        "fogged_objects",
+        &world.fogged_objects.instances,
     );
     for (layer, objects) in world.object_layers.iter().enumerate() {
         pool.upload_page(

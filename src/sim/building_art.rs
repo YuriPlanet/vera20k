@@ -683,6 +683,9 @@ impl Simulation {
         }
         self.substrate.entities.get_mut(id)?.building_art.anim_slots[usize::from(slot)] =
             Some(new_id);
+        // Building4519A8..4519B2 copies its FoggedOut byte to a new slot
+        // animation. Replacing the live art cannot make it visible through fog.
+        self.fog.inherit_object_fog(id, new_id);
         //451A36 calls4555D0 only when retained StuffEnabled6EA is true.
         //Construction/placement and operational history cannot substitute for it.
         let object = rules.object(
@@ -1038,6 +1041,50 @@ pub fn building_image(entity: &GameEntity, has_buildup: bool) -> BuildingImage {
     } else {
         BuildingImage::Null
     }
+}
+
+/// Current `BuildingClass::GetCurrentFrame @ 0x0043EF90`, shared by live
+/// DrawBody and the immutable FoggedObject constructor (`0x004D10DC`).
+/// Image selection and DrawBody's opening-gate override are separate callers.
+pub fn current_body_frame(
+    entity: &GameEntity,
+    object: &ObjectType,
+    rules: &RuleSet,
+    tech_level: i32,
+) -> i32 {
+    let art = rules
+        .art()
+        .resolve_metadata_entry(&object.id, &object.image);
+    let control = entity.building_construction_control();
+    body_frame(
+        BodyFrameInput {
+            state: entity.building_body_state().unwrap_or(1),
+            base_frame: entity.construction_stage_value(),
+            laser_frame: object.laser_fence.then_some(0),
+            firestorm_frame: object.firestorm_wall.then_some(0),
+            gate_stages: object
+                .gate
+                .then_some(art.map_or(9, |entry| entry.building_gate_stages)),
+            occupants: object.can_be_occupied.then_some(
+                entity
+                    .passenger_role
+                    .cargo()
+                    .map_or(0, |cargo| cargo.count()) as i32,
+            ),
+            tech_level,
+            selling: entity.building_down(),
+            buildup: [control[0], control[1]],
+            ordinary: art.map_or([[0, 1]; 4], |entry| {
+                entry
+                    .building_body_ranges
+                    .map(|[start, count, _]| [start, count])
+            }),
+        },
+        entity.health,
+        object.strength,
+        rules.general.condition_yellow,
+        rules.general.condition_red,
+    )
 }
 
 /// Equality key for health-only receiver continuation442B37. Represented

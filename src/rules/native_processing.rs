@@ -1657,6 +1657,13 @@ impl ProcessedRulesLayers {
         )
     }
 
+    /// Rules+1648 after the reached ReadAudioVisual66B4CA..66B4E4 passes.
+    pub(crate) fn fog_rate(&self) -> NativeF64Bits {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_fog_rate
+    }
+
     /// Final Difficulty readers after the ordered Process passes. Keeping the
     /// typed rows preserves literal f64 defaults separately from ReadDouble's
     /// widened f32 authored values (ReadDifficulty @ 0x0066D270).
@@ -2329,6 +2336,8 @@ pub(crate) struct NativeRulesRegistryState {
     rules_detail: DetailRules,
     rules_ambient_change_rate: NativeF64Bits,
     rules_ambient_change_step: NativeF64Bits,
+    #[serde(default = "crate::rules::ruleset::default_fog_rate")]
+    rules_fog_rate: NativeF64Bits,
     rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
     rules_gravity: i32,
     rules_wind_direction: i32,
@@ -2399,6 +2408,7 @@ impl Default for NativeRulesRegistryState {
             rules_detail: DetailRules::default(),
             rules_ambient_change_rate: crate::rules::ruleset::DEFAULT_AMBIENT_CHANGE_RATE,
             rules_ambient_change_step: crate::rules::ruleset::DEFAULT_AMBIENT_CHANGE_STEP,
+            rules_fog_rate: general.fog_rate,
             rules_difficulty_rows: general.difficulty_rows,
             rules_gravity: general.gravity,
             rules_wind_direction: general.wind_direction(),
@@ -2762,6 +2772,7 @@ impl NativeRulesRegistryState {
             rules_detail: self.rules_detail,
             rules_ambient_change_rate: self.rules_ambient_change_rate,
             rules_ambient_change_step: self.rules_ambient_change_step,
+            rules_fog_rate: self.rules_fog_rate,
             rules_difficulty_rows: self.rules_difficulty_rows,
             rules_gravity: self.rules_gravity,
             rules_drop_zone_radius: self.rules_drop_zone_radius,
@@ -3607,6 +3618,7 @@ struct RulesPassProcessor {
     rules_detail: DetailRules,
     rules_ambient_change_rate: NativeF64Bits,
     rules_ambient_change_step: NativeF64Bits,
+    rules_fog_rate: NativeF64Bits,
     rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
     rules_gravity: i32,
     rules_wind_direction: i32,
@@ -3669,6 +3681,7 @@ impl RulesPassProcessor {
             rules_detail: registry_state.rules_detail,
             rules_ambient_change_rate: registry_state.rules_ambient_change_rate,
             rules_ambient_change_step: registry_state.rules_ambient_change_step,
+            rules_fog_rate: registry_state.rules_fog_rate,
             rules_difficulty_rows: registry_state.rules_difficulty_rows,
             rules_gravity: registry_state.rules_gravity,
             rules_wind_direction: registry_state.rules_wind_direction,
@@ -6077,6 +6090,9 @@ impl RulesPassProcessor {
         // Full AudioVisual6691E0's 66B3C4 read uses the retained signed dword
         // default. Cold startup52D132 calls the same reader before Process.
         self.rules_gravity = section.read_int("Gravity", self.rules_gravity);
+        // ReadAudioVisual66B4CA..66B4E4: retain the current double across
+        // Process and Type resets; authored input is scanned as f32 then widened.
+        self.rules_fog_rate = section.read_double_bits("FogRate", self.rules_fog_rate);
         // AudioVisual66B5D7..66B625: rate then step; both ReadDouble defaults
         // are the current Rules fields. Missing reads retain; malformed float
         // output is native undefined stack data, using ini_value's safe policy.
@@ -6244,6 +6260,7 @@ impl RulesPassProcessor {
                     rules_detail: self.rules_detail,
                     rules_ambient_change_rate: self.rules_ambient_change_rate,
                     rules_ambient_change_step: self.rules_ambient_change_step,
+                    rules_fog_rate: self.rules_fog_rate,
                     rules_difficulty_rows: self.rules_difficulty_rows,
                     rules_gravity: self.rules_gravity,
                     rules_wind_direction: self.rules_wind_direction,

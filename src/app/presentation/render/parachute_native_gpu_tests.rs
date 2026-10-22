@@ -367,6 +367,7 @@ fn retail_parachute_actual_emitter_matches_original_component_planes() {
                 &[],
                 &remaps,
                 &Default::default(),
+                &Default::default(),
                 None,
                 None,
                 Some(scene.runtime.simulation.interner()),

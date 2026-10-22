@@ -761,6 +761,7 @@ impl Simulation {
         });
         for &viewer in viewers {
             if projection == vision::MapRevealProjection::Source
+                && !self.session.game_options().fog_of_war
                 && notification_viewer != Some(viewer)
             {
                 // No receiver hears this plane: walk it in one go.
@@ -773,6 +774,33 @@ impl Simulation {
                 continue;
             }
             for &cell in &cells {
+                {
+                    let native_cells = context
+                        .terrain()
+                        .or(self.resolved_terrain.as_ref())
+                        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                    self.fog
+                        .clear_pending_fog(viewer, cell, native_cells.as_ref());
+                }
+                if projection == vision::MapRevealProjection::FogProtect {
+                    let admitted = {
+                        let native_cells = context
+                            .terrain()
+                            .or(self.resolved_terrain.as_ref())
+                            .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                        self.fog
+                            .admits_fog_reveal(viewer, cell, native_cells.as_ref())
+                    };
+                    if admitted {
+                        self.reveal_fog_map_cell(
+                            viewer,
+                            cell,
+                            notification_viewer == Some(viewer),
+                            context,
+                        );
+                    }
+                    continue;
+                }
                 let notify = {
                     let native_cells = context
                         .terrain()
@@ -796,10 +824,13 @@ impl Simulation {
                         projection,
                     )
                 };
-                if let Some(notify) = notify
-                    && notification_viewer == Some(viewer)
-                {
-                    self.notify_cell_change(notify.cell, viewer, notify.fresh, context);
+                if let Some(notify) = notify {
+                    if notification_viewer == Some(viewer) {
+                        self.notify_cell_change(notify.cell, viewer, notify.fresh, context);
+                    }
+                    if notify.clean_fog {
+                        self.clean_fog(viewer, notify.cell, context);
+                    }
                 }
             }
         }
@@ -1011,6 +1042,9 @@ impl Simulation {
         };
         if let Some(notify) = notify {
             self.notify_cell_change(notify.cell, player, notify.fresh, context);
+            if notify.clean_fog {
+                self.clean_fog(player, notify.cell, context);
+            }
         }
     }
 
@@ -1072,6 +1106,17 @@ impl Simulation {
                 .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
             self.fog.grow_shroud(viewer, size, cells.as_ref());
         }
+        self.refresh_techno_shroud(false, false, None, context);
+    }
+
+    /// Shared DisplayClass::RefreshTechnoShroud4ADFF0 Ground-vector visitor.
+    fn refresh_techno_shroud(
+        &mut self,
+        skip_buildings: bool,
+        reveal_fog: bool,
+        only_viewer: Option<crate::sim::intern::InternedId>,
+        context: UninitContext<'_>,
+    ) {
         let mut ordinal = 0;
         while let Some(id) = self
             .substrate
@@ -1080,28 +1125,254 @@ impl Simulation {
             .get(ordinal)
             .copied()
         {
-            let reveal = self.substrate.entities.get(id).is_some_and(|entity| {
-                if self.house_is_human_player(entity.owner()) {
-                    entity.discovery.discovered_by_current_house()
-                } else {
-                    entity.category() == EntityCategory::Structure
-                        && context.rules().general.ally_reveal
-                        && self.session.current_house().is_some_and(|viewer| {
+            let arguments = self.substrate.entities.get(id).and_then(|entity| {
+                let building = entity.category() == EntityCategory::Structure;
+                if skip_buildings && building {
+                    return None;
+                }
+                // House50B6F0 compares against PlayerPtr in a nonzero
+                // mode. Project that same test onto the explicit viewer;
+                // the process-local receiver belongs only to ordinary calls.
+                let human = only_viewer
+                    .filter(|_| self.session.game_mode_nonzero())
+                    .map_or_else(
+                        || self.house_is_human_player(entity.owner()),
+                        |viewer| entity.owner() == viewer,
+                    );
+                if human {
+                    let discovered = only_viewer.map_or_else(
+                        || entity.discovery.discovered_by_current_house(),
+                        |viewer| self.fog.sight_is_latched(id, viewer),
+                    );
+                    discovered.then_some((false, reveal_fog))
+                } else if building
+                    && context.rules().general.ally_reveal
+                    && only_viewer
+                        .or(self.session.current_house())
+                        .is_some_and(|viewer| {
                             crate::map::houses::is_allied_with(
                                 self.house_alliances.as_map(),
                                 self.interner.resolve(entity.owner()),
                                 self.interner.resolve(viewer),
                             )
                         })
+                {
+                    Some((reveal_fog, false))
+                } else {
+                    None
                 }
             });
-            if reveal {
-                self.reveal_uncached_object_sight(id, context);
+            if let Some((incremental, skip_reveal)) = arguments {
+                self.reveal_uncached_object_sight(
+                    id,
+                    incremental,
+                    skip_reveal,
+                    only_viewer,
+                    context,
+                );
             }
             ordinal += 1;
         }
         //6DA7D0/virtual38(1) mark presentation dirty. Fog's existing
         //ground-change tracking and view publication consume those writes.
+    }
+
+    /// Logic55B2B2..55B326: after pending shroud, before lighting/ore/AI.
+    /// The timer reload precedes callbacks; no RNG draw or object detach.
+    pub(super) fn tick_fog_regrowth(&mut self, context: UninitContext<'_>) {
+        let rate = f64::from_bits(context.rules().general.fog_rate.bits());
+        if !self.session.game_options().fog_of_war
+            || rate == 0.0
+            || rate.is_nan()
+            || !self
+                .session
+                .poll_fog_regrowth(context.rules().general.fog_regrowth_interval_frames())
+        {
+            return;
+        }
+        // Native holds one local viewer. VERA retains each human's plane
+        // in stable House order, so selecting a different local player cannot
+        // alter shared fog hashes, snapshot IDs or the timer's effects.
+        for viewer in self.fog_viewers() {
+            self.for_each_allocated_map_cell(context, |sim, cell| {
+                let cells = context
+                    .terrain()
+                    .or(sim.resolved_terrain.as_ref())
+                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                sim.fog.mark_pending_fog(viewer, cell, cells.as_ref());
+            });
+            self.refresh_techno_shroud(false, true, Some(viewer), context);
+            self.for_each_allocated_map_cell(context, |sim, cell| {
+                let pending = {
+                    let cells = context
+                        .terrain()
+                        .or(sim.resolved_terrain.as_ref())
+                        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                    sim.fog.take_pending_fog(viewer, cell, cells.as_ref())
+                };
+                if pending {
+                    sim.regrow_fog_at_cell(viewer, cell, context);
+                }
+            });
+        }
+    }
+
+    pub(super) fn fog_viewers(&self) -> Vec<crate::sim::intern::InternedId> {
+        let viewers: Vec<_> = self
+            .houses
+            .order()
+            .iter()
+            .copied()
+            .filter(|house| {
+                self.houses
+                    .get(house)
+                    .is_some_and(|state| state.is_controlled_by_human(false))
+            })
+            .collect();
+        if viewers.is_empty() {
+            self.session.current_house().into_iter().collect()
+        } else {
+            viewers
+        }
+    }
+
+    /// RegrowFogAtCell4ACC50, with an explicit DFS stack preserving its
+    /// neighbor and postorder FogCell calls without depending on host stack size.
+    /// Residual: native480243 rendering also stores Cell121. After a
+    /// Reshroud577D30 clear, a viewed cell can therefore suppress stale-edge
+    /// recursion which an offscreen cell retains. VERA keeps this cache in
+    /// simulation so camera/render frequency cannot alter deterministic state;
+    /// a stock campaign-visible consequence has not been established.
+    fn regrow_fog_at_cell(
+        &mut self,
+        viewer: crate::sim::intern::InternedId,
+        cell: (u16, u16),
+        context: UninitContext<'_>,
+    ) {
+        let in_bounds = |cell: (u16, u16)| {
+            self.map_size_diamond().map_or(
+                cell.0 < self.fog.width() && cell.1 < self.fog.height(),
+                |(w, h)| {
+                    crate::map::playfield::size_diamond_contains(
+                        w,
+                        h,
+                        (cell.0 as i16, cell.1 as i16),
+                    )
+                },
+            )
+        };
+        if !in_bounds(cell) {
+            return;
+        }
+        let begin = |sim: &mut Self, cell| {
+            let cells = context
+                .terrain()
+                .or(sim.resolved_terrain.as_ref())
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+            sim.fog
+                .begin_fog_regrowth_cell(viewer, cell, cells.as_ref())
+        };
+        let mut stack = vec![(cell, 0usize, begin(self, cell))];
+        while let Some((current, ordinal, _)) = stack.last_mut() {
+            if *ordinal == 8 {
+                let (current, _, was_known) = stack.pop().unwrap();
+                if was_known {
+                    self.fog_cell(viewer, current, context);
+                }
+                continue;
+            }
+            let (dx, dy) = crate::map::resolved_terrain::ROW_NEIGHBORS[*ordinal];
+            *ordinal += 1;
+            let next = (
+                (current.0 as i16).wrapping_add(dx) as u16,
+                (current.1 as i16).wrapping_add(dy) as u16,
+            );
+            let recurse = {
+                let cells = context
+                    .terrain()
+                    .or(self.resolved_terrain.as_ref())
+                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                self.fog
+                    .refresh_regrown_fog_neighbor(viewer, next, cells.as_ref())
+            };
+            let in_bounds = self.map_size_diamond().map_or(
+                next.0 < self.fog.width() && next.1 < self.fog.height(),
+                |(w, h)| {
+                    crate::map::playfield::size_diamond_contains(
+                        w,
+                        h,
+                        (next.0 as i16, next.1 as i16),
+                    )
+                },
+            );
+            if recurse && in_bounds {
+                stack.push((next, 0, begin(self, next)));
+            }
+        }
+    }
+
+    /// Full_Init687C63 ->5866C0 freezes never-mapped cells after map setup.
+    pub(crate) fn initialize_fog_of_war(&mut self, context: UninitContext<'_>) {
+        if !self.session.game_options().fog_of_war {
+            return;
+        }
+        for viewer in self.fog_viewers() {
+            self.for_each_allocated_map_cell(context, |sim, cell| {
+                let initialized = {
+                    let cells = context
+                        .terrain()
+                        .or(sim.resolved_terrain.as_ref())
+                        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                    sim.fog.fog_cell_initialized(viewer, cell, cells.as_ref())
+                };
+                if !initialized {
+                    sim.fog_cell(viewer, cell, context);
+                }
+            });
+        }
+    }
+
+    /// RevealFogCell4A9DD0 updates only the fog channel, then notifies and
+    /// cleans remembered objects. Ground knowledge and counters are retained.
+    fn reveal_fog_map_cell(
+        &mut self,
+        viewer: crate::sim::intern::InternedId,
+        cell: (u16, u16),
+        notify_viewer: bool,
+        context: UninitContext<'_>,
+    ) {
+        let notify = {
+            let cells = context
+                .terrain()
+                .or(self.resolved_terrain.as_ref())
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+            self.fog.begin_fog_reveal(viewer, cell, cells.as_ref())
+        };
+        for (dx, dy) in crate::map::resolved_terrain::ROW_NEIGHBORS {
+            let next = (
+                (cell.0 as i16).wrapping_add(dx) as u16,
+                (cell.1 as i16).wrapping_add(dy) as u16,
+            );
+            let recurse = {
+                let cells = context
+                    .terrain()
+                    .or(self.resolved_terrain.as_ref())
+                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                self.fog
+                    .propagate_map_cell_edge(viewer, next, true, cells.as_ref())
+            };
+            if recurse {
+                self.reveal_fog_map_cell(viewer, next, notify_viewer, context);
+            }
+        }
+        if let Some(notify) = notify {
+            if notify_viewer {
+                self.notify_cell_change(notify.cell, viewer, notify.fresh, context);
+            }
+            if notify.clean_fog {
+                self.clean_fog(viewer, notify.cell, context);
+            }
+        }
     }
 
     /// The bulk store that `Reveal` and `Reset_Shroud` share. It is bracketed
@@ -1640,7 +1911,14 @@ impl Simulation {
     /// Aircraft41ADF0 uses a Map5678E0 pair; Techno70ADC0 uses conditional
     /// Map5673A0 plus its border. Neither replaces250/254/260 source state.
     /// Active slots: Aircraft7E23C4=41ADF0, Unit7F5D90=70ADC0.
-    pub(crate) fn reveal_uncached_object_sight(&mut self, id: u64, context: UninitContext<'_>) {
+    pub(crate) fn reveal_uncached_object_sight(
+        &mut self,
+        id: u64,
+        _incremental: bool,
+        skip_reveal: bool,
+        only_viewer: Option<crate::sim::intern::InternedId>,
+        context: UninitContext<'_>,
+    ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -1683,6 +1961,11 @@ impl Simulation {
                     &config,
                     &self.interner,
                 );
+                let viewers: Vec<_> = viewers
+                    .iter()
+                    .copied()
+                    .filter(|viewer| only_viewer.is_none_or(|only| *viewer == only))
+                    .collect();
                 let heights = self.sight_height_grid(&config);
                 let _ = self.reveal_area(
                     &viewers,
@@ -1693,7 +1976,11 @@ impl Simulation {
                     final_pass,
                     &config,
                     context,
-                    vision::MapRevealProjection::Transient,
+                    if skip_reveal {
+                        vision::MapRevealProjection::FogProtect
+                    } else {
+                        vision::MapRevealProjection::Transient
+                    },
                     self.session.current_house(),
                 );
             }
@@ -1725,6 +2012,11 @@ impl Simulation {
             &config,
             &self.interner,
         );
+        let viewers: Vec<_> = viewers
+            .iter()
+            .copied()
+            .filter(|viewer| only_viewer.is_none_or(|only| *viewer == only))
+            .collect();
         let heights = self.sight_height_grid(&config);
         for &viewer in viewers.iter() {
             let border_origin = self.reveal_area(
@@ -1736,9 +2028,26 @@ impl Simulation {
                 false,
                 &config,
                 context,
-                vision::MapRevealProjection::UncachedConditional,
+                if skip_reveal {
+                    vision::MapRevealProjection::FogProtect
+                } else {
+                    vision::MapRevealProjection::UncachedConditional
+                },
                 notification_viewer,
             );
+            let border_origin = border_origin.or_else(|| {
+                only_viewer.and_then(|_| {
+                    config
+                        .collect_area_cells(
+                            (geometry.origin.0, geometry.origin.1),
+                            geometry.radius.clamp(0, i32::from(vision::MAX_SIGHT_RANGE)) as u16,
+                            geometry.origin.2,
+                            heights.cell_levels(self.resolved_terrain.as_ref()),
+                            (self.fog.width(), self.fog.height()),
+                        )
+                        .1
+                })
+            });
             let Some(border_origin) = border_origin else {
                 continue;
             };

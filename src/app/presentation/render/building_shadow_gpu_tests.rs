@@ -155,6 +155,7 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
         &[],
         &HashSet::new(),
         &HashSet::new(),
+        &Default::default(),
         None,
         None,
         Some(sim.interner()),

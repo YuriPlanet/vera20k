@@ -155,6 +155,7 @@ impl SlotGpu {
                 &[],
                 &Default::default(),
                 &Default::default(),
+                &Default::default(),
                 None,
                 None,
                 Some(sim.interner()),

@@ -313,7 +313,7 @@ pub(crate) fn install_world_presentation(
         let shp =
             crate::assets::shp_file::ShpFile::from_bytes(assets.get_ref("shroud.shp")?).ok()?;
         let (frame_pixels, cw, ch) = crate::render::shroud_buffer::extract_shp_brightness(&shp);
-        Some(crate::render::shroud_buffer::ShroudBuffer::new(
+        let mut buffer = crate::render::shroud_buffer::ShroudBuffer::new(
             &state.renderer.gpu.device,
             &state.renderer.gpu.queue,
             [state.render_width(), state.render_height()],
@@ -321,7 +321,13 @@ pub(crate) fn install_world_presentation(
             frame_pixels,
             [cw, ch],
             crate::render::shroud_buffer::SHROUD_EDGE_LUT,
-        ))
+        );
+        // Cell47EFE0/47F250 use FOG.SHP's raw A bytes when Scenario0x1000
+        // is set. It belongs to this same tactical source, not a sprite atlas.
+        let fog = crate::assets::shp_file::ShpFile::from_bytes(assets.get_ref("fog.shp")?).ok()?;
+        let (frames, width, height) = crate::render::shroud_buffer::extract_shp_brightness(&fog);
+        buffer.install_fog_frames(frames, [width, height]);
+        Some(buffer)
     });
     state.match_state.match_presentation.shroud_buffer = shroud_buffer;
 }

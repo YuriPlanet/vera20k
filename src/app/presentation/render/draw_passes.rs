@@ -28,6 +28,7 @@ pub(super) struct DrawPassData<'a> {
     pub cell_body_draws: &'a [CellBodyDraw],
     pub bridge_shadows: &'a [SpriteInstance],
     pub object_layers: &'a [super::draw_plan_lowering::ObjectLayerPass; 5],
+    pub fogged_objects: &'a super::draw_plan_lowering::ObjectLayerPass,
     pub building_status_text:
         &'a crate::app::presentation::ui_overlays::BuildingStatusTextInstances,
     pub surface_effects: crate::render::terrain_draw::SurfaceLineBatch,
@@ -313,6 +314,45 @@ pub(super) fn dispatch_draw_passes(
     // C_SHADOW.SHP (545214..54524D), never RAILBRDG. Do not synthesize a bridge
     // railing pass from its tables. Retail gate/resource regression:
     // map::theater::theater_tests::active_retail_tile_shadow_route_is_dormant.
+
+    // Native base terrain6D3470 calls FoggedObject::DrawAll4D1890 before
+    // the live Building6D9920 sweep. Snapshots never enter Display layers.
+    if !data.fogged_objects.runs.is_empty() {
+        drop(pass);
+        state
+            .renderer
+            .terrain_draw_renderer
+            .note_external_passes(encoder, 1);
+        merge_passes::draw_native_object_pass(
+            encoder,
+            super::merge_passes::ObjectDrawPhase::Display,
+            view,
+            &state.renderer.depth_view,
+            &mut state.renderer.terrain_draw_renderer,
+            [tac_x, tac_y, tac_w, tac_h],
+            &state.renderer.batch_renderer,
+            pool.get("fogged_objects"),
+            data.fogged_objects,
+            state.match_state.match_presentation.overlay_atlas.as_ref(),
+            state.match_state.match_presentation.unit_atlas.as_ref(),
+            Some(&pose_cache),
+            state.match_state.match_presentation.sprite_atlas.as_ref(),
+            state.match_state.match_presentation.palette_set.as_ref(),
+            state
+                .match_state
+                .match_presentation
+                .building_zshape
+                .as_ref()
+                .map_or(
+                    state.renderer.batch_renderer.default_zshape_bind_group(),
+                    |z| &z.bind_group,
+                ),
+            None,
+            None,
+        );
+        pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+        pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
+    }
 
     // Native6D9920 ->43CEA0/43D290 draws Ground's building bases into the
     // background before rally6D4648. These ranges draw only here; Display's

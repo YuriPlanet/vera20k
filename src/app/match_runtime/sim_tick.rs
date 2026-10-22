@@ -1691,6 +1691,14 @@ fn advance_one_simulation_frame(
                         state.match_state.match_presentation.sprite_atlas.as_ref(),
                         &runtime.simulation,
                         &state.match_state.match_presentation.house_color_map,
+                    ) || !sprite_atlas::atlas_covers_sprite_keys(
+                        state.match_state.match_presentation.sprite_atlas.as_ref(),
+                        &sprite_atlas::collect_fogged_sprite_keys(
+                            &runtime.simulation,
+                            &runtime.resources.rules,
+                            &state.match_state.match_presentation.house_color_map,
+                        ),
+                        Some(&runtime.resources.rules),
                     )
                 }))
     {
@@ -1933,6 +1941,11 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
         sim,
         &state.match_state.match_presentation.house_color_map,
     );
+    let frozen_keys = sprite_atlas::collect_fogged_sprite_keys(
+        sim,
+        &rt.resources.rules,
+        &state.match_state.match_presentation.house_color_map,
+    );
     let sprite_rebuild = !sprite_atlas::atlas_covers_world(
         state.match_state.match_presentation.sprite_atlas.as_ref(),
         sim.entities(),
@@ -1940,6 +1953,10 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
         &extra_buildings,
         &anim_remap_keys,
         Some(sim.interner()),
+    ) || !sprite_atlas::atlas_covers_sprite_keys(
+        state.match_state.match_presentation.sprite_atlas.as_ref(),
+        &frozen_keys,
+        bound_rules,
     );
 
     if !unit_rebuild && !sprite_rebuild {
@@ -1996,6 +2013,7 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
             &extra_buildings,
             &anim_remap_keys,
             &cell_drawer_type_ids,
+            &frozen_keys,
             Some(&cell_palette),
             existing,
             Some(sim.interner()),

@@ -506,6 +506,14 @@ fn retail_gapowr_atlas_registers_native_embedded_shadow_frames() {
     let remaps = HashSet::new();
     let cell_drawers = HashSet::new();
     let extra_building_types = ["GAPOWR"];
+    let frozen_body = ShpSpriteKey {
+        palette_context: ShpPaletteContext::SelectedScheme,
+        type_id: "GAPOWR".to_string(),
+        facing: 0,
+        frame: 1,
+        house_color: HouseColorIndex(2),
+    };
+    let frozen_keys = HashSet::from([frozen_body.clone()]);
     let sprites = build_sprite_atlas(
         &gpu.device,
         &gpu.queue,
@@ -521,6 +529,7 @@ fn retail_gapowr_atlas_registers_native_embedded_shadow_frames() {
         &extra_building_types,
         &remaps,
         &cell_drawers,
+        &frozen_keys,
         Some(&theater.iso_palette),
         None,
         Some(scenario.runtime.simulation.interner()),
@@ -549,6 +558,20 @@ fn retail_gapowr_atlas_registers_native_embedded_shadow_frames() {
             "native body frame {body_frame} requires retail GGPOWR shadow frame {shadow_frame}"
         );
     }
+    assert!(sprites.get(&frozen_body).is_some());
+    assert!(
+        sprites
+            .get(&ShpSpriteKey {
+                frame: 4,
+                ..frozen_body
+            })
+            .is_some()
+    );
+    assert!(atlas_covers_sprite_keys(
+        Some(&sprites),
+        &frozen_keys,
+        Some(rules)
+    ));
 }
 
 fn building_body_atlas_rules(art_text: &str) -> RuleSet {
@@ -882,6 +905,7 @@ fn infantry_nonempty_shadow_is_uploaded_and_selected_from_the_second_half() {
         &[],
         &HashSet::new(),
         &HashSet::new(),
+        &Default::default(),
         None,
         None,
         Some(&interner),
@@ -1561,7 +1585,7 @@ pub(crate) fn palette_probe_page(palette: &Palette) -> NativePaletteProbe {
 #[test]
 fn palette_context_preserves_simultaneous_global_cell_and_attached_sprite_keys() {
     let art = ArtRegistry::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-        "[SHARED]\nShouldUseCellDrawer=yes\n",
+        "[SHARED]\nShouldUseCellDrawer=yes\n[ALT]\nAltPalette=yes\nShouldUseCellDrawer=no\n",
     ));
     let mut key = make_shp_key("SHARED", 0);
     let mut keys = HashSet::new();
@@ -1580,6 +1604,19 @@ fn palette_context_preserves_simultaneous_global_cell_and_attached_sprite_keys()
         );
     }
     assert_eq!(keys.len(), 3);
+    // Fogged DrawAll4D2176 keeps literal ANIM.PAL even where live
+    // AnimClass4232E2 would substitute the AltPalette ColorScheme.
+    key.type_id = "ALT".into();
+    key.palette_context = ShpPaletteContext::AnimPalette;
+    assert_eq!(
+        sprite_palette_for_key(&key, Some(&art), &effects, &cells, None),
+        SpritePaletteChoice::Anim
+    );
+    key.palette_context = ShpPaletteContext::GlobalAnim;
+    assert_eq!(
+        sprite_palette_for_key(&key, Some(&art), &effects, &cells, None),
+        SpritePaletteChoice::Unit
+    );
     let probe = native_palette_probe_page();
     assert_eq!(&probe.indices[505..520], (240..=254u8).collect::<Vec<_>>());
     assert_eq!(probe.palette_row[240 * 4], 240);
@@ -2275,6 +2312,7 @@ fn building_palette_groups_survive_refresh_and_palette_texture_growth() {
             types,
             &no_remaps,
             &no_cell_drawers,
+            &Default::default(),
             Some(&cell),
             existing,
             None,
@@ -2477,6 +2515,7 @@ fn building_palette_groups_survive_refresh_and_palette_texture_growth() {
             &[],
             &remaps,
             &no_cell_drawers,
+            &Default::default(),
             Some(&cell),
             previous,
             Some(sim.interner()),

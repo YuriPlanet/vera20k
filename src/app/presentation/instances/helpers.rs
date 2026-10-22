@@ -148,6 +148,13 @@ pub(crate) fn tactical_entity_admission(
 ) -> Option<crate::render::draw_state::DrawDecision> {
     let requires_revealed_anchor = purpose == TacticalEntityPurpose::ScreenSelection;
     if (entity.category() == EntityCategory::Structure && !entity.lifecycle.object_alive())
+        // Tactical6D9985..6D9996 skips the live building while its frozen
+        // FoggedObjectClass is drawn by the separate4D1890 base pass.
+        || (purpose == TacticalEntityPurpose::Drawing
+            && entity.category() == EntityCategory::Structure
+            && !ignore_visibility
+            && local_owner_id
+                .is_some_and(|viewer| fog.is_object_fogged(viewer, entity.stable_id())))
         || entity.lifecycle.in_limbo()
         || entity.passenger_role.is_inside_transport()
         || (requires_revealed_anchor

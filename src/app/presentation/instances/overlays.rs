@@ -419,6 +419,13 @@ pub(crate) fn build_display_effect_instances(
         ) {
             continue;
         }
+        // AnimDrawIt423014..423026 applies the fog byte after its detail
+        // queries, and only when AnimType.ShouldFogRemove is set.
+        if config.is_none_or(|config| config.should_fog_remove)
+            && local_owner.is_some_and(|viewer| sim.fog().is_object_fogged(viewer, stable_id))
+        {
+            continue;
+        }
         if is_building_anim {
             // DrawIt queries detail before hidden/image/material rejection.
             // An absent prepared piece must not suppress that query.

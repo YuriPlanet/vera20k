@@ -1571,6 +1571,20 @@ impl Simulation {
             &self.houses,
             stable_id,
         );
+        // BuildingClass::Unlimbo440B81..440C03 freezes an already-fogged
+        // foundation before exposing the new building. Its false visibility
+        // argument prevents newly constructed enemy art leaking into memory.
+        if self.session.game_options().fog_of_war
+            && self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+        {
+            for viewer in self.fog_viewers() {
+                self.freeze_building_in_fog(viewer, stable_id, false, context);
+            }
+        }
         // Building440D07: recompute from the PRE-append House+68. Failed
         // Mark and the earlier dead arms never reach it.
         if let Some(owner) = self
@@ -6322,6 +6336,9 @@ impl Simulation {
         // (4CD4DE) resubmits even an owner concealed earlier in the frame.
         self.substrate.display.remove(stable_id);
         self.fog.forget_sight_source(stable_id);
+        // FoggedObject4D0EF0 has no source-object pointer: its image survives
+        // this destruction until CellClass::CleanFog486BF0 reveals it.
+        self.fog.forget_fogged_live_object(stable_id);
         self.drop_object_custom_sound(stable_id);
         let removed = match kind {
             Some(ObjectKind::Entity) => {
