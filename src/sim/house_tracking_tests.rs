@@ -288,10 +288,7 @@ fn nominal_active_counts_match_executed_native_histories() {
         );
         for step in row["steps"].as_array().unwrap() {
             match step["operation"].as_str().unwrap() {
-                "add" => {
-                    tracking.added_to_game_prefix(&entity);
-                    tracking.added_to_game_after_power(&entity, &factors);
-                }
+                "add" => tracking.added_to_game(&entity, &factors),
                 "remove" => tracking.removed_from_game(&entity, &factors),
                 operation => panic!("unexpected counter operation {operation}"),
             }

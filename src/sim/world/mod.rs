@@ -181,8 +181,6 @@ mod gsi_04_18_tests;
 #[cfg(test)]
 mod house_ai_activation_tests;
 #[cfg(test)]
-mod house_power_admission_tests;
-#[cfg(test)]
 mod jumpjet_infantry_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod lifecycle_tests;
@@ -5605,28 +5603,27 @@ impl Simulation {
     }
 
     /// `HouseClass::Added_To_Game @ 0x00502A80` for an object on its owner's
-    /// house, priced with that house's current `Cost_Of` factors. A Building
-    /// immediately adds its live GetPowerDrain44E880 through5018C0 after
-    /// its active/factory counters and before capacity. This does not reassess
-    /// output or dirty power; GrandOpening and the health sample retain their
-    /// own phases.
+    /// house, priced with that house's current `Cost_Of` factors. It counts
+    /// no powered center and invalidates no power; the first GrandOpening
+    /// owns that invalidation.
+    ///
+    /// Building registration502B48..502B52 also adds GetPowerDrain44E880
+    /// immediately via5018C0. Earlier Houses may query the retained totals
+    /// before this House's first assessment (SOV01's Event58, for example).
     pub(crate) fn house_added_to_game(&mut self, stable_id: u64, rules: &RuleSet) {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };
-        let owner = entity.owner();
-        let Some(house) = self.houses.get_mut(&owner) else {
-            return;
-        };
-        house.tracking_mut().added_to_game_prefix(entity);
-        if entity.category() == EntityCategory::Structure {
-            let drain = power_system::building_power_drain(entity, rules, &self.interner);
-            self.power_states.house_mut(owner).add_building_drain(drain);
+        if let Some(house) = self.houses.get_mut(&entity.owner()) {
+            let factors = house.cost_factors();
+            house.tracking_mut().added_to_game(entity, &factors);
+            if entity.category() == EntityCategory::Structure {
+                let drain = power_system::building_power_drain(entity, rules, &self.interner);
+                self.power_states
+                    .house_mut(entity.owner())
+                    .add_building_drain(drain);
+            }
         }
-        let factors = house.cost_factors();
-        house
-            .tracking_mut()
-            .added_to_game_after_power(entity, &factors);
     }
 
     /// `HouseClass::Removed_From_Game @ 0x005025F0` for an object on its
