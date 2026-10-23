@@ -562,6 +562,7 @@ fn retail_bridge_end_headers_reach_full_and_dirty_radar_sources() {
     let colors = crate::render::overlay_atlas::compute_overlay_radar_colors(
         &assets,
         &registry,
+        crate::render::overlay_atlas::OverlayRadarColorSource::Cell,
         &names,
         "tem",
         "TEMPERATE",

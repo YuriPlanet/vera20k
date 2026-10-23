@@ -493,6 +493,29 @@ impl NativeRulesProcessOwner {
             .map_err(|failure| failure.into_parts().0)
     }
 
+    /// RMG InitMapFromSyntheticINI599650 calls ResetTypeRegistriesAndReloadRules
+    /// 6686C0 at59A0F0: root, LANG, then committed Session mode668B8E..668BAA.
+    /// Preview does not Process the synthetic map
+    /// or retain outgoing scenario Type fields. This immutable projection
+    /// supplies preview consumers without replacing the process registry.
+    pub fn random_map_preview_projection(
+        &self,
+        mode_rules_override: Option<&IniFile>,
+    ) -> Result<ProcessedRulesLayers, RulesError> {
+        let mut layers = self.startup_layers();
+        if let Some(mode) = mode_rules_override {
+            layers.push(RulesLayerKind::GameMode, mode.clone());
+        }
+        layers
+            .process_with_fixed_art_and_registry_state_recovering(
+                &self.sources.fixed_art,
+                NativeRulesRegistryState::default(),
+                RulesProcessContext::ScenarioReset,
+                &self.sources.fixed_eva,
+            )
+            .map_err(|failure| failure.into_parts().0)
+    }
+
     /// Run ordinary Full_Init's pre-reset E_multi exactly once, before Draw.
     ///
     /// Original68741D/68742E/687451 read root Countries, General and Country

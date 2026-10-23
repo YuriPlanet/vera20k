@@ -12,6 +12,28 @@ allocation order and corpora. This mode extends their physical-asset and native
 caller owner; `tmp_clear_render.py` contains no VM, image decoder, palette,
 projection, RNG or expected-pixel implementation.
 
+The additive packed-color numeric mode is consumed by
+`native_surface_format::packed_color_mixer_matches_original_executed_controls`:
+
+```sh
+python -m tools.spatial_oracle.tmp_clear_render --packed-color-mix --write
+python -m tools.spatial_oracle.tmp_clear_render --packed-color-mix --check
+```
+
+Its 20 rows contain only format, two logical input words, unsigned amount and
+the original `4BF650` low-word result. Existing PaletteReader initialization
+is reused; original `4BA9CD..4BAB06` derives masks from declared RGB565/RGB555
+descriptors. Only exact amounts 0/25/50/75/100 have special dispatch. Both 25
+and 75 quantize the first word without reading the second; 50 adds masked
+halves. The remaining controls cover adjacent/default amounts, zero source,
+RGB555 and two retail ore/gem colors. The latter RGB inputs come from the
+production TIB01/GEM01 reader and are packed by original `641409..641470`.
+Their ground input is existing `tmp_preview` level0 Cell output42282;
+additional controls use zero and original first-mix48549 as the following
+operation's input. The sidecar records these boundaries and the replay command.
+This mode does not execute RMG, raster drawing or gameplay; existing default
+and `--preview` modes keep their inputs and native instruction boundaries.
+
 The active route is Tactical6D2DE0 → full-view6D7560 → Cell480350 →
 IsometricTileType547CF0. The selected path is tile0/subtile0, ordinary draw
 argument0, no smudge, physical `clear01.tem` and its seven contiguous independent

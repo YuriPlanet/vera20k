@@ -51,7 +51,7 @@ fn retail_generation_inputs(
     )
     .expect("retail Generate rules")
     .into_parts();
-    let prepared = prepare_random_map_generation(&mut assets, options, Some(&rules))
+    let prepared = prepare_random_map_generation(&mut assets, options, Some(&rules), None)
         .expect("production Generate preparation");
     Some((assets, prepared, rules))
 }
@@ -245,7 +245,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
     let preview = crate::map::rmg::preview::preview_cells_from_map(
         &generated.map_file,
         &resolved,
-        &|_, _| None,
+        &|_, _, _| None,
     );
     assert!(
         preview

@@ -1047,10 +1047,18 @@ fn forced_tiberium_image_name() -> Option<&'static str> {
         .as_deref()
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum OverlayRadarColorSource {
+    /// Cell47C060 bypasses the type image for Tiberium's CellAnim branch.
+    Cell,
+    /// Preview641140 calls OverlayTypeGetRadarColor5FED00 directly.
+    OverlayType,
+}
+
 /// Read exact SHP-frame radar metadata for every runtime-addressable overlay.
 ///
 /// `CellClass::GetRadarColor @ 0x0047C060` selects frame 1 for the two low-
-/// bridge ranges and the cell data byte otherwise. `OverlayClass::GetRadarColor
+/// bridge ranges and the cell data byte otherwise. `OverlayTypeClass::GetRadarColor
 /// @ 0x005FED00` / `GetTiberiumRadarColor @ 0x0069E860` read bytes 0x0C..0x0E
 /// from that frame header; rendered-pixel averages and palettes are not part of
 /// this path. Tiberium is deliberately different: `OverlayTypeClass::ReadINI
@@ -1061,6 +1069,7 @@ fn forced_tiberium_image_name() -> Option<&'static str> {
 pub fn compute_overlay_radar_colors(
     asset_manager: &AssetManager,
     overlay_registry: &OverlayTypeRegistry,
+    source: OverlayRadarColorSource,
     overlay_names: &BTreeMap<u8, String>,
     theater_ext: &str,
     theater_name: &str,
@@ -1079,7 +1088,7 @@ pub fn compute_overlay_radar_colors(
         };
         let flags = overlay_registry.flags(overlay_id);
         let is_tiberium = flags.is_some_and(|flags| flags.tiberium);
-        let shp = if is_tiberium {
+        let cell_anim = || {
             flags
                 .and_then(|flags| flags.cell_anim.as_deref())
                 .and_then(|anim| {
@@ -1092,6 +1101,9 @@ pub fn compute_overlay_radar_colors(
                         theater_name,
                     ))
                 })
+        };
+        let shp = if source == OverlayRadarColorSource::Cell && is_tiberium {
+            cell_anim()
         } else {
             let image_id = art_registry.resolve_overlay_image_id(name, rules_ini);
             load(art_data::overlay_shp_candidates(
@@ -1101,6 +1113,7 @@ pub fn compute_overlay_radar_colors(
                 theater_ext,
                 theater_name,
             ))
+            .or_else(cell_anim)
         };
         if let Some(shp) = shp {
             shp_cache.insert(overlay_id, shp);
@@ -1112,7 +1125,19 @@ pub fn compute_overlay_radar_colors(
         for (frame, header) in shp.frames.iter().take(usize::from(u8::MAX) + 1).enumerate() {
             if let Ok(frame) = u8::try_from(frame) {
                 // Black is data, not an absence sentinel (e.g. retail bridge.tem).
-                result.insert((overlay_id, frame), header.radar_color);
+                let rgb = if source == OverlayRadarColorSource::Cell
+                    && overlay_registry
+                        .flags(overlay_id)
+                        .is_some_and(|flags| flags.tiberium)
+                {
+                    header.radar_color
+                } else {
+                    crate::rules::overlay_types::overlay_radar_channel_order(
+                        overlay_id,
+                        header.radar_color,
+                    )
+                };
+                result.insert((overlay_id, frame), rgb);
             }
         }
     }

@@ -83,6 +83,28 @@ fn native_tiberium_overlay_range(image: u8) -> NativeTiberiumOverlayRange {
     }
 }
 
+/// Overlay id bands whose radar colour comes back with green and blue swapped.
+///
+/// Two contiguous bands are re-packed on the way out; everything else is copied
+/// straight through. Copying all of them straight through leaves these bands the
+/// wrong hue while the rest look correct, which is a miserable thing to spot by
+/// eye.
+const SWAPPED_CHANNEL_BANDS: [(u8, u8); 2] = [(0x7F, 0x8A), (0x93, 0x9E)];
+
+/// OverlayTypeClass::GetRadarColor5FED34..5FED8E swaps these SHP-header channels.
+/// Callers selecting a Rules RadarColor use that separate triple unchanged.
+pub const fn overlay_radar_channel_order(overlay_id: u8, rgb: [u8; 3]) -> [u8; 3] {
+    let mut band = 0;
+    while band < SWAPPED_CHANNEL_BANDS.len() {
+        let (low, high) = SWAPPED_CHANNEL_BANDS[band];
+        if overlay_id >= low && overlay_id <= high {
+            return [rgb[0], rgb[2], rgb[1]];
+        }
+        band += 1;
+    }
+    rgb
+}
+
 /// Check if an overlay index is a bridge overlay. The original engine identifies
 /// bridges by hardcoded index position in `[OverlayTypes]`, not by INI flags.
 /// These indices must not be reordered without breaking bridge logic.
@@ -161,9 +183,9 @@ pub struct OverlayTypeFlags {
     pub bridge_deck: bool,
     /// `RadarColor=R,G,B` from the type's rules section.
     ///
-    /// The engine prefers the growth stage's colour out of the overlay SHP and
-    /// falls back to this when that comes back essentially black, so an overlay
-    /// whose art is missing still paints the right colour on radar and previews.
+    /// GenerateTerrainPreview641409 prefers this for Tiberium when its
+    /// packed value exceeds5. Other overlay previews prefer the SHP header;
+    /// in-match Cell radar has its own Tiberium/CellAnim selection.
     pub radar_color: Option<[u8; 3]>,
     /// Railroad track overlay (TRACKS01..TRACKS16). FA2 renders these +15px lower.
     pub track: bool,
@@ -1266,5 +1288,23 @@ Image=5
         // A scan that stops early keeps the constructor's black.
         assert_eq!(reg.flags(1).unwrap().radar_color, Some([0, 0, 0]));
         assert_eq!(reg.flags(2).unwrap().radar_color, None);
+    }
+    #[test]
+    fn only_the_two_bands_get_their_channels_reordered() {
+        let rgb = [10, 20, 30];
+        // Straight through outside the bands.
+        assert_eq!(overlay_radar_channel_order(0x00, rgb), rgb);
+        assert_eq!(overlay_radar_channel_order(0x7E, rgb), rgb);
+        assert_eq!(overlay_radar_channel_order(0x8B, rgb), rgb);
+        assert_eq!(overlay_radar_channel_order(0x92, rgb), rgb);
+        assert_eq!(overlay_radar_channel_order(0x9F, rgb), rgb);
+        // Green and blue swap inside them, edges included.
+        for id in [0x7F, 0x8A, 0x93, 0x9E] {
+            assert_eq!(
+                overlay_radar_channel_order(id, rgb),
+                [10, 30, 20],
+                "id {id:#04x} sits in a swapped band"
+            );
+        }
     }
 }

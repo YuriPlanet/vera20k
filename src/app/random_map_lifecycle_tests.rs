@@ -74,7 +74,7 @@ fn start_production_worker(
     shared_cell_dummy: &crate::map::resolved_terrain::SharedCellDummy,
 ) -> std::sync::mpsc::Receiver<RandomMapUpdate> {
     begin_random_map_generation_owners(runtime, retention, options);
-    let prepared = prepare_random_map_generation(assets, options, Some(native_rules))
+    let prepared = prepare_random_map_generation(assets, options, Some(native_rules), None)
         .expect("production retail generation preparation");
     let decision = retention.map_storage_decision(options);
     let receiver = spawn_random_map_generation_worker(

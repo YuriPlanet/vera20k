@@ -226,6 +226,7 @@ pub(crate) fn build_overlay_presentation(
         overlay_atlas::compute_overlay_radar_colors(
             asset_manager,
             overlay_registry,
+            overlay_atlas::OverlayRadarColorSource::Cell,
             &overlay_names,
             theater_ext,
             theater_name,
