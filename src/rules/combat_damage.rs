@@ -58,6 +58,9 @@ pub struct CombatDamageDefaults {
     /// neither an explicit death weapon nor a live current-weapon fallback,
     /// as the ordered Rules processor resolved it.
     pub death_weapon: Option<String>,
+    /// Rules+F88, constructor666B22 null; ReadCombatDamage66C2D4..66C2FE
+    /// retains the ordered Warhead factory result for ordinary AnimAI424630.
+    flame_damage2: Option<String>,
     /// `DrainAnimationType=` (`RulesClass+0x31C`): the AnimType a drain link
     /// attaches to its drainer (`TechnoClass::Install_Drain_Link @
     /// 0x0070FD70`). Read right after `DeathWeapon=`; the constructor leaves
@@ -110,6 +113,14 @@ pub struct CombatDamageDefaults {
 }
 
 impl CombatDamageDefaults {
+    pub(crate) fn bind_flame_damage2(&mut self, name: Option<String>) {
+        self.flame_damage2 = name;
+    }
+
+    pub(crate) fn flame_damage2(&self) -> Option<&str> {
+        self.flame_damage2.as_deref()
+    }
+
     /// Parse the scalars from a `[CombatDamage]` `IniSection`. The Type
     /// references keep the constructor's nulls: only the ordered Process
     /// owner reads them.
@@ -122,6 +133,7 @@ impl CombatDamageDefaults {
             incoming: section.read_speed("Incoming", 0),
             open_topped_warp_distance: section.read_int("OpenToppedWarpDistance", 5),
             death_weapon: None,
+            flame_damage2: None,
             drain_animation_type: None,
             falling_damage_multiplier: section.read_float("FallingDamageMultiplier", 1.0),
             current_strength_damage: section.read_bool("CurrentStrengthDamage", true),
@@ -153,6 +165,7 @@ impl Default for CombatDamageDefaults {
             incoming: 0,
             open_topped_warp_distance: 5,
             death_weapon: None,
+            flame_damage2: None,
             drain_animation_type: None,
             falling_damage_multiplier: 1.0,
             current_strength_damage: true,

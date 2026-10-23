@@ -97,12 +97,16 @@ const POINTERS: &[(&str, PublishPointer)] = &[
     ("EMPulseSparkles", |rules, id| {
         rules.bind_emp_sparkles(named(id))
     }),
-    // ReadCombatDamage (`0x0066BBB0`): C4Warhead +FA8 (constructor
+    // ReadCombatDamage (`0x0066BBB0`): FlameDamage2 +F88 (constructor
+    //666B22, read66C2D4..66C2FE); C4Warhead +FA8 (constructor
     // `0x00666B52`, read `0x0066C31F`), CrushWarhead +FAC (`0x00666B58`,
     // `0x0066C35D`), IvanWarhead +FC8 (`0x00666B82`, `0x0066C50C`), WarheadTypes;
     // DrainAnimationType +31C, ControlledAnimationType +320 and
     // PermaControlledAnimationType +324 (`0x00665AD8..0x00665AE4`,
     // `0x0066C94F..0x0066CA4F`), AnimTypes.
+    ("FlameDamage2", |rules, id| {
+        rules.combat_damage.bind_flame_damage2(named(id));
+    }),
     ("C4Warhead", |rules, id| {
         rules.bridge_warheads.c4_name = id.to_owned();
     }),

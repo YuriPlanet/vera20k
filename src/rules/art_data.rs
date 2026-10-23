@@ -424,20 +424,19 @@ pub struct AnimTypeRuntimeConfig {
     /// leaves it `0.0` when the key is absent, and the read passes the current
     /// value back as its own default.
     ///
-    /// UNCHECKED consumer (M11b): the per-frame damage arm at
+    /// The per-frame damage arm at
     /// `AnimClass::AI 0x00424507..0x0042464C` accumulates this into
     /// `AnimClass+0x188`, which the constructor seeds to **`1.0`**
     /// (`0x00421FA4` zeroes the low dword, `0x00421FC8` writes `0x3FF00000` to
     /// the high dword), so the first armed frame always emits at least one
-    /// point. Nothing reads this field yet.
+    /// point. `Simulation::visit_anim` consumes it after a due frame advance.
     pub damage: NativeF64Bits,
     /// art.ini `Warhead=`, `AnimTypeClass+0x330`, resolved by
     /// `WarheadTypeClass::FindOrAllocate`. Bouncer-landing only — the per-frame
     /// damage arm hard-selects `[CombatDamage] C4Warhead`/`FlameDamage2`
-    /// instead. Not consumed yet (M11b).
+    /// instead.
     pub warhead: Option<String>,
     /// art.ini `DamageRadius=`, `AnimTypeClass+0x334`. Bouncer-landing only.
-    /// Not consumed yet (M11b).
     pub damage_radius: i32,
     /// art.ini `Elasticity=`, `AnimTypeClass+0x310`, a `ReadDouble`.
     /// Constructor default `0x3FE99999_A0000000` — the single-precision `0.8f`
@@ -2879,8 +2878,8 @@ mod anim_runtime_metadata_tests {
         assert_eq!(f64::from_bits(debris.max_xy_vel.bits()), 25.0);
         assert!(debris.bouncer);
 
-        // The one live per-frame-damage producer in stock skirmish: the fire a
-        // destroyed building leaves behind.
+        // Positive fixed-ART input. Registration and an ordinary live
+        // producer are separate gates, exercised by authored CellAnim tests.
         let fire3 = registry
             .anim_runtime_config("FIRE3")
             .expect("stock FIRE3 declaration");

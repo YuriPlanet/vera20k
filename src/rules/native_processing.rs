@@ -6368,12 +6368,10 @@ impl RulesPassProcessor {
         {
             self.select_anim.splash_list = list;
         }
-        // FlameDamage (`0x0066C2A1`) and FlameDamage2 are allocated but not
-        // retained: VERA ports no reader of either pointer.
-        for key in ["FlameDamage", "FlameDamage2"] {
-            let _ = self.resolve_scalar_from(section, key, RulesTypeFamily::Warhead, 0x80);
-        }
-        for key in ["C4Warhead", "CrushWarhead"] {
+        // ReadCombatDamage66C2A1..66C35D, in original read order.
+        // RulesTypeReferences retains each consumed pointer; FlameDamage
+        // still allocates its Type without a published consumer.
+        for key in ["FlameDamage", "FlameDamage2", "C4Warhead", "CrushWarhead"] {
             let warhead = self.resolve_scalar_from(section, key, RulesTypeFamily::Warhead, 0x80);
             self.rules_type_references.read_pointer(key, warhead);
         }

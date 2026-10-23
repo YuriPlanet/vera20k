@@ -6753,6 +6753,7 @@ impl RuleSet {
         }
         self.anim_type_references.hash(&mut hasher);
         (
+            self.combat_damage.flame_damage2(),
             &self.bridge_warheads.c4_name,
             &self.bridge_warheads.crush_name,
             &self.bridge_warheads.ion_cannon_name,
