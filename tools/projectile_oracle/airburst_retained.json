@@ -1,0 +1,84 @@
+{
+  "initial_airburst": false,
+  "rng_before_sha256": [
+    "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+    "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6",
+    "dca67435629d486cac458300c323b247b68ed22541e3169dbaa0ec0412d595e6"
+  ],
+  "rng_unchanged": true,
+  "rows": [
+    {
+      "admitted": true,
+      "airburst": true,
+      "sections": {
+        "SHOT": {
+          "Airburst": "yes"
+        }
+      }
+    },
+    {
+      "admitted": true,
+      "airburst": true,
+      "sections": {
+        "SHOT": {
+          "Airburst": "invalid"
+        }
+      }
+    },
+    {
+      "admitted": true,
+      "airburst": true,
+      "sections": {
+        "SHOT": {
+          "Name": "missing key"
+        }
+      }
+    },
+    {
+      "admitted": false,
+      "airburst": true,
+      "sections": {
+        "OTHER": {
+          "Name": "missing section"
+        }
+      }
+    },
+    {
+      "admitted": true,
+      "airburst": false,
+      "sections": {
+        "SHOT": {
+          "Airburst": "no"
+        }
+      }
+    },
+    {
+      "admitted": true,
+      "airburst": false,
+      "sections": {
+        "SHOT": {
+          "Airburst": "invalid"
+        }
+      }
+    },
+    {
+      "admitted": true,
+      "airburst": true,
+      "sections": {
+        "SHOT": {
+          "Airburst": "yes"
+        }
+      }
+    },
+    {
+      "admitted": true,
+      "airburst": true,
+      "sections": {
+        "SHOT": {
+          "Airburst": ""
+        }
+      }
+    }
+  ],
+  "text_unchanged": true
+}

@@ -6662,6 +6662,18 @@ impl RuleSet {
             b"airburst-weapons-v1".hash(&mut hasher);
             airburst_weapons.hash(&mut hasher);
         }
+        // A later invalid raw token retains BulletType+294. Equal flattened
+        // INIs can therefore differ in the child-fan and parent-cluster gates.
+        let airburst_flags = self
+            .projectiles
+            .iter()
+            .filter(|(_, projectile)| projectile.airburst)
+            .map(|(id, _)| id.to_ascii_uppercase())
+            .collect::<std::collections::BTreeSet<_>>();
+        if !airburst_flags.is_empty() {
+            b"airburst-retained-flag-v1".hash(&mut hasher);
+            airburst_flags.hash(&mut hasher);
+        }
         self.super_weapons
             .iter()
             .map(|(id, super_weapon)| {
