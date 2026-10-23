@@ -94,7 +94,7 @@ pub(crate) fn factory_ai(
         .substrate
         .entities
         .get(building)
-        .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+        .and_then(|entity| sim.entity_object_type(entity, rules))
         .map(|ty| ty.factory_rtti())
         .filter(|&factory| factory != 0)
     else {
@@ -137,7 +137,12 @@ fn exit_finished_object(
     let Some(product) = object.entity_id else {
         return;
     };
-    let Some(product_type) = sim.object_type(object.type_id, rules) else {
+    let Some(product_type) = sim
+        .substrate
+        .entities
+        .get(product)
+        .and_then(|entity| sim.entity_object_type(entity, rules))
+    else {
         return;
     };
     let is_building = product_type.category == ObjectCategory::Building;
@@ -183,7 +188,10 @@ fn exit_finished_object(
             // `0x004501FF..0x00450220`: the object's owner stops choosing
             // naval buildings.
             let naval_building = sim
-                .object_type(object.type_id, rules)
+                .substrate
+                .entities
+                .get(product)
+                .and_then(|entity| sim.entity_object_type(entity, rules))
                 .is_some_and(|ty| ty.category == ObjectCategory::Building && ty.naval);
             if naval_building && let Some(house) = sim.houses.get_mut(&owner) {
                 house.ai_production_mut().forbid_naval();
@@ -247,7 +255,7 @@ fn start_factory(
         .substrate
         .entities
         .get(building)
-        .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+        .and_then(|entity| sim.entity_object_type(entity, rules))
         .is_some_and(|ty| ty.naval);
     if object.category == ObjectCategory::Vehicle && object.naval != factory_naval {
         return;

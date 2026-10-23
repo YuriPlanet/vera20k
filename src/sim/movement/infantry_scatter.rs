@@ -134,7 +134,7 @@ impl Simulation {
             .get(id)
             .ok_or("Scatter lost its infantryman")?;
         let object = self
-            .object_type(infantry.type_ref(), rules)
+            .entity_object_type(infantry, rules)
             .ok_or("Scatter requires an Infantry type")?;
         // Is_Moving only matters to a forced call; the query has no effect.
         let moving = flags.forced
@@ -389,7 +389,7 @@ impl Simulation {
     /// receiver. This checks port coverage, not native admission.
     pub(crate) fn infantry_setter_receiver(&self, id: u64, rules: &RuleSet) -> bool {
         self.substrate.entities.get(id).is_some_and(|actor| {
-            self.object_type(actor.type_ref(), rules).is_some()
+            self.entity_object_type(actor, rules).is_some()
                 && represented_infantry_destination(actor)
         })
     }
@@ -410,7 +410,7 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
-        if self.object_type(actor.type_ref(), rules).is_none() {
+        if self.entity_object_type(actor, rules).is_none() {
             return false;
         }
         if !represented_infantry_destination(actor) || actor.infantry.is_none() {
@@ -556,7 +556,7 @@ impl Simulation {
             .get(id)
             .ok_or("Infantry destination lost actor")?;
         let object = self
-            .object_type(actor.type_ref(), rules)
+            .entity_object_type(actor, rules)
             .ok_or("Infantry destination requires type")?;
         if !represented_infantry_destination(actor) {
             return Ok(false);

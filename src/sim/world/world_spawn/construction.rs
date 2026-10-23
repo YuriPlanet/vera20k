@@ -33,6 +33,17 @@ pub(super) enum ComponentOrigin {
 }
 
 impl Simulation {
+    /// Actual receiver's constructor type; unlike the name-only convenience
+    /// lookup, this preserves GetTechnoType's class registry (Infantry51FAF0).
+    pub fn entity_object_type<'r>(
+        &self,
+        entity: &GameEntity,
+        rules: &'r RuleSet,
+    ) -> Option<&'r ObjectType> {
+        self.interner
+            .object_type_in_category(entity.type_ref(), entity.category().into(), rules)
+    }
+
     pub(super) fn construct_runtime_techno(
         &mut self,
         type_id: &str,
@@ -47,6 +58,23 @@ impl Simulation {
         let Some(obj) = rules.object(type_id) else {
             return Ok(None);
         };
+        self.construct_resolved_runtime_techno(obj, type_id, owner, rx, ry, facing, z, rules, init)
+    }
+
+    /// Type::CreateInstance (FactoryStart4C9C70) consumes the selected typed
+    /// pointer. Both broad-name and typed callers share this constructor body.
+    pub(super) fn construct_resolved_runtime_techno(
+        &mut self,
+        obj: &ObjectType,
+        type_id: &str,
+        owner: &str,
+        rx: u16,
+        ry: u16,
+        facing: u8,
+        z: u8,
+        rules: &RuleSet,
+        init: TechnoConstructorInit,
+    ) -> Result<Option<GameEntity>, GeneratedTechnoInitError> {
         // Native class constructors copy signed type Strength unchanged.
         // Original copy slices: object_health corpus / constructors.
         let health = Health::new(obj.strength);

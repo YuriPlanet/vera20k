@@ -317,7 +317,12 @@ pub(crate) fn place_production_with_overlays(
             let Some(entity_id) = object.entity_id else {
                 return false;
             };
-            let Some(obj) = sim.object_type(object.type_id, rules) else {
+            let Some(obj) = sim
+                .substrate
+                .entities
+                .get(entity_id)
+                .and_then(|entity| sim.entity_object_type(entity, rules))
+            else {
                 return false;
             };
             let is_building = obj.category == ObjectCategory::Building;
@@ -403,7 +408,7 @@ pub(crate) fn place_production_with_overlays(
         }
         ProductionPlacement::Selected { .. } => unreachable!("normalized the selector above"),
     };
-    let Some(obj) = rules.object(type_id) else {
+    let Some(obj) = rules.object_in_category(category.object_category(), type_id) else {
         return false;
     };
     if obj.category != ObjectCategory::Building {
@@ -433,9 +438,18 @@ pub(crate) fn place_production_with_overlays(
         effects,
     );
     let new_sid = if obj.wall {
-        if evaluate_building_placement(sim, rules, owner, type_id, rx, ry, overlay_registry, None)
-            .reason
-            .is_some()
+        if evaluate_resolved_building_placement(
+            sim,
+            rules,
+            owner,
+            Some(obj),
+            rx,
+            ry,
+            overlay_registry,
+            None,
+        )
+        .reason
+        .is_some()
         {
             failed_building_unlimbo(sim, rules, owner_id, yard, effects);
             return false;
@@ -483,9 +497,18 @@ pub(crate) fn place_production_with_overlays(
         // Event::Execute4C70E1..4C710B passes an admitted PLACE straight to
         // House4FB0E0. Its placement refusal occurs after HELLO4FB1F1, and
         // still reaches the yard's FirstContact BREAK4FB4A6.
-        if evaluate_building_placement(sim, rules, owner, type_id, rx, ry, overlay_registry, None)
-            .reason
-            .is_some()
+        if evaluate_resolved_building_placement(
+            sim,
+            rules,
+            owner,
+            Some(obj),
+            rx,
+            ry,
+            overlay_registry,
+            None,
+        )
+        .reason
+        .is_some()
         {
             failed_building_unlimbo(sim, rules, owner_id, yard, effects);
             return false;
@@ -625,7 +648,30 @@ fn evaluate_building_placement(
     overlay_registry: Option<&OverlayTypeRegistry>,
     native_cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> BuildingPlacementEvaluation {
-    let obj = rules.object(type_id);
+    evaluate_resolved_building_placement(
+        sim,
+        rules,
+        owner,
+        rules.object(type_id),
+        rx,
+        ry,
+        overlay_registry,
+        native_cells,
+    )
+}
+
+// HousePlace4FB1DA uses the held object's typed descriptor; cursor callers
+// above still use their existing name-only API.
+fn evaluate_resolved_building_placement(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: &str,
+    obj: Option<&crate::rules::object_type::ObjectType>,
+    rx: u16,
+    ry: u16,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    native_cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+) -> BuildingPlacementEvaluation {
     // Display4ABA94 asks452670 for the selected host, independently of the
     // ordinary foundation query. Actual upgrade Unlimbo also returns before
     // Techno/Object clear-to-build, through the same installation predicate.
@@ -649,7 +695,7 @@ fn evaluate_building_placement(
         }
         let owner_id = sim.interner.get(owner);
         let ready = owner_id
-            .zip(sim.interner.get(type_id))
+            .zip(sim.interner.get(&obj.id))
             .is_some_and(|(owner_id, type_id)| {
                 let category = production_category_for_object(obj);
                 super::factory_lifecycle::ready_object(sim, owner_id, category, type_id).is_some()
@@ -777,7 +823,7 @@ pub fn is_within_build_area(
             continue;
         }
         let provider_owner = sim.interner.resolve(e.owner());
-        let Some(existing) = sim.object_type(e.type_ref(), rules) else {
+        let Some(existing) = sim.entity_object_type(e, rules) else {
             continue;
         };
         if provider_owner.eq_ignore_ascii_case(owner) {

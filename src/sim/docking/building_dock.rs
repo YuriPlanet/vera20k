@@ -113,7 +113,7 @@ pub(crate) fn building_has_clear_foundation_exit(
     let Some(building) = sim.substrate.entities.get(building_id) else {
         return false;
     };
-    let Some(object) = sim.object_type(building.type_ref(), rules) else {
+    let Some(object) = sim.entity_object_type(building, rules) else {
         return false;
     };
     let Some(terrain) = sim.resolved_terrain.as_ref() else {
@@ -905,7 +905,7 @@ pub(crate) fn building_dock_cell(
 ) -> Option<(u16, u16)> {
     use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
     let producer = sim.substrate.entities.get(producer_id)?;
-    let object = sim.object_type(producer.type_ref(), rules)?;
+    let object = sim.entity_object_type(producer, rules)?;
     let location =
         crate::sim::movement::ground_pose::object_location(producer, sim.resolved_terrain.as_ref());
     let nw = (

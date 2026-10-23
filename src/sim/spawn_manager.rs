@@ -457,9 +457,12 @@ pub fn init_spawn_manager(
     if obj.spawns_number <= 0 {
         return None;
     }
-    // Native resolves `Spawns=` through the TechnoType registry; an unresolved
+    // TechnoType ReadINI714E9E resolves Spawns through AircraftType67BD30; an unresolved
     // name leaves the pointer null and no manager is created.
-    rules.object(spawn_type_name)?;
+    rules.object_in_category(
+        crate::rules::object_type::ObjectCategory::Aircraft,
+        spawn_type_name,
+    )?;
 
     let missile_family = rules.missile_spawn.family_of(spawn_type_name);
     let is_missile_spawn = missile_family.is_some();
@@ -1492,8 +1495,11 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         let (rx, ry, z) = (owner.position.rx(), owner.position.ry(), owner.position.z());
         let facing = owner.body_facing_byte(self.sim.session.binary_frame());
         let type_name = self.sim.interner.resolve(spawn_type).to_string();
-        self.sim.construct_object_limbo_at_height(
-            &type_name,
+        self.sim.construct_resolved_object_limbo_at_height(
+            rules.object_in_category(
+                crate::rules::object_type::ObjectCategory::Aircraft,
+                &type_name,
+            )?,
             &house,
             rx,
             ry,

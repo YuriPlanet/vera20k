@@ -432,14 +432,15 @@ impl Simulation {
     ) {
         let Some((slave_type, count, regen, reload, owner, cell, facing, z)) =
             self.substrate.entities.get(master).and_then(|parent| {
-                let object = self.object_type(parent.type_ref(), rules)?;
+                let object = self.entity_object_type(parent, rules)?;
                 let slave_type = object.enslaves.as_deref()?;
-                let slave_object = rules.object(slave_type)?;
-                if slave_object.category != crate::rules::object_type::ObjectCategory::Infantry {
-                    return None;
-                }
+                // Enslaves714DD7 uses InfantryType reader67BAC0.
+                let slave_object = rules.object_in_category(
+                    crate::rules::object_type::ObjectCategory::Infantry,
+                    slave_type,
+                )?;
                 Some((
-                    slave_object.id.clone(),
+                    slave_object,
                     object.slaves_number.max(0),
                     object.slave_regen_rate,
                     object.slave_reload_rate,
@@ -454,8 +455,8 @@ impl Simulation {
         };
         let mut slaves = Vec::with_capacity(count as usize);
         for _ in 0..count {
-            let slave = self.construct_object_limbo_at_height(
-                &slave_type,
+            let slave = self.construct_resolved_object_limbo_at_height(
+                slave_type,
                 &owner,
                 cell.0,
                 cell.1,
@@ -469,7 +470,7 @@ impl Simulation {
             }
             slaves.push(slave);
         }
-        let slave_type = self.interner.intern(&slave_type);
+        let slave_type = self.interner.intern(&slave_type.id);
         let now = Self::now_frame(&self.session);
         if let Some(parent) = self.substrate.entities.get_mut(master) {
             parent.slave_manager = Some(SlaveManager::new(slave_type, slaves, regen, reload, now));

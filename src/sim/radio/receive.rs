@@ -131,7 +131,7 @@ fn building_receive(
                     );
                 }
                 if let Some(entity) = sim.substrate.entities.get(building)
-                    && let Some(object) = sim.object_type(entity.type_ref(), rules)
+                    && let Some(object) = sim.entity_object_type(entity, rules)
                     && object.construction_yard
                 {
                     let damaged = crate::sim::building_art::requested_damage_state(
@@ -155,7 +155,7 @@ fn building_receive(
                 .substrate
                 .entities
                 .get(building)
-                .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+                .and_then(|entity| sim.entity_object_type(entity, rules))
             else {
                 return RadioResponse::None;
             };
@@ -185,7 +185,7 @@ fn building_receive(
                 .substrate
                 .entities
                 .get(building)
-                .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+                .and_then(|entity| sim.entity_object_type(entity, rules))
                 .is_some_and(|object| object.weapons_factory || object.unit_repair || object.bunker)
             {
                 RadioResponse::Queued //43CE18 returns literal0x17.
@@ -200,7 +200,7 @@ fn building_receive(
                 .substrate
                 .entities
                 .get(building)
-                .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+                .and_then(|entity| sim.entity_object_type(entity, rules))
                 .is_some_and(|object| object.weapons_factory)
             {
                 RadioResponse::Roger
@@ -1282,7 +1282,7 @@ fn aircraft_receive(
         return RadioResponse::None;
     }
     let ammo = entity.ammo().map_or(-1, |ammo| ammo.current());
-    let object = sim.object_type(entity.type_ref(), rules);
+    let object = sim.entity_object_type(entity, rules);
     let type_ammo = object.map_or(-1, |object| object.ammo);
     let transport = AircraftHold {
         carryall: object.is_some_and(|object| object.carryall),

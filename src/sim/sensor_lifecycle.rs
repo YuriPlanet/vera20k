@@ -122,7 +122,7 @@ impl Simulation {
         rules: &RuleSet,
     ) -> Option<(InternedId, (u16, u16), u16)> {
         let entity = self.substrate.entities.get(id)?;
-        let object = self.interner.object_type(entity.type_ref(), rules)?;
+        let object = self.entity_object_type(entity, rules)?;
         Some((
             entity.owner(),
             (entity.position.rx(), entity.position.ry()),

@@ -88,6 +88,18 @@ impl StringInterner {
         self.types.object(self, id, rules)
     }
 
+    /// Resolve an already known concrete family. Native GetTechnoType returns
+    /// the constructor's typed pointer (Infantry51FAF0), even when another
+    /// class registry contains the same name. The name-only cache stays broad.
+    pub fn object_type_in_category<'r>(
+        &self,
+        id: InternedId,
+        category: crate::rules::object_type::ObjectCategory,
+        rules: &'r RuleSet,
+    ) -> Option<&'r ObjectType> {
+        rules.object_in_category(category, self.try_resolve(id)?)
+    }
+
     /// The handle of the object type `id` names in `rules`, as
     /// `rules.type_handle(self.resolve(id))` answers, the same way.
     #[inline]
