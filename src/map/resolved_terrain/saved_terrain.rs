@@ -41,7 +41,7 @@ enum SavedLandRole {
 pub struct SavedCellLandValues {
     width: u16,
     height: u16,
-    cells: Vec<Option<(u8, SpeedCostProfile)>>,
+    cells: Vec<Option<u8>>,
 }
 
 impl SavedCellLandValues {
@@ -135,7 +135,6 @@ impl SavedTerrainTemplate {
                 .is_none_or(|mask| mask[index])
             {
                 cell.land_type = live.land_type;
-                cell.speed_costs = live.speed_costs;
             }
         }
         self.land_role = SavedLandRole::LiveEffective;
@@ -166,7 +165,7 @@ impl SavedTerrainTemplate {
                     land: cell.land_type,
                 });
             }
-            cells.push(Some((cell.land_type, cell.speed_costs)));
+            cells.push(Some(cell.land_type));
         }
         Ok(SavedCellLandValues {
             width: self.width,
@@ -314,10 +313,11 @@ impl ResolvedTerrainGrid {
         Ok(saved)
     }
 
-    /// Keep the baseline's TMP/base metadata and the existing dynamic-cell
-    /// replacement owner, but save actual Cell+EC and its bound rules row.
+    /// Test convenience for capturing baseline metadata plus actual Cell+EC.
+    /// Production captures Land later, at the actual save-write boundary.
     /// Native Cell Save483C10 / Load4839F0 preserve these across literal crate
     /// erasure; a later genuine Recalc must still see the pristine base Land.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn capture_user_saved_template(
         &self,
         live: &ResolvedTerrainGrid,
@@ -346,10 +346,14 @@ impl ResolvedTerrainGrid {
         {
             return Err(SavedTerrainError::LiveLandShape);
         }
-        for (cell, saved) in self.cells.iter_mut().zip(&saved.cells) {
-            let Some((land, speed)) = saved else { continue };
+        for (index, saved) in saved.cells.iter().enumerate() {
+            let Some(land) = saved else { continue };
+            // Cell CheckCellPassability48357D/4835D5 reads retained Land and
+            // indexes the shared89EA40 table, never a saved per-cell speed row.
+            let speed_costs = self.land_speed_costs(i32::from(*land));
+            let cell = &mut self.cells[index];
             cell.land_type = *land;
-            cell.speed_costs = *speed;
+            cell.speed_costs = speed_costs;
             // This is VERA's derived walk projection, not a native Recalc.
             // Surviving overlay/terrain presence was restored by their owners.
             let land_blocked = matches!(

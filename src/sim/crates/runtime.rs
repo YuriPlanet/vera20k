@@ -262,6 +262,7 @@ mod tests {
         let registry = OverlayTypeRegistry::from_ini(&ini, None);
         let mut sim = sim_with_grid(17);
         let mut baseline = sim.resolved_terrain.take().unwrap();
+        baseline.set_land_speed_rules_for_test(&rules.terrain_rules);
         let cell = baseline.cell_mut_for_test(15, 15).unwrap();
         cell.land_type = 7;
         cell.base_land_type = 7;
@@ -327,6 +328,14 @@ mod tests {
                 .land_type,
             2
         );
+        // A stale derived speed cache must not become saved authority. Native
+        // movement indexes the bound Rules table using retained Cell Land.
+        sim.resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut_for_test(15, 15)
+            .unwrap()
+            .speed_costs = rules.terrain_rules.row(LandType::Rough).speed_costs;
         let retained_map = serde_json::to_value(sim.zone_grid()).unwrap();
         let timers = (slot.start_frame, slot.aux, slot.duration);
         // Two successive user files prove that overlay-free retained Land is
