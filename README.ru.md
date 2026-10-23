@@ -84,13 +84,6 @@ Yuri's Revenge из [Steam](https://store.steampowered.com/app/2229850/) или
 
 ![Приложение передаёт команды симуляции и получает состояние мира; данные отрисовки передаются рендерингу.](docs/images/architecture.ru.png)
 
-## Системные требования
-
-- **Игра:** Red Alert 2: Yuri's Revenge 1.001.
-- **ОС:** Windows 10+, Linux (glibc 2.35+, например Ubuntu 22.04 или Steam Deck) или macOS 11+
-  на Apple Silicon.
-- **Графика:** Vulkan, DirectX 12 или Metal.
-
 ## Сборка и запуск
 
 Понадобится:

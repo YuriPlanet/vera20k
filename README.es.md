@@ -87,13 +87,6 @@ Las flechas muestran el flujo de datos:
 
 ![La aplicación envía comandos a la simulación, que devuelve el estado del mundo; la aplicación envía datos de dibujado al renderizado.](docs/images/architecture.es.png)
 
-## Requisitos del sistema
-
-- **Juego:** Red Alert 2: Yuri's Revenge 1.001.
-- **Sistema operativo:** Windows 10+, Linux (glibc 2.35+, p. ej., Ubuntu 22.04 o Steam Deck) o
-  macOS 11+ en Apple Silicon.
-- **Gráficos:** Vulkan, DirectX 12 o Metal.
-
 ## Compilar y ejecutar
 
 Necesitas:

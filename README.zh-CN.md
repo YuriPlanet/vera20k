@@ -73,13 +73,6 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 
 ![应用层向模拟层发送指令并接收世界状态，再向渲染层发送绘制数据。](docs/images/architecture.zh-CN.png)
 
-## 系统需求
-
-- **游戏：** 《红色警戒2：尤里的复仇》1.001 版。
-- **系统：** Windows 10 或更高、Linux（glibc 2.35 或更高，如 Ubuntu 22.04 或 Steam Deck），
-  或 Apple Silicon 上的 macOS 11 或更高。
-- **显卡：** Vulkan、DirectX 12 或 Metal。
-
 ## 编译与运行
 
 你需要：

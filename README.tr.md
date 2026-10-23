@@ -84,13 +84,6 @@ Oklar veri akışını gösterir:
 
 ![Uygulama simülasyona komut gönderir ve dünya durumunu alır; görüntülemeye çizim verilerini gönderir.](docs/images/architecture.tr.png)
 
-## Sistem gereksinimleri
-
-- **Oyun:** Red Alert 2: Yuri's Revenge 1.001.
-- **İşletim sistemi:** Windows 10+, Linux (glibc 2.35+, ör. Ubuntu 22.04 veya Steam Deck) ya da
-  Apple Silicon üzerinde macOS 11+.
-- **Grafik:** Vulkan, DirectX 12 ya da Metal.
-
 ## Derleme ve çalıştırma
 
 Gerekenler:

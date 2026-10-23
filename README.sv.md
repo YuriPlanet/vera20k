@@ -83,13 +83,6 @@ Pilarna visar dataflödet:
 
 ![Applikationen skickar kommandon till simuleringen, som returnerar världstillståndet; applikationen skickar renderingsdata till renderingen.](docs/images/architecture.sv.png)
 
-## Systemkrav
-
-- **Spelet:** Red Alert 2: Yuri's Revenge 1.001.
-- **OS:** Windows 10+, Linux (glibc 2.35+, t.ex. Ubuntu 22.04 eller Steam Deck) eller macOS 11+ på
-  Apple Silicon.
-- **Grafik:** Vulkan, DirectX 12 eller Metal.
-
 ## Bygg och kör
 
 Du behöver:
