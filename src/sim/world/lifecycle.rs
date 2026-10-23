@@ -767,6 +767,12 @@ pub enum LifecycleOutput {
     ObjectSelected {
         stable_id: u64,
     },
+    /// UpdateBunker458E50 writes the installed tank's group index+214=-1
+    /// at459315. Local input owns membership and consumes this before the
+    /// next input/save boundary; no second group index is kept in sim.
+    ControlGroupMemberRemoved {
+        stable_id: u64,
+    },
     /// DispatchPointerExpired7258D0 reaches navigation733160 at7259B1
     /// for a Techno abstract pointer, regardless of announce-control or Alive.
     ObjectPointerExpired {
