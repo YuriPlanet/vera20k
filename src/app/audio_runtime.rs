@@ -386,8 +386,8 @@ impl AppAudioRuntime {
         let physical = self.music_output_state();
         let action = self
             .theme
-            .play_ares_loading_theme(names, assets, gates, physical, wall_ms);
-        self.apply_theme_action(action);
+            .play_ares_loading_theme(names, assets, gates, physical);
+        self.apply_theme_action(action, wall_ms);
     }
 
     /// Start_Scenario tail after shared `bind_match_theme_context`: `Stop(1)` /

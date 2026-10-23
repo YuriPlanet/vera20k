@@ -595,7 +595,6 @@ impl ThemeRuntime {
         assets: &AssetManager,
         gates: ThemeGates,
         physical: MusicOutputState,
-        wall_ms: u64,
     ) -> ThemeAction {
         self.initialize_catalog(assets);
         let selected = names
@@ -607,7 +606,7 @@ impl ThemeRuntime {
             selected
         };
         let mut prepare = |stem: &str| prepare_track(stem, assets);
-        self.play_song(selected, gates, physical, wall_ms, &mut prepare)
+        self.play_song(selected, gates, physical, &mut prepare)
     }
 
     /// `Main__PrepareSession @ 0x0052D9A0`: `Play(From_Name("INTRO"))`.
