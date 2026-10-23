@@ -4,6 +4,20 @@ use super::*;
 use crate::rules::ini_parser::IniFile;
 
 #[test]
+fn registry_walk_reads_duplicate_keys_through_name_reader() {
+    let stored = "B".repeat(31);
+    let incoming = format!("{stored}x");
+    let mut catalog = ShieldTypeCatalog::default();
+    catalog.apply_pass(&IniFile::from_str(&format!(
+        "[ShieldTypes]\nROOT=SHORT\nROOT={incoming}\nSHOW=TAIL\n"
+    )));
+    assert_eq!(
+        catalog.names().collect::<Vec<_>>(),
+        [stored.as_str(), stored.as_str(), "TAIL"]
+    );
+}
+
+#[test]
 fn shield_types_read_their_section_with_native_defaults() {
     let mut catalog = ShieldTypeCatalog::default();
     catalog.apply_pass(&IniFile::from_str(

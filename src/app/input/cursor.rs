@@ -2628,6 +2628,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
     fn bunker_fixed_and_occupied_buildings_share_selected_weapon_range_admission() {
         use crate::app::input::context_order::{AttackAction, armed_action};
         use crate::sim::combat::TargetKind;
+        use crate::sim::passenger::PassengerRole;
         let (mut sim, rules, tank) = stationary_attack_fixture();
         let tower = sim
             .spawn_object("TOWER", "Americans", 2, 6, 0, &rules)
@@ -2636,15 +2637,18 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             .spawn_object("HOUSE", "Americans", 2, 10, 0, &rules)
             .unwrap();
         let gi = sim
-            .spawn_object("GI", "Americans", 1, 10, 0, &rules)
+            .spawn_object_limbo_at_height("GI", "Americans", 1, 10, 0, 0, &rules)
             .unwrap();
+        // Garrison fire reads BuildingClass's occupants, not transport Cargo.
         sim.entities_mut_for_test()
             .get_mut(house)
             .unwrap()
             .passenger_role
-            .cargo_mut()
+            .set_occupants_for_test(vec![gi], 0);
+        sim.entities_mut_for_test()
+            .get_mut(gi)
             .unwrap()
-            .board_forced_chain(&[(gi, 1.0)]);
+            .passenger_role = PassengerRole::inside_for_test(house, false);
         assert!(rules.object("HOUSE").unwrap().primary().is_none());
         for (actor, y) in [(tower, 6), (house, 10)] {
             assert_eq!(
@@ -2863,9 +2867,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                 .get_mut(house)
                 .unwrap()
                 .passenger_role
-                .cargo_mut()
-                .unwrap()
-                .board_forced_chain(&[(gi, 1.0)]);
+                .set_occupants_for_test(vec![gi], 0);
             sim.entities_mut_for_test()
                 .get_mut(gi)
                 .unwrap()

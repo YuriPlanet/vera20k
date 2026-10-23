@@ -382,10 +382,14 @@ impl ShieldTypeCatalog {
     #[cfg(feature = "phobos")]
     pub(crate) fn apply_pass(&mut self, pass: &IniFile) {
         if let Some(list) = pass.section("ShieldTypes") {
-            for name in list.registry_ids() {
-                if name.is_empty() {
+            // Phobos Enumerable::LoadFromINIList reads each physical key
+            // through ReadString with Phobos::readBuffer[2048] before lookup.
+            // Source: Phobos b90ab4bc, src/Utilities/Enumerable.h:49-60,
+            // src/Phobos.h:23-24; CCINIClass::ReadString @0x00528A10.
+            for key in list.physical_keys() {
+                let Some(name) = list.read_name(key, 2048) else {
                     continue;
-                }
+                };
                 if self.entry(name).is_none() {
                     self.types.push(ShieldType::named(&truncate_native_bytes(
                         name,

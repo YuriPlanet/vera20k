@@ -11,6 +11,23 @@ fn catalog(ini: &str) -> RadiationTypeCatalog {
 }
 
 #[test]
+fn registry_walk_reads_duplicate_keys_through_name_reader() {
+    let stored = "B".repeat(31);
+    let incoming = format!("{stored}x");
+    let catalog = catalog(&format!(
+        "[RadiationTypes]\nROOT=SHORT\nROOT={incoming}\nSHOW=TAIL\n"
+    ));
+    assert_eq!(
+        catalog
+            .entries()
+            .iter()
+            .map(|entry| entry.name())
+            .collect::<Vec<_>>(),
+        ["Radiation", stored.as_str(), stored.as_str(), "TAIL"]
+    );
+}
+
+#[test]
 fn list_appends_entries_after_the_seeded_default() {
     let catalog = catalog("[RadiationTypes]\n0=ToxicField\n1=Second\n");
     assert_eq!(

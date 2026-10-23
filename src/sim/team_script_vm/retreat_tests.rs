@@ -94,6 +94,8 @@ fn retail_guard_retreat(ramp: bool) {
     sim.restore_map_authority_after_snapshot_load(&rules, &overlays, None)
         .unwrap();
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    // Player load discards active planning (ClearScene6370B0 / TechnoLoad70BF79).
+    sim.reset_planning_after_player_load();
     let before_rng = rng(&sim);
     let timers = {
         let state = &sim.team_script_vm.teams[&team];

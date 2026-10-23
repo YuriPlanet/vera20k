@@ -30,14 +30,11 @@
 //! every such pass. Detach calls: the evicted defense team's destructor
 //! (`TeamClass::~TeamClass @ 0x006E8DE0`, `TeamScriptVm::destroy_team`).
 //!
-//! RESIDUALS:
-//! - A campaign (`GameMode == 0`) gates an AI trigger on the scenario's
-//!   difficulty (`Scenario+0x60C`), now retained by ScenarioSession, and admits a
-//!   TaskForce type without a factory when the house owns one it can recruit
-//!   (`0x00509610`'s scan of `0x008B3DC4` with `0x006F1E20`). VERA skips the
-//!   difficulty gate and refuses such a trigger. Trigger: campaign AI trigger
-//!   selection after startup; effects include missing recruitment and a
-//!   different eligible/weighted trigger set. Required live chain: campaign AI eligibility under issue1508.
+//! Campaign selection reads ScenarioSession's startup difficulty, independently
+//! of each House's difficulty. HouseClass::Has_Factories_For_TeamType accepts
+//! each required type with an online factory, or in a campaign an existing Foot
+//! that TeamTypeClass::Can_Recruit admits (the membership owner). The later
+//! TeamClass recruitment, script execution and cleanup keep their existing owners.
 
 use crate::sim::world::FrameEffects;
 use std::hash::{Hash, Hasher};
@@ -343,9 +340,9 @@ fn draw_ai_trigger(
 /// - a global (`AIMD.INI`) trigger fails in a map with
 ///   `IgnoreGlobalAITriggers=` (`Scenario+0x34B4`);
 /// - a disabled trigger fails;
-/// - in a multiplayer game a trigger without `IsForMultiplayer` fails, as
-///   does one not enabled for the house's difficulty (module residual for
-///   campaigns);
+/// - in a multiplayer game a trigger without `IsForMultiplayer` fails;
+///   difficulty flags use the house's hardest-first row there and the
+///   scenario's easiest-first row in a campaign;
 /// - its owner, side (1 Allied, 2 Soviet, 3 Yuri) and TechLevel (`+0xB0`)
 ///   must admit the house;
 /// - its condition ([`condition_holds`]);
@@ -390,19 +387,21 @@ fn is_eligible(
     if !trigger.enabled {
         return false;
     }
-    if sim.session.game_mode_nonzero() {
+    // gamemd.exe, AITriggerTypeClass::Is_Eligible @ 0x0041E720:
+    // 41E7D7..41E84A selects House+184 (hardest first) in multiplayer,
+    // Scenario+60C (easiest first) in a campaign, before the owner gate.
+    let difficulty = if sim.session.game_mode_nonzero() {
         if !trigger.multiplayer {
             return false;
         }
-        let enabled = match house.difficulty().table_index() {
-            0 => trigger.difficulty_enabled[2],
-            1 => trigger.difficulty_enabled[1],
-            2 => trigger.difficulty_enabled[0],
-            _ => true,
-        };
-        if !enabled {
-            return false;
-        }
+        2 - house.difficulty().table_index()
+    } else {
+        sim.session
+            .campaign_house_difficulties()
+            .map_or(1, |(player, _)| player.table_index())
+    };
+    if !trigger.difficulty_enabled[difficulty] {
+        return false;
     }
     match trigger.owner {
         None => return false,
@@ -616,10 +615,12 @@ fn zones_admit(
     !same_zone && zone(own, MovementZone::Amphibious) == zone(theirs, MovementZone::Amphibious)
 }
 
-/// `HouseClass::Has_Factories_For_TeamType` `0x00509610` for `team_type`: in a
-/// multiplayer game, every TaskForce type has a factory of the house
-/// (`FindFactory(1, 1, 0, house)`: online, CanBuild not asked). A TeamType
-/// without a TaskForce fails.
+/// gamemd.exe, `HouseClass::Has_Factories_For_TeamType @ 0x00509610`:
+/// every TaskForce entry needs an online factory (`FindFactory(1, 1, 0,
+/// house)`, without CanBuild), or in a campaign an owned Foot of that type
+/// admitted by `TeamTypeClass::Can_Recruit`. The reverse Foot-array scan
+/// (`0x00509671..0x005096B9`) asks only whether one exists, not its count.
+/// A TeamType without a TaskForce fails; an empty TaskForce passes.
 fn factories_admit(
     sim: &Simulation,
     rules: &RuleSet,
@@ -629,20 +630,35 @@ fn factories_admit(
     let Some(task_force) = sim.team_script_vm.task_force_of(team_type.id) else {
         return false;
     };
-    // Campaigns: module residual.
-    sim.session.game_mode_nonzero()
-        && task_force.entries.iter().all(|entry| {
-            rules
-                .object_in_category(
-                    entry.member_type.category,
-                    sim.interner.resolve(entry.member_type.id),
-                )
-                .is_some_and(|obj| {
-                    find_factory(sim, rules, owner, obj, true, true, false).is_some()
-                })
-        })
+    task_force.entries.iter().all(|entry| {
+        let factory = rules
+            .object_in_category(
+                entry.member_type.category,
+                sim.interner.resolve(entry.member_type.id),
+            )
+            .is_some_and(|obj| find_factory(sim, rules, owner, obj, true, true, false).is_some());
+        if factory {
+            return true;
+        }
+        if sim.session.game_mode_nonzero() {
+            return false;
+        }
+        (0..sim.substrate.entities.foot_registry_len())
+            .rev()
+            .filter_map(|index| sim.substrate.entities.foot_registry_at(index))
+            .filter_map(|id| sim.substrate.entities.get(id))
+            .any(|foot| {
+                foot.owner() == owner
+                    && crate::sim::team_script_vm::member_type_identity(foot) == entry.member_type
+                    && sim.team_type_can_recruit(team_type.id, foot.stable_id(), owner, rules)
+            })
+    })
 }
 
 #[cfg(test)]
 #[path = "ai_team_creation_tests.rs"]
 pub(crate) mod tests;
+
+#[cfg(test)]
+#[path = "ai_team_creation_campaign_tests.rs"]
+mod campaign_tests;

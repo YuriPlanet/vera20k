@@ -108,6 +108,67 @@ pub(super) fn recruit_pick(
 }
 
 impl Simulation {
+    /// gamemd.exe, `TeamTypeClass::Can_Recruit @ 0x006F1E20`, called by
+    /// HouseClass::Has_Factories_For_TeamType509610 before a Team exists.
+    /// Reads the existing membership, life, mission, radio and recruitment
+    /// owners. Unlike TeamClass::Can_Add, this has no TaskForce-slot test,
+    /// placement-scope, airport-contact or unloading exceptions, or entry,
+    /// bunker, drain and Magnetron gates. It performs no writes or RNG draws.
+    pub(crate) fn team_type_can_recruit(
+        &self,
+        team_type_id: crate::sim::intern::InternedId,
+        entity_id: u64,
+        owner: crate::sim::intern::InternedId,
+        rules: &RuleSet,
+    ) -> bool {
+        let vm = &self.team_script_vm;
+        let Some(team_type) = vm.team_type_definition(team_type_id) else {
+            return false;
+        };
+        let current_type = vm.member_team_type(entity_id);
+        if current_type.is_some_and(|current| current.id == team_type_id) {
+            return false;
+        }
+        let Some(entity) = self.substrate.entities.get(entity_id) else {
+            return false;
+        };
+        if entity.health.current() <= 0
+            || !entity.lifecycle.object_alive()
+            || entity.lifecycle.in_limbo()
+            || !entity.radio_contacts.is_empty()
+            || entity.owner() != owner
+            || !crate::sim::mission::control::mission_recruitable(rules, entity.mission.effective())
+        {
+            return false;
+        }
+        let autocreate = vm
+            .team_type_ini
+            .get(&team_type_id)
+            .is_some_and(|metadata| metadata.autocreate);
+        if (!entity.base_defense_response.recruitable_a() && !autocreate)
+            || (!entity.base_defense_response.recruitable_b() && autocreate)
+            || current_type.is_some_and(|current| current.priority >= team_type.priority)
+        {
+            return false;
+        }
+        if entity.category() == EntityCategory::Aircraft
+            && self
+                .object_type(entity.type_ref(), rules)
+                .is_some_and(|object| {
+                    crate::sim::combat::combat_weapon::weapon_for_index(
+                        object,
+                        entity.veterancy.rank(),
+                        0,
+                    )
+                    .is_some()
+                })
+            && entity.ammo().is_some_and(|ammo| ammo.current() == 0)
+        {
+            return false;
+        }
+        true
+    }
+
     /// `TeamClass::Can_Add @ 0x006EA610`: whether `entity_id` may join team
     /// `team_id`, and the TaskForce entry it counts against, the first of
     /// its type. A `constrained` add (mind control's `0x006EA4F0`) skips the
