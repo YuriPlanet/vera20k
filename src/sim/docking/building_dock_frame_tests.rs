@@ -41,6 +41,109 @@ fn advance(sim: &mut Simulation, rules: &RuleSet) {
 }
 
 #[test]
+fn retail_shipyard_repairs_and_releases_a_damaged_destroyer() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("Hills.mmx")
+    else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 31);
+    crate::sim::arena_fixture::flood(
+        &mut sim,
+        rules,
+        32,
+        (0..19).flat_map(|y| (0..19).map(move |x| (x, y))),
+    );
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .economy_mut_for_test()
+        .add_credits(20_000);
+    sim.spawn_object("GAPOWR", "Americans", 22, 22, 0, rules)
+        .unwrap();
+    // Keep both houses alive while the ordinary frame clock runs service.
+    sim.spawn_object("NAPOWR", "Russians", 27, 27, 0, rules)
+        .unwrap();
+    let yard = sim
+        .spawn_object("GAYARD", "Americans", 10, 10, 0, rules)
+        .unwrap();
+    let ship = sim
+        .spawn_object("DEST", "Americans", 16, 12, 0, rules)
+        .unwrap();
+    for _ in 0..3 {
+        advance(&mut sim, rules);
+    }
+    let ap = sim.interner.intern("AP");
+    sim.commit_direct_damage_receiver(
+        rules,
+        None,
+        EntityDamageEvent::direct_receiver(
+            ship,
+            200,
+            0,
+            0,
+            None,
+            ap,
+            ReceiverCallFlags {
+                ignore_defenses: true,
+                arg6: false,
+            },
+        ),
+        crate::sim::world::FrameEffects::default(),
+    );
+    let strength = rules.object("DEST").unwrap().strength;
+    assert_eq!(
+        sim.substrate.entities.get(ship).unwrap().health.current(),
+        strength - 200
+    );
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::clicked_mission(
+            ship,
+            MissionType::Enter,
+            crate::sim::combat::TargetKind::Entity(yard)
+        ),
+        Some(rules),
+    ));
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(ship)
+            .unwrap()
+            .navigation
+            .nav_com(),
+        Some(NavTargetRef::object(yard)),
+        "the successful docking handshake must install the repair destination"
+    );
+    for _ in 0..2000 {
+        advance(&mut sim, rules);
+        let unit = sim.substrate.entities.get(ship).unwrap();
+        if unit.health.current() == strength && !linked(&sim, yard, ship) {
+            assert!(unit.locomotor.as_ref().unwrap().is_powered());
+            assert!(sim.houses.get(&owner).unwrap().economy().credits() < 20_000);
+            return;
+        }
+    }
+    let unit = sim.substrate.entities.get(ship).unwrap();
+    let building = sim.substrate.entities.get(yard).unwrap();
+    panic!(
+        "frame={} ship HP={} cell={:?} nav={:?} mission={:?}; yard mission={:?} state={} online={} linked={}",
+        sim.session.binary_frame(),
+        unit.health.current(),
+        (unit.position.rx(), unit.position.ry()),
+        unit.navigation.nav_com(),
+        unit.mission.current(),
+        building.mission.current(),
+        building.mission.handler_state(),
+        building.building_online(),
+        linked(&sim, yard, ship)
+    );
+}
+
+#[test]
 #[ignore = "slow; run when changing what it covers"]
 fn constructed_depot_waiters_take_the_freed_slot_in_live_logic_order() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")

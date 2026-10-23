@@ -1557,6 +1557,10 @@ impl Simulation {
         else {
             return;
         };
+        let owner_defeated = self
+            .houses
+            .get(&owner)
+            .is_some_and(|house| house.is_defeated());
         for &id in &plan.ids {
             if plan.held.contains(&id) {
                 self.release_object_sight_event(
@@ -1568,8 +1572,13 @@ impl Simulation {
                 );
             }
             for &gap in plan.gaps.get(&id).into_iter().flatten() {
-                self.fog
-                    .remove_map_transition_gap(owner, gap, old_spy_sat_active);
+                // DestroyGap @ 0x006FB470 takes the defeated PlayerPtr+0x1F5
+                // branch and updates +0x13C, not hostile +0x134. The bulk map
+                // store below still clears +0x134 as Reset_Shroud does.
+                if !owner_defeated {
+                    self.fog
+                        .remove_map_transition_gap(owner, gap, old_spy_sat_active);
+                }
             }
         }
         self.fog.store_map_transition(owner, cells, transition);

@@ -476,6 +476,9 @@ impl Simulation {
         let Some(entity) = substrate.entities.get_mut(id) else {
             return;
         };
+        // CreateGap/DestroyGap (0x006FB170/0x006FB470) branch on PlayerPtr+0x1F5;
+        // MPlayer_Defeated (0x004FC0B0) sets it. Each retained viewer maps to its House.
+        let viewer_defeated = houses.get(&viewer).is_some_and(|house| house.is_defeated());
         let deposit = entity.gap_generator.viewers.entry(viewer).or_default();
         if deposit.active == active {
             return;
@@ -497,6 +500,7 @@ impl Simulation {
             viewer,
             source,
             active,
+            viewer_defeated,
             interner,
             &spy_sat_active,
         );
@@ -610,6 +614,10 @@ impl Simulation {
         rules: &RuleSet,
     ) -> (Vec<vision::GapGeneratorSource>, bool) {
         let config = self.sight_reveal_config(rules);
+        let viewer_defeated = self
+            .houses
+            .get(&viewer)
+            .is_some_and(|house| house.is_defeated());
         let candidates: Vec<_> = self
             .substrate
             .entities
@@ -640,7 +648,11 @@ impl Simulation {
             let radius = deposit.radius;
             // The generator's house asks about the viewer, as the add does
             // (`0x006FB2CF`).
+            // CreateGap @ 0x006FB170 takes the PlayerPtr+0x1F5 branch for a
+            // defeated viewer, updating +0x13C instead of the hostile +0x134
+            // gap count. The map bracket's post-callback must not re-add that gap.
             if operational
+                && !viewer_defeated
                 && !crate::map::houses::is_allied_with(
                     self.house_alliances.as_map(),
                     self.interner.resolve(entity.owner()),

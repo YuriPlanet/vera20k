@@ -36,7 +36,15 @@ fn fixture() -> (Simulation, RuleSet, InternedId, InternedId, InternedId) {
     (sim, rules, a, b, c)
 }
 
-fn insert(sim: &mut Simulation, id: u64, owner: InternedId, name: &str, x: u16, y: u16) {
+fn insert(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    owner: InternedId,
+    name: &str,
+    x: u16,
+    y: u16,
+) {
     let kind = if name == "SIGHT" {
         EntityCategory::Unit
     } else {
@@ -75,9 +83,13 @@ fn insert(sim: &mut Simulation, id: u64, owner: InternedId, name: &str, x: u16, 
     }
     sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(id + 1));
     sim.substrate.entities.insert(entity);
-    sim.add_entity_occupancy(id);
-    // Unlimbo's House+0x68 append, which the SpySat scan walks.
-    sim.append_house_base_building_for_test(id);
+    // Building Unlimbo's House+0x68 append, which the SpySat scan walks.
+    if kind == EntityCategory::Structure {
+        sim.append_house_base_building_for_test(id);
+    }
+    // Occupancy can discover a Building immediately on a revealed cell, so
+    // bind the same Rules that its Type registry lookup requires.
+    let _ = sim.mark_entity_put(id, UninitContext::with_rules(rules));
 }
 
 fn power(sim: &mut Simulation, rules: &RuleSet) {
@@ -115,6 +127,111 @@ fn refresh(sim: &mut Simulation, rules: &RuleSet) {
     sim.refresh_fog(&vision::VisionConfig::default(), rules);
 }
 
+fn defeat_local_viewer(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    defeated: InternedId,
+    alive: InternedId,
+    gap_owner: InternedId,
+) {
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    sim.session.game_options_mut_for_test().short_game = false;
+    sim.session.set_current_house_for_test(Some(defeated));
+    sim.session.set_binary_frame_for_test(1);
+    for (owner, buildings, units) in [(defeated, 0, 0), (alive, 0, 1), (gap_owner, 2, 1)] {
+        let house = sim.houses.get_mut(&owner).unwrap();
+        house.tracking_mut().set_buildings_for_test(buildings);
+        house.tracking_mut().set_active_units_for_test(units);
+    }
+    sim.check_defeat(Some(rules), None);
+    assert!(sim.houses[&defeated].is_defeated());
+    assert!(!sim.houses[&alive].is_defeated());
+    assert!(!sim.houses[&gap_owner].is_defeated());
+    assert!(sim.fog.whole_map_revealed_for_owner(defeated));
+}
+
+#[test]
+fn defeated_gap_viewer_keeps_old_counter_and_suppresses_new_hostile_gaps() {
+    let (mut sim, rules, defeated, alive, gap_owner) = fixture();
+    let gap_count = |sim: &Simulation, viewer, cell: (u16, u16)| {
+        let index = usize::from(cell.1) * usize::from(sim.fog.width()) + usize::from(cell.0);
+        sim.fog.by_owner()[&viewer].shroud_knowledge_raw()[index].gap_counter()
+    };
+
+    insert(&mut sim, &rules, 1, gap_owner, "GAGAP", 12, 12);
+    insert(&mut sim, &rules, 2, gap_owner, "POWER", 16, 12);
+    insert(&mut sim, &rules, 4, alive, "SIGHT", 30, 30);
+    insert(&mut sim, &rules, 5, gap_owner, "SIGHT", 29, 29);
+    power(&mut sim, &rules);
+    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    assert_eq!(gap_count(&sim, defeated, (12, 12)), 1);
+    assert_eq!(gap_count(&sim, alive, (12, 12)), 1);
+
+    defeat_local_viewer(&mut sim, &rules, defeated, alive, gap_owner);
+    assert!(sim.fog.has_ground_bits(defeated, 12, 12));
+    assert_eq!(gap_count(&sim, defeated, (12, 12)), 1);
+
+    assert!(sim.go_building_offline(1, &rules, FrameEffects::default()));
+    // GoOffline removes immediately; Building Update samples the off edge
+    // before the following online edge can publish another CreateGap.
+    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    assert_eq!(sim.fog.gap_sources()[&defeated].len(), 1);
+    assert!(sim.fog.gap_sources()[&alive].is_empty());
+    assert_eq!(gap_count(&sim, defeated, (12, 12)), 1);
+    assert_eq!(gap_count(&sim, alive, (12, 12)), 0);
+    assert!(sim.fog.has_ground_bits(defeated, 12, 12));
+    assert!(!sim.fog.has_ground_bits(alive, 12, 12));
+
+    assert!(sim.go_building_online(1, &rules, FrameEffects::default()));
+    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    assert_eq!(gap_count(&sim, defeated, (12, 12)), 1);
+    assert_eq!(gap_count(&sim, alive, (12, 12)), 1);
+
+    insert(&mut sim, &rules, 3, gap_owner, "GAGAP", 20, 20);
+    power(&mut sim, &rules);
+    sim.visit_building_operational(3, &rules, None, FrameEffects::default());
+    refresh(&mut sim, &rules);
+    assert_eq!(gap_count(&sim, defeated, (20, 20)), 0);
+    assert_eq!(gap_count(&sim, alive, (20, 20)), 1);
+    assert!(!sim.fog.is_cell_gap_covered(defeated, 20, 20));
+    assert!(sim.fog.is_cell_gap_covered(alive, 20, 20));
+    assert!(sim.fog.has_ground_bits(defeated, 20, 20));
+    assert!(!sim.fog.has_ground_bits(alive, 20, 20));
+}
+
+#[test]
+fn defeated_gap_viewer_does_not_reenter_hostile_gap_after_shroud_reset() {
+    let (mut sim, rules, defeated, alive, gap_owner) = fixture();
+    let gap_count = |sim: &Simulation, viewer, cell: (u16, u16)| {
+        let index = usize::from(cell.1) * usize::from(sim.fog.width()) + usize::from(cell.0);
+        sim.fog.by_owner()[&viewer].shroud_knowledge_raw()[index].gap_counter()
+    };
+
+    insert(&mut sim, &rules, 1, gap_owner, "GAGAP", 12, 12);
+    insert(&mut sim, &rules, 2, gap_owner, "POWER", 16, 12);
+    insert(&mut sim, &rules, 3, alive, "SIGHT", 30, 30);
+    insert(&mut sim, &rules, 4, gap_owner, "SIGHT", 29, 29);
+    power(&mut sim, &rules);
+    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    assert_eq!(gap_count(&sim, defeated, (12, 12)), 1);
+    assert_eq!(gap_count(&sim, alive, (12, 12)), 1);
+
+    defeat_local_viewer(&mut sim, &rules, defeated, alive, gap_owner);
+    assert_eq!(gap_count(&sim, defeated, (12, 12)), 1);
+    sim.reset_shroud_for_owner(defeated, &rules);
+
+    assert_eq!(gap_count(&sim, defeated, (12, 12)), 0);
+    assert_eq!(gap_count(&sim, alive, (12, 12)), 1);
+    assert!(
+        sim.fog
+            .gap_sources()
+            .get(&defeated)
+            .is_none_or(|sources| sources.is_empty())
+    );
+    assert_eq!(sim.fog.gap_sources()[&alive].len(), 1);
+}
+
 /// The sight reveal of the Unlimbo `insert` stands for (`0x006F6D27`),
 /// through the sight owner.
 fn reveal_inserted_sight(sim: &mut Simulation, rules: &RuleSet, id: u64) {
@@ -131,8 +248,8 @@ fn reveal_inserted_sight(sim: &mut Simulation, rules: &RuleSet, id: u64) {
 #[test]
 fn explicit_power_off_removes_gap_before_the_operational_visit_and_on_defers_add() {
     let (mut sim, rules, a, b, _) = fixture();
-    insert(&mut sim, 1, a, "GAGAP", 12, 12);
-    insert(&mut sim, 2, a, "POWER", 16, 12);
+    insert(&mut sim, &rules, 1, a, "GAGAP", 12, 12);
+    insert(&mut sim, &rules, 2, a, "POWER", 16, 12);
     power(&mut sim, &rules);
     sim.visit_building_operational(1, &rules, None, FrameEffects::default());
     assert!(sim.fog.is_cell_gap_covered(b, 12, 12));
@@ -160,7 +277,7 @@ fn gap_operational_original_gate_and_native_order_corpus() {
     ))
     .unwrap();
     let (mut sim, rules, _, owner, _) = fixture();
-    insert(&mut sim, 1, owner, "GAGAP", 12, 12);
+    insert(&mut sim, &rules, 1, owner, "GAGAP", 12, 12);
     for case in corpus["operational"].as_array().unwrap() {
         let v = &case["inputs"];
         // Remaining raw inputs have no represented ordinary stock producer.
@@ -218,18 +335,18 @@ pub fn gap_operational_power_loss_views() -> Vec<(
     bool,
 )> {
     let (mut sim, rules, viewer, first, last) = fixture();
-    insert(&mut sim, 40, first, "POWER", 2, 2);
-    insert(&mut sim, 50, last, "POWER", 2, 25);
-    insert(&mut sim, 10, viewer, "SIGHT", 13, 13);
+    insert(&mut sim, &rules, 40, first, "POWER", 2, 2);
+    insert(&mut sim, &rules, 50, last, "POWER", 2, 25);
+    insert(&mut sim, &rules, 10, viewer, "SIGHT", 13, 13);
     for id in [40, 50, 10] {
         reveal_inserted_sight(&mut sim, &rules, id); // original reveal
     }
     refresh(&mut sim, &rules);
-    insert(&mut sim, 20, first, "GAGAP", 10, 12);
+    insert(&mut sim, &rules, 20, first, "GAGAP", 10, 12);
     power(&mut sim, &rules);
     sim.visit_building_operational(20, &rules, None, crate::sim::world::FrameEffects::default()); // gap
     sim.techno_limbo_with_rules(10, &rules, None); // leave, with its stored sight
-    insert(&mut sim, 30, last, "GAGAP", 14, 12);
+    insert(&mut sim, &rules, 30, last, "GAGAP", 14, 12);
     power(&mut sim, &rules);
     sim.visit_building_operational(30, &rules, None, crate::sim::world::FrameEffects::default()); // second gap
     assert!(matches!(sim.reveal(10), RevealOutcome::Revealed { .. }));
@@ -332,10 +449,10 @@ pub fn gap_operational_power_loss_views() -> Vec<(
 #[test]
 fn gap_operational_spy_sat_rechecks_live_candidates_per_viewer() {
     let (mut sim, rules, a, owner, b) = fixture();
-    insert(&mut sim, 1, owner, "GAGAP", 12, 12);
+    insert(&mut sim, &rules, 1, owner, "GAGAP", 12, 12);
     sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
     power(&mut sim, &rules); // newly low, before another Building turn
-    insert(&mut sim, 2, a, "GASPYSAT", 1, 1);
+    insert(&mut sim, &rules, 2, a, "GASPYSAT", 1, 1);
     sim.reconcile_active_vision_structures(&rules);
     let gap = &sim.substrate.entities.get(1).unwrap().gap_generator;
     assert!(
@@ -362,7 +479,7 @@ fn gap_operational_spy_sat_rechecks_live_candidates_per_viewer() {
 
     // This viewer's inactive generator must still be called by a live bracket
     //after power restores, even while6C8 remains true and no receipt exists.
-    insert(&mut sim, 3, owner, "POWER", 25, 25);
+    insert(&mut sim, &rules, 3, owner, "POWER", 25, 25);
     power(&mut sim, &rules);
     sim.uninit(2); // actual loss invokes the reset bracket at House
     sim.reconcile_active_vision_structures(&rules);
@@ -381,11 +498,11 @@ fn gap_operational_spy_sat_rechecks_live_candidates_per_viewer() {
 #[test]
 fn spy_sat_gap_reentry_and_removal_publish_the_native_ground_bits() {
     let (mut sim, rules, viewer, owner, _) = fixture();
-    insert(&mut sim, 1, owner, "GAGAP", 12, 12);
-    insert(&mut sim, 2, owner, "POWER", 16, 12);
+    insert(&mut sim, &rules, 1, owner, "GAGAP", 12, 12);
+    insert(&mut sim, &rules, 2, owner, "POWER", 16, 12);
     power(&mut sim, &rules);
     sim.visit_building_operational(1, &rules, None, FrameEffects::default());
-    insert(&mut sim, 3, viewer, "GASPYSAT", 1, 1);
+    insert(&mut sim, &rules, 3, viewer, "GASPYSAT", 1, 1);
     sim.reconcile_active_vision_structures(&rules);
     let ground =
         |sim: &Simulation| sim.fog.by_owner()[&viewer].ground_flags_raw()[12 * 32 + 12] & 0x18;
@@ -411,12 +528,12 @@ fn spy_sat_gap_reentry_asks_the_generators_house_about_the_viewer() {
         let (mut sim, rules, a, owner, _) = fixture();
         *sim.house_alliances_mut_for_test() =
             HouseAllianceMap::from([(asker.into(), [other.into()].into())]);
-        insert(&mut sim, 1, owner, "GAGAP", 12, 12);
+        insert(&mut sim, &rules, 1, owner, "GAGAP", 12, 12);
         sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
         power(&mut sim, &rules);
-        insert(&mut sim, 2, a, "GASPYSAT", 1, 1);
+        insert(&mut sim, &rules, 2, a, "GASPYSAT", 1, 1);
         sim.reconcile_active_vision_structures(&rules);
-        insert(&mut sim, 3, owner, "POWER", 25, 25);
+        insert(&mut sim, &rules, 3, owner, "POWER", 25, 25);
         power(&mut sim, &rules);
         sim.uninit(2);
         sim.reconcile_active_vision_structures(&rules);
@@ -437,9 +554,9 @@ fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes()
     // The capturer has power to spare. Its Added_To_Game counts the gap's
     // drain at once (0x00502B48..0x00502B52), before the operational recheck
     // that re-adds the gap (0x00448C3E..0x00448C60).
-    insert(&mut sim, 2, a, "POWER", 25, 25);
+    insert(&mut sim, &rules, 2, a, "POWER", 25, 25);
     power(&mut sim, &rules);
-    insert(&mut sim, 1, owner, "GAGAP", 12, 12);
+    insert(&mut sim, &rules, 1, owner, "GAGAP", 12, 12);
     refresh(&mut sim, &rules);
     sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
     sim.change_owner_with_rules(
@@ -500,12 +617,12 @@ fn gap_operational_events_invalidate_map_reveal_latch_including_friendly_reentry
         crate::sim::world::UninitContext::with_rules(&rules),
     );
     assert!(sim.fog.whole_map_revealed_for_owner(viewer));
-    insert(&mut sim, 1, owner, "GAGAP", 12, 12);
+    insert(&mut sim, &rules, 1, owner, "GAGAP", 12, 12);
     sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
     assert!(!sim.fog.whole_map_revealed_for_owner(viewer));
     assert!(!sim.fog.is_cell_revealed(viewer, 12, 12));
     power(&mut sim, &rules); // low power, but no Building turn has removed it
-    insert(&mut sim, 2, viewer, "GASPYSAT", 1, 1);
+    insert(&mut sim, &rules, 2, viewer, "GASPYSAT", 1, 1);
     sim.reconcile_active_vision_structures(&rules);
     assert!(sim.fog.is_cell_revealed(viewer, 12, 12));
     assert!(
@@ -529,13 +646,13 @@ fn gap_operational_events_invalidate_map_reveal_latch_including_friendly_reentry
         &mut sim,
         crate::sim::world::UninitContext::with_rules(&rules),
     );
-    insert(&mut sim, 1, viewer, "GAGAP", 12, 12);
+    insert(&mut sim, &rules, 1, viewer, "GAGAP", 12, 12);
     sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
     assert!(
         !sim.fog.whole_map_revealed_for_owner(viewer),
         "friendly admitted add clears240 without a hostile receipt"
     );
-    insert(&mut sim, 2, viewer, "GASPYSAT", 1, 1);
+    insert(&mut sim, &rules, 2, viewer, "GASPYSAT", 1, 1);
     sim.reconcile_active_vision_structures(&rules);
     assert!(
         sim.substrate
@@ -652,14 +769,14 @@ pub fn nontransitive_source_gap_views() -> Vec<(vision::FogState, InternedId, In
 #[test]
 fn a_raised_gap_generator_centres_its_circle_by_its_height() {
     let (mut sim, rules, a, b, _) = fixture();
-    insert(&mut sim, 1, a, "GAGAP", 16, 16);
+    insert(&mut sim, &rules, 1, a, "GAGAP", 16, 16);
     sim.substrate
         .entities
         .get_mut(1)
         .unwrap()
         .position
         .set_exact_z_leptons_for_test(Some(4 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS));
-    insert(&mut sim, 2, a, "POWER", 20, 16);
+    insert(&mut sim, &rules, 2, a, "POWER", 20, 16);
     power(&mut sim, &rules);
     sim.visit_building_operational(1, &rules, None, FrameEffects::default());
     let disc = |sim: &Simulation| {
@@ -692,8 +809,8 @@ fn a_raised_gap_generator_centres_its_circle_by_its_height() {
 #[test]
 fn alliance_callbacks_recheck_gap_operation_without_overwriting_the_building_sample() {
     let (mut sim, rules, player, other, _) = fixture();
-    insert(&mut sim, 1, other, "GAGAP", 12, 12);
-    insert(&mut sim, 2, other, "POWER", 16, 12);
+    insert(&mut sim, &rules, 1, other, "GAGAP", 12, 12);
+    insert(&mut sim, &rules, 2, other, "POWER", 16, 12);
     // The manual occupancy helper has no rules-bearing discovery context.
     // Bind the supplied native player only after those fixture objects exist.
     sim.session.set_current_house_for_test(Some(player));

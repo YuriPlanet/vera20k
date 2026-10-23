@@ -3151,13 +3151,16 @@ fn gap_footprint(generator: GapGeneratorSource, width: usize, height: usize) -> 
 /// this ledger owns which viewer cell writes that deposit contributed. The
 /// generator's house asks whether it is allied with the viewer
 /// (`HouseClass::IsAlliedWith @ 0x004F9A50` at `0x006FB2CF`, `0x006FB5B9`,
-/// `0x006FB6B7`), as the other gap planes below do.
+/// `0x006FB6B7`), as the other gap planes below do. `CreateGap`/`DestroyGap`
+/// (`0x006FB170`/`0x006FB470`) also test PlayerPtr+0x1F5: when defeated they
+/// update Cell+0x13C instead of the hostile +0x134 count modeled here.
 pub(crate) fn publish_gap_generator_event(
     fog: &mut FogState,
     alliances: &HouseAllianceMap,
     viewer: InternedId,
     source: GapGeneratorSource,
     active: bool,
+    viewer_defeated: bool,
     interner: &StringInterner,
     spy_sat_active_owners: &std::collections::BTreeSet<InternedId>,
 ) {
@@ -3169,17 +3172,19 @@ pub(crate) fn publish_gap_generator_event(
     if let Some(vis) = fog.by_owner.get_mut(&viewer) {
         let receipts = fog.gap_sources.entry(viewer).or_default();
         if active {
-            if !is_allied_with(
-                alliances,
-                interner.resolve(source.owner),
-                interner.resolve(viewer),
-            ) && receipts.insert(source)
+            if !viewer_defeated
+                && !is_allied_with(
+                    alliances,
+                    interner.resolve(source.owner),
+                    interner.resolve(viewer),
+                )
+                && receipts.insert(source)
             {
                 for index in gap_footprint(source, width, height) {
                     vis.add_gap_cell(index);
                 }
             }
-        } else {
+        } else if !viewer_defeated {
             // Source-prefix lookup avoids scanning every generator on every
             // Building event. Static GAGAP keeps its admitted cell geometry;
             // mobile/warp/owner-transfer callback policy is outside this owner.

@@ -967,6 +967,7 @@ fn a_gap_event_asks_the_generators_house_about_the_viewer() {
             viewer,
             source,
             true,
+            false,
             &interner,
             &std::collections::BTreeSet::new(),
         );

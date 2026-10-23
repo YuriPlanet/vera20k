@@ -1134,7 +1134,8 @@ impl Simulation {
             if teleporter {
                 let _ = self.unit_teleporter_arm(id, None, rules);
             }
-            if self.unit_factory_exit_arm(id, None, rules, None, frame_effects) {
+            if !dock_fast_return && self.unit_factory_exit_arm(id, None, rules, None, frame_effects)
+            {
                 return true;
             }
             self.unit_destination_power_on(id, rules);
@@ -1148,7 +1149,15 @@ impl Simulation {
             _ => None,
         };
         let skip_move_to = teleporter && self.unit_teleporter_arm(id, requested_cell, rules);
-        if self.unit_factory_exit_arm(id, Some(requested), rules, None, frame_effects) {
+        // UnitClass::Set_Destination 0x00741970: successful UnitRepair/Bunker
+        // docking jumps from 0x00742C8E/0x00742D08 to Foot's setter at
+        // 0x00742D09 and returns before the WeaponsFactory arm (0x00742D46).
+        // Retail naval yards have both flags; running that arm here queues
+        // the repair destination as a factory-exit order while Enter is pending.
+        // Source: gamemd.exe instructions 0x00742C14..0x00742E47.
+        if !dock_fast_return
+            && self.unit_factory_exit_arm(id, Some(requested), rules, None, frame_effects)
+        {
             return true;
         }
         let requested = match original_building.filter(|_| !dock_fast_return) {
