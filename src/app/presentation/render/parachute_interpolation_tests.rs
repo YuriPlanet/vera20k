@@ -108,7 +108,7 @@ fn retail_parachute_emitter_interpolates_absolute_attachment_once_and_resets_own
     };
     let atlas = SpriteAtlas::from_test_entries(std::collections::HashMap::from([(
         ShpSpriteKey {
-            palette_context: ShpPaletteContext::SelectedScheme,
+            palette_context: ShpPaletteContext::AnimScheme,
             type_id: "PARACH".into(),
             facing: 0,
             frame: 0,

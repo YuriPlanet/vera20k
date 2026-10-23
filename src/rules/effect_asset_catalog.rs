@@ -67,7 +67,8 @@ impl EffectAssetCatalog {
 
         for name in authoritative_effect_roots(rules) {
             let image_id = rules.art().resolve_effective_image_id(&name, &name);
-            let candidates = art_data::anim_shp_candidates(
+            let candidates = art_data::effect_shp_candidates(
+                crate::rules::art_data::EffectImageKind::Particle,
                 Some(rules.art()),
                 &name,
                 &image_id,
@@ -435,7 +436,7 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
 /// name animations no archive holds (`GAGAP_A`, `GAREFNL4`), so requiring every
 /// art building animation made every retail map fail to load. (Most of the
 /// names that first failed were a separate resolver fault, since fixed in
-/// `art_data::anim_shp_candidates`.)
+/// `art_data::effect_shp_candidates`.)
 pub fn tolerant_anim_class_roots(rules: &RuleSet) -> Vec<String> {
     let mut roots = anim_class_roots(rules);
     roots.extend(
@@ -638,11 +639,11 @@ mod tests {
         assert_eq!(catalog.raw_frame_count("BROKEN"), None);
     }
 
-    /// A root whose SHP is missing is skipped, not fatal, and a bound root's
+    /// A root whose SHP is missing stays a real null-image Anim, and a bound root's
     /// `Next=` chain is bound with it. Retail art names building animations
     /// (`[CAARAY] ActiveAnim=CAARAY_A`) whose sprites never shipped.
     #[test]
-    fn tolerant_binder_skips_missing_roots_and_follows_next_chains() {
+    fn tolerant_binder_keeps_imageless_roots_and_follows_next_chains() {
         let root = TestRoot::new();
         std::fs::write(
             root.path().join("ALPHA.SHP"),
@@ -668,11 +669,16 @@ mod tests {
             "TEMPERATE",
         );
 
-        assert_eq!(skipped, 1, "the missing sprite is counted, not fatal");
+        assert_eq!(skipped, 0, "AnimRead427D00 succeeds with a null image");
         let bound = rules.art().scheduler_anim_types();
         assert!(bound.contains("ALPHA"));
         assert!(bound.contains("BETA"), "Next= chain is bound with its root");
-        assert!(!bound.contains("ABSENT"));
+        assert!(bound.contains("ABSENT"));
+        let absent = rules.art().anim_runtime_config("ABSENT").unwrap();
+        assert_eq!(
+            (absent.raw_shp_frame_count, absent.end, absent.loop_end),
+            (Some(0), 0, 0)
+        );
         assert_eq!(rules.art().anim_runtime_config("BETA").unwrap().end, 4);
     }
 

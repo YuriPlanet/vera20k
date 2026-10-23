@@ -1563,7 +1563,7 @@ fn emit_building_anims(
         let Some(runtime_config) = art_reg.anim_runtime_config(anim_name) else {
             continue;
         };
-        if !runtime_config.art_body_read {
+        if !runtime_config.art_body_read && runtime_config.raw_shp_frame_count.is_none() {
             continue;
         }
         // DrawIt's translucency selection (`0x00423061`): a building being

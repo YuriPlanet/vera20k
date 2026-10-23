@@ -716,8 +716,8 @@ impl IniSection {
         capacity: usize,
         current: [i32; N],
     ) -> Option<[i32; N]> {
-        self.read_string_with(key, capacity, None, |_, value| {
-            let mut out = current;
+        self.read_string_with(key, capacity, None, |retained, value| {
+            let mut out = retained.unwrap_or(current);
             scan_int_fields(value, &mut out);
             Some(out)
         })

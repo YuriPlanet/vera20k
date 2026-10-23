@@ -53,7 +53,7 @@ fn fixture_with_anim_keys(
             ));
             entries.insert(
                 ShpSpriteKey {
-                    palette_context: ShpPaletteContext::SelectedScheme,
+                    palette_context: ShpPaletteContext::AnimScheme,
                     type_id: name.to_string(),
                     facing: 0,
                     frame: 3,
@@ -73,7 +73,7 @@ fn fixture_with_anim_keys(
             );
             if !anim_keys.is_empty() {
                 let mut shadow_key = ShpSpriteKey {
-                    palette_context: ShpPaletteContext::SelectedScheme,
+                    palette_context: ShpPaletteContext::AnimScheme,
                     type_id: name.to_string(),
                     facing: 0,
                     frame: 3,
@@ -210,7 +210,7 @@ fn material_fixture(name: &str, keys: &str) -> (Simulation, RuleSet, u64, u64, S
     assert!(sim.display_layers().layer_of(anim).is_some());
     let atlas = SpriteAtlas::from_test_entries(HashMap::from([(
         ShpSpriteKey {
-            palette_context: ShpPaletteContext::SelectedScheme,
+            palette_context: ShpPaletteContext::AnimScheme,
             type_id: name.to_string(),
             facing: 0,
             frame: 0,
@@ -544,7 +544,7 @@ fn building_slot_draws_a_nonempty_shadow_when_the_body_has_no_atlas_entry() {
     let order = NativeDisplayOrder::new(&[anim]);
     let full = emit(&sim, &rules, building, &atlas, &order);
     let shadow_key = ShpSpriteKey {
-        palette_context: ShpPaletteContext::SelectedScheme,
+        palette_context: ShpPaletteContext::AnimScheme,
         type_id: sim
             .interner()
             .resolve(sim.anim(anim).unwrap().type_id())

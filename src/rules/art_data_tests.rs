@@ -576,8 +576,14 @@ fn test_anim_candidates_use_explicit_own_flags_without_an_image_section() {
     let ini: IniFile = IniFile::from_str("[CAOILD_A]\nImage=CAOILDX\nNewTheater=yes\n");
     let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
     let image_id: String = reg.resolve_effective_image_id("CAOILD_A", "CAOILD_A");
-    let candidates: Vec<String> =
-        anim_shp_candidates(Some(&reg), "CAOILD_A", &image_id, "urb", "NEWURBAN");
+    let candidates: Vec<String> = effect_shp_candidates(
+        crate::rules::art_data::EffectImageKind::Animation,
+        Some(&reg),
+        "CAOILD_A",
+        &image_id,
+        "urb",
+        "NEWURBAN",
+    );
     // Native order: the theater-letter name, then the forced `G` name. The
     // rest is VERA leniency.
     assert_eq!(
@@ -599,7 +605,14 @@ fn test_anim_candidates_use_explicit_own_flags_without_an_image_section() {
 fn anim_candidates_force_the_generic_letter_without_new_theater() {
     let reg = ArtRegistry::from_ini(&IniFile::from_str("[GAPOWR_AD]\nImage=GAPOWR_A\n"));
     let image_id = reg.resolve_effective_image_id("GAPOWR_AD", "GAPOWR_AD");
-    let candidates = anim_shp_candidates(Some(&reg), "GAPOWR_AD", &image_id, "tem", "TEMPERATE");
+    let candidates = effect_shp_candidates(
+        crate::rules::art_data::EffectImageKind::Animation,
+        Some(&reg),
+        "GAPOWR_AD",
+        &image_id,
+        "tem",
+        "TEMPERATE",
+    );
     assert_eq!(&candidates[..2], ["GAPOWR_A.SHP", "GGPOWR_A.SHP"]);
 }
 
@@ -649,7 +662,14 @@ fn animation_flags_use_one_image_hop_and_exact_section_identity() {
     let image = art.resolve_anim_image_id("DAMAGED");
     assert_eq!(image, "CAIMAGE");
     assert_eq!(
-        &anim_shp_candidates(Some(&art), "DAMAGED", &image, "URB", "URBAN")[..2],
+        &effect_shp_candidates(
+            crate::rules::art_data::EffectImageKind::Animation,
+            Some(&art),
+            "DAMAGED",
+            &image,
+            "URB",
+            "URBAN"
+        )[..2],
         ["CUIMAGE.SHP", "CGIMAGE.SHP"]
     );
 }
@@ -661,9 +681,23 @@ fn anim_theater_letter_needs_the_native_name_pattern() {
     let reg = ArtRegistry::from_ini(&IniFile::from_str(
         "[XAFOO]\nNewTheater=yes\n[YAGRND_B]\nNewTheater=yes\n",
     ));
-    let plain = anim_shp_candidates(Some(&reg), "XAFOO", "XAFOO", "tem", "TEMPERATE");
+    let plain = effect_shp_candidates(
+        crate::rules::art_data::EffectImageKind::Animation,
+        Some(&reg),
+        "XAFOO",
+        "XAFOO",
+        "tem",
+        "TEMPERATE",
+    );
     assert_eq!(&plain[..2], ["XAFOO.SHP", "XGFOO.SHP"]);
-    let yuri = anim_shp_candidates(Some(&reg), "YAGRND_B", "YAGRND_B", "tem", "TEMPERATE");
+    let yuri = effect_shp_candidates(
+        crate::rules::art_data::EffectImageKind::Animation,
+        Some(&reg),
+        "YAGRND_B",
+        "YAGRND_B",
+        "tem",
+        "TEMPERATE",
+    );
     assert_eq!(&yuri[..2], ["YTGRND_B.SHP", "YGGRND_B.SHP"]);
 }
 
@@ -934,6 +968,90 @@ fn animation_image_flag_binding_preserves_own_runtime_metadata() {
 }
 
 #[test]
+fn scenario_anim_theater_replaces_only_the_shape_and_retries_the_stored_id() {
+    use crate::rules::native_processing::{RulesLayerStack, RulesProcessContext};
+    use crate::rules::object_image::ImageTheater;
+    use crate::rules::ruleset::RuleSet;
+
+    let root = AnimDimTestRoot::new();
+    for (name, frames) in [
+        ("ALIAA.SNO", 6_i16),
+        ("FX.SHP", 2),
+        ("CTTILE.SHP", 4),
+        ("CATILE.SHP", 8),
+        ("CTPLAIN.SHP", 3),
+        ("CAPLAIN.SHP", 5),
+    ] {
+        let mut bytes = single_frame_shp(1, 1);
+        bytes[6..8].copy_from_slice(&frames.to_le_bytes());
+        std::fs::write(root.path().join(name), bytes).unwrap();
+    }
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let fixed_art = IniFile::from_str(
+        "[FX]\nImage=ALIA\nTheater=yes\nAlternateArcticArt=yes\n[CTTILE]\nNewTheater=yes\n[CTPLAIN]\nRate=1\n",
+    );
+    let layers = RulesLayerStack::new(IniFile::from_str(
+        "[Animations]\n0=FX\n1=CTTILE\n2=CTPLAIN\n",
+    ));
+    let processed = layers
+        .process_with_fixed_art_and_registry_state_recovering(
+            &fixed_art,
+            Default::default(),
+            RulesProcessContext::ScenarioReset(ImageTheater::Snow),
+            &Default::default(),
+        )
+        .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&fixed_art));
+    let image = rules.art().resolve_anim_image_id("FX");
+    assert_eq!(
+        effect_shp_candidates(
+            crate::rules::art_data::EffectImageKind::Animation,
+            Some(rules.art()),
+            "FX",
+            &image,
+            "SNO",
+            "SNOW"
+        ),
+        ["FX.SNO", "FX.SHP"],
+        "Read_Map4AD092 -> InitTheater427940 replaces the resolver's image plan"
+    );
+    rules
+        .bind_scheduler_anim_assets(
+            &["FX".into(), "CTTILE".into(), "CTPLAIN".into()],
+            &assets,
+            "SNO",
+            "SNOW",
+        )
+        .unwrap();
+    let config = rules.art().anim_runtime_config("FX").unwrap();
+    assert_eq!(config.raw_shp_frame_count, Some(2));
+    assert_eq!(config.middle_frame, Some(3));
+    assert_eq!(
+        (config.end, config.loop_end),
+        (6, 6),
+        "427940 does not repeat427B50's numeric writes"
+    );
+    let tile = rules.art().anim_runtime_config("CTTILE").unwrap();
+    assert_eq!(
+        (
+            tile.raw_shp_frame_count,
+            tile.end,
+            tile.loop_end,
+            tile.middle_frame
+        ),
+        (Some(8), 4, 4, Some(4)),
+        "ReadINI's-1 request seeds bounds before the real-theater resolver replaces Shape and Middle"
+    );
+    let plain = rules.art().anim_runtime_config("CTPLAIN").unwrap();
+    assert_eq!(
+        (plain.raw_shp_frame_count, plain.end),
+        (Some(3), 3),
+        "without NewTheater, the generic read image stays resident"
+    );
+}
+
+#[test]
 fn animation_theater_flags_match_original_fresh_read_and_postpass() {
     let corpus = crate::test_fixture::json("tools/rules_oracle/anim_theater_flags.json");
     assert_eq!(corpus["schema"], 1);
@@ -967,7 +1085,29 @@ fn animation_theater_flags_match_original_fresh_read_and_postpass() {
             expected["theater"].as_bool().unwrap(),
             expected["new_theater"].as_bool().unwrap(),
         );
-        assert_eq!(art.anim_theater_flags[name], flags, "{label}");
+        assert_eq!(
+            art.anim_runtime_config(name).unwrap().art_body_read,
+            admitted,
+            "{label}"
+        );
+        if admitted {
+            assert_eq!(art.anim_theater_flags[name], flags, "{label}");
+        } else {
+            // This map is orphan resource metadata, not a constructor-only
+            // Anim's image authority. Its real draw contract is no request.
+            assert!(
+                effect_shp_candidates(
+                    EffectImageKind::Animation,
+                    Some(&art),
+                    name,
+                    name,
+                    "SNO",
+                    "SNOW"
+                )
+                .is_empty(),
+                "{label}"
+            );
+        }
         assert_eq!(
             art.anim_runtime_config(name).unwrap().image,
             expected["image"].as_str().unwrap(),
@@ -1000,7 +1140,14 @@ fn animation_theater_flags_match_original_fresh_read_and_postpass() {
             other => panic!("unexpected corpus theater {other}"),
         };
         let image = art.resolve_anim_image_id(name);
-        let candidates = anim_shp_candidates(Some(&art), name, &image, extension, theater);
+        let candidates = effect_shp_candidates(
+            crate::rules::art_data::EffectImageKind::Animation,
+            Some(&art),
+            name,
+            &image,
+            extension,
+            theater,
+        );
         let selected = candidates
             .iter()
             .find(|filename| assets.get_ref(filename).is_some());
@@ -1097,6 +1244,28 @@ fn animation_binding_keeps_literal_types_and_exact_image_sections() {
         0
     );
     assert_eq!(tolerant.scheduler_anim_types(), art.scheduler_anim_types());
+
+    // AnimTypeLoad428855 can load D's own file without ReadINI or the
+    // distinct bounds resolver427B50. Fresh orphan suppression stays above.
+    let mut restored = processed;
+    restored.restore_object_image_loads("TEMPERATE").unwrap();
+    let mut rules = RuleSet::from_processed_rules(&restored).unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+    rules
+        .bind_scheduler_anim_assets(&["D".into(), " NONE".into()], &assets, "TEM", "TEMPERATE")
+        .unwrap();
+    let d = rules.art().anim_runtime_config("D").unwrap();
+    assert!(!d.art_body_read);
+    assert_eq!(d.raw_shp_frame_count, Some(1));
+    assert_eq!((d.end, d.loop_end, d.rate_logic_frames), (0, 0, 1));
+    assert_eq!(
+        rules
+            .art()
+            .anim_runtime_config(" NONE")
+            .unwrap()
+            .raw_shp_frame_count,
+        None
+    );
 }
 
 #[test]

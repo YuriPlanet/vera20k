@@ -59,6 +59,12 @@ pub(crate) enum ObjectImageKind {
     Terrain,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AnimImagePhase {
+    ReadIni,
+    Theater,
+}
+
 /// Inputs of one reached SHP load in a first-success request plan.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ObjectImageLoad {
@@ -108,6 +114,10 @@ pub(crate) struct ObjectImageState {
     /// Reached loads in first-success order. Unconditional loads replace
     /// this plan; a native Shape==null suffix appends to it.
     shp_loads: Vec<ObjectImageLoad>,
+    /// Anim resolver427B50 writes numeric metadata before InitTheater427940
+    /// can replace Shape without changing those numbers.
+    anim_bounds_loads: Option<Vec<ObjectImageLoad>>,
+    anim_theater_bounds_loads: Option<Vec<ObjectImageLoad>>,
     voxel_load: Option<String>,
 }
 
@@ -123,6 +133,8 @@ impl ObjectImageState {
             new_theater: false,
             voxel: false,
             shp_loads: Vec::new(),
+            anim_bounds_loads: None,
+            anim_theater_bounds_loads: None,
             voxel_load: None,
         }
     }
@@ -188,9 +200,9 @@ impl ObjectImageState {
         }
     }
 
-    /// TechnoRead715820/715825, TerrainRead71DF9E..71DFC0 and
-    /// AnimResolve427B7B load Image.SHP once, without the alternate-art
-    /// prefix or generic retry. A miss replaces the previous shape with null.
+    /// TechnoRead715820/715825 and TerrainRead71DF9E..71DFC0 load
+    /// Image.SHP once, without the alternate-art prefix or generic retry.
+    /// A miss replaces the previous shape with null.
     pub(crate) fn load_plain_shp(&mut self) {
         self.shp_loads = vec![ObjectImageLoad {
             image: self.image.clone(),
@@ -198,6 +210,68 @@ impl ObjectImageState {
             new_theater: false,
             generic_retry: false,
         }];
+    }
+
+    /// AnimTypeClass::LoadImageAndResolveFrameBounds427B50 calls generic
+    /// LoadSHP only for Theater. Its other arm427B9F..427C0C formats the
+    /// Image/ID name with the shared theater/G retry, without Arctic mutation.
+    pub(crate) fn load_anim_shp(
+        &mut self,
+        stored_id: &str,
+        theater: ImageTheater,
+        phase: AnimImagePhase,
+    ) {
+        if self.theater {
+            self.load_unowned_shp(ObjectImageKind::Animation, theater);
+        } else {
+            let mut request = self.shp_request(true);
+            if request.image.is_empty() {
+                request.image = stored_id.to_owned();
+            }
+            // ReadINI427DD9 passes-1 to427BDE, so no theater letter is
+            // substituted there. InitTheater427A1B passes the real theater.
+            request.new_theater = phase == AnimImagePhase::Theater;
+            self.shp_loads = vec![request];
+        }
+        match phase {
+            AnimImagePhase::ReadIni => {
+                self.anim_bounds_loads = Some(self.shp_loads.clone());
+                self.anim_theater_bounds_loads = None;
+            }
+            AnimImagePhase::Theater => {
+                self.anim_theater_bounds_loads = Some(self.shp_loads.clone())
+            }
+        }
+    }
+
+    /// AnimTypeLoad4288E5..428929 replaces the generic image with the
+    /// stored type ID and theater extension, without a G retry.
+    pub(crate) fn load_saved_anim_theater_shp(&mut self, stored_id: &str) {
+        self.shp_loads = vec![ObjectImageLoad {
+            image: stored_id.to_owned(),
+            theater: true,
+            new_theater: false,
+            generic_retry: false,
+        }];
+    }
+
+    /// Read_Map4AD092 and MouseLoad5BE689 call the same AnimType array
+    /// InitTheater427940 after type reads/loads. Its Theater arm4279A8..427A09
+    /// replaces only Shape: stored ID + extension, then ID.SHP. It does not
+    /// repeat the earlier427B50 numeric writes. Deferred/owned shapes remain
+    /// the separate lifecycle boundary described above.
+    pub(crate) fn init_anim_theater(&mut self, stored_id: &str, theater: ImageTheater) {
+        if self.theater {
+            self.load_saved_anim_theater_shp(stored_id);
+            self.shp_loads.push(ObjectImageLoad {
+                image: stored_id.to_owned(),
+                theater: false,
+                new_theater: false,
+                generic_retry: false,
+            });
+        } else if self.new_theater {
+            self.load_anim_shp(stored_id, theater, AnimImagePhase::Theater);
+        }
     }
 
     fn shp_request(&self, generic_retry: bool) -> ObjectImageLoad {
@@ -260,6 +334,15 @@ impl ObjectImageState {
         if !valid_name(&self.image)
             || self.shp_loads.iter().any(|load| !valid_name(&load.image))
             || self.shp_loads.len() > 2
+            || self.anim_bounds_loads.as_ref().is_some_and(|loads| {
+                loads.len() > 2 || loads.iter().any(|load| !valid_name(&load.image))
+            })
+            || self
+                .anim_theater_bounds_loads
+                .as_ref()
+                .is_some_and(|loads| {
+                    loads.len() > 2 || loads.iter().any(|load| !valid_name(&load.image))
+                })
             || self
                 .voxel_load
                 .as_deref()
@@ -286,6 +369,12 @@ impl ObjectImageState {
     }
     pub(crate) fn shp_loads(&self) -> &[ObjectImageLoad] {
         &self.shp_loads
+    }
+    pub(crate) fn anim_bounds_loads(&self) -> Option<&[ObjectImageLoad]> {
+        self.anim_bounds_loads.as_deref()
+    }
+    pub(crate) fn anim_theater_bounds_loads(&self) -> Option<&[ObjectImageLoad]> {
+        self.anim_theater_bounds_loads.as_deref()
     }
     pub(crate) fn voxel_load(&self) -> Option<&str> {
         self.voxel_load.as_deref()

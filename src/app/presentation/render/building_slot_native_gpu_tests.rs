@@ -84,7 +84,8 @@ impl SlotGpu {
         let sim = fixture.scene.sim();
         let rules = &fixture.scene.runtime.resources.rules;
         let image = rules.art().resolve_anim_image_id("GAPOWR_A");
-        let (filename, physical) = crate::rules::art_data::anim_shp_candidates(
+        let (filename, physical) = crate::rules::art_data::effect_shp_candidates(
+            crate::rules::art_data::EffectImageKind::Animation,
             Some(rules.art()),
             "GAPOWR_A",
             &image,
@@ -302,7 +303,7 @@ impl SlotGpu {
                 );
                 batch.bind_shroud(&self.gpu.device, Some(&fog));
                 let key = ShpSpriteKey {
-                    palette_context: ShpPaletteContext::SelectedScheme,
+                    palette_context: ShpPaletteContext::AnimScheme,
                     type_id: "GAPOWR_A".into(),
                     facing: 0,
                     frame: frame as u16,

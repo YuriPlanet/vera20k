@@ -150,7 +150,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
     for color in &scheme_colors {
         assert!(live_remap_keys.contains(&(
             parachute_name.to_ascii_uppercase(),
-            crate::render::sprite_atlas::ShpPaletteContext::SelectedScheme,
+            crate::render::sprite_atlas::ShpPaletteContext::AnimScheme,
             *color
         )));
     }
@@ -190,7 +190,7 @@ fn retail_parachute_canopy_uses_each_attached_house_remap_in_gpu_pixels() {
         .map(|(&anim_id, &color)| {
             let anim = sim.anim(anim_id).unwrap();
             let key = ShpSpriteKey {
-                palette_context: ShpPaletteContext::SelectedScheme,
+                palette_context: ShpPaletteContext::AnimScheme,
                 type_id: parachute_name.clone(),
                 facing: 0,
                 frame: u16::try_from(anim.runtime().current_frame).unwrap(),

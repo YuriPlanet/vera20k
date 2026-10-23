@@ -277,7 +277,7 @@ impl Scene {
         };
         build_display_effect_instances(&input, &mut parents, &order, Default::default());
         let key = ShpSpriteKey {
-            palette_context: ShpPaletteContext::SelectedScheme,
+            palette_context: ShpPaletteContext::AnimScheme,
             type_id: "PARACH".into(),
             facing: 0,
             frame,

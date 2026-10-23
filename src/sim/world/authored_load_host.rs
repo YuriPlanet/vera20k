@@ -291,10 +291,10 @@ mod tests {
     fn load_rules() -> RuleSet {
         let art_ini = IniFile::from_str(
             "[LATE]\nLayer=ground\nShadow=no\nRate=900\nStartSound=TileStart\n\
-             [MISSING]\nImage=ABSENT\n",
+             [MALFORMED]\nImage=BROKEN\n",
         );
         let processed =
-            RulesLayerStack::new(IniFile::from_str("[Animations]\n0=LATE\n1=MISSING\n"))
+            RulesLayerStack::new(IniFile::from_str("[Animations]\n0=LATE\n1=MALFORMED\n"))
                 .process_with_fixed_art(&art_ini)
                 .expect("process canonical ART read admission");
         let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
@@ -308,6 +308,9 @@ mod tests {
         // The bounds binder consumes this SHP header; no pixel decode is
         // involved in this synthetic constructor/ownership regression.
         root.write("LATE.SHP", &[0, 0, 1, 0, 1, 0, 2, 0]);
+        // Missing images are valid native null images. A malformed signed
+        // frame count still exercises the strict pre-constructor failure.
+        root.write("BROKEN.SHP", &[0, 0, 1, 0, 1, 0, 255, 255]);
         let assets = AssetManager::from_loose_root_for_test(root.path());
         let request = TerrainTileAnimation {
             rx: 1,
@@ -395,11 +398,11 @@ mod tests {
         );
 
         let before_failure = sim.state_hash();
-        let mut missing = request.clone();
-        missing.anim_name = "MISSING".into();
+        let mut malformed = request.clone();
+        malformed.anim_name = "MALFORMED".into();
         assert!(
             SimulationAuthoredLoadHost::new(&mut sim, &mut rules, &assets, "TEM", "TEMPERATE")
-                .construct_terrain_attached_anim(&missing)
+                .construct_terrain_attached_anim(&malformed)
                 .is_err()
         );
         assert_eq!(

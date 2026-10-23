@@ -1032,7 +1032,8 @@ pub fn compute_overlay_radar_colors(
                 .and_then(|flags| flags.cell_anim.as_deref())
                 .and_then(|anim| {
                     let image_id = art_registry.resolve_anim_image_id(anim);
-                    load(art_data::anim_shp_candidates(
+                    load(art_data::effect_shp_candidates(
+                        crate::rules::art_data::EffectImageKind::Animation,
                         Some(art_registry),
                         anim,
                         &image_id,

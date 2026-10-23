@@ -4318,6 +4318,8 @@ pub struct RuleSet {
     /// Ordered native registry receipt: whether this type actually reached a
     /// successful fixed-ART ReadINI before the final rules pass completed.
     anim_type_art_read_states: Vec<(String, bool)>,
+    /// Immutable projection of the same retained type owner's image calls.
+    anim_type_images: Vec<(String, crate::rules::object_image::ObjectImageState)>,
     /// Each AnimType's fixed-ART Type references after the last pass, in the
     /// same registry order; installing ART data hands them to the registry.
     anim_type_references: Vec<(String, crate::rules::native_processing::AnimTypeReferences)>,
@@ -4766,6 +4768,10 @@ impl RuleSet {
         rules.anim_type_art_read_states = processed
             .anim_type_art_read_states()
             .map(|(name, read)| (name.to_owned(), read))
+            .collect();
+        rules.anim_type_images = processed
+            .anim_type_image_states()
+            .map(|(name, image)| (name.to_owned(), image.clone()))
             .collect();
         rules.anim_type_references = processed
             .anim_type_reference_states()
@@ -5757,6 +5763,7 @@ impl RuleSet {
             smudge_types: SmudgeTypeRegistry::from_rules_ini(ini),
             art_registry: crate::rules::art_data::ArtRegistry::empty(),
             anim_type_art_read_states: Vec::new(),
+            anim_type_images: Vec::new(),
             anim_type_references: Vec::new(),
             anim_type_names: ini
                 .section("Animations")
@@ -7095,6 +7102,7 @@ impl RuleSet {
         b"building-slot-config-v1".hash(hasher);
         self.anim_type_names.hash(hasher);
         self.anim_type_art_read_states.hash(hasher);
+        self.anim_type_images.hash(hasher);
         self.art_registry.scheduler_anim_types().hash(hasher);
         let mut types = self.anim_type_names.clone();
         types.extend(self.art_registry.scheduler_anim_types().iter().cloned());
@@ -7706,6 +7714,8 @@ impl RuleSet {
         self.art_registry = art;
         self.art_registry
             .apply_anim_type_read_states(&self.anim_type_art_read_states);
+        self.art_registry
+            .apply_anim_type_image_states(&self.anim_type_images);
         self.art_registry
             .apply_anim_type_references(&self.anim_type_references);
         self.project_art_data();

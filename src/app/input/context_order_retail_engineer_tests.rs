@@ -182,7 +182,8 @@ fn retail_camov02_alias_binds_damaged_art_and_engineer_repair_restores_normal() 
         );
         let image = rules.art().resolve_anim_image_id(name);
         assert_eq!(
-            crate::rules::art_data::anim_shp_candidates(
+            crate::rules::art_data::effect_shp_candidates(
+                crate::rules::art_data::EffectImageKind::Animation,
                 Some(rules.art()),
                 name,
                 &image,

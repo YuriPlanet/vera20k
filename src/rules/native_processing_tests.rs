@@ -1359,6 +1359,62 @@ fn projectile_flat_survives_registry_handoff_and_resets_with_its_owner() {
 }
 
 #[test]
+fn overlay_cell_anim_retains_its_factory_result_across_empty_reads() {
+    // OverlayTypeClass::ReadINI 0x005FE867..0x005FE8A0 retains an empty
+    // read, while AnimTypeClass::FindOrAllocate 0x00428B80 clears "none".
+    let Some((mut root, mut art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    root.merge(&IniFile::from_str("[GEM01]\nCellAnim=VCELLFX\n"));
+    art.merge(&IniFile::from_str("[VCELLFX]\nImage=SMOKEY\n"));
+    let mut layers = RulesLayerStack::new(root);
+    let first = layers.process_with_fixed_art(&art).unwrap();
+    let reference = |processed: &ProcessedRulesLayers| {
+        let registry =
+            crate::rules::overlay_types::OverlayTypeRegistry::from_processed_rules(processed);
+        registry
+            .flags(registry.id_for_name("GEM01").unwrap())
+            .unwrap()
+            .cell_anim
+            .clone()
+    };
+    assert_eq!(reference(&first).as_deref(), Some("VCELLFX"));
+    assert!(
+        first
+            .anim_type_art_read_states()
+            .any(|state| state == ("VCELLFX", false))
+    );
+    let constructors = first.native_type_construction_trace().events();
+
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[GEM01]\nTiberium=yes\nCellAnim=\n"),
+    );
+    let retained = layers.process_with_fixed_art(&art).unwrap();
+    assert_eq!(reference(&retained).as_deref(), Some("VCELLFX"));
+    assert!(
+        retained
+            .anim_type_art_read_states()
+            .any(|state| state == ("VCELLFX", true))
+    );
+    assert_eq!(
+        retained.native_type_construction_trace().events(),
+        constructors
+    );
+
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[GEM01]\nCellAnim=none\n"),
+    );
+    let cleared = layers.process_with_fixed_art(&art).unwrap();
+    assert_eq!(reference(&cleared), None);
+    assert_eq!(
+        cleared.native_type_construction_trace().events(),
+        constructors
+    );
+}
+
+#[test]
 fn anim_art_read_receipt_distinguishes_live_sweep_from_late_allocation() {
     // ReadTypeData 0x00679A5D..0x00679A82 reloads the live Anim count, then
     // proceeds to Techno readers; AudioVisual runs still later in Process.

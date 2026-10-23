@@ -1937,17 +1937,23 @@ pub(crate) mod tests {
             "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
              [Colors]\nGold=43,239,255\nNeonGreen=104,241,195\n\
              [Tiberiums]\n0=Riparius\n[Riparius]\nImage=1\nColor=NeonGreen\n\
-             [Animations]\n0=SPARK\n\
              [OverlayTypes]\n0=ANIMBOX\n[ANIMBOX]\nTiberium=yes\nCellAnim=SPARK\n\
              [CrateRules]\nCrateImg=ANIMBOX\nWoodCrateImg=ANIMBOX\nWaterCrateImg=ANIMBOX\n",
         );
-        let registry = OverlayTypeRegistry::from_ini(&ini, None);
-        let mut rules = RuleSet::from_ini(&ini).unwrap();
-        let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
-            "[SPARK]\nRate=1\nEnd=2\nLoopCount=1\n",
-        ));
+        let art_ini = IniFile::from_str("[SPARK]\nRate=1\nEnd=2\nLoopCount=1\n");
+        // OverlayRead5FE897 allocates SPARK after this pass's Anim sweep;
+        // the next normal pass supplies its ART before ordinary live Mark.
+        let mut layers = crate::rules::native_processing::RulesLayerStack::new(ini);
+        layers.push(
+            crate::rules::native_processing::RulesLayerKind::Scenario,
+            IniFile::empty(),
+        );
+        let processed = layers.process_with_fixed_art(&art_ini).unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        let registry = rules.overlay_registry().clone();
+        let mut art = crate::rules::art_data::ArtRegistry::from_ini(&art_ini);
         art.bind_anim_frame_count_for_test("SPARK", 2);
-        rules.replace_art_registry_for_test(art);
+        rules.install_art_data(art);
         (rules, registry)
     }
 

@@ -290,7 +290,8 @@ fn retail_power_plant_slot_obeys_detail_without_pausing_its_ai() {
     );
     assert!(!config.translucent && config.translucency == 0);
     let image = rules.art().resolve_anim_image_id("GAPOWR_A");
-    let physical = crate::rules::art_data::anim_shp_candidates(
+    let physical = crate::rules::art_data::effect_shp_candidates(
+        crate::rules::art_data::EffectImageKind::Animation,
         Some(rules.art()),
         "GAPOWR_A",
         &image,

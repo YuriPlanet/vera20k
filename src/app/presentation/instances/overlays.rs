@@ -341,7 +341,9 @@ pub(crate) fn build_display_effect_instances(
             parachute_type.is_some_and(|ty| parachute_canopy_owner(anim, ty).is_some());
         let type_name: &str = sim.interner().resolve(anim.type_id());
         let config = input.rules.art().anim_runtime_config(type_name);
-        if config.is_some_and(|config| !config.art_body_read) {
+        if config
+            .is_some_and(|config| !config.art_body_read && config.raw_shp_frame_count.is_none())
+        {
             continue;
         }
         // AnimDrawIfVisible422C70 rejects delay+184 before Object5F4B10's
@@ -470,7 +472,7 @@ pub(crate) fn build_display_effect_instances(
         );
         let key = ShpSpriteKey {
             palette_context: if anim.use_cell_drawer() {
-                crate::render::sprite_atlas::ShpPaletteContext::Cell
+                crate::render::sprite_atlas::ShpPaletteContext::AnimCell
             } else if remap_color.is_some() {
                 crate::render::sprite_atlas::anim_remap_context(anim)
             } else {

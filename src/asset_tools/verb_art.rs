@@ -30,7 +30,7 @@ use crate::asset_tools::identify;
 use crate::asset_tools::report::{AnimSlot, ArtCandidate, ArtForReport, ErrorReport};
 use crate::assets::asset_manager::AssetManager;
 use crate::rules::art_data::{
-    ArtRegistry, anim_shp_candidates, object_shp_candidates, voxel_asset_names,
+    ArtRegistry, effect_shp_candidates, object_shp_candidates, voxel_asset_names,
 };
 
 /// Theater assumed when the caller does not pass `--theater`. Temperate is the
@@ -265,7 +265,8 @@ fn assemble(
                     // theater convention, so it resolves independently.
                     let slot_upper = anim.anim_type.to_ascii_uppercase();
                     let slot_image = art_registry.resolve_effective_image_id(&slot_upper, "");
-                    let names = anim_shp_candidates(
+                    let names = effect_shp_candidates(
+                        crate::rules::art_data::EffectImageKind::Animation,
                         Some(art_registry),
                         &slot_upper,
                         &slot_image,

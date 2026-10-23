@@ -171,7 +171,7 @@ fn frozen_building_pieces(
         if zshape {
             let origin = native_z::zshape_origin(
                 (x as i32, y as i32),
-                crate::rules::foundation::foundation_dimensions(&object.foundation),
+                object.foundation.dimensions(),
                 art.map_or((0, 0), |art| art.z_shape_point_move),
             );
             instance.zshape_origin = [origin.0 as f32, origin.1 as f32];
@@ -355,10 +355,10 @@ mod tests {
             ("TEST", 2, ShpPaletteContext::SelectedScheme, 0),
             ("TEST", 6, ShpPaletteContext::SelectedScheme, 1),
             ("PAD", 2, ShpPaletteContext::SelectedScheme, 2),
-            ("FLAME", 7, ShpPaletteContext::SelectedScheme, 3),
+            ("FLAME", 7, ShpPaletteContext::AnimScheme, 3),
             // The snapshot never switches to a buildup image or re-adds Start.
             ("TEST_MAKE", 2, ShpPaletteContext::Legacy, 4),
-            ("FLAME", 11, ShpPaletteContext::SelectedScheme, 5),
+            ("FLAME", 11, ShpPaletteContext::AnimScheme, 5),
         ] {
             entries.insert(
                 ShpSpriteKey {

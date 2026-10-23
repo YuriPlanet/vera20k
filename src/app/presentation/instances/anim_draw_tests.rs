@@ -23,7 +23,7 @@ fn fixture(keys: &str) -> (SpriteAtlas, ShpSpriteKey, AnimTypeRuntimeConfig) {
     let config = art.anim_runtime_config("ANIM").unwrap().clone();
     let key = ShpSpriteKey {
         type_id: "ANIM".into(),
-        palette_context: ShpPaletteContext::SelectedScheme,
+        palette_context: ShpPaletteContext::AnimScheme,
         facing: 0,
         frame: 1,
         house_color: HouseColorIndex(2),

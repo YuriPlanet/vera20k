@@ -13,7 +13,6 @@
 use crate::rules::ini_parser::IniFile;
 use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainRules};
 use crate::rules::tiberium_type::{TiberiumType, TiberiumTypeId, TiberiumTypeRegistry};
-use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 
 use crate::rules::object_image::ObjectImageState;
@@ -347,9 +346,11 @@ impl OverlayTypeRegistry {
         processed: &crate::rules::native_processing::ProcessedRulesLayers,
     ) -> Self {
         let mut registry = Self::from_projected_ini(processed.ini());
-        for (index, (_, damage_levels, image)) in processed.overlay_type_image_states().enumerate()
+        for (index, (_, damage_levels, cell_anim, image)) in
+            processed.overlay_type_states().enumerate()
         {
             registry.flags[index].damage_levels = damage_levels;
+            registry.flags[index].cell_anim = cell_anim.map(str::to_ascii_uppercase);
             registry.images.push(image.clone());
         }
         assert_eq!(registry.names.len(), registry.images.len());
@@ -392,21 +393,6 @@ impl OverlayTypeRegistry {
         let clear_speed_costs = clear_semantics.map(|semantics| semantics.speed_costs);
         let clear_ground_blocked =
             clear_semantics.is_some_and(|semantics| semantics.ground_blocked);
-        // OverlayRead5FE897 calls AnimTypeFindOrAllocate428B80. This
-        // compatibility projection currently keeps only already registered
-        // names; implicit CellAnim construction/ART-read chronology remains
-        // a separate factory residual, outside the no-CellAnim wall chain.
-        let registered_anim_types: HashSet<String> = ini
-            .section("Animations")
-            .map(|section| {
-                section
-                    .registry_ids()
-                    .into_iter()
-                    .filter(|name| !name.is_empty())
-                    .map(str::to_ascii_uppercase)
-                    .collect()
-            })
-            .unwrap_or_default();
         let mut flags: Vec<OverlayTypeFlags> = Vec::with_capacity(names.len());
         let mut alpha_images: Vec<String> = Vec::with_capacity(names.len());
         for (idx, name) in names.iter().enumerate() {
@@ -460,11 +446,9 @@ impl OverlayTypeRegistry {
                     crate_type: type_section.read_bool("Crate", false),
                     crate_trigger: type_section.read_bool("CrateTrigger", false),
                     overrides: type_section.read_bool("Overrides", false),
-                    // ReadString 0x80 (`0x005FE88A`).
-                    cell_anim: type_section
-                        .read_name("CellAnim", 0x80)
-                        .map(str::to_ascii_uppercase)
-                        .filter(|value| registered_anim_types.contains(value)),
+                    // OverlayRead5FE867..5FE8A0's retained factory result
+                    // is projected from ProcessedType above, never re-read.
+                    cell_anim: None,
                     is_rubble: type_section.read_bool("IsRubble", false),
                     is_a_rock: type_section.read_bool("IsARock", false),
                     land_wheel_speed_zero,
@@ -526,6 +510,12 @@ impl OverlayTypeRegistry {
         self.images.hash(state);
         for flags in &self.flags {
             flags.damage_levels.hash(state);
+        }
+        if self.flags.iter().any(|flags| flags.cell_anim.is_some()) {
+            b"overlay-cellanim-reference-v1".hash(state);
+            for flags in &self.flags {
+                flags.cell_anim.hash(state);
+            }
         }
     }
 

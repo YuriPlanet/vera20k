@@ -348,7 +348,7 @@ pub(super) fn build_particle_instance(
         return;
     };
     let key = ShpSpriteKey {
-        palette_context: ShpPaletteContext::GlobalAnim,
+        palette_context: ShpPaletteContext::Particle,
         type_id: image.to_owned(),
         facing: 0,
         frame,

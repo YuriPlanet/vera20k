@@ -587,6 +587,132 @@ fn retail_saved_resources_prepare_cold() {
 }
 
 #[test]
+fn unread_cell_anim_loads_its_own_retail_shape_without_replaying_construction() {
+    use crate::sim::components::AnimClassSpawnDescriptor;
+    use crate::sim::native_identity::NativeUniqueIdCursor;
+    use crate::util::fixed_math::SIM_ZERO;
+
+    let Some(mut save) = incoming_save("TEMPERATE", "[GEM01]\nCellAnim=SEAL\n") else {
+        return;
+    };
+    // A same-named Infantry type/ART section does not perform an Anim read.
+    let rules = &save.incoming.resources.rules;
+    let overlay = rules.overlay_registry();
+    assert_eq!(
+        overlay
+            .flags(overlay.id_for_name("GEM01").unwrap())
+            .unwrap()
+            .cell_anim
+            .as_deref(),
+        Some("SEAL")
+    );
+    let config = rules.art().anim_runtime_config("SEAL").unwrap();
+    assert!(!config.art_body_read);
+    assert_eq!(config.raw_shp_frame_count, None);
+    let shape = save
+        .assets
+        .get_ref("SEAL.SHP")
+        .expect("real retail own-name SHP");
+    let count = i32::from(i16::from_le_bytes([shape[6], shape[7]]));
+    assert!(count > 0);
+    // This persistence fixture supplies an already born Anim through the
+    // common constructor. Ordinary Overlay Mark is covered by crates tests.
+    let sim = &mut save.incoming.simulation;
+    *sim.native_unique_ids_mut_for_test() = Some(NativeUniqueIdCursor::for_synthetic_simulation());
+    let kind = sim.intern("SEAL");
+    let mut descriptor = AnimClassSpawnDescriptor::new(kind, 5, 5, SIM_ZERO, SIM_ZERO, 0);
+    descriptor.loop_count = 1;
+    descriptor.draw_flags = 0x600;
+    let id = sim.spawn_anim_object(rules, descriptor).unwrap();
+    let native = sim.anim(id).unwrap().native_unique_id();
+    let runtime = sim.anim(id).unwrap().runtime().clone();
+    let cursor = sim.native_identity_cursor();
+    let hash = rules.simulation_config_hash();
+    let bytes = snapshot_bytes(&save.incoming, &save.owner, &save.map, None, hash);
+    let clock = || LOAD_CLOCK_MS;
+    let frontend = frontend_main();
+    let cache = TileVariantSelectorCache::default();
+    let view = SavedGamePreparationView {
+        repository: &save.repository,
+        current_simulation: None,
+        frontend_main: &frontend,
+        rules_owner: &save.owner,
+        tile_cache: &cache,
+        load_clock: &clock,
+    };
+    let prepared = save
+        .assets
+        .prepare_saved_load(|assets| PreparedSavedGame::prepare_resources(&bytes, &view, assets))
+        .unwrap();
+    // AnimTypeLoad428855 supplies image residency without ReadINI427D00
+    // or LoadImageAndResolveFrameBounds427B50: all ctor bounds stay zero.
+    let config = prepared
+        .resources
+        .rules
+        .art()
+        .anim_runtime_config("SEAL")
+        .unwrap();
+    assert!(!config.art_body_read);
+    assert_eq!(config.raw_shp_frame_count, Some(count));
+    assert_eq!(
+        (config.end, config.loop_end, config.rate_logic_frames),
+        (0, 0, 1)
+    );
+    let anim = prepared.world.simulation.anim(id).unwrap();
+    assert_eq!(anim.native_unique_id(), native);
+    assert_eq!(anim.runtime(), &runtime);
+    assert_eq!(prepared.world.simulation.native_identity_cursor(), cursor);
+
+    let PreparedSavedResources {
+        world,
+        resources,
+        processed_rules,
+        map,
+        ..
+    } = prepared;
+    let (simulation, _) = world.into_committed(SharedCellDummy::fresh(), &frontend);
+    save.owner.install_saved_scenario_rules(processed_rules);
+    let loaded = SimRuntime {
+        simulation,
+        resources,
+    };
+    let loaded_hash = loaded.resources.rules.simulation_config_hash();
+    let bytes = snapshot_bytes(&loaded, &save.owner, &map, None, loaded_hash);
+    let view = SavedGamePreparationView {
+        repository: &save.repository,
+        current_simulation: None,
+        frontend_main: &frontend,
+        rules_owner: &save.owner,
+        tile_cache: &cache,
+        load_clock: &clock,
+    };
+    let again = save
+        .assets
+        .prepare_saved_load(|assets| PreparedSavedGame::prepare_resources(&bytes, &view, assets))
+        .unwrap();
+    assert_eq!(again.resources.rules.simulation_config_hash(), loaded_hash);
+    assert_eq!(again.world.simulation.native_identity_cursor(), cursor);
+    assert_eq!(again.world.simulation.anim(id).unwrap().runtime(), &runtime);
+    let PreparedSavedResources {
+        world, resources, ..
+    } = again;
+    let (mut sim, _) = world.into_committed(SharedCellDummy::fresh(), &frontend);
+    for _ in 0..4 {
+        sim.advance_tick(
+            &[],
+            Some(&resources.rules),
+            None,
+            Some(&resources.overlay_registry),
+            33,
+        );
+    }
+    assert!(
+        sim.anim(id).is_none(),
+        "zero-End Anim uses normal AI and deferred cleanup"
+    );
+}
+
+#[test]
 fn unknown_terrain_type_load_validates_then_commits_and_resaves_its_same_owner() {
     use crate::sim::terrain_spawn::{
         TerrainConstructionMode, TerrainConstructionRules, construct_terrain_objects_with_rules,

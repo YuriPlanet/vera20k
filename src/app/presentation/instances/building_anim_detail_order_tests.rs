@@ -105,7 +105,7 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
         let entries = if present {
             HashMap::from([(
                 ShpSpriteKey {
-                    palette_context: ShpPaletteContext::SelectedScheme,
+                    palette_context: ShpPaletteContext::AnimScheme,
                     type_id: "GAPOWR_A".to_owned(),
                     facing: 0,
                     frame: 0,

@@ -304,6 +304,7 @@ impl RulesLayerStack {
             // Read_Map4AD071 / RMG59A201: all Overlay types receive this
             // postpass after the incoming scenario's ordered Rules reads.
             processor.init_overlay_theater();
+            processor.init_anim_theater();
         }
         let (ini, native_type_construction_trace, powerups) = processor.finish();
         Ok(ProcessedRulesLayers {
@@ -626,6 +627,7 @@ impl ProcessedRulesLayers {
                     RulesTypeFamily::Terrain
                         | RulesTypeFamily::Projectile
                         | RulesTypeFamily::Overlay
+                        | RulesTypeFamily::Animation
                 )
             {
                 continue;
@@ -646,12 +648,28 @@ impl ProcessedRulesLayers {
                 if family != RulesTypeFamily::Building {
                     image.load_voxel();
                 }
-                let kind = if family == RulesTypeFamily::Terrain {
-                    ObjectImageKind::Terrain
-                } else {
-                    ObjectImageKind::Ordinary
+                let kind = match family {
+                    RulesTypeFamily::Terrain => ObjectImageKind::Terrain,
+                    RulesTypeFamily::Animation => ObjectImageKind::Animation,
+                    _ => ObjectImageKind::Ordinary,
                 };
                 image.load_unowned_shp(kind, theater);
+                if family == RulesTypeFamily::Animation {
+                    // AnimTypeLoad42884E/55 reaches VXL then generic SHP
+                    // even for an unread type. Ctor-only false flags leave
+                    // that image resident without ART or bounds reads.
+                    if image.theater() {
+                        image.load_saved_anim_theater_shp(&member.native_stored_id);
+                    } else if image.new_theater() {
+                        //42894F invokes the distinct bounds/image resolver.
+                        image.load_anim_shp(
+                            &member.native_stored_id,
+                            theater,
+                            crate::rules::object_image::AnimImagePhase::Theater,
+                        );
+                    }
+                    image.init_anim_theater(&member.native_stored_id, theater);
+                }
                 if family == RulesTypeFamily::Overlay {
                     // OverlayLoad5FEB3E/45 loads VXL before unconditional
                     // generic SHP, then5FEBEC tries its suffix only on null.
@@ -662,6 +680,13 @@ impl ProcessedRulesLayers {
             }
         }
         Ok(())
+    }
+
+    /// The client atlas regression exercises this same resource operation;
+    /// connected saved-resource admission is tested by the persistence owner.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn restore_object_image_loads_for_test(&mut self, theater: &str) -> Result<(), RulesError> {
+        self.restore_object_image_loads(theater)
     }
 
     /// Project each actual Terrain member, including constructor-only Types.
@@ -717,9 +742,9 @@ impl ProcessedRulesLayers {
 
     /// Ordered immutable Overlay projection. ProcessedType retains the input
     /// fields and resource requests; registry construction performs no reads.
-    pub(crate) fn overlay_type_image_states(
+    pub(crate) fn overlay_type_states(
         &self,
-    ) -> impl Iterator<Item = (&str, i32, &ObjectImageState)> {
+    ) -> impl Iterator<Item = (&str, i32, Option<&str>, &ObjectImageState)> {
         self.native_type_construction_trace
             .registry_state()
             .families
@@ -730,6 +755,7 @@ impl ProcessedRulesLayers {
                 (
                     member.native_stored_id.as_str(),
                     member.overlay_damage_levels,
+                    member.overlay_cell_anim.as_deref(),
                     &member.object_image,
                 )
             })
@@ -944,6 +970,12 @@ impl ProcessedRulesLayers {
         self.native_type_construction_trace
             .registry_state()
             .anim_type_art_read_states()
+    }
+
+    /// Retained Image and reached resource requests of the real AnimTypes,
+    /// including ctor-only types and the saved Load428800 boundary.
+    pub(crate) fn anim_type_image_states(&self) -> impl Iterator<Item = (&str, &ObjectImageState)> {
+        self.member_states(RulesTypeFamily::Animation, |member| &member.object_image)
     }
 
     /// Retained Bullet/ObjectType Image and ART fields after each native pass.
@@ -3217,6 +3249,9 @@ struct ProcessedType {
     /// OverlayCtor5FE265 starts at1; OverlayRead5FE8A6..5FE8C3 retains
     /// the full signed dword through each fixed-ART Image-section read.
     overlay_damage_levels: i32,
+    /// OverlayTypeClass ctor5FE290 starts null; ReadINI5FE867..5FE8A0
+    /// retains empty reads and stores AnimTypeFindOrAllocate428B80's result.
+    overlay_cell_anim: Option<String>,
     /// Constructor711351=0; fixed ART ReadInt71592A..715948 keeps the
     /// current value as default across Image changes and later Rules passes.
     #[serde(default)]
@@ -3700,6 +3735,7 @@ impl ProcessedType {
             body: IniSection::new(native_stored_id.clone()),
             object_image: ObjectImageState::new(&native_stored_id),
             overlay_damage_levels: 1,
+            overlay_cell_anim: None,
             voxel_shadow_index: 0,
             tech_level: crate::rules::object_type::DEFAULT_TECH_LEVEL,
             projectile_art: ProjectileArtState::new(),
@@ -5266,8 +5302,28 @@ impl RulesPassProcessor {
                 // AbstractType's lookup at 0x00410A7F. Record this actual visit,
                 // not membership or eventual ART existence. See
                 // .local/anim-type-art-read-acceptance.md.
+                let theater = self.image_theater;
                 let member = &mut self.family_mut(RulesTypeFamily::Animation)[index];
                 member.anim_art_read = true;
+                // AnimTypeRead427D1B admits the inherited Object read, then
+                //427D9D..427DDD supplies its own theater flags and image call.
+                // This retains the existing fresh/unowned read projection;
+                // shape-dependent flag rereads on resident owned images are
+                // a separate cached-image lifecycle boundary.
+                member.object_image.read_ini(
+                    section,
+                    fixed_art,
+                    ObjectImageKind::Animation,
+                    theater,
+                );
+                if !member.object_image.image().is_empty() {
+                    member.object_image.read_anim_theater_flags(section);
+                    member.object_image.load_anim_shp(
+                        &member.native_stored_id,
+                        theater,
+                        crate::rules::object_image::AnimImagePhase::ReadIni,
+                    );
+                }
                 let mut references = std::mem::take(&mut member.anim_references);
                 for (key, family, field) in [
                     ("Next", RulesTypeFamily::Animation, &mut references.next),
@@ -6130,9 +6186,9 @@ impl RulesPassProcessor {
             {
                 let theater = self.image_theater;
                 let tree_strength = self.rules_tree_strength;
-                let member = &mut self.family_mut(family)[index];
                 match family {
                     RulesTypeFamily::Terrain => {
+                        let member = &mut self.family_mut(family)[index];
                         let state = member.terrain_type_read_state.get_or_insert_with(
                             crate::rules::terrain_object_type::TerrainTypeReadState::new,
                         );
@@ -6148,12 +6204,25 @@ impl RulesPassProcessor {
                         // OverlayRead5FE78B first calls ObjectRead. Its fixed
                         // ART cache retains a successful pre-Arctic section;
                         // only a miss permits lookup under the mutated Image.
-                        let cached_art = member.object_image.read_ini(
+                        let cached_art = self.family_mut(family)[index].object_image.read_ini(
                             &raw,
                             fixed_art,
                             ObjectImageKind::Ordinary,
                             theater,
                         );
+                        // OverlayTypeClass::ReadINI5FE88A/5FE897 resolves
+                        // this Rules reference after ObjectRead. Empty keeps
+                        // the pointer; nonempty uses the sole Anim factory.
+                        let cell_anim = self.resolve_scalar_from(
+                            &raw,
+                            "CellAnim",
+                            RulesTypeFamily::Animation,
+                            0x80,
+                        );
+                        let member = &mut self.family_mut(family)[index];
+                        if let Some(cell_anim) = cell_anim {
+                            member.overlay_cell_anim = cell_anim;
+                        }
                         let art = cached_art.unwrap_or_else(|| {
                             fixed_art.section_or_empty(member.object_image.image())
                         });
@@ -6175,6 +6244,15 @@ impl RulesPassProcessor {
     fn init_overlay_theater(&mut self) {
         for member in self.family_mut(RulesTypeFamily::Overlay) {
             member.object_image.init_overlay_theater();
+        }
+    }
+
+    fn init_anim_theater(&mut self) {
+        let theater = self.image_theater;
+        for member in self.family_mut(RulesTypeFamily::Animation) {
+            member
+                .object_image
+                .init_anim_theater(&member.native_stored_id, theater);
         }
     }
 

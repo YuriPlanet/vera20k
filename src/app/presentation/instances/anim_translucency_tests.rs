@@ -178,7 +178,7 @@ fn remapped_free_anim_keeps_its_existing_material_and_replay_route() {
     };
     let remap_atlas = SpriteAtlas::from_test_entries(HashMap::from([(
         ShpSpriteKey {
-            palette_context: ShpPaletteContext::SelectedScheme,
+            palette_context: ShpPaletteContext::AnimScheme,
             house_color: HouseColorIndex(3),
             ..key
         },

@@ -3601,9 +3601,14 @@ pub(crate) const ANIM_MIDDLE_MAX_HEIGHT: i32 = 30;
 /// halved (`AnimTypeClass::Load_Image @ 0x00427B50`). None when it is zero,
 /// where Start runs Middle instead.
 fn middle_frame(config: &AnimTypeRuntimeConfig) -> Option<i32> {
+    // AnimTypeLoad428855 calls generic LoadSHP, not bounds resolver427B50;
+    // an unread type's newly resident header must not replace ctor Middle0.
+    if !config.art_body_read {
+        return None;
+    }
     config
-        .raw_shp_frame_count
-        .map(|raw| raw / 2)
+        .middle_frame
+        .or_else(|| config.raw_shp_frame_count.map(|raw| raw / 2))
         .filter(|&middle| middle != 0)
 }
 

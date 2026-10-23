@@ -281,7 +281,7 @@ fn retail_shp_vehicle_keys_include_the_native_embedded_shadow_half() {
             Some(rules.art()),
         );
         let source = sources
-            .get(type_id)
+            .get(&(ShpImageKind::Object, type_id.to_owned()))
             .and_then(Option::as_ref)
             .expect("Unit keys retain the actual physical SHP for shadow frame selection");
         assert_eq!(source.shp.frames.len(), count);
@@ -491,6 +491,7 @@ fn retail_gapowr_atlas_registers_native_embedded_shadow_frames() {
         &theater_name,
         Some(rules),
         Some(art),
+        ShpImageKind::Object,
     )
     .expect("retail GAPOWR SHP resolves through its rules and theater image");
     assert_eq!(source.found_name, "GGPOWR.SHP");
@@ -663,7 +664,9 @@ fn registered_underscore_building_requests_make_frames_from_buildup_asset() {
     assert_eq!(make_frame_counts.get("GAGATE_A_MAKE"), Some(&10));
     assert_eq!(object_shp_frame_counts.get("GAGATE_A_MAKE"), Some(&20));
     assert_eq!(
-        shp_files.get("GAGATE_A_MAKE").map(String::as_str),
+        shp_files
+            .get(&(ShpImageKind::Object, "GAGATE_A_MAKE".to_owned()))
+            .map(String::as_str),
         Some("GTGATE_A.SHP")
     );
     for frame in 0..20 {
@@ -706,6 +709,7 @@ fn building_body_without_new_theater_uses_theater_then_generic() {
             "TEMPERATE",
             Some(&rules),
             Some(rules.art()),
+            ShpImageKind::Object,
         );
         assert_eq!(source.as_ref().map(|s| s.found_name.as_str()), expected);
     }
@@ -738,6 +742,7 @@ fn building_body_lookup_uses_rules_image_theater_before_redirect() {
             "TEMPERATE",
             Some(&rules),
             Some(rules.art()),
+            ShpImageKind::Object,
         );
         assert_eq!(source.as_ref().map(|s| s.found_name.as_str()), expected);
     }
@@ -760,6 +765,7 @@ fn building_body_lookup_respects_name_pattern_category_and_bound_file() {
             "TEMPERATE",
             Some(&rules),
             Some(rules.art()),
+            ShpImageKind::Object,
         )
     };
     assert_eq!(load("XAFOO", None).unwrap().found_name, "XAFOO.SHP");
@@ -791,6 +797,7 @@ fn retail_yayard_body_resolves_without_new_theater() {
         "TEMPERATE",
         Some(rules),
         Some(rules.art()),
+        ShpImageKind::Object,
     )
     .expect("stock YAYARD body must load independently of its slot animations");
     assert_eq!(source.found_name, "YGYARD.SHP");
@@ -882,7 +889,9 @@ fn raw_infantry_atlas_keeps_guard_and_actions_without_sequence_kinds() {
             Some(&art),
         );
         assert_eq!(sources.len(), 1, "one decoded source for both colours");
-        let source = sources["RAWGI"].as_ref().unwrap();
+        let source = sources[&(ShpImageKind::Object, "RAWGI".to_owned())]
+            .as_ref()
+            .unwrap();
         assert_eq!(source.found_name, "BOUNDGI.SHP", "rules Image binding");
         assert_eq!(source.shp.frames.len(), 2);
         for color in colors {
@@ -929,7 +938,15 @@ fn raw_infantry_atlas_bounds_signed_records_without_aliasing_indices() {
             Some(&rules),
             Some(&art),
         );
-        assert_eq!(sources["RAWGI"].as_ref().unwrap().shp.frames.len(), 2);
+        assert_eq!(
+            sources[&(ShpImageKind::Object, "RAWGI".to_owned())]
+                .as_ref()
+                .unwrap()
+                .shp
+                .frames
+                .len(),
+            2
+        );
         assert_eq!(
             infantry_asset_frames(
                 rules
@@ -1100,7 +1117,7 @@ fn raw_infantry_atlas_missing_source_has_no_invented_frame_fallback() {
         Some(&art),
     );
     assert_eq!(sources.len(), 1);
-    assert!(sources["RAWGI"].is_none());
+    assert!(sources[&(ShpImageKind::Object, "RAWGI".to_owned())].is_none());
     assert!(needed.is_empty());
 }
 
@@ -1119,6 +1136,7 @@ fn raw_infantry_render_does_not_substitute_an_out_of_asset_key() {
         "TEMPERATE",
         Some(&rules),
         Some(&art),
+        ShpImageKind::Object,
     )
     .unwrap();
     let mut key = make_shp_key("RAWGI", 0);
@@ -1178,7 +1196,8 @@ fn building_animation_frames_render_from_the_file_they_were_counted_in() {
             "tem",
             "TEMPERATE",
             None,
-            Some(&art)
+            Some(&art),
+            ShpImageKind::Object
         )
         .is_none(),
         "the object naming does not reach the forced-G file"
@@ -1191,6 +1210,7 @@ fn building_animation_frames_render_from_the_file_they_were_counted_in() {
         "TEMPERATE",
         None,
         Some(&art),
+        ShpImageKind::Object,
     )
     .expect("the counted file decodes");
     let mut key = make_shp_key("YAGRND_B", 0);
@@ -1262,6 +1282,7 @@ fn effect_shadow_frames_are_resident_without_extending_body_timing() {
             4,
             scheduler_owned,
             true,
+            ShpPaletteContext::GlobalAnim,
         );
         let expected_count = if scheduler_owned { 4 } else { 2 };
         assert_eq!(count, expected_count);
@@ -1269,7 +1290,7 @@ fn effect_shadow_frames_are_resident_without_extending_body_timing() {
         assert_eq!(needed.len(), 4);
         for frame in 0..4 {
             assert!(needed.contains(&ShpSpriteKey {
-                palette_context: ShpPaletteContext::Legacy,
+                palette_context: ShpPaletteContext::GlobalAnim,
                 type_id: "SHADOWFX".into(),
                 facing: 0,
                 frame,
@@ -1286,7 +1307,7 @@ fn building_anim_shadow_frames_follow_each_attached_palette_context() {
         .expect("write four physical animation frames");
     let assets = AssetManager::from_loose_root_for_test(&directory.0);
     for (cell_drawer, context) in [
-        ("yes", ShpPaletteContext::SelectedScheme),
+        ("yes", ShpPaletteContext::AnimScheme),
         ("no", ShpPaletteContext::GlobalAnim),
     ] {
         let art = ArtRegistry::from_ini(&crate::rules::ini_parser::IniFile::from_str(&format!(
@@ -1323,7 +1344,10 @@ fn building_anim_shadow_frames_follow_each_attached_palette_context() {
             }
         }
         assert_eq!(counts["YATEST"], (2, 4));
-        assert_eq!(files["YATEST"], "YGTEST.SHP");
+        assert_eq!(
+            files[&(ShpImageKind::Animation, "YATEST".to_owned())],
+            "YGTEST.SHP"
+        );
         assert_eq!(needed.len(), if cell_drawer == "yes" { 8 } else { 4 });
     }
 }
@@ -1351,21 +1375,25 @@ fn retail_refinery_anim_loads_its_physical_shadow_companions() {
         "TEMPERATE",
     );
     assert_eq!(counts["YAREFN_A"], (2, 4));
-    assert_eq!(files["YAREFN_A"], "YGREFN_A.SHP");
+    assert_eq!(
+        files[&(ShpImageKind::Animation, "YAREFN_A".to_owned())],
+        "YGREFN_A.SHP"
+    );
     let source = load_shp_source(
         &assets,
         "YAREFN_A",
-        Some(&files["YAREFN_A"]),
+        Some(&files[&(ShpImageKind::Animation, "YAREFN_A".to_owned())]),
         "tem",
         "TEMPERATE",
         Some(&battle.rules),
         Some(battle.rules.art()),
+        ShpImageKind::Object,
     )
     .expect("physical refinery animation");
     let palette = Palette::from_bytes(assets.get_ref("unittem.pal").unwrap()).unwrap();
     for frame in 0..4 {
         let key = ShpSpriteKey {
-            palette_context: ShpPaletteContext::SelectedScheme,
+            palette_context: ShpPaletteContext::AnimScheme,
             type_id: "YAREFN_A".into(),
             facing: 0,
             frame,
@@ -1391,7 +1419,7 @@ fn retail_refinery_anim_loads_its_physical_shadow_companions() {
 
 #[test]
 fn cell_anim_remap_registration_covers_every_bound_frame_for_its_color() {
-    let selected = ShpPaletteContext::SelectedScheme;
+    let selected = ShpPaletteContext::AnimScheme;
     let remaps = HashSet::from([
         ("CRATE_SPARK".to_string(), selected, HouseColorIndex(1)),
         ("OTHER".to_string(), selected, HouseColorIndex(2)),
@@ -1407,7 +1435,7 @@ fn cell_anim_remap_registration_covers_every_bound_frame_for_its_color() {
     assert_eq!(needed.len(), 3, "OTHER is no registered effect");
     for frame in 0..3 {
         assert!(needed.contains(&ShpSpriteKey {
-            palette_context: crate::render::sprite_atlas::ShpPaletteContext::SelectedScheme,
+            palette_context: ShpPaletteContext::AnimScheme,
             type_id: "Crate_Spark".to_string(),
             facing: 0,
             frame,
@@ -1442,13 +1470,14 @@ fn gsi_13_08_warpout_keeps_all_frames_and_drives_the_progressive_alpha_ladder() 
         21,
         art.scheduler_anim_types().contains("WARPOUT"),
         warpout.shadow,
+        ShpPaletteContext::GlobalAnim,
     );
 
     assert_eq!(active_anim_frame_counts["WARPOUT"], 21);
     assert_eq!(needed.len(), 21);
     for frame in 0..=20 {
         assert!(needed.contains(&ShpSpriteKey {
-            palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
+            palette_context: ShpPaletteContext::GlobalAnim,
             type_id: "WARPOUT".to_string(),
             facing: 0,
             frame,
@@ -1567,12 +1596,13 @@ fn gsi_13_04_tem_only_tile_root_uses_iso_palette_and_registers_every_frame() {
         shp.frames.len() as u16,
         true,
         false,
+        ShpPaletteContext::GlobalAnim,
     );
     assert_eq!(count, 4);
     assert_eq!(counts["CUSTOM_TILE_ANIM"], 4);
     for frame in 0..4 {
         assert!(needed.contains(&ShpSpriteKey {
-            palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
+            palette_context: ShpPaletteContext::GlobalAnim,
             type_id: "CUSTOM_TILE_ANIM".to_string(),
             facing: 0,
             frame,
@@ -1646,8 +1676,17 @@ pub(crate) fn palette_probe_page(palette: &Palette) -> NativePaletteProbe {
         frame: 0,
         house_color: crate::rules::house_colors::NO_REMAP,
     };
-    let source = load_shp_source(&assets, "PALPROBE", None, "tem", "TEMPERATE", None, None)
-        .expect("probe SHP decodes");
+    let source = load_shp_source(
+        &assets,
+        "PALPROBE",
+        None,
+        "tem",
+        "TEMPERATE",
+        None,
+        None,
+        ShpImageKind::Object,
+    )
+    .expect("probe SHP decodes");
     let mut palettes = ShpPalettes::default();
     let sprite = render_shp_frame(&source, palette, true, &key, None, &mut palettes).unwrap();
     assert_eq!(sprite.indices(), (0..=255u8).collect::<Vec<_>>());
@@ -1816,6 +1855,7 @@ fn retail_statue_bakes_against_the_theater_lib_palette() {
         "NEWURBAN",
         Some(rules),
         Some(rules.art()),
+        ShpImageKind::Object,
     )
     .expect("CGNEWY04.SHP");
     let mut palettes = ShpPalettes::default();
@@ -1895,7 +1935,7 @@ fn deployed_anim_palette_and_atlas_coverage_share_the_frozen_house() {
         Some(HouseColorIndex(3))
     );
     let remaps = collect_anim_remap_base_keys(&sim, &colors);
-    let selected = ShpPaletteContext::SelectedScheme;
+    let selected = ShpPaletteContext::AnimScheme;
     assert_eq!(
         remaps,
         HashSet::from([
@@ -1918,7 +1958,7 @@ fn deployed_anim_palette_and_atlas_coverage_share_the_frozen_house() {
     assert!(keys.iter().all(|key| {
         key.frame < 3
             && match key.palette_context {
-                ShpPaletteContext::SelectedScheme => {
+                ShpPaletteContext::AnimScheme => {
                     matches!(key.house_color, HouseColorIndex(3 | 5))
                 }
                 ShpPaletteContext::ExtraScheme(name) => {
@@ -2231,12 +2271,10 @@ fn map_load_pages_upload_in_shelf_bands_decoding_each_sprite_frame() {
 }
 
 #[test]
-#[ignore = "requires retail archives; lists animations the object naming cannot reach"]
+#[ignore = "requires retail archives; animation registration and drawing must use the same physical file"]
 fn retail_animations_render_from_the_file_their_frames_are_counted_in() {
-    // Before, every key rendered through the object naming while animation
-    // frames were counted through AnimTypeClass's. Where the two disagree the
-    // frames were registered but never drawable, and every refresh retried
-    // them. Lists every such animation on a stock TEMPERATE map.
+    // Registration and drawing share the reached AnimType image owner,
+    // independently of any same-named Techno. Compare real retail sources.
     //
     // Run: RA2_DIR=<retail root> cargo test -p vera20k --lib \
     //     retail_animations_render_from_the_file -- --ignored --nocapture
@@ -2278,6 +2316,7 @@ fn retail_animations_render_from_the_file_their_frames_are_counted_in() {
             &theater_name,
             Some(rules),
             Some(art),
+            ShpImageKind::Animation,
         )
         .map(|source| source.found_name);
         if object.as_deref() != Some(counted) {
@@ -2287,16 +2326,14 @@ fn retail_animations_render_from_the_file_their_frames_are_counted_in() {
         }
     }
     eprintln!(
-        "{} of {} animations on {theater_name} now render from the file their frames are counted in:\n{}",
+        "{} of {} animation sources on {theater_name} disagree:\n{}",
         unreachable.len(),
         names.len(),
         unreachable.join("\n")
     );
     assert!(
-        unreachable
-            .iter()
-            .any(|line| line.starts_with("YAGRND_B: counted in YGGRND_B.SHP")),
-        "the Grinder's grinding animation is the known case"
+        unreachable.is_empty(),
+        "every registered animation must decode the file its frames were counted in"
     );
 }
 
@@ -2315,6 +2352,120 @@ fn animation_atlas_candidates_keep_exact_type_image_and_skip_unread_d() {
         vec!["WRONG.SHP", "WGONG.SHP", "WRONG.TEM"]
     );
     assert!(effect_anim_shp_candidates("D", Some(&art), "TEM", "TEMPERATE").is_empty());
+}
+
+#[test]
+#[ignore = "requires a wgpu adapter; separate native Particle, Techno and saved unread Anim images"]
+fn cell_anim_keeps_particle_and_object_images_independent_across_load() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+
+    let directory = StoredFrameTestDirectory::new();
+    std::fs::write(
+        directory.0.join("FX.SHP"),
+        raw_shp(&[([3, 2], 7), ([3, 2], 7)]),
+    )
+    .unwrap();
+    std::fs::write(
+        directory.0.join("E1.SHP"),
+        raw_shp(&[([2, 2], 8), ([2, 2], 8)]),
+    )
+    .unwrap();
+    std::fs::write(directory.0.join("ANIM.PAL"), [1u8; 768]).unwrap();
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let art = IniFile::from_str("[FX]\nRate=1\n[E1]\nFoundation=1x1\n");
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[BuildingTypes]\n0=FX\n[FX]\nImage=E1\n\
+         [Particles]\n0=P\n[P]\nImage=FX\n\
+         [OverlayTypes]\n0=OV\n[OV]\nLand=Clear\n",
+    ));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[OV]\nCellAnim=FX\n"),
+    );
+    let mut processed = layers.process_with_fixed_art(&art).unwrap();
+    let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
+    let batch = BatchRenderer::new_with_device(
+        &gpu.device,
+        &gpu.queue,
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+    );
+    let palette = Palette::from_rgb(|_| [4, 4, 4]);
+    let colors = HouseColorMap::from([("Americans".to_owned(), HouseColorIndex(0))]);
+    for saved in [false, true] {
+        if saved {
+            processed
+                .restore_object_image_loads_for_test("TEMPERATE")
+                .unwrap();
+        }
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&art));
+        rules.bind_anim_class_assets(&["FX".into()], &assets, "TEM", "TEMPERATE");
+        let catalog = crate::rules::effect_asset_catalog::EffectAssetCatalog::bind(
+            &rules,
+            &assets,
+            "TEM",
+            "TEMPERATE",
+        );
+        assert_eq!(catalog.raw_frame_count("FX"), Some(2));
+        let atlas = build_sprite_atlas(
+            &gpu.device,
+            &gpu.queue,
+            &batch,
+            &Default::default(),
+            &assets,
+            &palette,
+            "TEM",
+            "TEMPERATE",
+            Some(&rules),
+            Some(rules.art()),
+            &colors,
+            &["FX"],
+            &Default::default(),
+            &Default::default(),
+            &Default::default(),
+            Some(&palette),
+            None,
+            None,
+        )
+        .unwrap();
+        let key = |context| ShpSpriteKey {
+            palette_context: context,
+            type_id: "FX".into(),
+            facing: 0,
+            frame: 0,
+            house_color: HouseColorIndex(0),
+        };
+        assert_eq!(
+            atlas
+                .get(&key(ShpPaletteContext::Legacy))
+                .unwrap()
+                .pixel_size,
+            [2.0, 2.0]
+        );
+        assert_eq!(
+            atlas
+                .get(&key(ShpPaletteContext::Particle))
+                .unwrap()
+                .pixel_size,
+            [3.0, 2.0]
+        );
+        let anim = atlas.get(&key(ShpPaletteContext::GlobalAnim));
+        if saved {
+            assert_eq!(
+                anim.unwrap().pixel_size,
+                [3.0, 2.0],
+                "AnimTypeLoad428855 uses FX.SHP, not Techno Image=E1"
+            );
+            let config = rules.art().anim_runtime_config("FX").unwrap();
+            assert_eq!(
+                (config.end, config.loop_end, config.middle_frame),
+                (0, 0, Some(0))
+            );
+        } else {
+            assert!(anim.is_none(), "fresh ctor-only Anim has no shape");
+        }
+    }
 }
 
 /// Production Rules layering, atlas load/refresh, texture growth and a real
