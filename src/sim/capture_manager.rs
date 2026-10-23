@@ -68,9 +68,6 @@
 //!   `FSTP float` under the process chop control word (`0x00670504..
 //!   0x00670509`); VERA parses to the nearest `f32`. Equal for stock `.25`;
 //!   an authored mark can differ by one ulp.
-//! - A crushed controller frees its victims at the crush call (`0x007418E5`,
-//!   before Record_The_Kill); VERA frees them in the crushed object's UnInit
-//!   a moment later in the same frame.
 
 use crate::sim::world::FrameEffects;
 use serde::{Deserialize, Serialize};

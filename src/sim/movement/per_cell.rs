@@ -350,8 +350,8 @@ impl Simulation {
             // The victim's vtable `+0x170` (`0x007418E5`): a Unit's
             // `0x00746D60` runs Death_Explosion (`0x00738680`), then
             // FreeAllMindControlCaptures (`0x00710460`), which is all the
-            // other classes run; VERA releases captives in the victim's
-            // UnInit below.
+            // other classes run. Releases finish before RecordKill can
+            // dispatch the victim's Tags; later Foot UnInit finds no nodes.
             if self
                 .substrate
                 .entities
@@ -361,6 +361,7 @@ impl Simulation {
                 crushed_unit = true;
                 self.unit_death_explosion(rules, victim, &mut Vec::new());
             }
+            self.free_all_captures(victim, rules, registry, effects);
             // `UnitClass::Crush_Or_Prescatter_Cell @ 0x007416A0`: the
             // victim records its kill by the crusher (vtable `+0xE0`,
             // `0x007418F0`) and is UnInit (vtable `+0xF8`, `0x00741910`),
