@@ -244,19 +244,19 @@ impl ShroudKnowledge {
         record
     }
 
-    pub fn reveal(&mut self) {
+    pub fn reveal(&mut self, ground_was_fully_open: bool) {
         if self.counter == 1 {
             self.counter = 0;
         }
         self.counter = self.counter.wrapping_sub(1);
         if self.counter <= 0 {
-            //487630 opens missing18 and returns. Only the already-open branch
-            //cancels20: a second gap followed by return must retain pending.
-            if self.open {
+            // CellClass::Reveal @ 0x00487630 tests prior Cell+12C bits18.
+            // Opening missing bits returns before the pending20 cancellation;
+            // the projected `open` also admits explored-only ground08.
+            if ground_was_fully_open {
                 self.pending = false;
-            } else {
-                self.open = true;
             }
+            self.open = true;
         }
     }
     pub fn leave(&mut self) {

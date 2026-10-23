@@ -710,3 +710,36 @@ fn uninitialized_edge_cache_fields_move_the_state_hash() {
     assert_ne!(hash(&open), hash(&base));
     assert_ne!(hash(&framed), hash(&base));
 }
+
+#[test]
+fn explored_frontier_keeps_pending_conceal_until_the_sweep() {
+    // Cell4876F0 -> GAP6FB170 cell write -> RevealCell4AA050 ->
+    // MapCell4A9CA0/Cell487630 -> Map578100 pending-cell sweep.
+    let viewer = crate::sim::intern::test_intern("Player");
+    for frontier in [false, true] {
+        let mut fog = FogState::new(12, 12);
+        fog.reveal_map_cell(viewer, (9, 10), false, None, MapRevealProjection::Fire);
+        let index = fog.by_owner[&viewer].index(9, 10).unwrap();
+        fog.by_owner.get_mut(&viewer).unwrap().add_gap_cell(index);
+        fog.reveal_cell(viewer, (9, 10), None);
+        if !frontier {
+            fog.reveal_map_cell(viewer, (9, 10), false, None, MapRevealProjection::Fire);
+        }
+        let before = &fog.by_owner[&viewer];
+        assert_eq!(before.ground_flags[index], if frontier { 8 } else { 24 });
+        assert_eq!(before.shroud_knowledge[index].counter(), 1);
+        assert_eq!(before.shroud_knowledge[index].gap_counter(), 1);
+        assert!(before.shroud_knowledge[index].open());
+        assert!(before.shroud_knowledge[index].pending());
+        fog.reveal_map_cell(viewer, (9, 10), false, None, MapRevealProjection::Transient);
+        let after = &fog.by_owner[&viewer];
+        assert_eq!(after.shroud_knowledge[index].counter(), -1);
+        assert_eq!(after.ground_flags[index], 24);
+        assert_eq!(after.shroud_knowledge[index].pending(), frontier);
+        fog.sweep_pending_map_cell(viewer, (9, 10), None);
+        let swept = &fog.by_owner[&viewer];
+        assert!(!swept.shroud_knowledge[index].pending());
+        assert_eq!(swept.shroud_knowledge[index].counter(), -1);
+        assert_eq!(swept.ground_flags[index], if frontier { 0 } else { 24 });
+    }
+}
