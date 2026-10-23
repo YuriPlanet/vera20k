@@ -1143,10 +1143,12 @@ pub(crate) fn snapshot_get_rof(
     let firer = substrate.entities.get(snap.stable_id);
     super::rof::get_rof(
         &super::rof::RofQuery {
-            // RESIDUAL: a building's own Ammo (`+0x2FC`) is not kept. The
-            // retail buildings with `Ammo=` (CAAIRP, CAPOWR: 5) are unarmed,
-            // so none reaches GetROF.
-            building_ammo: None,
+            // GetROF6FCFA9: a Building with more than one round returns1
+            // before weapon queries and the ordinary ROF variation draw.
+            building_ammo: firer
+                .filter(|entity| entity.category() == EntityCategory::Structure)
+                .and_then(|entity| entity.ammo())
+                .map(|ammo| ammo.current()),
             weapon: rof_weapon,
             live,
             burst_index,
@@ -1926,8 +1928,14 @@ pub(super) fn emit_admitted_fire(
     {
         world.commit_fired_wave(rules, &event, 3);
     }
-    // `0x006FF656`: DecreaseAmmo (vt+0x390). Only an aircraft holds Ammo here,
-    // and `AircraftClass`'s slot is a bare RET (`0x0041B900`).
+    // FireAt6FF65A: shared DecreaseAmmo70D670 (+390) debits only signed>0.
+    // Aircraft's override is RET41B900; release/dock retain their own writes.
+    if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id)
+        && entity.category() != EntityCategory::Aircraft
+        && let Some(ammo) = entity.ammo_mut()
+    {
+        ammo.decrease();
+    }
     // `0x006FF66C`, after DecreaseAmmo (`0x006FF656`): RevealOnFire.
     reveal_on_fire(
         world,
@@ -1954,6 +1962,19 @@ pub(super) fn emit_admitted_fire(
     // UnitTarget and direct mission calls; constructors/shrapnel/other
     // classes never pass this Unit-only postprocessing boundary.
     if snap.category == EntityCategory::Unit {
+        // UnitFireAt7413D3..741401: only a nonnull base Bullet return
+        // restarts a finite, non-full automatic magazine. Re-read the live
+        // type after the common tail, before the firing counter/scalable.
+        if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id)
+            && let Some(live_type) = world.interner.object_type(entity.type_ref(), rules)
+            && live_type.ammo > 0
+            && entity
+                .ammo()
+                .is_some_and(|ammo| ammo.current() < live_type.ammo)
+            && !live_type.manual_reload
+        {
+            entity.start_reloading_ammo(live_type, binary_frame as i32);
+        }
         let frames = rules
             .unit_shp_read_state(world.interner.resolve(snap.type_id))
             .map_or(0, |layout| layout.firing_frames());

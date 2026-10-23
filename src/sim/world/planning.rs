@@ -24,6 +24,16 @@ pub(super) struct PlanningState {
     #[serde(skip)]
     dynamic_nodes: BTreeSet<u64>,
     paths: BTreeMap<u64, PlanningPath>,
+    // AC4C7C: constructor / late-token registration order, independent of
+    // node contents. Loaded actors may create tokens in any stable-ID order.
+    token_order: Vec<u64>,
+    #[serde(skip)]
+    registered_tokens: BTreeSet<u64>,
+    // AC4B84 is independently mutated accounting. Prune/node delete can
+    // leave a charge behind even after a path becomes empty.
+    // Retail has 24 slots; extend the same owner to VERA's 30 players plus
+    // Neutral/Special, matching its 32-bit House masks.
+    house_charges: [i32; 32],
     /// `0x00AC4CF6`: set while [`Simulation::planning_select_tail_node`]
     /// Selects partners, so their Selects (and any Select their tag events
     /// start) do not expand. Clear between calls; neither saved nor hashed.
@@ -38,6 +48,8 @@ impl<'de> Deserialize<'de> for PlanningState {
             next_node: u64,
             nodes: BTreeMap<u64, PlanningNode>,
             paths: BTreeMap<u64, PlanningPath>,
+            token_order: Vec<u64>,
+            house_charges: [i32; 32],
         }
         let stored = StoredPlanningState::deserialize(deserializer)?;
         if crate::util::save_codec::layout::describing() {
@@ -49,6 +61,9 @@ impl<'de> Deserialize<'de> for PlanningState {
             locations: BTreeMap::new(),
             dynamic_nodes: BTreeSet::new(),
             paths: stored.paths,
+            token_order: stored.token_order,
+            registered_tokens: BTreeSet::new(),
+            house_charges: stored.house_charges,
             select_expanding: false,
         };
         state.restore_index().map_err(serde::de::Error::custom)?;
@@ -158,6 +173,24 @@ pub enum PlanningBadgeKind {
 }
 
 impl PlanningPath {
+    /// Token636B50 removes the requested occurrence without touching the
+    /// executing latch, current event or loop-edit flag.
+    fn remove_occurrence(&mut self, index: usize) -> u64 {
+        if self.nodes.len() == 1 {
+            self.pending = -1;
+        } else if self.pending > 0 && (index as i32) < self.pending {
+            self.pending -= 1;
+        }
+        if let Some(start) = self.loop_start {
+            if index < start {
+                self.loop_start = Some(start - 1);
+            } else if self.nodes.len() - start - 1 < 3 {
+                self.loop_start = None;
+            }
+        }
+        self.nodes.remove(index)
+    }
+
     /// 636E60 indexes the remaining path; beyond its end it wraps only the loop.
     fn node_at(&self, index: i32) -> Option<u64> {
         let index = usize::try_from(index).ok()?;
@@ -198,11 +231,17 @@ impl PlanningState {
     /// The location index is derived from authoritative nodes. Reject broken
     /// graph references before restored plans can reach connect/consume.
     fn restore_index(&mut self) -> Result<(), &'static str> {
+        self.registered_tokens = self.token_order.iter().copied().collect();
+        if self.registered_tokens.len() != self.token_order.len()
+            || self
+                .paths
+                .keys()
+                .any(|actor| !self.registered_tokens.contains(actor))
+        {
+            return Err("invalid planning token registration");
+        }
         let mut memberships = BTreeMap::<(u64, u64), usize>::new();
         for (&actor, path) in &self.paths {
-            if path.nodes.is_empty() && !path.executing {
-                return Err("empty planning path");
-            }
             if path.pending < -1
                 || usize::try_from(path.pending).is_ok_and(|pending| pending > path.nodes.len())
                 || path
@@ -257,7 +296,12 @@ impl PlanningState {
     pub(super) fn hash_state(&self, hasher: &mut impl Hasher) {
         // Keep existing no-plan hash controls stable while hashing every
         // authoritative field, including identity allocation after cleanup.
-        if self.next_node == 0 && self.nodes.is_empty() && self.paths.is_empty() {
+        if self.next_node == 0
+            && self.nodes.is_empty()
+            && self.paths.is_empty()
+            && self.token_order.is_empty()
+            && self.house_charges.iter().all(|charge| *charge == 0)
+        {
             return;
         }
         b"planning-v1".hash(hasher);
@@ -277,6 +321,8 @@ impl PlanningState {
             }
         }
         self.paths.len().hash(hasher);
+        self.token_order.hash(hasher);
+        self.house_charges.hash(hasher);
         for (actor, path) in &self.paths {
             actor.hash(hasher);
             (
@@ -311,6 +357,12 @@ impl PlanningState {
             self.remove_node(node_id);
         } else {
             self.index_node(node_id);
+        }
+    }
+
+    fn register_token(&mut self, actor: u64) {
+        if self.registered_tokens.insert(actor) {
+            self.token_order.push(actor);
         }
     }
 
@@ -379,7 +431,35 @@ impl PlanningNode {
 }
 
 impl Simulation {
+    /// Techno+514 / Token636DC0: only remaining occurrences count. A current
+    /// event can still execute after the final node has been consumed.
+    pub(crate) fn planning_has_remaining_nodes(&self, actor: u64) -> bool {
+        self.planning
+            .paths
+            .get(&actor)
+            .is_some_and(|path| !path.nodes.is_empty())
+    }
+
+    /// ClearScene6370B0 and TechnoLoad70BF79 discard active YR planning.
+    /// This is a player-load boundary, separate from internal serialization.
+    pub(crate) fn reset_planning_after_player_load(&mut self) {
+        self.planning = PlanningState::default();
+    }
+
+    /// Normalize the unsaved planner in cross-crate state-only load fixtures,
+    /// alongside their existing explicit Scenario RNG reset.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn reset_planning_after_player_load_for_test(&mut self) {
+        self.reset_planning_after_player_load();
+    }
+
     pub(crate) fn validate_planning_references(&self) -> Result<(), &'static str> {
+        for actor in &self.planning.token_order {
+            self.substrate
+                .entities
+                .get(*actor)
+                .ok_or("missing planning token owner")?;
+        }
         for (&actor, path) in &self.planning.paths {
             self.substrate
                 .entities
@@ -437,28 +517,18 @@ impl Simulation {
         Some(record)
     }
 
-    /// PlanMgr639130, called by LeftUp4ABF7F before dispatch: a House may
-    /// retain128 nonempty actor paths, including the newly selected actors.
-    /// Every entity in this store is a Techno (+14 bit0); missing selection
-    /// references do not contribute, and an existing nonempty path adds none.
-    ///
-    /// AC4B84 counts nonempty paths, not retained empty executing paths:
-    /// append638470 increments empty->nonempty; consume636718..636760 and
-    /// detach6386E0 decrement at the transition to empty. ChangeHouse701585
-    /// detaches before replacing the owner. Derive that count from this owner
-    /// using its existing effective-House projection, without a second counter.
-    /// Source: original gamemd.exe / building_manual_primary.md and its
-    /// executed planning_admission controls. Delayed old-issuer appends after
-    /// capture remain a separate native accounting bound.
+    /// PlanMgr639130, called by LeftUp4ABF7F: the current player's retained
+    /// accounting plus selected Technos with empty/missing tokens must be
+    /// <=128. Prune and node deletion do not release accounting; a connected
+    /// path does not charge it. It cannot be recomputed from nonempty paths.
     pub fn planning_selection_has_capacity(&self, owner: InternedId, selected: &[u64]) -> bool {
+        let player = self.session.current_house().unwrap_or(owner);
         let retained = self
-            .planning
-            .paths
-            .iter()
-            .filter(|(actor, path)| {
-                !path.nodes.is_empty() && self.planning_actor_house(**actor) == Some(owner)
-            })
-            .count();
+            .houses
+            .index_of(player)
+            .and_then(|index| self.planning.house_charges.get(index))
+            .copied()
+            .unwrap_or(0);
         let additional = selected
             .iter()
             .filter(|actor| {
@@ -470,7 +540,7 @@ impl Simulation {
                         .is_none_or(|path| path.nodes.is_empty())
             })
             .count();
-        retained.saturating_add(additional) <= 0x80
+        retained.wrapping_add(additional as i32) <= 0x80
     }
 
     pub fn encode_plan_commit_record(&self, owner: InternedId) -> Option<CommandRecord> {
@@ -1056,7 +1126,7 @@ impl Simulation {
     fn planning_actor_house(&self, actor: u64) -> Option<InternedId> {
         let owner = self.substrate.entities.get(actor)?.owner();
         if self.house_is_human_player(owner) {
-            self.session.current_house()
+            self.session.current_house().or(Some(owner))
         } else {
             Some(owner)
         }
@@ -1117,9 +1187,108 @@ impl Simulation {
     }
 
     pub(super) fn planning_detach_actor(&mut self, id: u64) {
-        if let Some(path) = self.planning.paths.remove(&id) {
-            for node in path.nodes {
+        if let Some(mut path) = self.planning.paths.remove(&id) {
+            if !path.nodes.is_empty() {
+                self.release_planning_charge(id);
+                path.pending = -1;
+                path.loop_start = None;
+                path.loop_changed = false;
+            }
+            for node in std::mem::take(&mut path.nodes) {
                 self.planning.remove_member(node, id);
+            }
+            path.executing = false;
+            if path.current.is_some() || path.loop_changed {
+                self.planning.paths.insert(id, path);
+            }
+        }
+    }
+
+    fn release_planning_charge(&mut self, actor: u64) {
+        if let Some(index) = self
+            .planning_actor_house(actor)
+            .and_then(|house| self.houses.index_of(house))
+            && let Some(charge) = self.planning.house_charges.get_mut(index)
+        {
+            *charge = charge.wrapping_sub(1);
+            if *charge < 0 {
+                *charge = 0;
+            }
+        }
+    }
+
+    pub(super) fn initialize_planning_token(&mut self, actor: u64) {
+        self.planning.register_token(actor);
+    }
+
+    /// Techno6F4507..6F4531, after Foot disposal and before voice/Anim tails.
+    pub(super) fn destroy_planning_token(&mut self, actor: u64) {
+        self.planning_detach_actor(actor);
+        self.planning.paths.remove(&actor);
+        self.planning.registered_tokens.remove(&actor);
+        self.planning.token_order.retain(|id| *id != actor);
+    }
+
+    /// ChangeOwner638840 clears future nodes/cursors, preserving +1C/+1D.
+    pub(super) fn planning_change_owner(&mut self, actor: u64) {
+        if self.planning_has_remaining_nodes(actor) {
+            self.release_planning_charge(actor);
+        }
+        let Some(path) = self.planning.paths.get_mut(&actor) else {
+            return;
+        };
+        let nodes = std::mem::take(&mut path.nodes);
+        path.pending = -1;
+        path.loop_start = None;
+        path.loop_changed = false;
+        for node in nodes {
+            self.planning.remove_member(node, actor);
+        }
+    }
+
+    /// PlanMgr637270: after frame commit and deferred finalization, walk
+    /// occurrences backwards. Both predicate and removal use the FIRST
+    /// matching actor member, even when a path repeats the shared node.
+    pub(super) fn prune_invalid_planning_nodes(&mut self) {
+        let actors = self.planning.token_order.clone();
+        for actor in actors {
+            let Some(path) = self.planning.paths.get(&actor) else {
+                continue;
+            };
+            let count = path.nodes.len();
+            for index in (0..count).rev() {
+                let node = self.planning.paths[&actor].nodes[index];
+                let record = self
+                    .planning
+                    .nodes
+                    .get(&node)
+                    .and_then(|node| node.order(actor));
+                let token = record
+                    .filter(|record| record.opcode() == 4)
+                    .and_then(|record| {
+                        // event+E/+12 is primary; destination+13/+17 is chosen
+                        // only when the primary KIND is zero, never on failure.
+                        let offset = if record.payload()[11] != 0 { 7 } else { 12 };
+                        read_target(record, offset)
+                    });
+                let target = match token {
+                    Some(MegaMissionTarget::Cell { x, y }) => {
+                        Some(crate::sim::combat::TargetKind::Cell(x as u16, y as u16))
+                    }
+                    Some(MegaMissionTarget::Object { id }) => u64::try_from(id)
+                        .ok()
+                        .map(crate::sim::combat::TargetKind::Entity),
+                    _ => None,
+                };
+                if self.resolve_event_token(target).is_some() {
+                    continue;
+                }
+                self.planning
+                    .paths
+                    .get_mut(&actor)
+                    .unwrap()
+                    .remove_occurrence(index);
+                self.planning.remove_member(node, actor);
             }
         }
     }
@@ -1128,9 +1297,6 @@ impl Simulation {
     pub(super) fn planning_acknowledge(&mut self, actor: u64) {
         if let Some(path) = self.planning.paths.get_mut(&actor) {
             path.executing = false;
-            if path.nodes.is_empty() {
-                self.planning.paths.remove(&actor);
-            }
         }
     }
 
@@ -1196,31 +1362,10 @@ impl Simulation {
                         continue;
                     };
                     if let Some(index) = path.nodes.iter().position(|id| *id == node) {
-                        path.nodes.remove(index);
-                        if path.nodes.is_empty() {
-                            path.pending = -1;
-                        } else if path.pending > 0 && path.pending > index as i32 {
-                            path.pending -= 1;
-                        }
-                        if let Some(start) = path.loop_start {
-                            path.loop_start = if start > index {
-                                Some(start - 1)
-                            } else {
-                                Some(start)
-                            };
-                            if path
-                                .loop_start
-                                .is_some_and(|start| path.nodes.len().saturating_sub(start) < 3)
-                            {
-                                path.loop_start = None;
-                            }
-                        }
+                        path.remove_occurrence(index);
                     }
                 }
                 self.planning.remove_node(node);
-                self.planning
-                    .paths
-                    .retain(|_, path| !path.nodes.is_empty() || path.executing);
                 self.lifecycle_outputs.emit(
                     super::lifecycle::LifecycleOutput::PlanningNodeDeleted {
                         owner,
@@ -1297,6 +1442,7 @@ impl Simulation {
             return false;
         }
         // 6384DC compares 10h directly in this active append path.
+        self.planning.register_token(actor);
         if self
             .planning
             .paths
@@ -1333,6 +1479,12 @@ impl Simulation {
             id
         };
         self.planning.unindex_node(id);
+        if !self.planning_has_remaining_nodes(actor)
+            && let Ok(index) = usize::try_from(record.house_id())
+            && let Some(charge) = self.planning.house_charges.get_mut(index)
+        {
+            *charge = charge.wrapping_add(1);
+        }
         let node = self.planning.nodes.get_mut(&id).unwrap();
         node.insert_order(actor, record.clone());
         self.planning.index_node(id);
@@ -1379,6 +1531,7 @@ impl Simulation {
         let Some(node_id) = self.planning_node_at_coords(owner, coord) else {
             return false;
         };
+        self.planning.register_token(actor);
         if let Some(path) = self.planning.paths.get_mut(&actor)
             && let Some(index) = path.nodes.iter().position(|id| *id == node_id)
         {
@@ -1577,6 +1730,9 @@ impl Simulation {
         path.consume();
         path.current = Some(record.clone());
         path.executing = true;
+        if path.nodes.is_empty() {
+            self.release_planning_charge(actor);
+        }
         // 636590 retains the first member only for loop-head rotation. A
         // nonloop occurrence removes one member even if this node recurs later.
         if !keep_member {

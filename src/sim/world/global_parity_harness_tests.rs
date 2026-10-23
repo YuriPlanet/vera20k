@@ -125,6 +125,7 @@ pub(super) fn record_replay_diagnostic(
                 "committed":r.frame_committed,"executed_commands":r.executed_commands,
                 "state_hash":r.state_hash,"terminal_score_finalized":r.terminal_score_finalized})),
             "commands":commands,"entities":actors,"logic_order":sim.logic_order(),
+            "planning":sim.planning,
             "fire_events_accumulated":fires,
             "lifecycle_outputs_accumulated":format!("{:?}",sim.lifecycle_outputs),
             "rng":{"scenario":sim.scenario_rng.native_state_hex(),
@@ -700,7 +701,9 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
 // the actor Houses' AI flags, actor/RNG assertions and replay checks intact.
 // This pin describes that fixture; it is not a native parity golden. The
 // older fixture's independent pre-existing drift remains tracked in #1946.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x4F21_B440_4A45_D50E;
+// The fold also covers constructor planning registration and ammo reload clocks;
+// this fixture's unlimited magazines and empty plans leave its gameplay unchanged.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0xD3AD_CDC9_DFF6_FCF4;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -1518,10 +1521,12 @@ fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
                 Some(call["timer_start"].as_u64().unwrap() as u32)
             );
         }
-        // Native load resets Scenario to Seed0 and retains process streams.
-        // Equalize only that documented load effect before comparing the
-        // movement-state round trip and its continued full-world hashes.
+        // Native load resets Scenario to Seed0 and clears planning tokens
+        // (ClearScene6370B0, TechnoLoad70BF79), retaining process streams.
+        // Equalize those load effects before comparing the movement state
+        // and its continued full-world hashes.
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        sim.reset_planning_after_player_load();
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 1, 0, "Fresh turn", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .unwrap()

@@ -29,7 +29,8 @@ pub(crate) fn body_palette_light(
 
 /// The light a Techno's body draw adds to its cell's intensity:
 /// UnitClass::DrawIt's bridge/side-cell arm and ExtraUnitLight=,
-/// ExtraInfantryLight= for infantry (`0x00518F90`), [`aircraft_extra_light`]
+/// InfantryClass::DrawIt's side/height arm and ExtraInfantryLight=
+/// (`0x00518F90`), [`aircraft_extra_light`]
 /// for an aircraft, and none for a building's voxel turret.
 ///
 /// The caller supplies its frame's isolated query; drawing never stamps the
@@ -103,7 +104,48 @@ pub(crate) fn body_extra_light(
                 extra
             }
         }
-        EntityCategory::Infantry => rules.general.extra_infantry_light,
+        EntityCategory::Infantry => {
+            use crate::map::bridge_facts::BRIDGE_FLAG_EXTRA_SIDE;
+            use crate::sim::movement::{air_movement, ground_pose};
+
+            let extra = rules.general.extra_infantry_light;
+            let Some(cells) = cells else {
+                return extra;
+            };
+            // Infantry DrawIt51933B..5193C5: OnBridge bypasses the side
+            // test. Map565730 reads the physical world-coordinate Cell,
+            // independently of the navigation Cell's top intensity.
+            let location = ground_pose::object_location(entity, Some(cells.terrain()));
+            let side = !entity.on_bridge()
+                && cells.flags(cells.lookup_world(location.x, location.y)) & BRIDGE_FLAG_EXTRA_SIDE
+                    != 0;
+            let height_arm = entity.on_bridge()
+                || (side
+                    && location.z
+                        > ground_pose::query_ground_height(cells, location)
+                            .unwrap_or(0)
+                            .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS / 2));
+            if height_arm {
+                //51941A..519457: Object5F5F40 subtracts ground AND the
+                //OnBridge deck. Signed height/208 truncates toward zero;
+                //an ordinary deck height0 adds no Level. The shared weather
+                //owner selects Ion, Dominator, Nuke fade-in, then Normal.
+                let height = air_movement::queried_flight_height(entity, Some(cells));
+                let level = sim
+                    .session()
+                    .lighting()
+                    .profile(sim.lighting_cell_profile())
+                    .level_units;
+                extra.wrapping_add(
+                    (height / (crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS / 2))
+                        .wrapping_mul(level),
+                )
+            } else if side {
+                extra.wrapping_sub(500)
+            } else {
+                extra
+            }
+        }
         EntityCategory::Aircraft => aircraft_extra_light(
             rules.general.extra_aircraft_light,
             crate::sim::movement::air_movement::queried_flight_height(entity, cells),
@@ -1080,6 +1122,10 @@ mod anim_lighting_tests;
 #[cfg(test)]
 #[path = "unit_light_tests.rs"]
 mod unit_light_tests;
+
+#[cfg(test)]
+#[path = "infantry_light_tests.rs"]
+mod infantry_light_tests;
 
 #[cfg(test)]
 mod palette_producer_tests {

@@ -5995,7 +5995,6 @@ impl Simulation {
             self.retire_non_entity_object(stable_id, context);
             return;
         }
-        self.planning_detach_actor(stable_id);
         let kind = match self.classify_object(stable_id) {
             Some(
                 kind @ (ObjectKind::Entity
@@ -6567,11 +6566,11 @@ impl Simulation {
         );
         #[cfg(feature = "ares")]
         self.destroy_ares_attach_effects(stable_id, context.rules());
-        // Techno destructor6F452C clears planning after the Foot tail, then
-        //6F4571 frees any remaining slave manager without a GameState gate.
+        // Techno destructor6F452C destroys its planning token after the Foot
+        // tail, then6F4571 frees any slave manager without a GameState gate.
         // Direct scalar entry has no earlier UnInit to supply either phase.
         if kind == Some(ObjectKind::Entity) {
-            self.planning_detach_actor(stable_id);
+            self.destroy_planning_token(stable_id);
             self.free_slaves(
                 stable_id,
                 None,

@@ -34,8 +34,12 @@ const RADAR_SOUND: HandleOwner = HandleOwner::Global(0x00880CA8);
 /// (`ActivateDeactivate` `0x00656C0E`, `0x00656C4E`).
 pub(crate) fn end_radar_sound_loop(state: &mut AppState) {
     if let Some(sfx) = state.audio.sfx_player.as_mut() {
-        sfx.release_animation_sound(RADAR_SOUND);
+        end_radar_sound_loop_with(sfx);
     }
+}
+
+pub(crate) fn end_radar_sound_loop_with(sfx: &mut crate::audio::sfx::SfxPlayer) {
+    sfx.release_animation_sound(RADAR_SOUND);
 }
 
 /// EndLooping, then `PlayGlobal(Rules MovieOn or MovieOff, 0x2000, 1.0)`

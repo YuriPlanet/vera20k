@@ -48,7 +48,7 @@ pub(crate) use voxel_anim_effects::BounceContactDamage;
 mod unit_repair_seek;
 pub(crate) use frame_channel::FrameChannel;
 pub use network_commands::{NetworkCommandQueues, NetworkQueueError, NetworkQueueContext, NetworkQueuePass, NetworkInterruption};
-pub use frame_effects::{FrameEffects, LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError, SoundBoundary, OutcomeWaitBoundary};
+pub use frame_effects::{FrameEffects, LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError, SoundBoundary, OutcomeWaitBoundary, TacticalRadarBoundary};
 pub(crate) use type_tech_levels::TypeTechLevels;
 #[cfg(test)]
 mod unit_unlimbo_tests;
@@ -166,6 +166,8 @@ mod aegis_distributed_fire_tests;
 mod aircraft_deployment_tests;
 #[cfg(test)]
 mod area_rocker_tests;
+#[cfg(test)]
+mod finite_ammo_tests;
 #[cfg(test)]
 mod brute_smash_debris_tests;
 #[cfg(test)]
@@ -5803,7 +5805,12 @@ impl Simulation {
     /// House4F844B..4F8506: assess dirty power, rewrite all owned Factory
     /// rates without touching timers, then refresh the radar projection.
     /// Numeric/order evidence: the engineer-repair native consumer packet.
-    fn assess_house_derived_state(&mut self, owner: InternedId, rules: &RuleSet) {
+    fn assess_house_derived_state(
+        &mut self,
+        owner: InternedId,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
         if !self.houses.contains_key(&owner) {
             return;
         }
@@ -5844,7 +5851,7 @@ impl Simulation {
             return;
         }
         let buildings = self.houses[&owner].base_projection().buildings();
-        power_system::assess_house_radar_projection(
+        let radar_assessed = power_system::assess_house_radar_projection(
             self.power_states
                 .get_mut(&owner)
                 .expect("represented House power state"),
@@ -5856,6 +5863,15 @@ impl Simulation {
             self.session.free_radar(),
             self.session.binary_frame(),
         );
+        // House508F39..508F4F compares the actual process Radar flag and
+        // calls SetAvailable656DF0 here, before this House's defeat gate.
+        if radar_assessed && self.session.current_house() == Some(owner) {
+            effects.set_tactical_radar_available(
+                self,
+                rules,
+                power_system::has_active_radar(self.power_states.as_map(), owner),
+            );
+        }
     }
 
     /// Append one successfully committed BuildConst Building to its owning
@@ -6123,7 +6139,7 @@ impl Simulation {
         }
         // Techno701585 -> Planning638840 removes this actor's path before
         // the house swap. Already generated command events remain queued.
-        self.planning_detach_actor(stable_id);
+        self.planning_change_owner(stable_id);
         // Techno70158A..7015E6: Removed_From_Game on the old house (not in
         // limbo), then Remove_Tracking from it and Add_Tracking to the new.
         let on_map = self
@@ -7626,6 +7642,10 @@ impl Simulation {
             1,
             self.session.started(),
         );
+
+        // MainTick55DEA4 follows Frame++ and ProcessPendingDelete725C70.
+        // Network waits and terminal transitions never enter this tail.
+        self.prune_invalid_planning_nodes();
 
         // Validate actual membership after the drain. Rebuilding from current
         // phase/terrain would erase legitimate retained Cell list history.

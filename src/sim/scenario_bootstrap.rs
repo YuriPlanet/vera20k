@@ -26,6 +26,10 @@ mod scenario_fillsilos_retail_tests;
 #[path = "scenario_special_money_retail_tests.rs"]
 mod scenario_special_money_retail_tests;
 
+#[cfg(test)]
+#[path = "building_ai_sale_tag_retail_tests.rs"]
+mod building_ai_sale_tag_retail_tests;
+
 use std::collections::HashMap;
 
 use crate::map::entities::EntityCategory;

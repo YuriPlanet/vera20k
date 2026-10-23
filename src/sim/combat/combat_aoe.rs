@@ -1132,14 +1132,18 @@ fn push_entity_aoe_damage(
         return;
     }
 
-    result.push_entity(EntityDamageEvent::area(
+    let mut event = EntityDamageEvent::area(
         entity.stable_id(),
         base_damage,
         distance_leptons,
         source_id,
         source_house,
         warhead_ref,
-    ));
+    );
+    // 489932 tests the spread-loop index, independently of the later
+    // transaction-wide filter. The unique zero offset is its first cell.
+    event.adjacent_ground_cell_record = !center_cell;
+    result.push_entity(event);
 }
 
 fn push_terrain_aoe_damage(

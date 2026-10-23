@@ -40,6 +40,9 @@ impl PlanningInputState {
     pub(crate) fn reset(&mut self) {
         *self = Self::default();
     }
+    /// Install supplied state for local-handler comparison fixtures. Player
+    /// load uses reset; it does not restore active YR planning.
+    #[cfg(test)]
     pub(crate) fn restore_active(&mut self, active: bool) {
         self.active = active;
         self.key = None;
@@ -923,14 +926,19 @@ mod tests {
     }
 
     #[test]
-    fn restored_planning_preserves_mode_without_retaining_physical_key() {
+    fn fixture_activation_does_not_retain_physical_key() {
         let mut input = PlanningInputState::default();
         input.key_transition(true, KeyCode::KeyZ, true, false);
         input.restore_active(true);
         assert!(input.active());
         assert!(!input.owns_key(KeyCode::KeyZ));
+        input.key_transition(true, KeyCode::KeyZ, true, false);
+        input.node_deleted(99, Some(7));
+        assert!(input.owns_key(KeyCode::KeyZ));
         input.reset();
         assert!(!input.active());
+        assert!(!input.owns_key(KeyCode::KeyZ));
+        assert_eq!(input.highlighted_node(), None);
     }
 
     #[test]

@@ -391,7 +391,15 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // composition only: a temporary control restoring that false gave the
 // previous value, with every tripwire above green. Control removed.
 // Previous: 0x51BE_2569_5006_2383.
-const SLICE6_BASELINE_HASH: u64 = 0x619E_E645_0B3E_881C;
+// 2026-10-24 shared ammo/reload: entity hashing now includes count
+// presence, signed unlimited ammo and the raw constructor reload clock.
+// Against raw c753af366, all 17 recorded non-hash observations, RNG
+// draws/caller sequences and the other 12 final hash domains matched
+// after the new zero clock; backtrace line shifts mapped to unchanged
+// source. This remains a Rust regression pin, not a native game golden.
+// Previous: 0x619E_E645_0B3E_881C.
+// Hash composition includes constructor planning registration and the shared ammo reload clock.
+const SLICE6_BASELINE_HASH: u64 = 0xAEA5_D31A_37FA_33F9;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
