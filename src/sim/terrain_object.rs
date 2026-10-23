@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::Hash;
 
+use crate::map::cell_index::canonical_cell_coord;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_object_type::TerrainObjectType;
@@ -229,11 +230,69 @@ impl TerrainObjectState {
         }
     }
 
+    /// Abstract Get_Cell_Packed41BEA0 (Terrain VT+1B8), original instructions:
+    /// truncate retained world XY toward zero, independently of the original
+    /// constructor words. FFFF,0 constructs at(-128,128) and answers0,0.
     pub fn cell(&self) -> (u16, u16) {
-        match self.location {
-            TerrainLocation::Null => (0, 0),
-            TerrainLocation::Centered { cell, .. } => cell,
+        let coord = self.world_coord();
+        (
+            crate::util::lepton::lepton_to_cell_packed(coord.x) as u16,
+            crate::util::lepton::lepton_to_cell_packed(coord.y) as u16,
+        )
+    }
+
+    /// TerrainUnlimbo71D046..71D097 / Limbo71C963..71C9B8 use one saved
+    /// packed source and the eight direction offsets, with word wrapping.
+    /// Original startup initializer49F2F0 fills table89F688 in this order.
+    pub(crate) fn neighbor_cells(&self) -> impl Iterator<Item = (i16, i16)> {
+        let (x, y) = self.cell();
+        crate::util::direction::DIRECTION_DELTAS
+            .into_iter()
+            .map(move |(dx, dy)| {
+                (
+                    (x as i16).wrapping_add(dx as i16),
+                    (y as i16).wrapping_add(dy as i16),
+                )
+            })
+    }
+
+    /// TerrainUnlimbo71D080 / Limbo71C9A1, original instructions, write
+    /// every neighbor byte. Rust derives real counts from the live owner.
+    /// Missing slots share a retained process byte, so only actual Unlimbo/
+    /// Limbo may mutate it; cache rebuilds and saved Load must not replay it.
+    pub(crate) fn adjust_dummy_neighbors(&self, terrain: Option<&ResolvedTerrainGrid>, add: bool) {
+        let Some(terrain) = terrain else {
+            return;
+        };
+        let query = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        for cell in self.neighbor_cells() {
+            if query.lookup(cell) == crate::map::cell_index::NativeCellIdentity::Dummy {
+                query.dummy().adjust_neighbor_count(add);
+            }
         }
+    }
+
+    /// TerrainLimbo71C937..71C9F8 precedes ObjectLimbo's expiry callback and
+    /// Mark(UP). The independent literal0x40 clear uses the retained Location.
+    pub(crate) fn limbo_prefix(
+        &self,
+        raw: &mut RawCellOccupationGrid,
+        terrain: Option<&ResolvedTerrainGrid>,
+    ) {
+        self.adjust_dummy_neighbors(terrain, false);
+        let cell = self.cell();
+        let key = terrain.map_or(
+            crate::sim::occupancy::RawCellKey::Real(cell.0, cell.1),
+            |terrain| {
+                let coord = self.world_coord();
+                let query = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+                crate::sim::occupancy::RawCellKey::from_native(
+                    terrain,
+                    query.lookup_world(coord.x, coord.y),
+                )
+            },
+        );
+        raw.clear_ground_at(key, TERRAIN_LIMBO_CLEAR_BIT);
     }
 
     pub const fn stable_id(&self) -> u64 {
@@ -396,7 +455,8 @@ impl TerrainObjectStore {
     }
 
     pub fn id_at(&self, cell: (u16, u16)) -> Option<u64> {
-        self.cells.get(&cell).copied()
+        let key = canonical_cell_coord(i32::from(cell.0), i32::from(cell.1))?;
+        self.cells.get(&key).copied()
     }
 
     /// CellAddContent47E8A0 / RemoveContent47EA90 retain every Terrain in
@@ -446,7 +506,11 @@ impl TerrainObjectStore {
                 let Some(object) = self.objects.get(&id) else {
                     return Err(format!("Terrain cell {cell:?} links missing object {id}"));
                 };
-                if !object.is_live() || object.cell() != cell || !seen.insert(id) {
+                let source = object.cell();
+                if !object.is_live()
+                    || canonical_cell_coord(i32::from(source.0), i32::from(source.1)) != Some(cell)
+                    || !seen.insert(id)
+                {
                     return Err(format!(
                         "Terrain cell {cell:?} has invalid or repeated member {id}"
                     ));
@@ -465,7 +529,13 @@ impl TerrainObjectStore {
                 let Some(successor) = self.objects.get(&link) else {
                     return Err(format!("Terrain {id} links missing successor {link}"));
                 };
-                if link == id || successor.cell() != object.cell() || !links.insert(link) {
+                let a = successor.cell();
+                let b = object.cell();
+                if link == id
+                    || canonical_cell_coord(i32::from(a.0), i32::from(a.1))
+                        != canonical_cell_coord(i32::from(b.0), i32::from(b.1))
+                    || !links.insert(link)
+                {
                     return Err(format!("Terrain {id} has invalid successor {link}"));
                 }
                 next = successor.next_in_cell;
@@ -540,14 +610,16 @@ impl TerrainObjectStore {
         &mut self,
         mut terrain: TerrainObjectState,
         spawns_tiberium: bool,
-        occupy_list_bound: bool,
+        occupy_list_visits_cell: bool,
     ) {
         let cell = terrain.cell();
         terrain.spawns_tiberium = spawns_tiberium;
         let live = terrain.is_live();
         if live {
-            if occupy_list_bound {
-                terrain.next_in_cell = self.cells.insert(cell, terrain.stable_id);
+            if occupy_list_visits_cell {
+                let key = canonical_cell_coord(i32::from(cell.0), i32::from(cell.1))
+                    .expect("admitted Terrain Cell slot");
+                terrain.next_in_cell = self.cells.insert(key, terrain.stable_id);
             }
             // The same epoch invalidates the all-live Terrain neighbor halo,
             // including live instances whose empty footprint adds no head.
@@ -607,7 +679,10 @@ impl TerrainObjectStore {
         let Some(object) = self.objects.get(&stable_id) else {
             return;
         };
-        let cell = object.cell();
+        let source = object.cell();
+        let Some(cell) = canonical_cell_coord(i32::from(source.0), i32::from(source.1)) else {
+            return;
+        };
         let successor = object.next_in_cell;
         let predecessor = self
             .members_at(cell)
@@ -647,6 +722,9 @@ impl TerrainObjectStore {
     }
 
     fn refresh_spawning_cell(&mut self, cell: (u16, u16)) {
+        let Some(cell) = canonical_cell_coord(i32::from(cell.0), i32::from(cell.1)) else {
+            return;
+        };
         // CanPlaceTiberium483969..48399A stops at the first Terrain and
         // reads only that type's Spawns flag. Older spawners do not veto it.
         if self
@@ -677,13 +755,20 @@ impl TerrainObjectStore {
         }
 
         let source_cell = snapshot.cell();
-        raw_occupation.clear_ground(source_cell.0, source_cell.1, TERRAIN_LIMBO_CLEAR_BIT);
         // MapPickUp56884C uses the CURRENT type list. A saved ctor-only
         // TypeLoad71E22D binds1x1 without changing its saved Cell membership;
         // RemoveContent47EAF7 still unmarks after failing to find that member.
-        if occupy_list_bound {
+        // PickUp5688A1..5688BE skips absent slots before RemoveContent;
+        // generic Map lookup must not manufacture a Dummy Cell-list member.
+        let allocated = resolved_terrain.as_ref().is_none_or(|grid| {
+            grid.native_fixed_cell_index(source_cell.0 as i16, source_cell.1 as i16)
+                .is_some()
+        });
+        if occupy_list_bound && allocated {
             self.unlink(stable_id);
-            unmark_terrain_raw_occupation(raw_occupation, source_cell, snapshot.occupation_bits);
+            let key = canonical_cell_coord(i32::from(source_cell.0), i32::from(source_cell.1))
+                .expect("allocated Terrain source");
+            unmark_terrain_raw_occupation(raw_occupation, key, snapshot.occupation_bits);
             if let Some(grid) = resolved_terrain {
                 let occupation = self
                     .id_at(source_cell)
@@ -720,6 +805,13 @@ impl TerrainObjectStore {
         resolved_terrain: Option<&mut ResolvedTerrainGrid>,
         occupy_list_bound: bool,
     ) -> bool {
+        if let Some(object) = self
+            .objects
+            .get(&stable_id)
+            .filter(|object| object.is_live())
+        {
+            object.limbo_prefix(raw_occupation, resolved_terrain.as_deref());
+        }
         if !self.begin_limbo(
             stable_id,
             raw_occupation,
@@ -799,7 +891,15 @@ impl TerrainObjectStore {
         };
         // ObjectClass::ReceiveDamage 005F53A1..005F53B7 rejects these before
         // either ordinary armor calculation or the forced direct-damage path.
-        if !snapshot.is_live() || snapshot.cell() != cell || snapshot.health <= 0 || raw_damage == 0
+        let source = snapshot.cell();
+        // AreaDamage489280 and direct bridge fallout47DD70 retain a real
+        // Cell receiver. Its fixed512 identity, not equality with the packed
+        // Location words, identifies an aliased Terrain member.
+        if !snapshot.is_live()
+            || canonical_cell_coord(i32::from(source.0), i32::from(source.1))
+                != canonical_cell_coord(i32::from(cell.0), i32::from(cell.1))
+            || snapshot.health <= 0
+            || raw_damage == 0
         {
             return TerrainAreaReceiveResult::Ignored;
         }

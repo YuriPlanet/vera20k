@@ -703,6 +703,7 @@ impl MovementPassCache {
                 let mut plane = bump_crush::blocker_plane_base(
                     grid.width(),
                     grid.height(),
+                    resolved_terrain,
                     terrain_objects,
                     overlay_grid,
                 );

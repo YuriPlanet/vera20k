@@ -537,9 +537,19 @@ pub fn construct_terrain_objects_with_rules(
         )
         .with_native_unique_id(native_unique_id);
         let occupation_bits = terrain_state.occupation_bits();
-        let occupy_list_bound = t.has_occupy_list();
-        sim.terrain_objects
-            .insert_constructed(terrain_state, t.spawns_tiberium, occupy_list_bound);
+        let source_cell = terrain_state.cell();
+        // MapPlaceDown568471..56848E tests the actual fixed512 allocation
+        // before CellAddContent. Missing cells still admit Unlimbo/Display.
+        let occupy_list_visits_cell = t.has_occupy_list()
+            && sim.resolved_terrain.as_ref().is_none_or(|grid| {
+                grid.native_fixed_cell_index(source_cell.0 as i16, source_cell.1 as i16)
+                    .is_some()
+            });
+        sim.terrain_objects.insert_constructed(
+            terrain_state,
+            t.spawns_tiberium,
+            occupy_list_visits_cell,
+        );
         constructed += 1;
         // TerrainCtor71BC34..71BC86 (original instructions) retains the
         // zero-cell identity but skips Unlimbo, including resource clearing.
@@ -550,10 +560,15 @@ pub fn construct_terrain_objects_with_rules(
         debug_assert!(registered);
         // TypeCtor71DAF1 leaves Occupy_List null; MapPlaceDown568432
         // visits no Cell, independently of successful Unlimbo/Display.
-        if occupy_list_bound {
+        if occupy_list_visits_cell {
+            let source = crate::map::cell_index::canonical_cell_coord(
+                i32::from(source_cell.0),
+                i32::from(source_cell.1),
+            )
+            .expect("admitted Terrain Cell slot");
             mark_terrain_raw_occupation(
                 &mut sim.substrate.raw_cell_occupation,
-                (obj.rx, obj.ry),
+                source,
                 occupation_bits,
             );
         }
@@ -564,15 +579,42 @@ pub fn construct_terrain_objects_with_rules(
                 .get(&stable_id)
                 .expect("new Terrain remains registered")
                 .clone();
-            if occupy_list_bound {
+            if occupy_list_visits_cell {
                 crate::sim::terrain_object::mark_terrain_occupation(
                     &terrain_snapshot,
                     sim.resolved_terrain.as_mut(),
                 );
             }
-            if let Some(grid) = sim.overlay_grid.as_mut() {
-                let source = grid.cell(obj.rx, obj.ry);
-                let before = (source.overlay_id.map_or(-1, i32::from), source.overlay_data);
+            // TerrainUnlimbo71D080..71D097 has eight ordered Cell lookups
+            // even when PlaceDown admitted no Cell content. Real counters
+            // stay derived; Dummy's wrapping byte is retained process state.
+            terrain_snapshot.adjust_dummy_neighbors(sim.resolved_terrain.as_ref(), true);
+            let source = sim.resolved_terrain.as_ref().map_or(
+                crate::sim::occupancy::RawCellKey::Real(source_cell.0, source_cell.1),
+                |terrain| {
+                    let coord = terrain_snapshot.world_coord();
+                    let query = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+                    crate::sim::occupancy::RawCellKey::from_native(
+                        terrain,
+                        query.lookup_world(coord.x, coord.y),
+                    )
+                },
+            );
+            // 71D0E2..71D12B clears only the selected Cell's literal overlay
+            // identity/data fields, without DestroyOverlay, Recalc or RNG.
+            let before = match source {
+                crate::sim::occupancy::RawCellKey::Real(x, y) => {
+                    sim.overlay_grid.as_ref().map(|grid| {
+                        let source = grid.cell(x, y);
+                        (source.overlay_id.map_or(-1, i32::from), source.overlay_data)
+                    })
+                }
+                crate::sim::occupancy::RawCellKey::Dummy => sim
+                    .resolved_terrain
+                    .as_ref()
+                    .map(|terrain| terrain.shared_cell_dummy().overlay_identity_state()),
+            };
+            if let Some(before) = before {
                 let after = crate::map::tiberium_cell::terrain_unlimbo_overlay_fields(
                     before.0,
                     before.1,
@@ -583,9 +625,24 @@ pub fn construct_terrain_objects_with_rules(
                     },
                 );
                 if after != before {
-                    grid.clear_cell_silently(obj.rx, obj.ry);
+                    match source {
+                        crate::sim::occupancy::RawCellKey::Real(x, y) => {
+                            sim.overlay_grid.as_mut().unwrap().clear_cell_silently(x, y)
+                        }
+                        crate::sim::occupancy::RawCellKey::Dummy => sim
+                            .resolved_terrain
+                            .as_ref()
+                            .unwrap()
+                            .shared_cell_dummy()
+                            .write_overlay_identity_state(after.0, after.1),
+                    }
                 }
             }
+        } else {
+            sim.terrain_objects
+                .get(stable_id)
+                .unwrap()
+                .adjust_dummy_neighbors(sim.resolved_terrain.as_ref(), true);
         }
     }
     Ok(constructed)

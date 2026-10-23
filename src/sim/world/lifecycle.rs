@@ -3242,6 +3242,10 @@ impl Simulation {
         let cell = terrain.cell();
         let was_live = terrain.is_live();
         if was_live {
+            terrain.limbo_prefix(
+                &mut self.substrate.raw_cell_occupation,
+                self.resolved_terrain.as_ref(),
+            );
             self.notify_pointer_expired(stable_id, context);
             let occupy_list_bound = self.terrain_occupy_list_bound(stable_id, context.rules());
             let unmarked = self.terrain_objects.begin_limbo(

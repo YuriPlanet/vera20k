@@ -31,8 +31,6 @@ const RTTI_TERRAIN: i32 = 0x24;
 const RTTI_VOXEL_ANIM: i32 = 0x29;
 const RTTI_WAVE: i32 = 0x240;
 const SYNC_EXEMPT_ANIM_ID: i32 = -2;
-const LEPTONS_PER_CELL: i32 = crate::util::lepton::LEPTONS_PER_CELL_I32;
-const CELL_CENTER_LEPTON: i32 = crate::util::lepton::CELL_CENTER_LEPTON_I32;
 const WAVE_EXTENDED_ENDPOINT_SCALE: NativeF32Bits = NativeF32Bits::from_bits(0x3f86_6666);
 
 /// One ObjectClass entry as seen by a display-layer checksum pass.
@@ -161,16 +159,6 @@ fn coordinate_term(world_x: i32, world_y: i32) -> u32 {
     let x = world_x / 10;
     let y = world_y / 10;
     (x as u32).wrapping_add((y as u32).wrapping_mul(0x1_0000))
-}
-
-#[inline]
-fn terrain_world_xy(rx: u16, ry: u16) -> (i32, i32) {
-    // gamemd-derived: `TerrainClass__Constructor @ 0x0071BB90` converts the
-    // map cell passed to Unlimbo to `(cell * 0x100) + 0x80` on both axes.
-    (
-        i32::from(rx) * LEPTONS_PER_CELL + CELL_CENTER_LEPTON,
-        i32::from(ry) * LEPTONS_PER_CELL + CELL_CENTER_LEPTON,
-    )
 }
 
 #[inline]
@@ -384,8 +372,10 @@ impl Simulation {
                     .objects()
                     .get(&stable_id)
                     .ok_or(missing)?;
-                let (world_x, world_y) = terrain_world_xy(terrain.cell().0, terrain.cell().1);
-                ChecksumObject::new(world_x, world_y, RTTI_TERRAIN, 0)
+                // Compute_Game_Sync_Checksum64DD1B..64DD5D reads retained
+                // Object Location, not the packed cell or a recentered alias.
+                let coord = terrain.world_coord();
+                ChecksumObject::new(coord.x, coord.y, RTTI_TERRAIN, 0)
             }
             ObjectKind::Projectile => {
                 let projectile = self.projectiles.get(stable_id).ok_or(missing)?;

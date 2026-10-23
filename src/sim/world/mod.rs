@@ -6940,10 +6940,13 @@ impl Simulation {
             .copied()
             // Dummy Recalc47D2B8 has no path publication or structure scan.
             // Test allocation without performing the ordered lookup early.
-            .filter(|&(x, y)| {
-                self.resolved_terrain
-                    .as_ref()
-                    .is_none_or(|grid| grid.cell(x, y).is_some())
+            .filter_map(|(x, y)| {
+                self.resolved_terrain.as_ref().map_or(Some((x, y)), |grid| {
+                    let index = grid.native_fixed_cell_index(x as i16, y as i16)?;
+                    let (x, y) = grid
+                        .native_cell_coord(crate::map::cell_index::NativeCellIdentity::Real(index));
+                    Some((x as u16, y as u16))
+                })
             })
             .collect();
         let blocked = navigation::structure_blocked_among(
@@ -6960,17 +6963,43 @@ impl Simulation {
             // Dummy, whose Recalc47D2B0 immediately returns (47D2B8).
             // Resize565C10's allocation diamond excludes cell0, so the
             // never-Unlimbo'd zero constructor has no real-cell Recalc work.
-            let dummy = self.resolved_terrain.as_ref().is_some_and(|terrain| {
-                terrain.native_cell_identity((cell.0 as i16, cell.1 as i16))
-                    == crate::map::cell_index::NativeCellIdentity::Dummy
-            });
+            let recalc_cell = self
+                .resolved_terrain
+                .as_ref()
+                .map_or(Some(cell), |terrain| {
+                    match terrain.native_cell_identity((cell.0 as i16, cell.1 as i16)) {
+                        crate::map::cell_index::NativeCellIdentity::Real(index) => {
+                            let (x, y) = terrain.native_cell_coord(
+                                crate::map::cell_index::NativeCellIdentity::Real(index),
+                            );
+                            Some((x as u16, y as u16))
+                        }
+                        crate::map::cell_index::NativeCellIdentity::Dummy => None,
+                    }
+                });
             let initializing = self.object_placement_scope_active();
-            if !dummy {
-                if initializing {
-                    self.publish_recalculated_cells_with_presence(rules, &[cell], &blocked);
-                } else {
-                    self.publish_cell_and_assign_orphaned_zone(rules, cell, &blocked);
-                }
+            if let Some(recalc_cell) = recalc_cell {
+                // Recalc71CA23 uses the allocated Cell receiver's coordinate.
+                // Zone/hierarchy71CA42/51 instead retain the packed Location;
+                // their own index/geometry is not the Map's fixed512 alias.
+                self.publish_recalculated_cells_with_presence(rules, &[recalc_cell], &blocked);
+            }
+            // 71CA2F..71CA60 gates zone/hierarchy only on ScenarioInit.
+            // A Map-Dummy can select a real retained zone record because
+            // 56D460 uses the separate Size-derived stride and clamp.
+            if !initializing
+                && let (Some(terrain), Some(path)) =
+                    (self.resolved_terrain.as_ref(), self.path_grid.as_deref())
+            {
+                repair_zone_after_recalc(
+                    &mut self.zone_grid,
+                    path,
+                    terrain,
+                    self.bridge_state.as_ref(),
+                    self.playfield_bounds,
+                    cell,
+                    ZoneRepairKind::AssignOrphaned,
+                );
             }
             // Zero's retained zone class7 returns at56D4E8..56D51B;
             // hierarchy58456A..584571 independently rejects its playfield.

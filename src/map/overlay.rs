@@ -233,12 +233,9 @@ pub fn parse_terrain_objects(ini: &IniFile, signed_new_ini_format: i32) -> Vec<T
     let radix = if signed_new_ini_format < 4 { 128 } else { 1000 };
 
     // `TerrainClass__Read_Map_Section @ 0x0071CA70`: the cell is `atoi` of the
-    // entry name, the type a 0x80-byte ReadString. Rust skips a negative cell.
+    // entry name, the type a 0x80-byte ReadString. IDIV/remainder are signed;
+    // the resulting CellStruct retains only each word (71CAEF..71CB44).
     for key in section.keys() {
-        let Ok(pos) = u32::try_from(crate::rules::ini_value::crt_atoi(key)) else {
-            continue;
-        };
-
         let Some(name) = section.read_name(key, 0x80) else {
             continue;
         };
@@ -246,6 +243,7 @@ pub fn parse_terrain_objects(ini: &IniFile, signed_new_ini_format: i32) -> Vec<T
         // AbstractTypeCtor41088D retains the input spelling. The selected
         // family member, not this reader, supplies the instance's identity.
         let name = name.to_string();
+        let pos = crate::rules::ini_value::crt_atoi(key);
 
         let ry: u16 = (pos / radix) as u16;
         let rx: u16 = (pos % radix) as u16;

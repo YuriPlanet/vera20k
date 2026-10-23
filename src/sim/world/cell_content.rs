@@ -76,9 +76,16 @@ impl Simulation {
             }
             CellObjectMember::Terrain(id) => {
                 let terrain = self.terrain_objects.objects().get(&id)?;
-                terrain
-                    .is_live()
-                    .then_some((terrain.cell(), MovementLayer::Ground))
+                if !terrain.is_live() {
+                    return None;
+                }
+                // CellAddContent47E8D2 appends Buildings to the actual Cell
+                // list; FogCell486BA4/contact483495 follow Object+30. The
+                // list identity of an alias differs from Get_Cell_Packed.
+                let (x, y) = terrain.cell();
+                let cell =
+                    crate::map::cell_index::canonical_cell_coord(i32::from(x), i32::from(y))?;
+                Some((cell, MovementLayer::Ground))
             }
         }
     }
