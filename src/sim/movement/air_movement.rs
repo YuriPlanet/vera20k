@@ -187,6 +187,19 @@ pub fn current_fly_height(
     queried_flight_height(entity, cells.as_ref())
 }
 
+/// Aircraft IFlyControl41B6A0 through its shared live cargo/radio owner.
+/// Read-only locomotor and presentation callers must use the same landing base.
+pub fn aircraft_landing_base(
+    entity: &crate::sim::game_entity::GameEntity,
+    entities: &crate::sim::entity_store::EntityStore,
+    rules_context: Option<(
+        &crate::rules::ruleset::RuleSet,
+        &crate::sim::intern::StringInterner,
+    )>,
+) -> i32 {
+    crate::sim::aircraft::landing_base::landing_base(entity, entities, rules_context)
+}
+
 /// [`current_fly_height`] through the caller's cell query. A draw passes its
 /// isolated query, so a miss stamps its own dummy, not the simulation's.
 pub fn queried_flight_height(

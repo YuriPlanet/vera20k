@@ -217,3 +217,102 @@ fn a_temporal_warp_start_on_a_building_raises_event6_on_its_house_tags() {
     assert_eq!(sim.trigger_runtime.dispatch_trace, raised(&own));
     assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([11, 12]));
 }
+
+/// NotifyUnderAttack4F93E0 submits radar/EVA/Voc before its House Tag walk
+///4F95D4. A skirmish Tag can change diplomacy at that callback: event8 gives
+/// the authored6+8 join House attachment, and action38 breaks the alliance.
+fn warning_precedes_house_tag_alliance_change(temporal: bool) {
+    use crate::sim::intern::InternedId;
+    use crate::sim::world::{SimSoundEvent, SoundBoundary};
+    use std::cell::{Cell, RefCell};
+
+    struct Listener {
+        victim: InternedId,
+        player: InternedId,
+        delivered: Cell<usize>,
+        warnings: RefCell<Vec<bool>>,
+    }
+    impl SoundBoundary for Listener {
+        fn consume(
+            &self,
+            sim: &Simulation,
+            _: &crate::rules::ruleset::RuleSet,
+            events: &[SimSoundEvent],
+        ) {
+            for event in &events[self.delivered.get()..] {
+                if matches!(event, SimSoundEvent::AllyUnderAttack { owner, .. } if *owner == self.player)
+                {
+                    self.warnings
+                        .borrow_mut()
+                        .push(crate::map::houses::is_allied_with(
+                            sim.house_alliances.as_map(),
+                            sim.interner.resolve(self.victim),
+                            sim.interner.resolve(self.player),
+                        ));
+                }
+            }
+            self.delivered.set(events.len());
+        }
+        fn delivered(&self) -> usize {
+            self.delivered.get()
+        }
+    }
+
+    let (mut sim, rules, overlays, houses) = event_ingress_fixture_with_rules(&format!(
+        "{RULES}\n[Sides]\nGDI=Country0\nNod=Country7\n"
+    ));
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    sim.houses
+        .get_mut(&houses[1])
+        .unwrap()
+        .set_is_human_for_test(true);
+    sim.make_ally(
+        houses[0],
+        houses[1],
+        &rules,
+        Some(&overlays),
+        FrameEffects::default(),
+        false,
+    );
+    let hq = spawn(&mut sim, &rules, "TAGHQ", houses[0], (15, 15));
+    let source = spawn(&mut sim, &rules, "TAGCLEG", houses[2], (15, 18));
+    install_event_ingress_map(
+        &mut sim,
+        &rules,
+        "[Triggers]\nBREAK=Country0,<none>,Break,0,1,1,1,0\n\
+         [Tags]\nTAG=2,Break,BREAK\n[Events]\nBREAK=2,6,0,0,8,0,0\n\
+         [Actions]\nBREAK=1,38,0,7,0,0,0,0,A\n",
+    );
+    let listener = Listener {
+        victim: houses[0],
+        player: houses[1],
+        delivered: Cell::new(0),
+        warnings: RefCell::new(Vec::new()),
+    };
+    let effects = FrameEffects::for_sound(&listener);
+    if temporal {
+        sim.temporal_initiate_warp(source, Some(hq), &rules, Some(&overlays), effects);
+    } else {
+        event_ingress_damage(&mut sim, &rules, &overlays, hq, source, 1, effects);
+    }
+    assert!(!crate::map::houses::is_allied_with(
+        sim.house_alliances.as_map(),
+        "House0",
+        "House1"
+    ));
+    // Include the frame-end consumer: queueing before the Tag while delivering
+    // after it would still expose the callback's changed state to the client.
+    effects.flush_sound(&sim, &rules);
+    assert_eq!(*listener.warnings.borrow(), [true]);
+}
+
+#[test]
+fn a_damage_warning_precedes_its_house_tags_alliance_change() {
+    warning_precedes_house_tag_alliance_change(false);
+}
+
+#[test]
+fn a_temporal_warning_precedes_its_house_tags_alliance_change() {
+    warning_precedes_house_tag_alliance_change(true);
+}

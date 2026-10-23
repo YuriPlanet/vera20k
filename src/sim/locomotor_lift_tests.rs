@@ -148,6 +148,339 @@ fn lift(rules: &RuleSet) -> (Simulation, PathGrid, u64, u64) {
     (sim, grid, magnetron, tank)
 }
 
+fn pull_sensor_ship_across_cell(
+    runtime: &mut crate::sim::runtime::SimRuntime,
+    magnetron: u64,
+    ship: u64,
+) -> (u16, u16) {
+    let held = entity(&runtime.simulation, ship);
+    let origin = (held.position.rx(), held.position.ry());
+    let attack = CommandEnvelope::new(
+        entity(&runtime.simulation, magnetron).owner(),
+        runtime.simulation.session.tick() + 1,
+        Command::Attack {
+            attacker_id: magnetron,
+            target_id: ship,
+        },
+    );
+    for frame in 0..400 {
+        runtime
+            .advance_frame_for_tooling(
+                if frame == 0 {
+                    std::slice::from_ref(&attack)
+                } else {
+                    &[]
+                },
+                crate::headless_scenario::SIM_TICK_MS,
+            )
+            .expect("ordinary Magnetron/Destroyer frame");
+        let sim = &runtime.simulation;
+        let held = entity(sim, ship);
+        let at = (held.position.rx(), held.position.ry());
+        if held.lift.source() == Some(magnetron)
+            && at != origin
+            && crate::sim::movement::air_movement::is_high_flying(
+                held,
+                sim.resolved_terrain.as_ref(),
+                Some((&runtime.resources.rules, &sim.interner)),
+            )
+        {
+            let active = held.locomotor.as_ref().unwrap();
+            assert_eq!(active.active_kind(), LocomotorKind::Jumpjet);
+            assert_eq!(
+                active.piggyback().as_ref().unwrap().active_kind(),
+                LocomotorKind::Ship
+            );
+            return at;
+        }
+    }
+    panic!(
+        "the real beam must lift and pull the ship: {:?}",
+        (
+            entity(&runtime.simulation, ship).position,
+            entity(&runtime.simulation, ship).lift
+        )
+    );
+}
+
+/// Imbue710000 preserves the sensor deposit; Jumpjet54AEC0 has no airborne
+/// PerCell. FootLimbo4DB376 removes at current GetCoords, not that old center.
+#[test]
+fn retail_lifted_destroyer_keeps_its_sensor_circle_until_real_lifecycle_callbacks() {
+    let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let mut scene = crate::headless_scenario::load(&retail, "XMP03T4.MAP", 0x1269)
+        .expect("physical AnyTown Battle scenario");
+    let enemy = scene.add_human_house("Magnetron", crate::skirmish_launch::LaunchCountry::Yuri);
+    let player = scene.sim().session.current_house().unwrap();
+    let runtime = &mut scene.runtime;
+    let rules = &runtime.resources.rules;
+    let radius = u16::from(rules.object("DEST").unwrap().sensors_sight);
+    assert_eq!(radius, 8);
+    let enemy_name = runtime.simulation.interner.resolve(enemy).to_owned();
+    let player_name = runtime.simulation.interner.resolve(player).to_owned();
+    // Keep the extra human house alive under the normal ShortGame option.
+    spawn(&mut runtime.simulation, rules, "PCV", &enemy_name, 88, 49);
+    // Physical bank and water, within MagneticBeam's stock 3..12 range.
+    // Spawn/Unlimbo supplies the deposit; no lift, head or sensor state is set.
+    let magnetron = spawn(&mut runtime.simulation, rules, "TELE", &enemy_name, 87, 50);
+    let ship = spawn(&mut runtime.simulation, rules, "DEST", &player_name, 89, 54);
+    let origin = entity(&runtime.simulation, ship)
+        .sensor_deposit
+        .unwrap()
+        .center();
+    assert_eq!(origin, (89, 54));
+    let at = pull_sensor_ship_across_cell(runtime, magnetron, ship);
+    assert_eq!(
+        entity(&runtime.simulation, ship)
+            .sensor_deposit
+            .unwrap()
+            .center(),
+        origin,
+        "airborne cell crossing does not move the native sensor circle"
+    );
+    let sim = &runtime.simulation;
+    let current_circle = sim.fog.sensor_circle_cells(at, radius);
+    let old_only = sim
+        .fog
+        .sensor_circle_cells(origin, radius)
+        .into_iter()
+        .find(|cell| !current_circle.contains(cell))
+        .unwrap();
+    assert!(
+        sim.fog.has_sensor_for_house(player, old_only.0, old_only.1),
+        "the original circle still supplies submarine detection"
+    );
+    assert!(sim.fog.has_sensor_for_house(player, origin.0, origin.1));
+    let counters = sim.fog.sensors_by_house().clone();
+    // Unit7463AE refuses before Foot's same-owner remove/add. A lifted
+    // source makes that distinction visible: current and deposited differ.
+    runtime.simulation.change_owner_with_rules(
+        ship,
+        player,
+        &runtime.resources.rules,
+        None,
+        FrameEffects::default(),
+    );
+    assert_eq!(runtime.simulation.fog.sensors_by_house(), &counters);
+    assert_eq!(
+        entity(&runtime.simulation, ship)
+            .sensor_deposit
+            .unwrap()
+            .center(),
+        origin
+    );
+    // Unit's actual airborne damage/UnInit owns the current-coordinate remove.
+    // Old-only coverage survives it natively; overlapping coverage is removed.
+    kill(
+        &mut runtime.simulation,
+        &runtime.resources.rules,
+        ship,
+        magnetron,
+    );
+    assert!(
+        runtime
+            .simulation
+            .fog
+            .has_sensor_for_house(player, old_only.0, old_only.1),
+        "native Limbo leaves the old-only sensor fringe stamped"
+    );
+    assert!(
+        !runtime
+            .simulation
+            .fog
+            .has_sensor_for_house(player, origin.0, origin.1),
+        "Limbo removes the current-coordinate overlap"
+    );
+    let saved =
+        crate::sim::snapshot::GameSnapshot::save(&runtime.simulation, 0, 0, "sensor fringe", 0);
+    let restored = crate::sim::snapshot::GameSnapshot::load(&saved)
+        .unwrap()
+        .sim;
+    assert_eq!(
+        restored.fog.sensors_by_house(),
+        runtime.simulation.fog.sensors_by_house(),
+        "residual coverage is saved independently of a surviving sensor source"
+    );
+}
+
+/// Fatal Techno702112 -> CaptureFreeAll472140 -> FreeUnit471FF0 restores
+/// a previously captured ship while airborne; Foot4DBED0 uses its current cell.
+#[test]
+fn retail_controller_death_restores_a_lifted_ships_current_sensor_circle() {
+    let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let mut scene = crate::headless_scenario::load(&retail, "XMP03T4.MAP", 0x1269)
+        .expect("physical AnyTown Battle scenario");
+    let captor = scene.add_human_house("Controller", crate::skirmish_launch::LaunchCountry::Yuri);
+    let enemy = scene.add_human_house("Magnetron", crate::skirmish_launch::LaunchCountry::Yuri);
+    let player = scene.sim().session.current_house().unwrap();
+    let runtime = &mut scene.runtime;
+    let captor_name = runtime.simulation.interner.resolve(captor).to_owned();
+    let enemy_name = runtime.simulation.interner.resolve(enemy).to_owned();
+    let player_name = runtime.simulation.interner.resolve(player).to_owned();
+    let controller = spawn(
+        &mut runtime.simulation,
+        &runtime.resources.rules,
+        "YURI",
+        &captor_name,
+        87,
+        50,
+    );
+    // Pull along the real water strip90,54 ->89,54;88,54 has a bridge.
+    let ship = spawn(
+        &mut runtime.simulation,
+        &runtime.resources.rules,
+        "DEST",
+        &player_name,
+        90,
+        54,
+    );
+    // Both added houses need a real BaseUnit under normal ShortGame rules.
+    spawn_retail_lift_participant(runtime, "PCV", captor, (87, 50), 12, 16);
+    spawn_retail_lift_participant(runtime, "PCV", enemy, (87, 50), 18, 24);
+    let capture = CommandEnvelope::new(
+        captor,
+        runtime.simulation.session.tick() + 1,
+        Command::Attack {
+            attacker_id: controller,
+            target_id: ship,
+        },
+    );
+    let mut captured = false;
+    for frame in 0..300 {
+        runtime
+            .advance_frame_for_tooling(
+                if frame == 0 {
+                    std::slice::from_ref(&capture)
+                } else {
+                    &[]
+                },
+                crate::headless_scenario::SIM_TICK_MS,
+            )
+            .expect("ordinary Yuri capture frame");
+        if entity(&runtime.simulation, ship).owner() == captor {
+            captured = true;
+            break;
+        }
+    }
+    assert!(captured, "the ground ship is captured through MindControl");
+    let origin = entity(&runtime.simulation, ship)
+        .sensor_deposit
+        .unwrap()
+        .center();
+    let magnetron = spawn(
+        &mut runtime.simulation,
+        &runtime.resources.rules,
+        "TELE",
+        &enemy_name,
+        81,
+        54,
+    );
+    let at = pull_sensor_ship_across_cell(runtime, magnetron, ship);
+    let held = entity(&runtime.simulation, ship);
+    assert_eq!(held.owner(), captor);
+    assert_eq!(held.sensor_deposit.unwrap().center(), origin);
+    assert_eq!(
+        runtime
+            .simulation
+            .resolved_terrain
+            .as_ref()
+            .unwrap()
+            .cell(at.0, at.1)
+            .unwrap()
+            .land_type,
+        crate::rules::terrain_rules::LandType::Water as u8,
+        "the nested NULL setter needs an admissible water stop"
+    );
+    let radius = u16::from(
+        runtime
+            .resources
+            .rules
+            .object("DEST")
+            .unwrap()
+            .sensors_sight,
+    );
+    let current_circle = runtime.simulation.fog.sensor_circle_cells(at, radius);
+    let old_only = runtime
+        .simulation
+        .fog
+        .sensor_circle_cells(origin, radius)
+        .into_iter()
+        .find(|cell| !current_circle.contains(cell))
+        .unwrap();
+    // No direct owner/lift writes: lethal damage frees the real capture node.
+    kill(
+        &mut runtime.simulation,
+        &runtime.resources.rules,
+        controller,
+        magnetron,
+    );
+    let sim = &runtime.simulation;
+    let freed = entity(sim, ship);
+    assert!(freed.lifecycle.object_alive());
+    assert_eq!(freed.owner(), player);
+    assert_eq!((freed.position.rx(), freed.position.ry()), at);
+    assert_eq!(
+        freed.sensor_deposit.unwrap().center(),
+        at,
+        "restoration adds around the current cell after the owner flip"
+    );
+    assert_eq!(
+        freed.navigation.neighbor_state().cell(),
+        (origin.0 as i16, origin.1 as i16),
+        "high-flight owner change preserves the distinct PerCell source"
+    );
+    assert!(sim.fog.has_sensor_for_house(captor, old_only.0, old_only.1));
+    assert!(!sim.fog.has_sensor_for_house(captor, origin.0, origin.1));
+    assert!(sim.fog.has_sensor_for_house(player, at.0, at.1));
+    assert!(!sim.fog.has_sensor_for_house(player, old_only.0, old_only.1));
+    assert!(
+        freed.lift.source().is_none(),
+        "the nested native NULL setter releases the hold"
+    );
+    let old_circle = sim.fog.sensor_circle_cells(origin, radius);
+    let mut landed = false;
+    for _ in 0..400 {
+        runtime
+            .advance_frame_for_tooling(&[], crate::headless_scenario::SIM_TICK_MS)
+            .expect("released Destroyer descent and real touchdown");
+        let sim = &runtime.simulation;
+        let ship = entity(sim, ship);
+        if !ship.lift.swap_active()
+            && ship.locomotor.as_ref().unwrap().active_kind() == LocomotorKind::Ship
+        {
+            let center = ship.sensor_deposit.unwrap().center();
+            assert_eq!(
+                ship.navigation.neighbor_state().cell(),
+                (center.0 as i16, center.1 as i16)
+            );
+            let witness = sim
+                .fog
+                .sensor_circle_cells(center, radius)
+                .into_iter()
+                .find(|cell| current_circle.contains(cell) && !old_circle.contains(cell))
+                .expect("landing and restoration overlap beyond the old radius");
+            let index =
+                usize::from(witness.1) * usize::from(sim.fog.width()) + usize::from(witness.0);
+            assert_eq!(
+                sim.fog.sensors_by_house()[&player][index],
+                2,
+                "real touchdown removes at +55C=A, retaining the earlier B-only add"
+            );
+            assert!(sim.fog.has_sensor_for_house(captor, old_only.0, old_only.1));
+            landed = true;
+            break;
+        }
+    }
+    assert!(
+        landed,
+        "the real landing callback restores Ship after owner restoration"
+    );
+}
+
 /// Imbue710326/710352 supplies both NavCom and Foot+6AD. UnitAI7365E8
 /// still runs Facing_Update, whose736BB1 gate preserves an idle turret's
 /// aim until the lift ends. The native idle_navcom_magnetron control in

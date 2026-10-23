@@ -20,6 +20,7 @@
 //! | `read_string`, `read_name`, `read_type_name` | `CCINIClass::ReadString` 0x00528A10 |
 //! | `read_movie` | `CCINIClass::ReadMovie` 0x004757D0 |
 //! | `read_pip` | `CCINIClass::ReadPip` 0x004748A0 |
+//! | `read_action_name` | `CCINIClass::ReadAction` 0x00474EE0 |
 //! | `read_edge` | `CCINIClass::ReadEdge` 0x00475980 |
 //! | `read_color_scheme` | `CCINIClass::ReadColor` 0x00474A90 |
 //! | `read_list` | ReadString, then `strtok(",")` (every type, house, sound and ability list) |
@@ -69,6 +70,84 @@ const STRTRIM_MAX: u8 = 0x20;
 /// The comma delimiter every native list reader passes to `strtok`
 /// (`DAT_00817F70`).
 const COMMA: &[char] = &[','];
+
+/// ActionType names at7E4C50, in ReadAction474EE0's numeric order.
+/// The scan accepts these whole names only; unknown text is action0.
+const ACTION_NAMES: [&str; 73] = [
+    "None",
+    "Move",
+    "NoMove",
+    "Enter",
+    "Self",
+    "Attack",
+    "Harvest",
+    "Select",
+    "ToggleSelect",
+    "Capture",
+    "Eaten",
+    "Repair",
+    "Sell",
+    "SellUnit",
+    "NoSell",
+    "NoRepair",
+    "Sabotage",
+    "Tote",
+    "DontUse2",
+    "DontUse3",
+    "Nuke",
+    "DontUse4",
+    "DontUse5",
+    "DontUse6",
+    "DontUse7",
+    "DontUse8",
+    "GuardArea",
+    "Heal",
+    "Damage",
+    "GRepair",
+    "NoDeploy",
+    "NoEnter",
+    "NoGRepair",
+    "TogglePower",
+    "NoTogglePower",
+    "EnterTunnel",
+    "NoEnterTunnel",
+    "IronCurtain",
+    "LightningStorm",
+    "ChronoSphere",
+    "ChronoWarp",
+    "ParaDrop",
+    "PlaceWaypoint",
+    "TibSunBug",
+    "EnterWaypointMode",
+    "FollowWaypoint",
+    "SelectWaypoint",
+    "LoopWaypointPath",
+    "DragWaypoint",
+    "AttackWaypoint",
+    "EnterWaypoint",
+    "PatrolWaypoint",
+    "AreaAttack",
+    "IvanBomb",
+    "NoIvanBomb",
+    "Detonate",
+    "DetonateAll",
+    "DisarmBomb",
+    "SelectNode",
+    "AttackSupport",
+    "PlaceBeacon",
+    "SelectBeacon",
+    "AttackMoveNav",
+    "AttackMoveTar",
+    "Demolish",
+    "AmerParaDrop",
+    "PsychicDominator",
+    "SpyPlane",
+    "GeneticConverter",
+    "ForceShield",
+    "NoForceShield",
+    "Airstrike",
+    "PsychicReveal",
+];
 
 /// AbstractType_From_Name40DCE0's compiled table at816EE0, read from Steam
 /// gamemd. Values are explicit: Temporal precedes RadSite in
@@ -213,6 +292,27 @@ const TECHNO_TYPE_CATEGORY_NAMES: [(&str, &str, TechnoTypeCategory); 11] = [
 ];
 
 impl IniSection {
+    /// ReadAction474EE0 copies31 native bytes and compares the entire trimmed
+    /// buffer case-insensitively against all73 names. Unknown names reset to
+    /// None0; they do not retain the previous action. SuperWeaponType ReadINI
+    /// calls it at6CEA9B with its current action as default (constructor0).
+    /// Missing physical keys retain the preceding pass; the physical loader
+    /// omits empty values. A supplied empty cache entry instead maps to0.
+    /// This projection keeps an absent constructor value as Option::None and
+    /// returns canonical names for actual reads, including action0's "None".
+    pub(crate) fn read_action_name(&self, key: &str) -> Option<&'static str> {
+        self.fold_rules_values(key, None, |_, raw| {
+            let name = strtrim_ascii(truncate_native_bytes(raw, 0x1f));
+            Some(
+                ACTION_NAMES
+                    .iter()
+                    .copied()
+                    .find(|candidate| candidate.eq_ignore_ascii_case(name))
+                    .unwrap_or(ACTION_NAMES[0]),
+            )
+        })
+    }
+
     /// `INIClass::ReadCategory @0x004749E0`: ReadString[0x20] defaults from
     /// the current integer's token, then Category_From_Name maps either name
     /// column. Missing/empty therefore retains current; unknown text returns
@@ -1596,6 +1696,51 @@ mod tests {
 
     fn sec(body: &str) -> IniFile {
         IniFile::from_str(body)
+    }
+
+    #[test]
+    fn action_reader_keeps_physical_defaults_but_resets_unknown_names() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        // ReadAction474EE0, called by SuperWeaponType ReadINI6CEA9B.
+        let mut layers = RulesLayerStack::new(sec(
+            "[SuperWeaponTypes]\n0=Strike\n[Strike]\nType=MultiMissile\nAction=nUkE\n",
+        ));
+        let action = |layers: &RulesLayerStack| {
+            let processed = layers.process_with_fixed_art(&IniFile::empty()).unwrap();
+            RuleSet::from_processed_rules(&processed)
+                .unwrap()
+                .super_weapon("Strike")
+                .unwrap()
+                .action
+                .clone()
+        };
+        assert_eq!(action(&layers).as_deref(), Some("Nuke"));
+        layers.push(
+            RulesLayerKind::GameMode,
+            sec("[Strike]\nAction= ; physically omitted\nRechargeTime=2\n"),
+        );
+        assert_eq!(action(&layers).as_deref(), Some("Nuke"));
+        layers.push(
+            RulesLayerKind::Scenario,
+            sec("[Strike]\nAction=NotAnAction\n"),
+        );
+        assert_eq!(action(&layers).as_deref(), Some("None"));
+
+        // Whole-buffer names, no numeric, quote or comma aliases. ReadString's
+        // cut precedes trim, so text beyond byte31 cannot invalidate Nuke.
+        let ini = sec("[S]\nNumeric=20\nQuoted=\"Nuke\"\nList=Nuke,Attack\n");
+        let section = ini.section("S").unwrap();
+        assert_eq!(section.read_action_name("Numeric"), Some("None"));
+        assert_eq!(section.read_action_name("Quoted"), Some("None"));
+        assert_eq!(section.read_action_name("List"), Some("None"));
+        assert_eq!(section.read_action_name("Missing"), None);
+        let mut cache = IniSection::new("S".to_owned());
+        cache.set("Action", &format!("Nuke{}Attack", " ".repeat(27)));
+        assert_eq!(cache.read_action_name("Action"), Some("Nuke"));
+        cache.set("Action", "");
+        assert_eq!(cache.read_action_name("Action"), Some("None"));
     }
 
     #[test]

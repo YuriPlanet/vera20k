@@ -447,16 +447,18 @@ impl OwnerVisibility {
         if final_pass {
             state.leave();
         } else {
-            state.reveal();
+            state
+                .reveal(*ground & (GROUND_VISIBLE | GROUND_OPEN) == (GROUND_VISIBLE | GROUND_OPEN));
         }
         if projection != MapRevealProjection::Source {
             state.project_reveal(matches!(key, VisibilityCell::Real(_)));
         }
         let open = state.open();
-        if open {
+        // Cell487690 leaves12C untouched. Cell487630 only ORs18 when its
+        // resulting counter is nonpositive; the separate sight projection
+        // must neither clear retained ground bits nor add them early.
+        if !final_pass && state.counter() <= 0 {
             *ground |= GROUND_VISIBLE | GROUND_OPEN;
-        } else {
-            *ground &= !(GROUND_VISIBLE | GROUND_OPEN);
         }
         if let VisibilityCell::Real(index) = key {
             if projection != MapRevealProjection::Source {
@@ -1133,21 +1135,11 @@ impl FogState {
     ///   returns.
     ///
     /// No shroud counter, `Cell+0x140` bit or fog frame (`+0x121`) is
-    /// written. [`ShroudKnowledge::open`] stands for both ground bits, while
-    /// `MapClass::IsShrouded @ 0x00586360` reads `0x08` alone, so the explored
-    /// cell opens there too. A cell left with `0x08` but not `0x10` (one beside
-    /// an unallocated cell) then reads as open to `0x00487630`, which clears
-    /// its pending conceal where native sets `0x10` instead.
-    ///
-    /// RESIDUAL (#1117): the two bits are read from `ground_flags`, which the
-    /// gap, fire and some whole-map writers (`0x006FB170`, `0x006FB470`,
-    /// `0x004876F0`, `0x00577D90`, `0x00577AB0`) leave as they
-    /// were. A cell a hostile gap re-hid still reads explored: its reveal is
-    /// not fresh and, with its frame unchanged, sends no CellChangeNotify, and
-    /// as a neighbor it is skipped when its stale `0x10` is set. A cell those
-    /// writers opened through `open` alone reads unexplored and notifies again.
-    /// Effect: on a later whole-map reveal (a local defeat) those cells'
-    /// discovery, radar marks and stored edge frames differ from native.
+    /// written. [`ShroudKnowledge::open`] projects explored ground, as does
+    /// `MapClass::IsShrouded @ 0x00586360`, which reads `0x08` alone. A cell
+    /// beside an unallocated cell can retain `0x08` without `0x10`; the next
+    /// `CellClass::Reveal @ 0x00487630` tests those prior raw bits and completes
+    /// `0x18` while retaining pending concealment for the later sweep.
     ///
     /// Returns CellChangeNotify's arguments when the explored bit or the frame
     /// changed (`0x004AA264..0x004AA27C`).

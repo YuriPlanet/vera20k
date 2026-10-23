@@ -480,7 +480,9 @@ fn harvest_looking(
 /// the GOING-TO-IDLE state dispatches. Not an INI value.
 const NO_ORE_DELAY: i32 = 0x69;
 
-/// `vt+0x480(ArchiveTarget, 1)`: the class setter towards an archived cell.
+/// `vt+0x480(ArchiveTarget, 1)` (`0x0073E741`, `0x0073E8DF`): pass the
+/// retained pointer directly. Unlike an ore/departure coordinate, an archive
+/// must not perform a fresh Map lookup that restamps the shared Dummy cell.
 fn assign_archive_destination(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -489,8 +491,14 @@ fn assign_archive_destination(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
-    if let crate::sim::combat::TargetKind::Cell(x, y) = archive {
-        assign_miner_cell_destination(sim, rules, id, (x, y), overlay_registry, frame_effects);
+    if let Err(cause) = sim.assign_destination_represented(
+        id,
+        Some(archive.into()),
+        rules,
+        overlay_registry,
+        frame_effects,
+    ) {
+        log::warn!("Miner archive destination {id}: {cause}");
     }
 }
 
@@ -922,14 +930,10 @@ fn handle_going_to_idle(
 /// (`0x00703590`), as Mission_Harvest state 4 (`0x0073EF1F..`) and the
 /// stuck-harvester nudge (`0x0073690A..0x0073696D`) send a miner off its pad.
 ///
-/// RESIDUAL: native always calls the setter with `Map[cell]`; VERA skips it
-/// when NearbyLocation finds no Cell or one outside the path grid
-/// ([`assign_miner_cell_destination`]). On a miss FNPC answers the zeroed
-/// (0,0) (`0x00ABD480`), outside the map diamond, so `Get_CellClass`
-/// (`0x005657A0`) hands back the shared dummy cell (`0x00ABDC50`) and Unit
-/// `Set_Destination` (`0x00741970`) makes it the NavCom with Move queued.
-/// Trigger: no unoccupied passable same-zone Cell within the search's ring
-/// cap (`0x0056DCEF`) of the refinery's centre. Frequency: none seen.
+/// A failed search still returns packed CellStruct::Empty (0,0), not NULL.
+/// Both callers freshly look up that cell (`0x0073EF5A`, `0x00736965`) and
+/// call the setter even when it is the shared Dummy. Mission selection stays
+/// with the caller: Harvest queues Guard; the AI nudge queues Move.
 fn drive_off_refinery(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -938,12 +942,11 @@ fn drive_off_refinery(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
-    if let Some(exit) = sim
+    let exit = sim
         .techno_nearby_location(id, Some(refinery), rules)
-        .and_then(|(x, y)| Some((u16::try_from(x).ok()?, u16::try_from(y).ok()?)))
-    {
-        assign_miner_cell_destination(sim, rules, id, exit, overlay_registry, frame_effects);
-    }
+        .map(|(x, y)| (x as u16, y as u16))
+        .unwrap_or((0, 0));
+    assign_miner_cell_destination(sim, rules, id, exit, overlay_registry, frame_effects);
 }
 
 /// `Queue_Mission(Guard, 0)` from inside the Harvest handler (preamble and
@@ -1232,11 +1235,13 @@ fn dock_zone_reachable(
         .unwrap_or(true)
 }
 
-/// A miner's `vt+0x480(cell, 1)` through the class setter: Search_For_Tiberium
-/// (`0x004DD086`) and Mission_Harvest state 4's `Set_Destination`. For a Unit
+/// A freshly looked-up miner cell through `vt+0x480(cell, 1)`:
+/// Search_For_Tiberium (`0x004DD07E..0x004DD086`), Mission_Harvest state 4
+/// (`0x0073EF5A..0x0073EF62`) and the AI nudge. For a Unit
 /// that is `0x741970`, which returns on an unchanged NavCom and whose
 /// Teleporter arm gives a Chrono Miner out of radio contact a Drive. The
-/// setter is void; a cell outside the path grid is not ordered.
+/// setter is void; Map lookup can return the shared Dummy outside the path
+/// grid. It precedes even the setter's unchanged-pointer early return.
 pub(crate) fn assign_miner_cell_destination(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1245,11 +1250,8 @@ pub(crate) fn assign_miner_cell_destination(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
-    let Some(grid) = sim.path_grid() else {
-        return;
-    };
-    if target.0 >= grid.width() || target.1 >= grid.height() {
-        return;
+    if let Some(terrain) = sim.resolved_terrain.as_ref() {
+        terrain.native_cell_identity((target.0 as i16, target.1 as i16));
     }
     if let Err(cause) = sim.assign_destination_represented(
         entity_id,

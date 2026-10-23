@@ -2,6 +2,8 @@
 //! The saved UnitUnlimboControls continuation executes nine producer Unload
 //! leaves, two shared Door completion callers and two miner primary controls.
 //! UnitAI, AStar setup and subsequent harvesting are separate boundaries.
+//! The stock transport-order regression below also joins paid production,
+//! local Strip publication, UnitAI, movement, clearance and real boarding.
 
 use super::{ObjectAiCtx, RuleSet, Simulation, mission_unload};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -1487,5 +1489,256 @@ fn a_chrono_miner_leaves_the_war_factory_on_the_bay_track() {
             crate::sim::movement::locomotor::MovementLayer::Ground
         ) != Some(factory),
         "out of the bay at ({rx}, {ry})"
+    );
+}
+
+#[test]
+fn a_factory_product_reconnects_to_its_ordered_transport_after_clearance() {
+    use crate::sim::combat::TargetKind;
+    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::mission::MissionType;
+    use crate::sim::world::world_orders::{EntryBaseAction, EntryClickAction};
+    use crate::sim::world::{FrameEffects, TickLane};
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let mut sim = Simulation::with_seed(0x0073_A981);
+    // The graphical match loader enables this movement mode too.
+    sim.batch_path_searches();
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    sim.session.game_options_mut_for_test().short_game = false;
+    let owner = sim.intern("Americans");
+    let side = rules.country_side_index("Americans").unwrap().0;
+    let mut house = HouseState::new(owner, side, Some(owner), true, 50_000, 10);
+    house.project_country_mults(&rules, &sim.interner);
+    sim.houses.register(house);
+    let rival = sim.intern("Russians");
+    sim.houses
+        .register(HouseState::new(rival, 1, Some(rival), false, 0, 10));
+    sim.session.set_current_house_for_test(Some(owner));
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    for (kind, x, y) in [
+        ("GACNST", 10, 14),
+        ("GAPOWR", 16, 12),
+        ("GAPOWR", 20, 12),
+        ("GAPILE", 10, 22),
+        ("GAREFN", 14, 22),
+    ] {
+        sim.spawn_object(kind, "Americans", x, y, 0, &rules)
+            .unwrap();
+    }
+    let factory = sim
+        .spawn_object("GAWEAP", "Americans", 20, 20, 0, &rules)
+        .unwrap();
+    sim.spawn_object("NAPOWR", "Russians", 14, 30, 0, &rules)
+        .unwrap();
+    let transport = sim
+        .spawn_object("LCRF", "Americans", 30, 21, 0, &rules)
+        .unwrap();
+    let product_type = sim.interner.get("MTNK").unwrap();
+    // Confirm the stock world actually batches searches; this does not
+    // identify which Foot supplied the work or compare route timing.
+    let saw_batch_search = std::cell::Cell::new(false);
+    let frame = |sim: &mut Simulation, command: Option<Command>| {
+        let mut commands = sim.take_due_commands();
+        if let Some(command) = command {
+            commands.push(CommandEnvelope::new(owner, sim.session.tick() + 1, command));
+        }
+        // Headless advance_tick has no local sidebar and intentionally emits
+        // no mobile PLACE. Supply the real Strip owner through its frame seam.
+        let visits = sim.production.factories().strip_visits_for_test(owner);
+        let output = sim
+            .advance_app_frame(
+                &commands,
+                &rules,
+                Some(rules.overlay_registry()),
+                33,
+                TickLane::Ordinary,
+                FrameEffects::default().with_production_strip(&visits, &|_| {}),
+            )
+            .expect("ordinary local production frame");
+        assert!(output.tick.frame_committed);
+        if sim
+            .path_batch_stats()
+            .is_some_and(|stats| stats.searched > 0)
+        {
+            saw_batch_search.set(true);
+        }
+    };
+    frame(
+        &mut sim,
+        Some(Command::QueueProduction {
+            type_id: product_type,
+        }),
+    );
+    let bay_head = |sim: &Simulation, id| {
+        sim.substrate.entities.get(id).and_then(|unit| {
+            unit.locomotor
+                .as_ref()
+                .and_then(|loco| loco.selected_drive_runtime())
+                .and_then(|drive| drive.retained())
+                .filter(|drive| drive.track().turn_index() == 0x42)
+                .and_then(|drive| drive.head_to())
+        })
+    };
+    let mut product = None;
+    for _ in 0..4000 {
+        product = sim
+            .substrate
+            .entities
+            .values()
+            .find(|unit| {
+                unit.type_ref() == product_type
+                    && !unit.lifecycle.in_limbo()
+                    && unit.mission.current().known() == Some(MissionType::Move)
+                    && unit.mission.queued() == MissionId::NONE
+                    && unit.radio_contacts.slot(0) == Some(factory)
+                    && unit.tether.partner() == Some(factory)
+                    && bay_head(&sim, unit.stable_id()).is_some()
+            })
+            .map(|unit| unit.stable_id());
+        if product.is_some() {
+            break;
+        }
+        frame(&mut sim, None);
+    }
+    let product = product.expect("paid production reaches the factory exit track");
+    assert!(sim.houses.get(&owner).unwrap().economy().spent_credits() > 0);
+    let enter = Command::MegaMission {
+        entity_id: product,
+        mission: MissionType::Enter,
+        target: None,
+        destination: Some(TargetKind::Entity(transport)),
+    };
+    assert_eq!(
+        sim.entry_click_action(product, transport, EntryBaseAction::Select, &rules),
+        Some(EntryClickAction::Enter)
+    );
+    let head = bay_head(&sim, product).unwrap();
+    frame(&mut sim, Some(enter.clone()));
+    let unit = sim.substrate.entities.get(product).unwrap();
+    assert_eq!(
+        unit.navigation.nav_list(),
+        &[NavTargetRef::Object { id: transport }]
+    );
+    assert_eq!(bay_head(&sim, product), Some(head));
+    for _ in 0..20 {
+        frame(&mut sim, None);
+        if sim
+            .substrate
+            .entities
+            .get(product)
+            .unwrap()
+            .mission
+            .current()
+            .known()
+            == Some(MissionType::Enter)
+        {
+            break;
+        }
+    }
+    let unit = sim.substrate.entities.get(product).unwrap();
+    assert_eq!(unit.mission.current().known(), Some(MissionType::Enter));
+    assert_eq!(bay_head(&sim, product), Some(head));
+    // The second ordinary Enter is processed with committed Enter, so the
+    // factory's NavList deferral no longer applies (Unit742D7D).
+    frame(&mut sim, Some(enter));
+    let unit = sim.substrate.entities.get(product).unwrap();
+    assert_eq!(
+        unit.navigation.nav_com(),
+        Some(NavTargetRef::Object { id: transport })
+    );
+    assert_eq!(unit.radio_contacts.slot(0), Some(factory));
+    assert_eq!(unit.tether.partner(), Some(factory));
+    assert_eq!(bay_head(&sim, product), Some(head));
+
+    radio::take_transmit_log();
+    let mut clearance = false;
+    for _ in 0..600 {
+        frame(&mut sim, None);
+        let sends = radio::take_transmit_log();
+        if let Some(cleared) = sends.iter().position(|send| {
+            send.sender_sid == product
+                && send.target_sid == factory
+                && send.msg == 8
+                && send.reply == Some(0x17)
+        }) {
+            clearance = true;
+            assert!(
+                saw_batch_search.get(),
+                "the enabled path batch must perform a search in this world"
+            );
+            assert!(
+                sends[cleared + 1..]
+                    .iter()
+                    .any(|send| send.sender_sid == product
+                        && send.target_sid == transport
+                        && send.msg == 0x0e),
+                "Unit73A981 sends CanDock to the retained foreign NavCom after clearance: {sends:?}"
+            );
+            let unit = sim.substrate.entities.get(product).unwrap();
+            assert_eq!(unit.radio_contacts.slot(0), Some(transport));
+            assert_eq!(
+                sim.substrate
+                    .entities
+                    .get(transport)
+                    .unwrap()
+                    .radio_contacts
+                    .slot(0),
+                Some(product)
+            );
+            assert!(
+                !sim.substrate
+                    .entities
+                    .get(factory)
+                    .unwrap()
+                    .radio_contacts
+                    .contains(product)
+            );
+            assert!(!unit.radio_contacts.contains(factory));
+            assert_ne!(unit.tether.partner(), Some(factory));
+            break;
+        }
+    }
+    assert!(clearance, "the ordered product clears the factory");
+    for _ in 0..600 {
+        frame(&mut sim, None);
+        if sim
+            .substrate
+            .entities
+            .get(product)
+            .unwrap()
+            .passenger_role
+            .inside_transport()
+            .is_some()
+        {
+            break;
+        }
+    }
+    let unit = sim.substrate.entities.get(product).unwrap();
+    assert_eq!(
+        unit.passenger_role.inside_transport(),
+        Some((transport, false))
+    );
+    assert!(
+        unit.lifecycle.in_limbo(),
+        "the original paid product boards without a third order"
+    );
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(transport)
+            .unwrap()
+            .passenger_role
+            .cargo()
+            .unwrap()
+            .passengers(),
+        &[product]
     );
 }

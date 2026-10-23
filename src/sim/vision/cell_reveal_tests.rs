@@ -7,6 +7,55 @@ use crate::util::save_codec;
 use serde_json::{Value, json};
 
 #[test]
+fn counter_updates_preserve_ground_bits_independently_of_projected_sight() {
+    // Display::MapCell4A9CA0 calls Cell487630/487690 before its edge queries.
+    // Positive reveal counters and final releases preserve a prior partial12C.
+    let viewer = crate::sim::intern::test_intern("Player");
+    let mut results = Vec::new();
+    for (final_pass, counter, open) in [
+        (false, 7, false),
+        (true, 2, false),
+        (false, 7, true),
+        (true, 2, true),
+    ] {
+        let mut fog = FogState::new(12, 12);
+        let mut vis = OwnerVisibility::new(12, 12);
+        let index = vis.index(9, 10).unwrap();
+        seed_cell(
+            &mut vis,
+            VisibilityCell::Real(index),
+            &json!({
+                "counter": counter, "gap": 0, "alt": 8,
+                "flags": 2, "cache": [127, 126],
+            }),
+        );
+        vis.shroud_knowledge[index].set_open_for_test(open);
+        fog.by_owner.insert(viewer, vis);
+        let notify = fog
+            .reveal_map_cell(
+                viewer,
+                (9, 10),
+                final_pass,
+                None,
+                MapRevealProjection::Transient,
+            )
+            .unwrap();
+        let vis = &fog.by_owner[&viewer];
+        results.push((
+            vis.shroud_knowledge[index].counter(),
+            vis.ground_flags[index],
+            vis.shroud_knowledge[index].open(),
+        ));
+        assert_eq!(vis.map_cell_edge_cache[index].frames, [-2, -2]);
+        assert!(!notify.fresh);
+    }
+    assert_eq!(
+        results,
+        [(6, 8, false), (0, 8, false), (6, 8, true), (0, 8, true)]
+    );
+}
+
+#[test]
 fn grow_shroud_captures_frontier_before_neighbors_lose_open_and_preserves_counters() {
     let viewer = crate::sim::intern::test_intern("Player");
     let other = crate::sim::intern::test_intern("Other");
@@ -709,4 +758,37 @@ fn uninitialized_edge_cache_fields_move_the_state_hash() {
     framed.map_cell_edge_cache[5].frames[0] = 3;
     assert_ne!(hash(&open), hash(&base));
     assert_ne!(hash(&framed), hash(&base));
+}
+
+#[test]
+fn explored_frontier_keeps_pending_conceal_until_the_sweep() {
+    // Cell4876F0 -> GAP6FB170 cell write -> RevealCell4AA050 ->
+    // MapCell4A9CA0/Cell487630 -> Map578100 pending-cell sweep.
+    let viewer = crate::sim::intern::test_intern("Player");
+    for frontier in [false, true] {
+        let mut fog = FogState::new(12, 12);
+        fog.reveal_map_cell(viewer, (9, 10), false, None, MapRevealProjection::Fire);
+        let index = fog.by_owner[&viewer].index(9, 10).unwrap();
+        fog.by_owner.get_mut(&viewer).unwrap().add_gap_cell(index);
+        fog.reveal_cell(viewer, (9, 10), None);
+        if !frontier {
+            fog.reveal_map_cell(viewer, (9, 10), false, None, MapRevealProjection::Fire);
+        }
+        let before = &fog.by_owner[&viewer];
+        assert_eq!(before.ground_flags[index], if frontier { 8 } else { 24 });
+        assert_eq!(before.shroud_knowledge[index].counter(), 1);
+        assert_eq!(before.shroud_knowledge[index].gap_counter(), 1);
+        assert!(before.shroud_knowledge[index].open());
+        assert!(before.shroud_knowledge[index].pending());
+        fog.reveal_map_cell(viewer, (9, 10), false, None, MapRevealProjection::Transient);
+        let after = &fog.by_owner[&viewer];
+        assert_eq!(after.shroud_knowledge[index].counter(), -1);
+        assert_eq!(after.ground_flags[index], 24);
+        assert_eq!(after.shroud_knowledge[index].pending(), frontier);
+        fog.sweep_pending_map_cell(viewer, (9, 10), None);
+        let swept = &fog.by_owner[&viewer];
+        assert!(!swept.shroud_knowledge[index].pending());
+        assert_eq!(swept.shroud_knowledge[index].counter(), -1);
+        assert_eq!(swept.ground_flags[index], if frontier { 0 } else { 24 });
+    }
 }

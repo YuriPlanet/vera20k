@@ -330,6 +330,17 @@ impl SoundBoundary for FrameClientBoundary<'_> {
     fn delivered(&self) -> usize {
         self.delivered.get()
     }
+
+    fn update_looping_sound(
+        &self,
+        sim: &Simulation,
+        owner: u64,
+        world: crate::sim::anim_class::AnimWorldCoord,
+    ) {
+        if let Some((sfx, inputs)) = self.playback.borrow_mut().as_mut() {
+            inputs.update_looping_sound(sfx, sim, self.local_owner, owner, world);
+        }
+    }
 }
 
 #[cfg(test)]

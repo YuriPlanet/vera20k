@@ -550,18 +550,13 @@ impl Simulation {
             owner: entity.owner(),
             victim_type: entity.type_ref(),
         };
-        Self::dispatch_under_attack_events(
-            &self.interner,
-            &self.session,
-            &self.house_alliances,
-            &mut self.sound_events,
-            &self.houses,
-            &[event],
-            rules,
-        );
         if notify_house {
-            self.raise_house_attacked_tags(event.owner, rules, registry, effects);
+            self.notify_house_under_attack(event, rules, registry, effects);
+            return;
         }
+        // Temporal71B04C/71B05F's harvester branch calls radar/EVA directly, with
+        // no House Tags, and also completes before returning to the warp.
+        self.submit_under_attack_warning(event, rules, effects);
     }
 
     /// `TemporalClass::CanWarpTarget @ 0x0071AE50`: a `Warpable=` type, not
@@ -745,10 +740,16 @@ impl Simulation {
                     UninitContext::new(rules, registry).with_effects(effects),
                 );
             }
+            // TemporalClass::Update (0x0071A9AC..0x0071A9DC) scalar-deletes Cargo
+            // before the parent's kill/UnInit. This private erase runs inside
+            // the admitted live object pass, whose active GameState is 1.
+            self.scalar_delete_building_cargo(
+                target,
+                UninitContext::new(rules, registry).with_effects(effects),
+                1,
+            );
             // 0x0071A9EE..0x0071AA15: a Tank Bunker releases its occupant
-            // (`0x004593A0`). Residual: native71A9AC..71A9DC scalar-deletes
-            // true Cargo before this release when ScenarioInit is zero;
-            // the existing Cargo retirement still runs in UnInit below.
+            // (`0x004593A0`) after the synchronous Cargo destructors.
             crate::sim::docking::bunker_link::release_sell_destroy(self, target, rules, effects);
         }
         // 0x0071AA90: the erased object's own bunker link (`+0x2E4`) names a
@@ -1435,3 +1436,7 @@ fn location_coord(entity: &GameEntity) -> AnimWorldCoord {
 #[cfg(test)]
 #[path = "temporal_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "temporal_cargo_disposal_tests.rs"]
+mod cargo_disposal_tests;

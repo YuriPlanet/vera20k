@@ -393,11 +393,12 @@ fn tally<T>(
 }
 
 /// `FootClass::IsRecruitable @ 0x004DA230` for house `owner`: owned by it
-/// (`+0x21C`), out of limbo (`+0x81`; VERA's dead await their removal, so
-/// they count as in limbo, see `GameEntity::is_ai_alive`), in no team
+/// (`+0x21C`), out of limbo (`+0x81`), in no team
 /// (`+0x5D4`), on a mission (`Get_Mission`) MissionControl lets recruit
 /// (`0x005B36E0`: none, -1, is recruitable), and its first scenario
 /// recruit byte (`+0x421`) set.
+/// Native has no Health gate: retained Infantry corpses still cover needs.
+/// `is_active` only excludes VERA's records awaiting native-equivalent removal.
 fn is_recruitable(
     sim: &Simulation,
     rules: &RuleSet,
@@ -405,7 +406,7 @@ fn is_recruitable(
     owner: InternedId,
 ) -> bool {
     entity.owner() == owner
-        && entity.is_ai_alive()
+        && entity.is_active()
         && !entity.lifecycle.in_limbo()
         && sim
             .team_script_vm

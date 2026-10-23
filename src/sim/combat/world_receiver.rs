@@ -1806,33 +1806,35 @@ pub(crate) fn commit_entities(
                     "damaged infantry {target_id} did not scatter from its source: {cause}"
                 );
             }
-            if let Some(target) = world.substrate.entities.get_mut(target_id) {
-                if let Some(obj) = world.interner.object_type(target.type_ref(), rules) {
-                    infantry::apply_fear_from_damage(
-                        obj,
-                        target,
-                        damage,
-                        attacker_coord.is_some(),
-                        rules.general.condition_red,
-                        rules.general.condition_yellow,
-                    );
-                }
-                // UnitClass (`0x007384B9..0x00738530`): the `Harvester=` ping,
-                // with or without a source. A building's ping is its
-                // retaliation block's, below.
-                if target.category() != EntityCategory::Structure
-                    && world
-                        .interner
-                        .object_type(target.type_ref(), rules)
-                        .is_some_and(|obj| obj.harvester)
-                {
-                    under_attack_events.push(UnderAttackEvent {
-                        rx: target.position.rx(),
-                        ry: target.position.ry(),
-                        owner: target.owner(),
-                        victim_type: target.type_ref(),
-                    });
-                }
+            if let Some(target) = world.substrate.entities.get_mut(target_id)
+                && let Some(obj) = world.interner.object_type(target.type_ref(), rules)
+            {
+                infantry::apply_fear_from_damage(
+                    obj,
+                    target,
+                    damage,
+                    attacker_coord.is_some(),
+                    rules.general.condition_red,
+                    rules.general.condition_yellow,
+                );
+            }
+            // UnitClass7384B9..738530 submits the Harvester warning before
+            // its AI response/return, with or without a source. Keep this at
+            // the Unit receiver; Infantry/Aircraft do not own this class tail.
+            if let Some(target) = world.substrate.entities.get(target_id)
+                && target.category() == EntityCategory::Unit
+                && world
+                    .interner
+                    .object_type(target.type_ref(), rules)
+                    .is_some_and(|obj| obj.harvester)
+            {
+                let event = UnderAttackEvent {
+                    rx: target.position.rx(),
+                    ry: target.position.ry(),
+                    owner: target.owner(),
+                    victim_type: target.type_ref(),
+                };
+                world.submit_under_attack_warning(event, rules, run.effects());
             }
         }
         // UnitClass's computer-owner response after its ping
@@ -1863,16 +1865,17 @@ pub(crate) fn commit_entities(
                     target.category() == EntityCategory::Structure
                         && target.lifecycle.object_alive()
                 })
-            && let Some(ping) = world.building_hit_response(
+        {
+            // Building44297B completes NotifyUnderAttack inline, including
+            // its warning before House callbacks; do not queue it again.
+            let _ = world.building_hit_response(
                 target_id,
                 (attacker_id != RAD_NO_ATTACKER).then_some(attacker_id),
                 receive_state,
                 rules,
                 overlay_registry,
                 run.effects(),
-            )
-        {
-            under_attack_events.push(ping);
+            );
         }
         finish_building_art_receiver(world, target_id, receive_state, building_entry_frame, rules);
     }
