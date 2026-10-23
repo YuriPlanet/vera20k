@@ -10,7 +10,6 @@
 //! - Part of the app layer — may depend on everything.
 //! - Read-only access to sim state via `AppState`.
 
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use crate::app::AppState;
@@ -252,14 +251,11 @@ pub(crate) fn build_bridge_shadow_instances_inner(
             let live = live_grid?.cell(cell.rx, cell.ry);
             let overlay = live.overlay_id?;
             let name = overlay_names.get(&overlay)?;
-            is_high_bridge_body_identity(overlay, name).then_some((
-                cell,
-                overlay,
-                Cow::Borrowed(name.as_str()),
-                u16::from(live.overlay_data),
-                live.overlay_data,
-                None,
-            ))
+            if !is_high_bridge_body_identity(overlay, name) {
+                return None;
+            }
+            let sprite = atlas.shadow_entry(name, u16::from(live.overlay_data))?;
+            Some((cell, overlay, sprite, live.overlay_data, None))
         })
         .collect();
     // Wall damage owns its current identity/data in OverlayGrid. The published
@@ -288,7 +284,7 @@ pub(crate) fn build_bridge_shadow_instances_inner(
         };
         // Native47F5DA tests Crate before IsRubble. A crate uses its own
         // image, independently of any recorded BuildingType.
-        if flags.is_rubble && !flags.crate_type {
+        let (sprite, proxy) = if flags.is_rubble && !flags.crate_type {
             let Some(type_id) = live_cell.and_then(|cell| cell.rubble_building_type) else {
                 continue;
             };
@@ -304,37 +300,39 @@ pub(crate) fn build_bridge_shadow_instances_inner(
             let Some(proxy) = atlas.shadow_entry(name, u16::from(frame)) else {
                 continue;
             };
-            cells.push((
-                cell,
-                overlay,
-                Cow::Owned(crate::render::overlay_atlas::rubble_image_name(&art.shp)),
+            let Some(sprite) = atlas.shadow_entry(
+                &crate::render::overlay_atlas::rubble_image_name(&art.shp),
                 art.shadow_frame,
-                frame,
-                Some(proxy),
-            ));
-        } else if flags.wall || flags.crate_type {
-            cells.push((
-                cell,
-                overlay,
-                Cow::Borrowed(name.as_str()),
+            ) else {
+                continue;
+            };
+            (sprite, Some(proxy))
+        } else {
+            // Original Tactical6D70BC..6D719F and Cell47F641..47F649
+            // admit every ordinary overlay by its actual shadow frame,
+            // without a Wall/Crate/IsARock predicate.
+            let Some(sprite) = atlas.shadow_entry(
+                name,
                 // BOTH drawing47F5E2 and outer bounds47FE3F force0 for
                 // Crate, despite live Mark dataFF; this same selected entry
                 // supplies the crop for viewport admission and drawing.
                 u16::from(if flags.crate_type { 0 } else { frame }),
-                frame,
-                None,
-            ));
-        }
+            ) else {
+                continue;
+            };
+            (sprite, None)
+        };
+        // Empty resource shadow frames do not enter the diagonal sort. The
+        // atlas owns this immutable stencil; retain its entry rather than a
+        // second name/frame lookup or a per-frame image copy.
+        cells.push((cell, overlay, sprite, frame, proxy));
     }
     // The native shadow sweep descends diagonals, advancing X within each.
     // Neither elevation, atlas frame nor the compatibility depth scalar owns
     // the order in which an overlap reads the previous color and Z stores.
-    cells.sort_unstable_by_key(|(cell, _, _, _, _, _)| cell_sweep_key(cell.rx, cell.ry));
-    for (cell, overlay, name, frame, raw_state, proxy) in cells {
+    cells.sort_unstable_by_key(|(cell, _, _, _, _)| cell_sweep_key(cell.rx, cell.ry));
+    for (cell, overlay, spr, raw_state, proxy) in cells {
         let (rx, ry) = (cell.rx, cell.ry);
-        let Some(spr) = atlas.shadow_entry(&name, frame) else {
-            continue;
-        };
         let (mut sx, mut sy) = terrain::iso_to_screen(rx, ry, cell.level);
         sy += cell_overlay_y_offset(overlay, cell.bridge_facts.raw_flags, raw_state);
         if cell.bridge_facts.raw_flags & crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF != 0 {
@@ -558,22 +556,23 @@ mod tests {
     }
 
     #[test]
-    fn live_walls_and_high_bridges_share_native_shadow_sweep_order() {
+    fn live_overlays_and_high_bridges_share_native_shadow_sweep_order() {
         use crate::map::overlay::OverlayEntry;
         use crate::render::overlay_atlas::OverlaySpriteEntry;
         use crate::rules::{ini_parser::IniFile, overlay_types::OverlayTypeRegistry};
-        struct Atlas(std::cell::RefCell<Vec<(String, u16)>>);
+        struct Atlas(BTreeMap<u16, OverlaySpriteEntry>);
         impl BridgeAtlasLookup for Atlas {
             fn body_entry(&self, _: &str, _: u16) -> Option<&OverlaySpriteEntry> {
                 None
             }
-            fn shadow_entry(&self, name: &str, frame: u16) -> Option<&OverlaySpriteEntry> {
-                self.0.borrow_mut().push((name.into(), frame));
-                None
+            fn shadow_entry(&self, _: &str, frame: u16) -> Option<&OverlaySpriteEntry> {
+                self.0.get(&frame)
             }
         }
         let registry = OverlayTypeRegistry::from_ini(
-            &IniFile::from_str("[OverlayTypes]\n0=WALL\n1=OTHER\n[WALL]\nWall=yes\n"),
+            &IniFile::from_str(
+                "[OverlayTypes]\n0=WALL\n1=OTHER\n[WALL]\nWall=yes\n[OTHER]\nWall=no\n",
+            ),
             None,
         );
         let terrain = crate::map::resolved_terrain::test_grid(
@@ -586,23 +585,43 @@ mod tests {
         high.overlay_id = Some(0x18);
         high.overlay_data = 9;
         let mut entries = Vec::new();
-        for (rx, ry, live_id, frame) in [
-            (4, 4, Some(0), 36),
-            (5, 6, Some(0), 20),
-            (6, 6, None, 0),
-            (7, 6, Some(1), 5),
+        for (rx, ry, published_id, live_id, frame) in [
+            (4, 4, 0, Some(0), 36),
+            (5, 6, 0, Some(0), 20),
+            (6, 6, 0, None, 0),
+            (7, 6, 0, Some(1), 5),
+            (7, 7, 1, Some(1), 5),
         ] {
             entries.push(OverlayEntry {
                 rx,
                 ry,
-                overlay_id: 0,
+                overlay_id: published_id,
                 frame: 5,
             });
             let cell = grid.cell_mut_for_test(rx, ry);
             cell.overlay_id = live_id;
             cell.overlay_data = frame;
         }
-        let atlas = Atlas(Default::default());
+        let atlas = Atlas(
+            [5, 9, 20, 36]
+                .into_iter()
+                .map(|frame| {
+                    (
+                        frame,
+                        OverlaySpriteEntry {
+                            uv_origin: [f32::from(frame), 0.0],
+                            uv_size: [1.0; 2],
+                            pixel_size: [1.0; 2],
+                            offset_x: 0.0,
+                            offset_y: 0.0,
+                            draw_point_offset: [0; 2],
+                            extended: false,
+                        },
+                    )
+                })
+                .collect(),
+        );
+        let mut instances = Vec::new();
         build_bridge_shadow_instances_inner(
             &terrain,
             &atlas,
@@ -621,18 +640,18 @@ mod tests {
             -1000.0,
             4000.0,
             4000.0,
-            &mut Vec::new(),
+            &mut instances,
         );
-        // Original Tactical traversal descends diagonals. A Wall cannot be
-        // appended after the high-bridge batch; live damage overrides cached5,
-        // while erased/replaced slots must not query any stale Wall artwork.
+        // Original Tactical traversal descends diagonals across every type.
+        // Tags observe actual submissions, not the cache lookup order. Live
+        // damage overrides cached5; erased/replaced anchors emit no stale
+        // WALL artwork and the published OTHER emits its own ordinary shadow.
         assert_eq!(
-            *atlas.0.borrow(),
-            vec![
-                ("WALL".into(), 20),
-                ("BRIDGE1".into(), 9),
-                ("WALL".into(), 36),
-            ]
+            instances
+                .iter()
+                .map(|sprite| sprite.uv_origin[0])
+                .collect::<Vec<_>>(),
+            [5.0, 20.0, 9.0, 36.0],
         );
     }
 

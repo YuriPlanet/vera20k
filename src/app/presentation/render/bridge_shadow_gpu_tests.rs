@@ -222,6 +222,132 @@ fn retail_wall_shadow_atlas_covers_physical_material_domains() {
     );
 }
 
+#[test]
+#[ignore = "requires retail assets and GPU; generated rock shadow binding, live erase and restore"]
+fn retail_rock_shadow_admits_generated_live_and_restored_overlay() {
+    use crate::map::overlay::{OverlayDataPack, OverlayEntry};
+    use crate::sim::snapshot::GameSnapshot;
+    use crate::sim::world::Simulation;
+
+    let mut fixture = RetailBridgeFixture::load(native_bridge_packet());
+    fixture.names = crate::render::overlay_assets::render_overlay_names(&fixture.registry);
+    let id = fixture.registry.id_for_name("TROCK05").unwrap();
+    let flags = fixture.registry.flags(id).unwrap();
+    assert!(!flags.wall && !flags.crate_type && !flags.is_rubble);
+    let shp = crate::assets::shp_file::ShpFile::from_bytes(
+        fixture.assets.get_ref("TROCK05.TEM").unwrap(),
+    )
+    .unwrap();
+    assert_eq!(shp.frames.len(), 2);
+    let shadow = &shp.frames[1];
+    assert_eq!(
+        [
+            shadow.frame_x,
+            shadow.frame_y,
+            shadow.frame_width,
+            shadow.frame_height
+        ],
+        [34, 46, 30, 11]
+    );
+    assert_eq!(
+        shadow.pixels.iter().filter(|&&index| index != 0).count(),
+        67
+    );
+
+    let gpu = Gpu::new();
+    let batch = BatchRenderer::new_with_device(
+        &gpu.device,
+        &gpu.queue,
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+    );
+    let atlas = fixture.atlas(&gpu, &batch);
+    assert_eq!(
+        atlas
+            .shadow_entry("TROCK05", 0)
+            .expect("ordinary rock shadow frame1")
+            .pixel_size,
+        [30.0, 11.0]
+    );
+    assert!(
+        atlas.body_entry("TROCK05", 0).is_none(),
+        "OverlayAtlas still owns the body"
+    );
+    assert!(
+        atlas.shadow_entry("TIB01", 0).is_none(),
+        "empty physical shadow frames stay absent"
+    );
+
+    let entry = OverlayEntry {
+        rx: 4,
+        ry: 4,
+        overlay_id: id,
+        frame: 0,
+    };
+    let mut terrain = test_grid(8, 8, test_flat_cell);
+    let grid = crate::sim::overlay_grid::OverlayGrid::from_generated_overlays(
+        std::slice::from_ref(&entry),
+        &OverlayDataPack::from_cells([(4, 4, 0)]),
+        &mut terrain,
+        &fixture.registry,
+    );
+    let mut sim = Simulation::new();
+    sim.install_resolved_terrain_for_new_map(terrain.clone());
+    sim.install_overlay_grid_for_load(grid);
+    let point = crate::map::terrain::iso_to_screen(4, 4, 0);
+    let build = |sim: &Simulation, atlas: &BridgeAtlas| {
+        let mut instances = Vec::new();
+        build_bridge_shadow_instances_inner(
+            sim.resolved_terrain().unwrap(),
+            atlas,
+            &fixture.names,
+            std::slice::from_ref(&entry),
+            sim.overlay_grid(),
+            Some(&fixture.registry),
+            None,
+            -100.0,
+            1000.0,
+            point.0 - 64.0,
+            point.1 - 64.0,
+            128.0,
+            128.0,
+            &mut instances,
+        );
+        instances
+    };
+    let before = build(&sim, &atlas);
+    assert_eq!(before.len(), 1);
+    assert_eq!(before[0].size, [30.0, 11.0]);
+    assert_eq!(before[0].z_adjust, -2.0);
+    assert_eq!(
+        before[0].z_gradient,
+        crate::render::native_z::ZGradient::Flat as u32
+    );
+    let saved = GameSnapshot::save(&sim, 0, 0, "generated rock", 0);
+    assert_eq!(
+        sim.overlay_grid_mut_for_test()
+            .as_mut()
+            .unwrap()
+            .clear_overlay(4, 4),
+        Some(id)
+    );
+    assert!(
+        build(&sim, &atlas).is_empty(),
+        "live erasure defeats the stale published anchor"
+    );
+    let mut restored = GameSnapshot::load(&saved).unwrap().sim;
+    restored.restore_after_snapshot_load().unwrap();
+    restored.rebuild_caches_after_load(terrain, Default::default(), &fixture.rules);
+    restored
+        .restore_map_authority_after_snapshot_load(&fixture.rules, &fixture.registry, None)
+        .unwrap();
+    let restored_atlas = fixture.atlas(&gpu, &batch);
+    let after = build(&restored, &restored_atlas);
+    assert_eq!(after.len(), 1);
+    assert_eq!(after[0].position, before[0].position);
+    assert_eq!(after[0].size, before[0].size);
+    assert_eq!(after[0].z_adjust, before[0].z_adjust);
+}
+
 struct RetailBridgeFixture {
     assets: AssetManager,
     theater: crate::map::theater::TheaterData,

@@ -28,24 +28,18 @@ pub struct BridgeAtlasKey {
 
 pub struct BridgeAtlas {
     pub texture: BatchTexture,
-    entries: HashMap<BridgeAtlasKey, OverlaySpriteEntry>,
+    entries: HashMap<String, HashMap<(BridgeFrameKind, u16), OverlaySpriteEntry>>,
 }
 
 impl BridgeAtlas {
     pub fn body_entry(&self, name: &str, frame: u16) -> Option<&OverlaySpriteEntry> {
-        self.entries.get(&BridgeAtlasKey {
-            name: name.to_string(),
-            frame,
-            kind: BridgeFrameKind::Body,
-        })
+        self.entries.get(name)?.get(&(BridgeFrameKind::Body, frame))
     }
 
     pub fn shadow_entry(&self, name: &str, frame: u16) -> Option<&OverlaySpriteEntry> {
-        self.entries.get(&BridgeAtlasKey {
-            name: name.to_string(),
-            frame,
-            kind: BridgeFrameKind::Shadow,
-        })
+        self.entries
+            .get(name)?
+            .get(&(BridgeFrameKind::Shadow, frame))
     }
 }
 
@@ -92,12 +86,12 @@ pub fn is_high_bridge_body_identity(overlay_id: u8, name: &str) -> bool {
     is_high_bridge_index(overlay_id) || is_high_bridge_body_name(name)
 }
 
-/// Every identity the bridge body and shadow builders may draw: each named
-/// type that routes as a high-bridge body. Bridge repair writes 0x18/0x19/
+/// Body frames for each type that routes as a high bridge. Shadow material
+/// for every overlay type is bound separately below. Repair writes 0x18/0x19/
 /// 0xED/0xEE from the ramp family and direction (`sim::bridge_state::
 /// ramp_repair`), and a crate image may name one, so map-authored cells alone
 /// do not bound the set; gamemd loads every OverlayType's image.
-fn needed_bridge_sprite_keys(overlay_names: &BTreeMap<u8, String>) -> HashSet<BridgeAtlasKey> {
+fn needed_bridge_body_keys(overlay_names: &BTreeMap<u8, String>) -> HashSet<BridgeAtlasKey> {
     let names: HashSet<&String> = overlay_names
         .iter()
         .filter(|&(&overlay_id, name)| is_high_bridge_body_identity(overlay_id, name))
@@ -110,11 +104,6 @@ fn needed_bridge_sprite_keys(overlay_names: &BTreeMap<u8, String>) -> HashSet<Br
                 name: name.clone(),
                 frame,
                 kind: BridgeFrameKind::Body,
-            });
-            needed.insert(BridgeAtlasKey {
-                name: name.clone(),
-                frame,
-                kind: BridgeFrameKind::Shadow,
             });
         }
     }
@@ -136,13 +125,11 @@ pub fn build_bridge_atlas(
     art_registry: &ArtRegistry,
     rubble_arts: &[crate::rules::building_rubble::RubbleArt],
 ) -> Option<BridgeAtlas> {
-    let needed = needed_bridge_sprite_keys(overlay_names);
-    let mut names: HashSet<&String> = needed.iter().map(|key| &key.name).collect();
-    names.extend(overlay_names.values().filter(|name| {
-        overlay_registry
-            .flags_by_name(name)
-            .is_some_and(|flags| flags.wall || flags.is_rubble || flags.crate_type)
-    }));
+    let needed = needed_bridge_body_keys(overlay_names);
+    // Tactical CellContent6D6D10 at6D70BC..6D719F admits every stored
+    // overlay with a nonempty shadow rect, including ordinary rocks. Original
+    // GetShadowRect47FDE0 / DrawOverlayShadow47F510 have no Wall filter.
+    let names: HashSet<_> = overlay_names.values().collect();
     let mut rendered = Vec::new();
     for name in names {
         let flags = overlay_registry
@@ -170,25 +157,23 @@ pub fn build_bridge_atlas(
             .cloned()
             .collect();
         // Cell47F5E2 and outer bounds47FE3F force Crate data0, even though
-        // Mark5FD105 writes FF. Walls retain raw state + SHP count/2.
+        // Mark5FD105 writes FF. Every other type retains raw state + count/2.
         // IsRubble needs this overlay-image rectangle for the outer47FDE0
         // gate, before the building image supplies its stencil.
         // DamageLevels does not bound that material domain.
         // Native body+shadow execution: concrete_wall_render.json.
         // Original callers/raster: bridge_shadow_render.py --crate.
-        if flags.wall || flags.is_rubble || flags.crate_type {
-            let frame_count = if flags.crate_type {
-                1
-            } else {
-                (shp.frames.len() - shp.frames.len() / 2).min(256)
-            };
-            for frame in 0..frame_count {
-                keys.insert(BridgeAtlasKey {
-                    name: name.clone(),
-                    frame: frame as u16,
-                    kind: BridgeFrameKind::Shadow,
-                });
-            }
+        let frame_count = if flags.crate_type {
+            1
+        } else {
+            (shp.frames.len() - shp.frames.len() / 2).min(256)
+        };
+        for frame in 0..frame_count {
+            keys.insert(BridgeAtlasKey {
+                name: name.clone(),
+                frame: frame as u16,
+                kind: BridgeFrameKind::Shadow,
+            });
         }
         for key in keys {
             if let Some(sprite) = render_bridge_sprite(&shp, palette, &key, &flags) {
@@ -401,8 +386,9 @@ fn pack_bridge_sprites(
 
     let mut rgba: Vec<u8> = vec![0u8; (atlas_width * atlas_height * 4) as usize];
     let mut source_indices = vec![0u8; (atlas_width * atlas_height) as usize];
-    let mut entries: HashMap<BridgeAtlasKey, OverlaySpriteEntry> =
-        HashMap::with_capacity(placements.len());
+    // Borrow the name during per-cell lookup; the ordinary sweep also visits
+    // resource cells whose physical shadow frames are empty.
+    let mut entries = HashMap::<_, HashMap<_, _>>::new();
     let aw: f32 = atlas_width as f32;
     let ah: f32 = atlas_height as f32;
 
@@ -421,8 +407,8 @@ fn pack_bridge_sprites(
                     .copy_from_slice(&spr.source_indices[src_start / 4..src_end / 4]);
             }
         }
-        entries.insert(
-            spr.key.clone(),
+        entries.entry(spr.key.name.clone()).or_default().insert(
+            (spr.key.kind, spr.key.frame),
             OverlaySpriteEntry {
                 uv_origin: [px as f32 / aw, py as f32 / ah],
                 uv_size: [w as f32 / aw, h as f32 / ah],
@@ -473,21 +459,20 @@ mod tests {
         }
         let registry = OverlayTypeRegistry::from_ini(&IniFile::from_str(&rules_text), None);
 
-        let keys = needed_bridge_sprite_keys(&crate::render::overlay_assets::render_overlay_names(
+        let keys = needed_bridge_body_keys(&crate::render::overlay_assets::render_overlay_names(
             &registry,
         ));
 
         let names = ["HIGHANCHOR", "BRIDGE2", "BRIDGE1", "BRIDGEB1", "BRIDGEB2"];
-        assert_eq!(keys.len(), names.len() * 36);
+        assert_eq!(keys.len(), names.len() * 18);
+        assert!(keys.iter().all(|key| key.kind == BridgeFrameKind::Body));
         for name in names {
-            for frame in 0..18 {
-                for kind in [BridgeFrameKind::Body, BridgeFrameKind::Shadow] {
-                    assert!(keys.contains(&BridgeAtlasKey {
-                        name: name.to_string(),
-                        frame,
-                        kind,
-                    }));
-                }
+            for frame in [0, 17] {
+                assert!(keys.contains(&BridgeAtlasKey {
+                    name: name.to_string(),
+                    frame,
+                    kind: BridgeFrameKind::Body,
+                }));
             }
         }
     }
