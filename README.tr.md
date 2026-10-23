@@ -50,6 +50,22 @@ Windows, macOS veya Linux yükleyicisini
 aldığınız Yuri's Revenge'i bulur ve VERA20K'yi yeni bir klasöre kurar. Modlar ve yeni içerikler de
 oraya gidecek; böylece oyunun kendi dosyaları hiç değiştirilmez.
 
+## Ayarlar
+
+Ses ve kontroller için **Options**, VERA'ya özgü özellikler için **Vera Options** menüsünü kullanın.
+Oyuncu tercihleri, klavye kısayolları ve lobi seçimleri `VERA.INI` dosyasına kaydedilir:
+
+- **Windows yükleyicisi:** `vera20k.exe` ile aynı klasörde.
+- **macOS:** `~/Library/Application Support/VERA20k/VERA.INI`.
+- **Linux:** `~/.local/share/VERA20k/VERA.INI` veya XDG veri klasörünüzde.
+
+`config.toml` oyun klasörünü belirler ve farklı bir ayar klasörü seçilmesine olanak tanır.
+
+`VERA.INI` yoksa VERA dosyayı oluşturur ve mevcut tercihleri bir kez içe aktarır.
+Eski ayarlar yoksa dosya başlangıçta boştur; ayarlar kaydedilene kadar VERA yerleşik varsayılanları
+kullanır. Orijinal `RA2MD.INI` ve `KeyboardMD.ini` dosyaları yalnızca içe aktarma için okunur,
+asla üzerlerine yazılmaz.
+
 ## Mimari
 
 Motorun üç ana bölümü vardır:
@@ -105,9 +121,13 @@ ile oyun testleri kullanarak kontrol ediyor. Ajanlar [AGENTS.md](AGENTS.md) dosy
 VERA20K varsayılan olarak orijinal oyun gibi oynanır. Ares gibi modlardan gelen eklentiler dahil
 her yeni özellik, şu yollardan biriyle açılana kadar kapalı kalmalıdır:
 
+- **Bir VERA oyuncu seçeneği**: **Options → Vera Options** altında bulunur ve `VERA.INI` dosyasının `[VERA]` bölümüne kaydedilir.
 - **Bir derleme seçeneği**: örneğin desteklenen [Ares eklentileri](docs/ares.md) için `--features ares`.
 - **Bir oyun içi lobi seçeneği**: her maç için seçilir.
 - **Bir INI anahtarı**: bir mod ya da harita tarafından ayarlanır.
+
+`VERA.INI` oyuncu tercihleri içindir. Birim, silah ve diğer oynanış kuralları modun
+`RULESMD.INI` ve `ARTMD.INI` gibi kural, grafik, oyun modu veya harita INI dosyalarına aittir.
 
 Tek oyunculu YR çatışmalarını veya senaryolarını bir CnCNet istemcisinden başlatmak için
 [çevrimdışı istemci kurulumuna](integrations/cncnet/README.md) bakın.
@@ -117,6 +137,9 @@ Tek oyunculu YR çatışmalarını veya senaryolarını bir CnCNet istemcisinden
 Yardımlarınızı bekliyoruz. Kod yazabilir, motoru yeniden düzenleyebilir, oyunu test edebilir,
 fikirlerinizi paylaşabilir veya orijinal oyunla yan yana oynayıp neyin yanlış hissettirdiğini
 bize anlatabilirsiniz. Bir PR açın, gerisini biz hallederiz.
+
+Her yeni seçenek için dosyayı, bölümü, anahtarı, varsayılan değeri ve etkisini belgeleyin.
+
 Tartışmalar [Discord](https://discord.gg/kmjRUn5m5F) üzerinden ve QQ grubunda (1097193563) yürür.
 
 ## Destek

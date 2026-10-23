@@ -51,6 +51,23 @@ de [Steam](https://store.steampowered.com/app/2229850/) o de la
 e instala VERA20K en una carpeta nueva. Ahí irán también los mods y el contenido nuevo, así que los
 archivos del juego nunca se modifican.
 
+## Ajustes
+
+Usa **Options** para el sonido y los controles, y **Vera Options** para las funciones específicas
+de VERA. Las preferencias del jugador, los atajos de teclado y las opciones del lobby se guardan
+en `VERA.INI`:
+
+- **Instalador de Windows:** junto a `vera20k.exe`.
+- **macOS:** `~/Library/Application Support/VERA20k/VERA.INI`.
+- **Linux:** `~/.local/share/VERA20k/VERA.INI`, o en tu carpeta de datos XDG.
+
+`config.toml` define la carpeta del juego y permite seleccionar otra carpeta de ajustes.
+
+Si falta `VERA.INI`, VERA crea el archivo e importa las preferencias existentes una sola vez.
+Si no hay ajustes anteriores, el archivo empieza vacío y VERA usa los valores predeterminados
+integrados hasta que se guardan los ajustes. Los archivos originales `RA2MD.INI` y `KeyboardMD.ini`
+solo se leen para la importación y nunca se sobrescriben.
+
 ## Arquitectura
 
 El motor tiene tres partes principales:
@@ -109,10 +126,14 @@ De forma predeterminada, VERA20K se comporta igual que el juego original. Toda f
 incluidas las extensiones de mods como Ares, debe permanecer desactivada hasta que se active con una
 de estas opciones:
 
+- **Una opción de VERA para el jugador**, en **Options → Vera Options**, guardada en la sección `[VERA]` de `VERA.INI`.
 - **Una opción de compilación**, como `--features ares` para las [extensiones de Ares](docs/ares.md)
   compatibles.
 - **Una opción del lobby del juego**, elegida para cada partida.
 - **Una clave INI**, definida por un mod o un mapa.
+
+`VERA.INI` es para las preferencias del jugador. Las reglas de unidades, armas y otras mecánicas
+pertenecen a los INI de reglas, arte, modo o mapa del mod, como `RULESMD.INI` y `ARTMD.INI`.
 
 Para iniciar escaramuzas o campañas de YR para un jugador desde un cliente de CnCNet, consulta la
 [configuración del cliente sin conexión](integrations/cncnet/README.md).
@@ -122,6 +143,10 @@ Para iniciar escaramuzas o campañas de YR para un jugador desde un cliente de C
 Toda ayuda es bienvenida. Puedes escribir código, refactorizar el motor, probar el juego, compartir
 ideas o jugarlo junto al original y decirnos qué no se siente como debería. Abre un PR y nosotros
 nos encargamos a partir de ahí.
+
+Para cada opción nueva, documenta el archivo, la sección, la clave, el valor predeterminado y su
+efecto.
+
 Hablamos en [Discord](https://discord.gg/kmjRUn5m5F) y en el grupo de QQ (1097193563).
 
 ## Apoya el proyecto

@@ -47,6 +47,21 @@ Download the installer for Windows, macOS or Linux from the
 [releases page](https://github.com/YuriPlanet/vera20k/releases). It finds your copy of
 Yuri's Revenge and sets up VERA20K in a new folder.
 
+## Settings
+
+Use **Options** for sound and controls, and **Vera Options** for VERA-specific features.
+Player preferences, keyboard shortcuts and lobby choices are saved in `VERA.INI`:
+
+- **Windows installer:** beside `vera20k.exe`.
+- **macOS:** `~/Library/Application Support/VERA20k/VERA.INI`.
+- **Linux:** `~/.local/share/VERA20k/VERA.INI`, or your XDG data folder.
+
+`config.toml` sets the game folder and can select another settings folder.
+
+If `VERA.INI` is missing, VERA creates it and imports existing preferences once. With no
+old settings, it starts empty and VERA uses built-in defaults until settings are saved.
+The original `RA2MD.INI` and `KeyboardMD.ini` are only read for import, never overwritten.
+
 ## Architecture
 
 The engine has three main parts:
@@ -89,11 +104,6 @@ cp config.toml.example config.toml
 cargo run --release --bin vera20k
 ```
 
-Options, keyboard shortcuts and lobby preferences are saved in `VERA.INI` in VERA20K's
-own settings folder. Existing settings are imported on first launch; your original
-game files are left untouched. `config.toml` selects the game folder and optional
-settings folder.
-
 ## How we work
 
 Most of the code is written by AI coding agents. They use Ghidra to study the original
@@ -105,9 +115,13 @@ and playtesting. Agents follow [AGENTS.md](AGENTS.md).
 VERA20K plays like the original game by default. Every new feature, including extensions from
 mods such as Ares, must stay off until it is turned on with one of:
 
+- **A VERA player option**, in **Options → Vera Options**, saved under `[VERA]` in `VERA.INI`.
 - **A build option**, such as `--features ares` for the supported [Ares extensions](docs/ares.md).
 - **An in-game lobby option**, chosen for each match.
 - **An INI key**, set by a mod or a map.
+
+`VERA.INI` is for player preferences. Unit, weapon and other gameplay rules belong in
+the mod's rules, art, mode or map INIs, such as `RULESMD.INI` and `ARTMD.INI`.
 
 To launch single-player YR skirmishes or campaigns from a CnCNet client, see the
 [offline client setup](integrations/cncnet/README.md).
@@ -122,6 +136,8 @@ move VERA20K forward.
 
 Maintainers will help with review, integration and merging. You'll keep full credit for your
 contribution.
+
+For each new option, document its file, section, key, default and effect.
 
 Discussion is on [Discord](https://discord.gg/kmjRUn5m5F) and in the QQ group (1097193563).
 
