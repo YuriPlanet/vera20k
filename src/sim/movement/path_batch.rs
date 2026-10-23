@@ -42,8 +42,9 @@
 //! re-paths a frame later. Hover's own timer-gated Find_Path is not batched.
 //! The batch draws no random numbers; later draws follow the changed
 //! movement. Each search reads only that frame-start world, so no result
-//! depends on the thread count. Simulations start without batching; real
-//! matches and sim-bench turn it on ([`Simulation::batch_path_searches`]).
+//! depends on the thread count. Simulations and app world handoffs use native
+//! search order. Tooling can opt in ([`Simulation::batch_path_searches`]);
+//! sim-bench does so unless its serial-paths option is selected.
 //!
 //! A request that heads for the Foot's own cell never waits, even when the
 //! pass did not answer the Foot or the Foot searched already that frame: it
@@ -503,6 +504,16 @@ fn heads_for_own_cell(foot: &GameEntity, request: WaitingRequest) -> bool {
 }
 
 impl Simulation {
+    /// Run Foot path searches at their own actor turn, in native order.
+    /// Drive Process_Movement4B281C..4B28A3, Walk75AF2A..75AFC5 and
+    /// Ship6A1E6C..6A1EF3 arm +640 and call Find_Path synchronously when due.
+    /// Retire optional batch work without changing the actors' destinations,
+    /// paths or timers. App world handoffs also use this for legacy saves;
+    /// the serialized optional payload remains readable by the save codec.
+    pub fn use_native_path_search_order(&mut self) {
+        self.path_batch = None;
+    }
+
     /// Batch the path searches from now on; see the module docs.
     pub fn batch_path_searches(&mut self) {
         self.path_batch.get_or_insert_with(PathBatch::default);

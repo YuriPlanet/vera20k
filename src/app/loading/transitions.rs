@@ -371,6 +371,21 @@ pub(crate) fn finish_fresh_scenario_read(state: &mut AppState, mut result: init:
     }
 }
 
+/// Install the incoming world at the successful fresh-scenario handoff.
+pub(crate) fn adopt_fresh_simulation(
+    mut simulation: crate::sim::world::Simulation,
+    resources: crate::sim::runtime::SimResources,
+    process_main: &crate::sim::rng::MainRng,
+) -> crate::sim::runtime::SimRuntime {
+    simulation.install_fresh_process_main(process_main);
+    simulation.publish_scenario_started();
+    simulation.use_native_path_search_order();
+    crate::sim::runtime::SimRuntime {
+        simulation,
+        resources,
+    }
+}
+
 pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadResult) {
     crate::app::match_runtime::scenario_pause::reset_clock(state);
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
@@ -426,18 +441,16 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             .session
             .retake_mode_from_world(outgoing.simulation.session().game_mode());
     }
-    state.match_state.sim_runtime = incoming.map(|(mut simulation, rules)| {
-        simulation.install_fresh_process_main(&state.frontend.frontend_main_rng);
-        simulation.publish_scenario_started();
-        simulation.batch_path_searches();
-        crate::sim::runtime::SimRuntime {
+    state.match_state.sim_runtime = incoming.map(|(simulation, rules)| {
+        adopt_fresh_simulation(
             simulation,
-            resources: crate::sim::runtime::SimResources {
+            crate::sim::runtime::SimResources {
                 overlay_registry: result.scenario.overlay_registry,
                 terrain_template: result.scenario.resolved_terrain,
                 rules,
             },
-        }
+            &state.frontend.frontend_main_rng,
+        )
     });
     if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
         state

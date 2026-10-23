@@ -362,6 +362,10 @@ impl PreparedLoad {
         // Original successful LoadGame67E6C4 publishes A8ED5C=1 after the
         // fallible content/read tail. Failed preparation never changes it.
         self.simulation.publish_scenario_started();
+        // Legacy app saves can carry deferred searches. Native Drive4B28A3,
+        // Walk75AFC5 and Ship6A1EF3 search at the actor turn; retire the
+        // optional batch only when the incoming world actually commits.
+        self.simulation.use_native_path_search_order();
         (
             self.simulation,
             CommittedLoadPresentation {
@@ -882,6 +886,7 @@ mod tests {
 
     mod factory_restore_tests;
     mod infantry_death_restore_tests;
+    mod path_order_restore_tests;
     mod rule_cache_restore_tests;
     mod sidebar_order_restore_tests;
     mod sinking_waterline_restore_tests;
