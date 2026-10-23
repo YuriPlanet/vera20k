@@ -756,7 +756,7 @@ impl<'a> FactoryView<'a> {
             .and_then(|object| object.entity_id)
             .and_then(|id| sim.substrate.entities.get(id))
             .and_then(|entity| {
-                sim.object_type(entity.type_ref(), rules).map(|object| {
+                sim.entity_object_type(entity, rules).map(|object| {
                     time_to_build(&time_to_build_inputs(sim, rules, entity.owner(), object))
                 })
             })
@@ -1409,7 +1409,13 @@ impl FactoryRegistry {
             let rate = factory
                 .object
                 .as_ref()
-                .and_then(|object| sim.object_type(object.type_id, rules))
+                .and_then(|object| {
+                    sim.interner.object_type_in_category(
+                        object.type_id,
+                        factory.category.object_category(),
+                        rules,
+                    )
+                })
                 .map_or(1, |object| {
                     time_to_build(&time_to_build_inputs(sim, rules, owner, object))
                 });

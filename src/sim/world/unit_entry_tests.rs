@@ -423,6 +423,18 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
             input["ag"].as_bool().unwrap_or(true),
             flag("wall_weapon"),
         );
+        // The oracle installs each supplied blocker's concrete native class
+        // and type vtable. Keep its shared fields in that same registry.
+        let nodes = input["objects"].as_array().into_iter().flatten();
+        if nodes.clone().any(|node| {
+            node["motion"]["family"] == "walk"
+                || (node["motion"]["family"] == "jumpjet" && node["infantry"] == true)
+        }) {
+            extra.push_str("[InfantryTypes]\n2=BLOCKER\n");
+        }
+        if nodes.clone().any(|node| node["motion"]["family"] == "fly") {
+            extra.push_str("[AircraftTypes]\n1=BLOCKER\n");
+        }
         if input.get("wall").is_some() {
             extra.push_str(&format!("[O0]\nWall=yes\nCrushable={}\n", flag("wall")));
         }

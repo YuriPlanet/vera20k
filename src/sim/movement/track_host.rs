@@ -1372,7 +1372,11 @@ impl Simulation {
         let current = entity.mission.current().known();
         let effective = entity.mission.effective().known();
         let category = entity.category();
-        let unit_type = self.interner.object_type(entity.type_ref(), rules);
+        let unit_type = self.interner.object_type_in_category(
+            entity.type_ref(),
+            entity.category().into(),
+            rules,
+        );
         let miner = unit_type.is_some_and(|object| object.harvester || object.weeder);
         // Unit738A6E calls the existing IsArmed701120 owner only after the
         // Harvester/Weeder gates. Armed idle keeps TarCom and burst; the
@@ -1383,7 +1387,9 @@ impl Simulation {
                 .is_some_and(|object| crate::sim::combat::combat_weapon::is_armed(entity, object));
         let deploys_into = unit_type
             .and_then(|object| object.deploys_into.as_deref())
-            .and_then(|name| rules.object(name))
+            .and_then(|name| {
+                rules.object_in_category(crate::rules::object_type::ObjectCategory::Building, name)
+            })
             .is_some();
         // 0x00738A7C..0x00738AAF: an unarmed mission-only Unit (`+0x3D4`) of
         // a `Passengers=` type (`+0x5E0`) carrying a first passenger
@@ -1459,7 +1465,7 @@ impl Simulation {
                         .is_some_and(|building| {
                             building.category() == EntityCategory::Structure
                                 && self
-                                    .object_type(building.type_ref(), rules)
+                                    .entity_object_type(building, rules)
                                     .is_some_and(|object| object.bunker)
                         })
                         && self.substrate.occupancy.first_building_on_layer(
@@ -1547,15 +1553,13 @@ fn unit_idle_guard_pick(sim: &Simulation, id: u64, rules: &RuleSet) -> MissionTy
         .houses
         .get(&entity.owner())
         .is_some_and(|house| house.current_iq() >= rules.general.iq_guard_area)
-        || sim
-            .object_type(entity.type_ref(), rules)
-            .is_some_and(|object| {
-                crate::sim::combat::veterancy::has_weapon_ability(
-                    entity.veterancy.rank_kind(),
-                    object,
-                    crate::rules::object_type::Ability::GuardArea,
-                ) || object.default_to_guard_area
-            });
+        || sim.entity_object_type(entity, rules).is_some_and(|object| {
+            crate::sim::combat::veterancy::has_weapon_ability(
+                entity.veterancy.rank_kind(),
+                object,
+                crate::rules::object_type::Ability::GuardArea,
+            ) || object.default_to_guard_area
+        });
     if wide
         && sim.team_script_vm.team_for_member(id).is_none()
         && entity.slave.owner().is_none()
@@ -1619,7 +1623,7 @@ fn harvester_idle_selection(
             .get(&entity.owner())
             .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
     let weeder = sim
-        .object_type(entity.type_ref(), rules)
+        .entity_object_type(entity, rules)
         .is_some_and(|obj| !obj.harvester && obj.weeder);
     let wanted_land = if weeder {
         crate::rules::terrain_rules::LandType::Weeds

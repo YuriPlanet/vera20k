@@ -303,6 +303,17 @@ impl Simulation {
     ) -> Option<CommandRecord> {
         let selection =
             production::ProductionSelection::for_type(rules, self.object_type(type_id, rules)?)?;
+        self.encode_selected_production_record(command_owner, event, selection)
+    }
+
+    /// Typed callers retain Select6AAD00's existing RTTI/index/Naval fields.
+    /// The name-only encoder above deliberately keeps broad-name semantics.
+    pub fn encode_selected_production_record(
+        &self,
+        command_owner: InternedId,
+        event: ProductionEvent,
+        selection: production::ProductionSelection,
+    ) -> Option<CommandRecord> {
         let mut record = self.encode_header_event(command_owner, event.opcode())?;
         ProductionRecord {
             house_id: record.house_id(),
@@ -354,7 +365,11 @@ impl Simulation {
             .factories()
             .view(command_owner, category)?
             .complete_object()?;
-        let object = self.object_type(held.type_id, rules)?;
+        let object = self.interner.object_type_in_category(
+            held.type_id,
+            category.object_category(),
+            rules,
+        )?;
         if object.category == crate::rules::object_type::ObjectCategory::Building {
             return None;
         }

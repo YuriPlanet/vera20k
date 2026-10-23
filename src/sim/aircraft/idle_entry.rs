@@ -381,7 +381,7 @@ fn enter_idle_mode_with(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
-    let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
+    let Some(object) = sim.entity_object_type(entity, rules) else {
         return;
     };
     let landing = super::landing_base::landing_base(

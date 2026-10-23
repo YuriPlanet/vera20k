@@ -1349,7 +1349,9 @@ impl GameEntity {
         if self.category != EntityCategory::Aircraft {
             return;
         }
-        let Some(object) = rules.object(type_id) else {
+        let Some(object) =
+            rules.object_in_category(crate::rules::object_type::ObjectCategory::Aircraft, type_id)
+        else {
             return;
         };
         let camera =

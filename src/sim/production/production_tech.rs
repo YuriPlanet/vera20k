@@ -79,7 +79,7 @@ fn append_construction_options(
     {
         return;
     }
-    let Some(factory) = sim.object_type(building.type_ref(), rules) else {
+    let Some(factory) = sim.entity_object_type(building, rules) else {
         return;
     };
     let ids = match factory.factory_type() {

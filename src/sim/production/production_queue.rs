@@ -228,7 +228,11 @@ pub(in crate::sim) fn exit_produced_object(
     // Exit443C81 sets Techno+3D5 before RTTI, admission or Unlimbo.
     entity.in_playfield.enter();
     let product_type_id = entity.type_ref();
-    let Some(product_type) = sim.object_type(product_type_id, rules) else {
+    let product_category = entity.category();
+    let Some(product_type) =
+        sim.interner
+            .object_type_in_category(product_type_id, product_category.into(), rules)
+    else {
         return BuildingExit::Failed;
     };
     // The native RTTI6 jump-table arm delegates to the existing building
@@ -252,7 +256,7 @@ pub(in crate::sim) fn exit_produced_object(
             .entities
             .get(producer_id)
             .and_then(|producer| {
-                sim.object_type(producer.type_ref(), rules)
+                sim.entity_object_type(producer, rules)
                     .map(|object| (producer.owner(), object))
             })
     else {
@@ -546,7 +550,7 @@ fn exit_land(
     let coord = crate::sim::movement::building_exit_coordinate(
         crate::sim::movement::ground_pose::position_world_coord(&producer.position),
         sim.interner
-            .object_type(producer.type_ref(), rules)
+            .object_type_in_category(producer.type_ref(), producer.category().into(), rules)
             .expect("the producer has a type"),
         || {
             crate::sim::movement::ground_pose::object_get_coords(
@@ -648,7 +652,7 @@ fn exit_at_dock(
             sim,
             rules,
             producer_id,
-            product_type.id.as_str(),
+            product_type,
             overlay_registry,
             effects,
         );
@@ -711,7 +715,7 @@ fn exit_cloning_vat_copies(
     sim: &mut Simulation,
     rules: &RuleSet,
     producer_id: u64,
-    product_type_name: &str,
+    product_type: &crate::rules::object_type::ObjectType,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) {
@@ -720,7 +724,7 @@ fn exit_cloning_vat_copies(
     };
     let owner = producer.owner();
     let clones = sim
-        .object_type(producer.type_ref(), rules)
+        .entity_object_type(producer, rules)
         .is_some_and(|producer_type| {
             producer_type.factory_type()
                 == Some(crate::rules::object_type::FactoryType::InfantryType)
@@ -737,7 +741,7 @@ fn exit_cloning_vat_copies(
     for vat_id in vat_ids {
         let Some((vat_owner, is_cloning_vat)) =
             sim.substrate.entities.get(vat_id).and_then(|vat| {
-                let object = sim.object_type(vat.type_ref(), rules)?;
+                let object = sim.entity_object_type(vat, rules)?;
                 Some((vat.owner(), object.cloning))
             })
         else {
@@ -749,8 +753,8 @@ fn exit_cloning_vat_copies(
         let vat_owner_name = sim.interner.resolve(vat_owner).to_owned();
         // Create_Object takes only the vat's House (`0x00444A24..0x00444A2B`);
         // the new object waits in limbo for the vat's exit to place it.
-        let Some(clone_id) = sim.construct_object_limbo_at_height(
-            product_type_name,
+        let Some(clone_id) = sim.construct_resolved_object_limbo_at_height(
+            product_type,
             &vat_owner_name,
             0,
             0,
@@ -886,7 +890,7 @@ impl ExitProducer {
     fn of(sim: &Simulation, rules: &RuleSet, producer_id: u64) -> Option<Self> {
         let producer = sim.substrate.entities.get(producer_id)?;
         let house = producer.owner();
-        let object = sim.object_type(producer.type_ref(), rules);
+        let object = sim.entity_object_type(producer, rules);
         Some(Self {
             house,
             computer: sim.houses.get(&house).is_some_and(|house| {

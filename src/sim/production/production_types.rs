@@ -239,6 +239,17 @@ pub enum BuildQueueState {
 }
 
 impl ProductionCategory {
+    /// The type family retained by this Factory slot. Naval and BuildCat
+    /// still select independent slots within that family (House4FA350).
+    pub(crate) fn object_category(self) -> ObjectCategory {
+        match self {
+            Self::Building | Self::Defense => ObjectCategory::Building,
+            Self::Infantry => ObjectCategory::Infantry,
+            Self::Vehicle | Self::Ship => ObjectCategory::Vehicle,
+            Self::Aircraft => ObjectCategory::Aircraft,
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Building => "Building",
