@@ -28,7 +28,7 @@ use crate::sim::components::NavTargetRef;
 use crate::sim::mission::MissionType;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::edge_cell::Edge;
-use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::sim::world::{SimSoundEvent, Simulation, UninitContext};
 
 /// The distance at which Approach turns to Overfly (`0x00415700 CMP
 /// EBX,0x300`), in leptons.
@@ -149,9 +149,9 @@ fn head_for_opposite_edge(
 /// Approach then plays `SpyPlaneCamera=` at the plane (`VocClass::PlayAt @
 /// 0x007509E0`).
 ///
-/// `MapClass @ 0x00567DA0` (the fog border around the snapshot, radius
-/// `LastSightRange + 3`) is presentation: the shroud renderer rebuilds from
-/// the vision owner.
+/// Then Map567DA0 (4156D1/415854) stores ground edge frames around the
+/// current Location, using the live cached sight radius + 3. It runs even
+/// when UpdateReveal refuses the map contribution, before Approach's sound.
 fn snapshot(
     sim: &mut Simulation,
     id: u64,
@@ -163,6 +163,10 @@ fn snapshot(
         return;
     };
     sim.refresh_object_sight(id, rules, damage, frame_effects);
+    sim.refresh_object_sight_border(
+        id,
+        UninitContext::new(rules, None).with_effects(frame_effects),
+    );
     if sound
         && let Some(camera) = rules.general.spy_plane_camera.clone()
         && let Some(plane) = sim.substrate.entities.get(id)

@@ -478,8 +478,12 @@ fn fresh_campaign_constructs_registered_supers_without_supported_dispatch_bodies
         ["KnownDispatch", "UnknownDispatch", "UnreadType"]
     );
     assert!(rules.super_weapon("KnownDispatch").is_some());
-    assert!(rules.super_weapon("UnknownDispatch").is_none());
-    assert!(rules.super_weapon("UnreadType").is_none());
+    for name in ["UnknownDispatch", "UnreadType"] {
+        assert_eq!(
+            rules.super_weapon(name).unwrap().kind,
+            crate::rules::superweapon_type::SuperWeaponKind::NoEffect
+        );
+    }
     let roster = parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let (sim, projection) = ScenarioBootstrapRng::new(31)
         .into_fresh_staged_simulation(

@@ -1,0 +1,29 @@
+{
+  "controls": [
+    {
+      "first_change": false,
+      "owner": 0,
+      "runtime_game_mode": 5,
+      "second_change": false
+    },
+    {
+      "first_change": true,
+      "owner": 1,
+      "runtime_game_mode": 5,
+      "second_change": false
+    },
+    {
+      "first_change": false,
+      "owner": 3,
+      "runtime_game_mode": 5,
+      "second_change": true
+    },
+    {
+      "first_change": true,
+      "owner": 3,
+      "runtime_game_mode": 5,
+      "second_change": true
+    }
+  ],
+  "source": "unicorn/gamemd.exe"
+}

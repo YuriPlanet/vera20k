@@ -32,9 +32,9 @@ def lexical(raw, wanted):
     return out,lines
 
 class BulletReader(Reader):
-    def __init__(self,art,root=None,*,arena_size=0x400000):
+    def __init__(self,art,root=None,*,arena_size=0x400000,asset_names=None):
         self.reads=[]
-        super().__init__(root or assets_root(),art,arena_size=arena_size)
+        super().__init__(root or assets_root(),art,arena_size=arena_size,asset_names=asset_names)
         self.u.mem_write(0xa83c80,dwords(0x7eb6d4,self.alloc(4096),1024,1,0,10))
         scenario=self.alloc(0x7000)
         self.u.mem_write(0xa8b230,dwords(scenario))

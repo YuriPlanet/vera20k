@@ -167,6 +167,7 @@ pub(crate) fn super_weapon_ready_event(kind: SuperWeaponKind) -> Option<&'static
         SuperWeaponKind::LightningStorm => "EVA_LightningStormReady",
         SuperWeaponKind::ChronoSphere => "EVA_ChronosphereReady",
         SuperWeaponKind::ChronoWarp
+        | SuperWeaponKind::NoEffect
         | SuperWeaponKind::GenericWarhead
         | SuperWeaponKind::UnitDelivery => return None,
         SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => "EVA_ReinforcementsReady",
@@ -194,7 +195,12 @@ pub(crate) fn super_weapon_detected_event(
 ) -> Option<&'static str> {
     // Extension types have no stock construction announcement, even when a
     // mod places one in an early SuperWeaponTypes slot.
-    if !(0..12).contains(&kind.native_index()) {
+    // Native44693D dispatches by registry ordinal, including ctor Type=-1.
+    // GenericWarhead also uses a negative tag, so test extension identity.
+    if matches!(
+        kind,
+        SuperWeaponKind::GenericWarhead | SuperWeaponKind::UnitDelivery
+    ) {
         return None;
     }
     match list_index {

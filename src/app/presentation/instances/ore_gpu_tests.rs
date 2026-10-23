@@ -547,7 +547,6 @@ fn assert_retail_wall_profile_reaches_native_raster(
     )
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
-    scene.runtime.simulation.batch_target_scans();
     let owner = scene.sim().session().current_house().unwrap();
     let mut orders: Vec<_> = profile["commands"]
         .as_array()

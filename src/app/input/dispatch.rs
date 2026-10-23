@@ -3591,10 +3591,7 @@ fn deploy_key_commands(
     let first = selection.first().and_then(|&id| sim.entities().get(id));
     if let Some(building) = first.filter(|entity| {
         entity.category() == EntityCategory::Structure
-            && entity
-                .passenger_role
-                .cargo()
-                .is_some_and(|cargo| !cargo.is_empty())
+            && entity.passenger_role.occupants().count() > 0
     }) {
         return deploy_key_command(sim, rules, building.stable_id(), local_owner)
             .into_iter()
@@ -4343,7 +4340,9 @@ mod deploy_key_tests {
     }
 
     #[test]
-    fn the_deploy_key_issues_unload_for_a_loaded_bio_reactor() {
+    // Selection730AF0/730B28 reads Occupants, not the absorber's Cargo.
+    // Building CanDeploySlashUnload465D30 refuses the ordinary D walk.
+    fn the_deploy_key_does_nothing_for_a_loaded_bio_reactor() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[BuildingTypes]\n0=YAPOWR\n[YAPOWR]\nStrength=1000\n\
              InfantryAbsorb=yes\nPassengers=5\n",
@@ -4360,16 +4359,14 @@ mod deploy_key_tests {
             .unwrap()
             .passenger_role = PassengerRole::transport(cargo);
 
-        assert_eq!(
+        assert!(
             deploy_key_commands(
                 &sim,
                 Some(&rules),
                 &[reactor],
                 sim.session().current_house()
-            ),
-            [Command::UnloadPassengers {
-                transport_id: reactor
-            }]
+            )
+            .is_empty()
         );
     }
 
@@ -6410,3 +6407,7 @@ mod context_click_route_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "building_occupant_deploy_tests.rs"]
+mod building_occupant_deploy_tests;

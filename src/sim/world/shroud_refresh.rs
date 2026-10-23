@@ -1958,16 +1958,16 @@ impl Simulation {
         self.refresh_object_sight_border(id, context);
     }
 
-    /// Map567DA0's current-source border after Unlimbo6F6D61 or Unit
-    /// PerCell2 73AC7A..73ACAE. These parents reread XYZ and cached260
-    /// after the sight callbacks; the shared release/update pair does not
-    /// imply this suffix for its other callers.
+    /// Map567DA0's current-source border after Unlimbo6F6D61, Unit
+    /// PerCell2 73AC7A..73ACAE or Spy camera4156D1/415854. These parents
+    /// reread XYZ and cached260 after the sight callbacks. The shared
+    /// release/update pair does not imply this suffix for its other callers.
     pub(crate) fn refresh_object_sight_border(&mut self, id: u64, context: UninitContext<'_>) {
         self.refresh_object_sight_border_on(id, None, context);
     }
 
     /// [`Self::refresh_object_sight_border`] on `only_viewer`'s map, or else
-    /// on each map source `id`'s reveal writes: around its current XYZ, out
+    /// on each executing logical client's map: around its current XYZ, out
     /// to that map's cached radius (`+0x260`) + 3.
     fn refresh_object_sight_border_on(
         &mut self,
@@ -1987,15 +1987,20 @@ impl Simulation {
                 context.terrain().or(self.resolved_terrain.as_ref()),
             ),
         );
-        let viewers: std::sync::Arc<[_]> = match only_viewer {
-            Some(viewer) => std::sync::Arc::from([viewer]),
-            None => self.reveal_viewers.direct(
-                &self.fog,
-                self.house_alliances.as_map(),
-                entity.owner(),
-                &config,
-                &self.interner,
-            ),
+        let viewers = match only_viewer {
+            Some(viewer) => vec![viewer],
+            None => {
+                let projected = self.reveal_viewers.direct(
+                    &self.fog,
+                    self.house_alliances.as_map(),
+                    entity.owner(),
+                    &config,
+                    &self.interner,
+                );
+                //567DA0 has no RevealArea house gate: an enemy's source
+                //still refreshes the active client's existing ground edges.
+                self.sight_event_viewers(id, entity.owner(), &projected, true, false)
+            }
         };
         for &viewer in viewers.iter() {
             //The border reads this client's native +0x260, not a
@@ -2029,13 +2034,27 @@ impl Simulation {
         radius: i32,
         context: UninitContext<'_>,
     ) {
+        Self::refresh_sight_border_range(fog, resolved_terrain, viewer, origin, radius, 0, context);
+    }
+
+    /// Map567DA0's independent inner ring; Foot4DA77B uses this after its
+    /// periodic sight pair, while the other callers use the full disc above.
+    fn refresh_sight_border_range(
+        fog: &mut FogState,
+        resolved_terrain: &Option<ResolvedTerrainGrid>,
+        viewer: InternedId,
+        origin: (u16, u16, i32),
+        radius: i32,
+        inner: i32,
+        context: UninitContext<'_>,
+    ) {
         #[cfg(any(test, feature = "test-support"))]
         REVEAL_CALLS.with_borrow_mut(|trace| {
             if let Some(trace) = trace {
                 trace.border_scans.push((origin, radius));
             }
         });
-        let border = vision::sight_border_cells(origin, radius, 0);
+        let border = vision::sight_border_cells(origin, radius, inner);
         let cells = context
             .terrain()
             .or(resolved_terrain.as_ref())
@@ -2915,10 +2934,55 @@ impl Simulation {
         );
         let heights = self.sight_height_grid(&config);
         self.update_object_sight_for_viewers(stable_id, 0, &due, &config, Some(&heights), context);
-        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-            for viewer in due {
-                entity.sight_refresh_timers.reload(viewer, frame);
-            }
+        for viewer in due {
+            let Some(entity) = self.substrate.entities.get(stable_id) else {
+                break;
+            };
+            let terrain = context.terrain().or(self.resolved_terrain.as_ref());
+            // Foot4DA710..4DA77B rereads height, current XYZ and cached260
+            // after both sight callbacks, even if UpdateReveal refused sight.
+            let height = crate::sim::movement::air_movement::current_fly_height(entity, terrain);
+            let radius = self
+                .fog
+                .source_sight(stable_id, viewer)
+                .map_or(0, |source| source.radius);
+            let inner = if height == entity.sight_refresh_timers.last_height(viewer) {
+                radius.wrapping_sub(3)
+            } else {
+                0
+            };
+            let origin = (
+                entity.position.rx(),
+                entity.position.ry(),
+                crate::sim::movement::ground_pose::object_world_z_leptons(entity, terrain),
+            );
+            Self::refresh_sight_border_range(
+                &mut self.fog,
+                &self.resolved_terrain,
+                viewer,
+                origin,
+                radius.wrapping_add(3),
+                inner,
+                context,
+            );
+            let Some(entity) = self.substrate.entities.get(stable_id) else {
+                break;
+            };
+            //4DA784..4DA7AA samples relative height again after the border's
+            //canonical cell queries, stores264, then reloads the countdown.
+            let height = crate::sim::movement::air_movement::current_fly_height(
+                entity,
+                context.terrain().or(self.resolved_terrain.as_ref()),
+            );
+            let now = self.session.binary_frame();
+            let clocks = &mut self
+                .substrate
+                .entities
+                .get_mut(stable_id)
+                .unwrap()
+                .sight_refresh_timers;
+            clocks.set_last_height(viewer, height);
+            clocks.reload(viewer, now);
         }
     }
 }

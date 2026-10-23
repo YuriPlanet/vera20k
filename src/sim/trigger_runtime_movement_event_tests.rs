@@ -21,6 +21,276 @@ fn rng(sim: &Simulation) -> [String; 3] {
     ]
 }
 
+/// Infantry519B53 and519F44 independently raise Entered. Native519F71
+/// reads the entrant's owner after the second callback and Tag transfer.
+#[test]
+fn engineer_capture_uses_live_owner_after_both_entered_callbacks() {
+    use crate::map::entities::EntityCategory;
+    use crate::sim::command::Command;
+    use crate::sim::house_state::HouseState;
+    use crate::sim::world::{SimSoundEvent, TickLane};
+
+    let native =
+        crate::test_fixture::json("tools/spatial_oracle/engineer_capture_entered_owner.json");
+    assert_eq!(native["source"], "unicorn/gamemd.exe");
+    let controls = native["controls"].as_array().unwrap();
+    assert_eq!(controls.len(), 4);
+    for control in controls {
+        assert_eq!(control["runtime_game_mode"], 5);
+        let first_change = control["first_change"].as_bool().unwrap();
+        let second_change = control["second_change"].as_bool().unwrap();
+        let expected_index = usize::try_from(control["owner"].as_u64().unwrap()).unwrap();
+        let (mut sim, rules, registry, initial_houses) =
+            super::tests::event_ingress_fixture_with_rules(
+                "[BuildingTypes]\n1=DEPOT\n[DEPOT]\nStrength=500\nCost=800\n\
+                 Capturable=yes\nRepairable=yes\n",
+            );
+        let country2 = sim.interner.intern("Country2");
+        sim.houses
+            .get_mut(&initial_houses[2])
+            .unwrap()
+            .set_country_for_test(Some(country2));
+        let house3 = sim.interner.intern("House3");
+        let country3 = sim.interner.intern("Country3");
+        sim.houses
+            .register(HouseState::new(house3, 3, Some(country3), true, 0, 10));
+        let houses = [
+            initial_houses[0],
+            initial_houses[1],
+            initial_houses[2],
+            house3,
+        ];
+        for owner in houses {
+            sim.houses
+                .get_mut(&owner)
+                .unwrap()
+                .set_is_human_for_test(true);
+        }
+        sim.session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+        sim.session.game_options_mut_for_test().multi_engineer = false;
+        sim.session.game_options_mut_for_test().short_game = false;
+        // Keep all four participants alive through the ordinary House visits;
+        // the native continuation supplies the same live-House prior.
+        for (index, owner) in houses.into_iter().enumerate() {
+            let name = sim.interner.resolve(owner).to_owned();
+            sim.spawn_object("TAGUNIT", &name, 18 + index as u16, 17, 0, &rules)
+                .unwrap();
+        }
+        let source = if first_change { 7 } else { 0 };
+        let first_action = if first_change {
+            "36,0,7,0,0,0,0,A,"
+        } else {
+            ""
+        };
+        let second_action = if second_change {
+            "36,0,3,0,0,0,0,A,"
+        } else {
+            ""
+        };
+        install_event_ingress_map(
+            &mut sim,
+            &rules,
+            &format!(
+                "[Triggers]\nT0=Country0,T1,First,0,1,1,1,0\n\
+                 T1=Country{source},<none>,Second,0,1,1,1,0\n\
+                 CARRY=Country0,<none>,Carry,1,1,1,1,1\n\
+                 [Tags]\nENTRY=2,Entry,T0\nCARRYTAG=2,Carry,CARRY\n\
+                 [Events]\nT0=2,1,0,0,28,0,11\nT1=2,1,0,{source},27,0,11\n\
+                 CARRY=1,1,0,-1\n[Actions]\n\
+                 T0={},{first_action}28,0,11,0,0,0,0,A\n\
+                 T1={},{second_action}28,0,13,0,0,0,0,A\nCARRY=0\n",
+                1 + usize::from(first_change),
+                1 + usize::from(second_change)
+            ),
+        );
+        let building = sim
+            .spawn_object("DEPOT", "House2", 16, 16, 0, &rules)
+            .unwrap();
+        let engineer = sim
+            .spawn_object("ENGINEER", "House0", 12, 16, 0, &rules)
+            .unwrap();
+        let start = crate::sim::movement::ground_pose::position_world_xy(
+            &sim.substrate.entities.get(engineer).unwrap().position,
+        );
+        let depot_type = sim.interner.get("DEPOT").unwrap();
+        let engineer_type = sim.interner.get("ENGINEER").unwrap();
+        sim.attach_object_trigger_tag(building, Some("ENTRY"));
+        sim.attach_object_trigger_tag(engineer, Some("CARRYTAG"));
+        let (entry, _) = tag(&mut sim, "ENTRY");
+        let (carry, carry_trigger) = tag(&mut sim, "CARRYTAG");
+        let entry_triggers = sim.trigger_runtime.tag(entry).unwrap().triggers.clone();
+        let live_order: Vec<_> = entry_triggers
+            .iter()
+            .map(|&index| {
+                let trigger = sim.trigger_runtime.trigger(index).unwrap();
+                sim.trigger_runtime.definitions.trigger_types[trigger.type_index]
+                    .id
+                    .as_str()
+            })
+            .collect();
+        assert_eq!(live_order, ["T1", "T0"]);
+        assert!(!sim.trigger_runtime.trigger(carry_trigger).unwrap().enabled);
+        assert!(sim.apply_command(
+            "House0",
+            &Command::CaptureBuilding {
+                engineer_id: engineer,
+                target_building_id: building,
+            },
+            Some(&rules)
+        ));
+        let mut moved = false;
+        let mut arrivals = Vec::new();
+        let mut announcements = Vec::new();
+        for frame in 0..256 {
+            let trace_start = sim.trigger_runtime.dispatch_trace.len();
+            let output = sim
+                .advance_app_frame(
+                    &[],
+                    &rules,
+                    Some(&registry),
+                    67,
+                    TickLane::Ordinary,
+                    FrameEffects::default(),
+                )
+                .unwrap();
+            arrivals.extend(
+                sim.trigger_runtime.dispatch_trace[trace_start..]
+                    .iter()
+                    .filter(|&&(index, kind)| index == entry && kind == 1)
+                    .map(|_| frame),
+            );
+            announcements.extend(
+                output
+                    .sound_events
+                    .into_iter()
+                    .filter(|event| matches!(event, SimSoundEvent::BuildingCaptured { .. })),
+            );
+            if let Some(actor) = sim.substrate.entities.get(engineer) {
+                moved |=
+                    crate::sim::movement::ground_pose::position_world_xy(&actor.position) != start;
+            } else {
+                break;
+            }
+        }
+        assert!(moved, "the ordinary Walk route must move before arrival");
+        assert!(
+            sim.substrate.entities.get(engineer).is_none(),
+            "Engineer must retire"
+        );
+        assert!(!sim.logic_order().contains(&engineer));
+        assert_eq!(sim.substrate.entities.infantry_registry_len(), 0);
+        assert_eq!(arrivals.len(), 2);
+        assert_eq!(arrivals[0], arrivals[1]);
+        let expected_owner = houses[expected_index];
+        let target = sim.substrate.entities.get(building).unwrap();
+        assert_eq!(
+            target.owner(),
+            expected_owner,
+            "first={first_change}, second={second_change}"
+        );
+        assert_eq!(
+            target.capture_infantry_type_index.get(),
+            rules
+                .type_array_index(
+                    crate::rules::object_type::ObjectCategory::Infantry,
+                    "ENGINEER"
+                )
+                .unwrap()
+        );
+        assert_eq!(announcements.len(), 1);
+        let SimSoundEvent::BuildingCaptured {
+            old_owner,
+            new_owner,
+            tech_building,
+            radar,
+            ..
+        } = &announcements[0]
+        else {
+            unreachable!()
+        };
+        assert_eq!(
+            (*old_owner, *new_owner, *tech_building),
+            (houses[2], expected_owner, false)
+        );
+        let radar = radar.as_ref().unwrap();
+        assert_eq!((radar.rx, radar.ry), (16, 16));
+        let mut actions = Vec::new();
+        if first_change {
+            actions.push((36, 7));
+        }
+        actions.push((28, 11));
+        if second_change {
+            actions.push((36, 3));
+        }
+        actions.push((28, 13));
+        assert_eq!(sim.trigger_runtime.action_trace, actions);
+        for (index, owner) in houses.into_iter().enumerate() {
+            let house = sim.houses.get(&owner).unwrap();
+            assert_eq!(house.building_capture_notified(), index == 2);
+            let owns = i32::from(index == expected_index);
+            assert_eq!(
+                house
+                    .tracking()
+                    .owned_count(EntityCategory::Structure, depot_type),
+                owns
+            );
+            assert_eq!(
+                house
+                    .tracking()
+                    .active_count(EntityCategory::Structure, depot_type),
+                owns
+            );
+            assert_eq!(house.tracking().buildings(), owns);
+            assert_eq!(
+                house.base_projection().buildings(),
+                if owns == 1 { vec![building] } else { vec![] }
+            );
+            assert_eq!(
+                house
+                    .tracking()
+                    .owned_count(EntityCategory::Infantry, engineer_type),
+                0
+            );
+            assert_eq!(
+                house
+                    .tracking()
+                    .active_count(EntityCategory::Infantry, engineer_type),
+                0
+            );
+            assert_eq!(house.stats().buildings_lost(), u32::from(index == 2));
+            assert_eq!(
+                house.stats().buildings_killed(),
+                u32::from(index == expected_index)
+            );
+        }
+        assert_eq!(
+            sim.trigger_runtime
+                .attachments
+                .get(&TagAttachment::Object(building)),
+            Some(&carry)
+        );
+        //519F6C copies the attachment. Object5F3B80 removes the consumed
+        //Engineer's index without decrementing the retained Tag+2C count.
+        assert_eq!(sim.trigger_runtime.tag(carry).unwrap().refs, 2);
+        assert!(
+            !sim.trigger_runtime
+                .attachments
+                .contains_key(&TagAttachment::Object(engineer))
+        );
+        assert_eq!(sim.trigger_runtime.tag(entry).unwrap().refs, 0);
+        assert!(!sim.trigger_runtime.trigger(carry_trigger).unwrap().enabled);
+        for index in entry_triggers {
+            let trigger = sim.trigger_runtime.trigger(index).unwrap();
+            let typ = &sim.trigger_runtime.definitions.trigger_types[trigger.type_index];
+            let entered_index = typ.events.iter().position(|event| event.kind == 1).unwrap();
+            assert_eq!(trigger.completed & (1 << entered_index), 0);
+            let source = if typ.id == "T1" && first_change { 1 } else { 0 };
+            assert_eq!(trigger.retained_house, Some(houses[source]));
+        }
+    }
+}
+
 fn tag(sim: &mut Simulation, name: &str) -> (usize, usize) {
     let typ = sim.trigger_runtime.definitions.tag_type(name).unwrap();
     let tag = sim.shared_trigger_tag(typ);
@@ -568,8 +838,7 @@ fn an_occupier_garrisoning_a_building_raises_its_entered_by_event() {
             .get(building)
             .unwrap()
             .passenger_role
-            .cargo()
-            .unwrap()
+            .occupants()
             .count(),
         1
     );

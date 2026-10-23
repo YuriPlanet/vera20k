@@ -3,6 +3,63 @@
 use super::*;
 use crate::util::save_codec;
 
+#[test]
+fn airburst_retained_flag_matches_native_reads_and_registry_restore() {
+    let native = crate::test_fixture::json("tools/projectile_oracle/airburst_retained.json");
+    let initial = IniFile::from_str(
+        "[VehicleTypes]\n0=UNIT\n[UNIT]\nPrimary=GUN\n[GUN]\nProjectile=SHOT\n[SHOT]\nName=shot\n",
+    );
+    let processed = RulesLayerStack::new(initial).process().unwrap();
+    let (_, trace) = processed.into_ini_and_native_type_construction_trace();
+    let mut state = trace.into_registry_state_discarding_events();
+    for row in native["rows"].as_array().unwrap() {
+        let ini = IniFile::from_sections_for_test(row["sections"].as_object().unwrap().iter().map(
+            |(name, values)| {
+                let mut section = IniSection::new(name.clone());
+                for (key, value) in values.as_object().unwrap() {
+                    section.set(key, value.as_str().unwrap());
+                }
+                section
+            },
+        ));
+        let restored: NativeRulesRegistryState =
+            save_codec::deserialize(&save_codec::serialize(&state).unwrap()).unwrap();
+        let next = RulesLayerStack::new(ini)
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), restored)
+            .unwrap();
+        let rules = crate::rules::ruleset::RuleSet::from_processed_rules(&next).unwrap();
+        assert_eq!(
+            rules.projectile("SHOT").unwrap().airburst,
+            row["airburst"].as_bool().unwrap(),
+            "{row}"
+        );
+        let (_, trace) = next.into_ini_and_native_type_construction_trace();
+        state = trace.into_registry_state_discarding_events();
+    }
+}
+
+#[test]
+fn airburst_retained_flag_changes_effective_rules_hash() {
+    let rules = |first| {
+        let mut layers = RulesLayerStack::new(IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=UNIT\n[UNIT]\nPrimary=GUN\n[GUN]\nProjectile=SHOT\n[SHOT]\nAirburst={first}\n",
+        )));
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[SHOT]\nAirburst=invalid\n"),
+        );
+        crate::rules::ruleset::RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap()
+    };
+    let enabled = rules("yes");
+    let disabled = rules("no");
+    assert!(enabled.projectile("SHOT").unwrap().airburst);
+    assert!(!disabled.projectile("SHOT").unwrap().airburst);
+    assert_ne!(
+        enabled.simulation_config_hash(),
+        disabled.simulation_config_hash()
+    );
+}
+
 #[cfg(feature = "ares")]
 #[test]
 fn ares_emp_ai_named_mission_reader_matches_native_histories() {

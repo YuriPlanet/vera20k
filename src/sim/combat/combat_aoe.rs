@@ -13,8 +13,6 @@
 //! - Part of sim/ — depends on rules/, map terrain, and sim occupancy/components.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-use std::collections::BTreeMap;
-
 use super::{EntityDamageEvent, TerrainDamageEvent, cell_spread};
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::entities::EntityCategory;
@@ -25,8 +23,6 @@ use crate::rules::warhead_type::WarheadType;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::StringInterner;
 use crate::sim::map::bridge_topology::{CellBridgeView, ListLayer};
-use crate::sim::mission::authority::restore_entity_after_target_expiry;
-use crate::sim::mission::concrete_effects::represented_assign_target;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::OccupancyGrid;
 #[cfg(any(test, feature = "test-support"))]
@@ -37,7 +33,6 @@ use crate::sim::overlay_grid::{
 };
 use crate::sim::pathfinding::zone_incremental::ZoneRepairKind;
 use crate::sim::rng::SimRng;
-use crate::sim::terrain_object::TerrainObjectState;
 use crate::util::fixed_math::SimFixed;
 use crate::util::lepton::{CELL_CENTER_LEPTON, LEPTONS_PER_LEVEL, ground_height_leptons};
 use crate::util::native_x87::distance_3d_leptons;
@@ -94,10 +89,6 @@ pub(crate) trait AoECellPrelude {
 }
 
 struct AoEWallDamageHost<'borrow, 'prelude> {
-    entities: &'borrow mut EntityStore,
-    target_terrain_objects: &'borrow BTreeMap<u64, TerrainObjectState>,
-    #[cfg(any(test, feature = "test-support"))]
-    trace: &'borrow mut Vec<CellTargetDetach>,
     prelude: &'borrow mut Option<&'prelude mut dyn AoECellPrelude>,
 }
 
@@ -121,19 +112,9 @@ impl WallDamageTransactionHost for AoEWallDamageHost<'_, '_> {
         }
     }
 
-    fn pointer_expired(&mut self, target: WallPointerTarget) {
-        if let WallPointerTarget::Real(rx, ry) = target {
-            expire_cell_target_references(
-                self.entities,
-                self.target_terrain_objects,
-                rx,
-                ry,
-                None,
-                #[cfg(any(test, feature = "test-support"))]
-                self.trace,
-            );
-        }
-    }
+    // Cell ctor47BBF0 leaves Abstract+14 bit1 clear; 7258D0(Cell) does not
+    // broadcast to Techno listeners. AreaDamage's explicit70D4A0 is separate.
+    fn pointer_expired(&mut self, _target: WallPointerTarget) {}
 }
 
 pub(crate) fn tiberium_reduction_cell_admitted(
@@ -468,12 +449,8 @@ pub(crate) fn apply_aoe_damage_with_terrain<O: Into<AoEDamageOrigin>>(
     let handles = Some(crate::sim::type_handle_table::ResolvedRuleHandles::resolve(
         rules, interner,
     ));
-    let no_terrain_objects = BTreeMap::new();
-    let target_terrain_objects =
-        terrain_objects.map_or(&no_terrain_objects, |view| view.store.objects());
     apply_aoe_damage_with_terrain_and_scenario(
         entities,
-        target_terrain_objects,
         impact_rx,
         impact_ry,
         base_damage,
@@ -489,143 +466,199 @@ pub(crate) fn apply_aoe_damage_with_terrain<O: Into<AoEDamageOrigin>>(
     )
 }
 
-/// `Apply_area_damage` (`0x00489280`): collects its receiver records. Without an
-/// occupancy grid, every unlimboed, living object stands in for the cell lists.
-/// `target_terrain_objects` is the complete target authority, independent of
-/// optional Terrain receiver collection (fixtures may exclude those receivers).
-pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin>>(
-    entities: &mut EntityStore,
-    target_terrain_objects: &BTreeMap<u64, TerrainObjectState>,
+/// Call-local AreaDamage collection cursor. World authorities stay installed
+/// between cells, so synchronous Restore/setter calls can run before capture.
+pub(crate) struct AoECollector {
     impact_rx: u16,
     impact_ry: u16,
     base_damage: i32,
-    warhead: &WarheadType,
-    rules: &RuleSet,
-    interner: &StringInterner,
-    handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
-    origin: O,
-    mut layer_context: AoELayerContext<'_>,
-    terrain_objects: Option<TerrainCollectionView<'_>>,
-    scenario_no_damage: bool,
-    mut cell_prelude: Option<&mut dyn AoECellPrelude>,
-) -> AoEDamageResult {
-    // Apply_area_damage returns at entry for signed zero. Nothing downstream
-    // observes CellSpread, wall routing, object lists, target detach, or RNG.
-    // Native ScenarioFlags bit 0x20 shares that transaction-wide early-out.
-    if base_damage == 0 || scenario_no_damage {
-        return AoEDamageResult::default();
+    origin: AoEDamageOrigin,
+    ground_source_admitted: bool,
+    spread_leptons: i64,
+    exact_impact: AoEAirImpact,
+    native_occupancy: bool,
+    pub result: AoEDamageResult,
+}
+
+pub(crate) struct AoESpreadCell {
+    identity: Option<NativeCellIdentity>,
+    real_coord: Option<(u16, u16)>,
+    requested: (u16, u16),
+    target: WallPointerTarget,
+    initial_overlay_present: bool,
+    center: bool,
+}
+
+impl AoESpreadCell {
+    /// 4896B2..4896BA tests the LIVE overlay on the retained allocation after
+    /// all recursive wall callbacks, but only when initially nonempty.
+    pub fn detached_cell(&self, context: &AoELayerContext<'_>) -> Option<(u16, u16)> {
+        (self.initial_overlay_present && retained_overlay(self.target, context).is_none())
+            // A frozen request identifies the shared Dummy without reading or
+            // restamping its mutable coordinate. The sweep compares allocation
+            // identities; a real alias uses the retained canonical coordinate.
+            .then_some(self.real_coord.unwrap_or(self.requested))
     }
-    let mut origin = origin.into();
-    if origin.source_house.is_none() && origin.source_id != super::RAD_NO_ATTACKER {
-        origin.source_house = entities.get(origin.source_id).map(|source| source.owner());
+}
+
+fn retained_overlay(target: WallPointerTarget, context: &AoELayerContext<'_>) -> Option<u8> {
+    match target {
+        WallPointerTarget::Real(rx, ry) => context.overlay_grid.as_deref()?.cell(rx, ry).overlay_id,
+        WallPointerTarget::SharedDummy => u8::try_from(
+            context
+                .terrain
+                .as_deref()?
+                .shared_cell_dummy()
+                .overlay_identity_state()
+                .0,
+        )
+        .ok(),
     }
-    let ground_source_admitted = handles
-        .is_some_and(|handles| handles.is_crush(origin.warhead_ref))
-        || entities
-            .get(origin.source_id)
-            .and_then(|source| interner.object_type(source.type_ref(), rules))
-            .is_some_and(|source_type| source_type.damage_self);
+}
 
-    let cell_spread = warhead.cell_spread_f64;
+impl AoECollector {
+    pub fn begin(
+        entities: &EntityStore,
+        impact_rx: u16,
+        impact_ry: u16,
+        base_damage: i32,
+        warhead: &WarheadType,
+        rules: &RuleSet,
+        interner: &StringInterner,
+        handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
+        origin: AoEDamageOrigin,
+        layer_context: &AoELayerContext<'_>,
+        scenario_no_damage: bool,
+    ) -> Option<Self> {
+        // Apply_area_damage returns at entry for signed zero. Nothing downstream
+        // observes CellSpread, wall routing, object lists, target detach, or RNG.
+        // Native ScenarioFlags bit 0x20 shares that transaction-wide early-out.
+        if base_damage == 0 || scenario_no_damage {
+            return None;
+        }
+        let mut origin = origin;
+        if origin.source_house.is_none() && origin.source_id != super::RAD_NO_ATTACKER {
+            origin.source_house = entities.get(origin.source_id).map(|source| source.owner());
+        }
+        let ground_source_admitted = handles
+            .is_some_and(|handles| handles.is_crush(origin.warhead_ref))
+            || entities
+                .get(origin.source_id)
+                .and_then(|source| interner.object_type(source.type_ref(), rules))
+                .is_some_and(|source_type| source_type.damage_self);
 
-    // Each candidate's native Sqrt_Approx/ftol distance is compared to this
-    // signed threshold; there is no exact-squared prefilter.
-    let spread_leptons = cell_spread::splash_threshold_leptons(cell_spread);
-    let mut result = AoEDamageResult::default();
-    let exact_impact = layer_context
-        .air_impact
-        .or_else(|| {
-            air_impact_from_layer_z(
-                layer_context.terrain.as_deref(),
-                impact_rx,
-                impact_ry,
-                CELL_CENTER_LEPTON,
-                CELL_CENTER_LEPTON,
-                layer_context.impact_z,
-            )
-        })
-        .unwrap_or(AoEAirImpact {
-            sub_x: CELL_CENTER_LEPTON,
-            sub_y: CELL_CENTER_LEPTON,
-            z_leptons: layer_context
-                .impact_z
-                .wrapping_mul(LEPTONS_PER_LEVEL as i32),
-        });
+        let cell_spread = warhead.cell_spread_f64;
 
-    result.object_list_layer = layer_context
-        .terrain
-        .as_deref()
-        .map_or(ListLayer::Ground, |terrain| {
-            select_object_damage_layer(terrain, impact_rx, impact_ry, exact_impact)
-        });
-
-    let native_occupancy = layer_context
-        .occupancy
-        .filter(|_| layer_context.terrain.is_some());
-    let selected_layer = match result.object_list_layer {
-        ListLayer::Ground => MovementLayer::Ground,
-        ListLayer::Bridge => MovementLayer::Bridge,
-    };
-    if native_occupancy.is_some() {
-        // Native enters the entire airborne query only when the exact impact
-        // coordinate is strictly above GetGroundHeight at that same XY. Keep
-        // this gate outside bucket materialization: equality observes no air
-        // vector at all.
-        if let Some(air_impact) = layer_context.air_impact
-            && layer_context.terrain.as_deref().is_some_and(|terrain| {
-                impact_is_above_ground(terrain, impact_rx, impact_ry, air_impact)
-            })
-        {
-            // Native appends airborne receiver records before entering the
-            // spread cell loop. Damage dispatch happens only after collection,
-            // so walls still mutate during the later cell walk before any
-            // receiver runs.
-            let center = crate::sim::cell_rect::get_cellclass_fallback(
-                layer_context.terrain.as_deref(),
-                i32::from(impact_rx as i16),
-                i32::from(impact_ry as i16),
-            );
-            for entity_id in entities.airborne_in_query_order(
-                &center,
-                cell_spread::whole_cells(cell_spread),
-                layer_context
-                    .terrain
-                    .as_deref()
-                    .map(|terrain| (terrain.width(), terrain.height()))
-                    .expect("checked terrain Apply_area_damage context"),
-            ) {
-                let terrain = layer_context
-                    .terrain
-                    .as_deref()
-                    .expect("checked terrain Apply_area_damage context");
-                push_airborne_aoe_damage(
-                    &mut result,
-                    entities,
-                    entity_id,
+        // Each candidate's native Sqrt_Approx/ftol distance is compared to this
+        // signed threshold; there is no exact-squared prefilter.
+        let spread_leptons = cell_spread::splash_threshold_leptons(cell_spread);
+        let mut result = AoEDamageResult::default();
+        let exact_impact = layer_context
+            .air_impact
+            .or_else(|| {
+                air_impact_from_layer_z(
+                    layer_context.terrain.as_deref(),
                     impact_rx,
                     impact_ry,
-                    air_impact,
-                    terrain,
-                    spread_leptons,
-                    base_damage,
-                    origin.source_id,
-                    origin.source_house,
-                    origin.warhead_ref,
-                    rules,
-                    interner,
+                    CELL_CENTER_LEPTON,
+                    CELL_CENTER_LEPTON,
+                    layer_context.impact_z,
+                )
+            })
+            .unwrap_or(AoEAirImpact {
+                sub_x: CELL_CENTER_LEPTON,
+                sub_y: CELL_CENTER_LEPTON,
+                z_leptons: layer_context
+                    .impact_z
+                    .wrapping_mul(LEPTONS_PER_LEVEL as i32),
+            });
+
+        result.object_list_layer = layer_context
+            .terrain
+            .as_deref()
+            .map_or(ListLayer::Ground, |terrain| {
+                select_object_damage_layer(terrain, impact_rx, impact_ry, exact_impact)
+            });
+
+        let native_occupancy = layer_context
+            .occupancy
+            .filter(|_| layer_context.terrain.is_some());
+        if native_occupancy.is_some() {
+            // Native enters the entire airborne query only when the exact impact
+            // coordinate is strictly above GetGroundHeight at that same XY. Keep
+            // this gate outside bucket materialization: equality observes no air
+            // vector at all.
+            if let Some(air_impact) = layer_context.air_impact
+                && layer_context.terrain.as_deref().is_some_and(|terrain| {
+                    impact_is_above_ground(terrain, impact_rx, impact_ry, air_impact)
+                })
+            {
+                // Native appends airborne receiver records before entering the
+                // spread cell loop. Damage dispatch happens only after collection,
+                // so walls still mutate during the later cell walk before any
+                // receiver runs.
+                let center = crate::sim::cell_rect::get_cellclass_fallback(
+                    layer_context.terrain.as_deref(),
+                    i32::from(impact_rx as i16),
+                    i32::from(impact_ry as i16),
                 );
+                for entity_id in entities.airborne_in_query_order(
+                    &center,
+                    cell_spread::whole_cells(cell_spread),
+                    layer_context
+                        .terrain
+                        .as_deref()
+                        .map(|terrain| (terrain.width(), terrain.height()))
+                        .expect("checked terrain Apply_area_damage context"),
+                ) {
+                    let terrain = layer_context
+                        .terrain
+                        .as_deref()
+                        .expect("checked terrain Apply_area_damage context");
+                    push_airborne_aoe_damage(
+                        &mut result,
+                        entities,
+                        entity_id,
+                        impact_rx,
+                        impact_ry,
+                        air_impact,
+                        terrain,
+                        spread_leptons,
+                        base_damage,
+                        origin.source_id,
+                        origin.source_house,
+                        origin.warhead_ref,
+                        rules,
+                        interner,
+                    );
+                }
             }
         }
+
+        Some(Self {
+            impact_rx,
+            impact_ry,
+            base_damage,
+            origin,
+            ground_source_admitted,
+            spread_leptons,
+            exact_impact,
+            native_occupancy: native_occupancy.is_some(),
+            result,
+        })
     }
 
-    // AreaDamage4895C7..489603 adds packed WORD offsets, then performs one
-    // Map5657A0 lookup. Retain that allocation identity across synchronous
-    // tiberium/wall callbacks; an inner lookup may restamp only the Dummy.
-    // Both native-list and legacy headless callers share this ordered sweep.
-    for &(dx, dy) in cell_spread::splash_cells(cell_spread) {
+    pub fn prepare_cell(
+        &mut self,
+        dx: i16,
+        dy: i16,
+        warhead: &WarheadType,
+        layer_context: &mut AoELayerContext<'_>,
+        cell_prelude: &mut Option<&mut dyn AoECellPrelude>,
+    ) -> AoESpreadCell {
         let requested = (
-            (impact_rx as i16).wrapping_add(dx),
-            (impact_ry as i16).wrapping_add(dy),
+            (self.impact_rx as i16).wrapping_add(dx),
+            (self.impact_ry as i16).wrapping_add(dy),
         );
         let cell = layer_context
             .terrain
@@ -641,6 +674,18 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
             // No CellClass authority exists in legacy headless fixtures.
             None => Some((requested.0 as u16, requested.1 as u16)),
         };
+        let target = real_coord.map_or(WallPointerTarget::SharedDummy, |(rx, ry)| {
+            WallPointerTarget::Real(rx, ry)
+        });
+        // AreaDamage48960E..489623 retains initial admission and type BEFORE
+        // ReduceTiberium. The final empty-cell sweep is independent of Wall.
+        let initial_overlay = retained_overlay(target, layer_context);
+        let initial_wall = initial_overlay.and_then(|id| {
+            layer_context
+                .overlay_registry?
+                .flags(id)
+                .map(|flags| (flags.wall, flags.armor_is_wood))
+        });
         if let Some((rx, ry)) = real_coord
             && let Some(prelude) = cell_prelude.as_deref_mut()
         {
@@ -654,71 +699,89 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
                 layer_context.occupancy,
             );
         }
-        // Ordinary resource placement rejects Dummy (admit_new_tiberium_target),
-        // whose constructor47BC21 overlay is-1. Do not invent grid-backed
-        // tiberium there. Existing modeled nonempty Dummy walls still execute
-        // their retained-pointer recursive owner, including RNG and expiry.
-        let wall_target = real_coord.map_or(WallPointerTarget::SharedDummy, |(rx, ry)| {
-            WallPointerTarget::Real(rx, ry)
-        });
         route_wall_before_cell_objects(
-            entities,
-            target_terrain_objects,
-            wall_target,
-            base_damage,
+            target,
+            initial_wall,
+            self.base_damage,
             warhead,
-            &mut layer_context,
-            &mut cell_prelude,
-            &mut result,
+            layer_context,
+            cell_prelude,
+            &mut self.result,
         );
-        let Some(occupancy) = native_occupancy else {
-            continue;
+        AoESpreadCell {
+            identity: cell,
+            real_coord,
+            requested: (requested.0 as u16, requested.1 as u16),
+            target,
+            initial_overlay_present: initial_overlay.is_some(),
+            center: dx == 0 && dy == 0,
+        }
+    }
+
+    fn selected_layer(&self) -> MovementLayer {
+        match self.result.object_list_layer {
+            ListLayer::Ground => MovementLayer::Ground,
+            ListLayer::Bridge => MovementLayer::Bridge,
+        }
+    }
+
+    pub fn capture_cell(
+        &mut self,
+        cell: &AoESpreadCell,
+        entities: &EntityStore,
+        context: &AoELayerContext<'_>,
+        terrain_objects: Option<TerrainCollectionView<'_>>,
+    ) {
+        let Some(occupancy) = context.occupancy.filter(|_| self.native_occupancy) else {
+            return;
         };
         // Dummy E4/E8 heads are null (47BC82/88). Its mutable coordinates must
         // never turn unrelated rectangular-grid entries into native residents.
-        if cell == Some(NativeCellIdentity::Dummy) {
-            continue;
+        if cell.identity == Some(NativeCellIdentity::Dummy) {
+            return;
         }
-        let (rx, ry) = real_coord.expect("native real cell has its canonical coordinate");
-        let mut terrain_inserted = selected_layer != MovementLayer::Ground;
+        let (rx, ry) = cell
+            .real_coord
+            .expect("native real cell has its canonical coordinate");
+        let mut terrain_inserted = self.selected_layer() != MovementLayer::Ground;
         if let Some(cell_occ) = occupancy.get(rx, ry) {
-            for occupant in cell_occ.iter_layer(selected_layer) {
+            for occupant in cell_occ.iter_layer(self.selected_layer()) {
                 // TerrainClass was revealed before map technos. Native
                 // AddContent prepends later nonbuildings and appends
                 // Buildings, so the captured Terrain record sits at this
                 // exact represented boundary.
                 if !terrain_inserted && occupant.is_building {
                     push_terrain_aoe_damage(
-                        &mut result,
+                        &mut self.result,
                         terrain_objects,
                         rx,
                         ry,
-                        impact_rx,
-                        impact_ry,
-                        exact_impact,
-                        spread_leptons,
-                        base_damage,
-                        origin.warhead_ref,
+                        self.impact_rx,
+                        self.impact_ry,
+                        self.exact_impact,
+                        self.spread_leptons,
+                        self.base_damage,
+                        self.origin.warhead_ref,
                     );
                     terrain_inserted = true;
                 }
                 push_entity_aoe_damage(
-                    &mut result,
+                    &mut self.result,
                     entities,
                     occupant.entity_id,
-                    impact_rx,
-                    impact_ry,
+                    self.impact_rx,
+                    self.impact_ry,
                     rx,
                     ry,
-                    dx == 0 && dy == 0,
-                    exact_impact,
-                    layer_context.terrain.as_deref(),
-                    spread_leptons,
-                    base_damage,
-                    origin.source_id,
-                    origin.source_house,
-                    ground_source_admitted,
-                    origin.warhead_ref,
+                    cell.center,
+                    self.exact_impact,
+                    context.terrain.as_deref(),
+                    self.spread_leptons,
+                    self.base_damage,
+                    self.origin.source_id,
+                    self.origin.source_house,
+                    self.ground_source_admitted,
+                    self.origin.warhead_ref,
                 );
             }
         }
@@ -726,67 +789,115 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
             // A tree-only cell has no OccupancyGrid entry. Terrain lookup
             // must remain outside that optional Techno cache.
             push_terrain_aoe_damage(
-                &mut result,
+                &mut self.result,
                 terrain_objects,
                 rx,
                 ry,
-                impact_rx,
-                impact_ry,
-                exact_impact,
-                spread_leptons,
-                base_damage,
-                origin.warhead_ref,
+                self.impact_rx,
+                self.impact_ry,
+                self.exact_impact,
+                self.spread_leptons,
+                self.base_damage,
+                self.origin.warhead_ref,
             );
         }
     }
-    if native_occupancy.is_some() {
-        return finalize_receiver_isolation_metadata(result, warhead);
-    }
 
-    for entity in entities.values() {
-        if entity.lifecycle.in_limbo()
-            || crate::sim::occupancy::cell_list_layer_for_entity(
-                entity,
-                layer_context.terrain.as_deref(),
-            )
-            .is_none()
-        {
-            continue;
-        }
-        // Dying corpses (uninit'd this tick, awaiting the end-of-tick drain)
-        // are off the live object list — exclude them. A sold/captured corpse
-        // keeps health>0, so gate on `dying`, not just health.
-        if entity.health.current() == 0 || entity.death.is_dying() {
-            continue;
+    pub fn finish(
+        mut self,
+        entities: &EntityStore,
+        context: &AoELayerContext<'_>,
+        warhead: &WarheadType,
+    ) -> AoEDamageResult {
+        if self.native_occupancy {
+            return finalize_receiver_isolation_metadata(self.result, warhead);
         }
 
-        push_entity_aoe_damage(
-            &mut result,
-            entities,
-            entity.stable_id(),
-            impact_rx,
-            impact_ry,
-            entity.position.rx(),
-            entity.position.ry(),
-            entity.position.rx() == impact_rx && entity.position.ry() == impact_ry,
-            exact_impact,
-            layer_context.terrain.as_deref(),
-            spread_leptons,
-            base_damage,
-            origin.source_id,
-            origin.source_house,
-            ground_source_admitted,
-            origin.warhead_ref,
-        );
-    }
+        for entity in entities.values() {
+            if entity.lifecycle.in_limbo()
+                || crate::sim::occupancy::cell_list_layer_for_entity(
+                    entity,
+                    context.terrain.as_deref(),
+                )
+                .is_none()
+            {
+                continue;
+            }
+            // Dying corpses (uninit'd this tick, awaiting the end-of-tick drain)
+            // are off the live object list — exclude them. A sold/captured corpse
+            // keeps health>0, so gate on `dying`, not just health.
+            if entity.health.current() == 0 || entity.death.is_dying() {
+                continue;
+            }
 
-    finalize_receiver_isolation_metadata(result, warhead)
+            push_entity_aoe_damage(
+                &mut self.result,
+                entities,
+                entity.stable_id(),
+                self.impact_rx,
+                self.impact_ry,
+                entity.position.rx(),
+                entity.position.ry(),
+                entity.position.rx() == self.impact_rx && entity.position.ry() == self.impact_ry,
+                self.exact_impact,
+                context.terrain.as_deref(),
+                self.spread_leptons,
+                self.base_damage,
+                self.origin.source_id,
+                self.origin.source_house,
+                self.ground_source_admitted,
+                self.origin.warhead_ref,
+            );
+        }
+
+        finalize_receiver_isolation_metadata(self.result, warhead)
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+/// Geometry-only fixture driver sharing the production collection cursor.
+/// Full-world Restore callbacks are owned by world_receiver::collect_area.
+/// Without occupancy, unlimboed living objects stand in for the cell lists.
+pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin>>(
+    entities: &mut EntityStore,
+    impact_rx: u16,
+    impact_ry: u16,
+    base_damage: i32,
+    warhead: &WarheadType,
+    rules: &RuleSet,
+    interner: &StringInterner,
+    handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
+    origin: O,
+    mut layer_context: AoELayerContext<'_>,
+    terrain_objects: Option<TerrainCollectionView<'_>>,
+    scenario_no_damage: bool,
+    mut cell_prelude: Option<&mut dyn AoECellPrelude>,
+) -> AoEDamageResult {
+    let Some(mut collector) = AoECollector::begin(
+        entities,
+        impact_rx,
+        impact_ry,
+        base_damage,
+        warhead,
+        rules,
+        interner,
+        handles,
+        origin.into(),
+        &layer_context,
+        scenario_no_damage,
+    ) else {
+        return AoEDamageResult::default();
+    };
+    for &(dx, dy) in cell_spread::splash_cells(warhead.cell_spread_f64) {
+        let cell = collector.prepare_cell(dx, dy, warhead, &mut layer_context, &mut cell_prelude);
+        collector.capture_cell(&cell, entities, &layer_context, terrain_objects);
+    }
+    collector.finish(entities, &layer_context, warhead)
 }
 
 fn route_wall_before_cell_objects(
-    entities: &mut EntityStore,
-    target_terrain_objects: &BTreeMap<u64, TerrainObjectState>,
     target: WallPointerTarget,
+    initial_wall: Option<(bool, bool)>,
     raw_damage: i32,
     warhead: &WarheadType,
     context: &mut AoELayerContext<'_>,
@@ -800,27 +911,15 @@ fn route_wall_before_cell_objects(
     ) else {
         return;
     };
-    let overlay_id = match target {
-        WallPointerTarget::Real(rx, ry) => grid.cell(rx, ry).overlay_id,
-        WallPointerTarget::SharedDummy => context.terrain.as_deref().and_then(|terrain| {
-            u8::try_from(terrain.shared_cell_dummy().overlay_identity_state().0).ok()
-        }),
-    };
-    let Some(overlay_id) = overlay_id else {
+    let Some((true, armor_is_wood)) = initial_wall else {
         return;
     };
-    let Some(flags) = registry.flags(overlay_id) else {
-        return;
-    };
-    if !flags.wall {
-        return;
-    }
 
     // Active-YR routing precedence: WAD forces literal -1; ordinary Wall and
     // Wood against Armor=wood pass the unchanged signed weapon damage.
     let routed_damage = if warhead.wall_absolute_destroyer {
         -1
-    } else if warhead.wall || (warhead.wood && flags.armor_is_wood) {
+    } else if warhead.wall || (warhead.wood && armor_is_wood) {
         raw_damage
     } else {
         return;
@@ -828,10 +927,6 @@ fn route_wall_before_cell_objects(
 
     let _wall_result = {
         let mut host = AoEWallDamageHost {
-            entities,
-            target_terrain_objects,
-            #[cfg(any(test, feature = "test-support"))]
-            trace: &mut _result.cell_target_detaches,
             prelude: cell_prelude,
         };
         damage_wall_overlay_with_runtime_host(
@@ -846,59 +941,6 @@ fn route_wall_before_cell_objects(
     };
     #[cfg(any(test, feature = "test-support"))]
     _result.wall_mutations.extend(_wall_result.mutations);
-}
-
-/// Broadcast one CellClass pointer-expiry notification to represented Techno
-/// listeners. Native walks the listener roster forward, clears the live Target
-/// first, and only then runs Restore when a mission was suspended.
-pub(crate) fn expire_cell_target_references(
-    entities: &mut EntityStore,
-    terrain_objects: &BTreeMap<u64, TerrainObjectState>,
-    rx: u16,
-    ry: u16,
-    types: Option<(
-        &crate::rules::ruleset::RuleSet,
-        &crate::sim::intern::StringInterner,
-    )>,
-    #[cfg(any(test, feature = "test-support"))] trace: &mut Vec<CellTargetDetach>,
-) {
-    let listener_ids = entities.keys_sorted();
-    for listener_id in listener_ids {
-        let saved_target_stored = entities.get(listener_id).and_then(|entity| {
-            crate::sim::mission::concrete_effects::assign_target_stored(
-                entities,
-                terrain_objects,
-                listener_id,
-                entity.suspended_attack_target.target(),
-                types,
-            )
-        });
-        let Some(entity) = entities.get_mut(listener_id) else {
-            continue;
-        };
-        if !matches!(
-            entity.attack_target.target(),
-            Some(super::TargetKind::Cell(tx, ty)) if (tx, ty) == (rx, ry)
-        ) {
-            continue;
-        }
-
-        let mission_was_suspended =
-            entity.mission.suspended() != crate::sim::mission::MissionId::NONE;
-        represented_assign_target(entity, None);
-        let _restored = mission_was_suspended
-            && restore_entity_after_target_expiry(entity, saved_target_stored);
-        // PointerExpired's aircraft-Patrol arm (`0x00707A51..0x00707A6C`).
-        if mission_was_suspended {
-            crate::sim::aircraft::restart_patrol_after_restore(entity);
-        }
-        #[cfg(any(test, feature = "test-support"))]
-        trace.push(CellTargetDetach {
-            listener_id,
-            restored: _restored,
-            cleared: true,
-        });
-    }
 }
 
 fn select_object_damage_layer(
@@ -1146,8 +1188,7 @@ fn push_terrain_aoe_damage(
 
 #[cfg(test)]
 mod tests {
-    use crate::sim::terrain_object::TerrainObjectLifecycle;
-    use std::collections::BTreeMap;
+    use crate::sim::terrain_object::{TerrainObjectLifecycle, TerrainObjectState};
 
     use super::*;
     use crate::map::bridge_facts::{BRIDGE_FLAG_STRUCTURAL, BridgeCellFacts};
@@ -1275,12 +1316,13 @@ mod tests {
     ) -> (RuleSet, WarheadType, OverlayTypeRegistry) {
         let ini = IniFile::from_str(&format!(
             "[InfantryTypes]\n\
-             [VehicleTypes]\n\
+             [VehicleTypes]\n0=MTNK\n\
              [AircraftTypes]\n\
              [BuildingTypes]\n\
              [Warheads]\n0=WH\n\
              [OverlayTypes]\n0=GASAND\n1=CYCL\n2=GAWALL\n\
              [WH]\nCellSpread={cell_spread}\n{warhead_flags}\n\
+             [MTNK]\nStrength=300\n\
              [GASAND]\nWall=yes\nArmor=wood\nStrength=400\n\
              [CYCL]\nWall=yes\nArmor=wood\nStrength=400\n\
              [GAWALL]\nWall=yes\nArmor=concrete\nStrength=400\n"
@@ -1501,7 +1543,6 @@ mod tests {
             let mut prelude = RestampDummy { visits: Vec::new() };
             let result = apply_aoe_damage_with_terrain_and_scenario(
                 &mut EntityStore::new(),
-                &BTreeMap::new(),
                 0,
                 1,
                 1,
@@ -1590,7 +1631,6 @@ mod tests {
             let mut prelude = ObserveDummy::default();
             let result = apply_aoe_damage_with_terrain_and_scenario(
                 &mut entities,
-                &BTreeMap::new(),
                 20,
                 20,
                 1,
@@ -1636,6 +1676,60 @@ mod tests {
                 dummy_wall,
                 "a nonempty Dummy wall keeps its existing native dirty transaction"
             );
+            if dummy_wall {
+                // Explicit boundary state, not a claimed stock producer of a
+                // nonempty Dummy. Recursive lookups restamp it; the outer
+                // sweep must still match another request for that allocation.
+                dummy.write_overlay_identity_state(0, 0);
+                entities
+                    .get_mut(7)
+                    .unwrap()
+                    .attack_target
+                    .set_for_test(Some(TargetKind::Cell(21, 21)));
+                let wh = interner.intern("WH");
+                let mut world = Simulation::with_seed(0x489608);
+                world.interner = interner;
+                world.substrate.entities = entities;
+                world.substrate.occupancy = occupancy;
+                world.resolved_terrain = Some(terrain);
+                world.overlay_grid = Some(overlays);
+                world.terrain_objects = objects;
+                let result = super::super::world_receiver::collect_area(
+                    &mut world,
+                    &rules,
+                    Some(&registry),
+                    (20, 20),
+                    1,
+                    &warhead,
+                    (super::super::RAD_NO_ATTACKER, None, wh),
+                    Some(center_impact(0)),
+                    0,
+                    crate::sim::world::FrameEffects::default(),
+                );
+                assert!(result.receivers.is_empty());
+                assert_eq!(
+                    result.cell_target_detaches,
+                    vec![CellTargetDetach {
+                        listener_id: 7,
+                        restored: false,
+                        cleared: true
+                    }]
+                );
+                assert_eq!(
+                    world
+                        .substrate
+                        .entities
+                        .get(7)
+                        .unwrap()
+                        .attack_target
+                        .target(),
+                    None
+                );
+                assert_eq!(
+                    world.overlay_grid.as_ref().unwrap().cell(20, 20).overlay_id,
+                    Some(0)
+                );
+            }
         }
     }
 
@@ -1709,7 +1803,6 @@ mod tests {
             crate::sim::type_handle_table::ResolvedRuleHandles::resolve(&rules, &mut interner);
         let result = apply_aoe_damage_with_terrain_and_scenario(
             &mut entities,
-            &BTreeMap::new(),
             8,
             8,
             100,
@@ -1785,7 +1878,6 @@ mod tests {
             crate::sim::type_handle_table::ResolvedRuleHandles::resolve(&rules, &mut interner);
         let _ = apply_aoe_damage_with_terrain_and_scenario(
             &mut EntityStore::new(),
-            &BTreeMap::new(),
             8,
             8,
             1,
@@ -2651,7 +2743,7 @@ mod tests {
     }
 
     #[test]
-    fn gsi_04_07_damage_pointer_expiry_is_cleanup_then_direct_forward_clear_first() {
+    fn wall_cleanup_preserves_neighbor_targets_until_an_explicit_outer_sweep() {
         let (rules, warhead, registry) =
             wall_aoe_fixture("0", "WallAbsoluteDestroyer=yes\nWall=yes");
         let mut entities = EntityStore::new();
@@ -2689,24 +2781,31 @@ mod tests {
             .set_for_test(Some(TargetKind::Cell(8, 7)));
         entities.insert(chain_only);
 
-        let mut interner = test_interner();
         let owner = crate::sim::intern::InternedId::from_index(7);
         let mut overlays = OverlayGrid::new(16, 16);
-        let mut terrain = crate::sim::tiberium::test_support::flat_terrain(16, 16);
+        let terrain = crate::sim::tiberium::test_support::flat_terrain(16, 16);
         overlays.place_overlay(8, 8, 2, 0);
         overlays.place_owned_wall(8, 7, 2, 0x24, owner);
-        let mut scenario_rng = SimRng::new(5);
-        let result = apply_aoe_damage(
-            &mut entities,
-            8,
-            8,
+        let mut world = crate::sim::world::Simulation::with_seed(5);
+        world.interner = test_interner();
+        world.substrate.entities = entities;
+        world.resolved_terrain = Some(terrain);
+        world.overlay_grid = Some(overlays);
+        let wh = world.interner.intern("WH");
+        let result = super::super::world_receiver::collect_area(
+            &mut world,
+            &rules,
+            Some(&registry),
+            (8, 8),
             1,
             &warhead,
-            &rules,
-            &mut interner,
-            "Americans",
-            wall_routing(&mut terrain, &mut overlays, &registry, &mut scenario_rng),
+            (super::super::RAD_NO_ATTACKER, None, wh),
+            Some(center_impact(0)),
+            0,
+            crate::sim::world::FrameEffects::default(),
         );
+        let overlays = world.overlay_grid.as_ref().unwrap();
+        let entities = &world.substrate.entities;
 
         assert_eq!(overlays.cell(8, 8).overlay_id, None);
         assert_eq!(
@@ -2718,35 +2817,29 @@ mod tests {
             result.cell_target_detaches,
             vec![
                 CellTargetDetach {
-                    listener_id: 40,
+                    listener_id: 30,
                     restored: false,
-                    cleared: true,
+                    cleared: true
                 },
                 CellTargetDetach {
                     listener_id: 20,
                     restored: true,
-                    cleared: true,
-                },
-                CellTargetDetach {
-                    listener_id: 30,
-                    restored: false,
-                    cleared: true,
+                    cleared: true
                 },
             ],
-            "cleanup expiry precedes the direct callback; each roster walk is forward and clears before Restore"
+            "only the impact cell receives70D4A0, after recursion, in descending order"
         );
         assert!(entities.get(30).unwrap().attack_target.target().is_none());
         assert!(!entities.get(30).unwrap().passive_scan.acquired());
-        assert!(matches!(
-            entities.get(20).unwrap().attack_target.target(),
-            Some(TargetKind::Cell(8, 8))
-        ));
-        assert!(entities.get(40).unwrap().attack_target.target().is_none());
+        assert!(entities.get(20).unwrap().attack_target.target().is_none());
+        assert_eq!(
+            entities.get(40).unwrap().attack_target.target(),
+            Some(TargetKind::Cell(8, 7))
+        );
     }
 
-    /// Wall pointer expiry clears the Cell target before Restore asks the
-    /// shared6FCDB0 admission about its saved Object. Excluding Terrain from
-    /// AreaDamage's receiver list must not remove that Object from admission.
+    /// AreaDamage restores before conditionally clearing the Cell target.
+    /// Excluding Terrain receivers must not remove live Terrain from target admission.
     #[test]
     fn cell_expiry_restores_terrain_target_independently_of_damage_collection() {
         use crate::sim::combat::receiver_fixture::{FixturePolicy, FixtureTrace};
@@ -2867,6 +2960,7 @@ mod tests {
                 (super::super::RAD_NO_ATTACKER, None, warhead_ref),
                 Some(center_impact(0)),
                 0,
+                crate::sim::world::FrameEffects::default(),
             );
 
             assert_eq!(
@@ -2891,9 +2985,9 @@ mod tests {
                 vec![CellTargetDetach {
                     listener_id: 20,
                     restored: true,
-                    cleared: true,
+                    cleared: false,
                 }],
-                "{label}: clear first, then Restore regardless of target admission"
+                "{label}: Restore replaces the Cell target before the conditional clear"
             );
             assert_eq!(
                 result.receivers.iter().any(|receiver| matches!(
@@ -3034,7 +3128,6 @@ mod tests {
             };
             let result = apply_aoe_damage_with_terrain_and_scenario(
                 &mut entities,
-                &BTreeMap::new(),
                 5,
                 5,
                 100,

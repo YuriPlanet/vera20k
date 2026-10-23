@@ -42,10 +42,12 @@ FireAt electric arm supplies the gate, while the newly selected weapon supplies
 FLH and alternate color. The ordinary path selects slot0. Its bolt has no
 attached owner, native Abstract ID or Scenario RNG draw.
 
-The shared Rust GetFLH source differs by one lepton in X (less than one pixel);
-`caller_coordinate_residual` explicitly supplies `[9777,12288,300]` to original
-constructor/Init/draw to bound downstream rendering and Main RNG, without
-claiming upstream coordinate equality.
+The shared Rust GetFLH now uses the Building identity-matrix arm and matches the
+native source exactly. The retained historical `caller_coordinate_residual`
+control explicitly supplies `[9777,12288,300]` to original constructor/Init/draw;
+it remains downstream coverage for that supplied endpoint. Native identity-arm
+controls and boundaries are documented in
+[`building_flh_direct.md`](../spatial_oracle/building_flh_direct.md).
 
 Init consumes Main `RandomRanged(0,256)` before constructing exactly one default
 Spark system. The fixture retains all three original RNG objects, requested

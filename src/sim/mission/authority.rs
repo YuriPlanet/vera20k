@@ -29,8 +29,7 @@ use crate::sim::world::Simulation;
 use super::concrete_effects::UnavailableConcreteMissionEffects;
 use super::concrete_effects::{
     AuthorityUnavailable, ConcreteMissionEffects, ConcreteSetterRequest,
-    RepresentedConcreteMissionEffects, represented_assign_destination,
-    represented_assign_target_admitted,
+    RepresentedConcreteMissionEffects,
 };
 use super::readiness::{
     AircraftReadyView, BuildingReadyView, InfantryReadyView, ReadyLeptonPoint, ReadyResult,
@@ -80,39 +79,6 @@ impl SuspendedTarget {
     pub fn set_for_test(&mut self, target: Option<crate::sim::combat::TargetKind>) {
         self.target = target;
     }
-}
-
-/// Entity-local Restore transaction used after a represented pointer-expiry
-/// callback has already cleared the expired target through Assign_Target.
-///
-/// The write set matches native Restore: selector first, then archived Target,
-/// then mode-one destination. Callers must preserve the distinct expiry order
-/// (clear first, then conditionally Restore); live-object detach uses a separate
-/// wrapper and order. `saved_target_stored` is `assign_target_stored` for the
-/// archived target, read before the receiver was borrowed.
-/// `FootClass::Restore_Mission @ 0x004D8F80`, a Building's `TechnoClass::Restore_Mission`
-/// (`0x007013E0`): `+0xB0` to `+0xAC`, Assign_Target(`+0x2B8`), Assign_Destination(`+0x5A8`, 1).
-pub(crate) fn restore_entity_after_target_expiry(
-    entity: &mut crate::sim::game_entity::GameEntity,
-    saved_target_stored: Option<TargetKind>,
-) -> bool {
-    if entity.mission.suspended() == MissionId::NONE {
-        return false;
-    }
-
-    let saved_target = entity.suspended_attack_target.target();
-    let saved_destination = entity.navigation.suspended_nav_com();
-    let category = entity.category();
-    let restored = verb::restore_base(&mut entity.mission);
-    debug_assert!(restored);
-    represented_assign_target_admitted(entity, saved_target, saved_target_stored);
-    if category != EntityCategory::Structure {
-        represented_assign_destination(entity, saved_destination);
-        if saved_destination.is_some() {
-            entity.navigation.owe_destination_setter();
-        }
-    }
-    true
 }
 
 /// Entity-local category wrapper for `Queue_Mission(requested, false)`.

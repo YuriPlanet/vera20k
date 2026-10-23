@@ -1303,11 +1303,11 @@ mod tests {
                 actor.type_facts.set_foundation_for_test(
                     rules.object("ATKR").unwrap().foundation.clone().into(),
                 );
-                let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0.0);
-                for id in 2..2 + building["occupants"].as_u64().unwrap_or(1) {
-                    cargo.board_forced_chain(&[(id, 1.0)]);
-                }
-                actor.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+                actor.passenger_role.occupants_mut().set_ids_for_test(
+                    (2..2 + building["occupants"].as_u64().unwrap_or(1))
+                        .rev()
+                        .collect(),
+                );
                 EntityCategory::Structure
             } else if input["unit"] == true {
                 EntityCategory::Unit

@@ -739,11 +739,7 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
         .unwrap_or(MissionType::Guard);
     // vt+0x2AC, `BuildingClass::Is_Armed 0x00458DB0`.
     if combat_weapon::is_armed(entity, obj) {
-        let empty_garrison = obj.can_be_occupied
-            && entity
-                .passenger_role
-                .cargo()
-                .is_none_or(|cargo| cargo.is_empty());
+        let empty_garrison = obj.can_be_occupied && entity.passenger_role.occupants().is_empty();
         let has_target = entity.attack_target.target().is_some();
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             // `0x00449701`.
@@ -1578,15 +1574,6 @@ impl Simulation {
     /// (vt+0x3AC), including its overlay line-of-fire checks. Other objects
     /// admit every target here.
     ///
-    /// RESIDUALS:
-    /// - The restore after a cell target expires
-    ///   (`combat::combat_aoe::expire_cell_target_references`) holds only the
-    ///   entity store and puts the suspended target back without this
-    ///   admission. Trigger: a building whose retaliation suspended its
-    ///   mission and whose later cell target expires. Effect: a Selling,
-    ///   unpowered or out-of-range building keeps that target until its next
-    ///   Mission_Attack or range drop. Frequency: rare. Later owner: that
-    ///   restore moving onto `Simulation`.
     pub(crate) fn building_admits_target(
         &self,
         id: u64,

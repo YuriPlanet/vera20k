@@ -5,6 +5,13 @@ These tools execute the retail `gamemd.exe` under Unicorn. See the
 identity. This page indexes the consolidated FireAt-tail, load-timer and collision
 fixtures; other projectile families still need their own inventory.
 
+## Retained Airburst flag
+
+[`airburst_retained`](airburst_retained.md) executes the original whole
+BulletType reader across eight ordered flag histories, with no asset inputs.
+`python -m tools.projectile_oracle.airburst_retained --check` verifies the native
+current-value defaults independently of the existing child-fan corpus.
+
 ## Bullet trailer animations
 
 [`projectile_trailer`](projectile_trailer.md) joins the original Bullet AI

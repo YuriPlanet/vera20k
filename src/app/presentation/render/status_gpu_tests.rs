@@ -1457,7 +1457,15 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     }
                     // Explicit drawing-consumer hold prior. Actual command,
                     // Limbo and departure lifecycle has separate production tests.
-                    entity.passenger_role = PassengerRole::transport(cargo);
+                    if is_garrison {
+                        // Retain the same supplied drawing order in its
+                        // canonical store; transport rows still own Cargo.
+                        entity
+                            .passenger_role
+                            .set_occupants_for_test(cargo.passengers().to_vec(), 0);
+                    } else {
+                        entity.passenger_role = PassengerRole::transport(cargo);
+                    }
                 }
                 if let Some(count) = actor["capture_count"].as_u64() {
                     let weapon = object

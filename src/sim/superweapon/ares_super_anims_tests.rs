@@ -161,7 +161,10 @@ fn ares_super_anim_queries_and_slot_calls_match_four_native_histories() {
     // same executed timer rows therefore apply with an unimplemented Type;
     // displaying its body must not synthesize an effect implementation.
     let (mut sim, rules, owner, building) = fixture("[SW0]\nType=FUTURE_HANDLER\n");
-    assert!(rules.super_weapon("SW0").is_none());
+    assert_eq!(
+        rules.super_weapon("SW0").unwrap().kind,
+        crate::rules::superweapon_type::SuperWeaponKind::NoEffect
+    );
     assert_selection(&sim, &rules, building, &a["selection"]);
     for phase in ["opening_charging", "opening_ready"] {
         clear(&mut sim, building);

@@ -712,6 +712,24 @@ impl OverlayGrid {
         true
     }
 
+    /// CellLoad483BE0 clears literal179/242, independently of Rules crate-image
+    /// pointers or lobby options. Loading emits no runtime dirty/recalc receipt.
+    pub(crate) fn reset_crate_fields_after_user_load(
+        &mut self,
+        cells: impl Iterator<Item = (u16, u16)>,
+    ) {
+        for (rx, ry) in cells {
+            let Some(index) = index_of(self.width, self.height, rx, ry) else {
+                continue;
+            };
+            let cell = &mut self.cells[index];
+            if matches!(cell.overlay_id, Some(179 | 242)) {
+                cell.overlay_id = None;
+                cell.overlay_data = 0;
+            }
+        }
+    }
+
     /// Drain the coordinates whose overlay identity was erased without a
     /// recalc. The frame finalizer forwards these to presentation so the
     /// removed sprite stops drawing.

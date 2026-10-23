@@ -1728,15 +1728,15 @@ fn gsi_04_07_wall_sell_ordered_cleanup_detach_navigation_and_zero_refund_rng() {
             .target()
             .is_none()
     );
-    assert!(
+    assert_eq!(
         sim.substrate
             .entities
             .get(20)
             .unwrap()
             .attack_target
-            .target()
-            .is_none(),
-        "cleanup removal expires the represented Cell target"
+            .target(),
+        Some(TargetKind::Cell(4, 3)),
+        "sale sweeps its source Cell; recursive cleanup does not sweep the neighbor"
     );
     assert!(sim.path_grid.as_deref().unwrap().is_walkable(4, 4));
     assert!(sim.path_grid.as_deref().unwrap().is_walkable(4, 3));

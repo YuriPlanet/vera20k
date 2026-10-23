@@ -445,7 +445,6 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
     )
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
-    scene.runtime.simulation.batch_target_scans();
     // A skirmish never admits the human's authored radar (`0x0044F8CB`); the
     // computer's stock NARADR charges this Super.
     let owner = scene.sim().interner().get("Computer1").unwrap();

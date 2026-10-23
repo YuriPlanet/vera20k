@@ -1260,7 +1260,7 @@ fn superweapon_retained_cameo_keeps_identity_through_hold_and_recovery() {
             .map(|entry| entry.id)
             .collect();
         assert_eq!(ids, vec![CameoId::SuperWeapon(sw_views[0].type_id)]);
-        let sidebar = build_sidebar_view_with_spec(
+        let mut sidebar = build_sidebar_view_with_spec(
             SidebarChromeLayoutSpec::stock(),
             800.0,
             430.0,
@@ -1288,6 +1288,14 @@ fn superweapon_retained_cameo_keeps_identity_through_hold_and_recovery() {
             sidebar.items.len(),
             1,
             "one retained Super, without duplicates"
+        );
+        // The per-frame receiver must restore the live Super display without
+        // rebuilding membership; drain transitions use this same receiver.
+        sidebar.items[0].super_weapon_display = None;
+        projection.apply_cameo_draw_state(&mut sidebar, sim, rules, owner, None);
+        assert_eq!(
+            sidebar.items[0].super_weapon_display,
+            Some(sw_views[0].display)
         );
         (sidebar.items[0].clone(), change)
     }

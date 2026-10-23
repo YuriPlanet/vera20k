@@ -230,13 +230,18 @@ fn snapshot_bytes(
         .unwrap()
         .capture_saved_template()
         .expect("fixture terrain authority");
-    let resources = SavedScenarioResourcesRef::capture(
+    let mut resources = SavedScenarioResourcesRef::capture(
         &runtime.resources,
         owner.saved_scenario_rules().unwrap(),
         owner.fixed_art().content_hash(),
         terrain,
         map.clone(),
     );
+    // The same late capture used by PreparedSave::write, after immutable
+    // resource preparation and immediately before simulation serialization.
+    resources
+        .capture_live_cell_land(runtime.simulation.resolved_terrain().unwrap())
+        .unwrap();
     let mut view = SavedLocalView::new(
         [[4, 5], [5, 4], [0, 0], [u16::MAX, 0]],
         Vec::new(),
@@ -341,7 +346,7 @@ fn assert_incoming_resources(
                 .terrain_template
                 .as_ref()
                 .unwrap()
-                .capture_saved_template()
+                .capture_user_saved_template(prepared.resources.terrain_template.as_ref().unwrap())
                 .unwrap()
         )
         .unwrap(),
@@ -351,13 +356,53 @@ fn assert_incoming_resources(
                 .terrain_template
                 .as_ref()
                 .unwrap()
-                .capture_saved_template()
+                .capture_user_saved_template(incoming.simulation.resolved_terrain().unwrap())
                 .unwrap()
         )
         .unwrap(),
-        "asset rebinding preserves baseline terrain values",
+        "asset rebinding preserves baseline metadata plus saved effective Land",
     );
     let live = sim.resolved_terrain().unwrap();
+    // CellLoad4839F0 clears literal crates and+4C, keeping saved Land and the
+    // separate Map+68 plane. XMP25MW's WCRATE/Rough combination motivates this
+    // small materialized fixture; no native/full retail map load is simulated.
+    let cell = live.cell(8, 8).unwrap();
+    assert_eq!(
+        (cell.land_type, cell.base_land_type, cell.zone_type),
+        (2, 7, 0)
+    );
+    assert!(!cell.overlay_blocks);
+    assert_eq!(cell.speed_costs.track, Some(0));
+    assert_eq!(cell.speed_costs.wheel, Some(0));
+    assert_eq!(cell.speed_costs.float, Some(100));
+    assert!(sim.path_grid().unwrap().is_walkable(8, 8));
+    assert_eq!(sim.overlay_grid().unwrap().cell(8, 8).overlay_id, None);
+    assert_eq!(sim.overlay_grid().unwrap().cell(7, 8).overlay_id, None);
+    assert_eq!(sim.overlay_grid().unwrap().cell(8, 8).overlay_data, 0);
+    assert!(
+        !prepared
+            .world
+            .map_restore
+            .occupied_overlays
+            .iter()
+            .any(|cell| (cell.rx, cell.ry) == (8, 8) || (cell.rx, cell.ry) == (7, 8))
+    );
+    assert_eq!(
+        serde_json::to_value(sim.zone_grid()).unwrap(),
+        serde_json::to_value(incoming.simulation.zone_grid()).unwrap()
+    );
+    for (loaded, saved) in sim
+        .crate_authority()
+        .slots()
+        .iter()
+        .zip(incoming.simulation.crate_authority().slots())
+    {
+        assert_eq!((loaded.cell_x, loaded.cell_y), (0, 0));
+        assert_eq!(
+            (loaded.start_frame, loaded.aux, loaded.duration),
+            (saved.start_frame, saved.aux, saved.duration)
+        );
+    }
     assert!(
         live.native_tmp_file_count(i32::from(prepared.theater.rmg_tiles.clear_tile.unwrap()))
             .is_some(),
@@ -461,13 +506,87 @@ fn incoming_save(theater: &str, extra_rules: &str) -> Option<IncomingSave> {
         crate::map::source::load_map_by_name_or_path_with_assets(&root, source_name, &assets)
             .unwrap();
     let mut warm_cache = TileVariantSelectorCache::default();
-    let (incoming, map, incoming_file) = bound_saved_world(
+    let (mut incoming, map, incoming_file) = bound_saved_world(
         loaded,
         source_name,
         &mut assets,
         &mut owner,
         &mode,
         &mut warm_cache,
+    );
+    let rough = *incoming
+        .resources
+        .rules
+        .terrain_rules
+        .row(crate::rules::terrain_rules::LandType::Rough);
+    let template = incoming.resources.terrain_template.as_mut().unwrap();
+    let cell = template.cell_mut_for_test(8, 8).unwrap();
+    cell.land_type = 7;
+    cell.base_land_type = 7;
+    cell.speed_costs = rough.speed_costs;
+    cell.base_speed_costs = rough.speed_costs;
+    incoming
+        .simulation
+        .install_resolved_terrain_for_new_map(template.clone());
+    assert_eq!(
+        incoming.resources.overlay_registry.id_for_name("CRATE"),
+        Some(179)
+    );
+    assert_eq!(
+        incoming.resources.overlay_registry.id_for_name("WCRATE"),
+        Some(242)
+    );
+    let overlays = incoming
+        .simulation
+        .overlay_grid_mut_for_test()
+        .as_mut()
+        .unwrap();
+    overlays.place_overlay(8, 8, 242, 10);
+    overlays.place_overlay(7, 8, 179, 255);
+    let terrain = incoming
+        .simulation
+        .resolved_terrain_mut_for_test()
+        .as_mut()
+        .unwrap();
+    // Split the test-only borrows through a short-lived owned grid.
+    let mut terrain = terrain.clone();
+    let overlays = incoming
+        .simulation
+        .overlay_grid_mut_for_test()
+        .as_mut()
+        .unwrap();
+    crate::sim::overlay_grid::recalc_overlay_passability(
+        overlays,
+        &mut terrain,
+        &incoming.resources.overlay_registry,
+        8,
+        8,
+    );
+    *incoming.simulation.resolved_terrain_mut_for_test() = Some(terrain);
+    *incoming
+        .simulation
+        .crate_authority_mut_for_test()
+        .slot_mut_for_test(0) = crate::sim::crates::CrateSlot {
+        start_frame: 73,
+        aux: 0x1234,
+        duration: 125,
+        cell_x: 8,
+        cell_y: 8,
+    };
+    *incoming
+        .simulation
+        .crate_authority_mut_for_test()
+        .slot_mut_for_test(255) = crate::sim::crates::CrateSlot {
+        start_frame: -1,
+        aux: u32::MAX,
+        duration: 321,
+        cell_x: -13,
+        cell_y: 0,
+    };
+    assert!(
+        incoming
+            .simulation
+            .rebuild_dynamic_navigation(&incoming.resources.rules)
     );
     let rules_hash = incoming.resources.rules.simulation_config_hash();
     let bytes = snapshot_bytes(&incoming, &owner, &map, None, rules_hash);

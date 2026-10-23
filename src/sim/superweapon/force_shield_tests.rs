@@ -168,7 +168,15 @@ fn the_launch_matches_native() {
         let russians = sim.interner.intern("Russians");
         let sw_type = charge_super(&mut sim, russians, FORCE_SHIELD);
         let frame = sim.session.binary_frame();
-        assert!(launch(&mut sim, &rules, russians, cell.0, cell.1, sw_type));
+        assert!(launch(
+            &mut sim,
+            &rules,
+            russians,
+            cell.0,
+            cell.1,
+            sw_type,
+            crate::sim::world::FrameEffects::default()
+        ));
 
         let native_anim = events(row, "anim").next().unwrap();
         let invoke = sim.interner.intern("FORCSHLD");

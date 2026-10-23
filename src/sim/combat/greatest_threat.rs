@@ -726,8 +726,6 @@ struct ScanContext<'a> {
     /// VERA-only: the draws so far, so side-by-side scoring can tell which
     /// candidate drew ([`flat_scores`]).
     scenario_draws: std::cell::Cell<u32>,
-    /// VERA-only: [`ThreatScanOutcome`]'s `met_idle_disguise`.
-    met_idle_disguise: std::cell::Cell<bool>,
 }
 
 impl ScanContext<'_> {
@@ -982,10 +980,7 @@ impl ScanContext<'_> {
         capture
             || (self.attacker_obj.occupier
                 && self.fire_world.is_some_and(|world| {
-                    let (Some(scanner), Some(cargo)) = (
-                        self.entities.get(self.attacker.stable_id),
-                        candidate.passenger_role.cargo(),
-                    ) else {
+                    let Some(scanner) = self.entities.get(self.attacker.stable_id) else {
                         return false;
                     };
                     crate::sim::passenger::can_dock_occupier_garrison(
@@ -993,7 +988,7 @@ impl ScanContext<'_> {
                         candidate,
                         self.attacker_obj,
                         candidate_obj,
-                        cargo,
+                        candidate.passenger_role.occupants(),
                         self.rules,
                         world,
                     )
@@ -1116,9 +1111,6 @@ pub(crate) struct ThreatScanOutcome {
     /// The Scenario stream after the scan's draws, `None` when it drew
     /// nothing ([`ScanContext::computer_detects_disguise`]).
     scenario_rng: Option<SimRng>,
-    /// The scan refused a disguised candidate only because it was not
-    /// blinking: a blink starting later would have it roll.
-    met_idle_disguise: bool,
 }
 
 impl ThreatScanOutcome {
@@ -1129,16 +1121,6 @@ impl ThreatScanOutcome {
     /// The Scenario stream the scan left, for the caller to commit.
     pub(crate) fn take_scenario_rng(&mut self) -> Option<SimRng> {
         self.scenario_rng.take()
-    }
-
-    /// The scan drew from the Scenario stream.
-    pub(crate) const fn drew_scenario_rng(&self) -> bool {
-        self.scenario_rng.is_some()
-    }
-
-    /// See [`Self::met_idle_disguise`]'s field.
-    pub(crate) const fn met_idle_disguise(&self) -> bool {
-        self.met_idle_disguise
     }
 
     pub(crate) const fn target(&self) -> Option<u64> {
@@ -1268,7 +1250,6 @@ pub(crate) fn greatest_threat(
                 foot_wrapper_entered: false,
                 collected: None,
                 scenario_rng: None,
-                met_idle_disguise: false,
             };
         }
     };
@@ -1277,7 +1258,6 @@ pub(crate) fn greatest_threat(
         foot_wrapper_entered,
         collected,
         scenario_rng: ctx.scenario_rng.take(),
-        met_idle_disguise: ctx.met_idle_disguise.get(),
     };
     // Base GreatestThreat6F8F80..6F8FA5 clears these two lists, retaining
     // history. Class returns before the base must preserve the prior lists.
@@ -1398,7 +1378,6 @@ pub(crate) fn greatest_threat(
         },
         scenario_rng: Default::default(),
         scenario_draws: Default::default(),
-        met_idle_disguise: Default::default(),
     };
 
     if flat {
@@ -1786,9 +1765,9 @@ fn flat_scores(
             let draws = ctx.scenario_draws.get();
             let (score, stamped) = dummy.detached_stamps(|| flat_score(ctx, walk, candidate));
             let drew = ctx.scenario_draws.get() != draws;
-            (score, stamped, drew, ctx.met_idle_disguise.replace(false))
+            (score, stamped, drew)
         });
-        if scored.iter().all(|&(_, stamped, _, _)| !stamped) {
+        if scored.iter().all(|&(_, stamped, _)| !stamped) {
             #[cfg(any(test, feature = "test-support"))]
             FLAT_WALKS_SIDE_BY_SIDE.set(FLAT_WALKS_SIDE_BY_SIDE.get() + 1);
             // Whether a candidate draws does not depend on the stream: the
@@ -1797,10 +1776,7 @@ fn flat_scores(
             return scored
                 .into_iter()
                 .zip(candidates)
-                .map(|((score, _, drew, met_idle_disguise), candidate)| {
-                    if met_idle_disguise {
-                        ctx.met_idle_disguise.set(true);
-                    }
+                .map(|((score, _, drew), candidate)| {
                     if drew {
                         flat_score(ctx, walk, candidate)
                     } else {
@@ -2374,13 +2350,6 @@ fn evaluate_candidate(
     ) {
         crate::sim::cloak_disguise::DisguiseGateOutcome::Accept => {}
         crate::sim::cloak_disguise::DisguiseGateOutcome::Reject => {
-            if candidate_disguised_to_attacker
-                && !ctx.attacker_obj.detect_disguise
-                && blink == 0
-                && !ctx.standing.human
-            {
-                ctx.met_idle_disguise.set(true);
-            }
             return None;
         }
         crate::sim::cloak_disguise::DisguiseGateOutcome::AiDetectionRoll => {
@@ -2568,10 +2537,7 @@ fn evaluate_candidate(
             needs_engineer: candidate_obj.needs_engineer,
             factory: candidate_obj.has_factory(),
             can_be_occupied: candidate_obj.can_be_occupied,
-            occupants: candidate
-                .passenger_role
-                .cargo()
-                .map_or(0, |cargo| cargo.count() as i32),
+            occupants: candidate.passenger_role.occupants().count(),
             armed: is_armed(candidate, candidate_obj),
         },
     )?;

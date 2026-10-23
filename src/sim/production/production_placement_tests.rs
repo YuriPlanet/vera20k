@@ -2507,15 +2507,15 @@ fn gsi_04_07_wall_placement_publishes_connectivity_neighbor_auto_destruction() {
         sim.zone_grid.is_some(),
         "neighbor removal must publish zones"
     );
-    assert!(
+    assert_eq!(
         sim.substrate
             .entities
             .get(1)
             .expect("construction yard listener")
             .attack_target
-            .target()
-            .is_none(),
-        "cleanup removal must broadcast CellClass pointer expiry before returning"
+            .target(),
+        Some(TargetKind::Cell(13, 10)),
+        "Cell7258D0 does not broadcast to Techno listeners during placement cleanup"
     );
     let expected_dirty = vec![(12, 9), (13, 10), (12, 11), (11, 10), (12, 10)];
     // Object base Mark publishes the anchor before wall connectivity's
@@ -3465,7 +3465,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
 
 #[test]
 fn sell_player_built_garrisoned_building_demolishes_and_ejects_alive() {
-    use crate::sim::passenger::{PassengerCargo, PassengerRole};
+    use crate::sim::passenger::PassengerRole;
     let mut sim = placement_sim();
     let rules = sell_rules();
     super::house_for_test(&mut sim, "Americans")
@@ -3501,18 +3501,13 @@ fn sell_player_built_garrisoned_building_demolishes_and_ejects_alive() {
     );
     let amer_id = sim.interner.intern("Americans");
     let e1_id = sim.interner.intern("E1");
-    if let Some(t) = sim.substrate.entities.get_mut(30) {
-        t.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 1.0));
-    }
     let mut pax = crate::sim::game_entity::GameEntity::test_default(31, "E1", "Americans", 39, 40);
     pax.set_owner_for_test(amer_id);
     pax.set_type_ref_for_test(e1_id);
     pax.passenger_role = PassengerRole::inside_for_test(30, false);
     sim.substrate.entities.insert(pax);
-    if let Some(t) = sim.substrate.entities.get_mut(30)
-        && let Some(c) = t.passenger_role.cargo_mut()
-    {
-        c.board_forced_chain(&[(31, 1.0)]);
+    if let Some(t) = sim.substrate.entities.get_mut(30) {
+        t.passenger_role.occupants_mut().add(31);
     }
     // Accepted Building AddOccupant52298D refreshes after the append.
     sim.refresh_spatial_threat(30, &rules, None);

@@ -851,7 +851,7 @@ mod tests {
         let ini = IniFile::from_str(
             "[SW]\nType=PsychicReveal\nSidebarImage=oldicon\nSidebarPCX=Normal.PCX\n",
         );
-        let sw = SuperWeaponType::from_ini_section("SW", ini.section("SW").unwrap()).unwrap();
+        let sw = SuperWeaponType::from_ini_section("SW", ini.section("SW").unwrap());
         let assets = AssetManager::from_loose_root_for_test(dir.path());
         let palette = Palette::from_rgb(|_| [1, 2, 3]);
         let fallback = super::render_superweapon_cameo(&sw, &assets, &palette).unwrap();
@@ -866,8 +866,7 @@ mod tests {
             assert_eq!([selected.canvas_width, selected.canvas_height], [60, 48]);
             let ini = IniFile::from_str("[PCXONLY]\nType=PsychicReveal\nSidebarPCX=Normal.PCX\n");
             let pcx_only =
-                SuperWeaponType::from_ini_section("PCXONLY", ini.section("PCXONLY").unwrap())
-                    .unwrap();
+                SuperWeaponType::from_ini_section("PCXONLY", ini.section("PCXONLY").unwrap());
             assert!(super::render_superweapon_cameo(&pcx_only, &assets, &palette).is_some());
         }
         #[cfg(not(feature = "ares"))]
@@ -1036,7 +1035,7 @@ mod tests {
             let ini = IniFile::from_str(
                 "[SW]\nType=PsychicReveal\nSidebarPCX=normal.pcx\nSidebarImage=oldicon\n",
             );
-            let sw = SuperWeaponType::from_ini_section("SW", ini.section("SW").unwrap()).unwrap();
+            let sw = SuperWeaponType::from_ini_section("SW", ini.section("SW").unwrap());
             let assets = AssetManager::from_loose_root_for_test(dir.path());
             let palette = Palette::from_rgb(|_| [1, 2, 3]);
             let selected = super::render_superweapon_cameo(&sw, &assets, &palette).unwrap();

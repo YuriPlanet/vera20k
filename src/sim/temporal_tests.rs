@@ -1101,6 +1101,89 @@ fn trigger_online_is_independent_of_temporal_and_corrupt_chain_clear_does_not_re
     assert!(!entity(&sim, building).building_online());
 }
 
+/// House cleanup's71AD40 releases the warp without452210's online store.
+/// A stock immune bridge hut survives the subsequent C4 receiver4423A3.
+#[test]
+fn house_cleanup_leaves_a_warped_bridge_hut_offline_when_it_survives_c4() {
+    use crate::sim::command::Command;
+    use crate::sim::world::HouseBlowupSubset;
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let hut_type = rules.object("CABHUT").unwrap();
+    assert!(hut_type.bridge_repair_hut && hut_type.immune && hut_type.warpable);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x71ad40);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    let hut = spawn(&mut sim, &rules, "CABHUT", "Russians", 13, 10);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Americans", 10, 10);
+    // Keep both sides in the skirmish until the explicit cleanup below.
+    spawn(&mut sim, &rules, "GACNST", "Americans", 24, 16);
+    spawn(&mut sim, &rules, "NACNST", "Russians", 24, 24);
+    let owner = entity(&sim, hut).owner();
+    let health = entity(&sim, hut).health.current();
+    let attacker = entity(&sim, cleg).owner();
+    sim.session.set_current_house_for_test(Some(attacker));
+    sim.fog.mark_visible_for_owner(attacker, 13, 10);
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Attack {
+            attacker_id: cleg,
+            target_id: hut,
+        },
+        Some(&rules),
+    ));
+    let grid = sim.path_grid_snapshot().unwrap();
+    for _ in 0..120 {
+        sim.advance_tick(&[], Some(&rules), Some(&grid), None, 33);
+        if entity(&sim, hut).is_warped_out() {
+            break;
+        }
+    }
+    assert_eq!(
+        head_of(&sim, hut),
+        Some(cleg),
+        "the ordinary shot starts the warp: fire={:?}, mission={:?}, target={:?}",
+        crate::sim::combat::fire_error_world::FireSubject {
+            world: &sim,
+            rules: &rules,
+            overlay_registry: None,
+            fog: None,
+            firer: entity(&sim, cleg),
+            obj: rules.object("CLEG").unwrap(),
+            target: Some(crate::sim::combat::TargetKind::Entity(hut)),
+            weapon_index: 0,
+        }
+        .fire_error(true),
+        entity(&sim, cleg).mission.current().known(),
+        entity(&sim, cleg).attack_target.target()
+    );
+    assert!(!entity(&sim, hut).building_online());
+    sim.house_blowup(
+        owner,
+        HouseBlowupSubset::All,
+        &rules,
+        None,
+        FrameEffects::default(),
+    );
+    assert_eq!(
+        entity(&sim, hut).health.current(),
+        health,
+        "the immune hut survives"
+    );
+    assert!(!entity(&sim, hut).is_warped_out());
+    assert_eq!(link(&sim, cleg).target, None);
+    assert!(
+        !entity(&sim, hut).building_online(),
+        "71AD40 does not restore a surviving building's online latch"
+    );
+    assert!(sim.go_building_online(hut, &rules, FrameEffects::default()));
+}
+
 /// The fixture with `SILO`, which provides a powered `NukeSpecial`.
 fn silo_rules() -> RuleSet {
     rules_from(

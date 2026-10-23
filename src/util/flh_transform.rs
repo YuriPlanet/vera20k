@@ -36,6 +36,14 @@ pub struct FlhFacings {
     pub matrix: u16,
 }
 
+/// GetFLH6F3B59 distinguishes a native locomotor from the identity arm.
+/// An absent supplied Draw_Matrix still retains a locomotor's flat fallback.
+#[derive(Clone, Copy)]
+pub enum FlhBasis {
+    NoLocomotor,
+    Locomotor(Option<glam::Mat4>),
+}
+
 /// The native fire coordinate, as a signed lepton delta from the object's
 /// render coordinate.
 ///
@@ -49,15 +57,17 @@ pub struct FlhFacings {
 ///
 /// with the Y component negated at `0x006F3D0A` before the truncation, and the
 /// three `Math__ftol` calls chopping toward zero.
-/// The optional locomotor basis is the same GPU-independent Draw_Matrix
-/// consumed by rendering. With no supplied basis, the existing flat heading
-/// remains the input. All callers use the original affine rotation and scalar
-/// translation stores, including GetFLH's distinct Translate5AE890 kernel.
+/// A supplied locomotor basis is the same GPU-independent Draw_Matrix
+/// consumed by rendering. A locomotor without a supplied matrix retains its
+/// existing flat heading. The native no-locomotor arm starts at identity and
+/// rotates once by the absolute fire facing. All callers use the original
+/// affine rotation and scalar translation stores, including GetFLH's distinct
+/// Translate5AE890 kernel.
 ///
 /// Two things here are easy to get wrong and are pinned by tests:
 ///
-/// 1. **`B` and `Rz(theta)` are two separate rotations and do NOT collapse.**
-///    A turreted object takes the locomotor branch, where `theta` is the
+/// 1. **A locomotor's `B` and `Rz(theta)` remain separate rotations.**
+///    In the locomotor branch, `theta` is the
 ///    DIFFERENCE `d32(aim) - d32(body)` and `B` supplies its own heading.
 ///    Fly4CF651 reads SecondaryFacing for B; ground55A730 reads PrimaryFacing.
 ///    On ground that algebraically composes to `Rz(aim)`, but retail's sine table is
@@ -66,8 +76,9 @@ pub struct FlhFacings {
 ///    lepton on a long barrel. `LocomotionClass::Draw_Matrix @ 0x0055A730` uses the
 ///    same quantisation and the same `-(pi/16)` double, and on flat ground `B`
 ///    reduces to that pure Z rotation with no translation and no scale.
-/// 2. **`TurretOffset` is added between the two rotations**, so it rides the
-///    locomotor matrix frame — matching the art-INI description of
+/// 2. **`TurretOffset` is added before the aim rotation**, so it rides the
+///    locomotor matrix frame when one exists; otherwise it stays on world X.
+///    This matches the art-INI description of
 ///    an offset along the body centreline. `GetFLH` uses the raw value; note
 ///    that `render/vxl_raster.rs` divides the same field by 8 for its own
 ///    purposes, and that scaling must not leak in here.
@@ -82,7 +93,7 @@ pub fn native_flh_world_delta(
     turret_offset: i32,
     facings: FlhFacings,
     burst_index: u8,
-    locomotor_basis: Option<glam::Mat4>,
+    basis: FlhBasis,
 ) -> Option<(i32, i32, i32)> {
     use crate::util::direction_tables::step32_from_facing16;
     use crate::util::native_affine::{rotate_z, translate_xyz};
@@ -93,14 +104,21 @@ pub fn native_flh_world_delta(
     let body_step = i32::from(step32_from_facing16(facings.body));
     let matrix_step = i32::from(step32_from_facing16(facings.matrix));
 
-    let basis = if let Some(basis) = locomotor_basis {
-        basis
-    } else {
-        let (sin, cos) = native_sin_cos_by_step(matrix_step - 8)?;
-        rotate_z(glam::Mat4::IDENTITY, sin, cos)
+    let (basis, relative_step) = match basis {
+        //6F3C1A..6F3C52: no Foot locomotor means identity plus one absolute
+        // fire-facing turn. A Building's authored body heading is not read.
+        FlhBasis::NoLocomotor => (glam::Mat4::IDENTITY, aim_step - 8),
+        FlhBasis::Locomotor(Some(basis)) => (basis, aim_step - body_step),
+        FlhBasis::Locomotor(None) => {
+            let (sin, cos) = native_sin_cos_by_step(matrix_step - 8)?;
+            (
+                rotate_z(glam::Mat4::IDENTITY, sin, cos),
+                aim_step - body_step,
+            )
+        }
     };
     let matrix = translate_xyz(basis, [turret_offset as f32, 0., 0.]);
-    let (sin, cos) = native_sin_cos_by_step(aim_step - body_step)?;
+    let (sin, cos) = native_sin_cos_by_step(relative_step)?;
     let matrix = rotate_z(matrix, sin, cos);
     let matrix = translate_xyz(
         matrix,
