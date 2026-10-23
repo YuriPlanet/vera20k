@@ -994,12 +994,47 @@ impl Simulation {
             return Ok(outcome);
         }
 
-        // FootClass::AI 0x004DADF5..0x004DAE59: the 64-frame idle scatter.
-        // RESIDUAL: native runs the MoveSound tail (0x004DAA01..0x004DAB3C)
-        // before it; VERA's runs later in this turn. Trigger: an Infantry
-        // whose null Scatter finds a cell runs its Walk Process at once.
-        // Effect: a MoveSound= infantry (YURIPR, JUMPJET) starts its sound,
-        // and spends its draw, one frame early. Units run no Process here.
+        // Foot4DAA01 MoveSound,4DABC7 sinking and4DACDD crash edges run
+        // before Scatter/piggyback/pending-entry/Parasite callbacks. In
+        // particular, a later Squid cull cannot run this visit's sound edge.
+        Self::tick_move_sound_after_process(
+            &sim.interner,
+            &sim.session,
+            &sim.main_rng,
+            &mut sim.substrate,
+            &mut sim.sound_events,
+            &sim.houses,
+            stable_id,
+            body_frame_before_process,
+            rules,
+        );
+        Self::sinking_edge_sounds(
+            &sim.interner,
+            &mut sim.substrate,
+            &mut sim.sound_events,
+            stable_id,
+            rules,
+        );
+        Self::crash_edge_sounds(
+            &sim.interner,
+            &mut sim.substrate,
+            &mut sim.sound_events,
+            &sim.houses,
+            stable_id,
+            rules,
+        );
+        // Foot4DADF0 ->750D40 uses the coordinate BEFORE those callbacks
+        // and Unit's subsequent hull lowering. Finish PlayAt/Release first.
+        if let Some(entity) = sim.substrate.entities.get(stable_id) {
+            object_ctx.effects.update_looping_sound(
+                sim,
+                rules,
+                stable_id,
+                Self::movement_sound_world(entity),
+            );
+        }
+
+        // FootClass::AI 0x004DADF5..0x004DAE59: the64-frame idle Scatter.
         match sim.foot_idle_scatter(stable_id, rules, overlay_registry, object_ctx.effects) {
             Ok(changed) => outcome.bridge_state_changed |= changed,
             Err(cause) => log::debug!("Foot {stable_id} did not idle-scatter: {cause}"),
@@ -1075,32 +1110,6 @@ impl Simulation {
             );
         }
 
-        Self::tick_move_sound_after_process(
-            &sim.interner,
-            &sim.session,
-            &sim.main_rng,
-            &mut sim.substrate,
-            &mut sim.sound_events,
-            &sim.houses,
-            stable_id,
-            body_frame_before_process,
-            rules,
-        );
-        Self::sinking_edge_sounds(
-            &sim.interner,
-            &mut sim.substrate,
-            &mut sim.sound_events,
-            stable_id,
-            rules,
-        );
-        Self::crash_edge_sounds(
-            &sim.interner,
-            &mut sim.substrate,
-            &mut sim.sound_events,
-            &sim.houses,
-            stable_id,
-            rules,
-        );
         // Aircraft414DA8..414DB0 rereads Object+90 after the complete Foot
         // tail. A dead aircraft returns before descent, wake draws and the
         // remaining class suffix, regardless of which callback cleared Alive.

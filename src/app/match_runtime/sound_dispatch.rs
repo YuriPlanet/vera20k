@@ -1041,7 +1041,9 @@ fn outcome_eva_event(
     }
 }
 
-fn anim_world_sound_source(world: crate::sim::anim_class::AnimWorldCoord) -> SoundSource {
+pub(crate) fn anim_world_sound_source(
+    world: crate::sim::anim_class::AnimWorldCoord,
+) -> SoundSource {
     let (rx, ry, sub_x, sub_y, _) = world.to_cell_sub_z();
     let screen = crate::util::lepton::lepton_to_screen_exact_z(rx, ry, sub_x, sub_y, world.z);
     SoundSource::new(screen, (rx, ry))
