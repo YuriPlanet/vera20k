@@ -119,6 +119,60 @@ fn commit(prepared: PreparedSavedLocalView, input: &mut MatchInputState) {
 }
 
 #[test]
+fn player_load_resets_q_producer_state_without_committing_incoming_commands() {
+    let (mut sim, rules, mut source) = fixture();
+    let mut sounds = crate::audio::events::SoundEventQueue::default();
+    source.planning.set_active(
+        true,
+        Some(&sim),
+        Some(&rules),
+        &mut source.selection_state,
+        &mut sounds,
+    );
+    assert!(source.planning.active());
+    let saved = serialized_capture(&source, &sim, &rules);
+    assert!(
+        !saved.modes().planning,
+        "active YR PlanMgr mode is not a saved Display cursor mode"
+    );
+
+    // Imported earlier VERA view data may contain this bit. It must not
+    // reactivate Q, even though native Mouse raw load retains a DIFFERENT
+    // legacy Display waypoint byte. Reset6370B0 leaves637AA0 false.
+    let mut encoded = serde_json::to_value(saved).unwrap();
+    encoded["modes"]["planning"] = serde_json::json!(true);
+    let saved: SavedLocalView = serde_json::from_value(encoded).unwrap();
+    let owner = sim.session().current_house().unwrap();
+    sim.queue_command(CommandEnvelope::new(
+        owner,
+        2,
+        Command::Stop { entity_id: 1 },
+    ));
+    let queued = sim.pending_command_snapshot();
+    let prepared = PreparedSavedLocalView::new(saved, &sim, &rules).unwrap();
+    let mut outgoing = MatchInputState::new(Default::default());
+    outgoing.planning.set_active(
+        true,
+        Some(&sim),
+        Some(&rules),
+        &mut outgoing.selection_state,
+        &mut sounds,
+    );
+    assert!(outgoing.planning.active());
+    outgoing.planning.node_deleted(99, Some(7));
+    assert_eq!(outgoing.planning.highlighted_node(), Some(7));
+    commit(prepared, &mut outgoing);
+    assert!(!outgoing.planning.active());
+    assert_eq!(outgoing.planning.highlighted_node(), None);
+    assert_eq!(
+        sim.pending_command_snapshot(),
+        queued,
+        "restoration cannot enqueue PLANCOMMIT into the incoming world"
+    );
+    assert!(!serialized_capture(&outgoing, &sim, &rules).modes().planning);
+}
+
+#[test]
 fn saved_view_replaces_reused_ids_and_preserves_order_and_raw_bookmarks() {
     let (sim, rules, mut source) = fixture();
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(

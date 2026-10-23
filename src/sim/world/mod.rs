@@ -6069,7 +6069,7 @@ impl Simulation {
         }
         // Techno701585 -> Planning638840 removes this actor's path before
         // the house swap. Already generated command events remain queued.
-        self.planning_detach_actor(stable_id);
+        self.planning_change_owner(stable_id);
         // Techno70158A..7015E6: Removed_From_Game on the old house (not in
         // limbo), then Remove_Tracking from it and Add_Tracking to the new.
         let on_map = self
@@ -7569,6 +7569,10 @@ impl Simulation {
             1,
             self.session.started(),
         );
+
+        // MainTick55DEA4 follows Frame++ and ProcessPendingDelete725C70.
+        // Network waits and terminal transitions never enter this tail.
+        self.prune_invalid_planning_nodes();
 
         // Validate actual membership after the drain. Rebuilding from current
         // phase/terrain would erase legitimate retained Cell list history.

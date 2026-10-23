@@ -153,8 +153,8 @@ impl PreparedSavedLocalView {
         Ok(Self { saved, targeting })
     }
 
-    /// Restore exactly the saved owners after navigation's world-replacement
-    /// invalidation. The Tactical view has its own owner,
+    /// Restore persistent owners after navigation's world-replacement
+    /// invalidation. Active YR PlanMgr is reset, not restored. The Tactical view has its own owner,
     /// camera::restore_tactical_view, applied once new geometry is installed.
     pub(crate) fn commit_into(
         self,
@@ -165,7 +165,10 @@ impl PreparedSavedLocalView {
             .view_bookmarks
             .restore_saved_cells(self.saved.view_bookmarks());
         let modes = self.saved.modes();
-        input.planning.restore_active(modes.planning);
+        // ClearScene6370B0 clears active YR Q at AC4CF4. Mouse raw load can
+        // restore legacy Display+11B3, a different byte. Do not use the saved
+        // VERA bit to reactivate the producer or emit a new PLANCOMMIT.
+        input.planning.reset();
         sidebar.repair_mode_on = modes.repair;
         sidebar.sell_mode_on = modes.sell;
         input.targeting_mode = self.targeting;
@@ -735,7 +738,8 @@ impl MatchInputState {
             SavedCursorModes {
                 repair: sidebar.repair_mode_on,
                 sell: sidebar.sell_mode_on,
-                planning: self.planning.active(),
+                // Active YR PlanMgr is outside Mouse's saved Display body.
+                planning: false,
                 targeting,
             },
         )

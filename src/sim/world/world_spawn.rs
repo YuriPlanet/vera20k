@@ -2258,6 +2258,9 @@ impl Simulation {
         rules: &RuleSet,
         frame_effects: FrameEffects<'_>,
     ) {
+        // InitManagers6F3F83 registers the typed parent before constructing
+        // its Spawn/Slave manager children. Load/NoInit bypasses this owner.
+        self.initialize_planning_token(parent_id);
         crate::sim::spawn_manager::commit_spawn_manager_pool(self, parent_id, rules, frame_effects);
         self.create_slave_manager(parent_id, rules, frame_effects);
         Self::initialize_airstrike(&self.interner, &mut self.substrate, parent_id, rules);

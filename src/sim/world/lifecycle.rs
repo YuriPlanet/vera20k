@@ -5989,7 +5989,6 @@ impl Simulation {
             self.retire_non_entity_object(stable_id, context);
             return;
         }
-        self.planning_detach_actor(stable_id);
         let kind = match self.classify_object(stable_id) {
             Some(
                 kind @ (ObjectKind::Entity
@@ -6514,6 +6513,7 @@ impl Simulation {
         // before its attached/deploy Anims6F468B. Keep the disposal marker in
         // the same stream as AI visits and those Anim sound callbacks.
         if kind == Some(ObjectKind::Entity) {
+            self.destroy_planning_token(stable_id);
             self.sound_events
                 .emit(super::SimSoundEvent::UnitVoiceDestroyed { owner: stable_id });
         }
