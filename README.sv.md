@@ -49,6 +49,9 @@ Ladda ner installationsprogrammet för Windows, macOS eller Linux från
 och installerar VERA20K i en ny mapp. Dit hamnar även moddar och nytt innehåll framöver, så spelets
 egna filer ändras aldrig.
 
+För att starta skirmish-matcher eller kampanjer i YR för en spelare från en CnCNet-klient, se
+[installationen av offlineklienten](integrations/cncnet/README.md).
+
 ## Inställningar
 
 Använd **Options** för ljud och kontroller och **Vera Options** för VERA-specifika funktioner.
@@ -126,11 +129,8 @@ moddar som Ares, måste vara avstängd tills den slås på med något av följan
 - **Ett lobbyalternativ i spelet**, som väljs för varje match.
 - **En INI-nyckel**, som sätts av en mod eller en karta.
 
-`VERA.INI` är till för spelarinställningar. Regler för enheter, vapen och annat i spelet hör hemma
-i moddens regel-, grafik-, spelläges- eller kart-INI-filer, till exempel `RULESMD.INI` och `ARTMD.INI`.
-
-För att starta skirmish-matcher eller kampanjer i YR för en spelare från en CnCNet-klient, se
-[installationen av offlineklienten](integrations/cncnet/README.md).
+Inställningar för ljud, grafik och kontroller sparas i `VERA.INI`. Spelreglerna kommer från
+lobbyinställningar, moddar eller kartor.
 
 ## Bidra
 
@@ -139,6 +139,9 @@ spela det sida vid sida med originalet och berätta vad som känns fel. Öppna e
 därifrån.
 
 Dokumentera fil, avsnitt, nyckel, standardvärde och effekt för varje nytt alternativ.
+
+Behåll funktionerna i samma bygge; lägg bara till byggalternativ för plattformsskillnader eller
+valfria bibliotek.
 
 Diskussionen sker på [Discord](https://discord.gg/kmjRUn5m5F) och i QQ-gruppen (1097193563).
 

@@ -51,6 +51,9 @@ de [Steam](https://store.steampowered.com/app/2229850/) o de la
 e instala VERA20K en una carpeta nueva. Ahí irán también los mods y el contenido nuevo, así que los
 archivos del juego nunca se modifican.
 
+Para iniciar escaramuzas o campañas de YR para un jugador desde un cliente de CnCNet, consulta la
+[configuración del cliente sin conexión](integrations/cncnet/README.md).
+
 ## Ajustes
 
 Usa **Options** para el sonido y los controles, y **Vera Options** para las funciones específicas
@@ -132,11 +135,8 @@ de estas opciones:
 - **Una opción del lobby del juego**, elegida para cada partida.
 - **Una clave INI**, definida por un mod o un mapa.
 
-`VERA.INI` es para las preferencias del jugador. Las reglas de unidades, armas y otras mecánicas
-pertenecen a los INI de reglas, arte, modo o mapa del mod, como `RULESMD.INI` y `ARTMD.INI`.
-
-Para iniciar escaramuzas o campañas de YR para un jugador desde un cliente de CnCNet, consulta la
-[configuración del cliente sin conexión](integrations/cncnet/README.md).
+Los ajustes de sonido, gráficos y controles se guardan en `VERA.INI`. Las reglas de juego
+provienen de los ajustes del lobby, los mods o los mapas.
 
 ## Contribuir
 
@@ -146,6 +146,9 @@ nos encargamos a partir de ahí.
 
 Para cada opción nueva, documenta el archivo, la sección, la clave, el valor predeterminado y su
 efecto.
+
+Mantén las funciones en la misma compilación; añade opciones de compilación solo para
+diferencias entre plataformas o bibliotecas opcionales.
 
 Hablamos en [Discord](https://discord.gg/kmjRUn5m5F) y en el grupo de QQ (1097193563).
 

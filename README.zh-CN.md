@@ -42,6 +42,8 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 
 从[发布页面](https://github.com/YuriPlanet/vera20k/releases)下载适用于 Windows、macOS 或 Linux 的安装程序。它会找到你从 [Steam](https://store.steampowered.com/app/2229850/) 或 [EA app](https://www.ea.com/games/command-and-conquer/command-and-conquer-the-ultimate-collection) 获得的《尤里的复仇》，并把 VERA20K 安装到一个新文件夹。今后的模组和新内容也会放在那里，因此游戏本身的文件永远不会被改动。
 
+如需通过 CnCNet 客户端启动 YR 单人遭遇战或战役，请参阅[离线客户端设置](integrations/cncnet/README.md)。
+
 ## 设置
 
 声音和操作设置请使用 **Options**，VERA 专属功能请使用 **Vera Options**。
@@ -123,10 +125,7 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 - **游戏内大厅选项**，每局单独选择。
 - **INI 键**，由模组或地图设置。
 
-`VERA.INI` 用于保存玩家偏好。单位、武器及其他游戏规则应放在模组的规则、美术、模式或地图
-INI 文件中，例如 `RULESMD.INI` 和 `ARTMD.INI`。
-
-如需通过 CnCNet 客户端启动 YR 单人遭遇战或战役，请参阅[离线客户端设置](integrations/cncnet/README.md)。
+声音、画面和操作设置保存在 `VERA.INI` 中。游戏规则由大厅设置、模组或地图决定。
 
 ## 参与贡献
 
@@ -134,6 +133,8 @@ INI 文件中，例如 `RULESMD.INI` 和 `ARTMD.INI`。
 直接提交 PR 即可，剩下的交给我们。
 
 每个新增选项都应注明其所在文件、配置节、键、默认值及作用。
+
+将各项功能保留在同一个构建中；仅在适配平台差异或可选库时添加构建选项。
 
 讨论在 [Discord](https://discord.gg/kmjRUn5m5F) 和 QQ 群（1097193563）进行。
 

@@ -50,6 +50,9 @@ Yuri's Revenge aus [Steam](https://store.steampowered.com/app/2229850/) oder der
 und richtet VERA20K in einem neuen Ordner ein. Dort kommen künftig auch Mods und neue Inhalte hin,
 sodass die Spieldateien nie verändert werden.
 
+Wie du Einzelspieler-Gefechte oder Kampagnen von YR über einen CnCNet-Client startest, steht in der
+[Offline-Client-Einrichtung](integrations/cncnet/README.md).
+
 ## Einstellungen
 
 Nutze **Options** für Ton und Steuerung und **Vera Options** für VERA-spezifische Funktionen.
@@ -127,12 +130,8 @@ aus Mods wie Ares, muss ausgeschaltet bleiben, bis sie auf einem dieser Wege akt
 - **Eine Lobby-Option im Spiel**, die für jede Partie gewählt wird.
 - **Ein INI-Schlüssel**, den eine Mod oder eine Karte setzt.
 
-`VERA.INI` ist für Spielereinstellungen gedacht. Regeln für Einheiten, Waffen und andere
-Spielmechaniken gehören in die Regel-, Grafik-, Modus- oder Karten-INIs der Mod, etwa
-`RULESMD.INI` und `ARTMD.INI`.
-
-Wie du Einzelspieler-Gefechte oder Kampagnen von YR über einen CnCNet-Client startest, steht in der
-[Offline-Client-Einrichtung](integrations/cncnet/README.md).
+Einstellungen für Ton, Grafik und Steuerung werden in `VERA.INI` gespeichert. Die Spielregeln
+stammen aus den Lobby-Einstellungen, Mods oder Karten.
 
 ## Mitmachen
 
@@ -142,6 +141,9 @@ Ideen einbringen oder es neben dem Original spielen und uns sagen, was sich fals
 
 Dokumentiere für jede neue Option die Datei, den Abschnitt, den Schlüssel, den Standardwert und
 die Wirkung.
+
+Behalte die Funktionen im selben Build; füge Build-Optionen nur für Plattformunterschiede oder
+optionale Bibliotheken hinzu.
 
 Diskutiert wird auf [Discord](https://discord.gg/kmjRUn5m5F) und in der QQ-Gruppe (1097193563).
 

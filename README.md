@@ -47,6 +47,9 @@ Download the installer for Windows, macOS or Linux from the
 [releases page](https://github.com/YuriPlanet/vera20k/releases). It finds your copy of
 Yuri's Revenge and sets up VERA20K in a new folder.
 
+To launch single-player YR skirmishes or campaigns from a CnCNet client, see the
+[offline client setup](integrations/cncnet/README.md).
+
 ## Contributing
 
 Help is welcome. You can write code, refactor the engine, test the game, share ideas, or play
@@ -59,6 +62,8 @@ Maintainers will help with review, integration and merging. You'll keep full cre
 contribution.
 
 For each new option, document its file, section, key, default and effect.
+
+Keep features in the same build; only add build options for platform differences or optional libraries.
 
 Discussion is on [Discord](https://discord.gg/kmjRUn5m5F) and in the QQ group (1097193563).
 
@@ -134,15 +139,8 @@ mods such as Ares, must stay off until it is turned on with one of:
 - **A build option**, such as `--features ares` for the supported [Ares extensions](docs/ares.md).
 - **An INI key**, set by a mod or a map.
 
-Use `VERA.INI` for settings such as sound, graphics and controls, and the lobby or mod/map INI
-files for gameplay rules.
-Keep these in the same build; only add build options for platform differences or optional libraries.
-
-`VERA.INI` is for player preferences. Unit, weapon and other gameplay rules belong in
-the mod's rules, art, mode or map INIs, such as `RULESMD.INI` and `ARTMD.INI`.
-
-To launch single-player YR skirmishes or campaigns from a CnCNet client, see the
-[offline client setup](integrations/cncnet/README.md).
+Sound, graphics and controls are saved in `VERA.INI`. Gameplay rules come from lobby
+settings, mods or maps.
 
 ## Support
 
