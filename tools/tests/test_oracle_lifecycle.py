@@ -170,6 +170,14 @@ class OracleLifecycleTests(unittest.TestCase):
                                          'tools.spatial_oracle.squid_grapple_light',
                                          optimized)
 
+    def test_building_flh_direct_import_and_help_are_inert(self):
+        for operation in ('import', 'help'):
+            for optimized in (False, True):
+                with self.subTest(operation=operation, optimized=optimized):
+                    self.check_lifecycle(operation,
+                                         'tools.spatial_oracle.building_flh_direct',
+                                         optimized)
+
     def test_explosion_rejects_retired_cache_before_inputs_deserialization_or_publication(self):
         module = 'tools.spatial_oracle.trigger_action_values'
         with tempfile.TemporaryDirectory() as directory:

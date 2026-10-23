@@ -243,6 +243,57 @@ fn pair(value: &Value) -> [i32; 2] {
     std::array::from_fn(|axis| value[axis].as_i64().unwrap() as i32)
 }
 
+/// Original Building/GetFLH identity arm over every quantized heading, both
+/// burst parities and stock/asymmetric FLH inputs with a nonzero pivot.
+#[test]
+fn building_identity_matrix_matches_original_get_flh() {
+    let native = crate::test_fixture::json("tools/spatial_oracle/building_flh_direct.json");
+    let rows = native.as_array().unwrap();
+    assert_eq!(rows.len(), 128);
+    for row in rows {
+        let input = &row["input"];
+        let [forward, lateral, height] = triple(&input["flh"]);
+        let offset = input["turret_offset"].as_i64().unwrap();
+        let mut rules = RuleSet::from_ini(&IniFile::from_str(
+            "[BuildingTypes]\n0=BLD\n[BLD]\nStrength=500\nPrimary=GUN\n[GUN]\nDamage=1\n",
+        ))
+        .unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&IniFile::from_str(&format!(
+            "[BLD]\nTurretOffset={offset}\nPrimaryFireFLH={forward},{lateral},{height}\n",
+        ))));
+        let mut sim = Simulation::new();
+        place(
+            &mut sim,
+            1,
+            "BLD",
+            EntityCategory::Structure,
+            &input["location"],
+        );
+        sim.substrate.entities.get_mut(1).unwrap().body_facing =
+            FacingClass::new(input["heading"].as_u64().unwrap() as u16, 0);
+        let source = FireSource::of_entity(sim.substrate.entities.get(1).unwrap());
+        let before = sim.state_hash();
+        let shot = fire_coordinate(
+            &sim,
+            &rules,
+            &source,
+            rules.object("BLD").unwrap(),
+            0,
+            input["burst"].as_u64().unwrap() as u8,
+            Flh::from(triple(&input["base"])),
+        );
+        assert_eq!(shot.coord, native_coord(&row["source"]), "{input}");
+        assert_eq!(
+            shot.offset_y,
+            triple(&row["source"])[1] - triple(&row["object_coordinate"])[1]
+        );
+        assert_eq!(sim.state_hash(), before, "read-only fire-coordinate query");
+        assert_eq!(row["identity_arm"], true);
+        assert_eq!(row["actor_type_unchanged"], true);
+        assert_eq!(row["rng_unchanged"], true);
+    }
+}
+
 /// The reader inputs one `building_voxel_flh.json` row writes: `[BLD]`'s type
 /// keys and the `[BLD]` ART section the merged FLH and pixel offset come from.
 /// The row's `barrel_anim_is_voxel` byte has no reader (`+0x16C6` is the arm
