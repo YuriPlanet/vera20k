@@ -36,11 +36,10 @@ const FREE_UNIT_FALLBACK_ATTEMPTS: [NearbySearchOptions; 2] = [
 /// building, so its constructor and Unlimbo are visible to subsequent Logic
 /// visits. ScenarioInit/capture gates belong to the caller.
 ///
-/// Residual: the human stored-price300 gate (446AF2..446B10) is not retained
-/// by the existing production object owner. Retail reach requires a refinery
-/// with a nonpositive miner Cost_Of (26 Industrial Plants). Its old late
-/// completion caller also omitted this gate; no basic construction type has
-/// FreeUnit. The original spatial FreeUnit corpus bounds placement below.
+/// Grand_Opening446AE3..446B10 (gamemd) suppresses a human-controlled
+/// House's FreeUnit when its retained nonzero start quote is no greater than
+/// BuildingType::GetCost45ED50. Zero is the nonproduction constructor sentinel.
+/// The original spatial FreeUnit corpus bounds placement below.
 pub(crate) fn spawn_building_free_unit(
     sim: &mut Simulation,
     stable_id: u64,
@@ -51,6 +50,17 @@ pub(crate) fn spawn_building_free_unit(
     let Some((owner_id, type_ref, rx, ry, width, height)) =
         sim.substrate.entities.get(stable_id).and_then(|entity| {
             if entity.category() != EntityCategory::Structure || entity.death.is_dying() {
+                return None;
+            }
+            let object = sim.object_type(entity.type_ref(), rules)?;
+            let human = sim
+                .houses
+                .get(&entity.owner())
+                .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+            if human
+                && entity.production_start_price() != 0
+                && entity.production_start_price() <= rules.type_cost(object)
+            {
                 return None;
             }
             let (width, height) = entity.type_facts.foundation().dimensions();

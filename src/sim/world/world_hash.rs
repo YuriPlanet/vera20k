@@ -1524,6 +1524,12 @@ fn hash_particle(p: &crate::sim::particles::Particle, hasher: &mut impl Hasher) 
 /// `frame` is the binary frame the pending timers measure against.
 fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     entity.stable_id().hash(hasher);
+    if entity.production_start_price() != 0 {
+        // Techno+300 survives factory release and can suppress FreeUnit at
+        // Grand_Opening446AF2. Native ComputeCRC70C3C6 also consumes it.
+        b"production-start-price".hash(hasher);
+        entity.production_start_price().hash(hasher);
+    }
     // Shared count presence and the raw Techno reload clock affect future
     // firing/reload, including a signed -1 reached from InitialAmmo=-2.
     b"techno-ammo-reload-v1".hash(hasher);

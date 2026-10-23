@@ -275,12 +275,16 @@ pub(crate) fn suspend_production(
 /// `FactoryClass::StartNextQueued @ 0x004CA5A0` promotes them, which runs the
 /// same Begin_Production (`0x004CA60A`).
 ///
-/// Begin_Production's network headstart (`0x004FA631..0x004FA68F`) never runs:
+/// With initialized queues and successful allocations, Begin_Production's
+/// network headstart (`0x004FA631..0x004FA68F`) is skipped:
 /// it needs the factory unsuspended just before the start (read at
 /// `0x004FA622`), and every path there has just suspended it (StartProduction's
 /// create path, `0x004C9D72`) or resumed a suspended one (`0x004FA5A8..0x004FA5C6`).
 /// A queue append (`0x004C9D22..0x004C9D2E`) returns at `0x004FA612` first, and
 /// a promotion's StartProduction never appends (`0x004C9CC9..0x004C9CCF`).
+/// A returning first-append allocation failure can instead keep the count at
+/// zero and reach that branch (`0x004C9D20..0x004C9D31`); its allocator/prediction
+/// history remains unproven and is not modeled here.
 ///
 /// A computer's building factory runs the same StartProduction and build
 /// start (`BuildingClass::Factory_AI`, `0x0045039A` and `0x004503C5`).
@@ -309,14 +313,23 @@ pub(super) fn start_active_production(
     // selected delivery/placement coordinate on this same stable identity.
     let stable_id =
         sim.construct_object_limbo_at_height(&type_name, &owner, 0, 0, 0, 0, rules, effects)?;
+    // FactoryClass::StartProduction4C9DD3..4C9DED (gamemd): quote the actual
+    // constructed Techno's owner once for both debt and its retained +300.
+    // Resume and queue append never construct here or replace this quote.
+    let product_owner = sim.substrate.entities.get(stable_id)?.owner();
+    let start_price = sim.cost_of(product_owner, obj, rules);
     let linked = sim
         .production
         .factories_mut()
-        .link_active_entity(holder, stable_id);
+        .link_active_entity(holder, stable_id, start_price);
     if linked != Some(stable_id) {
         let _ = sim.discard_constructed_limbo(stable_id, rules, effects);
         return None;
     }
+    sim.substrate
+        .entities
+        .get_mut(stable_id)?
+        .record_production_start_price(start_price);
     let time_to_build = time_to_build(&time_to_build_inputs(sim, rules, owner_id, obj));
     let frame = sim.session.binary_frame();
     let money = crate::sim::credit_income::available_money(&sim.houses, owner_id);

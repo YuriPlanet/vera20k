@@ -683,12 +683,6 @@ pub struct AbandonedObject {
 /// paying the house, and its cancel refund (Cost_Of less that Balance) takes
 /// the Cost_Of instead of nothing.
 ///
-/// RESIDUAL: VERA keeps no object `+0x300`. Its gameplay reader, the
-/// building's construction completion (`0x00446AE3..0x00446B10`), gives a
-/// human's building no FreeUnit when that stored price is non-zero and at most
-/// the type's GetCost, which in retail needs the FreeUnit's Cost_Of at 0 or
-/// less: 26 Industrial Plants for a refinery's Miner. Effect: VERA still
-/// delivers the free unit.
 fn seeded_balance(cost: i32) -> i32 {
     cost.max(0)
 }
@@ -1303,11 +1297,15 @@ impl FactoryRegistry {
         &mut self,
         holder: FactoryHolder,
         entity_id: u64,
+        start_price: i32,
     ) -> Option<u64> {
         let factory = self.factories.get_mut(&holder)?;
         let object = factory.object.as_mut()?;
         if object.entity_id.is_none() {
             object.entity_id = Some(entity_id);
+            // StartProduction4C9DEA samples Cost_Of after CreateInstance.
+            // The same quote is retained separately on that Techno at4C9DED.
+            factory.balance = seeded_balance(start_price);
         }
         object.entity_id
     }
