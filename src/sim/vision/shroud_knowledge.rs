@@ -31,7 +31,6 @@ impl Default for ShroudKnowledge {
 }
 impl ShroudKnowledge {
     /// The shroud counter: positive is shrouded, zero or negative mapped.
-    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn counter(&self) -> i32 {
         self.counter
     }

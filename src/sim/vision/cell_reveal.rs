@@ -453,10 +453,11 @@ impl OwnerVisibility {
             state.project_reveal(matches!(key, VisibilityCell::Real(_)));
         }
         let open = state.open();
-        if open {
+        // Cell487690 leaves12C untouched. Cell487630 only ORs18 when its
+        // resulting counter is nonpositive; the separate sight projection
+        // must neither clear retained ground bits nor add them early.
+        if !final_pass && state.counter() <= 0 {
             *ground |= GROUND_VISIBLE | GROUND_OPEN;
-        } else {
-            *ground &= !(GROUND_VISIBLE | GROUND_OPEN);
         }
         if let VisibilityCell::Real(index) = key {
             if projection != MapRevealProjection::Source {
