@@ -18,10 +18,10 @@ The capability list lives in `tools/capability_tests.py` and nowhere else:
 which the capability workflow runs before it compiles anything (the Python
 suite, `python-tools.yml`, runs the same guards but is manual), so another flag
 cannot silently skip coverage. The CI workflow
-`.github/workflows/capability-tests.yml` runs the tool's `check`, not a
-hand-written command list, so the registry is the coverage. The guard also
-checks `src/Cargo.toml`: core features must be enabled through a registered
-client capability or its test dependency.
+`.github/workflows/capability-tests.yml` runs the registry's `check` command
+daily at 03:17 UTC on the latest `main` commit. It can also be started manually
+from GitHub Actions. The guard also checks `src/Cargo.toml`: core features must
+be enabled through a registered client capability or its test dependency.
 
 ## Running one capability
 

@@ -87,16 +87,27 @@ begin
     (Pos(CustomMessage('GameSourceEAApp'), GameInstallList.ItemSubItem[1]) > 0), 'storefront row labels');
   AssertPicker(GameInstallList.Height >= ScaleY(48), 'list has usable height');
   AssertPicker(GameInstallDetails.Height >= ScaleY(48), 'details have usable height');
+  AssertPicker((Pos('optional.wav', GameInstallDetails.Text) > 0) and
+    (Pos(Second, GameInstallDetails.Text) = 0) and
+    (Pos(CustomMessage('GameSourceEAApp'), GameInstallDetails.Text) = 0),
+    'picker details show content issues without repeating row information');
   AssertPicker(GameInstallDetails.Top + GameInstallDetails.Height + ScaleY(8) <= GameInstallNote.Top,
     'note stays below picker details');
   AssertPicker((GameInstallNote.Height > 0) and
     (GameInstallNote.Top + GameInstallNote.Height <= GameDirPage.SurfaceHeight),
     'reassurance note fits standard wizard');
+  Installations[1].OptionalIssues := '';
+  RefreshInstallationList();
+  AssertPicker(not GameInstallDetails.Visible, 'healthy selection hides empty details');
+  AssertPicker(GameInstallList.Top + GameInstallList.Height + ScaleY(8) = GameInstallNote.Top,
+    'healthy selection gives the list the available space');
+  Installations[1].OptionalIssues := 'optional.wav: unavailable';
+  RefreshInstallationList();
   GameDirPage.Values[0] := Manual;
   AssertPicker(not GameInstallList.Checked[0] and not GameInstallList.Checked[1], 'manual edit clears radio');
   AssertPicker((Pos(CustomMessage('GameInstallManual'), GameInstallDetails.Text) > 0) and
     (Pos(CustomMessage('GameSourceManual'), GameInstallDetails.Text) > 0) and
-    (Pos('test-song.wav', GameInstallDetails.Text) = 0), 'manual label replaces stale content');
+    (Pos('optional.wav', GameInstallDetails.Text) = 0), 'manual label replaces stale content');
   SavedInstallations := Installations;
   SetArrayLength(Installations, 0);
   RefreshInstallationList();

@@ -4,7 +4,7 @@ name: Capability tests
 # to be compiled by nobody: the default-features suite, the release job and the
 # nightly all skip them, so a break could sit on main until someone happened to
 # build that combination by hand (#2798, #2789). This workflow runs
-# `tools/capability_tests.py check` on every change that can touch them: every
+# `tools/capability_tests.py check` daily and on demand: every
 # capability compiled and tested, the declared combinations compiled, and the
 # shipping `--no-default-features` configuration checked.
 #
@@ -15,24 +15,9 @@ name: Capability tests
 # platform-independent cfg flags, and the runner is plain cargo, so a matrix
 # does not contend on tools/cargo_run.py's build lock.
 on:
-  push:
-    paths:
-      - 'src/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'tools/**'
-      - 'tests/maps/**'
-      - '.gitattributes'
-      - '.github/workflows/capability-tests.yml'
-  pull_request:
-    paths:
-      - 'src/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'tools/**'
-      - 'tests/maps/**'
-      - '.gitattributes'
-      - '.github/workflows/capability-tests.yml'
+  schedule:
+    # 03:17 UTC daily, away from the busy start of the hour.
+    - cron: '17 3 * * *'
   workflow_dispatch:
 
 env:

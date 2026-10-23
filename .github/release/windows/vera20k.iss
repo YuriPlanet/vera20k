@@ -1,4 +1,4 @@
-; Windows installer for VERA20K. The Release workflow (.github/workflows/release.yml)
+; Windows installer for VERA. The Release workflow (.github/workflows/release.yml)
 ; compiles it with the Inno Setup compiler pinned in the workflow:
 ;
 ;   ISCC /DAppVersion=<x.y.z> /DBuild=<YYYYMMDD-HHMMSS> /DPackageDir=<package folder>
@@ -25,19 +25,19 @@
 [Setup]
 ; Fixed for the life of the program: upgrades find the previous install by it.
 AppId={{9C9BFC32-A7B8-48ED-A428-72333354BDDB}
-AppName=VERA20K
+AppName=VERA
 AppVersion={#AppVersion}
 ; The version and build, which stay true when a release republishes this
 ; installer under a plain name.
-AppVerName=VERA20K {#AppVersion} (build {#Build})
-AppPublisher=VERA20K
+AppVerName=VERA {#AppVersion} (build {#Build})
+AppPublisher=VERA
 AppPublisherURL=https://github.com/YuriPlanet/vera20k
 AppSupportURL=https://github.com/YuriPlanet/vera20k/issues
 AppUpdatesURL=https://github.com/YuriPlanet/vera20k/releases
 VersionInfoVersion={#AppVersion}
 ; Per user: {autopf} is %LOCALAPPDATA%\Programs, which the program can write to.
 PrivilegesRequired=lowest
-DefaultDirName={autopf}\VERA20K
+DefaultDirName={autopf}\VERA
 DisableProgramGroupPage=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -47,7 +47,7 @@ DisableWelcomePage=no
 ShowLanguageDialog=auto
 ; Use Inno Setup's built-in setup icon and wizard images.
 UninstallDisplayIcon={app}\vera20k.exe
-UninstallDisplayName=VERA20K
+UninstallDisplayName=VERA
 SourceDir={#PackageDir}
 OutputDir={#OutputDir}
 OutputBaseFilename={#OutputBaseFilename}
@@ -59,19 +59,20 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
 [Messages]
-; Standard wizard/uninstaller footer; always name the compiler actually used.
-BeveledLabel=Inno Setup {#DecodeVer(Ver)}
-english.WelcomeLabel2=This will install [name/ver] on your computer.%n%nVERA20K is a community-led rewrite of the Red Alert 2: Yuri's Revenge engine.%n%nYou will need the game files from your own copy of Yuri's Revenge 1.001.
-chinesesimplified.WelcomeLabel2=即将在您的计算机上安装 [name/ver]。%n%nVERA20K 是由社区开发的《红色警戒 2：尤里的复仇》引擎重写项目。%n%n运行游戏需要您自己拥有的《尤里的复仇》1.001 版游戏文件。
+; Credit the actual compiler in the title bar; keep the standard footer clear.
+english.SetupWindowTitle=Setup - %1 | Inno Setup {#DecodeVer(Ver)}
+chinesesimplified.SetupWindowTitle=安装 - %1 | Inno Setup {#DecodeVer(Ver)}
+english.WelcomeLabel2=VERA is a community-built engine for Yuri's Revenge.%n%nRequires game files from your own copy of Yuri's Revenge 1.001.
+chinesesimplified.WelcomeLabel2=VERA 是由社区开发的《尤里的复仇》游戏引擎。%n%n需要您自己拥有的《尤里的复仇》1.001 版游戏文件。
 
 [CustomMessages]
 english.GameDirCaption=Yuri's Revenge folder
 english.GameDirDescription=Where is Yuri's Revenge installed?
-english.GameDirSubCaption=Choose a detected Yuri's Revenge 1.001 installation below, or browse for another folder.
+english.GameDirSubCaption=Choose an installation or browse for another folder.
 english.GameDirPrompt=Yuri's Revenge folder:
-english.GameInstallReady=Required files ready
-english.GameInstallOptional=Ready; optional content unavailable
-english.GameInstallMissing=Required files missing or unreadable
+english.GameInstallReady=Ready
+english.GameInstallOptional=Ready; optional files missing
+english.GameInstallMissing=Required files unavailable
 english.GameInstallRecommended=Recommended
 english.GameInstallLanguage=Language: %1
 english.GameInstallSource=Source: %1
@@ -79,11 +80,11 @@ english.GameSourceSteam=Steam
 english.GameSourceEAApp=EA App
 english.GameSourceManual=Manually selected
 english.GameSourceDetected=Detected installation
-english.GameInstallUntouched=Uses your existing game files. Your original installation stays untouched.
+english.GameInstallUntouched=Your original game files stay untouched.
 english.GameInstallChecking=Checking detected installations...
-english.GameInstallChoose=Select an installation above to see its missing content. You can also browse for another folder.
+english.GameInstallChoose=Select an installation to see any missing content.
 english.GameInstallManual=Click Next to check the chosen folder.
-english.GameInstallNone=No installations were detected. Browse for your Yuri's Revenge folder, then click Next to check it.
+english.GameInstallNone=No installations found. Browse for your Yuri's Revenge folder.
 english.GameLanguage0=English (US)
 english.GameLanguage1=English (UK)
 english.GameLanguage2=German
@@ -108,11 +109,11 @@ english.GameCheckNoFolder=No game folder was selected.
 english.ConfigNotWritten=Setup could not write %1.
 chinesesimplified.GameDirCaption=《尤里的复仇》文件夹
 chinesesimplified.GameDirDescription=《尤里的复仇》安装在哪里？
-chinesesimplified.GameDirSubCaption=请选择下方检测到的《尤里的复仇》1.001 安装，或浏览其他文件夹。
+chinesesimplified.GameDirSubCaption=请选择一个安装，或浏览其他文件夹。
 chinesesimplified.GameDirPrompt=《尤里的复仇》文件夹：
-chinesesimplified.GameInstallReady=必需文件齐全
-chinesesimplified.GameInstallOptional=可以使用；部分可选内容不可用
-chinesesimplified.GameInstallMissing=必需文件缺失或无法读取
+chinesesimplified.GameInstallReady=可以使用
+chinesesimplified.GameInstallOptional=可以使用；缺少可选文件
+chinesesimplified.GameInstallMissing=必需文件不可用
 chinesesimplified.GameInstallRecommended=推荐
 chinesesimplified.GameInstallLanguage=语言：%1
 chinesesimplified.GameInstallSource=来源：%1
@@ -120,11 +121,11 @@ chinesesimplified.GameSourceSteam=Steam
 chinesesimplified.GameSourceEAApp=EA App
 chinesesimplified.GameSourceManual=手动选择
 chinesesimplified.GameSourceDetected=检测到的安装
-chinesesimplified.GameInstallUntouched=使用您现有的游戏文件，不会改动原版游戏安装。
+chinesesimplified.GameInstallUntouched=不会改动您的原版游戏文件。
 chinesesimplified.GameInstallChecking=正在检查检测到的游戏安装……
-chinesesimplified.GameInstallChoose=选择上方的安装可查看缺失内容，也可以浏览其他文件夹。
+chinesesimplified.GameInstallChoose=选择一个安装可查看缺失内容。
 chinesesimplified.GameInstallManual=点击“下一步”检查所选文件夹。
-chinesesimplified.GameInstallNone=未检测到游戏安装。请浏览选择《尤里的复仇》文件夹，然后点击“下一步”检查。
+chinesesimplified.GameInstallNone=未找到游戏安装。请浏览选择《尤里的复仇》文件夹。
 chinesesimplified.GameLanguage0=英语（美国）
 chinesesimplified.GameLanguage1=英语（英国）
 chinesesimplified.GameLanguage2=德语
@@ -159,11 +160,17 @@ Source: "THIRD_PARTY_LICENSES.html"; DestDir: "{app}"; Flags: ignoreversion
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Icons]
-Name: "{autoprograms}\VERA20K"; Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\VERA20K"; Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\VERA"; Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"
+Name: "{autodesktop}\VERA"; Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+
+[InstallDelete]
+; AppId and the previous install directory still identify upgrades. Replace
+; our old shortcuts so an upgrade has one visible product name.
+Type: files; Name: "{autoprograms}\VERA20K.lnk"
+Type: files; Name: "{autodesktop}\VERA20K.lnk"
 
 [Run]
-Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,VERA20K}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\vera20k.exe"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,VERA}"; Flags: nowait postinstall skipifsilent
 
 [Code]
 type
@@ -427,18 +434,32 @@ begin
     Result := CustomMessage('GameInstallReady');
 end;
 
+function InstallationIssues(Installation: TGameInstallation): String;
+begin
+  Result := '';
+  if Installation.RequiredIssues <> '' then
+    Result := CustomMessage('GameCheckRequiredHeading') + #13#10 +
+      Installation.RequiredIssues;
+  if Installation.OptionalIssues <> '' then
+  begin
+    if Result <> '' then
+      Result := Result + #13#10#13#10;
+    Result := Result + CustomMessage('GameCheckOptionalHeading') + #13#10 +
+      Installation.OptionalIssues;
+  end;
+end;
+
 function InstallationReport(Installation: TGameInstallation): String;
+var
+  Issues: String;
 begin
   Result := Installation.Folder + #13#10 +
     FmtMessage(CustomMessage('GameInstallSource'), [GameSourceName(Installation.Source)]) + #13#10 +
     FmtMessage(CustomMessage('GameInstallLanguage'), [GameLanguageName(Installation.Language)]) + #13#10 +
     InstallationStatus(Installation);
-  if Installation.RequiredIssues <> '' then
-    Result := Result + #13#10#13#10 + CustomMessage('GameCheckRequiredHeading') + #13#10 +
-      Installation.RequiredIssues;
-  if Installation.OptionalIssues <> '' then
-    Result := Result + #13#10#13#10 + CustomMessage('GameCheckOptionalHeading') + #13#10 +
-      Installation.OptionalIssues;
+  Issues := InstallationIssues(Installation);
+  if Issues <> '' then
+    Result := Result + #13#10#13#10 + Issues;
 end;
 
 function FindInstallation(Dir: String): Integer;
@@ -484,7 +505,7 @@ end;
 
 procedure RefreshInstallationList();
 var
-  I, Selected: Integer;
+  I, Selected, Space: Integer;
   Summary: String;
 begin
   UpdatingSelection := True;
@@ -504,12 +525,24 @@ begin
     end;
     GameInstallList.ItemIndex := Selected;
     if Selected >= 0 then
-      GameInstallDetails.Text := InstallationReport(Installations[Selected])
+      GameInstallDetails.Text := InstallationIssues(Installations[Selected])
     else if (GetArrayLength(Installations) = 0) and (GameDir() = '') then
       GameInstallDetails.Text := CustomMessage('GameInstallNone')
     else
-      GameInstallDetails.Text := FmtMessage(CustomMessage('GameInstallSource'), [GameSourceName(gsManual)]) + #13#10 +
+      GameInstallDetails.Text := GameSourceName(gsManual) + #13#10 +
         CustomMessage('GameInstallManual');
+    { Healthy copies need no second box repeating their row. Keep the space
+      for detected installations; show exact content issues when needed. }
+    Space := GameInstallNote.Top - GameInstallList.Top - ScaleY(8);
+    GameInstallDetails.Visible := GameInstallDetails.Text <> '';
+    if GameInstallDetails.Visible then
+    begin
+      GameInstallList.Height := (Space - ScaleY(8)) div 2;
+      GameInstallDetails.Top := GameInstallList.Top + GameInstallList.Height + ScaleY(8);
+      GameInstallDetails.Height := GameInstallNote.Top - GameInstallDetails.Top - ScaleY(8);
+    end
+    else
+      GameInstallList.Height := Space;
   finally
     UpdatingSelection := False;
   end;
@@ -527,10 +560,10 @@ begin
       UpdatingSelection := True;
       try
         GameDirPage.Values[0] := Installations[I].Folder;
-        GameInstallDetails.Text := InstallationReport(Installations[I]);
       finally
         UpdatingSelection := False;
       end;
+      RefreshInstallationList();
       Exit;
     end;
 end;
@@ -580,8 +613,14 @@ end;
 
 procedure InitializeWizard();
 var
-  ListTop, Space: Integer;
+  HeaderTop, ListTop, Space: Integer;
 begin
+  { Align the standard header lines and leave a small gap below the title.
+    Keep the subtitle's bottom edge inside the existing header panel. }
+  HeaderTop := WizardForm.PageNameLabel.Top + WizardForm.PageNameLabel.Height + ScaleY(4);
+  WizardForm.PageDescriptionLabel.SetBounds(WizardForm.PageNameLabel.Left, HeaderTop,
+    WizardForm.PageNameLabel.Width, WizardForm.PageDescriptionLabel.Top +
+    WizardForm.PageDescriptionLabel.Height - HeaderTop);
   RecommendedInstall := -1;
   GameDirPage := CreateInputDirPage(wpSelectDir, CustomMessage('GameDirCaption'),
     CustomMessage('GameDirDescription'), CustomMessage('GameDirSubCaption'), False, '');
