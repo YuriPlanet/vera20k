@@ -803,7 +803,7 @@ where
 {
     let mut grid = CellLightGrid::with_detail_level(detail_level);
     for (cell, z) in heights {
-        let sample = sample_cell_light(cell, z, profile, &[]);
+        let sample = sample_cell_light((cell.0 as i16, cell.1 as i16), z, profile, &[]);
         let light = sample.finalize(&mut grid.profiles, grid.detail_level);
         grid.insert_light(cell, light);
     }
@@ -866,7 +866,6 @@ pub struct DeferredCellLightRefresh {
 
 #[derive(Debug, Clone)]
 struct CellLightSample {
-    cell: (u16, u16),
     neutral: bool,
     raw_rgb: LightRgbKey,
     raw_additive_intensity: i32,
@@ -928,7 +927,12 @@ impl DeferredCellLightRefresh {
         for _ in 0..count {
             let index = self.cells.len() - 1 - self.gathered;
             let (cell, height) = self.cells[index];
-            self.samples[index] = Some(sample_cell_light(cell, height, self.profile, &self.lights));
+            self.samples[index] = Some(sample_cell_light(
+                (cell.0 as i16, cell.1 as i16),
+                height,
+                self.profile,
+                &self.lights,
+            ));
             self.gathered += 1;
         }
         self.is_gathered()
@@ -950,9 +954,10 @@ impl DeferredCellLightRefresh {
             return None;
         }
         let mut grid = CellLightGrid::with_detail_level(self.detail_level);
-        for sample in self.samples.into_iter().flatten() {
-            let cell = sample.cell;
-            let light = sample.finalize(&mut grid.profiles, self.detail_level);
+        for ((cell, _), sample) in self.cells.into_iter().zip(self.samples) {
+            let light = sample
+                .expect("a completed refresh has a sample for each cell")
+                .finalize(&mut grid.profiles, self.detail_level);
             grid.insert_light(cell, light);
         }
         Some(grid)
@@ -965,9 +970,10 @@ impl DeferredCellLightRefresh {
             return false;
         }
         grid.detail_level = self.detail_level;
-        for sample in self.samples.into_iter().flatten() {
-            let cell = sample.cell;
-            let light = sample.finalize(&mut grid.profiles, self.detail_level);
+        for ((cell, _), sample) in self.cells.into_iter().zip(self.samples) {
+            let light = sample
+                .expect("a completed refresh has a sample for each cell")
+                .finalize(&mut grid.profiles, self.detail_level);
             grid.insert_light(cell, light);
         }
         true
@@ -1114,7 +1120,7 @@ pub fn accumulate_point_lights(grid: &mut CellLightGrid, lights: &[PointLight]) 
         let mut raw_top = base_light.raw_top_scalar;
         let mut raw_bottom = base_light.raw_bottom_scalar;
         accumulate_light_sample(
-            cell,
+            (cell.0 as i16, cell.1 as i16),
             lights,
             &mut raw_rgb,
             &mut raw_additive,
@@ -1156,15 +1162,16 @@ fn initial_height_scalars(profile: CellRelightProfile, level: u8) -> (i32, i32) 
     )
 }
 
+/// Cell484180 reads packed coordinates with MOVSX, including the shared
+/// fallback Cell. The two neutral sentinels are coordinates, not identities.
 fn sample_cell_light(
-    cell: (u16, u16),
+    cell: (i16, i16),
     height: u8,
     profile: CellRelightProfile,
     lights: &[PointLight],
 ) -> CellLightSample {
-    if cell == (0, 0) {
+    if cell == (0, 0) || cell == (-1, -1) {
         return CellLightSample {
-            cell,
             neutral: true,
             raw_rgb: [LIGHT_UNIT, LIGHT_UNIT, LIGHT_UNIT],
             raw_additive_intensity: 0,
@@ -1185,7 +1192,6 @@ fn sample_cell_light(
         &mut raw_bottom_scalar,
     );
     CellLightSample {
-        cell,
         neutral: false,
         raw_rgb,
         raw_additive_intensity,
@@ -1197,34 +1203,48 @@ fn sample_cell_light(
 /// The one per-light sum: the full rebuild ([`accumulate_point_lights`]) and
 /// each per-event refresh ([`sample_cell_light`]) add lights through it.
 fn accumulate_light_sample(
-    cell: (u16, u16),
+    cell: (i16, i16),
     lights: &[PointLight],
     raw_rgb: &mut LightRgbKey,
     raw_additive: &mut i32,
     raw_top: &mut i32,
     raw_bottom: &mut i32,
 ) {
+    if cell == (0, 0) || cell == (-1, -1) {
+        return;
+    }
     let cell_center_x = i32::from(cell.0) * LEPTONS_PER_CELL + HALF_CELL_LEPTONS;
     let cell_center_y = i32::from(cell.1) * LEPTONS_PER_CELL + HALF_CELL_LEPTONS;
     for light in lights {
-        if !light.active || !light.detail || light.radius_leptons <= 0 {
+        if !light.active || !light.detail {
             continue;
         }
-        let dx = i64::from(cell_center_x - light.center_x);
-        let dy = i64::from(cell_center_y - light.center_y);
-        let distance_sq = dx * dx + dy * dy;
-        let radius = i64::from(light.radius_leptons);
-        if distance_sq > radius * radius {
+        let dx = cell_center_x.wrapping_sub(light.center_x);
+        let dy = cell_center_y.wrapping_sub(light.center_y);
+        // Cell48431A..484394 first compares low32 squared distances unsigned,
+        // then uses the shared Sqrt_Approx4CAC40/ftol7C5F00 distance owner.
+        let squared = dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy)) as u32;
+        let radius = light.radius_leptons;
+        if squared > radius.wrapping_mul(radius) as u32 {
             continue;
         }
-        let distance = integer_sqrt(distance_sq);
-        let factor = ((radius - distance) * i64::from(LIGHT_UNIT)) / radius;
-        let intensity = signed_div_1000(i64::from(light.intensity) * factor);
-        *raw_additive += intensity;
-        *raw_top += intensity;
-        *raw_bottom += intensity;
+        let distance = crate::util::native_x87::sqrt_approx_length([dx, dy]);
+        if distance as u32 > radius as u32 {
+            continue;
+        }
+        //48439A..484438: wrapping products, unsigned DIV for the falloff,
+        // then signed /1000 of each low32 contribution. A zero-radius source
+        // at its centre reaches the native division fault at4843B8 too.
+        let numerator = radius
+            .wrapping_mul(LIGHT_UNIT)
+            .wrapping_sub(distance.wrapping_mul(LIGHT_UNIT));
+        let factor = (numerator as u32 / radius as u32) as i32;
+        let intensity = light.intensity.wrapping_mul(factor) / LIGHT_UNIT;
+        *raw_additive = raw_additive.wrapping_add(intensity);
+        *raw_top = raw_top.wrapping_add(intensity);
+        *raw_bottom = raw_bottom.wrapping_add(intensity);
         for (channel, raw) in raw_rgb.iter_mut().enumerate() {
-            *raw += signed_div_1000(i64::from(light.tint[channel]) * factor);
+            *raw = raw.wrapping_add(light.tint[channel].wrapping_mul(factor) / LIGHT_UNIT);
         }
     }
 }
@@ -1299,8 +1319,8 @@ fn build_cell_light_from_raw(
     // LIGHTCONVERT_ROW_RGB565_ORACLE_2026_09_09.md and palette_oracle fixtures.
     let normalized = normalize_light_at_detail(raw_rgb, top_high, detail_level);
     let common_high = normalized.common_scalar;
-    let scaled_bottom = ((i64::from(raw_bottom_scalar) * i64::from(normalized.scale16)) >> 16)
-        .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+    //4845D6 retains the IMUL low dword before its arithmetic shift.
+    let scaled_bottom = raw_bottom_scalar.wrapping_mul(normalized.scale16) >> 16;
     let bottom_high = scaled_bottom.min(LIGHT_CLAMP_MAX);
     let top_scalar = clamp_light_scalar(top_high);
     let common_scalar = clamp_light_scalar(common_high);
@@ -1312,7 +1332,7 @@ fn build_cell_light_from_raw(
         raw_rgb,
         normalized.scale16,
         raw_additive_intensity,
-        raw_additive_intensity,
+        i32::from(raw_additive_intensity as i16), //483F88 stores Cell108 as a word.
         raw_top_scalar,
         raw_bottom_scalar,
         top_scalar,
@@ -1382,8 +1402,8 @@ fn normalize_light_at_detail(
                 rgb[1] = normalize_channel_by_scale(rgb[1], scale);
                 rgb[2] = LIGHT_UNIT;
             }
-            common = ((i64::from(scale16) * i64::from(common)) >> 16)
-                .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+            //555A96/99 likewise shift the wrapping dword product.
+            common = scale16.wrapping_mul(common) >> 16;
         }
     }
     if common > LIGHT_CLAMP_MAX {
@@ -1423,10 +1443,6 @@ fn quantize_rgb_key(rgb: LightRgbKey, detail_level: u32) -> LightRgbKey {
 
 fn clamp_light_scalar(value: i32) -> i32 {
     value.clamp(LIGHT_CLAMP_MIN, LIGHT_CLAMP_MAX)
-}
-
-fn signed_div_1000(value: i64) -> i32 {
-    (value / i64::from(LIGHT_UNIT)) as i32
 }
 
 #[cfg(test)]
@@ -1614,6 +1630,151 @@ mod tests {
         assert_eq!(light.top_scalar, 875);
         assert_eq!(light.common_scalar, 647);
         assert_eq!(light.raw_rgb, [290, 390, 740]);
+    }
+
+    #[test]
+    fn signed_cell_light_sampling_matches_native_sentinels_and_negative_height() {
+        // Complete original Cell484180, supplied normal profile63/80/70/60,
+        // Ground50/Level8 and one active source. Both sentinel pairs skip
+        // that source; nonsentinel signed coordinates retain their own level.
+        let profile = LightingProfileUnits {
+            ambient_percent: 63,
+            red_percent: 80,
+            green_percent: 70,
+            blue_percent: 60,
+            ground_units: 50,
+            level_units: 8,
+        };
+        for (cell, height, expected, rgb) in [
+            ((0, 0), 0, [65536, 0, 1000, 1000, 1000], [1000; 3]),
+            ((-1, -1), 0, [65536, 0, 1000, 1000, 1000], [1000; 3]),
+            ((-1, 0), 0, [63700, 308, 888, 863, 894], [992, 576, 672]),
+            (
+                (-17, 4),
+                -4_i8,
+                [63700, 308, 856, 832, 863],
+                [992, 576, 672],
+            ),
+        ] {
+            let mut source = test_point_light(0, 0, 5000, 375, [210, -170, 90]);
+            source.center_x = i32::from(cell.0) * 256 + 128 - 765;
+            source.center_y = i32::from(cell.1) * 256 + 128 + 437;
+            let stored = (cell.0 as u16, cell.1 as u16);
+            let mut refresh = DeferredCellLightRefresh::new_with_profile(
+                [(stored, height as u8)],
+                profile.into(),
+                2,
+                vec![source],
+            );
+            refresh.gather_all();
+            let grid = refresh.commit().unwrap();
+            let light = grid.cell_light_at(stored).unwrap();
+            assert_eq!(
+                [
+                    light.scale16,
+                    light.raw_additive_intensity,
+                    light.top_scalar,
+                    light.common_scalar,
+                    light.bottom_scalar
+                ],
+                expected,
+                "receiver {cell:?}, level{height}"
+            );
+            assert_eq!(light.rgb_key, rgb);
+        }
+    }
+
+    #[test]
+    fn point_light_sampling_uses_native_approximate_distance_at_falloff_boundary() {
+        // Cell484180 -> Sqrt_Approx4CAC40 -> ftol7C5F00 yields distance190
+        // for delta(191,1), making falloff962 rather than the exact sqrt's961.
+        let profile = LightingProfileUnits {
+            ambient_percent: 63,
+            red_percent: 80,
+            green_percent: 70,
+            blue_percent: 60,
+            ground_units: 50,
+            level_units: 8,
+        };
+        let mut source = test_point_light(24, 24, 5000, 1000, [1000; 3]);
+        source.center_x -= 191;
+        source.center_y -= 1;
+        let mut refresh = DeferredCellLightRefresh::new_with_profile(
+            [((24, 24), 0)],
+            profile.into(),
+            2,
+            vec![source],
+        );
+        refresh.gather_all();
+        let grid = refresh.commit().unwrap();
+        let light = grid.cell_light_at((24, 24)).unwrap();
+        assert_eq!(
+            [
+                light.scale16,
+                light.additive_intensity,
+                light.top_scalar,
+                light.common_scalar,
+                light.bottom_scalar
+            ],
+            [115474, 962, 1542, 2000, 2000]
+        );
+        assert_eq!(light.rgb_key, [992, 928, 864]);
+    }
+
+    #[test]
+    fn point_light_sampling_retains_native_wrapping_products_and_source_word() {
+        // Original48439A..484438 products/DIV and4845D6 final bottom scale;
+        //483F88 publishes additive as a signed Cell108 word independently.
+        let profile = LightingProfileUnits {
+            ambient_percent: 63,
+            red_percent: 80,
+            green_percent: 70,
+            blue_percent: 60,
+            ground_units: 50,
+            level_units: 8,
+        };
+        for (radius, delta, intensity, tint, expected, raw_additive) in [
+            (
+                i32::MAX,
+                [0, 0],
+                375,
+                [210, -170, 90],
+                [52428, 0, 580, 463, 489],
+                0,
+            ),
+            (
+                5000,
+                [765, -437],
+                i32::MAX,
+                [i32::MAX, i32::MIN, 123456789],
+                [131072, -15206, 2000, 2000, 0],
+                2147482,
+            ),
+        ] {
+            let mut source = test_point_light(24, 24, radius, intensity, tint);
+            source.center_x -= delta[0];
+            source.center_y -= delta[1];
+            let mut refresh = DeferredCellLightRefresh::new_with_profile(
+                [((24, 24), 0)],
+                profile.into(),
+                2,
+                vec![source],
+            );
+            refresh.gather_all();
+            let grid = refresh.commit().unwrap();
+            let light = grid.cell_light_at((24, 24)).unwrap();
+            assert_eq!(
+                [
+                    light.scale16,
+                    light.additive_intensity,
+                    light.top_scalar,
+                    light.common_scalar,
+                    light.bottom_scalar
+                ],
+                expected
+            );
+            assert_eq!(light.raw_additive_intensity, raw_additive);
+        }
     }
 
     #[test]
@@ -1858,12 +2019,13 @@ mod tests {
 
     #[test]
     fn test_point_light_division_truncates_toward_zero() {
-        let mut grid = test_grid(1, [0.0, 0.0, 0.0]);
-        let mut light = test_point_light(0, 0, 3, 1000, [0; 3]);
+        // Use a nonsentinel receiver: native484180 ignores sources at0,0.
+        let mut grid = test_grid(2, [0.0, 0.0, 0.0]);
+        let mut light = test_point_light(1, 1, 3, 1000, [0; 3]);
         light.center_x -= 1;
         accumulate_point_lights(&mut grid, &[light]);
 
-        let center = grid.tint_or_default((0, 0));
+        let center = grid.tint_or_default((1, 1));
         assert!((center[0] - 0.666).abs() < 0.001);
     }
 
