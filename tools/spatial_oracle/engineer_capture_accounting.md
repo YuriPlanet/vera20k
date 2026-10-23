@@ -60,8 +60,12 @@ already paid arrival head are inputs; whole native map loading, ordinary travel,
 full House startup and hardware presentation remain outside these controls.
 The entrant has no Tag. The Rust production regression separately exercises
 ordinary command/movement and the transfer of an inert entrant Tag; that extra
-composition is not claimed as a native golden. Recorded RNG states cover this
-bounded native continuation, not the full Rust travel frames.
+composition is not claimed as a native golden. Original executable sections,
+required callback/capture/destruction routes, RNG-call completion and the Infantry
+vtable remain checked internally. This fixture retains only the callback-change
+flags, runtime mode and final owner read by the Rust regression, plus its source
+marker; its sidecar records the scope, replay command and payload integrity hash.
+The default accounting comparison below retains its existing observations.
 
 ## Executed controls
 

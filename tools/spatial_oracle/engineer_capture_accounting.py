@@ -302,7 +302,7 @@ def entered_owner_control(inputs, first_change, second_change):
         for offset in (0x5528, 0x5578):
             u.mem_write(house + offset, dwords(0x7E449C, f.allocate(128 * 4), 128, 1, 1, 10))
     actor = f.actor((9, 10))
-    command = f.resolved_command(actor, f.ordinary_action(actor))
+    f.resolved_command(actor, f.ordinary_action(actor))
     # Same delivered-friendly-order/enroute-owner race as the existing corpus.
     u.mem_write(engineer.BLD + 0x21C, dwords(houses[2]))
     items = f.allocate(4 * len(houses))
@@ -348,73 +348,44 @@ def entered_owner_control(inputs, first_change, second_change):
     nav.finish_graphs()
     Navigation.setup_pathfinder(nav.call)
     observation = AccountingObservation(f, {str(i): house for i, house in enumerate(houses)})
-    callbacks, actions = [], []
 
     def observe(vm, pc, _size, _data):
         sp = vm.reg_read(engineer.UC_X86_REG_ESP)
-        if pc in (0x519B58, 0x519F49, 0x519F71, 0x519F84):
-            callbacks.append(dict(pc=f'0x{pc:08X}',
-                entrant_owner=houses.index(f.read32(actor + 0x21C)),
-                building_owner=houses.index(f.read32(engineer.BLD + 0x21C)),
-                mission=f.read32(actor + 0xAC), destination=f.read32(actor + 0x5A4)))
-        elif pc == 0x6DD8B0:
-            action = vm.reg_read(engineer.UC_X86_REG_ECX)
-            actions.append([f.read32(action + 0x2C), f.read32(action + 0x90)])
-        elif pc == 0x6E53A0 and f.read32(sp + 4) == 1:
+        if pc == 0x6E53A0 and f.read32(sp + 4) == 1:
             assert f.read32(sp + 8) == actor
 
     hook = u.hook_add(UC_HOOK_CODE, observe)
     f.phase = 'tagged_capture'
     f.walk_arrival(actor, 10)
-    before_drain = dict(alive=u.mem_read(actor + 0x90, 1)[0],
-                        entrant_owner=houses.index(f.read32(actor + 0x21C)),
-                        pending_count=f.read32(0xB0F6A8))
     f.phase = 'tagged_capture_deferred_drain'
     construction.invoke(u, 0x725C70, 0)
     u.hook_del(hook)
     runtime_game_mode = f.read32(0xA8B238)
     if runtime_game_mode != 5:
         raise native.OracleError('Tagged capture did not retain Skirmish runtime mode5')
-    result = dict(first_change=first_change, second_change=second_change,
-        runtime_game_mode=runtime_game_mode,
-        command=command, callbacks=callbacks, actions=actions,
-        owner=houses.index(f.read32(engineer.BLD + 0x21C)),
-        before_drain=before_drain, pending_count=f.read32(0xB0F6A8),
-        infantry_registry_count=f.read32(0xA83DF8),
-        observation=observation.finish((0x519630, 0x6E53A0, 0x71E940, 0x7265C0,
-                                       0x448260, 0x7014A0, 0x725C70, 0x517D90)))
+    # Keep original-code, route and RNG-call integrity checks internal;
+    # the fixture stores only the semantic fields the Rust regression reads.
+    observation.finish((0x519630, 0x519B53, 0x519F44, 0x519F71,
+                        0x6E53A0, 0x71E940, 0x7265C0, 0x448260,
+                        0x7014A0, 0x725C70, 0x517D90))
     if bytes(u.mem_read(engineer.INF_VTABLE, 0x55C)) != infantry_vtable:
         raise native.OracleError('Tagged capture changed the Infantry vtable')
-    result['unchanged_infantry_vtable'] = True
-    return result
+    return dict(first_change=first_change, second_change=second_change,
+                runtime_game_mode=runtime_game_mode,
+                owner=houses.index(f.read32(engineer.BLD + 0x21C)))
 
 
 def entered_owner_generate():
     inputs = engineer.prepare_joined_inputs(engineer.JOINED_ROOT)
-    return dict(schema_version=1, source='unicorn/gamemd.exe',
+    return dict(source='unicorn/gamemd.exe',
         controls=[entered_owner_control(inputs, first, second)
                   for first, second in ((False, False), (True, False), (False, True), (True, True))])
 
 
 def entered_owner_metadata():
-    result = native.provenance(
-        scope='Original Engineer Walk/PerCell two Entered1 callbacks, live Tag/Trigger/TEvent/Action36, current-owner capture and deferred destruction in four authored controls.',
-        assumptions=[
-            'Reuses EngineerJoinedFixture, tag_lifecycle.initialize_registries and Navigation.on_existing_map/setup_pathfinder. Existing Object/Techno/UID/pending registries remain intact. No gameplay callback result is supplied.',
-            'The inherited runtime mode1 prior is overridden atA8B238 to Skirmish5 before target setup, actor construction, command delivery and arrival, and read back after destruction. Mode selection and full native startup remain supplied/excluded; earlier retail type readers retain the inherited setup.',
-            'Four human House allocations have distinct array indices0..3 and explicit Country+B4/B8 identities0,7,2,3. They inherit neutral selected costs and receive independent Building and Infantry tracking storage. The target is the existing admitted GAPOWR; the resolved friendly order is followed by the supplied hostile-House2 enroute race. Full House startup and ordinary path payment remain excluded.',
-            'Supplied repeat2 Tag definitions produce live orderT1,T0. T0 requires EnteredHouse0 and Global11clear, optionally transfers0to1, then sets11. T1 requires EnteredHouse1 (House0 without the first transfer) and Global11set, optionally transfers to3, then sets13. Runtime constructors, attachment, event evaluation, actions, real Foot/Techno ChangeOwner and cleanup all execute original code. Entrant Tag is null; transferring an entrant Tag is excluded.',
-            'Declared flat32x32 clear cells and33x33 class/height plane feed original connectivity and Pathfinder startup, needed when Action36 clears NavCom before evacuation Scatter. Full native map loading, travel and frame scheduling are excluded. Full RNG states/draw traces are observations of this bounded continuation, not whole-frame expectations.',
-        ],
-        substitutions=['Inherited platform/allocator/presentation transport only; no owner, predicate, action, capture, Scatter, pathfinding, accounting, RNG or destruction answer is substituted.'],
-        entry_points={'per_cell': 0x519630, 'entered_first': 0x519B53,
-            'entered_second': 0x519F44, 'capture_live_owner': 0x519F71,
-            'tag_dispatch': 0x6E53A0, 'trigger_spring': 0x7265C0,
-            'all_change_house': 0x6E0B60, 'foot_change_owner': 0x4DBED0,
-            'building_change_owner': 0x448260, 'deferred_drain': 0x725C70})
-    result['inherited_fixture'] = engineer.joined_metadata()
-    result['fixture_overrides'] = {'runtime_game_mode': 5, 'address': '0x00A8B238'}
-    return result
+    return dict(
+        schema_version=1,
+        scope='Original Engineer two Entered callbacks, current-owner capture and deferred destruction; supplied admitted target, House/map priors and final arrival head. See engineer_capture_accounting.md for boundaries.')
 
 
 def metadata():
