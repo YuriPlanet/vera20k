@@ -8,6 +8,11 @@ archive mounting or simulation authority.
 
 ## Configuration
 
+Put these `[ini]` settings in `config.toml`. VERA checks the working directory
+first, then the directory beside its executable. Relative paths in that config
+resolve from the config's own directory; the INI basenames below resolve through
+the selected game folder's resource provider.
+
 ```toml
 [ini]
 profile = "mo"
@@ -83,10 +88,10 @@ retargeted. A directory missing required retail archives still cannot enter the
 normal game bootstrap. Selecting the MO triplet does not certify that every MO
 definition, asset or gameplay mechanism is supported.
 
-Include/Inherits expansion from #2283 runs at the selected source boundary.
-This change uses that same selector without copying its traversal. The CLI
-keeps `ini-expand --source-only` separate from profile-aware queries: an explicit
-expansion target does not require a configured Rules/Art/AI triplet.
+[Include and inheritance](ini-directives.md) expand at the selected source
+boundary only in gameplay builds with `--features ares`. Root selection itself
+needs no extension feature. The read-only `ini-expand --source-only` probe works
+in every build and does not require a configured Rules/Art/AI triplet.
 
 The mono reference is my local working tree: configurable file lists in
 `Ra2.Shared/GameConfig.cs`, consumed together by the cached

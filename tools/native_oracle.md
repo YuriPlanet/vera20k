@@ -183,13 +183,14 @@ interpretation; a static file scan does not observe initialized memory.
 
 ## Run an existing comparison
 
-From the repository root, with Python 3.10+ and Unicorn **2.1.4** installed:
+From the repository root, using Python **3.12+** and the pinned test dependencies
+(including Unicorn **2.1.4**):
 
 ```powershell
-python -m pip install unicorn==2.1.4
+python -m pip install -r tools/requirements-test.txt
 $env:VERA20K_GAMEMD_EXE = 'C:/your-retail-install/gamemd.exe'
 python -m tools.color_oracle.hsv_to_rgb
-cargo test -p vera20k-core --lib rules::color_scheme::tests::hsv_to_rgb_matches_native_oracle_all_hues_at_sv_boundaries
+python -m tools.cargo_run -- test -p vera20k-core --lib rules::color_scheme::tests::hsv_to_rgb_matches_native_oracle_all_hues_at_sv_boundaries
 ```
 
 `RA2_DIR` is an alternative; an explicit executable path takes precedence and never
@@ -459,10 +460,21 @@ publish if one changed while it ran; it records nothing.
 
 ## Add a comparison
 
-Start with `tools/color_oracle/hsv_to_rgb.py` for a complete example. Establish the
-body, active callers, calling convention, input/state ownership, and observable
-outputs before constructing the fixture. Select cases that exercise meaningful
-branches and boundaries. Avoid a second Python implementation of the algorithm.
+Read native instructions for ordinary control flow and arithmetic. Execute native
+code only for a shared numeric kernel, RNG draws, a known arithmetic trap reached
+by retail data, or a discrepancy demonstrated by a playtest or bug report; see
+[AGENTS.md](../AGENTS.md#exactness-and-evidence).
+
+New committed fixtures hold at most about 20 cases, contain only the inputs and
+outputs the Rust test asserts, and stay under 100 KB per file. Keep call traces,
+addresses, register values and stack dumps out of those payloads. Keep a harness
+only while a Rust test consumes its output, with a sidecar recording the replay command.
+
+Use `tools/color_oracle/hsv_to_rgb.py` as an API example. Its existing 2,304-input
+sweep is historical, not guidance for new fixture size. Establish the body, active
+callers, calling convention, input/state ownership, and observable outputs before
+constructing the fixture. Choose boundary cases, not sweeps or grids, and avoid a
+second Python implementation of the algorithm.
 
 * `call(address, ecx=..., stack_args=[...], writes={...}, dumps={...})` maps verified
   code in a fresh emulator for each invocation. Entries must lie in an original
@@ -490,8 +502,7 @@ branches and boundaries. Avoid a second Python implementation of the algorithm.
   `image_bytes()` (see Evidence identity).
 * Consume native outputs in a focused Rust test of the actual production function.
   Assert case identity/coverage as well as output equality, and review the connection
-  to callers independently. The HSV example checks 2,304 inputs, not all 256³ inputs
-  or final rendered colors.
+  to callers independently.
 
 ## Investigating a failed native run
 

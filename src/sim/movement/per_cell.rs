@@ -561,9 +561,23 @@ impl Simulation {
         };
         let nav_com = unit.navigation.nav_com();
         if nav_com.is_some() && nav_com != Some(NavTargetRef::cell(cell.0, cell.1)) {
-            // RESIDUAL:73A96F tests Abstract+14 bit1 before directed opcode
-            //0xE at73A981. This distinct non-current-object receiver requires
-            // that validity state; it is not the null/current-Cell human arm.
+            //73A94C..73A987 re-reads NavCom after synchronous clearance.
+            // Abstract+14 mask1 is Techno: ask that object to dock, ignore
+            // its reply, then reach the shared building Scatter tail.
+            if let Some(NavTargetRef::Object { id: target }) = nav_com
+                && let Some(target) = crate::sim::radio::as_techno(self, target)
+            {
+                crate::sim::radio::transmit(
+                    self,
+                    id,
+                    target,
+                    crate::sim::radio::RadioMessage::CanDock,
+                    crate::sim::radio::RadioPayload::default(),
+                    rules,
+                    effects,
+                );
+            }
+            self.unit_per_cell_building_scatter(id, rules, registry, effects);
             return;
         }
         let Some(object) = self.object_type(unit.type_ref(), rules) else {

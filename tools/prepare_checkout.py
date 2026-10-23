@@ -48,7 +48,8 @@ INI = 'ini'
 GAME_ARCHIVE = 'ra2md.mix'
 # Retail tests compare VERA20k's math tables with it.
 GAME_EXECUTABLE = 'gamemd.exe'
-EXTRACT_INI = 'python -m tools.cargo_run -- run --bin extract-ini'
+EXTRACT_INI = 'python -m tools.cargo_run -- build --bin extract-ini'
+RESOLVE_EXTRACT_INI = 'python -m tools.cargo_run --resolve extract-ini --profile debug'
 # The pinned packages of tool tests and native oracles; sidecars record the Unicorn version.
 REQUIREMENTS = REPO / 'tools' / 'requirements-test.txt'
 RA2_DIR_LINE = re.compile(r'(?m)^ra2_dir\s*=.*$')
@@ -204,7 +205,11 @@ def report(root: Path, main: Path) -> tuple[list[str], bool]:
         inis = line(True, f'{INI}/', f'{len(list(ini.glob("*.ini")))} retail INIs{where}')
     else:
         if root == main or not (main / INI / 'rulesmd.ini').is_file():
-            fix = f'{EXTRACT_INI}  (needs a valid ra2_dir)'
+            target = f'"{folder}"' if game else 'the Yuri\'s Revenge game folder'
+            fix = (f'{EXTRACT_INI}\n'
+                   f'          resolve: {RESOLVE_EXTRACT_INI}\n'
+                   f'          run the returned executable with {target} as its argument; '
+                   'quote paths, and prefix the executable with & in PowerShell')
         elif os.path.lexists(ini):
             fix = f'remove {ini}, then run python -m tools.prepare_checkout'
         else:

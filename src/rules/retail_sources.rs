@@ -10,6 +10,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_parser::directives::{
     DirectiveDiagnostic, DirectiveOptions, include_identity, process_directives,
 };
+use crate::rules::personal_rules::PersonalRules;
 use crate::rules::process_owner::NativeRulesProcessOwner;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
@@ -157,6 +158,7 @@ pub struct RetailRulesSources {
     pub rulesmd: SelectedIni,
     pub langrule: Option<SelectedIni>,
     pub artmd: SelectedIni,
+    personal_rules: PersonalRules,
 }
 
 impl RetailRulesSources {
@@ -168,7 +170,19 @@ impl RetailRulesSources {
             rulesmd,
             langrule,
             artmd,
+            personal_rules: PersonalRules::default(),
         })
+    }
+
+    /// VERA-only source composition; physical source identities remain intact.
+    /// No extra native Rules pass is introduced by a personal override.
+    pub fn with_personal_rules(mut self, personal_rules: PersonalRules) -> Self {
+        personal_rules.apply_root(&mut self.rulesmd.ini);
+        if let Some(langrule) = self.langrule.as_mut() {
+            personal_rules.apply_base_layer(&mut langrule.ini);
+        }
+        self.personal_rules = personal_rules;
+        self
     }
 
     /// The cold-started native Rules authority alone, without the shell
@@ -188,6 +202,7 @@ impl RetailRulesSources {
                 self.rulesmd.source.logical_name,
                 self.artmd.source.logical_name,
             ],
+            self.personal_rules,
         )
         .map_err(|error| format!("Native rules cold startup failed: {error}"))
     }

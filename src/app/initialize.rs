@@ -168,12 +168,20 @@ impl App {
         // automation lane, so it uses exact defaults and its explicit
         // dimensions instead of ingesting operator argv/profile screen state.
         let mut main_menu_shell_error = None;
+        let mut personal_rules = crate::rules::personal_rules::PersonalRules::default();
         let game_config = startup_asset_or_error(
             GameConfig::load().and_then(|config| {
                 if capture_dimensions.is_none() {
                     crate::app::persistence::profile_file::import_legacy(&config.paths).map_err(
                         |error| anyhow::Error::new(error).context("Could not prepare VERA.INI"),
                     )?;
+                    let bytes = crate::app::persistence::rules_profile::load_or_create(
+                        config.paths.settings_dir(),
+                    )
+                    .context("Could not prepare VERARULES.INI")?;
+                    personal_rules =
+                        crate::rules::personal_rules::PersonalRules::from_bytes(&bytes)
+                            .context("Could not read VERARULES.INI")?;
                 }
                 Ok(config)
             }),
@@ -417,7 +425,8 @@ impl App {
                 .as_ref()
                 .map(|config| config.ini.clone())
                 .unwrap_or_default(),
-        );
+        )
+        .with_personal_rules(personal_rules);
         process_assets.csf = startup_csf;
         let (startup_rules, startup_rules_projection) = startup_asset_manager
             .as_ref()

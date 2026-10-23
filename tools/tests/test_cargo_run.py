@@ -41,6 +41,28 @@ sys.exit(int(status))
 '''
 
 
+class CargoLauncherTests(unittest.TestCase):
+    def test_local_tool_uses_coordinated_runner_and_preserves_environment(self):
+        with patch.dict(os.environ, {"GITHUB_ACTIONS": "", "RA2_DIR": "/retail"}), \
+             patch.object(cargo_run.subprocess, "call", return_value=7) as call:
+            self.assertEqual(cargo_run.invoke(
+                ["build", "--bin", "vera20k"], cwd=REPOSITORY,
+                env_extra={"RA2_QUICKPLAY": "/map.map"}), 7)
+            command = call.call_args.args[0]
+            self.assertEqual(command, [sys.executable, "-m", "tools.cargo_run", "--",
+                                       "build", "--bin", "vera20k"])
+            self.assertEqual(call.call_args.kwargs["cwd"], REPOSITORY)
+            self.assertEqual(call.call_args.kwargs["env"]["RA2_DIR"], "/retail")
+            self.assertEqual(call.call_args.kwargs["env"]["RA2_QUICKPLAY"], "/map.map")
+
+    def test_github_runner_uses_plain_cargo(self):
+        with patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}), \
+             patch.object(cargo_run.subprocess, "call", return_value=0) as call:
+            self.assertEqual(cargo_run.invoke(
+                ["check", "--lib"], cwd=REPOSITORY, isolated_ci=True), 0)
+            self.assertEqual(call.call_args.args[0], ["cargo", "check", "--lib"])
+
+
 class CargoRunTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

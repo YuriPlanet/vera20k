@@ -3,7 +3,7 @@
 //! FogState owns stamps, live draw suppression and immutable records. The
 //! live object keeps simulating; only a later reveal removes its saved image.
 
-use super::{LifecycleOutput, Simulation, UninitContext};
+use super::{Simulation, UninitContext};
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::sim::intern::InternedId;
@@ -232,13 +232,7 @@ impl Simulation {
         if self.session.current_house() != Some(viewer) {
             return;
         }
-        if let Some(entity) = self.substrate.entities.get_mut(id)
-            && entity.selection.is_selected()
-        {
-            entity.selection.deselect();
-            self.lifecycle_outputs
-                .emit(LifecycleOutput::FollowReleased { stable_id: id });
-        }
+        self.object_deselect(id);
     }
 }
 

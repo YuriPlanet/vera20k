@@ -19,6 +19,19 @@ import tempfile
 import time
 
 
+def invoke(args: list[str], *, cwd: Path, env_extra: dict[str, str] | None = None,
+           isolated_ci: bool = False) -> int:
+    """Launch a tool's Cargo command through this owner unless CI is isolated.
+
+    Hosted CI jobs have no cooperating worktrees. Callers must opt into that
+    case; local tools retain the shared build lock and owned artifact records.
+    """
+    prefix = ['cargo'] if isolated_ci else [sys.executable, '-m', 'tools.cargo_run', '--']
+    command = [*prefix, *args]
+    print(f"+ {' '.join(command)}", flush=True)
+    return subprocess.call(command, cwd=cwd, env={**os.environ, **(env_extra or {})})
+
+
 def git(root: Path, *args: str) -> str:
     return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
 

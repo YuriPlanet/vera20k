@@ -36,6 +36,10 @@ use crate::sim::world::ObjectSubstrate;
 const RELAXED_STRAY_ACTIONS: [i32; 2] = [0x35, 0x36];
 
 #[cfg(test)]
+#[path = "guard_slower_tests.rs"]
+mod guard_slower_tests;
+
+#[cfg(test)]
 #[path = "retreat_tests.rs"]
 mod retreat_tests;
 
@@ -424,7 +428,8 @@ impl Simulation {
 
     /// `FootClass vt+0x4E0` (`0x004DBFD0`), which a `GuardSlower=` team's
     /// centre weights twice: unarmed (`GetWeapon(0)`), or of `TechLevel=-1`,
-    /// or `DeploysInto=` a building, or of `Speed=` 13 or less.
+    /// or `DeploysInto=` a building, or converted speed of 13 leptons/frame
+    /// or less (`TechnoTypeClass::Read_INI @ 0x0071465F`).
     fn guard_slower_weight(&self, entity: &GameEntity, rules: &RuleSet) -> bool {
         self.object_type(entity.type_ref(), rules)
             .is_some_and(|object| {
@@ -436,7 +441,7 @@ impl Simulation {
                 .is_none()
                     || self.object_tech_level(object) == -1
                     || object.deploys_into.is_some()
-                    || object.speed <= 13
+                    || crate::util::fixed_math::ra2_speed_to_leptons_per_frame(object.speed) <= 13
             })
     }
 

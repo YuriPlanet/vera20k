@@ -58,7 +58,7 @@ fn read_legacy(directories: &[&Path], name: &str) -> io::Result<Option<Vec<u8>>>
     Ok(None)
 }
 
-fn create_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(super) fn create_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
     match std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)

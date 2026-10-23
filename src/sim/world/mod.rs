@@ -3036,6 +3036,53 @@ impl Simulation {
         .commit(self, rules, overlay_registry, frame_effects)
     }
 
+    /// HouseClass::NotifyUnderAttack4F93E0 submits its radar/EVA/Voc before
+    /// the dynamic House Tag walk4F95D4. Callbacks may change alliances or
+    /// client admission state, so both selection and delivery precede them.
+    pub(crate) fn notify_house_under_attack(
+        &mut self,
+        event: crate::sim::combat::UnderAttackEvent,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        self.submit_under_attack_warning(event, rules, effects);
+        self.raise_house_attacked_tags(event.owner, rules, registry, effects);
+    }
+
+    /// Unit73851D/738530 and Temporal71B04C/71B05F submit radar/EVA before
+    /// returning to their caller. House4F93E0 reaches the same boundary before
+    /// its Tags. A later AoE receiver must not overtake this warning.
+    pub(crate) fn submit_under_attack_warning(
+        &mut self,
+        event: crate::sim::combat::UnderAttackEvent,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        Self::dispatch_under_attack_events(
+            &self.interner,
+            &self.session,
+            &self.house_alliances,
+            &mut self.sound_events,
+            &self.houses,
+            &[event],
+            rules,
+        );
+        // Unit7384D8 and Temporal71B009 compare Owner with PlayerPtr before
+        // entering their radar/EVA block. Keep all-owner producer facts for
+        // replay, but only the reached local Unit call consumes this prefix.
+        // HouseNotify can also warn a local ally of a nonlocal building.
+        let building_warning = self
+            .interner
+            .object_type(event.victim_type, rules)
+            .is_some_and(|object| {
+                object.category == crate::rules::object_type::ObjectCategory::Building
+            });
+        if building_warning || self.session.current_house() == Some(event.owner) {
+            effects.flush_sound(self, rules);
+        }
+    }
+
     /// `HouseClass::NotifyUnderAttack @ 0x004F93E0` for a building warning,
     /// plus the `UnitClass::ReceiveDamage 0x00738530` harvester ping.
     ///
@@ -5939,7 +5986,18 @@ impl Simulation {
         else {
             return;
         };
+        // UnitChangeOwner7463A8..7463AE refuses the same house before its
+        // Foot delegate. Infantry/Aircraft inherit Foot's failure receiver.
+        if category == EntityCategory::Unit && old_owner == new_owner {
+            return;
+        }
+        // FootChangeOwner4DBEFB removes at the current cell before its
+        // Techno delegate, including the same-owner refusal at7014A0.
+        self.remove_unit_sensors_at_current(stable_id, rules, registry);
         if old_owner == new_owner {
+            // Foot4DBFB7 restores the current owner's circle on failure;
+            // it does not replace LastMapCoords in this arm.
+            self.add_unit_sensors_at_current(stable_id, rules, registry);
             return;
         }
         // `BuildingClass::ChangeOwner` first (`0x00448277..0x0044828E`): a
@@ -5974,10 +6032,6 @@ impl Simulation {
             //teardown.448C69 initializes it after the delegated owner swap.
             self.production.clear_primary_factory(stable_id);
         }
-        // FootClass::ChangeOwner @ 0x004DBED0 removes from the deposited old
-        // owner and adds to the new owner before later readers observe it.
-        self.transfer_sensor_before_owner_change(stable_id, new_owner, rules, registry);
-
         // Active YR chain: BuildingClass::ChangeOwner (0x00448260) delegates
         // to TechnoClass::ChangeOwner (0x007014A0), which moves the house
         // counts (`house_tracking`) below.
@@ -6301,6 +6355,9 @@ impl Simulation {
             self.leave_team(stable_id, false, rules, effects);
         }
         self.foot_neighbors_after_owner_change(stable_id, rules);
+        // Foot4DBF81 samples the live type, new owner and current cell only
+        // after Techno/leave-team/history callbacks. High flight keeps +55C.
+        self.add_unit_sensors_at_current(stable_id, rules, registry);
         self.reapply_building_gap_after_owner_change(stable_id, rules);
         self.relink_docked_after_owner_change(stable_id, &taken_along, rules, effects);
         // Building449267/449284: old House then new House, after lists,

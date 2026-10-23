@@ -2655,6 +2655,19 @@ impl Simulation {
         first_human != human(new) || !first_human
     }
 
+    /// ObjectClass::Deselect @ 0x005F44A0: an unselected object does
+    /// nothing; otherwise remove it from selection, then release Follow
+    /// (0x005F4503..0x005F4513). The app owns the retained input ledger.
+    pub(crate) fn object_deselect(&mut self, stable_id: u64) {
+        if let Some(entity) = self.substrate.entities.get_mut(stable_id)
+            && entity.selection.is_selected()
+        {
+            entity.selection.deselect();
+            self.lifecycle_outputs
+                .emit(super::LifecycleOutput::FollowReleased { stable_id });
+        }
+    }
+
     /// `ObjectClass::Select @ 0x005F4520` and the Selected tag event that
     /// `TechnoClass::Select` raises after it (`0x006FBFD0..0x006FBFE4`). A
     /// Select the game makes itself (`logic`) first runs Unselect_All
@@ -2697,14 +2710,7 @@ impl Simulation {
                 .map(|entity| entity.stable_id());
             if first.is_some_and(|first| self.select_unselects_all(first, stable_id)) {
                 for id in self.substrate.entities.keys_sorted() {
-                    if let Some(entity) = self.substrate.entities.get_mut(id)
-                        && entity.selection.is_selected()
-                    {
-                        entity.selection.deselect();
-                        // Deselect's Follow release (`0x005F4503..0x005F4513`).
-                        self.lifecycle_outputs
-                            .emit(super::LifecycleOutput::FollowReleased { stable_id: id });
-                    }
+                    self.object_deselect(id);
                 }
             }
         }

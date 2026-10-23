@@ -438,7 +438,9 @@ fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
                         sim.interner().resolve(entity.type_ref()),
                         TELEMETRY_MAX_NAME_BYTES
                     ),
-                    bounded_text(&foundation, TELEMETRY_MAX_NAME_BYTES),
+                    // The typed Foundation owner carries its name through
+                    // Display; the capture keeps the name it always showed.
+                    bounded_text(&foundation.to_string(), TELEMETRY_MAX_NAME_BYTES),
                     ex,
                     ey,
                     bounded_text(

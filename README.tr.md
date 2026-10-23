@@ -50,6 +50,29 @@ Windows, macOS veya Linux yükleyicisini
 aldığınız Yuri's Revenge'i bulur ve VERA20K'yi yeni bir klasöre kurar. Modlar ve yeni içerikler de
 oraya gidecek; böylece oyunun kendi dosyaları hiç değiştirilmez.
 
+Tek oyunculu YR çatışmalarını veya senaryolarını bir CnCNet istemcisinden başlatmak için
+[çevrimdışı istemci kurulumuna](integrations/cncnet/README.md) bakın.
+
+## Ayarlar
+
+Ses ve kontroller için **Options**, VERA'ya özgü özellikler için **Vera Options** menüsünü kullanın.
+Oyuncu tercihleri, klavye kısayolları ve lobi seçimleri `VERA.INI` dosyasına kaydedilir:
+
+- **Windows yükleyicisi:** `vera20k.exe` ile aynı klasörde.
+- **macOS:** `~/Library/Application Support/VERA20k/VERA.INI`.
+- **Linux:** `~/.local/share/VERA20k/VERA.INI` veya XDG veri klasörünüzde.
+
+`config.toml` oyun klasörünü belirler ve farklı bir ayar klasörü seçilmesine olanak tanır.
+
+`VERA.INI` yoksa VERA dosyayı oluşturur ve mevcut tercihleri bir kez içe aktarır.
+Eski ayarlar yoksa dosya başlangıçta boştur; ayarlar kaydedilene kadar VERA yerleşik varsayılanları
+kullanır. Orijinal `RA2MD.INI` ve `KeyboardMD.ini` dosyaları yalnızca içe aktarma için okunur,
+asla üzerlerine yazılmaz.
+
+Aynı klasördeki `VERARULES.INI`, isteğe bağlı oynanış değişikliklerini içerir. Başlangıçta yorum
+satırı hâline getirilmiş örnekler içerir ve görev ve harita kurallarına öncelik tanır. Bunları
+düzenlemek ve geçersiz kılmak için [kişisel kurallar](docs/personal-rules.md) bölümüne bakın.
+
 ## Mimari
 
 Motorun üç ana bölümü vardır:
@@ -64,13 +87,6 @@ Bu ayrım deterministik oynanışı destekler.
 Oklar veri akışını gösterir:
 
 ![Uygulama simülasyona komut gönderir ve dünya durumunu alır; görüntülemeye çizim verilerini gönderir.](docs/images/architecture.tr.png)
-
-## Sistem gereksinimleri
-
-- **Oyun:** Red Alert 2: Yuri's Revenge 1.001.
-- **İşletim sistemi:** Windows 10+, Linux (glibc 2.35+, ör. Ubuntu 22.04 veya Steam Deck) ya da
-  Apple Silicon üzerinde macOS 11+.
-- **Grafik:** Vulkan, DirectX 12 ya da Metal.
 
 ## Derleme ve çalıştırma
 
@@ -105,18 +121,20 @@ ile oyun testleri kullanarak kontrol ediyor. Ajanlar [AGENTS.md](AGENTS.md) dosy
 VERA20K varsayılan olarak orijinal oyun gibi oynanır. Ares gibi modlardan gelen eklentiler dahil
 her yeni özellik, şu yollardan biriyle açılana kadar kapalı kalmalıdır:
 
+- **Bir VERA oyuncu seçeneği**: **Options → Vera Options** altında bulunur ve `VERA.INI` dosyasının `[VERA]` bölümüne kaydedilir.
 - **Bir derleme seçeneği**: örneğin desteklenen [Ares eklentileri](docs/ares.md) için `--features ares`.
 - **Bir oyun içi lobi seçeneği**: her maç için seçilir.
 - **Bir INI anahtarı**: bir mod ya da harita tarafından ayarlanır.
 
-Tek oyunculu YR çatışmalarını veya senaryolarını bir CnCNet istemcisinden başlatmak için
-[çevrimdışı istemci kurulumuna](integrations/cncnet/README.md) bakın.
+Ses, grafik ve kontrol ayarları `VERA.INI` dosyasına kaydedilir. Oynanış kuralları lobi
+ayarlarından, modlardan veya haritalardan gelir.
 
 ## Katkıda bulunma
 
 Yardımlarınızı bekliyoruz. Kod yazabilir, motoru yeniden düzenleyebilir, oyunu test edebilir,
 fikirlerinizi paylaşabilir veya orijinal oyunla yan yana oynayıp neyin yanlış hissettirdiğini
 bize anlatabilirsiniz. Bir PR açın, gerisini biz hallederiz.
+
 Tartışmalar [Discord](https://discord.gg/kmjRUn5m5F) üzerinden ve QQ grubunda (1097193563) yürür.
 
 ## Destek

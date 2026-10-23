@@ -130,6 +130,26 @@ impl SoundPlaybackInputs<'_> {
         SoundSpatialContext::new(self.catalog.sounds(), &self.listener, sim, local_owner)
     }
 
+    /// Foot4DADF0 reaches750D40 before Scatter and later callbacks. Use
+    /// that coordinate and the existing handle, including a kept sound.
+    pub(crate) fn update_looping_sound(
+        &self,
+        sfx: &mut crate::audio::sfx::SfxPlayer,
+        sim: &crate::sim::world::Simulation,
+        local_owner: Option<&str>,
+        owner: u64,
+        world: crate::sim::anim_class::AnimWorldCoord,
+    ) {
+        let Some(sound) = sfx.handle_sound_id(owner) else {
+            return;
+        };
+        let source = crate::app::match_runtime::sound_dispatch::anim_world_sound_source(world);
+        let gain = self
+            .spatial_context(Some(sim), local_owner)
+            .gain_for(&sound, Some(source));
+        sfx.update_looping_sound(owner, gain, self.catalog.sounds());
+    }
+
     /// Consume ordered requests through the sole SFX owner. Periodic voice,
     /// positional-owner and bomb maintenance stay in the frame-tail drain.
     pub(crate) fn consume(
@@ -559,6 +579,16 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
             if !alive {
                 sfx.stop_animation_sound(owner);
             }
+            continue;
+        }
+        // Foot4DADF0 already re-drove this shared handle at its actual
+        // visit, before Scatter/Parasite and Unit sinking. A final-position
+        // poll would overwrite it or restart a loop after a later callback.
+        // Tagged Gattling/turret/working and Anim handles remain separate.
+        if sim.entities().get(owner).is_some_and(|entity| {
+            use crate::map::entities::EntityCategory::{Aircraft, Infantry, Unit};
+            matches!(entity.category(), Unit | Infantry | Aircraft)
+        }) {
             continue;
         }
         let Some(world) = sim.looping_sound_owner_coord(owner) else {

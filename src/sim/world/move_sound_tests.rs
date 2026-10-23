@@ -412,6 +412,130 @@ fn retail_idle_squid_production_frames_match_native_counter_and_sound_cadence() 
     }
 }
 
+/// Foot4DAA01 precedes idle Scatter4DAE59, whose Infantry receiver51D478
+/// can synchronously produce a Walk head. The next Foot visit hears it.
+#[test]
+fn retail_yuri_idle_scatter_does_not_start_move_sound_until_the_next_foot_visit() {
+    use std::cell::{Cell, RefCell};
+    #[derive(Default)]
+    struct LoopPhase {
+        delivered: Cell<usize>,
+        visits: RefCell<Vec<(u64, u32, crate::sim::anim_class::AnimWorldCoord, bool)>>,
+    }
+    impl super::SoundBoundary for LoopPhase {
+        fn consume(&self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+            self.delivered.set(events.len());
+        }
+        fn delivered(&self) -> usize {
+            self.delivered.get()
+        }
+        fn update_looping_sound(
+            &self,
+            sim: &Simulation,
+            owner: u64,
+            world: crate::sim::anim_class::AnimWorldCoord,
+        ) {
+            self.visits.borrow_mut().push((
+                owner,
+                sim.session.binary_frame(),
+                world,
+                sim.substrate
+                    .entities
+                    .get(owner)
+                    .unwrap()
+                    .navigation
+                    .nav_com()
+                    .is_some(),
+            ));
+        }
+    }
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("Hills.mmx")
+    else {
+        return;
+    };
+    let rules = retail.rules;
+    let kind = rules.object("YURIPR").unwrap();
+    assert_eq!((kind.walk_rate, kind.idle_rate), (1, 0));
+    assert_eq!(kind.move_sound.len(), 1);
+    assert!(kind.move_sound[0].eq_ignore_ascii_case("YuriPrimeMoveLoop"));
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
+    let owner = sim.interner.get("Americans").unwrap();
+    sim.session.set_current_house_for_test(Some(owner));
+    let actor = sim
+        .spawn_object("YURIPR", "Americans", 10, 10, 0, &rules)
+        .unwrap();
+    // Supplied authored cliff, as in the original joined Foot/Scatter/Walk
+    // comparison; movement, NavCom, head and sound state are not supplied.
+    sim.resolved_terrain
+        .as_mut()
+        .unwrap()
+        .cell_mut_for_test(11, 11)
+        .unwrap()
+        .level = 4;
+    sim.session.set_binary_frame_for_test(63);
+    let main = sim.main_rng.native_state_hex();
+    let scenario = sim.scenario_rng.native_state_hex();
+    let before = Simulation::movement_sound_world(sim.substrate.entities.get(actor).unwrap());
+    let phase = LoopPhase::default();
+    let output = sim
+        .advance_app_frame(
+            &[],
+            &rules,
+            None,
+            33,
+            TickLane::Ordinary,
+            super::FrameEffects::for_sound(&phase),
+        )
+        .unwrap();
+    let entity = sim.substrate.entities.get(actor).unwrap();
+    assert!(
+        entity.navigation.nav_com().is_some(),
+        "idle Scatter admitted"
+    );
+    assert!(
+        crate::sim::movement::motion_query::is_moving_now(
+            entity,
+            crate::sim::movement::SpeedRules::new(&rules, &sim.interner, &sim.houses),
+            63,
+        ),
+        "the real synchronous Walk Process produced motion"
+    );
+    assert_ne!(sim.scenario_rng.native_state_hex(), scenario);
+    assert!(!entity.move_sound.is_active());
+    assert_eq!(sim.main_rng.native_state_hex(), main);
+    assert_eq!(
+        phase.visits.borrow().as_slice(),
+        [(actor, 63, before, false)],
+        "750D40 runs before Scatter creates NavCom, not at the final frame position"
+    );
+    assert!(!output.sound_events.iter().any(|event| matches!(event,
+        SimSoundEvent::AnimationStarted { anim_id, .. } if *anim_id == actor)));
+    phase.delivered.set(0);
+    let output = sim
+        .advance_app_frame(
+            &[],
+            &rules,
+            None,
+            33,
+            TickLane::Ordinary,
+            super::FrameEffects::for_sound(&phase),
+        )
+        .unwrap();
+    assert!(
+        sim.substrate
+            .entities
+            .get(actor)
+            .unwrap()
+            .move_sound
+            .is_active()
+    );
+    assert_ne!(sim.main_rng.native_state_hex(), main);
+    assert_eq!(phase.visits.borrow().len(), 2);
+    assert!(output.sound_events.iter().any(|event| matches!(event,
+        SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
+            if *anim_id == actor && sound_id.eq_ignore_ascii_case("YuriPrimeMoveLoop"))));
+}
+
 fn assert_retail_idle_timeline(retail_dir: &std::path::Path, row: &Value) {
     let name = row["name"].as_str().unwrap();
     let steps = row["steps"].as_array().unwrap();

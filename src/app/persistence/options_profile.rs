@@ -132,6 +132,9 @@ pub(crate) struct RetailOptionsProfile {
     /// default, so new profiles draw the original tick-stepped motion; it never
     /// changes the simulation rate or saves.
     pub(crate) render_interpolation: bool,
+    /// `[VERA] MouseWheelZoom=`: let the mouse wheel change the battle's
+    /// view distance. Off by default; this is a local camera preference.
+    pub(crate) mouse_wheel_zoom: bool,
     /// `[VERA] ShiftQueue=`: whether a Shift-click on a mobile strip queues
     /// [`Self::shift_queue_count`] builds: the Options page's Shift-Click
     /// Batch Queue. Off by default, so Shift + left click queues one copy as
@@ -210,6 +213,7 @@ impl Default for RetailOptionsProfile {
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
             yr_original_style: false,
             render_interpolation: false,
+            mouse_wheel_zoom: false,
             shift_queue: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             wol_test_service: false,
@@ -230,7 +234,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 10],
+    pub(crate) vera: [(&'static str, String); 11],
 }
 
 impl RetailOptionsLoad {
@@ -429,6 +433,7 @@ impl RetailOptionsProfile {
             self.yr_original_style = vera.read_bool("YROriginalStyle", self.yr_original_style);
             self.render_interpolation =
                 vera.read_bool("RenderInterpolation", self.render_interpolation);
+            self.mouse_wheel_zoom = vera.read_bool("MouseWheelZoom", self.mouse_wheel_zoom);
             self.shift_queue = vera.read_bool("ShiftQueue", self.shift_queue);
             // Absent keeps the current value; present-but-nonnumeric answers 0,
             // which the range lifts to 1 rather than a click that queues nothing.
@@ -534,6 +539,10 @@ impl RetailOptionsProfile {
                 (
                     "RenderInterpolation",
                     format_bool(self.render_interpolation).to_string(),
+                ),
+                (
+                    "MouseWheelZoom",
+                    format_bool(self.mouse_wheel_zoom).to_string(),
                 ),
                 ("Display", self.display.ini_value().to_owned()),
             ],
@@ -1418,6 +1427,31 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
             load_snapshot(&startup, &auto).retained_profile.display,
             DisplayTarget::Auto
         );
+    }
+
+    #[test]
+    fn mouse_wheel_zoom_preference_round_trips_in_the_existing_vera_section() {
+        let startup = RetailStartupOptions::default();
+        assert!(
+            !load_snapshot(&startup, b"")
+                .retained_profile
+                .mouse_wheel_zoom
+        );
+        let input = b"[VERA]\nMouseWheelZoom=yes\nRenderInterpolation=no\nUnowned=keep\n";
+        let mut profile = load_snapshot(&startup, input).retained_profile;
+        assert!(profile.mouse_wheel_zoom);
+        let written = profile.transform_settings(input);
+        assert!(
+            load_snapshot(&startup, &written)
+                .retained_profile
+                .mouse_wheel_zoom
+        );
+        profile.mouse_wheel_zoom = false;
+        let written = profile.transform_settings(&written);
+        let reloaded = load_snapshot(&startup, &written).retained_profile;
+        assert!(!reloaded.mouse_wheel_zoom);
+        assert!(!reloaded.render_interpolation);
+        assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
     }
 
     #[test]

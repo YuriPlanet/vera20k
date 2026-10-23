@@ -17,6 +17,16 @@ use super::{SimSoundEvent, Simulation};
 pub trait SoundBoundary {
     fn consume(&self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]);
     fn delivered(&self) -> usize;
+
+    /// One reached750D40 owner update. Headless/replay has no device handle;
+    /// a client reuses its existing handle and the coordinate at this phase.
+    fn update_looping_sound(
+        &self,
+        _sim: &Simulation,
+        _owner: u64,
+        _world: crate::sim::anim_class::AnimWorldCoord,
+    ) {
+    }
 }
 
 /// HouseClass::Update4F860F/4F8736 waits before publishing its result
@@ -290,6 +300,21 @@ impl<'a> FrameEffects<'a> {
         if let Some(sound) = self.sound {
             sound.consume(sim, rules, &sim.sound_events);
             assert_eq!(sound.delivered(), sim.sound_events.len());
+        }
+    }
+
+    /// Finish preceding PlayAt/Stop/Release operations before the native
+    /// positional update; neither the coordinate nor callback is retained.
+    pub(crate) fn update_looping_sound(
+        self,
+        sim: &Simulation,
+        rules: &RuleSet,
+        owner: u64,
+        world: crate::sim::anim_class::AnimWorldCoord,
+    ) {
+        self.flush_sound(sim, rules);
+        if let Some(sound) = self.sound {
+            sound.update_looping_sound(sim, owner, world);
         }
     }
 

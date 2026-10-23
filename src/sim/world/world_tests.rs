@@ -2282,17 +2282,23 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
     // takes `BuildingClass::ReceiveDamage` case 4, whose stock 8-frame timer
     // runs `ObjectClass::UnInit` (`0x005F6625` clears `IsAlive +0x90`) before
     // the `0x00442905` re-test, so `NotifyUnderAttack` never runs for it.
-    assert_eq!(result.consequences.effects().under_attack_events.len(), 1);
+    assert!(result.consequences.effects().under_attack_events.is_empty());
     assert_eq!(
-        (
-            result.consequences.effects().under_attack_events[0].rx,
-            result.consequences.effects().under_attack_events[0].ry
-        ),
-        (8, 5)
-    );
-    assert_eq!(
-        result.consequences.effects().under_attack_events[0].victim_type,
-        listener.type_ref()
+        fatal
+            .sound_events
+            .iter()
+            .filter_map(|event| match event {
+                SimSoundEvent::UnderAttack {
+                    owner,
+                    miner,
+                    rx,
+                    ry,
+                    ..
+                } => Some((*owner, *miner, *rx, *ry)),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        [(listener.owner(), false, 8, 5)]
     );
     assert!(!fatal.substrate.occupancy.contains_entity(8, 5, 10));
     let attacker = fatal.substrate.entities.get(20).unwrap();

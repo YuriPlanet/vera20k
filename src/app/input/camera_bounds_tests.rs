@@ -2,6 +2,42 @@
 use super::*;
 
 #[test]
+fn saved_zoom_respects_the_wheel_preference_without_moving_the_center_or_focus() {
+    let viewport = (641, 481);
+    let mut pending = PendingCameraScroll::default();
+    assert!(pending.focus_on((100., 200.), [8192, 4096, 0], 2, (640., 480.), 0.8));
+    pending.last_ai_frame = 42;
+    let saved = pending.saved_view((2100., 1600.), ViewDistanceTier::Large.zoom());
+    validate_saved_tactical_view(&saved).unwrap();
+
+    for (enabled, expected_zoom) in [(false, 1.0), (true, saved.zoom)] {
+        let mut input = crate::app::input::state::MatchInputState::new(Default::default());
+        input.pending_camera_scroll.request((99., -80.));
+        restore_camera_input(&mut input, &saved, viewport, enabled);
+        assert_eq!(input.zoom_level, expected_zoom);
+        assert_eq!(input.zoom_target, expected_zoom);
+        let center = tactical_camera_center(
+            (input.camera_x, input.camera_y),
+            viewport.0 as f32,
+            viewport.1 as f32,
+            input.zoom_level,
+        );
+        assert_eq!(center, (2100., 1600.));
+        assert_eq!(input.pending_camera_scroll.world_pixels, (0., 0.));
+        assert_eq!(
+            input
+                .pending_camera_scroll
+                .saved_view(center, input.zoom_level),
+            crate::sim::snapshot::SavedTacticalView {
+                zoom: expected_zoom,
+                ..saved.clone()
+            },
+            "focus and last-AI-frame survive the player zoom override"
+        );
+    }
+}
+
+#[test]
 fn oversized_view_is_centered_and_repeated_clamps_are_stable() {
     // Shifted world rectangle; the horizontal camera margin is still 30 px.
     let area = (130., 200., 1800., 1305.);

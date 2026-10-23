@@ -14,7 +14,7 @@ use crate::sim::movement::ground_pose::object_get_coords;
 use crate::sim::radio::{RadioMessage, RadioPayload, transmit};
 use crate::sim::world::FrameChannel;
 use crate::sim::world::ObjectSubstrate;
-use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
+use crate::sim::world::{FrameEffects, LifecycleOutput, SimSoundEvent, Simulation};
 use crate::util::fixed_math::SIM_ONE;
 
 /// The installed unit side of the tank-bunker reciprocal link. Distinct from
@@ -129,10 +129,8 @@ pub fn install_bunker_link(sim: &mut Simulation, building_id: u64, unit_id: u64,
         u.bunker.link = BunkerLink::Installed(building_id);
     }
     sim.lifecycle_outputs
-        .emit(crate::sim::world::LifecycleOutput::ControlGroupMemberRemoved { stable_id: unit_id });
-    if let Some(u) = sim.substrate.entities.get_mut(unit_id) {
-        u.selection.deselect();
-    }
+        .emit(LifecycleOutput::ControlGroupMemberRemoved { stable_id: unit_id });
+    sim.object_deselect(unit_id);
     if let Some(rt) = sim
         .substrate
         .entities
@@ -801,6 +799,26 @@ mod tests {
         assert!(!unit.lifecycle.in_limbo());
         assert!(unit.lifecycle.cell_marked());
         assert!(!unit.selection.is_selected());
+        let group_and_follow: Vec<_> = sim
+            .take_lifecycle_outputs_for_test()
+            .into_iter()
+            .filter(|output| {
+                matches!(
+                    output,
+                    crate::sim::world::LifecycleOutput::ControlGroupMemberRemoved { .. }
+                        | crate::sim::world::LifecycleOutput::FollowReleased { .. }
+                )
+            })
+            .collect();
+        assert_eq!(
+            group_and_follow,
+            [
+                crate::sim::world::LifecycleOutput::ControlGroupMemberRemoved { stable_id: 1 },
+                crate::sim::world::LifecycleOutput::FollowReleased { stable_id: 1 },
+            ],
+            "UpdateBunker clears membership before Deselect releases Follow"
+        );
+        let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(
             unit.mission.current(),
             MissionId::from_known(MissionType::Guard)

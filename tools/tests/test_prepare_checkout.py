@@ -4,13 +4,14 @@ import importlib.util
 import io
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import tempfile
 import tomllib
 import unittest
 from unittest.mock import patch
 
-from tools import prepare_checkout as checkout
+from tools import cargo_run, prepare_checkout as checkout
 
 SYMLINKS = 'symlink privilege varies on Windows'
 
@@ -151,7 +152,28 @@ class MainCheckoutTests(CheckoutTest):
         checkout.write_config(self.main, self.game)
         text, ready = self.report(self.main, self.main)
         self.assertFalse(ready)
-        self.assertIn('fix: python -m tools.cargo_run -- run --bin extract-ini  (needs a valid ra2_dir)', text)
+        build = next(line.strip().removeprefix('fix: ') for line in text.splitlines()
+                     if 'fix: python -m tools.cargo_run -- ' in line)
+        arguments = shlex.split(build)
+        options = arguments[arguments.index('--') + 1:]
+        self.assertIn('--bin', options)
+        self.assertEqual(options[options.index('--bin') + 1], 'extract-ini')
+        self.assertEqual(cargo_run.cargo_args(options, None)[0], 'build')
+
+    def test_missing_ini_extractor_resolves_its_recorded_debug_binary(self):
+        checkout.write_config(self.main, self.game)
+        text, ready = self.report(self.main, self.main)
+        self.assertFalse(ready)
+        command = next(line.strip().removeprefix('resolve: ') for line in text.splitlines()
+                       if 'resolve: python -m tools.cargo_run ' in line)
+        executable = self.main / 'recorded extractor'
+        with patch.object(cargo_run, 'git', return_value=str(self.main)), \
+             patch.object(cargo_run, 'resolve_binary', return_value=(executable, 'debug')) as resolve, \
+             redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(cargo_run.main(shlex.split(command)[3:]), 0)
+            resolve.assert_called_once_with(self.main, 'extract-ini', 'debug')
+            self.assertEqual(output.getvalue().strip(), str(executable))
+        self.assertFalse((self.main / 'ini').exists())
 
     def test_relative_ra2_dir_starts_at_the_config_folder(self):
         # GameConfig::parse_from's rule, which src/util/config.rs tests on the Rust side.

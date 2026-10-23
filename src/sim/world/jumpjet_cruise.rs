@@ -1179,9 +1179,8 @@ mod tests {
                 .get(building)
                 .unwrap()
                 .passenger_role
-                .cargo()
-                .unwrap()
-                .passengers(),
+                .occupants()
+                .ids(),
             &[id]
         );
     }

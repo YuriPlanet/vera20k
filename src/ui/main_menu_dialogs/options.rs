@@ -71,6 +71,8 @@ pub(crate) const YR_ORIGINAL_STYLE_HELP: &str =
     "Show the Yuri's Revenge loading screen and menu movie.";
 pub(crate) const RENDER_INTERPOLATION_LABEL: &str = "Render Interpolation";
 pub(crate) const RENDER_INTERPOLATION_HELP: &str = "Smooth motion between simulation frames. Adds one frame of visual latency; does not increase simulation speed.";
+pub(crate) const MOUSE_WHEEL_ZOOM_LABEL: &str = "Mouse Wheel Zoom";
+pub(crate) const MOUSE_WHEEL_ZOOM_HELP: &str = "Use the mouse wheel to zoom battles in or out. Turning this off restores the normal view distance.";
 pub(crate) const SHIFT_QUEUE_LABEL: &str = "Shift-Click Batch Queue";
 pub(crate) const DEVELOPER_OPTIONS_LABEL: &str = "Developer Options";
 pub(crate) const WOL_TEST_SERVICE_LABEL: &str = "Offline Internet Test Service";
@@ -467,6 +469,8 @@ pub(crate) enum LauncherCheckboxId {
     WolTestService,
     /// Client-only smoothing, independent of native simulation and detail.
     RenderInterpolation,
+    /// VERA's local camera option: the wheel changes battle view distance.
+    MouseWheelZoom,
     /// VERA's developer box: the window's FPS readout. Like Full Screen it
     /// shows and changes live state at once, and is never saved: the readout
     /// starts hidden at every launch.
@@ -498,6 +502,7 @@ pub(crate) enum LauncherOptionsEvent {
     ShiftQueueChanged(bool),
     WolTestServiceChanged(bool),
     RenderInterpolationChanged(bool),
+    MouseWheelZoomChanged(bool),
     FpsCounterChanged(bool),
     ScorePreview(f32),
     SoundPreview(f32),
@@ -536,6 +541,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) original_shape: bool,
     pub(crate) yr_original_style: bool,
     pub(crate) render_interpolation: bool,
+    pub(crate) mouse_wheel_zoom: bool,
     pub(crate) shift_queue: bool,
     pub(crate) wol_test_service: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
@@ -560,6 +566,7 @@ impl Default for LauncherOptionsValues {
             original_shape: false,
             yr_original_style: false,
             render_interpolation: false,
+            mouse_wheel_zoom: false,
             shift_queue: false,
             wol_test_service: false,
             fps_counter: false,
@@ -880,6 +887,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::ShiftQueue => &mut self.values.shift_queue,
             LauncherCheckboxId::WolTestService => &mut self.values.wol_test_service,
             LauncherCheckboxId::RenderInterpolation => &mut self.values.render_interpolation,
+            LauncherCheckboxId::MouseWheelZoom => &mut self.values.mouse_wheel_zoom,
             LauncherCheckboxId::FpsCounter => &mut self.values.fps_counter,
         };
         *slot = !*slot;
@@ -905,6 +913,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::RenderInterpolation => self
                 .pending_events
                 .push(LauncherOptionsEvent::RenderInterpolationChanged(checked)),
+            LauncherCheckboxId::MouseWheelZoom => self
+                .pending_events
+                .push(LauncherOptionsEvent::MouseWheelZoomChanged(checked)),
             LauncherCheckboxId::FpsCounter => self
                 .pending_events
                 .push(LauncherOptionsEvent::FpsCounterChanged(checked)),

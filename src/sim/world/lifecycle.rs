@@ -3829,6 +3829,12 @@ impl Simulation {
             self.sound_events
                 .emit(super::SimSoundEvent::ObjectSoundDetached { owner: stable_id });
         }
+        // FootLimbo4DB376 passes NullCell: remove around current GetCoords,
+        // before tracker/Techno callbacks, only on the admitted first Limbo.
+        // An airborne old-only fringe can survive this native removal.
+        if first_foot_limbo {
+            self.remove_unit_sensors_at_current(stable_id, rules, context.registry());
+        }
         self.substrate
             .release_foot_air_tracker_before_limbo(stable_id);
         #[cfg(feature = "ares")]
@@ -3910,9 +3916,9 @@ impl Simulation {
             &mut self.houses,
             stable_id,
         );
-        // FootClass::Limbo @ 0x004DB260 and BuildingClass::Limbo @
-        // 0x00445880 remove the exact deposited footprint before conceal.
-        self.remove_sensor_before_limbo(stable_id, context.rules(), context.registry());
+        // BuildingClass::Limbo @ 0x00445880 keeps its separate array and
+        // disguise removals; Foot's sensor receiver ran in its prelude.
+        self.remove_building_sensor_before_limbo(stable_id, context.rules(), context.registry());
         // Dead and InLimbo are independent native state. TechnoClass::Limbo
         // still reaches ObjectClass::Conceal for a stored dead object; the
         // latter's InLimbo branch alone decides whether Conceal is a no-op.
@@ -6241,9 +6247,39 @@ impl Simulation {
         }
     }
 
-    /// Shared physical destructor owner, used by deferred retirement and
-    /// constructor-complete limbo disposal. Neither caller repeats UnInit or
-    /// books a loss here. Rules stay available to synchronous expiry receivers.
+    /// TemporalClass::Update (0x0071A9AC..0x0071A9DC): true Building Cargo gets
+    /// scalar destruction, not RecordKill/UnInit, while ScenarioInit is zero.
+    pub(crate) fn scalar_delete_building_cargo(
+        &mut self,
+        building_id: u64,
+        context: UninitContext<'_>,
+        game_state: i32,
+    ) {
+        if self.object_placement_scope_active() {
+            return;
+        }
+        loop {
+            // CargoClass::RemoveFirstPassenger (0x00473430) pops one head.
+            // Its destructor's callbacks finish before71A9D6 rereads the head.
+            let passenger = self
+                .substrate
+                .entities
+                .get_mut(building_id)
+                .and_then(|entity| entity.passenger_role.cargo_mut())
+                .and_then(|cargo| cargo.unload_first())
+                .map(|(id, _)| id);
+            let Some(passenger) = passenger else {
+                break;
+            };
+            if self.substrate.entities.contains(passenger) {
+                self.finalize_and_remove_common(passenger, context, game_state);
+            }
+        }
+    }
+
+    /// Shared physical destructor owner for deferred retirement, direct Cargo
+    /// scalar destruction and constructor-complete limbo disposal. This owner's
+    /// loss is not booked here. Rules reach synchronous expiry receivers.
     pub(super) fn finalize_and_remove_common(
         &mut self,
         stable_id: u64,
@@ -6261,29 +6297,35 @@ impl Simulation {
             .entities
             .get(stable_id)
             .is_some_and(|entity| entity.category() != EntityCategory::Structure);
-        // Unit7357D6..7357EF asks the existing House CanBuild4F7870 before
-        // leaving its Team or removing tracking. AtLimit(-1) requests the
-        // existing House+1FC tech-tree refresh; no alternate counter or
-        // production admission is introduced. Constructor-complete Full
-        // carriers can reach this scalar path without an earlier UnInit.
-        // Source: Steam gamemd, Unit destructor735780 body.
+        let infantry = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.category() == EntityCategory::Infantry);
+        // Unit7357D6..7357EF and Infantry517DDB..517DEB ask the existing
+        // House CanBuild4F7870 before Team/Slave/Tracking removal. AtLimit(-1)
+        // requests the child's current owner's House+1FC tech-tree refresh.
+        // Both direct scalar paths can arrive without an earlier UnInit.
         let rules = context.rules();
         if (game_state as u8) != 0
             && let Some(owner) = self.substrate.entities.get(stable_id).and_then(|entity| {
-                (entity.category() == EntityCategory::Unit)
-                    .then(|| self.object_type(entity.type_ref(), rules))
-                    .flatten()
-                    .filter(|object| {
-                        crate::sim::production::can_build(
-                            self,
-                            rules,
-                            entity.owner(),
-                            object,
-                            false,
-                            false,
-                        ) == crate::sim::production::CanBuild::AtLimit
-                    })
-                    .map(|_| entity.owner())
+                matches!(
+                    entity.category(),
+                    EntityCategory::Unit | EntityCategory::Infantry
+                )
+                .then(|| self.object_type(entity.type_ref(), rules))
+                .flatten()
+                .filter(|object| {
+                    crate::sim::production::can_build(
+                        self,
+                        rules,
+                        entity.owner(),
+                        object,
+                        false,
+                        false,
+                    ) == crate::sim::production::CanBuild::AtLimit
+                })
+                .map(|_| entity.owner())
             })
         {
             self.houses.request_house_tech_tree_recheck(owner);
@@ -6314,6 +6356,11 @@ impl Simulation {
                 self.houses.request_house_tech_tree_recheck(owner);
             }
             self.leave_team(stable_id, false, context.rules(), context.effects());
+        }
+        // Infantry destructor517E22 removes its slave node after Team leave
+        // and before RemoveTracking517E2E, only under GameState's low byte.
+        if infantry && (game_state as u8) != 0 {
+            Self::remove_slave(&self.session, &mut self.substrate, stable_id);
         }
         if kind == Some(ObjectKind::ParticleSystem) {
             // SystemDtor62E075/62E092 broadcasts control1 before its
@@ -6434,8 +6481,14 @@ impl Simulation {
                 crate::sim::house_tracking::HouseTracking::remove_tracking,
             );
         }
+        // Infantry517E33..517E6C resets movement animation/water/prone/Doing,
+        // then calls FootLimbo4DB260 even when already hidden in Cargo. The
+        // canonical class+Foot owner preserves that repeated-Limbo suffix.
+        if infantry && (game_state as u8) != 0 {
+            self.techno_limbo_with_context(stable_id, context);
+        }
         // Unit73581B..73584D follows its own RemoveTracking735816 with
-        // CargoRemoveFirst473430 -> child's scalarF8, before Unit expiry
+        // CargoRemoveFirst473430 -> child's scalar+20, before Unit expiry
         //735892 and the delegated Foot destructor. A8E7AC!=0 skips this
         //loop: PlaceMembers65E5A4's final refusal still holds that scope,
         //whereas its initial NullCell65E12B disposal does not. Ordinary
@@ -6475,6 +6528,11 @@ impl Simulation {
             // repairs observers of a rejected constructor that never UnInits.
             self.notify_pointer_expired(stable_id, context);
         }
+        // Infantry517E75 announces expiry while still Alive;517F83 clears it
+        // only afterward, before delegated Foot517F89. HP/kill state survive.
+        if infantry && let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+            entity.lifecycle.object_alive = false;
+        }
         // The ObjectClass destructor's defensive Defuse (`0x005F3BA6`).
         Self::bomb_defuse(&mut self.substrate, &mut self.bombs, stable_id);
         self.team_script_vm.object_deleted(stable_id);
@@ -6509,6 +6567,20 @@ impl Simulation {
         );
         #[cfg(feature = "ares")]
         self.destroy_ares_attach_effects(stable_id, context.rules());
+        // Techno destructor6F452C clears planning after the Foot tail, then
+        //6F4571 frees any remaining slave manager without a GameState gate.
+        // Direct scalar entry has no earlier UnInit to supply either phase.
+        if kind == Some(ObjectKind::Entity) {
+            self.planning_detach_actor(stable_id);
+            self.free_slaves(
+                stable_id,
+                None,
+                None,
+                context.rules(),
+                context.registry(),
+                context.effects(),
+            );
+        }
         // Foot4D3701 delegates to Techno6F4500 only after its own sound
         // tail. Techno6F4607 destroys the distinct voice handle via405C00,
         // before its attached/deploy Anims6F468B. Keep the disposal marker in
@@ -6680,7 +6752,6 @@ impl Simulation {
             self.trace_lifecycle_for_test(LifecycleTestEvent::DeferredDeleteSelected { ticket });
             match ticket {
                 DeferredDeleteTicket::Object(id) => {
-                    self.release_slave_links_at_destruction(id, rules, registry, effects);
                     self.finalize_and_remove_common(
                         id,
                         UninitContext::new(rules, registry).with_effects(effects),

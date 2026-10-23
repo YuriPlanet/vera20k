@@ -577,7 +577,7 @@ clock. Frame observations are post-commit state: the step 1/frame 1 row contains
 the result of executing native frame 0. A literal load also refreshes the
 context's loaded frame/tick while `completed_steps` remains monotonic.
 
-Limits are 1..16 distinct ASCII sound IDs (128 bytes each), 1..16 submissions,
+Limits are 1..16 distinct ASCII sound IDs (128 bytes each), 1..32 submissions,
 1..262144 samples per submission, 64 action/format rows and 128 resolved sample
 names per submission. After the requested exact steps, the existing frame/audio
 service continues without simulation ticks for at most the requested 1..10000 ms
@@ -1235,8 +1235,11 @@ Keys are one ASCII letter or digit, or `Escape`. They are not command names.
 An optional unique `modifiers` list contains literal `Ctrl`, `Shift`, `Alt`,
 and/or `Super` edges, for example `{"kind":"key","key":"P","modifiers":["Shift"]}`.
 The shared modifier owner presses them before the key and releases them in
-reverse order before rendering. The loaded `KEYBOARDMD.INI` bindings and registered
-startup defaults resolve them in production. Each keyboard receipt reports the
+reverse order before rendering. The production keyboard owner loads `[Hotkey]`
+from `VERA.INI` in the configured settings directory, or the retail `KEYBOARDMD.INI`
+archive when that section is absent, and installs its startup defaults. Check the
+recorded `keyboard_bindings` before reusing literal-key profiles with personal settings.
+Each keyboard receipt reports the
 production `encoded_key`, resolved registered `binding_command` (or `null`),
 and observed held-key press/release state. The capture never dispatches a
 semantic hotkey command directly. An input, including `Escape`, that opens a
@@ -2047,18 +2050,19 @@ The map observer and transactional publisher use the same encoder for the
 refinery observation exceed that limit. Readers also accept historical indented
 receipts.
 
-Use the existing runner with that profile:
+Build and select the normal `fast` binary for this profile:
 
 ```sh
+python -m tools.cargo_run -- build -p vera20k --profile fast --bin vera20k
 env -u RA2_DIR python -m tools.map_observation \
-  --build-label refinery-docking-reviewed-20261002 \
+  --build-profile fast \
   --profile /absolute/checkout/tools/map_observation.refinery-docking.example.json \
   --contract /absolute/checkout/src/app/diagnostics/tactical_capture/contract.v2.json \
   --cwd /absolute/checkout \
   --output /absolute/evidence/refinery-docking
 ```
 
-The release observation can show cargo draining alongside the actual House payout,
+The observation can show cargo draining alongside the actual House payout,
 contact release and resumed harvesting. It is production integration evidence;
 native scheduler, movement, audio and pixels require separate comparisons. Native
 coverage is recorded in [`spatial_oracle/refinery_dock.md`](spatial_oracle/refinery_dock.md).
@@ -2277,8 +2281,10 @@ placement admission. Recording an enqueued command does not imply the House
 could build it, had sufficient credits, had a ready object, or accepted the cell.
 
 Rows must be nondecreasing by `issue_after_step`, retaining input order for ties,
-and occur before the final step. An issue at step N calls the ordinary
-`try_schedule_command` producer at simulation tick N, before advancing frame N+1.
+and occur before the final completed step. At completed step N, the ordinary
+`try_schedule_command` producer stamps the command with the simulation's current
+tick before the next step. Completed steps stay monotonic across quickload; the
+simulation tick follows the restored clock.
 The producer owns encoding and queuing; the diagnostic adds no input-delay offset.
 Move carries an already resolved semantic destination, as synchronized/replay
 orders do; it does not claim to reproduce the preceding cell-click resolver.
