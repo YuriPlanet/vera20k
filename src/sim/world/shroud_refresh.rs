@@ -1958,16 +1958,16 @@ impl Simulation {
         self.refresh_object_sight_border(id, context);
     }
 
-    /// Map567DA0's current-source border after Unlimbo6F6D61 or Unit
-    /// PerCell2 73AC7A..73ACAE. These parents reread XYZ and cached260
-    /// after the sight callbacks; the shared release/update pair does not
-    /// imply this suffix for its other callers.
+    /// Map567DA0's current-source border after Unlimbo6F6D61, Unit
+    /// PerCell2 73AC7A..73ACAE or Spy camera4156D1/415854. These parents
+    /// reread XYZ and cached260 after the sight callbacks. The shared
+    /// release/update pair does not imply this suffix for its other callers.
     pub(crate) fn refresh_object_sight_border(&mut self, id: u64, context: UninitContext<'_>) {
         self.refresh_object_sight_border_on(id, None, context);
     }
 
     /// [`Self::refresh_object_sight_border`] on `only_viewer`'s map, or else
-    /// on each map source `id`'s reveal writes: around its current XYZ, out
+    /// on each executing logical client's map: around its current XYZ, out
     /// to that map's cached radius (`+0x260`) + 3.
     fn refresh_object_sight_border_on(
         &mut self,
@@ -1987,15 +1987,20 @@ impl Simulation {
                 context.terrain().or(self.resolved_terrain.as_ref()),
             ),
         );
-        let viewers: std::sync::Arc<[_]> = match only_viewer {
-            Some(viewer) => std::sync::Arc::from([viewer]),
-            None => self.reveal_viewers.direct(
-                &self.fog,
-                self.house_alliances.as_map(),
-                entity.owner(),
-                &config,
-                &self.interner,
-            ),
+        let viewers = match only_viewer {
+            Some(viewer) => vec![viewer],
+            None => {
+                let projected = self.reveal_viewers.direct(
+                    &self.fog,
+                    self.house_alliances.as_map(),
+                    entity.owner(),
+                    &config,
+                    &self.interner,
+                );
+                //567DA0 has no RevealArea house gate: an enemy's source
+                //still refreshes the active client's existing ground edges.
+                self.sight_event_viewers(id, entity.owner(), &projected, true, false)
+            }
         };
         for &viewer in viewers.iter() {
             //The border reads this client's native +0x260, not a
