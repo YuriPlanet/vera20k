@@ -280,6 +280,12 @@ impl PreparedSave<'_> {
         clock: &mut crate::app::match_runtime::frame_pacer::ScenarioElapsedClock,
         destination: SaveDestination<'_>,
     ) -> Result<PathBuf, SaveCommandError> {
+        sim.zone_grid()
+            .ok_or(SaveCommandError::MissingResources("retained navigation"))?;
+        self.resources.capture_live_cell_land(
+            sim.resolved_terrain()
+                .ok_or(SaveCommandError::MissingResources("live terrain"))?,
+        )?;
         let clock_save = clock.begin_save(crate::app::match_runtime::frame_pacer::wall_clock_ms());
         self.resources
             .set_elapsed_buckets(clock_save.accumulated_buckets());
