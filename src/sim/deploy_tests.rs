@@ -229,6 +229,11 @@ fn deploy_then_undeploy_returns_the_mcv_to_its_original_cell() {
     let mcv = sim
         .spawn_object("AMCV", "Americans", start.0, start.1, 128, &rules)
         .expect("spawn MCV");
+    sim.substrate
+        .entities
+        .get_mut(mcv)
+        .unwrap()
+        .assign_object_group(3);
     assert!(
         sim.deploy_mcv(
             mcv,
@@ -251,6 +256,8 @@ fn deploy_then_undeploy_returns_the_mcv_to_its_original_cell() {
         .map(|e| e.stable_id())
         .expect("ConYard should exist after deploy");
 
+    assert_eq!(sim.entities().get(yard).unwrap().object_group(), 3);
+
     assert!(
         sim.apply_command(
             "Americans",
@@ -270,7 +277,10 @@ fn deploy_then_undeploy_returns_the_mcv_to_its_original_cell() {
         .entities
         .values()
         .find(|e| e.type_ref() == amcv_id)
-        .map(|e| (e.position.rx(), e.position.ry()))
+        .map(|e| {
+            assert_eq!(e.object_group(), 3);
+            (e.position.rx(), e.position.ry())
+        })
         .expect("MCV should exist again after undeploy");
     assert_eq!(
         landed, start,

@@ -1249,11 +1249,19 @@ pub enum Command {
     /// enclosing CommandEnvelope's owner and execute_tick are diagnostic
     /// metadata only; the record header owns House, frame and processed state.
     SynchronizedRecord { record: CommandRecord },
+    /// Local TeamAssign731060; TeamClear7310D0 is the same eligible clear
+    /// with no selected IDs. Appended to preserve existing variant indices.
+    /// Native hotkey535CC0/Tab6D07FE write directly, without an EventClass
+    /// record or RNG; retain through local frame ingress for saves/replay.
+    AssignControlGroup { group: i32, entity_ids: Vec<u64> },
 }
 
 impl Command {
     pub(crate) fn uses_frame_ingress(&self) -> bool {
-        matches!(self, Self::Select { .. } | Self::SetGameSpeed { .. })
+        matches!(
+            self,
+            Self::Select { .. } | Self::SetGameSpeed { .. } | Self::AssignControlGroup { .. }
+        )
     }
 
     /// Classify local issue, not already-admitted replay/network input. The
@@ -1262,6 +1270,7 @@ impl Command {
     pub(crate) fn consumes_native_outlist_slot(&self) -> bool {
         match self {
             Self::Select { .. }
+            | Self::AssignControlGroup { .. }
             | Self::SetGameSpeed { .. }
             | Self::MoveFlash { .. }
             | Self::CancelPaidSuperWeapon { .. }

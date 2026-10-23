@@ -29,6 +29,8 @@ pub enum OpeningTarget {
     SovietTick(u64),
     /// Issue ordinary naval attack orders, then observe the committed tick.
     SovietNavy(u64),
+    /// Stock SOV07: ordinary player attack-move toward the NE setpiece.
+    SovietGroups(u64),
     /// SOV01 timer actions replayed after opening unlock, then ordinary expiry.
     TimerRunning,
     TimerExpired,
@@ -52,6 +54,7 @@ impl OpeningTarget {
             Self::AlliedTick(_) => "opening-allied-tick",
             Self::SovietTick(_) => "opening-soviet-tick",
             Self::SovietNavy(_) => "soviet-naval-encounter",
+            Self::SovietGroups(_) => "sov07-group-encounter",
             Self::TimerRunning => "opening-timer-running",
             Self::TimerExpired => "opening-timer-expired",
             Self::RadarAlert => "radar-alert",
@@ -69,7 +72,9 @@ impl OpeningTarget {
     fn step_limit(self) -> usize {
         match self {
             Self::LoadUnlockedWhileLocked => 6_000,
-            Self::SovietTick(tick) | Self::SovietNavy(tick) => tick as usize + 1,
+            Self::SovietTick(tick) | Self::SovietNavy(tick) | Self::SovietGroups(tick) => {
+                tick as usize + 1
+            }
             Self::TimerRunning | Self::TimerExpired => 8_000,
             _ => 2_500,
         }
@@ -105,6 +110,7 @@ pub(super) struct OpeningCapture {
     /// The (tick, binary frame) a load installed, until the next step.
     loaded_frame: Option<(u64, u32)>,
     saved_radar: Option<crate::sim::snapshot::saved_local_view::SavedRadarEvents>,
+    group_orders: Option<Value>,
 }
 
 impl OpeningCapture {
@@ -132,6 +138,7 @@ impl OpeningCapture {
             steps_after_load: 0,
             loaded_frame: None,
             saved_radar: None,
+            group_orders: None,
         }
     }
 
@@ -139,7 +146,8 @@ impl OpeningCapture {
         Duration::from_secs(match self.target {
             OpeningTarget::LoadUnlockedWhileLocked
             | OpeningTarget::SovietTick(_)
-            | OpeningTarget::SovietNavy(_) => 600,
+            | OpeningTarget::SovietNavy(_)
+            | OpeningTarget::SovietGroups(_) => 600,
             OpeningTarget::TimerRunning | OpeningTarget::TimerExpired => 600,
             _ => 180,
         })
@@ -207,7 +215,8 @@ impl OpeningCapture {
                 }
                 OpeningTarget::AlliedTick(tick)
                 | OpeningTarget::SovietTick(tick)
-                | OpeningTarget::SovietNavy(tick) => sim.session().tick() == tick,
+                | OpeningTarget::SovietNavy(tick)
+                | OpeningTarget::SovietGroups(tick) => sim.session().tick() == tick,
                 OpeningTarget::TimerRunning => sim.session().scenario_timer_view().is_some(),
                 OpeningTarget::TimerExpired => {
                     self.saw_countdown && sim.session().scenario_timer_view().is_none()
@@ -281,6 +290,9 @@ impl OpeningCapture {
         }
         if matches!(self.target, OpeningTarget::SovietNavy(_)) && self.saw_unlock && !locked {
             self.issue_naval_orders(state)?;
+        }
+        if matches!(self.target, OpeningTarget::SovietGroups(_)) && !locked {
+            self.issue_group_encounter_orders(state)?;
         }
         if matches!(
             self.target,
@@ -706,6 +718,79 @@ impl OpeningCapture {
         Ok(())
     }
 
+    /// Player input only. The unmodified SOV07 map owns discovery, creation,
+    /// recruitment, movement, damage and cleanup. No Tag or AI action is called
+    /// by this diagnostic; the group-7 setpiece is near the NE grinder141,92.
+    fn issue_group_encounter_orders(&mut self, state: &mut AppState) -> Result<()> {
+        use crate::sim::combat::TargetKind;
+        use crate::sim::command::Command;
+        if self.group_orders.is_some() {
+            return Ok(());
+        }
+        let sim = &state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .context("group runtime")?
+            .simulation;
+        let tick = sim.session().tick();
+        if tick < 300 {
+            return Ok(());
+        }
+        let viewer = sim.session().current_house().context("campaign player")?;
+        let owner = sim.interner().resolve(viewer).to_owned();
+        let rules = state.rules().context("campaign rules")?;
+        let ids: Vec<_> = sim
+            .entities()
+            .iter_sorted()
+            .filter_map(|(id, actor)| {
+                let object = rules.object(sim.interner().resolve(actor.type_ref()))?;
+                (actor.owner() == viewer
+                    && actor.is_active()
+                    && !actor.lifecycle.in_limbo()
+                    && actor.category() != crate::map::entities::EntityCategory::Structure
+                    && !object.resource_gatherer
+                    && crate::sim::combat::combat_weapon::is_armed(actor, object))
+                .then_some(id)
+            })
+            .collect();
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let target = (141, 92);
+        ensure!(
+            crate::app::input::commands::try_schedule_command(
+                state,
+                &owner,
+                Command::AssignControlGroup {
+                    group: 0,
+                    entity_ids: ids.clone()
+                }
+            )
+            .is_some(),
+            "group input rejected"
+        );
+        for &entity_id in &ids {
+            ensure!(
+                crate::app::input::commands::try_schedule_command(
+                    state,
+                    &owner,
+                    Command::AttackMove {
+                        entity_id,
+                        target: None,
+                        destination: Some(TargetKind::Cell(target.0, target.1))
+                    }
+                )
+                .is_some(),
+                "attack-move input rejected"
+            );
+        }
+        self.group_orders = Some(json!({"tick": tick, "owner": owner, "ids": ids,
+            "requested_native_group": 0, "attack_move_cell": target}));
+        camera::center_camera_on_cell(state, target.0, target.1);
+        Ok(())
+    }
+
     pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
         ensure!(
             self.ready(state)?,
@@ -728,8 +813,9 @@ impl OpeningCapture {
                     "minimap_visible": radar.is_minimap_visible()})),
             "pre_lock_save": self.pre_lock_save, "unlocked_save": self.unlocked_save,
             "load_while_locked": self.load_while_locked,
-            "requested_tick": match self.target { OpeningTarget::AlliedTick(tick) | OpeningTarget::SovietTick(tick) | OpeningTarget::SovietNavy(tick) => Some(tick), _ => None },
-            "encounter_entities": if matches!(self.target, OpeningTarget::SovietTick(_) | OpeningTarget::SovietNavy(_)) {
+            "group_orders": self.group_orders,
+            "requested_tick": match self.target { OpeningTarget::AlliedTick(tick) | OpeningTarget::SovietTick(tick) | OpeningTarget::SovietNavy(tick) | OpeningTarget::SovietGroups(tick) => Some(tick), _ => None },
+            "encounter_entities": if matches!(self.target, OpeningTarget::SovietTick(_) | OpeningTarget::SovietNavy(_) | OpeningTarget::SovietGroups(_)) {
                 let sim = &state.match_state.sim_runtime.as_ref().context("encounter runtime")?.simulation;
                 Some(sim.entities().iter_sorted().map(|(_, entity)| json!({
                     "id": entity.stable_id(), "type": sim.interner().resolve(entity.type_ref()),
@@ -737,6 +823,7 @@ impl OpeningCapture {
                     "limbo": entity.lifecycle.in_limbo(),
                     "cell": [entity.position.rx(), entity.position.ry()],
                     "health": entity.health.current(), "mission": format!("{:?}", entity.mission),
+                    "group": entity.object_group(),
                     "target": format!("{:?}", entity.attack_target),
                     "spawn_manager": entity.spawn_manager,
                 })).collect::<Vec<_>>())

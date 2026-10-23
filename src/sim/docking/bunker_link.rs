@@ -14,7 +14,7 @@ use crate::sim::movement::ground_pose::object_get_coords;
 use crate::sim::radio::{RadioMessage, RadioPayload, transmit};
 use crate::sim::world::FrameChannel;
 use crate::sim::world::ObjectSubstrate;
-use crate::sim::world::{FrameEffects, LifecycleOutput, SimSoundEvent, Simulation};
+use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 use crate::util::fixed_math::SIM_ONE;
 
 /// The installed unit side of the tank-bunker reciprocal link. Distinct from
@@ -109,9 +109,8 @@ pub fn can_auto_deploy_here(sim: &Simulation, unit_id: u64, rules: &RuleSet) -> 
 /// Bunker install state 5 (459301..459337): reciprocal links, deselection,
 /// state 6, then Guard5/1. Unit virtual+150 is Object deselect5F44A0, not
 /// Limbo: preserve coordinates, track, radio contacts and Logic membership.
-/// UpdateBunker458E50/459315 clears +214 before deselection. The ordered
-/// lifecycle fact reaches the existing local-input group owner before its
-/// next input or save boundary; there is no simulation copy of membership.
+/// gamemd.exe UpdateBunker458E50/459315 clears the one retained Techno+214
+/// Group before deselection; input derives membership from that same field.
 pub fn install_bunker_link(sim: &mut Simulation, building_id: u64, unit_id: u64, rules: &RuleSet) {
     if !sim
         .substrate
@@ -127,9 +126,8 @@ pub fn install_bunker_link(sim: &mut Simulation, building_id: u64, unit_id: u64,
     }
     if let Some(u) = sim.substrate.entities.get_mut(unit_id) {
         u.bunker.link = BunkerLink::Installed(building_id);
+        u.assign_object_group(-1);
     }
-    sim.lifecycle_outputs
-        .emit(LifecycleOutput::ControlGroupMemberRemoved { stable_id: unit_id });
     sim.object_deselect(unit_id);
     if let Some(rt) = sim
         .substrate
@@ -780,6 +778,11 @@ mod tests {
             .unwrap()
             .selection
             .set_selected_for_test(true);
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .assign_object_group(4);
         install_bunker_link(&mut sim, 2, 1, &rules);
 
         let bunker = sim.substrate.entities.get(2).unwrap();
@@ -799,23 +802,20 @@ mod tests {
         assert!(!unit.lifecycle.in_limbo());
         assert!(unit.lifecycle.cell_marked());
         assert!(!unit.selection.is_selected());
-        let group_and_follow: Vec<_> = sim
+        assert_eq!(unit.object_group(), -1);
+        let follow: Vec<_> = sim
             .take_lifecycle_outputs_for_test()
             .into_iter()
             .filter(|output| {
                 matches!(
                     output,
-                    crate::sim::world::LifecycleOutput::ControlGroupMemberRemoved { .. }
-                        | crate::sim::world::LifecycleOutput::FollowReleased { .. }
+                    crate::sim::world::LifecycleOutput::FollowReleased { .. }
                 )
             })
             .collect();
         assert_eq!(
-            group_and_follow,
-            [
-                crate::sim::world::LifecycleOutput::ControlGroupMemberRemoved { stable_id: 1 },
-                crate::sim::world::LifecycleOutput::FollowReleased { stable_id: 1 },
-            ],
+            follow,
+            [crate::sim::world::LifecycleOutput::FollowReleased { stable_id: 1 }],
             "UpdateBunker clears membership before Deselect releases Follow"
         );
         let unit = sim.substrate.entities.get(1).unwrap();

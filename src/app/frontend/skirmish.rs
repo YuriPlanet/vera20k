@@ -1304,6 +1304,7 @@ mod tests {
                 veterancy: None,
                 high: false,
                 mission: None,
+                group: -1,
                 recruitable_a: true,
                 recruitable_b: true,
                 structure_upgrades: [None, None, None],

@@ -1,8 +1,8 @@
 //! Saved local view facts, independent of window, renderer and input devices.
 //!
 //! Active-retail authorities: ScenarioSave689310/Load689470 (four cell
-//! bookmarks), MiscSave67F82A/Load67FA2A (ordered selection), Techno+214 (one
-//! group membership), MouseLoad5BE117..123 (Follow target) and the Display
+//! bookmarks), MiscSave67F82A/Load67FA2A (ordered selection),
+//! MouseLoad5BE117..123 (Follow target) and the Display
 //! cursor modes below. The committed Tactical center is the separate
 //! `SavedTacticalView`. Original executed
 //! bookmark controls live in tools/spatial_oracle/native_id_snapshot.json.
@@ -12,9 +12,6 @@
 use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
-
-/// Ten native team-selection slots; an object belongs to at most one slot.
-pub const CONTROL_GROUP_SLOTS: usize = 10;
 
 /// Mouse5BE715/5BE092 preserves Power's semantic state in its raw display
 /// stream. Geometry is derived; Sidebar NoInit6A4F8E/94 overwrites slide start
@@ -64,7 +61,6 @@ pub struct SavedLocalView {
     /// App projection of the serialized Simulation Select queue. No command
     /// payload is duplicated here; admission checks the existing queue owner.
     selection_order_pending: bool,
-    control_groups: [Vec<u64>; CONTROL_GROUP_SLOTS],
     follow_target: Option<u64>,
     modes: SavedCursorModes,
     /// The save coordinator attaches the Power owner's projection after the
@@ -110,8 +106,6 @@ pub enum SavedTargeting {
 pub enum SavedLocalViewError {
     #[error("saved selection repeats object {object_id}")]
     DuplicateSelectionReference { object_id: u64 },
-    #[error("saved control groups repeat object {object_id}")]
-    DuplicateGroupReference { object_id: u64 },
     #[error("saved {field} references absent object {object_id}")]
     MissingEntityReference { field: &'static str, object_id: u64 },
     #[error("saved selection order does not match its simulation selection timeline")]
@@ -129,7 +123,6 @@ impl SavedLocalView {
         view_bookmarks: [[u16; 2]; 4],
         selection_order: Vec<u64>,
         selection_order_pending: bool,
-        control_groups: [Vec<u64>; CONTROL_GROUP_SLOTS],
         follow_target: Option<u64>,
         modes: SavedCursorModes,
     ) -> Result<Self, SavedLocalViewError> {
@@ -137,7 +130,6 @@ impl SavedLocalView {
             view_bookmarks,
             selection_order,
             selection_order_pending,
-            control_groups,
             follow_target,
             modes,
             power_bar: None,
@@ -158,12 +150,6 @@ impl SavedLocalView {
                 return Err(SavedLocalViewError::DuplicateSelectionReference { object_id });
             }
         }
-        let mut grouped = BTreeSet::new();
-        for &object_id in self.control_groups.iter().flatten() {
-            if !grouped.insert(object_id) {
-                return Err(SavedLocalViewError::DuplicateGroupReference { object_id });
-            }
-        }
         Ok(())
     }
 
@@ -177,10 +163,6 @@ impl SavedLocalView {
 
     pub fn selection_order_pending(&self) -> bool {
         self.selection_order_pending
-    }
-
-    pub fn control_groups(&self) -> &[Vec<u64>; CONTROL_GROUP_SLOTS] {
-        &self.control_groups
     }
 
     pub fn follow_target(&self) -> Option<u64> {
@@ -215,13 +197,10 @@ impl SavedLocalView {
         self.credits_counter.take()
     }
 
-    pub fn into_local_input(
-        self,
-    ) -> (Vec<u64>, bool, [Vec<u64>; CONTROL_GROUP_SLOTS], Option<u64>) {
+    pub fn into_local_input(self) -> (Vec<u64>, bool, Option<u64>) {
         (
             self.selection_order,
             self.selection_order_pending,
-            self.control_groups,
             self.follow_target,
         )
     }

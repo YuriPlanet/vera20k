@@ -1479,6 +1479,9 @@ impl Simulation {
                 }
                 self.apply_production_record(record, rules, overlay_registry, frame_effects)
             }
+            Command::AssignControlGroup { group, entity_ids } => {
+                self.assign_control_group(*group, entity_ids)
+            }
             Command::Select { entity_ids, .. } => self.apply_selection_snapshot(
                 entity_ids,
                 super::UninitContext::new(rules, overlay_registry).with_effects(frame_effects),

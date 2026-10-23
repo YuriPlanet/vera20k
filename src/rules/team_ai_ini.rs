@@ -478,9 +478,15 @@ impl TeamAiIniRegistry {
                     member_type: member_type.to_string(),
                 });
             }
+            // gamemd.exe TaskForceClass::Read_INI6E8420 passes its current
+            // +98 Group as ReadInt's default at6E84CD..6E84E2. A reread that
+            // omits Group retains it; only the constructor starts at -1.
+            let group_default = index
+                .get(&canonical_identity(id))
+                .map_or(-1, |&position| self.task_forces[position].group);
             let definition = TaskForceIni {
                 id: id.to_string(),
-                group: section.read_int("Group", -1),
+                group: section.read_int("Group", group_default),
                 entries,
                 source,
             };
@@ -848,6 +854,14 @@ mod tests {
         );
         assert_eq!(loaded.task_forces[0].entries.len(), 1);
         assert_eq!(loaded.task_forces[0].entries[0].count, 2);
+        assert_eq!(
+            loaded.task_forces[0].group, 3,
+            "omitted map Group retains the fixed value"
+        );
+        assert_eq!(
+            loaded.task_forces[1].group, -1,
+            "a new TaskForce starts ungrouped"
+        );
         assert_eq!(loaded.ai_triggers.len(), 2);
         assert!(!loaded.ai_triggers[0].enabled);
         assert!(loaded.ai_triggers[1].enabled);

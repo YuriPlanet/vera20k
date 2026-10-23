@@ -205,15 +205,14 @@ fn entity_status_pips_drawable(
         )
 }
 
-/// Project the input-owned control-group membership onto the live objects that
-/// reach the status-pip draw. The membership remains owned by
-/// `MatchInputState`; this transient index only makes each frame's lookup
+/// Project the simulation-owned control-group membership onto the live objects that
+/// reach the status-pip draw. This transient index only makes each frame's lookup
 /// linear in the retained Display list plus the ten group lists.
 ///
 /// Native `DrawHealthBar @0x006F64A0` calls the class pip-scale slot
 /// (`vtable +0x450`), whose tail reads Techno `+0x214` at
 /// `DrawPipScalePips @0x00709A90`. Native `+0x214` is a zero-based slot; Rust's
-/// input-owned control groups are indexed by the registered hotkey digit
+/// projected control groups are indexed by the registered hotkey digit
 /// (`TeamCreate_1` stores slot 1 and `TeamCreate_10` stores slot 0), so the
 /// displayed digit is the Rust slot itself. The native caller's selected/hovered
 /// admission is shared with the health strip for units, infantry, and buildings.
@@ -231,9 +230,8 @@ pub(crate) fn control_group_status_labels(
     let mut slot_by_id = HashMap::new();
     for (slot, members) in control_groups.iter().take(10).enumerate() {
         for &stable_id in members {
-            // The input owner maintains unique membership. Last-slot choice
-            // only makes malformed/restored duplicates deterministic; it
-            // does not reconstruct a native assignment history.
+            // Simulation derives this unique membership from each entity's
+            // native group field and pending local assignment commands.
             slot_by_id.insert(stable_id, slot);
         }
     }
@@ -533,7 +531,7 @@ pub(crate) fn build_control_group_status_instances(
     ];
     build_control_group_status_render_instances(
         sim,
-        &state.match_state.input.control_groups,
+        &sim.projected_control_groups(),
         hovered_entity_id,
         local_owner_id,
         state.match_state.sandbox_full_visibility,
