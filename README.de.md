@@ -139,12 +139,6 @@ Hilfe ist willkommen. Du kannst Code schreiben, die Engine refaktorieren, das Sp
 Ideen einbringen oder es neben dem Original spielen und uns sagen, was sich falsch anfühlt.
 Öffne einen PR, und wir kümmern uns um den Rest.
 
-Dokumentiere für jede neue Option die Datei, den Abschnitt, den Schlüssel, den Standardwert und
-die Wirkung.
-
-Behalte die Funktionen im selben Build; füge Build-Optionen nur für Plattformunterschiede oder
-optionale Bibliotheken hinzu.
-
 Diskutiert wird auf [Discord](https://discord.gg/kmjRUn5m5F) und in der QQ-Gruppe (1097193563).
 
 ## Unterstützen

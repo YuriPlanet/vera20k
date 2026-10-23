@@ -138,11 +138,6 @@ Yardımlarınızı bekliyoruz. Kod yazabilir, motoru yeniden düzenleyebilir, oy
 fikirlerinizi paylaşabilir veya orijinal oyunla yan yana oynayıp neyin yanlış hissettirdiğini
 bize anlatabilirsiniz. Bir PR açın, gerisini biz hallederiz.
 
-Her yeni seçenek için dosyayı, bölümü, anahtarı, varsayılan değeri ve etkisini belgeleyin.
-
-Özellikleri aynı derlemede tutun; yalnızca platform farklılıkları veya isteğe bağlı kütüphaneler
-için derleme seçenekleri ekleyin.
-
 Tartışmalar [Discord](https://discord.gg/kmjRUn5m5F) üzerinden ve QQ grubunda (1097193563) yürür.
 
 ## Destek

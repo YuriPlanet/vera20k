@@ -138,11 +138,6 @@ All hjälp är välkommen. Du kan skriva kod, refaktorera motorn, testa spelet, 
 spela det sida vid sida med originalet och berätta vad som känns fel. Öppna en PR så tar vi det
 därifrån.
 
-Dokumentera fil, avsnitt, nyckel, standardvärde och effekt för varje nytt alternativ.
-
-Behåll funktionerna i samma bygge; lägg bara till byggalternativ för plattformsskillnader eller
-valfria bibliotek.
-
 Diskussionen sker på [Discord](https://discord.gg/kmjRUn5m5F) och i QQ-gruppen (1097193563).
 
 ## Stöd projektet

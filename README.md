@@ -61,10 +61,6 @@ move VERA20K forward.
 Maintainers will help with review, integration and merging. You'll keep full credit for your
 contribution.
 
-For each new option, document its file, section, key, default and effect.
-
-Keep features in the same build; only add build options for platform differences or optional libraries.
-
 Discussion is on [Discord](https://discord.gg/kmjRUn5m5F) and in the QQ group (1097193563).
 
 ## Settings

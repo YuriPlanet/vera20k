@@ -144,12 +144,6 @@ Toda ayuda es bienvenida. Puedes escribir código, refactorizar el motor, probar
 ideas o jugarlo junto al original y decirnos qué no se siente como debería. Abre un PR y nosotros
 nos encargamos a partir de ahí.
 
-Para cada opción nueva, documenta el archivo, la sección, la clave, el valor predeterminado y su
-efecto.
-
-Mantén las funciones en la misma compilación; añade opciones de compilación solo para
-diferencias entre plataformas o bibliotecas opcionales.
-
 Hablamos en [Discord](https://discord.gg/kmjRUn5m5F) y en el grupo de QQ (1097193563).
 
 ## Apoya el proyecto
