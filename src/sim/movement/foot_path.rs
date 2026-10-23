@@ -1104,6 +1104,30 @@ impl Simulation {
         goal_bridge: bool,
         rules: &RuleSet,
     ) -> Result<i32, String> {
+        self.estimate_zone_cost_in_query(
+            id,
+            ZoneQueryCell::Copied(start),
+            ZoneQueryCell::Copied(goal),
+            start_bridge,
+            goal_bridge,
+            rules,
+        )
+    }
+
+    /// The same native query with the caller's actual CellStruct arguments.
+    /// Patrol also passes retained Cell+24 pointers. Resolve each at its own
+    /// read: the second lookup and the bridge helpers may restamp Dummy,
+    /// including before the original arguments are reread for distances.
+    /// The bridge booleans are copied inputs, not live Cell flag queries.
+    pub(crate) fn estimate_zone_cost_in_query(
+        &self,
+        id: u64,
+        start: ZoneQueryCell,
+        goal: ZoneQueryCell,
+        start_bridge: bool,
+        goal_bridge: bool,
+        rules: &RuleSet,
+    ) -> Result<i32, String> {
         use crate::sim::cell_rect::get_cellclass_fallback;
         use crate::sim::pathfinding::zone_build::find_high_bridge_record_index;
         use crate::sim::pathfinding::zone_hierarchy::{
@@ -1130,8 +1154,9 @@ impl Simulation {
         let lookup = |cell: (i16, i16)| {
             get_cellclass_fallback(Some(terrain), i32::from(cell.0), i32::from(cell.1))
         };
-        let start_cell = lookup(start); //42D1A1
-        let goal_cell = lookup(goal); //42D1B2, before the first projection
+        let cells = NativeCellQuery::canonical(terrain);
+        let start_cell = lookup(start.coord(&cells)); //42D1A1
+        let goal_cell = lookup(goal.coord(&cells)); //42D1B2, after start's lookup
         let start_projection = live_hierarchy_projection(
             terrain,
             zones.bridge_records(),
@@ -1178,7 +1203,7 @@ impl Simulation {
         };
         let packed = |cell: (i16, i16)| (cell.0 as u16, cell.1 as u16);
         let signed = |cell: (u16, u16)| (cell.0 as i16, cell.1 as i16);
-        let direct = chebyshev(start, goal);
+        let direct = chebyshev(start.coord(&cells), goal.coord(&cells));
         let fine_path = &path.paths[0];
         let count = fine_path.len();
         let mut cost = 2 * (count as i32 - 1);
@@ -1187,10 +1212,18 @@ impl Simulation {
             if start_bridge {
                 // Both copied bridge booleans true: the same nonnegative
                 // high-record index bypasses every bridge-distance term.
-                let goal_record =
-                    find_high_bridge_record_index(zones.bridge_records(), 0, packed(goal), 3);
-                let start_record =
-                    find_high_bridge_record_index(zones.bridge_records(), 0, packed(start), 3);
+                let goal_record = find_high_bridge_record_index(
+                    zones.bridge_records(),
+                    0,
+                    packed(goal.coord(&cells)),
+                    3,
+                );
+                let start_record = find_high_bridge_record_index(
+                    zones.bridge_records(),
+                    0,
+                    packed(start.coord(&cells)),
+                    3,
+                );
                 if goal_record.is_some() && goal_record == start_record {
                     return Ok(direct);
                 }
@@ -1199,7 +1232,7 @@ impl Simulation {
             if count >= 4 {
                 adjacent = zones.bridge_cell_for_hierarchy_zone(
                     terrain,
-                    packed(goal),
+                    packed(goal.coord(&cells)),
                     0,
                     fine_path[count - 2],
                     self.playfield_bounds(),
@@ -1208,7 +1241,7 @@ impl Simulation {
             if adjacent == (0, 0) {
                 adjacent = zones.bridge_cell_for_hierarchy_zone(
                     terrain,
-                    packed(goal),
+                    packed(goal.coord(&cells)),
                     0,
                     fine_path[count - 1],
                     self.playfield_bounds(),
@@ -1218,7 +1251,7 @@ impl Simulation {
                 adjacent = goal_projection;
             }
             if adjacent != (0, 0) {
-                cost += chebyshev(goal, signed(adjacent));
+                cost += chebyshev(goal.coord(&cells), signed(adjacent));
             }
         }
         if start_bridge {
@@ -1226,7 +1259,7 @@ impl Simulation {
             if count >= 4 {
                 adjacent = zones.bridge_cell_for_hierarchy_zone(
                     terrain,
-                    packed(start),
+                    packed(start.coord(&cells)),
                     0,
                     fine_path[1],
                     self.playfield_bounds(),
@@ -1235,7 +1268,7 @@ impl Simulation {
             if adjacent == (0, 0) {
                 adjacent = zones.bridge_cell_for_hierarchy_zone(
                     terrain,
-                    packed(start),
+                    packed(start.coord(&cells)),
                     0,
                     fine_path[0],
                     self.playfield_bounds(),
@@ -1245,7 +1278,7 @@ impl Simulation {
                 adjacent = start_projection;
             }
             if adjacent != (0, 0) {
-                cost += chebyshev(start, signed(adjacent));
+                cost += chebyshev(start.coord(&cells), signed(adjacent));
             }
         };
         Ok(cost.max(direct))

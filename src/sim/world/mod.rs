@@ -127,6 +127,7 @@ mod trigger_explosion;
 mod trigger_strikes;
 pub(crate) use techno_ai::ObjectAiCtx;
 pub(crate) use techno_ai::PassiveScan;
+pub(crate) use techno_ai::PatrolPost;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use techno_ai::PendingBuildingFire;
 pub(crate) use techno_ai::PrismSupport;

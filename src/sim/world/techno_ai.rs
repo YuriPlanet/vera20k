@@ -18,11 +18,13 @@ mod aircraft_guard;
 mod building_missile;
 mod building_missions;
 mod building_retaliation;
+mod foot_patrol;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use building_missions::PendingBuildingFire;
 pub(crate) use building_missions::PrismSupport;
 pub(crate) use building_missions::queue_and_commence;
 pub use building_missions::{BuildingDelayedFire, DelayedFire};
+pub(crate) use foot_patrol::PatrolPost;
 mod mission_handlers;
 mod scan_batch;
 mod target_scan;

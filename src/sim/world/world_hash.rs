@@ -798,6 +798,9 @@ impl Simulation {
             };
             parallel::any_index(entities.len(), |index| {
                 let entity = entities[index];
+                if entity.patrol_post.cell() == Some(NativeCellIdentity::Dummy) {
+                    return true;
+                }
                 [
                     entity.attack_target.target(),
                     entity.suspended_attack_target.target(),
@@ -2302,6 +2305,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
 
     hash_mission_com(&entity.mission, hasher);
     hash_mission_leaf(&entity.mission_leaf, hasher);
+    if let Some(post) = entity.patrol_post.cell() {
+        b"foot-patrol-post-v1".hash(hasher);
+        post.hash(hasher);
+    }
     entity.removal_facts.occupier().hash(hasher);
     entity.passive_scan.timer().hash(hasher);
     // Passive-acquire bookkeeping. `passively_acquired_target` gates
