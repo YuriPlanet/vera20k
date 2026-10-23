@@ -32,6 +32,37 @@ the executable. Default execution checks without writing; `--write` deliberately
 regenerates only this companion and its provenance sidecar. `--output` changes
 only the reference destination through the shared checker.
 
+`--entered-owner` selects the separate `engineer_capture_entered_owner.json`
+comparison:
+
+```sh
+python -m tools.spatial_oracle.engineer_capture_accounting --entered-owner --check
+```
+
+This joins both original building Entered1 calls (`519B53`, `519F44`) to real
+repeatable Tag/Trigger/Event callbacks and Action36 ownership changes. T0 sets
+Global11 after the first callback; T1 requires that flag before the second.
+The four controls change the entrant's owner on neither callback, the first,
+the second, or both. `519F71` then reads the current entrant owner for capture.
+Each control overrides the inherited supplied runtime mode to Skirmish5 before
+target setup, actor construction and command delivery, and records its readback
+after destruction. Native mode selection and complete startup remain excluded;
+the inherited earlier retail type-reader setup remains unchanged.
+Original Foot/Techno ChangeOwner clears its orders without restarting the
+already admitted PerCell continuation. Building ownership/accounting,
+evacuation, Engineer UnInit and deferred destruction execute afterward.
+
+The supplied flat-map class/height plane uses the existing native connectivity
+and Pathfinder producers, since evacuation can enter Scatter/pathfinding after
+Action36 clears the destination. Four human Houses have independent tracking
+storage and explicit Country identities. Definitions, admitted target and
+already paid arrival head are inputs; whole native map loading, ordinary travel,
+full House startup and hardware presentation remain outside these controls.
+The entrant has no Tag. The Rust production regression separately exercises
+ordinary command/movement and the transfer of an inert entrant Tag; that extra
+composition is not claimed as a native golden. Recorded RNG states cover this
+bounded native continuation, not the full Rust travel frames.
+
 ## Executed controls
 
 The schema version is `1`, kind
