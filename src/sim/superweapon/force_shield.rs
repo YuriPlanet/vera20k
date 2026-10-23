@@ -41,7 +41,7 @@ use crate::map::houses::is_allied_with;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::superweapon::invulnerability::{InvulnKind, apply_invulnerability};
-use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
 /// The coordinates the walk skips (`0x006CD1C8..0x006CD1FF`): `0x00B0C020`,
 /// zeroed by its static initializer `0x006CADC0`, and `0x00B0C070`, which
@@ -58,21 +58,21 @@ pub fn launch(
     target_rx: u16,
     target_ry: u16,
     sw_type: InternedId,
+    frame_effects: FrameEffects<'_>,
 ) -> bool {
     let general = &rules.general;
     let frame = sim.session.binary_frame();
 
     // `0x006CD07D..0x006CD130`: the anim 5 leptons over the deck coordinate.
-    super::spawn_cell_anim(
+    let deck @ [x, y, z] = super::deck_coords(sim, (target_rx, target_ry));
+    let _ = super::spawn_super_anim(
         sim,
         rules,
         &general.force_shield_invoke_anim,
-        target_rx,
-        target_ry,
+        [x, y, z.wrapping_add(super::INVOKE_ANIM_Z_LIFT_LEPTONS)],
     );
 
     // `0x006CD135..0x006CD162`: the countdown and where its sound plays.
-    let deck = super::deck_coords(sim, (target_rx, target_ry));
     if let Some(instance) = sim.super_weapons.instance_mut(&owner, &sw_type) {
         instance.arm_fade(
             general
@@ -80,6 +80,19 @@ pub fn launch(
                 .wrapping_sub(general.force_shield_fade_sound_time),
             deck,
         );
+    }
+
+    // Launch6CD16B..6CD176: StartSound at the original deck, before
+    // blackout/curtain callbacks can change client listener admission.
+    if rules
+        .super_weapon(sim.interner.resolve(sw_type))
+        .is_some_and(|sw| sw.start_sound.is_some())
+    {
+        sim.sound_events.emit(SimSoundEvent::SuperWeaponActivation {
+            sw_type,
+            world: crate::sim::anim_class::AnimWorldCoord { x, y, z },
+        });
+        frame_effects.flush_sound(sim, rules);
     }
 
     // `0x006CD17B..0x006CD18B` calls the shared House50BC90 replacement

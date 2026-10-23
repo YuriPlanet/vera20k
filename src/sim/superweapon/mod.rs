@@ -25,6 +25,8 @@ mod can_fire_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod cell_receiver_tests;
 #[cfg(test)]
+mod charge_drain_tests;
+#[cfg(test)]
 mod charge_native_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod chronosphere_lunar_retail_tests;
@@ -73,7 +75,9 @@ use crate::sim::world::FrameChannel;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{SimSoundEvent, Simulation};
-use crate::util::native_x87::{NativeF32Bits, X87Chop53, X87Ordering};
+use crate::util::native_x87::{
+    MaskedX87Chop53, NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering,
+};
 
 /// The `[SuperWeaponTypes]` entry at a type's `PreDependent=` index: the
 /// Super Fire_SW pairs a `PostClick=` type with (`HouseClass+0x258` indexed by
@@ -378,7 +382,7 @@ pub struct SuperWeaponInstance {
     #[serde(default = "inherited_recharge_time")]
     custom_recharge_time: i32,
     /// Charge/drain state: -1=N/A, 0=empty, 1=charged, 2=draining.
-    /// Only used when UseChargeDrain=yes (Force Shield). -1 for all others.
+    /// Native authored UseChargeDrain branch; no stock type enables it.
     charge_drain_state: i32,
     /// Native frame when the SW became ready. Construction uses -100.
     ready_tick: i32,
@@ -925,22 +929,90 @@ impl SuperWeaponInstance {
         self.store_charge_timer(timer);
     }
 
-    /// Compute charge progress as 0.0–1.0 for sidebar display.
-    /// Only valid when is_active and not is_ready.
-    ///
-    /// gamemd.exe parity: standard `SuperClass::AnimStage` at `0x006CBEE0`
-    /// (active caller `StripClass::Draw` at `0x006A99AC`) derives progress from
-    /// the instance's effective recharge time and the live `CDTimer` remainder.
-    pub fn charge_progress(&self, current_frame: u32, full_recharge_frames: i32) -> f32 {
-        if self.is_ready {
-            return 1.0;
+    /// ClickFire6CB954/6CB9D9: human stop/start. The timer/state writes
+    /// precede Launch and bypass the ordinary ready/one-time finish. The
+    /// Boolean reports whether to call Launch, not native AL (always zero).
+    fn click_charge_drain(
+        &mut self,
+        sw: &SuperWeaponType,
+        current_frame: u32,
+        ratio: NativeF64Bits,
+    ) -> bool {
+        use MaskedX87Chop53 as F;
+        let full = self.recharge_time(sw);
+        let frame = current_frame as i32;
+        let remaining = self.charge_timer().remaining(frame);
+        let q = F::load_f64(ratio);
+        let (duration, launch) = match self.charge_drain_state {
+            1 => {
+                self.charge_drain_state = 2;
+                //6CBA0E integer SUB precedes FILD/FMUL/ftol-low32.
+                (F::mul(F::load_i32(full.wrapping_sub(remaining)), q), true)
+            }
+            2 => {
+                self.charge_drain_state = 1;
+                //6CB995..6CB9B0: T - (R/q), no intermediate f64 store.
+                (
+                    F::sub(F::load_i32(full), F::div(F::load_i32(remaining), q)),
+                    false,
+                )
+            }
+            _ => return false,
+        };
+        self.store_charge_timer(CdTimer::started(frame, F::ftol_i32_low_masked(duration)));
+        launch
+    }
+
+    /// AnimStage6CBEE0, including state2's original expression and masked
+    /// PC53/chop order. Only an upper cap follows ftol; signed lower stages
+    /// are admitted by the shared SHP clock owner.
+    fn anim_stage(&self, sw: &SuperWeaponType, frame: i32, ratio: NativeF64Bits) -> i32 {
+        use MaskedX87Chop53 as F;
+        if !self.is_active {
+            return 0;
         }
-        if full_recharge_frames <= 0 {
-            return 0.0;
+        if !sw.use_charge_drain && self.is_ready {
+            return 54;
         }
-        let remaining = self.charge_timer().remaining(current_frame as i32);
-        let elapsed = full_recharge_frames.wrapping_sub(remaining) as f32;
-        (elapsed / full_recharge_frames as f32).clamp(0.0, 1.0)
+        let full = self.recharge_time(sw);
+        let remaining = self.charge_timer().remaining(frame);
+        let fraction = if sw.use_charge_drain && self.charge_drain_state == 2 {
+            let total = F::mul(F::load_i32(full), F::load_f64(ratio));
+            F::sub(
+                F::load_i32(1),
+                F::div(F::sub(total, F::load_i32(remaining)), total),
+            )
+        } else {
+            F::div(F::load_i32(full.wrapping_sub(remaining)), F::load_i32(full))
+        };
+        F::ftol_i32_low_masked(F::mul(fraction, F::load_i32(54))).min(53)
+    }
+
+    fn sidebar_display(
+        &self,
+        sw: &SuperWeaponType,
+        frame: i32,
+        ratio: NativeF64Bits,
+    ) -> SuperWeaponDisplay {
+        // NameReadiness6CC2B0: HOLD has priority, independently of rawReady.
+        let status = if self.is_suspended {
+            Some(SuperWeaponStatus::Hold)
+        } else if sw.use_charge_drain {
+            match self.charge_drain_state {
+                0 => Some(SuperWeaponStatus::Charging),
+                1 => Some(SuperWeaponStatus::Ready),
+                2 => Some(SuperWeaponStatus::Active),
+                _ => None,
+            }
+        } else {
+            self.is_ready.then_some(SuperWeaponStatus::Ready)
+        };
+        SuperWeaponDisplay {
+            stage: self.anim_stage(sw, frame, ratio),
+            // ShouldDrawProgress6CDE90; draining still draws while rawReady.
+            draw_progress: sw.use_charge_drain || !self.is_ready,
+            status,
+        }
     }
 }
 
@@ -1191,12 +1263,30 @@ pub fn super_timer_views(sim: &Simulation, rules: &RuleSet) -> Vec<SuperTimerVie
     views
 }
 
+/// Derived native status text, without a presentation-local phase/timer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SuperWeaponStatus {
+    Hold,
+    Ready,
+    Charging,
+    Active,
+}
+
+/// Shared NameReadiness/AnimStage/ShouldDrawProgress projection.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SuperWeaponDisplay {
+    pub stage: i32,
+    pub draw_progress: bool,
+    pub status: Option<SuperWeaponStatus>,
+}
+
 /// View struct for sidebar display — no sim internals exposed.
 #[derive(Debug, Clone)]
 pub struct SuperWeaponView {
     pub type_id: InternedId,
     pub display_name: String,
     pub progress: f32,
+    pub display: SuperWeaponDisplay,
     pub is_ready: bool,
     pub is_online: bool,
     /// Derived `SuperClass::ShouldFlashTab @ 0x006CE1A0` result for the
@@ -1230,10 +1320,13 @@ pub fn superweapon_views_for_owner(
         let paid_source = paid_pair_source(rules, sw_type);
         #[cfg(feature = "ares")]
         let money_type = financial_type(rules, sw_type);
+        let display =
+            inst.sidebar_display(sw_type, current_frame, rules.general.charge_to_drain_ratio);
         views.push(SuperWeaponView {
             type_id: inst.type_id,
             display_name: type_id_str.to_string(),
-            progress: inst.charge_progress(sim.session.binary_frame(), inst.recharge_time(sw_type)),
+            progress: display.stage as f32 / 54.0,
+            display,
             is_ready: inst.is_ready,
             is_online: !inst.is_suspended,
             should_flash_tab: inst.should_flash_tab(sw_type, current_frame),
@@ -1275,11 +1368,29 @@ pub(crate) fn tick_house_superweapon_instances(
                 .expect("selected retained Super");
             // The fade head precedes the granted/held/readiness gates.
             let fade = instance.step_fade();
-            let ready = instance.is_active
-                && !instance.is_ready
+            let sw = rules.super_weapon(sim.interner.resolve(type_id));
+            let charge_drain = sw.is_some_and(|sw| sw.use_charge_drain);
+            let expired = instance.is_active
+                && (!instance.is_ready || charge_drain)
                 && !instance.is_suspended
                 && instance.charge_start_tick != -1
                 && instance.charge_timer().expired(current_frame as i32);
+            // AI6CBD7E..6CBDBD returns before ordinary ReadyFrame/EVA.
+            // Drain expiry does not clear rawReady; the next recharge must
+            // therefore remain visitable while that flag is already true.
+            let ready = expired && !charge_drain;
+            if expired && charge_drain {
+                if instance.charge_drain_state == 2 {
+                    instance.charge_drain_state = 0;
+                    instance.store_charge_timer(CdTimer::started(
+                        current_frame as i32,
+                        instance.recharge_time(sw.expect("drain type")),
+                    ));
+                } else {
+                    instance.charge_drain_state = 1;
+                    instance.is_ready = true;
+                }
+            }
             if ready {
                 instance.mark_ready(current_frame);
             }

@@ -295,7 +295,7 @@ pub(super) fn passive_acquire_step(
     match targeting_slot(entity, sim.session.binary_frame()) {
         TargetingSlot::Skip => {}
         TargetingSlot::ArrivalHandler => sim.foot_arrival_target_handler(id, rules, ctx),
-        TargetingSlot::PassiveAcquire(_) => {
+        TargetingSlot::PassiveAcquire => {
             passive_target_acquire(sim, id, rules, ctx);
         }
     }
@@ -308,7 +308,7 @@ pub(super) enum TargetingSlot {
     /// An attack-mover's Arrival_Target_Handler.
     ArrivalHandler,
     /// [`passive_target_acquire`] on this mission.
-    PassiveAcquire(MissionType),
+    PassiveAcquire,
 }
 
 /// Where the passive block of `TechnoClass::AI_Update` goes for `entity` at
@@ -330,7 +330,7 @@ pub(super) fn targeting_slot(
     ) {
         return TargetingSlot::Skip;
     }
-    TargetingSlot::PassiveAcquire(mission)
+    TargetingSlot::PassiveAcquire
 }
 
 /// `TechnoClass::Passive_Target_Acquire @ 0x00709480`: false unless
@@ -516,10 +516,7 @@ pub(super) fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> 
     }
     if entity.category() == EntityCategory::Structure
         && obj.can_be_occupied
-        && entity
-            .passenger_role
-            .cargo()
-            .is_none_or(|cargo| cargo.count() == 0)
+        && entity.passenger_role.occupants().is_empty()
     {
         return false;
     }
@@ -777,20 +774,15 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
         );
     }
 
-    /// Through the object's `+0x3C4` override, or this pass's batched answer
-    /// ([`super::scan_batch`]).
+    /// Through the object's live `+0x3C4` override. Hunt4D5392,
+    /// AreaGuard4D6F06 and passive/arrival acquisition709820 observe all
+    /// earlier object turns, including newly admitted candidates. Reusing a
+    /// frame-start result would omit their ranking and query/RNG effects.
     fn greatest_threat(&mut self, mask: ScanMission) -> Option<TargetKind> {
         let (rules, registry) = (self.rules, self.ctx.overlay_registry);
-        let outcome =
-            match self
-                .sim
-                .take_batched_scan(rules, registry, self.id, mask, self.scan_coord)
-            {
-                Some(outcome) => outcome,
-                None => self
-                    .sim
-                    .threat_scan(rules, registry, self.id, mask, self.scan_coord),
-            };
+        let outcome = self
+            .sim
+            .threat_scan(rules, registry, self.id, mask, self.scan_coord);
         Simulation::commit_threat_scan(
             &mut self.sim.scenario_rng,
             &mut self.sim.substrate,

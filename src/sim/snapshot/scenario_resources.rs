@@ -38,6 +38,15 @@ pub struct SavedScenarioResourcesRef<'a> {
 }
 
 impl<'a> SavedScenarioResourcesRef<'a> {
+    /// Native Cell Save483C10 sees the current Cell body, including after the
+    /// frame's Ground phase. Resource preparation may precede that boundary.
+    pub fn capture_live_cell_land(
+        &mut self,
+        live: &crate::map::resolved_terrain::ResolvedTerrainGrid,
+    ) -> Result<(), SavedTerrainError> {
+        self.terrain.capture_live_cell_land(live)
+    }
+
     pub(crate) fn compatibility(&self) -> crate::rules::compatibility::RulesCompatibility {
         self.processed_rules.compatibility()
     }

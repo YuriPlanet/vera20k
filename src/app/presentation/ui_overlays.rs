@@ -1458,13 +1458,10 @@ pub(crate) fn scale_pip_draws(
     //709C27..D17 precedes passengers and uses raw OccupyPip, including
     //reader-produced1..5 as well as person frames6..12. Keep its own origin.
     if building && object.show_occupant_pips && object.max_number_occupants > 0 {
-        let occupants = entity
-            .passenger_role
-            .cargo()
-            .map(|cargo| cargo.passengers());
+        let occupants = entity.passenger_role.occupants().ids();
         pips.extend((0..object.max_number_occupants as usize).map(|slot| {
             let frame = occupants
-                .and_then(|ids| ids.get(slot))
+                .get(slot)
                 .and_then(|id| sim.entities().get(*id))
                 .and_then(|passenger| sim.interner().object_type(passenger.type_ref(), rules))
                 .map_or(6, |passenger| passenger.occupy_pip() as usize);

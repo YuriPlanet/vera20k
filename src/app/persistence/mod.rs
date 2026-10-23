@@ -255,12 +255,17 @@ impl PreparedLoad {
             current_simulation.terrain_speed_config().clone(),
             overlay_registry.ok_or(PreparedLoadError::MissingOverlayRegistry)?,
             None,
+            None,
         )
     }
 
     /// One world restore for production resource loads and headless fixtures.
     /// The caller supplies the incoming bound resources and only lends the
     /// current process RNG owners; no fresh scenario construction is replayed.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "bound resources and explicit user-file Cell values"
+    )]
     fn prepare_snapshot(
         snapshot: GameSnapshot,
         process: crate::sim::world::SnapshotProcessState<'_>,
@@ -271,6 +276,7 @@ impl PreparedLoad {
         prepare_terrain_assets: Option<
             &mut crate::sim::snapshot::SnapshotTerrainAssetPreparation<'_>,
         >,
+        saved_land: Option<crate::map::resolved_terrain::SavedCellLandValues>,
     ) -> Result<Self, PreparedLoadError> {
         let saved_sidebar_order = snapshot.sidebar_order().cloned();
         let tactical_view = snapshot.tactical_view().cloned();
@@ -289,11 +295,19 @@ impl PreparedLoad {
         crate::sim::production::validate_restored_factory_state(&simulation, rules)?;
         simulation.rebuild_caches_after_load(terrain_template, terrain_speed_config, rules);
 
-        let map_restore = simulation.restore_map_authority_after_snapshot_load(
-            rules,
-            overlay_registry,
-            prepare_terrain_assets,
-        )?;
+        let map_restore = match saved_land {
+            Some(saved_land) => simulation.restore_map_authority_after_user_load(
+                rules,
+                overlay_registry,
+                prepare_terrain_assets,
+                saved_land,
+            )?,
+            None => simulation.restore_map_authority_after_snapshot_load(
+                rules,
+                overlay_registry,
+                prepare_terrain_assets,
+            )?,
+        };
         // Older headless saves may omit types that had never spawned. Add
         // those canonical names without changing any saved ID, then build
         // the handle table; a missing name must never become sidebar ID zero.

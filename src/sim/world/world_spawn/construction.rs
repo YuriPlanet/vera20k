@@ -272,17 +272,10 @@ impl Simulation {
             let storage = obj.storage.max(0) as u16;
             ge.miner = Some(Miner::new(kind, &mcfg, storage));
         }
-        // Passenger cargo for transports and garrisonable buildings.
+        // Cargo+114 is independent of Building occupants+684 (Ctor43B8DC).
         if obj.passengers > 0 {
             ge.passenger_role = crate::sim::passenger::PassengerRole::transport(
                 crate::sim::passenger::PassengerCargo::new(obj.passengers as u32, obj.size_limit),
-            );
-        } else if obj.can_be_occupied && obj.max_number_occupants > 0 {
-            ge.passenger_role = crate::sim::passenger::PassengerRole::transport(
-                crate::sim::passenger::PassengerCargo::new(
-                    obj.max_number_occupants,
-                    obj.size_limit,
-                ),
             );
         }
 

@@ -70,6 +70,23 @@ fn wall_sale_detach_clears_only_matching_team_target_fields() {
             "70D562..57A clears Team pointers directly, without AssignMissionTarget member orders"
         );
     }
+
+    //70D562/70D577 compare allocations, including fixed512 aliases and Dummy.
+    sim.resolved_terrain = Some(crate::sim::tiberium::test_support::flat_terrain(8, 8));
+    let team = *sim.team_script_vm.teams.keys().next().unwrap();
+    sim.team_script_vm
+        .teams
+        .get_mut(&team)
+        .unwrap()
+        .mission_target = Some(TeamTarget::Cell { x: 516, y: 3 }); // same allocation as4,4
+    sim.stop_all_targeting_cell(4, 4, &rules, Some(&overlays), FrameEffects::default());
+    assert_eq!(sim.team_script_vm.team(team).unwrap().mission_target, None);
+    let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
+    state.mission_target = Some(TeamTarget::Cell { x: -1, y: 0 });
+    state.focus = Some(TeamTarget::Cell { x: 9, y: 9 });
+    sim.stop_all_targeting_cell(12, 12, &rules, Some(&overlays), FrameEffects::default());
+    let state = sim.team_script_vm.team(team).unwrap();
+    assert_eq!((state.mission_target, state.focus), (None, None));
 }
 
 #[test]

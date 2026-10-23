@@ -82,11 +82,7 @@ fn assert_retail_embedded_shadow(expected_type: &str, expected_frame_count: u16)
     // Match the completed-building GetCurrentFrame owner used by
     // build_shp_instances; the helper receives this actual body key and entry.
     let art = rules.art().resolve_metadata_entry(type_id, &object.image);
-    let occupants = entity
-        .passenger_role
-        .cargo()
-        .map(|cargo| cargo.count())
-        .unwrap_or(0);
+    let occupants = entity.passenger_role.occupants().count();
     let body_frame = if entity.category() == crate::map::entities::EntityCategory::Unit {
         i32::from(
             crate::sim::animation::resolve_shp_vehicle_body_frame(

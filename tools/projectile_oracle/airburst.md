@@ -14,6 +14,11 @@ does not recursively read a Weapon body. The live Weapon sweep679B10 precedes
 the Bullet sweep679B33. The Rust reader regression preserves this order for a
 map-only child allocation.
 
+The separate [`airburst_retained`](airburst_retained.md) whole-reader corpus
+also covers the Airburst byte's current-value default through invalid, missing
+and empty later inputs. The existing per-type registry owns that retained flag;
+flattened text alone cannot reconstruct it.
+
 The parent reaches its existing shared tail after ordinary/special receivers,
 animation and debris. Alive/nullify early returns still suppress that tail.
 The Airburst fan469EBA emits eight neighbors in the direction initializer49F2F0

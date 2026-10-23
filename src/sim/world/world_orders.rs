@@ -1233,8 +1233,24 @@ impl Simulation {
                 }
                 self.trigger_runtime
                     .transfer_engineer_tag_to_building(engineer_id, building_id);
-                self.announce_engineer_capture(building_id, owner, rules);
-                self.change_owner_with_rules(building_id, owner, rules, registry, frame_effects);
+                //519F71 loads the entrant's live owner after the second
+                //Entered callback and Tag transfer. Action36 can change it
+                //again without restarting this admitted PerCell continuation.
+                if let Some(capture_owner) = self
+                    .substrate
+                    .entities
+                    .get(engineer_id)
+                    .map(|engineer| engineer.owner())
+                {
+                    self.announce_engineer_capture(building_id, capture_owner, rules);
+                    self.change_owner_with_rules(
+                        building_id,
+                        capture_owner,
+                        rules,
+                        registry,
+                        frame_effects,
+                    );
+                }
                 if let Some(building) = self.substrate.entities.get_mut(building_id) {
                     // Techno+0x338 (`0x00519F94`).
                     building

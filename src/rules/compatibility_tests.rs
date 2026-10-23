@@ -44,8 +44,12 @@ fn compiled_capability_controls_real_readers_and_roundtrip() {
     } else {
         assert_eq!(reveal.money_amount, 0);
         assert!(reveal.building_requirements.is_none());
-        assert!(rules.super_weapon("STRIKE").is_none());
-        assert!(rules.super_weapon("DELIVERY").is_none());
+        for id in ["STRIKE", "DELIVERY"] {
+            let sw = rules.super_weapon(id).unwrap();
+            assert_eq!(sw.kind, SuperWeaponKind::NoEffect);
+            assert!(sw.generic_warhead.is_none() && sw.unit_delivery.is_none());
+            assert_eq!(sw.money_amount, 0);
+        }
         assert!(rules.warhead("PAYLOAD").is_none());
     }
     assert_eq!(

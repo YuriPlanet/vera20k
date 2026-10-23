@@ -173,10 +173,12 @@ mod layered_enum_history {
             rules.super_weapon(REVEAL).unwrap().kind,
             SuperWeaponKind::PsychicReveal
         );
-        // Preserve the existing typed-projection boundary for a type that
-        // never had a recognized value. This does not model native Type=-1.
+        // A never-recognized type retains the native constructor's -1.
         assert_eq!(rules.super_weapon_order[1], "UnknownOnly");
-        assert!(rules.super_weapon("UnknownOnly").is_none());
+        assert_eq!(
+            rules.super_weapon("UnknownOnly").unwrap().kind,
+            SuperWeaponKind::NoEffect
+        );
 
         let mut sim = world(&rules);
         let owner = sim.interner.get(OWNER).unwrap();
@@ -245,4 +247,218 @@ mod layered_enum_history {
         assert_eq!(source.kind, SuperWeaponKind::ChronoSphere);
         assert!(source.pre_click && destination.post_click);
     }
+}
+
+/// Native ctor/ReadINI6CE5B0/6CEA20 retain Type=-1; Grant6CB560 and
+/// ClickFire6CB920 still own charging/consumption around default Launch6CC3AC.
+#[test]
+fn initial_unknown_type_keeps_provider_trigger_and_saved_click_lifecycle() {
+    use crate::map::map_file::MapFile;
+    use crate::rules::native_processing::{ProcessedRulesLayers, RulesLayerStack};
+    use crate::sim::command::Command;
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::sim::snapshot::GameSnapshot;
+    use crate::sim::world::FrameEffects;
+    use crate::util::save_codec;
+
+    fn world(rules: &RuleSet) -> Simulation {
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 31);
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+        sim.session.game_options_mut_for_test().super_weapons = true;
+        sim.session.set_binary_frame_for_test(4100);
+        let local = sim.interner.get("Americans").unwrap();
+        sim.houses
+            .get_mut(&local)
+            .unwrap()
+            .set_player_control_for_test(true);
+        sim.session.set_current_house_for_test(Some(local));
+        for name in ["Americans", "Russians"] {
+            let owner = sim.interner.get(name).unwrap();
+            sim.houses
+                .get_mut(&owner)
+                .unwrap()
+                .set_country_for_test(Some(owner));
+            construct_house_supers(&mut sim, rules, owner, false);
+        }
+        sim
+    }
+    fn fire(sim: &mut Simulation, rules: &RuleSet, id: InternedId) {
+        assert!(sim.apply_command_with_overlays(
+            "Americans",
+            &Command::LaunchSuperWeapon {
+                sw_type_id: id,
+                target_rx: 20,
+                target_ry: 20,
+            },
+            rules,
+            None,
+            FrameEffects::default()
+        ));
+    }
+
+    let art = IniFile::from_str("[POWER]\nFoundation=1x1\n[PROVIDER]\nFoundation=1x1\n");
+    let processed = RulesLayerStack::new(crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [BuildingTypes]\n0=POWER\n1=PROVIDER\n\
+         [POWER]\nStrength=1000\nPower=100\nTurret=no\nSight=0\n\
+         [PROVIDER]\nStrength=1000\nPower=-10\nTurret=no\nSight=0\nSuperWeapon=Blank\n\
+         [SuperWeaponTypes]\n0=Blank\n\
+         [Blank]\nType=NoSuchKind\nRechargeTime=1\nIsPowered=yes\nShowTimer=yes\nAction=none\nSidebarImage=EMPTYICO\n",
+    )).process_with_fixed_art(&art).unwrap();
+    let rules = RuleSet::from_processed_rules(&processed).unwrap();
+    assert_eq!(
+        rules
+            .super_weapon("Blank")
+            .expect("allocated native Type=-1 remains a runtime type")
+            .kind
+            .native_index(),
+        -1
+    );
+    assert_eq!(rules.super_weapon_index("Blank"), Some(0));
+
+    let mut sim = world(&rules);
+    let local = sim.interner.get("Americans").unwrap();
+    let enemy = sim.interner.get("Russians").unwrap();
+    let id = sim.interner.get("Blank").unwrap();
+    for (name, at) in [("Americans", 8), ("Russians", 24)] {
+        sim.spawn_object("POWER", name, at, 8, 0, &rules).unwrap();
+        sim.spawn_object("PROVIDER", name, at, 12, 0, &rules)
+            .unwrap();
+    }
+    sim.assess_power_for_test(&rules);
+    for owner in [local, enemy] {
+        assert!(!sim.power_states.get(&owner).unwrap().low_power());
+        sim.recheck_house_tech_tree(owner, &rules);
+        let instance = &sim.super_weapons[&owner][&id];
+        assert!(instance.is_active() && !instance.is_ready() && !instance.is_suspended());
+        assert_eq!(
+            (instance.charge_start_tick(), instance.charge_duration()),
+            (4100, 900)
+        );
+    }
+    assert_eq!(super_timer_views(&sim, &rules).len(), 2);
+    let view = superweapon_views_for_owner(&sim, &rules, &local)
+        .pop()
+        .unwrap();
+    assert!(!view.can_fire && view.is_online);
+    assert_eq!(
+        rules
+            .super_weapon(sim.interner.resolve(view.type_id))
+            .unwrap()
+            .sidebar_image
+            .as_deref(),
+        Some("EMPTYICO")
+    );
+
+    // Same-build rules-resource wire plus the saved dynamic world. No native
+    // SAV import or pre-fix rules-hash compatibility is implied by this fixture.
+    sim.session.set_binary_frame_for_test(4550);
+    let expected = save_codec::serialize(&sim.super_weapons).unwrap();
+    let rng = sim.rng_state();
+    let rules_hash = rules.simulation_config_hash();
+    let resources = save_codec::serialize(&processed).unwrap();
+    let retained: ProcessedRulesLayers = save_codec::deserialize(&resources).unwrap();
+    let restored_rules = RuleSet::from_processed_rules(&retained).unwrap();
+    assert_eq!(restored_rules.simulation_config_hash(), rules_hash);
+    assert_eq!(
+        restored_rules
+            .super_weapon("Blank")
+            .unwrap()
+            .kind
+            .native_index(),
+        -1
+    );
+    let bytes = GameSnapshot::save_validated(&sim, 0, rules_hash, "unassigned super", 0);
+    let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
+    loaded.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
+    crate::sim::arena_fixture::flat_ground(&mut loaded, &restored_rules);
+    loaded.resolve_type_handles(&restored_rules);
+    loaded.restore_after_snapshot_load().unwrap();
+    assert_eq!(
+        save_codec::serialize(&loaded.super_weapons).unwrap(),
+        expected
+    );
+    let restored_rng = loaded.rng_state();
+    assert_eq!(restored_rng.main, rng.main);
+    assert_eq!(restored_rng.mapgen, rng.mapgen);
+    assert_eq!(
+        restored_rng.scenario,
+        crate::sim::rng::SimRng::new(0).logical_state()
+    );
+    assert_eq!(super_timer_views(&loaded, &restored_rules).len(), 2);
+    assert_eq!(
+        loaded.super_weapons[&local][&id].charge_remaining(4550),
+        450
+    );
+    sim = loaded;
+    let rules = restored_rules;
+    sim.session.set_binary_frame_for_test(5000);
+    for owner in [local, enemy] {
+        tick_house_superweapon_instances(&mut sim, &rules, owner);
+    }
+    assert!(superweapon_views_for_owner(&sim, &rules, &local)[0].can_fire);
+    sim.sound_events.clear_for_test();
+    let computer = sim.houses.get_mut(&enemy).unwrap();
+    computer.set_enemy_house_for_test(Some(local));
+    computer.set_preferred_super_weapon_target((20, 20));
+    let rng = sim.rng_state();
+    ai_fire::AI_FIRE_LOG.set(Some(Vec::new()));
+    ai_fire::try_fire(&mut sim, &rules, enemy, None, FrameEffects::default());
+    assert_eq!(
+        ai_fire::AI_FIRE_LOG.take().unwrap(),
+        [ai_fire::AiFireEvent::TryFire]
+    );
+    assert_eq!(sim.rng_state(), rng);
+    assert!(sim.super_weapons[&enemy][&id].is_ready());
+    let object_count = sim.substrate.entities.len();
+    fire(&mut sim, &rules, id);
+    let instance = &sim.super_weapons[&local][&id];
+    assert!(instance.is_active() && !instance.is_ready());
+    assert_eq!(
+        (instance.charge_start_tick(), instance.charge_duration()),
+        (5000, 900)
+    );
+    assert_eq!(instance.ready_tick(), 5000);
+    assert_eq!(super_timer_views(&sim, &rules).len(), 2);
+    assert!(
+        sim.sound_events.is_empty(),
+        "default Launch emits no case effect or selection cleanup"
+    );
+    assert_eq!(sim.substrate.entities.len(), object_count);
+    assert_eq!(sim.rng_state(), rng);
+    sim.session.set_binary_frame_for_test(5900);
+    tick_house_superweapon_instances(&mut sim, &rules, local);
+    assert!(sim.super_weapons[&local][&id].is_ready());
+
+    // Original map action33 grants a fresh retained slot once; no provider
+    // or direct ready/active override participates in this second history.
+    let mut sim = world(&rules);
+    let map = MapFile::from_bytes(b"[Map]\nTheater=TEMPERATE\nSize=0,0,16,16\nLocalSize=0,0,16,16\n[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n[Triggers]\nGRANT=Americans,<none>,Grant,0,1,1,1,0\n[Events]\nGRANT=1,8,0,0\n[Actions]\nGRANT=1,33,11,0,0,0,0,0,A\n[Tags]\nGRANTTAG=0,Grant,GRANT\n").unwrap();
+    sim.initialize_trigger_definitions(
+        &map,
+        &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
+        None,
+        None,
+    );
+    sim.classify_map_triggers(&rules);
+    sim.advance_triggers(&rules, None, FrameEffects::default());
+    let instance = &sim.super_weapons[&local][&id];
+    assert!(instance.is_active() && instance.is_ready() && instance.one_time);
+    assert_eq!(super_timer_views(&sim, &rules).len(), 1);
+    let rng = sim.rng_state();
+    sim.sound_events.clear_for_test();
+    fire(&mut sim, &rules, id);
+    let instance = &sim.super_weapons[&local][&id];
+    assert!(!instance.is_active() && !instance.is_ready() && !instance.one_time);
+    assert_eq!(
+        (instance.charge_start_tick(), instance.charge_duration()),
+        (4100, 0)
+    );
+    assert_eq!(instance.ready_tick(), 4100);
+    assert!(super_timer_views(&sim, &rules).is_empty());
+    assert!(superweapon_views_for_owner(&sim, &rules, &local).is_empty());
+    assert!(sim.sound_events.is_empty());
+    assert_eq!(sim.rng_state(), rng);
 }

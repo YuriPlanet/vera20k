@@ -22,6 +22,135 @@ fn retail_arena() -> Option<(Simulation, RuleSet, PathGrid)> {
     Some((sim, rules, grid))
 }
 
+/// Foot4DA710..4DA7AA refreshes ground edges after the sight pair, using
+/// a full disc when physical height changed and an annulus otherwise.
+#[test]
+fn retail_harrier_flight_refreshes_sight_edges_and_retains_height_across_save() {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
+        return;
+    };
+    let mut sim = crate::sim::arena_fixture::rival_arena_with_size(&rules, 17, 128);
+    let owner = sim.intern("Americans");
+    sim.session.set_current_house_for_test(Some(owner));
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
+        base: 64,
+        ..crate::sim::arena_fixture::OPEN_PLAYFIELD
+    }));
+    sim.set_playfield_size_height_for_test(Some(64));
+    sim.set_input_delay_ticks(0);
+    for (kind, house, cell) in [
+        ("GAPOWR", "Americans", (40, 48)),
+        ("NAPOWR", "Russians", (90, 80)),
+    ] {
+        sim.spawn_object(kind, house, cell.0, cell.1, 0, &rules)
+            .expect("stock power plants keep both skirmish houses alive");
+    }
+    let grid = sim.path_grid.clone();
+    sim.advance_tick(&[], Some(&rules), grid.as_deref(), None, 33);
+    let plane = sim
+        .spawn_object("ORCA", "Americans", 50, 64, 0, &rules)
+        .expect("a stock Harrier on open ground");
+    let mut commands = vec![CommandEnvelope::new(
+        owner,
+        sim.session.tick(),
+        Command::Move {
+            entity_id: plane,
+            target_rx: 100,
+            target_ry: 64,
+        },
+    )];
+    let mut previous_height = 0;
+    let mut saw_changed_height = false;
+    let mut saved_at_cruise = false;
+    let mut repaired_ground_edge = false;
+    for _ in 0..1200 {
+        let entity = sim.entities().get(plane).expect("the Harrier stays alive");
+        let timer = entity.sight_refresh_timers.timer(owner);
+        let height = crate::sim::movement::air_movement::current_fly_height(
+            entity,
+            sim.resolved_terrain.as_ref(),
+        );
+        let before_ground = {
+            let view = &sim.fog.by_owner_mut_for_test()[&owner];
+            (0..128u16)
+                .flat_map(|y| {
+                    (0..128u16).map(move |x| view.map_cell_edge_cache_for_test((x, y)).0[0])
+                })
+                .collect::<Vec<_>>()
+        };
+        let grid = sim.path_grid.clone();
+        let ((), trace) = trace_reveal_calls(|| {
+            sim.advance_tick(&commands, Some(&rules), grid.as_deref(), None, 33);
+        });
+        commands = sim.take_due_commands();
+        if sim
+            .entities()
+            .get(plane)
+            .unwrap()
+            .sight_refresh_timers
+            .timer(owner)
+            == timer
+        {
+            continue;
+        }
+        assert!(height > 0, "the periodic high-flight refresh ran");
+        let radius = sim.fog.source_sight(plane, owner).unwrap().radius;
+        assert_eq!(radius, 8, "stock Harrier sight at this flight level");
+        let inner = if previous_height == height { 5 } else { 0 };
+        previous_height = height;
+        assert_eq!(
+            trace.border_scans.len(),
+            1,
+            "the Foot sight suffix must run"
+        );
+        let (origin, outer) = trace.border_scans[0];
+        assert_eq!(outer, 11);
+        let expected = vision::sight_border_cells(origin, outer, inner);
+        assert_eq!(expected.len(), if inner == 0 { 369 } else { 308 });
+        assert_eq!(trace.border_receivers, expected);
+        assert_eq!(trace.walks.len(), 2);
+        let walked: std::collections::BTreeSet<_> = trace.walks.iter().flatten().copied().collect();
+        repaired_ground_edge |= trace.edge_visits == 0
+            && expected
+                .iter()
+                .zip(&trace.border_ground_after)
+                .any(|(cell, after)| {
+                    !walked.contains(cell)
+                        && before_ground[usize::from(cell.1) * 128 + usize::from(cell.0)] != *after
+                });
+        saw_changed_height |= inner == 0;
+        if height == rules.general.flight_level && !saved_at_cruise {
+            let retained = sim
+                .entities()
+                .get(plane)
+                .unwrap()
+                .sight_refresh_timers
+                .clone();
+            let bytes =
+                crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "foot-flight-height", 0);
+            sim = crate::sim::snapshot::GameSnapshot::load(&bytes)
+                .unwrap()
+                .sim;
+            sim.restore_after_snapshot_load().unwrap();
+            assert_eq!(
+                sim.entities().get(plane).unwrap().sight_refresh_timers,
+                retained
+            );
+            saved_at_cruise = true;
+        } else if saved_at_cruise && inner == 5 {
+            assert!(saw_changed_height);
+            assert!(
+                repaired_ground_edge,
+                "the border stored an edge outside both reveal walks"
+            );
+            return;
+        }
+    }
+    panic!("the real Move flight must reach a stable-height refresh after save/load");
+}
+
 /// GrowShroud4ADFF0 calls the object's See slot, not UpdateReveal488.
 /// Aircraft41ADF0 forces radius1 at GetHeight==0, even for raw Sight0;
 /// its Map5678E0 final0/final1 pair has no border or retained source write.

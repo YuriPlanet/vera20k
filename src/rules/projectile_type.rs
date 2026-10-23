@@ -177,6 +177,9 @@ pub(crate) struct ProjectileArtState {
     /// Rules Degenerates (+2A6) shares this retained Bullet reader owner.
     #[serde(default)]
     degenerates: bool,
+    /// BulletType+294 uses its current byte as the ReadBoolean default.
+    #[serde(default)]
+    airburst: bool,
     inviso: bool,
     inverse_rotates: bool,
     flat: bool,
@@ -196,6 +199,7 @@ impl ProjectileArtState {
         Self {
             color_scheme: 0,
             degenerates: false,
+            airburst: false,
             inviso: false,
             inverse_rotates: true,
             flat: false,
@@ -260,6 +264,7 @@ impl ProjectileArtState {
         // Bullet46BEE0 reads with the constructor/current byte as default;
         // a flattened invalid later token cannot replace a prior true value.
         self.degenerates = rules.read_bool("Degenerates", self.degenerates);
+        self.airburst = rules.read_bool("Airburst", self.airburst);
         // Bullet46C1CC clears absent Image. Later unguarded animation reads use
         // that same address, hence the ART section cached by ObjectType above.
         // Active retail's preceding Anim sweep679A5D..679A82 resets this cache:
@@ -305,6 +310,7 @@ impl ProjectileArtState {
         projectile.voxel_image_load = image.voxel_load().map(str::to_string);
         projectile.color_scheme = self.color_scheme;
         projectile.degenerates = self.degenerates;
+        projectile.airburst = self.airburst;
         projectile.inviso = self.inviso;
         projectile.voxel = image.voxel();
         projectile.theater = image.theater();

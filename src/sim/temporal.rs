@@ -731,9 +731,24 @@ impl Simulation {
             return;
         };
         if category == EntityCategory::Structure {
+            // Temporal71A9A0..71A9A7: only positive true Occupants count
+            // calls KillOccupants(NULL), ahead of Cargo disposal/bunker release.
+            if self
+                .substrate
+                .entities
+                .get(target)
+                .is_some_and(|entity| entity.passenger_role.occupants().count() > 0)
+            {
+                crate::sim::passenger::garrison_eject::kill_building_occupants(
+                    self,
+                    target,
+                    UninitContext::new(rules, registry).with_effects(effects),
+                );
+            }
             // 0x0071A9EE..0x0071AA15: a Tank Bunker releases its occupant
-            // (`0x004593A0`). Garrison occupants and absorbed passengers go
-            // in the UnInit below (module residual).
+            // (`0x004593A0`). Residual: native71A9AC..71A9DC scalar-deletes
+            // true Cargo before this release when ScenarioInit is zero;
+            // the existing Cargo retirement still runs in UnInit below.
             crate::sim::docking::bunker_link::release_sell_destroy(self, target, rules, effects);
         }
         // 0x0071AA90: the erased object's own bunker link (`+0x2E4`) names a
@@ -1004,15 +1019,9 @@ impl Simulation {
             return;
         };
         if let Some(target) = target {
+            //71AD40 clears only +270/+278 here. Unlike ClearWarp71ACD0,
+            //it never calls ForceOnline452210 or dirties the target House.
             self.substrate.set_temporal_head(target, None);
-            self.substrate
-                .set_building_online_for_temporal(target, true); //ClearWarp71AD0B
-            if let Some(owner) = self.substrate.entities.get(target).and_then(|entity| {
-                (entity.category() == EntityCategory::Structure).then_some(entity.owner())
-            }) {
-                Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false); //ClearWarp71AD04
-                self.houses.request_house_tech_tree_recheck(owner); //71AD17
-            }
             if let Some(stored) = self.substrate.temporal_link_mut(attacker) {
                 stored.target = None;
             }

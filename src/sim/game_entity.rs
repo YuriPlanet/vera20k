@@ -323,6 +323,9 @@ pub struct GameEntity {
     /// remain visible after a DriveTrack segment has cleared.
     #[serde(default)]
     pub navigation: NavigationState,
+    /// Foot+5DC, retained across mission changes and swizzled by native Load.
+    #[serde(default)]
+    pub(crate) patrol_post: crate::sim::world::PatrolPost,
     /// Live Foot-owned applied speed; survives active locomotor replacement.
     #[serde(default)]
     pub foot_speed: crate::sim::components::FootSpeedState,
@@ -1641,6 +1644,7 @@ impl GameEntity {
             distributed_fire: Default::default(),
             locomotor: None,
             navigation: NavigationState::at_frame(construction_frame),
+            patrol_post: Default::default(),
             foot_speed: crate::sim::components::FootSpeedState::default(),
             flight_attitude: Default::default(),
             ion_blast_lift: 0,
