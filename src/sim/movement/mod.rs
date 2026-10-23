@@ -283,3 +283,6 @@ mod foot_timer_migration_tests;
 
 #[cfg(test)]
 mod drop_as_bomb_oracle_tests;
+
+#[cfg(test)]
+mod paratrooper_crush_tests;
