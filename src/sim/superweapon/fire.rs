@@ -452,6 +452,9 @@ fn launch(
 ) {
     use super::paradrop::ParaDropKind;
     match sw.kind {
+        // Launch6CC3A3..6CC3AC: the constructor's -1 exits without case
+        // effects. ClickFire's ordinary/one-time finish still runs afterwards.
+        SuperWeaponKind::NoEffect => {}
         #[cfg(feature = "ares")]
         SuperWeaponKind::UnitDelivery => {
             if super::unit_delivery::launch(
