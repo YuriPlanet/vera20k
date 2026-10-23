@@ -1237,7 +1237,7 @@ fn retail_sloped_ore_rows_match_original_with_zero_tail_boundary() {
         let display = row["display_overlay_id"].as_u64().unwrap() as u8;
         let key = crate::render::overlay_atlas::OverlaySpriteKey {
             name: registry.name(display).unwrap().to_owned(),
-            frame: input["state"].as_u64().unwrap() as u8,
+            frame: i32::from(input["state"].as_u64().unwrap() as u8),
         };
         for batch in &probe.batches {
             assert!(

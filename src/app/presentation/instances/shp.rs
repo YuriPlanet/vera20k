@@ -1791,11 +1791,8 @@ fn emit_unit_terrain_body(
     let Some(atlas) = input.overlay_atlas else {
         return;
     };
-    let Ok(frame) = u8::try_from(frame) else {
-        return;
-    };
     // CC_Draw_Shape draws nothing for a missing or empty frame.
-    let (body, shadow) = atlas.terrain_pieces(type_id, frame);
+    let (body, shadow) = atlas.terrain_pieces(type_id, i32::from(frame));
     let Some(anchor) = body.or(shadow) else {
         return;
     };

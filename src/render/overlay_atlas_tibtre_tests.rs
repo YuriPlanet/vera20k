@@ -112,7 +112,7 @@ fn retail_tibtre_decode_and_atlas_pairs_match_original_shape_draw() {
                     "{file} frame{index}: original RLE source"
                 );
                 if index < 11 {
-                    let (Some(body), Some(shadow)) = atlas.terrain_pieces(&type_name, index as u8)
+                    let (Some(body), Some(shadow)) = atlas.terrain_pieces(&type_name, index as i32)
                     else {
                         panic!("{file} stage {index}: body and stencil");
                     };

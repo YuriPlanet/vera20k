@@ -869,7 +869,7 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
         // `render::overlay_atlas::resolve_body_frame`.
         let key = rubble_key.unwrap_or_else(|| OverlaySpriteKey {
             name: name.clone(),
-            frame: render_frame,
+            frame: i32::from(render_frame),
         });
         let Some(spr) = input.atlas.get(&key) else {
             continue;
@@ -1034,9 +1034,7 @@ pub(crate) fn build_overlay_instances(
                 .get(&obj.stable_id())
                 .map_or(0, |animation| animation.current_frame())
         });
-        let Some(frame) = terrain_draw_frame(stage, obj.health()) else {
-            continue;
-        };
+        let frame = terrain_draw_frame(stage, obj.health());
         let (body, shadow) = atlas.terrain_pieces(name, frame);
         if body.is_none() && shadow.is_none() {
             continue;
@@ -1117,8 +1115,10 @@ pub(crate) fn build_overlay_instances(
 /// below 2 health, else 0. Its crumbling arm never draws: Take_Damage
 /// (0x71B920) starts crumbling on a lethal hit and uninits the object in the
 /// same call.
-fn terrain_draw_frame(stage: Option<i32>, health: i32) -> Option<u8> {
-    stage.map_or(Some(u8::from(health < 2)), |stage| u8::try_from(stage).ok())
+fn terrain_draw_frame(stage: Option<i32>, health: i32) -> i32 {
+    // Original71C208 keeps the whole signed Stage; frame bounds belong to
+    // the image/atlas, not the cell overlay-data byte's0..255 domain.
+    stage.unwrap_or_else(|| i32::from(health < 2))
 }
 
 /// Ordinary Terrain DrawIt 0071C304/0071C34E: both stored frames share one

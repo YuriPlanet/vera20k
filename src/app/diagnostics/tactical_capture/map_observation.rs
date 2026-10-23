@@ -2072,19 +2072,17 @@ fn disguise_inputs(
                 )
             })
             .flatten();
-        let terrain_pair = frame
-            .and_then(|frame| u8::try_from(frame).ok())
-            .is_some_and(|frame| {
-                state
-                    .match_state
-                    .match_presentation
-                    .overlay_atlas
-                    .as_ref()
-                    .is_some_and(|atlas| {
-                        let (body, shadow) = atlas.terrain_pieces(&chosen, frame);
-                        body.is_some() || shadow.is_some()
-                    })
-            });
+        let terrain_pair = frame.is_some_and(|frame| {
+            state
+                .match_state
+                .match_presentation
+                .overlay_atlas
+                .as_ref()
+                .is_some_and(|atlas| {
+                    let (body, shadow) = atlas.terrain_pieces(&chosen, i32::from(frame));
+                    body.is_some() || shadow.is_some()
+                })
+        });
         let decision = crate::render::draw_state::DrawState::for_entity(
             entity,
             sim.session().binary_frame(),

@@ -9,9 +9,12 @@ use crate::render::terrain_draw::TerrainPiece;
 /// frame 0 otherwise; an animated type draws its stage whatever its health.
 #[test]
 fn terrain_draw_frame_follows_health_and_stage() {
-    assert_eq!(terrain_draw_frame(None, 2), Some(0));
-    assert_eq!(terrain_draw_frame(None, 1), Some(1));
-    assert_eq!(terrain_draw_frame(Some(7), 1), Some(7));
+    assert_eq!(terrain_draw_frame(None, 2), 0);
+    assert_eq!(terrain_draw_frame(None, 1), 1);
+    assert_eq!(terrain_draw_frame(Some(7), 1), 7);
+    // TerrainAI71C7DD and DrawIt71C208 retain the full Stage. A 514-frame
+    // animated spawner reaches256 before its midpoint257 resets the stage.
+    assert_eq!(terrain_draw_frame(Some(256), 1), 256);
 }
 
 #[test]

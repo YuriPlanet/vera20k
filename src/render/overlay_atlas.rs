@@ -133,7 +133,7 @@ pub const SMUDGE_KEY_PREFIX: &str = "__smudge::";
 
 /// Source identity for Terrain DrawIt's body frame, apart from overlay keys:
 /// a TerrainType draws its own image even when an OverlayType shares its name.
-pub fn terrain_body_key(name: &str, frame: u8) -> OverlaySpriteKey {
+pub fn terrain_body_key(name: &str, frame: i32) -> OverlaySpriteKey {
     OverlaySpriteKey {
         name: format!("__terrain::{}", name.to_uppercase()),
         frame,
@@ -141,7 +141,7 @@ pub fn terrain_body_key(name: &str, frame: u8) -> OverlaySpriteKey {
 }
 
 /// Separate source identity for Terrain DrawIt's paired second-half stencil.
-pub fn terrain_shadow_key(name: &str, frame: u8) -> OverlaySpriteKey {
+pub fn terrain_shadow_key(name: &str, frame: i32) -> OverlaySpriteKey {
     OverlaySpriteKey {
         name: format!("__terrain_shadow::{}", name.to_uppercase()),
         frame,
@@ -154,7 +154,7 @@ pub fn terrain_shadow_key(name: &str, frame: u8) -> OverlaySpriteKey {
 pub fn rubble_key(shp: &str, frame: u16) -> OverlaySpriteKey {
     OverlaySpriteKey {
         name: rubble_image_name(shp),
-        frame: frame as u8,
+        frame: i32::from(frame as u8),
     }
 }
 
@@ -180,8 +180,9 @@ pub fn smudge_key(name: &str) -> OverlaySpriteKey {
 pub struct OverlaySpriteKey {
     /// Overlay or terrain object name (e.g., "GEM01", "INTREE01").
     pub name: String,
-    /// Frame/variant index.
-    pub frame: u8,
+    /// Terrain DrawIt71C208 retains the signed Stage dword. Ordinary overlay
+    /// callers still supply their unchanged raw data byte (47F6A0).
+    pub frame: i32,
 }
 
 /// Atlas keys reachable when a map-pack low bridge mutates its live overlay
@@ -215,7 +216,7 @@ fn runtime_low_bridge_sprite_keys(
         for &frame in &frames {
             keys.insert(OverlaySpriteKey {
                 name: name.clone(),
-                frame,
+                frame: i32::from(frame),
             });
         }
     }
@@ -242,7 +243,7 @@ fn runtime_tiberium_sprite_keys(
             for frame in 0..ty.max_density {
                 keys.insert(OverlaySpriteKey {
                     name: name.clone(),
-                    frame,
+                    frame: i32::from(frame),
                 });
             }
         }
@@ -278,7 +279,7 @@ fn runtime_crate_sprite_keys(
         {
             keys.insert(OverlaySpriteKey {
                 name,
-                frame: CRATE_BODY_FRAME,
+                frame: i32::from(CRATE_BODY_FRAME),
             });
         }
     }
@@ -376,7 +377,7 @@ fn runtime_crate_sprite_keys(
             for frame in frames {
                 keys.insert(OverlaySpriteKey {
                     name: name.clone(),
-                    frame,
+                    frame: i32::from(frame),
                 });
             }
         }
@@ -447,7 +448,7 @@ impl OverlayAtlas {
     pub fn terrain_pieces(
         &self,
         name: &str,
-        frame: u8,
+        frame: i32,
     ) -> (Option<&OverlaySpriteEntry>, Option<&OverlaySpriteEntry>) {
         (
             self.get(&terrain_body_key(name, frame)),
@@ -553,7 +554,7 @@ pub(crate) fn build_overlay_atlas_on_device(
         {
             needed.insert(OverlaySpriteKey {
                 name: mapped_name.clone(),
-                frame: entry.frame,
+                frame: i32::from(entry.frame),
             });
             // Also include frame 0 as fallback.
             needed.insert(OverlaySpriteKey {
@@ -610,7 +611,7 @@ pub(crate) fn build_overlay_atlas_on_device(
             for frame in 0..frame_count {
                 needed.insert(OverlaySpriteKey {
                     name: mapped_name.clone(),
-                    frame: frame as u8,
+                    frame: frame as i32,
                 });
             }
         }
@@ -905,7 +906,11 @@ fn render_overlay_sprite(
         .iter()
         .map(|fr| (fr.frame_width, fr.frame_height))
         .collect();
-    let frame_idx: usize = resolve_body_frame(key.frame, max_normal_frame, &frame_sizes)?;
+    let frame_idx: usize = resolve_body_frame(
+        u8::try_from(key.frame).ok()?,
+        max_normal_frame,
+        &frame_sizes,
+    )?;
     render_decoded_overlay_frame(&shp, palette, key.clone(), frame_idx, flags.y_draw_offset())
 }
 
@@ -948,9 +953,10 @@ fn render_terrain_sprites(
     let frames = if is_animated { 0..half.max(1) } else { 0..2 };
     let mut sprites = Vec::new();
     for frame in frames {
-        let Ok(stage) = u8::try_from(frame) else {
-            break;
-        };
+        // Terrain DrawIt71C208/71C344 passes the full Stage and Stage+half
+        // to CC_Draw_Shape. The SHP count, not an OverlayData byte, bounds
+        // this animated-spawner preload domain (AI71C87A).
+        let stage = frame as i32;
         for (key, index) in [
             (terrain_body_key(name, stage), frame),
             (terrain_shadow_key(name, stage), frame + half),
@@ -1392,6 +1398,56 @@ impl OverlayAtlas {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn animated_terrain_binds_stage_256_body_and_paired_shadow() {
+        use super::*;
+        // TerrainAI71C87A resets a spawner at raw count/2, so514 is the
+        // first shape whose Stage256 reaches DrawIt71C208/71C344.
+        let directory = crate::map::source::test_support::TestDirectory::new("terrain-stage-256");
+        let mut bytes = vec![0u8; 8 + 514 * 24];
+        for (offset, value) in [(2, 1u16), (4, 1), (6, 514)] {
+            bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+        }
+        // Empty earlier frames keep this a single boundary witness. Palette
+        // indices are authored input bytes, not native arithmetic goldens.
+        for (frame, index) in [(256, 7u8), (513, 1)] {
+            let header = 8 + frame * 24;
+            bytes[header + 4..header + 6].copy_from_slice(&1u16.to_le_bytes());
+            bytes[header + 6..header + 8].copy_from_slice(&1u16.to_le_bytes());
+            let offset = bytes.len() as u32;
+            bytes[header + 20..header + 24].copy_from_slice(&offset.to_le_bytes());
+            bytes.push(index);
+        }
+        directory.write("TIBTRE01.TEM", &bytes);
+        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        let palette = Palette::from_bytes(&[0; 768]).unwrap();
+        let rules = IniFile::from_str("[TIBTRE01]\nIsAnimated=yes\nSpawnsTiberium=yes\n");
+        let art = ArtRegistry::from_ini(&IniFile::empty());
+        let sprites = render_terrain_sprites(
+            &assets,
+            &palette,
+            "TIBTRE01",
+            true,
+            "TEM",
+            "TEMPERATE",
+            &rules,
+            &art,
+        );
+        assert_eq!(sprites.len(), 2, "both pieces of the last pre-reset stage");
+        let packed = pack_overlay_pixels(&sprites, 64);
+        for (prefix, index) in [("__terrain::", 7), ("__terrain_shadow::", 1)] {
+            let (key, entry) = packed
+                .entries
+                .iter()
+                .find(|(key, _)| key.name.starts_with(prefix))
+                .unwrap();
+            assert_eq!(key.frame, 256);
+            let x = (entry.uv_origin[0] * packed.width as f32).round() as usize;
+            let y = (entry.uv_origin[1] * packed.height as f32).round() as usize;
+            assert_eq!(packed.source_indices[y * packed.width as usize + x], index);
+        }
+    }
+
     #[test]
     fn static_extended_pair_preserves_source_indices_through_decode_and_atlas_copy() {
         use super::*;

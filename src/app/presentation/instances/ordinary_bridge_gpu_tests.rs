@@ -455,7 +455,7 @@ impl Probe {
                 self.atlas
                     .get(&OverlaySpriteKey {
                         name: name.clone(),
-                        frame: frame_index as u8
+                        frame: frame_index as i32
                     })
                     .is_none(),
                 "flank must not substitute populated body art"
