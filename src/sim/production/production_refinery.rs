@@ -7,6 +7,8 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::find_nearby_cell::NearbySearchOptions;
 use crate::sim::houses::Houses;
 use crate::sim::intern::StringInterner;
+use crate::sim::mission::authority::LiveReadyInputProvider;
+use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::{PlacementEvidence, Simulation};
@@ -236,18 +238,34 @@ fn try_place_free_unit(
     // occupied by their own live building object and therefore enter the native
     // nearby-search sequence; independent occupants are evaluated in that same
     // ordered cell list rather than through the old coarse ground-blocker model.
-    sim.reveal_constructed_object_at_height_with_overlay_context(
+    if sim
+        .reveal_constructed_object_at_height_with_overlay_context(
+            free_unit_id,
+            rx,
+            ry,
+            facing,
+            sim.terrain_cell_level(rx, ry).unwrap_or(0),
+            PlacementEvidence::EvaluateMark,
+            rules,
+            overlay_registry,
+            effects,
+        )
+        .is_none()
+    {
+        return false;
+    }
+    // GrandOpening446EA1..446EB1 assigns Harvest even for a non-harvester
+    // FreeUnit. Queue(false), then Commence, after the successful Unlimbo.
+    let now = sim.session.binary_frame();
+    let _ = sim.mission_queue_exact(
         free_unit_id,
-        rx,
-        ry,
-        facing,
-        sim.terrain_cell_level(rx, ry).unwrap_or(0),
-        PlacementEvidence::EvaluateMark,
-        rules,
-        overlay_registry,
-        effects,
-    )
-    .is_some()
+        MissionId::from_known(MissionType::Harvest),
+        0,
+        now,
+        &LiveReadyInputProvider { rules },
+    );
+    let _ = sim.substrate.mission_commence_exact(free_unit_id, now);
+    true
 }
 
 /// A free unit that cannot be made or placed pays its house its GetRefund with

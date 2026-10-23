@@ -117,6 +117,9 @@ mod tests;
 mod industrial_plant_retail_tests;
 
 #[cfg(test)]
+mod free_unit_harvest_retail_tests;
+
+#[cfg(test)]
 #[path = "production_queue_tests.rs"]
 mod queue_tests;
 
