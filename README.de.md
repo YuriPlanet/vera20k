@@ -69,6 +69,10 @@ Ohne alte Einstellungen bleibt die Datei zunächst leer; VERA verwendet die inte
 Standardwerte, bis Einstellungen gespeichert werden. Die Originaldateien `RA2MD.INI` und
 `KeyboardMD.ini` werden nur für den Import gelesen und nie überschrieben.
 
+`VERARULES.INI` im selben Ordner enthält optionale Änderungen am Spielverhalten. Die Datei
+enthält zunächst auskommentierte Beispiele; die Regeln der Mission oder Karte bleiben maßgeblich.
+Zum Bearbeiten und Überschreiben siehe [persönliche Regeln](docs/personal-rules.md).
+
 ## Architektur
 
 Die Engine besteht aus drei Hauptteilen:

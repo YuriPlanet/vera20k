@@ -10,6 +10,7 @@ pub(crate) mod options;
 pub(crate) mod options_profile;
 pub(crate) mod profile_file;
 mod resource_load;
+pub(crate) mod rules_profile;
 pub(crate) mod wol_profile;
 pub(crate) use resource_load::{PreparedSavedGame, SavedGamePreparationView};
 

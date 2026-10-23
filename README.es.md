@@ -71,6 +71,10 @@ Si no hay ajustes anteriores, el archivo empieza vacío y VERA usa los valores p
 integrados hasta que se guardan los ajustes. Los archivos originales `RA2MD.INI` y `KeyboardMD.ini`
 solo se leen para la importación y nunca se sobrescriben.
 
+`VERARULES.INI`, en la misma carpeta, contiene cambios opcionales en la jugabilidad. Al principio
+incluye ejemplos comentados y mantiene la prioridad de las reglas de las misiones y los mapas.
+Consulta [reglas personales](docs/personal-rules.md) para editarlas y anularlas.
+
 ## Arquitectura
 
 El motor tiene tres partes principales:

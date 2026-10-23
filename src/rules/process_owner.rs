@@ -34,6 +34,7 @@ use crate::rules::native_processing::{
     refresh_native_multiplayer_country_bodies,
 };
 use crate::rules::object_type::ObjectCategory;
+use crate::rules::personal_rules::PersonalRules;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
 
@@ -57,6 +58,8 @@ struct NativeRulesSourceSnapshot {
     fixed_sounds: Arc<SoundRegistry>,
     /// The same immutable EVAMD catalog used by process playback.
     fixed_eva: Arc<EvaRegistry>,
+    /// VERA source customization frozen with this process's selected INIs.
+    personal_rules: PersonalRules,
 }
 
 #[derive(Debug)]
@@ -243,6 +246,7 @@ impl NativeRulesProcessOwner {
             fixed_sounds,
             fixed_eva,
             ["RULESMD.INI".into(), "ARTMD.INI".into()],
+            PersonalRules::default(),
         )
     }
 
@@ -255,6 +259,7 @@ impl NativeRulesProcessOwner {
         fixed_sounds: Arc<SoundRegistry>,
         fixed_eva: Arc<EvaRegistry>,
         rules_art_names: [String; 2],
+        personal_rules: PersonalRules,
     ) -> Result<Self, RulesError> {
         let movies = crate::rules::movies::MovieRegistry::from_art(&fixed_art);
         let cold_trace = process_native_rules_cold_start(
@@ -273,6 +278,7 @@ impl NativeRulesProcessOwner {
                 movies,
                 fixed_sounds,
                 fixed_eva,
+                personal_rules,
             },
             registry: Some(NativeRulesRegistryOwner::BeforeReset(cold_trace)),
         })
@@ -428,6 +434,11 @@ impl NativeRulesProcessOwner {
         &self.sources.selected_rules_root
     }
 
+    /// Include VERA's extra source and precedence policy in network admission.
+    pub fn personal_rules_compatibility_crc(&self) -> Option<u32> {
+        self.sources.personal_rules.compatibility_crc()
+    }
+
     /// Fixed ART snapshot, unaffected by mode/map Rules passes.
     pub fn fixed_art(&self) -> &IniFile {
         &self.sources.fixed_art
@@ -567,7 +578,7 @@ impl NativeRulesProcessOwner {
     ) -> Result<ProcessedRulesLayers, RulesError> {
         let mut layers = self.startup_layers();
         if let Some(mode) = mode_rules_override {
-            layers.push(RulesLayerKind::GameMode, mode.clone());
+            layers.push(RulesLayerKind::GameMode, self.personalized_layer(mode));
         }
         layers
             .process_with_fixed_art_and_registry_state_recovering(
@@ -713,9 +724,10 @@ impl NativeRulesProcessOwner {
             ),
             NativeScenarioRulesPrefix::Campaign(named) => {
                 let state = self.take_pre_reset_state(true);
+                let named = named.map(|ini| self.personalized_layer(ini));
                 let trace = match process_native_campaign_rules_prepass(
                     state,
-                    named,
+                    named.as_ref(),
                     &self.sources.fixed_art,
                     &self.sources.fixed_eva,
                 ) {
@@ -797,10 +809,19 @@ impl NativeRulesProcessOwner {
     ) -> RulesLayerStack {
         let mut layers = self.startup_layers();
         if let Some(mode) = mode_rules_override {
-            layers.push(RulesLayerKind::GameMode, mode.clone());
+            layers.push(RulesLayerKind::GameMode, self.personalized_layer(mode));
         }
-        layers.push(RulesLayerKind::Scenario, map_rules_overrides.clone());
+        layers.push(
+            RulesLayerKind::Scenario,
+            self.personalized_layer(map_rules_overrides),
+        );
         layers
+    }
+
+    fn personalized_layer(&self, original: &IniFile) -> IniFile {
+        let mut rules = original.clone();
+        self.sources.personal_rules.apply_later_layer(&mut rules);
+        rules
     }
 }
 

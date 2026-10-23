@@ -5,6 +5,7 @@
 
 config.toml
 /VERA.INI
+/VERARULES.INI
 
 .vscode/
 .idea/
@@ -39,6 +40,7 @@ Thumbs.db
 !/docs/npatch.md
 !/docs/ares-generic-warhead.md
 !/docs/ini-roots.md
+!/docs/personal-rules.md
 !/docs/_config.yml
 !/docs/index.md
 !/docs/Networking.md

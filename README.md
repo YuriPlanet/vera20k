@@ -81,6 +81,10 @@ If `VERA.INI` is missing, VERA creates it and imports existing preferences once.
 old settings, it starts empty and VERA uses built-in defaults until settings are saved.
 The original `RA2MD.INI` and `KeyboardMD.ini` are only read for import, never overwritten.
 
+`VERARULES.INI`, in the same folder, contains optional gameplay changes. It starts with
+commented examples and leaves mission/map rules in control. See [personal rules](docs/personal-rules.md)
+for editing and overriding them.
+
 ## Architecture
 
 The engine has three main parts:

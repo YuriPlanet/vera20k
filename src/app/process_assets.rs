@@ -25,6 +25,8 @@ pub(crate) struct ProcessAssets {
     /// Launch request and its first resolved names survive a lost asset lease.
     ini_config: crate::util::ini_roots::IniRootConfig,
     selected_ini_roots: Option<crate::util::ini_roots::IniRoots>,
+    /// Personal rules are frozen at startup, like the selected game sources.
+    personal_rules: crate::rules::personal_rules::PersonalRules,
     manager: Option<AssetManager>,
     leased: bool,
     /// Frozen launch policy, including deferred recovery after assetless startup.
@@ -81,6 +83,7 @@ impl ProcessAssets {
             media_archive_mode,
             ini_config: Default::default(),
             selected_ini_roots: None,
+            personal_rules: Default::default(),
             manager: None,
             leased: false,
             load_audio_index,
@@ -102,6 +105,14 @@ impl ProcessAssets {
         let mut process = Self::new(media, audio);
         process.ini_config = config;
         process
+    }
+
+    pub(crate) fn with_personal_rules(
+        mut self,
+        rules: crate::rules::personal_rules::PersonalRules,
+    ) -> Self {
+        self.personal_rules = rules;
+        self
     }
 
     /// Recovery uses the process's already resolved choice, never a new Auto
@@ -182,6 +193,7 @@ impl ProcessAssets {
             std::sync::Arc::clone(self.audio_catalog.as_ref().unwrap().definitions.sounds());
         let eva = std::sync::Arc::clone(self.audio_catalog.as_ref().unwrap().definitions.eva());
         let startup = crate::rules::retail_sources::RetailRulesSources::select(assets)?
+            .with_personal_rules(self.personal_rules.clone())
             .into_startup(sounds, eva)?;
         let (rules, projection, owner) = startup.into_parts();
         self.native_rules = Some(owner);
@@ -313,13 +325,19 @@ impl ProcessAssets {
         )
         .ok()
         .map(|selected| selected.ini);
-        self.native_ini_hashes = Some(crate::rules::native_ini_hash::NativeIniHashes::compute(
+        let mut hashes = crate::rules::native_ini_hash::NativeIniHashes::compute(
             rules.selected_rules_root(),
             &mode_inis,
             cooperative.as_ref(),
             &ai,
             rules.fixed_art(),
-        ));
+        );
+        // VERA extension: peers must agree on both personal rules and whether
+        // they may replace map-authored rules. An inactive file adds nothing.
+        if let Some(crc) = rules.personal_rules_compatibility_crc() {
+            hashes.rules = hashes.rules.wrapping_add(crc);
+        }
+        self.native_ini_hashes = Some(hashes);
     }
 
     pub(crate) fn read_multiplayer_country(
@@ -441,6 +459,32 @@ impl ProcessAssets {
 mod tests {
     use super::{MediaArchiveMode, ProcessAssets};
     use crate::assets::asset_manager::AssetManager;
+
+    #[test]
+    fn personal_rules_and_map_priority_participate_in_network_compatibility() {
+        use crate::map::source::test_support::TestDirectory;
+        use crate::rules::personal_rules::PersonalRules;
+
+        let dir = TestDirectory::new("personal-rules-network");
+        dir.write("rulesmd.ini", b"[General]\nBuildSpeed=.7\n");
+        dir.write("artmd.ini", b"[Test]\nVoxel=no\n");
+        dir.write("aimd.ini", b"[Test]\nValue=1\n");
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        let hashes = |bytes: &[u8]| {
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
+                .with_personal_rules(PersonalRules::from_bytes(bytes).unwrap());
+            process.initialize_sources_if_needed(&assets).unwrap();
+            process.install_native_ini_hashes(&assets, &[]);
+            process.native_ini_hashes().unwrap()
+        };
+        let stock = hashes(b"");
+        assert_eq!(stock, hashes(b";[General]\n;BuildSpeed=.5\n"));
+        let personal = hashes(b"[General]\nBuildSpeed=.5\n");
+        assert_ne!(stock.rules, personal.rules);
+        let priority = hashes(b"[General]\nBuildSpeed=.5\n[VERA]\nOverrideMapRules=yes\n");
+        assert_ne!(personal.rules, priority.rules);
+        assert_eq!((stock.ai, stock.art), (priority.ai, priority.art));
+    }
 
     #[test]
     fn ini_roots_process_recovery_keeps_auto_choice_and_refuses_a_foreign_triplet() {

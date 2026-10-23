@@ -69,6 +69,10 @@ Eski ayarlar yoksa dosya başlangıçta boştur; ayarlar kaydedilene kadar VERA 
 kullanır. Orijinal `RA2MD.INI` ve `KeyboardMD.ini` dosyaları yalnızca içe aktarma için okunur,
 asla üzerlerine yazılmaz.
 
+Aynı klasördeki `VERARULES.INI`, isteğe bağlı oynanış değişikliklerini içerir. Başlangıçta yorum
+satırı hâline getirilmiş örnekler içerir ve görev ve harita kurallarına öncelik tanır. Bunları
+düzenlemek ve geçersiz kılmak için [kişisel kurallar](docs/personal-rules.md) bölümüne bakın.
+
 ## Mimari
 
 Motorun üç ana bölümü vardır:

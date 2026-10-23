@@ -180,6 +180,37 @@ impl IniSection {
         }
     }
 
+    /// Edit the value the physical source actually selects, keeping unrelated
+    /// duplicate-key choices intact instead of changing to dictionary lookup.
+    fn overlay_source(&mut self, patch: &IniSection) {
+        for key in patch.keys() {
+            let Some(value) = patch.get(key) else {
+                continue;
+            };
+            let Some(index) = self.fresh_index.as_ref() else {
+                self.set(key, value);
+                continue;
+            };
+            match find_crc_index_value(index, ini_name_crc(key)).copied() {
+                Some(PhysicalEntry::First(at)) => {
+                    *self.entries.get_mut(&self.key_order[at]).unwrap() = value.to_owned();
+                }
+                Some(PhysicalEntry::Duplicate(at)) => {
+                    self.duplicate_entries[at].2 = value.to_owned();
+                }
+                None => {
+                    let at = self.key_order.len();
+                    self.insert_initial(key, value);
+                    insert_source_index(
+                        self.fresh_index.as_mut().unwrap(),
+                        ini_name_crc(key),
+                        PhysicalEntry::First(at),
+                    );
+                }
+            }
+        }
+    }
+
     fn physical_slots(&self) -> impl Iterator<Item = PhysicalEntry> {
         let mut first = 0..self.key_order.len();
         let mut duplicates = self.duplicate_entries.iter().enumerate().peekable();
@@ -514,6 +545,21 @@ impl IniFile {
             .collect()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.sections.is_empty()
+    }
+
+    /// Remove a reserved configuration section before composing gameplay data.
+    pub(crate) fn remove_section(&mut self, name: &str) {
+        while let Some(position) = self
+            .sections
+            .iter()
+            .position(|section| section.name == name)
+        {
+            self.remove_section_at(position);
+        }
+    }
+
     /// ReadCCFile4741F0: a positive ReadUUBlock526FB0("Digest",20) removes
     /// the selected section before scenario initialization, even on mismatch.
     /// Base64Pipe42DDB0/42DF40 emits at least one byte for every nonempty raw
@@ -529,6 +575,10 @@ impl IniFile {
         // Clear5257C0 -> RemoveKey52B2B0 compacts the sorted pair array and
         // clears its cached pair, without resetting the sorted flag. Retain
         // the other physical sections and their lookup order unchanged.
+        self.remove_section_at(position);
+    }
+
+    fn remove_section_at(&mut self, position: usize) {
         self.sections.remove(position);
         self.rebuild_first_sections();
         if let Some(index) = &mut self.fresh_section_index {
@@ -579,6 +629,27 @@ impl IniFile {
                 continue;
             }
             self.overlay_section(patch_section);
+        }
+    }
+
+    /// VERA source edits preserve native lookup winners. Later passes set
+    /// `add_sections` false so an absent section still skips its native reader.
+    pub(crate) fn merge_source_sections(&mut self, patch: &IniFile, add_sections: bool) {
+        for (patch_index, section) in patch.sections.iter().enumerate() {
+            if patch.first_section.get(&section.name) != Some(&patch_index) {
+                continue;
+            }
+            let selected = patch.section(&section.name).unwrap();
+            if let Some(index) = self.section_position(&section.name) {
+                self.sections[index].overlay_source(selected);
+            } else if add_sections {
+                let at = self.sections.len();
+                self.sections.push(selected.clone());
+                self.first_section.insert(selected.name.clone(), at);
+                if let Some(index) = self.fresh_section_index.as_mut() {
+                    insert_source_index(index, ini_name_crc(&selected.name), at);
+                }
+            }
         }
     }
 
@@ -727,6 +798,21 @@ fn find_crc_index_value<T>(pairs: &[(i32, T)], crc: i32) -> Option<&T> {
         }
     }
     None
+}
+
+/// Growing a sorted index changes the midpoint used for equal CRCs. Preserve
+/// each existing group's selected physical entry before adding a new name;
+/// the physical duplicate payload remains untouched for registry walks/CRC.
+fn insert_source_index<T: Copy>(pairs: &mut Vec<(i32, T)>, crc: i32, value: T) {
+    let mut selected = Vec::with_capacity(pairs.len() + 1);
+    for &(existing, _) in pairs.iter() {
+        if selected.last().is_none_or(|&(last, _)| last != existing) {
+            selected.push((existing, *find_crc_index_value(pairs, existing).unwrap()));
+        }
+    }
+    let at = selected.partition_point(|&(existing, _)| existing < crc);
+    selected.insert(at, (crc, value));
+    *pairs = selected;
 }
 
 fn crc_of_pipe(bytes: &[u8]) -> u32 {
