@@ -2103,12 +2103,12 @@ impl Simulation {
                 if !self.entity_owned_by_id(command_owner, *transport_id) {
                     return false;
                 }
-                let has_passengers = self
-                    .substrate
-                    .entities
-                    .get(*transport_id)
-                    .and_then(|t| t.passenger_role.cargo())
-                    .is_some_and(|c| !c.is_empty());
+                let has_passengers = self.substrate.entities.get(*transport_id).is_some_and(|t| {
+                    !t.passenger_role.occupants().is_empty()
+                        || t.passenger_role
+                            .cargo()
+                            .is_some_and(|cargo| !cargo.is_empty())
+                });
                 // A gap generator's self click sends the same Unload
                 // (`0x004434FF..0x00443514`) with no cargo; its mission
                 // toggles the super-charge.

@@ -1,8 +1,8 @@
 //! Self-click/cursor unload admission and structure/aircraft deploy-key routes.
 //!
 //! Mobile transports use `Type+0x5E0 Passengers > 0` and the aircraft unload
-//! slot `0x004151E0`; garrisons use `CanBeOccupied`; InfantryAbsorb buildings
-//! use their native absorber flag. These sites share the cargo-count gate;
+//! slot `0x004151E0`; garrisons use GetOccupantCount; InfantryAbsorb buildings
+//! use their native absorber flag. Buildings read Cargo and Occupants separately;
 //! Unit transport D instead sends Event9, including with an empty hold.
 
 use crate::map::entities::EntityCategory;
@@ -13,8 +13,8 @@ use crate::sim::intern::InternedId;
 
 /// Resolve self-click/cursor unload and the structure/aircraft deploy key.
 /// Unit transport D is handled by dispatch's separate Event9 route.
-/// Structures unload only when they are InfantryAbsorb buildings or
-/// occupiable garrisons; mobile transports retain their passenger-count gate.
+/// Structures unload their actual occupants or an InfantryAbsorb Cargo;
+/// mobile transports retain their passenger-count gate.
 /// Production callers provide the local owner so an enemy building cannot
 /// advertise an unload.
 pub(crate) fn unload_command(
@@ -31,7 +31,10 @@ pub(crate) fn unload_command(
         .cargo()
         .is_some_and(|cargo| !cargo.is_empty());
     let can_unload = match entity.category() {
-        EntityCategory::Structure => (obj.can_be_occupied || obj.infantry_absorb) && has_passengers,
+        // Building44731C..447358 reads independent Cargo+114 and Occupants+694.
+        EntityCategory::Structure => {
+            !entity.passenger_role.occupants().is_empty() || (obj.infantry_absorb && has_passengers)
+        }
         EntityCategory::Unit | EntityCategory::Aircraft => obj.passengers > 0 && has_passengers,
         EntityCategory::Infantry => false,
     };

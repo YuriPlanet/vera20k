@@ -10,7 +10,7 @@ use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::StringInterner;
 
-/// Read the existing type, cargo and reciprocal bunker owners. Native checks
+/// Read the existing type, Building occupants and bunker owners. Native checks
 /// the receiver's type first, then Building occupant count, then Building+2E4
 /// (installed tank), and finally the receiver type's ThreatPosed+670.
 pub(crate) fn live_threat_posed(
@@ -24,10 +24,7 @@ pub(crate) fn live_threat_posed(
         return 0;
     };
     if candidate.category() == EntityCategory::Structure {
-        let occupants = candidate
-            .passenger_role
-            .cargo()
-            .map_or(0, |cargo| cargo.count() as i32);
+        let occupants = candidate.passenger_role.occupants().count();
         if occupants > 0 {
             return occupants.wrapping_mul(rules.general.threat_per_occupant);
         }

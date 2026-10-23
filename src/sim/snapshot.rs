@@ -1217,6 +1217,19 @@ fn restore_object_references(
             }
         }
 
+        // BuildingClass's saved vector+684 contains independent Infantry
+        // references; Cargo+114 is validated above, never reclassified by flags.
+        for &occupant_id in entity.passenger_role.occupants().ids() {
+            require_resolved_reference(
+                entity_ids.contains(&occupant_id),
+                "EntityStore",
+                entity_id,
+                "passenger_role.occupants.ids",
+                "EntityStore",
+                occupant_id,
+            )?;
+        }
+
         // SpawnManagerClass__Load @ 0x006B7F10 queues every non-null
         // SpawnControl child pointer plus its current and queued target slots
         // for the common post-load swizzle pass. Rust keeps stable IDs in those

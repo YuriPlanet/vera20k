@@ -96,7 +96,7 @@ use crate::sim::world::{ConcealOutcome, FrameEffects, SimSoundEvent, Simulation,
 /// through each passenger's `ObjectClass+0x30`), held in a
 /// [`PassengerRole`].
 ///
-/// Tracks which entities are currently inside this transport/garrison.
+/// Tracks the true CargoClass list, independently of Building occupants.
 /// Passengers are stored as a Vec of stable_ids in native CargoClass list
 /// order: index 0 is the list HEAD. `CargoClass::AddPassenger @ 0x004733A0`
 /// PREPENDS (`passenger->next = head; head = passenger`, `0x004733FA`..
@@ -104,17 +104,9 @@ use crate::sim::world::{ConcealOutcome, FrameEffects, SimSoundEvent, Simulation,
 /// head, so every native consumer — transport unload, paradrop, sell eject —
 /// releases the LAST boarded passenger first.
 ///
-/// A garrisoned building's occupants natively live in a separate `Occupants`
-/// vector instead (Items `+0x688`, Count `+0x694`), which
-/// [`add_garrison_occupant`] APPENDS to ([`Self::add_occupant`]): index 0 is
-/// the earliest admission, which fires first (`+0x69C`) and names the owner
-/// a civilian building takes (`0x00458313`), while a sale removes them last
-/// to first (`0x004580A9..0x0045819E`).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PassengerCargo {
-    /// Stable IDs of entities currently inside: a transport's head first
-    /// (the most recently boarded at index 0, LIFO unload), a garrison's in
-    /// admission order.
+    /// Stable IDs in CargoClass head order (last boarded first).
     passengers: Vec<u64>,
     /// `Size=` captured for each entry in `passengers`, at the same index.
     ///
@@ -123,17 +115,13 @@ pub struct PassengerCargo {
     /// the entry gives the Rust cargo list the same exact bookkeeping ability.
     #[serde(default)]
     passenger_sizes: Vec<f64>,
-    /// Maximum passenger count (from Passengers= or MaxNumberOccupants= in rules.ini).
+    /// Maximum passenger count (from Passengers= in rules.ini).
     capacity: u32,
     /// Maximum Size= of individual passenger allowed (from SizeLimit= in rules.ini).
     size_limit: f64,
     /// Native CargoTotalSize's signed low-32-bit FTOL result, recomputed in
     /// passenger-list order after every mutation.
     total_size: i32,
-    /// Round-robin index for garrison fire — which occupant fires next.
-    /// Matches gamemd BuildingClass+0x69C (CurrentFireIdx). Init 0, advanced
-    /// by garrison combat after each shot: `(idx + 1) % occupant_count`.
-    garrison_fire_index: u8,
     /// A transport's own passenger relation is independent of its cargo.
     /// Unit73A6EC..73A77C attaches it without clearing CargoClass+114;
     /// Steam gamemd.exe, original Unit739EC0 instructions.
@@ -160,7 +148,6 @@ impl PassengerCargo {
             capacity,
             size_limit,
             total_size: 0,
-            garrison_fire_index: 0,
             carrier_relation: CarrierRelation::Outside,
         }
     }
@@ -170,8 +157,7 @@ impl PassengerCargo {
         self.passengers.len() as u32
     }
 
-    /// The passengers' stable ids, a transport's list head first and a
-    /// garrison's earliest admission first.
+    /// The passengers' stable ids, CargoClass list head first.
     pub fn passengers(&self) -> &[u64] {
         &self.passengers
     }
@@ -181,7 +167,7 @@ impl PassengerCargo {
         &self.passenger_sizes
     }
 
-    /// `Passengers=`, or a garrison's `MaxNumberOccupants=`.
+    /// `Passengers=`.
     pub fn capacity(&self) -> u32 {
         self.capacity
     }
@@ -258,26 +244,6 @@ impl PassengerCargo {
         )
     }
 
-    /// `BuildingClass+0x69C`, the garrison occupant that fires next.
-    pub fn garrison_fire_index(&self) -> u8 {
-        self.garrison_fire_index
-    }
-
-    /// `BulletClass::Fire`'s advance of an occupied building's firing
-    /// occupant: `+0x69C = (+0x69C + 1) % occupants`.
-    pub(crate) fn advance_garrison_fire_index(&mut self) {
-        let count = self.count() as u8;
-        if count > 0 {
-            self.garrison_fire_index = (self.garrison_fire_index + 1) % count;
-        }
-    }
-
-    /// Install a fixture's firing occupant.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn set_garrison_fire_index_for_test(&mut self, index: u8) {
-        self.garrison_fire_index = index;
-    }
-
     /// Install a fixture's passenger list, sizes untouched.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_passengers_for_test(&mut self, passengers: Vec<u64>) {
@@ -294,16 +260,6 @@ impl PassengerCargo {
     /// Whether the transport has room for a passenger of the given size.
     pub fn can_accept(&self, passenger_size: f64) -> bool {
         self.count() < self.capacity && Self::size_within_limit(passenger_size, self.size_limit)
-    }
-
-    /// Append a garrison occupant: `Occupants.AddItem` in
-    /// `AddGarrisonOccupant` (`0x0052293B..0x0052297C`). The vector grows
-    /// past `MaxNumberOccupants=`; `CanBeOccupiedBy`'s count test is the
-    /// admission.
-    pub(crate) fn add_occupant(&mut self, stable_id: u64, passenger_size: f64) {
-        self.passengers.push(stable_id);
-        self.passenger_sizes.push(passenger_size);
-        self.recompute_total_size();
     }
 
     /// Cargo4733A0 attaches an existing Foot+30 chain ahead of the old head.
@@ -357,19 +313,68 @@ impl PassengerCargo {
         self.passengers.clear();
         self.passenger_sizes.clear();
         self.total_size = 0;
-        self.garrison_fire_index = 0;
+    }
+}
+
+/// BuildingClass's independent append-order Occupants vector (+684/+688/+694)
+/// and signed DWORD firing cursor (+69C). BuildingCtor43B8DC..43B907 creates
+/// this empty state independently of CanBeOccupied/MaxNumberOccupants/Cargo.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct BuildingOccupants {
+    ids: Vec<u64>,
+    fire_index: i32,
+}
+
+impl BuildingOccupants {
+    /// GetOccupantCount4581F0 reads the vector's count, never CargoClass+114.
+    pub fn count(&self) -> i32 {
+        self.ids.len() as i32
+    }
+    pub fn ids(&self) -> &[u64] {
+        &self.ids
+    }
+    pub fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+    pub fn fire_index(&self) -> i32 {
+        self.fire_index
     }
 
-    /// Detach the complete cargo list for recursive ObjectClass::UnInit.
-    ///
-    /// Capacity and SizeLimit are type configuration and survive the transition;
-    /// only the live CargoClass contents and its fire cursor are cleared.
-    pub(crate) fn take_for_uninit(&mut self) -> Vec<u64> {
-        let passengers = std::mem::take(&mut self.passengers);
-        self.passenger_sizes.clear();
-        self.total_size = 0;
-        self.garrison_fire_index = 0;
-        passengers
+    /// AddGarrisonOccupant52293B..52297C appends without a capacity test.
+    pub(crate) fn add(&mut self, id: u64) {
+        self.ids.push(id);
+    }
+
+    /// FireAt6FF065..6FF085: INC DWORD, then signed IDIV by live count.
+    pub(crate) fn advance_fire_index(&mut self) {
+        let count = self.count();
+        if count > 0 {
+            self.fire_index = self.fire_index.wrapping_add(1) % count;
+        }
+    }
+    /// SellBuilding457DEB and KillOccupants4585CA clear the cursor first.
+    pub(crate) fn reset_fire_index(&mut self) {
+        self.fire_index = 0;
+    }
+    pub(crate) fn clear(&mut self) {
+        self.ids.clear();
+        self.reset_fire_index();
+    }
+    /// BuildingPointerExpired44EAC0..44EB02 removes the first matching
+    /// vector entry by shifting, without changing +69C. Its caller owns
+    /// the ScenarioInit(A8E7AC) gate; ordinary Cargo expiry is separate.
+    pub(crate) fn remove_expired(&mut self, id: u64) {
+        if let Some(index) = self.ids.iter().position(|&entry| entry == id) {
+            self.ids.remove(index);
+        }
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_ids_for_test(&mut self, ids: Vec<u64>) {
+        self.ids = ids;
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_fire_index_for_test(&mut self, index: i32) {
+        self.fire_index = index;
     }
 }
 
@@ -405,8 +410,8 @@ impl Simulation {
     }
 }
 
-/// An entity's passenger relation and, for a type that holds passengers, its
-/// cargo hold. Natively these are separate Techno fields: the CargoClass
+/// The containment owner: an entity's passenger relation, true Cargo hold,
+/// and independent Building occupant vector/cursor. The Techno fields are: the CargoClass
 /// `Passengers` (`TechnoClass+0x114`, [`PassengerCargo`]), the Transporter
 /// (`+0x11C`) and InOpenToppedTransport (`+0x82`). VERA creates a hold for
 /// configured carriers or when native raw Cargo admission first uses it,
@@ -417,6 +422,8 @@ impl Simulation {
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct PassengerRole {
     role: Role,
+    #[serde(default)]
+    occupants: BuildingOccupants,
 }
 
 /// The stored shape of a [`PassengerRole`]. A transport keeps its own cargo
@@ -427,7 +434,7 @@ enum Role {
     /// Entity has no passenger/transport role. Most entities are this.
     #[default]
     None,
-    /// Entity is a transport or garrisonable building that can hold passengers.
+    /// Entity owns a CargoClass hold.
     Transport { cargo: PassengerCargo },
     /// Entity is inside a transport (hidden from map, not targetable).
     Inside {
@@ -444,11 +451,11 @@ enum Role {
 }
 
 impl PassengerRole {
-    /// The role of a type that holds passengers (`Passengers=`, or a
-    /// garrison's `MaxNumberOccupants=`), with its empty hold.
+    /// The role of a Cargo carrier (`Passengers=`), with its empty hold.
     pub fn transport(cargo: PassengerCargo) -> Self {
         Self {
             role: Role::Transport { cargo },
+            occupants: BuildingOccupants::default(),
         }
     }
 
@@ -497,6 +504,22 @@ impl PassengerRole {
             Role::Transport { cargo } => cargo.carrier_relation = CarrierRelation::Outside,
             role => *role = Role::None,
         }
+    }
+
+    /// The Building vector is independent of Cargo and the carrier relation.
+    pub fn occupants(&self) -> &BuildingOccupants {
+        &self.occupants
+    }
+    pub(crate) fn occupants_mut(&mut self) -> &mut BuildingOccupants {
+        &mut self.occupants
+    }
+
+    /// Install a supplied Building-vector prior across the core/client test
+    /// boundary. Production admission remains add_garrison_occupant522910.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_occupants_for_test(&mut self, ids: Vec<u64>, raw_fire_index: i32) {
+        self.occupants.ids = ids;
+        self.occupants.fire_index = raw_fire_index;
     }
 
     /// Returns the cargo hold if this entity is a transport.
@@ -573,7 +596,7 @@ impl PassengerRole {
         self.inside_transport().is_some()
     }
 
-    /// True if entity is a transport/garrison with a cargo hold.
+    /// True if entity owns a CargoClass hold.
     pub fn is_transport(&self) -> bool {
         matches!(self.role, Role::Transport { .. })
     }
@@ -592,6 +615,7 @@ impl PassengerRole {
                 transport_id,
                 open_topped,
             },
+            occupants: BuildingOccupants::default(),
         }
     }
 }
@@ -665,7 +689,7 @@ pub fn can_dock_occupier_garrison(
     building: &GameEntity,
     passenger_obj: &ObjectType,
     building_obj: &ObjectType,
-    cargo: &PassengerCargo,
+    occupants: &BuildingOccupants,
     rules: &RuleSet,
     sim: &Simulation,
 ) -> bool {
@@ -698,7 +722,7 @@ pub fn can_dock_occupier_garrison(
     if !same_owner && !owner_is_multiplay_passive(building.owner(), &sim.houses) {
         return false;
     }
-    if cargo.count() == building_obj.max_number_occupants {
+    if occupants.count() as u32 == building_obj.max_number_occupants {
         return false;
     }
     if is_at_or_below_red_hp(
@@ -752,7 +776,7 @@ fn owner_is_multiplay_passive(owner: InternedId, houses: &crate::sim::houses::Ho
         .is_some_and(|house| house.multiplay_passive())
 }
 
-/// The passenger, building, their types and the building's cargo, by id:
+/// The passenger, building, their types and the independent occupants, by id:
 /// what the garrison admission tests read.
 fn garrison_parts<'a>(
     sim: &'a Simulation,
@@ -764,7 +788,7 @@ fn garrison_parts<'a>(
     &'a GameEntity,
     &'a ObjectType,
     &'a ObjectType,
-    &'a PassengerCargo,
+    &'a BuildingOccupants,
 )> {
     let passenger = sim.substrate.entities.get(passenger_id)?;
     let building = sim.substrate.entities.get(building_id)?;
@@ -773,7 +797,7 @@ fn garrison_parts<'a>(
         building,
         sim.object_type(passenger.type_ref(), rules)?,
         sim.object_type(building.type_ref(), rules)?,
-        building.passenger_role.cargo()?,
+        building.passenger_role.occupants(),
     ))
 }
 
@@ -1061,7 +1085,7 @@ pub(crate) fn board_passenger(
 /// garrison: `InfantryClass::PerCellProcess`'s occupier arm
 /// (`sim::movement::per_cell`), shared by player and computer Capture orders. An
 /// `Occupier=` infantryman leaves the map (Limbo, vt+0xD4) and is appended
-/// to the building's occupants ([`PassengerCargo::add_occupant`]); the
+/// to the building's occupants ([`BuildingOccupants::add`]); the
 /// building's spatial threat is refreshed (`0x0052297F..0x0052298D`). The
 /// first occupant marks the building for redraw (Mark(2), `0x0052299B`) and
 /// plays `EVA_StructureGarrisoned` and `BuildingGarrisonedSound=` at the
@@ -1090,10 +1114,9 @@ pub fn add_garrison_occupant(
     let world =
         crate::sim::movement::ground_pose::object_get_coords(pax, sim.resolved_terrain.as_ref())
             .into();
-    let Some(pax_size) = sim
+    let Some(_) = sim
         .object_type(pax.type_ref(), rules)
         .filter(|object| object.occupier)
-        .map(|object| object.size)
     else {
         return false;
     };
@@ -1101,7 +1124,7 @@ pub fn add_garrison_occupant(
         .substrate
         .entities
         .get(building_id)
-        .is_some_and(|building| building.passenger_role.cargo().is_some())
+        .is_some_and(|building| building.category() == EntityCategory::Structure)
     {
         return false;
     }
@@ -1109,16 +1132,11 @@ pub fn add_garrison_occupant(
     if sim.techno_limbo_with_context(pax_id, context) != ConcealOutcome::Concealed {
         return false;
     }
-    let Some(count) = sim
-        .substrate
-        .entities
-        .get_mut(building_id)
-        .and_then(|building| building.passenger_role.cargo_mut())
-        .map(|cargo| {
-            cargo.add_occupant(pax_id, pax_size);
-            cargo.count()
-        })
-    else {
+    let Some(count) = sim.substrate.entities.get_mut(building_id).map(|building| {
+        let occupants = building.passenger_role.occupants_mut();
+        occupants.add(pax_id);
+        occupants.count()
+    }) else {
         return false;
     };
     if let Some(pax) = sim.substrate.entities.get_mut(pax_id) {
@@ -1448,13 +1466,12 @@ pub(crate) fn reconcile_civilian_garrison_owner_for_building(
     let Some(building) = sim.substrate.entities.get(building_id) else {
         return false;
     };
-    // Zero-capacity types have no allocated Rust cargo. Native458272 tests
-    // the empty occupant vector without requiring MaxNumberOccupants > 0.
-    let cargo = building.passenger_role.cargo();
+    // Native458272 tests the vector independently of Cargo/type allocation.
+    let occupants = building.passenger_role.occupants();
     let current_owner = building.owner();
-    let cargo_empty = cargo.is_none_or(PassengerCargo::is_empty);
+    let cargo_empty = occupants.is_empty();
     //458313 reads Occupants[0], the earliest admission.
-    let first_passenger = cargo.and_then(|cargo| cargo.passengers.first().copied());
+    let first_passenger = occupants.ids().first().copied();
 
     let Some(civilian_owner) = sim.civilian_side_house(rules) else {
         // A malformed roster can leave the native empty arm passing NULL to

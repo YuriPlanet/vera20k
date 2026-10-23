@@ -516,10 +516,7 @@ pub(super) fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> 
     }
     if entity.category() == EntityCategory::Structure
         && obj.can_be_occupied
-        && entity
-            .passenger_role
-            .cargo()
-            .is_none_or(|cargo| cargo.count() == 0)
+        && entity.passenger_role.occupants().is_empty()
     {
         return false;
     }

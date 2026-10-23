@@ -1808,11 +1808,15 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let target_building = target.category() == EntityCategory::Structure;
     let occupiable = infantry
         && target_building
-        && target.passenger_role.cargo().is_some_and(|cargo| {
-            crate::sim::passenger::can_dock_occupier_garrison(
-                entity, target, obj, target_obj, cargo, rules, sim,
-            )
-        });
+        && crate::sim::passenger::can_dock_occupier_garrison(
+            entity,
+            target,
+            obj,
+            target_obj,
+            target.passenger_role.occupants(),
+            rules,
+            sim,
+        );
     let engineer = infantry && obj.engineer;
     let overpowers = target_building
         && target_obj.overpowerable
@@ -3508,11 +3512,11 @@ mod tests {
             let _ = sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
         }
         assert!(
-            sim.substrate
-                .entities
-                .get(1)
-                .and_then(|house| house.passenger_role.cargo())
-                .is_some_and(|cargo| cargo.passengers() == [2]),
+            sim.substrate.entities.get(1).is_some_and(|house| house
+                .passenger_role
+                .occupants()
+                .ids()
+                == [2]),
             "precondition: Capture admitted the occupant"
         );
         (

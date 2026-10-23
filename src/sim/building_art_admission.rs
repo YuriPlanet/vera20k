@@ -147,15 +147,12 @@ impl Simulation {
         {
             return;
         }
+        // UpdateAnimation450B72..450B7F selects the slot from true Cargo
+        // total Size, independently of the garrison vector.
         let occupied = entity
             .passenger_role
             .cargo()
-            .is_some_and(|c| !c.passengers().is_empty());
-        let damaged = requested_damage_state(
-            entity.health,
-            object.strength,
-            rules.general.condition_yellow,
-        );
+            .is_some_and(|cargo| cargo.total_size() > 0);
         let (remove, keep) = if occupied { (3, 4) } else { (4, 3) };
         self.clear_building_anim_slot(id, remove);
         if self
@@ -167,12 +164,17 @@ impl Simulation {
             .anim_slots[usize::from(keep)]
         .is_none()
         {
-            // Absorbed passengers (+114) are not the distinct +694 garrison
-            // vector. Stock YAPOWR has only the former. Custom types combining
-            // CanBeOccupied and InfantryAbsorb remain outside this policy's
-            // native parity claim: the pre-existing shared cargo representation
-            // cannot independently express both native containers.
-            self.set_building_anim_slot(id, keep, damaged, false, 0, rules);
+            // 450BCC/450C66 read true Occupants+694 after clearing the old
+            // slot; both native arms supply it to CreateAnim451890. Damage
+            // takes precedence over the garrison variant in that shared owner.
+            let entity = self.substrate.entities.get(id).unwrap();
+            let damaged = requested_damage_state(
+                entity.health,
+                object.strength,
+                rules.general.condition_yellow,
+            );
+            let garrisoned = entity.passenger_role.occupants().count() > 0;
+            self.set_building_anim_slot(id, keep, damaged, garrisoned, 0, rules);
         }
     }
 }

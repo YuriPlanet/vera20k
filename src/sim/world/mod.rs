@@ -2105,11 +2105,7 @@ impl Simulation {
                 }
                 let garrison = self.substrate.entities.get(stable_id).and_then(|entity| {
                     let object = self.interner.object_type(entity.type_ref(), rules)?;
-                    let passenger_ids = entity
-                        .passenger_role
-                        .cargo()
-                        .map(|cargo| cargo.passengers().to_vec())
-                        .unwrap_or_default();
+                    let passenger_ids = entity.passenger_role.occupants().ids().to_vec();
                     if !object.can_be_occupied || passenger_ids.is_empty() {
                         return None;
                     }
@@ -8714,3 +8710,6 @@ mod airstrike_aircraft;
 
 #[cfg(test)]
 mod radiation_overlap_tests;
+
+#[cfg(test)]
+mod building_occupant_storage_tests;

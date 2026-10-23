@@ -4489,6 +4489,13 @@ impl Simulation {
         if let Some(cargo) = listener.passenger_role.cargo() {
             cargo.passengers().iter().copied().for_each(&mut name);
         }
+        listener
+            .passenger_role
+            .occupants()
+            .ids()
+            .iter()
+            .copied()
+            .for_each(&mut name);
         let navigation = &listener.navigation;
         navigation
             .suspended_nav_com()
@@ -5058,6 +5065,16 @@ impl Simulation {
         // Building44EA77 removes a charger for either control, irrespective
         // of the base target exemptions. Only later AI changes the weapon latch.
         let clear_tesla_charger = listener.tesla_charge.chargers().contains(&expired_id);
+        // BuildingPointerExpired44EAB8..44EB02 removes a matching Occupant
+        // only inside ScenarioInit(A8E7AC), after inherited Techno cleanup.
+        // It neither depends on removed/control nor rewrites the fire cursor.
+        let clear_occupant = listener.category() == EntityCategory::Structure
+            && self.object_placement_scope_active()
+            && listener
+                .passenger_role
+                .occupants()
+                .ids()
+                .contains(&expired_id);
         // BuildingPointerExpired44E932..44E93A clears its owned child for
         // either control, before that storage is physically removed.
         let clear_spotlight = listener.category() == EntityCategory::Structure
@@ -5076,7 +5093,8 @@ impl Simulation {
             || clear_c4_source
             || expire_mega_pointer
             || clear_tesla_charger
-            || clear_spotlight)
+            || clear_spotlight
+            || clear_occupant)
         {
             return;
         }
@@ -5137,6 +5155,12 @@ impl Simulation {
         }
         if clear_spotlight {
             listener.building_light.take();
+        }
+        if clear_occupant {
+            listener
+                .passenger_role
+                .occupants_mut()
+                .remove_expired(expired_id);
         }
     }
 

@@ -142,7 +142,7 @@ pub(crate) struct FireSource {
     pub barrel_facing: Option<crate::sim::movement::FacingClass>,
     pub veterancy: u16,
     /// The firing occupant's port, when an occupied building fires.
-    pub garrison_fire_index: Option<u8>,
+    pub garrison_fire_index: Option<i32>,
     /// TarCom (`+0x2B4`) as the shot reads it; a building's fire facings aim
     /// at it.
     pub tar_com: Option<TargetKind>,
@@ -756,7 +756,7 @@ fn building_pixel_offset(art: &ArtEntry, snap: &FireSource) -> Option<(i32, i32)
     if let Some(fire_index) = snap.garrison_fire_index {
         return Some(
             art.muzzle_flash_positions
-                .get(usize::from(fire_index))
+                .get(usize::try_from(fire_index).ok()?)
                 .copied()
                 .unwrap_or((0, 0)),
         );

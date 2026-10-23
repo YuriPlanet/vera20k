@@ -568,8 +568,7 @@ fn an_occupier_garrisoning_a_building_raises_its_entered_by_event() {
             .get(building)
             .unwrap()
             .passenger_role
-            .cargo()
-            .unwrap()
+            .occupants()
             .count(),
         1
     );
