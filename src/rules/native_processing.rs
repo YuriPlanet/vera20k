@@ -1827,6 +1827,13 @@ impl ProcessedRulesLayers {
         )
     }
 
+    /// Rules6660AE/ReadGeneral671858: retained scalar, surviving Type resets.
+    pub(crate) fn charge_to_drain_ratio(&self) -> NativeF64Bits {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_charge_to_drain_ratio
+    }
+
     pub(crate) fn gravity(&self) -> i32 {
         self.native_type_construction_trace
             .registry_state()
@@ -2561,6 +2568,7 @@ pub(crate) struct NativeRulesRegistryState {
     rules_no_parachute_max_fall_rate: i32,
     rules_survivor_divisors: [i32; 3],
     rules_infantry_repair_step: i32,
+    rules_charge_to_drain_ratio: NativeF64Bits,
     rules_unit_repair_rate: NativeF64Bits,
     rules_infantry_repair_rate: NativeF64Bits,
     rules_maximum_cheer_rate: i32,
@@ -2636,6 +2644,7 @@ impl Default for NativeRulesRegistryState {
             rules_no_parachute_max_fall_rate: general.no_parachute_max_fall_rate,
             rules_survivor_divisors: crate::rules::ruleset::DEFAULT_SURVIVOR_DIVISORS,
             rules_infantry_repair_step: general.infantry_repair_step,
+            rules_charge_to_drain_ratio: general.charge_to_drain_ratio,
             rules_unit_repair_rate: NativeF64Bits::from_bits(general.unit_repair_rate.to_bits()),
             rules_infantry_repair_rate: NativeF64Bits::from_bits(
                 general.infantry_repair_rate.to_bits(),
@@ -3021,6 +3030,7 @@ impl NativeRulesRegistryState {
             rules_no_parachute_max_fall_rate: self.rules_no_parachute_max_fall_rate,
             rules_survivor_divisors: self.rules_survivor_divisors,
             rules_infantry_repair_step: self.rules_infantry_repair_step,
+            rules_charge_to_drain_ratio: self.rules_charge_to_drain_ratio,
             rules_unit_repair_rate: self.rules_unit_repair_rate,
             rules_infantry_repair_rate: self.rules_infantry_repair_rate,
             rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
@@ -3966,6 +3976,7 @@ struct RulesPassProcessor {
     rules_no_parachute_max_fall_rate: i32,
     rules_survivor_divisors: [i32; 3],
     rules_infantry_repair_step: i32,
+    rules_charge_to_drain_ratio: NativeF64Bits,
     rules_unit_repair_rate: NativeF64Bits,
     rules_infantry_repair_rate: NativeF64Bits,
     rules_maximum_cheer_rate: i32,
@@ -4034,6 +4045,7 @@ impl RulesPassProcessor {
             rules_no_parachute_max_fall_rate: registry_state.rules_no_parachute_max_fall_rate,
             rules_survivor_divisors: registry_state.rules_survivor_divisors,
             rules_infantry_repair_step: registry_state.rules_infantry_repair_step,
+            rules_charge_to_drain_ratio: registry_state.rules_charge_to_drain_ratio,
             rules_unit_repair_rate: registry_state.rules_unit_repair_rate,
             rules_infantry_repair_rate: registry_state.rules_infantry_repair_rate,
             rules_maximum_cheer_rate: registry_state.rules_maximum_cheer_rate,
@@ -4666,6 +4678,10 @@ impl RulesPassProcessor {
             section.read_double_bits("URepairRate", self.rules_unit_repair_rate);
         self.rules_infantry_repair_rate =
             section.read_double_bits("IRepairRate", self.rules_infantry_repair_rate);
+        // ReadGeneral67183C..67185D, Rules+760. Shared binary32 scanner,
+        // optional percent scaling, then retained binary64; no type reset.
+        self.rules_charge_to_drain_ratio =
+            section.read_double_bits("ChargeToDrainRatio", self.rules_charge_to_drain_ratio);
         // ReadGeneral's Prism block (`0x0067114F..0x006711B8`), current values
         // as defaults; RulesClass keeps them across Full_Init's reset.
         self.rules_prism_support = self.rules_prism_support.read_pass(section);
@@ -6697,6 +6713,7 @@ impl RulesPassProcessor {
                     rules_no_parachute_max_fall_rate: self.rules_no_parachute_max_fall_rate,
                     rules_survivor_divisors: self.rules_survivor_divisors,
                     rules_infantry_repair_step: self.rules_infantry_repair_step,
+                    rules_charge_to_drain_ratio: self.rules_charge_to_drain_ratio,
                     rules_unit_repair_rate: self.rules_unit_repair_rate,
                     rules_infantry_repair_rate: self.rules_infantry_repair_rate,
                     rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,

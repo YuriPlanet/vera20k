@@ -361,6 +361,7 @@ pub(crate) fn build_sidebar_view_with_spec(
                 is_armed: entry.is_armed,
                 is_superweapon: entry.is_superweapon,
                 super_weapon_section: entry.super_weapon_section,
+                super_weapon_display: entry.super_weapon_display,
             }
         })
         .collect();
@@ -510,6 +511,7 @@ struct BuildEntry {
     is_armed: bool,
     is_superweapon: bool,
     super_weapon_section: Option<String>,
+    super_weapon_display: Option<crate::sim::superweapon::SuperWeaponDisplay>,
 }
 
 fn collect_build_entries(
@@ -551,11 +553,12 @@ fn collect_build_entries(
                 queued_count: 0,
                 is_building_this_type: !sw.is_ready && sw.is_online && sw.progress > 0.0,
                 is_ready: sw.is_ready,
-                is_on_hold: false,
+                is_on_hold: !sw.is_online,
                 is_armed: armed_sw_section
                     .is_some_and(|s| s.eq_ignore_ascii_case(&sw.display_name)),
                 is_superweapon: true,
                 super_weapon_section: Some(sw.display_name.clone()),
+                super_weapon_display: Some(sw.display),
             });
         }
     }
@@ -593,6 +596,7 @@ fn collect_build_entries(
                 is_armed: false,
                 is_superweapon: false,
                 super_weapon_section: None,
+                super_weapon_display: None,
             }
         })
         .collect();
@@ -629,6 +633,7 @@ fn collect_build_entries(
                 is_armed: false,
                 is_superweapon: false,
                 super_weapon_section: None,
+                super_weapon_display: None,
             });
         }
     }
@@ -656,6 +661,7 @@ mod tests {
                 is_ready: true,
                 is_online: online,
                 should_flash_tab: false,
+                display: Default::default(),
                 can_fire: online,
                 can_afford: affordable,
             }];

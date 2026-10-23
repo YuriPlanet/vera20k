@@ -349,6 +349,22 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
+            SimSoundEvent::SuperWeaponActivation { sw_type, world } => {
+                let Some(sw) = rules.super_weapon(sim.interner().resolve(sw_type)) else {
+                    continue;
+                };
+                // Launch6CD176 uses PlayAt7509E0 before effect receivers.
+                // No activation EVA belongs to the ForceShield case.
+                if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::ForceShield
+                    && let Some(sound_id) = &sw.start_sound
+                {
+                    output.push(GameSoundEvent::VocAt {
+                        sound_id: sound_id.clone(),
+                        source: Some(anim_world_sound_source(world)),
+                    });
+                }
+                continue;
+            }
             SimSoundEvent::SuperWeaponLaunched {
                 owner,
                 sw_type,
@@ -363,6 +379,16 @@ pub(super) fn dispatch_sim_sound_events(
                 let Some(sw) = rules.super_weapon(type_name) else {
                     continue;
                 };
+                // ForceShield already played at its original producer point;
+                // this post-receiver fact only owns the local cleanup tail.
+                if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::ForceShield {
+                    if owner_is_local(sim.interner(), owner, local_owner_name) {
+                        output.push(GameSoundEvent::EvaRemove {
+                            event: "EVA_ForceShieldReady".to_owned(),
+                        });
+                    }
+                    continue;
+                }
                 let cue =
                     superweapon_launch_cue(sw.kind, &rules.general, sw.start_sound.as_deref());
                 // The EVA column is picked for the *listening* client's

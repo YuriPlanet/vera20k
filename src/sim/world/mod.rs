@@ -911,6 +911,13 @@ pub enum SimSoundEvent {
         line: bool,
         eva: Option<AllianceEva>,
     },
+    /// ForceShield Launch6CD176 plays StartSound before its blackout/curtain
+    /// receivers. The later SuperWeaponLaunched owns only that case's local
+    /// selection/Ready-line cleanup; the original signed deck is retained.
+    SuperWeaponActivation {
+        sw_type: InternedId,
+        world: crate::sim::anim_class::AnimWorldCoord,
+    },
     /// A superweapon fired. `sw_type` is the interned `[SuperWeaponTypes]`
     /// section name of the launched weapon — the discriminator the app layer
     /// needs to pick the cue, and the same object gamemd switches on.
@@ -925,7 +932,8 @@ pub enum SimSoundEvent {
     /// (`0x006CD7BF`); and both for `MultiMissile`, `PsychicDominator` and
     /// `GeneticConverter`. Carrying the type rather than a per-case flag is
     /// what lets the app read both the case index and `StartSound=` off one
-    /// object, as `param_1[10]` does.
+    /// object, as `param_1[10]` does. ForceShield carries its activation
+    /// through SuperWeaponActivation at the original earlier call site.
     SuperWeaponLaunched {
         owner: InternedId,
         sw_type: InternedId,

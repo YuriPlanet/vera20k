@@ -180,6 +180,8 @@ pub struct SidebarItem {
     /// only when `is_superweapon=true`. Multiple SWs may share `type_id`
     /// (SidebarImage), but section names are unique.
     pub super_weapon_section: Option<String>,
+    /// Derived native Super display; factories keep their own status owner.
+    pub super_weapon_display: Option<crate::sim::superweapon::SuperWeaponDisplay>,
 }
 
 impl SidebarItem {

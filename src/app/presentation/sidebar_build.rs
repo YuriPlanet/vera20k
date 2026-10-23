@@ -341,20 +341,35 @@ fn ready_text_scale(ui_scale: f32) -> f32 {
     ui_scale
 }
 
-/// Status text drawn over a cameo, or `None` when the slot has none.
-///
-/// gamemd's strip draw uses one status slot: `TXT_READY` while an item waits
-/// to be placed, and `TXT_HOLD` while its production is suspended. Both use
-/// the same dark strip and the same anchor rules, and a slot never shows both.
+/// The CSF labels shared by the cameo's single status strip and its glyphs.
+#[derive(Clone, Copy)]
+pub(crate) struct CameoStatusLabels<'a> {
+    pub ready: &'a str,
+    pub hold: &'a str,
+    pub charging: &'a str,
+    pub active: &'a str,
+}
+
+/// The same status selection sizes the dark strip and draws its text.
 fn cameo_status_text<'a>(
     item: &crate::ui::sidebar::SidebarItem,
-    ready_text: &'a str,
-    hold_text: &'a str,
+    labels: CameoStatusLabels<'a>,
 ) -> Option<&'a str> {
+    if let Some(display) = item.super_weapon_display {
+        // SuperClass::NameReadiness6CC2B0 owns held/drain status; raw Ready
+        // can stay set while draining and must not override this projection.
+        use crate::sim::superweapon::SuperWeaponStatus;
+        return display.status.map(|status| match status {
+            SuperWeaponStatus::Hold => labels.hold,
+            SuperWeaponStatus::Ready => labels.ready,
+            SuperWeaponStatus::Charging => labels.charging,
+            SuperWeaponStatus::Active => labels.active,
+        });
+    }
     if item.is_ready {
-        Some(ready_text)
+        Some(labels.ready)
     } else if item.is_on_hold {
-        Some(hold_text)
+        Some(labels.hold)
     } else {
         None
     }
@@ -373,6 +388,11 @@ fn shows_queue_badge(item: &crate::ui::sidebar::SidebarItem) -> bool {
 /// `0x006A9812..0x006A981D`) and draws frame `progress + 1`, so a build shows
 /// its clock from the frame it starts, before its first step.
 fn shows_build_clock(item: &crate::ui::sidebar::SidebarItem) -> bool {
+    // SuperClass::ShouldDrawProgress6CDE90 draws every drain phase, even
+    // with raw Ready set or a stage-zero charge. Factory policy is separate.
+    if let Some(display) = item.super_weapon_display {
+        return display.draw_progress;
+    }
     !item.is_ready && (item.is_building_this_type || item.is_on_hold || item.progress > 0.0)
 }
 
@@ -417,13 +437,35 @@ pub(crate) fn build_gclock_instance(
     slot: Rect,
     camera_offset: [f32; 2],
 ) -> Option<SpriteInstance> {
-    let last_frame = gclock_frames.len().checked_sub(1)?;
+    // Factory stage projection retains its existing clamp and rounding.
     let progress = progress.clamp(0.0, 1.0);
-    // StripDraw6A9E97 uses actual Factory stage +1: unfinished stages0..53
-    // select frames1..54. Atlas length is not the production stage scale.
-    // A custom short atlas retains the existing final-frame clamp residual.
-    let stage = (progress * f32::from(crate::sim::production::PRODUCTION_STEPS)).round() as usize;
-    let frame_index = (stage + 1).min(last_frame);
+    let stage = (progress * f32::from(crate::sim::production::PRODUCTION_STEPS)).round() as i32;
+    build_gclock_stage_instance(gclock_frames, stage, slot, camera_offset)
+}
+
+fn build_cameo_clock_instance(
+    gclock_frames: &[SidebarChromeEntry],
+    item: &crate::ui::sidebar::SidebarItem,
+    slot: Rect,
+    camera_offset: [f32; 2],
+) -> Option<SpriteInstance> {
+    if let Some(display) = item.super_weapon_display {
+        build_gclock_stage_instance(gclock_frames, display.stage, slot, camera_offset)
+    } else {
+        build_gclock_instance(gclock_frames, item.progress, slot, camera_offset)
+    }
+}
+
+fn build_gclock_stage_instance(
+    gclock_frames: &[SidebarChromeEntry],
+    stage: i32,
+    slot: Rect,
+    camera_offset: [f32; 2],
+) -> Option<SpriteInstance> {
+    let last_frame = gclock_frames.len().checked_sub(1)?;
+    // StripClass::Draw6A9E97 adds one before SHP signed-frame admission.
+    // Stage-1 selects frame0; lower frames refuse. Short art still clamps.
+    let frame_index = usize::try_from(stage.wrapping_add(1)).ok()?.min(last_frame);
     let gclock_entry = &gclock_frames[frame_index];
     let gclock_rect = place_canvas_crop_in_slot(
         slot,
@@ -488,8 +530,7 @@ pub(crate) fn build_darken_instance(
 pub(crate) fn build_sidebar_cameo_instances(
     state: &AppState,
     view: &SidebarView,
-    ready_text: &str,
-    hold_text: &str,
+    labels: CameoStatusLabels<'_>,
 ) -> SidebarCameoInstances {
     let Some(atlas) = state
         .match_state
@@ -542,7 +583,7 @@ pub(crate) fn build_sidebar_cameo_instances(
             ..Default::default()
         });
         if shows_build_clock(item)
-            && let Some(instance) = build_gclock_instance(gclock_frames, item.progress, slot, co)
+            && let Some(instance) = build_cameo_clock_instance(gclock_frames, item, slot, co)
         {
             gclock_instances.push(instance);
         }
@@ -566,7 +607,7 @@ pub(crate) fn build_sidebar_cameo_instances(
 
         // Dark strip overlay behind the cameo status text (alpha 0xAF).
         // When a queue badge is also present, the status strip shifts left.
-        if let Some(status_text) = cameo_status_text(item, ready_text, hold_text)
+        if let Some(status_text) = cameo_status_text(item, labels)
             && state.renderer.bit_font.darken_texture().is_some()
         {
             let s = state.match_state.match_presentation.ui_scale;
@@ -640,8 +681,7 @@ pub(crate) struct SidebarTextInstances {
 pub(crate) fn build_sidebar_text_instances(
     state: &AppState,
     view: &SidebarView,
-    ready_text: &str,
-    hold_text: &str,
+    labels: CameoStatusLabels<'_>,
     ready_tint: [f32; 3],
 ) -> SidebarTextInstances {
     if state.renderer.bit_font.darken_texture().is_none() {
@@ -666,7 +706,7 @@ pub(crate) fn build_sidebar_text_instances(
         // When a queue badge is also shown, the status text shifts left to
         // avoid overlap (original: x = cameo_x+2, flags 0x42 vs centered
         // cameo_x+30, 0x142).
-        if let Some(status_text) = cameo_status_text(item, ready_text, hold_text) {
+        if let Some(status_text) = cameo_status_text(item, labels) {
             let text_w = state.renderer.bit_font.text_width(status_text) as f32 * ts;
             let text_x = if has_queue_badge {
                 slot.x + READY_PAD_X * ts
@@ -796,12 +836,136 @@ mod tests {
         assert_eq!(instance.uv_origin, frames[2].uv_origin);
     }
 
+    /// The UI receives the simulation's derived native display, independently
+    /// of raw Ready: drain phase2 still draws a clock and its own status.
+    #[test]
+    fn super_cameo_preserves_native_display_through_status_and_signed_clock() {
+        use crate::sim::intern::StringInterner;
+        use crate::sim::superweapon::{SuperWeaponDisplay, SuperWeaponStatus, SuperWeaponView};
+        use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
+        use crate::ui::sidebar::{self, SidebarChromeLayoutSpec, SidebarTab};
+        let mut interner = StringInterner::new();
+        let id = interner.intern("Drain");
+        // Supplied display output at the client boundary. Core histories
+        // cover the actual Grant/AI/click arithmetic that produces it.
+        let project = |display, online| {
+            let supers = [SuperWeaponView {
+                type_id: id,
+                display_name: "Drain".into(),
+                progress: 1.0,
+                is_ready: true,
+                is_online: online,
+                should_flash_tab: false,
+                can_fire: online,
+                can_afford: true,
+                display,
+            }];
+            let cameos = sidebar::cameo_order::CameoStrips::layout_fixture(&[], &[], &supers);
+            sidebar::build_sidebar_view_with_spec(
+                SidebarChromeLayoutSpec::default(),
+                800.0,
+                600.0,
+                SidebarTab::Defense,
+                0,
+                0,
+                0,
+                None,
+                &[],
+                &[],
+                &[],
+                None,
+                &[],
+                Some(&interner),
+                &supers,
+                &SidebarGadgetState::default(),
+                None,
+                None,
+                None,
+                None,
+                [None; 2],
+                &cameos,
+            )
+            .items
+            .pop()
+            .unwrap()
+        };
+        let labels = super::CameoStatusLabels {
+            ready: "Ready",
+            hold: "On Hold",
+            charging: "Charging",
+            active: "Firestorm On",
+        };
+        let display = SuperWeaponDisplay {
+            stage: 0,
+            draw_progress: true,
+            status: Some(SuperWeaponStatus::Active),
+        };
+        let mut item = project(display, true);
+        assert_eq!(item.super_weapon_display, Some(display));
+        assert!(item.is_ready && super::shows_build_clock(&item));
+        assert_eq!(
+            super::cameo_status_text(&item, labels),
+            Some("Firestorm On")
+        );
+        let frames: Vec<_> = (0..55)
+            .map(|frame| SidebarChromeEntry {
+                uv_origin: [frame as f32, 0.0],
+                uv_size: [1.0; 2],
+                pixel_size: [60.0, 48.0],
+            })
+            .collect();
+        let slot = item.cameo_rect();
+        let draw = |item: &sidebar::SidebarItem| {
+            super::build_cameo_clock_instance(&frames, item, slot, [0.0; 2])
+        };
+        assert_eq!(
+            draw(&item).unwrap().uv_origin,
+            frames[1].uv_origin,
+            "native integer stage wins over raw Ready and float progress"
+        );
+        item = project(
+            SuperWeaponDisplay {
+                status: Some(SuperWeaponStatus::Hold),
+                ..display
+            },
+            false,
+        );
+        assert!(item.is_ready && item.is_on_hold);
+        assert_eq!(super::cameo_status_text(&item, labels), Some("On Hold"));
+        item = project(
+            SuperWeaponDisplay {
+                stage: -1,
+                status: Some(SuperWeaponStatus::Charging),
+                ..display
+            },
+            true,
+        );
+        assert_eq!(super::cameo_status_text(&item, labels), Some("Charging"));
+        assert_eq!(draw(&item).unwrap().uv_origin, frames[0].uv_origin);
+        item = project(
+            SuperWeaponDisplay {
+                stage: -2,
+                status: None,
+                ..display
+            },
+            true,
+        );
+        assert!(draw(&item).is_none());
+        assert_eq!(super::cameo_status_text(&item, labels), None);
+    }
+
     /// The cameo status slot carries `TXT_HOLD` for suspended production, the
     /// same way it carries `TXT_READY` for a placement-ready building. Before
     /// this, a held or unaffordable item looked identical to an idle one.
     #[test]
     fn cameo_status_text_covers_ready_and_hold() {
-        use super::cameo_status_text;
+        use super::{CameoStatusLabels, cameo_status_text};
+        let labels = CameoStatusLabels {
+            ready: "Ready",
+            hold: "On Hold",
+            charging: "Charging",
+            active: "Active",
+        };
 
         let mut item = crate::ui::sidebar::SidebarItem {
             rect: Rect {
@@ -827,18 +991,16 @@ mod tests {
             is_armed: false,
             is_superweapon: false,
             super_weapon_section: None,
+            super_weapon_display: None,
         };
-        assert_eq!(cameo_status_text(&item, "Ready", "On Hold"), None);
+        assert_eq!(cameo_status_text(&item, labels), None);
 
         item.is_on_hold = true;
-        assert_eq!(
-            cameo_status_text(&item, "Ready", "On Hold"),
-            Some("On Hold")
-        );
+        assert_eq!(cameo_status_text(&item, labels), Some("On Hold"));
 
         // Ready wins when a slot somehow reports both.
         item.is_ready = true;
-        assert_eq!(cameo_status_text(&item, "Ready", "On Hold"), Some("Ready"));
+        assert_eq!(cameo_status_text(&item, labels), Some("Ready"));
     }
 
     /// A build shows its clock from its start frame, at progress 0, and while
@@ -871,6 +1033,7 @@ mod tests {
             is_armed: false,
             is_superweapon: false,
             super_weapon_section: None,
+            super_weapon_display: None,
         };
         assert!(!shows_build_clock(&item), "queued behind another build");
         item.is_building_this_type = true;
