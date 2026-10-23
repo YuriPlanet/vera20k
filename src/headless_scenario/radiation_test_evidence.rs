@@ -46,7 +46,6 @@ pub fn visit_paid_deso_light_lifecycle(
     // Match the App's initial batches. HeadlessScenario::tick's 66ms lane is
     // deliberately not used: the accepted capture advances ordinary22ms.
     scene.runtime.simulation.batch_path_searches();
-    scene.runtime.simulation.batch_target_scans();
     let owner = scene.sim().session.current_house().unwrap();
     assert_eq!(scene.sim().resolve(owner), local_name);
     assert_eq!(

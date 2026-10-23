@@ -777,7 +777,6 @@ impl Simulation {
         self.fog.settle_plane_writes();
         self.reveal_viewers.end();
         self.finish_batched_path_searches();
-        self.finish_batched_scans();
         walked?;
         Ok(outcome)
     }
