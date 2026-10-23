@@ -416,13 +416,17 @@ impl SightFacts {
     }
 }
 
-/// Native Foot65C/664 countdown, one logical native client per viewer. The
-/// constructor initial value is retained so an unseen/nonallied viewer never
-/// borrows another viewer's timer history. Admission release does not reset it.
+/// Native Foot65C/664 countdown and Techno264 sight height, one logical
+/// native client per viewer. Admission release does not reset either history.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct SightRefreshTimers {
     initial: crate::sim::timer::CdTimer,
-    by_viewer: std::collections::BTreeMap<InternedId, crate::sim::timer::CdTimer>,
+    by_viewer: std::collections::BTreeMap<InternedId, SightRefreshClient>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+struct SightRefreshClient {
+    timer: crate::sim::timer::CdTimer,
+    last_height: i32,
 }
 impl SightRefreshTimers {
     pub(crate) fn at_construction(frame: u32) -> Self {
@@ -432,13 +436,27 @@ impl SightRefreshTimers {
         }
     }
     pub(crate) fn timer(&self, viewer: InternedId) -> crate::sim::timer::CdTimer {
-        self.by_viewer.get(&viewer).copied().unwrap_or(self.initial)
+        self.by_viewer
+            .get(&viewer)
+            .map_or(self.initial, |state| state.timer)
+    }
+    pub(crate) fn last_height(&self, viewer: InternedId) -> i32 {
+        // Techno constructor6F2D9C initializes264 independently of sight250.
+        self.by_viewer
+            .get(&viewer)
+            .map_or(0, |state| state.last_height)
+    }
+    fn client_mut(&mut self, viewer: InternedId) -> &mut SightRefreshClient {
+        self.by_viewer.entry(viewer).or_insert(SightRefreshClient {
+            timer: self.initial,
+            last_height: 0,
+        })
+    }
+    pub(crate) fn set_last_height(&mut self, viewer: InternedId, height: i32) {
+        self.client_mut(viewer).last_height = height;
     }
     pub(crate) fn reload(&mut self, viewer: InternedId, frame: u32) {
-        self.by_viewer.insert(
-            viewer,
-            crate::sim::timer::CdTimer::started(frame as i32, 15),
-        );
+        self.client_mut(viewer).timer = crate::sim::timer::CdTimer::started(frame as i32, 15);
     }
 
     /// The viewer has its own countdown.
