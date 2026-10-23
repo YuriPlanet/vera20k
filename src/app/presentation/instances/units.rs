@@ -42,6 +42,10 @@ mod naval_draw_tests;
 #[path = "unit_body_draw_tests.rs"]
 mod unit_body_draw_tests;
 
+#[cfg(test)]
+#[path = "aircraft_body_point_tests.rs"]
+mod aircraft_body_point_tests;
+
 const NATIVE_TURRET_FIRST_START: u8 = 32;
 const NATIVE_TURRET_FIRST_END_EXCLUSIVE: u8 = 160;
 
@@ -184,6 +188,100 @@ fn render_slope_phase(
 /// completed, including the unsigned wrap at the initial committed frame.
 const fn display_binary_frame_for_committed_session(committed_binary_frame: u32) -> u32 {
     committed_binary_frame.wrapping_sub(1)
+}
+
+/// Aircraft4145FD and Foot4DAF5E each add the locomotor's Draw_Point.
+/// Keep this body point separate from the physical/interpolated entity anchor.
+fn aircraft_body_anchor(
+    sim: &crate::sim::world::Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    anchor: [f32; 2],
+) -> [f32; 2] {
+    if entity.category() != EntityCategory::Aircraft {
+        return anchor;
+    }
+    let Some((taking_off, landing)) = entity
+        .locomotor
+        .as_ref()
+        .and_then(|locomotor| locomotor.fly_phase_callbacks())
+    else {
+        return anchor;
+    };
+    let Some(object) = rules.and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
+    else {
+        return anchor;
+    };
+    let height = crate::sim::movement::air_movement::queried_flight_height(entity, cells);
+    let base = crate::sim::movement::air_movement::aircraft_landing_base(
+        entity,
+        sim.entities(),
+        rules.map(|rules| (rules, sim.interner())),
+    );
+    let delta = crate::render::locomotor_visual::fly_draw_point_y(
+        display_binary_frame_for_committed_session(sim.session().binary_frame()),
+        object.is_dropship(),
+        taking_off,
+        landing,
+        height,
+        base,
+    ) as f32;
+    [anchor[0], anchor[1] + delta + delta]
+}
+
+/// Stable and posed Aircraft bodies share this CPU submission and final point.
+/// Atlas lookup stays with the callers; ground shadows keep their own point.
+fn aircraft_body_piece(
+    sim: &crate::sim::world::Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    entry: UnitSpriteEntry,
+    source: UnitTextureSource,
+    anchor: [f32; 2],
+    axis: crate::render::batch::DepthAxis,
+    depth_row_offset: f32,
+    z: u8,
+    tint: [f32; 3],
+    palette_light: crate::render::palette_light::PaletteLight,
+    draw_state: DrawState,
+    z_adjust: f32,
+) -> ObjectPieceInstance {
+    let center = aircraft_body_anchor(sim, entity, rules, cells, anchor);
+    let bounds = composite_draw_bounds([(entry, center)]);
+    let (composite_rect, split) = bounds.depth_rect(false);
+    let depth = super::helpers::compute_sprite_depth_params(
+        axis.origin_y,
+        axis.world_height,
+        ground_sort_row(
+            entity,
+            center[1] + entry.offset_y + entry.pixel_size[1] + depth_row_offset,
+        ),
+        z,
+    );
+    ObjectPieceInstance {
+        target: match source {
+            UnitTextureSource::Stable(page) => ObjectTexture::UnitAtlasPage(page),
+            UnitTextureSource::Pose(page) => ObjectTexture::UnitPosePage(page),
+        },
+        render_z: RenderZPolicy::ReadOnly,
+        instance: SpriteInstance {
+            position: [center[0] + entry.offset_x, center[1] + entry.offset_y],
+            size: entry.pixel_size,
+            uv_origin: entry.uv_origin,
+            uv_size: entry.uv_size,
+            depth,
+            tint,
+            palette_light,
+            alpha: 1.0,
+            draw_state,
+            z_adjust,
+            z_gradient: pack_voxel_z_gradient(ZGradient::Vertical, split),
+            zshape_origin: composite_rect,
+            ..Default::default()
+        },
+    }
 }
 
 /// Depth key for one voxel body, from the screen row it was drawn at.
@@ -507,6 +605,8 @@ pub(crate) fn build_unit_instances(
             };
             emit_pose_sprite(
                 state,
+                sim,
+                light_cells.as_ref(),
                 &mut pieces,
                 entity,
                 &key,
@@ -570,7 +670,8 @@ pub(crate) fn build_unit_instances(
                 barrel_pitch: 0,
             };
             if let Some((entry, texture_source)) = unit_entry_for_pose(state, atlas, &key, None) {
-                let depth_y: f32 = sy + entry.offset_y + entry.pixel_size[1] + dock_depth_y_offset;
+                let depth_y: f32 =
+                    center_y + entry.offset_y + entry.pixel_size[1] + dock_depth_y_offset;
                 let depth: f32 = body_sort_depth(state, entity, depth_y, interp_z);
                 let voxel_adjust =
                     super::foot_depth::unit_z_adjust(state, entity, true, None) as f32;
@@ -604,27 +705,46 @@ pub(crate) fn build_unit_instances(
                         &mut pieces,
                     );
                 }
-                let bounds = composite_draw_bounds([(entry, [center_x, center_y])]);
-                let (composite_rect, split) =
-                    bounds.depth_rect(super::foot_depth::unit_bridge_split(state, entity, true));
-                let body_draw_state =
-                    unit_body_draw_state(state, entity, draw_state, split, bounds);
-                let sprite = SpriteInstance {
-                    position: [center_x + entry.offset_x, center_y + entry.offset_y],
-                    size: entry.pixel_size,
-                    uv_origin: entry.uv_origin,
-                    uv_size: entry.uv_size,
-                    depth,
-                    tint: body_tint,
-                    palette_light: body_light,
-                    alpha,
-                    draw_state: body_draw_state,
-                    z_adjust: voxel_adjust,
-                    z_gradient: pack_voxel_z_gradient(ZGradient::Vertical, split),
-                    zshape_origin: composite_rect,
-                    ..Default::default()
-                };
-                push_unit_sprite(texture_source, sprite, &mut pieces);
+                if entity.category() == EntityCategory::Aircraft {
+                    pieces.push(aircraft_body_piece(
+                        sim,
+                        entity,
+                        state.rules(),
+                        light_cells.as_ref(),
+                        entry,
+                        texture_source,
+                        [center_x, center_y],
+                        super::helpers::depth_axis(state),
+                        dock_depth_y_offset,
+                        interp_z,
+                        body_tint,
+                        body_light,
+                        draw_state,
+                        voxel_adjust,
+                    ));
+                } else {
+                    let bounds = composite_draw_bounds([(entry, [center_x, center_y])]);
+                    let (composite_rect, split) = bounds
+                        .depth_rect(super::foot_depth::unit_bridge_split(state, entity, true));
+                    let body_draw_state =
+                        unit_body_draw_state(state, entity, draw_state, split, bounds);
+                    let sprite = SpriteInstance {
+                        position: [center_x + entry.offset_x, center_y + entry.offset_y],
+                        size: entry.pixel_size,
+                        uv_origin: entry.uv_origin,
+                        uv_size: entry.uv_size,
+                        depth,
+                        tint: body_tint,
+                        palette_light: body_light,
+                        alpha,
+                        draw_state: body_draw_state,
+                        z_adjust: voxel_adjust,
+                        z_gradient: pack_voxel_z_gradient(ZGradient::Vertical, split),
+                        zshape_origin: composite_rect,
+                        ..Default::default()
+                    };
+                    push_unit_sprite(texture_source, sprite, &mut pieces);
+                }
                 if native_shadow {
                     emit_unit_shadow_sprite(
                         native_shadow,
@@ -1029,6 +1149,8 @@ fn ground_pose_with_angles(
 /// callers emit their shadow separately in native order.
 fn emit_pose_sprite(
     state: &AppState,
+    sim: &crate::sim::world::Simulation,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
     pieces: &mut Vec<ObjectPieceInstance>,
     entity: &crate::sim::game_entity::GameEntity,
     key: &UnitSpriteKey,
@@ -1051,6 +1173,25 @@ fn emit_pose_sprite(
     else {
         return;
     };
+    if entity.category() == EntityCategory::Aircraft {
+        pieces.push(aircraft_body_piece(
+            sim,
+            entity,
+            state.rules(),
+            cells,
+            entry,
+            UnitTextureSource::Pose(entry.page),
+            [center_x, center_y],
+            super::helpers::depth_axis(state),
+            0.0,
+            z,
+            tint,
+            palette_light,
+            draw_state,
+            super::foot_depth::unit_z_adjust(state, entity, true, None) as f32,
+        ));
+        return;
+    }
     let depth_y = center_y + entry.offset_y + entry.pixel_size[1];
     let depth = body_sort_depth(state, entity, depth_y, z);
     let voxel_adjust = super::foot_depth::unit_z_adjust(state, entity, true, None) as f32;

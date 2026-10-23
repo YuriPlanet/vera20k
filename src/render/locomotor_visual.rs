@@ -133,6 +133,34 @@ pub fn facing_step_screen_position(entity: &GameEntity, facing: u16, distance: i
     crate::util::lepton::absolute_leptons_to_screen(x, y, z)
 }
 
+/// Fly Draw_Point4CF830 returns X0 and this screen-row delta. It is separate
+/// from physical XYZ projection; Aircraft414613 and Foot4DAF6D each add it.
+pub(crate) fn fly_draw_point_y(
+    frame: u32,
+    is_dropship: bool,
+    taking_off: bool,
+    landing: bool,
+    height: i32,
+    landing_base: i32,
+) -> i32 {
+    if is_dropship || taking_off || landing || height <= landing_base {
+        return 0;
+    }
+    use crate::util::native_x87::{NativeF64Bits, X87Chop53 as X};
+    //4CF8D8 uses signed IDIV20; the qword argument store precedes table sine.
+    let angle = X::mul(
+        X::load_i32((frame as i32) % 20),
+        X::load_f64(NativeF64Bits::from_bits(0x3fd4_1b2f_769c_f0e0)).unwrap(),
+    );
+    let angle = X::load_f64(X::store_f64(angle).unwrap()).unwrap();
+    let sine = crate::util::retail_trig::TrigTable::embedded().sin_from_table(angle);
+    let scaled = X::mul(
+        sine,
+        X::load_f64(NativeF64Bits::from_bits(0x3ff8_0000_0000_0000)).unwrap(),
+    );
+    X::ftol_i32_low_masked(X::add(scaled, X::load_f64(NativeF64Bits::HALF).unwrap()))
+}
+
 /// The whole upward lift [`screen_position`] draws `entity` with, in pixels:
 /// `AdjustForZ` of its exact Location Z, or of its stored level. A draw that
 /// cancels its lift for depth or per-pixel Z
@@ -215,6 +243,48 @@ fn z_free_screen_position(position: &crate::sim::components::Position) -> (f32, 
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
+
+    #[test]
+    fn fly_draw_point_matches_original_signed_frames_and_phase_gates() {
+        let ordinary = [0, 0, 1, 1, 1, 2, 1, 1, 1, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0];
+        for (frame, expected) in ordinary.into_iter().enumerate() {
+            assert_eq!(
+                fly_draw_point_y(frame as u32, false, false, false, 60, 0),
+                expected
+            );
+        }
+        // Original IDIV/table/ftol controls; negative peaks are asymmetric.
+        for (frame, expected) in [
+            (-1, 0),
+            (-5, 0),
+            (-15, 1),
+            (-19, 0),
+            (-20, 0),
+            (i32::MIN, 0),
+            (i32::MIN + 1, 0),
+            (i32::MAX, 1),
+            (0, 0),
+        ] {
+            assert_eq!(
+                fly_draw_point_y(frame as u32, false, false, false, 1500, 0),
+                expected
+            );
+        }
+        for (dropship, takeoff, landing, height, base, expected) in [
+            (true, false, false, 1500, 0, 0),
+            (false, true, false, 1500, 0, 0),
+            (false, false, true, 1500, 0, 0),
+            (false, false, false, 0, 0, 0),
+            (false, false, false, 100, 100, 0),
+            (false, false, false, 99, 100, 0),
+            (false, false, false, 101, 100, 2),
+        ] {
+            assert_eq!(
+                fly_draw_point_y(5, dropship, takeoff, landing, height, base),
+                expected
+            );
+        }
+    }
 
     // -- F14 boundary tests: sim-side callers moved here so `sim/` never
     // names `crate::render`. Coverage preserved verbatim. --
