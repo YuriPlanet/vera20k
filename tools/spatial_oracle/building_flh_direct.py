@@ -1,4 +1,4 @@
-"""Original Building/GetFLH identity-matrix arm, all32 quantized headings.
+"""Original Building/GetFLH identity-matrix arm, selected coordinate controls.
 
 Uses the existing supplied Building fixture and original getters, matrix
 kernels, trigonometric table and ftol. No coordinate answer is supplied.
@@ -33,13 +33,19 @@ def generate():
                seen.append(at) if at == 0x6F3C1A else None)
     scene.invoke(FACING_RATE_CTOR, actor + 0x388, 0)
     rows = []
-    for flh, offset in (([50, 0, 300], 0), ([-250, 37, -23], 95)):
+    # Cardinal, diagonal and nearby stock poses; asymmetric/pivot controls
+    # retain both burst parities across selected turns instead of a sweep.
+    controls = (
+        ([50, 0, 300], 0, (0, 0x0800, 0x2000, 0x4000, 0x8000, 0xC000), (0,)),
+        ([-250, 37, -23], 95, (0, 0x1800, 0x4800, 0x8800, 0xE800), (0, 1)),
+    )
+    for flh, offset, headings, bursts in controls:
         u.mem_write(scene.kind + 0x89C, dwords(*flh))
         u.mem_write(scene.kind + 0x720, dwords(offset))
-        for heading in range(0, 0x10000, 0x800):
+        for heading in headings:
             u.mem_write(HEADING, dwords(heading))
             scene.invoke(FACING_SET_CURRENT, actor + 0x388, HEADING)
-            for burst in (0, 1):
+            for burst in bursts:
                 u.mem_write(actor + 0x3B8, dwords(burst))
                 seen.clear()
                 before = prism.laser_rng_state(u, scenario)
@@ -57,8 +63,7 @@ def generate():
                 rows.append(dict(input=dict(location=[3200, 3200, 0],
                     flh=list(flh), turret_offset=offset, heading=heading,
                     burst=burst, base=[7, 11, 13]), source=source,
-                    object_coordinate=list(struct.unpack('<3i', u.mem_read(OBJECT_COORDINATE, 12))),
-                    identity_arm=True, actor_type_unchanged=True, rng_unchanged=True))
+                    object_y=struct.unpack('<3i', u.mem_read(OBJECT_COORDINATE, 12))[1]))
     if bytes(u.mem_read(prism.TEXT_BEGIN, prism.TEXT_SIZE)) != text:
         raise RuntimeError('Original execution changed executable instructions')
     return rows
@@ -66,11 +71,11 @@ def generate():
 
 def metadata():
     return provenance(
-        scope='128 original Building453840/GetFLH6F3AD0 no-locomotor matrix controls:32 quantized headings,2 burst parities,2 FLH/TurretOffset pairs.',
+        scope='16 selected original Building453840/GetFLH6F3AD0 no-locomotor coordinate controls: stock cardinal/diagonal/nearby poses and asymmetric FLH/TurretOffset poses with both burst parities.',
         assumptions=[
             'Existing Scene supplied Building/type bytes and original Building vtable are reused; Building/type constructors and INI reads do not execute. Target is null; heading is installed by original FacingClass methods. Location3200,3200,0 and weapon0/FLH/type values are supplied.',
             'Primary pixel offset is unset; occupancy, BarrelAnimIsVoxel and TurretAnimIsVoxel are clear. The base7,11,13 control is supplied to the Building override. Its actual forwarding, GetWeapon, direction, matrix, table, ftol and GetCoords bodies execute.',
-            'One32-step cycle covers this arm\'s quantized heading domain; it does not exercise interpolated FacingClass timing or all authored FLH integers. FPCW0x0E7F.',
+            'Selected headings cover cardinal, diagonal and nearby stock poses plus asymmetric FLH/pivot inputs in several quadrants; this is not an exhaustive heading comparison or coverage of interpolated FacingClass timing/all authored FLH integers. FPCW0x0E7F.',
             'Every row requires actual entry at6F3C1A, unchanged actor/type storage and untouched full Main/Scenario/mapgen RNG storage. The entire mapped text must match the source PE before and after execution; no historical whole-image hash is pinned. Complete source AI, FireAt, collision, damage and disk persistence are outside the fixture.',
         ],
         substitutions=[

@@ -8,10 +8,12 @@ Building/type construction and native INI reads are outside this fixture.
 Unrelated Prism callbacks remain installed but are not reached. No coordinate
 or math result is supplied.
 
-The 128 controls cover all 32 quantized headings and both burst parities for
-two authored input pairs: FLH `50,0,300` / TurretOffset `0`, and asymmetric FLH
-`-250,37,-23` / TurretOffset `95`. The location is `3200,3200,0`, weapon index
-zero and target null. Original FacingClass methods install each heading.
+The 16 selected coordinate controls use two authored input pairs: FLH
+`50,0,300` / TurretOffset `0`, and asymmetric FLH
+`-250,37,-23` / TurretOffset `95`. Six stock poses retain cardinal, diagonal
+and nearby headings; five asymmetric/pivot poses retain both burst parities
+in several quadrants. These are focused regressions, not a heading sweep.
+The location is `3200,3200,0`, weapon index zero and target null. Original FacingClass methods install each heading.
 Occupancy, primary pixel offset, barrel voxel and turret voxel arms are disabled.
 Building's nonzero incoming base `7,11,13` is dropped by the actual override.
 

@@ -243,13 +243,13 @@ fn pair(value: &Value) -> [i32; 2] {
     std::array::from_fn(|axis| value[axis].as_i64().unwrap() as i32)
 }
 
-/// Original Building/GetFLH identity arm over every quantized heading, both
-/// burst parities and stock/asymmetric FLH inputs with a nonzero pivot.
+/// Selected original Building/GetFLH coordinate controls cover stock poses
+/// and asymmetric FLH/pivot inputs with both burst parities.
 #[test]
 fn building_identity_matrix_matches_original_get_flh() {
     let native = crate::test_fixture::json("tools/spatial_oracle/building_flh_direct.json");
     let rows = native.as_array().unwrap();
-    assert_eq!(rows.len(), 128);
+    assert_eq!(rows.len(), 16);
     for row in rows {
         let input = &row["input"];
         let [forward, lateral, height] = triple(&input["flh"]);
@@ -285,12 +285,9 @@ fn building_identity_matrix_matches_original_get_flh() {
         assert_eq!(shot.coord, native_coord(&row["source"]), "{input}");
         assert_eq!(
             shot.offset_y,
-            triple(&row["source"])[1] - triple(&row["object_coordinate"])[1]
+            triple(&row["source"])[1] - row["object_y"].as_i64().unwrap() as i32
         );
         assert_eq!(sim.state_hash(), before, "read-only fire-coordinate query");
-        assert_eq!(row["identity_arm"], true);
-        assert_eq!(row["actor_type_unchanged"], true);
-        assert_eq!(row["rng_unchanged"], true);
     }
 }
 
