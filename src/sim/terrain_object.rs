@@ -662,7 +662,7 @@ impl TerrainObjectStore {
     /// TerrainLimbo71C930 / Unmark71C070 remove the requested instance.
     /// Raw bits are literally AND-cleared even with another Terrain present;
     /// RecalcZone483C80 instead reads the first surviving Terrain's full mask.
-    pub(crate) fn limbo(
+    pub(crate) fn begin_limbo(
         &mut self,
         stable_id: u64,
         raw_occupation: &mut RawCellOccupationGrid,
@@ -691,21 +691,68 @@ impl TerrainObjectStore {
                 grid.set_terrain_object_occupation(source_cell, occupation);
             }
         }
-        if let Some(terrain) = self.objects.get_mut(&stable_id) {
-            terrain.lifecycle = TerrainObjectLifecycle::Limbo;
-        }
+        true
+    }
+
+    /// ObjectLimbo5F4E9E writes InLimbo after sound/Logic removal. Keeping
+    /// this separate from Mark(UP) lets the world visit those shared owners
+    /// while the retained Location and live object remain readable.
+    pub(crate) fn finish_limbo(&mut self, stable_id: u64) {
+        let terrain = self
+            .objects
+            .get_mut(&stable_id)
+            .expect("admitted Terrain Limbo");
+        let source_cell = terrain.cell();
+        terrain.lifecycle = TerrainObjectLifecycle::Limbo;
         self.membership_epoch = self.membership_epoch.wrapping_add(1);
         self.animations.remove(&stable_id);
         // The cell admission index represents the first Terrain type, not animation state.
         // Immutable type projection on every instance keeps its invalidation
         // local to this owner even for non-animated SpawnsTiberium types.
         self.refresh_spawning_cell(source_cell);
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    fn limbo(
+        &mut self,
+        stable_id: u64,
+        raw_occupation: &mut RawCellOccupationGrid,
+        resolved_terrain: Option<&mut ResolvedTerrainGrid>,
+        occupy_list_bound: bool,
+    ) -> bool {
+        if !self.begin_limbo(
+            stable_id,
+            raw_occupation,
+            resolved_terrain,
+            occupy_list_bound,
+        ) {
+            return false;
+        }
+        self.finish_limbo(stable_id);
+        true
+    }
+
+    /// ObjectUnInit5F6625 clears Alive only after the complete Limbo returns.
+    pub(crate) fn finish_uninit(&mut self, stable_id: u64) -> bool {
+        let Some(terrain) = self
+            .objects
+            .get_mut(&stable_id)
+            .filter(|t| t.object_alive())
+        else {
+            return false;
+        };
+        debug_assert!(
+            !terrain.is_live(),
+            "Terrain must complete Limbo before UnInit"
+        );
+        terrain.lifecycle = TerrainObjectLifecycle::Destroyed;
         true
     }
 
     /// ObjectUnInit5F661F..5F6625 delegates Limbo and clears Alive even when
     /// the caller is not a lethal damage receiver.
-    pub(crate) fn uninit(
+    #[cfg(any(test, feature = "test-support"))]
+    fn uninit(
         &mut self,
         stable_id: u64,
         raw_occupation: &mut RawCellOccupationGrid,
@@ -725,8 +772,7 @@ impl TerrainObjectStore {
             resolved_terrain,
             occupy_list_bound,
         );
-        self.objects.get_mut(&stable_id).unwrap().lifecycle = TerrainObjectLifecycle::Destroyed;
-        true
+        self.finish_uninit(stable_id)
     }
 
     /// Receive against the live objects. The recursion guard belongs to the
@@ -817,7 +863,8 @@ impl TerrainObjectStore {
 
     /// Finalize only after nested C4 receivers return, against the same live
     /// objects.
-    pub(crate) fn finalize_lethal(
+    #[cfg(any(test, feature = "test-support"))]
+    fn finalize_lethal(
         &mut self,
         raw_occupation: &mut RawCellOccupationGrid,
         finalizing_terrain: &mut BTreeSet<u64>,

@@ -5250,6 +5250,21 @@ impl RuleSet {
         }
     }
 
+    pub(crate) fn bind_terrain_type_sound_references(
+        &mut self,
+        processed: &ProcessedRulesLayers,
+        sounds: &crate::rules::sound_ini::SoundRegistry,
+    ) {
+        for (name, section) in processed.terrain_type_read_sections() {
+            if let Some(terrain) = self
+                .terrain_object_types
+                .get_mut(&name.to_ascii_uppercase())
+            {
+                terrain.bind_sound_references(section, sounds);
+            }
+        }
+    }
+
     /// Resolve Ares refusal cues through the same fixed EVAMD catalog that
     /// owns process playback. The retained INI body supplies each read pass.
     pub fn bind_type_eva_references(
@@ -5311,10 +5326,9 @@ impl RuleSet {
         }
         let processed = RulesLayerStack::new(ini.clone()).process()?;
         let mut rules = Self::from_processed_rules(&processed)?;
-        rules.bind_type_sound_references(
-            processed.ini(),
-            &crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(&catalog)),
-        );
+        let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(&catalog));
+        rules.bind_type_sound_references(processed.ini(), &sounds);
+        rules.bind_terrain_type_sound_references(&processed, &sounds);
         Ok(rules)
     }
 

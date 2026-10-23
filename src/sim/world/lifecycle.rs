@@ -3232,6 +3232,35 @@ impl Simulation {
         self.unregister_logic_object(stable_id)
     }
 
+    /// TerrainLimbo71C930 -> ObjectLimbo5F4D30: Mark(UP), Display removal,
+    /// ambient hard-stop5F4D81, custom detach5F4D89, Logic removal5F4DD3,
+    /// then Limbo flags. The Terrain-specific navigation suffix follows.
+    fn limbo_terrain_with_context(&mut self, stable_id: u64, context: UninitContext<'_>) -> bool {
+        let Some(terrain) = self.terrain_objects.get(stable_id) else {
+            return false;
+        };
+        let cell = terrain.cell();
+        let was_live = terrain.is_live();
+        if was_live {
+            self.notify_pointer_expired(stable_id, context);
+            let occupy_list_bound = self.terrain_occupy_list_bound(stable_id, context.rules());
+            let unmarked = self.terrain_objects.begin_limbo(
+                stable_id,
+                &mut self.substrate.raw_cell_occupation,
+                self.resolved_terrain.as_mut(),
+                occupy_list_bound,
+            );
+            debug_assert!(unmarked);
+            self.substrate.display.remove(stable_id);
+            self.object_sound_conceal(stable_id, context.rules());
+            context.effects().flush_sound(self, context.rules());
+            self.unregister_logic_object(stable_id);
+            self.terrain_objects.finish_limbo(stable_id);
+        }
+        self.finish_terrain_navigation_changes(context.rules(), &[cell]);
+        was_live
+    }
+
     /// Terminal Terrain/Bullet/Wave objects leave Logic immediately but retain
     /// their physical store identity until the common late delete drain.
     ///
@@ -3250,25 +3279,12 @@ impl Simulation {
             .get(stable_id)
             .is_some_and(|terrain| terrain.object_alive())
         {
-            let cell = self.terrain_objects.get(stable_id).unwrap().cell();
-            let was_live = self.terrain_objects.get(stable_id).unwrap().is_live();
             // ObjectUnInit5F6616 and ObjectLimbo5F4D61 announce while this
             // instance is retained. TerrainLimbo71C930 unlinks only its ID;
             // a successor keeps its own Logic/Display, Stage and cell query.
             self.notify_pointer_expired(stable_id, context);
-            // ObjectLimbo5F4D45 returns before DetachAll when already in
-            // Limbo, including the retained zero-cell Terrain constructor.
-            if was_live {
-                self.notify_pointer_expired(stable_id, context);
-            }
-            let occupy_list_bound = self.terrain_occupy_list_bound(stable_id, context.rules());
-            self.terrain_objects.uninit(
-                stable_id,
-                &mut self.substrate.raw_cell_occupation,
-                self.resolved_terrain.as_mut(),
-                occupy_list_bound,
-            );
-            self.finish_terrain_navigation_changes(context.rules(), &[cell]);
+            self.limbo_terrain_with_context(stable_id, context);
+            self.terrain_objects.finish_uninit(stable_id);
         }
         if self.classify_object(stable_id) == Some(ObjectKind::Projectile) {
             // `ObjectClass::UnInit @ 0x005F65F0` broadcasts the bullet's
@@ -3279,9 +3295,9 @@ impl Simulation {
             // Bullet's membership. The later scalar destructor repeats once.
             self.notify_pointer_expired(stable_id, context);
         }
-        // The same UnInit's Limbo (vt+0xD4) detaches a dying tree's custom
-        // sound (`object_sound`).
-        self.detach_custom_sound(stable_id);
+        if self.classify_object(stable_id) != Some(ObjectKind::Terrain) {
+            self.detach_custom_sound(stable_id);
+        }
         let _ = self.unregister_non_entity_object(stable_id);
         self.substrate.pending_delete.queue_object(stable_id);
         #[cfg(any(test, feature = "test-support"))]
@@ -3296,27 +3312,23 @@ impl Simulation {
         &mut self,
         lethal: crate::sim::terrain_object::TerrainLethalDamage,
         finalizing: &mut std::collections::BTreeSet<u64>,
-        navigation_changed_cells: &mut Vec<(u16, u16)>,
         context: UninitContext<'_>,
     ) -> bool {
-        // 71BB69->5F5311, 71BB73->5F6616, then 5F4D61. Repeated
-        // notifications do not rematch a Bullet already repaired to Cell.
-        for _ in 0..3 {
-            self.notify_pointer_expired(lethal.stable_id, context);
+        if !finalizing.contains(&lethal.stable_id) {
+            return false;
         }
-        let occupy_list_bound = self.terrain_occupy_list_bound(lethal.stable_id, context.rules());
-        let finalized = self.terrain_objects.finalize_lethal(
-            &mut self.substrate.raw_cell_occupation,
-            finalizing,
-            navigation_changed_cells,
-            lethal,
-            self.resolved_terrain.as_mut(),
-            occupy_list_bound,
-        );
+        // 71BB69->5F5311 precedes ordinary UnInit's5F6616/5F4D61.
+        // Repeated announcements do not rematch a repaired Bullet.
+        self.notify_pointer_expired(lethal.stable_id, context);
+        let finalized = self
+            .terrain_objects
+            .get(lethal.stable_id)
+            .is_some_and(|terrain| terrain.object_alive());
         if finalized {
             let retired = self.retire_non_entity_object(lethal.stable_id, context);
             debug_assert!(retired);
         }
+        finalizing.remove(&lethal.stable_id);
         finalized
     }
 
@@ -6207,15 +6219,7 @@ impl Simulation {
             // suffix still queries/recalculates the retained cell; the
             // already-InLimbo prefix performs no unmark or extra expiry.
             if (game_state as u8) != 0 {
-                let cell = self.terrain_objects.get(stable_id).unwrap().cell();
-                let occupy_list_bound = self.terrain_occupy_list_bound(stable_id, rules);
-                self.terrain_objects.limbo(
-                    stable_id,
-                    &mut self.substrate.raw_cell_occupation,
-                    self.resolved_terrain.as_mut(),
-                    occupy_list_bound,
-                );
-                self.finish_terrain_navigation_changes(rules, &[cell]);
+                self.limbo_terrain_with_context(stable_id, context);
             }
         }
         if kind == Some(ObjectKind::Projectile) {

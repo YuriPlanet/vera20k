@@ -311,6 +311,254 @@ fn a_type_ambient_sound_plays_every_visit_and_limbo_hard_stops_it() {
 }
 
 #[test]
+fn retail_terrain_ambient_reaches_logic_saved_load_and_lethal_cleanup() {
+    use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
+    use crate::rules::retail_ini_fixture::retail_ini;
+
+    let (Some(root), Some(art), Some(sound), Some(mode)) = (
+        retail_ini("rulesmd.ini"),
+        retail_ini("artmd.ini"),
+        retail_ini("soundmd.ini"),
+        retail_ini("mpbattlemd.ini"),
+    ) else {
+        return;
+    };
+    let catalog = std::sync::Arc::new(SoundRegistry::from_ini(&sound));
+    assert!(catalog.get("OreMineExtract").is_some());
+    let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+        root,
+        None,
+        art,
+        catalog,
+        Default::default(),
+    )
+    .unwrap();
+    // Authored activation: retain the real drill/weapon data, permitting damage.
+    let rules = owner
+        .load_scenario(
+            NativeScenarioRulesPrefix::NonCampaign(Some(&mode)),
+            &IniFile::from_str("[TIBTRE01]\nAmbientSound=OreMineExtract\nImmune=no\n"),
+        )
+        .unwrap()
+        .into_parts()
+        .0;
+    let mut sim = Simulation::new();
+    sim.playfield_bounds =
+        Some(crate::map::playfield::PlayfieldBounds::from_normalized_local_size(8, 0, 0, 8, 8));
+    sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+        32,
+        32,
+        crate::map::resolved_terrain::test_clear_cell,
+    ));
+    crate::sim::terrain_spawn::construct_terrain_objects(
+        &mut sim,
+        &[crate::map::overlay::TerrainObject {
+            name: "TIBTRE01".into(),
+            rx: 5,
+            ry: 6,
+        }],
+        &rules,
+        false,
+    );
+    let id = *sim.terrain_objects.objects().keys().next().unwrap();
+    crate::sim::terrain_object::mark_terrain_occupation(
+        sim.terrain_objects.get(id).unwrap(),
+        sim.resolved_terrain.as_mut(),
+    );
+    assert!(sim.rebuild_dynamic_navigation(&rules));
+    assert_eq!(sim.live_object_order_snapshot(), [id]);
+    sim.set_custom_sound(id, Some("CowAmbient"));
+    sim.advance_live_object_pass(&rules, None, FrameEffects::default())
+        .unwrap();
+    let starts = |events: &[SimSoundEvent]| {
+        assert!(matches!(events, [
+            SimSoundEvent::AnimationStarted { anim_id: ambient, sound_id, world },
+            SimSoundEvent::AnimationStarted { anim_id: custom, sound_id: custom_sound, .. },
+        ] if *ambient == ambient_sound_owner(id) && sound_id == "OreMineExtract"
+            && *custom == custom_sound_owner(id) && custom_sound == "CowAmbient"
+            && (world.x, world.y, world.z) == (WAYPOINT_COORD.x, WAYPOINT_COORD.y, 0)));
+    };
+    starts(sim.sound_events.as_slice());
+    sim.sound_events.clear_for_test();
+
+    let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "terrain-ambient", 0);
+    let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .sim;
+    restored.restore_after_snapshot_load().unwrap();
+    let saved = crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+    let processed = crate::util::save_codec::deserialize(&saved).unwrap();
+    let loaded_rules = owner.project_saved_scenario_rules(&processed).unwrap();
+    // The app restores the resolved map separately from retained save state.
+    restored.resolved_terrain = sim.resolved_terrain.clone();
+    assert!(restored.rebuild_dynamic_navigation(&loaded_rules));
+    let zone_slots = |world: &Simulation| {
+        let graph = world
+            .zone_grid()
+            .unwrap()
+            .hierarchy_for(crate::rules::locomotor_type::MovementZone::Normal)
+            .unwrap();
+        std::array::from_fn::<_, 3, _>(|level| graph.level(level).unwrap().record_slot_count())
+    };
+    let initial_slots = zone_slots(&sim);
+    assert_eq!(zone_slots(&restored), initial_slots);
+    restored
+        .advance_live_object_pass(&loaded_rules, None, FrameEffects::default())
+        .unwrap();
+    starts(restored.sound_events.as_slice());
+    restored.sound_events.clear_for_test();
+
+    // Direct UnInit and a lethal receiver must stop +3C before detaching +50.
+    let stops = |events: &[SimSoundEvent]| {
+        assert!(matches!(events, [
+            SimSoundEvent::AnimationStopped { anim_id, stop_sound_id: None, .. },
+            SimSoundEvent::ObjectSoundDetached { owner },
+        ] if *anim_id == ambient_sound_owner(id) && *owner == custom_sound_owner(id)));
+    };
+    struct StopBoundary {
+        id: u64,
+        delivered: std::cell::Cell<usize>,
+        stopped: std::cell::Cell<bool>,
+    }
+    impl crate::sim::world::SoundBoundary for StopBoundary {
+        fn consume(&self, sim: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+            for event in events.iter().skip(self.delivered.get()) {
+                if matches!(event, SimSoundEvent::AnimationStopped { anim_id, .. }
+                    if *anim_id == ambient_sound_owner(self.id))
+                {
+                    // ObjectLimbo5F4D79..5F4DD3: cell/Display are gone;
+                    // the synchronous audio consumer still sees Live/Logic.
+                    let terrain = sim.terrain_objects.get(self.id).unwrap();
+                    assert!(terrain.is_live() && terrain.in_logic_vector());
+                    assert_ne!(sim.terrain_objects.id_at((5, 6)), Some(self.id));
+                    assert_eq!(sim.substrate.display.layer_of(self.id), None);
+                    self.stopped.set(true);
+                }
+            }
+            self.delivered.set(events.len());
+        }
+        fn delivered(&self) -> usize {
+            self.delivered.get()
+        }
+    }
+    let boundary = || StopBoundary {
+        id,
+        delivered: Default::default(),
+        stopped: Default::default(),
+    };
+    let direct = boundary();
+    assert!(
+        sim.retire_non_entity_object(
+            id,
+            crate::sim::world::UninitContext::with_rules(&rules)
+                .with_effects(FrameEffects::for_sound(&direct))
+        )
+    );
+    assert!(direct.stopped.get());
+    stops(sim.sound_events.as_slice());
+    let direct_slots = zone_slots(&sim);
+    assert_ne!(
+        direct_slots, initial_slots,
+        "installed hierarchy must exercise local repair"
+    );
+    let warhead_ref = restored.intern("AP");
+    let lethal = boundary();
+    restored.commit_noncombat_aoe_receivers(
+        &loaded_rules,
+        None,
+        &[crate::sim::combat::combat_aoe::AreaDamageReceiver::Terrain(
+            crate::sim::combat::TerrainDamageEvent {
+                stable_id: id,
+                rx: 5,
+                ry: 6,
+                damage: 1000,
+                distance_leptons: 0,
+                warhead_ref,
+                near_center_ic_isolation_eligible: false,
+            },
+        )],
+        FrameEffects::for_sound(&lethal),
+    );
+    assert!(lethal.stopped.get());
+    stops(restored.sound_events.as_slice());
+    assert_eq!(
+        zone_slots(&restored),
+        direct_slots,
+        "native TerrainLimbo71CA2A..71CA51 publishes once for direct and lethal UnInit; receiver delivery must not replay it"
+    );
+    assert!(!restored.terrain_objects.get(id).unwrap().object_alive());
+    assert!(restored.live_object_order_snapshot().is_empty());
+    restored.sound_events.clear_for_test();
+    restored
+        .advance_live_object_pass(&loaded_rules, None, FrameEffects::default())
+        .unwrap();
+    assert!(restored.sound_events.is_empty());
+}
+
+#[test]
+fn terrain_ambient_retains_only_its_reached_rules_reads() {
+    use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
+    let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+        IniFile::from_str(
+            "[TerrainTypes]\n0=DRILL\n[DRILL]\nSpawnsTiberium=yes\nAmbientSound=testambient\n\
+             [VehicleTypes]\n0=COLLIDE\n[COLLIDE]\nAmbientSound=CowAmbient\n",
+        ),
+        Some(IniFile::from_str("[DRILL]\nAmbientSound=Unknown\n")),
+        IniFile::from_str("[DRILL]\nAmbientSound=CowAmbient\n"),
+        std::sync::Arc::new(sounds()),
+        Default::default(),
+    )
+    .unwrap();
+    let mut rules = owner
+        .load_scenario(
+            NativeScenarioRulesPrefix::NonCampaign(Some(&IniFile::from_str(
+                "[DRILL]\nAmbientSound= \n",
+            ))),
+            &IniFile::from_str("[DRILL]\nAmbientSound=none\n"),
+        )
+        .unwrap()
+        .into_parts()
+        .0;
+    // ObjectRead5F93FB retains the registered ID after empty/unknown/none;
+    // TerrainRead71DEBB reads Rules, independently of fixed ART sound text.
+    assert_eq!(
+        rules
+            .terrain_object_type_case_insensitive("DRILL")
+            .unwrap()
+            .ambient_sound(),
+        Some("TestAmbient")
+    );
+    owner
+        .find_or_allocate_map_terrain_type("COLLIDE", &mut rules)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        rules
+            .terrain_object_type_case_insensitive("COLLIDE")
+            .unwrap()
+            .ambient_sound(),
+        None
+    );
+    let bytes = crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+    let processed = crate::util::save_codec::deserialize(&bytes).unwrap();
+    let restored = owner.project_saved_scenario_rules(&processed).unwrap();
+    assert_eq!(
+        restored
+            .terrain_object_type_case_insensitive("DRILL")
+            .unwrap()
+            .ambient_sound(),
+        Some("TestAmbient")
+    );
+    assert_eq!(
+        restored
+            .terrain_object_type_case_insensitive("COLLIDE")
+            .unwrap()
+            .ambient_sound(),
+        None
+    );
+}
+
+#[test]
 fn a_custom_sound_reaches_the_hash_and_a_snapshot_restore_rejects_its_missing_object() {
     let mut sim = Simulation::new();
     let empty = sim.state_hash();

@@ -6922,8 +6922,8 @@ impl Simulation {
     /// receipts publish their Recalc only. A destroyed terrain object follows
     /// `TerrainClass::Limbo` @ `0x0071C930`: Recalc (`0x0071CA2A`), then
     /// AssignOrphanedCellZone (`0x0071CA42`) and the local graph update
-    /// (`0x0071CA51`) outside the ScenarioInit scope. Deaths are published
-    /// after the receiver batch, not inside each Limbo.
+    /// (`0x0071CA51`) outside the ScenarioInit scope. Production Terrain
+    /// Limbo publishes synchronously before the following receiver.
     fn finish_terrain_navigation_changes(
         &mut self,
         rules: &RuleSet,

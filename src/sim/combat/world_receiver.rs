@@ -914,10 +914,9 @@ pub(crate) fn commit_terrain(
     // ObjectReceiveDamage5F57AF calls DetachAll before returning lethal4
     // to Terrain71B920. Its observers run before Terrain's nested C4 and
     // the three later DetachAll/UnInit/Limbo announcements.
-    world.notify_pointer_expired(
-        lethal.stable_id,
-        crate::sim::world::UninitContext::new(rules, overlay_registry),
-    );
+    let uninit_context =
+        crate::sim::world::UninitContext::new(rules, overlay_registry).with_effects(run.effects());
+    world.notify_pointer_expired(lethal.stable_id, uninit_context);
 
     if lethal.spawns_tiberium
         && let Some(c4_warhead) = rules.warhead(&rules.bridge_warheads.c4_name)
@@ -953,12 +952,7 @@ pub(crate) fn commit_terrain(
         // whose complete active-YR body is RET; there is no queued effect.
     }
 
-    world.terrain_lethal_uninit(
-        lethal,
-        &mut run.finalizing_terrain,
-        &mut run.navigation_changed_cells,
-        crate::sim::world::UninitContext::new(rules, overlay_registry),
-    );
+    world.terrain_lethal_uninit(lethal, &mut run.finalizing_terrain, uninit_context);
     (effects, under_attack_events)
 }
 

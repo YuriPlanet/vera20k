@@ -52,7 +52,7 @@
 //! RESIDUALS:
 //! - A waypoint index the action reader rejects (native `-1`) reads the slot
 //!   before the waypoint array; VERA plays nothing.
-//! - Anim, Bullet, Wave and Terrain types do not bind AmbientSound
+//! - Anim, Bullet and Wave types do not bind AmbientSound
 //!   (dormant: no retail one sets it).
 
 use super::{FrameEffects, SimSoundEvent, Simulation};
@@ -242,7 +242,7 @@ impl Simulation {
         true
     }
 
-    /// `ObjectClass::Limbo`'s handle teardown for a Techno
+    /// `ObjectClass::Limbo`'s handle teardown for a Techno or Terrain
     /// (`0x005F4D81`, `0x005F4D89`).
     pub(crate) fn object_sound_conceal(&mut self, id: u64, rules: &RuleSet) {
         if self.object_ambient_sound(id, rules).is_some()
@@ -326,10 +326,18 @@ impl Simulation {
     }
 
     fn object_ambient_sound<'r>(&self, id: u64, rules: &'r RuleSet) -> Option<&'r str> {
-        let entity = self.substrate.entities.get(id)?;
-        self.object_type(entity.type_ref(), rules)?
-            .ambient_sound
-            .as_deref()
+        if let Some(entity) = self.substrate.entities.get(id) {
+            return self
+                .object_type(entity.type_ref(), rules)?
+                .ambient_sound
+                .as_deref();
+        }
+        // TerrainAI71C738 calls the same ObjectAI5F3E70; its vt+88
+        // returns TerrainType+1F4, not a same-named Techno type.
+        let terrain = self.terrain_objects.get(id)?;
+        rules
+            .terrain_object_type_case_insensitive(self.interner.resolve(terrain.type_ref()))?
+            .ambient_sound()
     }
 }
 

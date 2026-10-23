@@ -703,6 +703,12 @@ impl ProcessedRulesLayers {
             .filter_map(ProcessedType::terrain_projection)
     }
 
+    /// The actual family's admitted Rules history, including empty bodies of
+    /// late constructor-only Types; another family's equal ID is independent.
+    pub(crate) fn terrain_type_read_sections(&self) -> impl Iterator<Item = (&str, &IniSection)> {
+        self.member_states(RulesTypeFamily::Terrain, |member| &member.body)
+    }
+
     /// TerrainReadMap71CAD2 calls FindOrAllocate71E2A0 immediately before
     /// this row's instance constructor. No Rules/ART pass is replayed here.
     pub(crate) fn find_or_allocate_map_terrain_type(

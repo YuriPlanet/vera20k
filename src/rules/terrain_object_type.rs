@@ -24,6 +24,9 @@ pub struct TerrainObjectType {
     /// Inherited `ObjectTypeClass::ReadINI @ 0x005F92D0` AlphaImage buffer
     /// (`+0x213`, `char[25]`), separate from TerrainType art metadata.
     pub(crate) alpha_image: String,
+    /// ObjectTypeCtor5F7140 starts at-1. The process owner resolves only this
+    /// Terrain member's reached Rules reads through ObjectRead5F93C1..5F9403.
+    ambient_sound: Option<String>,
     /// Inherited IsLogic, initialized by TerrainType ctor71DB1E and cleared
     /// by the reached IsVeinhole post-read71DF05. It is not an INI key.
     is_logic: bool,
@@ -139,6 +142,7 @@ impl TerrainObjectType {
             image_file: image.image().to_string(),
             theater: image.theater(),
             alpha_image: section.read_object_alpha_image(""),
+            ambient_sound: None,
             is_logic: read_state.is_logic,
             spawns_tiberium: section.read_bool("SpawnsTiberium", false),
             is_animated: section.read_bool("IsAnimated", false),
@@ -220,6 +224,20 @@ impl TerrainObjectType {
 
     pub(crate) fn bind_armor(&mut self, armor: crate::rules::armor::ArmorId) {
         self.armor_id = armor;
+    }
+
+    pub(crate) fn bind_sound_references(
+        &mut self,
+        section: &IniSection,
+        sounds: &crate::rules::sound_ini::SoundRegistry,
+    ) {
+        // TerrainRead71DEBB inherits ObjectRead5F93E4: own Rules section,
+        // ReadString128, registered Voc lookup, current-ID retention on misses.
+        self.ambient_sound = sounds.read_rules_reference(section, "AmbientSound");
+    }
+
+    pub(crate) fn ambient_sound(&self) -> Option<&str> {
+        self.ambient_sound.as_deref()
     }
 }
 
