@@ -2129,10 +2129,9 @@ impl MapLoadInitial {
         rules.bind_building_buildup_assets(asset_manager, &map_data.header.theater);
         rules.bind_building_rubble_assets(asset_manager, theater_ext, &map_data.header.theater);
         rules.bind_terrain_assets(
-            &rules_ini,
             asset_manager,
             theater_ext,
-            &map_data.header.theater,
+            crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
         );
         rules.bind_animation_sequences(&infantry_sequences);
         drop(variant_draw);
@@ -3048,13 +3047,13 @@ pub(crate) fn load_map_from_initial(
     ));
     crate::app::loading::init_helpers::bind_rules_asset_closure(
         &mut rules,
-        &rules_ini,
         &fixed_art_ini,
         &overlay_registry,
         &roots,
         asset_manager,
         theater_ext,
         &map_data.header.theater,
+        crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
     )?;
     // `Read_Map_Section_And_IsoMapPacks @ 0x004ACE70` snapshots the fresh
     // prefix before theater Tile##Anim resolution, then sets the cursor from

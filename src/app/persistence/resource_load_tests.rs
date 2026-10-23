@@ -91,13 +91,13 @@ fn bound_saved_world(
     );
     init_helpers::bind_rules_asset_closure(
         &mut rules,
-        &processed,
         &fixed_art,
         &overlay_registry,
         &roots,
         assets,
         theater.extension,
         &map.header.theater,
+        crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Saved,
     )
     .expect("retail simulation asset closure");
     let roster =

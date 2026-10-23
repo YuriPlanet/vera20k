@@ -1217,9 +1217,14 @@ impl ArtRegistry {
             // using those values as defaults. Fresh AnimTypes have no image:
             // the base reader skips LoadSHP for their RTTI5 (428E50).
             let image_section = ini.section(&anim_runtime_config.image);
-            let mut anim_theater = image_section.is_some_and(|s| s.read_bool("Theater", false));
-            let mut anim_new_theater =
-                image_section.is_some_and(|s| s.read_bool("NewTheater", false));
+            let (mut anim_theater, mut anim_new_theater) = image_section
+                .map(|image_section| {
+                    crate::rules::object_type::read_object_theater_flags(
+                        image_section,
+                        (false, false),
+                    )
+                })
+                .unwrap_or_default();
             if !anim_runtime_config.image.is_empty() {
                 anim_theater = section.read_bool("Theater", anim_theater);
                 anim_new_theater = section.read_bool("NewTheater", anim_new_theater);

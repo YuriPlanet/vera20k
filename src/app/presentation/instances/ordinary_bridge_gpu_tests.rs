@@ -223,10 +223,8 @@ impl Probe {
             theater.extension,
             &scene.map.header.theater,
             registry,
-            &rules.tiberium_types,
-            &rules.crate_rules,
+            rules,
             &rules_ini,
-            rules.art(),
             None,
             &[],
         )
@@ -1184,10 +1182,8 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
             theater.extension,
             &scene.map.header.theater,
             registry,
-            &rules.tiberium_types,
-            &rules.crate_rules,
+            rules,
             &rules_ini,
-            rules.art(),
             None,
             &rubble_arts,
         )

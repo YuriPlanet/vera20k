@@ -293,8 +293,10 @@ impl ProjectileArtState {
 
     fn read_object_fields(&mut self, section: Option<&IniSection>) {
         if let Some(section) = section {
-            self.theater = section.read_bool("Theater", self.theater);
-            self.new_theater = section.read_bool("NewTheater", self.new_theater);
+            (self.theater, self.new_theater) = crate::rules::object_type::read_object_theater_flags(
+                section,
+                (self.theater, self.new_theater),
+            );
             self.voxel = section.read_bool("Voxel", self.voxel);
             // ObjectType5F9574..5F95E2, after the base ART/Image selection.
             // Constructor5F7090 defaults; original executable controls:

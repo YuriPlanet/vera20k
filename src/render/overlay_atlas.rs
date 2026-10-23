@@ -27,6 +27,8 @@ use crate::rules::overlay_types::{
     OverlayTypeFlags, OverlayTypeRegistry, is_bridge_overlay_index, is_high_bridge_index,
     native_mark_overlay_data,
 };
+use crate::rules::ruleset::RuleSet;
+use crate::rules::terrain_object_type::TerrainObjectType;
 use crate::rules::tiberium_type::TiberiumTypeRegistry;
 
 #[path = "overlay_zshape.rs"]
@@ -492,10 +494,8 @@ pub fn build_overlay_atlas(
     theater_ext: &str,
     theater_name: &str,
     overlay_registry: &OverlayTypeRegistry,
-    tiberium_types: &TiberiumTypeRegistry,
-    crate_rules: &CrateRules,
+    rules: &RuleSet,
     rules_ini: &IniFile,
-    art_registry: &ArtRegistry,
     smudge_types: Option<&crate::rules::smudge_type::SmudgeTypeRegistry>,
     rubble_arts: &[crate::rules::building_rubble::RubbleArt],
 ) -> Option<OverlayAtlas> {
@@ -513,10 +513,8 @@ pub fn build_overlay_atlas(
         theater_ext,
         theater_name,
         overlay_registry,
-        tiberium_types,
-        crate_rules,
+        rules,
         rules_ini,
-        art_registry,
         smudge_types,
         rubble_arts,
     )
@@ -538,13 +536,14 @@ pub(crate) fn build_overlay_atlas_on_device(
     theater_ext: &str,
     theater_name: &str,
     overlay_registry: &OverlayTypeRegistry,
-    tiberium_types: &TiberiumTypeRegistry,
-    crate_rules: &CrateRules,
+    rules: &RuleSet,
     rules_ini: &IniFile,
-    art_registry: &ArtRegistry,
     smudge_types: Option<&crate::rules::smudge_type::SmudgeTypeRegistry>,
     rubble_arts: &[crate::rules::building_rubble::RubbleArt],
 ) -> Option<OverlayAtlas> {
+    let tiberium_types = &rules.tiberium_types;
+    let crate_rules = &rules.crate_rules;
+    let art_registry = rules.art();
     // Collect unique (name, frame) pairs from overlays.
     let mut needed: HashSet<OverlaySpriteKey> = HashSet::new();
 
@@ -723,8 +722,13 @@ pub(crate) fn build_overlay_atlas_on_device(
     // Terrain DrawIt's 16-pixel lift.
     let overlay_sprite_count = rendered.len();
     for &name in &terrain_names {
-        let section = rules_ini.section_or_empty(name);
-        let palette = if section.read_bool("SpawnsTiberium", false) {
+        let Some(terrain_type) = rules.terrain_object_type_case_insensitive(name) else {
+            continue;
+        };
+        let Some(shape_filename) = rules.terrain_shape_filename(name) else {
+            continue;
+        };
+        let palette = if terrain_type.spawns_tiberium {
             unit_palette
         } else {
             theater_palette
@@ -732,12 +736,8 @@ pub(crate) fn build_overlay_atlas_on_device(
         rendered.extend(render_terrain_sprites(
             asset_manager,
             palette,
-            name,
-            section.read_bool("IsAnimated", false),
-            theater_ext,
-            theater_name,
-            rules_ini,
-            art_registry,
+            terrain_type,
+            shape_filename,
         ));
     }
     log::info!(
@@ -925,32 +925,28 @@ fn render_overlay_sprite(
 /// rectangle, so an uncompressed body cut by the screen's bottom edge gets a
 /// slightly different Z. A missing or empty frame draws nothing, as
 /// SHPStruct::GetFrameBounds (0x69E7E0) gives CC_Draw_Shape an empty rectangle.
-/// The image is the type's own name: TerrainType's theater load (0x71DCA0).
+/// The rules asset owner supplies the resident shape selected by original
+/// TerrainTypeClass::ReadINI (0x71DEA0) and InitTheater (0x71DCA0).
 fn render_terrain_sprites(
     asset_manager: &AssetManager,
     palette: &Palette,
-    name: &str,
-    is_animated: bool,
-    theater_ext: &str,
-    theater_name: &str,
-    rules_ini: &IniFile,
-    art_registry: &ArtRegistry,
+    terrain_type: &TerrainObjectType,
+    shape_filename: &str,
 ) -> Vec<RenderedOverlay> {
-    let image_id = art_registry.resolve_overlay_image_id(name, rules_ini);
-    let Some(shp) = art_data::overlay_shp_candidates(
-        Some(art_registry),
-        name,
-        &image_id,
-        theater_ext,
-        theater_name,
-    )
-    .iter()
-    .find_map(|file| ShpFile::from_bytes(asset_manager.get_ref(file)?).ok()) else {
-        log::debug!("Terrain image not found: {name}");
+    let Some(shp) = asset_manager
+        .get_ref(shape_filename)
+        .and_then(|bytes| ShpFile::from_bytes(bytes).ok())
+    else {
+        log::debug!("Terrain image not found: {shape_filename}");
         return Vec::new();
     };
+    let name = &terrain_type.name;
     let half = shp.frames.len() / 2;
-    let frames = if is_animated { 0..half.max(1) } else { 0..2 };
+    let frames = if terrain_type.is_animated {
+        0..half.max(1)
+    } else {
+        0..2
+    };
     let mut sprites = Vec::new();
     for frame in frames {
         // Terrain DrawIt71C208/71C344 passes the full Stage and Stage+half
@@ -1421,17 +1417,19 @@ mod tests {
         directory.write("TIBTRE01.TEM", &bytes);
         let assets = AssetManager::from_loose_root_for_test(directory.path());
         let palette = Palette::from_bytes(&[0; 768]).unwrap();
-        let rules = IniFile::from_str("[TIBTRE01]\nIsAnimated=yes\nSpawnsTiberium=yes\n");
-        let art = ArtRegistry::from_ini(&IniFile::empty());
+        let ini = IniFile::from_str(
+            "[TerrainTypes]\n0=TIBTRE01\n[TIBTRE01]\nIsAnimated=yes\nSpawnsTiberium=yes\n",
+        );
+        let art = IniFile::from_str("[TIBTRE01]\nTheater=yes\n");
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+        rules.bind_terrain_assets(&assets, "TEM", TerrainAssetLoadPhase::Fresh);
         let sprites = render_terrain_sprites(
             &assets,
             &palette,
-            "TIBTRE01",
-            true,
-            "TEM",
-            "TEMPERATE",
-            &rules,
-            &art,
+            rules
+                .terrain_object_type_case_insensitive("TIBTRE01")
+                .unwrap(),
+            rules.terrain_shape_filename("TIBTRE01").unwrap(),
         );
         assert_eq!(sprites.len(), 2, "both pieces of the last pre-reset stage");
         let packed = pack_overlay_pixels(&sprites, 64);
@@ -1515,6 +1513,7 @@ mod tests {
     use crate::rules::crate_rules::CrateRules;
     use crate::rules::ini_parser::IniFile;
     use crate::rules::overlay_types::OverlayTypeRegistry;
+    use crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase;
     use crate::rules::tiberium_type::TiberiumTypeRegistry;
 
     /// `CellClass::DrawOverlay_Body` (0x47F6A0) draws the shape that
@@ -1564,19 +1563,21 @@ mod tests {
         let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;
         };
-        let retail = crate::rules::retail_ini_fixture::retail_battle_rules()
+        let mut retail = crate::rules::retail_ini_fixture::retail_battle_rules()
             .expect("retail Battle rules beside the archives");
         let theater = crate::map::theater::load_theater(&mut assets, "SNOW").unwrap();
+        retail
+            .rules
+            .bind_terrain_assets(&assets, theater.extension, TerrainAssetLoadPhase::Fresh);
         let keys = |name: &str| {
             super::render_terrain_sprites(
                 &assets,
                 &theater.iso_palette,
-                name,
-                false,
-                theater.extension,
-                "SNOW",
-                &retail.processed_rules,
-                retail.rules.art(),
+                retail
+                    .rules
+                    .terrain_object_type_case_insensitive(name)
+                    .unwrap(),
+                retail.rules.terrain_shape_filename(name).unwrap(),
             )
             .into_iter()
             .map(|sprite| sprite.key)
@@ -1594,6 +1595,62 @@ mod tests {
             keys("TREE19"),
             HashSet::from([terrain_body_key("TREE19", 0)])
         );
+    }
+
+    /// Original TerrainTypeClass::InitTheater (0x71DCA0) loads the stored
+    /// type ID, while TerrainTypeClass::ReadINI (0x71DEA0) keeps Image for
+    /// its separate ART/read-time uses. Atlas pixels follow the resident SHP.
+    #[test]
+    fn retail_theater_spawner_atlas_ignores_rules_image_redirect() {
+        use super::*;
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let patch = IniFile::from_str("[TIBTRE01]\nImage=TREE01\n");
+        let mut retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+            "Hills.mmx",
+            &patch,
+        )
+        .expect("retail scenario reader with the authored Image override");
+        let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+        retail
+            .rules
+            .bind_terrain_assets(&assets, theater.extension, TerrainAssetLoadPhase::Fresh);
+        let source = ShpFile::from_bytes(assets.get_ref("TIBTRE01.TEM").unwrap()).unwrap();
+        let sprites = render_terrain_sprites(
+            &assets,
+            &theater.unit_palette,
+            retail
+                .rules
+                .terrain_object_type_case_insensitive("TIBTRE01")
+                .unwrap(),
+            retail.rules.terrain_shape_filename("TIBTRE01").unwrap(),
+        );
+        let packed = pack_overlay_pixels(&sprites, 4096);
+        for (key, frame) in [
+            (terrain_body_key("TIBTRE01", 0), &source.frames[0]),
+            (
+                terrain_shadow_key("TIBTRE01", 0),
+                &source.frames[source.frames.len() / 2],
+            ),
+        ] {
+            let entry = &packed.entries[&key];
+            assert_eq!(
+                entry.pixel_size,
+                [f32::from(frame.frame_width), f32::from(frame.frame_height)]
+            );
+            let x = (entry.uv_origin[0] * packed.width as f32).round() as usize;
+            let y = (entry.uv_origin[1] * packed.height as f32).round() as usize;
+            let width = usize::from(frame.frame_width);
+            for row in 0..usize::from(frame.frame_height) {
+                let start = (y + row) * packed.width as usize + x;
+                assert_eq!(
+                    packed.source_indices[start..start + width],
+                    frame.pixels[row * width..(row + 1) * width],
+                    "{key:?}: physical own-ID body/stencil source"
+                );
+            }
+        }
     }
 
     #[test]

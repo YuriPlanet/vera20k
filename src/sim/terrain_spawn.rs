@@ -858,10 +858,9 @@ mod tests {
         let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
         let mut rules = battle.rules;
         rules.bind_terrain_assets(
-            &battle.processed_rules,
             &assets,
             theater.extension,
-            "TEMPERATE",
+            crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
         );
         assert!(rules.terrain_spawner_frame_count("TIBTRE01").is_some());
         let registry =
@@ -1094,10 +1093,9 @@ mod tests {
         let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
         let mut rules = battle.rules;
         rules.bind_terrain_assets(
-            &battle.processed_rules,
             &assets,
             theater.extension,
-            "TEMPERATE",
+            crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
         );
         let roots = crate::rules::effect_asset_catalog::anim_class_roots(&rules);
         rules.bind_anim_class_assets(&roots, &assets, theater.extension, "TEMPERATE");

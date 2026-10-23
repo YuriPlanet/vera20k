@@ -6334,7 +6334,7 @@ impl RuleSet {
         // defaults across Process calls. Equal current text can admit
         // different Logic members, targets or occupation, so identify the
         // effective fields as well as the current source layers.
-        b"terrain-logic-targeting-and-occupation-v2".hash(&mut hasher);
+        b"terrain-logic-targeting-occupation-and-foundation-v3".hash(&mut hasher);
         self.terrain_object_types
             .iter()
             .map(|(name, terrain)| {
@@ -6345,6 +6345,7 @@ impl RuleSet {
                         terrain.legal_target,
                         terrain.raw_occupation_bits(false),
                         terrain.raw_occupation_bits(true),
+                        terrain.foundation.as_str(),
                     ),
                 )
             })
@@ -7764,25 +7765,10 @@ impl RuleSet {
             dock_patched,
             buildings_checked,
         );
-        let mut terrain_foundations_patched: u32 = 0;
-        for terrain in self.terrain_object_types.values_mut() {
-            if let Some(entry) = art.get(&terrain.name)
-                && let Some(foundation) = entry.foundation
-            {
-                terrain.merge_art_foundation(
-                    crate::rules::foundation::FOUNDATION_TABLE[usize::from(foundation)].name,
-                );
-                terrain_foundations_patched += 1;
-            }
-        }
         log::trace!(
             "Merged infantry art metadata: {} Crawls flags ({} infantry checked)",
             crawls_patched,
             infantry_checked,
-        );
-        log::trace!(
-            "Merged terrain art metadata: {} Foundation values",
-            terrain_foundations_patched,
         );
         self.rebuild_animation_sequences(None);
     }
@@ -8005,19 +7991,20 @@ impl RuleSet {
     /// counts for TIBTRE timing from the active theater's asset bytes.
     pub fn bind_terrain_assets(
         &mut self,
-        rules_ini: &crate::rules::ini_parser::IniFile,
         asset_manager: &crate::assets::asset_manager::AssetManager,
         theater_ext: &str,
-        theater_name: &str,
+        phase: crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase,
     ) {
         self.terrain_assets = crate::rules::terrain_asset_catalog::TerrainAssetCatalog::bind(
-            &self.art_registry,
             &mut self.terrain_object_types,
-            rules_ini,
             asset_manager,
             theater_ext,
-            theater_name,
+            phase,
         );
+    }
+
+    pub fn terrain_shape_filename(&self, name: &str) -> Option<&str> {
+        self.terrain_assets.shape_filename(name)
     }
 
     /// Resolve every building type's Buildup SHP from the active theater's

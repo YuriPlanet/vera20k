@@ -35,6 +35,18 @@ use crate::rules::sound_ini::SoundRegistry;
 use crate::rules::terrain_rules::LandType;
 use crate::util::fixed_math::SimFixed;
 
+/// ObjectTypeClass::ReadINI5F95DC..5F9616 reads fixed ART under its retained
+/// ImageFile. Missing/invalid values preserve each current constructor/read byte.
+pub(crate) fn read_object_theater_flags(
+    image_art: &IniSection,
+    current: (bool, bool),
+) -> (bool, bool) {
+    (
+        image_art.read_bool("Theater", current.0),
+        image_art.read_bool("NewTheater", current.1),
+    )
+}
+
 /// Which type registry an object belongs to.
 ///
 /// Determines which `[XxxTypes]` section listed this object and affects

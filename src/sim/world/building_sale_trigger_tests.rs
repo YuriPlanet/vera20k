@@ -149,7 +149,11 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
     rules.bind_effect_assets(&assets, theater.extension, &map.header.theater);
     rules.bind_building_buildup_assets(&assets, &map.header.theater);
     rules.bind_building_rubble_assets(&assets, theater.extension, &map.header.theater);
-    rules.bind_terrain_assets(&rules_ini, &assets, theater.extension, &map.header.theater);
+    rules.bind_terrain_assets(
+        &assets,
+        theater.extension,
+        crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
+    );
     rules.bind_animation_sequences(&sequences);
     let overlay_shps = crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
         &overlays,

@@ -370,7 +370,11 @@ pub fn load_with_launch_and_ini(
     rules.bind_effect_assets(&assets, theater.extension, &map.header.theater);
     rules.bind_building_buildup_assets(&assets, &map.header.theater);
     rules.bind_building_rubble_assets(&assets, theater.extension, &map.header.theater);
-    rules.bind_terrain_assets(&rules_ini, &assets, theater.extension, &map.header.theater);
+    rules.bind_terrain_assets(
+        &assets,
+        theater.extension,
+        crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
+    );
     let _alpha_image_bindings =
         crate::rules::alpha_image_assets::bind(&rules, &overlay_registry, &assets);
     rules.bind_animation_sequences(&infantry_sequences);

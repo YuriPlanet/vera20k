@@ -2,6 +2,7 @@
 //! come from original CC_Draw_Shape, not another SHP decoder.
 use super::*;
 use crate::render::terrain_draw_gpu_tests::Gpu;
+use crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase;
 
 #[test]
 #[ignore = "requires all retail theater archives and GPU; original stock SHP decoding and atlas binding"]
@@ -28,7 +29,7 @@ fn retail_tibtre_decode_and_atlas_pairs_match_original_shape_draw() {
         let theater = crate::map::theater::load_theater(&mut assets, name).unwrap();
         retail
             .rules
-            .bind_terrain_assets(&retail.processed_rules, &assets, theater.extension, name);
+            .bind_terrain_assets(&assets, theater.extension, TerrainAssetLoadPhase::Fresh);
         let objects: Vec<_> = (1..=3)
             .map(|number| TerrainObject {
                 rx: 0,
@@ -50,10 +51,8 @@ fn retail_tibtre_decode_and_atlas_pairs_match_original_shape_draw() {
             theater.extension,
             name,
             &registry,
-            &retail.rules.tiberium_types,
-            &retail.rules.crate_rules,
+            &retail.rules,
             &retail.processed_rules,
-            retail.rules.art(),
             None,
             &[],
         )

@@ -352,16 +352,17 @@ pub(crate) fn bind_rules_art_metadata(
 
 /// The common post-terrain asset binding order. Saved loading supplies the
 /// complete retained scheduler closure, including authored animations that
-/// have since expired, rather than constructing their objects again.
+/// have since expired, rather than constructing their objects again. The
+/// Terrain phase preserves the distinct fresh/saved shape residency.
 pub(crate) fn bind_rules_asset_closure(
     rules: &mut RuleSet,
-    processed_ini: &IniFile,
     fixed_art: &IniFile,
     overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
     roots: &[String],
     assets: &AssetManager,
     theater_ext: &str,
     theater_name: &str,
+    terrain_phase: crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase,
 ) -> anyhow::Result<()> {
     rules.bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name)?;
     // The strict pass replaces the scheduler set; tolerant bindings must follow.
@@ -371,7 +372,7 @@ pub(crate) fn bind_rules_asset_closure(
     rules.bind_effect_assets(assets, theater_ext, theater_name);
     rules.bind_building_buildup_assets(assets, theater_name);
     rules.bind_building_rubble_assets(assets, theater_ext, theater_name);
-    rules.bind_terrain_assets(processed_ini, assets, theater_ext, theater_name);
+    rules.bind_terrain_assets(assets, theater_ext, terrain_phase);
     let _alpha_image_bindings =
         crate::rules::alpha_image_assets::bind(rules, overlay_registry, assets);
     let sequences = crate::rules::infantry_sequence::parse_infantry_sequence_registry(fixed_art);

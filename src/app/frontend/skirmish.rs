@@ -148,7 +148,6 @@ pub(crate) fn build_overlay_presentation(
         );
     }
 
-    let crate_rules = &rules.crate_rules;
     let art_registry = rules.art();
     let rubble_arts: Vec<_> = rules.building_rubble_arts().cloned().collect();
 
@@ -251,10 +250,8 @@ pub(crate) fn build_overlay_presentation(
             theater_ext,
             theater_name,
             overlay_registry,
-            &rules.tiberium_types,
-            crate_rules,
+            rules,
             rules_ini,
-            art_registry,
             Some(&rules.smudge_types),
             &rubble_arts,
         )

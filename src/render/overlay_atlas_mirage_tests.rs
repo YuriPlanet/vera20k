@@ -3,15 +3,19 @@
 //! Unit73C5F0 then borrows those SHPs without constructing a Terrain object.
 use super::*;
 use crate::render::terrain_draw_gpu_tests::Gpu;
+use crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase;
 
 #[test]
 #[ignore = "requires retail theater archives and GPU; Mirage source catalog closure"]
 fn retail_mirage_catalog_loads_without_placed_terrain() {
     let (_, mut assets) =
         crate::rules::retail_ini_fixture::retail_assets().expect("RA2_DIR supplies retail assets");
-    let retail = crate::rules::retail_ini_fixture::retail_battle_rules()
+    let mut retail = crate::rules::retail_ini_fixture::retail_battle_rules()
         .expect("retail Battle rules and fixed ART");
     let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+    retail
+        .rules
+        .bind_terrain_assets(&assets, theater.extension, TerrainAssetLoadPhase::Fresh);
     let names = &retail.rules.general.default_mirage_disguises;
     assert!(
         !names.is_empty(),
@@ -50,10 +54,8 @@ fn retail_mirage_catalog_loads_without_placed_terrain() {
         theater.extension,
         "TEMPERATE",
         &registry,
-        &retail.rules.tiberium_types,
-        &retail.rules.crate_rules,
+        &retail.rules,
         &retail.processed_rules,
-        retail.rules.art(),
         None,
         &[],
     )
@@ -65,21 +67,10 @@ fn retail_mirage_catalog_loads_without_placed_terrain() {
                 .terrain_object_type_case_insensitive(name)
                 .is_some()
         );
-        let image = retail
-            .rules
-            .art()
-            .resolve_overlay_image_id(name, &retail.processed_rules);
-        let candidates = art_data::overlay_shp_candidates(
-            Some(retail.rules.art()),
-            name,
-            &image,
-            theater.extension,
-            "TEMPERATE",
-        );
-        let bytes = candidates
-            .iter()
-            .find_map(|candidate| assets.get_ref(candidate))
-            .unwrap_or_else(|| panic!("physical registered shape {name}"));
+        let shape_filename = retail.rules.terrain_shape_filename(name).unwrap();
+        let bytes = assets
+            .get_ref(shape_filename)
+            .unwrap_or_else(|| panic!("physical registered shape {name}: {shape_filename}"));
         let native_image = native_images
             .iter()
             .find(|row| row["name"] == name.as_str())

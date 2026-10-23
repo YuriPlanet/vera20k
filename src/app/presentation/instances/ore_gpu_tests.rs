@@ -150,10 +150,8 @@ impl Probe {
                 theater.extension,
                 &scene.map.header.theater,
                 registry,
-                &rules.tiberium_types,
-                &rules.crate_rules,
+                rules,
                 &rules_ini,
-                rules.art(),
                 None,
                 &[],
             )

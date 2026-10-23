@@ -708,6 +708,9 @@ impl ProcessedRulesLayers {
         }
         for (&family, members) in &registry.families {
             for member in members {
+                if let Some(terrain) = &member.terrain_type_read_state {
+                    terrain.validate_saved_state()?;
+                }
                 #[cfg(feature = "ares")]
                 {
                     if member.factory_owners.is_some() != family.object_category().is_some() {
@@ -4673,9 +4676,9 @@ impl RulesPassProcessor {
         // AudioVisual6691E0 runs later in Process, so this uses prior Gravity.
         self.postprocess_weapon_speeds();
         // Building post adds no Type references.
-        self.process_plain_family(RulesTypeFamily::Terrain, pass);
-        self.process_plain_family(RulesTypeFamily::Smudge, pass);
-        self.process_plain_family(RulesTypeFamily::Overlay, pass);
+        self.process_plain_family(RulesTypeFamily::Terrain, pass, fixed_art);
+        self.process_plain_family(RulesTypeFamily::Smudge, pass, fixed_art);
+        self.process_plain_family(RulesTypeFamily::Overlay, pass, fixed_art);
         self.process_particle_family(pass);
         self.process_particle_system_family(pass);
         self.process_voxel_anim_family(pass);
@@ -5897,7 +5900,12 @@ impl RulesPassProcessor {
         }
     }
 
-    fn process_plain_family(&mut self, family: RulesTypeFamily, pass: &IniFile) {
+    fn process_plain_family(
+        &mut self,
+        family: RulesTypeFamily,
+        pass: &IniFile,
+        fixed_art: &IniFile,
+    ) {
         let mut index = 0;
         while index < self.family_len(family) {
             if let Some((_id, raw, _effective)) = self.begin_rules_member_read(family, index, pass)
@@ -5909,7 +5917,7 @@ impl RulesPassProcessor {
                         &member.native_stored_id,
                     )
                 });
-                state.read_pass(&raw);
+                state.read_pass(&raw, fixed_art);
             }
             index += 1;
         }

@@ -18,6 +18,9 @@ use crate::util::native_x87::NativeF32Bits;
 pub struct TerrainObjectType {
     /// Section name, e.g. "TIBTRE01".
     pub name: String,
+    /// ObjectType ImageFile+1F8 and Theater+22C, retained by the process reader.
+    image_file: String,
+    theater: bool,
     /// Inherited `ObjectTypeClass::ReadINI @ 0x005F92D0` AlphaImage buffer
     /// (`+0x213`, `char[25]`), separate from TerrainType art metadata.
     pub(crate) alpha_image: String,
@@ -102,7 +105,7 @@ impl TerrainObjectType {
         let animation_probability =
             section.read_double_to_float("AnimationProbability", NativeF32Bits::POSITIVE_ZERO);
         let mut read_state = TerrainTypeReadState::new(name);
-        read_state.read_pass(section);
+        read_state.read_pass(section, &crate::rules::ini_parser::IniFile::empty());
         // Terrain ctor71DBAC initializes Strength=-1. ObjectType5F94D3 reads
         // with that current default; Terrain71DEC8..71DEDC substitutes
         // Rules+1144 when the stored result is exactly -1, including an
@@ -111,6 +114,8 @@ impl TerrainObjectType {
 
         Self {
             name: name.to_string(),
+            image_file: read_state.image.clone(),
+            theater: read_state.theater,
             alpha_image: section.read_object_alpha_image(""),
             is_logic: read_state.is_logic,
             spawns_tiberium: section.read_bool("SpawnsTiberium", false),
@@ -141,12 +146,30 @@ impl TerrainObjectType {
             // without clamps; the shared reader folds prior rule passes.
             temperate_occupation_bits: section.read_int("TemperateOccupationBits", 7),
             snow_occupation_bits: section.read_int("SnowOccupationBits", 7),
-            foundation: foundation::foundation_name("1x1").to_string(),
+            foundation: foundation::FOUNDATION_TABLE[usize::from(read_state.foundation)]
+                .name
+                .to_string(),
         }
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn merge_art_foundation(&mut self, foundation_name: &str) {
         self.foundation = foundation::foundation_name(foundation_name).to_string();
+    }
+
+    /// Terrain InitTheater71DCD8..71DD3B loads its stored ID and extension.
+    /// The fresh non-theater reader71DF9E..71DFC0 loads only ImageFile.SHP;
+    /// neither branch follows ART Image redirects or alternate candidates.
+    pub(crate) fn shape_filename(&self, theater_ext: &str) -> String {
+        if self.theater {
+            format!("{}.{}", self.name, theater_ext)
+        } else {
+            format!("{}.SHP", self.image_file)
+        }
+    }
+
+    pub(crate) fn uses_theater_shape(&self) -> bool {
+        self.theater
     }
 
     pub fn armor_id(&self) -> crate::rules::armor::ArmorId {
@@ -175,7 +198,7 @@ impl TerrainObjectType {
 /// color is deferred until the existing terrain asset binding phase.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct TerrainRadarColorReadPass {
-    pub(crate) image: String,
+    pub(crate) image: Option<String>,
     pub(crate) radar_color: Option<String>,
 }
 
@@ -185,6 +208,9 @@ pub(crate) struct TerrainRadarColorReadPass {
 pub(crate) struct TerrainTypeReadState {
     #[serde(default)]
     image: String,
+    theater: bool,
+    new_theater: bool,
+    foundation: u8,
     #[serde(default)]
     reads: Vec<TerrainRadarColorReadPass>,
     is_logic: bool,
@@ -198,6 +224,9 @@ impl TerrainTypeReadState {
     pub(crate) fn new(type_id: &str) -> Self {
         Self {
             image: type_id.to_string(),
+            theater: false,
+            new_theater: false,
+            foundation: foundation::DEFAULT_FOUNDATION_ID,
             reads: Vec::new(),
             is_logic: true,
             is_veinhole: false,
@@ -209,11 +238,20 @@ impl TerrainTypeReadState {
     /// ObjectTypeClass::ReadINI @0x005F92D0, whose current Image buffer is
     /// the default to ReadString("Image", ..., 0x19). The derived reader then
     /// loads frame 0 and reads RadarColor with that current RGB as default.
-    pub(crate) fn read_pass(&mut self, section: &crate::rules::ini_parser::IniSection) {
-        self.image = section
-            .read_name("Image", 0x19)
-            .unwrap_or(&self.image)
-            .to_string();
+    pub(crate) fn read_pass(
+        &mut self,
+        section: &crate::rules::ini_parser::IniSection,
+        fixed_art: &crate::rules::ini_parser::IniFile,
+    ) {
+        self.image = section.read_string("Image", &self.image, 0x19);
+        let image_art = fixed_art.section_or_empty(&self.image);
+        (self.theater, self.new_theater) = crate::rules::object_type::read_object_theater_flags(
+            image_art,
+            (self.theater, self.new_theater),
+        );
+        // TerrainType ReadINI71DF61..71DF96 reads this same retained Image,
+        // using the current Foundation as default through shared ReadFoundation.
+        self.foundation = foundation::read_foundation(image_art, self.foundation);
         // Original instructions: ObjectTypeClass::ReadINI5F9499..5F94C2
         // reads LegalTarget with its current value. TerrainTypeClass::ReadINI
         //71DEEA..71DF0C then reads IsVeinhole and, when true, clears IsLogic
@@ -225,7 +263,10 @@ impl TerrainTypeReadState {
             self.legal_target = true;
         }
         self.reads.push(TerrainRadarColorReadPass {
-            image: self.image.clone(),
+            // Object LoadSHP5F9203/5F923E clears then skips TerrainType.
+            // Only fresh non-theater71DF9C..71DFC0 reloads ImageFile.SHP
+            // before the optional GetColor71DFD0..71DFF5.
+            image: (!self.theater).then(|| self.image.clone()),
             radar_color: section.raw_value("RadarColor").map(str::to_string),
         });
     }
@@ -234,7 +275,21 @@ impl TerrainTypeReadState {
         terrain.is_logic = self.is_logic;
         terrain.is_veinhole = self.is_veinhole;
         terrain.legal_target = self.legal_target;
+        terrain.image_file.clone_from(&self.image);
+        terrain.theater = self.theater;
+        terrain.foundation = foundation::FOUNDATION_TABLE[usize::from(self.foundation)]
+            .name
+            .to_string();
         terrain.radar_color_read_passes.clone_from(&self.reads);
+    }
+
+    pub(crate) fn validate_saved_state(&self) -> Result<(), crate::rules::error::RulesError> {
+        if usize::from(self.foundation) >= foundation::FOUNDATION_TABLE.len() {
+            return Err(crate::rules::error::RulesError::InvalidSavedState(
+                "Terrain Foundation is outside its native table",
+            ));
+        }
+        Ok(())
     }
 }
 

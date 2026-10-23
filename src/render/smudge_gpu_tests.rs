@@ -156,6 +156,11 @@ fn retail_crater11_matches_original_cell_raster() {
         crate::app::loading::init_helpers::load_rules_with_merged_ini(&assets, Some(&mode), None)
             .unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    rules.bind_terrain_assets(
+        &assets,
+        theater.extension,
+        crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
+    );
     let registry = OverlayTypeRegistry::from_ini(&rules_ini, Some(&art));
     for source in packet["inputs"]["sources"].as_array().unwrap() {
         let name = source["name"].as_str().unwrap();
@@ -222,10 +227,8 @@ fn retail_crater11_matches_original_cell_raster() {
             theater.extension,
             "TEMPERATE",
             &registry,
-            &rules.tiberium_types,
-            &rules.crate_rules,
+            &rules,
             &rules_ini,
-            rules.art(),
             Some(&rules.smudge_types),
             &[],
         )
@@ -537,10 +540,8 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
         theater.extension,
         "TEMPERATE",
         &scene.runtime.resources.overlay_registry,
-        &rules.tiberium_types,
-        &rules.crate_rules,
+        rules,
         &rules_ini,
-        rules.art(),
         Some(&rules.smudge_types),
         &[],
     )

@@ -147,13 +147,13 @@ impl PreparedSavedGame {
         );
         init_helpers::bind_rules_asset_closure(
             &mut rules,
-            saved.processed_rules().ini(),
             view.rules_owner.fixed_art(),
             &overlay_registry,
             saved.scheduler_anim_roots(),
             assets,
             theater.extension,
             &theater_name,
+            crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Saved,
         )
         .map_err(|error| PreparedLoadError::Resources(error.to_string()))?;
         // Asset-dependent simulation metadata participates in this digest.
