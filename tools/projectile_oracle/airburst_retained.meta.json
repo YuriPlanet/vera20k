@@ -20,5 +20,5 @@
     "read_ini": "0x0046BEE0"
   },
   "replay_command": "python -m tools.projectile_oracle.airburst_retained",
-  "payload_sha256": "d457172b5af6600aa8e82526b0e7c4bd767972d73b2fce3ac6fd1a226b12dc4d"
+  "payload_sha256": "1059f4e455450964d629e7a2cfd5cc64a07e5b01ba1eaf7341b234fdc7210382"
 }

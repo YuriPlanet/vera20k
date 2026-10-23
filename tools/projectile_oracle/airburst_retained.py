@@ -1,5 +1,4 @@
 """Original whole BulletType reader's retained Airburst byte histories."""
-import hashlib
 from pathlib import Path
 import tempfile
 from tools.native_oracle import finish_vectors,provenance,image_bytes,file_span
@@ -14,21 +13,19 @@ def generate():
         scenario=m.read32(0xA8B230)
         rngs=(0x886B88,scenario+0x218,0xABE890)
         before=[bytes(m.u.mem_read(a,0x3F4)) for a in rngs]
-        initial=int(m.u.mem_read(p+0x294,1)[0])
         rows=[]
         for sections in ({'SHOT':{'Airburst':'yes'}},{'SHOT':{'Airburst':'invalid'}},
                          {'SHOT':{'Name':'missing key'}},{'OTHER':{'Name':'missing section'}},
                          {'SHOT':{'Airburst':'no'}},{'SHOT':{'Airburst':'invalid'}},
                          {'SHOT':{'Airburst':'yes'}},{'SHOT':{'Airburst':''}}):
             m.rules_cache(sections)
-            admitted=m.invoke(0x46BEE0,p,(RULES,))&255
-            rows.append(dict(sections=sections,admitted=bool(admitted),
+            m.invoke(0x46BEE0,p,(RULES,))
+            rows.append(dict(sections=sections,
                 airburst=bool(m.u.mem_read(p+0x294,1)[0])))
         after=[bytes(m.u.mem_read(a,0x3F4)) for a in rngs]
         if before!=after: raise RuntimeError('Whole reader changed RNG state')
         if text!=bytes(m.u.mem_read(0x401000,len(text))): raise RuntimeError('Original text changed')
-        return dict(initial_airburst=bool(initial),rows=rows,rng_unchanged=True,text_unchanged=True,
-            rng_before_sha256=[hashlib.sha256(b).hexdigest() for b in before])
+        return dict(rows=rows)
 
 def metadata():
     return provenance(scope='Original BulletType ctor46BBC0 and fullReadINI46BEE0; eight ordered synthetic Rules histories for retained Airburst byte+294.',
