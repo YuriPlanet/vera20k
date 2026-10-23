@@ -78,13 +78,23 @@ fn normal_fly_pose_uses_strict_pitch_speed_gate_and_secondary_turn_sign() {
     assert!(matches!(body, BodyDraw::Composite));
     assert_eq!(tilt, None);
 
-    sim.entities_mut_for_test()
+    let locomotor = sim
+        .entities_mut_for_test()
         .get_mut(id)
         .unwrap()
         .locomotor
         .as_mut()
-        .unwrap()
-        .set_current_fly_speed_for_test(SimFixed::from_bits(16_385));
+        .unwrap();
+    // Supplied numeric boundary: one binary64 ULP above stock PitchSpeed.
+    // The renderer must retain this distinction even below one Q16 quantum.
+    let above_threshold = 0x3fd0_0000_0000_0001_u64;
+    let mut saved = serde_json::to_value(&*locomotor).unwrap();
+    saved["runtime_payload"]["Fly"]["current_speed_bits"] = serde_json::json!(above_threshold);
+    *locomotor = serde_json::from_value(saved).unwrap();
+    assert_eq!(
+        locomotor.current_fly_speed().unwrap().bits(),
+        above_threshold
+    );
     let (_, direction, pose) = production_pose(&sim);
     assert_eq!(direction, Some(RotationDirection::Positive));
     let pose = pose.unwrap();

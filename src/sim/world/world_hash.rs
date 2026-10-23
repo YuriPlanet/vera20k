@@ -2457,8 +2457,8 @@ fn hash_locomotor_payload(
             state.landing_effect_latched().hash(hasher);
             state.airport_bound().hash(hasher);
             state.fall_counter().hash(hasher);
-            state.target_speed().to_bits().hash(hasher);
-            state.current_speed().to_bits().hash(hasher);
+            state.target_speed().bits().hash(hasher);
+            state.current_speed().bits().hash(hasher);
         }
         LocomotorRuntimePayload::Jumpjet(state) => {
             10u8.hash(hasher);
@@ -4526,6 +4526,11 @@ mod bridge161_hash_projection_tests {
             true,
         );
         let mut locomotor = LocomotorState::for_test_kind(kind);
+        if let Some(fly) = locomotor.fly_runtime_mut() {
+            let tenth = crate::util::native_x87::NativeF64Bits::from_bits(0x3fb9_9999_9999_999a);
+            fly.set_target_speed_bits_for_test(tenth);
+            fly.set_current_speed_bits_for_test(tenth);
+        }
         if stashed {
             assert!(locomotor.begin_piggyback(LocomotorKind::Teleport, 0));
         }
@@ -4549,6 +4554,15 @@ mod bridge161_hash_projection_tests {
                 _ => unreachable!(),
             },
             LocomotorRuntimePayload::Hover(state) => state.set_head(Some(coord)),
+            LocomotorRuntimePayload::Fly(state) => {
+                // Adjacent binary64 values share the same old Q16 projection.
+                let next = crate::util::native_x87::NativeF64Bits::from_bits(0x3fb9_9999_9999_999b);
+                match field {
+                    0 => state.set_target_speed_bits_for_test(next),
+                    1 => state.set_current_speed_bits_for_test(next),
+                    _ => unreachable!(),
+                }
+            }
             LocomotorRuntimePayload::Jumpjet(state) => {
                 *state = match field {
                     0 => state.clone().with_destination_for_test(coord),
@@ -4584,6 +4598,7 @@ mod bridge161_hash_projection_tests {
         for (kind, fields) in [
             (LocomotorKind::Walk, 4),
             (LocomotorKind::Hover, 1),
+            (LocomotorKind::Fly, 2),
             (LocomotorKind::Jumpjet, 7),
         ] {
             for stashed in [false, true] {

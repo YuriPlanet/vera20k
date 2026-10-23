@@ -5,7 +5,7 @@ use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
 use crate::sim::combat::{build_attacker_snapshot, fire_coord};
 use crate::sim::movement::FacingClass;
 use crate::sim::snapshot::GameSnapshot;
-use crate::util::fixed_math::SimFixed;
+use crate::util::native_x87::NativeF64Bits;
 use serde_json::{Value, json};
 
 fn fixture(input: &Value) -> (Simulation, RuleSet) {
@@ -66,7 +66,9 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     let loco = entity.locomotor.as_mut().unwrap();
     loco.fly_runtime_mut()
         .unwrap()
-        .set_current_speed_for_test(SimFixed::from_num(input["speed"].as_f64().unwrap_or(1.0)));
+        .set_current_speed_bits_for_test(NativeF64Bits::from_bits(
+            input["speed"].as_f64().unwrap_or(1.0).to_bits(),
+        ));
     let mut fly = serde_json::to_value(loco.fly_runtime().unwrap()).unwrap();
     fly["moving"] = json!(input["moving"].as_bool().unwrap_or(true));
     *loco.fly_runtime_mut().unwrap() = serde_json::from_value(fly).unwrap();

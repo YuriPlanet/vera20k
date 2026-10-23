@@ -5,7 +5,8 @@ use super::*;
 use crate::rules::jumpjet_params::JumpjetParams;
 use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
 use crate::rules::object_type::{ObjectCategory, ObjectType};
-use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+use crate::util::fixed_math::SimFixed;
+use crate::util::native_x87::NativeF64Bits;
 
 #[test]
 fn walk_destination_and_cell_producer_match_original_startup_conversion() {
@@ -164,9 +165,32 @@ fn test_fly_locomotor_air_layer() {
     assert_eq!(state.fly_target_height(), 0);
     assert_eq!(
         state.fly_runtime().unwrap().target_speed(),
-        SIM_ZERO,
+        NativeF64Bits::POSITIVE_ZERO,
         "constructor4CC9E5 target speed"
     );
+    // Supplied storage shapes: exact non-Q16 fractions must survive as two
+    // independent fields, including inside the serialized suspended object.
+    // This does not claim a native teleport producer for this Aircraft.
+    let target = NativeF64Bits::from_bits(0x3fd3_3333_3333_3333);
+    let current = NativeF64Bits::from_bits(0x3fb9_9999_9999_999b);
+    for stashed in [false, true] {
+        let mut supplied = state.clone();
+        let fly = supplied.fly_runtime_mut().unwrap();
+        fly.set_target_speed_bits_for_test(target);
+        fly.set_current_speed_bits_for_test(current);
+        if stashed {
+            assert!(supplied.begin_piggyback(LocomotorKind::Teleport, 0));
+        }
+        let mut restored: LocomotorState =
+            serde_json::from_str(&serde_json::to_string(&supplied).unwrap()).unwrap();
+        assert_eq!(restored, supplied);
+        if stashed {
+            assert!(restored.end_piggyback().is_some());
+        }
+        let restored = restored.fly_runtime().unwrap();
+        assert_eq!(restored.target_speed(), target);
+        assert_eq!(restored.current_speed(), current);
+    }
 }
 
 #[test]

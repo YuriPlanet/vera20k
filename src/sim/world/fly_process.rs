@@ -46,7 +46,7 @@ use crate::sim::movement::ground_pose;
 use crate::sim::rng::SimRng;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::ObjectSubstrate;
-use crate::util::fixed_math::SIM_ZERO;
+use crate::util::native_x87::NativeF64Bits;
 
 #[cfg(test)]
 #[path = "fly_process_tests.rs"]
@@ -317,7 +317,7 @@ impl Simulation {
                 .locomotor
                 .as_ref()
                 .and_then(|locomotor| locomotor.fly_runtime())
-                .map_or(SIM_ZERO, |state| state.current_speed()),
+                .map_or(NativeF64Bits::POSITIVE_ZERO, |state| state.current_speed()),
         );
         let mut candidate = location;
         if speed > 0 {
@@ -377,7 +377,7 @@ impl Simulation {
                 .locomotor
                 .as_ref()
                 .and_then(|locomotor| locomotor.fly_runtime())
-                .is_some_and(|state| state.current_speed() > SIM_ZERO && !state.taking_off())
+                .is_some_and(|state| state.current_speed_is_positive() && !state.taking_off())
         {
             entity
                 .flight_attitude
@@ -528,7 +528,7 @@ impl Simulation {
             && entity.health.current() > 0
             && !state.has_phase_callback()
             && coord_cell(state.destination()) == coord_cell(location)
-            && state.target_speed() == SIM_ZERO
+            && state.target_speed_is_zero()
             && (entity.attack_target.target().is_none()
                 || entity.ammo().map_or(-1, |ammo| ammo.current()) == 0)
     }
@@ -717,7 +717,7 @@ impl Simulation {
         let land = arrival
             && distance < ARRIVAL_STOP
             && !cruise
-            && state.current_speed() < air_movement::MIN_CREEP_SPEED;
+            && state.current_speed_below_landing_threshold();
 
         let entity = self.substrate.entities.get_mut(id).unwrap();
         if let Some(primary) = primary {
