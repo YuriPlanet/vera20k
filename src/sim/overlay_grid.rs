@@ -1351,8 +1351,10 @@ fn damage_wall_recursive(
     // — and apply damage only when roll < damage; otherwise no effect. The
     // engine uses `< damage` (so roll == damage is a no-op) and the inclusive
     // top, both of which differ from an exclusive `[0, Strength-1]` / `>` test.
-    if damage != -1 && damage < i32::from(flags.strength) {
-        let roll = rng.next_range_u32_inclusive(0, u32::from(flags.strength)) as i32;
+    // CellClass::DestroyOverlay480CE9..480D18 compares signed dwords and
+    // forwards the full bound to RandomRanged65C7E0, including negative ones.
+    if damage != -1 && damage < flags.strength {
+        let roll = rng.next_range_i32_inclusive(0, flags.strength);
         if roll >= damage {
             return;
         }

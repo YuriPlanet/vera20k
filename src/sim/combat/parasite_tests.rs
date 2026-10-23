@@ -1109,9 +1109,25 @@ fn the_reselect_memo_stays_out_of_the_peer_hash() {
     let rules = rules();
     let run = |local: &str, selected: bool| {
         let mut arena = Arena::new(&rules);
+        // Ordinary unit survival keeps the GI alive without a base.
+        arena.sim.session.game_options_mut_for_test().short_game = false;
+        // Both replicas have the same two human clients. Only the local
+        // current House/selection differs, not the logical sight-client roster.
+        for (name, side) in [("Russians", 1), ("Americans", 0)] {
+            let owner = arena.sim.intern(name);
+            let mut house =
+                crate::sim::house_state::HouseState::new(owner, side, None, true, 0, 10);
+            // Start after each client's empty initial sight pass. House4F9353
+            // clears +24B; Map4ADCD0 has no Techno callbacks in an empty world.
+            // The memo test then varies only PlayerPtr and local selection.
+            assert!(house.take_initial_sight_refresh());
+            arena.sim.houses.register(house);
+        }
         let dog = arena.spawn(&rules, "DOG", "Russians", (10, 10));
         let gi = arena.spawn(&rules, "E1", "Americans", (11, 10));
-        // Skirmish: IsHumanPlayer (`0x0050B6F0`) is the local player.
+        // Limbo removes the dog's active count; its House still owns a unit.
+        arena.spawn(&rules, "MCV", "Russians", (6, 15));
+        // Nonzero mode: IsHumanPlayer (`0x0050B6F0`) is the local player.
         arena.sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );

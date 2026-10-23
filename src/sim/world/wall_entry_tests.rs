@@ -364,8 +364,8 @@ fn assert_retail_wall_fire_profile(
     assert!(flags.wall);
     assert_eq!(flags.armor_is_wood, native_type["armor"] == 6);
     assert_eq!(
-        u64::from(flags.strength),
-        native_type["strength"].as_u64().unwrap()
+        i64::from(flags.strength),
+        native_type["strength"].as_i64().unwrap()
     );
     assert_eq!(
         i64::from(flags.damage_levels),

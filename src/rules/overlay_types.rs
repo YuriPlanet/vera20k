@@ -213,9 +213,9 @@ pub struct OverlayTypeFlags {
     /// re-derived from that stored LandType. VERA caches the derivation, so the
     /// cache has to move with the LandType that produced it.
     pub land_ground_blocked: bool,
-    /// Strength= from rules.ini — hit points for destructible overlays.
-    /// Only meaningful when wall=true. Default 1.
-    pub strength: u16,
+    /// Signed wall damage-roll bound. OverlayTypeCtor5FE26B defaults to1;
+    /// OverlayTypeRead5FE7B1..5FE7DA retains the full current-default ReadInt.
+    pub strength: i32,
     /// DamageLevels= from art.ini — number of damage stages for walls.
     /// Only meaningful when wall=true. Default 1.
     pub damage_levels: i32,
@@ -432,9 +432,9 @@ impl OverlayTypeRegistry {
                     land_semantics.is_some_and(|semantics| semantics.ground_blocked);
                 let land_wheel_speed_zero =
                     land_speed_costs.is_some_and(|speed_costs| speed_costs.wheel == Some(0));
-                // ReadInt over the constructor's 1 (`0x005FE7C6`, `0x005FE265`),
-                // e.g. [GAWALL] Strength=300.
-                let strength = u16::try_from(type_section.read_int("Strength", 1)).unwrap_or(1);
+                // OverlayTypeClass::ReadINI5FE7B1..5FE7DA stores all of EAX,
+                // with no clamp. The retained pass reader uses current values.
+                let strength = type_section.read_int("Strength", 1);
                 // ReadColorRGB (`0x005FE947`) for an authored key; an absent one
                 // leaves the overlay's art colour to the caller.
                 let radar_color = type_section
@@ -789,6 +789,53 @@ mod tests {
         // its penultimate/connection check. This hit needs no RNG draw.
         assert!(result.destroyed_cells.is_empty());
         assert_eq!(grid.cell(2, 2).overlay_id, Some(wall));
+        assert_eq!(grid.cell(2, 2).overlay_data, 0x10);
+        assert_eq!(rng.native_state_hex(), before);
+    }
+
+    #[test]
+    fn retail_wide_wall_strength_keeps_the_damage_rng_gate() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
+            &IniFile::from_str("[GAWALL]\nStrength=65536\n"),
+        ) else {
+            return;
+        };
+        let registry = retail.rules.overlay_registry();
+        let wall = registry.id_for_name("GAWALL").unwrap();
+        // OverlayTypeRead5FE7B1..5FE7DA retains the whole signed ReadInt.
+        assert_eq!(i64::from(registry.flags(wall).unwrap().strength), 65536);
+        let mut grid = crate::sim::overlay_grid::OverlayGrid::new(5, 5);
+        grid.place_overlay(2, 2, wall, 0);
+        let mut rng = crate::sim::rng::SimRng::new(1);
+        let before = rng.native_state_hex();
+        let result =
+            crate::sim::overlay_grid::damage_wall_overlay(&mut grid, registry, 2, 2, 65, &mut rng);
+        // DestroyOverlay480CEF..480D18 must reach the shared ranged owner.
+        // Original RandomRanged65C7E0 on seed1 over0..65536 returns21713,
+        // so this ordinary AP-sized hit is rejected before any wall write.
+        assert!(result.destroyed_cells.is_empty());
+        assert_eq!(grid.cell(2, 2).overlay_id, Some(wall));
+        assert_eq!(grid.cell(2, 2).overlay_data, 0);
+        assert_ne!(rng.native_state_hex(), before);
+    }
+
+    #[test]
+    fn negative_wall_strength_uses_signed_damage_admission() {
+        let registry = OverlayTypeRegistry::from_ini(
+            &IniFile::from_str("[OverlayTypes]\n0=WALL\n[WALL]\nWall=yes\nStrength=-2147483648\n"),
+            Some(&IniFile::from_str("[WALL]\nDamageLevels=3\n")),
+        );
+        assert_eq!(
+            i64::from(registry.flags(0).unwrap().strength),
+            i64::from(i32::MIN)
+        );
+        let mut grid = crate::sim::overlay_grid::OverlayGrid::new(5, 5);
+        grid.place_overlay(2, 2, 0, 0);
+        let mut rng = crate::sim::rng::SimRng::new(1);
+        let before = rng.native_state_hex();
+        // DestroyOverlay480CEF signed JGE admits damage0 over MIN without
+        // a random call. Narrowing Strength to1 would reject this instead.
+        crate::sim::overlay_grid::damage_wall_overlay(&mut grid, &registry, 2, 2, 0, &mut rng);
         assert_eq!(grid.cell(2, 2).overlay_data, 0x10);
         assert_eq!(rng.native_state_hex(), before);
     }

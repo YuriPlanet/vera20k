@@ -754,7 +754,7 @@ mod tests {
         land: LandType,
         no_use_tile_land_type: bool,
         land_speed_costs: Option<SpeedCostProfile>,
-        strength: u16,
+        strength: i32,
         damage_levels: i32,
     }
 
