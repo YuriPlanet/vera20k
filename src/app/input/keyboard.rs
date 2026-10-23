@@ -253,7 +253,7 @@ pub(crate) fn commit_close(state: &mut AppState, exit: KeyboardExit) {
                 &state.match_state.input.hotkey_bindings,
             )
         {
-            log::warn!("Could not save KeyboardMD.ini: {error}");
+            log::warn!("Could not save VERA.INI keyboard settings: {error}");
         }
     } else if exit.binding_action() == BindingExit::Reload {
         // IDCANCEL5FB6D4 reloads CURRENT disk, including a preceding Reset All.

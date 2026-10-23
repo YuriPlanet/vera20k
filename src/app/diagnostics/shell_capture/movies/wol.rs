@@ -148,7 +148,7 @@ pub enum WolTarget {
     /// `0x2BC` Play Music unchecked: the preview queues -3, nothing saved.
     OptionsMusicOff,
     /// Pages and Buddies toggled, then Cancel: the lobby again, applied
-    /// unchanged, RA2MD.INI untouched.
+    /// unchanged, VERA.INI untouched.
     OptionsCancel,
     /// Pages unchecked and Buddies checked, then OK: `[WOnline]` written,
     /// applied, and a reopened `0x2BC` shows them.
@@ -831,7 +831,7 @@ pub(super) struct WolCapture {
     rejoined: bool,
     abort_input: Option<abort_return::AbortReturnInput>,
     exit_consumed: bool,
-    /// RA2MD.INI and the live WOL preferences when Options was pressed.
+    /// VERA.INI and the live WOL preferences when Options was pressed.
     options_before: Option<(Option<Vec<u8>>, WolPreferences)>,
     /// The locale `0xFE` OK sent, ahead of the runner's requests.
     chosen_locale: Option<i32>,
@@ -2058,8 +2058,8 @@ impl WolCapture {
                 );
                 self.event(frame, json!({"0x2BC reopened": checked}));
                 // The capture's isolated profile goes back as it was.
-                let (bytes, _) = self.options_before.clone().context("saved RA2MD.INI")?;
-                restore_ra2md(state, bytes)?;
+                let (bytes, _) = self.options_before.clone().context("saved VERA.INI")?;
+                restore_settings(state, bytes)?;
                 self.hover_settle(state);
             }
             WolPhase::SoundOpening
@@ -2966,7 +2966,7 @@ impl WolCapture {
         }
         self.event(frame, "0x113 settled");
         if self.target.options() {
-            self.options_before = Some((read_ra2md(state)?, state.frontend.wol_preferences));
+            self.options_before = Some((read_settings(state)?, state.frontend.wol_preferences));
             lobby_button(state, &layout, lobby_ui::OPTIONS)?;
             ensure!(
                 state.frontend.shell_exit.is_some(),
@@ -3616,7 +3616,7 @@ impl WolCapture {
             WolTarget::OptionsSteady => {
                 ensure!(
                     live == WolPreferences::default(),
-                    "the isolated RA2MD.INI holds [WOnline] values: {live:?}"
+                    "the isolated VERA.INI holds [WOnline] values: {live:?}"
                 );
                 let rect = crate::app::shell_wol::options::layout(state)
                     .checkbox_rect(PAGES)
@@ -3638,7 +3638,8 @@ impl WolCapture {
                 );
                 ensure!(
                     state.frontend.wol_preferences == live
-                        && read_ra2md(state)? == self.options_before.clone().context("before")?.0,
+                        && read_settings(state)?
+                            == self.options_before.clone().context("before")?.0,
                     "the preview changed a preference"
                 );
                 self.event(frame, "Play Music unchecked: Queue(-3)");
@@ -3647,7 +3648,7 @@ impl WolCapture {
             WolTarget::OptionsCancel | WolTarget::OptionsOk => {
                 ensure!(
                     live == WolPreferences::default(),
-                    "the isolated RA2MD.INI holds [WOnline] values: {live:?}"
+                    "the isolated VERA.INI holds [WOnline] values: {live:?}"
                 );
                 options_checkbox(state, PAGES)?;
                 options_checkbox(state, BUDDIES)?;
@@ -3704,7 +3705,7 @@ impl WolCapture {
             ensure!(
                 live == before
                     && state.persistence.options_profile.wol_preferences == before
-                    && read_ra2md(state)? == bytes,
+                    && read_settings(state)? == bytes,
                 "Cancel changed the preferences"
             );
             self.event(frame, "0x113 again: Cancel applied the unchanged values");
@@ -3720,10 +3721,10 @@ impl WolCapture {
             live == expected && state.persistence.options_profile.wol_preferences == expected,
             "OK did not commit the staged values: {live:?}"
         );
-        let saved = read_ra2md(state)?.context("RA2MD.INI after OK")?;
+        let saved = read_settings(state)?.context("VERA.INI after OK")?;
         let text = String::from_utf8_lossy(&saved).into_owned();
         let ini = crate::rules::ini_parser::IniFile::from_bytes(&saved)
-            .context("parse RA2MD.INI after OK")?;
+            .context("parse VERA.INI after OK")?;
         let wonline = ini.section("WOnline").context("saved [WOnline]")?;
         let keys = [
             ("AllowPage", "0"),
@@ -4458,19 +4459,19 @@ fn options_button(state: &mut AppState, id: u16) -> Result<()> {
     Ok(())
 }
 
-fn ra2md_path(state: &AppState) -> Result<std::path::PathBuf> {
-    Ok(state
+fn settings_path(state: &AppState) -> Result<std::path::PathBuf> {
+    let config = state
         .platform
         .game_config
         .as_ref()
-        .context("capture game config")?
-        .paths
-        .settings_dir()
-        .join("RA2MD.INI"))
+        .context("capture game config")?;
+    Ok(crate::app::persistence::profile_file::path(
+        config.paths.settings_dir(),
+    ))
 }
 
-fn read_ra2md(state: &AppState) -> Result<Option<Vec<u8>>> {
-    let path = ra2md_path(state)?;
+fn read_settings(state: &AppState) -> Result<Option<Vec<u8>>> {
+    let path = settings_path(state)?;
     match std::fs::read(&path) {
         Ok(bytes) => Ok(Some(bytes)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -4478,8 +4479,8 @@ fn read_ra2md(state: &AppState) -> Result<Option<Vec<u8>>> {
     }
 }
 
-fn restore_ra2md(state: &AppState, bytes: Option<Vec<u8>>) -> Result<()> {
-    let path = ra2md_path(state)?;
+fn restore_settings(state: &AppState, bytes: Option<Vec<u8>>) -> Result<()> {
+    let path = settings_path(state)?;
     match bytes {
         Some(bytes) => std::fs::write(&path, bytes),
         None => std::fs::remove_file(&path),
@@ -4512,7 +4513,7 @@ fn game_row_click(state: &mut AppState, row: usize) -> Result<()> {
 }
 
 /// Three IRC records; the preferred-server draw left record 1 selected.
-/// `wolinfoMD.ini` beside the isolated RA2MD.INI.
+/// `wolinfoMD.ini` beside the isolated VERA.INI.
 fn info_file(state: &AppState) -> Result<WolInfoFile> {
     let config = state
         .platform

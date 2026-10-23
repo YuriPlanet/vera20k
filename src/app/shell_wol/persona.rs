@@ -15,7 +15,7 @@ use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::wol_persona::*;
 
-/// The file next to RA2MD.INI, when the process has a settings directory.
+/// The file next to VERA.INI, when the process has a settings directory.
 pub(super) fn info_file(state: &AppState) -> Option<WolInfoFile> {
     let config = state.platform.game_config.as_ref()?;
     Some(WolInfoFile::in_directory(config.paths.settings_dir()))

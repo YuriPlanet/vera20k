@@ -89,6 +89,11 @@ cp config.toml.example config.toml
 cargo run --release --bin vera20k
 ```
 
+Options, keyboard shortcuts and lobby preferences are saved in `VERA.INI` in VERA20K's
+own settings folder. Existing settings are imported on first launch; your original
+game files are left untouched. `config.toml` selects the game folder and optional
+settings folder.
+
 ## How we work
 
 Most of the code is written by AI coding agents. They use Ghidra to study the original

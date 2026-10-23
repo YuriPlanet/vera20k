@@ -1710,7 +1710,7 @@ fn send_chat(state: &mut AppState, text: Vec<u16>) {
     let line = match wol_chat::parse_lobby(&text, &commands, &filters, last_pager.is_some()) {
         WolLobbyChatLine::Filter(filter) => {
             // 0x78B3F4/0x78B4DF flip the live DisplayBuddies/DisplayClan
-            // bytes without saving; the next WOL entry re-reads RA2MD.INI.
+            // bytes without saving; the next WOL entry re-reads VERA.INI.
             let live = &mut state.frontend.wol_preferences;
             let on = match filter {
                 WolChatFilter::Buddy => {

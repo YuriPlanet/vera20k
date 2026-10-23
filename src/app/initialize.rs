@@ -101,11 +101,11 @@ where
     LoadProfile: FnOnce(&Path, &RetailStartupOptions) -> RetailOptionsLoad,
 {
     if capture_dimensions.is_some() {
-        RetailOptionsLoad::without_ra2md(&RetailStartupOptions::default())
+        RetailOptionsLoad::without_settings(&RetailStartupOptions::default())
     } else if let Some(ra2_dir) = ra2_dir {
         load_profile(ra2_dir, startup_options)
     } else {
-        RetailOptionsLoad::without_ra2md(startup_options)
+        RetailOptionsLoad::without_settings(startup_options)
     }
 }
 
@@ -168,14 +168,24 @@ impl App {
         // automation lane, so it uses exact defaults and its explicit
         // dimensions instead of ingesting operator argv/profile screen state.
         let mut main_menu_shell_error = None;
-        let game_config = startup_asset_or_error(GameConfig::load(), &mut main_menu_shell_error);
+        let game_config = startup_asset_or_error(
+            GameConfig::load().and_then(|config| {
+                if capture_dimensions.is_none() {
+                    crate::app::persistence::profile_file::import_legacy(&config.paths).map_err(
+                        |error| anyhow::Error::new(error).context("Could not prepare VERA.INI"),
+                    )?;
+                }
+                Ok(config)
+            }),
+            &mut main_menu_shell_error,
+        );
         let options_load = select_startup_options_load(
             capture_dimensions,
             &startup_options,
             game_config
                 .as_ref()
                 .map(|config| config.paths.settings_dir()),
-            RetailOptionsLoad::from_ra2md,
+            RetailOptionsLoad::from_settings,
         );
         let profile_screen = options_load.startup_shell_screen;
         let mut options_profile = options_load.retained_profile;
@@ -1295,7 +1305,7 @@ mod tests {
         assert!(!profile_loader_called.get());
         assert_eq!(
             options_load,
-            RetailOptionsLoad::without_ra2md(&RetailStartupOptions::default())
+            RetailOptionsLoad::without_settings(&RetailStartupOptions::default())
         );
         assert_eq!(
             startup_window_projection(options_load.startup_shell_screen, capture_dimensions),

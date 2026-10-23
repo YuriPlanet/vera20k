@@ -3,7 +3,7 @@
 //!
 //! The model owns the dialog's nine checkboxes and its results. The
 //! `[WOnline]` preferences it shows and commits ([`WolPreferences`]) belong to
-//! the app: the profile holds what RA2MD.INI says, and the WOL owner holds the
+//! the app: the profile holds what VERA.INI says, and the WOL owner holds the
 //! live process copy each WOL entry re-reads (`0x0077DED0`).
 
 use crate::ui::shell::button::ShellButtonInteraction;

@@ -5,8 +5,8 @@
 # Point this to your Red Alert 2: Yuri's Revenge installation directory.
 # The engine reads .mix files directly from here (ra2.mix, language.mix, etc.)
 ra2_dir = "C:/Westwood/RA2"
-# Optional writable RA2MD.INI / KeyboardMD.INI location (defaults to ra2_dir).
-# Relative paths are resolved beside this config file. Assets stay in ra2_dir.
+# Optional VERA.INI location (defaults to VERA20k's user data folder).
+# Relative paths are resolved beside this config file, outside the game folder.
 # settings_dir = "."
 
 [ini]
@@ -21,7 +21,7 @@ profile = "yr" # yr | mo | auto | custom
 
 [graphics]
 extra_animations = true   # cosmetic effects: water/ore sparkles (future: laser pulses, particle trails)
-# Full screen, zoom and the original 4:3 shape are on the Options page (saved in RA2MD.INI).
+# Full screen, zoom and the original 4:3 shape are on the Options page (saved in VERA.INI).
 
 [gameplay]
 input_delay_ticks = 15

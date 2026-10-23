@@ -56,8 +56,8 @@ pub(crate) fn poll(state: &mut AppState) -> Option<std::time::Instant> {
 }
 
 /// `0x0077DED0`, called only at `WOL_Main` entry (`0x0077B307`): the
-/// nine `[WOnline]` values from RA2MD.INI, then `[MultiPlayer] ObserverMode`
-/// (`0x005EE190`). The profile holds what RA2MD.INI says, so the chat
+/// nine `[WOnline]` values from VERA.INI, then `[MultiPlayer] ObserverMode`
+/// (`0x005EE190`). The profile holds what VERA.INI says, so the chat
 /// filter toggles of the last visit revert here.
 pub(crate) fn read_wol_settings(state: &mut AppState) {
     state.frontend.wol_preferences = state.persistence.options_profile.wol_preferences;

@@ -6,7 +6,7 @@
 //! wherever the player opened it. A launch from either therefore works in the
 //! app's data folder, `~/Library/Application Support/VERA20k` on macOS and
 //! `~/.local/share/VERA20k` on Linux, the way the Windows shortcuts start the
-//! game in its install folder: config.toml, RA2MD.INI, logs, saves and replays
+//! game in its install folder: config.toml, VERA.INI, logs, saves and replays
 //! all live there.
 //!
 //! Until config.toml names a Yuri's Revenge folder, each launch sets one up
@@ -14,11 +14,8 @@
 //! offers the folder it finds in one question; only when there is none, or the
 //! player wants another, does a folder chooser open.
 
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-
-/// The macOS data folder, below the home folder.
-const MACOS_DATA_FOLDER: &str = "Library/Application Support/VERA20k";
 
 /// When this process runs from the macOS app bundle or the Linux AppImage,
 /// make the app's data folder the working directory and return true. Call it
@@ -42,13 +39,15 @@ pub fn enter_data_folder() -> bool {
 /// AppImage.
 fn data_folder() -> Option<PathBuf> {
     let executable = std::env::current_exe().ok()?;
-    let home = PathBuf::from(std::env::var_os("HOME")?);
     if cfg!(target_os = "macos") {
-        in_app_bundle(&executable).then(|| home.join(MACOS_DATA_FOLDER))
+        in_app_bundle(&executable)
+            .then(|| crate::util::config::default_settings_dir().ok())
+            .flatten()
     } else if cfg!(target_os = "linux") {
         let app_dir = PathBuf::from(std::env::var_os("APPDIR")?);
         in_app_image(&executable, &app_dir)
-            .then(|| linux_data_home(std::env::var_os("XDG_DATA_HOME"), &home).join("VERA20k"))
+            .then(|| crate::util::config::default_settings_dir().ok())
+            .flatten()
     } else {
         None
     }
@@ -72,15 +71,6 @@ fn in_app_bundle(executable: &Path) -> bool {
 /// such as a terminal, inherits that one's APPDIR without being inside it.
 fn in_app_image(executable: &Path, app_dir: &Path) -> bool {
     app_dir.is_absolute() && executable.starts_with(app_dir)
-}
-
-/// `$XDG_DATA_HOME`, or `~/.local/share` when it is unset, empty or relative,
-/// as the XDG Base Directory specification says.
-fn linux_data_home(xdg_data_home: Option<OsString>, home: &Path) -> PathBuf {
-    xdg_data_home
-        .map(PathBuf::from)
-        .filter(|folder| folder.is_absolute())
-        .unwrap_or_else(|| home.join(".local/share"))
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -213,7 +203,7 @@ mod first_launch {
         let path = data_folder.join("config.toml");
         let config = match std::fs::read_to_string(&path) {
             Ok(config) => set_paths_key(&config, "ra2_dir", ra2_dir),
-            // RA2MD.INI goes beside config.toml rather than into the game folder.
+            // VERA.INI goes beside config.toml rather than into the game folder.
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => set_paths_key(
                 &set_paths_key(CONFIG_TEMPLATE, "ra2_dir", ra2_dir),
                 "settings_dir",
@@ -670,23 +660,6 @@ mod tests {
             Path::new("/tmp/.mount_TerminalAbC")
         ));
         assert!(!in_app_image(Path::new("usr/bin/vera20k"), Path::new("")));
-    }
-
-    // Linux paths, which Windows does not take as absolute.
-    #[cfg(unix)]
-    #[test]
-    fn the_linux_data_folder_follows_xdg_data_home() {
-        let home = Path::new("/home/<you>");
-        assert_eq!(
-            linux_data_home(Some("/data/me".into()), home),
-            Path::new("/data/me")
-        );
-        for unusable in [None, Some(OsString::new()), Some("relative/data".into())] {
-            assert_eq!(
-                linux_data_home(unusable, home),
-                Path::new("/home/<you>/.local/share")
-            );
-        }
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]

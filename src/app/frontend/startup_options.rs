@@ -1,7 +1,7 @@
 //! Retail process-start command-line switch parsing.
 //!
 //! The returned screen fields seed the process-owned Options profile. That
-//! profile alone performs the later RA2MD.INI Video read and paired fallback,
+//! profile alone performs the later VERA.INI Video read and paired fallback,
 //! keeping argv parsing free of a second settings/filesystem authority.
 //!
 //! Native uppercases every argument after `argv[0]` in place before matching,
@@ -69,7 +69,7 @@ pub struct ScreenSize {
 }
 
 /// Everything the native pre-window command-line pass decides. The retained
-/// profile applies `RA2MD.INI` later, using these screen fields as defaults.
+/// profile applies `VERA.INI` later, using these screen fields as defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RetailStartupOptions {
     /// A help form was passed: print usage and terminate before a window opens.

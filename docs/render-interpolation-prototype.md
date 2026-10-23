@@ -13,7 +13,7 @@ presentation state rather than adding interpolation components to simulation.
   main menu's **Options** page has a
   **Render Interpolation** checkbox, using the same preview/profile transaction
   as VERA's other extra options. It is saved as `RenderInterpolation=yes` or
-  `RenderInterpolation=no` in `[VERA]` of the active writable `RA2MD.INI` profile.
+  `RenderInterpolation=no` in `[VERA]` of the active writable `VERA.INI` profile.
   Options acceptance and normal exit save the choice; a map load keeps it.
 - Press **Ctrl+Alt+I** in a match to toggle
   immediately; the FPS overlay displays `INTERP ON` or `INTERP OFF`. The overlay

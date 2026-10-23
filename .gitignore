@@ -4,6 +4,7 @@
 **/graphify-out/
 
 config.toml
+/VERA.INI
 
 .vscode/
 .idea/

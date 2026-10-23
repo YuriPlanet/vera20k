@@ -119,7 +119,7 @@ pub(crate) enum LauncherButton {
 /// sidebar, cursor) at the window size divided by the zoom, then scales it up.
 /// A whole multiple of 100% scales by whole pixels and stays sharp; the steps
 /// between blend neighbouring pixels. The menus fit the window on their own.
-/// Saved as `[VERA] Zoom` in RA2MD.INI, a section gamemd never reads.
+/// Saved as `[VERA] Zoom` in VERA.INI, a section gamemd never reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Zoom {
     /// The largest sharp zoom that still shows the original 800x600 view.

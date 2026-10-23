@@ -33,7 +33,7 @@ use persistence::{
     SkirmishPersistedSlot, read_setup_snapshot,
 };
 
-const RA2MD_INI: &str = "RA2MD.INI";
+use crate::app::persistence::profile_file;
 const CONCRETE_ITEM_DATA: i32 = -1;
 const RANDOM_ITEM_DATA: i32 = -2;
 const MULTIPLAYER_HANDLE_UNITS: usize = 0x14;
@@ -112,7 +112,7 @@ impl LocalMultiplayerPreferences {
     /// Apply the six fields written by `SessionClass__WriteMultiPlayerSettings`
     /// at 0x006990A0. The reader at 0x006980C0 first establishes a complete
     /// Session cache from constructor/string-table defaults, so pump/dialog
-    /// exits still write all six fields when keys were absent from RA2MD.INI.
+    /// exits still write all six fields when keys were absent from VERA.INI.
     fn update_ini_bytes(&self, content: &[u8], side_name: &str) -> Vec<u8> {
         let handle = encode_multiplayer_handle(&self.handle_bytes);
         let color = self.color_index.to_string();
@@ -156,7 +156,7 @@ pub(crate) struct MultiplayerShellRuntime {
     lan_snapshot: MultiplayerSetupSnapshot,
     wol_snapshot: MultiplayerSetupSnapshot,
     // These preferences mirror the process INI8870C0. Native6980C0 does not
-    // reopen RA2MD.INI on a child-dialog visit; keep accepted in-memory values
+    // reopen VERA.INI on a child-dialog visit; keep accepted in-memory values
     // rather than replacing them with an unsolicited disk refresh.
     local_preferences: LocalMultiplayerPreferences,
     /// Physical process INI8870C0 input. Accepted writers update this buffer
@@ -308,7 +308,7 @@ impl MultiplayerShellRuntime {
     /// `0x00699450`, called by Main_Game (`0x0048CF79`) after a scenario
     /// returns in GameMode 1..4 with replay bit 2 of `0x00A8D5F8` clear
     /// (VERA has no replay playback, so the bit is always clear):
-    /// WriteBool the four toggles, then save RA2MD.INI.
+    /// WriteBool the four toggles, then save VERA.INI.
     pub(crate) fn persist_session_toggles(&mut self) {
         self.persist_preferences(|runtime, existing| {
             let toggles = runtime.local_preferences.toggles;
@@ -657,7 +657,7 @@ impl MultiplayerShellRuntime {
         self.lan_observer_mode = i32::from(observer);
     }
 
-    /// `0x5EE190`: `[MultiPlayer] ObserverMode` from the process RA2MD.INI
+    /// `0x5EE190`: `[MultiPlayer] ObserverMode` from the process VERA.INI
     /// object (ReadInt, default 0), as `WOL_Main`'s settings reader ends
     /// (`0x0077DED0`). An unsaved lobby toggle reverts here.
     pub(crate) fn reload_observer_mode(&mut self) {
@@ -801,7 +801,7 @@ impl MultiplayerShellRuntime {
         let cooperative_country_roster = startup_rules
             .map(cooperative_country_roster_from_rules)
             .unwrap_or_default();
-        let ini_path = ra2_dir.map(|root| root.join(RA2MD_INI));
+        let ini_path = ra2_dir.map(profile_file::path);
         let (
             snapshot,
             [lan_snapshot, wol_snapshot],
@@ -830,7 +830,7 @@ impl MultiplayerShellRuntime {
             scenario_start_staging: Default::default(),
             gameplay_scenario_return_pending: false,
         };
-        // The retained RA2MD.INI bytes are the process INI, so the cache has to
+        // The retained VERA.INI bytes are the process INI, so the cache has to
         // carry the whole `ReadMultiPlayer6980C0` read from the start: native
         // runs it (`52E11E`/`55FD31`) before any dialog reads `Side` back out of
         // the Session, and `Side` only resolves through `Countries6722F0`/`475540`.
@@ -1295,25 +1295,11 @@ impl MultiplayerShellRuntime {
         let Some(path) = self.ini_path.as_deref() else {
             return;
         };
-        let existing = match std::fs::read(path) {
-            Ok(bytes) => bytes,
-            Err(err) if err.kind() == io::ErrorKind::NotFound => Vec::new(),
-            Err(err) => {
-                log::warn!(
-                    "Could not read {} before multiplayer persistence: {err}",
-                    path.display()
-                );
-                return;
-            }
+        let Some(directory) = path.parent() else {
+            return;
         };
-        // Other existing profile writers own their sections. Merge those disk
-        // bytes while retaining this owner's process inputs independently.
-        let updated = update(self, &existing);
-        if let Err(err) = std::fs::write(path, updated) {
-            log::warn!(
-                "Could not persist multiplayer settings to {}: {err}",
-                path.display()
-            );
+        if let Err(err) = profile_file::update(directory, |existing| update(self, existing)) {
+            log::warn!("Could not write {}: {err}", path.display());
         }
     }
 
@@ -1994,7 +1980,7 @@ mod tests {
             std::thread::current().id()
         ));
         std::fs::create_dir_all(&directory).expect("fixture directory");
-        let path = directory.join(RA2MD_INI);
+        let path = directory.join(profile_file::FILENAME);
         let initial =
             b"; keep this comment\r\n[Unrelated]\r\nKey=kept\r\n[Skirmish]\r\nCredits=10000\r\n";
         std::fs::write(&path, initial).expect("existing nonempty profile");
@@ -2002,7 +1988,9 @@ mod tests {
         let mut seed = RmgOptions::default();
         saved_seeds::write_browser_seed(&directory, &seed_name, &seed).expect("existing seed");
         let assets = AssetManager::from_loose_root_for_test(&directory);
-        let borrowed_profile = assets.get_ref(RA2MD_INI).expect("profile snapshot");
+        let borrowed_profile = assets
+            .get_ref(profile_file::FILENAME)
+            .expect("profile snapshot");
         let borrowed_seed = assets.get_ref("SAVE0001.SED").expect("seed snapshot");
         let mut runtime = MultiplayerShellRuntime::initialize(
             42,
@@ -2019,7 +2007,7 @@ mod tests {
             runtime.persist_snapshot();
             profile.scroll_rate = scroll_rate;
             profile
-                .commit_ra2md(&directory)
+                .commit_settings(&directory)
                 .expect("Options write with manager alive");
             runtime.persist_snapshot();
             let bytes = std::fs::read(&path).expect("persisted profile");
@@ -2054,7 +2042,10 @@ mod tests {
         assert_eq!(reread.description, seed.description);
         assert_eq!(borrowed_profile, initial);
         assert_ne!(borrowed_seed, seed.to_sed_bytes());
-        assert_eq!(assets.get_ref(RA2MD_INI), Some(borrowed_profile));
+        assert_eq!(
+            assets.get_ref(profile_file::FILENAME),
+            Some(borrowed_profile)
+        );
         drop(assets);
         std::fs::remove_dir_all(directory).expect("remove owned fixture");
     }
@@ -2253,7 +2244,7 @@ WOLTaunts=junk
         );
         directory.write("artmd.ini", b"[Fixture]\n");
         directory.write(
-            RA2MD_INI,
+            profile_file::FILENAME,
             b"[MultiPlayer]\nSide=ABCDEFGHIJKLMNOPQRSTUVWXY\nColor=99\n",
         );
         let assets = AssetManager::from_loose_root_for_test(directory.path());
@@ -2284,7 +2275,10 @@ WOLTaunts=junk
             runtime.local_preferences.side, 3,
             "475540 rereads the original long token; constructor IDs truncate at24bytes"
         );
-        directory.write(RA2MD_INI, b"[MultiPlayer]\nSide=Americans\nColor=0\n");
+        directory.write(
+            profile_file::FILENAME,
+            b"[MultiPlayer]\nSide=Americans\nColor=0\n",
+        );
         runtime.read_multiplayer_settings(&mut process);
         assert_eq!(runtime.local_preferences.side, 4);
         assert_eq!(runtime.local_preferences.color_index, 99);
@@ -2328,7 +2322,10 @@ WOLTaunts=junk
               [Sides]\nAllied=Americans,British\n",
         );
         directory.write("artmd.ini", b"[Fixture]\n");
-        directory.write(RA2MD_INI, b"[MultiPlayer]\nSide=British\nColor=3\n");
+        directory.write(
+            profile_file::FILENAME,
+            b"[MultiPlayer]\nSide=British\nColor=3\n",
+        );
         let assets = AssetManager::from_loose_root_for_test(directory.path());
         let mut process = crate::app::process_assets::ProcessAssets::new(
             crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,

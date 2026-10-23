@@ -1,7 +1,7 @@
 //! Retail keyboard binding loading and logical-key dispatch.
 //!
 //! This app-layer module translates winit's logical keys into the encoded
-//! Win32 key words stored in `KEYBOARDMD.INI`. It deliberately stops at
+//! Win32 key words imported from `KEYBOARDMD.INI` and saved in `VERA.INI`. It deliberately stops at
 //! semantic command names; gameplay effects remain in `input::dispatch`.
 
 use std::collections::BTreeMap;

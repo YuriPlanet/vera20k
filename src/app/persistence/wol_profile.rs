@@ -1,5 +1,5 @@
 //! `wolinfoMD.ini` (`0x00849F8C`): the WOL persona file gamemd writes next
-//! to RA2MD.INI. Retail does not ship it; the first login flow that reaches
+//! to VERA.INI. Retail does not ship it; the first login flow that reaches
 //! `0x10F` creates it (`0x007873AC`).
 //!
 //! Nothing is cached, as in native: every getter and setter reads and parses

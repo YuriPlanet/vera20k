@@ -8,7 +8,7 @@
 ; administrator prompt, and asks for the Yuri's Revenge folder, offering the one
 ; it finds (DetectGameDirs). It writes config.toml beside the program with that
 ; folder as ra2_dir and the install folder as settings_dir. Shortcuts start the
-; program in its install folder, so logs, saves, replays and its RA2MD.INI stay
+; program in its install folder, so logs, saves, replays and its VERA.INI stay
 ; there and never touch the game folder, which may be read-only or shared with
 ; the original game.
 ;

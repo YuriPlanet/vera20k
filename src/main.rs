@@ -81,7 +81,7 @@ fn run(app_bundle: bool) -> Result<()> {
 
     // Native claims its single-instance gate before it creates a window: a
     // second copy raises and restores the running one and exits, so the two
-    // never both write RA2MD.INI on quit. Capture modes are automation-only and
+    // never both write VERA.INI on quit. Capture modes are automation-only and
     // are deliberately left ungated so parallel captures still run —
     // VERA-internal exemption, native has no capture mode.
     let _instance_guard = match &launch_mode {
