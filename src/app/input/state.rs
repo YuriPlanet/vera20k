@@ -626,6 +626,24 @@ impl MatchInputState {
                     group.retain(|id| *id != stable_id);
                 }
             }
+            LifecycleOutput::ControlGroupCopied {
+                source_id,
+                destination_id,
+            } => {
+                // Native copies the one Group+214 field, including a latent
+                // ineligible member's slot or -1. Preserve the source until
+                // normal missing-object pruning; this fact precedes UnInit.
+                let slot = self
+                    .control_groups
+                    .iter()
+                    .position(|group| group.contains(&source_id));
+                for group in &mut self.control_groups {
+                    group.retain(|id| *id != destination_id);
+                }
+                if let Some(slot) = slot {
+                    self.control_groups[slot].push(destination_id);
+                }
+            }
             _ => {}
         }
         false

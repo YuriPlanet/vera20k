@@ -778,6 +778,14 @@ pub enum LifecycleOutput {
     ControlGroupMemberRemoved {
         stable_id: u64,
     },
+    /// UnitDeploy7397C6/7397CC and BuildingSelling44A04C/44A052 copy
+    /// Group+214 after successful conversion admission, before source UnInit.
+    /// The input owner copies its retained membership without eligibility or
+    /// selection filtering; pointer expiry alone does not clear that field.
+    ControlGroupCopied {
+        source_id: u64,
+        destination_id: u64,
+    },
     /// DispatchPointerExpired7258D0 reaches navigation733160 at7259B1
     /// for a Techno abstract pointer, regardless of announce-control or Alive.
     ObjectPointerExpired {

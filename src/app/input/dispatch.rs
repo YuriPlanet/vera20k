@@ -47,6 +47,10 @@ mod area_guard_tests;
 #[path = "player_scatter_tests.rs"]
 mod player_scatter_tests;
 
+#[cfg(test)]
+#[path = "mcv_group_tests.rs"]
+mod mcv_group_tests;
+
 /// Handle mouse button press/release for selection and move commands.
 ///
 /// The in-game gadget walk runs FIRST (study G22/A8): chrome buttons + cameos

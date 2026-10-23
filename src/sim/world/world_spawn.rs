@@ -15,7 +15,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use super::{
-    PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, SimSoundEvent, Simulation,
+    LifecycleOutput, PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest,
+    SimSoundEvent, Simulation,
 };
 use crate::map::entities::{EntityCategory, MapEntity};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -2315,8 +2316,7 @@ impl Simulation {
     /// type can stand at its origin turns to the type's `DeployFacing=` or,
     /// already facing it, becomes that building. False when it refuses.
     ///
-    /// Not carried over to the building: the unit's Group (`+0x214`,
-    /// `0x007397C6`; VERA's control groups live in the app), its AttachedTag
+    /// Not carried over to the building: its AttachedTag
     /// (`+0x34`, `0x007399EE`), its looping sound handles (`+0x4DC..+0x4F4`,
     /// `0x00739971`), `DiscoveredBy(owner)` (vt+0x198, `0x00739848`) and the
     /// turret facing a `+0x16CA`/`+0x16C4` type starts at (`0x007397FB`).
@@ -2658,6 +2658,13 @@ impl Simulation {
             let _ =
                 self.assign_target_represented(targeter, target, rules, registry, frame_effects);
         }
+        //7397C6/7397CC: copy Group+214 after successful Building Unlimbo
+        // and retargeting. The existing input owner holds this local field.
+        self.lifecycle_outputs
+            .emit(LifecycleOutput::ControlGroupCopied {
+                source_id: stable_id,
+                destination_id: new_sid,
+            });
         // 0x007397D2..0x007397DE: the unit's veterancy (`+0x150`); the rank
         // cache (`+0x13C`) stays the building's own.
         if let Some(building) = self.substrate.entities.get_mut(new_sid) {
@@ -2803,8 +2810,7 @@ impl Simulation {
     /// class setter `vt+0x480(archive, 1)` and `Queue_Mission(Move, 0)`
     /// (`0x0044A091..0x0044A0AE`), and the listed attackers target the unit
     /// (`0x0044A146..0x0044A167`). The building's UnInit comes last. Not
-    /// carried over: its Group (`+0x214`, `0x0044A04C`; VERA's control groups
-    /// live in the app), AttachedTag (`+0x34`, `0x0044A0B4`) and looping sound
+    /// carried over: its AttachedTag (`+0x34`, `0x0044A0B4`) and looping sound
     /// handles (`+0x4DC..+0x4F4`). A refused Unit Unlimbo refunds the cached
     /// building value to its current owner and retains the limbo constructor
     /// (`0x0044A16B..0x0044A176`).
@@ -2955,6 +2961,13 @@ impl Simulation {
         #[cfg(feature = "ares")]
         self.transfer_factory_country(sid, new_sid);
         self.transfer_slave_manager(sid, new_sid, false, rules, overlay_registry, frame_effects);
+        //44A04C/44A052: successful Unit Unlimbo and slave handoff precede
+        // the unconditional Group+214 copy, including latent membership.
+        self.lifecycle_outputs
+            .emit(LifecycleOutput::ControlGroupCopied {
+                source_id: sid,
+                destination_id: new_sid,
+            });
         // Cell clicks, object clicks (event 0x1E) and the SlaveManager
         // relocation share ArchiveTarget; conversion sends the new Unit to
         // that existing goal, a Cell or an object: vt+0x480

@@ -3952,7 +3952,7 @@ fn shot_is_illegal(
 /// A query the sim cannot answer (no map cells) keeps Move: VERA-internal, as
 /// a live gamemd session always has a map.
 #[allow(clippy::too_many_arguments)]
-fn building_cell_orders(
+pub(super) fn building_cell_orders(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
