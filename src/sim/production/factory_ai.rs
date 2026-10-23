@@ -252,12 +252,15 @@ fn start_factory(
     // scopes the block to the produced-type RTTI class; the per-type
     // `DisableAIParallelProduction=` only takes effect while it is no
     // (说明书 1.4.11.4), and the global yes already blocks every class.
-    let parallel_blocked =
-        rules.general.disable_parallel_ai_queues || object.disable_ai_parallel_production;
-    if parallel_blocked
-        && house_holds_parallel_production(sim, rules, owner, building, object.category)
+    #[cfg(feature = "npatch")]
     {
-        return;
+        let parallel_blocked =
+            rules.general.disable_parallel_ai_queues || object.disable_ai_parallel_production;
+        if parallel_blocked
+            && house_holds_parallel_production(sim, rules, owner, building, object.category)
+        {
+            return;
+        }
     }
     let factory_naval = sim
         .substrate
@@ -333,6 +336,7 @@ pub(crate) struct AiPlacementTimer {
 /// releases here where the native counter would leak. The native unit class
 /// split by the second-queue flag at `UnitType+0xCCE` is that feature's own
 /// bookkeeping, not the switch's; one vehicle class is the documented scope.
+#[cfg(feature = "npatch")]
 fn house_holds_parallel_production(
     sim: &Simulation,
     rules: &RuleSet,

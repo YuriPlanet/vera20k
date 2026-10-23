@@ -372,6 +372,7 @@ fn without_the_switch_both_war_factories_clone_the_choice() {
 /// produces, no other starts (`0x45033C` hook, cave `0xC2F07C`); the block
 /// releases when that production ends — the native counter decrements in
 /// `Exit_Object` (`0x443CCA..0x4452F0`) and `AbandonProduction` (`0x4CA004`).
+#[cfg(feature = "npatch")]
 #[test]
 fn disable_parallel_ai_queues_serializes_war_factory_production() {
     let mut f = war_fixture("DisableParallelAIQueues=yes\n", "[TANK]\n");
@@ -403,6 +404,7 @@ fn disable_parallel_ai_queues_serializes_war_factory_production() {
 
 /// `[TANK] DisableAIParallelProduction=yes` with the global switch left no:
 /// the type alone is not produced twice (说明书 1.4.11.4 局部代码).
+#[cfg(feature = "npatch")]
 #[test]
 fn disable_ai_parallel_production_scopes_the_block_to_the_type() {
     let mut f = war_fixture(
@@ -438,4 +440,29 @@ fn disable_ai_parallel_production_scopes_the_block_to_the_type() {
         .set(crate::sim::ai_unit_choice::UnitChoiceKind::Unit, 0);
     f.visit(weap_2);
     assert!(f.holds(weap_2), "the release lets the idle factory start");
+}
+
+/// Extension keys cannot change production in a build without NPatch.
+#[cfg(not(feature = "npatch"))]
+#[test]
+fn npse_switches_are_ignored_without_the_build_capability() {
+    let mut f = war_fixture(
+        "DisableParallelAIQueues=yes\n",
+        "[TANK]\nDisableAIParallelProduction=yes\n",
+    );
+    assert!(!f.rules.general.disable_parallel_ai_queues);
+    assert!(
+        !f.rules
+            .object("TANK")
+            .unwrap()
+            .disable_ai_parallel_production
+    );
+    let [weap_1, weap_2] = f.war();
+    f.visit(weap_1);
+    f.visit(weap_2);
+    assert!(f.holds(weap_1));
+    assert!(
+        f.holds(weap_2),
+        "NPSE keys leave stock parallel production intact"
+    );
 }

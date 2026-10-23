@@ -3469,8 +3469,11 @@ impl GeneralRules {
             curley_shuffle: general.read_bool("CurleyShuffle", defaults.curley_shuffle),
             // NPSE reads it with the current field as default into Rules+0x2D
             // (`0xC302E9..0xC3031A`); the constructor extension leaves 0.
-            disable_parallel_ai_queues: general
-                .read_bool("DisableParallelAIQueues", defaults.disable_parallel_ai_queues),
+            disable_parallel_ai_queues: crate::rules::NPATCH_ENABLED
+                && general.read_bool(
+                    "DisableParallelAIQueues",
+                    defaults.disable_parallel_ai_queues,
+                ),
             repair_rate_minutes: general.read_double("RepairRate", defaults.repair_rate_minutes),
             // `RulesClass+0x30/+0x34/+0x38/+0x3C`, read by the General reader at
             // `0x0066D530`. ReadInt66E6F3/70D/727/740 retains each current

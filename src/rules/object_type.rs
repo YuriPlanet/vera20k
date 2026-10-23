@@ -3655,7 +3655,8 @@ impl ObjectType {
                 section.read_bool("WaterBound", default)
             },
             naval: section.read_bool("Naval", false),
-            disable_ai_parallel_production: section.read_bool("DisableAIParallelProduction", false),
+            disable_ai_parallel_production: crate::rules::NPATCH_ENABLED
+                && section.read_bool("DisableAIParallelProduction", false),
             number_impassable_rows: section.read_int("NumberImpassableRows", -1),
 
             // Rules' ordered processor publishes the retained reader result.
