@@ -513,15 +513,31 @@ pub(crate) fn build_shp_instances_from_inputs(
         let extra_light = rules.map_or(0, |rules| {
             crate::app::presentation::lighting::body_extra_light(entity, rules, sim, cells.as_ref())
         });
-        let tint = shp_body_tint(
-            input.lighting,
-            (pos.rx(), pos.ry()),
-            entity.category(),
-            extra_light,
-        );
+        // Infantry5192C9 retains Object5F69C0 -> Foot4DBDF0's navigation
+        // Cell for both top-light arms51940A/51943F. A destination alone
+        // does not change it: the active locomotor's head/null-current
+        // projection (or Tube exit) owns this read. Physical position still
+        // owns shroud, depth and the extra's side/ground/height queries.
+        let physical_cell = (pos.rx(), pos.ry());
+        let light_cell = if entity.category() == EntityCategory::Infantry {
+            sim.foot_navigation_coordinate(stable_id)
+                .map(|coord| {
+                    (
+                        crate::util::lepton::lepton_to_cell_packed(coord.x) as u16,
+                        crate::util::lepton::lepton_to_cell_packed(coord.y) as u16,
+                    )
+                })
+                // Incomplete pre-bind/headless actors can lack an active
+                // locomotor or Tube descriptor. Preserve their prior physical
+                // cell fallback; a missing light-grid entry still uses1000.
+                .unwrap_or(physical_cell)
+        } else {
+            physical_cell
+        };
+        let tint = shp_body_tint(input.lighting, light_cell, entity.category(), extra_light);
         let selected_palette_light = crate::app::presentation::lighting::body_palette_light(
             input.lighting,
-            (pos.rx(), pos.ry()),
+            light_cell,
             extra_light,
         );
         let palette_light = if entity.category() == EntityCategory::Structure {
