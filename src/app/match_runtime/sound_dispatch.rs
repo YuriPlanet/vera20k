@@ -355,13 +355,15 @@ pub(super) fn dispatch_sim_sound_events(
                 };
                 // Launch6CD176 uses PlayAt7509E0 before effect receivers.
                 // No activation EVA belongs to the ForceShield case.
-                if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::ForceShield
-                    && let Some(sound_id) = &sw.start_sound
-                {
-                    output.push(GameSoundEvent::VocAt {
-                        sound_id: sound_id.clone(),
-                        source: Some(anim_world_sound_source(world)),
-                    });
+                if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::ForceShield {
+                    let cue =
+                        superweapon_launch_cue(sw.kind, &rules.general, sw.start_sound.as_deref());
+                    if let Some(sound_id) = cue.sound_id {
+                        output.push(GameSoundEvent::VocAt {
+                            sound_id,
+                            source: Some(anim_world_sound_source(world)),
+                        });
+                    }
                 }
                 continue;
             }
@@ -379,18 +381,15 @@ pub(super) fn dispatch_sim_sound_events(
                 let Some(sw) = rules.super_weapon(type_name) else {
                     continue;
                 };
-                // ForceShield already played at its original producer point;
-                // this post-receiver fact only owns the local cleanup tail.
-                if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::ForceShield {
-                    if owner_is_local(sim.interner(), owner, local_owner_name) {
-                        output.push(GameSoundEvent::EvaRemove {
-                            event: "EVA_ForceShieldReady".to_owned(),
-                        });
-                    }
-                    continue;
-                }
-                let cue =
-                    superweapon_launch_cue(sw.kind, &rules.general, sw.start_sound.as_deref());
+                // ForceShield's cue was dispatched at its early activation
+                // boundary; this later fact still reaches the shared Ready
+                // cleanup below without playing the cue twice.
+                let cue = if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::ForceShield
+                {
+                    SuperWeaponLaunchCue::default()
+                } else {
+                    superweapon_launch_cue(sw.kind, &rules.general, sw.start_sound.as_deref())
+                };
                 // The EVA column is picked for the *listening* client's
                 // side, not the launcher's: `VoxClass::PlayEVA` takes
                 // only the event name; the consumer resolves the side.
@@ -2272,21 +2271,8 @@ mod tests {
     /// does author it.
     #[test]
     fn force_shield_takes_its_cue_from_the_launched_type_not_from_audiovisual() {
-        use crate::rules::superweapon_type::SuperWeaponKind as K;
-        let g = stock_audio_visual();
-
-        let stock = superweapon_launch_cue(K::ForceShield, &g, Some("ForceShieldStarting"));
-        assert_eq!(stock.sound_id.as_deref(), Some("ForceShieldStarting"));
-        assert!(stock.positional);
-        assert_eq!(stock.eva_event, None, "case 10 reaches no VoxClass call");
-
-        let unset = superweapon_launch_cue(K::ForceShield, &g, None);
-        assert_eq!(unset.sound_id, None);
-        let empty = superweapon_launch_cue(K::ForceShield, &g, Some("  "));
-        assert_eq!(empty.sound_id, None);
-
         //6CEBCE..6CEBD8 retains the resolved type cue across an unknown
-        // later read; the actual case10 consumer receives that same cue.
+        // later read; exercise its actual early dispatcher and cleanup tail.
         use crate::rules::ini_parser::IniFile;
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
         use crate::rules::sound_ini::SoundRegistry;
@@ -2303,12 +2289,65 @@ mod tests {
         let sounds =
             SoundRegistry::from_ini(&IniFile::from_str("[SoundList]\n0=ForceShieldStarting\n"));
         rules.bind_type_sound_references(processed.ini(), &sounds);
-        let shield = rules.super_weapon("Shield").unwrap();
-        let retained =
-            superweapon_launch_cue(shield.kind, &rules.general, shield.start_sound.as_deref());
-        assert_eq!(retained.sound_id.as_deref(), Some("ForceShieldStarting"));
-        assert!(retained.positional);
-        assert_eq!(retained.eva_event, None);
+        assert_eq!(
+            rules.super_weapon("Shield").unwrap().start_sound.as_deref(),
+            Some("ForceShieldStarting")
+        );
+        let mut sim = Simulation::new();
+        let local = sim.intern("Local");
+        let remote = sim.intern("Remote");
+        let sw_type = sim.intern("Shield");
+        let world = crate::sim::anim_class::AnimWorldCoord {
+            x: -257,
+            y: 1537,
+            z: 104,
+        };
+        let dispatch = |rules: &RuleSet, event| {
+            let mut output = SoundEventQueue::new();
+            dispatch_sim_sound_events(
+                [event],
+                &sim,
+                rules,
+                Some("LOCAL"),
+                &mut |_| panic!("ForceShield sound has no radar admission"),
+                &mut output,
+            );
+            output.drain()
+        };
+        // The first case uses the retained reader result. Empty and absent
+        // boundary inputs stay silent through the shared cue owner.
+        for cue in [Some("ForceShieldStarting"), None, Some("  ")] {
+            rules.super_weapons.values_mut().next().unwrap().start_sound = cue.map(str::to_owned);
+            let early = dispatch(
+                &rules,
+                SimSoundEvent::SuperWeaponActivation { sw_type, world },
+            );
+            if cue == Some("ForceShieldStarting") {
+                assert!(matches!(early.as_slice(), [GameSoundEvent::VocAt {
+                    sound_id, source: Some(_),
+                }] if sound_id == "ForceShieldStarting"));
+            } else {
+                assert!(early.is_empty());
+            }
+            for owner in [local, remote] {
+                let tail = dispatch(
+                    &rules,
+                    SimSoundEvent::SuperWeaponLaunched {
+                        owner,
+                        sw_type,
+                        world,
+                    },
+                );
+                if owner == local {
+                    assert!(
+                        matches!(tail.as_slice(), [GameSoundEvent::EvaRemove { event }]
+                        if event == "EVA_ForceShieldReady")
+                    );
+                } else {
+                    assert!(tail.is_empty());
+                }
+            }
+        }
     }
 
     /// ClickFire's refusal lines (`LightningStorm::PrintMessage @
