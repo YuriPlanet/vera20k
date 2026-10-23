@@ -728,7 +728,8 @@ fn radar_provider_available(
 
 /// House508DF0: a running radar outage (`0x00508E07..0x00508E31`, any
 /// remaining time) denies radar before Scenario FreeRadar (`+0x34A4`), power
-/// and the providers are asked.
+/// and the providers are asked. Returns whether this visit assessed radar,
+/// so the local House can reach the process setter at the same boundary.
 pub(crate) fn assess_house_radar_projection(
     state: &mut PowerState,
     entities: &EntityStore,
@@ -738,7 +739,7 @@ pub(crate) fn assess_house_radar_projection(
     interner: &crate::sim::intern::StringInterner,
     free_radar: bool,
     binary_frame: u32,
-) {
+) -> bool {
     if state.radar_dirty {
         state.radar_dirty = false;
         state.radar_available = state.radar_outage_timer.remaining(binary_frame as i32) == 0
@@ -751,7 +752,9 @@ pub(crate) fn assess_house_radar_projection(
                     owner,
                     interner,
                 ));
+        return true;
     }
+    false
 }
 
 /// Check whether a specific building is functionally active (not disabled by low power).

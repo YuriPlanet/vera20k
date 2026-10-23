@@ -48,7 +48,7 @@ pub(crate) use voxel_anim_effects::BounceContactDamage;
 mod unit_repair_seek;
 pub(crate) use frame_channel::FrameChannel;
 pub use network_commands::{NetworkCommandQueues, NetworkQueueError, NetworkQueueContext, NetworkQueuePass, NetworkInterruption};
-pub use frame_effects::{FrameEffects, LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError, SoundBoundary, OutcomeWaitBoundary};
+pub use frame_effects::{FrameEffects, LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError, SoundBoundary, OutcomeWaitBoundary, TacticalRadarBoundary};
 pub(crate) use type_tech_levels::TypeTechLevels;
 #[cfg(test)]
 mod unit_unlimbo_tests;
@@ -5756,7 +5756,12 @@ impl Simulation {
     /// House4F844B..4F8506: assess dirty power, rewrite all owned Factory
     /// rates without touching timers, then refresh the radar projection.
     /// Numeric/order evidence: the engineer-repair native consumer packet.
-    fn assess_house_derived_state(&mut self, owner: InternedId, rules: &RuleSet) {
+    fn assess_house_derived_state(
+        &mut self,
+        owner: InternedId,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
         if !self.houses.contains_key(&owner) {
             return;
         }
@@ -5797,7 +5802,7 @@ impl Simulation {
             return;
         }
         let buildings = self.houses[&owner].base_projection().buildings();
-        power_system::assess_house_radar_projection(
+        let radar_assessed = power_system::assess_house_radar_projection(
             self.power_states
                 .get_mut(&owner)
                 .expect("represented House power state"),
@@ -5809,6 +5814,15 @@ impl Simulation {
             self.session.free_radar(),
             self.session.binary_frame(),
         );
+        // House508F39..508F4F compares the actual process Radar flag and
+        // calls SetAvailable656DF0 here, before this House's defeat gate.
+        if radar_assessed && self.session.current_house() == Some(owner) {
+            effects.set_tactical_radar_available(
+                self,
+                rules,
+                power_system::has_active_radar(self.power_states.as_map(), owner),
+            );
+        }
     }
 
     /// Append one successfully committed BuildConst Building to its owning

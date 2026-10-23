@@ -221,7 +221,7 @@ impl Simulation {
             let kind = if let Some(kind) = resumed_kind.take() {
                 Some(kind)
             } else {
-                self.assess_house_derived_state(owner, rules);
+                self.assess_house_derived_state(owner, rules, frame_effects);
                 self.update_house_anger_and_activation(owner, rules);
                 self.houses.get(&owner).and_then(|house| {
                     house.pending_outcome(
@@ -421,8 +421,8 @@ impl Simulation {
             // Original gamemd:4FC1EE ->637A10, before Session+300/reveal
             // and the loss announcement. Input owns the exit and2B event;
             // House returns it to MainTick's existing post-Logic dispatcher.
-            // Earlier death cues precede EndPlanningModeSound; MatchOutcome's
-            // synchronous flush later delivers that cue before the local EVA.
+            // Earlier death cues precede EndPlanningModeSound; the reached
+            // Radar setter then delivers it before RadarOn and the local EVA.
             // Executable controls: spatial_oracle/planning_local_defeat.
             context.effects().flush_sound(self, context.rules());
             let commit = context
@@ -432,6 +432,11 @@ impl Simulation {
             self.power_states
                 .house_mut(owner)
                 .set_tactical_map_available();
+            // Local MPlayerDefeated4FC21B reaches Radar656DF0 immediately,
+            // including an Off -> On reversal within this same House visit.
+            context
+                .effects()
+                .set_tactical_radar_available(self, rules, true);
             commit
         } else {
             if let Some(house) = self.houses.get_mut(&owner) {

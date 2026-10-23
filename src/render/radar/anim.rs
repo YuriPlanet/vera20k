@@ -484,6 +484,10 @@ impl RadarAnimState {
 }
 
 #[cfg(test)]
+#[path = "availability_tests.rs"]
+mod availability_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use serde::Deserialize;

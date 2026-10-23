@@ -1181,12 +1181,21 @@ fn advance_one_simulation_frame(
                         minimap.admit_radar_event(request, tick, Some(rules))
                     })
                 };
+                let has_radar = &mut state.match_state.match_presentation.has_radar;
+                let radar_anim = &mut state.match_state.match_presentation.radar_anim;
+                let mut set_tactical_radar = |available| {
+                    *has_radar = available;
+                    radar_anim
+                        .as_mut()
+                        .and_then(|radar| radar.set_has_radar(available))
+                };
                 let boundary = super::frame_effects::FrameClientBoundary::new(
                     playback,
                     local_owner_name.as_deref(),
                     &mut state.match_state.match_audio.sound_events,
                     &mut admit_radar,
                 )
+                .with_tactical_radar(&mut set_tactical_radar)
                 .with_planning(
                     &mut state.match_state.input.planning,
                     &mut state.match_state.input.selection_state,
@@ -1201,6 +1210,7 @@ fn advance_one_simulation_frame(
                 )
                 .with_outcome_wait(&mut state.match_state.scenario_outcome);
                 let effects = FrameEffects::for_sound(&boundary)
+                    .with_tactical_radar(&boundary)
                     .with_local_planning(&boundary)
                     .with_network_commands(&boundary)
                     .with_outcome_wait(&boundary)

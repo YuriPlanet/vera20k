@@ -296,7 +296,7 @@ fn settled_repair_native_health_sample_factory_cadence_radar_and_later_advice() 
             .get_mut(&owner)
             .unwrap()
             .start_blackout(int(&timer[0]) as u32, int(&timer[2]));
-        sim.assess_house_derived_state(owner, &rules);
+        sim.assess_house_derived_state(owner, &rules, super::FrameEffects::empty());
         let type_ref = sim.interner.intern("PENDING");
         assert!(sim.production.factories_mut().test_enqueue_kernel(
             owner,
@@ -366,7 +366,7 @@ fn settled_repair_native_health_sample_factory_cadence_radar_and_later_advice() 
                 }
                 "actual_global_factory_then_house_prefix" => {
                     production::step_factories(&mut sim);
-                    sim.assess_house_derived_state(owner, &rules);
+                    sim.assess_house_derived_state(owner, &rules, super::FrameEffects::empty());
                 }
                 "later_local_house_advice" => house_eva::update_house_eva(&mut sim, &rules, owner),
                 phase => panic!("unmapped native boundary {phase}"),
@@ -401,7 +401,7 @@ fn native_blackout_setter_replaces_shorter_longer_and_zero_durations() {
         // Establish the supplied settled prior through the existing House
         // receiver. The full50BC90 comparison itself executes only the
         // setter; ForceShield/Spy activation and numeric inputs are outside.
-        sim.assess_house_derived_state(owner, &rules);
+        sim.assess_house_derived_state(owner, &rules, super::FrameEffects::empty());
         if input["prior_dirty"] == true {
             Simulation::invalidate_house_power(
                 &sim.houses,
@@ -443,14 +443,14 @@ fn native_blackout_zero_one_and_two_remaining_with_clean_or_dirty_house() {
             .start_blackout(start, int(&input["duration"]));
         // Reach a clean power assessment while the timer still has2 frames.
         // Local radar's separately supplied prior bool is not compared here.
-        sim.assess_house_derived_state(owner, &rules);
+        sim.assess_house_derived_state(owner, &rules, super::FrameEffects::empty());
         sim.session
             .set_binary_frame_for_test(int(&input["frame"]) as u32);
         if input["prior_dirty"] == true {
             Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, false);
         }
         assert_power(&sim, owner, &row["before"], "blackout prior");
-        sim.assess_house_derived_state(owner, &rules);
+        sim.assess_house_derived_state(owner, &rules, super::FrameEffects::empty());
         assert_power(&sim, owner, &row["output"], "native blackout receiver");
         assert_rng(&sim, &row["receipt"]["rng_after"], "blackout receiver");
     }
