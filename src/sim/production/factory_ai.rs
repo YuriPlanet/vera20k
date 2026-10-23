@@ -27,7 +27,11 @@
 //!   (`FactoryClass::StartProduction @ 0x004C9C70`, then the build start
 //!   `0x004C9EA0`; the call between, `0x004FF540`, is an empty body); a
 //!   failed start deletes it unrefunded. A war factory makes no Unit whose
-//!   `Naval=` differs from its own (`0x00450343..0x0045036A`).
+//!   `Naval=` differs from its own (`0x00450343..0x0045036A`). The NPSE
+//!   extension switch `[General] DisableParallelAIQueues=` (plus the
+//!   per-type `DisableAIParallelProduction=`, 说明书 1.4.11.4) blocks the
+//!   start when the house already holds another factory producing the same
+//!   produced-type class — see [`house_holds_parallel_production`].
 //!
 //! The same factory also goes, abandoned, with its building's
 //! `Detach_All(1)` (a kill, a sale's completion or a Limbo, [`detach_all`])
@@ -243,6 +247,18 @@ fn start_factory(
     let Some(object) = ai_base_building::suggest_new_object(sim, rules, owner, factory_rtti) else {
         return;
     };
+    // The NPSE parallel gate runs where `Factory_AI` fetched the type, before
+    // the naval mismatch check (`0x45033C` hook). `DisableParallelAIQueues=`
+    // scopes the block to the produced-type RTTI class; the per-type
+    // `DisableAIParallelProduction=` only takes effect while it is no
+    // (说明书 1.4.11.4), and the global yes already blocks every class.
+    let parallel_blocked =
+        rules.general.disable_parallel_ai_queues || object.disable_ai_parallel_production;
+    if parallel_blocked
+        && house_holds_parallel_production(sim, rules, owner, building, object.category)
+    {
+        return;
+    }
     let factory_naval = sim
         .substrate
         .entities
@@ -304,6 +320,37 @@ fn placement_wait_over(sim: &Simulation, building: u64) -> bool {
 #[serde(transparent)]
 pub(crate) struct AiPlacementTimer {
     timer: CdTimer,
+}
+
+/// The NPSE parallel gate's "is the class counter above zero" side
+/// (`0xC2F07C..0xC2F117`): `owner` holds another building's factory whose
+/// current object's type is of `category`, counted from production start and
+/// released when the object leaves through `Exit_Object` (`0x443CCA..0x4452F0`)
+/// or `AbandonProduction` (`0x4CA004`) — so a finished object still waiting to
+/// leave still counts. The live scan replaces the native counters
+/// (`House+0x160D4..0x160E4`); only `Factory_AI` starts ever incremented them,
+/// so House-holder production stays outside, and a `PointerExpired` clearing
+/// releases here where the native counter would leak. The native unit class
+/// split by the second-queue flag at `UnitType+0xCCE` is that feature's own
+/// bookkeeping, not the switch's; one vehicle class is the documented scope.
+fn house_holds_parallel_production(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    building: u64,
+    category: ObjectCategory,
+) -> bool {
+    sim.production
+        .factories()
+        .keyed_factories()
+        .any(|(holder, factory)| {
+            matches!(holder, FactoryHolder::Building(other) if *other != building)
+                && factory.owner() == owner
+                && factory.object().is_some_and(|object| {
+                    sim.object_type(object.type_id, rules)
+                        .is_some_and(|ty| ty.category == category)
+                })
+        })
 }
 
 impl AiPlacementTimer {

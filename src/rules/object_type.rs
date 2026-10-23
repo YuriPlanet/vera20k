@@ -1987,6 +1987,14 @@ pub struct ObjectType {
     /// Unit or building is classified as naval (Naval=yes in INI).
     /// Controls AI targeting priority, factory classification, and UI filtering.
     pub naval: bool,
+    /// `[TechnoTypes] DisableAIParallelProduction=` — the per-type arm of the
+    /// NPSE AI parallel-production switch (NPSE 说明书 1.4.11.4). With it, a
+    /// computer house may not hold this type producing in two factories at
+    /// once; it only takes effect when `[General] DisableParallelAIQueues=`
+    /// is no. The shipped NPSE 2.0 build (`2.0 #359`) reads only the global
+    /// key — this one follows the documented contract — so the reader default
+    /// is no and the gate sits in `factory_ai::start_factory`.
+    pub disable_ai_parallel_production: bool,
     /// Number of foundation columns from the west edge (X-axis) that remain
     /// impassable in the UnitClass live building-occupant helper. Default -1
     /// keeps the whole checked building as a blocker. Parsed from
@@ -3647,6 +3655,7 @@ impl ObjectType {
                 section.read_bool("WaterBound", default)
             },
             naval: section.read_bool("Naval", false),
+            disable_ai_parallel_production: section.read_bool("DisableAIParallelProduction", false),
             number_impassable_rows: section.read_int("NumberImpassableRows", -1),
 
             // Rules' ordered processor publishes the retained reader result.

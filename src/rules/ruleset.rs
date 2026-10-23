@@ -522,6 +522,19 @@ pub struct GeneralRules {
     /// that fired or missed goes back to state 1 and picks a new firing spot.
     /// Retail: yes.
     pub curley_shuffle: bool,
+    /// `[General] DisableParallelAIQueues=` — an extension switch read into
+    /// `Rules+0x2D` by the NPSE 2.0 `RulesClass::ReadGeneral` hook
+    /// (`0xC302E9..0xC3031A`, `INIClass::ReadBooleanByte @ 0x5295F0` with the
+    /// current field as its default; the constructor extension zeroes it, so
+    /// absent means no). With yes, `BuildingClass::Factory_AI`'s fetch path
+    /// (`0x45033C` hook, cave `0xC2F07C`) counts a computer house's factories
+    /// holding a producing object per produced-type RTTI class (aircraft 3 /
+    /// unit 0x28 / infantry 0x10 / building 7; `House+0x160D4..0x160E4`) and a
+    /// factory whose class counter is above zero starts nothing. The counters
+    /// release in `BuildingClass::Exit_Object` (`0x443CCA..0x4452F0`) and
+    /// `FactoryClass::AbandonProduction` (`0x4CA004`). Default no: the
+    /// computer's factories clone one choice in parallel as retail does.
+    pub disable_parallel_ai_queues: bool,
     /// `[General] RepairRate=` in minutes — `RulesClass+0x16E0`.
     ///
     /// The self-heal pulse (`FUN_0070BE80`) divides the frame counter by
@@ -2310,6 +2323,7 @@ impl Default for GeneralRules {
             game_speed_bias: 1.0,
             veteran_armor: 1.0,
             curley_shuffle: false,
+            disable_parallel_ai_queues: false,
             repair_rate_minutes: 0.016,
             // Rules665696..6656B0 initializes the current-default fields
             // before ReadGeneral66E6E2..66E74B. Retail overrides are separate.
@@ -3453,6 +3467,10 @@ impl GeneralRules {
             game_speed_bias: general.read_double("GameSpeedBias", defaults.game_speed_bias),
             veteran_armor: general.read_double("VeteranArmor", 1.0),
             curley_shuffle: general.read_bool("CurleyShuffle", defaults.curley_shuffle),
+            // NPSE reads it with the current field as default into Rules+0x2D
+            // (`0xC302E9..0xC3031A`); the constructor extension leaves 0.
+            disable_parallel_ai_queues: general
+                .read_bool("DisableParallelAIQueues", defaults.disable_parallel_ai_queues),
             repair_rate_minutes: general.read_double("RepairRate", defaults.repair_rate_minutes),
             // `RulesClass+0x30/+0x34/+0x38/+0x3C`, read by the General reader at
             // `0x0066D530`. ReadInt66E6F3/70D/727/740 retains each current
