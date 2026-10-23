@@ -745,10 +745,16 @@ impl Simulation {
                     UninitContext::new(rules, registry).with_effects(effects),
                 );
             }
+            // TemporalClass::Update (0x0071A9AC..0x0071A9DC) scalar-deletes Cargo
+            // before the parent's kill/UnInit. This private erase runs inside
+            // the admitted live object pass, whose active GameState is 1.
+            self.scalar_delete_building_cargo(
+                target,
+                UninitContext::new(rules, registry).with_effects(effects),
+                1,
+            );
             // 0x0071A9EE..0x0071AA15: a Tank Bunker releases its occupant
-            // (`0x004593A0`). Residual: native71A9AC..71A9DC scalar-deletes
-            // true Cargo before this release when ScenarioInit is zero;
-            // the existing Cargo retirement still runs in UnInit below.
+            // (`0x004593A0`) after the synchronous Cargo destructors.
             crate::sim::docking::bunker_link::release_sell_destroy(self, target, rules, effects);
         }
         // 0x0071AA90: the erased object's own bunker link (`+0x2E4`) names a
@@ -1435,3 +1441,7 @@ fn location_coord(entity: &GameEntity) -> AnimWorldCoord {
 #[cfg(test)]
 #[path = "temporal_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "temporal_cargo_disposal_tests.rs"]
+mod cargo_disposal_tests;

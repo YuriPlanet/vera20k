@@ -1596,22 +1596,6 @@ impl Simulation {
         }
     }
 
-    /// The destructors' slave links, at the pending-delete drain: a slave's
-    /// InfantryClass destructor leaves its node (RemoveSlave at
-    /// `0x00517E22`), and a master still holding its manager frees its
-    /// slaves with no killer and no house (TechnoClass destructor
-    /// `0x006F4571`).
-    pub(crate) fn release_slave_links_at_destruction(
-        &mut self,
-        id: u64,
-        rules: &RuleSet,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
-    ) {
-        Self::remove_slave(&self.session, &mut self.substrate, id);
-        self.free_slaves(id, None, None, rules, registry, frame_effects);
-    }
-
     /// FreeSlaves (`0x006B0AE0`, `killer`, `house`), last node first. Each
     /// slave loses its SlaveOwner. One inside (limbo) dies with its master:
     /// the kill is recorded for `killer` (`vt+0xE0`) and it is UnInit. One
