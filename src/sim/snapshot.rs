@@ -1967,6 +1967,9 @@ impl Simulation {
             .occupancy
             .restore_memberships(&self.substrate.entities)
             .map_err(|reason| SnapshotRestoreError::InvalidCellMembership { reason })?;
+        // VERA-only compatibility: the retired frame-start scan setting keeps
+        // its serialized slot, but every restored object scans live.
+        self.scan_batch = None;
         Ok(())
     }
 

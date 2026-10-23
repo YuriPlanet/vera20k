@@ -731,7 +731,6 @@ impl Simulation {
         effects: super::FrameEffects<'_>,
     ) -> Result<LiveObjectPassOutcome, super::FrameAdvanceError> {
         self.answer_batched_path_searches(rules, overlay_registry);
-        self.answer_batched_scans(rules, overlay_registry);
         let object_ctx = techno_ai::ObjectAiCtx {
             effects,
             overlay_registry,

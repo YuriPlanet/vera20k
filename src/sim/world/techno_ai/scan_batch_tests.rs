@@ -1,5 +1,6 @@
 //! Live target acquisition and compatibility with the retired scan request.
 use super::*;
+use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::{ScanMission, TargetKind};
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::scenario_session::ScenarioGameMode;
@@ -47,12 +48,10 @@ fn run_mission(sim: &mut Simulation, rules: &RuleSet, hunter: u64) -> Option<Tar
     actor.attack_target.target()
 }
 
-/// Exercise the former real-match opt-in and the same object-pass prefix.
-/// This also keeps the regression usable against the former cache owner.
+/// Exercise the former real-match opt-in, which now keeps scans live.
 #[allow(deprecated)]
-fn begin_requested_scan_pass(sim: &mut Simulation, rules: &RuleSet) {
+fn request_legacy_scan_mode(sim: &mut Simulation) {
     sim.batch_target_scans();
-    sim.answer_batched_scans(rules, None);
 }
 
 /// Foot::Mission_Hunt calls Retaliate_And_Scan synchronously at 0x004D5392.
@@ -74,7 +73,7 @@ fn hunt_sees_a_hostile_admitted_after_the_pass_begins() {
             .is_none()
     );
 
-    begin_requested_scan_pass(&mut requested, rules);
+    request_legacy_scan_mode(&mut requested);
     let hostile = serial
         .spawn_object("HTNK", "Russians", 14, 12, 0, rules)
         .unwrap();
@@ -118,7 +117,7 @@ fn hunt_reranks_new_candidates_even_when_the_old_pick_remains_legal() {
             .target(),
         Some(previous)
     );
-    begin_requested_scan_pass(&mut requested, rules);
+    request_legacy_scan_mode(&mut requested);
     let hostile = serial
         .spawn_object("HTNK", "Russians", 12, 14, 0, rules)
         .unwrap();
@@ -164,24 +163,23 @@ fn a_saved_legacy_scan_request_resumes_with_live_acquisition() {
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .unwrap()
         .sim;
-    restored.restore_after_snapshot_load().unwrap();
-    restored.rebuild_caches_after_load(terrain, Default::default(), rules);
-    assert!(restored.rebuild_dynamic_navigation(rules));
     assert!(
         restored.scan_batch.is_some(),
         "the saved Option tag decoded"
     );
-    restored.answer_batched_scans(rules, None);
+    restored.restore_after_snapshot_load().unwrap();
+    assert!(
+        restored.scan_batch.is_none(),
+        "load retires the legacy request before any object turn"
+    );
+    restored.rebuild_caches_after_load(terrain, Default::default(), rules);
+    assert!(restored.rebuild_dynamic_navigation(rules));
     let hostile = restored
         .spawn_object("HTNK", "Russians", 14, 12, 0, rules)
         .unwrap();
     assert_eq!(
         run_mission(&mut restored, rules, hunter),
         Some(TargetKind::Entity(hostile))
-    );
-    assert!(
-        restored.scan_batch.is_none(),
-        "the legacy request was retired"
     );
 }
 

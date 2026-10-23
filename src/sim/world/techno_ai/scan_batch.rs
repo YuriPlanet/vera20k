@@ -6,8 +6,6 @@
 //! All consumers now use the live scan owner in target_scan. Candidate
 //! scoring within one scan retains its existing parallel implementation.
 
-use crate::rules::overlay_types::OverlayTypeRegistry;
-use crate::rules::ruleset::RuleSet;
 use crate::sim::world::Simulation;
 
 /// Old saves encode Option<ScanBatch>; every former payload field was
@@ -22,17 +20,6 @@ impl Simulation {
     /// always observe the world at their object's turn now.
     #[deprecated(note = "target scans run during each object's turn")]
     pub fn batch_target_scans(&mut self) {
-        self.scan_batch = None;
-    }
-
-    /// Retire an old save's request at the existing object-pass prefix.
-    /// Retain this phase entry while the serialized legacy marker exists;
-    /// it performs no queries, RNG draws or candidate validation.
-    pub(in crate::sim::world) fn answer_batched_scans(
-        &mut self,
-        _rules: &RuleSet,
-        _overlay_registry: Option<&OverlayTypeRegistry>,
-    ) {
         self.scan_batch = None;
     }
 }
