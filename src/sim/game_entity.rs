@@ -658,6 +658,9 @@ pub struct GameEntity {
     /// Shared signed Techno+0x2FC, with aircraft release/dock state where
     /// applicable. The `ammo` owner exposes the count's native mutations.
     ammo: Option<TechnoAmmo>,
+    /// Techno+1FC/+204, constructed running at (binary frame,0) by
+    /// TechnoClass6F2CE7..6F2CF3. Independent of the weapon rearm clock.
+    ammo_reload_timer: crate::sim::timer::CdTimer,
     /// The spot an infantryman holds in its cell, an [`InfantrySpot`] cache
     /// that `movement::foot_mark` owns.
     ///
@@ -953,12 +956,103 @@ impl GameEntity {
         self.ammo.as_mut()
     }
 
-    /// Unit735592, Infantry517D69 and Aircraft414033 constructor writes.
+    /// Building442C81, Unit735592, Infantry517D69 and Aircraft414033 writes.
     pub(crate) fn initialize_ammo_from_type(
         &mut self,
         object: &crate::rules::object_type::ObjectType,
     ) {
         self.ammo = Some(TechnoAmmo::from_type(object));
+    }
+
+    /// The authoritative Techno reload clock, preserved verbatim in saves.
+    pub const fn ammo_reload_timer(&self) -> crate::sim::timer::CdTimer {
+        self.ammo_reload_timer
+    }
+
+    /// Techno ReceiveDamage701ADB..701B62, after the early immunity gates
+    /// and before the bunker/warhead gates. StartReloading is unconditional
+    /// after the count write; its own full-count check decides the timer.
+    pub(crate) fn reduce_ammo_for_damage(
+        &mut self,
+        object: &crate::rules::object_type::ObjectType,
+        damage: i32,
+        now: i32,
+    ) {
+        if !object.damage_reduces_readiness {
+            return;
+        }
+        if let Some(ammo) = self.ammo_mut() {
+            ammo.reduce_readiness(
+                damage,
+                object.strength,
+                object.ammo,
+                object.readiness_reduction_multiplier,
+            );
+            self.start_reloading_ammo(object, now);
+        }
+    }
+
+    /// TechnoClass::StartReloading6FB080: current type/count, signed raw
+    /// frames and wrapping integer products; a full count leaves the clock.
+    pub(crate) fn start_reloading_ammo(
+        &mut self,
+        object: &crate::rules::object_type::ObjectType,
+        now: i32,
+    ) {
+        let Some(ammo) = self.ammo() else {
+            return;
+        };
+        let current = ammo.current();
+        if current >= object.ammo {
+            return;
+        }
+        let duration = if current == 0 && object.empty_reload != -1 {
+            object.empty_reload
+        } else {
+            let quotient = if object.pip_wrap() == 0 {
+                1
+            } else {
+                // Native IDIV likewise faults for MIN/-1; the ordinary
+                // signed quotient truncates toward zero.
+                current / object.pip_wrap()
+            };
+            object.reload.wrapping_add(
+                object
+                    .reload_increment
+                    .wrapping_mul(quotient)
+                    .wrapping_mul(quotient),
+            )
+        };
+        self.ammo_reload_timer.start(now, duration);
+    }
+
+    /// UnitClass::Reload736CA0, reached at UnitAI736689 only. MobileFire=no
+    /// uses ILocomotion+10; a moving positive clock is re-anchored, not paused.
+    /// The inherited Techno Reload6FB010 then adds at most one round.
+    pub(crate) fn reload_unit_ammo(
+        &mut self,
+        object: &crate::rules::object_type::ObjectType,
+        now: i32,
+    ) -> Result<(), String> {
+        if !object.mobile_fire {
+            let moving = crate::sim::movement::motion_query::is_moving(self).ok_or_else(|| {
+                "Unit Reload736CA0 requires ILocomotion+10 (E_POINTER)".to_owned()
+            })?;
+            let remaining = self.ammo_reload_timer.remaining(now);
+            if moving && remaining > 0 {
+                self.ammo_reload_timer.start(now, remaining.wrapping_add(1));
+            }
+        }
+        if object.ammo != -1
+            && self.ammo().is_some_and(|ammo| ammo.current() < object.ammo)
+            && self.ammo_reload_timer.remaining(now) == 0
+        {
+            self.ammo_mut().unwrap().reload_round();
+            // Foot/Unit Mark(2)4D3780 returns immediately, before any
+            // callback or spatial write. No redraw event is synthesized.
+            self.start_reloading_ammo(object, now);
+        }
+        Ok(())
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -1712,6 +1806,7 @@ impl GameEntity {
             pending_entry: Default::default(),
             building_entry: Default::default(),
             ammo: None,
+            ammo_reload_timer: crate::sim::timer::CdTimer::started(construction_frame as i32, 0),
             // Infantry get sub-cell 2 (first distinct position) at spawn so
             // they don't all pile up at cell center when multiple are created.
             sub_cell: crate::sim::movement::foot_mark::InfantrySpot::new(

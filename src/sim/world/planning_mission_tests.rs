@@ -20,6 +20,104 @@ fn scene() -> Option<(Simulation, crate::rules::ruleset::RuleSet, InternedId)> {
     Some((sim, rules, owner))
 }
 
+#[test]
+fn retail_parked_jumpjet_planning_blocks_scanning_until_player_load_drops_the_queue() {
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::mission::MissionType;
+    let Some((mut sim, rules, owner)) = scene() else {
+        return;
+    };
+    let kind = rules.object("JUMPJET").unwrap();
+    assert!(kind.balloon_hover && kind.can_passive_acquire && !kind.opportunity_fire);
+    let actor = sim
+        .spawn_object("JUMPJET", "Americans", 12, 12, 0, &rules)
+        .unwrap();
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Move {
+            entity_id: actor,
+            target_rx: 15,
+            target_ry: 12
+        },
+        Some(&rules)
+    ));
+    let mut parked = false;
+    for _ in 0..600 {
+        step(&mut sim, &rules);
+        let entity = sim.entities().get(actor).unwrap();
+        if (entity.position.rx(), entity.position.ry()) == (15, 12)
+            && entity.navigation.nav_com() == Some(NavTargetRef::cell(15, 12))
+            && entity.mission.current().known() == Some(MissionType::Move)
+        {
+            parked = true;
+            break;
+        }
+    }
+    assert!(
+        parked,
+        "ordinary Move must reach the parked BalloonHover history"
+    );
+    planned(
+        &mut sim,
+        &rules,
+        owner,
+        Command::Move {
+            entity_id: actor,
+            target_rx: 18,
+            target_ry: 12,
+        },
+    );
+    assert_eq!(sim.planning.paths[&actor].nodes.len(), 1);
+    let entity = sim.entities().get(actor).unwrap();
+    assert_eq!(
+        entity.navigation.nav_com(),
+        Some(NavTargetRef::cell(15, 12))
+    );
+    assert_eq!(entity.mission.current().known(), Some(MissionType::Move));
+    let now = sim.session.binary_frame();
+    let entity = sim.substrate.entities.get_mut(actor).unwrap();
+    entity.passive_scan.arm_timer(now, 0);
+    entity
+        .passive_scan
+        .set_last_target_scan_frame_for_test(now.wrapping_sub(1));
+    let before = entity.passive_scan;
+    step(&mut sim, &rules);
+    assert_eq!(
+        sim.entities().get(actor).unwrap().passive_scan,
+        before,
+        "production mission dispatch must retain the suppression count"
+    );
+    // The full frame also has legitimate mission RNG. Isolate the passive
+    // gate's own no-draw contract only after the production visit above.
+    let rng = sim.scenario_rng.native_state_hex();
+    super::super::techno_ai::passive_target_acquire(&mut sim, actor, &rules, Default::default());
+    assert_eq!(sim.entities().get(actor).unwrap().passive_scan, before);
+    assert_eq!(sim.scenario_rng.native_state_hex(), rng);
+    let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "planning", 0);
+    let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .sim;
+    assert!(
+        restored
+            .planning
+            .paths
+            .get(&actor)
+            .is_none_or(|path| path.nodes.is_empty())
+    );
+    let now = restored.session.binary_frame();
+    let rng = restored.scenario_rng.native_state_hex();
+    super::super::techno_ai::passive_target_acquire(
+        &mut restored,
+        actor,
+        &rules,
+        Default::default(),
+    );
+    let scan = restored.entities().get(actor).unwrap().passive_scan;
+    assert_eq!(scan.last_scan_frame(), now);
+    assert_ne!(scan.timer(), before.timer());
+    assert_ne!(restored.scenario_rng.native_state_hex(), rng);
+}
+
 fn planned(
     sim: &mut Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -137,10 +235,10 @@ fn retail_planned_tanya_plants_c4_and_continues_to_the_next_waypoint() {
             .pending()
             .is_none()
     );
-    // Save before committing: the new mission stays in the authoritative raw
-    // node records, retaining ordering and target through restoration.
+    // An internal checkpoint retains authoritative raw node records. Normal
+    // player load deliberately drops these future plans (tested separately).
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "planned-c4", 0);
-    sim = crate::sim::snapshot::GameSnapshot::load(&bytes)
+    sim = crate::util::save_codec::deserialize::<crate::sim::snapshot::GameSnapshot>(&bytes)
         .unwrap()
         .sim;
     sim.restore_after_snapshot_load().unwrap();
@@ -175,7 +273,7 @@ fn retail_planned_tanya_plants_c4_and_continues_to_the_next_waypoint() {
         "planned C4 must reach the real arrival/charge owner"
     );
     assert!(arrived, "the route must continue after sabotage");
-    assert!(!sim.planning.paths.contains_key(&tanya));
+    assert!(!sim.planning_has_remaining_nodes(tanya));
 }
 
 #[test]
@@ -268,7 +366,7 @@ fn retail_planned_enter_reaches_transport_and_bunker_adapters() {
             }
         }
         assert!(entered, "planned Enter, bunker={bunker}");
-        assert!(!sim.planning.paths.contains_key(&actor));
+        assert!(!sim.planning_has_remaining_nodes(actor));
     }
 }
 

@@ -193,6 +193,7 @@ fn receiver_commit_keeps_negative_heal_on_exact_zero_techno_tail_and_wide_hits()
         let event =
             EntityDamageEvent::area(1, damage, 0, super::super::RAD_NO_ATTACKER, None, warhead);
         let outcome = DamageOutcome {
+            readiness_damage: None,
             apply_object_damage: hp > 0,
             hp_delta: if hp > 0 { damage } else { 0 },
             post_object_damage: Some(damage),

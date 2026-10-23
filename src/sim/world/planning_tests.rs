@@ -174,6 +174,11 @@ fn stop_repair_or_uninit_detaches_only_its_actor_from_shared_nodes() {
         }
         if action == "uninit" {
             sim.uninit(1);
+            assert!(
+                sim.planning_has_remaining_nodes(1),
+                "UnInit retains +514 until destruction"
+            );
+            sim.process_pending_delete_with(&rules, None, Default::default(), 1, false);
         } else if action == "repair_dead" {
             sim.substrate
                 .entities
@@ -189,6 +194,12 @@ fn stop_repair_or_uninit_detaches_only_its_actor_from_shared_nodes() {
             assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 1 }, Some(&rules)));
         }
         assert!(!sim.planning.paths.contains_key(&1), "{action}");
+        assert_eq!(sim.planning.house_charges[0], 1, "{action}");
+        assert_eq!(
+            sim.planning.registered_tokens.contains(&1),
+            action != "uninit",
+            "only destruction unregisters the token: {action}"
+        );
         assert!(sim.planning.paths.contains_key(&2), "{action}");
         assert_eq!(
             sim.planning.nodes[&0]
@@ -405,7 +416,7 @@ fn guard_commit_consumes_first_node_stages_deliberate_and_retains_next_node() {
 }
 
 #[test]
-fn planning_snapshot_restores_shared_nodes_loops_current_records_and_hash() {
+fn planning_internal_checkpoint_restores_shared_nodes_loops_current_records_and_hash() {
     use crate::sim::snapshot::GameSnapshot;
     let (mut sim, rules, owner) = fixture();
     // Snapshot loading intentionally reseeds the unsaved Scenario RNG to zero.
@@ -425,7 +436,7 @@ fn planning_snapshot_restores_shared_nodes_loops_current_records_and_hash() {
     let hash = sim.state_hash();
     assert_ne!(hash, empty_hash);
     let bytes = GameSnapshot::save(&sim, 0, 0, "planning", 0);
-    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+    let mut restored = save_codec::deserialize::<GameSnapshot>(&bytes).unwrap().sim;
     assert_eq!(restored.state_hash(), hash);
     assert_eq!(
         save_codec::serialize(&restored.planning).unwrap(),
@@ -467,7 +478,8 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
     // Techno701585 ->638840 clears the path, not the published DoList event.
     sim.change_owner(1, new_owner);
     assert_eq!(sim.substrate.entities.get(1).unwrap().owner(), new_owner);
-    assert!(!sim.planning.paths.contains_key(&1));
+    assert!(sim.planning.paths[&1].nodes.is_empty());
+    assert!(sim.planning.paths[&1].executing);
     assert_eq!(sim.planning.nodes.len(), 1);
     assert!(
         sim.planning
@@ -479,10 +491,11 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
     assert_eq!(sim.pending_command_snapshot(), generated);
     let hash = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "planning", 0);
-    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+    let mut restored = save_codec::deserialize::<GameSnapshot>(&bytes).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
     assert_eq!(restored.state_hash(), hash);
-    assert!(!restored.planning.paths.contains_key(&1));
+    assert!(restored.planning.paths[&1].nodes.is_empty());
+    assert!(restored.planning.paths[&1].executing);
     assert_eq!(restored.planning_paths(owner)[0].cells, vec![(20, 15)]);
     sim.session.set_tick_for_test(sim.session.tick() + 1);
     sim.session
@@ -502,7 +515,8 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
         "a published flag2 event still executes after capture"
     );
     assert_eq!(sim.substrate.entities.get(1).unwrap().owner(), new_owner);
-    assert!(!sim.planning.paths.contains_key(&1));
+    assert!(!sim.planning_has_remaining_nodes(1));
+    assert!(!sim.planning.paths[&1].executing);
 }
 
 #[test]
@@ -604,7 +618,7 @@ fn planning_restore_rejects_broken_graph_record_actor_and_house_references() {
             sim.houses.remove_for_test(&owner);
         }
         let bytes = GameSnapshot::save(&sim, 0, 0, "planning", 0);
-        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        let mut restored = save_codec::deserialize::<GameSnapshot>(&bytes).unwrap().sim;
         assert!(matches!(
             restored.restore_after_snapshot_load(),
             Err(crate::sim::snapshot::SnapshotRestoreError::InvalidPlanningReferences { .. })
@@ -753,7 +767,12 @@ fn object_nodes_follow_live_xyz_share_and_retain_target_through_connect_delete()
         .set_rx_for_test(22);
     apply(&mut sim, &rules, delete);
     assert!(sim.planning.nodes.is_empty());
-    assert!(sim.planning.paths.is_empty());
+    assert!(
+        sim.planning
+            .paths
+            .values()
+            .all(|path| path.nodes.is_empty())
+    );
 }
 
 #[test]
@@ -1215,7 +1234,7 @@ fn overlapping_connect_consumption_preserves_occurrences_and_loop_first_record()
             assert_eq!(sim.planning.paths[&1].nodes, vec![0, 1, 2, 1]);
             assert_eq!(sim.planning.nodes[&1].orders[&1].len(), 2);
         } else {
-            assert!(!sim.planning.paths.contains_key(&1));
+            assert!(!sim.planning_has_remaining_nodes(1));
             assert!(!sim.planning.nodes[&1].orders.contains_key(&1));
         }
     }
@@ -1862,4 +1881,42 @@ fn connect_actor_group_expands_another_houses_actor() {
     sim.change_owner(2, enemy);
     apply(&mut sim, &rules, connect);
     assert_eq!(sim.planning_connect_actors(&[2]), vec![1, 2]);
+}
+
+#[test]
+fn finalized_target_pruning_retains_the_empty_token_and_its_house_charge() {
+    let (mut sim, rules, owner) = fixture();
+    let record = sim
+        .encode_planning_order_record(
+            owner,
+            &Command::Attack {
+                attacker_id: 1,
+                target_id: 3,
+            },
+        )
+        .unwrap();
+    apply(&mut sim, &rules, record);
+    sim.uninit(3);
+    sim.prune_invalid_planning_nodes();
+    assert!(
+        sim.planning_has_remaining_nodes(1),
+        "the retired target remains registered until actual destruction"
+    );
+    let frame = sim.session.binary_frame();
+    assert!(sim.commit_frame_tail(&rules, None, 33, sim.session.tick() + 1, Default::default()));
+    assert_eq!(sim.session.binary_frame(), frame.wrapping_add(1));
+    assert!(!sim.substrate.entities.contains(3));
+    assert!(!sim.planning_has_remaining_nodes(1));
+    assert!(sim.planning.registered_tokens.contains(&1));
+    assert_eq!(
+        sim.planning.house_charges[0], 1,
+        "late pruning does not release the retained charge"
+    );
+    append(&mut sim, &rules, owner, 1, (16, 15));
+    assert_eq!(sim.planning.house_charges[0], 2);
+    sim.planning_detach_actor(1);
+    assert_eq!(
+        sim.planning.house_charges[0], 1,
+        "ordinary cancellation releases only the new nonempty path"
+    );
 }

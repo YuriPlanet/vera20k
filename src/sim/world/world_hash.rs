@@ -496,7 +496,7 @@ impl Simulation {
     /// Read-only Rust diagnostic projections through the existing hash owners.
     /// These are attribution receipts, never gameplay/native golden inputs.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn hash_owner_diagnostics_for_test(&self) -> [(&'static str, u64); 13] {
+    pub(crate) fn hash_owner_diagnostics_for_test(&self) -> [(&'static str, u64); 14] {
         fn digest(fold: impl FnOnce(&mut StateHasher)) -> u64 {
             let mut hasher = StateHasher::new();
             fold(&mut hasher);
@@ -552,6 +552,7 @@ impl Simulation {
                 digest(|h| self.hash_fog_and_alliances(&self.fog_digests(), h)),
             ),
             ("power", digest(|h| self.hash_power_states(h))),
+            ("planning", digest(|h| self.planning.hash_state(h))),
             ("projectiles", digest(|h| self.hash_projectiles(h))),
         ]
     }
@@ -1523,17 +1524,19 @@ fn hash_particle(p: &crate::sim::particles::Particle, hasher: &mut impl Hasher) 
 /// `frame` is the binary frame the pending timers measure against.
 fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     entity.stable_id().hash(hasher);
+    // Shared count presence and the raw Techno reload clock affect future
+    // firing/reload, including a signed -1 reached from InitialAmmo=-2.
+    b"techno-ammo-reload-v1".hash(hasher);
+    entity.ammo().is_some().hash(hasher);
     if let Some(ammo) = entity.ammo() {
         if entity.category() == crate::map::entities::EntityCategory::Aircraft {
             b"aircraft-ammo-v170".hash(hasher);
             ammo.hash(hasher);
-        } else if ammo.current() != -1 {
-            // -1 is the historical absent Foot count. The newly retained
-            // counter matters after65EDC8, including -2 for unlimited ammo.
-            b"techno-ammo-v376".hash(hasher);
+        } else {
             ammo.current().hash(hasher);
         }
     }
+    entity.ammo_reload_timer().hash(hasher);
     // GSI-09.01: the `BuildingClass+0x6D0/+0x6D8` ProduceCash
     // timer and the `TechnoClass+0x1CC/+0x1D0` drain link pair.
     // All three drive future wallet writes, so a divergence here

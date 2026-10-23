@@ -719,7 +719,9 @@ impl GameSnapshot {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn load_unchecked(bytes: &[u8]) -> Result<GameSnapshot, SnapshotError> {
         let _ = Self::read_header(bytes)?;
-        Ok(save_codec::deserialize(bytes)?)
+        let mut snapshot: GameSnapshot = save_codec::deserialize(bytes)?;
+        snapshot.sim.reset_planning_after_player_load();
+        Ok(snapshot)
     }
 
     /// Compatibility alias for existing unit fixtures that intentionally use
@@ -790,7 +792,7 @@ impl GameSnapshot {
     }
 
     fn deserialize_admitted(bytes: &[u8]) -> Result<GameSnapshot, SnapshotError> {
-        let snapshot: GameSnapshot = save_codec::deserialize(bytes)?;
+        let mut snapshot: GameSnapshot = save_codec::deserialize(bytes)?;
         if snapshot.tick != snapshot.sim.session.tick() {
             return Err(SnapshotError::TickMetadataMismatch {
                 header_tick: snapshot.tick,
@@ -803,6 +805,10 @@ impl GameSnapshot {
                 simulation_map_name: snapshot.sim.session.map_name().to_owned(),
             });
         }
+        // Native content Load clears PlanMgr, then TechnoLoad zeros +514.
+        // Retain the wire layout for internal checkpoints, but player loads
+        // cannot restore future paths. Current missions and events survive.
+        snapshot.sim.reset_planning_after_player_load();
         Ok(snapshot)
     }
 

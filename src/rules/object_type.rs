@@ -1099,12 +1099,25 @@ pub struct ObjectType {
     /// UnloadingClass. Empty/missing retains the prior pointer. AnimType
     /// FindOrAllocate428B80 owns registration, before the InitialAmmo read.
     pub deploying_anim: Option<String>,
-    /// Ammo count for aircraft. -1 = unlimited (default), 0+ = finite.
-    /// Aircraft with finite ammo return to a helipad/airfield to reload after depleting.
+    /// Shared TechnoType+684 count limit; -1 is unlimited. Aircraft use
+    /// their release/dock owners; Unit Reload and Building refill read it live.
     pub ammo: i32,
     /// TechnoType+680, ReadINI71474C (InitialAmmo); -1 selects Ammo at
     /// Aircraft InitFromType414033..41404B. Other signed values are retained.
     pub initial_ammo: i32,
+    /// TechnoType+698, raw signed frames. Constructor711122 seeds0;
+    /// ReadINI71486A..71487E retains the current value as ReadInt's default.
+    pub reload: i32,
+    /// TechnoType+69C, constructor711128=-1. ReadINI714884..714898;
+    /// -1 makes StartReloading6FB080 use the ordinary Reload interval.
+    pub empty_reload: i32,
+    /// TechnoType+6A0, constructor71112E=0. ReadINI71489E..7148B2;
+    /// StartReloading6FB080 multiplies it by the signed PipWrap quotient twice.
+    pub reload_increment: i32,
+    /// TechnoType+6B1/+6B4; constructor711163..711169 clears both.
+    /// ReceiveDamage701ADB consumes the pre-Object packet when enabled.
+    pub damage_reduces_readiness: bool,
+    pub readiness_reduction_multiplier: f32,
     /// `TechnoType+0xD24`, exact `ManualReload=`: constructor7114D6 clears
     /// it; ReadBool713352 retains the current value (store713366). Depot
     /// MissionRepairAndProduce reads it before the first RepairTick and may
@@ -3316,6 +3329,15 @@ impl ObjectType {
             deploying_anim: None,
             ammo: section.read_int("Ammo", -1),
             initial_ammo: section.read_int("InitialAmmo", -1),
+            // TechnoTypeClass::ReadINI71486A..7148B2, raw signed frames.
+            // The retained section folds each reached pass with its current
+            // member as the next default; no time conversion or clamp.
+            reload: section.read_int("Reload", 0),
+            empty_reload: section.read_int("EmptyReload", -1),
+            reload_increment: section.read_int("ReloadIncrement", 0),
+            // ReadINI7148B8..7148EB: bool, then ReadDouble stored as float.
+            damage_reduces_readiness: section.read_bool("DamageReducesReadiness", false),
+            readiness_reduction_multiplier: section.read_float("ReadinessReductionMultiplier", 0.0),
 
             // Spawn manager pool. Constructor null; only the ordered Process
             // owner reads `Spawns=`.

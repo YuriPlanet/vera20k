@@ -29,6 +29,13 @@ pub trait SoundBoundary {
     }
 }
 
+/// The process-owned Radar656DF0 setter at reached House call sites. The
+/// implementation keeps animation/audio state outside the simulation and
+/// delivers preceding sound facts before applying the requested transition.
+pub trait TacticalRadarBoundary {
+    fn set_available(&self, sim: &Simulation, rules: &RuleSet, available: bool);
+}
+
 /// HouseClass::Update4F860F/4F8736 waits before publishing its result
 /// and visiting later Houses. Audio and the 120-bucket clock stay with the
 /// process; a headless frame has idle Vox and completes immediately.
@@ -115,6 +122,7 @@ impl NetworkCommandBoundary for std::cell::RefCell<crate::sim::command_queue::Fr
 #[derive(Clone, Copy, Default)]
 pub struct FrameEffects<'a> {
     sound: Option<&'a dyn SoundBoundary>,
+    tactical_radar: Option<&'a dyn TacticalRadarBoundary>,
     outcome_wait: Option<&'a dyn OutcomeWaitBoundary>,
     local_planning: Option<&'a dyn LocalPlanningBoundary>,
     network_commands: Option<&'a dyn NetworkCommandBoundary>,
@@ -137,6 +145,7 @@ impl<'a> FrameEffects<'a> {
     pub const fn empty() -> Self {
         Self {
             sound: None,
+            tactical_radar: None,
             outcome_wait: None,
             local_planning: None,
             network_commands: None,
@@ -150,6 +159,7 @@ impl<'a> FrameEffects<'a> {
     pub fn for_sound(sound: &'a dyn SoundBoundary) -> Self {
         Self {
             sound: Some(sound),
+            tactical_radar: None,
             outcome_wait: None,
             local_planning: None,
             network_commands: None,
@@ -157,6 +167,24 @@ impl<'a> FrameEffects<'a> {
             before_logic: None,
             production_factories: &[],
             production_request_cleared: None,
+        }
+    }
+
+    pub fn with_tactical_radar(self, boundary: &'a dyn TacticalRadarBoundary) -> Self {
+        Self {
+            tactical_radar: Some(boundary),
+            ..self
+        }
+    }
+
+    pub(crate) fn set_tactical_radar_available(
+        self,
+        sim: &Simulation,
+        rules: &RuleSet,
+        available: bool,
+    ) {
+        if let Some(boundary) = self.tactical_radar {
+            boundary.set_available(sim, rules, available);
         }
     }
 

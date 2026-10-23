@@ -1138,6 +1138,23 @@ impl Simulation {
             );
             outcome.bridge_state_changed |= receipt.bridge_state_changed;
             outcome.destroyed_structure |= receipt.structure_destroyed;
+            // UnitAI736689 Reload+424 follows FireAtTarget/Facing and
+            // precedes the second Ready/Commence. Aircraft/Infantry have
+            // no corresponding ordinary Reload dispatch here. The native
+            // post-Foot alive gate precedes firing; no second gate is added.
+            if let Some(entity) = sim.substrate.entities.get_mut(stable_id)
+                && entity.category() == EntityCategory::Unit
+                && let Some(obj) = sim.interner.object_type(entity.type_ref(), rules)
+            {
+                entity
+                    .reload_unit_ammo(obj, sim.session.binary_frame() as i32)
+                    .map_err(|cause| super::FrameAdvanceError {
+                        tick: sim.session.tick(),
+                        binary_frame: sim.session.binary_frame(),
+                        entity_id: stable_id,
+                        cause,
+                    })?;
+            }
             sim.object_ai_post_movement_promote_one(stable_id, rules);
             // Unit73671F..736817 follows that Commence (the CTF flag block
             // between them is unreachable).

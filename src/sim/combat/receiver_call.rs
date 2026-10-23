@@ -106,6 +106,10 @@ pub(crate) struct EntityDamageEvent {
     /// to reproduce the native near-center Iron Curtain isolation scan; it is
     /// deliberately false for direct-receiver calls.
     pub(crate) near_center_ic_isolation_eligible: bool,
+    /// The native ground collector was visiting a spread cell after index0.
+    /// Such records are filtered by an armed transaction but cannot arm it.
+    /// Airborne and primary-cell records leave this false.
+    pub(crate) adjacent_ground_cell_record: bool,
     pub(crate) damage_writeback: Option<DamageWriteback>,
 }
 
@@ -135,6 +139,7 @@ impl EntityDamageEvent {
                 arg6: false,
             },
             near_center_ic_isolation_eligible: false,
+            adjacent_ground_cell_record: false,
             damage_writeback: None,
         }
     }
@@ -157,6 +162,7 @@ impl EntityDamageEvent {
             distance_leptons,
             receiver_flags,
             near_center_ic_isolation_eligible: false,
+            adjacent_ground_cell_record: false,
             damage_writeback: None,
         }
     }
@@ -431,7 +437,11 @@ pub(super) fn resolve_receive_damage_with_input(
         current_hp: target.health.current(),
         object_immune: target_type.is_some_and(|object| object.immune),
     };
-    let type_immune = target_type.is_some_and(|object| object.type_immune)
+    // 70192B/701933 skip the entire defender/TypeImmune block for forced
+    // damage and healing, before readiness is considered at701ADB.
+    let type_immune = !receiver_flags.ignore_defenses
+        && receiver_input >= 0
+        && target_type.is_some_and(|object| object.type_immune)
         && source.is_some_and(|source| {
             source.type_ref() == target.type_ref() && source.owner() == target.owner()
         });
@@ -643,13 +653,15 @@ pub(super) fn postmortem_duration_for_event(
 }
 
 /// `Apply_area_damage` (`0x00489280`)'s isolation pre-scan (`0x0048993E..0x00489968`):
-/// an Iron Curtained receiver under 85 leptons without the Force Shield byte arms it.
+/// an airborne or primary-cell Iron Curtained receiver under 85 leptons,
+/// without the Force Shield byte, arms it. Adjacent ground records cannot.
 fn event_arms_ic_isolation(
     event: &EntityDamageEvent,
     entities: &EntityStore,
     current_tick: u64,
 ) -> bool {
     event.near_center_ic_isolation_eligible
+        && !event.adjacent_ground_cell_record
         && event.distance_leptons < 85
         && entities.get(event.target_id).is_some_and(|target| {
             // 0x0048994E: vt+0x160 IsIronCurtained (0x0041BF40). Every

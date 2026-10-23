@@ -407,7 +407,27 @@ pub(crate) fn power_bar_budget_px(state: &AppState) -> i32 {
     (layout.cameo_grid_bottom - layout.cameo_grid_top) as i32 + 3
 }
 
-/// Update radar availability from ECS and tick the radar chrome animation.
+/// House508DF0 -> Radar656BE0 -> Voc750920: centred, volume 1, NULL
+/// handle. Both one-shots survive a reversal independently of the movie loop.
+pub(crate) fn radar_availability_sound(
+    rules: &crate::rules::ruleset::RuleSet,
+    cue: crate::render::radar::anim::RadarAvailabilityCue,
+) -> Option<crate::audio::events::GameSoundEvent> {
+    use crate::render::radar::anim::RadarAvailabilityCue;
+    let sound = match cue {
+        RadarAvailabilityCue::On => &rules.general.radar_on,
+        RadarAvailabilityCue::Off => &rules.general.radar_off,
+    };
+    sound
+        .clone()
+        .map(|sound_id| crate::audio::events::GameSoundEvent::VocAt {
+            sound_id,
+            source: None,
+        })
+}
+
+/// Reconcile view/tool changes with the same radar owner the reached House
+/// boundaries update. Its equality guard suppresses already-delivered edges.
 pub(crate) fn update_radar_state(state: &mut AppState) {
     let new_has_radar: bool = match (
         state
@@ -432,24 +452,13 @@ pub(crate) fn update_radar_state(state: &mut AppState) {
         .as_mut()
         .and_then(|radar| radar.set_has_radar(new_has_radar));
     if let Some(cue) = cue {
-        use crate::render::radar::anim::RadarAvailabilityCue;
         //656BE0 ends the radar's movie loop before either cue.
         crate::app::radar_movie::end_radar_sound_loop(state);
-        let sound = state.rules().and_then(|rules| match cue {
-            RadarAvailabilityCue::On => rules.general.radar_on.as_ref(),
-            RadarAvailabilityCue::Off => rules.general.radar_off.as_ref(),
-        });
-        if let Some(sound_id) = sound.cloned() {
-            // House508DF0→656DF0/656BE0→750920: EDX2000, volume1.0,
-            // NULL handle. The common pool owns both one-shots through a
-            // reversal; neither cue is bound to the housing/movie handle.
-            // Source: tools/input_oracle/radar_availability_audio.md.
-            state.match_state.match_audio.sound_events.push(
-                crate::audio::events::GameSoundEvent::VocAt {
-                    sound_id,
-                    source: None,
-                },
-            );
+        if let Some(sound) = state
+            .rules()
+            .and_then(|rules| radar_availability_sound(rules, cue))
+        {
+            state.match_state.match_audio.sound_events.push(sound);
         }
     }
 }

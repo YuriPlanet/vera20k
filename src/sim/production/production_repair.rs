@@ -375,7 +375,7 @@ pub(crate) fn update_repair_and_power(
 /// retail `SellBack=2` no skirmish building gets this far and none draws.
 /// Then `RandomRanged(0, 0x32)` on the Scenario stream (`0x004507C4`) must
 /// fall below the owner's TechLevel (unsigned), and a tagged building
-/// (`+0x34`, `0x004507D7`; VERA has no per-object tags), a construction yard
+/// (`Object+0x34`, `0x004507D7..0x004507DC`), a construction yard
 /// (`Factory=BuildingType`, `Type+0xEB8 == 7`, `0x004507DE`) and one at or
 /// above ConditionRed (`0x004507ED`) stay. The rest take [`sell_back`]'s
 /// computer order (`0x0045080D`).
@@ -411,7 +411,9 @@ fn low_credit_sale(
         MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
     );
     let roll = sim.scenario_rng.next_range_u32_inclusive(0, 0x32);
-    if roll >= tech_level as u32 || yard || !below_red {
+    // UpdateRepairAndPower4507D7..4507DC checks raw Object+34 after
+    // the roll: even a disabled Trigger's attached Tag vetoes this order.
+    if roll >= tech_level as u32 || sim.object_has_trigger_tag(id) || yard || !below_red {
         return;
     }
     let _ = sell_back(sim, rules, id, SellOrder::Computer, registry, effects);

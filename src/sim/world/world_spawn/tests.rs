@@ -727,8 +727,10 @@ fn signed_rot_reaches_spawn_combat_turn_and_snapshot_restore() {
             serde_json::json!(entity.turret_rotation_latch.is_set()),
             expected["rotating"]
         );
-        // Match the load-time RNG initialization before comparing whole state.
+        // Match native load-time resets of Scenario RNG and the unsaved
+        // active planner before comparing whole state and continuing both.
         sim.scenario_rng = SimRng::new(0);
+        sim.reset_planning_after_player_load();
         let hash = sim.state_hash();
         let saved = GameSnapshot::save(&sim, 0, 0, "signed facing ROT", 0);
         let mut restored = GameSnapshot::load(&saved).unwrap().sim;
@@ -844,9 +846,10 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
         sim.change_owner(id, other);
         let transferred = sim.substrate.entities.get(id).unwrap().discovery;
         assert_eq!(bytes(transferred), [0, 1, 0]);
-        // Snapshot deserialization intentionally executes native Scenario Seed0.
-        // Compare this state-only roundtrip on that same admitted RNG cursor.
+        // Match the admitted Scenario Seed0 and lost active-planner state
+        // before comparing this discovery-state roundtrip's whole hash.
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        sim.reset_planning_after_player_load();
         let hash = sim.state_hash();
         let saved = GameSnapshot::save(&sim, 0, 0, "discovery", 0);
         let mut restored = GameSnapshot::load(&saved).unwrap().sim;

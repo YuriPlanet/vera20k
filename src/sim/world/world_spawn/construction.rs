@@ -246,12 +246,16 @@ impl Simulation {
                     .ensure_installed_track_state();
             }
         }
-        // The concrete Foot constructors all select InitialAmmo unless it is
+        // Building InitManagers442C81..442C92 and the concrete Foot
+        // constructors select InitialAmmo unless it is
         // exactly -1; otherwise Ammo. Chrono reinforcement65EC30 also reads
         // and decrements this count for ground Units (ammo module evidence).
         if matches!(
             category,
-            EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+            EntityCategory::Unit
+                | EntityCategory::Infantry
+                | EntityCategory::Aircraft
+                | EntityCategory::Structure
         ) {
             ge.initialize_ammo_from_type(obj);
         }

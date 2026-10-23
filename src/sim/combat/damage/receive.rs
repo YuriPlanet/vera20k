@@ -3,7 +3,7 @@
 //! live in combat::object_health and execute once after this preparation.
 //! The represented order follows Techno701900 and Object5F5390.
 
-use super::gates::evaluate_gates;
+use super::gates::{evaluate_early_gates, evaluate_late_gates};
 use super::kernel::apply_warhead_damage;
 use super::{DamageGate, DamageOutcome, DefenceDivisors, ImmunityInputs, TargetDamageView};
 use crate::util::native_x87::{MaskedX87Chop53 as X, NativeF64Bits};
@@ -53,6 +53,7 @@ pub(crate) fn receive_damage(
     max_damage: i32,
 ) -> DamageOutcome {
     let unaffected = DamageOutcome {
+        readiness_damage: None,
         apply_object_damage: false,
         hp_delta: 0,
         post_object_damage: None,
@@ -74,8 +75,18 @@ pub(crate) fn receive_damage(
         }
     }
 
-    // Immunity gates (after the divides; TypeImmune handled inside).
-    match evaluate_gates(gates) {
+    // Techno701ADB..701B62 changes readiness after TypeImmune/IC/warp,
+    // before later gates can reject the HP damage. Keep that packet even
+    // when a later gate returns early; the live receiver owns its mutation.
+    let (gate, readiness_damage) = match evaluate_early_gates(gates) {
+        Some(gate) => (gate, None),
+        None => (evaluate_late_gates(gates), Some(dmg)),
+    };
+    let unaffected = DamageOutcome {
+        readiness_damage,
+        ..unaffected
+    };
+    match gate {
         DamageGate::Nullified { clear_damage } => {
             return DamageOutcome {
                 // Techno701A2C and701CFC/1D1F/1D3E retain the defended value;
@@ -105,6 +116,7 @@ pub(crate) fn receive_damage(
                 max_damage,
             );
             return DamageOutcome {
+                readiness_damage,
                 apply_object_damage: false,
                 hp_delta: 0,
                 post_object_damage: Some(psychedelic_value),
@@ -158,6 +170,7 @@ pub(crate) fn receive_damage(
     // Object HP mutation, Building minimum, packet clamp and return-code
     // classification belong to object_health::commit, after preparation.
     DamageOutcome {
+        readiness_damage,
         apply_object_damage: true,
         hp_delta: delta,
         post_object_damage: Some(delta),

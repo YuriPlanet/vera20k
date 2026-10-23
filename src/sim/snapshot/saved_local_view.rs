@@ -86,7 +86,9 @@ pub struct SavedLocalView {
 pub struct SavedCursorModes {
     pub repair: bool,
     pub sell: bool,
-    /// Local PlanMgr input mode; physical-key ownership is never saved.
+    /// Retained VERA wire field, written false and ignored on restoration.
+    /// Active YR PlanMgr at AC4CF4 is not saved. This is not an owner for the
+    /// distinct legacy Display waypoint byte at +11B3.
     pub planning: bool,
     pub targeting: Option<SavedTargeting>,
 }
