@@ -3201,14 +3201,21 @@ impl Simulation {
     /// Pickup reads the current Type cache, not construction-time instance
     /// state: TerrainTypeLoad71E22D can bind a formerly null Occupy_List.
     /// Resource-free synthetic callers retain their explicit legacy policy.
-    fn terrain_occupy_list_bound(&self, stable_id: u64, rules: &RuleSet) -> bool {
+    fn terrain_occupied_offsets(&self, stable_id: u64, rules: &RuleSet) -> Vec<(i16, i16)> {
         self.terrain_objects
             .get(stable_id)
             .and_then(|terrain| {
                 rules
                     .terrain_object_type_case_insensitive(self.interner.resolve(terrain.type_ref()))
             })
-            .is_none_or(|terrain_type| terrain_type.has_occupy_list())
+            .map_or_else(
+                || vec![(0, 0)],
+                |terrain_type| {
+                    terrain_type
+                        .occupied_cell_offsets()
+                        .expect("Terrain footprint admitted at construction or saved load")
+                },
+            )
     }
 
     pub fn register_projectile(&mut self, stable_id: u64, flat: bool) -> bool {
@@ -3254,14 +3261,20 @@ impl Simulation {
                 self.resolved_terrain.as_ref(),
             );
             self.notify_pointer_expired(stable_id, context);
-            let occupy_list_bound = self.terrain_occupy_list_bound(stable_id, context.rules());
-            let unmarked = self.terrain_objects.begin_limbo(
-                stable_id,
-                &mut self.substrate.raw_cell_occupation,
-                self.resolved_terrain.as_mut(),
-                occupy_list_bound,
-            );
-            debug_assert!(unmarked);
+            let occupied_offsets = self.terrain_occupied_offsets(stable_id, context.rules());
+            let recalculated = self
+                .terrain_objects
+                .begin_limbo(
+                    stable_id,
+                    &mut self.substrate.raw_cell_occupation,
+                    self.resolved_terrain.as_mut(),
+                    &occupied_offsets,
+                )
+                .expect("live Terrain enters PickUp");
+            // MapPickUp5688EB/568911 Recalc each visited recipient. The
+            // TerrainLimbo71CA23..65 source-only zone/radar suffix is below,
+            // once after ObjectLimbo, never replayed for footprint cells.
+            self.publish_recalculated_cells(context.rules(), &recalculated);
             self.substrate.display.remove(stable_id);
             self.object_sound_conceal(stable_id, context.rules());
             context.effects().flush_sound(self, context.rules());

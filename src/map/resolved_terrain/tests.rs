@@ -3349,7 +3349,7 @@ SnowOccupationBits=-1
         vec![
             MapCell {
                 rx: 0,
-                ry: 0,
+                ry: 1,
                 tile_index: 0,
                 sub_tile: 0,
                 z: 0,
@@ -3366,7 +3366,7 @@ SnowOccupationBits=-1
         vec![
             TerrainObject {
                 rx: 0,
-                ry: 0,
+                ry: 1,
                 name: "TIBTRE03".to_string(),
             },
             TerrainObject {
@@ -3393,7 +3393,7 @@ SnowOccupationBits=-1
         None,
         PixelConversionBounds::default(),
     );
-    let temperate_tree = temperate.cell(0, 0).unwrap();
+    let temperate_tree = temperate.cell(0, 1).unwrap();
     assert_eq!(temperate_tree.terrain_object_occupation, Some(4));
     assert!(temperate_tree.terrain_object_blocks);
     assert_eq!(temperate_tree.zone_type, zone_class::BUILDING);
@@ -3420,7 +3420,7 @@ SnowOccupationBits=-1
         None,
         PixelConversionBounds::default(),
     );
-    let snow_tree = snow.cell(0, 0).unwrap();
+    let snow_tree = snow.cell(0, 1).unwrap();
     assert_eq!(snow_tree.terrain_object_occupation, Some(7));
     assert!(snow_tree.terrain_object_blocks);
     assert_eq!(snow_tree.zone_type, zone_class::WALL);

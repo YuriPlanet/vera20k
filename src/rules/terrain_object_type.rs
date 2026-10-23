@@ -203,7 +203,31 @@ impl TerrainObjectType {
     }
 
     pub fn has_occupy_list(&self) -> bool {
-        self.occupy_list_bound && foundation::foundation_dimensions(&self.foundation) != (0, 0)
+        self.occupy_list_bound
+    }
+
+    /// TerrainTypeOccupyList71DE40 returns the cached Terrain list, not the
+    /// Building list selected by the same ReadFoundation474DA0 token. Original
+    /// initializer71D580 builds selectors0..6 as the named rectangles, but
+    /// selector7 atB0EED8 is4x2 despite the reader's `3x5` name. The remaining
+    /// source is zeroed/unterminated71DA51..75; refuse its execution rather than
+    /// inventing Building geometry. An unused retained Type is still valid.
+    pub fn occupied_cell_offsets(
+        &self,
+    ) -> Result<Vec<(i16, i16)>, crate::rules::error::RulesError> {
+        if !self.occupy_list_bound {
+            return Ok(Vec::new());
+        }
+        match foundation::foundation_id(&self.foundation) {
+            0..=6 => Ok(foundation::foundation_cell_offsets(&self.foundation)),
+            7 => Ok(foundation::foundation_cell_offsets("4x2")),
+            _ => Err(crate::rules::error::RulesError::InvalidValue {
+                section: self.name.clone(),
+                key: "Foundation".into(),
+                expected: "an initialized Terrain list (native selector0..7)".into(),
+                value: self.foundation.clone(),
+            }),
+        }
     }
 
     pub fn armor_id(&self) -> crate::rules::armor::ArmorId {

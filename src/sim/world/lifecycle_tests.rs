@@ -5883,8 +5883,8 @@ fn gsi_05_02_mixed_fixture() -> (Simulation, [u64; 6]) {
             terrain
         },
         false,
-        true,
     );
+    sim.terrain_objects.add_to_cell(terrain_id, (8, 9));
     assert!(
         sim.register_terrain_object(terrain_id, crate::rules::ruleset::RuleSet::empty_for_test())
     );
@@ -8607,8 +8607,8 @@ fn gsi_05_02_graph_restore_allows_static_terrain_and_requires_fired_objects() {
             terrain
         },
         false,
-        true,
     );
+    terrain.terrain_objects.add_to_cell(terrain_id, (1, 1));
     terrain
         .restore_after_snapshot_load()
         .expect("static Terrain has no required Logic slot");

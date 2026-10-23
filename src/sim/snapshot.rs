@@ -2002,6 +2002,15 @@ impl Simulation {
         // TerrainLoad71CDA0 preserves the separately saved Display/Logic
         // vectors. Only ObjectUnlimbo5F4FEF..5F5040's eligible spawners need
         // Logic; validate with restored type state without rebuilding order.
+        if let Some(grid) = self.resolved_terrain.as_ref() {
+            for &(x, y) in self.terrain_objects.cell_index().keys() {
+                if grid.native_fixed_cell_index(x as i16, y as i16).is_none() {
+                    return Err(SnapshotRestoreError::InvalidCellMembership {
+                        reason: format!("Terrain Cell ({x}, {y}) has no native allocation"),
+                    });
+                }
+            }
+        }
         for terrain in self.terrain_objects.objects().values() {
             if !terrain.is_live() {
                 continue;
@@ -2013,6 +2022,14 @@ impl Simulation {
                     object_id: terrain.stable_id(),
                     type_name: type_name.to_owned(),
                 })?;
+            // TypeLoad71E22D rebinds its retained selector, but only actual
+            // live instance admission needs an executable terminated list.
+            // Preserve saved Cell heads; never infer them from this check.
+            terrain_type.occupied_cell_offsets().map_err(|error| {
+                SnapshotRestoreError::InvalidCellMembership {
+                    reason: error.to_string(),
+                }
+            })?;
             if !terrain.in_logic_vector()
                 && terrain.joins_logic_on_unlimbo(terrain_type, self.session.game_mode())
             {
@@ -8482,11 +8499,10 @@ mod tests {
             terrain
         };
         for terrain in [&damaged, &destroyed, &spawner] {
-            sim.terrain_objects.insert_constructed(
-                terrain.clone(),
-                terrain.stable_id() == spawner_id,
-                true,
-            );
+            sim.terrain_objects
+                .insert_constructed(terrain.clone(), terrain.stable_id() == spawner_id);
+            sim.terrain_objects
+                .add_to_cell(terrain.stable_id(), terrain.cell());
             assert!(sim.register_terrain_object(terrain.stable_id(), &rules));
             mark_terrain_raw_occupation(
                 &mut sim.substrate.raw_cell_occupation,

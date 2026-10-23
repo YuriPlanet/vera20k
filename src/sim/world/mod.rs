@@ -6638,21 +6638,23 @@ impl Simulation {
         // transactionally by `restore_after_snapshot_load` before this call.
         // The supplied map grid predates runtime Terrain lifecycle changes, so
         // serialized Terrain objects must overwrite that derived projection.
-        // Clear every known source first so Limbo/Destroyed objects stay absent,
-        // then replay only live objects through the shared occupation writer.
-        for object in self.terrain_objects.objects().values() {
-            crate::sim::terrain_object::unmark_terrain_occupation(
-                object,
-                Some(&mut resolved_terrain),
-            );
+        // Clear the map's derived projection, including cells outside saved
+        // anchors. CellLoad483B9F restores its own heads independently of
+        // current Type geometry or whether an instance ever had a footprint.
+        let projected_cells: Vec<_> = resolved_terrain
+            .cells()
+            .iter()
+            .filter(|cell| cell.terrain_object_occupation.is_some())
+            .map(|cell| (cell.rx, cell.ry))
+            .collect();
+        for cell in projected_cells {
+            resolved_terrain.set_terrain_object_occupation(cell, None);
         }
         // RecalcZone483C80 selects the first Terrain in saved cell order.
         // Replaying storage order would select the wrong surviving mask.
-        for &head in self.terrain_objects.cell_index().values() {
-            crate::sim::terrain_object::mark_terrain_occupation(
-                &self.terrain_objects.objects()[&head],
-                Some(&mut resolved_terrain),
-            );
+        for &cell in self.terrain_objects.cell_index().keys() {
+            self.terrain_objects
+                .project_cell_occupation(&mut resolved_terrain, cell);
         }
         self.resolved_terrain = Some(resolved_terrain);
         self.terrain_speed_config = terrain_speed_config;
@@ -6845,7 +6847,7 @@ impl Simulation {
     /// touched: gamemd's non-wall Mark (`0x005FC570`) and ReduceTiberium
     /// (`0x00480A80`) run no zone helper, and the wall, sale and terrain owners
     /// run theirs themselves.
-    fn publish_recalculated_cells(&mut self, rules: &RuleSet, cells: &[(u16, u16)]) {
+    pub(crate) fn publish_recalculated_cells(&mut self, rules: &RuleSet, cells: &[(u16, u16)]) {
         // During initial map Reveal no navigation views are installed yet;
         // their first full rebuild reads every admitted Mark. Avoid scanning
         // all structures once per placement before that rebuild.

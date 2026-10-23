@@ -91,6 +91,21 @@ fn fixture(input: &Value, stock: &Value) -> (Scene, Vec<(u16, u16)>) {
         }
     }
     construct_terrain_objects(&mut s.sim, &trees, &s.rules, false);
+    // tools/spatial_oracle/tibtre.py supplies these Cell+E4 heads directly;
+    // full Terrain construction/placement is outside that native fixture.
+    let prepared_heads: Vec<_> = s
+        .sim
+        .terrain_objects
+        .objects()
+        .values()
+        .filter(|object| object.is_live())
+        .map(|object| (object.cell(), object.stable_id()))
+        .collect();
+    for (at, id) in prepared_heads {
+        if s.sim.terrain_objects.id_at(at).is_none() {
+            s.sim.terrain_objects.add_to_cell(id, at);
+        }
+    }
     seed_terrain_spawner_animation(
         &s.sim.interner,
         &mut s.sim.terrain_objects,

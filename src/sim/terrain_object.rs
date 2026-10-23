@@ -15,7 +15,7 @@ use crate::rules::warhead_type::WarheadType;
 use crate::sim::cell_kernel::{WorldCoordinate, cell_center};
 use crate::sim::combat::damage;
 use crate::sim::intern::{InternedId, StringInterner};
-use crate::sim::occupancy::RawCellOccupationGrid;
+use crate::sim::occupancy::{RawCellKey, RawCellOccupationGrid};
 use crate::sim::terrain_spawn::TerrainAnimationState;
 
 #[cfg(test)]
@@ -54,9 +54,11 @@ pub struct TerrainObjectState {
     type_ref: InternedId,
     /// Retained placement, independent of the current Alive/InLimbo state.
     location: TerrainLocation,
-    /// Terrain-relative CellClass list order. CellAddContent47E91C prepends
-    /// each constructor; OccupancyGrid merges this subsequence with Technos
-    /// for the supported Terrain-before-Techno scenario loading boundary.
+    /// ONE Object+30 shared by every Cell head containing this instance.
+    /// CellAddContent47E91C overwrites it for each footprint recipient.
+    /// OccupancyGrid merges this Terrain subsequence with Technos for the
+    /// represented Terrain-before-Techno loading boundary; generic mixed
+    /// cross-cell Entity successors remain a separate owner boundary.
     next_in_cell: Option<u64>,
     health: i32,
     max_health: i32,
@@ -241,6 +243,49 @@ impl TerrainObjectState {
         )
     }
 
+    /// MapPlaceDown568432..5684E1 / PickUp568862..568911 add signed WORD
+    /// offsets to Get_Cell_Packed, guard actual fixed512 allocations, and
+    /// retain that recipient order. A failed slot never becomes a Dummy list.
+    pub(crate) fn allocated_footprint_cells(
+        &self,
+        offsets: &[(i16, i16)],
+        terrain: Option<&ResolvedTerrainGrid>,
+    ) -> Vec<(u16, u16)> {
+        let (x, y) = self.cell();
+        offsets
+            .iter()
+            .filter_map(|&(dx, dy)| {
+                let (x, y) = ((x as i16).wrapping_add(dx), (y as i16).wrapping_add(dy));
+                if terrain.is_some_and(|grid| grid.native_fixed_cell_index(x, y).is_none()) {
+                    return None;
+                }
+                canonical_cell_coord(i32::from(x), i32::from(y))
+            })
+            .collect()
+    }
+
+    /// Nonbuilding CellAdd/Remove47EA52/47EB62 pass Object.Location to
+    /// Terrain Mark/UnmarkOccupation71C110/71C070, independently of recipient.
+    pub(crate) fn raw_occupation_cell(&self, terrain: Option<&ResolvedTerrainGrid>) -> RawCellKey {
+        let cell = self.cell();
+        terrain.map_or(RawCellKey::Real(cell.0, cell.1), |terrain| {
+            let coord = self.world_coord();
+            let query = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            RawCellKey::from_native(terrain, query.lookup_world(coord.x, coord.y))
+        })
+    }
+
+    pub(crate) fn mark_raw_occupation(
+        &self,
+        raw: &mut RawCellOccupationGrid,
+        terrain: Option<&ResolvedTerrainGrid>,
+    ) {
+        raw.mark_ground_at(
+            self.raw_occupation_cell(terrain),
+            terrain_raw_occupation_mask(self.occupation_bits),
+        );
+    }
+
     /// TerrainUnlimbo71D046..71D097 / Limbo71C963..71C9B8 use one saved
     /// packed source and the eight direction offsets, with word wrapping.
     /// Original startup initializer49F2F0 fills table89F688 in this order.
@@ -280,18 +325,7 @@ impl TerrainObjectState {
         terrain: Option<&ResolvedTerrainGrid>,
     ) {
         self.adjust_dummy_neighbors(terrain, false);
-        let cell = self.cell();
-        let key = terrain.map_or(
-            crate::sim::occupancy::RawCellKey::Real(cell.0, cell.1),
-            |terrain| {
-                let coord = self.world_coord();
-                let query = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-                crate::sim::occupancy::RawCellKey::from_native(
-                    terrain,
-                    query.lookup_world(coord.x, coord.y),
-                )
-            },
-        );
+        let key = self.raw_occupation_cell(terrain);
         raw.clear_ground_at(key, TERRAIN_LIMBO_CLEAR_BIT);
     }
 
@@ -405,6 +439,8 @@ pub enum TerrainDamageResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TerrainLethalDamage {
     pub(crate) stable_id: u64,
+    /// Retained source anchor for TerrainLimbo's suffix, never the particular
+    /// footprint Cell from which AreaDamage captured this receiver.
     pub(crate) cell: (u16, u16),
     pub(crate) spawns_tiberium: bool,
 }
@@ -493,24 +529,29 @@ impl TerrainObjectStore {
         let next = self.next_in_cell(expired);
         self.objects.get_mut(&listener).unwrap().next_in_cell = next;
         self.touched.note(listener, self.objects.len());
+        self.membership_epoch = self.membership_epoch.wrapping_add(1);
         true
     }
 
     /// Validate serialized links before any iterator can follow them. Native
     /// ObjectLoad5F5E80 swizzles the saved Next; it does not reconstruct order.
     pub(crate) fn validate_membership(&self) -> Result<(), String> {
-        let mut seen = BTreeSet::new();
         for (&cell, &head) in &self.cells {
+            if canonical_cell_coord(i32::from(cell.0), i32::from(cell.1)) != Some(cell) {
+                return Err(format!(
+                    "Terrain cell {cell:?} is not a canonical real slot"
+                ));
+            }
+            // PlaceDown5683C0 inserts the SAME Object into every footprint
+            // cell. Its one Next47E91C can expose a cross-anchor successor;
+            // saved CellLoad483B9F heads must not be rebuilt from geometry.
+            let mut seen = BTreeSet::new();
             let mut next = Some(head);
             while let Some(id) = next {
                 let Some(object) = self.objects.get(&id) else {
                     return Err(format!("Terrain cell {cell:?} links missing object {id}"));
                 };
-                let source = object.cell();
-                if !object.is_live()
-                    || canonical_cell_coord(i32::from(source.0), i32::from(source.1)) != Some(cell)
-                    || !seen.insert(id)
-                {
+                if !object.is_live() || !seen.insert(id) {
                     return Err(format!(
                         "Terrain cell {cell:?} has invalid or repeated member {id}"
                     ));
@@ -529,13 +570,7 @@ impl TerrainObjectStore {
                 let Some(successor) = self.objects.get(&link) else {
                     return Err(format!("Terrain {id} links missing successor {link}"));
                 };
-                let a = successor.cell();
-                let b = object.cell();
-                if link == id
-                    || canonical_cell_coord(i32::from(a.0), i32::from(a.1))
-                        != canonical_cell_coord(i32::from(b.0), i32::from(b.1))
-                    || !links.insert(link)
-                {
+                if !successor.is_live() || link == id || !links.insert(link) {
                     return Err(format!("Terrain {id} has invalid successor {link}"));
                 }
                 next = successor.next_in_cell;
@@ -603,33 +638,47 @@ impl TerrainObjectStore {
         self.membership_epoch = next_epoch;
     }
 
-    /// Unlimbo admits Cell content only when the current Type Occupy_List
-    /// visits it. A live ctor-only type has no Cell member (71DAF1/568432).
-    /// The null-cell constructor skips Display too (71BC34).
+    /// Retain constructor identity independently of later MapPlaceDown cells.
+    /// A live ctor-only type visits no Cell (71DAF1/568432), while a bound
+    /// footprint may put this same Object in several Cell heads.
     pub(crate) fn insert_constructed(
         &mut self,
         mut terrain: TerrainObjectState,
         spawns_tiberium: bool,
-        occupy_list_visits_cell: bool,
     ) {
-        let cell = terrain.cell();
         terrain.spawns_tiberium = spawns_tiberium;
         let live = terrain.is_live();
         if live {
-            if occupy_list_visits_cell {
-                let key = canonical_cell_coord(i32::from(cell.0), i32::from(cell.1))
-                    .expect("admitted Terrain Cell slot");
-                terrain.next_in_cell = self.cells.insert(key, terrain.stable_id);
-            }
             // The same epoch invalidates the all-live Terrain neighbor halo,
             // including live instances whose empty footprint adds no head.
             self.membership_epoch = self.membership_epoch.wrapping_add(1);
         }
         self.touched.note(terrain.stable_id, self.objects.len());
         self.objects.insert(terrain.stable_id, terrain);
-        if live {
-            self.refresh_spawning_cell(cell);
+    }
+
+    /// CellAddContent47E913..47E91F, original instructions: prepend to
+    /// this recipient unless its head.Next already equals the object. Every
+    /// recipient overwrites the same Object+30, never a per-cell successor.
+    pub(crate) fn add_to_cell(&mut self, stable_id: u64, cell: (u16, u16)) {
+        let head = self.id_at(cell);
+        if head.is_none_or(|head| self.next_in_cell(head) != Some(stable_id)) {
+            self.objects
+                .get_mut(&stable_id)
+                .expect("constructed Terrain Cell member")
+                .next_in_cell = head;
+            self.cells.insert(cell, stable_id);
+            self.touched.note(stable_id, self.objects.len());
+            self.membership_epoch = self.membership_epoch.wrapping_add(1);
         }
+        self.refresh_spawning_cell(cell);
+    }
+
+    /// RecalcZone483C80 reads the actual recipient's first Terrain, which
+    /// can be anchored elsewhere after shared-Next writes or a saved load.
+    pub(crate) fn project_cell_occupation(&self, grid: &mut ResolvedTerrainGrid, cell: (u16, u16)) {
+        let occupation = self.id_at(cell).map(|id| self.objects[&id].occupation_bits);
+        grid.set_terrain_object_occupation(cell, occupation);
     }
 
     /// The animation index is reseeded from the live objects once the
@@ -675,12 +724,8 @@ impl TerrainObjectStore {
     }
 
     /// RemoveContent47EA90 replaces only this member's head/predecessor link.
-    fn unlink(&mut self, stable_id: u64) {
+    fn unlink(&mut self, stable_id: u64, cell: (u16, u16)) {
         let Some(object) = self.objects.get(&stable_id) else {
-            return;
-        };
-        let source = object.cell();
-        let Some(cell) = canonical_cell_coord(i32::from(source.0), i32::from(source.1)) else {
             return;
         };
         let successor = object.next_in_cell;
@@ -707,12 +752,16 @@ impl TerrainObjectStore {
         if found {
             self.objects.get_mut(&stable_id).unwrap().next_in_cell = None;
             self.touched.note(stable_id, self.objects.len());
+            self.membership_epoch = self.membership_epoch.wrapping_add(1);
         }
+        self.refresh_spawning_cell(cell);
     }
 
     /// Storage disposal cannot erase the successor's animation or membership.
     pub(crate) fn remove(&mut self, stable_id: u64) -> Option<TerrainObjectState> {
-        self.unlink(stable_id);
+        // TerrainDtor71B7B0 delegates active Limbo before ObjectDtor5F3B80;
+        // storage disposal does not scan or repair foreign Cell heads. Native
+        // dangling pointers outside the current footprint are unsupported.
         self.animations.remove(&stable_id);
         let terrain = self.objects.remove(&stable_id)?;
         self.refresh_spawning_cell(terrain.cell());
@@ -744,39 +793,37 @@ impl TerrainObjectStore {
         &mut self,
         stable_id: u64,
         raw_occupation: &mut RawCellOccupationGrid,
-        resolved_terrain: Option<&mut ResolvedTerrainGrid>,
-        occupy_list_bound: bool,
-    ) -> bool {
+        mut resolved_terrain: Option<&mut ResolvedTerrainGrid>,
+        occupied_offsets: &[(i16, i16)],
+    ) -> Option<Vec<(u16, u16)>> {
         let Some(snapshot) = self.objects.get(&stable_id).cloned() else {
-            return false;
+            return None;
         };
         if !snapshot.is_live() {
-            return false;
+            return None;
         }
 
-        let source_cell = snapshot.cell();
         // MapPickUp56884C uses the CURRENT type list. A saved ctor-only
         // TypeLoad71E22D binds1x1 without changing its saved Cell membership;
         // RemoveContent47EAF7 still unmarks after failing to find that member.
         // PickUp5688A1..5688BE skips absent slots before RemoveContent;
         // generic Map lookup must not manufacture a Dummy Cell-list member.
-        let allocated = resolved_terrain.as_ref().is_none_or(|grid| {
-            grid.native_fixed_cell_index(source_cell.0 as i16, source_cell.1 as i16)
-                .is_some()
-        });
-        if occupy_list_bound && allocated {
-            self.unlink(stable_id);
-            let key = canonical_cell_coord(i32::from(source_cell.0), i32::from(source_cell.1))
-                .expect("allocated Terrain source");
-            unmark_terrain_raw_occupation(raw_occupation, key, snapshot.occupation_bits);
-            if let Some(grid) = resolved_terrain {
-                let occupation = self
-                    .id_at(source_cell)
-                    .map(|id| self.objects[&id].occupation_bits);
-                grid.set_terrain_object_occupation(source_cell, occupation);
+        let cells =
+            snapshot.allocated_footprint_cells(occupied_offsets, resolved_terrain.as_deref());
+        for &cell in &cells {
+            self.unlink(stable_id, cell);
+            // RemoveContent47EAF7 invokes Unmark even when expiry already
+            // bypassed this object, and always at its retained source Location.
+            let source = snapshot.raw_occupation_cell(resolved_terrain.as_deref());
+            raw_occupation.clear_ground_at(
+                source,
+                terrain_raw_occupation_mask(snapshot.occupation_bits),
+            );
+            if let Some(grid) = resolved_terrain.as_deref_mut() {
+                self.project_cell_occupation(grid, cell);
             }
         }
-        true
+        Some(cells)
     }
 
     /// ObjectLimbo5F4E9E writes InLimbo after sound/Logic removal. Keeping
@@ -803,7 +850,7 @@ impl TerrainObjectStore {
         stable_id: u64,
         raw_occupation: &mut RawCellOccupationGrid,
         resolved_terrain: Option<&mut ResolvedTerrainGrid>,
-        occupy_list_bound: bool,
+        occupied_offsets: &[(i16, i16)],
     ) -> bool {
         if let Some(object) = self
             .objects
@@ -812,12 +859,15 @@ impl TerrainObjectStore {
         {
             object.limbo_prefix(raw_occupation, resolved_terrain.as_deref());
         }
-        if !self.begin_limbo(
-            stable_id,
-            raw_occupation,
-            resolved_terrain,
-            occupy_list_bound,
-        ) {
+        if self
+            .begin_limbo(
+                stable_id,
+                raw_occupation,
+                resolved_terrain,
+                occupied_offsets,
+            )
+            .is_none()
+        {
             return false;
         }
         self.finish_limbo(stable_id);
@@ -849,7 +899,7 @@ impl TerrainObjectStore {
         stable_id: u64,
         raw_occupation: &mut RawCellOccupationGrid,
         resolved_terrain: Option<&mut ResolvedTerrainGrid>,
-        occupy_list_bound: bool,
+        occupied_offsets: &[(i16, i16)],
     ) -> bool {
         if !self
             .objects
@@ -862,7 +912,7 @@ impl TerrainObjectStore {
             stable_id,
             raw_occupation,
             resolved_terrain,
-            occupy_list_bound,
+            occupied_offsets,
         );
         self.finish_uninit(stable_id)
     }
@@ -873,7 +923,7 @@ impl TerrainObjectStore {
         &mut self,
         finalizing_terrain: &mut BTreeSet<u64>,
         stable_id: u64,
-        cell: (u16, u16),
+        _cell: (u16, u16),
         raw_damage: &mut i32,
         distance_leptons: i32,
         warhead: &WarheadType,
@@ -892,15 +942,10 @@ impl TerrainObjectStore {
         // ObjectClass::ReceiveDamage 005F53A1..005F53B7 rejects these before
         // either ordinary armor calculation or the forced direct-damage path.
         let source = snapshot.cell();
-        // AreaDamage489280 and direct bridge fallout47DD70 retain a real
-        // Cell receiver. Its fixed512 identity, not equality with the packed
-        // Location words, identifies an aliased Terrain member.
-        if !snapshot.is_live()
-            || canonical_cell_coord(i32::from(source.0), i32::from(source.1))
-                != canonical_cell_coord(i32::from(cell.0), i32::from(cell.1))
-            || snapshot.health <= 0
-            || *raw_damage == 0
-        {
+        // TerrainTakeDamage71B920 has no Cell parameter. AreaDamage489280
+        // can capture this ID from any footprint cell (or several of them),
+        // so admission must not compare that caller's Cell to the source.
+        if !snapshot.is_live() || snapshot.health <= 0 || *raw_damage == 0 {
             return TerrainAreaReceiveResult::Ignored;
         }
         let Some(terrain_type) =
@@ -959,7 +1004,7 @@ impl TerrainObjectStore {
         finalizing_terrain.insert(stable_id);
         TerrainAreaReceiveResult::Lethal(TerrainLethalDamage {
             stable_id,
-            cell,
+            cell: source,
             spawns_tiberium: terrain_type.spawns_tiberium,
         })
     }
@@ -974,7 +1019,7 @@ impl TerrainObjectStore {
         navigation_changed_cells: &mut Vec<(u16, u16)>,
         lethal: TerrainLethalDamage,
         resolved_terrain: Option<&mut ResolvedTerrainGrid>,
-        occupy_list_bound: bool,
+        occupied_offsets: &[(i16, i16)],
     ) -> bool {
         if !finalizing_terrain.contains(&lethal.stable_id) {
             return false;
@@ -983,7 +1028,7 @@ impl TerrainObjectStore {
             lethal.stable_id,
             raw_occupation,
             resolved_terrain,
-            occupy_list_bound,
+            occupied_offsets,
         );
         if finalized {
             if !navigation_changed_cells.contains(&lethal.cell) {
@@ -1121,7 +1166,7 @@ impl TerrainAreaState {
         &mut self,
         lethal: TerrainLethalDamage,
         resolved_terrain: Option<&mut ResolvedTerrainGrid>,
-        occupy_list_bound: bool,
+        occupied_offsets: &[(i16, i16)],
     ) -> bool {
         self.store.finalize_lethal(
             &mut self.raw_occupation,
@@ -1129,7 +1174,7 @@ impl TerrainAreaState {
             &mut self.navigation_changed_cells,
             lethal,
             resolved_terrain,
-            occupy_list_bound,
+            occupied_offsets,
         )
     }
 }
@@ -1141,6 +1186,7 @@ pub(crate) fn terrain_raw_occupation_mask(source_mask: i32) -> u8 {
     ((source_mask & 0x07) as u8) << 2
 }
 
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn mark_terrain_raw_occupation(
     raw_occupation: &mut RawCellOccupationGrid,
     cell: (u16, u16),
@@ -1149,14 +1195,9 @@ pub(crate) fn mark_terrain_raw_occupation(
     raw_occupation.mark_ground(cell.0, cell.1, terrain_raw_occupation_mask(source_mask));
 }
 
-fn unmark_terrain_raw_occupation(
-    raw_occupation: &mut RawCellOccupationGrid,
-    cell: (u16, u16),
-    source_mask: i32,
-) {
-    raw_occupation.clear_ground(cell.0, cell.1, terrain_raw_occupation_mask(source_mask));
-}
-
+/// Explicit source-cell projection for synthetic test setup. Live construction,
+/// PickUp and saved restore project the actual Cell heads through the store.
+#[cfg(any(test, feature = "test-support"))]
 pub fn mark_terrain_occupation(
     terrain: &TerrainObjectState,
     resolved_terrain: Option<&mut ResolvedTerrainGrid>,
@@ -1166,6 +1207,7 @@ pub fn mark_terrain_occupation(
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
 pub fn unmark_terrain_occupation(
     terrain: &TerrainObjectState,
     resolved_terrain: Option<&mut ResolvedTerrainGrid>,
@@ -1209,11 +1251,12 @@ pub(crate) fn damage_terrain_object_at_cell(
         }
         TerrainAreaReceiveResult::Lethal(lethal) => {
             let terrain = area_state.store.get(lethal.stable_id).unwrap();
-            let occupy_list_bound = rules
+            let occupied_offsets = rules
                 .terrain_object_type_case_insensitive(interner.resolve(terrain.type_ref()))
                 .unwrap()
-                .has_occupy_list();
-            if area_state.finalize_lethal(lethal, resolved_terrain, occupy_list_bound) {
+                .occupied_cell_offsets()
+                .expect("admitted Terrain footprint");
+            if area_state.finalize_lethal(lethal, resolved_terrain, &occupied_offsets) {
                 TerrainDamageResult::Destroyed
             } else {
                 TerrainDamageResult::Ignored
@@ -1585,8 +1628,8 @@ mod tests {
             "nested Wood=yes C4 reentry must not receive or finalize twice"
         );
 
-        assert!(area.finalize_lethal(lethal, Some(&mut grid), true));
-        assert!(!area.finalize_lethal(lethal, Some(&mut grid), true));
+        assert!(area.finalize_lethal(lethal, Some(&mut grid), &[(0, 0)]));
+        assert!(!area.finalize_lethal(lethal, Some(&mut grid), &[(0, 0)]));
         assert!(!area.is_finalizing(stable_id));
         assert_eq!(area.navigation_changed_cells(), &[(1, 1)]);
         assert_eq!(

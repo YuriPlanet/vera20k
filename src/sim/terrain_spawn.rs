@@ -28,8 +28,8 @@ use crate::sim::ore_growth::OreGrowthState;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
+use crate::sim::terrain_object::TerrainObjectState;
 use crate::sim::terrain_object::TerrainObjectStore;
-use crate::sim::terrain_object::{TerrainObjectState, mark_terrain_raw_occupation};
 use crate::sim::tiberium::{
     NewTiberiumAdmission, PlaceTiberiumContext, TiberiumPlacement, TiberiumPlacementObjectContext,
     spread_tiberium,
@@ -414,7 +414,7 @@ pub fn construct_terrain_objects(
         snow_theater,
         TerrainConstructionMode::Compatibility,
     )
-    .expect("compatibility Terrain construction does not require a native-ID cursor")
+    .expect("compatibility Terrain construction requires an admitted native footprint")
 }
 
 /// Native identity admission is independent of authored Unlimbo resource
@@ -536,70 +536,48 @@ pub fn construct_terrain_objects_with_rules(
             sim.resolved_terrain.as_ref(),
         )
         .with_native_unique_id(native_unique_id);
-        let occupation_bits = terrain_state.occupation_bits();
-        let source_cell = terrain_state.cell();
-        // MapPlaceDown568471..56848E tests the actual fixed512 allocation
-        // before CellAddContent. Missing cells still admit Unlimbo/Display.
-        let occupy_list_visits_cell = t.has_occupy_list()
-            && sim.resolved_terrain.as_ref().is_none_or(|grid| {
-                grid.native_fixed_cell_index(source_cell.0 as i16, source_cell.1 as i16)
-                    .is_some()
-            });
-        sim.terrain_objects.insert_constructed(
-            terrain_state,
-            t.spawns_tiberium,
-            occupy_list_visits_cell,
-        );
+        // Query only a reached PlaceDown: the zero sentinel skips Unlimbo
+        // entirely, even when its retained type has an unsupported list.
+        let cells = if terrain_state.is_live() {
+            terrain_state.allocated_footprint_cells(
+                &t.occupied_cell_offsets()?,
+                sim.resolved_terrain.as_ref(),
+            )
+        } else {
+            Vec::new()
+        };
+        sim.terrain_objects
+            .insert_constructed(terrain_state, t.spawns_tiberium);
         constructed += 1;
         // TerrainCtor71BC34..71BC86 (original instructions) retains the
         // zero-cell identity but skips Unlimbo, including resource clearing.
         if !sim.terrain_objects.get(stable_id).unwrap().is_live() {
             continue;
         }
-        let registered = sim.register_terrain_object(stable_id, rules.rules());
-        debug_assert!(registered);
+        let terrain_snapshot = sim.terrain_objects.get(stable_id).unwrap().clone();
         // TypeCtor71DAF1 leaves Occupy_List null; MapPlaceDown568432
         // visits no Cell, independently of successful Unlimbo/Display.
-        if occupy_list_visits_cell {
-            let source = crate::map::cell_index::canonical_cell_coord(
-                i32::from(source_cell.0),
-                i32::from(source_cell.1),
-            )
-            .expect("admitted Terrain Cell slot");
-            mark_terrain_raw_occupation(
+        for cell in cells {
+            sim.terrain_objects.add_to_cell(stable_id, cell);
+            terrain_snapshot.mark_raw_occupation(
                 &mut sim.substrate.raw_cell_occupation,
-                source,
-                occupation_bits,
+                sim.resolved_terrain.as_ref(),
             );
-        }
-        if let TerrainConstructionMode::Authored(overlay_registry) = mode {
-            let terrain_snapshot = sim
-                .terrain_objects
-                .objects()
-                .get(&stable_id)
-                .expect("new Terrain remains registered")
-                .clone();
-            if occupy_list_visits_cell {
-                crate::sim::terrain_object::mark_terrain_occupation(
-                    &terrain_snapshot,
-                    sim.resolved_terrain.as_mut(),
-                );
+            if let Some(grid) = sim.resolved_terrain.as_mut() {
+                sim.terrain_objects.project_cell_occupation(grid, cell);
             }
+            // PlaceDown5684E1 Recalc belongs to this recipient. Display and
+            // Terrain's once-only halo/resource suffix follow the whole list.
+            sim.publish_recalculated_cells(rules.rules(), &[cell]);
+        }
+        let registered = sim.register_terrain_object(stable_id, rules.rules());
+        debug_assert!(registered);
+        if let TerrainConstructionMode::Authored(overlay_registry) = mode {
             // TerrainUnlimbo71D080..71D097 has eight ordered Cell lookups
             // even when PlaceDown admitted no Cell content. Real counters
             // stay derived; Dummy's wrapping byte is retained process state.
             terrain_snapshot.adjust_dummy_neighbors(sim.resolved_terrain.as_ref(), true);
-            let source = sim.resolved_terrain.as_ref().map_or(
-                crate::sim::occupancy::RawCellKey::Real(source_cell.0, source_cell.1),
-                |terrain| {
-                    let coord = terrain_snapshot.world_coord();
-                    let query = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-                    crate::sim::occupancy::RawCellKey::from_native(
-                        terrain,
-                        query.lookup_world(coord.x, coord.y),
-                    )
-                },
-            );
+            let source = terrain_snapshot.raw_occupation_cell(sim.resolved_terrain.as_ref());
             // 71D0E2..71D12B clears only the selected Cell's literal overlay
             // identity/data fields, without DestroyOverlay, Recalc or RNG.
             let before = match source {
@@ -1367,6 +1345,403 @@ mod tests {
         assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(2, 2), 0);
         sim.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
         assert!(sim.terrain_objects.objects().is_empty());
+    }
+
+    fn retail_terrain_foundation_scene(
+        template: ResolvedTerrainGrid,
+    ) -> Option<(
+        crate::sim::world::Simulation,
+        RuleSet,
+        OverlayTypeRegistry,
+        ResolvedTerrainGrid,
+    )> {
+        use crate::rules::process_owner::NativeScenarioRulesPrefix;
+        use crate::rules::retail_sources::RetailRulesSources;
+
+        let (_, startup_assets) = crate::rules::retail_ini_fixture::retail_assets()?;
+        let mut sources = RetailRulesSources::select(&startup_assets).unwrap();
+        sources
+            .artmd
+            .ini
+            .merge(&IniFile::from_str("[TREE01]\nFoundation=2x2\n"));
+        let audio = crate::rules::audio_sources::AudioDefinitions::select(&startup_assets);
+        let mut owner = sources
+            .into_owner(audio.sounds().clone(), audio.eva().clone())
+            .unwrap();
+        let (root, mut assets) = crate::rules::retail_ini_fixture::retail_scenario_assets()?;
+        let map =
+            crate::map::source::load_map_by_name_or_path_with_assets(&root, "XMP03T4.MAP", &assets)
+                .unwrap();
+        let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+        let mode =
+            crate::rules::retail_sources::select_mode_ini(&assets, Some("MPBattleMD.INI")).unwrap();
+        let (mut rules, _, _, _) = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::NonCampaign(mode.as_ref()),
+                &map.map.ini,
+            )
+            .unwrap()
+            .into_parts();
+        rules.bind_terrain_assets(
+            &assets,
+            theater.extension,
+            crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
+        );
+        let registry = rules.overlay_registry().clone();
+        let mut sim = crate::sim::world::Simulation::with_seed(31);
+        sim.session_mut_for_test()
+            .set_map_width_for_test(template.width());
+        sim.session_mut_for_test()
+            .set_map_height_for_test(template.height());
+        // This fixture starts at the real Terrain constructor phase; the
+        // normal app launch captures exercise the complete Scenario prefix.
+        sim.native_unique_ids =
+            Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        sim.overlay_grid = Some(OverlayGrid::new(template.width(), template.height()));
+        sim.install_resolved_terrain_for_new_map(template.clone());
+        Some((sim, rules, registry, template))
+    }
+
+    #[test]
+    fn terrain_foundation_cells_receive_nonanchor_damage_and_leave_through_common_cleanup() {
+        use crate::map::overlay::{OverlayEntry, TerrainObject};
+        use crate::sim::combat::combat_aoe::AreaDamageReceiver;
+        use crate::sim::combat::world_receiver::{apply_area_damage, collect_area};
+        use crate::sim::world::FrameEffects;
+
+        let Some((mut sim, rules, registry, _)) =
+            retail_terrain_foundation_scene(resolved_grid(8, 8))
+        else {
+            return;
+        };
+        let ore = registry.id_for_name("TIB01").unwrap();
+        sim.overlay_grid = Some(OverlayGrid::from_overlay_entries(
+            &[
+                OverlayEntry {
+                    rx: 2,
+                    ry: 2,
+                    overlay_id: ore,
+                    frame: 7,
+                },
+                OverlayEntry {
+                    rx: 3,
+                    ry: 2,
+                    overlay_id: ore,
+                    frame: 7,
+                },
+            ],
+            8,
+            8,
+        ));
+        let before_rng = sim.scenario_rng.logical_state();
+        let before_cursor = sim.native_identity_cursor().unwrap();
+        construct_terrain_objects_with_rules(
+            &mut sim,
+            &[TerrainObject {
+                rx: 2,
+                ry: 2,
+                name: "TREE01".into(),
+            }],
+            &mut TerrainConstructionRules::Projected(&rules),
+            false,
+            TerrainConstructionMode::Authored(&registry),
+        )
+        .unwrap();
+        let id = sim.terrain_objects.id_at((2, 2)).unwrap();
+        let cells = [(2, 2), (3, 2), (2, 3), (3, 3)];
+        // TerrainMark71BFF8 -> PlaceDown5683C0 visits selector3's four
+        // initialized offsets71D69F..71D734, with one shared Object+30.
+        assert_eq!(sim.terrain_objects.cell_index().len(), 4);
+        assert_eq!(sim.scenario_rng.logical_state(), before_rng);
+        assert_eq!(
+            sim.native_identity_cursor(),
+            Some(before_cursor.wrapping_add(1))
+        );
+        assert!(sim.rebuild_dynamic_navigation(&rules));
+        for cell in cells {
+            assert_eq!(sim.terrain_objects.id_at(cell), Some(id));
+            assert!(
+                !sim.path_grid_snapshot()
+                    .unwrap()
+                    .is_walkable(cell.0, cell.1)
+            );
+        }
+        assert_ne!(
+            sim.substrate.raw_cell_occupation.ground_bits(2, 2) & 0x1C,
+            0
+        );
+        assert_eq!(
+            sim.substrate.raw_cell_occupation.ground_bits(3, 2) & 0x1C,
+            0
+        );
+        assert_eq!(
+            sim.overlay_grid.as_ref().unwrap().cell(2, 2).overlay_id,
+            None
+        );
+        assert_eq!(
+            sim.overlay_grid.as_ref().unwrap().cell(3, 2).overlay_id,
+            Some(ore)
+        );
+
+        let he = rules.warhead("HE").unwrap();
+        let he_ref = sim.interner.intern("HE");
+        let origin = (crate::sim::combat::RAD_NO_ATTACKER, None, he_ref);
+        let collected = collect_area(
+            &mut sim,
+            &rules,
+            Some(&registry),
+            (2, 2),
+            10,
+            he,
+            origin,
+            None,
+            0,
+        );
+        let records: Vec<_> = collected
+            .receivers
+            .iter()
+            .filter_map(|receiver| match receiver {
+                AreaDamageReceiver::Terrain(event) => Some(*event),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            records.len(),
+            4,
+            "AreaDamage489280 retains every visited Cell record"
+        );
+        let secondary = *records
+            .iter()
+            .find(|event| (event.rx, event.ry) == (3, 2))
+            .unwrap();
+        sim.commit_noncombat_aoe_receivers(
+            &rules,
+            Some(&registry),
+            &collected.receivers,
+            FrameEffects::default(),
+        );
+        let health = sim.terrain_objects.get(id).unwrap().health();
+        assert!(health > 0 && health < sim.terrain_objects.get(id).unwrap().max_health());
+        // TakeDamage71B920 has no Cell argument: this actual collected
+        // non-anchor record must reach the same retained receiver.
+        sim.commit_direct_terrain_damage_receiver(
+            &rules,
+            Some(&registry),
+            secondary,
+            false,
+            FrameEffects::default(),
+        );
+        assert!(sim.terrain_objects.get(id).unwrap().health() < health);
+        let impact = sim.terrain_objects.get(id).unwrap().world_coord();
+        apply_area_damage(
+            &mut sim,
+            &rules,
+            Some(&registry),
+            impact,
+            10000,
+            he,
+            origin,
+            FrameEffects::default(),
+        );
+        for cell in cells {
+            assert_eq!(sim.terrain_objects.id_at(cell), None);
+            assert!(
+                sim.path_grid_snapshot()
+                    .unwrap()
+                    .is_walkable(cell.0, cell.1)
+            );
+        }
+        assert_eq!(
+            sim.substrate.raw_cell_occupation.ground_bits(2, 2) & 0x1C,
+            0
+        );
+        assert!(sim.substrate.pending_delete.contains_object(&id));
+        sim.process_pending_delete_with(&rules, Some(&registry), FrameEffects::default(), 1, true);
+        assert!(sim.terrain_objects.get(id).is_none());
+    }
+
+    #[test]
+    fn terrain_foundation_cells_restore_shared_live_heads_and_pick_up_in_native_order() {
+        use crate::map::overlay::TerrainObject;
+        use crate::sim::snapshot::GameSnapshot;
+        use crate::sim::world::UninitContext;
+
+        let Some((mut sim, rules, registry, template)) =
+            retail_terrain_foundation_scene(resolved_grid(8, 8))
+        else {
+            return;
+        };
+        construct_terrain_objects_with_rules(
+            &mut sim,
+            &[
+                TerrainObject {
+                    rx: 2,
+                    ry: 2,
+                    name: "TREE01".into(),
+                },
+                TerrainObject {
+                    rx: 1,
+                    ry: 1,
+                    name: "TREE01".into(),
+                },
+            ],
+            &mut TerrainConstructionRules::Projected(&rules),
+            false,
+            TerrainConstructionMode::Authored(&registry),
+        )
+        .unwrap();
+        let ids: Vec<_> = sim.terrain_objects.objects().keys().copied().collect();
+        let (older, newer) = (ids[0], ids[1]);
+        // The last new recipient2,2 overwrites the ONE Next with older.
+        // Therefore1,1 exposes older despite lying outside its own list.
+        assert_eq!(
+            sim.terrain_objects.members_at((1, 1)).collect::<Vec<_>>(),
+            [newer, older]
+        );
+        assert_eq!(
+            sim.terrain_objects.members_at((3, 3)).collect::<Vec<_>>(),
+            [older]
+        );
+        let saved_heads = sim.terrain_objects.cell_index().clone();
+        let bytes =
+            GameSnapshot::save_validated(&sim, 0, rules.simulation_config_hash(), "Terrain2x2", 0);
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        restored.rebuild_caches_after_load(template, Default::default(), &rules);
+        restored
+            .restore_map_authority_after_snapshot_load(&rules, &registry, None)
+            .unwrap();
+        assert_eq!(restored.terrain_objects.cell_index(), &saved_heads);
+        assert_eq!(
+            restored
+                .terrain_objects
+                .members_at((1, 1))
+                .collect::<Vec<_>>(),
+            [newer, older]
+        );
+        assert!(
+            restored
+                .resolved_terrain
+                .as_ref()
+                .unwrap()
+                .cell(2, 1)
+                .unwrap()
+                .terrain_object_occupation
+                .is_some()
+        );
+        restored.uninit_with_context(newer, UninitContext::new(&rules, Some(&registry)));
+        // RemoveContent47EAF0 clears shared Next only when found: the first
+        // recipient keeps older, the later heads receive the now-null Next.
+        assert_eq!(restored.terrain_objects.id_at((1, 1)), Some(older));
+        for cell in [(2, 1), (1, 2), (2, 2)] {
+            assert_eq!(restored.terrain_objects.id_at(cell), None);
+        }
+        assert_eq!(restored.terrain_objects.id_at((3, 3)), Some(older));
+        assert!(restored.terrain_objects.get(older).unwrap().is_live());
+        restored.process_pending_delete_with(&rules, Some(&registry), Default::default(), 1, true);
+        assert!(restored.terrain_objects.get(newer).is_none());
+        // Keep the exposed older object live; later native destruction of a
+        // foreign direct head is a separate dangling-pointer boundary.
+        let bytes = GameSnapshot::save_validated(
+            &restored,
+            0,
+            rules.simulation_config_hash(),
+            "Terrain2x2 survivor",
+            0,
+        );
+        GameSnapshot::load(&bytes)
+            .unwrap()
+            .sim
+            .restore_after_snapshot_load()
+            .unwrap();
+    }
+
+    #[test]
+    fn terrain_foundation_cells_mark_dummy_source_for_allocated_secondary_recipients() {
+        use crate::map::overlay::TerrainObject;
+        use crate::sim::movement::locomotor::MovementLayer;
+        use crate::sim::occupancy::RawCellKey;
+        use crate::sim::world::UninitContext;
+
+        let mut template = resolved_grid(4, 4);
+        template.test_set_native_allocated_cells(&[(2, 1), (1, 2), (2, 2)]);
+        assert!(template.native_fixed_cell_index(1, 1).is_none());
+        assert!(
+            [(2, 1), (1, 2), (2, 2)]
+                .into_iter()
+                .all(|(x, y)| template.native_fixed_cell_index(x, y).is_some())
+        );
+        let Some((mut sim, rules, registry, _)) = retail_terrain_foundation_scene(template) else {
+            return;
+        };
+        let infantry_owner = sim.interner.intern("Americans");
+        sim.substrate.raw_cell_occupation.write_occupant(
+            RawCellKey::Dummy,
+            MovementLayer::Ground,
+            0x03,
+            Some(infantry_owner),
+            true,
+        );
+        construct_terrain_objects_with_rules(
+            &mut sim,
+            &[TerrainObject {
+                rx: 1,
+                ry: 1,
+                name: "TREE01".into(),
+            }],
+            &mut TerrainConstructionRules::Projected(&rules),
+            false,
+            TerrainConstructionMode::Authored(&registry),
+        )
+        .unwrap();
+        let id = *sim.terrain_objects.objects().keys().next().unwrap();
+        // PlaceDown568471 checks each allocation; CellAddContent47EA52
+        // still passes retained Object.Location to TerrainMarkOccupation.
+        assert_eq!(sim.terrain_objects.cell_index().len(), 3);
+        assert_eq!(sim.terrain_objects.id_at((1, 1)), None);
+        assert_ne!(
+            sim.substrate
+                .raw_cell_occupation
+                .bits_at(RawCellKey::Dummy, MovementLayer::Ground)
+                & 0x1C,
+            0
+        );
+        assert_eq!(
+            sim.substrate
+                .raw_cell_occupation
+                .occupant_at(RawCellKey::Dummy, MovementLayer::Ground)
+                .1,
+            Some(infantry_owner)
+        );
+        assert_eq!(
+            sim.substrate.raw_cell_occupation.ground_bits(1, 1) & 0x1C,
+            0
+        );
+        assert!(sim.rebuild_dynamic_navigation(&rules));
+        sim.uninit_with_context(id, UninitContext::new(&rules, Some(&registry)));
+        assert!(sim.terrain_objects.cell_index().is_empty());
+        assert_eq!(
+            sim.substrate
+                .raw_cell_occupation
+                .occupant_at(RawCellKey::Dummy, MovementLayer::Ground),
+            (0x03, Some(infantry_owner))
+        );
+        assert_eq!(
+            sim.substrate
+                .raw_cell_occupation
+                .bits_at(RawCellKey::Dummy, MovementLayer::Ground)
+                & 0x1C,
+            0
+        );
+        for cell in [(2, 1), (1, 2), (2, 2)] {
+            assert!(
+                sim.path_grid_snapshot()
+                    .unwrap()
+                    .is_walkable(cell.0, cell.1)
+            );
+        }
     }
 
     /// A map entry becomes a live force-fire target through the real weapon.

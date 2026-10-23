@@ -206,18 +206,34 @@ fn random_map_preview_cells(
             let Some(kind) = rules
                 .rules
                 .terrain_object_type_case_insensitive(&object.name)
-                .filter(|kind| kind.has_occupy_list())
             else {
                 continue;
             };
-            for (dx, dy) in crate::rules::foundation::foundation_cell_offsets(&kind.foundation) {
-                terrain_heads.insert(
-                    (
-                        object.rx.wrapping_add_signed(dx),
-                        object.ry.wrapping_add_signed(dy),
-                    ),
-                    kind.radar_color,
+            let offsets = match kind.occupied_cell_offsets() {
+                Ok(offsets) => offsets,
+                Err(error) => {
+                    // Actual Terrain construction rejects the native
+                    // unterminated list; preview must not invent a footprint.
+                    log::warn!("Cannot project random-map Terrain: {error}");
+                    continue;
+                }
+            };
+            // RMG placements are positive map cells. The constructor's zero
+            // sentinel71BC34 skips Unlimbo; PlaceDown guards each allocation.
+            if (object.rx, object.ry) == (0, 0) {
+                continue;
+            }
+            for (dx, dy) in offsets {
+                let cell = (
+                    object.rx.wrapping_add_signed(dx),
+                    object.ry.wrapping_add_signed(dy),
                 );
+                if let Some(index) =
+                    resolved_terrain.native_fixed_cell_index(cell.0 as i16, cell.1 as i16)
+                {
+                    let cell = &resolved_terrain.cells()[index];
+                    terrain_heads.insert((cell.rx, cell.ry), kind.radar_color);
+                }
             }
         }
     }

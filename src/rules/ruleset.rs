@@ -6392,7 +6392,7 @@ impl RuleSet {
         // defaults across Process calls. Equal current text can admit
         // different Strength, Logic members, targets or occupation, so identify
         // the effective fields as well as the current source layers.
-        b"terrain-strength-logic-targeting-occupation-and-foundation-v5".hash(&mut hasher);
+        b"terrain-strength-logic-targeting-occupation-and-foundation-v6".hash(&mut hasher);
         self.terrain_object_types
             .iter()
             .map(|(name, terrain)| {

@@ -4216,9 +4216,10 @@ impl TacticalCaptureSession {
             }).collect();
             // Location, Cell content, Display and Logic are independent native
             // memberships. Observe the retained owner even when Occupy_List
-            // placed no Cell member; this never constructs or marks an object.
+            // placed no Cell member, and foreign-anchor members reached here;
+            // this never constructs or marks an object.
             let terrain_instances: Vec<_> = sim.terrain_objects().objects().values()
-                .filter(|object| object.cell() == at).map(|object| {
+                .filter(|object| object.cell() == at || member_ids.contains(&object.stable_id())).map(|object| {
                     let mut row = terrain_row(object);
                     row["lifecycle"] = json!(object.lifecycle());
                     row["cell_member"] = json!(member_ids.contains(&object.stable_id()));

@@ -324,10 +324,23 @@ impl RawCellOccupationGrid {
     }
 
     pub(crate) fn mark_ground(&mut self, rx: u16, ry: u16, mask: u8) {
-        if mask != 0 {
-            self.cells
-                .get_or_insert_with((rx, ry), Default::default)
-                .ground |= mask;
+        self.mark_ground_at(RawCellKey::Real(rx, ry), mask);
+    }
+
+    /// Literal ground OR, preserving the independent Infantry owner. Terrain
+    /// MarkOccupation71C110 may select Dummy from retained Object.Location
+    /// even when PlaceDown5683C0 admitted a different real footprint cell.
+    pub(crate) fn mark_ground_at(&mut self, key: RawCellKey, mask: u8) {
+        if mask == 0 {
+            return;
+        }
+        match key {
+            RawCellKey::Real(rx, ry) => {
+                self.cells
+                    .get_or_insert_with((rx, ry), Default::default)
+                    .ground |= mask;
+            }
+            RawCellKey::Dummy => self.dummy.ground |= mask,
         }
     }
 

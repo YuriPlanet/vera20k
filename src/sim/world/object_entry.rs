@@ -1715,7 +1715,10 @@ fn terrain_impassable(
     } else {
         SpeedType::Track
     };
-    for offset in crate::rules::foundation::foundation_cell_offsets(&ty.foundation) {
+    for offset in ty
+        .occupied_cell_offsets()
+        .map_err(|error| error.to_string())?
+    {
         let selected = live
             .terrain()
             .native_cell_identity((p.0.wrapping_add(offset.0), p.1.wrapping_add(offset.1)));
