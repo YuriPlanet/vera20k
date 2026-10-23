@@ -553,10 +553,8 @@ struct NativeBlowupCase {
 /// damage = its Health, distance, C4Warhead, no attacker, ignoreDefenses,
 /// no escape, no source house); a captive of another house handed to the
 /// Civilian-side house, or killed when none exists; our own captive spared;
-/// a warped object released first. The trigger-held original owner
-/// (`trigger_owned_elsewhere_dies`) has no VERA state and is skipped. VERA's
-/// deferred deletion never shifts the array; the removal case shows native
-/// re-reading the slot, so the call order is the same.
+/// a warped object released first. The shared registry walk re-reads live
+/// slots after callbacks, matching the native removal case's call order.
 #[test]
 fn native_blowup_subsets_corpus() {
     let cases: Vec<NativeBlowupCase> = serde_json::from_str(crate::test_fixture::text(
@@ -692,9 +690,6 @@ fn native_blowup_all_corpus() {
     for case in cases {
         let input = &case.input;
         let name = input["name"].as_str().unwrap();
-        if name == "trigger_owned_elsewhere_dies" {
-            continue;
-        }
         let sides: Vec<u8> = input["houses"]
             .as_array()
             .unwrap()
@@ -717,6 +712,12 @@ fn native_blowup_all_corpus() {
                 entity.set_owner_for_test(owner);
                 entity.set_type_ref_for_test(sim.interner.intern("TANK"));
                 entity.set_category_for_test(EntityCategory::Unit);
+                if let Some(original) = object["trigger_owner"].as_u64() {
+                    entity.mind_control = MindControlLink::controlled_by_house_for_test(
+                        owner,
+                        houses[original as usize],
+                    );
+                }
                 entity
                     .health
                     .set_for_test(object["health"].as_i64().unwrap_or(100) as i32);

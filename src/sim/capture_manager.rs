@@ -402,6 +402,18 @@ impl MindControlLink {
         }
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn controlled_by_house_for_test(
+        controller: InternedId,
+        original: InternedId,
+    ) -> Self {
+        Self {
+            house_controller: Some(controller),
+            house_original_owner: Some(original),
+            ..Self::default()
+        }
+    }
+
     /// The Dominator's hold (`+0x2C4`) with no controller or ring.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn permanent_for_test() -> Self {
