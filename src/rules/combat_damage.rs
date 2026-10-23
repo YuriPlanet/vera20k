@@ -25,6 +25,9 @@ use crate::rules::ini_parser::IniSection;
 /// must supply their own fallback in that case.
 #[derive(Debug, Clone)]
 pub struct CombatDamageDefaults {
+    /// RulesCtor665675=100; ReadCombatDamage66BBDE..66BBF5 reads signed
+    /// AmmoCrateDamage with its current default, without clamping.
+    pub ammo_crate_damage: i32,
     /// Signed post-Verses cap used by ApplyWarheadDamage. The executable's
     /// constructor default is 1000; stock rulesmd.ini overrides it to 10000.
     pub max_damage: i32,
@@ -126,6 +129,7 @@ impl CombatDamageDefaults {
     /// owner reads them.
     pub fn from_ini_section(section: &IniSection) -> Self {
         Self {
+            ammo_crate_damage: section.read_int("AmmoCrateDamage", 100),
             max_damage: section.read_int("MaxDamage", 1000),
             collapse_chance: section.read_int("CollapseChance", 100),
             ballistic_scatter: section.read_range("BallisticScatter", 0x100),
@@ -158,6 +162,7 @@ impl CombatDamageDefaults {
 impl Default for CombatDamageDefaults {
     fn default() -> Self {
         Self {
+            ammo_crate_damage: 100,
             max_damage: 1000,
             collapse_chance: 100,
             ballistic_scatter: 0x100,

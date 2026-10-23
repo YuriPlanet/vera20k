@@ -2455,6 +2455,7 @@ struct MapElectricBoltDrawObservation {
 #[derive(Debug, Serialize)]
 struct MapEffectObservation {
     scenario_rng_cursor: [i32; 2],
+    voxel_anims: Vec<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     projectiles: Option<Vec<Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2466,9 +2467,30 @@ struct MapEffectObservation {
 impl MapEffectObservation {
     fn capture(
         sim: &crate::sim::world::Simulation,
-        _rules: &crate::rules::ruleset::RuleSet,
+        rules: &crate::rules::ruleset::RuleSet,
         profile: &MapCaptureProfile,
     ) -> Result<Self> {
+        let voxel_anims = sim
+            .voxel_anims()
+            .iter()
+            .take(MAX_OBSERVATION_SAMPLES + 1)
+            .map(|(&id, debris)| {
+                let location = debris.world_coord();
+                let bounce = debris.bounce();
+                let lifecycle = debris.lifecycle();
+                // Retained Object.Location and the independent Bounce body are
+                // read separately; observing never advances either authority.
+                json!({"stable_id": id, "native_id": debris.native_unique_id(),
+                "type_id": rules.voxel_anim_type(debris.type_id()).name.as_str(),
+                "owner_house": debris.owner_house().map(|owner| sim.interner().resolve(owner)),
+                "stored_leptons": [location.x, location.y, location.z],
+                "duration": debris.duration(), "marked_for_deletion": debris.marked_for_deletion(),
+                "in_logic_vector": debris.in_logic_vector(),
+                "object_alive": lifecycle.object_alive(), "in_limbo": lifecycle.in_limbo(),
+                "bounce_position_bits": bounce.position().map(|value| value.bits()),
+                "bounce_velocity_bits": bounce.velocity().map(|value| value.bits())})
+            })
+            .collect::<Vec<_>>();
         let projectiles = (profile.observe_projectiles == Some(true)).then(|| {
             sim.projectiles().iter().take(MAX_OBSERVATION_SAMPLES + 1).map(|(&id, bullet)| {
                 let weapon = bullet.payload().installed_weapon().map(|id| sim.interner().resolve(id));
@@ -2514,6 +2536,7 @@ impl MapEffectObservation {
         let rng = sim.rng_views().scenario;
         let snapshot = Self {
             scenario_rng_cursor: [rng.index_a, rng.index_b],
+            voxel_anims,
             projectiles,
             waves,
             animations,
@@ -2526,7 +2549,8 @@ impl MapEffectObservation {
     }
 
     fn sample_count(&self) -> usize {
-        1 + self.projectiles.as_ref().map_or(0, Vec::len)
+        1 + self.voxel_anims.len()
+            + self.projectiles.as_ref().map_or(0, Vec::len)
             + self.waves.as_ref().map_or(0, Vec::len)
             + self.animations.as_ref().map_or(0, Vec::len)
     }

@@ -430,6 +430,33 @@ class MapObservationTests(unittest.TestCase):
         self.assertEqual(retained, self.effect_frames[1])
         self.assertNotIn('temporal_paused', retained['animations'][0]['runtime'])
 
+    def test_voxel_effect_rows_retain_location_bounce_and_cleanup(self):
+        self.effect_profile()
+        # Schema fixtures, not native flight/timing expectations.
+        row = {'stable_id': 21, 'native_id': -1, 'type_id': 'PIECE', 'owner_house': None,
+               'stored_leptons': [100, 200, -5], 'duration': -1, 'marked_for_deletion': False,
+               'in_logic_vector': True, 'object_alive': True, 'in_limbo': False,
+               'bounce_position_bits': [0x42c80000, 0x43480000, 0x41200000],
+               'bounce_velocity_bits': [0x3f800000, 0x80000000, 0xbf800000]}
+        self.effect_frames[1]['voxel_anims'] = [row]
+        self.effect_frames[2]['voxel_anims'] = []
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        frames = report['capture']['observations']['frames']
+        self.assertEqual(frames[1]['effects']['voxel_anims'], [row])
+        self.assertEqual(frames[2]['effects']['voxel_anims'], [])
+        self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+        for mutation in (lambda x: x.update(duration=True),
+                         lambda x: x.update(bounce_position_bits=[0, 0]),
+                         lambda x: x.update(bounce_velocity_bits=[0, 0, 1 << 32]),
+                         lambda x: x.update(in_limbo=0)):
+            bad = deepcopy(row); mutation(bad)
+            effects = dict(self.effect_frames[1], voxel_anims=[bad])
+            with self.assertRaises(ValidationError):
+                observation._effects(effects, self.profile, 'bad')
+        with self.assertRaises(ValidationError):
+            observation._effects(dict(self.effect_frames[1], voxel_anims=[row, row]), self.profile, 'bad')
+
     def test_wave_observations_retain_lifetime_and_refuse_malformed_snapshots(self):
         self.profile.update(schema_version=observation.PROFILE_V2, observe_waves=True)
         self.profile_path.write_text(json.dumps(self.profile))

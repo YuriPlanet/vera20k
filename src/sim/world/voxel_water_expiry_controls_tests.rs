@@ -1,10 +1,9 @@
 //! Numerical expiry-query controls, separate from the ordinary stock flight.
 //!
 //! These post-constructor duration/position priors are not natural flights.
-//! Original expiry reads retained Object.Location.Z; Rust derives that
-//! query coordinate from Bounce, so these controls supply
-//! the equivalent complete Bounce position. They do not prove independent
-//! Location/Bounce retention or pre-first-AI drawing parity.
+//! Original expiry reads retained Object.Location.Z. These controls supply
+//! both that query location and the independent Bounce position; the natural
+//! flight test supplies neither after construction.
 
 use crate::sim::bounce::BounceState;
 use crate::sim::runtime::SimRuntime;
@@ -45,6 +44,7 @@ fn piece_with_prior(runtime: &mut SimRuntime, z: i32, duration: i32) -> u64 {
         body.rotation(),
     ));
     piece.set_duration_for_test(duration);
+    piece.set_location_for_test(glam::IVec3::new(19972, 28836, z));
     id
 }
 
@@ -74,10 +74,23 @@ fn tire_water_expiry_requires_strictly_below_the_deck_plane() {
         let id = piece_with_prior(&mut runtime, floor + height, 1);
         let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
         let rng_before = sim.scenario_rng.native_state_hex();
-        sim.visit_voxel_anim(id, &resources.rules);
-        assert!(sim.voxel_anims().get(id).is_none(), "height{height}");
+        sim.visit_voxel_anim(id, &resources.rules, super::FrameEffects::default());
+        let piece = sim
+            .voxel_anims()
+            .get(id)
+            .expect("UnInit retains body until late drain");
+        assert!(!piece.lifecycle().object_alive());
+        assert!(piece.lifecycle().in_limbo());
         assert!(!sim.live_object_order_snapshot().contains(&id));
         assert_eq!(sim.display_layers().layer_of(id), None);
+        sim.process_pending_delete_with(
+            &resources.rules,
+            Some(&resources.overlay_registry),
+            super::FrameEffects::default(),
+            1,
+            sim.session.started(),
+        );
+        assert!(sim.voxel_anims().get(id).is_none(), "height{height}");
         let children: Vec<_> = sim
             .anims()
             .map(|(_, anim)| {
@@ -129,10 +142,24 @@ fn tire_out_of_domain_update_deletes_without_water_expiry_effects() {
     let rng_before = sim.scenario_rng.native_state_hex();
     let native_id_before = sim.native_identity_cursor();
     let stable_id_before = sim.next_stable_object_id();
-    sim.visit_voxel_anim(id, &resources.rules);
-    assert!(sim.voxel_anims().get(id).is_none());
+    sim.visit_voxel_anim(id, &resources.rules, super::FrameEffects::default());
+    assert!(
+        !sim.voxel_anims()
+            .get(id)
+            .unwrap()
+            .lifecycle()
+            .object_alive()
+    );
     assert!(!sim.live_object_order_snapshot().contains(&id));
     assert_eq!(sim.display_layers().layer_of(id), None);
+    sim.process_pending_delete_with(
+        &resources.rules,
+        Some(&resources.overlay_registry),
+        super::FrameEffects::default(),
+        1,
+        sim.session.started(),
+    );
+    assert!(sim.voxel_anims().get(id).is_none());
     assert!(sim.anims().next().is_none());
     assert_eq!(sim.native_identity_cursor(), native_id_before);
     assert_eq!(sim.next_stable_object_id(), stable_id_before);

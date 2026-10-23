@@ -3106,9 +3106,16 @@ impl Simulation {
     /// `ObjectClass::Unlimbo` inside `VoxelAnimClass::Constructor @ 0x007493B0`
     /// reveals the piece, which is what puts it in the LogicClass vector.
     pub(crate) fn reveal_voxel_anim(&mut self, stable_id: u64) -> bool {
-        if !self.substrate.voxel_anims.contains_key(stable_id) {
+        let Some(piece) = self.substrate.voxel_anims.get_mut(stable_id) else {
+            return false;
+        };
+        if !piece.lifecycle().object_alive() {
             return false;
         }
+        // ObjectUnlimbo5F4F4E / Mark5F58F7 update the base bytes even
+        // though Voxel OccupyList74AB40 returns null: no Cell insertion.
+        piece.lifecycle_mut().in_limbo = false;
+        piece.lifecycle_mut().admit_mark_down();
         // VoxelAnim VT7F6318+78 ->74A960: always Air.
         Self::submit_overhead_display(&mut self.substrate, stable_id, DisplayLayer::AIR);
         self.register_logic_object(stable_id)
@@ -3436,6 +3443,12 @@ impl Simulation {
             .get(stable_id)
             .map(|entity| (entity.lifecycle.in_limbo, entity.lifecycle.object_alive))
             .or_else(|| {
+                self.substrate.voxel_anims.get(stable_id).map(|piece| {
+                    let state = piece.lifecycle();
+                    (state.in_limbo, state.object_alive)
+                })
+            })
+            .or_else(|| {
                 self.substrate
                     .particle_systems
                     .detached_particle_lifecycle(stable_id)
@@ -3475,6 +3488,12 @@ impl Simulation {
                 .entities
                 .get(stable_id)
                 .map(|entity| (entity.lifecycle.object_alive, entity.lifecycle.cell_marked))
+                .or_else(|| {
+                    self.substrate.voxel_anims.get(stable_id).map(|piece| {
+                        let state = piece.lifecycle();
+                        (state.object_alive, state.cell_marked)
+                    })
+                })
                 .or_else(|| {
                     self.substrate
                         .particle_systems
@@ -3517,7 +3536,17 @@ impl Simulation {
         // turn kamikaze on the wing's target (`0x006B7100`).
         self.notify_pointer_expired(stable_id, context);
 
-        if self.unmark_entity_remove(stable_id, context) {
+        let unmarked = self.unmark_entity_remove(stable_id, context)
+            || self
+                .substrate
+                .voxel_anims
+                .get_mut(stable_id)
+                .is_some_and(|piece| {
+                    // Voxel OccupyList74AB40 is null. Generic Mark(UP) still
+                    // clears Object+74 before Display and sound concealment.
+                    piece.lifecycle_mut().admit_mark_up()
+                });
+        if unmarked {
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::ConcealUnmarked);
         }
@@ -3577,6 +3606,8 @@ impl Simulation {
         );
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.lifecycle.in_limbo = true;
+        } else if let Some(piece) = self.substrate.voxel_anims.get_mut(stable_id) {
+            piece.lifecycle_mut().in_limbo = true;
         } else {
             // Ordinary Particle base fields are null and Mark(REMOVE) has
             // no cell footprint; the same Object5F4D30 body still owns its
@@ -4693,7 +4724,19 @@ impl Simulation {
         self.substrate
             .entities
             .get(listener_id)
-            .is_some_and(|listener| listener.attack_target.target() == Some(target))
+            .and_then(|listener| listener.attack_target.target())
+            .is_some_and(|held| {
+                //70D539 compares pointers, including fixed512 aliases and
+                //the one shared Dummy. Reading an already held Cell never
+                //restamps that Dummy's current coordinate.
+                if let (TargetKind::Cell(..), TargetKind::Cell(..), Some(terrain)) =
+                    (held, target, self.resolved_terrain.as_ref())
+                {
+                    held.cell_identity(terrain) == target.cell_identity(terrain)
+                } else {
+                    held == target
+                }
+            })
     }
 
     /// Infantry PerCell repair519D17..519D36 calls each registered Infantry
@@ -5389,6 +5432,16 @@ impl Simulation {
                 Some((cell, self.spotlight_alive(expired_id)?, 255, false, None))
             })
             .or_else(|| {
+                let piece = self.substrate.voxel_anims.get(expired_id)?;
+                let location = piece.world_coord();
+                let cell = u16::try_from(crate::util::lepton::lepton_to_cell(location.x))
+                    .ok()
+                    .zip(u16::try_from(crate::util::lepton::lepton_to_cell(location.y)).ok());
+                // Voxel749A11 / inherited ObjectUnInit5F65F0 announce
+                // this retained Object body; OwnerHouse is no Techno flag.
+                Some((cell, piece.lifecycle().object_alive(), 255, false, None))
+            })
+            .or_else(|| {
                 let system = self.substrate.particle_systems.get(expired_id)?;
                 let cell = u16::try_from(crate::util::lepton::lepton_to_cell(system.coords().x))
                     .ok()
@@ -5883,7 +5936,12 @@ impl Simulation {
         }
         self.planning_detach_actor(stable_id);
         let kind = match self.classify_object(stable_id) {
-            Some(kind @ (ObjectKind::Entity | ObjectKind::Spotlight | ObjectKind::Smudge)) => kind,
+            Some(
+                kind @ (ObjectKind::Entity
+                | ObjectKind::Spotlight
+                | ObjectKind::Smudge
+                | ObjectKind::VoxelAnim),
+            ) => kind,
             Some(ObjectKind::Particle)
                 if self
                     .substrate
@@ -5898,7 +5956,6 @@ impl Simulation {
             Some(
                 ObjectKind::Particle
                 | ObjectKind::Anim
-                | ObjectKind::VoxelAnim
                 | ObjectKind::ParticleSystem
                 | ObjectKind::Terrain
                 | ObjectKind::Projectile
@@ -5994,6 +6051,14 @@ impl Simulation {
                     .particle_systems
                     .finish_particle_retirement(stable_id);
             }
+            ObjectKind::VoxelAnim => {
+                // Voxel74A700 inherits ObjectUnInit5F65F0: Limbo while
+                // Alive, clear +90, then queue the same retained body.
+                let _ = self.object_conceal_with_context(stable_id, context);
+                if let Some(piece) = self.substrate.voxel_anims.get_mut(stable_id) {
+                    piece.lifecycle_mut().object_alive = false;
+                }
+            }
             ObjectKind::Entity => {
                 let _ = self.techno_limbo_with_context(stable_id, context);
                 if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
@@ -6002,7 +6067,6 @@ impl Simulation {
                 }
             }
             ObjectKind::Anim
-            | ObjectKind::VoxelAnim
             | ObjectKind::ParticleSystem
             | ObjectKind::Terrain
             | ObjectKind::Projectile
@@ -6113,9 +6177,12 @@ impl Simulation {
                 .waves
                 .get(stable_id)
                 .is_some_and(|wave| !wave.in_logic_vector()),
-            // Never queued: its AI's Delete verdict removes it at once
-            // (`visit_voxel_anim`).
-            ObjectKind::VoxelAnim => true,
+            // Voxel inherits Object IsReadyToDelete5F6690: !ObjectAlive.
+            ObjectKind::VoxelAnim => self
+                .substrate
+                .voxel_anims
+                .get(stable_id)
+                .is_some_and(|piece| !piece.lifecycle().object_alive()),
         }
     }
 
@@ -6207,6 +6274,14 @@ impl Simulation {
             // then62D9C8 announces again before ObjectDtor5F3B80 unregisters
             // and frees the body. No Particle-specific RNG/timer writes.
             self.notify_pointer_expired(stable_id, context);
+        }
+        if kind == Some(ObjectKind::VoxelAnim) {
+            // Voxel destructor749A11 announces expiry before its GameActive
+            // Limbo749A86 and before ObjectDtor749B0C releases the body.
+            self.notify_pointer_expired(stable_id, context);
+            if (game_state as u8) != 0 {
+                self.object_conceal_with_context(stable_id, context);
+            }
         }
         if kind == Some(ObjectKind::Smudge) {
             // Scalar Smudge6B4FA0 sends its third removed=true expiry at
@@ -6482,9 +6557,9 @@ impl Simulation {
                 .as_mut()
                 .and_then(|grid| grid.finalize_remove(stable_id))
                 .is_some(),
-            // A spotlight returned above. VERA removes a voxel anim on its AI's
-            // Delete (`visit_voxel_anim`), never through this destructor.
-            Some(ObjectKind::Spotlight | ObjectKind::VoxelAnim) => false,
+            Some(ObjectKind::VoxelAnim) => self.substrate.voxel_anims.remove(stable_id).is_some(),
+            // A spotlight returned above.
+            Some(ObjectKind::Spotlight) => false,
             // A stale deferred-delete ticket: a direct destructor already
             // removed its object (`discard_constructed_limbo` keeps a queued
             // constructor-owned child's ticket).

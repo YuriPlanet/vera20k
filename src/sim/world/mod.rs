@@ -25,6 +25,7 @@ pub(crate) mod building_anim;
 mod building_scatter;
 mod building_upgrade_art;
 mod camera_home;
+mod bounce_terrain;
 mod cell_content;
 mod crash;
 mod disk_laser;
@@ -42,6 +43,8 @@ mod sinking;
 mod time_warp;
 mod trigger_chrono;
 mod type_tech_levels;
+mod voxel_anim_effects;
+pub(crate) use voxel_anim_effects::BounceContactDamage;
 mod unit_repair_seek;
 pub(crate) use frame_channel::FrameChannel;
 pub use network_commands::{NetworkCommandQueues, NetworkQueueError, NetworkQueueContext, NetworkQueuePass, NetworkInterruption};
@@ -204,6 +207,8 @@ pub use lifecycle_tests::common_raw_terrain_cell as common_raw_test_terrain_cell
 mod team_script_vm_tests;
 #[cfg(test)]
 mod voxel_water_expiry_tests;
+#[cfg(test)]
+mod overlay_explodes_tests;
 
 pub(crate) use crash::CrashLatch;
 pub(crate) use display_registry::entity_layer;
@@ -1229,6 +1234,9 @@ pub struct Simulation {
     /// Shared by all instances of the type; the upgrade/art owner mutates it.
     #[serde(default)]
     building_upgrade_art_names: crate::sim::building_upgrades::BuildingUpgradeArtNames,
+    /// VoxelAnimAI74A8F8 supplies the live Type Damage field to receivers.
+    #[serde(default)]
+    voxel_type_damage: crate::sim::voxel_anim::VoxelTypeDamage,
     /// Pre-resolved `[CombatDamage]` warhead handles (F04). Built by
     /// `resolve_type_handles` beside the type table; rebuilt from rules on
     /// load. NOT serialized, NOT hashed. `None` until resolved.
@@ -2671,6 +2679,7 @@ impl Simulation {
                             );
                             crate::sim::combat::combat_aoe::AreaDamageReceiver::Terrain(
                                 crate::sim::combat::TerrainDamageEvent {
+                    damage_writeback: None,
                                     stable_id,
                                     rx,
                                     ry,
@@ -2947,15 +2956,16 @@ impl Simulation {
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         event: crate::sim::combat::TerrainDamageEvent,
+        ignore_defenses: bool,
         frame_effects: FrameEffects<'_>,
-    ) {
+    ) -> damage_consequences::DamageCommitReceipt {
         let mut run =
             crate::sim::combat::world_receiver::ReceiverRun::default().with_effects(frame_effects);
         let (effects, under_attack_events) = crate::sim::combat::world_receiver::commit_terrain(
             self,
             &mut run,
             event,
-            true,
+            ignore_defenses,
             rules,
             overlay_registry,
         );
@@ -2967,7 +2977,7 @@ impl Simulation {
             under_attack_events,
             terrain_navigation_changed_cells,
             frame_effects,
-        );
+        )
     }
 
     /// Commit one non-combat Apply_area_damage hit list through the ordinary
@@ -3026,7 +3036,7 @@ impl Simulation {
     /// consequences already happened recursively in combat; this consumes the
     /// same lifecycle/presentation/terrain outputs without leaving an alternate
     /// zero-HP object registered for the next LogicClass visit.
-    fn absorb_noncombat_damage_effects(
+    pub(crate) fn absorb_noncombat_damage_effects(
         &mut self,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
@@ -4354,6 +4364,7 @@ impl Simulation {
             dirty_cells: Default::default(),
             power_states: Default::default(),
             building_upgrade_art_names: Default::default(),
+            voxel_type_damage: Default::default(),
             super_weapons: Default::default(),
             lightning_storm: Default::default(),
             psychic_dominator: Default::default(),

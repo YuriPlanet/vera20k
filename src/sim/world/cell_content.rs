@@ -13,6 +13,59 @@ use crate::sim::occupancy::CellObjectMember;
 use crate::sim::overlay_grid::OverlayCell;
 
 impl Simulation {
+    /// AreaDamage48A2C4..48A319 (original gamemd.exe): redraw, clear only
+    /// Overlay identity, Recalc, AssignOrphaned/hierarchy, then70D4A0. The
+    /// Cell pointer was looked up at489EA4, before bridge callbacks; a Dummy
+    /// reads its current fields here and is never looked up a second time.
+    pub(crate) fn remove_exploding_overlay(
+        &mut self,
+        cell: NativeCellIdentity,
+        rules: &crate::rules::ruleset::RuleSet,
+        registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+        effects: super::FrameEffects<'_>,
+    ) -> bool {
+        if !self
+            .cell_overlay(cell)
+            .overlay_id
+            .and_then(|id| registry.flags(id))
+            .is_some_and(|flags| flags.explodes)
+        {
+            return false;
+        }
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return false;
+        };
+        let (x, y) = terrain.native_cell_coord(cell);
+        let coord = (x as u16, y as u16);
+        // CellRedraw486E70 unions the tactical rectangles and marks radar.
+        // Tactical presentation rebuilds each frame; DirtyCells owns radar.
+        self.dirty_cells.mark_cell(coord);
+        match cell {
+            NativeCellIdentity::Real(_) => {
+                let (Some(grid), Some(terrain)) =
+                    (self.overlay_grid.as_mut(), self.resolved_terrain.as_mut())
+                else {
+                    return false;
+                };
+                grid.clear_literal_overlay_identity(coord.0, coord.1);
+                grid.recalculate_runtime_cell(terrain, registry, coord);
+            }
+            NativeCellIdentity::Dummy => {
+                // Recalc47D2B8 returns immediately for the shared Dummy.
+                terrain.shared_cell_dummy().write_overlay_identity(-1);
+            }
+        }
+        let blocked = super::navigation::structure_blocked_among(
+            &self.substrate.entities,
+            &self.interner,
+            rules,
+            &[coord],
+        );
+        self.publish_cell_and_assign_orphaned_zone(rules, coord, &blocked);
+        self.stop_all_targeting_cell(coord.0, coord.1, rules, Some(registry), effects);
+        true
+    }
+
     /// Cell+0x44 overlay index, +0x11E data and +0x50 wall owner of a cell
     /// already looked up, as Mark (0x005FC570), DestroyOverlay (0x00480CB0),
     /// ore growth and the bridge writers leave them during play. OverlayGrid

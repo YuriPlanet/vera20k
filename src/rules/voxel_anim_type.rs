@@ -185,7 +185,7 @@ impl VoxelAnimType {
         out.stop_sound = section
             .read_type_name("StopSound", 0x80)
             .map(str::to_string);
-        out.damage = section.read_int("Damage", out.damage);
+        out.damage = read_damage(section, out.damage);
         out.damage_radius = section.read_int("DamageRadius", out.damage_radius);
 
         out.share_source = section
@@ -204,6 +204,12 @@ impl VoxelAnimType {
     pub fn shares_data(&self) -> bool {
         self.share_body_data || self.share_turret_data || self.share_barrel_data
     }
+}
+
+/// VoxelAnimTypeReadINI74B3D8..74B3F2: signed Damage+2F0 uses its current
+/// value, including a previous contact write. Shared by cold and retained reads.
+pub(crate) fn read_damage(section: &IniSection, current: i32) -> i32 {
+    section.read_int("Damage", current)
 }
 
 /// The two angular-velocity keys, including native's sentinel bug.

@@ -874,7 +874,7 @@ impl TerrainObjectStore {
         finalizing_terrain: &mut BTreeSet<u64>,
         stable_id: u64,
         cell: (u16, u16),
-        raw_damage: i32,
+        raw_damage: &mut i32,
         distance_leptons: i32,
         warhead: &WarheadType,
         rules: &RuleSet,
@@ -899,7 +899,7 @@ impl TerrainObjectStore {
             || canonical_cell_coord(i32::from(source.0), i32::from(source.1))
                 != canonical_cell_coord(i32::from(cell.0), i32::from(cell.1))
             || snapshot.health <= 0
-            || raw_damage == 0
+            || *raw_damage == 0
         {
             return TerrainAreaReceiveResult::Ignored;
         }
@@ -916,10 +916,10 @@ impl TerrainObjectStore {
         // ignore_defenses to ObjectClass 005F5390. BlowUpBridge 0047DD70 passes
         // true: current Health bypasses verses, falloff, NoDamage and MaxDamage.
         let resolved_damage = if ignore_defenses {
-            raw_damage
+            *raw_damage
         } else {
             damage::kernel::apply_warhead_damage(
-                raw_damage,
+                *raw_damage,
                 warhead.cell_spread_f64,
                 warhead.percent_at_max_f64,
                 warhead.interaction(terrain_type.armor_id()).multiplier(),
@@ -928,6 +928,7 @@ impl TerrainObjectStore {
                 rules.combat_damage.max_damage,
             )
         };
+        *raw_damage = resolved_damage;
         if resolved_damage == 0 {
             return TerrainAreaReceiveResult::Ignored;
         }
@@ -946,7 +947,9 @@ impl TerrainObjectStore {
             };
         }
 
-        let remaining = terrain.health.wrapping_sub(resolved_damage);
+        // Object5F54A4 caps the actual pointed packet before lethal callbacks.
+        *raw_damage = resolved_damage.min(terrain.health);
+        let remaining = terrain.health.wrapping_sub(*raw_damage);
         if remaining > 0 {
             terrain.health = remaining;
             return TerrainAreaReceiveResult::Damaged { remaining };
@@ -1093,7 +1096,7 @@ impl TerrainAreaState {
         &mut self,
         stable_id: u64,
         cell: (u16, u16),
-        raw_damage: i32,
+        mut raw_damage: i32,
         distance_leptons: i32,
         warhead: &WarheadType,
         rules: &RuleSet,
@@ -1103,7 +1106,7 @@ impl TerrainAreaState {
             &mut self.finalizing_terrain,
             stable_id,
             cell,
-            raw_damage,
+            &mut raw_damage,
             distance_leptons,
             warhead,
             rules,
@@ -1284,6 +1287,7 @@ mod tests {
             &rules,
             None,
             crate::sim::combat::TerrainDamageEvent {
+                damage_writeback: None,
                 stable_id,
                 rx: 1,
                 ry: 1,
@@ -1292,6 +1296,7 @@ mod tests {
                 warhead_ref,
                 near_center_ic_isolation_eligible: false,
             },
+            true,
             crate::sim::world::FrameEffects::default(),
         );
         let terrain = &sim.terrain_objects.objects()[&stable_id];
@@ -1318,6 +1323,7 @@ mod tests {
                 &rules,
                 None,
                 crate::sim::combat::TerrainDamageEvent {
+                    damage_writeback: None,
                     stable_id,
                     rx: 1,
                     ry: 1,
@@ -1326,6 +1332,7 @@ mod tests {
                     warhead_ref,
                     near_center_ic_isolation_eligible: false,
                 },
+                true,
                 crate::sim::world::FrameEffects::default(),
             );
             assert_eq!(sim.terrain_objects.objects()[&stable_id].health, health);
@@ -1351,6 +1358,7 @@ mod tests {
             &rules,
             None,
             crate::sim::combat::TerrainDamageEvent {
+                damage_writeback: None,
                 stable_id,
                 rx: 1,
                 ry: 1,
@@ -1359,6 +1367,7 @@ mod tests {
                 warhead_ref,
                 near_center_ic_isolation_eligible: false,
             },
+            true,
             crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sim.terrain_objects.objects()[&stable_id].health, 0);

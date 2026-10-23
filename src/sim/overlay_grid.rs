@@ -750,10 +750,10 @@ impl OverlayGrid {
         true
     }
 
-    /// Literal576BA0 +44=-1 after the separately published +11E store. Keep
+    /// Literal576BA0 / AreaDamage48A2F0 +44=-1. Keep
     /// the state, wall owner and retained attributes; only presentation drops
     /// the removed identity. This must not enqueue a frame-tail Recalc.
-    pub(crate) fn clear_literal_bridge_identity(&mut self, rx: u16, ry: u16) -> bool {
+    pub(crate) fn clear_literal_overlay_identity(&mut self, rx: u16, ry: u16) -> bool {
         self.bump_mutation_epoch();
         let Some(idx) = index_of(self.width, self.height, rx, ry) else {
             return false;
@@ -2162,7 +2162,7 @@ mod tests {
         grid.cells[0].overlay_id = Some(24);
         grid.cells[0].wall_owner = Some(crate::sim::intern::test_intern("RetainedOwner"));
         let owner = grid.cells[0].wall_owner;
-        assert!(grid.clear_literal_bridge_identity(0, 0));
+        assert!(grid.clear_literal_overlay_identity(0, 0));
         assert_eq!(grid.cell(0, 0).overlay_id, None);
         assert_eq!(
             grid.cell(0, 0).overlay_data,

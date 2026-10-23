@@ -248,3 +248,174 @@ fn retail_tsunami_harv_tire_water_expiry_constructs_wake_then_first_splash() {
     // This is the completed ordinary master frame. Child first-AI guard/timer
     // state is deliberately not compared to a constructor-only native row.
 }
+
+/// VoxelAnim749F30's ordinary dry expiry: TWLT036 precedes TankOGas area
+/// damage, then UnInit74A700 retires through the ordinary late-frame drain.
+/// The stock type/terrain/SHP inputs are unchanged; the debris birth and a
+/// receiver placed after natural contact are supplied component inputs.
+#[test]
+fn retail_gastank_natural_dry_expiry_constructs_twlt036_damages_and_retires() {
+    let Some((root, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let loaded = crate::headless_scenario::load(&root, "Tsunami.mmx", 17).unwrap();
+    let mut runtime = shoreline_runtime(&loaded);
+    let (sim, resources) = (&mut runtime.simulation, &runtime.resources);
+    let rules = &resources.rules;
+    let kind_id = rules.voxel_anim_type_id_by_name("GASTANK").unwrap();
+    let kind = rules.voxel_anim_type(kind_id);
+    assert_eq!(kind.duration, 100);
+    assert_eq!(kind.expire_anim.as_deref(), Some("TWLT036"));
+    assert_eq!(kind.warhead.as_deref(), Some("TankOGas"));
+    assert_eq!(kind.damage, 20);
+    assert!(!kind.is_meteor && !kind.is_tiberium);
+    assert!(
+        rules
+            .art()
+            .anim_runtime_config("TWLT036")
+            .unwrap()
+            .raw_shp_frame_count
+            .is_some_and(|count| count > 0)
+    );
+    // Tsunami's first start plateau: the physical map pack has clear tile0
+    // at(54,97), level4. Supply that exact location and let the ordinary
+    // Bounce/world query own its height throughout the launch and landing.
+    let terrain = sim.resolved_terrain().unwrap();
+    let source = (54, 97);
+    let launch_cell = terrain.cell(source.0, source.1).unwrap();
+    assert_eq!(
+        (
+            launch_cell.source_tile_index,
+            launch_cell.source_sub_tile,
+            launch_cell.level,
+            launch_cell.slope_type
+        ),
+        (0, 0, 4, 0)
+    );
+    assert!(!launch_cell.outside_playfield && !launch_cell.ground_walk_blocked);
+    let launch_z = crate::util::lepton::ground_height_leptons(
+        launch_cell.level,
+        launch_cell.slope_type,
+        i32::from(source.0) * 256 + 128,
+        i32::from(source.1) * 256 + 128,
+    )
+    .unwrap();
+    let safe = terrain
+        .iter()
+        .filter(|cell| {
+            !cell.outside_playfield
+                && !cell.ground_walk_blocked
+                && cell.land_type != crate::rules::terrain_rules::LandType::Water.as_index()
+                && cell.speed_costs.track.is_some_and(|cost| cost > 0)
+        })
+        .max_by_key(|cell| cell.rx.abs_diff(source.0) + cell.ry.abs_diff(source.1))
+        .map(|cell| (cell.rx, cell.ry))
+        .unwrap();
+    sim.spawn_object_with_overlay_registry(
+        "AMCV",
+        "Americans",
+        safe.0,
+        safe.1,
+        0,
+        rules,
+        &resources.overlay_registry,
+    )
+    .expect("ordinary House survivor");
+    sim.scenario_rng = SimRng::new(2);
+    let origin = glam::IVec3::new(
+        i32::from(source.0) * 256 + 128,
+        i32::from(source.1) * 256 + 128,
+        launch_z,
+    );
+    sim.emit_debris_voxel(kind_id, kind, None, origin, true, &mut Vec::new())
+        .unwrap();
+    let piece_id = sim.voxel_anims().ids()[0];
+    let piece = sim.voxel_anims().get(piece_id).unwrap();
+    assert_eq!(piece.world_coord(), origin, "Unlimbo7494E9 retains input");
+    assert_eq!(piece.bounce().position_leptons().z, origin.z + 10);
+    // Observe the stock flight rather than installing a duration, velocity,
+    // position or bounce verdict. Stop and expiry are distinct AI visits.
+    for _ in 0..100 {
+        let piece = runtime
+            .simulation
+            .voxel_anims()
+            .get(piece_id)
+            .expect("stock dry piece remains present until its expiry visit");
+        if piece.duration() == 0 {
+            break;
+        }
+        ordinary_frame(&mut runtime);
+    }
+    let sim = &mut runtime.simulation;
+    let piece = sim
+        .voxel_anims()
+        .get(piece_id)
+        .expect("natural contact before expiry");
+    assert_eq!(piece.duration(), 0);
+    assert!(!piece.marked_for_deletion());
+    let impact = piece.bounce().position_leptons();
+    let cell = ((impact.x / 256) as u16, (impact.y / 256) as u16);
+    assert_ne!(
+        sim.resolved_terrain()
+            .unwrap()
+            .cell(cell.0, cell.1)
+            .unwrap()
+            .land_type,
+        crate::rules::terrain_rules::LandType::Water.as_index()
+    );
+    // A real Building's center-cell receiver has native distance zero. This
+    // avoids mistaking a small-spread admission miss for absent expiry damage.
+    let resources = &runtime.resources;
+    let rules = &resources.rules;
+    // Use the production authored-placement scope for this supplied receiver;
+    // ordinary Map Read can place it on a paved cell as well as clear ground.
+    let receiver = sim
+        .with_object_placement_scope(|sim| {
+            sim.spawn_object_with_overlay_registry(
+                "GAPOWR",
+                "Americans",
+                cell.0,
+                cell.1,
+                0,
+                rules,
+                &resources.overlay_registry,
+            )
+        })
+        .expect("ordinary receiver on the natural dry landing cell");
+    let health = sim.entities().get(receiver).unwrap().health.current();
+    let prior: BTreeSet<_> = sim.anims().map(|(&id, _)| id).collect();
+    ordinary_frame(&mut runtime);
+    let sim = &runtime.simulation;
+    let created: Vec<_> = sim
+        .anims()
+        .filter(|(id, anim)| {
+            !prior.contains(id) && sim.interner.resolve(anim.type_id()) == "TWLT036"
+        })
+        .collect();
+    assert_eq!(
+        created.len(),
+        1,
+        "natural dry expiry must construct TWLT036"
+    );
+    let (_, explosion) = created[0];
+    assert_eq!(
+        explosion.world_coord(),
+        AnimWorldCoord {
+            x: impact.x,
+            y: impact.y,
+            z: impact.z
+        }
+    );
+    assert_eq!(explosion.draw_flags(), 0x2600);
+    assert_eq!(explosion.z_adjust(), -30);
+    assert_eq!(explosion.owner_entity(), None);
+    assert_eq!(explosion.owner_house(), None);
+    assert!(
+        sim.entities().get(receiver).unwrap().health.current() < health,
+        "stock TankOGas expiry must reach the ordinary Building receiver"
+    );
+    assert!(sim.voxel_anims().get(piece_id).is_none());
+    assert!(!sim.live_object_order_snapshot().contains(&piece_id));
+    assert_eq!(sim.display_layers().layer_of(piece_id), None);
+    assert!(!sim.substrate.pending_delete.contains_object(&piece_id));
+}

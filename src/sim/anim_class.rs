@@ -2904,7 +2904,7 @@ impl Simulation {
         id: AnimId,
         config: &AnimTypeRuntimeConfig,
         rules: &RuleSet,
-        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        _overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         position: glam::IVec3,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
@@ -2913,11 +2913,7 @@ impl Simulation {
         {
             self.spawn_named_anim(rules, bounce_anim, coord, 0, BOUNCE_CONTACT_DRAW_FLAGS, 0);
         }
-        // Map[coord] (`0x004239E5`); VERA keeps no objects on the dummy cell.
-        let (Some(warhead_name), Some((rx, ry))) = (
-            config.warhead.as_deref(),
-            Self::map_coord_cell(&self.resolved_terrain, position.x, position.y),
-        ) else {
+        let Some(warhead_name) = config.warhead.as_deref() else {
             return false;
         };
         let damage = match X87Chop53::load_f64(config.damage).and_then(X87Chop53::ftol_i64) {
@@ -2925,80 +2921,14 @@ impl Simulation {
             Err(_) => return false,
         };
         let warhead_ref = self.interner.intern(warhead_name);
-        use crate::sim::combat::combat_aoe::AreaDamageReceiver;
-        use crate::sim::occupancy::CellObjectMember;
-        let ground = MovementLayer::Ground;
-        let mut current = self.cell_objects((rx, ry), ground).next();
-        let mut bridge_state_changed = false;
-        while let Some(target) = current {
-            let center = match target {
-                CellObjectMember::Entity(id) => self.substrate.entities.get(id).map(|entity| {
-                    let [x, y] = crate::sim::movement::ground_pose::object_center_xy(entity);
-                    (x, y)
-                }),
-                // Loaded Terrain objects retain their map-cell center. This
-                // contact gate uses XY only (GetCoords5F65A0); it does not
-                // substitute ground/deck height for the object's location.
-                CellObjectMember::Terrain(id) => {
-                    self.terrain_objects.objects().get(&id).map(|tree| {
-                        let coord = tree.world_coord();
-                        (coord.x, coord.y)
-                    })
-                }
-            };
-            if let Some((x, y)) = center {
-                let distance = position
-                    .x
-                    .wrapping_sub(x)
-                    .wrapping_abs()
-                    .wrapping_add(position.y.wrapping_sub(y).wrapping_abs());
-                if distance <= config.damage_radius {
-                    let distance_leptons = crate::util::native_x87::adjust_for_z_standard(distance);
-                    let receiver = match target {
-                        CellObjectMember::Entity(id) => AreaDamageReceiver::Entity(
-                            crate::sim::combat::EntityDamageEvent::direct_receiver(
-                                id,
-                                damage,
-                                distance_leptons,
-                                crate::sim::combat::RAD_NO_ATTACKER,
-                                None,
-                                warhead_ref,
-                                crate::sim::combat::ReceiverCallFlags {
-                                    ignore_defenses: false,
-                                    arg6: false,
-                                },
-                            ),
-                        ),
-                        CellObjectMember::Terrain(id) => {
-                            let tree = &self.terrain_objects.objects()[&id];
-                            AreaDamageReceiver::Terrain(crate::sim::combat::TerrainDamageEvent {
-                                stable_id: id,
-                                rx: tree.cell().0,
-                                ry: tree.cell().1,
-                                damage,
-                                distance_leptons,
-                                warhead_ref,
-                                near_center_ic_isolation_eligible: false,
-                            })
-                        }
-                    };
-                    bridge_state_changed |= self
-                        .commit_noncombat_aoe_receivers(
-                            rules,
-                            overlay_registry,
-                            &[receiver],
-                            frame_effects,
-                        )
-                        .bridge_state_changed;
-                }
-            }
-            // 423A83 reads Object+30 AFTER ReceiveDamage. The native Terrain
-            // lethal tail unlinks synchronously and clears that successor;
-            // collecting a vector up front would incorrectly hit later objects.
-            // Evidence: tools/spatial_oracle/terrain_debris_receiver.json.
-            current = self.next_cell_object(target);
-        }
-        bridge_state_changed
+        self.apply_bounce_contact_damage(
+            position,
+            config.damage_radius,
+            crate::sim::world::BounceContactDamage::Anim(damage),
+            warhead_ref,
+            rules,
+            frame_effects,
+        )
     }
 
     /// The landing arm proper (`0x00423C4A..0x00423EF8`); see

@@ -227,7 +227,7 @@ fn native_bounce_ground_deck_contacts_match_original_update() {
 
 fn fixture_rules() -> RuleSet {
     RuleSet::from_ini_with_fixed_art_for_test(&crate::rules::ini_parser::IniFile::from_str(
-        "[BuildingTypes]\n0=building\n1=undeploy\n2=large_undeploy\n[VehicleTypes]\n0=nonbuilding\n[building]\nName=Building\n[undeploy]\nUndeploysInto=nonbuilding\n[large_undeploy]\nUndeploysInto=nonbuilding\n[nonbuilding]\nSpeed=5\n"), &crate::rules::ini_parser::IniFile::from_str("[building]\nFoundation=1x1\n[undeploy]\nFoundation=1x1\n[large_undeploy]\nFoundation=2x2\n")).unwrap()
+        "[BuildingTypes]\n0=building\n1=undeploy\n2=large_undeploy\n[VehicleTypes]\n0=nonbuilding\n[building]\nName=Building\n[undeploy]\nUndeploysInto=nonbuilding\n[large_undeploy]\nUndeploysInto=nonbuilding\n[nonbuilding]\nSpeed=5\n[VoxelAnims]\n0=TIRE\n[TIRE]\nElasticity=0.8\nMinZVel=28\nMaxZVel=32\nMaxXYVel=10\nDuration=150\n"), &crate::rules::ini_parser::IniFile::from_str("[building]\nFoundation=1x1\n[undeploy]\nFoundation=1x1\n[large_undeploy]\nFoundation=2x2\n")).unwrap()
 }
 struct RecordingTerrain<'a> {
     inner: ResolvedBounceTerrain<'a>,
@@ -303,13 +303,8 @@ fn voxel_anim_logic_visit_delivers_native_deck_height_and_low_bridge_selection()
     ))
     .unwrap();
     let rules = fixture_rules();
-    let ini = crate::rules::ini_parser::IniFile::from_str(
-        "[TIRE]\nElasticity=0.8\nMinZVel=28\nMaxZVel=32\nMaxXYVel=10\nDuration=150\n",
-    );
-    let kind = crate::rules::voxel_anim_type::VoxelAnimType::from_ini_section(
-        "TIRE",
-        ini.section("TIRE").unwrap(),
-    );
+    let type_id = rules.voxel_anim_type_id_by_name("TIRE").unwrap();
+    let kind = rules.voxel_anim_type(type_id);
     for name in [
         "deck_fall",
         "deck_rest",
@@ -324,15 +319,8 @@ fn voxel_anim_logic_visit_delivers_native_deck_height_and_low_bridge_selection()
             .find(|c| c["name"] == name)
             .unwrap();
         let mut sim = fixture(case);
-        sim.emit_debris_voxel(
-            crate::rules::voxel_anim_type::VoxelAnimTypeId(0),
-            &kind,
-            None,
-            IVec3::ZERO,
-            true,
-            &mut Vec::new(),
-        )
-        .unwrap();
+        sim.emit_debris_voxel(type_id, kind, None, IVec3::ZERO, true, &mut Vec::new())
+            .unwrap();
         let id = sim.substrate.voxel_anims.ids()[0];
         // This terrain-consumer fixture supplies the independently captured
         // Bounce body after the ordinary constructor has admitted the object.
@@ -343,7 +331,14 @@ fn voxel_anim_logic_visit_delivers_native_deck_height_and_low_bridge_selection()
             .set_bounce_for_test(body(case));
         assert!(sim.live_object_order_snapshot().contains(&id));
         let before = sim.state_hash();
-        sim.visit_voxel_anim(id, &rules);
+        sim.visit_voxel_anim(id, &rules, crate::sim::world::FrameEffects::default());
+        sim.process_pending_delete_with(
+            &rules,
+            Some(rules.overlay_registry()),
+            crate::sim::world::FrameEffects::default(),
+            1,
+            sim.session().started(),
+        );
         let actual = sim.substrate.voxel_anims.get(id).unwrap();
         assert_eq!(
             actual.duration(),

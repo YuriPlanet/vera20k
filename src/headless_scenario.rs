@@ -935,6 +935,7 @@ mod retail_construction_tests {
             rules,
             Some(rules.overlay_registry()),
             crate::sim::combat::TerrainDamageEvent {
+                damage_writeback: None,
                 stable_id: alias_id,
                 rx: 26,
                 ry: 60,
@@ -943,6 +944,7 @@ mod retail_construction_tests {
                 warhead_ref,
                 near_center_ic_isolation_eligible: false,
             },
+            true,
             Default::default(),
         );
         assert_eq!(

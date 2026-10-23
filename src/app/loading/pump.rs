@@ -925,6 +925,7 @@ fn prepare_country_loading_prefix(
             resident.retire_object_type_tech_levels(),
             resident.retire_ambient_change_inputs(),
             resident.retire_building_upgrade_art_names(),
+            resident.retire_voxel_type_damage(),
         )?;
     }
     let preparation = owner.prepare_noncampaign_scenario_prefix();
@@ -1395,6 +1396,7 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
                 runtime.simulation.retire_object_type_tech_levels(),
                 runtime.simulation.retire_ambient_change_inputs(),
                 runtime.simulation.retire_building_upgrade_art_names(),
+                runtime.simulation.retire_voxel_type_damage(),
             )?;
         }
         let load_result = {

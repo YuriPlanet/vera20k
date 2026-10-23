@@ -312,6 +312,22 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     for name in &rules.general.metallic_debris {
         insert(name);
     }
+    // AreaDamage48A34D constructs the retained BarrelExplode; Voxel749F30
+    // constructs its ExpireAnim74A1AF and BounceAnim74A87F. Bind these
+    // producers explicitly rather than depending on another warhead's list.
+    if let Some(name) = rules.general.barrel_explode.as_deref() {
+        insert(name);
+    }
+    for kind in rules.voxel_anim_types_iter() {
+        for name in kind.expire_anim.iter().chain(&kind.bounce_anim) {
+            insert(name);
+        }
+    }
+    // BuildingDestructionEffects441AF3 uses find-only on literal FIRE3.
+    // An orphan ART section must not create a registered Type.
+    if rules.anim_type_names.contains("FIRE3") {
+        insert("FIRE3");
+    }
     // A chunk landing in water below the deck: `Wake=` and the first
     // `SplashList=` entry (`AnimClass::AI 0x00423D46..0x00423DDD`).
     insert(&rules.general.wake.name);
@@ -921,6 +937,23 @@ mod anim_class_root_tests {
 
     /// `[Powerups]` anims reach the binder; a `<none>` token and an absent
     /// row (the default `0,NONE`) contribute no root.
+    #[test]
+    fn roots_cover_overlay_and_voxel_death_producers() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nBarrelExplode=MYBLAST\n[VoxelAnims]\n0=MYCHUNK\n\
+             [MYCHUNK]\nExpireAnim=MYEXPIRE\nBounceAnim=MYBOUNCE\n\
+             [Animations]\n999=FIRE3\n",
+        ))
+        .unwrap();
+        let roots = anim_class_roots(&rules);
+        for name in ["MYBLAST", "MYEXPIRE", "MYBOUNCE", "FIRE3"] {
+            assert!(
+                roots.iter().any(|root| root == name),
+                "{name} absent: {roots:?}"
+            );
+        }
+    }
+
     #[test]
     fn roots_cover_powerup_pickup_anims() {
         let rules = RuleSet::from_ini(&IniFile::from_str(

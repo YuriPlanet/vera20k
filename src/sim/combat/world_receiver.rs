@@ -552,8 +552,10 @@ pub(crate) fn apply_area_damage(
     origin: (u64, Option<InternedId>, InternedId),
     effects: FrameEffects<'_>,
 ) -> bool {
-    let area = collect_area_at(
+    let mut run = ReceiverRun::default().with_effects(effects);
+    let (death, pings) = apply_area_damage_in_run(
         world,
+        &mut run,
         rules,
         overlay_registry,
         impact,
@@ -561,17 +563,10 @@ pub(crate) fn apply_area_damage(
         warhead,
         origin,
     );
-    let receipt =
-        world.commit_noncombat_aoe_receivers(rules, overlay_registry, &area.aoe.receivers, effects);
-    let bridge_continued = continue_area_damage(
-        world,
-        rules,
-        overlay_registry,
-        area.continuation,
-        receipt.area_result.expect("area receiver receipt"),
-        effects,
-    );
-    receipt.bridge_state_changed || bridge_continued
+    let navigation = run.finish();
+    world
+        .absorb_noncombat_damage_effects(rules, overlay_registry, death, pings, navigation, effects)
+        .bridge_state_changed
 }
 
 /// [`apply_area_damage`] inside a damage transaction (a TerrainClass death's
@@ -606,17 +601,19 @@ pub(crate) fn apply_area_damage_in_run(
     effects
         .cell_target_detaches
         .extend(area.aoe.cell_target_detaches);
-    let (nested, pings, area_result) =
+    let (nested, mut pings, area_result) =
         commit_area_with_dispatch(world, run, &area.aoe.receivers, rules, overlay_registry);
     effects.append(nested);
-    effects.bridge_state_changed |= continue_area_damage(
+    let (tail, mut tail_pings) = continue_area_damage(
         world,
+        run,
         rules,
         overlay_registry,
         area.continuation,
         area_result,
-        run.effects(),
     );
+    effects.append(tail);
+    pings.append(&mut tail_pings);
     (effects, pings)
 }
 
@@ -629,6 +626,7 @@ struct AreaDamageContinuation<'r> {
     impact: ProjectileCoord,
     damage: i32,
     source_id: u64,
+    source_house: Option<InternedId>,
     warhead: &'r WarheadType,
     warhead_ref: InternedId,
     object_list_layer: crate::sim::map::bridge_topology::ListLayer,
@@ -682,6 +680,7 @@ fn collect_area_at<'r>(
             impact,
             damage,
             source_id: origin.0,
+            source_house: origin.1,
             warhead,
             warhead_ref: origin.2,
             object_list_layer: aoe.object_list_layer,
@@ -895,11 +894,12 @@ pub(crate) fn commit_terrain(
     let Some(warhead) = rules.warhead(world.interner.resolve(event.warhead_ref)) else {
         return (effects, under_attack_events);
     };
+    let mut packet = event.damage;
     let receive = world.terrain_objects.receive_damage(
         &mut run.finalizing_terrain,
         event.stable_id,
         (event.rx, event.ry),
-        event.damage,
+        &mut packet,
         event.distance_leptons,
         warhead,
         rules,
@@ -907,6 +907,9 @@ pub(crate) fn commit_terrain(
         world.session.no_damage(),
         ignore_defenses,
     );
+    if let Some(writeback) = event.damage_writeback {
+        writeback.write(world, rules, packet);
+    }
     let TerrainAreaReceiveResult::Lethal(lethal) = receive else {
         return (effects, under_attack_events);
     };
@@ -1073,6 +1076,17 @@ pub(crate) fn commit_entities(
         } else {
             None
         };
+        let prepared_event = super::receiver_call::prepare_infantry_receiver(
+            event,
+            &world.substrate.entities,
+            rules,
+            &world.interner,
+            world.resolved_terrain.as_ref(),
+        );
+        let event = &prepared_event;
+        if let Some(writeback) = event.damage_writeback {
+            writeback.write(world, rules, event.damage);
+        }
         // FootClass::ReceiveDamage 0x004D7330..0x004D7413 runs its parasite
         // prefix on the raw damage before TechnoClass::ReceiveDamage.
         world.foot_receive_damage_parasite_prefix(
@@ -1083,6 +1097,13 @@ pub(crate) fn commit_entities(
             rules,
             run.effects(),
         );
+        // Foot's synchronous parasite exit can re-enter damage and mutate the
+        // same caller-owned field. Techno reads its current pointed value.
+        let mut receiver_event = *event;
+        if let Some(writeback) = event.damage_writeback {
+            receiver_event.damage = writeback.read(world, rules);
+        }
+        let event = &receiver_event;
         let receiver_outcome = resolve_receive_damage(
             event,
             &world.substrate.entities,
@@ -1094,6 +1115,14 @@ pub(crate) fn commit_entities(
             current_tick,
             world.resolved_terrain.as_ref(),
         );
+        // Techno70196C..701D69 writes its defended/gated/kernel value before
+        // team removal and Object's synchronous Tag/Kill/Destroy callbacks.
+        if let Some(writeback) = event.damage_writeback
+            && let Some(value) =
+                receiver_outcome.and_then(|resolved| resolved.outcome.post_object_damage)
+        {
+            writeback.write(world, rules, value);
+        }
         if let Some(effect) = receiver_outcome.and_then(|resolved| resolved.invulnerability_impact)
         {
             death.combat_light_requests.push(effect);
@@ -2600,22 +2629,21 @@ pub(crate) fn area_routes_to_wall(
         .is_some_and(|flags| flags.wall && warhead_damages_wall(warhead, flags))
 }
 
-/// Apply_area_damage489B49..48A2C4 resumes after synchronous receivers and
-/// recursive deaths: area rocking, then the existing bridge driver. The
-/// original source argument and pre-receiver layer survive those callbacks;
-/// a Bullet's now-cleared Owner must not replace this call's source.
-/// Bullet469033 completes both effects before cluster RNG469057. Negative
-/// nonzero packets skip the weak rocker but still reach the bridge draw.
+/// Apply_area_damage489B49..48A479 (original gamemd.exe). After synchronous
+/// receivers: rocker, bridge, Overlay.Explodes, then ordinary WH.Particle.
+/// The original arguments and selected layer survive every nested callback.
 fn continue_area_damage(
     world: &mut Simulation,
+    run: &mut ReceiverRun,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
     context: AreaDamageContinuation<'_>,
     area_result: AreaDamageResult,
-    effects: FrameEffects<'_>,
-) -> bool {
+) -> (DeathEffects, Vec<UnderAttackEvent>) {
+    let mut death = DeathEffects::default();
+    let mut pings = Vec::new();
     if !context.entered || area_result == AreaDamageResult::IronCurtain {
-        return false;
+        return (death, pings);
     }
     area_rocker::apply(
         world,
@@ -2629,26 +2657,125 @@ fn continue_area_damage(
             list_layer: context.object_list_layer,
         },
     );
-    //489E87 follows the rocker even when this impact routed into a wall.
-    // The saved wall-route decision suppresses only the bridge driver.
-    if context.routed_wall || !context.warhead.wall {
-        return false;
+    //489EA4 re-looks up the decoded packed impact Cell, before the bridge
+    //callbacks. Retain this allocation, including the shared Dummy; do not
+    //replace it with the earlier489342 Cell or a post-bridge lookup.
+    let cell = world.resolved_terrain.as_ref().map(|terrain| {
+        terrain.native_cell_identity((context.cell.0 as i16, context.cell.1 as i16))
+    });
+    if !context.routed_wall && context.warhead.wall {
+        let event = BridgeDamageEvent {
+            rx: context.cell.0,
+            ry: context.cell.1,
+            damage: context.damage,
+            warhead_ref: context.warhead_ref,
+            is_ion_cannon: context.warhead_ref == world.rule_handles().ion_cannon,
+            impact_z_leptons: context.impact.z,
+        };
+        death.bridge_state_changed |= crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(
+            world, rules, std::slice::from_ref(&event), overlay_registry, run.effects(),
+        );
     }
-    let event = BridgeDamageEvent {
-        rx: context.cell.0,
-        ry: context.cell.1,
-        damage: context.damage,
-        warhead_ref: context.warhead_ref,
-        is_ion_cannon: context.warhead_ref == world.rule_handles().ion_cannon,
-        impact_z_leptons: context.impact.z,
+    let coord = crate::sim::anim_class::AnimWorldCoord {
+        x: context.impact.x,
+        y: context.impact.y,
+        z: context.impact.z,
     };
-    crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(
-        world,
-        rules,
-        std::slice::from_ref(&event),
-        overlay_registry,
-        effects,
-    )
+    let position = glam::IVec3::new(coord.x, coord.y, coord.z);
+    if let (Some(cell), Some(registry)) = (cell, overlay_registry)
+        && world.remove_exploding_overlay(cell, rules, registry, run.effects())
+    {
+        //48A34D: loop1/600h/z0/delay0 at the unchanged impact. The shared
+        //nullable constructor preserves identity and constructor RNG order.
+        if let Err(error) = world.emit_debris_anim(
+            rules,
+            rules.general.barrel_explode.as_deref(),
+            coord,
+            &mut death.explosion_effects,
+        ) {
+            log::warn!("barrel explosion animation did not construct: {error}");
+        }
+        //48A371: null source, ORIGINAL outer sourceHouse, C4 and affectTib1.
+        //Keep the same receiver run across this recursive gameplay chain.
+        if let Some(c4) = rules.warhead(&rules.bridge_warheads.c4_name) {
+            let reference = world.interner.intern(&c4.id);
+            let (nested, mut nested_pings) = apply_area_damage_in_run(
+                world,
+                run,
+                rules,
+                overlay_registry,
+                context.impact,
+                rules.combat_damage.ammo_crate_damage,
+                c4,
+                (RAD_NO_ATTACKER, context.source_house, reference),
+            );
+            death.append(nested);
+            pings.append(&mut nested_pings);
+        }
+        //48A38A..48A3D8: ordered trials stop after the FIRST success. The
+        //selected Voxel constructor finishes its RNG before the particle trial.
+        for name in &rules.general.barrel_debris {
+            if world.scenario_rng.next_range_u32_inclusive(0, 99) >= 15 {
+                continue;
+            }
+            if let Some(type_id) = rules.voxel_anim_type_id_by_name(name) {
+                let voxel_type = rules.voxel_anim_type(type_id);
+                let inline = callbacks_enabled(world);
+                if let Err(error) = world.emit_debris_voxel(
+                    type_id,
+                    voxel_type,
+                    None,
+                    position,
+                    inline,
+                    &mut death.voxel_debris,
+                ) {
+                    log::warn!("barrel debris did not construct: {error}");
+                }
+            }
+            break;
+        }
+        //48A3E3..48A41F is separate, even with an empty debris list. The
+        //system freezes zero target coords; its explicit child receives the
+        //impact for BOTH source and target, not that frozen system target.
+        if world.scenario_rng.next_range_u32_inclusive(0, 99) < 25
+            && let Some(type_id) = rules
+                .general
+                .barrel_particle
+                .as_deref()
+                .and_then(|name| rules.ps_type_id_by_name(name))
+            && let Some(system) = world.spawn_particle_system(
+                type_id,
+                position,
+                None,
+                None,
+                glam::IVec3::ZERO,
+                None,
+                rules,
+            )
+        {
+            world.spawn_particle_in_system(system, position, position, rules);
+        }
+    }
+    //48A437..48A479 follows both the bridge and Explodes branches. WH.Particle
+    //uses the outer sourceHouse and also constructs one immediate child.
+    if let Some(type_id) = context
+        .warhead
+        .particle_system
+        .as_deref()
+        .and_then(|name| rules.ps_type_id_by_name(name))
+        && let Some(system) = world.spawn_particle_system(
+            type_id,
+            position,
+            None,
+            None,
+            glam::IVec3::ZERO,
+            context.source_house,
+            rules,
+        )
+    {
+        world.spawn_particle_in_system(system, position, position, rules);
+    }
+    (death, pings)
 }
 
 /// Installed46920B ->100536E0's local extension-effect coordinate. The
@@ -3185,14 +3312,10 @@ pub(crate) fn commit_projectile_detonations_inline(
             );
             emit.effects.append(inline_death);
             if let Some(context) = area_continuation {
-                emit.effects.bridge_state_changed |= continue_area_damage(
-                    world,
-                    rules,
-                    overlay_registry,
-                    context,
-                    area_result,
-                    run.effects(),
-                );
+                let (tail, mut tail_pings) =
+                    continue_area_damage(world, run, rules, overlay_registry, context, area_result);
+                emit.effects.append(tail);
+                pings.append(&mut tail_pings);
             }
             emit.effects
                 .explosion_effects

@@ -525,6 +525,7 @@ impl NativeRulesProcessOwner {
         updates: impl IntoIterator<Item = (ObjectCategory, String, i32)>,
         ambient_change: [Option<crate::util::native_x87::NativeF64Bits>; 2],
         upgrade_art_names: impl IntoIterator<Item = (String, u8, String)>,
+        voxel_damage: impl IntoIterator<Item = (String, i32)>,
     ) -> Result<(), RulesError> {
         self.assert_no_prepared_prefix();
         let mut registry = self
@@ -532,7 +533,8 @@ impl NativeRulesProcessOwner {
             .take()
             .expect("native Rules registry transition may not be re-entered")
             .into_registry_state();
-        let result = registry.consume_outgoing_type_runtime_fields(updates, upgrade_art_names);
+        let result =
+            registry.consume_outgoing_type_runtime_fields(updates, upgrade_art_names, voxel_damage);
         if result.is_ok() {
             registry.consume_outgoing_ambient_change_inputs(ambient_change);
         }
@@ -817,3 +819,53 @@ mod global_controls_tests;
 #[cfg(all(test, feature = "ares"))]
 #[path = "country_loading_prefix_tests.rs"]
 mod country_loading_prefix_tests;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rules::native_processing::RulesLayerStack;
+
+    #[test]
+    fn retired_voxel_damage_survives_omitted_read_until_type_reset() {
+        let root = IniFile::from_str("[VoxelAnims]\n0=CHUNK\n[CHUNK]\nName=Chunk\n");
+        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+            root.clone(),
+            None,
+            IniFile::empty(),
+            Arc::default(),
+            Arc::default(),
+        )
+        .unwrap();
+        let loaded = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::Campaign(None),
+                &IniFile::from_str("[CHUNK]\nDamage=20\n"),
+            )
+            .unwrap();
+        let damage = |rules: &RuleSet| {
+            rules
+                .voxel_anim_type(rules.voxel_anim_type_id_by_name("CHUNK").unwrap())
+                .damage
+        };
+        assert_eq!(damage(&loaded.rules), 20);
+
+        // Voxel74A91B can mutate Type.Damage during a scene. Read74B3D8
+        // uses that current field when the next Process omits Damage.
+        owner
+            .consume_outgoing_scenario_rules([], [None; 2], [], [("CHUNK".into(), 3)])
+            .unwrap();
+        let state = owner.registry.take().unwrap().into_registry_state();
+        let reread = RulesLayerStack::new(root)
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), state)
+            .unwrap();
+        assert_eq!(damage(&RuleSet::from_processed_rules(&reread).unwrap()), 3);
+
+        // Full_Init's later TypeReset6686C0 deletes the old type; its new
+        // constructor74AD80 starts Damage at zero rather than transplanting3.
+        owner.install_saved_scenario_rules(reread);
+        let reset = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &IniFile::empty())
+            .unwrap();
+        assert_eq!(damage(&reset.rules), 0);
+    }
+}

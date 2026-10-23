@@ -688,6 +688,7 @@ fn terrain_bullet_expiry_matches_original_live_observer() {
             check(&scene, &expected["after_source_before_damage"]);
         }
         let event = super::TerrainDamageEvent {
+            damage_writeback: None,
             stable_id: tree_id,
             rx: 10,
             ry: 20,

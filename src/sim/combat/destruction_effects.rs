@@ -20,7 +20,8 @@
 //! fire anims are UnInit), 5 (`0x00441702`, a computer house's
 //! `RevealToAll=` building releases the sight it showed the current house), 7
 //! (`0x0044177E`, the centre scorch/crater mark), 8 (`0x004418EC`, one
-//! `Explosion=` anim per foundation cell), 12 (`0x00441C43`, the death fuse
+//! `Explosion=` anim per foundation cell), 9 (`0x00441A31`, delayed FIRE3
+//! beside explosive overlays), 12 (`0x00441C43`, the death fuse
 //! that decides whether the building outlives its killing blow), 13
 //! (`0x00441CAC`, one `DestroyAnim=` anim at the origin cell's corner) and the
 //! NoSurvivor write before SpawnSurvivors (`0x00441F0B`).
@@ -55,9 +56,7 @@
 //!   `+0xD4`/`+0xDC`, `0x00441D2F..0x00441D61`) is carried as the anim's
 //!   extra-building-scheme remap (`AnimRemap::ExtraBuildingScheme`).
 //! - Steps with no stock trigger or no VERA state: 2 (radar-spy bits `+0x210`),
-//!   3 and 4 (CloakGenerator, LaserFencePost), 9 (FIRE3 on each cardinal
-//!   neighbour of an `Explodes=` building whose cell holds an overlay with
-//!   `Explodes=yes`, `0x00441A90..0x00441AC2`; no stock overlay has it), 10
+//!   3 and 4 (CloakGenerator, LaserFencePost), 10
 //!   (stored-ore spill; YR never fills building storage), 11 (ShakeScreen, a
 //!   bare `RET`), 14 (`DestroyParticleSystems=` smoke; no stock user). Step 6
 //!   (BuildingDieSound) plays from the Techno death sounds.
@@ -515,6 +514,40 @@ impl Simulation {
                         delay,
                     ),
                 );
+            }
+        }
+
+        // 9. BuildingDestructionEffects441A31..441B24, original gamemd.exe.
+        // The literal direction table818CB8 visits N,E,S,W. Coord49F550
+        // adds initialized49F3A0 lepton deltas to the building's Location;
+        // GetCell uses that coordinate, while Anim retains its exact XYZ.
+        if object.explodes {
+            for direction in [0, 2, 4, 6] {
+                let (dx, dy) = crate::util::direction_tables::LEPTON_DELTAS[direction];
+                let coord = AnimWorldCoord {
+                    x: location.x.wrapping_add(dx),
+                    y: location.y.wrapping_add(dy),
+                    z: location.z,
+                };
+                let explosive = self.resolved_terrain.as_ref().is_some_and(|terrain| {
+                    let cell = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain)
+                        .lookup_world(coord.x, coord.y);
+                    self.cell_overlay(cell)
+                        .overlay_id
+                        .and_then(|id| rules.overlay_registry().flags(id))
+                        .is_some_and(|flags| flags.explodes)
+                });
+                if !explosive {
+                    continue;
+                }
+                let delay = self.scenario_rng.next_range_u32_inclusive(1, 3) as u16 + 3;
+                //427CB0 is find-only: orphan ART does not create a Type.
+                //RESIDUAL: an unregistered literal produces index-1 at441AF3
+                //and unchecked array[-1] at441B07/13. Safe Rust skips that
+                //undefined access; it cannot invent a NULL-type constructor.
+                if rules.anim_type_names.contains("FIRE3") {
+                    self.emit_death_anim(rules, anims, "FIRE3", DeathAnimSpawn::at(coord, delay));
+                }
             }
         }
 

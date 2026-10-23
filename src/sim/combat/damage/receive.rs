@@ -65,10 +65,18 @@ pub(crate) fn receive_damage(
 
     // Immunity gates (after the divides; TypeImmune handled inside).
     match evaluate_gates(gates) {
-        DamageGate::Nullified => return unaffected,
+        DamageGate::Nullified { clear_damage } => {
+            return DamageOutcome {
+                // Techno701A2C and701CFC/1D1F/1D3E retain the defended value;
+                // the other early gates write zero through the actual pointer.
+                post_object_damage: Some(if clear_damage { 0 } else { dmg }),
+                ..unaffected
+            };
+        }
         DamageGate::Invulnerable => {
             return DamageOutcome {
                 invulnerability_impact_damage: Some(dmg.wrapping_shl(1)),
+                post_object_damage: Some(0),
                 ..unaffected
             };
         }
@@ -88,7 +96,7 @@ pub(crate) fn receive_damage(
             return DamageOutcome {
                 apply_object_damage: false,
                 hp_delta: 0,
-                post_object_damage: None,
+                post_object_damage: Some(psychedelic_value),
                 psychedelic_value: Some(psychedelic_value),
                 invulnerability_impact_damage: None,
                 reached_survivor_postlude: false,

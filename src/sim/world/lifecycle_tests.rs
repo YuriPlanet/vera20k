@@ -6229,6 +6229,7 @@ fn gsi_05_02_lethal_terrain_unregisters_and_inactive_slot_cannot_roundtrip() {
         None,
         &[crate::sim::combat::combat_aoe::AreaDamageReceiver::Terrain(
             crate::sim::combat::TerrainDamageEvent {
+                damage_writeback: None,
                 stable_id: terrain_id,
                 rx: 5,
                 ry: 6,
@@ -6300,6 +6301,7 @@ fn gsi_05_03_terminal_non_entities_remain_resolvable_until_common_drain() {
         None,
         &[crate::sim::combat::combat_aoe::AreaDamageReceiver::Terrain(
             crate::sim::combat::TerrainDamageEvent {
+                damage_writeback: None,
                 stable_id: terrain_id,
                 rx: 5,
                 ry: 6,

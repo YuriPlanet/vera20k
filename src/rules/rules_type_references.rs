@@ -154,6 +154,10 @@ const POINTERS: &[(&str, PublishPointer)] = &[
     ("OreTwinkle", |rules, id| {
         rules.general.ore_twinkle = named(id);
     }),
+    // RulesCtor6656D1; ReadGeneral66D6A8..66D6D5.
+    ("BarrelExplode", |rules, id| {
+        rules.general.barrel_explode = named(id);
+    }),
     ("BarrelParticle", |rules, id| {
         rules.general.barrel_particle = named(id);
     }),
@@ -288,6 +292,10 @@ pub(crate) const DEFAULT_PARTICLE_SYSTEMS: [(&str, PublishPointer); 9] = [
 /// The kept lists. Each Rules offset is the constructor's empty vector and the
 /// read's store; the empty read keeps the vector at the address given.
 const LISTS: &[(&str, PublishList)] = &[
+    // RulesCtor6656C0..6656E4; ReadGeneral66D6E2..66D7B1.
+    ("BarrelDebris", |rules, ids| {
+        rules.general.barrel_debris = ids.to_vec();
+    }),
     // RepairBay +850: ReadGeneral66F362..66F3F8, through the shared
     // ReadString128/BuildingType4653C0 list reader. Omission/empty keeps
     // the existing vector; the Rules constructor leaves it empty.

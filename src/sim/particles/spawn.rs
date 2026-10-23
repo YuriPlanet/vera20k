@@ -3,8 +3,8 @@
 //! Three entry points:
 //!   - `Simulation::spawn_particle_system` — public API for combat / refinery /
 //!     gap-gen / area-damage to create a new system at a world coord.
-//!   - `spawn_particle` — append one particle to a system's vector, capped by
-//!     `ParticleSystemType::particle_cap`. Used by per-tick system AI.
+//!   - `spawn_particle` — ParticleSystem62E380's explicit child constructor.
+//!     Producers own their individual cap/cadence gates.
 //!   - `spawn_particle_with_insert` — Fire-only variant: append, then random-
 //!     shuffle within the last `insert_range` slots so the visual stream has
 //!     variety instead of strict FIFO.
@@ -84,6 +84,24 @@ impl DamageSmoke {
 }
 
 impl Simulation {
+    /// Explicit62E380 birth for AreaDamage's two system producers. The
+    /// constructor has no world callbacks; the existing store ownership
+    /// round-trip lets the one child constructor allocate/register its object.
+    pub(crate) fn spawn_particle_in_system(
+        &mut self,
+        system_id: u64,
+        coords: IVec3,
+        target_coords: IVec3,
+        rules: &RuleSet,
+    ) -> bool {
+        let Some(mut system) = self.substrate.particle_systems.take_for_tick(system_id) else {
+            return false;
+        };
+        let spawned = spawn_particle(&mut system, coords, target_coords, rules, self);
+        self.substrate.particle_systems.reinsert_after_tick(system);
+        spawned
+    }
+
     /// Cyborg-only TechnoAI6FACD9..6FAEDA. Stock YR leaves Cyborg unset, so
     /// ordinary damaged vehicles never enter this producer. Both it and
     /// FireAt use the actual +308 link and the one system constructor.
@@ -579,11 +597,13 @@ fn damage_particle_offset(object: &crate::rules::object_type::ObjectType) -> IVe
     )
 }
 
-/// Append one particle to `sys.particles`. Returns `false` when the system's
-/// type has no `HoldsWhat` set or its particle cap is already reached.
+/// ParticleSystemClass::CreateParticle62E380 (original gamemd.exe): the
+/// explicit source and target feed the common Particle constructor. There is
+/// no ParticleCap gate here; Fire/Smoke AI own their admission checks.
 pub(super) fn spawn_particle(
     sys: &mut ParticleSystem,
     coords: IVec3,
+    target_coords: IVec3,
     rules: &RuleSet,
     sim: &mut Simulation,
 ) -> bool {
@@ -591,11 +611,8 @@ pub(super) fn spawn_particle(
     let Some(pt_id) = pst.holds_what else {
         return false;
     };
-    if sys.particles.len() >= pst.particle_cap as usize {
-        return false;
-    }
     let pt = rules.particle_type(pt_id);
-    let particle = Particle::new(pt_id, coords, sys.target_coords, pt, sim);
+    let particle = Particle::new(pt_id, coords, target_coords, pt, sim);
     sys.particles.push(particle);
     true
 }
@@ -696,7 +713,7 @@ pub(super) fn spawn_state_ai_advance(
 
 /// Fire-only variant: spawn one particle, then random-shuffle it into the last
 /// `insert_range` slots so the stream looks varied. Returns `false` if the
-/// underlying `spawn_particle` failed (cap reached or no `HoldsWhat`).
+/// underlying `spawn_particle` failed (no `HoldsWhat`).
 pub(super) fn spawn_particle_with_insert(
     sys: &mut ParticleSystem,
     coords: IVec3,
@@ -704,7 +721,7 @@ pub(super) fn spawn_particle_with_insert(
     rules: &RuleSet,
     sim: &mut Simulation,
 ) -> bool {
-    if insert_range == 0 || !spawn_particle(sys, coords, rules, sim) {
+    if insert_range == 0 || !spawn_particle(sys, coords, sys.target_coords, rules, sim) {
         return false;
     }
     let count = sys.particles.len();
@@ -921,7 +938,11 @@ mod tests {
                 .particle_systems
                 .take_for_tick(sys_id)
                 .unwrap();
-            assert!(spawn_particle(&mut sys, source, &rules, &mut sim), "{name}");
+            let sys_target = sys.target_coords;
+            assert!(
+                spawn_particle(&mut sys, source, sys_target, &rules, &mut sim),
+                "{name}"
+            );
 
             let particle = &sys.particles[0];
             let velocity: [u32; 3] = serde_json::from_value(row["velocity"].clone()).unwrap();
@@ -1019,7 +1040,7 @@ mod tests {
     }
 
     #[test]
-    fn spawn_particle_respects_particle_cap() {
+    fn explicit_particle_birth_has_no_ai_particle_cap_gate() {
         let rules = build_rules("Smoke", 3);
         let mut sim = Simulation::new();
         let sys_id = sim
@@ -1033,16 +1054,13 @@ mod tests {
                 &rules,
             )
             .unwrap();
-        *sim.particle_rng() = SimRng::new(1);
-        let mut sys = sim
-            .substrate
-            .particle_systems
-            .take_for_tick(sys_id)
-            .unwrap();
-        for _ in 0..10 {
-            spawn_particle(&mut sys, IVec3::ZERO, &rules, &mut sim);
+        for _ in 0..4 {
+            assert!(sim.spawn_particle_in_system(sys_id, IVec3::ZERO, IVec3::ZERO, &rules));
         }
-        assert_eq!(sys.particles.len(), 3);
+        assert_eq!(
+            sim.particle_systems().get(sys_id).unwrap().particles.len(),
+            4
+        );
     }
 
     #[test]
@@ -1077,7 +1095,7 @@ mod tests {
             .particle_systems
             .take_for_tick(sys_id)
             .unwrap();
-        spawn_particle(&mut sys, IVec3::ZERO, &rules, &mut sim);
+        spawn_particle(&mut sys, IVec3::ZERO, IVec3::ZERO, &rules, &mut sim);
         assert_eq!(sys.particles[0].lifetime_remaining, 11);
 
         // Exactly one raw draw consumed by the lifetime roll.
@@ -1114,7 +1132,13 @@ mod tests {
             .particle_systems
             .take_for_tick(sys_id)
             .unwrap();
-        assert!(!spawn_particle(&mut sys, IVec3::ZERO, &rules, &mut sim));
+        assert!(!spawn_particle(
+            &mut sys,
+            IVec3::ZERO,
+            IVec3::ZERO,
+            &rules,
+            &mut sim
+        ));
         assert!(sys.particles.is_empty());
     }
 }

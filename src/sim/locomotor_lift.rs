@@ -923,6 +923,7 @@ impl Simulation {
                     return false;
                 };
                 AreaDamageReceiver::Terrain(TerrainDamageEvent {
+                    damage_writeback: None,
                     stable_id: tree.stable_id(),
                     rx: tree.cell().0,
                     ry: tree.cell().1,

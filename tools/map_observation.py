@@ -2727,7 +2727,9 @@ def _effects(value: Any, profile: Mapping[str, Any], label: str) -> int:
     with_projectiles = profile.get('observe_projectiles', False)
     with_anims = 'observe_anim_types' in profile
     with_waves = profile.get('observe_waves', False)
+    # Voxel rows extend the existing opt-in; preserved older receipts omit them.
     require_exact_keys(effects, ('scenario_rng_cursor',
+                                *(('voxel_anims',) if 'voxel_anims' in effects else ()),
                                 *(('projectiles',) if with_projectiles else ()),
                                 *(('waves',) if with_waves else ()),
                                 *(('animations',) if with_anims else ())), label)
@@ -2738,7 +2740,7 @@ def _effects(value: Any, profile: Mapping[str, Any], label: str) -> int:
         _bounded_int(number, f'{label}.scenario_rng_cursor[{index}]', 0, 249)
     anim_types = {name.translate(ASCII_UPPER) for name in profile.get('observe_anim_types', [])}
     samples = 1
-    for kind in ('projectiles', 'animations', 'waves'):
+    for kind in ('projectiles', 'animations', 'waves', 'voxel_anims'):
         if kind not in effects:
             continue
         rows = require_array(effects[kind], f'{label}.{kind}')
@@ -2749,6 +2751,33 @@ def _effects(value: Any, profile: Mapping[str, Any], label: str) -> int:
         for index, value in enumerate(rows):
             row_label = f'{label}.{kind}[{index}]'
             row = require_object(value, row_label)
+            if kind == 'voxel_anims':
+                require_exact_keys(row, ('stable_id', 'native_id', 'type_id', 'owner_house',
+                                         'stored_leptons', 'duration', 'marked_for_deletion',
+                                         'in_logic_vector', 'object_alive', 'in_limbo',
+                                         'bounce_position_bits', 'bounce_velocity_bits'), row_label)
+                identity = _bounded_int(row['stable_id'], f'{row_label}.stable_id', 1, (1 << 64) - 1)
+                if identity <= previous:
+                    raise ValidationError(f'{row_label}.stable_id is repeated or out of order')
+                previous = identity
+                for field in ('native_id', 'duration'):
+                    _bounded_int(row[field], f'{row_label}.{field}', -(1 << 31), (1 << 31) - 1)
+                for field in ('type_id', 'owner_house'):
+                    if field == 'owner_house' and row[field] is None:
+                        continue
+                    if not require_string(row[field], f'{row_label}.{field}'):
+                        raise ValidationError(f'{row_label}.{field} is empty')
+                _coordinate(row['stored_leptons'], f'{row_label}.stored_leptons', leptons=True)
+                for field in ('bounce_position_bits', 'bounce_velocity_bits'):
+                    bits = require_array(row[field], f'{row_label}.{field}')
+                    if len(bits) != 3:
+                        raise ValidationError(f'{row_label}.{field} must contain three components')
+                    for component in bits:
+                        _bounded_int(component, f'{row_label}.{field} component', 0, (1 << 32) - 1)
+                for field in ('marked_for_deletion', 'in_logic_vector', 'object_alive', 'in_limbo'):
+                    if type(row[field]) is not bool:
+                        raise ValidationError(f'{row_label}.{field} must be a boolean')
+                continue
             if kind == 'waves':
                 require_exact_keys(row, ('stable_id', 'wave_type', 'owner_id', 'in_logic_vector',
                                          'lifetime', 'active_geometry', 'decaying', 'direction_octant',

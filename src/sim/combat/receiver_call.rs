@@ -59,6 +59,33 @@ pub(crate) struct ReceiverCallFlags {
     pub(crate) arg6: bool,
 }
 
+/// A native caller can pass a live field as `int *damage`. The receiver writes
+/// this owner before synchronous callbacks, so later pieces read the mutation.
+/// VoxelAnimAI74A8F8 passes VoxelAnimType+Damage (original gamemd.exe).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DamageWriteback {
+    VoxelType(crate::rules::voxel_anim_type::VoxelAnimTypeId),
+}
+
+impl DamageWriteback {
+    pub(crate) fn read(self, world: &crate::sim::world::Simulation, rules: &RuleSet) -> i32 {
+        match self {
+            Self::VoxelType(id) => world.voxel_type_damage(id, rules),
+        }
+    }
+
+    pub(crate) fn write(
+        self,
+        world: &mut crate::sim::world::Simulation,
+        rules: &RuleSet,
+        value: i32,
+    ) {
+        match self {
+            Self::VoxelType(id) => world.write_voxel_type_damage(id, value, rules),
+        }
+    }
+}
+
 /// One ordered damage call. Area and direct-receiver records retain the raw
 /// signed damage, native lepton distance, and concrete receiver flags until
 /// dispatch.
@@ -79,9 +106,15 @@ pub(crate) struct EntityDamageEvent {
     /// to reproduce the native near-center Iron Curtain isolation scan; it is
     /// deliberately false for direct-receiver calls.
     pub(crate) near_center_ic_isolation_eligible: bool,
+    pub(crate) damage_writeback: Option<DamageWriteback>,
 }
 
 impl EntityDamageEvent {
+    pub(crate) fn with_damage_writeback(mut self, writeback: Option<DamageWriteback>) -> Self {
+        self.damage_writeback = writeback;
+        self
+    }
+
     pub(crate) fn area(
         target_id: u64,
         raw_damage: i32,
@@ -102,6 +135,7 @@ impl EntityDamageEvent {
                 arg6: false,
             },
             near_center_ic_isolation_eligible: false,
+            damage_writeback: None,
         }
     }
 
@@ -123,6 +157,7 @@ impl EntityDamageEvent {
             distance_leptons,
             receiver_flags,
             near_center_ic_isolation_eligible: false,
+            damage_writeback: None,
         }
     }
 }
@@ -142,6 +177,7 @@ pub struct TerrainDamageEvent {
     /// True when the parent AoE used native binary32 CellSpread <= 0.5.
     /// Terrain cannot arm IC isolation, but an armed transaction skips it.
     pub near_center_ic_isolation_eligible: bool,
+    pub damage_writeback: Option<DamageWriteback>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -217,6 +253,33 @@ pub(super) fn apply_building_receive_prelude(
     BuildingReceivePrelude::Respond
 }
 
+/// Infantry517FC1..518010 mutates the caller's damage before Foot4D7330.
+/// Keep this head ahead of Foot's parasite callbacks and the Techno resolver.
+pub(super) fn prepare_infantry_receiver(
+    event: &EntityDamageEvent,
+    entities: &EntityStore,
+    rules: &RuleSet,
+    interner: &StringInterner,
+    terrain: Option<&ResolvedTerrainGrid>,
+) -> EntityDamageEvent {
+    let mut prepared = *event;
+    if let Some(target) = entities.get(event.target_id)
+        && let Some(warhead) = rules.warhead(interner.resolve(event.warhead_ref))
+    {
+        prepared.damage = if infantry_spared_mutation(target, warhead, terrain) {
+            0
+        } else {
+            infantry_prone_raw_damage(
+                target,
+                warhead,
+                event.damage,
+                event.receiver_flags.ignore_defenses,
+            )
+        };
+    }
+    prepared
+}
+
 /// Build the native ReceiveDamage value ABI for one ordered area or direct
 /// receiver record and run the shared receiver exactly once. The returned
 /// signed HP delta is the only health input consumed by `commit_damage_events`.
@@ -284,19 +347,9 @@ pub(super) fn resolve_receive_damage(
     let source_house = event
         .source_house
         .or_else(|| source.map(|entity| entity.owner()));
-    // InfantryClass mutates the positive raw i32 before forwarding to the
-    // shared Techno receiver. Its sign is therefore Techno's original-sign
-    // snapshot used by the IC/FS gate below.
-    let receiver_input = if infantry_spared_mutation(target, warhead, terrain) {
-        0
-    } else {
-        infantry_prone_raw_damage(
-            target,
-            warhead,
-            event.damage,
-            receiver_flags.ignore_defenses,
-        )
-    };
+    // The concrete Infantry head already ran before Foot's prefix. Its signed
+    // result is Techno's original-sign snapshot for the IC/FS gate.
+    let receiver_input = event.damage;
 
     let allied = |asker: InternedId, other: InternedId| {
         crate::map::houses::is_allied_with(
@@ -442,8 +495,9 @@ pub(crate) fn wave_post_object_damage(
     current_tick: u64,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> Option<i32> {
+    let event = prepare_infantry_receiver(event, entities, rules, interner, terrain);
     resolve_receive_damage(
-        event,
+        &event,
         entities,
         rules,
         interner,

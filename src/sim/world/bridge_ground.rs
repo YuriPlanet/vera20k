@@ -65,6 +65,7 @@ pub(super) fn apply(
             CellObjectMember::Terrain(stable_id) => {
                 if let Some(terrain) = sim.terrain_objects.objects().get(&stable_id) {
                     let event = TerrainDamageEvent {
+                        damage_writeback: None,
                         stable_id,
                         rx,
                         ry,
@@ -77,6 +78,7 @@ pub(super) fn apply(
                         rules,
                         registry,
                         event,
+                        true,
                         frame_effects,
                     );
                 }

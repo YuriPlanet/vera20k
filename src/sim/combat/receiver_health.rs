@@ -58,6 +58,14 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
         )
     }
 
+    fn write_damage(&mut self, damage: i32) {
+        if self.execute_world_callbacks
+            && let Some(writeback) = self.event.damage_writeback
+        {
+            writeback.write(self.world, self.rules, damage);
+        }
+    }
+
     fn invoke(&mut self, callback: super::object_health::HealthCallback) {
         use super::object_health::HealthCallback;
         let id = self.event.target_id;

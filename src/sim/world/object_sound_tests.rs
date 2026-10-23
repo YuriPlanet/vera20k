@@ -468,6 +468,7 @@ fn retail_terrain_ambient_reaches_logic_saved_load_and_lethal_cleanup() {
         None,
         &[crate::sim::combat::combat_aoe::AreaDamageReceiver::Terrain(
             crate::sim::combat::TerrainDamageEvent {
+                damage_writeback: None,
                 stable_id: id,
                 rx: 5,
                 ry: 6,

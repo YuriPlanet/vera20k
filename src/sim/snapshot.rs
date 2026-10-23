@@ -325,6 +325,10 @@ pub enum SnapshotRestoreError {
         object_id: u64,
         reason: &'static str,
     },
+    #[error("invalid saved VoxelAnimType damage identity")]
+    InvalidVoxelTypeDamage,
+    #[error("invalid saved VoxelAnim {object_id} type identity")]
+    InvalidVoxelAnimType { object_id: u64 },
     #[error("invalid saved TechnoType TechLevel state: {reason}")]
     InvalidTypeTechLevels { reason: String },
     #[error("invalid scalable Bullet runtime: {0}")]
@@ -1983,6 +1987,18 @@ impl Simulation {
         prepare_terrain_assets: Option<&mut SnapshotTerrainAssetPreparation<'_>>,
     ) -> Result<SnapshotMapRestoreOutput, SnapshotRestoreError> {
         self.validate_type_tech_levels(rules)?;
+        for (id, name, _) in self.voxel_type_damage_identity_entries() {
+            if rules.voxel_anim_type_id_by_name(name) != Some(id)
+                || rules.voxel_anim_type(id).name != name
+            {
+                return Err(SnapshotRestoreError::InvalidVoxelTypeDamage);
+            }
+        }
+        for (&object_id, debris) in self.substrate.voxel_anims.iter() {
+            if debris.type_id().0 as usize >= rules.voxel_anim_type_count() {
+                return Err(SnapshotRestoreError::InvalidVoxelAnimType { object_id });
+            }
+        }
         // TerrainLoad71CDA0 preserves the separately saved Display/Logic
         // vectors. Only ObjectUnlimbo5F4FEF..5F5040's eligible spawners need
         // Logic; validate with restored type state without rebuilding order.
@@ -2330,6 +2346,7 @@ mod tests {
             rules,
             Some(&registry),
             crate::sim::combat::TerrainDamageEvent {
+                damage_writeback: None,
                 stable_id: tree,
                 rx: 3,
                 ry: 4,
@@ -2338,6 +2355,7 @@ mod tests {
                 warhead_ref,
                 near_center_ic_isolation_eligible: false,
             },
+            true,
             crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(

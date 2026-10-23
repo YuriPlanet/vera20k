@@ -346,6 +346,7 @@ fn retail_transylv_ambient_action_reaches_native_fade_and_large_flash_request() 
             sim.retire_object_type_tech_levels(),
             sim.session.lighting_mut().retire_ambient_change_inputs(),
             sim.retire_building_upgrade_art_names(),
+            sim.retire_voxel_type_damage(),
         )
         .unwrap();
     let next = owner
@@ -676,6 +677,7 @@ fn ambient_action_values_survive_save_and_transfer_to_retained_rules_at_retireme
                 .lighting_mut()
                 .retire_ambient_change_inputs(),
             restored.retire_building_upgrade_art_names(),
+            restored.retire_voxel_type_damage(),
         )
         .unwrap();
     assert_eq!(

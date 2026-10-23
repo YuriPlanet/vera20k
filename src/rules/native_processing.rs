@@ -750,7 +750,7 @@ impl ProcessedRulesLayers {
     /// fields and resource requests; registry construction performs no reads.
     pub(crate) fn overlay_type_states(
         &self,
-    ) -> impl Iterator<Item = (&str, i32, Option<&str>, &ObjectImageState)> {
+    ) -> impl Iterator<Item = (&str, i32, bool, Option<&str>, &ObjectImageState)> {
         self.native_type_construction_trace
             .registry_state()
             .families
@@ -761,6 +761,7 @@ impl ProcessedRulesLayers {
                 (
                     member.native_stored_id.as_str(),
                     member.overlay_damage_levels,
+                    member.overlay_explodes,
                     member.overlay_cell_anim.as_deref(),
                     &member.object_image,
                 )
@@ -1601,10 +1602,20 @@ impl ProcessedRulesLayers {
     /// Each VoxelAnimType's references after every reached pass.
     pub(crate) fn voxel_anim_reference_states(
         &self,
-    ) -> impl Iterator<Item = (&str, &VoxelAnimTypeReferences)> {
-        self.member_states(RulesTypeFamily::VoxelAnimation, |member| {
-            &member.voxel_anim_references
-        })
+    ) -> impl Iterator<Item = (&str, &VoxelAnimTypeReferences, i32)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::VoxelAnimation)
+            .into_iter()
+            .flatten()
+            .map(|member| {
+                (
+                    member.native_stored_id.as_str(),
+                    &member.voxel_anim_references,
+                    member.voxel_anim_damage,
+                )
+            })
     }
 
     /// Each AnimType's fixed-ART references, in AnimType registry order; a
@@ -1642,6 +1653,12 @@ impl ProcessedRulesLayers {
     }
 
     /// `[CombatDamage] DeathWeapon=` (Rules+FDC) after the last pass.
+    pub(crate) fn ammo_crate_damage(&self) -> i32 {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_ammo_crate_damage
+    }
+
     pub(crate) fn combat_damage_death_weapon(&self) -> Option<&str> {
         self.native_type_construction_trace
             .registry_state()
@@ -2549,6 +2566,7 @@ pub(crate) struct NativeRulesRegistryState {
     rules_maximum_cheer_rate: i32,
     rules_talk_bubble_time: i32,
     rules_spotlight: crate::rules::ruleset::SpotlightRules,
+    rules_ammo_crate_damage: i32,
     rules_ion_cannon_damage: i32,
     rules_ion_blast_anim: String,
     rules_ion_beam_anim: String,
@@ -2626,6 +2644,7 @@ impl Default for NativeRulesRegistryState {
             rules_talk_bubble_time: general.talk_bubble_time,
             rules_spotlight: general.spotlight,
             // Rules665CD4=700; pointer fields665A18/665A24/666BD5 start null.
+            rules_ammo_crate_damage: 100,
             rules_ion_cannon_damage: 700,
             rules_ion_blast_anim: String::new(),
             rules_ion_beam_anim: String::new(),
@@ -2860,6 +2879,7 @@ impl NativeRulesRegistryState {
         &mut self,
         tech_levels: impl IntoIterator<Item = (ObjectCategory, String, i32)>,
         upgrade_art_names: impl IntoIterator<Item = (String, u8, String)>,
+        voxel_damage: impl IntoIterator<Item = (String, i32)>,
     ) -> Result<(), RulesError> {
         let mut resolved = Vec::new();
         for (id, slot, name) in upgrade_art_names {
@@ -2871,6 +2891,15 @@ impl NativeRulesRegistryState {
                 ))?;
             resolved.push((index, slot, name));
         }
+        let mut resolved_voxels = Vec::new();
+        for (id, damage) in voxel_damage {
+            let index = self
+                .exact_type_index(RulesTypeFamily::VoxelAnimation, &id)
+                .ok_or(RulesError::InvalidSavedState(
+                    "outgoing VoxelAnim Damage does not identify one exact live VoxelAnimType",
+                ))?;
+            resolved_voxels.push((index, damage));
+        }
         self.consume_outgoing_type_tech_levels(tech_levels)?;
         for (index, slot, name) in resolved {
             self.families
@@ -2878,6 +2907,12 @@ impl NativeRulesRegistryState {
                 .expect("validated BuildingType family")[index]
                 .building_upgrade
                 .set_normal_art_name(slot, name);
+        }
+        for (index, damage) in resolved_voxels {
+            self.families
+                .get_mut(&RulesTypeFamily::VoxelAnimation)
+                .expect("validated VoxelAnimType family")[index]
+                .voxel_anim_damage = damage;
         }
         Ok(())
     }
@@ -2991,6 +3026,7 @@ impl NativeRulesRegistryState {
             rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
             rules_talk_bubble_time: self.rules_talk_bubble_time,
             rules_spotlight: self.rules_spotlight,
+            rules_ammo_crate_damage: self.rules_ammo_crate_damage,
             rules_ion_cannon_damage: self.rules_ion_cannon_damage,
             rules_mind_control_attack_line_frames: self.rules_mind_control_attack_line_frames,
             rules_line_trail_override: self.rules_line_trail_override,
@@ -3255,6 +3291,8 @@ struct ProcessedType {
     /// OverlayCtor5FE265 starts at1; OverlayRead5FE8A6..5FE8C3 retains
     /// the full signed dword through each fixed-ART Image-section read.
     overlay_damage_levels: i32,
+    /// OverlayCtor5FE2C0 false; ReadINI5FE839..5FE853 current-default bool.
+    overlay_explodes: bool,
     /// OverlayTypeClass ctor5FE290 starts null; ReadINI5FE867..5FE8A0
     /// retains empty reads and stores AnimTypeFindOrAllocate428B80's result.
     overlay_cell_anim: Option<String>,
@@ -3397,6 +3435,8 @@ struct ProcessedType {
     /// then WarheadType's factory (`0x0075E3B0`); an empty read keeps it.
     particle_warhead: Option<String>,
     voxel_anim_references: VoxelAnimTypeReferences,
+    /// Type+2F0 is mutable through Voxel contact74A923 and retained on reread.
+    voxel_anim_damage: i32,
     anim_references: AnimTypeReferences,
     /// BulletType+2B4 `ShrapnelWeapon=`, read the same way by BulletType
     /// ReadINI (`0x0046C2E1..0x0046C31F`) over the constructor's null
@@ -3741,6 +3781,7 @@ impl ProcessedType {
             body: IniSection::new(native_stored_id.clone()),
             object_image: ObjectImageState::new(&native_stored_id),
             overlay_damage_levels: 1,
+            overlay_explodes: false,
             overlay_cell_anim: None,
             voxel_shadow_index: 0,
             tech_level: crate::rules::object_type::DEFAULT_TECH_LEVEL,
@@ -3805,6 +3846,7 @@ impl ProcessedType {
             generic_super_weapon_warhead: None,
             particle_warhead: None,
             voxel_anim_references: VoxelAnimTypeReferences::default(),
+            voxel_anim_damage: 0,
             anim_references: AnimTypeReferences::default(),
             shrapnel_weapon: None,
             airburst_weapon: None,
@@ -3929,6 +3971,7 @@ struct RulesPassProcessor {
     rules_maximum_cheer_rate: i32,
     rules_talk_bubble_time: i32,
     rules_spotlight: crate::rules::ruleset::SpotlightRules,
+    rules_ammo_crate_damage: i32,
     rules_ion_cannon_damage: i32,
     rules_ion_blast_anim: String,
     rules_ion_beam_anim: String,
@@ -3996,6 +4039,7 @@ impl RulesPassProcessor {
             rules_maximum_cheer_rate: registry_state.rules_maximum_cheer_rate,
             rules_talk_bubble_time: registry_state.rules_talk_bubble_time,
             rules_spotlight: registry_state.rules_spotlight,
+            rules_ammo_crate_damage: registry_state.rules_ammo_crate_damage,
             rules_ion_cannon_damage: registry_state.rules_ion_cannon_damage,
             rules_ion_blast_anim: registry_state.rules_ion_blast_anim,
             rules_ion_beam_anim: registry_state.rules_ion_beam_anim,
@@ -6216,6 +6260,9 @@ impl RulesPassProcessor {
                             ObjectImageKind::Ordinary,
                             theater,
                         );
+                        let member = &mut self.family_mut(family)[index];
+                        member.overlay_explodes =
+                            raw.read_bool("Explodes", member.overlay_explodes);
                         // OverlayTypeClass::ReadINI5FE88A/5FE897 resolves
                         // this Rules reference after ObjectRead. Empty keeps
                         // the pointer; nonempty uses the sole Anim factory.
@@ -6333,6 +6380,15 @@ impl RulesPassProcessor {
                         &mut references.attached_system,
                     ),
                 ] {
+                    if key == "Warhead" {
+                        //74B3D8..74B3F2 reads Damage after TrailerAnim and
+                        //before DamageRadius/Warhead, with its current value.
+                        let member = &mut self.family_mut(RulesTypeFamily::VoxelAnimation)[index];
+                        member.voxel_anim_damage = crate::rules::voxel_anim_type::read_damage(
+                            &raw,
+                            member.voxel_anim_damage,
+                        );
+                    }
                     if let Some(resolved) = self.resolve_scalar_from(&raw, key, family, 0x80) {
                         *field = resolved;
                     }
@@ -6348,6 +6404,9 @@ impl RulesPassProcessor {
         let Some(section) = pass.section("CombatDamage") else {
             return;
         };
+        // RulesCtor665675=100; CombatDamage66BBDE..66BBF5 precedes IonCannonDamage.
+        self.rules_ammo_crate_damage =
+            section.read_int("AmmoCrateDamage", self.rules_ammo_crate_damage);
         // CombatDamage66BBF8..66BC12: exact-case signed ReadInt5276D0,
         // current Rules+490 default, constructor665CD4=700, no clamp.
         self.rules_ion_cannon_damage =
@@ -6643,6 +6702,7 @@ impl RulesPassProcessor {
                     rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
                     rules_talk_bubble_time: self.rules_talk_bubble_time,
                     rules_spotlight: self.rules_spotlight,
+                    rules_ammo_crate_damage: self.rules_ammo_crate_damage,
                     rules_ion_cannon_damage: self.rules_ion_cannon_damage,
                     rules_ion_blast_anim: self.rules_ion_blast_anim,
                     rules_ion_beam_anim: self.rules_ion_beam_anim,

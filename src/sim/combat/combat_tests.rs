@@ -9911,6 +9911,7 @@ fn gsi_04_10_near_center_iron_curtain_isolates_earlier_terrain_receiver() {
         entity_event.near_center_ic_isolation_eligible = true;
         let receivers = [
             AreaDamageReceiver::Terrain(TerrainDamageEvent {
+                damage_writeback: None,
                 stable_id: terrain_id,
                 rx: 5,
                 ry: 5,
@@ -10001,6 +10002,7 @@ fn gsi_04_10_entity_fatal_hook_and_later_terrain_share_raw_occupation() {
             warhead_ref,
         )),
         AreaDamageReceiver::Terrain(TerrainDamageEvent {
+            damage_writeback: None,
             stable_id: terrain_id,
             rx: 5,
             ry: 5,
@@ -11140,10 +11142,12 @@ fn gsi_05_14_a_dying_harvester_throws_voxel_tires_and_no_shp_debris() {
         !names.iter().any(|n| n.starts_with("DBRI")),
         "the voxel loop spends the whole budget: {names:?}"
     );
-    // Every piece launches from the wreck's own coordinate, lifted 10 leptons.
+    // ObjectUnlimbo7494E9 retains the wreck Location; only Bounce gets
+    // the constructor's ten-lepton lift74950C before its first AI visit.
     for piece in &result.consequences.effects().voxel_debris {
         assert_eq!(piece.object.duration(), 150);
-        assert_eq!(piece.object.world_coord().z, 10);
+        assert_eq!(piece.object.world_coord().z, 0);
+        assert_eq!(piece.object.bounce().position_leptons().z, 10);
     }
 }
 

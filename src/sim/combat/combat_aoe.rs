@@ -1132,6 +1132,7 @@ fn push_terrain_aoe_damage(
             continue;
         }
         result.push_terrain(TerrainDamageEvent {
+            damage_writeback: None,
             stable_id,
             rx: scan_rx,
             ry: scan_ry,
@@ -4639,6 +4640,7 @@ mod tests {
             None,
             &[
                 AreaDamageReceiver::Terrain(TerrainDamageEvent {
+                    damage_writeback: None,
                     stable_id: terrain_id,
                     rx: 5,
                     ry: 5,
@@ -4774,6 +4776,7 @@ mod tests {
                     },
                 )),
                 AreaDamageReceiver::Terrain(TerrainDamageEvent {
+                    damage_writeback: None,
                     stable_id: terrain_id,
                     rx: 5,
                     ry: 5,

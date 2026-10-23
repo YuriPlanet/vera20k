@@ -136,6 +136,9 @@ pub struct OverlayTypeFlags {
     pub tiberium: bool,
     /// ChainReaction=yes permits Apply_area_damage resource reduction.
     pub chain_reaction: bool,
+    /// OverlayRead5FE839..5FE853 reads the current Explodes+2B0 byte;
+    /// OverlayCtor5FE2C0 starts false. AreaDamage and building deaths consume it.
+    pub explodes: bool,
     /// Wall=yes — rendered with unit palette, gets -12px Y offset.
     pub wall: bool,
     /// `CrushSound=` -> `OverlayTypeClass+0x1F0`: the Voc `UnitClass::PerCellProcess
@@ -225,6 +228,7 @@ impl Default for OverlayTypeFlags {
         Self {
             tiberium: false,
             chain_reaction: false,
+            explodes: false,
             wall: false,
             crush_sound: None,
             draw_flat: true,
@@ -346,10 +350,11 @@ impl OverlayTypeRegistry {
         processed: &crate::rules::native_processing::ProcessedRulesLayers,
     ) -> Self {
         let mut registry = Self::from_projected_ini(processed.ini());
-        for (index, (_, damage_levels, cell_anim, image)) in
+        for (index, (_, damage_levels, explodes, cell_anim, image)) in
             processed.overlay_type_states().enumerate()
         {
             registry.flags[index].damage_levels = damage_levels;
+            registry.flags[index].explodes = explodes;
             registry.flags[index].cell_anim = cell_anim.map(str::to_ascii_uppercase);
             registry.images.push(image.clone());
         }
@@ -429,6 +434,8 @@ impl OverlayTypeRegistry {
                 flags.push(OverlayTypeFlags {
                     tiberium,
                     chain_reaction: type_section.read_bool("ChainReaction", false),
+                    // The retained reader below supplies this, never flattened text.
+                    explodes: false,
                     wall: type_section.read_bool("Wall", false),
                     // ObjectType ReadString 0x80 (`0x005F93A8`).
                     crush_sound: type_section
@@ -510,6 +517,12 @@ impl OverlayTypeRegistry {
         self.images.hash(state);
         for flags in &self.flags {
             flags.damage_levels.hash(state);
+        }
+        if self.flags.iter().any(|flags| flags.explodes) {
+            b"overlay-explodes-v1".hash(state);
+            for flags in &self.flags {
+                flags.explodes.hash(state);
+            }
         }
         if self.flags.iter().any(|flags| flags.cell_anim.is_some()) {
             b"overlay-cellanim-reference-v1".hash(state);

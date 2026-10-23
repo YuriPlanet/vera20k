@@ -41,7 +41,7 @@ pub(crate) use target_scan::{can_fire_at, weapon_at_index};
 
 use target_scan::{can_acquire_target, passive_acquire_step};
 
-use super::{FrameEffects, ObjectKind, ObjectSubstrate, Simulation};
+use super::{FrameEffects, ObjectKind, ObjectSubstrate, Simulation, bounce_terrain};
 use crate::map::entities::EntityCategory;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -255,78 +255,6 @@ impl Simulation {
         }
         self.mission_host_promote(id, self.session.binary_frame(), rules);
         self.substrate.aircraft_ammo_after_commence(id);
-    }
-
-    /// One `VoxelAnimClass::AI @ 0x00749F30` LogicVector slot.
-    ///
-    /// The piece is taken out of the store for the visit so the integrator can
-    /// read the live terrain grid through `&self` while it mutates the body,
-    /// then reinserted at the same key — `BTreeMap` order is unchanged.
-    ///
-    /// A `Delete` verdict is native's `vtable+0xF8`. Native queues the free on
-    /// the deferred finalization list; here the object leaves the LogicVector
-    /// and the store in the same step, because nothing resolves debris by id
-    /// between the two points.
-    /// Natural expiry constructs its children while the parent is registered;
-    /// marked deletion and the x87-domain fallback skip those effects.
-    pub fn visit_voxel_anim(&mut self, id: u64, rules: &RuleSet) {
-        use crate::sim::voxel_anim::VoxelAnimAiOutcome;
-
-        let Some(mut debris) = self.substrate.voxel_anims.remove(id) else {
-            return;
-        };
-        let outcome = {
-            let terrain = bounce_terrain::ResolvedBounceTerrain { sim: self, rules };
-            crate::sim::voxel_anim::voxel_anim_ai(&mut debris, &terrain)
-        };
-        let outcome = match outcome {
-            Ok(outcome) => outcome,
-            Err(error) => {
-                log::warn!("voxel debris {id} left the verified x87 domain: {error}");
-                VoxelAnimAiOutcome::Delete
-            }
-        };
-        // Reinsert before the verdict is acted on: the LogicVector dispatch
-        // classifies by store membership, and native's object is likewise still
-        // registered when `vtable+0xF8` runs.
-        self.substrate.voxel_anims.insert(debris);
-        if outcome == VoxelAnimAiOutcome::Expire {
-            let debris = self.substrate.voxel_anims.get(id).unwrap();
-            let position = debris.world_coord();
-            let is_meteor = rules.voxel_anim_type(debris.type_id()).is_meteor;
-            // VoxelAnim749FA2..74A13E: retained Location selects Water first,
-            // then Map578080 supplies the floor for the strict deck test.
-            // Stock TIREs construct Wake then the FIRST SplashList entry;
-            // the SHP-Anim landing producer uses a different splash Z lift.
-            let water = self.bounce_cell_is_water(position, rules);
-            let ground = crate::sim::projectile::projectile_ground_z(
-                self.resolved_terrain.as_ref(),
-                &self.effective_shared_cell_dummy(),
-                crate::sim::projectile::ProjectileCoord::new(position.x, position.y, position.z),
-            );
-            if water
-                && position.z < ground.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS)
-                && !is_meteor
-            {
-                let location = crate::sim::anim_class::AnimWorldCoord {
-                    x: position.x,
-                    y: position.y,
-                    z: position.z,
-                };
-                self.spawn_named_anim(rules, &rules.general.wake.name, location, 0, 0x600, 0);
-                if let Some(splash) = rules.combat_damage.splash_list.first() {
-                    let splash_location = crate::sim::anim_class::AnimWorldCoord {
-                        z: location.z.wrapping_add(10),
-                        ..location
-                    };
-                    self.spawn_named_anim(rules, splash, splash_location, 0, 0x600, 0);
-                }
-            }
-        }
-        if outcome != VoxelAnimAiOutcome::Alive {
-            self.unregister_non_entity_object(id);
-            self.substrate.voxel_anims.remove(id);
-        }
     }
 
     /// `BounceClass::Update @ 0x00439B00` for an `AnimClass` chunk's body over
@@ -544,7 +472,7 @@ impl Simulation {
                 return outcome;
             }
             Some(ObjectKind::VoxelAnim) => {
-                self.visit_voxel_anim(id, rules);
+                outcome.bridge_state_changed = self.visit_voxel_anim(id, rules, ctx.effects);
                 return outcome;
             }
             Some(ObjectKind::ParticleSystem) => {
@@ -5766,9 +5694,6 @@ mod selfheal_tests;
 #[cfg(test)]
 #[path = "techno_ai_selfheal_oracle_tests.rs"]
 mod selfheal_oracle_tests;
-
-#[path = "bounce_terrain.rs"]
-mod bounce_terrain;
 
 #[cfg(test)]
 #[path = "techno_ai/signed_health_tests.rs"]

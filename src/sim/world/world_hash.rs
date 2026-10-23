@@ -618,6 +618,15 @@ impl Simulation {
         // map-read continuation. This is independent of Rust stable handles.
         self.native_unique_ids.hash(hasher);
         self.hash_type_tech_levels(hasher);
+        let mut voxel_damage = self.voxel_type_damage_identity_entries().peekable();
+        if voxel_damage.peek().is_some() {
+            b"voxel-type-damage-v1".hash(hasher);
+            for (id, name, damage) in voxel_damage {
+                id.0.hash(hasher);
+                name.hash(hasher);
+                damage.hash(hasher);
+            }
+        }
         if !self.building_upgrade_art_names().is_empty() {
             b"building-upgrade-type-art-v458".hash(hasher);
             self.building_upgrade_art_names().hash(hasher);
@@ -1464,6 +1473,10 @@ impl Simulation {
             id.hash(hasher);
             debris.native_unique_id().hash(hasher);
             debris.type_id().0.hash(hasher);
+            debris.world_coord().to_array().hash(hasher);
+            debris.lifecycle().object_alive().hash(hasher);
+            debris.lifecycle().in_limbo().hash(hasher);
+            debris.lifecycle().cell_marked().hash(hasher);
             debris.duration().hash(hasher);
             debris.marked_for_deletion().hash(hasher);
             debris.owner_house().hash(hasher);

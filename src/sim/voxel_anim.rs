@@ -26,9 +26,10 @@ use glam::IVec3;
 use serde::{Deserialize, Serialize};
 
 use crate::rules::voxel_anim_type::{VoxelAnimType, VoxelAnimTypeId};
-use crate::sim::bounce::{BounceOutcome, BounceState, BounceTerrain};
+use crate::sim::bounce::BounceState;
 use crate::sim::intern::InternedId;
 use crate::sim::rng::{SimRng, abs_before_modulo};
+use crate::sim::world::ObjectLifecycle;
 use crate::util::native_x87::{NativeF64Bits, NativeX87Error, X87Chop53};
 
 /// One live `VoxelAnimClass` instance.
@@ -49,6 +50,11 @@ pub struct VoxelAnimObject {
     /// Owner house, or `None` — Bullet debris passes null; Techno death
     /// debris passes the dying object's house (VoxelAnim74941C).
     owner_house: Option<InternedId>,
+    /// Object+9C: Unlimbo7494E9 keeps the input location. Flight74A949
+    /// copies Bounce into it only after all contact callbacks finish.
+    location: [i32; 3],
+    /// Object5F65F0/5F4D30 retain a dead, limbo body until725C70.
+    lifecycle: ObjectLifecycle,
     /// The embedded `BounceClass` at `+0xB0`.
     bounce: BounceState,
     /// LogicClass membership, reconstructed from the serialized vector.
@@ -65,6 +71,11 @@ impl VoxelAnimObject {
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_bounce_for_test(&mut self, value: BounceState) {
         self.bounce = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_location_for_test(&mut self, value: IVec3) {
+        self.location = value.to_array();
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -107,20 +118,115 @@ impl VoxelAnimObject {
         self.in_logic_vector
     }
 
+    pub const fn lifecycle(&self) -> ObjectLifecycle {
+        self.lifecycle
+    }
+
+    /// Only the shared lifecycle owner writes the private Object bytes.
+    pub(crate) fn lifecycle_mut(&mut self) -> &mut ObjectLifecycle {
+        &mut self.lifecycle
+    }
+
     /// Constructor-assigned AbstractClass identity, separate from the stable handle.
     pub const fn native_unique_id(&self) -> i32 {
         self.native_unique_id
     }
 
-    /// The world coordinate the draw and the damage arms read, in leptons.
-    ///
-    /// `VoxelAnimClass::AI` refreshes `ObjectClass`'s own coordinate from the
-    /// physics body every tick via `CoordStruct::FromDoubles`, so the body is
-    /// the authority after a flight update and this is the conversion. Native
-    /// retains the constructor Location separately until that first update;
-    /// expiry before it remains outside this body-only representation.
+    /// Retained Object.Location, in world leptons. VoxelAI749FA2/74A7EF
+    /// queries this location; its effects read the independent Bounce body.
     pub fn world_coord(&self) -> IVec3 {
-        self.bounce.position_leptons()
+        IVec3::from_array(self.location)
+    }
+
+    /// VoxelAI749F67..749F9C: marked deletion precedes the wrapping timer
+    /// decrement. The world owns the subsequent effects and callbacks.
+    pub(crate) fn begin_ai_visit(&mut self) -> VoxelAnimAiStep {
+        if self.marked_for_deletion {
+            return VoxelAnimAiStep::Delete;
+        }
+        if self.duration != 0 {
+            self.duration = self.duration.wrapping_sub(1);
+        }
+        if self.duration > 0 {
+            VoxelAnimAiStep::Flight
+        } else {
+            VoxelAnimAiStep::Expire
+        }
+    }
+
+    pub(crate) fn replace_bounce(&mut self, body: BounceState) {
+        self.bounce = body;
+    }
+
+    /// Stopped74A7E4 / Water74A823 expire on the next AI visit.
+    pub(crate) fn stop_flight(&mut self) {
+        self.duration = 0;
+    }
+
+    /// SetLocation74A949 follows the synchronous contact receiver walk.
+    pub(crate) fn finish_flight(&mut self) {
+        self.location = self.bounce.position_leptons().to_array();
+    }
+}
+
+/// VoxelAnim749F30's prefix decision, before any constructor or receiver.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum VoxelAnimAiStep {
+    Flight,
+    Expire,
+    Delete,
+}
+
+/// Runtime writes to shared VoxelAnimType+2F0 over immutable bound Rules.
+/// Contact74A91B passes this field by address to each concrete receiver.
+/// The sparse values follow that type across pieces, save/load and scene
+/// retirement; the processed Rules owner resumes authority after transfer.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub(crate) struct VoxelTypeDamage {
+    // Identity metadata follows the sole mutable value through retirement,
+    // where the outgoing RuleSet is no longer available.
+    changed: BTreeMap<VoxelAnimTypeId, (String, i32)>,
+}
+
+impl VoxelTypeDamage {
+    pub(crate) fn get(&self, type_id: VoxelAnimTypeId, baseline: i32) -> i32 {
+        self.changed
+            .get(&type_id)
+            .map_or(baseline, |(_, value)| *value)
+    }
+
+    pub(crate) fn set(&mut self, type_id: VoxelAnimTypeId, name: &str, value: i32, baseline: i32) {
+        if value == baseline {
+            self.changed.remove(&type_id);
+        } else {
+            self.changed
+                .entry(type_id)
+                .and_modify(|(stored_name, stored_value)| {
+                    assert_eq!(
+                        stored_name.as_str(),
+                        name,
+                        "Voxel type identity changed without rebinding"
+                    );
+                    *stored_value = value;
+                })
+                .or_insert_with(|| (name.to_owned(), value));
+        }
+    }
+
+    pub(crate) fn entries(&self) -> impl Iterator<Item = (VoxelAnimTypeId, i32)> + '_ {
+        self.changed.iter().map(|(&id, (_, value))| (id, *value))
+    }
+
+    pub(crate) fn identity_entries(
+        &self,
+    ) -> impl Iterator<Item = (VoxelAnimTypeId, &str, i32)> + '_ {
+        self.changed
+            .iter()
+            .map(|(&id, (name, value))| (id, name.as_str(), *value))
+    }
+
+    pub(crate) fn take(&mut self) -> Vec<(String, i32)> {
+        std::mem::take(&mut self.changed).into_values().collect()
     }
 }
 
@@ -295,82 +401,11 @@ pub fn spawn_debris_piece(
         duration: voxel_anim_type.duration,
         marked_for_deletion: false,
         owner_house,
+        location: origin.to_array(),
+        lifecycle: ObjectLifecycle::default(),
         bounce,
         in_logic_vector: false,
     })
-}
-
-/// What one `VoxelAnimClass::AI` visit asks the world to do after it returns.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VoxelAnimAiOutcome {
-    /// Still flying. The object stays in the store and in the LogicVector.
-    Alive,
-    /// Natural duration expiry. The world emits supported expiry effects,
-    /// then retires the object through `vtable+0xF8` (`Delete`).
-    Expire,
-    /// Retire without the natural expiry effects, including marked deletion.
-    Delete,
-}
-
-/// One `VoxelAnimClass::AI @ 0x00749F30` visit for the debris arm.
-///
-/// The verified order:
-/// 1. `StopSound` (`+0x2DC`) looping-sound maintenance.
-/// 2. `marked_for_deletion` (`+0x110`) -> `Delete`, return.
-/// 3. `if (duration != 0) duration -= 1` — the decrement is unconditional on
-///    the sign, so a negative duration walks further negative.
-/// 4. `duration > 0`: the `TrailerAnim=` arm on even frames, then
-///    `BounceClass::Update`, then the `IsMeteor` extra gravity, then the
-///    contact arms; a `Bounced` on WATER sets `duration = 0` instead of playing
-///    the `BounceAnim=`, and a `Stopped` sets `duration = 0` outright.
-/// 5. Otherwise `Expire`: the world owns the expiry effects and deletion.
-///
-/// The world visitor implements the nonmeteor Water Wake/Splash pair used by
-/// stock TIREs (`0x00749FA2..0x0074A13E`).
-///
-/// RESIDUAL (GSI-05.14) — two arms of the native AI are not built here:
-/// - The `BounceAnim=`/`ExpireAnim=`/`TrailerAnim=` `AnimClass` spawns and the
-///   expiry `Apply_area_damage` (`+0x2F0`/`+0x2F4`/`+0x2F8`). Every stock
-///   `DebrisTypes=` line names `[TIRE]`, which authors none of the four keys,
-///   so the death-debris path never reaches any of them in stock; `[PIECE]` and
-///   `[GASTANK]` carry `Damage=`/`ExpireAnim=` but no stock section throws
-///   them. Trigger: a mod pointing `DebrisTypes=` at a damaging type. Player
-///   effect: that debris would leave no puff and do no splash damage.
-///   Frequency: zero in stock skirmish. Downstream risk: the damage arm would
-///   need the combat AoE transaction, so wiring it belongs with that owner.
-/// - The `IsMeteor` arms — the extra per-tick gravity add at `+0xDC`, the
-///   `Spawns=`/`SpawnCount=` child burst (two `RandomRanged(0, SpawnCount)`
-///   draws, summed), the last-SplashList expiry at Z+5, and the `IsTiberium`
-///   ore-laying ring. `IsMeteor` types
-///   reach the field through scenario meteor storms, never through a death.
-///   Frequency: zero on this path.
-pub fn voxel_anim_ai(
-    object: &mut VoxelAnimObject,
-    terrain: &impl BounceTerrain,
-) -> Result<VoxelAnimAiOutcome, NativeX87Error> {
-    if object.marked_for_deletion {
-        return Ok(VoxelAnimAiOutcome::Delete);
-    }
-    if object.duration != 0 {
-        object.duration -= 1;
-    }
-    if object.duration <= 0 {
-        return Ok(VoxelAnimAiOutcome::Expire);
-    }
-
-    match object.bounce.update(terrain)? {
-        BounceOutcome::Falling => {}
-        BounceOutcome::Bounced => {
-            // Native distinguishes a water landing here and kills the piece
-            // instead of playing its `BounceAnim=`; the anim itself is the
-            // residual above, the `duration = 0` is not.
-            if terrain.is_water(object.world_coord()) {
-                object.duration = 0;
-            }
-        }
-        BounceOutcome::Stopped => object.duration = 0,
-    }
-    Ok(VoxelAnimAiOutcome::Alive)
 }
 
 /// Which list the SHP half of the death block draws its anim from.
@@ -711,6 +746,7 @@ pub fn throw_death_debris(
 mod tests {
     use super::*;
     use crate::rules::voxel_anim_type::VoxelAnimType;
+    use crate::sim::bounce::{BounceOutcome, BounceTerrain};
     use crate::sim::rng::SimRng;
 
     /// A `[VoxelAnims]` section with the stock `[TIRE]` numbers, which is the
@@ -1049,7 +1085,13 @@ mod tests {
             &mut rng,
         )
         .expect("in domain");
-        assert_eq!(piece.world_coord(), IVec3::new(1280, 2560, 106));
+        // Unlimbo7494E9 retains the unraised Object.Location independently
+        // of the Bounce launch height74950C.
+        assert_eq!(piece.world_coord(), IVec3::new(1280, 2560, 96));
+        assert_eq!(
+            piece.bounce().position_leptons(),
+            IVec3::new(1280, 2560, 106)
+        );
     }
 
     /// Flat ground at Z = 0 with no bridges, buildings or ramps — the terrain
@@ -1091,7 +1133,7 @@ mod tests {
         // the ground, come back, bounce at least once, and stop through the
         // `FUN_00439A10` magnitude test well inside its 150-tick `Duration=`.
         let mut rng = SimRng::new(1234);
-        let mut piece = spawn_debris_piece(
+        let piece = spawn_debris_piece(
             1,
             0,
             VoxelAnimTypeId(0),
@@ -1102,20 +1144,18 @@ mod tests {
         )
         .expect("in domain");
         let ground = FlatGround;
-        let mut peak = piece.world_coord().z;
+        let mut body = piece.bounce();
+        let mut peak = body.position_leptons().z;
         let mut bounces = 0;
         let mut ticks_alive = 0;
         for _ in 0..150 {
-            match voxel_anim_ai(&mut piece, &ground).expect("in domain") {
-                VoxelAnimAiOutcome::Alive => {}
-                VoxelAnimAiOutcome::Expire | VoxelAnimAiOutcome::Delete => break,
-            }
             ticks_alive += 1;
-            peak = peak.max(piece.world_coord().z);
-            if piece.duration == 0 {
-                bounces += 1;
-                break;
+            match body.update(&ground).expect("in domain") {
+                BounceOutcome::Falling => {}
+                BounceOutcome::Bounced => bounces += 1,
+                BounceOutcome::Stopped => break,
             }
+            peak = peak.max(body.position_leptons().z);
         }
         assert!(peak > 100, "the tire should climb, peaked at {peak}");
         assert!(
@@ -1125,11 +1165,6 @@ mod tests {
         assert!(
             ticks_alive < 150,
             "it settled after {ticks_alive} ticks, inside its Duration"
-        );
-        // The AI zeroes the duration on a stop; the next visit deletes.
-        assert_eq!(
-            voxel_anim_ai(&mut piece, &ground).expect("in domain"),
-            VoxelAnimAiOutcome::Expire
         );
     }
 
@@ -1149,10 +1184,7 @@ mod tests {
         )
         .expect("in domain");
         piece.marked_for_deletion = true;
-        assert_eq!(
-            voxel_anim_ai(&mut piece, &FlatGround).expect("in domain"),
-            VoxelAnimAiOutcome::Delete
-        );
+        assert_eq!(piece.begin_ai_visit(), VoxelAnimAiStep::Delete);
         assert_eq!(piece.duration, 150, "the decrement sits below the gate");
     }
 }
