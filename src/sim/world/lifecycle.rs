@@ -3829,6 +3829,12 @@ impl Simulation {
             self.sound_events
                 .emit(super::SimSoundEvent::ObjectSoundDetached { owner: stable_id });
         }
+        // FootLimbo4DB376 passes NullCell: remove around current GetCoords,
+        // before tracker/Techno callbacks, only on the admitted first Limbo.
+        // An airborne old-only fringe can survive this native removal.
+        if first_foot_limbo {
+            self.remove_unit_sensors_at_current(stable_id, rules, context.registry());
+        }
         self.substrate
             .release_foot_air_tracker_before_limbo(stable_id);
         #[cfg(feature = "ares")]
@@ -3910,9 +3916,9 @@ impl Simulation {
             &mut self.houses,
             stable_id,
         );
-        // FootClass::Limbo @ 0x004DB260 and BuildingClass::Limbo @
-        // 0x00445880 remove the exact deposited footprint before conceal.
-        self.remove_sensor_before_limbo(stable_id, context.rules(), context.registry());
+        // BuildingClass::Limbo @ 0x00445880 keeps its separate array and
+        // disguise removals; Foot's sensor receiver ran in its prelude.
+        self.remove_building_sensor_before_limbo(stable_id, context.rules(), context.registry());
         // Dead and InLimbo are independent native state. TechnoClass::Limbo
         // still reaches ObjectClass::Conceal for a stored dead object; the
         // latter's InLimbo branch alone decides whether Conceal is a no-op.

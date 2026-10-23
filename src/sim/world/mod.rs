@@ -5939,7 +5939,18 @@ impl Simulation {
         else {
             return;
         };
+        // UnitChangeOwner7463A8..7463AE refuses the same house before its
+        // Foot delegate. Infantry/Aircraft inherit Foot's failure receiver.
+        if category == EntityCategory::Unit && old_owner == new_owner {
+            return;
+        }
+        // FootChangeOwner4DBEFB removes at the current cell before its
+        // Techno delegate, including the same-owner refusal at7014A0.
+        self.remove_unit_sensors_at_current(stable_id, rules, registry);
         if old_owner == new_owner {
+            // Foot4DBFB7 restores the current owner's circle on failure;
+            // it does not replace LastMapCoords in this arm.
+            self.add_unit_sensors_at_current(stable_id, rules, registry);
             return;
         }
         // `BuildingClass::ChangeOwner` first (`0x00448277..0x0044828E`): a
@@ -5974,10 +5985,6 @@ impl Simulation {
             //teardown.448C69 initializes it after the delegated owner swap.
             self.production.clear_primary_factory(stable_id);
         }
-        // FootClass::ChangeOwner @ 0x004DBED0 removes from the deposited old
-        // owner and adds to the new owner before later readers observe it.
-        self.transfer_sensor_before_owner_change(stable_id, new_owner, rules, registry);
-
         // Active YR chain: BuildingClass::ChangeOwner (0x00448260) delegates
         // to TechnoClass::ChangeOwner (0x007014A0), which moves the house
         // counts (`house_tracking`) below.
@@ -6301,6 +6308,9 @@ impl Simulation {
             self.leave_team(stable_id, false, rules, effects);
         }
         self.foot_neighbors_after_owner_change(stable_id, rules);
+        // Foot4DBF81 samples the live type, new owner and current cell only
+        // after Techno/leave-team/history callbacks. High flight keeps +55C.
+        self.add_unit_sensors_at_current(stable_id, rules, registry);
         self.reapply_building_gap_after_owner_change(stable_id, rules);
         self.relink_docked_after_owner_change(stable_id, &taken_along, rules, effects);
         // Building449267/449284: old House then new House, after lists,
