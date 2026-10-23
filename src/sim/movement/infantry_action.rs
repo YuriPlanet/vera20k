@@ -379,6 +379,7 @@ impl Simulation {
         }
         //51D939/51D981: the admitted Deploy/Undeploy sound observes the
         // previous Doing and Stage. Refused actions do not emit this cue.
+        let previous_sound_count = self.sound_events.len();
         Self::emit_deploy_action_sound(
             &mut self.interner,
             &self.substrate,
@@ -388,6 +389,10 @@ impl Simulation {
             requested,
             rules,
         )?;
+        if self.sound_events.len() != previous_sound_count {
+            // DoAction51D94F..51D9CA submits PlayAt before the Doing store.
+            effects.flush_sound(self, rules);
+        }
         let actor = self
             .substrate
             .entities
