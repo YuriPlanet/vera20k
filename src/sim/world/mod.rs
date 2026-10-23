@@ -167,6 +167,8 @@ mod aircraft_deployment_tests;
 #[cfg(test)]
 mod area_rocker_tests;
 #[cfg(test)]
+mod finite_ammo_tests;
+#[cfg(test)]
 mod brute_smash_debris_tests;
 #[cfg(test)]
 mod building_fatal_lifecycle_tests;
