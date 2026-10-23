@@ -2468,7 +2468,7 @@ fn gsi_04_07_damage_wall_dies_in_the_tail_after_both_attackers_fire() {
             .iter()
             .map(|event| (event.listener_id, event.restored, event.cleared))
             .collect::<Vec<_>>(),
-        vec![(10, false, true), (20, true, true)]
+        vec![(20, true, false), (10, false, true)]
     );
 }
 
@@ -2613,7 +2613,7 @@ fn gsi_04_07_damage_prior_projectile_fatal_death_weapon_is_inline() {
             .effects()
             .cell_target_detaches
             .iter()
-            .any(|detach| { detach.listener_id == 20 && detach.restored && detach.cleared })
+            .any(|detach| { detach.listener_id == 20 && detach.restored && !detach.cleared })
     );
     assert_eq!(
         fatal_entities

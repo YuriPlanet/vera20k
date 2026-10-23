@@ -549,7 +549,7 @@ fn assert_retail_wall_fire_profile(
                     .attack_target
                     .target()
                     .is_none(),
-                "Cell7258D0 target expiry is synchronous with removal"
+                "AreaDamage4896BA restores targets synchronously after wall cleanup"
             );
             assert!(sim.dirty_cells.radar().contains(&source));
             assert!(sim.dirty_cells.tactical_for_test().contains(&source));

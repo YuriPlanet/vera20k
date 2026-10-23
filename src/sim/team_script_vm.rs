@@ -1190,12 +1190,28 @@ impl TeamScriptVm {
     /// gamemd.exe Detach70D554..70D57B walks the live Team roster after the Techno
     /// sweep, clearing only matching +3C/+40. Unlike AssignMissionTarget
     /// 6E9050, it issues no member orders and preserves zone/membership.
-    pub(crate) fn detach_target(&mut self, target: TeamTarget) {
+    pub(crate) fn detach_target(
+        &mut self,
+        target: TeamTarget,
+        terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    ) {
+        //70D562/70D577 compare Cell pointers too: fixed-stride aliases and
+        //different requests for the shared Dummy identify the same allocation.
+        let matches = |held: TeamTarget| {
+            if let (TeamTarget::Cell { .. }, TeamTarget::Cell { .. }, Some(terrain)) =
+                (held, target, terrain)
+            {
+                held.target_kind().cell_identity(terrain)
+                    == target.target_kind().cell_identity(terrain)
+            } else {
+                held == target
+            }
+        };
         for team in self.teams.values_mut().rev() {
-            if team.mission_target == Some(target) {
+            if team.mission_target.is_some_and(matches) {
                 team.mission_target = None;
             }
-            if team.focus == Some(target) {
+            if team.focus.is_some_and(matches) {
                 team.focus = None;
             }
         }

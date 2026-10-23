@@ -2507,15 +2507,15 @@ fn gsi_04_07_wall_placement_publishes_connectivity_neighbor_auto_destruction() {
         sim.zone_grid.is_some(),
         "neighbor removal must publish zones"
     );
-    assert!(
+    assert_eq!(
         sim.substrate
             .entities
             .get(1)
             .expect("construction yard listener")
             .attack_target
-            .target()
-            .is_none(),
-        "cleanup removal must broadcast CellClass pointer expiry before returning"
+            .target(),
+        Some(TargetKind::Cell(13, 10)),
+        "Cell7258D0 does not broadcast to Techno listeners during placement cleanup"
     );
     let expected_dirty = vec![(12, 9), (13, 10), (12, 11), (11, 10), (12, 10)];
     // Object base Mark publishes the anchor before wall connectivity's

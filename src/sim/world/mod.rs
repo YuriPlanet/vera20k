@@ -149,6 +149,8 @@ pub(crate) mod techno_ai_cloak;
 pub(crate) mod unit_post;
 #[cfg(test)]
 mod wall_autofill_oracle_tests;
+#[cfg(test)]
+mod wall_restore_tests;
 mod world_commands;
 mod world_hash;
 
@@ -1910,16 +1912,9 @@ pub(crate) fn repair_zone_after_recalc(
     }
 }
 
-/// Borrow-split wall observer used by runtime placement and sale, where the
-/// overlay/terrain transaction remains in its owning module but the live
-/// presentation, navigation, and represented Cell-target authorities are
-/// already available as disjoint Simulation fields.
+/// Wall map callbacks over the installed presentation and navigation owners.
+/// Native Cell expiry7258D0 has no Techno listener broadcast.
 pub(crate) struct SimulationWallRuntimeHost<'a> {
-    pub(crate) entities: &'a mut EntityStore,
-    pub(crate) target_terrain_objects:
-        &'a BTreeMap<u64, crate::sim::terrain_object::TerrainObjectState>,
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) detach_trace: &'a mut Vec<crate::sim::combat::combat_aoe::CellTargetDetach>,
     pub(crate) dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
     pub(crate) zone_grid: &'a mut Option<ZoneGrid>,
     pub(crate) path_grid: &'a mut Option<Arc<PathGrid>>,
@@ -1956,19 +1951,9 @@ impl WallDamageTransactionHost for SimulationWallRuntimeHost<'_> {
         );
     }
 
-    fn pointer_expired(&mut self, target: WallPointerTarget) {
-        if let WallPointerTarget::Real(rx, ry) = target {
-            crate::sim::combat::combat_aoe::expire_cell_target_references(
-                self.entities,
-                self.target_terrain_objects,
-                rx,
-                ry,
-                None,
-                #[cfg(any(test, feature = "test-support"))]
-                self.detach_trace,
-            );
-        }
-    }
+    // Ordinary Cell7258D0 has no Techno broadcast; real70D4A0 callers
+    // (AreaDamage, wall sale, cliff collapse) own their explicit outer sweep.
+    fn pointer_expired(&mut self, _target: WallPointerTarget) {}
 }
 
 fn dispatch_smudge_inline(
@@ -2728,10 +2713,6 @@ impl Simulation {
                     if flags.wall {
                         let _wall = {
                             let mut host = SimulationWallRuntimeHost {
-                                entities: &mut self.substrate.entities,
-                                target_terrain_objects: self.terrain_objects.objects(),
-                                #[cfg(any(test, feature = "test-support"))]
-                                detach_trace: &mut effects.cell_target_detaches,
                                 dirty_cells: &mut self.dirty_cells,
                                 zone_grid: &mut self.zone_grid,
                                 path_grid: &mut self.path_grid,
@@ -2784,15 +2765,12 @@ impl Simulation {
                         // strictly interleaved: detach this CellClass target,
                         // then dirty this radar cell, in old-TMP row order.
                         for &coord in &mutation.original_footprint {
-                            crate::sim::combat::combat_aoe::expire_cell_target_references(
-                                &mut self.substrate.entities,
-                                self.terrain_objects.objects(),
-                                coord.0,
-                                coord.1,
-                                Some((rules, &self.interner)),
-                                #[cfg(any(test, feature = "test-support"))]
-                                &mut effects.cell_target_detaches,
+                            // Map5814D4/581BE6:70D4A0 then radar, per old footprint cell.
+                            let _receipt = self.stop_all_targeting_cell(
+                                coord.0, coord.1, rules, overlay_registry, frame_effects,
                             );
+                            #[cfg(any(test, feature = "test-support"))]
+                            effects.cell_target_detaches.extend(_receipt.cell_detaches);
                             self.dirty_cells.mark_radar([coord]);
                         }
                         for &coord in &mutation.original_footprint {
@@ -7063,13 +7041,7 @@ impl Simulation {
         let Some(grid) = self.overlay_grid.as_mut() else {
             return;
         };
-        #[cfg(any(test, feature = "test-support"))]
-        let mut cell_target_detaches = Vec::new();
         let mut host = SimulationWallRuntimeHost {
-            entities: &mut self.substrate.entities,
-            target_terrain_objects: self.terrain_objects.objects(),
-            #[cfg(any(test, feature = "test-support"))]
-            detach_trace: &mut cell_target_detaches,
             dirty_cells: &mut self.dirty_cells,
             zone_grid: &mut self.zone_grid,
             path_grid: &mut self.path_grid,

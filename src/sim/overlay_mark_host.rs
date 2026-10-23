@@ -77,14 +77,8 @@ impl<'a> SimulationMarkHost<'a> {
         ) -> R,
     ) -> Option<R> {
         let sim = &mut *self.sim;
-        #[cfg(any(test, feature = "test-support"))]
-        let mut detach_trace = Vec::new();
         let playfield_bounds = sim.playfield_bounds();
         let mut host = SimulationWallRuntimeHost {
-            entities: &mut sim.substrate.entities,
-            target_terrain_objects: sim.terrain_objects.objects(),
-            #[cfg(any(test, feature = "test-support"))]
-            detach_trace: &mut detach_trace,
             dirty_cells: &mut sim.dirty_cells,
             zone_grid: &mut sim.zone_grid,
             path_grid: &mut sim.path_grid,

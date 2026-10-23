@@ -8801,8 +8801,8 @@ fn detach_sweep_clears_target_when_no_mission_was_suspended() {
 }
 
 /// A cell target is not the departing Techno pointer, so the live-object detach
-/// sweep does not match it. CellClass pointer expiry has its own forward,
-/// clear-before-Restore transaction and is tested with wall removal.
+/// sweep does not match it. AreaDamage and cliff callers explicitly invoke
+/// the same restore-first sweep with their retained Cell identity.
 #[test]
 fn detach_sweep_never_matches_a_cell_target() {
     let mut sim = Simulation::new();

@@ -15,8 +15,6 @@ use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::canonical_cell_coord;
 use crate::sim::combat;
-#[cfg(any(test, feature = "test-support"))]
-use crate::sim::combat::combat_aoe::CellTargetDetach;
 use crate::sim::command::{
     ArchiveRecord, BUILDING_OFF_LINE_OPCODE, BUILDING_ON_LINE_OPCODE, BuildingOnLineRecord,
     COMMAND_RECORD_LEN, Command, CommandEnvelope, CommandRecord, DeployRecord, ExitRecord,
@@ -1176,15 +1174,9 @@ impl Simulation {
         // Selling invokes exactly one PostDestructionWallCleanup at the sold
         // cell: N, E, S, W, self. It is not damage's four-cardinal fan-out.
         const CROSS: [(i32, i32); 5] = [(0, -1), (1, 0), (0, 1), (-1, 0), (0, 0)];
-        #[cfg(any(test, feature = "test-support"))]
-        let mut detach_trace: Vec<CellTargetDetach> = Vec::new();
         for (dx, dy) in CROSS {
             let visit = {
                 let mut host = SimulationWallRuntimeHost {
-                    entities: &mut self.substrate.entities,
-                    target_terrain_objects: self.terrain_objects.objects(),
-                    #[cfg(any(test, feature = "test-support"))]
-                    detach_trace: &mut detach_trace,
                     dirty_cells: &mut self.dirty_cells,
                     zone_grid: &mut self.zone_grid,
                     path_grid: &mut self.path_grid,

@@ -481,6 +481,11 @@ pub enum PlacementEvidence {
     FootEntryAdmitted,
 }
 
+pub(crate) struct TargetingSweepReceipt {
+    #[cfg(any(test, feature = "test-support"))]
+    pub cell_detaches: Vec<crate::sim::combat::combat_aoe::CellTargetDetach>,
+}
+
 impl Simulation {
     /// A8E7AC's caller-owned bracket. Native factory444575..444979/444EE6
     /// retains it through Unlimbo, Mark and radio callbacks; nested scopes
@@ -4648,9 +4653,9 @@ impl Simulation {
     ///    the null-out then does not run.
     ///
     /// The native sweep has callers in area damage, building sale, owner change,
-    /// building placement and teleportation. The represented owner-change,
-    /// bridge-damage, wall-sale and teleport (`0x007193C7`) callers share this
-    /// owner; the other caller chains remain separate migration work.
+    /// building placement and teleportation. The represented area-damage,
+    /// cliff, owner-change, bridge, wall-sale and teleport (`0x007193C7`)
+    /// callers share this owner.
     ///
     /// After the Restore an aircraft now on Patrol restarts it
     /// (`0x0070D513..0x0070D532`, [`crate::sim::aircraft::restart_patrol_after_restore`]).
@@ -4664,7 +4669,7 @@ impl Simulation {
         self.stop_all_targeting_target(TargetKind::Entity(detach_id), rules, registry, effects);
     }
 
-    /// Bridge success, foundation clearing and House wall sale call the same
+    /// AreaDamage, cliff, bridge, foundation and wall-sale callers share the
     /// 0x0070D4A0 sweep with a CellClass pointer. This is not PointerExpired:
     /// Restore precedes the conditional target clear, in descending Techno order.
     pub(crate) fn stop_all_targeting_cell(
@@ -4674,8 +4679,8 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
-    ) {
-        self.stop_all_targeting_target(TargetKind::Cell(rx, ry), rules, registry, effects);
+    ) -> TargetingSweepReceipt {
+        self.stop_all_targeting_target(TargetKind::Cell(rx, ry), rules, registry, effects)
     }
 
     fn stop_all_targeting_target(
@@ -4684,7 +4689,9 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
-    ) {
+    ) -> TargetingSweepReceipt {
+        #[cfg(any(test, feature = "test-support"))]
+        let mut cell_detaches = Vec::new();
         // VERA-only: the sweep releases a batched target scan's pick as it
         // does a TarCom (`techno_ai::scan_batch`).
         if let TargetKind::Entity(target_id) = target {
@@ -4719,6 +4726,14 @@ impl Simulation {
 
             let _ = restored;
             #[cfg(any(test, feature = "test-support"))]
+            if matches!(target, TargetKind::Cell(..)) {
+                cell_detaches.push(crate::sim::combat::combat_aoe::CellTargetDetach {
+                    listener_id,
+                    restored,
+                    cleared: target_cleared,
+                });
+            }
+            #[cfg(any(test, feature = "test-support"))]
             if let TargetKind::Entity(detach_id) = target {
                 self.trace_lifecycle_for_test(LifecycleTestEvent::DetachTargetingSweepVisited {
                     detach_id,
@@ -4728,7 +4743,12 @@ impl Simulation {
                 });
             }
         }
-        self.team_script_vm.detach_target(target.into());
+        self.team_script_vm
+            .detach_target(target.into(), self.resolved_terrain.as_ref());
+        TargetingSweepReceipt {
+            #[cfg(any(test, feature = "test-support"))]
+            cell_detaches,
+        }
     }
 
     /// Match the retained target identity, preserving Cell/Techno distinction.

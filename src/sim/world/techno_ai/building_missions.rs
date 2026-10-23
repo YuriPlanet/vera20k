@@ -1578,15 +1578,6 @@ impl Simulation {
     /// (vt+0x3AC), including its overlay line-of-fire checks. Other objects
     /// admit every target here.
     ///
-    /// RESIDUALS:
-    /// - The restore after a cell target expires
-    ///   (`combat::combat_aoe::expire_cell_target_references`) holds only the
-    ///   entity store and puts the suspended target back without this
-    ///   admission. Trigger: a building whose retaliation suspended its
-    ///   mission and whose later cell target expires. Effect: a Selling,
-    ///   unpowered or out-of-range building keeps that target until its next
-    ///   Mission_Attack or range drop. Frequency: rare. Later owner: that
-    ///   restore moving onto `Simulation`.
     pub(crate) fn building_admits_target(
         &self,
         id: u64,
