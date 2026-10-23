@@ -242,6 +242,191 @@ mod tests {
     use super::super::tests::{crate_cells, crate_registry, crate_ruleset, sim_with_grid};
 
     #[test]
+    fn saved_game_crate_reset_retains_removed_land_without_resetting_snapshots() {
+        use crate::map::resolved_terrain::{SavedTerrainError, SavedTerrainTemplate};
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::terrain_rules::LandType;
+        use crate::sim::snapshot::GameSnapshot;
+        use crate::util::save_codec;
+
+        // Same Water-over-Rough state as shipped XMP25MW. Removal4A1AA0
+        // precedes saving here, so no current overlay can explain saved Land.
+        let ini = IniFile::from_str(
+            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [CrateRules]\nCrateImg=WCRATE\nWoodCrateImg=WCRATE\nWaterCrateImg=WCRATE\n\
+             [OverlayTypes]\n0=WCRATE\n[WCRATE]\nCrate=yes\nLand=Water\n\
+             [Water]\nFoot=0%\nTrack=0%\nWheel=0%\nFloat=100%\n\
+             [Rough]\nFoot=100%\nTrack=80%\nWheel=50%\nFloat=0%\n",
+        );
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        let registry = OverlayTypeRegistry::from_ini(&ini, None);
+        let mut sim = sim_with_grid(17);
+        let mut baseline = sim.resolved_terrain.take().unwrap();
+        baseline.set_land_speed_rules_for_test(&rules.terrain_rules);
+        let cell = baseline.cell_mut_for_test(15, 15).unwrap();
+        cell.land_type = 7;
+        cell.base_land_type = 7;
+        cell.speed_costs = rules.terrain_rules.row(LandType::Rough).speed_costs;
+        cell.base_speed_costs = cell.speed_costs;
+        sim.install_resolved_terrain_for_new_map(baseline.clone());
+        // A retained replacement record can predate the later overlay. Its
+        // stale effective Land must not override the actual saved Cell value.
+        sim.dynamic_terrain_cells
+            .record(sim.resolved_terrain.as_ref().unwrap().cell(15, 15).unwrap());
+        sim.overlay_grid
+            .as_mut()
+            .unwrap()
+            .place_overlay(15, 15, 0, 10);
+        crate::sim::overlay_grid::recalc_overlay_passability(
+            sim.overlay_grid.as_mut().unwrap(),
+            sim.resolved_terrain.as_mut().unwrap(),
+            &registry,
+            15,
+            15,
+        );
+        let slot = CrateSlot {
+            start_frame: 30,
+            aux: 0x1234,
+            duration: 80,
+            cell_x: 15,
+            cell_y: 15,
+        };
+        *sim.crate_authority.slot_mut_for_test(0) = slot;
+        assert!(sim.rebuild_dynamic_navigation(&rules));
+
+        let bytes = GameSnapshot::save(&sim, 0, 0, "internal", 0);
+        let mut internal = GameSnapshot::load(&bytes).unwrap().sim;
+        internal.restore_after_snapshot_load().unwrap();
+        internal.rebuild_caches_after_load(baseline.clone(), Default::default(), &rules);
+        internal
+            .restore_map_authority_after_snapshot_load(&rules, &registry, None)
+            .unwrap();
+        assert_eq!(
+            internal.overlay_grid().unwrap().cell(15, 15).overlay_id,
+            Some(0)
+        );
+        assert_eq!(internal.crate_authority().slots()[0], slot);
+        assert!(matches!(
+            baseline
+                .capture_saved_template()
+                .unwrap()
+                .user_load_land_values(),
+            Err(SavedTerrainError::BaselineOnlyLand)
+        ));
+
+        assert!(remove_crate_overlay_from_cell(
+            &mut sim,
+            &rules,
+            &registry,
+            (15, 15)
+        ));
+        assert_eq!(
+            sim.resolved_terrain()
+                .unwrap()
+                .cell(15, 15)
+                .unwrap()
+                .land_type,
+            2
+        );
+        // A stale derived speed cache must not become saved authority. Native
+        // movement indexes the bound Rules table using retained Cell Land.
+        sim.resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut_for_test(15, 15)
+            .unwrap()
+            .speed_costs = rules.terrain_rules.row(LandType::Rough).speed_costs;
+        let retained_map = serde_json::to_value(sim.zone_grid()).unwrap();
+        let timers = (slot.start_frame, slot.aux, slot.duration);
+        // Two successive user files prove that overlay-free retained Land is
+        // captured again, rather than reconstructed from old crate provenance.
+        for _ in 0..2 {
+            let mut saved = baseline.capture_saved_template().unwrap();
+            saved
+                .capture_live_cell_land(sim.resolved_terrain().unwrap())
+                .unwrap();
+            let saved: SavedTerrainTemplate =
+                save_codec::deserialize(&save_codec::serialize(&saved).unwrap()).unwrap();
+            let land = saved.user_load_land_values().unwrap();
+            let bytes = GameSnapshot::save(&sim, 0, 0, "user", 0);
+            let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
+            loaded.restore_after_snapshot_load().unwrap();
+            loaded.rebuild_caches_after_load(baseline.clone(), Default::default(), &rules);
+            loaded
+                .restore_map_authority_after_user_load(&rules, &registry, None, land)
+                .unwrap();
+            let cell = loaded.resolved_terrain().unwrap().cell(15, 15).unwrap();
+            assert_eq!(
+                (cell.land_type, cell.base_land_type, cell.zone_type),
+                (2, 7, 0)
+            );
+            assert_eq!(
+                (cell.speed_costs.track, cell.speed_costs.float),
+                (Some(0), Some(100))
+            );
+            assert!(!cell.overlay_blocks);
+            assert!(loaded.path_grid().unwrap().is_walkable(15, 15));
+            let admits = |speed_type| {
+                crate::sim::cell_rect::check_cell_passability(
+                    &crate::sim::cell_rect::CellRef::Real(cell),
+                    crate::sim::cell_rect::CellPassabilityArgs {
+                        speed_type,
+                        ignore_infantry: true,
+                        ignore_vehicles: true,
+                        zone: None,
+                        movement_zone: crate::rules::locomotor_type::MovementZone::Normal,
+                        level: None,
+                        is_bridge: false,
+                    },
+                    &loaded.cell_passability_map(),
+                )
+                .admits()
+            };
+            assert!(!admits(crate::rules::locomotor_type::SpeedType::Track));
+            assert!(!admits(crate::rules::locomotor_type::SpeedType::Wheel));
+            assert!(admits(crate::rules::locomotor_type::SpeedType::Float));
+            assert!(
+                loaded
+                    .resolved_terrain()
+                    .unwrap()
+                    .iter()
+                    .all(|cell| cell.zone_type == 0)
+            );
+            assert_eq!(loaded.overlay_grid().unwrap().cell(15, 15).overlay_id, None);
+            let slot = loaded.crate_authority().slots()[0];
+            assert_eq!((slot.cell_x, slot.cell_y), (0, 0));
+            assert_eq!((slot.start_frame, slot.aux, slot.duration), timers);
+            assert_eq!(
+                serde_json::to_value(loaded.zone_grid()).unwrap(),
+                retained_map
+            );
+            sim = loaded;
+        }
+        crate::sim::overlay_grid::recalc_overlay_passability(
+            sim.overlay_grid.as_mut().unwrap(),
+            sim.resolved_terrain.as_mut().unwrap(),
+            &registry,
+            15,
+            15,
+        );
+        assert_eq!(
+            sim.resolved_terrain()
+                .unwrap()
+                .cell(15, 15)
+                .unwrap()
+                .land_type,
+            7
+        );
+        let saved = baseline
+            .capture_user_saved_template(sim.resolved_terrain().unwrap())
+            .unwrap();
+        let mut next = baseline.clone();
+        next.restore_user_loaded_land(&saved.user_load_land_values().unwrap())
+            .unwrap();
+        assert_eq!(next.cell(15, 15).unwrap().land_type, 7);
+    }
+
+    #[test]
     fn pickup_removal_matches_original_cell_pickup_outputs() {
         // Compare only rows that reach Map56C020; guard/selection/effect
         // coverage belongs to the complete pickup dispatcher, not this owner.

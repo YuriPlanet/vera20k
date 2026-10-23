@@ -100,6 +100,33 @@ with ExitStack() as stack:
 
 
 class OracleLifecycleTests(unittest.TestCase):
+    def test_named_asset_inputs_exclude_unrequested_files_and_directories(self):
+        from unittest.mock import patch
+        from tools.rules_oracle.bridge_anim_inputs import read_asset_inputs
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            selected = root / 'dragon.shp'
+            selected.write_bytes(b'named input')
+            (root / 'audio.bag').write_bytes(b'unrequested')
+            (root / 'private.json').write_bytes(b'unrequested')
+            (root / 'subdirectory').mkdir()
+            original = Path.read_bytes
+            reads = []
+            def guarded(path):
+                self.assertEqual(path, selected)
+                reads.append(path.name)
+                return original(path)
+            with patch.object(Path, 'read_bytes', guarded):
+                self.assertEqual(read_asset_inputs(root, ()), {})
+                self.assertEqual(read_asset_inputs(root, ('DRAGON.SHP',)), {'DRAGON.SHP': b'named input'})
+            self.assertEqual(reads, ['dragon.shp'])
+
+    def test_airburst_retained_import_and_help_are_inert(self):
+        for operation in ('import', 'help'):
+            for optimized in (False, True):
+                with self.subTest(operation=operation, optimized=optimized):
+                    self.check_lifecycle(operation, 'tools.projectile_oracle.airburst_retained', optimized)
+
     def check_lifecycle(self, operation, module, optimized, *, arguments=(), environment=None):
         command = [sys.executable] + (['-O'] if optimized else [])
         child_environment = absent_retail_environment()
@@ -176,6 +203,14 @@ class OracleLifecycleTests(unittest.TestCase):
                 with self.subTest(operation=operation, optimized=optimized):
                     self.check_lifecycle(operation,
                                          'tools.spatial_oracle.squid_grapple_light',
+                                         optimized)
+
+    def test_building_flh_direct_import_and_help_are_inert(self):
+        for operation in ('import', 'help'):
+            for optimized in (False, True):
+                with self.subTest(operation=operation, optimized=optimized):
+                    self.check_lifecycle(operation,
+                                         'tools.spatial_oracle.building_flh_direct',
                                          optimized)
 
     def test_explosion_rejects_retired_cache_before_inputs_deserialization_or_publication(self):

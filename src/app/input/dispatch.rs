@@ -3591,10 +3591,7 @@ fn deploy_key_commands(
     let first = selection.first().and_then(|&id| sim.entities().get(id));
     if let Some(building) = first.filter(|entity| {
         entity.category() == EntityCategory::Structure
-            && entity
-                .passenger_role
-                .cargo()
-                .is_some_and(|cargo| !cargo.is_empty())
+            && entity.passenger_role.occupants().count() > 0
     }) {
         return deploy_key_command(sim, rules, building.stable_id(), local_owner)
             .into_iter()
@@ -4343,7 +4340,9 @@ mod deploy_key_tests {
     }
 
     #[test]
-    fn the_deploy_key_issues_unload_for_a_loaded_bio_reactor() {
+    // Selection730AF0/730B28 reads Occupants, not the absorber's Cargo.
+    // Building CanDeploySlashUnload465D30 refuses the ordinary D walk.
+    fn the_deploy_key_does_nothing_for_a_loaded_bio_reactor() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[BuildingTypes]\n0=YAPOWR\n[YAPOWR]\nStrength=1000\n\
              InfantryAbsorb=yes\nPassengers=5\n",
@@ -4360,16 +4359,14 @@ mod deploy_key_tests {
             .unwrap()
             .passenger_role = PassengerRole::transport(cargo);
 
-        assert_eq!(
+        assert!(
             deploy_key_commands(
                 &sim,
                 Some(&rules),
                 &[reactor],
                 sim.session().current_house()
-            ),
-            [Command::UnloadPassengers {
-                transport_id: reactor
-            }]
+            )
+            .is_empty()
         );
     }
 
@@ -4518,6 +4515,137 @@ mod control_group_tests {
         ctrl: false,
         alt: false,
     };
+
+    #[test]
+    fn retail_bunker_docking_forgets_control_group_through_release_and_saved_view() {
+        use crate::app::input::state::{MatchInputState, PreparedSavedLocalView};
+        use crate::sim::command::{Command, CommandEnvelope};
+        use crate::sim::docking::bunker_link::BunkerLink;
+        use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
+
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let mut rules = retail.rules;
+        let (_, mut assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+        crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+        let walls = ["NATBNK_A", "NATBNK_B", "NATBNK_A2", "NATBNK_B2"].map(str::to_owned);
+        assert_eq!(
+            rules.bind_anim_class_assets(&walls, &assets, "TEM", "TEMPERATE"),
+            0
+        );
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x459315);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        sim.set_input_delay_ticks(0);
+        let bunker = sim
+            .spawn_object("NATBNK", "Americans", 10, 10, 0, &rules)
+            .unwrap();
+        let tank = sim
+            .spawn_object("MTNK", "Americans", 14, 10, 0, &rules)
+            .unwrap();
+        let reserve = sim
+            .spawn_object("MTNK", "Americans", 18, 14, 0, &rules)
+            .unwrap();
+        let owner = sim.interner().get("Americans").unwrap();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        let mut input = MatchInputState::new(Default::default());
+        reassign_control_group(&mut input.control_groups, 0, &[tank, bunker], &sim);
+        reassign_control_group(&mut input.control_groups, 9, &[reserve], &sim);
+        assert_eq!(input.control_groups[0], [tank, bunker]);
+        sim.queue_command(CommandEnvelope::new(
+            owner,
+            sim.session().tick() + 1,
+            Command::clicked_mission(
+                tank,
+                crate::sim::mission::MissionType::Enter,
+                crate::sim::combat::TargetKind::Entity(bunker),
+            ),
+        ));
+        let mut runtime = crate::sim::runtime::SimRuntime {
+            simulation: sim,
+            resources: crate::sim::runtime::SimResources::new(rules),
+        };
+        for _ in 0..600 {
+            let commands = runtime.simulation.take_due_commands();
+            let frame = runtime
+                .advance_frame(
+                    &commands,
+                    33,
+                    crate::sim::world::TickLane::Ordinary,
+                    Default::default(),
+                )
+                .unwrap();
+            let sim = &runtime.simulation;
+            for output in &frame.lifecycle_outputs {
+                input.apply_lifecycle_output(output, Some(owner));
+            }
+            if sim.entities().get(tank).unwrap().bunker.link() == BunkerLink::Installed(bunker) {
+                break;
+            }
+            assert_eq!(
+                input.control_groups[0],
+                [tank, bunker],
+                "approaching retains the group"
+            );
+        }
+        let sim = &runtime.simulation;
+        let rules = &runtime.resources.rules;
+        assert_eq!(
+            sim.entities().get(tank).unwrap().bunker.link(),
+            BunkerLink::Installed(bunker)
+        );
+        // UpdateBunker458E50/459315 clears +214 at installation, before
+        // deselection. A recall-time filter would wrongly revive it on exit.
+        assert_eq!(input.control_groups[0], [bunker]);
+        assert_eq!(input.control_groups[9], [reserve]);
+        let saved = input
+            .capture_saved_local_view(&sim, &rules, &SidebarGadgetState::new())
+            .unwrap();
+        let saved = crate::util::save_codec::deserialize(
+            &crate::util::save_codec::serialize(&saved).unwrap(),
+        )
+        .unwrap();
+        let mut restored = MatchInputState::new(Default::default());
+        PreparedSavedLocalView::new(saved, &sim, &rules)
+            .unwrap()
+            .commit_into(&mut restored, &mut SidebarGadgetState::new());
+        let next_tick = runtime.simulation.session().tick() + 1;
+        runtime.simulation.queue_command(CommandEnvelope::new(
+            owner,
+            next_tick,
+            Command::EjectBunker { bunker_id: bunker },
+        ));
+        for _ in 0..120 {
+            let commands = runtime.simulation.take_due_commands();
+            let frame = runtime
+                .advance_frame(
+                    &commands,
+                    33,
+                    crate::sim::world::TickLane::Ordinary,
+                    Default::default(),
+                )
+                .unwrap();
+            let sim = &runtime.simulation;
+            for output in &frame.lifecycle_outputs {
+                restored.apply_lifecycle_output(output, Some(owner));
+            }
+            if sim.entities().get(tank).unwrap().bunker.link() == BunkerLink::None {
+                break;
+            }
+        }
+        let sim = &runtime.simulation;
+        assert_eq!(
+            sim.entities().get(tank).unwrap().bunker.link(),
+            BunkerLink::None
+        );
+        assert_eq!(
+            team_walk_members(Some(&sim), &restored.control_groups[0]),
+            [bunker]
+        );
+        assert_eq!(restored.control_groups[9], [reserve]);
+    }
 
     #[test]
     fn ctrl_assigns_shift_adds_alt_centers_bare_recalls() {
@@ -6279,3 +6407,7 @@ mod context_click_route_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "building_occupant_deploy_tests.rs"]
+mod building_occupant_deploy_tests;

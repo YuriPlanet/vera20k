@@ -446,6 +446,59 @@ impl IniSection {
         })
     }
 
+    /// Phobos `Nullable<T>::Read<false, false>`: `<default>`, `none` and
+    /// `<none>` clear the value; absent, empty and rejected reads retain it.
+    /// Source: Phobos b90ab4bc, Utilities/TemplateDef.h:1878..1892,
+    /// Utilities/Template.h (`allowNone=false`) and Phobos.h (`readLength`).
+    /// `read_string_with` retains the ordered passes in a projected section.
+    pub(crate) fn read_phobos_nullable_with<T>(
+        &self,
+        key: &str,
+        current: Option<T>,
+        mut parse: impl FnMut(&str) -> Option<T>,
+    ) -> Option<T> {
+        self.read_string_with(key, 2048, current, |current, raw| {
+            if raw.eq_ignore_ascii_case("<default>") || is_native_none_type_name(raw) {
+                None
+            } else {
+                parse(raw).or(current)
+            }
+        })
+    }
+
+    /// Phobos shares Ares's `Parser<int>::TryParse`, including `$%d`.
+    pub fn read_phobos_nullable_int(&self, key: &str, current: Option<i32>) -> Option<i32> {
+        self.read_phobos_nullable_with(key, current, parse_ares_int)
+    }
+
+    pub fn read_phobos_nullable_bool(&self, key: &str, current: Option<bool>) -> Option<bool> {
+        self.read_phobos_nullable_with(key, current, read_bool_decision)
+    }
+
+    /// Phobos b90ab4bc Utilities/Parser.h:248..271: `strtod`, cast to
+    /// binary32, optional binary32 percent scaling, then widen to double.
+    /// Unlike stock ReadDouble, a failed conversion keeps the old nullable.
+    pub fn read_phobos_nullable_double(&self, key: &str, current: Option<f64>) -> Option<f64> {
+        self.read_phobos_nullable_with(key, current, |raw| {
+            let parsed = try_parse_leading_f64(raw, FloatScanRounding::Nearest)?;
+            // strtod reports ERANGE on overflow and underflow. Reuse the
+            // decimal scanner's token to distinguish underflow from literal 0.
+            let token = leading_float_token(raw)?;
+            let mantissa = token.split(['e', 'E']).next().unwrap_or(token);
+            if !parsed.is_finite()
+                || (parsed != 0.0 && parsed.abs() < f64::MIN_POSITIVE)
+                || (parsed == 0.0 && mantissa.bytes().any(|byte| matches!(byte, b'1'..=b'9')))
+            {
+                return None;
+            }
+            let mut value = parsed as f32;
+            if raw.contains('%') {
+                value *= 0.01_f32;
+            }
+            Some(f64::from(value))
+        })
+    }
+
     /// [`Self::read_bool`] where the caller supplies the default later: `None`
     /// wherever ReadBool would return its default argument (an absent key,
     /// or a first character outside `1TY0FN`).

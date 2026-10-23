@@ -469,6 +469,11 @@ pub struct ObjectType {
     /// reparsing this text later could retroactively bind an unknown Ares name.
     pub armor: String,
     armor_id: crate::rules::armor::ArmorId,
+    /// Phobos `TechnoTypeExt::ShieldType` (`ShieldType=`): the bound
+    /// `[ShieldTypes]` entry, or `None` for an absent/`none` key. Retained as
+    /// the authored name; the Rules catalog resolves it at use.
+    #[cfg(feature = "phobos")]
+    shield_type: Option<String>,
     /// Canonical Speed percent,0..100 (0 is immobile). TechnoType
     /// ReadINI71464A retains the prior value for -1 across rules passes.
     /// Whole-lepton Type+678 conversion belongs to util::fixed_math.
@@ -558,6 +563,9 @@ pub struct ObjectType {
     pub double_owned: bool,
     /// Specific countries that may build this object.
     pub required_houses: Vec<String>,
+    // ReadOwners4750D0 replaces the constructor's -1 even when comma
+    // tokenization produces no entries. Derived from the retained INI body.
+    required_houses_explicitly_empty: bool,
     /// Countries explicitly forbidden from building this (ForbiddenHouses= in rules.ini).
     /// Inverse of Owner — if the player's country is in this list, they cannot build.
     pub forbidden_houses: Vec<String>,
@@ -2367,6 +2375,12 @@ impl ObjectType {
         self.armor_id = armor;
     }
 
+    /// Phobos `ShieldType=`: the bound `[ShieldTypes]` entry name.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn shield_type(&self) -> Option<&str> {
+        self.shield_type.as_deref()
+    }
+
     /// Native fixed-ART ShadowIndex, retained by the ordered Type reader.
     pub const fn voxel_shadow_index(&self) -> i32 {
         self.voxel_shadow_index
@@ -2781,6 +2795,17 @@ impl ObjectType {
         }
     }
 
+    /// ReadOwners4750D0 / Type reader714531: absent/empty ReadString keeps
+    /// the constructor's -1 (711633), but nonempty comma-only input writes0.
+    /// CanBuild4F79E4 and FirstBuildable505230 both test this raw mask.
+    pub(crate) fn required_houses_mask(&self, rules: &crate::rules::ruleset::RuleSet) -> u32 {
+        if self.required_houses.is_empty() && !self.required_houses_explicitly_empty {
+            u32::MAX
+        } else {
+            rules.house_type_mask(&self.required_houses)
+        }
+    }
+
     /// The AI base planning side filter: `AIBasePlanningSide=` (`+0x6D0`) is
     /// -1 or the house's side (`HouseTypeClass+0xBC`), as
     /// `FirstBuildableFromArray @ 0x005051E0` and `AI_BuildWalls @ 0x0050C340`
@@ -2896,8 +2921,9 @@ impl ObjectType {
             .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
             .unwrap_or_default();
 
-        let required_houses: Vec<String> = section
-            .read_list("RequiredHouses", 0x80)
+        let required_tokens = section.read_list("RequiredHouses", 0x80);
+        let required_houses_explicitly_empty = required_tokens.as_ref().is_some_and(Vec::is_empty);
+        let required_houses: Vec<String> = required_tokens
             .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
             .unwrap_or_default();
 
@@ -3001,6 +3027,15 @@ impl ObjectType {
             ),
             armor_id: crate::rules::armor::armor_index(&armor),
             armor,
+            #[cfg(feature = "phobos")]
+            shield_type: section
+                .read_name("ShieldType", 0x80)
+                .filter(|name| {
+                    !name.is_empty()
+                        && !name.eq_ignore_ascii_case("none")
+                        && !name.eq_ignore_ascii_case("<none>")
+                })
+                .map(str::to_owned),
             speed: section.read_techno_speed("Speed", 0),
             // TechnoTypeClass ctor/read contract: raw signed ints, with no
             // clamp or conversion. A zero WalkRate is invalid content natively
@@ -3076,6 +3111,7 @@ impl ObjectType {
             // ReadBool over the constructor's 0 at +0xC99 (`0x00712299`).
             double_owned: section.read_bool("DoubleOwned", false),
             required_houses,
+            required_houses_explicitly_empty,
             forbidden_houses,
             // gamemd-derived: `TechnoTypeClass__Constructor @ 0x00710FF0`
             // seeds +0x6D0 to -1; `TechnoTypeClass::ReadINI` around 0x007149FB

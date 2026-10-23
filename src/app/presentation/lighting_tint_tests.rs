@@ -376,3 +376,40 @@ fn a_bound_radiation_type_tints_the_field_with_its_own_color() {
         "the default green field keeps more green: {retail:?} vs {violet:?}"
     );
 }
+
+/// Phobos `ApplyCustomTintValues` selects the viewer's shield-tint bucket and
+/// `Drawing::RGB_To_Int` packs `Tint.Color` as RGB565.
+#[cfg(feature = "phobos")]
+#[test]
+fn shield_tint_uses_the_viewers_bucket_and_rgb565_word() {
+    use crate::rules::phobos_shields::AffectedHouse;
+    use crate::sim::intern::InternedId;
+    let owner = InternedId::from_index(0);
+    let other = InternedId::from_index(1);
+    assert_eq!(
+        tint_bucket(owner, Some(owner), || panic!(
+            "the owner needs no alliance query"
+        )),
+        AffectedHouse::OWNER
+    );
+    assert_eq!(
+        tint_bucket(owner, Some(other), || true),
+        AffectedHouse::ALLIES
+    );
+    assert_eq!(
+        tint_bucket(owner, Some(other), || false),
+        AffectedHouse::ENEMIES
+    );
+    assert_eq!(
+        tint_bucket(owner, None, || panic!("no viewer to ask")),
+        AffectedHouse::ENEMIES
+    );
+    // RGB_To_Int: (B >> 3) | ((G >> 2) << 5) | ((R >> 3) << 11).
+    assert_eq!(rgb565_word([255, 0, 0]), 0xF800);
+    assert_eq!(rgb565_word([0, 255, 0]), 0x07E0);
+    assert_eq!(rgb565_word([0, 0, 255]), 0x001F);
+    // Tint.VisibleToHouses gates each bucket independently.
+    assert!(AffectedHouse::OWNER.contains(AffectedHouse::OWNER));
+    assert!(!AffectedHouse::ENEMIES.contains(AffectedHouse::OWNER));
+    assert!(AffectedHouse::ALL.contains(AffectedHouse::ENEMIES));
+}

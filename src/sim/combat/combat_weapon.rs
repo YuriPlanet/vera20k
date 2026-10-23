@@ -1197,10 +1197,7 @@ pub(crate) fn is_occupied(entity: &GameEntity, obj: &ObjectType) -> bool {
     entity.category() == EntityCategory::Structure
         && obj.can_be_occupied
         && obj.can_occupy_fire
-        && entity
-            .passenger_role
-            .cargo()
-            .is_some_and(|cargo| !cargo.is_empty())
+        && entity.passenger_role.occupants().count() > 0
 }
 
 /// `BuildingClass @ 0x00458E00` (vt+0x404): half the shorter side of the
@@ -1226,10 +1223,12 @@ pub(crate) fn firing_occupant_id(entity: &GameEntity, obj: &ObjectType) -> Optio
     if !is_occupied(entity, obj) {
         return None;
     }
-    let cargo = entity.passenger_role.cargo()?;
-    cargo
-        .passengers()
-        .get(usize::from(cargo.garrison_fire_index()))
+    let occupants = entity.passenger_role.occupants();
+    // Native452742 uses signed DWORD. Unsafe negative/stale slots are not
+    // representable object references; do not narrow a valid index to u8.
+    occupants
+        .ids()
+        .get(usize::try_from(occupants.fire_index()).ok()?)
         .copied()
 }
 
@@ -1275,7 +1274,6 @@ pub fn get_weapon<'r>(
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
-    use crate::sim::passenger::PassengerRole;
 
     #[test]
     fn passive_scan_occupied_building_uses_weapon_identity_without_target_fallback() {
@@ -1311,9 +1309,7 @@ mod tests {
                 );
                 inside.veterancy.set_rank_for_test(veterancy);
                 entities.insert(inside);
-                let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0.0);
-                cargo.board_forced_chain(&[(2, 1.0)]);
-                building.passenger_role = PassengerRole::transport(cargo);
+                building.passenger_role.occupants_mut().add(2);
             }
             entities.insert(building);
             let interner = crate::sim::intern::test_interner();

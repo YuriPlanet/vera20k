@@ -304,7 +304,6 @@ fn assert_retail_wall_fire_profile(
     // App apply_map_load_result installs these execution modes before the
     // first Logic turn. Headless load deliberately defaults to serial mode.
     scene.runtime.simulation.batch_path_searches();
-    scene.runtime.simulation.batch_target_scans();
     // Periodic frame hashes feed replay and sync checks, which nothing here
     // reads; an interval no tick reaches skips them (11-12% of each frame in
     // this unoptimized test build).
@@ -549,7 +548,7 @@ fn assert_retail_wall_fire_profile(
                     .attack_target
                     .target()
                     .is_none(),
-                "Cell7258D0 target expiry is synchronous with removal"
+                "AreaDamage4896BA restores targets synchronously after wall cleanup"
             );
             assert!(sim.dirty_cells.radar().contains(&source));
             assert!(sim.dirty_cells.tactical_for_test().contains(&source));
@@ -1252,7 +1251,6 @@ fn retail_mtnk_move_crushes_fences_through_per_cell_with_body_rocking() {
     )
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
-    scene.runtime.simulation.batch_target_scans();
     // Periodic frame hashes feed replay and sync checks, which nothing here
     // reads; an interval no tick reaches skips them (11-12% of each frame in
     // this unoptimized test build).

@@ -40,9 +40,18 @@ def physical_sections(raw):
   if k and v:
    k=k.decode('latin1');assert k not in current,('duplicate-key',k);current[k]=v.decode('latin1')
  return {n:v for n,v in result.items() if v}
+def read_asset_inputs(root,names=None):
+ """Read only selected asset files when a bounded producer supplies names."""
+ if names is None:
+  paths=root.glob('*')
+ else:
+  selected={name.upper() for name in names}
+  paths=(p for p in root.iterdir() if p.name.upper() in selected and p.is_file())
+ return {p.name.upper():p.read_bytes() for p in paths}
+
 class Reader(Lists):
- def __init__(self,root,sections,*,arena_size=0x400000):
-  self.assets={p.name.upper():p.read_bytes() for p in root.glob('*')};self.asset_loaded=[];self.asset_ptr={};self.sound_names=[]
+ def __init__(self,root,sections,*,arena_size=0x400000,asset_names=None):
+  self.assets=read_asset_inputs(root,asset_names);self.asset_loaded=[];self.asset_ptr={};self.sound_names=[]
   super().__init__(arena_size=arena_size)
   # Retail startup installs the CRT floating scanner before ReadDouble5283D0.
   self.invoke(0x7C8F5E,0)

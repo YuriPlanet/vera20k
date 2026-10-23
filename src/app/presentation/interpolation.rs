@@ -899,6 +899,7 @@ mod tests {
             wrench: Some(sprite()),
             rank: Some(sprite()),
             background: Some(sprite()),
+            shield_background: Some(sprite()),
             fills: vec![sprite()],
             scale: vec![sprite()],
             self_heal: Some(sprite()),
@@ -915,6 +916,7 @@ mod tests {
             .chain(status.wrench.iter())
             .chain(status.rank.iter())
             .chain(status.background.iter())
+            .chain(status.shield_background.iter())
             .chain(status.fills.iter())
             .chain(status.scale.iter())
             .chain(status.self_heal.iter())
@@ -923,7 +925,7 @@ mod tests {
             .chain(status.talk_bubble.iter())
             .map(|instance| instance.position)
             .collect();
-        assert_eq!(positions.len(), 10);
+        assert_eq!(positions.len(), 11);
         assert!(positions.iter().all(|position| *position == [11.5, 18.0]));
     }
 

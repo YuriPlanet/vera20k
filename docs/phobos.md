@@ -32,4 +32,5 @@ other mode, even with identical retail INIs.
 Supported extensions:
 
 - [Custom radiation types](phobos-custom-radiation.md)
+- [Shields](phobos-shields.md) (damage absorption, shield bar, shield tint, break, respawn and self-healing)
 - [Superweapon techno gates](phobos-superweapon-technos.md)

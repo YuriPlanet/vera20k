@@ -172,6 +172,7 @@ fn status_instances<'a>(
         wrench,
         rank,
         background,
+        shield_background,
         fills,
         scale,
         self_heal,
@@ -190,6 +191,7 @@ fn status_instances<'a>(
         *wrench,
         *rank,
         *background,
+        *shield_background,
         *self_heal,
         *talk_bubble,
     ]
@@ -221,6 +223,7 @@ fn draw_status_prefix<'a>(
         wrench,
         rank,
         background,
+        shield_background,
         fills,
         scale,
         ..
@@ -239,8 +242,12 @@ fn draw_status_prefix<'a>(
     if let (Some(index), Some(shape)) = (rank, overlay.pips()) {
         batch.draw_passthrough_range(pass, shape.texture(), buffer, *index, rank_count);
     }
-    if let (Some(index), Some(shape)) = (background, overlay.pipbrd()) {
-        batch.draw_passthrough_range(pass, shape.texture(), buffer, *index, 1);
+    if let Some(shape) = overlay.pipbrd() {
+        // Both health and Phobos shield borders are PIPBRD/E00. Their UVs
+        // belong to this texture, independently of the following PIPS fills.
+        for index in [background, shield_background].into_iter().flatten() {
+            batch.draw_passthrough_range(pass, shape.texture(), buffer, *index, 1);
+        }
     }
     if let Some(shape) = overlay.pips() {
         batch.draw_with_buffer_passthrough_range(
@@ -374,6 +381,7 @@ fn rank_run_end(runs: &[ObjectExtrasRun], start: usize) -> usize {
         wrench: None,
         rank: Some(first),
         background: None,
+        shield_background: None,
         fills,
         scale,
         self_heal: None,
@@ -398,6 +406,7 @@ fn rank_run_end(runs: &[ObjectExtrasRun], start: usize) -> usize {
         wrench: None,
         rank: Some(index),
         background: None,
+        shield_background: None,
         fills,
         scale,
         self_heal: None,

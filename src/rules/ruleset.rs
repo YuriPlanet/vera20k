@@ -1763,6 +1763,9 @@ pub struct GeneralRules {
     /// progress against this retained value times900, without truncating it
     /// to a timer first (`0x0044BD32`, `0x0044BD44`).
     pub unit_repair_rate: f64,
+    /// Rules+760; ctor6660AE stores3.0. ReadGeneral671858 uses the
+    /// current double as ReadDouble5283D0 default, without scaling/clamping.
+    pub charge_to_drain_ratio: NativeF64Bits,
     /// Hospital repair: Rules+16D8/16F0, ReadGeneral670DE9/670E57.
     pub infantry_repair_step: i32,
     pub infantry_repair_rate: f64,
@@ -2632,6 +2635,7 @@ impl Default for GeneralRules {
             guard_mode_stray: 0,
             // Rules constructor667530/53A retains the double, not frame ticks.
             unit_repair_rate: U_REPAIR_RATE_MINUTES,
+            charge_to_drain_ratio: NativeF64Bits::from_bits(0x4008_0000_0000_0000),
             // Constructor66751A and667540: 1 and double0.016.
             infantry_repair_step: 1,
             infantry_repair_rate: 0.016,
@@ -3916,6 +3920,7 @@ impl GeneralRules {
             repair_percent: general.read_double("RepairPercent", defaults.repair_percent),
             repair_step: general.read_int("RepairStep", defaults.repair_step),
             unit_repair_rate: defaults.unit_repair_rate,
+            charge_to_drain_ratio: defaults.charge_to_drain_ratio,
             infantry_repair_step: defaults.infantry_repair_step,
             infantry_repair_rate: defaults.infantry_repair_rate,
             reload_rate: general.read_double("ReloadRate", defaults.reload_rate),
@@ -4278,6 +4283,14 @@ pub struct RuleSet {
     pub elevation_model: ElevationModel,
     /// Per-cell radiation-field constants from [Radiation].
     pub radiation: RadiationRules,
+    /// Phobos `[ShieldTypes]` catalog, read per Rules pass by the ordered
+    /// Process owner. Empty in builds without the capability.
+    #[cfg(feature = "phobos")]
+    pub(crate) shield_types: crate::rules::phobos_shields::ShieldTypeCatalog,
+    /// Phobos shield globals: `[CombatDamage] ShieldApplyArmorMult` and
+    /// `[AudioVisual] Shield.ConditionYellow/ConditionRed`.
+    #[cfg(feature = "phobos")]
+    pub(crate) shield_globals: crate::rules::phobos_shields::ShieldGlobals,
     /// Radar event visual parameters (ping rectangles on minimap).
     pub radar_event_config: RadarEventConfig,
     /// All superweapon types indexed by ID (e.g., "LightningStormSpecial" → SuperWeaponType).
@@ -4621,6 +4634,7 @@ impl RuleSet {
             rules.general.unit_repair_rate,
             rules.general.infantry_repair_rate,
         ) = processed.repair_service_inputs();
+        rules.general.charge_to_drain_ratio = processed.charge_to_drain_ratio();
         let mut weapon_name_counts = HashMap::<String, usize>::new();
         for weapon in processed.weapon_states() {
             *weapon_name_counts
@@ -5408,6 +5422,18 @@ impl RuleSet {
         let elevation_model = ElevationModel::from_ini(ini);
         let radiation: RadiationRules = RadiationRules::from_ini(ini);
         #[cfg(feature = "phobos")]
+        let (shield_types, shield_globals) = {
+            let shield_types = processed.shield_types().cloned().unwrap_or_default();
+            log::info!(
+                "Phobos shield types: [{}]",
+                shield_types.names().collect::<Vec<_>>().join(", ")
+            );
+            (
+                shield_types,
+                crate::rules::phobos_shields::ShieldGlobals::from_ini(ini),
+            )
+        };
+        #[cfg(feature = "phobos")]
         let radiation = {
             let mut radiation = radiation;
             radiation.radiation_types = processed.radiation_types().cloned().unwrap_or_default();
@@ -5588,11 +5614,8 @@ impl RuleSet {
         let super_weapon_order: Vec<String> = sw_ids.clone();
         for sw_id in &sw_ids {
             if let Some(section) = ini.section(sw_id) {
-                if let Some(sw) = SuperWeaponType::from_ini_section(sw_id, section) {
-                    super_weapons.insert(sw_id.clone(), sw);
-                } else {
-                    log::warn!("SuperWeapon '{}' has unknown Type=, skipping", sw_id);
-                }
+                let sw = SuperWeaponType::from_ini_section(sw_id, section);
+                super_weapons.insert(sw_id.clone(), sw);
             } else {
                 log::trace!(
                     "SuperWeapon '{}' listed in [SuperWeaponTypes] but has no section",
@@ -5773,6 +5796,10 @@ impl RuleSet {
             allied_wall_transparency,
             elevation_model,
             radiation,
+            #[cfg(feature = "phobos")]
+            shield_types,
+            #[cfg(feature = "phobos")]
+            shield_globals,
             radar_event_config,
             super_weapons,
             super_weapon_order,
@@ -6168,6 +6195,19 @@ impl RuleSet {
         Self::lookup_ci(&self.warheads, id)
     }
 
+    /// Phobos `[ShieldTypes]` entry by name (case-insensitive, first spelling
+    /// retained). No entry in a build without the capability.
+    #[cfg(feature = "phobos")]
+    pub fn shield_type(&self, name: &str) -> Option<&crate::rules::phobos_shields::ShieldType> {
+        self.shield_types.entry(name)
+    }
+
+    /// Phobos shield globals (`[CombatDamage]`/`[AudioVisual]`).
+    #[cfg(feature = "phobos")]
+    pub fn shield_globals(&self) -> &crate::rules::phobos_shields::ShieldGlobals {
+        &self.shield_globals
+    }
+
     /// Look up a projectile by ID (case-insensitive, gamemd parity).
     pub fn projectile(&self, id: &str) -> Option<&ProjectileType> {
         Self::lookup_ci(&self.projectiles, id)
@@ -6256,6 +6296,22 @@ impl RuleSet {
             .map(|object| (object.id.to_ascii_uppercase(), &object.foundation))
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
+        // ReadOwners4750D0 retains an explicit zero RequiredHouses mask
+        // through later absent/empty reads. Current-pass source text does
+        // not encode this history; keep ordinary stock hashes unchanged.
+        let mut empty_required_houses: Vec<_> = self
+            .object_list
+            .iter()
+            .filter(|object| {
+                object.required_houses.is_empty() && object.required_houses_mask(self) == 0
+            })
+            .map(|object| (object.category, object.id.to_ascii_uppercase()))
+            .collect();
+        if !empty_required_houses.is_empty() {
+            empty_required_houses.sort_unstable();
+            b"required-houses-explicit-empty-v1".hash(&mut hasher);
+            empty_required_houses.hash(&mut hasher);
+        }
         // Bullet46BEE0 retains this byte even when a later raw value is
         // invalid. Equal flattened INIs can therefore have different flight
         // damage. Preserve the previous hash domain for all-false stock rules.
@@ -6315,6 +6371,21 @@ impl RuleSet {
             self.weapons
                 .iter()
                 .map(|(id, weapon)| (id, &weapon.rad_type))
+                .collect::<Vec<_>>()
+                .hash(&mut hasher);
+            b"phobos-shield-types-v1".hash(&mut hasher);
+            self.shield_types.hash(&mut hasher);
+            self.shield_globals.apply_armor_mult.hash(&mut hasher);
+            self.shield_globals.condition_yellow.to_bits().hash(&mut hasher);
+            self.shield_globals.condition_red.to_bits().hash(&mut hasher);
+            self.shield_globals.pips.hash(&mut hasher);
+            self.shield_globals.pips_building.hash(&mut hasher);
+            self.shield_globals.pips_background.hash(&mut hasher);
+            self.shield_globals.pips_building_empty.hash(&mut hasher);
+            // Bound techno `ShieldType=` names, in registry order.
+            self.object_list
+                .iter()
+                .map(|object| (&object.id, object.shield_type()))
                 .collect::<Vec<_>>()
                 .hash(&mut hasher);
         }
@@ -6471,6 +6542,7 @@ impl RuleSet {
         self.general.tree_strength.hash(&mut hasher);
         self.general.infantry_repair_step.hash(&mut hasher);
         self.general.unit_repair_rate.to_bits().hash(&mut hasher);
+        self.general.charge_to_drain_ratio.hash(&mut hasher);
         self.general
             .infantry_repair_rate
             .to_bits()
@@ -6661,6 +6733,18 @@ impl RuleSet {
         if !airburst_weapons.is_empty() {
             b"airburst-weapons-v1".hash(&mut hasher);
             airburst_weapons.hash(&mut hasher);
+        }
+        // A later invalid raw token retains BulletType+294. Equal flattened
+        // INIs can therefore differ in the child-fan and parent-cluster gates.
+        let airburst_flags = self
+            .projectiles
+            .iter()
+            .filter(|(_, projectile)| projectile.airburst)
+            .map(|(id, _)| id.to_ascii_uppercase())
+            .collect::<std::collections::BTreeSet<_>>();
+        if !airburst_flags.is_empty() {
+            b"airburst-retained-flag-v1".hash(&mut hasher);
+            airburst_flags.hash(&mut hasher);
         }
         self.super_weapons
             .iter()

@@ -355,10 +355,7 @@ impl Simulation {
             object.strength,
             rules.general.condition_yellow,
         );
-        let garrisoned = entity
-            .passenger_role
-            .cargo()
-            .is_some_and(|cargo| !cargo.passengers().is_empty());
+        let garrisoned = !entity.passenger_role.occupants().is_empty();
         // 0x00446382..0x004463B4: the built type's InfantryGainSelfHeal and
         // UnitsGainSelfHeal join the owner's house. Natively a capture of a
         // placed building skips this add (0x00445FD0) and ChangeOwner's tail
@@ -572,10 +569,7 @@ impl Simulation {
                 object.strength,
                 rules.general.condition_yellow,
             );
-            let garrisoned = entity
-                .passenger_role
-                .cargo()
-                .is_some_and(|cargo| !cargo.is_empty());
+            let garrisoned = !entity.passenger_role.occupants().is_empty();
             self.set_building_anim_slot(id, slot as u8, damaged, garrisoned, 0, rules);
         }
     }
@@ -796,10 +790,7 @@ impl Simulation {
                 == crate::sim::mission::MissionId::from_known(
                     crate::sim::mission::MissionType::Repair,
                 );
-        let garrisoned = entity
-            .passenger_role
-            .cargo()
-            .is_some_and(|cargo| !cargo.passengers().is_empty());
+        let garrisoned = !entity.passenger_role.occupants().is_empty();
         let delayed_fire = self.building_anim_delayed_fire(owner, rules);
         self.substrate.clear_building_anim_reference(expired);
         let next = match slot {
@@ -1065,12 +1056,9 @@ pub fn current_body_frame(
             gate_stages: object
                 .gate
                 .then_some(art.map_or(9, |entry| entry.building_gate_stages)),
-            occupants: object.can_be_occupied.then_some(
-                entity
-                    .passenger_role
-                    .cargo()
-                    .map_or(0, |cargo| cargo.count()) as i32,
-            ),
+            occupants: object
+                .can_be_occupied
+                .then_some(entity.passenger_role.occupants().count()),
             tech_level,
             selling: entity.building_down(),
             buildup: [control[0], control[1]],
@@ -1113,12 +1101,9 @@ pub(crate) fn receiver_body_frame(
             gate_stages: object
                 .gate
                 .then_some(art.map_or(9, |art| art.building_gate_stages)),
-            occupants: object.can_be_occupied.then_some(
-                entity
-                    .passenger_role
-                    .cargo()
-                    .map_or(0, |cargo| cargo.passengers().len() as i32),
-            ),
+            occupants: object
+                .can_be_occupied
+                .then_some(entity.passenger_role.occupants().count()),
             tech_level,
             selling: false,
             buildup: [0, 1],

@@ -465,6 +465,7 @@ pub(crate) fn collect_area(
     origin: (u64, Option<InternedId>, InternedId),
     air_impact: Option<combat_aoe::AoEAirImpact>,
     impact_z: i32,
+    effects: FrameEffects<'_>,
 ) -> combat_aoe::AoEDamageResult {
     #[cfg(not(test))]
     let include_terrain_objects = true;
@@ -475,42 +476,8 @@ pub(crate) fn collect_area(
         .is_none_or(|fixture| fixture.terrain_collection);
     let playfield_bounds = world.playfield_bounds();
     let rule_handles = world.resolved_rule_handles();
-    let mut prelude = crate::sim::world::simulation_area_damage_cell_prelude(
-        rules,
-        warhead,
-        damage,
-        true,
-        world.session.no_damage(),
-        &mut world.ore_growth_state,
-        world.terrain_objects.spawning_cells(),
-        world.terrain_objects.cell_index(),
-        world.session.binary_frame(),
-        world.ore_growth_config.spreads(),
-        &mut world.dirty_cells,
-        &mut world.zone_grid,
-        &mut world.path_grid,
-        world.bridge_state.as_ref(),
-        playfield_bounds,
-    );
-    #[cfg(test)]
-    let mut deferred_prelude = world.receiver_fixture.as_mut().map(|fixture| {
-        super::receiver_fixture::DeferredCellPrelude {
-            amount: (!world.session.no_damage())
-                .then(|| tiberium_reduction_amount(damage, true, warhead))
-                .flatten(),
-            deferred: &mut fixture.deferred_tiberium,
-        }
-    });
-    #[cfg(test)]
-    let prelude: &mut dyn combat_aoe::AoECellPrelude = match deferred_prelude.as_mut() {
-        Some(deferred) => deferred,
-        None => &mut prelude,
-    };
-    #[cfg(not(test))]
-    let prelude: &mut dyn combat_aoe::AoECellPrelude = &mut prelude;
-    combat_aoe::apply_aoe_damage_with_terrain_and_scenario(
-        &mut world.substrate.entities,
-        world.terrain_objects.objects(),
+    let Some(mut collector) = combat_aoe::AoECollector::begin(
+        &world.substrate.entities,
         cell.0,
         cell.1,
         damage,
@@ -518,8 +485,8 @@ pub(crate) fn collect_area(
         rules,
         &world.interner,
         rule_handles,
-        origin,
-        combat_aoe::AoELayerContext {
+        origin.into(),
+        &combat_aoe::AoELayerContext {
             occupancy: Some(&world.substrate.occupancy),
             terrain: world.resolved_terrain.as_mut(),
             overlay_grid: world.overlay_grid.as_mut(),
@@ -528,11 +495,99 @@ pub(crate) fn collect_area(
             air_impact,
             impact_z,
         },
-        include_terrain_objects.then_some(combat_aoe::TerrainCollectionView {
-            store: &world.terrain_objects,
-        }),
         world.session.no_damage(),
-        Some(prelude),
+    ) else {
+        return combat_aoe::AoEDamageResult::default();
+    };
+    for &(dx, dy) in cell_spread::splash_cells(warhead.cell_spread_f64) {
+        let (spread_cell, detached_cell) = {
+            let mut prelude = crate::sim::world::simulation_area_damage_cell_prelude(
+                rules,
+                warhead,
+                damage,
+                true,
+                world.session.no_damage(),
+                &mut world.ore_growth_state,
+                world.terrain_objects.spawning_cells(),
+                world.terrain_objects.cell_index(),
+                world.session.binary_frame(),
+                world.ore_growth_config.spreads(),
+                &mut world.dirty_cells,
+                &mut world.zone_grid,
+                &mut world.path_grid,
+                world.bridge_state.as_ref(),
+                playfield_bounds,
+            );
+            #[cfg(test)]
+            let mut deferred_prelude = world.receiver_fixture.as_mut().map(|fixture| {
+                super::receiver_fixture::DeferredCellPrelude {
+                    amount: (!world.session.no_damage())
+                        .then(|| tiberium_reduction_amount(damage, true, warhead))
+                        .flatten(),
+                    deferred: &mut fixture.deferred_tiberium,
+                }
+            });
+            #[cfg(test)]
+            let prelude: &mut dyn combat_aoe::AoECellPrelude = match deferred_prelude.as_mut() {
+                Some(deferred) => deferred,
+                None => &mut prelude,
+            };
+            #[cfg(not(test))]
+            let prelude: &mut dyn combat_aoe::AoECellPrelude = &mut prelude;
+            let mut context = combat_aoe::AoELayerContext {
+                occupancy: Some(&world.substrate.occupancy),
+                terrain: world.resolved_terrain.as_mut(),
+                overlay_grid: world.overlay_grid.as_mut(),
+                overlay_registry,
+                scenario_rng: Some(&mut world.scenario_rng),
+                air_impact,
+                impact_z,
+            };
+            let spread_cell =
+                collector.prepare_cell(dx, dy, warhead, &mut context, &mut Some(prelude));
+            let detached_cell = spread_cell.detached_cell(&context);
+            (spread_cell, detached_cell)
+        };
+        // AreaDamage4896BA explicitly calls70D4A0 AFTER recursive480CB0 and
+        // BEFORE4896BF captures this cell's residents. Concrete Restore4D8F80
+        // runs its destination setter synchronously with all world authorities.
+        if let Some((rx, ry)) = detached_cell {
+            let _receipt = world.stop_all_targeting_cell(rx, ry, rules, overlay_registry, effects);
+            #[cfg(any(test, feature = "test-support"))]
+            collector
+                .result
+                .cell_target_detaches
+                .extend(_receipt.cell_detaches);
+        }
+        collector.capture_cell(
+            &spread_cell,
+            &world.substrate.entities,
+            &combat_aoe::AoELayerContext {
+                occupancy: Some(&world.substrate.occupancy),
+                terrain: world.resolved_terrain.as_mut(),
+                overlay_grid: world.overlay_grid.as_mut(),
+                overlay_registry,
+                scenario_rng: Some(&mut world.scenario_rng),
+                air_impact,
+                impact_z,
+            },
+            include_terrain_objects.then_some(combat_aoe::TerrainCollectionView {
+                store: &world.terrain_objects,
+            }),
+        );
+    }
+    collector.finish(
+        &world.substrate.entities,
+        &combat_aoe::AoELayerContext {
+            occupancy: Some(&world.substrate.occupancy),
+            terrain: world.resolved_terrain.as_mut(),
+            overlay_grid: world.overlay_grid.as_mut(),
+            overlay_registry,
+            scenario_rng: Some(&mut world.scenario_rng),
+            air_impact,
+            impact_z,
+        },
+        warhead,
     )
 }
 
@@ -591,6 +646,7 @@ pub(crate) fn apply_area_damage_in_run(
         damage,
         warhead,
         origin,
+        run.effects(),
     );
     let mut effects = DeathEffects::default();
     #[cfg(test)]
@@ -651,6 +707,7 @@ fn collect_area_at<'r>(
     damage: i32,
     warhead: &'r WarheadType,
     origin: (u64, Option<InternedId>, InternedId),
+    effects: FrameEffects<'_>,
 ) -> AreaAtImpact<'r> {
     // Observe the shared entry, including Bullet and nested receiver calls;
     // an external-only wrapper misses those paths and must not double-count.
@@ -673,6 +730,7 @@ fn collect_area_at<'r>(
             z_leptons,
         }),
         z_leptons.div_euclid(LEPTONS_PER_LEVEL as i32),
+        effects,
     );
     AreaAtImpact {
         continuation: AreaDamageContinuation {
@@ -1104,6 +1162,58 @@ pub(crate) fn commit_entities(
             receiver_event.damage = writeback.read(world, rules);
         }
         let event = &receiver_event;
+        // Phobos `TechnoClass_ReceiveDamage @ 0x701900+0x6` runs the shield
+        // before gamemd's receiver body and replaces `args->Damage` with the
+        // surviving damage. The stage owns the mutation here, before the
+        // otherwise-immutable resolver is entered.
+        #[cfg(feature = "phobos")]
+        let shield_receipt = {
+            let warhead = rules.warhead(world.interner.resolve(event.warhead_ref));
+            let target = world.substrate.entities.get(target_id);
+            match (target, warhead) {
+                (Some(target), Some(_)) => {
+                    let target_type = world.interner.object_type(target.type_ref(), rules);
+                    let divisors = super::receiver_divisors(
+                        target,
+                        target_type,
+                        rules,
+                        &world.interner,
+                        &world.houses,
+                    );
+                    let input = event.damage;
+                    crate::sim::shield::pre_receive_damage(world, rules, event, input, &divisors)
+                }
+                _ => None,
+            }
+        };
+        #[cfg(feature = "phobos")]
+        let receiver_outcome = match shield_receipt {
+            Some(receipt) => resolve_receive_damage_with_input(
+                event,
+                &world.substrate.entities,
+                rules,
+                &world.interner,
+                &world.houses,
+                world.house_alliances.as_map(),
+                scenario_no_damage,
+                current_tick,
+                world.resolved_terrain.as_ref(),
+                receipt.remaining,
+                receipt.remaining == 0,
+            ),
+            None => resolve_receive_damage(
+                event,
+                &world.substrate.entities,
+                rules,
+                &world.interner,
+                &world.houses,
+                world.house_alliances.as_map(),
+                scenario_no_damage,
+                current_tick,
+                world.resolved_terrain.as_ref(),
+            ),
+        };
+        #[cfg(not(feature = "phobos"))]
         let receiver_outcome = resolve_receive_damage(
             event,
             &world.substrate.entities,
@@ -2952,6 +3062,7 @@ fn emit_detonation_receivers<'r>(
                     source_house,
                     detonation.payload.warhead,
                 ),
+                effects,
             );
             #[cfg(test)]
             append_fixture_tiberium(world, &mut out.effects.tiberium_reduction_requests);

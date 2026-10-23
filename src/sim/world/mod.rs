@@ -127,6 +127,7 @@ mod trigger_explosion;
 mod trigger_strikes;
 pub(crate) use techno_ai::ObjectAiCtx;
 pub(crate) use techno_ai::PassiveScan;
+pub(crate) use techno_ai::PatrolPost;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use techno_ai::PendingBuildingFire;
 pub(crate) use techno_ai::PrismSupport;
@@ -149,6 +150,8 @@ pub(crate) mod techno_ai_cloak;
 pub(crate) mod unit_post;
 #[cfg(test)]
 mod wall_autofill_oracle_tests;
+#[cfg(test)]
+mod wall_restore_tests;
 mod world_commands;
 mod world_hash;
 
@@ -911,6 +914,13 @@ pub enum SimSoundEvent {
         line: bool,
         eva: Option<AllianceEva>,
     },
+    /// ForceShield Launch6CD176 plays StartSound before its blackout/curtain
+    /// receivers. The later SuperWeaponLaunched owns only that case's local
+    /// selection/Ready-line cleanup; the original signed deck is retained.
+    SuperWeaponActivation {
+        sw_type: InternedId,
+        world: crate::sim::anim_class::AnimWorldCoord,
+    },
     /// A superweapon fired. `sw_type` is the interned `[SuperWeaponTypes]`
     /// section name of the launched weapon — the discriminator the app layer
     /// needs to pick the cue, and the same object gamemd switches on.
@@ -925,7 +935,8 @@ pub enum SimSoundEvent {
     /// (`0x006CD7BF`); and both for `MultiMissile`, `PsychicDominator` and
     /// `GeneticConverter`. Carrying the type rather than a per-case flag is
     /// what lets the app read both the case index and `StartSound=` off one
-    /// object, as `param_1[10]` does.
+    /// object, as `param_1[10]` does. ForceShield carries its activation
+    /// through SuperWeaponActivation at the original earlier call site.
     SuperWeaponLaunched {
         owner: InternedId,
         sw_type: InternedId,
@@ -1450,8 +1461,8 @@ pub struct Simulation {
     /// Batched path searches (`movement::path_batch`); `None`
     /// searches in native order. Its registrations wait across a save.
     pub(crate) path_batch: Option<crate::sim::movement::path_batch::PathBatch>,
-    /// Batched target scans (`techno_ai::scan_batch`); `None` scans in
-    /// native order. A save carries only the setting.
+    /// Retired target-scan request, retained only for positional save layout
+    /// compatibility. Cleared during snapshot restoration; never read by scans.
     pub(crate) scan_batch: Option<techno_ai::ScanBatch>,
     /// Retained native navigation base plane/raw movement rows plus the live
     /// derived hierarchy. ZoneGrid saves only its own retained base state;
@@ -1910,16 +1921,9 @@ pub(crate) fn repair_zone_after_recalc(
     }
 }
 
-/// Borrow-split wall observer used by runtime placement and sale, where the
-/// overlay/terrain transaction remains in its owning module but the live
-/// presentation, navigation, and represented Cell-target authorities are
-/// already available as disjoint Simulation fields.
+/// Wall map callbacks over the installed presentation and navigation owners.
+/// Native Cell expiry7258D0 has no Techno listener broadcast.
 pub(crate) struct SimulationWallRuntimeHost<'a> {
-    pub(crate) entities: &'a mut EntityStore,
-    pub(crate) target_terrain_objects:
-        &'a BTreeMap<u64, crate::sim::terrain_object::TerrainObjectState>,
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) detach_trace: &'a mut Vec<crate::sim::combat::combat_aoe::CellTargetDetach>,
     pub(crate) dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
     pub(crate) zone_grid: &'a mut Option<ZoneGrid>,
     pub(crate) path_grid: &'a mut Option<Arc<PathGrid>>,
@@ -1956,19 +1960,9 @@ impl WallDamageTransactionHost for SimulationWallRuntimeHost<'_> {
         );
     }
 
-    fn pointer_expired(&mut self, target: WallPointerTarget) {
-        if let WallPointerTarget::Real(rx, ry) = target {
-            crate::sim::combat::combat_aoe::expire_cell_target_references(
-                self.entities,
-                self.target_terrain_objects,
-                rx,
-                ry,
-                None,
-                #[cfg(any(test, feature = "test-support"))]
-                self.detach_trace,
-            );
-        }
-    }
+    // Ordinary Cell7258D0 has no Techno broadcast; real70D4A0 callers
+    // (AreaDamage, wall sale, cliff collapse) own their explicit outer sweep.
+    fn pointer_expired(&mut self, _target: WallPointerTarget) {}
 }
 
 fn dispatch_smudge_inline(
@@ -2105,12 +2099,7 @@ impl Simulation {
                 }
                 let garrison = self.substrate.entities.get(stable_id).and_then(|entity| {
                     let object = self.interner.object_type(entity.type_ref(), rules)?;
-                    let passenger_ids = entity
-                        .passenger_role
-                        .cargo()
-                        .map(|cargo| cargo.passengers().to_vec())
-                        .unwrap_or_default();
-                    if !object.can_be_occupied || passenger_ids.is_empty() {
+                    if !object.can_be_occupied || entity.passenger_role.occupants().is_empty() {
                         return None;
                     }
                     let (foundation_w, foundation_h) =
@@ -2122,7 +2111,6 @@ impl Simulation {
                             ry: entity.position.ry(),
                             foundation_w,
                             foundation_h,
-                            passenger_ids,
                         },
                     )
                 });
@@ -2653,6 +2641,8 @@ impl Simulation {
                                         scenario_no_damage,
                                         current_tick,
                                         self.resolved_terrain.as_ref(),
+                                        #[cfg(feature = "phobos")]
+                                        Some(&*self),
                                     )
                                 };
                             if let Some(value) = post_object_damage {
@@ -2728,10 +2718,6 @@ impl Simulation {
                     if flags.wall {
                         let _wall = {
                             let mut host = SimulationWallRuntimeHost {
-                                entities: &mut self.substrate.entities,
-                                target_terrain_objects: self.terrain_objects.objects(),
-                                #[cfg(any(test, feature = "test-support"))]
-                                detach_trace: &mut effects.cell_target_detaches,
                                 dirty_cells: &mut self.dirty_cells,
                                 zone_grid: &mut self.zone_grid,
                                 path_grid: &mut self.path_grid,
@@ -2784,15 +2770,12 @@ impl Simulation {
                         // strictly interleaved: detach this CellClass target,
                         // then dirty this radar cell, in old-TMP row order.
                         for &coord in &mutation.original_footprint {
-                            crate::sim::combat::combat_aoe::expire_cell_target_references(
-                                &mut self.substrate.entities,
-                                self.terrain_objects.objects(),
-                                coord.0,
-                                coord.1,
-                                Some((rules, &self.interner)),
-                                #[cfg(any(test, feature = "test-support"))]
-                                &mut effects.cell_target_detaches,
+                            // Map5814D4/581BE6:70D4A0 then radar, per old footprint cell.
+                            let _receipt = self.stop_all_targeting_cell(
+                                coord.0, coord.1, rules, overlay_registry, frame_effects,
                             );
+                            #[cfg(any(test, feature = "test-support"))]
+                            effects.cell_target_detaches.extend(_receipt.cell_detaches);
                             self.dirty_cells.mark_radar([coord]);
                         }
                         for &coord in &mutation.original_footprint {
@@ -7063,13 +7046,7 @@ impl Simulation {
         let Some(grid) = self.overlay_grid.as_mut() else {
             return;
         };
-        #[cfg(any(test, feature = "test-support"))]
-        let mut cell_target_detaches = Vec::new();
         let mut host = SimulationWallRuntimeHost {
-            entities: &mut self.substrate.entities,
-            target_terrain_objects: self.terrain_objects.objects(),
-            #[cfg(any(test, feature = "test-support"))]
-            detach_trace: &mut cell_target_detaches,
             dirty_cells: &mut self.dirty_cells,
             zone_grid: &mut self.zone_grid,
             path_grid: &mut self.path_grid,
@@ -8714,3 +8691,6 @@ mod airstrike_aircraft;
 
 #[cfg(test)]
 mod radiation_overlap_tests;
+
+#[cfg(test)]
+mod building_occupant_storage_tests;

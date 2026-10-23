@@ -663,10 +663,6 @@ impl Simulation {
             b"path-batch-v2".hash(hasher);
             batch.hash(hasher);
         }
-        // Whether target scans are batched; their answers live within a pass.
-        if self.scan_batch.is_some() {
-            b"scan-batch-v1".hash(hasher);
-        }
 
         self.substrate.fold_raw_cell_occupation(hasher);
         self.substrate.fold_hidden_occupation(hasher);
@@ -798,6 +794,9 @@ impl Simulation {
             };
             parallel::any_index(entities.len(), |index| {
                 let entity = entities[index];
+                if entity.patrol_post.cell() == Some(NativeCellIdentity::Dummy) {
+                    return true;
+                }
                 [
                     entity.attack_target.target(),
                     entity.suspended_attack_target.target(),
@@ -1621,6 +1620,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     {
         b"phobos-techno-placement-v1".hash(hasher);
         entity.phobos_placement.hash(hasher);
+        if let Some(shield) = &entity.shield {
+            b"phobos-shield-v1".hash(hasher);
+            shield.hash(hasher);
+        }
     }
     if entity.tracking_facts.naval_combatant() {
         // Retained across reload: later Remove_Tracking must use the same
@@ -2201,6 +2204,19 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
             }
         }
     }
+    // BuildingCtor43B8DC..43B907 and GetCount4581F0: independent vector,
+    // not Cargo+114. The unique empty/zero constructor state adds no bytes,
+    // preserving unrelated replay controls. A nonzero signed +69C still
+    // contributes even when pointer expiry has emptied the vector.
+    let occupants = role.occupants();
+    if entity.category() == crate::map::entities::EntityCategory::Structure
+        && (!occupants.is_empty() || occupants.fire_index() != 0)
+    {
+        b"building-occupants-694-69c".hash(hasher);
+        occupants.count().hash(hasher);
+        occupants.ids().hash(hasher);
+        occupants.fire_index().hash(hasher);
+    }
     // Spawn-manager pool: slot states, timers and targets are
     // deterministic sim state that no other field covers. (Native
     // folds only the manager-level fields into its CRC and leaves the
@@ -2302,6 +2318,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
 
     hash_mission_com(&entity.mission, hasher);
     hash_mission_leaf(&entity.mission_leaf, hasher);
+    if let Some(post) = entity.patrol_post.cell() {
+        b"foot-patrol-post-v1".hash(hasher);
+        post.hash(hasher);
+    }
     entity.removal_facts.occupier().hash(hasher);
     entity.passive_scan.timer().hash(hasher);
     // Passive-acquire bookkeeping. `passively_acquired_target` gates

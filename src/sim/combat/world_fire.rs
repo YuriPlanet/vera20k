@@ -1162,7 +1162,7 @@ pub(crate) fn snapshot_get_rof(
                 crate::rules::object_type::Ability::Rof,
             ),
             veteran_rof: rules.general.veteran_rof,
-            occupants: snap.garrison.as_ref().map(|gs| gs.occupant_count as i32),
+            occupants: snap.garrison.as_ref().map(|gs| gs.occupant_count),
             bunkered: snap.category != EntityCategory::Structure
                 && firer.is_some_and(|firer| {
                     matches!(
@@ -1804,14 +1804,8 @@ pub(super) fn emit_admitted_fire(
     // occupant's ROF and Burst) and the shot's own kill credit, since its
     // Inviso bullet detonates later in its own AI (possibly this frame's
     // Logic tail, once its impact/fuse admits it).
-    if is_garrison
-        && let Some(cargo) = world
-            .substrate
-            .entities
-            .get_mut(snap.stable_id)
-            .and_then(|building| building.passenger_role.cargo_mut())
-    {
-        cargo.advance_garrison_fire_index();
+    if is_garrison && let Some(building) = world.substrate.entities.get_mut(snap.stable_id) {
+        building.passenger_role.occupants_mut().advance_fire_index();
     }
     // Techno6FF0B7..6FF15B: only a successfully launched shot arms recoil.
     // Stock recoil buildings have their own Turret=yes. Building4527D0's
@@ -1988,7 +1982,6 @@ pub(super) fn emit_admitted_fire(
             .and_then(|entity| entity.disguise.as_mut())
     {
         disguise.start_fire_blink(binary_frame, weapon.disguise_fake_blink_time);
-        world.note_disguise_blink_started();
     }
     Some(bullet_id)
 }
@@ -2404,10 +2397,9 @@ pub(crate) fn visit_fire(
                     .interner
                     .object_type(actor.type_ref(), rules)
                     .filter(|obj| combat_weapon::is_occupied(actor, obj))
-                    .and_then(|_| actor.passenger_role.cargo())
-                    .map(|cargo| GarrisonSnapshot {
-                        fire_index: cargo.garrison_fire_index(),
-                        occupant_count: cargo.count() as u8,
+                    .map(|_| GarrisonSnapshot {
+                        fire_index: actor.passenger_role.occupants().fire_index(),
+                        occupant_count: actor.passenger_role.occupants().count(),
                     });
                 AttackerSnapshot {
                     building_shot: Some(shot),

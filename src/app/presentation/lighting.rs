@@ -216,6 +216,87 @@ pub(crate) fn anim_palette_light(
     }
 }
 
+/// `Drawing::RGB_To_Int` (YRpp `Drawing::Color16bit`): the 16-bit RGB565 word
+/// `(B >> 3) | ((G >> 2) << 5) | ((R >> 3) << 11)`.
+#[cfg(feature = "phobos")]
+fn rgb565_word([red, green, blue]: [u8; 3]) -> u16 {
+    (u16::from(blue) >> 3) | ((u16::from(green) >> 2) << 5) | ((u16::from(red) >> 3) << 11)
+}
+
+/// `TechnoExt::ApplyCustomTintValues`'s viewer bucket: the owner's own draw
+/// takes Owner, an ally's Allies and anyone else's Enemies.
+#[cfg(feature = "phobos")]
+fn tint_bucket(
+    owner: crate::sim::intern::InternedId,
+    viewer: Option<crate::sim::intern::InternedId>,
+    allied: impl FnOnce() -> bool,
+) -> crate::rules::phobos_shields::AffectedHouse {
+    use crate::rules::phobos_shields::AffectedHouse;
+    match viewer {
+        Some(viewer) if viewer == owner => AffectedHouse::OWNER,
+        Some(_) if allied() => AffectedHouse::ALLIES,
+        _ => AffectedHouse::ENEMIES,
+    }
+}
+
+/// Phobos `TechnoExt::ApplyCustomTintValues`
+/// (`src/Ext/Techno/Body.Internal.cpp:211..231`) for the shield entry that
+/// `UpdateTintValues` adds last (`Body.Update.cpp:1278..1282`): the viewer is
+/// the CurrentPlayer, so the owner's shield takes the Owner bucket, an ally's
+/// the Allies bucket and anyone else's the Enemies bucket, gated by
+/// `Tint.VisibleToHouses`. Returns the OR word and the summed intensity.
+///
+/// Read only: no simulation state, timer, RNG or detach is written.
+pub(crate) fn shield_tint(
+    entity: &crate::sim::game_entity::GameEntity,
+    simulation: &Simulation,
+    rules: &RuleSet,
+) -> (u16, i32) {
+    #[cfg(feature = "phobos")]
+    {
+        let Some(shield) = entity.shield.as_ref().filter(|shield| shield.is_active()) else {
+            return (0, 0);
+        };
+        let Some(shield_type) = rules.shield_type(shield.type_name()) else {
+            return (0, 0);
+        };
+        if !shield_type.has_tint() {
+            return (0, 0);
+        }
+        let owner = entity.owner();
+        let bucket = tint_bucket(owner, simulation.session().current_house(), || {
+            let Some(viewer) = simulation.session().current_house() else {
+                return false;
+            };
+            crate::map::houses::is_allied_with(
+                simulation.house_alliances(),
+                simulation.interner().resolve(owner),
+                simulation.interner().resolve(viewer),
+            )
+        });
+        if !shield_type.tint_visible_to_houses().contains(bucket) {
+            return (0, 0);
+        }
+        let word = shield_type
+            .tint_color()
+            .map_or(0, |(red, green, blue)| rgb565_word([red, green, blue]));
+        let intensity = (shield_type.tint_intensity() * 1000.0) as i32;
+        (word, intensity)
+    }
+    #[cfg(not(feature = "phobos"))]
+    {
+        let _ = (entity, simulation, rules);
+        (0, 0)
+    }
+}
+
+/// Selects the native draw hook that orders custom tint and effect intensity.
+#[derive(Clone, Copy)]
+pub(crate) enum TechnoDraw {
+    Shape,
+    Voxel,
+}
+
 /// TechnoClass's flash and curtain arms on a draw's intensity. The signed
 /// flash countdown's bit 1 selects the flash at vt+0x464: TechnoClass
 /// `0x0070D190` chooses 2000/500; BuildingClass `0x00456F80` adds/subtracts
@@ -243,13 +324,18 @@ pub(crate) fn techno_effect_light(
     tint: [f32; 3],
     light: crate::render::palette_light::PaletteLight,
     sim: &Simulation,
+    rules: Option<&RuleSet>,
+    draw: TechnoDraw,
 ) -> ([f32; 3], crate::render::palette_light::PaletteLight) {
+    let custom = rules.map_or(0, |rules| shield_tint(entity, sim, rules).1);
     techno_effect_light_at(
         entity,
         tint,
         light,
         sim.session().binary_frame(),
         sim.airstrike_tint_active(entity.stable_id()),
+        custom,
+        draw,
     )
 }
 
@@ -268,18 +354,22 @@ pub(crate) fn building_anim_light(
     tint: [f32; 3],
     light: crate::render::palette_light::PaletteLight,
     sim: &Simulation,
+    rules: Option<&RuleSet>,
 ) -> ([f32; 3], crate::render::palette_light::PaletteLight) {
+    let custom = rules.map_or(0, |rules| shield_tint(building, sim, rules).1);
     let (tint, light) = if let Some(sample) = building.building_art.tint_sample() {
         effect_light(
             tint,
             light,
             TintLightState {
                 building: true,
+                custom_before_effects: false,
                 flashed: sample.flashed(),
                 curtain: sample.invulnerability(),
                 airstrike: sample.airstrike(),
                 airstrike_active: sample.airstrike_active(),
                 frame: sample.frame(),
+                custom_intensity: custom,
             },
         )
     } else {
@@ -289,6 +379,8 @@ pub(crate) fn building_anim_light(
             light,
             sim.session().binary_frame().wrapping_sub(1),
             sim.airstrike_tint_active(building.stable_id()),
+            custom,
+            TechnoDraw::Shape,
         )
     };
     (tint, light.with_brightness(light.brightness() & 0xFFFF))
@@ -300,28 +392,39 @@ fn techno_effect_light_at(
     light: crate::render::palette_light::PaletteLight,
     frame: u32,
     airstrike_active: bool,
+    custom_intensity: i32,
+    draw: TechnoDraw,
 ) -> ([f32; 3], crate::render::palette_light::PaletteLight) {
     effect_light(
         tint,
         light,
         TintLightState {
             building: entity.category() == crate::map::entities::EntityCategory::Structure,
+            custom_before_effects: matches!(draw, TechnoDraw::Voxel)
+                && entity.category() != crate::map::entities::EntityCategory::Unit,
             flashed: entity.flashing.flashed(),
             curtain: entity.invulnerability.as_ref(),
             airstrike: &entity.airstrike_tint,
             airstrike_active,
             frame,
+            custom_intensity,
         },
     )
 }
 
 struct TintLightState<'a> {
     building: bool,
+    /// TechnoClass_DrawVoxel_TintColor (0x706786) adds custom intensity
+    /// before curtain/airstrike for aircraft and building voxel guns. Unit
+    /// composites and SHP draws add it after those effects.
+    /// https://github.com/Phobos-developers/Phobos/blob/b90ab4bcba3f4b0b8ce74d2119ac0d561eaccc8f/src/Ext/Techno/Hooks.Tint.cpp#L252-L280
+    custom_before_effects: bool,
     flashed: bool,
     curtain: Option<&'a crate::sim::superweapon::invulnerability::InvulnerabilityState>,
     airstrike: &'a crate::sim::superweapon::airstrike_tint::AirstrikeTintState,
     airstrike_active: bool,
     frame: u32,
+    custom_intensity: i32,
 }
 
 fn effect_light(
@@ -343,6 +446,11 @@ fn effect_light(
     } else {
         500
     };
+    let flashed = if state.custom_before_effects {
+        flashed.wrapping_add(state.custom_intensity)
+    } else {
+        flashed
+    };
     let curtained =
         crate::sim::superweapon::invulnerability::is_invulnerable(state.curtain, state.frame);
     let tinted = if curtained || (state.building && state.airstrike_active) {
@@ -354,6 +462,11 @@ fn effect_light(
             .effect_tint_intensity(iron, state.frame as i32)
     } else {
         flashed
+    };
+    let tinted = if state.custom_before_effects {
+        tinted
+    } else {
+        tinted.wrapping_add(state.custom_intensity)
     };
     with_intensity(tint, light, tinted)
 }
@@ -374,27 +487,38 @@ pub(crate) fn unit_voxel_effect_light(
     tint: [f32; 3],
     light: crate::render::palette_light::PaletteLight,
     rules: Option<&RuleSet>,
+    sim: &Simulation,
     frame: u32,
 ) -> ([f32; 3], crate::render::palette_light::PaletteLight) {
     let mut light = light;
-    if entity.category() == crate::map::entities::EntityCategory::Unit {
+    let category = entity.category();
+    if category == crate::map::entities::EntityCategory::Unit
+        || category == crate::map::entities::EntityCategory::Aircraft
+    {
+        // Unit73BF95 and Aircraft706786 OR the custom shield tint into the
+        // class word after their curtain/berserk arms.
         let word = rules.map_or(0, |rules| {
-            let curtain = if crate::sim::superweapon::invulnerability::is_invulnerable(
-                entity.invulnerability.as_ref(),
-                frame,
-            ) {
-                rules
-                    .color_add
-                    .rgb565_word(rules.general.iron_curtain_color)
+            let class = if category == crate::map::entities::EntityCategory::Unit {
+                let curtain = if crate::sim::superweapon::invulnerability::is_invulnerable(
+                    entity.invulnerability.as_ref(),
+                    frame,
+                ) {
+                    rules
+                        .color_add
+                        .rgb565_word(rules.general.iron_curtain_color)
+                } else {
+                    0
+                };
+                let berserk = if entity.berserk.is_active() {
+                    rules.color_add.rgb565_word(rules.general.berserk_color)
+                } else {
+                    0
+                };
+                curtain | berserk
             } else {
                 0
             };
-            let berserk = if entity.berserk.is_active() {
-                rules.color_add.rgb565_word(rules.general.berserk_color)
-            } else {
-                0
-            };
-            curtain | berserk
+            class | shield_tint(entity, sim, rules).0
         });
         light = light.with_colour_word(light.colour_word() | word);
     }
@@ -449,16 +573,20 @@ pub(crate) fn shp_colour_word(
     rules: &RuleSet,
     shrouded: impl FnOnce() -> bool,
 ) -> u16 {
+    // Shield tint is the custom tint those hooks OR in after their class word,
+    // including for a shrouded draw (the hooks replace the native shroud clear).
+    let shield_word = shield_tint(entity, sim, rules).0;
     match entity.category() {
         crate::map::entities::EntityCategory::Infantry => {
-            return if entity.berserk.is_active() && !shrouded() {
+            let berserk = if entity.berserk.is_active() && !shrouded() {
                 rules.color_add.rgb565_word(rules.general.berserk_color)
             } else {
                 0
             };
+            return berserk | shield_word;
         }
         crate::map::entities::EntityCategory::Structure => {}
-        _ => return 0,
+        _ => return shield_word,
     }
     let shielded = entity.invulnerability.as_ref().is_some_and(|curtain| {
         curtain.kind() == crate::sim::superweapon::invulnerability::InvulnKind::ForceShield
@@ -469,7 +597,7 @@ pub(crate) fn shp_colour_word(
     });
     let marked = entity.has_airstrike_marker();
     if !(shielded || marked) || shrouded() {
-        return 0;
+        return shield_word;
     }
     let shield = if shielded {
         rules
@@ -485,7 +613,7 @@ pub(crate) fn shp_colour_word(
     } else {
         0
     };
-    shield | laser
+    shield | laser | shield_word
 }
 
 use crate::sim::light_sources::{LightingEvent, PaletteUpdate};

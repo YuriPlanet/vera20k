@@ -28,6 +28,147 @@ fn native_mobile_health_strips_preserve_color_a_and_z() {
     );
 }
 
+/// ShieldClass::DrawShieldBar_Other (0x6F683C) uses PIPBRD/E00 for the
+/// background. Compare its production replay with the existing health-border
+/// material using the same physical frame, so PIPS UV/material mixing fails.
+#[cfg(feature = "phobos")]
+#[test]
+#[ignore = "requires retail assets and GPU; shield PIPBRD texture and E00 material"]
+fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
+    use crate::app::presentation::ui_overlays::TechnoExtras;
+    use crate::rules::ini_parser::IniFile;
+    let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &IniFile::from_str(
+            "[MTNK]\nShieldType=S\n[ShieldTypes]\n0=S\n\
+             [S]\nStrength=100\nInitialStrength=0\nRespawn=1\n",
+        ),
+    )
+    .expect("physical Battle rules with an empty respawning shield");
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+    let gpu = Gpu::new();
+    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
+    let size = [128, 96];
+    let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+    let overlay = SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+    let mut sim = Simulation::new();
+    let owner = sim.intern("Americans");
+    sim.houses_mut_for_test()
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    let id = sim
+        .construct_object_limbo_at_height(
+            "MTNK",
+            "Americans",
+            20,
+            20,
+            0,
+            0,
+            &retail.rules,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+    let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+    entity.lifecycle.set_in_limbo_for_test(false);
+    entity.discovery.set_owned_by_current_house_for_test(true);
+    entity.selection.set_selected_for_test(true);
+    // The held constructor binds the shield but deliberately skips Unlimbo's
+    // Display submission. Establish that drawing prior for this consumer test.
+    sim.resubmit_entity_display_for_test(id);
+    assert!(sim.display_layers().layer_of(id).is_some());
+    *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(64, 64);
+    sim.fog_mut_for_test().reveal_all_for_owner(owner);
+    let entity = sim.entities().get(id).unwrap();
+    let coord = crate::sim::movement::ground_pose::object_get_coords(entity, None);
+    let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
+    let mut cam = camera(size);
+    cam.camera_pos = [x - 64.0, y - 60.0];
+    let strip = techno_extras_for_parent(
+        &sim,
+        entity,
+        Some(&retail.rules),
+        &overlay,
+        None,
+        Some("Americans"),
+        StatusViewport {
+            camera: cam.camera_pos,
+            size: size.map(|n| n as f32),
+            ignore_visibility: true,
+        },
+    );
+    assert_eq!(strip.fills.len(), 17, "the empty shield adds no PIPS fills");
+    let background = strip.shield_background.expect("selected shield border");
+    let a = ShroudBuffer::fixture(
+        &gpu.device,
+        &gpu.queue,
+        size,
+        cam.camera_pos,
+        &vec![127; (size[0] * size[1]) as usize],
+    );
+    batch.bind_shroud(&gpu.device, Some(&a));
+    batch.write_camera(&gpu.queue, cam);
+    let display = NativeDisplayOrder::new(&[id]);
+    let mut pool = InstanceBufferPool::new();
+    let mut outputs = Vec::new();
+    for status in [
+        TechnoExtras {
+            shield_background: Some(background),
+            ..Default::default()
+        },
+        TechnoExtras {
+            background: Some(background),
+            ..Default::default()
+        },
+    ] {
+        let mut parent = PlannedObjectInstance::object(
+            display.object_draw(id, SpriteEncoding::Plain).unwrap(),
+            vec![],
+        );
+        parent.status = Some(status);
+        let layer = lower_ground_object_instances(vec![parent]);
+        pool.upload_on_device(
+            &gpu.device,
+            &gpu.queue,
+            "object_extras",
+            &layer.extras_instances,
+        );
+        let color = gpu.target(size, format);
+        let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+        let cv = color.create_view(&Default::default());
+        let dv = depth.create_view(&Default::default());
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        clear(
+            &mut encoder,
+            &cv,
+            &dv,
+            u16::MAX,
+            wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+        );
+        let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+        terrain.prepare(&gpu.device, &color, &dv, cam);
+        super::object_extras::draw_object_extras(
+            &mut encoder,
+            &cv,
+            &dv,
+            &mut terrain,
+            [0, 0, size[0], size[1]],
+            &batch,
+            Some(&overlay),
+            pool.get("object_extras").map(|(buffer, _)| buffer),
+            None,
+            &layer,
+        );
+        let read = gpu.read(&mut encoder, &color);
+        outputs.push(gpu.finish(encoder, &[read], size).remove(0));
+    }
+    assert!(outputs[1].chunks_exact(4).any(|pixel| pixel[..3] != [0; 3]));
+    assert_eq!(
+        outputs[0], outputs[1],
+        "the shield border uses the PIPBRD/E00 draw"
+    );
+}
+
 /// The disguised hover arm (`0x006F5E37..0x006F5E87`) through the strip
 /// production draws: an enemy Mirage worn as terrain (Unit `+0xD0(1)`
 /// `0x007465F0` NULL) draws no health while hovered until it is selected; a
@@ -1316,7 +1457,15 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     }
                     // Explicit drawing-consumer hold prior. Actual command,
                     // Limbo and departure lifecycle has separate production tests.
-                    entity.passenger_role = PassengerRole::transport(cargo);
+                    if is_garrison {
+                        // Retain the same supplied drawing order in its
+                        // canonical store; transport rows still own Cargo.
+                        entity
+                            .passenger_role
+                            .set_occupants_for_test(cargo.passengers().to_vec(), 0);
+                    } else {
+                        entity.passenger_role = PassengerRole::transport(cargo);
+                    }
                 }
                 if let Some(count) = actor["capture_count"].as_u64() {
                     let weapon = object
@@ -2017,6 +2166,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             wrench: None,
                             rank: *rank,
                             background: *background,
+                            shield_background: None,
                             fills: fills.clone(),
                             scale: scale.clone(),
                             group_rectangles: 0..0,

@@ -113,7 +113,8 @@ impl AiFireArm {
             SuperWeaponKind::GenericWarhead => Self::GenericWarhead,
             SuperWeaponKind::IronCurtain
             | SuperWeaponKind::ChronoSphere
-            | SuperWeaponKind::ChronoWarp => Self::None,
+            | SuperWeaponKind::ChronoWarp
+            | SuperWeaponKind::NoEffect => Self::None,
         }
     }
 }

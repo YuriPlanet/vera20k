@@ -383,38 +383,31 @@ impl SidebarProjectionState {
                 });
             }
         }
-        let paid_supers = view
+        // StripDraw6A99AC asks the retained Super every draw, even when no
+        // Ready event or House recheck rebuilt the view. Drain AI changes its
+        // stage/status without an ordinary Ready announcement.
+        let supers = view
             .items
             .iter()
-            .any(|item| {
-                item.super_weapon_section
-                    .as_deref()
-                    .and_then(|name| rules.super_weapon(name))
-                    .is_some_and(|sw| {
-                        sw.money_amount != 0
-                            || crate::sim::superweapon::financial_type(rules, sw).money_amount != 0
-                    })
-            })
+            .any(|item| item.is_superweapon)
             .then(|| crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner));
         for item in &mut view.items {
-            // A super weapon's cameo darkens from its SuperClass readiness,
-            // not from a build factory.
             if item.is_superweapon {
-                if let Some(views) = &paid_supers
-                    && let Some(section) = item.super_weapon_section.as_deref()
-                    && rules.super_weapon(section).is_some_and(|sw| {
-                        sw.money_amount != 0
-                            || crate::sim::superweapon::financial_type(rules, sw).money_amount != 0
-                    })
-                {
-                    item.enabled = views
-                        .iter()
-                        .find(|sw| {
+                if let Some(sw) = supers.as_ref().and_then(|views| {
+                    views.iter().find(|sw| {
+                        item.super_weapon_section.as_deref().is_some_and(|section| {
                             sim.interner()
                                 .resolve(sw.type_id)
                                 .eq_ignore_ascii_case(section)
                         })
-                        .is_some_and(|sw| sw.is_online && sw.can_afford);
+                    })
+                }) {
+                    item.enabled = sw.is_online && sw.can_afford;
+                    item.progress = sw.progress;
+                    item.is_ready = sw.is_ready;
+                    item.is_on_hold = !sw.is_online;
+                    item.is_building_this_type = !sw.is_ready && sw.is_online && sw.progress > 0.0;
+                    item.super_weapon_display = Some(sw.display);
                 }
                 continue;
             }

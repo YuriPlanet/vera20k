@@ -162,6 +162,10 @@ pub mod smudge_grid;
 // --- Per-cell radiation field (sites, spread/decay; damage applied by combat) ---
 pub mod radiation;
 
+// --- Phobos Shields: per-object shield points, absorption and recovery ---
+#[cfg(feature = "phobos")]
+pub mod shield;
+
 // --- Passengers, transport, slaves ---
 pub mod parity_digest;
 pub mod passenger;

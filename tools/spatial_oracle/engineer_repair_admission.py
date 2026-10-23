@@ -725,8 +725,9 @@ class EngineerJoinedFixture(construction.JoinedFixture):
         0x6F4960: 'techno_discovery',
     }
 
-    def __init__(self, inputs, *, seed=31, arena_size=0x200000):
+    def __init__(self, inputs, *, seed=31, arena_size=0x200000, live_tags=False):
         self.phase, self.trail, self.trace = 'setup', deque(maxlen=40), []
+        self.live_tags = live_tags
         self.platform_audio = None
         super().__init__(inputs, seed=seed, arena_size=arena_size)
         u = self.u
@@ -872,7 +873,7 @@ class EngineerJoinedFixture(construction.JoinedFixture):
         if pc in (0x519B43, 0x51A015, 0x519F34):
             self.trace.append(dict(kind='null_tag_gate', phase=self.phase, pc=f'0x{pc:08X}',
                                    tag=u.reg_read(UC_X86_REG_ECX)))
-        if pc == 0x6E53A0:
+        if pc == 0x6E53A0 and not self.live_tags:
             raise AssertionError('Tag=NULL corpus unexpectedly entered live Tag receiver')
         sp = u.reg_read(UC_X86_REG_ESP)
         if pc in (0x7C978A, 0x6C8C40):

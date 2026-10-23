@@ -416,12 +416,15 @@ pub(crate) fn build_unit_instances(
             tint,
             palette_light,
             sim,
+            state.rules(),
+            crate::app::presentation::lighting::TechnoDraw::Voxel,
         );
         let (body_tint, body_light) = crate::app::presentation::lighting::unit_voxel_effect_light(
             entity,
             body_tint,
             body_light,
             state.rules(),
+            sim,
             sim.session().binary_frame(),
         );
         let center_x: f32 = sx;
@@ -2255,13 +2258,20 @@ mod tests {
                     .with_colour_word(int(&row["word"]) as u16);
             sim.session_mut_for_test()
                 .set_binary_frame_for_test(int(&row["frame"]) as u32);
-            let (lit_tint, lit) =
-                crate::app::presentation::lighting::techno_effect_light(&unit, tint, light, &sim);
+            let (lit_tint, lit) = crate::app::presentation::lighting::techno_effect_light(
+                &unit,
+                tint,
+                light,
+                &sim,
+                None,
+                crate::app::presentation::lighting::TechnoDraw::Voxel,
+            );
             let (lit_tint, lit) = crate::app::presentation::lighting::unit_voxel_effect_light(
                 &unit,
                 lit_tint,
                 lit,
                 Some(&rules_by_iron_index[&int(&row["iron_color"])]),
+                &sim,
                 sim.session().binary_frame(),
             );
             let out = int(&row["out_intensity"]);

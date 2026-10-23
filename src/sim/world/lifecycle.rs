@@ -481,6 +481,11 @@ pub enum PlacementEvidence {
     FootEntryAdmitted,
 }
 
+pub(crate) struct TargetingSweepReceipt {
+    #[cfg(any(test, feature = "test-support"))]
+    pub cell_detaches: Vec<crate::sim::combat::combat_aoe::CellTargetDetach>,
+}
+
 impl Simulation {
     /// A8E7AC's caller-owned bracket. Native factory444575..444979/444EE6
     /// retains it through Unlimbo, Mark and radio callbacks; nested scopes
@@ -765,6 +770,12 @@ pub enum LifecycleOutput {
     /// `0x00637840` Selects it, and any Select a tag event starts in between.
     /// Input Selects write the app's selection ledger themselves.
     ObjectSelected {
+        stable_id: u64,
+    },
+    /// UpdateBunker458E50 writes the installed tank's group index+214=-1
+    /// at459315. Local input owns membership and consumes this before the
+    /// next input/save boundary; no second group index is kept in sim.
+    ControlGroupMemberRemoved {
         stable_id: u64,
     },
     /// DispatchPointerExpired7258D0 reaches navigation733160 at7259B1
@@ -4489,6 +4500,13 @@ impl Simulation {
         if let Some(cargo) = listener.passenger_role.cargo() {
             cargo.passengers().iter().copied().for_each(&mut name);
         }
+        listener
+            .passenger_role
+            .occupants()
+            .ids()
+            .iter()
+            .copied()
+            .for_each(&mut name);
         let navigation = &listener.navigation;
         navigation
             .suspended_nav_com()
@@ -4648,9 +4666,9 @@ impl Simulation {
     ///    the null-out then does not run.
     ///
     /// The native sweep has callers in area damage, building sale, owner change,
-    /// building placement and teleportation. The represented owner-change,
-    /// bridge-damage, wall-sale and teleport (`0x007193C7`) callers share this
-    /// owner; the other caller chains remain separate migration work.
+    /// building placement and teleportation. The represented area-damage,
+    /// cliff, owner-change, bridge, wall-sale and teleport (`0x007193C7`)
+    /// callers share this owner.
     ///
     /// After the Restore an aircraft now on Patrol restarts it
     /// (`0x0070D513..0x0070D532`, [`crate::sim::aircraft::restart_patrol_after_restore`]).
@@ -4664,7 +4682,7 @@ impl Simulation {
         self.stop_all_targeting_target(TargetKind::Entity(detach_id), rules, registry, effects);
     }
 
-    /// Bridge success, foundation clearing and House wall sale call the same
+    /// AreaDamage, cliff, bridge, foundation and wall-sale callers share the
     /// 0x0070D4A0 sweep with a CellClass pointer. This is not PointerExpired:
     /// Restore precedes the conditional target clear, in descending Techno order.
     pub(crate) fn stop_all_targeting_cell(
@@ -4674,8 +4692,8 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
-    ) {
-        self.stop_all_targeting_target(TargetKind::Cell(rx, ry), rules, registry, effects);
+    ) -> TargetingSweepReceipt {
+        self.stop_all_targeting_target(TargetKind::Cell(rx, ry), rules, registry, effects)
     }
 
     fn stop_all_targeting_target(
@@ -4684,12 +4702,9 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
-    ) {
-        // VERA-only: the sweep releases a batched target scan's pick as it
-        // does a TarCom (`techno_ai::scan_batch`).
-        if let TargetKind::Entity(target_id) = target {
-            self.release_batched_scan_pick(target_id);
-        }
+    ) -> TargetingSweepReceipt {
+        #[cfg(any(test, feature = "test-support"))]
+        let mut cell_detaches = Vec::new();
         let mut listeners = self.substrate.entities.keys_sorted();
         listeners.reverse();
 
@@ -4719,6 +4734,14 @@ impl Simulation {
 
             let _ = restored;
             #[cfg(any(test, feature = "test-support"))]
+            if matches!(target, TargetKind::Cell(..)) {
+                cell_detaches.push(crate::sim::combat::combat_aoe::CellTargetDetach {
+                    listener_id,
+                    restored,
+                    cleared: target_cleared,
+                });
+            }
+            #[cfg(any(test, feature = "test-support"))]
             if let TargetKind::Entity(detach_id) = target {
                 self.trace_lifecycle_for_test(LifecycleTestEvent::DetachTargetingSweepVisited {
                     detach_id,
@@ -4728,7 +4751,12 @@ impl Simulation {
                 });
             }
         }
-        self.team_script_vm.detach_target(target.into());
+        self.team_script_vm
+            .detach_target(target.into(), self.resolved_terrain.as_ref());
+        TargetingSweepReceipt {
+            #[cfg(any(test, feature = "test-support"))]
+            cell_detaches,
+        }
     }
 
     /// Match the retained target identity, preserving Cell/Techno distinction.
@@ -5058,6 +5086,16 @@ impl Simulation {
         // Building44EA77 removes a charger for either control, irrespective
         // of the base target exemptions. Only later AI changes the weapon latch.
         let clear_tesla_charger = listener.tesla_charge.chargers().contains(&expired_id);
+        // BuildingPointerExpired44EAB8..44EB02 removes a matching Occupant
+        // only inside ScenarioInit(A8E7AC), after inherited Techno cleanup.
+        // It neither depends on removed/control nor rewrites the fire cursor.
+        let clear_occupant = listener.category() == EntityCategory::Structure
+            && self.object_placement_scope_active()
+            && listener
+                .passenger_role
+                .occupants()
+                .ids()
+                .contains(&expired_id);
         // BuildingPointerExpired44E932..44E93A clears its owned child for
         // either control, before that storage is physically removed.
         let clear_spotlight = listener.category() == EntityCategory::Structure
@@ -5076,7 +5114,8 @@ impl Simulation {
             || clear_c4_source
             || expire_mega_pointer
             || clear_tesla_charger
-            || clear_spotlight)
+            || clear_spotlight
+            || clear_occupant)
         {
             return;
         }
@@ -5137,6 +5176,12 @@ impl Simulation {
         }
         if clear_spotlight {
             listener.building_light.take();
+        }
+        if clear_occupant {
+            listener
+                .passenger_role
+                .occupants_mut()
+                .remove_expired(expired_id);
         }
     }
 
@@ -5395,9 +5440,6 @@ impl Simulation {
         control: PointerExpiryControl,
         context: UninitContext<'_>,
     ) {
-        // VERA-only: a batched target scan holds its pick across the turns
-        // before its scanner's as a TarCom does (`techno_ai::scan_batch`).
-        self.release_batched_scan_pick(expired_id);
         // `DispatchPointerExpiredCleanup @ 0x007258D0` calls
         // `BombListClass::PointerGotInvalid @ 0x00439150` after its listener
         // loop (0x00725961) whatever the control, so a cloaking planter loses

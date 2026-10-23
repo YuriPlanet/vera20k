@@ -18,11 +18,13 @@ mod aircraft_guard;
 mod building_missile;
 mod building_missions;
 mod building_retaliation;
+mod foot_patrol;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use building_missions::PendingBuildingFire;
 pub(crate) use building_missions::PrismSupport;
 pub(crate) use building_missions::queue_and_commence;
 pub use building_missions::{BuildingDelayedFire, DelayedFire};
+pub(crate) use foot_patrol::PatrolPost;
 mod mission_handlers;
 mod scan_batch;
 mod target_scan;
@@ -704,7 +706,15 @@ fn techno_ai_shell(
         sim.update_building_damage_fire(id, rules);
         turret_rotate_sample = sim.sample_building_turret_rotation(id, rules);
     }
-    if sim.temporal_ai_prologue(id, rules, ctx, &mut outcome.bridge_state_changed) {
+    let temporal_frozen =
+        sim.temporal_ai_prologue(id, rules, ctx, &mut outcome.bridge_state_changed);
+    // Phobos `ShieldClass::AI_Temporal` pauses recovery during the Temporal
+    // prologue; frozen leaves never reach the normal `ShieldClass::AI` at
+    // `TechnoClass_AI @ 0x6F9E50+0x5`. The shield owner handles that paused
+    // visit or the normal recovery visit after this frame's warp update.
+    #[cfg(feature = "phobos")]
+    crate::sim::shield::tick(sim, id, rules);
+    if temporal_frozen {
         return;
     }
     // Unit7363C9..7363DE precedes Hunt/Ready/Foot AI, after the existing
@@ -1808,11 +1818,15 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let target_building = target.category() == EntityCategory::Structure;
     let occupiable = infantry
         && target_building
-        && target.passenger_role.cargo().is_some_and(|cargo| {
-            crate::sim::passenger::can_dock_occupier_garrison(
-                entity, target, obj, target_obj, cargo, rules, sim,
-            )
-        });
+        && crate::sim::passenger::can_dock_occupier_garrison(
+            entity,
+            target,
+            obj,
+            target_obj,
+            target.passenger_role.occupants(),
+            rules,
+            sim,
+        );
     let engineer = infantry && obj.engineer;
     let overpowers = target_building
         && target_obj.overpowerable
@@ -3508,11 +3522,11 @@ mod tests {
             let _ = sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
         }
         assert!(
-            sim.substrate
-                .entities
-                .get(1)
-                .and_then(|house| house.passenger_role.cargo())
-                .is_some_and(|cargo| cargo.passengers() == [2]),
+            sim.substrate.entities.get(1).is_some_and(|house| house
+                .passenger_role
+                .occupants()
+                .ids()
+                == [2]),
             "precondition: Capture admitted the occupant"
         );
         (

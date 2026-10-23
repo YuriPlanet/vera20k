@@ -804,7 +804,9 @@ pub(crate) struct TechnoExtras {
     pub wrench: Option<SpriteInstance>,
     pub rank: Option<SpriteInstance>,
     pub background: Option<SpriteInstance>,
-    /// Plain600 PIPS commands: health followed by any garrison occupants.
+    /// Phobos mobile shield PIPBRD/E00, before the shield and health fills.
+    pub shield_background: Option<SpriteInstance>,
+    /// Plain600 PIPS commands: shield, health, then any garrison occupants.
     pub fills: Vec<SpriteInstance>,
     /// Plain600 PIPS2 scale commands, after this parent's health.
     pub scale: Vec<SpriteInstance>,
@@ -826,6 +828,7 @@ impl TechnoExtras {
             .chain(self.wrench.iter_mut())
             .chain(self.rank.iter_mut())
             .chain(self.background.iter_mut())
+            .chain(self.shield_background.iter_mut())
             .chain(self.fills.iter_mut())
             .chain(self.scale.iter_mut())
             .chain(self.self_heal.iter_mut())
@@ -836,6 +839,135 @@ impl TechnoExtras {
             instance.position[0] += offset[0];
             instance.position[1] += offset[1];
         }
+    }
+}
+
+/// Phobos `ShieldClass::DrawShieldBar_Pip`: the entry's own triplet when its
+/// X is set, otherwise the global `[AudioVisual] Pips.Shield*` triplet, then
+/// the native 5 (building) / 16 (mobile) fallback.
+#[cfg(feature = "phobos")]
+fn shield_pip_frame(
+    building: bool,
+    hp: i32,
+    ty: &crate::rules::phobos_shields::ShieldType,
+    globals: &crate::rules::phobos_shields::ShieldGlobals,
+) -> usize {
+    let local = ty.pips(building);
+    let pips = if local[0] != -1 {
+        local
+    } else {
+        globals.pips(building)
+    };
+    let strength = f64::from(ty.strength());
+    let yellow = ty.condition_yellow(globals.condition_yellow());
+    let red = ty.condition_red(globals.condition_red());
+    let pick = |fallback: i32| usize::try_from(fallback.max(0)).unwrap_or(0);
+    if f64::from(hp) > yellow * strength && pips[0] != -1 {
+        pick(pips[0])
+    } else if f64::from(hp) > red * strength && (pips[1] != -1 || pips[0] != -1) {
+        pick(if pips[1] == -1 { pips[0] } else { pips[1] })
+    } else if pips[2] != -1 || pips[0] != -1 {
+        pick(if pips[2] == -1 { pips[0] } else { pips[2] })
+    } else {
+        if building { 5 } else { 16 }
+    }
+}
+
+/// Phobos `DrawShieldBar_Building`/`DrawShieldBar_Other` sprite commands.
+/// `bracket` is the native bracket anchor after the class fixed offsets;
+/// `bracket_delta` is the shield's own `BracketDelta` (foot only).
+#[cfg(feature = "phobos")]
+#[allow(clippy::too_many_arguments)]
+fn shield_bar_instances(
+    entity: &crate::sim::game_entity::GameEntity,
+    rules: &RuleSet,
+    shape: &crate::render::selection_overlay::CenteredShapeStrip,
+    pip_board: Option<&crate::render::selection_overlay::CenteredShapeStrip>,
+    building: bool,
+    length: i32,
+    bracket: (f32, f32),
+    bracket_delta: f32,
+    strip: &mut TechnoExtras,
+) {
+    let Some(shield) = entity.shield.as_ref() else {
+        return;
+    };
+    let Some(ty) = rules.shield_type(shield.type_name()) else {
+        return;
+    };
+    // `0x6F65D1`/`0x6F683C` skip the whole shield bar, background included,
+    // while the shield is broken and nothing will respawn it.
+    if shield.broken_non_respawning(ty) {
+        return;
+    }
+    let globals = rules.shield_globals();
+    if shield.hp() <= 0 && ty.pips_hide_if_no_strength() {
+        return;
+    }
+    let strength = ty.strength();
+    let total = if shield.is_active() && strength != 0 {
+        ((f64::from(shield.hp()) / f64::from(strength) * f64::from(length)).round() as i32)
+            .clamp(1, length.max(1))
+    } else {
+        0
+    };
+    let frame = shield_pip_frame(building, shield.hp(), ty, globals);
+    let depth = if building { 0.0006 } else { 0.0005 };
+    let instance = |frame: usize, point: (f32, f32)| {
+        shape.instance(frame, point, depth).map(|mut instance| {
+            instance.palette_light = crate::render::palette_light::PaletteLight::plain(53, 1000);
+            instance
+        })
+    };
+    if building {
+        for index in 0..total {
+            strip.fills.extend(instance(
+                frame,
+                (
+                    bracket.0 - 4.0 * index as f32,
+                    bracket.1 + 2.0 * index as f32,
+                ),
+            ));
+        }
+        let empty_frame = ty
+            .pips_building_empty()
+            .or_else(|| globals.pips_building_empty())
+            .unwrap_or(0);
+        let empty_frame = usize::try_from(empty_frame.max(0)).unwrap_or(0);
+        for index in total..length {
+            strip.fills.extend(instance(
+                empty_frame,
+                (
+                    bracket.0 - 4.0 * index as f32,
+                    bracket.1 + 2.0 * index as f32,
+                ),
+            ));
+        }
+        return;
+    }
+    let base = (bracket.0, bracket.1 + bracket_delta);
+    let infantry = entity.category() == EntityCategory::Infantry;
+    if entity.selection.is_selected()
+        && let Some(board) = pip_board
+    {
+        let board_frame = if board.frame_count() > 2 { 2 } else { 0 } + usize::from(infantry);
+        let offset = length + 1 + if infantry { length + 1 } else { 0 };
+        // Phobos DrawShieldBar_Other (0x6F683C) draws PIPBRD with E00;
+        // keep its texture/material separate from the following PIPS/600.
+        // https://github.com/Phobos-developers/Phobos/blob/b90ab4bcba3f4b0b8ce74d2119ac0d561eaccc8f/src/New/Entity/ShieldClass.cpp#L1195-L1209
+        strip.shield_background = board
+            .instance(board_frame, (base.0 + offset as f32, base.1), depth)
+            .map(|mut instance| {
+                instance.palette_light =
+                    crate::render::palette_light::PaletteLight::plain(53, 1000);
+                instance
+            });
+    }
+    for index in 0..total {
+        strip.fills.extend(instance(
+            frame,
+            (base.0 + 2.0 * (index + 1) as f32, base.1 + 1.0),
+        ));
     }
 }
 
@@ -1062,6 +1194,27 @@ pub(crate) fn techno_extras_for_parent(
         if num_pips <= 0 {
             return strip;
         }
+        // Phobos `TechnoClass_DrawHealthBar_Buildings 0x6F65D1` ->
+        // `DrawShieldBar_Building(length, bound)`, before the native health
+        // fill. The building bracket is the Top anchor minus (6,3).
+        #[cfg(feature = "phobos")]
+        {
+            let bracket = (
+                sx + (ax + 4 * num_pips + 3 - 6) as f32,
+                sy + (upper_y + 4 - 2 * num_pips - 3) as f32,
+            );
+            shield_bar_instances(
+                entity,
+                rules,
+                shape,
+                overlay.pipbrd(),
+                true,
+                num_pips,
+                bracket,
+                0.0,
+                &mut strip,
+            );
+        }
         let filled = filled_count(object.strength, num_pips);
         //6F660A/661F use the existing health-category predicates; zero HP
         // does not satisfy IsRed. Raw frame selection is green1/yellow2/red4.
@@ -1125,6 +1278,34 @@ pub(crate) fn techno_extras_for_parent(
     let (Some(rules), Some(object), Some(shape)) = (rules, object, overlay.pips()) else {
         return strip;
     };
+    // Phobos `TechnoClass_DrawHealthBar_Units 0x6F683C` ->
+    // `DrawShieldBar_Other`, before the native health fill. The foot bracket
+    // is the (Left, Top) anchor minus (1,0); the shield's own `BracketDelta`
+    // adds the object bracket delta and the type's offset -3.
+    #[cfg(feature = "phobos")]
+    {
+        let length = if infantry { 8 } else { 17 };
+        let bracket = (
+            sx - length as f32 + if infantry { 1.0 } else { 0.0 },
+            sy - 28.0 + if infantry { 1.0 } else { 0.0 },
+        );
+        let type_delta = entity
+            .shield
+            .as_ref()
+            .and_then(|shield| rules.shield_type(shield.type_name()))
+            .map_or(0.0, |ty| ty.bracket_delta() as f32);
+        shield_bar_instances(
+            entity,
+            rules,
+            shape,
+            overlay.pipbrd(),
+            false,
+            length as i32,
+            bracket,
+            delta + type_delta - 3.0,
+            &mut strip,
+        );
+    }
     let filled = filled_count(object.strength, num_pips as i32) as u32;
     //6F69B1..69F3 compares independently: <=red overrides <=yellow. These
     // are direct ratio comparisons, unlike Building's positive-HP red gate.
@@ -1277,13 +1458,10 @@ pub(crate) fn scale_pip_draws(
     //709C27..D17 precedes passengers and uses raw OccupyPip, including
     //reader-produced1..5 as well as person frames6..12. Keep its own origin.
     if building && object.show_occupant_pips && object.max_number_occupants > 0 {
-        let occupants = entity
-            .passenger_role
-            .cargo()
-            .map(|cargo| cargo.passengers());
+        let occupants = entity.passenger_role.occupants().ids();
         pips.extend((0..object.max_number_occupants as usize).map(|slot| {
             let frame = occupants
-                .and_then(|ids| ids.get(slot))
+                .get(slot)
                 .and_then(|id| sim.entities().get(*id))
                 .and_then(|passenger| sim.interner().object_type(passenger.type_ref(), rules))
                 .map_or(6, |passenger| passenger.occupy_pip() as usize);
@@ -1547,6 +1725,46 @@ mod mind_control_pip_tests;
 
 #[cfg(test)]
 mod tests {
+    /// Phobos `DrawShieldBar_Pip`: the shield type's own frames first, then the
+    /// global `[AudioVisual] Pips.Shield*` triplet, then the native 16/5.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn shield_pip_frames_follow_local_then_global_then_fallback() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+
+        let local = RuleSet::from_ini(&IniFile::from_str(
+            "[ShieldTypes]\n0=S\n[S]\nStrength=100\nPips=20,21,22\nPips.Building=30,31,32\n",
+        ))
+        .unwrap();
+        let ty = local.shield_type("S").unwrap();
+        let globals = local.shield_globals();
+        assert_eq!(shield_pip_frame(false, 90, ty, globals), 20);
+        assert_eq!(shield_pip_frame(false, 40, ty, globals), 21);
+        assert_eq!(shield_pip_frame(false, 10, ty, globals), 22);
+        assert_eq!(shield_pip_frame(true, 90, ty, globals), 30);
+        assert_eq!(shield_pip_frame(true, 10, ty, globals), 32);
+
+        let global = RuleSet::from_ini(&IniFile::from_str(
+            "[ShieldTypes]\n0=S\n[S]\nStrength=100\n\
+             [AudioVisual]\nPips.Shield=10,11,12\nPips.Shield.Building=40,41,42\n",
+        ))
+        .unwrap();
+        let ty = global.shield_type("S").unwrap();
+        let globals = global.shield_globals();
+        assert_eq!(shield_pip_frame(false, 90, ty, globals), 10);
+        assert_eq!(shield_pip_frame(false, 10, ty, globals), 12);
+        assert_eq!(shield_pip_frame(true, 10, ty, globals), 42);
+
+        let bare = RuleSet::from_ini(&IniFile::from_str(
+            "[ShieldTypes]\n0=S\n[S]\nStrength=100\n",
+        ))
+        .unwrap();
+        let ty = bare.shield_type("S").unwrap();
+        assert_eq!(shield_pip_frame(false, 90, ty, bare.shield_globals()), 16);
+        assert_eq!(shield_pip_frame(true, 90, ty, bare.shield_globals()), 5);
+    }
+
     /// `tools/spatial_oracle/building_repair.json` `wrench` rows: the frame
     /// DrawExtras picks over every stored game speed.
     #[test]

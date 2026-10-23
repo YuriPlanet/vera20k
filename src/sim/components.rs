@@ -65,6 +65,23 @@ impl NavTargetRef {
         Self::Object { id }
     }
 
+    /// Compare retained Abstract pointers without querying or restamping Map.
+    /// Distinct missing-coordinate tokens name the one CellClass Dummy;
+    /// packed fixed-stride aliases also name the same allocated Cell.
+    pub(crate) fn same_pointer(
+        self,
+        other: Self,
+        terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    ) -> bool {
+        match (self, other, terrain) {
+            (Self::Cell { rx: ax, ry: ay }, Self::Cell { rx: bx, ry: by }, Some(terrain)) => {
+                terrain.native_fixed_cell_index(ax as i16, ay as i16)
+                    == terrain.native_fixed_cell_index(bx as i16, by as i16)
+            }
+            _ => self == other,
+        }
+    }
+
     /// The object this names; a Cell names none.
     pub(crate) const fn object_id(self) -> Option<u64> {
         match self {

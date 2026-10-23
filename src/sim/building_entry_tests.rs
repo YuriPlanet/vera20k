@@ -243,12 +243,20 @@ fn install_state(sim: &Simulation, bunker: u64) -> (BunkerState, Option<u64>) {
     )
 }
 
-fn occupants(sim: &Simulation, building: u64) -> Vec<u64> {
+fn cargo_passengers(sim: &Simulation, building: u64) -> Vec<u64> {
     entity(sim, building)
         .passenger_role
         .cargo()
         .unwrap()
         .passengers()
+        .to_vec()
+}
+
+fn occupants(sim: &Simulation, building: u64) -> Vec<u64> {
+    entity(sim, building)
+        .passenger_role
+        .occupants()
+        .ids()
         .to_vec()
 }
 
@@ -1656,7 +1664,7 @@ fn a_full_bio_reactor_takes_an_arriving_contact() {
         entity(&sim, foot).passenger_role.inside_transport_id(),
         Some(reactor)
     );
-    assert_eq!(occupants(&sim, reactor).len(), 6);
+    assert_eq!(cargo_passengers(&sim, reactor).len(), 6);
 }
 
 /// A unit's way into a `UnitAbsorb=` building: the Unit setter parks it as
@@ -1712,7 +1720,7 @@ fn a_unit_absorber_takes_a_unit_arriving_on_its_foundation() {
         entity(&sim, tank).passenger_role.inside_transport_id(),
         Some(absorber)
     );
-    assert_eq!(occupants(&sim, absorber), [tank]);
+    assert_eq!(cargo_passengers(&sim, absorber), [tank]);
 }
 
 /// #1045: an infantryman ordered into a Bio Reactor and retasked to Move
@@ -1773,7 +1781,7 @@ fn a_foot_retasked_to_move_stays_out_of_the_old_absorber() {
         crossed |= on_foundation(rx, ry);
     }
     assert!(crossed, "the paid step carried him onto the foundation");
-    assert!(occupants(&sim, reactor).is_empty());
+    assert!(cargo_passengers(&sim, reactor).is_empty());
     assert!(cell(&sim).0 < 16, "he walked on toward the Move goal");
 }
 
@@ -1867,9 +1875,8 @@ fn the_nearest_own_bunker_with_room_takes_an_occupier() {
             .get_mut(near)
             .unwrap()
             .passenger_role
-            .cargo_mut()
-            .unwrap()
-            .add_occupant(id, 1.0);
+            .occupants_mut()
+            .add(id);
     }
     sim.substrate
         .entities
@@ -1988,9 +1995,8 @@ fn two_occupiers_garrison_in_arrival_order_and_fire_in_that_order() {
         let building = sim.substrate.entities.get_mut(bunker).unwrap();
         building
             .passenger_role
-            .cargo_mut()
-            .unwrap()
-            .set_garrison_fire_index_for_test(index);
+            .occupants_mut()
+            .set_fire_index_for_test(index);
         assert_eq!(
             crate::sim::combat::combat_weapon::firing_occupant_id(entity(&sim, bunker), object),
             Some(expected)
@@ -2020,9 +2026,8 @@ fn an_occupier_turned_away_at_a_full_bunker_gives_up() {
             .get_mut(bunker)
             .unwrap()
             .passenger_role
-            .cargo_mut()
-            .unwrap()
-            .add_occupant(id, 1.0);
+            .occupants_mut()
+            .add(id);
     }
 
     assert!(run_until(&mut sim, &rules, &grid, 900, |sim| {

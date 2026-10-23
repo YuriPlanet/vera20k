@@ -77,6 +77,11 @@ impl CenteredShapeStrip {
         &self.texture
     }
 
+    /// Number of frames the source SHP carries.
+    pub fn frame_count(&self) -> usize {
+        self.frames.len()
+    }
+
     /// `frame` drawn centered on `point`; `None` for a frame the file lacks
     /// or one without pixels.
     pub fn instance(&self, frame: usize, point: (f32, f32), depth: f32) -> Option<SpriteInstance> {

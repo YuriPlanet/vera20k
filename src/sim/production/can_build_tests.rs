@@ -425,6 +425,51 @@ fn can_build_matches_the_original() {
     }
 }
 
+/// ReadOwners4750D0 clears DA0 before comma tokenization; CanBuild4F79E4
+/// rejects that zero mask. The limit-only and prerequisite-override arms
+/// precede this country gate in the original function.
+#[test]
+#[cfg(not(feature = "ares"))]
+fn comma_only_required_houses_refuses_ordinary_can_build_but_keeps_shortcuts() {
+    let make = |required: &str| {
+        RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[Countries]\n0=C0\n1=C1\n[BuildingTypes]\n0=Q\n1=BYPASS\n\
+             [Q]\nStrength=100\nTechLevel=1\nOwner=C1\nPrerequisiteOverride=BYPASS\n\
+             RequiredHouses={required}\n[BYPASS]\nStrength=100\n"
+        )))
+        .unwrap()
+    };
+    let rules = make(",,,");
+    let product = rules.object("Q").unwrap();
+    let (mut sim, owner) = sim_for(&json!({}), &rules);
+    assert_eq!(
+        can_build(&sim, &rules, owner, product, false, true),
+        CanBuild::No
+    );
+    let (ai, ai_owner) = sim_for(&json!({"house":{"human":false}}), &rules);
+    assert_eq!(
+        can_build(&ai, &rules, ai_owner, product, false, true),
+        CanBuild::No
+    );
+    assert_eq!(
+        can_build(&sim, &rules, owner, product, true, true),
+        CanBuild::Yes
+    );
+
+    crate::sim::production::tests::spawn_structure(&mut sim, &rules, 1, "H0", "BYPASS", 10, 10);
+    assert_eq!(
+        can_build(&sim, &rules, owner, product, false, true),
+        CanBuild::Yes
+    );
+    let blank = make("");
+    let (sim, owner) = sim_for(&json!({}), &blank);
+    assert_eq!(
+        can_build(&sim, &blank, owner, blank.object("Q").unwrap(), false, true),
+        CanBuild::Yes,
+        "an empty ReadString keeps the unrestricted constructor default"
+    );
+}
+
 #[test]
 fn check_build_limit_matches_the_original() {
     for row in rows("check_build_limit") {

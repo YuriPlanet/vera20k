@@ -902,11 +902,7 @@ impl FireQuery for WorldQuery<'_, '_> {
     /// Building vt+0x408 (`0x004581F0`), the occupant count that
     /// `BuildingClass::GetFireError` (`0x00447F10`) reads.
     fn occupants(&mut self) -> i32 {
-        self.subject
-            .firer
-            .passenger_role
-            .cargo()
-            .map_or(0, |cargo| cargo.count() as i32)
+        self.subject.firer.passenger_role.occupants().count()
     }
 
     fn operational(&mut self) -> bool {

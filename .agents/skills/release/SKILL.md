@@ -31,7 +31,8 @@ builds and releases. This skill is the maintainer's order of steps and the page 
 
 ## Release
 
-1. Promote the published dev build that was tested:
+1. Promote the published dev build that was tested. The workflow uses that build's commit
+   and copies its three installers under plain release filenames:
    `gh workflow run release.yml --ref main -f promote=<dev build tag>`. Merge no workflow
    change between the dev build and this step: creating a tag on a commit whose
    `.github/workflows` differ from main's fails with HTTP 403.
@@ -41,7 +42,11 @@ builds and releases. This skill is the maintainer's order of steps and the page 
 3. Check that it is Latest, holds the three installers, and that
    `gh attestation verify <download> --repo YuriPlanet/vera20k` passes for each.
 4. In a PR, raise the version in `Cargo.toml`, `src/Cargo.toml` and their two `Cargo.lock`
-   entries above the release. Until then every dev build refuses to start.
+   entries above the release and check all four versions agree. This allows the development
+   build workflow to start again.
+
+For example, after publishing `v0.2.0`, main can move to `0.2.1` for future development
+builds while `v0.2.0` remains Latest.
 
 A release that main's version cannot carry, such as a patch while main is ahead, comes from
 a branch: main plus one commit setting the version, dispatched with `--ref <branch>`. Its

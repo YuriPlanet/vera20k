@@ -430,7 +430,6 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         simulation.install_fresh_process_main(&state.frontend.frontend_main_rng);
         simulation.publish_scenario_started();
         simulation.batch_path_searches();
-        simulation.batch_target_scans();
         crate::sim::runtime::SimRuntime {
             simulation,
             resources: crate::sim::runtime::SimResources {

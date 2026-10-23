@@ -597,7 +597,7 @@ impl MatchInputState {
 
     /// Consume the ordered native lifecycle facts through this input owner.
     /// Returning true requests an actual-cursor preview refresh after retry.
-    pub(crate) fn apply_building_placement_output(
+    pub(crate) fn apply_lifecycle_output(
         &mut self,
         output: &crate::sim::world::LifecycleOutput,
         local_house: Option<InternedId>,
@@ -617,6 +617,11 @@ impl MatchInputState {
             }
             LifecycleOutput::ObjectPointerExpired { stable_id } => {
                 self.building_placement_pointer_expired(stable_id);
+            }
+            LifecycleOutput::ControlGroupMemberRemoved { stable_id } => {
+                for group in &mut self.control_groups {
+                    group.retain(|id| *id != stable_id);
+                }
             }
             _ => {}
         }

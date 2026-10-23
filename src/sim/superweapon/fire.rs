@@ -23,9 +23,10 @@
 //! - A `PostClick=` type whose `PreDependent=` is unset or past the list
 //!   (constructor -1) reads outside the Supers vector natively; VERA pairs
 //!   nothing. Dormant in retail.
-//! - ClickFire's charge-drain arm remains unported; no retail type sets
-//!   `UseChargeDrain=`. One-time consumption uses the same retained instance
-//!   owner as ordinary charging.
+//! - Authored charge-drain uses the native state/timer branch. Fresh House
+//!   construction clears FirestormActive+1FA; imported nonzero native House
+//!   states have no represented producer. Installed stock types do not enable
+//!   UseChargeDrain. Ordinary one-time consumption uses the retained instance.
 
 #[cfg(test)]
 #[path = "fire_tests.rs"]
@@ -344,6 +345,39 @@ fn click_fire(
     payment: Option<(InternedId, &SuperWeaponType)>,
     selecting_paid_source: bool,
 ) -> bool {
+    if sw.use_charge_drain {
+        // ClickFire6CB934..6CBA7A precedes ordinary ready/running/one-time
+        // admission. House control is independent of local launch output.
+        let Some(house) = sim.houses.get(&owner) else {
+            return false;
+        };
+        let human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
+        let called_launch = if human {
+            let frame = sim.session.binary_frame();
+            let Some(instance) = super_instance(sim, owner, sw_type_id) else {
+                return false;
+            };
+            instance.click_charge_drain(sw, frame, rules.general.charge_to_drain_ratio)
+        } else {
+            // HouseCtor4F573A clears +1FA; no enabled fresh writer has been
+            // established. Native6CBA52 tests that byte, without human timer
+            // conversion. Do not manufacture a Firestorm effect/toggle here.
+            true
+        };
+        if called_launch {
+            launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                sw,
+                cell,
+                overlay_registry,
+                frame_effects,
+            );
+        }
+        return called_launch;
+    }
     // Paid launches passed this same owner before the outer transaction writes.
     #[cfg(feature = "ares")]
     let needs_native_admission = sw.money_amount == 0;
@@ -451,7 +485,21 @@ fn launch(
     frame_effects: FrameEffects<'_>,
 ) {
     use super::paradrop::ParaDropKind;
+    // Every native stock case except ChronoWarp begins with rawReady+6F
+    // (ForceShield6CD072..6CD077; case4 starts6CC4B2 with radar production).
+    // Drain ClickFire can reach Launch after Reset retained state1 but cleared
+    // rawReady. Keep the earlier timer transition while skipping case effects.
+    let native_kind = sw.kind.native_index();
+    if (0..12).contains(&native_kind)
+        && native_kind != 4
+        && !super::is_charged(sim, owner, sw_type_id)
+    {
+        return;
+    }
     match sw.kind {
+        // Launch6CC3A3..6CC3AC: the constructor's -1 exits without case
+        // effects. ClickFire's ordinary/one-time finish still runs afterwards.
+        SuperWeaponKind::NoEffect => {}
         #[cfg(feature = "ares")]
         SuperWeaponKind::UnitDelivery => {
             if super::unit_delivery::launch(
@@ -488,7 +536,7 @@ fn launch(
             );
         }
         SuperWeaponKind::ForceShield => {
-            super::force_shield::launch(sim, rules, owner, rx, ry, sw_type_id);
+            super::force_shield::launch(sim, rules, owner, rx, ry, sw_type_id, frame_effects);
         }
         SuperWeaponKind::GeneticConverter => {
             super::genetic_converter::launch(

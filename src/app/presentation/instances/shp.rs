@@ -544,6 +544,8 @@ pub(crate) fn build_shp_instances_from_inputs(
             tint,
             palette_light,
             sim,
+            rules,
+            crate::app::presentation::lighting::TechnoDraw::Shape,
         );
         let colour_word = match rules {
             Some(rules) => {
@@ -806,6 +808,8 @@ pub(crate) fn build_shp_instances_from_inputs(
                         tint,
                         selected_palette_light,
                         sim,
+                        rules,
+                        crate::app::presentation::lighting::TechnoDraw::Voxel,
                     );
                 emit_building_turret_vxl(
                     unit_atlas,
@@ -1640,6 +1644,7 @@ fn emit_building_anims(
                     tint,
                     attached_palette,
                     sim,
+                    rules,
                 )
             }
         } else {
@@ -1658,7 +1663,13 @@ fn emit_building_anims(
         // Preserve the existing body's color-word path. The shared pass
         // builder clears it independently for the later shadow.
         let policy = BlitPolicy::z_read(SpriteEncoding::Plain);
-        let palette_light = palette_light.with_colour_word(anim_word(anim_id));
+        // AnimClass::Draw's tint hook (`0x00423420`) ORs the custom shield
+        // tint into the building anim's colour word independently of the
+        // ShouldUseCellDrawer intensity arm.
+        let shield_word = rules.map_or(0, |rules| {
+            crate::app::presentation::lighting::shield_tint(building, sim, rules).0
+        });
+        let palette_light = palette_light.with_colour_word(anim_word(anim_id) | shield_word);
         // DrawIt422CA0 -> 4AED70 retains the Anim's Convert selector. Reducing
         // it to alpha loses the indexed palette/A lookup and packed RGB565
         // blend (spatial_oracle/building_anim_translucency). The inherited
@@ -1812,8 +1823,14 @@ fn emit_unit_terrain_body(
     // Techno7060CC..70610A uses Cell+34 and the common/ground light+10C.
     let palette_light = crate::render::palette_light::PaletteLight::cell(grid, cell, false);
     let tint = grid.terrain_object_tint_for_type(cell, false);
-    let (tint, palette_light) =
-        crate::app::presentation::lighting::techno_effect_light(entity, tint, palette_light, sim);
+    let (tint, palette_light) = crate::app::presentation::lighting::techno_effect_light(
+        entity,
+        tint,
+        palette_light,
+        sim,
+        Some(&runtime.resources.rules),
+        crate::app::presentation::lighting::TechnoDraw::Shape,
+    );
     let depth = compute_sprite_depth_params(
         input.axis.origin_y,
         input.axis.world_height,

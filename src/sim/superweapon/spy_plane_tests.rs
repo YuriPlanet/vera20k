@@ -611,6 +611,126 @@ fn spyplane_missions_match_native() {
     }
 }
 
+/// A real launch reaches its first camera before Foot's next sight refresh.
+/// RevealArea visits the center before its neighbors; the camera's final
+/// Map567DA0 call (4156D1) must then store the fully open ground frame there.
+#[test]
+fn retail_spy_plane_camera_finishes_its_ground_edge_frames() {
+    let Some(rules) = retail_rules() else {
+        return;
+    };
+    let (rules, mut sim, americans) = world(rules);
+    sim.session.set_current_house_for_test(Some(americans));
+    charge_super(&mut sim, americans, SPY_PLANE);
+    click(&mut sim, &rules, americans, SPY_PLANE, TARGET);
+    let [plane] = spy_planes(&sim)[..] else {
+        panic!("one stock Spy Plane");
+    };
+
+    for _ in 0..3000 {
+        sim.sound_events.clear_for_test();
+        step(&mut sim, &rules);
+        if camera_sounds(&sim) == 0 {
+            continue;
+        }
+        let source = sim.fog.source_sight(plane, americans).unwrap();
+        assert!(source.latched, "the first camera survives this Foot visit");
+        assert_eq!(source.radius, 6, "stock camera Damage, not SPYP Sight=0");
+        let center = crate::sim::vision::sight_border_cells(source.origin, 9, 0)[0];
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(
+            sim.resolved_terrain.as_ref().unwrap(),
+        );
+        assert_eq!(
+            sim.fog
+                .map_cell_edge_frame(americans, center, false, Some(&cells)),
+            -1,
+            "all eight neighbors opened during this camera"
+        );
+        assert_eq!(
+            sim.fog.by_owner_mut_for_test()[&americans]
+                .map_cell_edge_cache_for_test(center)
+                .0[0],
+            -1,
+            "4156D1 must replace the center's early RevealArea edge frame"
+        );
+        return;
+    }
+    panic!("the stock Spy Plane never took a camera snapshot");
+}
+
+/// An enemy camera runs its border on the current client's map even though
+/// RevealArea refuses that enemy's sight. Capture's UpdateReveal70187B has
+/// no border suffix, so it supplies fresh ground with an early center frame.
+#[test]
+fn retail_enemy_spy_plane_refreshes_existing_player_ground_without_revealing() {
+    let Some(rules) = retail_rules() else {
+        return;
+    };
+    let (rules, mut sim, player) = world(rules);
+    sim.session.set_current_house_for_test(Some(player));
+    let computer = sim.interner.get("Russians").unwrap();
+    sim.houses
+        .get_mut(&computer)
+        .unwrap()
+        .set_enemy_house_for_test(Some(player));
+    sim.houses
+        .get_mut(&player)
+        .unwrap()
+        .set_base_center_for_test(Some(TARGET));
+    charge_super(&mut sim, computer, SPY_PLANE);
+    super::ai_fire::try_fire(&mut sim, &rules, computer, None, FrameEffects::default());
+    let [plane] = spy_planes(&sim)[..] else {
+        panic!("one computer Spy Plane");
+    };
+
+    let mut center = None;
+    for _ in 0..3000 {
+        sim.sound_events.clear_for_test();
+        step(&mut sim, &rules);
+        // Leave time for the next 16-frame camera before Logic's periodic
+        // 120-frame edge sweep can repair the newly captured tank's border.
+        if camera_sounds(&sim) > 0 && sim.session.binary_frame() % 120 < 95 {
+            let source = sim.fog.source_sight(plane, player).unwrap();
+            assert_eq!(source.radius, 6);
+            assert!(sim.fog.sight_admission(plane, player).is_none());
+            center = Some(crate::sim::vision::sight_border_cells(source.origin, 9, 0)[0]);
+            break;
+        }
+    }
+    let center = center.expect("an Approach camera before the periodic sweep");
+    assert!(!sim.fog.is_cell_revealed(player, center.0, center.1));
+    let tank = sim
+        .spawn_object("MTNK", "Russians", center.0, center.1, 0, &rules)
+        .expect("a ground tank below the plane");
+    sim.change_owner_with_rules(tank, player, &rules, None, FrameEffects::default());
+    assert!(sim.fog.is_cell_revealed(player, center.0, center.1));
+    assert_eq!(
+        sim.fog.by_owner_mut_for_test()[&player]
+            .map_cell_edge_cache_for_test(center)
+            .0[0],
+        -2,
+        "capture reveals the center before its neighbors"
+    );
+
+    for _ in 0..20 {
+        sim.sound_events.clear_for_test();
+        step(&mut sim, &rules);
+        if camera_sounds(&sim) > 0 {
+            assert!(sim.fog.sight_admission(plane, player).is_none());
+            assert_eq!(
+                sim.fog.by_owner_mut_for_test()[&player]
+                    .map_cell_edge_cache_for_test(center)
+                    .0[0],
+                -1,
+                "the enemy camera refreshes existing player ground frames"
+            );
+            assert!(!sim.fog.is_cell_revealed(player, TARGET.0, TARGET.1));
+            return;
+        }
+    }
+    panic!("the next Approach camera must run at the stock 16-frame interval");
+}
+
 /// The player's Spy Plane on retail rules, from the click through
 /// production frames. AllyParaDrop authors one entry, so one SPYP enters at
 /// the Americans' North edge (its cells sum to 36 on this map) in

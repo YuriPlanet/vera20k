@@ -17,6 +17,12 @@ use crate::util::native_x87::{MaskedX87Chop53 as X, NativeF64Bits};
 ///
 /// Native execution: `tools/spatial_oracle/damage_build.py` (`receive` rows).
 pub(crate) fn defence_divides(damage: i32, divisors: &DefenceDivisors) -> i32 {
+    defence_divides_unfloored(damage, divisors).max(1)
+}
+
+/// The same divides without `0x007019D8`'s `< 1 -> 1` floor, which the
+/// Phobos shield hook suppresses for the zero packet it owns.
+fn defence_divides_unfloored(damage: i32, divisors: &DefenceDivisors) -> i32 {
     let mut damage = X::ftol_i32_low_masked(X::div(
         X::load_i32(damage),
         X::mul(
@@ -27,7 +33,7 @@ pub(crate) fn defence_divides(damage: i32, divisors: &DefenceDivisors) -> i32 {
     if let Some(rank_armor) = divisors.rank_armor {
         damage = X::ftol_i32_low_masked(X::div(X::load_i32(damage), X::load_f64(rank_armor)));
     }
-    damage.max(1)
+    damage
 }
 
 /// Prepare the receiver packet without committing HP or predicting its result.
@@ -55,12 +61,17 @@ pub(crate) fn receive_damage(
         reached_survivor_postlude: false,
     };
 
-    // Nonnegative receiver divides (`0x0070192B..0x00701933` skips them for
+    // Positive receiver divides (`0x0070192B..0x00701933` skips them for
     // ignoreDefenses or a heal). gamemd runs them BEFORE the immunity gates
-    // (TypeImmune included), so the gates are evaluated below.
+    // (TypeImmune included), so the gates are evaluated below. A zero packet
+    // still divides (0 stays 0); only the later `< 1 -> 1` floor is suppressed
+    // when the Phobos shield hook owns the zero, as `0x7019D8` does.
     let mut dmg = incoming;
     if !gates.ignore_defenses && dmg >= 0 {
-        dmg = defence_divides(dmg, divisors);
+        dmg = defence_divides_unfloored(dmg, divisors);
+        if !gates.skip_low_damage_check {
+            dmg = dmg.max(1);
+        }
     }
 
     // Immunity gates (after the divides; TypeImmune handled inside).
@@ -333,6 +344,45 @@ pub(crate) mod tests {
     }
     fn multiplier(v: f64) -> NativeF64Bits {
         NativeF64Bits::from_bits(v.to_bits())
+    }
+
+    /// `0x7019D8` floors a damaged packet to 1; the Phobos shield hook's
+    /// `SkipLowDamageCheck` suppresses it only for the zero packet it wrote.
+    /// Both runs still divide first, so an unflagged zero becomes 1 and a
+    /// flagged one stays 0.
+    #[test]
+    fn the_shield_zero_packet_suppresses_the_low_damage_floor() {
+        let target = tgt(300, 300);
+        let unflagged = receive_damage(
+            0,
+            0.0,
+            1.0,
+            multiplier(1.0),
+            &target,
+            &DefenceDivisors::default(),
+            &allow(),
+            0,
+            false,
+            MAXD,
+        );
+        assert_eq!(unflagged.post_object_damage, Some(1));
+        let flagged = receive_damage(
+            0,
+            0.0,
+            1.0,
+            multiplier(1.0),
+            &target,
+            &DefenceDivisors::default(),
+            &ImmunityInputs {
+                affects_allies: true,
+                skip_low_damage_check: true,
+                ..Default::default()
+            },
+            0,
+            false,
+            MAXD,
+        );
+        assert_eq!(flagged.post_object_damage, Some(0));
     }
 
     /// `ObjectClass::ReceiveDamage @ 0x005F5390` returns before the kernel for

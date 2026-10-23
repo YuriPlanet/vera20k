@@ -146,6 +146,7 @@ pub(crate) enum ObjectExtrasRun {
         wrench: Option<u32>,
         rank: Option<u32>,
         background: Option<u32>,
+        shield_background: Option<u32>,
         fills: std::ops::Range<u32>,
         scale: std::ops::Range<u32>,
         self_heal: Option<u32>,
@@ -361,6 +362,11 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     lowered.extras_instances.push(instance);
                     index
                 });
+                let shield_background = strip.shield_background.map(|instance| {
+                    let index = lowered.extras_instances.len() as u32;
+                    lowered.extras_instances.push(instance);
+                    index
+                });
                 let start = lowered.extras_instances.len() as u32;
                 lowered.extras_instances.extend(strip.fills);
                 let end = lowered.extras_instances.len() as u32;
@@ -388,6 +394,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     wrench,
                     rank,
                     background,
+                    shield_background,
                     fills: start..end,
                     scale: end..scale_end,
                     self_heal,
@@ -418,6 +425,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                         wrench: *wrench,
                         rank: *rank,
                         background: None,
+                        shield_background: None,
                         fills: fills.start..fills.start,
                         scale: fills.start..fills.start,
                         self_heal: None,
@@ -472,6 +480,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                 wrench,
                 rank,
                 background,
+                shield_background,
                 fills,
                 scale,
                 self_heal,
@@ -488,6 +497,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     || wrench.is_some()
                     || rank.is_some()
                     || background.is_some()
+                    || shield_background.is_some()
                     || !fills.is_empty()
                     || !scale.is_empty()
                     || self_heal.is_some()
@@ -508,6 +518,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                         wrench,
                         rank,
                         background,
+                        shield_background,
                         fills,
                         scale,
                         self_heal,
@@ -864,6 +875,7 @@ mod tests {
             wrench: None,
             rank: Some(SpriteInstance::default()),
             background: None,
+            shield_background: None,
             fills: vec![SpriteInstance::default(); 15],
             scale: Vec::new(),
             group: Default::default(),

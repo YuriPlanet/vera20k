@@ -40,9 +40,9 @@
 //! flat 500x500-cell map used for 20,000-unit, 30-house march runs, and with
 //! `--starts 30` the match map with ore and trees.
 //!
-//! The simulation batches its path searches and target scans as a real
-//! match does; `--serial-paths` searches and `--serial-scans` scans in native
-//! order instead.
+//! The simulation batches its path searches as a real match does;
+//! `--serial-paths` searches in native order instead. Target scans run at
+//! each object's turn; `--serial-scans` remains an accepted compatibility flag.
 //!
 //! Beside each frame's wall time, the CSV's `cpu_ms` column and the
 //! `main_thread_cpu_*` line give the main thread's CPU time (Unix only). On a
@@ -91,7 +91,6 @@ struct Args {
     frame_hash_every: NonZeroU64,
     csv: Option<PathBuf>,
     serial_paths: bool,
-    serial_scans: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -113,7 +112,6 @@ fn parse_args() -> Result<Args, String> {
         frame_hash_every: vera20k_core::sim::replay::PLAY_HASH_INTERVAL,
         csv: None,
         serial_paths: false,
-        serial_scans: false,
     };
     let mut march_flag = None;
     let mut argv = std::env::args().skip(1);
@@ -159,7 +157,7 @@ fn parse_args() -> Result<Args, String> {
             }
             "--csv" => args.csv = Some(PathBuf::from(value()?)),
             "--serial-paths" => args.serial_paths = true,
-            "--serial-scans" => args.serial_scans = true,
+            "--serial-scans" => {} // All target scans already run at their object turn.
             other => return Err(format!("unrecognised argument {other}")),
         }
     }
@@ -391,9 +389,6 @@ fn main() -> Result<(), String> {
     };
     if !args.serial_paths {
         scenario.runtime.simulation.batch_path_searches();
-    }
-    if !args.serial_scans {
-        scenario.runtime.simulation.batch_target_scans();
     }
     scenario
         .runtime

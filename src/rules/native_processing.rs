@@ -18,6 +18,7 @@ use crate::rules::gunner_turrets::GunnerTurrets;
 use crate::rules::ini_parser::{IniFile, IniSection, is_native_none_type_name};
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::phobos_radiation::RadiationTypeCatalog;
+use crate::rules::phobos_shields::ShieldTypeCatalog;
 use crate::rules::sound_ini::EvaRegistry;
 
 use crate::rules::missile_spawn::{MissileFamily, MissileSpawnRules};
@@ -600,6 +601,16 @@ impl ProcessedRulesLayers {
             .as_ref()
     }
 
+    /// Phobos `[ShieldTypes]` catalog with the same retained process lifetime
+    /// as Types.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn shield_types(&self) -> Option<&ShieldTypeCatalog> {
+        self.native_type_construction_trace
+            .registry_state
+            .phobos_shield_types
+            .as_ref()
+    }
+
     /// Read-only projection of the retained registry's build capability.
     pub(crate) fn compatibility(&self) -> RulesCompatibility {
         self.native_type_construction_trace
@@ -934,6 +945,7 @@ impl ProcessedRulesLayers {
         registry.validate_techno_type_order()?;
         registry.validate_prerequisites()?;
         registry.validate_radiation_types()?;
+        registry.validate_shield_types()?;
         let families = &registry.families;
         let projectile_count = families
             .get(&RulesTypeFamily::Projectile)
@@ -1827,6 +1839,13 @@ impl ProcessedRulesLayers {
         )
     }
 
+    /// Rules6660AE/ReadGeneral671858: retained scalar, surviving Type resets.
+    pub(crate) fn charge_to_drain_ratio(&self) -> NativeF64Bits {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_charge_to_drain_ratio
+    }
+
     pub(crate) fn gravity(&self) -> i32 {
         self.native_type_construction_trace
             .registry_state()
@@ -2527,6 +2546,8 @@ pub(crate) struct NativeRulesRegistryState {
     ares_armors: Option<ArmorCatalog>,
     /// Phobos `[RadiationTypes]` catalog; Process retains it per pass.
     phobos_radiation_types: Option<RadiationTypeCatalog>,
+    /// Phobos `[ShieldTypes]` catalog; Process retains it per pass.
+    phobos_shield_types: Option<ShieldTypeCatalog>,
     #[cfg(feature = "ares")]
     ares_global_controls: AresGlobalControls,
     families: HashMap<RulesTypeFamily, Vec<ProcessedType>>,
@@ -2561,6 +2582,7 @@ pub(crate) struct NativeRulesRegistryState {
     rules_no_parachute_max_fall_rate: i32,
     rules_survivor_divisors: [i32; 3],
     rules_infantry_repair_step: i32,
+    rules_charge_to_drain_ratio: NativeF64Bits,
     rules_unit_repair_rate: NativeF64Bits,
     rules_infantry_repair_rate: NativeF64Bits,
     rules_maximum_cheer_rate: i32,
@@ -2612,6 +2634,7 @@ impl Default for NativeRulesRegistryState {
             ares_armors: crate::rules::ARES_ENABLED.then(ArmorCatalog::default),
             phobos_radiation_types: crate::rules::PHOBOS_ENABLED
                 .then(RadiationTypeCatalog::with_default),
+            phobos_shield_types: crate::rules::PHOBOS_ENABLED.then(ShieldTypeCatalog::default),
             #[cfg(feature = "ares")]
             ares_global_controls: AresGlobalControls::default(),
             families: HashMap::new(),
@@ -2636,6 +2659,7 @@ impl Default for NativeRulesRegistryState {
             rules_no_parachute_max_fall_rate: general.no_parachute_max_fall_rate,
             rules_survivor_divisors: crate::rules::ruleset::DEFAULT_SURVIVOR_DIVISORS,
             rules_infantry_repair_step: general.infantry_repair_step,
+            rules_charge_to_drain_ratio: general.charge_to_drain_ratio,
             rules_unit_repair_rate: NativeF64Bits::from_bits(general.unit_repair_rate.to_bits()),
             rules_infantry_repair_rate: NativeF64Bits::from_bits(
                 general.infantry_repair_rate.to_bits(),
@@ -2763,6 +2787,15 @@ impl NativeRulesRegistryState {
         if self.phobos_radiation_types.is_some() != crate::rules::PHOBOS_ENABLED {
             return Err(RulesError::InvalidSavedState(
                 "saved radiation type catalog does not match the compiled capability",
+            ));
+        }
+        Ok(())
+    }
+
+    fn validate_shield_types(&self) -> Result<(), RulesError> {
+        if self.phobos_shield_types.is_some() != crate::rules::PHOBOS_ENABLED {
+            return Err(RulesError::InvalidSavedState(
+                "saved shield type catalog does not match the compiled capability",
             ));
         }
         Ok(())
@@ -3021,6 +3054,7 @@ impl NativeRulesRegistryState {
             rules_no_parachute_max_fall_rate: self.rules_no_parachute_max_fall_rate,
             rules_survivor_divisors: self.rules_survivor_divisors,
             rules_infantry_repair_step: self.rules_infantry_repair_step,
+            rules_charge_to_drain_ratio: self.rules_charge_to_drain_ratio,
             rules_unit_repair_rate: self.rules_unit_repair_rate,
             rules_infantry_repair_rate: self.rules_infantry_repair_rate,
             rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
@@ -3936,6 +3970,8 @@ struct RulesPassProcessor {
     ares_armors: Option<ArmorCatalog>,
     /// Phobos `[RadiationTypes]` catalog; Process retains it per pass.
     phobos_radiation_types: Option<RadiationTypeCatalog>,
+    /// Phobos `[ShieldTypes]` catalog; Process retains it per pass.
+    phobos_shield_types: Option<ShieldTypeCatalog>,
     #[cfg(feature = "ares")]
     ares_global_controls: AresGlobalControls,
     ordinary: Option<IniFile>,
@@ -3966,6 +4002,7 @@ struct RulesPassProcessor {
     rules_no_parachute_max_fall_rate: i32,
     rules_survivor_divisors: [i32; 3],
     rules_infantry_repair_step: i32,
+    rules_charge_to_drain_ratio: NativeF64Bits,
     rules_unit_repair_rate: NativeF64Bits,
     rules_infantry_repair_rate: NativeF64Bits,
     rules_maximum_cheer_rate: i32,
@@ -4010,6 +4047,7 @@ impl RulesPassProcessor {
             ares_prerequisites: registry_state.ares_prerequisites,
             ares_armors: registry_state.ares_armors,
             phobos_radiation_types: registry_state.phobos_radiation_types,
+            phobos_shield_types: registry_state.phobos_shield_types,
             #[cfg(feature = "ares")]
             ares_global_controls: registry_state.ares_global_controls,
             families: registry_state.families,
@@ -4034,6 +4072,7 @@ impl RulesPassProcessor {
             rules_no_parachute_max_fall_rate: registry_state.rules_no_parachute_max_fall_rate,
             rules_survivor_divisors: registry_state.rules_survivor_divisors,
             rules_infantry_repair_step: registry_state.rules_infantry_repair_step,
+            rules_charge_to_drain_ratio: registry_state.rules_charge_to_drain_ratio,
             rules_unit_repair_rate: registry_state.rules_unit_repair_rate,
             rules_infantry_repair_rate: registry_state.rules_infantry_repair_rate,
             rules_maximum_cheer_rate: registry_state.rules_maximum_cheer_rate,
@@ -4137,6 +4176,8 @@ impl RulesPassProcessor {
         self.allocate_radiation_references(pass);
         #[cfg(feature = "phobos")]
         self.allocate_radiation_types(pass);
+        #[cfg(feature = "phobos")]
+        self.allocate_shield_types(pass);
         // Elevation and Wall contain no Type factories.
         self.allocate_audio_visual_references(pass);
         self.process_special_weapons(pass);
@@ -4666,6 +4707,10 @@ impl RulesPassProcessor {
             section.read_double_bits("URepairRate", self.rules_unit_repair_rate);
         self.rules_infantry_repair_rate =
             section.read_double_bits("IRepairRate", self.rules_infantry_repair_rate);
+        // ReadGeneral67183C..67185D, Rules+760. Shared binary32 scanner,
+        // optional percent scaling, then retained binary64; no type reset.
+        self.rules_charge_to_drain_ratio =
+            section.read_double_bits("ChargeToDrainRatio", self.rules_charge_to_drain_ratio);
         // ReadGeneral's Prism block (`0x0067114F..0x006711B8`), current values
         // as defaults; RulesClass keeps them across Full_Init's reset.
         self.rules_prism_support = self.rules_prism_support.read_pass(section);
@@ -6495,6 +6540,14 @@ impl RulesPassProcessor {
         }
     }
 
+    /// Phobos `ShieldTypeClass::LoadFromINIList` + each type's `LoadFromINI`.
+    #[cfg(feature = "phobos")]
+    fn allocate_shield_types(&mut self, pass: &IniFile) {
+        if let Some(catalog) = self.phobos_shield_types.as_mut() {
+            catalog.apply_pass(pass);
+        }
+    }
+
     fn allocate_audio_visual_references(&mut self, pass: &IniFile) {
         let Some(section) = pass.section("AudioVisual") else {
             return;
@@ -6673,6 +6726,7 @@ impl RulesPassProcessor {
                     ares_prerequisites: self.ares_prerequisites,
                     ares_armors: self.ares_armors,
                     phobos_radiation_types: self.phobos_radiation_types,
+                    phobos_shield_types: self.phobos_shield_types,
                     #[cfg(feature = "ares")]
                     ares_global_controls: self.ares_global_controls,
                     families: self.families,
@@ -6697,6 +6751,7 @@ impl RulesPassProcessor {
                     rules_no_parachute_max_fall_rate: self.rules_no_parachute_max_fall_rate,
                     rules_survivor_divisors: self.rules_survivor_divisors,
                     rules_infantry_repair_step: self.rules_infantry_repair_step,
+                    rules_charge_to_drain_ratio: self.rules_charge_to_drain_ratio,
                     rules_unit_repair_rate: self.rules_unit_repair_rate,
                     rules_infantry_repair_rate: self.rules_infantry_repair_rate,
                     rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,

@@ -658,24 +658,9 @@ impl Simulation {
     /// call sees is the override's (Override_Mission saved NavCom at
     /// `0x004D8F5B` and set its own at `0x004D8F6D`), not the saved one.
     ///
-    /// Residual: native Restore runs this setter inside the restore; VERA runs
-    /// it at the object's next Process entry, without the override's NavCom.
-    /// Trigger: an AoE cell target expiring under a suspended mission
-    /// (`restore_entity_after_target_expiry`, whose broadcast holds only the
-    /// entity store). Effects:
-    /// - the setter's timers, NavQueue clear, Move_To and admission effects
-    ///   (the deployment refusal's NavCom clear, the UnitRepair radio arm, the
-    ///   Teleporter arm's locomotor swap) land up to one frame late, inside the
-    ///   Process host chosen before the call;
-    /// - an override NavCom equal to the saved one takes the whole setter,
-    ///   where native's unchanged-NavCom return (`0x00741A80`) writes nothing;
-    /// - a setter that refuses before the Foot tail leaves NavCom and
-    ///   NavComAux empty, where native keeps the override's.
-    ///
-    /// Frequency: rare. Risk: timing, plus the rare same-NavCom and refusal
-    /// cases. The Teleporter swap needs a `Teleporter=` Unit holding a cell
-    /// target; a text search of retail `rulesmd.ini` finds only the unarmed
-    /// CMIN among Units.
+    /// Compatibility path for retained state or fixture-only restores without
+    /// a represented class setter. Production AreaDamage calls the full world
+    /// Restore synchronously before capturing the current spread cell.
     pub(crate) fn complete_pending_order(
         &mut self,
         id: u64,
@@ -823,7 +808,12 @@ impl Simulation {
         {
             return false;
         }
-        if actor.navigation.nav_com() == Some(requested) && !actor.setter_force_reassign.raised {
+        if actor
+            .navigation
+            .nav_com()
+            .is_some_and(|held| held.same_pointer(requested, self.resolved_terrain.as_ref()))
+            && !actor.setter_force_reassign.raised
+        {
             return true;
         }
         let actor = self

@@ -304,8 +304,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
             .get(building)
             .unwrap()
             .passenger_role
-            .cargo()
-            .unwrap()
+            .occupants()
             .count(),
         1
     );
@@ -367,8 +366,7 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
             .get(building)
             .unwrap()
             .passenger_role
-            .cargo()
-            .unwrap()
+            .occupants()
             .count(),
         0
     );
@@ -379,6 +377,6 @@ fn real_garrison_append_and_complete_ejection_refresh_the_existing_building_cach
             .unwrap()
             .cached_spatial_threat(),
         Some(7),
-        "ejection tail refreshes after the complete cargo mutation"
+        "ejection tail refreshes after the complete occupant mutation"
     );
 }
