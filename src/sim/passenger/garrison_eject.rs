@@ -82,9 +82,8 @@ fn choose_garrison_exit_cell(
     ry: u16,
     width: u16,
     height: u16,
-    passenger_ids: &[u64],
+    first_occupant_id: u64,
 ) -> Option<(u16, u16)> {
-    let first_occupant_id = *passenger_ids.first()?;
     let cells = NativeCellQuery::canonical(sim.resolved_terrain.as_ref()?);
     garrison_sellbuilding_exit_cells(rx, ry, width, height)
         .into_iter()
@@ -264,26 +263,18 @@ fn place_garrison_passenger_at_cell(
     true
 }
 
-/// SellBuilding458092/4580A9 and KillOccupants4585D4 snapshot the initial
-/// count but re-read each live vector slot after earlier callbacks. Absent
-/// Building fixtures supply the explicit plan; production keeps the object
-/// resolvable until its enclosing callback returns. Native out-of-count stale
-/// pointer reads are outside represented safe references.
-fn live_occupant_at(
-    sim: &Simulation,
-    building_id: u64,
-    index: usize,
-    fallback: &[u64],
-) -> Option<u64> {
-    match sim.substrate.entities.get(building_id) {
-        Some(building) => building
-            .passenger_role
-            .occupants()
-            .ids()
-            .get(index)
-            .copied(),
-        None => fallback.get(index).copied(),
-    }
+/// SellBuilding4580A9 and KillOccupants4585E8 re-read each live vector
+/// slot after earlier callbacks. The enclosing callback retains the building;
+/// native out-of-count stale reads are outside represented safe references.
+fn live_occupant_at(sim: &Simulation, building_id: u64, index: usize) -> Option<u64> {
+    sim.substrate
+        .entities
+        .get(building_id)?
+        .passenger_role
+        .occupants()
+        .ids()
+        .get(index)
+        .copied()
 }
 
 fn eject_garrison_passengers_at_edges(
@@ -294,13 +285,20 @@ fn eject_garrison_passengers_at_edges(
     ry: u16,
     width: u16,
     height: u16,
-    passenger_ids: &[u64],
     mode: GarrisonEjectMode,
     uninit_context: UninitContext<'_>,
 ) -> usize {
-    if passenger_ids.is_empty() || width == 0 || height == 0 {
+    if width == 0 || height == 0 {
         return 0;
     }
+    let Some(building) = sim.substrate.entities.get(building_id) else {
+        return 0;
+    };
+    let occupants = building.passenger_role.occupants();
+    let Some(&first_occupant_id) = occupants.ids().first() else {
+        return 0;
+    };
+    let initial_count = occupants.ids().len();
 
     let exit_cell = choose_garrison_exit_cell(
         sim,
@@ -310,7 +308,7 @@ fn eject_garrison_passengers_at_edges(
         ry,
         width,
         height,
-        passenger_ids,
+        first_occupant_id,
     )
     .or_else(|| match mode {
         GarrisonEjectMode::PlayerSell => {
@@ -321,8 +319,8 @@ fn eject_garrison_passengers_at_edges(
     let mut ejected: usize = 0;
 
     let Some((exit_rx, exit_ry)) = exit_cell else {
-        for index in (0..passenger_ids.len()).rev() {
-            if let Some(id) = live_occupant_at(sim, building_id, index, passenger_ids) {
+        for index in (0..initial_count).rev() {
+            if let Some(id) = live_occupant_at(sim, building_id, index) {
                 uninit_garrison_passenger_without_exit(sim, id, uninit_context);
             }
         }
@@ -341,8 +339,8 @@ fn eject_garrison_passengers_at_edges(
     // 458092..4581B2 brackets the entire LIFO loop, including Scatter and
     // its live cell callbacks; no-exit removal above does not enter it.
     sim.with_object_placement_scope(|sim| {
-        for index in (0..passenger_ids.len()).rev() {
-            let Some(pax_id) = live_occupant_at(sim, building_id, index, passenger_ids) else {
+        for index in (0..initial_count).rev() {
+            let Some(pax_id) = live_occupant_at(sim, building_id, index) else {
                 continue;
             };
             if place_garrison_passenger_at_cell(
@@ -375,9 +373,6 @@ pub struct DestroyedGarrisonBuilding {
     pub ry: u16,
     pub foundation_w: u16,
     pub foundation_h: u16,
-    /// Snapshot of `Occupants` at time of death, in admission order
-    /// (the eject helper walks it last to first).
-    pub passenger_ids: Vec<u64>,
 }
 
 /// Eject garrison occupants from a building destroyed in combat.
@@ -407,20 +402,10 @@ pub(crate) fn eject_destruction_garrison_with_context(
     event: &DestroyedGarrisonBuilding,
     uninit_context: UninitContext<'_>,
 ) -> usize {
-    let passenger_ids = sim
-        .substrate
-        .entities
-        .get_mut(event.building_id)
-        .map(|building| {
-            let occupants = building.passenger_role.occupants_mut();
-            occupants.reset_fire_index();
-            occupants.ids().to_vec()
-        })
-        .unwrap_or_else(|| event.passenger_ids.clone());
-    debug_assert_eq!(
-        passenger_ids, event.passenger_ids,
-        "destroyed-garrison plan must name the live occupant vector"
-    );
+    let Some(building) = sim.substrate.entities.get_mut(event.building_id) else {
+        return 0;
+    };
+    building.passenger_role.occupants_mut().reset_fire_index();
 
     let ejected = eject_garrison_passengers_at_edges(
         sim,
@@ -430,7 +415,6 @@ pub(crate) fn eject_destruction_garrison_with_context(
         event.ry,
         event.foundation_w,
         event.foundation_h,
-        &passenger_ids,
         GarrisonEjectMode::Release,
         uninit_context,
     );
@@ -458,9 +442,9 @@ pub(crate) fn kill_building_occupants(
     };
     let occupants = building.passenger_role.occupants_mut();
     occupants.reset_fire_index();
-    let ids = occupants.ids().to_vec();
-    for index in (0..ids.len()).rev() {
-        if let Some(id) = live_occupant_at(sim, building_id, index, &ids) {
+    let initial_count = occupants.ids().len();
+    for index in (0..initial_count).rev() {
+        if let Some(id) = live_occupant_at(sim, building_id, index) {
             uninit_garrison_passenger_without_exit(sim, id, context);
         }
     }
@@ -481,7 +465,7 @@ pub(crate) fn sell_building_occupants(
     mode: GarrisonEjectMode,
     frame_effects: FrameEffects<'_>,
 ) -> usize {
-    let (rx, ry, width, height, passenger_ids) = {
+    let (rx, ry, width, height) = {
         let Some(entity) = sim.substrate.entities.get(building_id) else {
             return 0;
         };
@@ -489,24 +473,17 @@ pub(crate) fn sell_building_occupants(
             return 0;
         };
         let (fw, fh) = obj.foundation.dimensions();
-        (
-            entity.position.rx(),
-            entity.position.ry(),
-            fw,
-            fh,
-            entity.passenger_role.occupants().ids().to_vec(),
-        )
+        (entity.position.rx(), entity.position.ry(), fw, fh)
     };
 
     // SellBuilding457DEB clears CurrentFireIdx before testing Occupants.Count,
     // including CheckAutoSellOrCivilian's red-health call on an empty building.
     if let Some(building) = sim.substrate.entities.get_mut(building_id) {
         building.passenger_role.occupants_mut().reset_fire_index();
+        if building.passenger_role.occupants().is_empty() {
+            return 0;
+        }
     }
-    if passenger_ids.is_empty() {
-        return 0;
-    }
-
     let ejected = eject_garrison_passengers_at_edges(
         sim,
         rules,
@@ -515,7 +492,6 @@ pub(crate) fn sell_building_occupants(
         ry,
         width,
         height,
-        &passenger_ids,
         mode,
         UninitContext::new(rules, registry).with_effects(frame_effects),
     );
@@ -1116,14 +1092,14 @@ pub(crate) mod tests {
         insert_hidden_passenger(&mut sim, 12, 10, "Neutral");
 
         assert_eq!(
-            choose_garrison_exit_cell(&sim, &rules, None, 10, 10, 2, 2, &[11, 12]),
+            choose_garrison_exit_cell(&sim, &rules, None, 10, 10, 2, 2, 11),
             None,
             "slot 0 drives the scan; a later valid passenger must not be probed"
         );
 
         insert_hidden_passenger(&mut sim, 11, 10, "Neutral");
         assert_eq!(
-            choose_garrison_exit_cell(&sim, &rules, None, 10, 10, 2, 2, &[11, 12]),
+            choose_garrison_exit_cell(&sim, &rules, None, 10, 10, 2, 2, 11),
             Some((12, 12))
         );
     }
@@ -1136,7 +1112,7 @@ pub(crate) mod tests {
         insert_map_infantry(&mut sim, &rules, 12, 12);
 
         assert_eq!(
-            choose_garrison_exit_cell(&sim, &rules, None, 10, 10, 2, 2, &[11]),
+            choose_garrison_exit_cell(&sim, &rules, None, 10, 10, 2, 2, 11),
             Some((12, 12)),
             "one exterior infantry leaves a free sub-cell, so slot-0 Can_Enter_Cell accepts"
         );
@@ -1145,7 +1121,7 @@ pub(crate) mod tests {
         insert_map_infantry(&mut sim, &rules, 12, 12);
 
         assert_eq!(
-            choose_garrison_exit_cell(&sim, &rules, None, 10, 10, 2, 2, &[11]),
+            choose_garrison_exit_cell(&sim, &rules, None, 10, 10, 2, 2, 11),
             Some((12, 11)),
             "full exterior infantry sub-cells reject the selected cell and continue the scan"
         );
@@ -1156,6 +1132,11 @@ pub(crate) mod tests {
         let rules = garrison_edge_rules();
         let mut sim = garrison_map(&rules);
         let building_id = 10;
+        insert_garrison_building(&mut sim, building_id);
+        assert!(matches!(
+            sim.reveal_entity_with_rules(building_id, &rules),
+            RevealOutcome::Revealed { .. }
+        ));
         let pax1 =
             insert_hidden_passenger_with_subcell(&mut sim, 11, building_id, "Neutral", Some(4));
         let pax2 =
@@ -1170,7 +1151,6 @@ pub(crate) mod tests {
             ry: 10,
             foundation_w: 2,
             foundation_h: 2,
-            passenger_ids: vec![pax1, pax2, pax3],
         };
 
         assert_eq!(eject_destruction_garrison(&mut sim, &rules, &event), 3);
@@ -1237,6 +1217,11 @@ pub(crate) mod tests {
         let rules = garrison_edge_rules();
         let mut sim = garrison_map(&rules);
         let building_id = 10;
+        insert_garrison_building(&mut sim, building_id);
+        assert!(matches!(
+            sim.reveal_entity_with_rules(building_id, &rules),
+            RevealOutcome::Revealed { .. }
+        ));
         let ids: Vec<u64> = (11..)
             .zip([4, 3, 2])
             .map(|(id, sub)| {
@@ -1255,7 +1240,6 @@ pub(crate) mod tests {
             ry: 10,
             foundation_w: 2,
             foundation_h: 2,
-            passenger_ids: ids.clone(),
         };
         assert_eq!(eject_destruction_garrison(&mut sim, &rules, &event), 3);
         for id in ids {
@@ -1285,7 +1269,6 @@ pub(crate) mod tests {
             ry: 10,
             foundation_w: 2,
             foundation_h: 2,
-            passenger_ids: vec![passenger_id],
         };
 
         assert_eq!(eject_destruction_garrison(&mut sim, &rules, &event), 1);
@@ -1379,7 +1362,6 @@ pub(crate) mod tests {
             ry: 10,
             foundation_w: 2,
             foundation_h: 2,
-            passenger_ids: vec![passenger_id],
         };
 
         assert_eq!(eject_destruction_garrison(&mut sim, &rules, &event), 1);
@@ -1407,6 +1389,11 @@ pub(crate) mod tests {
         let rules = garrison_edge_rules();
         let mut sim = garrison_map(&rules);
         let building_id = 40;
+        insert_garrison_building(&mut sim, building_id);
+        assert!(matches!(
+            sim.reveal_entity_with_rules(building_id, &rules),
+            RevealOutcome::Revealed { .. }
+        ));
         let passenger_id = insert_hidden_passenger(&mut sim, 41, building_id, "Neutral");
         block_all_garrison_exit_cells(&mut sim, &rules, 10, 10, 2, 2);
         let rng_before = sim.scenario_rng.state();
@@ -1417,7 +1404,6 @@ pub(crate) mod tests {
             ry: 10,
             foundation_w: 2,
             foundation_h: 2,
-            passenger_ids: vec![passenger_id],
         };
 
         assert_eq!(eject_destruction_garrison(&mut sim, &rules, &event), 0);

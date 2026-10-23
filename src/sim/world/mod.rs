@@ -2105,8 +2105,7 @@ impl Simulation {
                 }
                 let garrison = self.substrate.entities.get(stable_id).and_then(|entity| {
                     let object = self.interner.object_type(entity.type_ref(), rules)?;
-                    let passenger_ids = entity.passenger_role.occupants().ids().to_vec();
-                    if !object.can_be_occupied || passenger_ids.is_empty() {
+                    if !object.can_be_occupied || entity.passenger_role.occupants().is_empty() {
                         return None;
                     }
                     let (foundation_w, foundation_h) =
@@ -2118,7 +2117,6 @@ impl Simulation {
                             ry: entity.position.ry(),
                             foundation_w,
                             foundation_h,
-                            passenger_ids,
                         },
                     )
                 });
