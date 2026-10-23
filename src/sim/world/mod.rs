@@ -3046,6 +3046,19 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
+        self.submit_under_attack_warning(event, rules, effects);
+        self.raise_house_attacked_tags(event.owner, rules, registry, effects);
+    }
+
+    /// Unit73851D/738530 and Temporal71B04C/71B05F submit radar/EVA before
+    /// returning to their caller. House4F93E0 reaches the same boundary before
+    /// its Tags. A later AoE receiver must not overtake this warning.
+    pub(crate) fn submit_under_attack_warning(
+        &mut self,
+        event: crate::sim::combat::UnderAttackEvent,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
         Self::dispatch_under_attack_events(
             &self.interner,
             &self.session,
@@ -3055,8 +3068,19 @@ impl Simulation {
             &[event],
             rules,
         );
-        effects.flush_sound(self, rules);
-        self.raise_house_attacked_tags(event.owner, rules, registry, effects);
+        // Unit7384D8 and Temporal71B009 compare Owner with PlayerPtr before
+        // entering their radar/EVA block. Keep all-owner producer facts for
+        // replay, but only the reached local Unit call consumes this prefix.
+        // HouseNotify can also warn a local ally of a nonlocal building.
+        let building_warning = self
+            .interner
+            .object_type(event.victim_type, rules)
+            .is_some_and(|object| {
+                object.category == crate::rules::object_type::ObjectCategory::Building
+            });
+        if building_warning || self.session.current_house() == Some(event.owner) {
+            effects.flush_sound(self, rules);
+        }
     }
 
     /// `HouseClass::NotifyUnderAttack @ 0x004F93E0` for a building warning,

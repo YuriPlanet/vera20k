@@ -554,18 +554,9 @@ impl Simulation {
             self.notify_house_under_attack(event, rules, registry, effects);
             return;
         }
-        Self::dispatch_under_attack_events(
-            &self.interner,
-            &self.session,
-            &self.house_alliances,
-            &mut self.sound_events,
-            &self.houses,
-            &[event],
-            rules,
-        );
         // Temporal71B04C/71B05F's harvester branch calls radar/EVA directly, with
         // no House Tags, and also completes before returning to the warp.
-        effects.flush_sound(self, rules);
+        self.submit_under_attack_warning(event, rules, effects);
     }
 
     /// `TemporalClass::CanWarpTarget @ 0x0071AE50`: a `Warpable=` type, not
