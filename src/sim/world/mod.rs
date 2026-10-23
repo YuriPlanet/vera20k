@@ -3036,6 +3036,29 @@ impl Simulation {
         .commit(self, rules, overlay_registry, frame_effects)
     }
 
+    /// HouseClass::NotifyUnderAttack4F93E0 submits its radar/EVA/Voc before
+    /// the dynamic House Tag walk4F95D4. Callbacks may change alliances or
+    /// client admission state, so both selection and delivery precede them.
+    pub(crate) fn notify_house_under_attack(
+        &mut self,
+        event: crate::sim::combat::UnderAttackEvent,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        Self::dispatch_under_attack_events(
+            &self.interner,
+            &self.session,
+            &self.house_alliances,
+            &mut self.sound_events,
+            &self.houses,
+            &[event],
+            rules,
+        );
+        effects.flush_sound(self, rules);
+        self.raise_house_attacked_tags(event.owner, rules, registry, effects);
+    }
+
     /// `HouseClass::NotifyUnderAttack @ 0x004F93E0` for a building warning,
     /// plus the `UnitClass::ReceiveDamage 0x00738530` harvester ping.
     ///

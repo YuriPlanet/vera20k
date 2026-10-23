@@ -1863,16 +1863,17 @@ pub(crate) fn commit_entities(
                     target.category() == EntityCategory::Structure
                         && target.lifecycle.object_alive()
                 })
-            && let Some(ping) = world.building_hit_response(
+        {
+            // Building44297B completes NotifyUnderAttack inline, including
+            // its warning before House callbacks; do not queue it again.
+            let _ = world.building_hit_response(
                 target_id,
                 (attacker_id != RAD_NO_ATTACKER).then_some(attacker_id),
                 receive_state,
                 rules,
                 overlay_registry,
                 run.effects(),
-            )
-        {
-            under_attack_events.push(ping);
+            );
         }
         finish_building_art_receiver(world, target_id, receive_state, building_entry_frame, rules);
     }

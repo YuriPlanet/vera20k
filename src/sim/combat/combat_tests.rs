@@ -8860,6 +8860,7 @@ fn deployed_desolator_self_irradiates_and_refires_below_third() {
 
 #[test]
 fn under_attack_events_fire_for_sourced_structures_and_harvester_types() {
+    use crate::sim::world::SimSoundEvent;
     // The damage-apply producer, per `BuildingClass::ReceiveDamage @
     // 0x00442230` (sourced, non-zero result, `Insignificant=` clear — no
     // attacker-house test) and `UnitClass::ReceiveDamage 0x007384B9`
@@ -8881,7 +8882,7 @@ fn under_attack_events_fire_for_sourced_structures_and_harvester_types() {
     .expect("rules parse");
 
     let mut main_rng = SimRng::new(1);
-    let mut run_attack = |victim: GameEntity| -> CombatTickResult {
+    let mut run_attack = |victim: GameEntity| {
         let mut store = EntityStore::new();
         store.insert(victim);
         let mut attacker = make_infantry_entity(1, "E1", 5, 5, 125);
@@ -8889,27 +8890,55 @@ fn under_attack_events_fire_for_sourced_structures_and_harvester_types() {
         store.insert(attacker);
         let mut interner = test_interner();
         install_entity_attack_target_for_test(&mut store, 1, 10);
-        tick(&mut store, &rules, &mut interner, 0, &mut main_rng)
+        let mut sounds = Vec::new();
+        let result = tick_combat_with_fog(
+            &mut store,
+            &mut OccupancyGrid::new(),
+            &rules,
+            &mut interner,
+            None,
+            &BTreeMap::new(),
+            Some(&mut sounds),
+            None,
+            None,
+            None,
+            0,
+            100,
+            0,
+            &[],
+            None,
+            &mut main_rng,
+        );
+        let warnings: Vec<_> = sounds
+            .into_iter()
+            .filter_map(|event| match event {
+                SimSoundEvent::UnderAttack {
+                    owner,
+                    miner,
+                    rx,
+                    ry,
+                    ..
+                } => Some((owner, miner, rx, ry)),
+                _ => None,
+            })
+            .collect();
+        (result, warnings)
     };
 
     // Enemy-owned Structure → one base ping for the VICTIM's owner.
     let mut building = make_entity_owned(10, "CAGAS", 8, 5, 800, "Defender");
     building.set_category_for_test(EntityCategory::Structure);
-    let result = run_attack(building);
-    assert_eq!(
-        result.consequences.effects().under_attack_events.len(),
-        1,
-        "structure hit pings"
+    let (result, warnings) = run_attack(building);
+    assert!(
+        result.consequences.effects().under_attack_events.is_empty(),
+        "building warning is already submitted inline"
     );
-    let ev = &result.consequences.effects().under_attack_events[0];
-    assert_eq!(ev.victim_type, test_intern("CAGAS"));
-    assert_eq!(ev.owner, test_intern("Defender"));
-    assert_eq!((ev.rx, ev.ry), (8, 5));
+    assert_eq!(warnings, [(test_intern("Defender"), false, 8, 5)]);
 
     // `Harvester=` vehicle → miner ping (the type flag, `UnitType+0xE0E`,
     // not the Rust miner component).
     let harv = make_entity_owned(10, "HARV", 8, 5, 1000, "Defender");
-    let result = run_attack(harv);
+    let (result, _) = run_attack(harv);
     assert_eq!(
         result.consequences.effects().under_attack_events.len(),
         1,
@@ -8925,21 +8954,18 @@ fn under_attack_events_fire_for_sourced_structures_and_harvester_types() {
     // `NotifyUnderAttack` (force-fire on an own building announces).
     let mut friendly = make_entity_owned(10, "CAGAS", 8, 5, 800, "Attacker");
     friendly.set_category_for_test(EntityCategory::Structure);
-    let result = run_attack(friendly);
+    let (_, warnings) = run_attack(friendly);
     assert_eq!(
-        result.consequences.effects().under_attack_events.len(),
-        1,
+        warnings,
+        [(test_intern("Attacker"), false, 8, 5)],
         "own-fire pings"
-    );
-    assert_eq!(
-        result.consequences.effects().under_attack_events[0].owner,
-        test_intern("Attacker")
     );
 
     // `Insignificant=yes` building → `BuildingType+0x232` skip.
     let mut prop = make_entity_owned(10, "CATREE", 8, 5, 800, "Defender");
     prop.set_category_for_test(EntityCategory::Structure);
-    let result = run_attack(prop);
+    let (result, warnings) = run_attack(prop);
+    assert!(warnings.is_empty());
     assert!(
         result.consequences.effects().under_attack_events.is_empty(),
         "insignificant buildings never ping"
@@ -8951,7 +8977,8 @@ fn under_attack_events_fire_for_sourced_structures_and_harvester_types() {
     // (`building_retaliation`'s tests).
     let mut slave = make_entity_owned(10, "YAREFN", 8, 5, 800, "Defender");
     slave.set_category_for_test(EntityCategory::Structure);
-    let result = run_attack(slave);
+    let (result, warnings) = run_attack(slave);
+    assert!(warnings.is_empty());
     assert!(
         result.consequences.effects().under_attack_events.is_empty(),
         "1x1 UndeploysInto buildings never ping"
@@ -8959,7 +8986,8 @@ fn under_attack_events_fire_for_sourced_structures_and_harvester_types() {
 
     // Plain vehicle (not `Harvester=`, not a structure) → no ping.
     let plain = make_entity_owned(10, "MTNK", 8, 5, 1000, "Defender");
-    let result = run_attack(plain);
+    let (result, warnings) = run_attack(plain);
+    assert!(warnings.is_empty());
     assert!(
         result.consequences.effects().under_attack_events.is_empty(),
         "plain unit hits do not ping"

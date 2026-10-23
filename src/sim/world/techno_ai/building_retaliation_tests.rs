@@ -364,8 +364,9 @@ fn production_fixture(
 }
 
 /// One `AP` hit of 10 on `building` from `source`, through the production
-/// receiver; returns its pings.
+/// receiver; returns the number of newly submitted inline warnings.
 fn hit(sim: &mut Simulation, rules: &RuleSet, building: u64, source: u64) -> usize {
+    let sound_prefix = sim.sound_events.len();
     let house = sim.substrate.entities.get(source).unwrap().owner();
     let warhead = sim.interner.intern("AP");
     let event = EntityDamageEvent::area(building, 10, 0, source, Some(house), warhead);
@@ -377,7 +378,12 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, building: u64, source: u64) -> usi
         rules,
         None,
     );
-    pings.len()
+    assert!(pings.is_empty(), "building warnings are already submitted");
+    sim.sound_events
+        .iter()
+        .skip(sound_prefix)
+        .filter(|event| matches!(event, SimSoundEvent::UnderAttack { .. }))
+        .count()
 }
 
 /// A 2x2 building that undeploys and gathers (the deployed Slave Miner)
@@ -397,15 +403,7 @@ fn a_deployed_slave_miner_pings_the_ore_miner_line() {
         &rules,
         None,
     );
-    Simulation::dispatch_under_attack_events(
-        &sim.interner,
-        &sim.session,
-        &sim.house_alliances,
-        &mut sim.sound_events,
-        &sim.houses,
-        &pings,
-        &rules,
-    );
+    assert!(pings.is_empty(), "building warning is already submitted");
     assert_eq!(
         sim.sound_events
             .iter()

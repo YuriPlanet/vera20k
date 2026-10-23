@@ -550,6 +550,10 @@ impl Simulation {
             owner: entity.owner(),
             victim_type: entity.type_ref(),
         };
+        if notify_house {
+            self.notify_house_under_attack(event, rules, registry, effects);
+            return;
+        }
         Self::dispatch_under_attack_events(
             &self.interner,
             &self.session,
@@ -559,9 +563,9 @@ impl Simulation {
             &[event],
             rules,
         );
-        if notify_house {
-            self.raise_house_attacked_tags(event.owner, rules, registry, effects);
-        }
+        // Temporal71B04C/71B05F's harvester branch calls radar/EVA directly, with
+        // no House Tags, and also completes before returning to the warp.
+        effects.flush_sound(self, rules);
     }
 
     /// `TemporalClass::CanWarpTarget @ 0x0071AE50`: a `Warpable=` type, not

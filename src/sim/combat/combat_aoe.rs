@@ -1410,6 +1410,7 @@ mod tests {
         main_rng: SimRng,
         scenario_rng: SimRng,
         handled_deaths: Vec<u64>,
+        sounds: Option<Vec<crate::sim::world::SimSoundEvent>>,
     }
 
     impl ReceiverCommit {
@@ -1420,6 +1421,7 @@ mod tests {
                 main_rng: SimRng::new(1),
                 scenario_rng: SimRng::new(2),
                 handled_deaths: Vec::new(),
+                sounds: None,
             }
         }
 
@@ -1451,7 +1453,7 @@ mod tests {
                 Some(terrain),
                 0,
                 &mut None,
-                &mut None,
+                &mut self.sounds.as_mut(),
             )
         }
     }
@@ -3385,7 +3387,11 @@ mod tests {
                 "Immune remains an ordered receiver record, not a collector filter"
             );
 
-            let (death, pings) = ReceiverCommit::new().run(
+            let mut commit = ReceiverCommit {
+                sounds: Some(Vec::new()),
+                ..ReceiverCommit::new()
+            };
+            let (death, pings) = commit.run(
                 &aoe.hits,
                 &mut entities,
                 &mut occupancy,
@@ -3393,11 +3399,16 @@ mod tests {
                 &mut interner,
                 &mut terrain,
             );
-            (
-                entities.get(2).unwrap().health.current(),
-                pings.len(),
-                death,
-            )
+            assert!(pings.is_empty(), "building warnings are already submitted");
+            let warnings = commit
+                .sounds
+                .unwrap()
+                .iter()
+                .filter(|event| {
+                    matches!(event, crate::sim::world::SimSoundEvent::UnderAttack { .. })
+                })
+                .count();
+            (entities.get(2).unwrap().health.current(), warnings, death)
         }
 
         let (immune_hp, immune_pings, immune_death) = run(true);
