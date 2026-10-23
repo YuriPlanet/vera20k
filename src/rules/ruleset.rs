@@ -5588,11 +5588,8 @@ impl RuleSet {
         let super_weapon_order: Vec<String> = sw_ids.clone();
         for sw_id in &sw_ids {
             if let Some(section) = ini.section(sw_id) {
-                if let Some(sw) = SuperWeaponType::from_ini_section(sw_id, section) {
-                    super_weapons.insert(sw_id.clone(), sw);
-                } else {
-                    log::warn!("SuperWeapon '{}' has unknown Type=, skipping", sw_id);
-                }
+                let sw = SuperWeaponType::from_ini_section(sw_id, section);
+                super_weapons.insert(sw_id.clone(), sw);
             } else {
                 log::trace!(
                     "SuperWeapon '{}' listed in [SuperWeaponTypes] but has no section",

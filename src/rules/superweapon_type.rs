@@ -238,7 +238,7 @@ impl SuperWeaponType {
     /// Parse a SuperWeaponType from a rules.ini section
     /// (`SuperWeaponTypeClass::ReadINI`, reads `0x006CEA6D`-`0x006CEDB1`).
     /// Ares extensions require the explicit `ares` build feature.
-    pub fn from_ini_section(id: &str, section: &IniSection) -> Option<Self> {
+    pub fn from_ini_section(id: &str, section: &IniSection) -> Self {
         // Native reads Range and LineMultiplier before Type. The constructor
         // owns the zero defaults; keep the same current-value defaults here.
         let range = section.read_float("Range", 0.0);
@@ -259,7 +259,7 @@ impl SuperWeaponType {
         );
         #[cfg(not(feature = "ares"))]
         let extension_kind = false;
-        Some(Self {
+        Self {
             id: id.to_string(),
             // AbstractTypeClass `UIName=`, ReadString 0x20 (`0x00410AFB`).
             ui_name: section.read_name("UIName", 0x20).map(str::to_string),
@@ -365,7 +365,7 @@ impl SuperWeaponType {
                     ),
                 }
             }),
-        })
+        }
     }
 }
 
@@ -596,7 +596,7 @@ DisableableFromShell=yes
 ";
         let ini = IniFile::from_str(ini_text);
         let section = ini.section("LightningStormSpecial").unwrap();
-        let sw = SuperWeaponType::from_ini_section("LightningStormSpecial", section).unwrap();
+        let sw = SuperWeaponType::from_ini_section("LightningStormSpecial", section);
         assert_eq!(sw.kind, SuperWeaponKind::LightningStorm);
         assert_eq!(sw.recharge_time_frames, 9000); // 10 min × 900
         assert!(sw.is_powered);
@@ -663,7 +663,7 @@ Type=BogusType
 ";
         let ini = IniFile::from_str(ini_text);
         let section = ini.section("BogusWeapon").unwrap();
-        let sw = SuperWeaponType::from_ini_section("BogusWeapon", section).unwrap();
+        let sw = SuperWeaponType::from_ini_section("BogusWeapon", section);
         assert_eq!(sw.kind, SuperWeaponKind::NoEffect);
         assert_eq!(sw.kind.native_index(), -1);
         assert_eq!(sw.recharge_time_frames, CTOR_RECHARGE_FRAMES);
@@ -675,8 +675,7 @@ Type=BogusType
     fn parse_ares_generic_warhead() {
         let ini =
             IniFile::from_str("[Strike]\nType=GenericWarhead\nSW.Warhead=Payload\nSW.Damage=75\n");
-        let sw = SuperWeaponType::from_ini_section("Strike", ini.section("Strike").unwrap())
-            .expect("Ares GenericWarhead is a supported superweapon type");
+        let sw = SuperWeaponType::from_ini_section("Strike", ini.section("Strike").unwrap());
         assert_eq!(
             sw.kind.native_index(),
             -1,
@@ -686,8 +685,7 @@ Type=BogusType
         assert_eq!(sw.action.as_deref(), Some("Attack"));
         let defaults = IniFile::from_str("[Default]\nType=gEnErIcWaRhEaD\n");
         let default_sw =
-            SuperWeaponType::from_ini_section("Default", defaults.section("Default").unwrap())
-                .unwrap();
+            SuperWeaponType::from_ini_section("Default", defaults.section("Default").unwrap());
         assert_eq!(default_sw.generic_warhead.as_ref().unwrap().damage, 0);
         assert_eq!(
             default_sw.generic_warhead.as_ref().unwrap().ai_targeting,
@@ -705,14 +703,13 @@ Type=BogusType
              Action=PsychicReveal\nRange=7\nLineMultiplier=2\nSW.RequiresTarget=unknown-mask\n",
         );
         for id in ["Strike", "Delivery"] {
-            let sw = SuperWeaponType::from_ini_section(id, ini.section(id).unwrap()).unwrap();
+            let sw = SuperWeaponType::from_ini_section(id, ini.section(id).unwrap());
             assert_eq!(sw.kind, SuperWeaponKind::NoEffect);
             assert!(sw.generic_warhead.is_none() && sw.unit_delivery.is_none());
             assert!(sw.action.is_none());
             assert_eq!(sw.money_amount, 0);
         }
-        let stock = SuperWeaponType::from_ini_section("Reveal", ini.section("Reveal").unwrap())
-            .expect("native types remain available with extension tags present");
+        let stock = SuperWeaponType::from_ini_section("Reveal", ini.section("Reveal").unwrap());
         assert_eq!(stock.kind, SuperWeaponKind::PsychicReveal);
         assert_eq!(stock.recharge_time_frames, 1800);
         assert_eq!(stock.action.as_deref(), Some("PsychicReveal"));
