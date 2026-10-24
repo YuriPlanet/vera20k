@@ -932,9 +932,18 @@ fn shroud_current_sight_spy_sat_event_preserves_registration_order_and_restore()
     .unwrap();
     for gap_first in [false, true] {
         let (mut sim, rules, owner) = fixture();
+        sim.session.set_current_house_for_test(Some(owner));
         let gapper = sim.interner.intern("Soviet");
         let (source, first_gap) = if gap_first { (2, 1) } else { (1, 2) };
         insert_sight_unit(&mut sim, source, owner, 12, 12);
+        // The supplied reveal/release history represents the native current
+        // player's discovered source (4ADCD0's50B6F0/+41B Human arm).
+        sim.substrate
+            .entities
+            .get_mut(source)
+            .unwrap()
+            .discovery
+            .set_discovered_by_current_house_for_test(true);
         sim.update_object_sight_in_view(
             source,
             0,
@@ -1115,6 +1124,7 @@ fn shroud_current_sight_spy_sat_replays_allied_buildings_but_not_mobile_admissio
 #[test]
 fn reset_shroud_replays_own_sight_and_allied_buildings() {
     let (mut sim, rules, viewer) = fixture();
+    sim.session.set_current_house_for_test(Some(viewer));
     let ally = sim.interner.intern("Alliance");
     sim.house_alliances_mut_for_test()
         .entry("ALLIANCE".into())
@@ -1125,6 +1135,12 @@ fn reset_shroud_replays_own_sight_and_allied_buildings() {
         .or_default()
         .insert("ALLIANCE".into());
     insert_sight_unit(&mut sim, 1, viewer, 4, 4);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .discovery
+        .set_discovered_by_current_house_for_test(true);
     insert_structure(&mut sim, 2, ally, "GSI418SIGHT", 18);
     reveal_inserted_sight(&mut sim, 1);
     reveal_inserted_sight(&mut sim, 2);

@@ -2,9 +2,9 @@
 //! Native callbacks visit Techno registration order, ordinary sight then Gap on
 //! each object. House240 idempotence is distinct from House577A SpySatActive;
 //! Map577F30 (RevealEntireMap) shares the House240 latch.
+use super::{FogState, InternedId, OwnerVisibility};
 #[cfg(any(test, feature = "test-support"))]
-use super::gap_footprint;
-use super::{FogState, InternedId, OwnerVisibility, SightAdmission};
+use super::{SightAdmission, gap_footprint};
 
 /// The three native bulk writers have different counter semantics.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -97,9 +97,30 @@ impl FogState {
         *self = world.fog;
     }
 
-    /// Prepare the existing represented House-map bracket. This contains no
-    /// source event: Simulation performs each release/re-entry and delivers
-    /// Cell notifications synchronously between individual writes.
+    /// Map577D90's entry240 guard, before the shared live callbacks. The
+    /// reset writers577AB0/577C90 always enter. Source: original gamemd.
+    pub(crate) fn begin_map_transition(
+        &mut self,
+        owner: InternedId,
+        transition: MapTransition,
+    ) -> bool {
+        if self.width == 0
+            || self.height == 0
+            || (transition == MapTransition::Reveal
+                && self.whole_map_revealed_owners.contains(&owner))
+        {
+            return false;
+        }
+        self.by_owner
+            .get_or_insert_with(owner, || OwnerVisibility::new(self.width, self.height))
+            .tracked
+            .complete = false;
+        true
+    }
+
+    /// Explicit footprint-only fixture inputs; no live source admission or
+    /// native House/Techno decision is implemented here.
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn prepare_map_transition(
         &mut self,
         owner: InternedId,
@@ -108,11 +129,7 @@ impl FogState {
         gap_reentry: Option<&[super::GapGeneratorSource]>,
         alternates: &std::collections::BTreeMap<u64, SightAdmission>,
     ) -> Option<MapTransitionPlan> {
-        if self.width == 0
-            || self.height == 0
-            || (transition == MapTransition::Reveal
-                && self.whole_map_revealed_owners.contains(&owner))
-        {
+        if !self.begin_map_transition(owner, transition) {
             return None;
         }
         let held: std::collections::BTreeSet<_> = self
@@ -141,10 +158,6 @@ impl FogState {
             .chain(reentry.keys().copied())
             .chain(alternates.keys().copied())
             .collect();
-        self.by_owner
-            .get_or_insert_with(owner, || OwnerVisibility::new(self.width, self.height))
-            .tracked
-            .complete = false;
         Some(MapTransitionPlan {
             held,
             #[cfg(any(test, feature = "test-support"))]
@@ -212,6 +225,7 @@ impl FogState {
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) struct MapTransitionPlan {
     pub held: std::collections::BTreeSet<u64>,
     #[cfg(any(test, feature = "test-support"))]

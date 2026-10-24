@@ -603,45 +603,6 @@ impl Simulation {
             radius,
         );
     }
-
-    /// Gap candidates visited by the live4ADEE0/4ADCD0 map bracket. Each
-    /// callback uses refresh_map_callback_gap and its existing +269 owner;
-    /// source collection must not change latches or manufacture cell writes.
-    pub(super) fn map_callback_gap_sources(
-        &self,
-        viewer: InternedId,
-        rules: &RuleSet,
-    ) -> Vec<vision::GapGeneratorSource> {
-        let config = self.sight_reveal_config(rules);
-        self.substrate
-            .entities
-            .iter_sorted()
-            .filter_map(|(id, entity)| {
-                let (_, radius) = self.gap_operational_state(id, rules)?;
-                if entity.owner() != viewer
-                    && self.takes_allied_building_arm(entity, viewer, &config)
-                {
-                    return None;
-                }
-                let radius = entity
-                    .gap_generator
-                    .viewers
-                    .get(&viewer)
-                    .map_or(radius, |deposit| {
-                        if deposit.radius == 0 {
-                            radius
-                        } else {
-                            deposit.radius
-                        }
-                    });
-                Some(building_gap_source(
-                    entity,
-                    radius,
-                    self.resolved_terrain.as_ref(),
-                ))
-            })
-            .collect()
-    }
 }
 
 /// The gap source of `entity` with `radius`: CreateGap and DestroyGap

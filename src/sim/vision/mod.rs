@@ -949,14 +949,19 @@ impl FogState {
         &mut self,
         id: u64,
         viewer: InternedId,
+        source_owner: InternedId,
         admission: &SightAdmission,
     ) {
         assert!(
             !self.source_sight_is_latched(id, viewer),
             "source sight is already latched"
         );
-        self.sight_sources
-            .insert((id, viewer), SightSource::from(admission));
+        // The native cache has source geometry; ordinary ReReveal takes its
+        // House gate from the source owner, even when UpdateReveal's explicit
+        // alternate House received the actual map contribution (70B0CB..B12C).
+        let mut source = SightSource::from(admission);
+        source.owner = source_owner;
+        self.sight_sources.insert((id, viewer), source);
     }
 
     /// Native ReReveal clears this logical client's +0x250 before its final
@@ -2161,55 +2166,6 @@ pub(crate) fn holds_sight(
         && (!config.require_playfield_membership || entity.in_playfield())
         && !entity.passenger_role.is_inside_transport()
         && !config.passive_owner(entity.owner())
-}
-
-/// The ordinary `TechnoClass::UpdateReveal @ 0x0070AF50` footprint for
-/// the entity's own House. Exact zero type Sight is rejected at `0x0070AF87`;
-/// an admitted zero effective radius can still retain an empty footprint.
-/// Returns `None` without a fog plane. Callers own [`holds_sight`] eligibility.
-pub(crate) fn entity_own_sight(
-    fog: &FogState,
-    entity: &crate::sim::game_entity::GameEntity,
-    config: &VisionConfig,
-    height_grid: Option<CellLevels<'_>>,
-    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    sight_ability: bool,
-) -> Option<SightAdmission> {
-    entity_sight_admission(
-        fog,
-        entity,
-        entity.owner(),
-        config,
-        height_grid,
-        terrain,
-        sight_ability,
-        None,
-    )
-}
-
-/// The footprint `TechnoClass::UpdateReveal @ 0x0070AF50` reveals for
-/// `entity`'s sight, computed as the ordinary writer computes it and recorded
-/// as a reveal by `revealer`; none for a zero radius (`0x0070B186`).
-pub(crate) fn entity_sight_footprint(
-    fog: &FogState,
-    entity: &crate::sim::game_entity::GameEntity,
-    config: &VisionConfig,
-    height_grid: Option<CellLevels<'_>>,
-    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    sight_ability: bool,
-    revealer: InternedId,
-) -> Option<SightAdmission> {
-    entity_sight_admission(
-        fog,
-        entity,
-        revealer,
-        config,
-        height_grid,
-        terrain,
-        sight_ability,
-        None,
-    )
-    .filter(|admission| admission.radius != 0)
 }
 
 /// The footprint `TechnoClass::UpdateReveal @ 0x0070AF50` reveals for
