@@ -27,8 +27,26 @@ Per-type `AIBuildLimit=` limits AI production using the existing tracked and pro
 owners (`Factory_AI`, `0xC335A0..0xC33726`). Positive limits include limbo factory objects;
 non-positive limits compare the magnitude against both counters, and zero blocks the type.
 Reaching a cap clears the standing choice, without advancing the base plan. A capped building
-can therefore stall construction. VERA still has one vehicle choice slot; NPSE's separate
-naval AI choice remains a separate unimplemented mechanism.
+can therefore stall construction.
+
+NPSE also splits the vehicle choice by `Naval=`: `Suggest_New_Object`'s hook
+(`0x4FBDAF -> 0xC2F130`) reads `House+0x16130` for a naval producer and `House+0x5650`
+otherwise, so a shipyard and a war factory no longer share one pick. Without the split the
+shipyard fetched the war factory's land unit, failed the `Naval=` mismatch check at `0x450343`
+and idled, which stock does too.
+
+`[General] DisableParallelAIQueues=` (default no) suppresses the other half of the cloning
+behavior: a computer house's factories normally all fetch the same standing choice and produce
+it in parallel. NPSE 2.0 reads the switch into `Rules+0x2D` from its `RulesClass::ReadGeneral`
+hook (`0xC302E9..0xC3031A`) and gates `Factory_AI`'s fetched type on it (`0x45033C` hook, cave
+`0xC335A0` -> `0xC2F07C`): the start is skipped while the house already counts a producing object
+of the same class. The cave keeps five counters at `House+0x160D4..0x160E4` — aircraft, unit with
+`UnitType+0xCCE` clear, unit with it set, infantry, building — and `0xCCE` is the `Naval=` byte
+(`0x00714A77`), so ground and naval units count apart: NPSE #333 fixed the switch having stopped
+the AI's naval yards behind its war factories. A per-type `DisableAIParallelProduction=` existed
+in older revisions only; NPSE #331 removed it in favor of the per-type `AIBuildLimit=` above, so
+this port reads no per-type switch. The start gate scans live factory state instead of adding a
+second set of counters, which also releases a production the native counters would leak.
 
 ## Cross-extension compatibility
 

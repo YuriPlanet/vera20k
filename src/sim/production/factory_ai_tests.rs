@@ -22,6 +22,8 @@ struct Fixture {
     path: PathGrid,
     owner: InternedId,
     yard: u64,
+    /// The two extra war factories of the parallel-switch tests.
+    war: Option<[u64; 2]>,
 }
 
 fn fixture() -> Fixture {
@@ -64,6 +66,7 @@ fn fixture_from_sources(ini: &IniFile, art: &IniFile) -> Fixture {
         path,
         owner,
         yard,
+        war: None,
     }
 }
 
@@ -414,6 +417,128 @@ fn aibuild_limit_is_ignored_without_npatch() {
     );
 }
 
+const WAR_RULES_TAIL: &str = "[InfantryTypes]\n[AircraftTypes]\n[VehicleTypes]\n0=TANK\n\
+    [BuildingTypes]\n0=YARD\n1=PLAIN\n2=WEAP\n\
+    [YARD]\nStrength=1000\nConstructionYard=yes\nFactory=BuildingType\n\
+    [PLAIN]\nStrength=1000\nCost=100\n\
+    [WEAP]\nStrength=1000\nFactory=UnitType\nCost=200\n\
+    [TANK]\nStrength=300\nSpeed=5\nCost=100\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+    [Clear]\nBuildable=yes\n";
+
+/// The shared fixture plus a second computer war factory and the preset
+/// vehicle choice, for the NPSE parallel-production switch tests. The tests
+/// drive `factory_ai` directly, so no strategy pass rewrites the preset
+/// choice.
+fn war_fixture(general: &str, tank_tail: &str) -> Fixture {
+    let rules = format!(
+        "[General]\n{general}PlacementDelay=.05\nAIAlternateProductionCreditCutoff=10\n{}",
+        WAR_RULES_TAIL.replace("[TANK]\n", tank_tail)
+    );
+    let mut f = fixture_with(&rules);
+    let weap_1 = f
+        .sim
+        .spawn_object("WEAP", "AIHouse", 8, 8, 0, &f.rules)
+        .unwrap();
+    let weap_2 = f
+        .sim
+        .spawn_object("WEAP", "AIHouse", 8, 12, 0, &f.rules)
+        .unwrap();
+    f.sim
+        .houses
+        .get_mut(&f.owner)
+        .unwrap()
+        .ai_unit_choices_mut()
+        .set(crate::sim::ai_unit_choice::UnitChoiceKind::Unit, 0);
+    f.war = Some([weap_1, weap_2]);
+    f
+}
+
+impl Fixture {
+    fn war(&self) -> [u64; 2] {
+        self.war.expect("war fixture")
+    }
+
+    fn holds(&self, building: u64) -> bool {
+        self.sim
+            .production
+            .factories()
+            .building_factory(building)
+            .and_then(|factory| factory.object())
+            .is_some()
+    }
+
+    /// One `BuildingClass::Factory_AI` visit.
+    fn visit(&mut self, building: u64) {
+        factory_ai(
+            &mut self.sim,
+            &self.rules,
+            building,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+    }
+}
+
+/// Retail default: the house's war factories all fetch the same standing
+/// choice and clone it, like the cloning vats (NPSE 1.4.11.4). This guards
+/// the behavior the switch exists to suppress.
+#[test]
+fn without_the_switch_both_war_factories_clone_the_choice() {
+    let mut f = war_fixture("", "[TANK]\n");
+    assert!(!f.rules.general.disable_parallel_ai_queues);
+    let [weap_1, weap_2] = f.war();
+    f.visit(weap_1);
+    assert!(f.holds(weap_1), "the first factory starts the tank");
+    f.visit(weap_2);
+    assert!(f.holds(weap_2), "the second factory clones it");
+}
+
+/// `[General] DisableParallelAIQueues=yes`: while one factory of the house
+/// produces, no other starts (`0x45033C` hook, cave `0xC2F07C`); the block
+/// releases when that production ends — the live scan reads the factory
+/// state `Exit_Object` (`0x443CCA`) and `AbandonProduction` (`0x4CA004`)
+/// release.
+#[cfg(feature = "npatch")]
+#[test]
+fn disable_parallel_ai_queues_serializes_war_factory_production() {
+    let mut f = war_fixture("DisableParallelAIQueues=yes\n", "[TANK]\n");
+    assert!(f.rules.general.disable_parallel_ai_queues);
+    let [weap_1, weap_2] = f.war();
+    f.visit(weap_1);
+    assert!(f.holds(weap_1), "the first factory starts the tank");
+    f.visit(weap_2);
+    assert!(!f.holds(weap_2), "the second factory waits");
+    abandon_production(
+        &mut f.sim,
+        &f.rules,
+        FactoryHolder::Building(weap_1),
+        f.owner,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert!(!f.holds(weap_1), "the production ended");
+    // The abandon clears the standing choice; the house's chooser refills it
+    // every 8th frame. The chooser itself is outside this test.
+    f.sim
+        .houses
+        .get_mut(&f.owner)
+        .unwrap()
+        .ai_unit_choices_mut()
+        .set(crate::sim::ai_unit_choice::UnitChoiceKind::Unit, 0);
+    f.visit(weap_2);
+    assert!(f.holds(weap_2), "the release lets the idle factory start");
+}
+
+const NAVAL_RULES_TAIL: &str = "[InfantryTypes]\n[AircraftTypes]\n[VehicleTypes]\n0=TANK\n1=SHIP\n\
+    [BuildingTypes]\n0=YARD\n1=PLAIN\n2=WEAP\n3=SYRD\n\
+    [YARD]\nStrength=1000\nConstructionYard=yes\nFactory=BuildingType\n\
+    [PLAIN]\nStrength=1000\nCost=100\n\
+    [WEAP]\nStrength=1000\nFactory=UnitType\nCost=200\n\
+    [SYRD]\nStrength=1000\nFactory=UnitType\nNaval=yes\nCost=200\n\
+    [TANK]\nStrength=300\nSpeed=5\nCost=100\n\
+    Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+    [SHIP]\nStrength=300\nSpeed=5\nCost=100\nNaval=yes\n\
+    Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+    [Clear]\nBuildable=yes\n";
 
 /// NPSE `Suggest_New_Object` (`0x4FBDAF -> 0xC2F130`) reads `House+0x16130`
 /// from a naval producer and `House+0x5650` from a land one, so a shipyard and
@@ -426,20 +551,9 @@ fn a_shipyard_takes_the_naval_choice_while_the_war_factory_keeps_its_own() {
     use crate::rules::object_type::ObjectCategory;
     use crate::sim::ai_unit_choice::UnitChoiceKind;
 
-    let mut f = fixture_with(
-        "[General]\nPlacementDelay=.05\nAIAlternateProductionCreditCutoff=10\n\
-         [InfantryTypes]\n[AircraftTypes]\n[VehicleTypes]\n0=TANK\n1=SHIP\n\
-         [BuildingTypes]\n0=YARD\n1=PLAIN\n2=WEAP\n3=SYRD\n\
-         [YARD]\nStrength=1000\nConstructionYard=yes\nFactory=BuildingType\n\
-         [PLAIN]\nStrength=1000\nCost=100\n\
-         [WEAP]\nStrength=1000\nFactory=UnitType\nCost=200\n\
-         [SYRD]\nStrength=1000\nFactory=UnitType\nNaval=yes\nCost=200\n\
-         [TANK]\nStrength=300\nSpeed=5\nCost=100\n\
-         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
-         [SHIP]\nStrength=300\nSpeed=5\nCost=100\nNaval=yes\n\
-         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
-         [Clear]\nBuildable=yes\n",
-    );
+    let mut f = fixture_with(&format!(
+        "[General]\nPlacementDelay=.05\nAIAlternateProductionCreditCutoff=10\n{NAVAL_RULES_TAIL}"
+    ));
     let weap = f
         .sim
         .spawn_object("WEAP", "AIHouse", 8, 8, 0, &f.rules)
@@ -494,5 +608,83 @@ fn a_shipyard_takes_the_naval_choice_while_the_war_factory_keeps_its_own() {
         held(&f, syrd).as_deref(),
         Some("SHIP"),
         "the shipyard builds the naval channel"
+    );
+}
+
+/// The switch's unit counters split on `UnitType+0xCCE` (the `Naval=` byte),
+/// so a ground factory's tank does not fill the naval yard's counter — NPSE
+/// #333 fixed exactly the global switch stopping the AI's navy. Two naval
+/// yards still serialize, so the split is not a blanket disable. Each
+/// producer reads its own choice slot, as `0xC2F130` routes them.
+#[cfg(feature = "npatch")]
+#[test]
+fn disable_parallel_ai_queues_keeps_naval_and_ground_counters_apart() {
+    use crate::rules::object_type::ObjectCategory;
+    use crate::sim::ai_unit_choice::UnitChoiceKind;
+
+    let mut f = fixture_with(&format!(
+        "[General]\nDisableParallelAIQueues=yes\nPlacementDelay=.05\n\
+         AIAlternateProductionCreditCutoff=10\n{NAVAL_RULES_TAIL}"
+    ));
+    let weap = f
+        .sim
+        .spawn_object("WEAP", "AIHouse", 8, 8, 0, &f.rules)
+        .unwrap();
+    let syrd_1 = f
+        .sim
+        .spawn_object("SYRD", "AIHouse", 8, 14, 0, &f.rules)
+        .unwrap();
+    let syrd_2 = f
+        .sim
+        .spawn_object("SYRD", "AIHouse", 8, 20, 0, &f.rules)
+        .unwrap();
+    let tank = f
+        .rules
+        .type_array_index(ObjectCategory::Vehicle, "TANK")
+        .expect("TANK is a vehicle type");
+    let ship = f
+        .rules
+        .type_array_index(ObjectCategory::Vehicle, "SHIP")
+        .expect("SHIP is a vehicle type");
+    let set = |f: &mut Fixture, index: i32| {
+        f.sim
+            .houses
+            .get_mut(&f.owner)
+            .unwrap()
+            .ai_unit_choices_mut()
+            .set(UnitChoiceKind::Unit, index);
+    };
+
+    set(&mut f, tank);
+    f.visit(weap);
+    assert!(f.holds(weap), "the ground factory starts its tank");
+    f.sim
+        .houses
+        .get_mut(&f.owner)
+        .unwrap()
+        .ai_unit_choices_mut()
+        .set_naval_unit(ship);
+    f.visit(syrd_1);
+    assert!(
+        f.holds(syrd_1),
+        "a naval yard is not blocked by the ground unit's counter"
+    );
+    f.visit(syrd_2);
+    assert!(!f.holds(syrd_2), "two naval yards still serialize");
+}
+
+/// Extension keys cannot change production in a build without NPatch.
+#[cfg(not(feature = "npatch"))]
+#[test]
+fn npse_switches_are_ignored_without_the_build_capability() {
+    let mut f = war_fixture("DisableParallelAIQueues=yes\n", "[TANK]\n");
+    assert!(!f.rules.general.disable_parallel_ai_queues);
+    let [weap_1, weap_2] = f.war();
+    f.visit(weap_1);
+    f.visit(weap_2);
+    assert!(f.holds(weap_1));
+    assert!(
+        f.holds(weap_2),
+        "NPSE keys leave stock parallel production intact"
     );
 }
