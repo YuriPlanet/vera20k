@@ -146,6 +146,9 @@ pub fn voxel_table_rotation(angle: f32) -> (f32, f32) {
 /// **((lift * slope) * facing) * shifted_rotation**, with a float store at
 /// every product. The cached ordinary arm remains the existing slope/facing
 /// owner. Offsets are shared with Jumpjet54DCC0, not another support model.
+/// Hover513F40's rocking arm makes only **(lift * facing) * shifted_rotation**
+/// (`0x00514262`, `0x00514270`); at slope 0 the identity product here is exact
+/// (table entry 0 is the identity), so this owner draws that arm too.
 pub fn ground_locomotor_matrix(
     slope_type: u8,
     slope_blend: Option<VxlSlopeBlend>,

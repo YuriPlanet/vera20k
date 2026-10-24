@@ -1,5 +1,5 @@
 //! Per-frame sprites of posed bodies: tilted (crashing) bodies, pitched
-//! rockets, rocking Drive/Ship unit parts and tumbling voxel debris.
+//! rockets, rocking Drive/Ship/Hover unit parts and tumbling voxel debris.
 //!
 //! `FlyLocomotionClass` Draw_Matrix's crashing arm (`0x004CF610`) and
 //! `JumpjetLocomotionClass`'s `TiltCrashJumpjet=` arm (`0x0054DCC0`) key their

@@ -25,7 +25,33 @@ use crate::util::native_x87::{
 #[path = "hover_process.rs"]
 mod process;
 
-pub(crate) use process::{hover_move_to, hover_stop_moving};
+pub(crate) use process::{hover_is_powered, hover_move_to, hover_stop_moving};
+
+/// `HoverLocomotionClass::Draw_Matrix @ 0x00513F40` (vt+0x24) as the slope
+/// [`ground_locomotor_matrix`] builds it at, with the same angles. Either
+/// rocking angle at the gate (`0x00513F53..0x00513F7F`) takes the rocking arm,
+/// keyed -1 (`0x005140A2`): `(lift * F) * frame` (`0x00514262`,
+/// `0x00514270`), F being `LocomotionClass::Draw_Matrix @ 0x0055A730`, which
+/// is the owner's slope-0 tilt, since its extra identity product is exact.
+/// Otherwise Is_Powered (`0x00513F88`) returns F itself
+/// (`0x0051407F..0x00514092`), the owner's untilted slope 0. Only an
+/// unpowered Hover takes the slope of the cell under its Location
+/// (`0x00513F93..0x0051405C`: Map `0x00565730`, CellClass `+0x11C`), read
+/// through the caller's query. The voxel draw, GetFLH (`0x006F3B9B`) and the
+/// turret pivot (`0x006F3DB7`) all ask it.
+///
+/// [`ground_locomotor_matrix`]: crate::map::voxel_pose::ground_locomotor_matrix
+pub fn hover_draw_slope(
+    entity: &crate::sim::game_entity::GameEntity,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    angles: [f32; 2],
+) -> u8 {
+    if crate::map::voxel_pose::voxel_tilt_applies(angles) || hover_is_powered(entity, cells) {
+        return 0;
+    }
+    let [x, y] = super::ground_pose::position_world_xy(&entity.position);
+    cells.map_or(0, |cells| cells.ground_fields(cells.lookup_world(x, y)).1)
+}
 
 /// Double 0x007E27F8, the minute-to-frame factor of the Hover time keys.
 const FRAMES_PER_MINUTE: NativeF64Bits = NativeF64Bits::from_bits(0x408c_2000_0000_0000);

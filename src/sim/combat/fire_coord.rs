@@ -207,9 +207,10 @@ impl From<&AttackerSnapshot> for FireSource {
 /// facing/truncation implementation. A source without a locomotor starts
 /// from the identity, so its offset is along world X. The result adds to the
 /// same virtual +AC base as GetFLH. Executed source/ART controls:
-/// tools/procedural_drawing_oracle/action_lines. Drive/Ship use the same
-/// physical-model and locomotor matrix inputs as GetFLH, including the
-/// translation of a rocking hull.
+/// tools/procedural_drawing_oracle/action_lines. Drive/Ship/Hover use the
+/// same physical-model and locomotor matrix inputs as GetFLH (the
+/// locomotor's vt+0x24 at `0x006F3DB7`), including the translation of a
+/// rocking hull.
 ///
 /// BuildingClass's override (`0x00453A70`) has no port: neither caller
 /// reaches a building.
@@ -557,6 +558,13 @@ fn fire_coordinate_base<'r>(
     // GetFLH6F3B6C..6F3BA3 consumes the actual locomotor Draw_Matrix.
     // The physical half sizes come from the immutable rules binding, never
     // the renderer's model cache. Fly's raw pose has no half-size requirement.
+    // Ground pose math has one shared owner;
+    // Hover's Draw_Matrix (`0x00513F40`) is that owner at the slope
+    // [`hover_draw_slope`](crate::sim::movement::hover::hover_draw_slope)
+    // picks. Its cell reads go through an isolated query because the turret
+    // pivot also serves the presentation's target lines: a miss, which needs a
+    // Location outside every allocated cell, stamps that query's Dummy, not
+    // the simulation's as GetFLH's lookups would natively.
     let locomotor_basis = world
         .substrate
         .entities
@@ -573,13 +581,29 @@ fn fire_coordinate_base<'r>(
                     binary_frame,
                 ));
             }
-            if !matches!(kind, LocomotorKind::Drive | LocomotorKind::Ship) {
-                return None;
-            }
             use crate::map::voxel_pose::{VxlSlopeBlend, ground_locomotor_matrix};
             use crate::sim::movement::slope_transition::{SlopeRenderPhase, state_for_entity};
+            if !matches!(
+                kind,
+                LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Hover
+            ) {
+                return None;
+            }
             let half_sizes = rules.object_voxel_half_sizes(&obj.id)?;
-            let (slope, blend) =
+            let angles = entity
+                .rocking
+                .as_ref()
+                .map_or([0.; 2], |state| state.angles_native());
+            let (slope, blend) = if kind == LocomotorKind::Hover {
+                let cells = world
+                    .resolved_terrain
+                    .as_ref()
+                    .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+                (
+                    crate::sim::movement::hover::hover_draw_slope(entity, cells.as_ref(), angles),
+                    None,
+                )
+            } else {
                 match state_for_entity(entity).map(|state| state.render_phase(binary_frame)) {
                     Some(SlopeRenderPhase::Stable(slope)) => (slope, None),
                     Some(SlopeRenderPhase::Transition {
@@ -597,15 +621,13 @@ fn fire_coordinate_base<'r>(
                         }),
                     ),
                     None => (0, None),
-                };
+                }
+            };
             Some(ground_locomotor_matrix(
                 slope,
                 blend,
                 crate::util::direction_tables::step32_from_facing16(body_facing16),
-                entity
-                    .rocking
-                    .as_ref()
-                    .map_or([0.; 2], |state| state.angles_native()),
+                angles,
                 half_sizes,
             ))
         });
@@ -1387,6 +1409,10 @@ mod tests {
 #[cfg(test)]
 #[path = "fire_coord_building_tests.rs"]
 mod building_tests;
+
+#[cfg(test)]
+#[path = "fire_coord_hover_tests.rs"]
+mod hover_tests;
 
 #[cfg(test)]
 mod control_link_port_tests {

@@ -35,6 +35,10 @@ use crate::sim::movement::slope_transition::SLOPE_TRANSITION_FRAMES;
 use std::borrow::Cow;
 
 #[cfg(test)]
+#[path = "hover_draw_tests.rs"]
+mod hover_draw_tests;
+
+#[cfg(test)]
 #[path = "naval_draw_tests.rs"]
 mod naval_draw_tests;
 
@@ -102,20 +106,30 @@ fn clamp_slope_for_render(slope: u8) -> u8 {
     if slope <= 16 { slope } else { 0 }
 }
 
-fn terrain_slope_for_render(state: &AppState, rx: u16, ry: u16) -> u8 {
-    state
-        .terrain_template()
+fn terrain_slope_for_render(
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    rx: u16,
+    ry: u16,
+) -> u8 {
+    terrain
         .and_then(|t| t.cell(rx, ry))
         .map(|c| clamp_slope_for_render(c.slope_type))
         .unwrap_or(0)
 }
 
+/// The slope a Unit body's locomotor Draw_Matrix draws it at. `terrain`
+/// supplies the fallback's cell slope, `cells` is the draw's isolated query
+/// of the live map, and `angles` are the rocking angles the body is drawn
+/// with, the ones [`ground_pose_with_angles`] tilts it by.
 fn unit_render_slope_state(
-    state: &AppState,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
     entity: &crate::sim::game_entity::GameEntity,
     display_binary_frame: u32,
     band: EntityDrawBand,
+    angles: [f32; 2],
 ) -> UnitRenderSlopeState {
+    use crate::rules::locomotor_type::LocomotorKind;
     // Drive/Ship Draw_Matrix reads the locomotor-owned cache even when the
     // cached slope is zero. Terrain is only a compatibility fallback for
     // locomotor classes excluded from the native override pair.
@@ -125,25 +139,79 @@ fn unit_render_slope_state(
     if entity.category() == EntityCategory::Aircraft {
         return UnitRenderSlopeState::Stable(0);
     }
+    let kind = entity
+        .locomotor
+        .as_ref()
+        .map(|locomotor| locomotor.active_kind());
     // `JumpjetLocomotionClass` Draw_Matrix (`0x0054DCC0`) is the facing matrix
     // of `LocomotionClass::Draw_Matrix @ 0x0055A730`, tilted only by its
     // `TiltCrashJumpjet=` arm: a Jumpjet body never takes a cell slope, landed
     // or airborne.
-    let jumpjet = entity.locomotor.as_ref().is_some_and(|locomotor| {
-        locomotor.active_kind() == crate::rules::locomotor_type::LocomotorKind::Jumpjet
-    });
     // A body that has left the floor has no cell slope to sit on, so it never
     // enters the drive-track tilt transition. Upper-layer bodies therefore
     // keep their stable atlas shape.
-    if jumpjet || band != EntityDrawBand::Ground {
+    if kind == Some(LocomotorKind::Jumpjet) || band != EntityDrawBand::Ground {
         return UnitRenderSlopeState::Stable(0);
     }
-
+    // `HoverLocomotionClass::Draw_Matrix @ 0x00513F40`: the level facing
+    // matrix while rocking or powered, its cell's slope otherwise
+    // ([`hover_draw_slope`](crate::sim::movement::hover::hover_draw_slope));
+    // a rocking body's tilt is [`ground_pose_with_angles`]'s.
+    if kind == Some(LocomotorKind::Hover) {
+        return UnitRenderSlopeState::Stable(clamp_slope_for_render(
+            crate::sim::movement::hover::hover_draw_slope(entity, cells, angles),
+        ));
+    }
+    // RESIDUAL: every other locomotor that reaches here draws through the
+    // base `LocomotionClass::Draw_Matrix @ 0x0055A730`, the level facing
+    // matrix (Teleport's vtable slot `0x007F5024`, Walk's `0x007F6A1C`,
+    // Mech's `0x007EDB90`), but takes its cell's slope here. Trigger: a voxel
+    // Unit with one of them active on a sloped cell: a Chrono Miner (CMIN,
+    // Teleport primary) before the Drive its next move installs, a vehicle
+    // inside a Chronosphere warp's Teleport piggyback, and the unbuildable
+    // CMON and SMON; no retail vehicle uses Walk or Mech. Effect: the body
+    // tilts with the ground where gamemd draws it level; its shadow (base
+    // `0x0055A7D0`) lies on the slope either way. Frequency: whenever one of
+    // them stands on a ramp in that state. Risk: visual only.
     UnitRenderSlopeState::Stable(terrain_slope_for_render(
-        state,
+        terrain,
         entity.position.rx(),
         entity.position.ry(),
     ))
+}
+
+/// The slope a Unit's ground shadow lies on. Hover's Shadow_Matrix
+/// (`0x005142A0`) keys a rocking draw -1 and returns the base
+/// `LocomotionClass::Shadow_Matrix @ 0x0055A7D0`, its cell's slope and its
+/// facing, whatever its body draws: a powered Hover's shadow stays on the
+/// ramp its level body crosses. Every other body's shadow keeps its body
+/// slope here.
+///
+/// RESIDUAL: Drive's and Ship's Shadow_Matrix (`0x004B0410`, `0x0069FB20`)
+/// key -1 while their slope changes or they rock, then also end in
+/// `0x0055A7D0`, so natively their shadow lies on the slope of the cell under
+/// their Location as well. Trigger: a Drive or Ship body whose slope state
+/// (the transition's `to_slope` mid-transition) differs from that cell's
+/// slope. Effect: its shadow lies on the other slope. Frequency: untraced, at
+/// most the frames around a slope change. Risk: visual only.
+fn unit_shadow_slope(
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    entity: &crate::sim::game_entity::GameEntity,
+    body: UnitRenderSlopeState,
+) -> u8 {
+    if entity.locomotor.as_ref().is_some_and(|locomotor| {
+        locomotor.active_kind() == crate::rules::locomotor_type::LocomotorKind::Hover
+    }) {
+        // Base Shadow_Matrix 0x0055A801..0x0055A80C reads the current
+        // Map cell, including replacements made by cliff collapse.
+        terrain_slope_for_render(
+            cells.map(crate::map::resolved_terrain::NativeCellQuery::terrain),
+            entity.position.rx(),
+            entity.position.ry(),
+        )
+    } else {
+        stable_slope_for_key(body)
+    }
 }
 
 fn locomotor_render_slope_state(
@@ -293,7 +361,9 @@ pub(crate) fn build_unit_instances(
         .sim_runtime
         .as_ref()
         .and_then(|rt| rt.view().resolved_terrain());
-    let light_cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+    // The draw's own query of the live map: lighting and Hover's Is_Powered
+    // height read through it, and a miss stamps its dummy, not the simulation's.
+    let cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::isolated);
     state
         .match_state
         .match_presentation
@@ -422,16 +492,21 @@ pub(crate) fn build_unit_instances(
         let slope_state = render_pose
             .slope
             .map(render_slope_phase)
-            .unwrap_or_else(|| unit_render_slope_state(state, entity, display_binary_frame, band));
+            .unwrap_or_else(|| {
+                unit_render_slope_state(
+                    state.terrain_template(),
+                    cells.as_ref(),
+                    entity,
+                    display_binary_frame,
+                    band,
+                    render_pose.angles,
+                )
+            });
+        let shadow_slope = unit_shadow_slope(cells.as_ref(), entity, slope_state);
         let interp_z = pos.z();
         let draw_state = draw_decision.state;
         let extra_light = state.rules().map_or(0, |rules| {
-            crate::app::presentation::lighting::body_extra_light(
-                entity,
-                rules,
-                sim,
-                light_cells.as_ref(),
-            )
+            crate::app::presentation::lighting::body_extra_light(entity, rules, sim, cells.as_ref())
         });
         let tint = vxl_body_tint(
             state.match_state.match_presentation.lighting.grid(),
@@ -554,7 +629,7 @@ pub(crate) fn build_unit_instances(
             emit_pose_sprite(
                 state,
                 sim,
-                light_cells.as_ref(),
+                cells.as_ref(),
                 &mut pieces,
                 entity,
                 &key,
@@ -597,6 +672,7 @@ pub(crate) fn build_unit_instances(
                 turret_frame,
                 dock_depth_y_offset,
                 slope_state,
+                shadow_slope,
                 band,
                 ground_pose,
                 &mut pieces,
@@ -648,7 +724,7 @@ pub(crate) fn build_unit_instances(
                         center_y,
                         depth,
                         draw_state,
-                        slope_state,
+                        shadow_slope,
                         band,
                         &mut pieces,
                     );
@@ -657,7 +733,7 @@ pub(crate) fn build_unit_instances(
                     sim,
                     entity,
                     state.rules(),
-                    light_cells.as_ref(),
+                    cells.as_ref(),
                     [center_x, center_y],
                 );
                 let body_depth = body_sort_depth(
@@ -703,7 +779,7 @@ pub(crate) fn build_unit_instances(
                         center_y,
                         depth,
                         draw_state,
-                        slope_state,
+                        shadow_slope,
                         band,
                         &mut pieces,
                     );
@@ -1045,7 +1121,14 @@ fn body_pose_with_angles(
 }
 
 /// Drive4AFFB0..4AFFE8 / Ship69F6C0..69F6F8 key dynamic draws for an unsettled slope or either
-/// qualifying angle. Model loading stays with UnitModel; no ART boolean is
+/// qualifying angle. Hover's rocking arm (`0x00513F53..0x00513F7F`, keyed -1
+/// at `0x005140A2`) is that dynamic matrix without a slope: it multiplies the
+/// lift by `LocomotionClass::Draw_Matrix @ 0x0055A730`'s facing matrix and
+/// then by the shifted, rolled and pitched frame (`0x00514262`,
+/// `0x00514270`). The shared owner's extra identity-slope product is exact,
+/// so a rocking Hover draws through it at the slope 0
+/// [`unit_render_slope_state`] gives it, gun parts included.
+/// Model loading stays with UnitModel; no ART boolean is
 /// used as evidence that a VXL loaded. Read-only: no RNG/timer/detach writes.
 #[cfg(test)]
 fn ground_pose(
@@ -1070,10 +1153,10 @@ fn ground_pose_with_angles(
     binary_frame: u32,
     angles: [f32; 2],
 ) -> Option<crate::render::vxl_raster::GroundPose> {
+    use crate::rules::locomotor_type::LocomotorKind;
     if !matches!(
         entity.locomotor.as_ref()?.active_kind(),
-        crate::rules::locomotor_type::LocomotorKind::Drive
-            | crate::rules::locomotor_type::LocomotorKind::Ship
+        LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Hover
     ) {
         return None;
     }
@@ -1172,7 +1255,8 @@ fn turret_screen_offset(
 /// (`0x004AFFB0..0x004AFFE8`, `[0x007E44E8]`): the binary32 gate
 /// [`voxel_tilt_applies`](crate::map::voxel_pose::voxel_tilt_applies) owns,
 /// which [`ground_pose`] reads too. Otherwise it keys -1 (`0x004B0187`), and
-/// the turret and barrel draw uncached (`0x0073B74C`, `0x007067EF`).
+/// the turret and barrel draw uncached (`0x0073B74C`, `0x007067EF`). Hover's
+/// keys by the angles alone (`0x00513F53..0x00513F7F`, -1 at `0x005140A2`).
 fn turret_images_cached(
     entity: &crate::sim::game_entity::GameEntity,
     slope_state: UnitRenderSlopeState,
@@ -1394,6 +1478,7 @@ fn shadow_lookup_key(mut key: UnitSpriteKey, native_shadow: bool) -> UnitSpriteK
 /// Cloak states suppress this shadow; aircraft and building VXL paths remain
 /// separate. The voxel pipeline reads depth and uses FX_SHADOW alpha darkening;
 /// packed RGB565 half and full native cache lifecycle remain outside this fix.
+/// `shadow_slope` is [`unit_shadow_slope`]'s.
 fn emit_unit_shadow_sprite(
     native_shadow: bool,
     no_shadow: bool,
@@ -1406,7 +1491,7 @@ fn emit_unit_shadow_sprite(
     center_y: f32,
     depth: f32,
     draw_state: DrawState,
-    slope_state: UnitRenderSlopeState,
+    shadow_slope: u8,
     band: EntityDrawBand,
     pieces: &mut Vec<ObjectPieceInstance>,
 ) {
@@ -1420,7 +1505,7 @@ fn emit_unit_shadow_sprite(
         facing: canonical_unit_facing(body_facing),
         layer: VxlLayer::Shadow,
         frame: 0,
-        slope_type: stable_slope_for_key(slope_state),
+        slope_type: shadow_slope,
         barrel_pitch: 0,
     };
     let lookup_key = shadow_lookup_key(key.clone(), native_shadow);
@@ -1879,6 +1964,7 @@ fn emit_turret_unit_sprites(
     turret_frame: u32,
     dock_depth_y_offset: f32,
     slope_state: UnitRenderSlopeState,
+    shadow_slope: u8,
     band: EntityDrawBand,
     mut ground_pose: Option<crate::render::vxl_raster::GroundPose>,
     pieces: &mut Vec<ObjectPieceInstance>,
@@ -2025,7 +2111,7 @@ fn emit_turret_unit_sprites(
             center_y,
             entity_depth,
             draw_state,
-            slope_state,
+            shadow_slope,
             band,
             pieces,
         );
@@ -2096,7 +2182,7 @@ fn emit_turret_unit_sprites(
             center_y,
             entity_depth,
             draw_state,
-            slope_state,
+            shadow_slope,
             band,
             pieces,
         );

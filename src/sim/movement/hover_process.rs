@@ -113,7 +113,7 @@ pub(crate) fn hover_move_to(
     frame: u32,
 ) -> bool {
     let paralyzed = entity.parasite.is_paralyzed(frame);
-    let airborne = hover_is_powered(entity, terrain);
+    let airborne = hover_is_powered(entity, terrain.map(NativeCellQuery::canonical).as_ref());
     let Some(hover) = runtime_mut(entity) else {
         return false;
     };
@@ -163,14 +163,18 @@ pub(crate) fn hover_stop_moving(entity: &mut GameEntity) -> bool {
     true
 }
 
-/// Hover's `Is_Powered` (0x00516C70): the locomotor's powered byte, or the
-/// Foot above its surface (GetHeight 0x005F5F40 > 0).
-fn hover_is_powered(entity: &GameEntity, terrain: Option<&ResolvedTerrainGrid>) -> bool {
+/// Hover's `Is_Powered` (0x00516C70): the locomotor's powered byte (base
+/// 0x0055A930, called at 0x00516C76), or the Foot above its surface
+/// (GetHeight 0x005F5F40 > 0, its vt+0x1C8 at 0x00516C84). Draw_Matrix
+/// (0x00513F88) asks it too ([`super::hover_draw_slope`]), so the height reads
+/// through the caller's cell query: the simulation's canonical one, or an
+/// isolated one whose miss stamps its own dummy.
+pub(crate) fn hover_is_powered(entity: &GameEntity, cells: Option<&NativeCellQuery<'_>>) -> bool {
     entity
         .locomotor
         .as_ref()
         .is_some_and(|loco| loco.is_powered())
-        || super::super::air_movement::current_fly_height(entity, terrain) > 0
+        || super::super::air_movement::queried_flight_height(entity, cells) > 0
 }
 
 impl Simulation {
@@ -240,7 +244,13 @@ impl Simulation {
         if runtime(entity).is_none() {
             return false;
         }
-        let powered = hover_is_powered(entity, resolved_terrain.as_ref());
+        let powered = hover_is_powered(
+            entity,
+            resolved_terrain
+                .as_ref()
+                .map(NativeCellQuery::canonical)
+                .as_ref(),
+        );
         let settled = matches!(
             entity.mission.current().known(),
             Some(MissionType::Sleep | MissionType::Enter)
@@ -662,10 +672,11 @@ impl Simulation {
         id: u64,
     ) {
         let frame = session.binary_frame();
+        let cells = resolved_terrain.as_ref().map(NativeCellQuery::canonical);
         let powered = substrate
             .entities
             .get(id)
-            .is_some_and(|entity| hover_is_powered(entity, resolved_terrain.as_ref()));
+            .is_some_and(|entity| hover_is_powered(entity, cells.as_ref()));
         let Some(entity) = substrate.entities.get_mut(id) else {
             return;
         };
@@ -758,7 +769,7 @@ impl Simulation {
             return Ok(());
         };
         let foot = ground_pose::position_world_coord(&entity.position);
-        let airborne = hover_is_powered(entity, terrain);
+        let airborne = hover_is_powered(entity, terrain.map(NativeCellQuery::canonical).as_ref());
         let pushed = hover.pushed;
         let boost = matches!(
             (path_word(entity, 0), path_word(entity, 1)),

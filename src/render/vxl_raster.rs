@@ -224,7 +224,7 @@ fn voxel_jumpjet_tilt_locomotor_matrix(step: u8, angles: [f32; 2], half_sizes: [
     product(product(lift, voxel_body_facing(step)), frame)
 }
 
-/// Drive4AFF60 / Ship69F670 render-only per-part inputs. The locomotor owns slope/blend; the
+/// Drive4AFF60 / Ship69F670 (and Hover513F40 rocking) render-only per-part inputs. The locomotor owns slope/blend; the
 /// object owns facing and angles; ART owns TurretOffset. The loaded model
 /// supplies the main first-section half sizes, including for its gun parts.
 #[derive(Debug, Clone, Copy, PartialEq)]

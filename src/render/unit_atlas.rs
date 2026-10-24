@@ -84,6 +84,7 @@ pub enum PoseTilt {
     /// radians above the horizon, never zero here.
     Rocket(f32),
     /// Shared Drive4AFF60/Ship69F670 dynamic matrix, retained per Unit part.
+    /// Hover513F40's rocking arm draws it at slope 0.
     Ground(vxl_raster::GroundPose),
 }
 
