@@ -496,13 +496,13 @@ pub struct ObjectType {
     /// that current value as the key's default. About 33 ticks from rest to full
     /// speed; the wall-clock time follows `GameSpeed=` (criterion A12), so no
     /// frame rate is quoted here.
-    pub accel_factor: SimFixed,
+    pub accel_factor: NativeF64Bits,
     /// Fraction of max speed lost per tick during braking (DeaccelerationFactor=).
-    /// Default 0.002 — not 0.02, which this comment claimed until the constant was
-    /// read: ctor `0x00710BBC`/`0x00710BC6` writes `0x3F60624DD2F1A9FC` to `+0x300`
-    /// (`ReadINI 0x007124A3`, key string `0x008443F4`). The parse below was already
-    /// correct. Applied when within slowdown_distance of destination.
-    pub decel_factor: SimFixed,
+    /// TechnoType ctor710BBC/710BC6 writes double0.002 (3F60624DD2F1A9FC)
+    /// to+300; ReadINI7124A3 retains the current double as its default. Both
+    /// coefficients preserve widened authored floats and distinct constructor
+    /// doubles. Applied when within slowdown_distance of the destination.
+    pub decel_factor: NativeF64Bits,
     /// Whether Drive/Ship locomotors ramp toward target speed (`Accelerates=`).
     /// Defaults to true; `Accelerates=false` is handled by locomotor speed
     /// fraction ownership, not by mutating raw `Speed=`.
@@ -3044,9 +3044,13 @@ impl ObjectType {
             idle_rate: section.read_int("IdleRate", 0),
             // Double fields (`0x007124A3..0x007124E5`).
             weight: SimFixed::from_num(section.read_double("Weight", 1.0) as f32),
-            accel_factor: SimFixed::from_num(section.read_double("AccelerationFactor", 0.03) as f32),
-            decel_factor: SimFixed::from_num(
-                section.read_double("DeaccelerationFactor", 0.002) as f32
+            accel_factor: section.read_double_bits(
+                "AccelerationFactor",
+                NativeF64Bits::from_bits(0x3f9e_b851_eb85_1eb8),
+            ),
+            decel_factor: section.read_double_bits(
+                "DeaccelerationFactor",
+                NativeF64Bits::from_bits(0x3f60_624d_d2f1_a9fc),
             ),
             accelerates: section.read_bool("Accelerates", true),
             passive: category == ObjectCategory::Vehicle && section.read_bool("Passive", false),
@@ -4413,6 +4417,7 @@ mod tests {
             "[VehicleTypes]\n0=MTNK\n\
              [MTNK]\nName=Grizzly Battle Tank\nCost=700\nStrength=300\n\
              Armor=heavy\nSpeed=6\nSight=6\nTechLevel=2\n\
+             AccelerationFactor=.03\nDeaccelerationFactor=.002\n\
              Owner=Americans,Alliance\nRequiredHouses=Americans\n\
              Prerequisite=GAWEAP\nPrimary=105mm\n",
         ))
@@ -4426,6 +4431,8 @@ mod tests {
         assert_eq!(obj.strength, 300);
         assert_eq!(obj.armor, "heavy");
         assert_eq!(obj.speed, 6);
+        assert_eq!(obj.accel_factor.bits(), 0x3f9e_b851_e000_0000);
+        assert_eq!(obj.decel_factor.bits(), 0x3f60_624d_e000_0000);
         assert_eq!(obj.tech_level, 2);
         assert_eq!(
             obj.build_time_multiplier,
@@ -4563,6 +4570,8 @@ mod tests {
         assert_eq!(obj.strength, 0);
         assert_eq!(obj.armor, "none");
         assert_eq!(obj.speed, 0);
+        assert_eq!(obj.accel_factor.bits(), 0x3f9e_b851_eb85_1eb8);
+        assert_eq!(obj.decel_factor.bits(), 0x3f60_624d_d2f1_a9fc);
         assert_eq!(obj.walk_rate, 1);
         assert_eq!(obj.idle_rate, 0);
         assert_eq!(obj.sight, 0);

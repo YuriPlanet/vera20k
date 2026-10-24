@@ -44,7 +44,7 @@ use crate::rules::tiberium_type::TiberiumTypeRegistry;
 use crate::rules::voxel_anim_type::{VoxelAnimType, VoxelAnimTypeId};
 use crate::rules::warhead_type::WarheadType;
 use crate::rules::weapon_type::WeaponType;
-use crate::util::fixed_math::{SIM_ONE, SimFixed};
+use crate::util::fixed_math::SimFixed;
 use crate::util::lookup_hash::LookupMap;
 use crate::util::native_random::unit_draw_threshold;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
@@ -1712,13 +1712,13 @@ pub struct GeneralRules {
     // (0x6660BE..0x6660ED). Read by the Drive/Ship fresh speed publish
     // (0x4B3D4C..0x4B3DA6) and the per-cell speed chain.
     /// Tracked vehicle uphill coefficient (`TrackedUphill=`).
-    pub tracked_uphill: SimFixed,
+    pub tracked_uphill: NativeF64Bits,
     /// Tracked vehicle downhill coefficient (`TrackedDownhill=`).
-    pub tracked_downhill: SimFixed,
+    pub tracked_downhill: NativeF64Bits,
     /// Non-tracked (wheeled and other) vehicle uphill coefficient (`WheeledUphill=`).
-    pub wheeled_uphill: SimFixed,
+    pub wheeled_uphill: NativeF64Bits,
     /// Non-tracked vehicle downhill coefficient (`WheeledDownhill=`).
-    pub wheeled_downhill: SimFixed,
+    pub wheeled_downhill: NativeF64Bits,
 
     // -- Per-object draw-light offsets --
     /// Signed `[AudioVisual] ExtraUnitLight=` body-light offset (`1000 == 1.0`).
@@ -2621,10 +2621,10 @@ impl Default for GeneralRules {
             ),
             ship_sinking_weight: SimFixed::lit("3.0"),
             // RulesClass constructor 0x6660BE..0x6660ED.
-            tracked_uphill: SIM_ONE,
-            tracked_downhill: SIM_ONE,
-            wheeled_uphill: SIM_ONE,
-            wheeled_downhill: SIM_ONE,
+            tracked_uphill: NativeF64Bits::ONE,
+            tracked_downhill: NativeF64Bits::ONE,
+            wheeled_uphill: NativeF64Bits::ONE,
+            wheeled_downhill: NativeF64Bits::ONE,
             extra_unit_light: 0,
             extra_infantry_light: 0,
             extra_aircraft_light: 0,
@@ -3896,18 +3896,12 @@ impl GeneralRules {
                 general.read_double("ShipSinkingWeight", defaults.ship_sinking_weight.to_num())
                     as f32,
             ),
-            tracked_uphill: SimFixed::from_num(
-                general.read_double("TrackedUphill", defaults.tracked_uphill.to_num::<f64>()),
-            ),
-            tracked_downhill: SimFixed::from_num(
-                general.read_double("TrackedDownhill", defaults.tracked_downhill.to_num::<f64>()),
-            ),
-            wheeled_uphill: SimFixed::from_num(
-                general.read_double("WheeledUphill", defaults.wheeled_uphill.to_num::<f64>()),
-            ),
-            wheeled_downhill: SimFixed::from_num(
-                general.read_double("WheeledDownhill", defaults.wheeled_downhill.to_num::<f64>()),
-            ),
+            tracked_uphill: general.read_double_bits("TrackedUphill", defaults.tracked_uphill),
+            tracked_downhill: general
+                .read_double_bits("TrackedDownhill", defaults.tracked_downhill),
+            wheeled_uphill: general.read_double_bits("WheeledUphill", defaults.wheeled_uphill),
+            wheeled_downhill: general
+                .read_double_bits("WheeledDownhill", defaults.wheeled_downhill),
             extra_unit_light,
             extra_infantry_light,
             extra_aircraft_light,

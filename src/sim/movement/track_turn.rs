@@ -187,7 +187,7 @@ impl Simulation {
                 .path_replay()
                 .remaining_directions()
                 .is_empty()
-            && entity.foot_speed.applied_fraction() > crate::util::fixed_math::SIM_ZERO
+            && entity.foot_speed.speed_fraction_is_positive()
         {
             entity
                 .foot_speed

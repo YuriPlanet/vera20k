@@ -8,6 +8,7 @@
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::locomotor_type::SpeedType;
 use crate::util::fixed_math::{SIM_ONE, SimFixed};
+use crate::util::native_x87::{MaskedX87Chop53 as X, NativeF64Bits};
 
 /// Canonical YR land types in their native numeric order.
 #[derive(
@@ -166,6 +167,22 @@ impl SpeedCostProfile {
             SpeedType::Hover => self.hover,
             SpeedType::Winged => Some(100),
         }
+    }
+
+    /// The native float land row promoted to double for Drive/Ship movement.
+    /// Rules674000 reads whole-percent stock tokens through ReadDouble5283D0
+    /// and chops them to float (for example6740B4/6740F8). Reconstruct that
+    /// store from the lossless stock percent, rather than from SimFixed or a
+    /// nearest-rounded float division. Fractional/custom percentages retain
+    /// the existing whole-percent profile's documented quantisation.
+    pub fn native_speed_multiplier_for(&self, speed_type: SpeedType) -> NativeF64Bits {
+        let percent = self.cost_for_speed_type(speed_type).unwrap_or(100).min(100);
+        let scaled = X::mul(
+            X::load_i32(i32::from(percent)),
+            X::load_f64(crate::rules::ini_value::PERCENT_SCALE),
+        );
+        let stored = X::store_f32_masked_chop(scaled);
+        X::store_f64_masked_chop(X::load_f32(stored))
     }
 
     /// Runtime speed multiplier for a given SpeedType.
@@ -394,6 +411,13 @@ mod tests {
             .expect("rough semantics");
         assert!(!rough.ground_blocked);
         assert_eq!(rough.cost_for_speed_type(SpeedType::Wheel), Some(60));
+        assert_eq!(
+            rough
+                .speed_costs
+                .native_speed_multiplier_for(SpeedType::Wheel)
+                .bits(),
+            0x3fe3_3333_2000_0000,
+        );
 
         let water = terrain_rules
             .semantics_for_land_type(LandType::Water.as_index())

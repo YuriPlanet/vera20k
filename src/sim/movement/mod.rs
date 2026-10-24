@@ -144,7 +144,7 @@ pub use facing_class::FacingClass;
 
 #[cfg(any(test, feature = "test-support"))]
 pub use drive_locomotion::{DriveLocomotionRuntime, ShipLocomotionRuntime};
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 pub(crate) use foot_speed::owner_current_speed_from_fraction;
 pub use foot_speed::owner_speed_bonus;
 pub use foot_speed::{SpeedRules, owner_current_speed};

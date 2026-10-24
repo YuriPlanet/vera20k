@@ -308,7 +308,6 @@ fn jumpjet_infantry_actions_match_the_native_bodies() {
     ))
     .expect("corpus parses");
     let mut compared = 0;
-    let mut truncated = 0;
     for (index, row) in corpus["rows"].as_array().expect("rows").iter().enumerate() {
         let input = &row["input"];
         let output = &row["output"];
@@ -376,44 +375,31 @@ fn jumpjet_infantry_actions_match_the_native_bodies() {
             }
             other => panic!("unknown row kind {other}"),
         }
-        // A fraction within 2^-16 above 0.8 truncates to 0.8 itself
-        // (`set_speed_fraction_native_bits`): the tail reads it as a hover
-        // where native flies. The corpus probes that boundary on purpose.
-        let fraction = input["fraction"].as_f64().unwrap_or(0.0);
-        if kind == "movement"
-            && fraction > 0.8
-            && fraction * 65536.0 < 52429.0
-            && native_doing == DO_FLY
-        {
-            assert_eq!(doing(&sim, id), DO_HOVER, "{name}: truncated fraction");
-            truncated += 1;
-            continue;
-        }
         assert_eq!(doing(&sim, id), native_doing, "{name}");
         assert_stage(&sim, id, output, &name);
         compared += 1;
     }
-    assert_eq!((compared, truncated), (497, 30));
+    assert_eq!(compared, 527);
 }
 
-/// The truncation of `FootClass::SetSpeedFraction @ 0x004D3710`'s stored
-/// double to `SimFixed`: a Jumpjet at speed 30 braking by 3 reaches 3/30 and
+/// `FootClass::SetSpeedFraction @ 0x004D3710` retains the native double:
+/// a Jumpjet at speed 30 braking by 3 reaches 3/30 and
 /// 24/30, which the truncating native division leaves just below 0.1 and 0.8.
 /// The clamp itself is checked against the original setter in
 /// `components::tests::speed_fraction_setter_matches_the_original`.
 #[test]
-fn a_native_speed_fraction_is_truncated_below_its_thresholds() {
+fn a_native_speed_fraction_retains_bits_below_its_thresholds() {
     let mut speed = crate::sim::components::FootSpeedState::default();
     let mut set = |bits: u64| {
         speed.set_speed_fraction_native_bits(bits);
-        speed.applied_fraction().to_bits()
+        speed.native_applied_fraction().bits()
     };
     // 3/30 and 24/30 divided with truncation: one ulp below 0.1 and 0.8.
     let tenth = 0x3FB9_9999_9999_9999;
     let eight_tenths = 0x3FE9_9999_9999_9999;
     assert!(f64::from_bits(tenth) < 0.1 && f64::from_bits(eight_tenths) < 0.8);
-    assert_eq!(set(tenth), 6553);
-    assert_eq!(set(eight_tenths), 52428);
+    assert_eq!(set(tenth), tenth);
+    assert_eq!(set(eight_tenths), eight_tenths);
     // Neither reads as above its threshold; the next step above does.
     let mut entity =
         crate::sim::game_entity::GameEntity::test_default(1, "JUMPJET", "Americans", 0, 0);

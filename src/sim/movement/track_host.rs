@@ -218,7 +218,10 @@ impl Simulation {
             return false;
         };
         loco.store_track_destination(family, Some(supplied));
-        loco.store_track_target_fraction(family, crate::util::fixed_math::SIM_ONE);
+        loco.store_track_target_fraction_native(
+            family,
+            crate::util::native_x87::NativeF64Bits::ONE,
+        );
         true
     }
 
@@ -1000,7 +1003,7 @@ impl Simulation {
             return Ok(false);
         };
         let candidate = super::track_head::offset_head(head(entity, family), direction);
-        let saved_speed = entity.foot_speed.applied_fraction();
+        let saved_speed = entity.foot_speed.native_applied_fraction();
         //4B1BA1..4B1C3E: Unit+1AC(cell(head + delta), dir, Object 0x5F5F00,
         //0, 1), with no Mark bracket.
         let target = super::foot_path::coord_cell(candidate);
@@ -1128,7 +1131,9 @@ impl Simulation {
             true,
         );
         if let Some(entity) = self.substrate.entities.get_mut(id) {
-            entity.foot_speed.set_speed_fraction(saved_speed);
+            entity
+                .foot_speed
+                .set_speed_fraction_native_bits(saved_speed.bits());
             entity.navigation.path_replay_mut().consume(1);
         }
         Ok(true)

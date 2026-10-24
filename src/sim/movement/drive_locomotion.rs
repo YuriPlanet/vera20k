@@ -14,14 +14,16 @@ use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::components::FootSpeedState;
 use crate::sim::components::{DriveCoord, TrackProgress};
 use crate::sim::game_entity::GameEntity;
-use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+#[cfg(any(test, feature = "test-support"))]
+use crate::util::fixed_math::SimFixed;
+use crate::util::native_x87::{MaskedX87Chop53 as M, MaskedX87Ordering, NativeF64Bits};
 
 /// ShipLocomotion-owned destination, committed head, and target speed state.
 ///
 /// Ships share the ordinary TurnTrack/RawTrack curves, target fraction,
 /// Force_Track (`0x006A0310`, Drive's twin) and the tube entry (`0x006A095F`,
 /// Drive's `0x004B1297`) with Drive.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ShipLocomotionRuntime {
     #[serde(default)]
     destination: Option<DriveCoord>,
@@ -36,8 +38,9 @@ pub struct ShipLocomotionRuntime {
     /// Do_Turn and track-point facing updates do not write this latch.
     #[serde(default)]
     turn_latched: bool,
-    #[serde(default)]
-    target_speed_fraction: SimFixed,
+    /// Native Ship+50 binary64, independent of the Foot's applied fraction.
+    #[serde(default = "track_target_fraction_default")]
+    target_speed_fraction: NativeF64Bits,
 }
 
 /// DriveLocomotion-owned destination/head-to state.
@@ -67,8 +70,13 @@ pub struct DriveLocomotionRuntime {
     /// Do_Turn and track-point facing updates do not write this latch.
     #[serde(default)]
     turn_latched: bool,
-    #[serde(default)]
-    target_speed_fraction: SimFixed,
+    /// Native Drive+50 binary64; fresh targets may exceed one.
+    #[serde(default = "track_target_fraction_default")]
+    target_speed_fraction: NativeF64Bits,
+}
+
+fn track_target_fraction_default() -> NativeF64Bits {
+    NativeF64Bits::POSITIVE_ZERO
 }
 
 fn drive_end_permitted_default() -> bool {
@@ -85,7 +93,20 @@ impl Default for DriveLocomotionRuntime {
             track_valid: false,
             straight: false,
             turn_latched: false,
-            target_speed_fraction: SIM_ZERO,
+            target_speed_fraction: NativeF64Bits::POSITIVE_ZERO,
+        }
+    }
+}
+
+impl Default for ShipLocomotionRuntime {
+    fn default() -> Self {
+        Self {
+            destination: None,
+            head_to: None,
+            track: TrackProgress::default(),
+            track_valid: false,
+            turn_latched: false,
+            target_speed_fraction: NativeF64Bits::POSITIVE_ZERO,
         }
     }
 }
@@ -113,7 +134,7 @@ impl DriveLocomotionRuntime {
     }
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn target_speed_fraction(&self) -> SimFixed {
-        self.target_speed_fraction
+        SimFixed::from_num(f64::from_bits(self.target_speed_fraction.bits()))
     }
     pub(crate) fn end_permitted(&self) -> bool {
         self.end_permitted
@@ -148,7 +169,7 @@ impl DriveLocomotionRuntime {
     }
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_target_speed_fraction_for_test(mut self, value: SimFixed) -> Self {
-        self.target_speed_fraction = value;
+        self.target_speed_fraction = NativeF64Bits::from_bits(value.to_num::<f64>().to_bits());
         self
     }
     #[cfg(any(test, feature = "test-support"))]
@@ -181,7 +202,7 @@ impl ShipLocomotionRuntime {
     }
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn target_speed_fraction(&self) -> SimFixed {
-        self.target_speed_fraction
+        SimFixed::from_num(f64::from_bits(self.target_speed_fraction.bits()))
     }
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_destination_for_test(mut self, value: Option<DriveCoord>) -> Self {
@@ -205,7 +226,7 @@ impl ShipLocomotionRuntime {
     }
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_target_speed_fraction_for_test(mut self, value: SimFixed) -> Self {
-        self.target_speed_fraction = value;
+        self.target_speed_fraction = NativeF64Bits::from_bits(value.to_num::<f64>().to_bits());
         self
     }
 }
@@ -297,7 +318,7 @@ pub(super) enum TrackStateMutation {
     Valid(bool),
     TurnLatched(bool),
     DriveStraight(bool),
-    TargetFraction(SimFixed),
+    TargetFraction(NativeF64Bits),
 }
 
 impl TrackRetainedRef<'_> {
@@ -331,7 +352,7 @@ impl TrackRetainedRef<'_> {
             Self::Ship(state) => state.turn_latched,
         }
     }
-    fn target_speed_fraction(&self) -> SimFixed {
+    fn target_speed_fraction(&self) -> NativeF64Bits {
         match self {
             Self::Drive(state) => state.target_speed_fraction,
             Self::Ship(state) => state.target_speed_fraction,
@@ -493,9 +514,18 @@ impl LocomotorState {
             TrackRetainedRef::Ship(_) => None,
         }
     }
-    pub(crate) fn track_target_fraction(&self, family: TrackFamily) -> Option<SimFixed> {
+    pub(crate) fn track_target_fraction_native(
+        &self,
+        family: TrackFamily,
+    ) -> Option<NativeF64Bits> {
         self.selected_track_retained(family)
             .map(|state| state.target_speed_fraction())
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn track_target_fraction(&self, family: TrackFamily) -> Option<SimFixed> {
+        self.track_target_fraction_native(family)
+            .map(|value| SimFixed::from_num(f64::from_bits(value.bits())))
     }
 
     /// Constructor permission for an absent installed Drive remains true.
@@ -562,12 +592,24 @@ impl LocomotorState {
             TrackStateMutation::DriveStraight(value),
         )
     }
+    pub(crate) fn store_track_target_fraction_native(
+        &mut self,
+        family: TrackFamily,
+        value: NativeF64Bits,
+    ) -> bool {
+        self.apply_track_state_mutation(family, TrackStateMutation::TargetFraction(value))
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn store_track_target_fraction(
         &mut self,
         family: TrackFamily,
         value: SimFixed,
     ) -> bool {
-        self.apply_track_state_mutation(family, TrackStateMutation::TargetFraction(value))
+        self.store_track_target_fraction_native(
+            family,
+            NativeF64Bits::from_bits(value.to_num::<f64>().to_bits()),
+        )
     }
 
     pub(crate) fn store_drive_end_permission(&mut self, value: bool) -> bool {
@@ -629,9 +671,11 @@ impl LocomotorState {
 // Drive qwords 0x7E6240/0x7E6248/0x7E6250 (Ship 0x7F1308/0x7F1310/0x7F1318):
 // the 0.3 brake floor, the 0.1 sinking floor and the 0.0015 sinking brake,
 // promoted binary32; crush cap 0x7E3548 (binary64 0.2).
-const DRIVE_DESTINATION_BRAKE_FLOOR: SimFixed = SimFixed::lit("0.3");
-const SINKING_BRAKE_FLOOR: SimFixed = SimFixed::lit("0.1");
-const CRUSH_SLOWDOWN_CAP: SimFixed = SimFixed::lit("0.2");
+const DRIVE_DESTINATION_BRAKE_FLOOR: NativeF64Bits =
+    NativeF64Bits::from_bits(0x3fd3_3333_4000_0000);
+const SINKING_BRAKE_FLOOR: NativeF64Bits = NativeF64Bits::from_bits(0x3fb9_9999_a000_0000);
+const SINKING_BRAKE: NativeF64Bits = NativeF64Bits::from_bits(0x3f58_9374_c000_0000);
+const CRUSH_SLOWDOWN_CAP: NativeF64Bits = NativeF64Bits::from_bits(0x3fc9_9999_9999_999a);
 
 /// Drive4B0EF0, Ship6A05C0, Hover516370 and Teleport7192C0 have identical
 /// ILocomotion+4C bodies: Set4C9220 on the owner's PrimaryFacing+388.
@@ -645,99 +689,147 @@ pub(crate) fn drive_do_turn(entity: &mut GameEntity, desired: u16, frame: u32) {
 /// The live inputs of one Drive/Ship speed prefix (Drive 0x004B0F20..0x004B1295,
 /// Ship 0x006A05F0..0x006A095D), read by `track_speed::advance`.
 pub(super) struct TrackSpeedPrefix {
-    /// Accelerates= (type +0xDBD).
     pub accelerates: bool,
-    /// A Unit whose type is Passive= (type +0xE0C).
+    /// Already includes the Unit RTTI gate; Passive on a non-Unit is ignored.
     pub unit_passive: bool,
-    /// The class selector (+0x58).
     pub selector: i32,
-    /// The type's stored speed (type +0x678 through vt+0x38C), leptons per frame.
+    /// Drive: actual owner virtual+38C. Ship: actual Type+678 integer.
     pub raw_type_speed: i32,
-    pub accel: SimFixed,
-    pub decel: SimFixed,
-    /// SlowdownDistance= (type +0x2F8).
+    pub accel: NativeF64Bits,
+    pub decel: NativeF64Bits,
     pub slowdown_distance: i32,
-    /// Techno+0x3CD (`SinkingState`).
     pub sinking: bool,
-    /// Foot+0x6B5.
     pub crush_slowdown: bool,
 }
 
-/// What one prefix wrote: the class target (+0x50) and, when it called the
-/// Foot's `SetSpeedFraction` (0x004D3710), the fraction it passed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct TrackSpeedStep {
-    pub target: SimFixed,
-    pub set_fraction: Option<SimFixed>,
+    /// Class+50: unchanged bit-for-bit except the crush arm's FLD/FSTP.
+    pub target: NativeF64Bits,
+    /// Exact double argument to the Foot setter, before that setter's clamp.
+    pub set_fraction: Option<NativeF64Bits>,
 }
 
-/// One speed prefix over the class target and the Foot's applied fraction
-/// (+0x578). `distance` (`track_speed::braking_distance`) is measured only
-/// past the gates, as native reaches it (0x004B0FBA). Executed native rows:
-/// tools/spatial_oracle/track_speed_native.json.
+/// The native TEST AH,1 condition: both Less and Unordered set C0.
+fn track_c0_set(order: MaskedX87Ordering) -> bool {
+    matches!(
+        order,
+        MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
+    )
+}
+
+/// Process_Drive_Track speed prefix: Drive4B0F74..4B1218 / Ship6A0644..6A08E0.
+/// Exact PC53/chop arithmetic feeds the same frame's movement budget.
+/// Linked-member propagation remains outside this numeric owner; no stock
+/// producer of that linked chain has been established.
 ///
-/// - Accelerates=false passes the target to the setter.
-/// - A selector of 64 or more, or a Passive Unit, skips the ramp.
-/// - Inside SlowdownDistance (strict) the applied fraction brakes by raw type
-///   speed x Deceleration down to 0.3; a sinking Techno brakes by 0.0015 x
-///   raw speed down to 0.1 instead.
-/// - The crush slowdown caps the target at 0.2 and applies it, braking or not.
-/// - Otherwise the applied fraction ramps toward the target: up by
-///   Acceleration, down by raw speed x Deceleration, never past it. An
-///   applied fraction equal to the target calls no setter.
-///
-/// PRECISION: native works in binary64 x87 (chop53); this port works in
-/// `SimFixed` (I16F16). Deceleration= is held to 2^-16, so a brake step can
-/// differ from native by about raw speed x 2^-17 (about 1e-4 for a Rhino),
-/// below one lepton of speed until raw speed reaches 128.
-///
-/// RESIDUAL: a Unit's ramp also propagates the applied fraction to its linked
-/// members (0x004B1225 / 0x006A08ED); VERA has no linked-member chain.
+/// `distance` is called exactly once only after Accelerates/selector/Passive
+/// gates. The native distance owner is a pure ground/Cell query. Live mutable
+/// receiver callbacks are not represented by this closure or these snapshots.
 pub(super) fn track_speed_prefix(
     input: &TrackSpeedPrefix,
     distance: impl FnOnce() -> i32,
-    target: SimFixed,
-    applied: SimFixed,
+    target: NativeF64Bits,
+    applied: NativeF64Bits,
 ) -> TrackSpeedStep {
-    let step = |set_fraction| TrackSpeedStep {
+    use MaskedX87Ordering::Greater;
+
+    let unchanged_target = |set_fraction| TrackSpeedStep {
         target,
         set_fraction,
     };
-    // ProcessMovement retains an unclamped class target. Only the Foot
-    // setter clamps the applied fraction to [0,1].
+
+    // Direct MOV/PUSH of both target words: no x87 load/store normalization.
+    // This branch also bypasses the accelerating linked-member propagation.
     if !input.accelerates {
-        return step(Some(target));
+        return unchanged_target(Some(target));
     }
+    // Signed selector comparison; negative values are not rejected here.
     if input.selector >= 64 || input.unit_passive {
-        return step(None);
+        return unchanged_target(None);
     }
-    let raw = SimFixed::from_num(input.raw_type_speed);
-    let type_brake = raw * input.decel;
-    // raw x 0.0015 as raw x 3 / 2000, rounded once.
-    let sinking_brake = SimFixed::from_num(input.raw_type_speed * 3) / SimFixed::from_num(2000);
+
+    // The native saved applied double is loaded only after the lazy distance
+    // calculation. Neither destination braking nor sinking changes class+50.
+    // The ordinary destination branch takes priority over sinking.
     let braking = if distance() < input.slowdown_distance {
-        Some((applied - type_brake).max(DRIVE_DESTINATION_BRAKE_FLOOR))
+        let product = M::mul(M::load_i32(input.raw_type_speed), M::load_f64(input.decel));
+        let candidate = M::sub(M::load_f64(applied), product);
+        // FLD floor; FCOMP candidate; TEST AH,41: only Greater picks floor.
+        // Equal, Less, and Unordered spill the arithmetic result instead.
+        Some(
+            if M::compare(M::load_f64(DRIVE_DESTINATION_BRAKE_FLOOR), candidate) == Greater {
+                DRIVE_DESTINATION_BRAKE_FLOOR
+            } else {
+                M::store_f64_masked_chop(candidate)
+            },
+        )
     } else if input.sinking {
-        Some((applied - sinking_brake).max(SINKING_BRAKE_FLOOR))
+        let product = M::mul(
+            M::load_i32(input.raw_type_speed),
+            M::load_f64(SINKING_BRAKE),
+        );
+        let candidate = M::sub(M::load_f64(applied), product);
+        Some(
+            if M::compare(M::load_f64(SINKING_BRAKE_FLOOR), candidate) == Greater {
+                SINKING_BRAKE_FLOOR
+            } else {
+                M::store_f64_masked_chop(candidate)
+            },
+        )
     } else {
         None
     };
+
+    // Native computes/spills any brake candidate before testing Foot+6B5,
+    // even though the crush arm subsequently overwrites that local argument.
     if input.crush_slowdown {
-        let capped = target.min(CRUSH_SLOWDOWN_CAP);
+        let selected = if track_c0_set(M::compare(
+            M::load_f64(target),
+            M::load_f64(CRUSH_SLOWDOWN_CAP),
+        )) {
+            M::load_f64(target)
+        } else {
+            M::load_f64(CRUSH_SLOWDOWN_CAP)
+        };
+        // The same register is FST to local and FSTP to class+50. Both stores
+        // have identical bits, including quieting a selected signaling NaN.
+        let capped = M::store_f64_masked_chop(selected);
         return TrackSpeedStep {
             target: capped,
             set_fraction: Some(capped),
         };
     }
-    step(if let Some(braked) = braking {
-        Some(braked)
-    } else if applied < target {
-        Some((applied + input.accel).min(target))
-    } else if applied > target {
-        Some((applied - type_brake).max(target))
-    } else {
-        None
-    })
+    if let Some(braked) = braking {
+        return unchanged_target(Some(braked));
+    }
+
+    // TEST AH,1: an unordered applied/target comparison takes acceleration.
+    if track_c0_set(M::compare(M::load_f64(applied), M::load_f64(target))) {
+        // FLD accel; FADD applied. Preserve operand and operation order.
+        let candidate = M::add(M::load_f64(input.accel), M::load_f64(applied));
+        let selected = if track_c0_set(M::compare(M::load_f64(target), candidate)) {
+            // The original explicitly FLDs target again before the store.
+            M::load_f64(target)
+        } else {
+            candidate
+        };
+        return unchanged_target(Some(M::store_f64_masked_chop(selected)));
+    }
+
+    // Second native comparison uses TEST AH,41: only Greater decelerates.
+    // Equal performs no setter. This is not f64 min/max or a total ordering.
+    if M::compare(M::load_f64(applied), M::load_f64(target)) == Greater {
+        let product = M::mul(M::load_i32(input.raw_type_speed), M::load_f64(input.decel));
+        let candidate = M::sub(M::load_f64(applied), product);
+        let selected = if M::compare(M::load_f64(target), candidate) == Greater {
+            M::load_f64(target)
+        } else {
+            candidate
+        };
+        return unchanged_target(Some(M::store_f64_masked_chop(selected)));
+    }
+    unchanged_target(None)
 }
 
 #[cfg(test)]
@@ -769,7 +861,32 @@ mod tests {
             assert!(state.store_track_progress(family, progress));
             assert!(state.store_track_valid(family, true));
             assert!(state.store_track_turn_latched(family, true));
-            assert!(state.store_track_target_fraction(family, SimFixed::lit("1.2")));
+            let target = NativeF64Bits::from_bits(0x3ff3_3333_3333_3333);
+            assert!(state.store_track_target_fraction_native(family, target));
+            assert_eq!(state.track_target_fraction_native(family), Some(target));
+            let payload_hash = |state: &LocomotorState| {
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::hash::DefaultHasher::new();
+                match family {
+                    TrackFamily::Drive => state
+                        .selected_drive_runtime()
+                        .unwrap()
+                        .retained()
+                        .hash(&mut hasher),
+                    TrackFamily::Ship => state
+                        .selected_ship_runtime()
+                        .unwrap()
+                        .retained()
+                        .hash(&mut hasher),
+                }
+                hasher.finish()
+            };
+            let mut adjacent = state.clone();
+            assert!(adjacent.store_track_target_fraction_native(
+                family,
+                NativeF64Bits::from_bits(target.bits() ^ 1),
+            ));
+            assert_ne!(payload_hash(&state), payload_hash(&adjacent));
             if family == TrackFamily::Drive {
                 assert!(state.store_drive_end_permission(false));
                 assert_eq!(state.drive_straight(), Some(false));
@@ -792,6 +909,7 @@ mod tests {
             assert_eq!(state.track_destination(family), destination);
             assert_eq!(state.track_head(family), head);
             assert_eq!(state.track_progress(family), Some(progress));
+            assert_eq!(state.track_target_fraction_native(family), Some(target));
             if family == TrackFamily::Drive {
                 assert_eq!(state.drive_straight(), Some(true));
             }
@@ -814,6 +932,7 @@ mod tests {
             }
             assert_eq!(loaded.track_destination(family), destination);
             assert_eq!(loaded.track_progress(family), Some(progress));
+            assert_eq!(loaded.track_target_fraction_native(family), Some(target));
         }
     }
 
@@ -843,8 +962,8 @@ mod tests {
             unit_passive: false,
             selector: 0,
             raw_type_speed,
-            accel: SimFixed::lit("0.03"),
-            decel: SimFixed::lit("0.002"),
+            accel: NativeF64Bits::from_bits(0x3f9e_b851_eb85_1eb8),
+            decel: NativeF64Bits::from_bits(0x3f60_624d_d2f1_a9fc),
             slowdown_distance,
             sinking: false,
             crush_slowdown: false,
@@ -897,12 +1016,12 @@ mod tests {
                     0,
                 ),
                 || 256,
-                ship.target_speed_fraction(),
-                owner_speed.applied_fraction(),
+                ship.target_speed_fraction,
+                owner_speed.native_applied_fraction(),
             );
-            ship = ship.with_target_speed_fraction_for_test(step.target);
+            ship.target_speed_fraction = step.target;
             if let Some(fraction) = step.set_fraction {
-                owner_speed.set_speed_fraction(fraction);
+                owner_speed.set_speed_fraction_native_bits(fraction.bits());
             }
             assert_eq!(ship.target_speed_fraction(), SimFixed::lit("0.3"));
             assert!(owner_current_speed_from_fraction(speed, owner_speed.applied_fraction()) > 0);
@@ -1016,11 +1135,11 @@ mod tests {
         let step = track_speed_prefix(
             &prefix(false, 10, 500),
             || 1000,
-            drive.target_speed_fraction(),
-            owner_speed.applied_fraction(),
+            drive.target_speed_fraction,
+            owner_speed.native_applied_fraction(),
         );
-        drive = drive.with_target_speed_fraction_for_test(step.target);
-        owner_speed.set_speed_fraction(step.set_fraction.unwrap());
+        drive.target_speed_fraction = step.target;
+        owner_speed.set_speed_fraction_native_bits(step.set_fraction.unwrap().bits());
 
         assert_eq!(drive.target_speed_fraction(), SimFixed::lit("1.2"));
         assert_eq!(owner_speed.applied_fraction(), SIM_ONE);

@@ -37,6 +37,7 @@ use crate::sim::world::SimSoundEvent;
 use crate::sim::world::Simulation;
 use crate::util::direction::DIRECTION_DELTAS;
 use crate::util::direction_tables::dir_from_facing16;
+#[cfg(test)]
 use crate::util::fixed_math::SIM_ZERO;
 
 /// AStar429F54's live Foot +1AC receiver: Infantry 0x0051BF90 or Unit
@@ -214,7 +215,7 @@ impl Simulation {
             if !foot.category().is_foot() {
                 return Ok(true);
             }
-            let direction = if foot.foot_speed.applied_fraction() == SIM_ZERO {
+            let direction = if !foot.foot_speed.speed_fraction_is_positive() {
                 let Some(&word) = foot.navigation.path_replay().remaining_directions().first()
                 else {
                     return Ok(false);
