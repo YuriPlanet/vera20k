@@ -1,10 +1,13 @@
-//! Nearby-passable-cell search (engine `Find_Nearby_Passable_Cell`).
+//! Map-owned nearby-cell searches. Passability and shroud searches share
+//! ring order and the map radius cap; their admission and selection differ.
 //!
 //! Square (Chebyshev) ring expansion around a seed cell — concentric perimeters,
 //! NOT a Manhattan diamond (see [`square_ring_cells`]); per-candidate passability (plus an
 //! optional occupancy check that always SKIPS reservations); frame-counter
 //! selection when no target cell is given, nearest-distance selection when a
-//! target is given. It consumes no RNG stream. Exact CellClass projection misses
+//! target is given. That passability search consumes no RNG stream. The shroud
+//! search uses the Scenario ranged owner once its pool is nonempty.
+//! Exact CellClass projection misses
 //! do stamp the process-shared dummy coordinate, so lookup order is deterministic,
 //! future-affecting state; no other grid state is changed. Depends only on `map/`,
 //! `sim/`, and `rules/`; never on render/ui/audio/net.
@@ -752,6 +755,73 @@ impl NearbyArgs {
 }
 
 impl crate::sim::world::Simulation {
+    /// Map580BC0, called on Script22's first visit at6E9597. Its first24
+    /// qualifying cells in square-ring order are selected by one Scenario
+    /// range request (65C7E0); an empty pool returns the original centre.
+    /// Qualification is only Map578460(mode1), Cell47B3A0 floor, then
+    /// IsShrouded586360. No movement, occupancy, zone or FNPC filters apply.
+    /// Original gamemd instructions580BC0..581082; floor/shroud/identity and
+    /// RNG keep their existing owners. The argument is an Abstract pointer,
+    /// read through virtual+48 before scanning; the result is a Cell pointer.
+    pub(crate) fn nearby_shrouded_cell(
+        &mut self,
+        origin: crate::sim::combat::TargetKind,
+        viewer: crate::sim::intern::InternedId,
+    ) -> Option<crate::sim::components::NavTargetRef> {
+        let (width, height) = self.map_size_diamond()?;
+        let terrain = self.resolved_terrain.as_ref()?;
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        let coord =
+            crate::sim::movement::ground_pose::target_get_coords(origin, self, Some(&cells))?;
+        let center = ((coord.x / 256) as i16, (coord.y / 256) as i16);
+        let mut pool = Vec::with_capacity(MAX_CANDIDATES);
+        'rings: for radius in 0..map_owned_radius_cap(width, height) {
+            for (x, y) in square_ring_cells(
+                (i32::from(center.0), i32::from(center.1)),
+                i32::from(radius),
+            ) {
+                let cell = (x as i16, y as i16);
+                if !crate::sim::cell_rect::cell_is_in_playfield_height_aware_in_query(
+                    (i32::from(cell.0), i32::from(cell.1)),
+                    self.playfield_bounds(),
+                    Some(terrain),
+                    Some(&cells),
+                ) {
+                    continue;
+                }
+                let world = crate::sim::cell_kernel::cell_center(cell.into(), 0);
+                let mut point = crate::sim::components::DriveCoord {
+                    x: world.x,
+                    y: world.y,
+                    z: 0,
+                };
+                // Native samples this world coordinate through Map565730,
+                // then reads the selected Cell's floor, without a deck rise.
+                point.z =
+                    crate::sim::movement::ground_pose::query_ground_height(&cells, point).ok()?;
+                if crate::sim::vision::point_is_shrouded(&self.fog, &cells, viewer, point) {
+                    pool.push(cell);
+                    if pool.len() == MAX_CANDIDATES {
+                        break 'rings;
+                    }
+                }
+            }
+        }
+        let selected = if pool.is_empty() {
+            center
+        } else {
+            pool[self
+                .scenario_rng
+                .next_range_i32_inclusive(0, pool.len() as i32 - 1) as usize]
+        };
+        //58100C/58104E resolves the chosen packed cell AFTER the draw; this
+        //lookup also publishes the final Dummy stamp when no slot exists.
+        let (x, y) = cells.coord(cells.lookup(selected));
+        Some(crate::sim::components::NavTargetRef::cell(
+            x as u16, y as u16,
+        ))
+    }
+
     /// Foot4CBC40's class-specific entry receiver. Native looks up each
     /// candidate before dispatching +1AC, including an Aircraft receiver.
     pub(crate) fn foot_nearby_location(

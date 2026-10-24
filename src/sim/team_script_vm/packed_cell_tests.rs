@@ -10,7 +10,7 @@ use crate::sim::snapshot::GameSnapshot;
 use crate::sim::world::{FrameEffects, Simulation, SnapshotProcessState, TickLane};
 use crate::skirmish_launch::{AiDifficulty, LaunchCountry, LaunchStartPosition};
 
-fn frame(scene: &mut HeadlessScenario) {
+pub(super) fn frame(scene: &mut HeadlessScenario) {
     let commands = scene.runtime.simulation.take_due_commands();
     let result = scene
         .runtime
@@ -19,12 +19,26 @@ fn frame(scene: &mut HeadlessScenario) {
     assert!(!result.outcome_waiting);
 }
 
-fn scene(argument: i32) -> Option<(HeadlessScenario, u64, u64)> {
+pub(super) fn scene(
+    script: &str,
+    shroud: bool,
+    prepare: impl FnOnce(&mut HeadlessScenario),
+) -> Option<(HeadlessScenario, u64, u64)> {
     let (root, assets) = crate::rules::retail_ini_fixture::retail_assets()?;
     let stock = assets.resolve_ref("XMP03T4.MAP").unwrap();
     let stock = std::str::from_utf8(&stock.bytes).unwrap();
-    let mut map = super::firesale_retail_tests::scenario(stock, &format!("0=4,{argument}"));
-    super::firesale_retail_tests::insert_section_records(&mut map, "Waypoints", "98=-2\n99=-3\n");
+    // Retail already defines98/99. Duplicate-key CRC selection changes
+    // when an entry is added, so author unused slots instead of shadowing.
+    let stock_ini = IniFile::from_str(stock);
+    for index in ["697", "700", "701"] {
+        assert!(!stock_ini.section_or_empty("Waypoints").is_present(index));
+    }
+    let mut map = super::firesale_retail_tests::scenario(stock, script);
+    super::firesale_retail_tests::insert_section_records(
+        &mut map,
+        "Waypoints",
+        "697=85030\n700=-2\n701=-3\n",
+    );
     let directory = crate::map::source::test_support::TestDirectory::new("team-packed-cell");
     directory.write("packed-cell.map", map.as_bytes());
     let path = directory.path().join("packed-cell.map");
@@ -36,8 +50,9 @@ fn scene(argument: i32) -> Option<(HeadlessScenario, u64, u64)> {
     launch.options.unit_count = 0;
     launch.options.short_game = false;
     launch.options.crates = false;
-    launch.options.shroud = false;
+    launch.options.shroud = shroud;
     let mut scene = load_session(&root, name, 0x6E95B3, launch).unwrap();
+    prepare(&mut scene);
     let sim = scene.sim();
     let owner = Simulation::scenario_house_named(&sim.houses, "Computer").unwrap();
     let member = sim
@@ -65,7 +80,7 @@ fn scene(argument: i32) -> Option<(HeadlessScenario, u64, u64)> {
     panic!("timed Trigger4 did not create and recruit its team");
 }
 
-fn reload(scene: &mut HeadlessScenario) {
+pub(super) fn reload(scene: &mut HeadlessScenario) {
     let runtime = &mut scene.runtime;
     let sim = &runtime.simulation;
     let rules = &runtime.resources.rules;
@@ -104,7 +119,8 @@ fn reload(scene: &mut HeadlessScenario) {
 fn authored_packed_cell_team_moves_after_reload_and_finishes_at_eof() {
     // Signed packed128 coordinates, not a waypoint number (6E95B7..6E95E5).
     let target = TeamTarget::Cell { x: 36, y: 85 };
-    let Some((mut scene, team, member)) = scene(85 * 128 + 36) else {
+    let Some((mut scene, team, member)) = scene(&format!("0=4,{}", 85 * 128 + 36), false, |_| {})
+    else {
         return;
     };
     let state = scene.sim().team_script_vm.team(team).unwrap();
@@ -165,7 +181,7 @@ fn authored_packed_cell_team_moves_after_reload_and_finishes_at_eof() {
 
 #[test]
 fn packed_cell_dummy_keeps_its_pointer_across_restamps_and_reload() {
-    let Some((mut scene, team, member)) = scene(-1) else {
+    let Some((mut scene, team, member)) = scene("0=4,-1", false, |_| {}) else {
         return;
     };
     let target = TeamTarget::Cell { x: -1, y: 0 };
@@ -178,7 +194,7 @@ fn packed_cell_dummy_keeps_its_pointer_across_restamps_and_reload() {
             .mission_target,
         Some(target)
     );
-    let expected = scene.sim().trigger_waypoint_location(98).unwrap();
+    let expected = scene.sim().trigger_waypoint_location(700).unwrap();
     let current = scene.sim().team_target_coord(target).unwrap();
     assert_eq!(
         [current.x, current.y],
@@ -188,7 +204,7 @@ fn packed_cell_dummy_keeps_its_pointer_across_restamps_and_reload() {
     reload(&mut scene);
     let sim = &mut scene.runtime.simulation;
     let rules = &scene.runtime.resources.rules;
-    let expected = sim.trigger_waypoint_location(99).unwrap();
+    let expected = sim.trigger_waypoint_location(701).unwrap();
     let current = sim.team_target_coord(target).unwrap();
     assert_eq!([current.x, current.y], [expected[0], expected[1]]);
     assert_eq!(

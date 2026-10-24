@@ -23,6 +23,15 @@
 //!   Effect: the team idles on that action for good, keeping its
 //!   members and its TeamType's `Max=` slot, and nothing else sends those
 //!   units out.
+//! - Script22's LAN/WOL path remains refused: Map580BC0 reads process-current
+//!   shroud586360; native LAN guest setup5E0841..5E0931 installs its local
+//!   participant at index0, then688109 makes that House PlayerPtr. Feeding
+//!   this local plane into shared Scenario RNG would make network results
+//!   client-dependent. A deterministic network visibility contract is still
+//!   required; this is not an unreachable native branch or a whole22 port.
+//!   Such teams retain their members and Max slot. Native would request one
+//!   Scenario range for a nonempty pool, with no private timer or detach;
+//!   the refused handler currently performs none of those effects.
 //! - `Coordinate_Attack` orders an unloading unit to attack without asking
 //!   Unit vt+0x4E4 (`0x00736D50`), which keeps it unloading when its type is
 //!   `DeployToFire=`, or when a computer unit's `DeploysInto=` building is
@@ -62,6 +71,10 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::team_script_vm::TeamScriptVm;
 use crate::sim::world::ObjectSubstrate;
 
+#[cfg(test)]
+#[path = "scout_tests.rs"]
+mod scout_tests;
+
 impl TeamScriptState {
     /// TeamFlash6EF5F0 walks +54/+5D8 head first and writes signed Techno+F0.
     /// Script50 inlines the same loop at6E9CFF..6E9D18. Neither caller asks
@@ -96,7 +109,8 @@ impl Simulation {
     }
 }
 
-/// Whether the dispatch ports `action_id`'s handler.
+/// Whether the dispatch has a port of `action_id`'s handler. Mode-specific
+/// residuals can still refuse a path (Script22 currently admits single player).
 pub(super) const fn action_is_ported(action_id: i32) -> bool {
     matches!(
         action_id,
@@ -117,6 +131,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 19
             | 20
             | 21
+            | 22
             | 24
             | 25
             | 26
@@ -304,6 +319,38 @@ impl Simulation {
                     self.team_assign_mission_target(
                         team_id,
                         Some(target),
+                        rules,
+                        registry,
+                        frame_effects,
+                    );
+                }
+                self.team_coordinate_move(team_id, rules, registry, frame_effects);
+            }
+            // TeamClass::AI Script22 at6E9583: first visit uses centre or
+            // head, Map580BC0 and AssignMissionTarget; every visit moves.
+            // Its script argument is unused. Shared movement owns timers
+            // and detach/EOF cleanup; only the search can request RNG.
+            22 => {
+                if !self.session.game_mode().is_single_player() {
+                    self.refuse_team_script_action(team_id, action.action_id);
+                    return;
+                }
+                if first {
+                    let origin = self.team_script_vm.teams.get(&team_id).and_then(|team| {
+                        team.zone
+                            .or_else(|| team.members().next().map(TeamTarget::Object))
+                    });
+                    let Some(viewer) = self.session.current_house() else {
+                        return;
+                    };
+                    let target = origin
+                        .and_then(|origin| self.nearby_shrouded_cell(origin.target_kind(), viewer))
+                        .map(|target| {
+                            TeamTarget::from(crate::sim::combat::TargetKind::from(target))
+                        });
+                    self.team_assign_mission_target(
+                        team_id,
+                        target,
                         rules,
                         registry,
                         frame_effects,
@@ -757,15 +804,18 @@ impl Simulation {
             }
             action_id => {
                 debug_assert!(!action_is_ported(action_id));
-                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id)
-                    && team.refusal.is_none()
-                {
-                    team.refusal = Some(TeamScriptRefusal::UnsupportedAction { action_id });
-                    log::warn!(
-                        "TeamClass::AI: team {team_id} stays on unported script action {action_id}"
-                    );
-                }
+                self.refuse_team_script_action(team_id, action_id);
             }
+        }
+    }
+
+    /// Keep the existing first-refusal diagnostic for unported action paths.
+    fn refuse_team_script_action(&mut self, team_id: u64, action_id: i32) {
+        if let Some(team) = self.team_script_vm.teams.get_mut(&team_id)
+            && team.refusal.is_none()
+        {
+            team.refusal = Some(TeamScriptRefusal::UnsupportedAction { action_id });
+            log::warn!("TeamClass::AI: team {team_id} stays on unported script action {action_id}");
         }
     }
 
