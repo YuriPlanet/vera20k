@@ -2814,9 +2814,8 @@ impl From<&SoundEntry> for EntryFacts {
             loop_count: entry.loop_count,
             delay_ms: entry.delay_ms,
             entry_volume_linear: entry.volume_linear,
-            // VERA reads `Sounds=` names without the audio index, so `+0x0C`
-            // (every name resolved, `AddSample @ 0x004064A0`) is not modelled.
-            samples_ok: !entry.sounds.is_empty(),
+            samples_ok: !entry.sounds.is_empty() && entry.samples_resolved,
+            samples_resolved: entry.samples_resolved,
         }
     }
 }
@@ -2845,6 +2844,7 @@ fn entry_facts(sound_id: &str, registry: &SoundRegistry) -> EntryFacts {
         delay_ms: (0, 0),
         entry_volume_linear: VOLUME_SCALE,
         samples_ok: true,
+        samples_resolved: true,
     }
 }
 
@@ -3432,6 +3432,41 @@ mod tests {
         assert!(facts.control & control::LOOP == 0);
         assert!(!facts.is_loopable());
         assert_eq!(facts.delay_ms, (0, 400));
+    }
+
+    /// `VocClass::AddSample @ 0x004064A0`: a `Sounds=` name the audio index
+    /// lacks stores nothing and clears the entry's `+0x0C` (`0x00406510`), so
+    /// `AllocateFromPool @ 0x00405190` refuses every play (`0x004051B6`) even
+    /// though another name resolved. A 33rd token is refused before its lookup.
+    #[cfg(not(feature = "ares"))]
+    #[test]
+    fn one_unresolvable_sample_name_silences_the_whole_entry() {
+        use crate::assets::audio_bag::{AudioIndex, test_support::build_idx};
+        use crate::rules::sound_ini::MAX_SAMPLES;
+        let index =
+            AudioIndex::from_idx_bag(&build_idx(&[("known", 0, 0, 22050, 0)]), Vec::new()).unwrap();
+        let full = vec!["known"; MAX_SAMPLES].join(" ");
+        let registry = SoundRegistry::from_ini_admitting(
+            &IniFile::from_str(&format!(
+                "[SoundList]\n1=Mixed\n2=Clean\n3=Full\n[Mixed]\nSounds=$known missing\n\
+                 [Clean]\nSounds=#KNOWN\n[Full]\nSounds={full} missing\n"
+            )),
+            Some(&index),
+        );
+        assert_eq!(registry.get("Mixed").unwrap().sounds, ["known"]);
+        let mut arbiter = SoundArbiter::new(0);
+        let mut play = |id: &str| {
+            let request = PlayRequest {
+                key: registry_key(id),
+                facts: entry_facts(id, &registry),
+                volume_linear: VOLUME_SCALE,
+                pan: VOLUME_SCALE / 2,
+            };
+            arbiter.submit(&request, 0).is_some()
+        };
+        assert!(!play("Mixed"));
+        assert!(play("Clean"));
+        assert!(play("Full"));
     }
 
     /// `Control=random` over three samples: one `RandomRanged(0, 2)` draw and

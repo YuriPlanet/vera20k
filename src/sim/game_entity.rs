@@ -2011,6 +2011,11 @@ impl GameEntity {
         self.fall.finish();
     }
 
+    /// FootClass::AI's +8D/+8E edge; true as a DropAsBomb fall starts.
+    pub(crate) fn observe_falling_edge(&mut self) -> bool {
+        self.fall.observe_falling_edge()
+    }
+
     /// ObjectAI5F3FBC..3FFA updates even the grounding frame's rate.
     pub(crate) fn advance_fall_rate(&mut self, parachute_cap: i32, free_fall_cap: i32) {
         self.fall.advance_rate(parachute_cap, free_fall_cap);

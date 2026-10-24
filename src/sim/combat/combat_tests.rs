@@ -5150,20 +5150,24 @@ fn selected_death_sounds_for(
     owner_is_human: bool,
     main_rng: &mut SimRng,
 ) -> Vec<String> {
+    selected_campaign_death_sounds(rules, owner_is_human, owner_is_human, main_rng)
+}
+
+/// The Techno death block in the fixture's campaign session, for an owner
+/// with the given `IsHuman` (`+0x1EC`) and `PlayerControl` (`+0x1ED`) bytes.
+fn selected_campaign_death_sounds(
+    rules: &RuleSet,
+    is_human: bool,
+    player_control: bool,
+    main_rng: &mut SimRng,
+) -> Vec<String> {
     let mut entities = EntityStore::new();
     entities.insert(make_entity_owned(2, "E1", 8, 5, 1, "Americans"));
     let mut interner = test_interner();
     let owner = test_intern("Americans");
-    let mut houses = [HouseState::new(
-        owner,
-        0,
-        Some(owner),
-        owner_is_human,
-        5_000,
-        10,
-    )]
-    .into_iter()
-    .collect::<crate::sim::houses::Houses>();
+    let mut house = HouseState::new(owner, 0, Some(owner), is_human, 5_000, 10);
+    house.set_player_control_for_test(player_control);
+    let mut houses = [house].into_iter().collect::<crate::sim::houses::Houses>();
     let mut scenario_rng = SimRng::new(0);
     let mut handled_deaths = Vec::new();
     let handles = crate::sim::type_handle_table::ResolvedRuleHandles::resolve(rules, &mut interner);
@@ -5759,6 +5763,28 @@ fn fatal_sound_selection_uses_human_voice_then_die_sound_main_draws() {
     let mut one_draw_reference = SimRng::new(1);
     one_draw_reference.next_u32();
     assert_eq!(ai_rng.state(), one_draw_reference.state());
+}
+
+/// `0x00702130..0x00702136` gates VoiceDie on `HouseClass::IsHumanPlayer @
+/// 0x0050B6F0`, whose campaign arm also admits `PlayerControl` (`+0x1ED`,
+/// `0x0050B703`) without `IsHuman`: retail ALL01UMD and ALL03UMD give
+/// Alliance, and SOV04DMD Germans, `PlayerControl=yes`.
+#[test]
+fn campaign_player_controlled_house_hears_voice_die() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "\
+[InfantryTypes]\n0=E1\n\n\
+[VehicleTypes]\n\n\
+[AircraftTypes]\n\n\
+[BuildingTypes]\n\n\
+[E1]\nStrength=1\nArmor=none\nVoiceDie=OnlyVoice\nDieSound=OnlyDie\n",
+    ))
+    .expect("death-sound rules parse");
+    let mut rng = SimRng::new(1);
+    assert_eq!(
+        selected_campaign_death_sounds(&rules, false, true, &mut rng),
+        ["OnlyVoice", "OnlyDie"]
+    );
 }
 
 #[test]

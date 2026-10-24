@@ -22,7 +22,9 @@ use crate::sim::lifecycle_request::{LifecycleRequest, UninitReason};
 use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::radio::{self, RadioMessage, RadioPayload};
-use crate::sim::world::{FrameAdvanceError, FrameEffects, Simulation, UninitContext};
+use crate::sim::world::{
+    FrameAdvanceError, FrameEffects, SimSoundEvent, Simulation, UninitContext,
+};
 
 /// NavCom (`+0x5A4`) compared by pointer with `object`.
 fn nav_com_is(entity: &crate::sim::game_entity::GameEntity, object: u64) -> bool {
@@ -843,8 +845,20 @@ impl Simulation {
                     rules,
                     effects,
                 );
-                // 0x0051A812..0x0051A84A plays VoiceComment's second sound;
-                // retail rules give no type one.
+                // 0x0051A812..0x0051A84A: a type with two or more
+                // VoiceComment sounds plays the second at the arrival's
+                // Location (PlayAt7509E0, no owner gate or draw).
+                if let Some(event) = self.substrate.entities.get(id).and_then(|actor| {
+                    let object = self.object_type(actor.type_ref(), rules)?;
+                    Some(SimSoundEvent::voc_at_location(
+                        object.voice_comment.get(1)?.clone(),
+                        actor,
+                        self.resolved_terrain.as_ref(),
+                    ))
+                }) {
+                    self.sound_events.emit(event);
+                    effects.flush_sound(self, rules);
+                }
                 if let Some(cell) = entry_cell {
                     bridge_state_changed |=
                         self.infantry_full_cell_scatter(id, cell, rules, registry, effects)?;

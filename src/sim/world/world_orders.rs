@@ -596,14 +596,24 @@ impl Simulation {
     }
 
     pub fn house_is_human_player(&self, owner: InternedId) -> bool {
+        Self::is_human_player(&self.session, &self.houses, owner)
+    }
+
+    /// `HouseClass::IsHumanPlayer @ 0x0050B6F0` over the two fields it reads,
+    /// for callers that hold the object store mutably.
+    pub(crate) fn is_human_player(
+        session: &crate::sim::scenario_session::ScenarioSession,
+        houses: &crate::sim::houses::Houses,
+        owner: InternedId,
+    ) -> bool {
         // House50B6F0: nonzero session mode compares exactly to LocalPlayer;
         // mode zero uses the two native human/control flags.
-        if self.session.game_mode_nonzero() {
+        if session.game_mode_nonzero() {
             //50B716 loads A83D4C, the persisted native current-house input.
             //Presentation viewer binding cannot change this receiver's result.
-            self.session.current_house() == Some(owner)
+            session.current_house() == Some(owner)
         } else {
-            self.houses
+            houses
                 .get(&owner)
                 .is_some_and(|h| h.is_controlled_by_human(false))
         }

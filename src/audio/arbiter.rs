@@ -397,6 +397,9 @@ pub struct EntryFacts {
     /// The entry holds samples (`+0x134` non-zero, `+0x0C` set). Without
     /// them `UpdateState` state 0 kills its events before they take a channel.
     pub samples_ok: bool,
+    /// `+0x0C` alone: every `Sounds=` name resolved (`AddSample @
+    /// 0x004064A0`). Without it the entry never gets an event at all.
+    pub samples_resolved: bool,
 }
 
 impl EntryFacts {
@@ -601,6 +604,11 @@ impl SoundArbiter {
     /// its dead events and retries once, then gives up and the cue simply
     /// never plays.
     pub fn submit(&mut self, request: &PlayRequest, now_ms: u64) -> Option<EventId> {
+        // `0x004051B6 CMP [EBX+0xC],EBP; JZ 0x004052CB`: an entry with an
+        // unresolved sample name returns NULL before any pool work.
+        if !request.facts.samples_resolved {
+            return None;
+        }
         let entry = self.entry_index(&request.key);
         self.entries[entry as usize].facts = Some(request.facts);
 
@@ -1132,6 +1140,7 @@ impl SoundArbiter {
                 delay_ms: (0, 0),
                 entry_volume_linear: 0,
                 samples_ok: true,
+                samples_resolved: true,
             })
     }
 
@@ -1829,6 +1838,7 @@ mod tests {
             delay_ms: (0, 0),
             entry_volume_linear: VOLUME_SCALE,
             samples_ok: true,
+            samples_resolved: true,
         }
     }
 

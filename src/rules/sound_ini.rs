@@ -29,10 +29,12 @@
 //! are NOT separators.
 //!
 //! ## Dependency rules
-//! - Part of rules/ — depends on rules/ini_parser. No sim/render dependencies.
+//! - Part of rules/ — depends on rules/ini_parser and the assets audio index
+//!   (`Sounds=` admission). No sim/render dependencies.
 
 use std::collections::HashMap;
 
+use crate::assets::audio_bag::AudioIndex;
 use crate::rules::ini_parser::{IniFile, IniSection};
 #[cfg(feature = "ares")]
 use crate::rules::ini_value::truncate_native_bytes;
@@ -198,6 +200,13 @@ pub struct SoundEntry {
     /// [`MAX_SAMPLES`]. `Attack=` counts the first N as attack samples and
     /// `Decay=` the last M as decay samples; the rest is the body.
     pub sounds: Vec<String>,
+    /// `+0x0C`: every name `VocClass::AddSample @ 0x004064A0` looked up was
+    /// found. `FindOrCreate @ 0x004063B0` sets it (`0x00406427`); a name
+    /// `FindSampleIndex @ 0x004015C0` misses clears it (`0x00406510`), and
+    /// nothing sets it again, so one unresolvable name silences the whole
+    /// entry (`AllocateFromPool @ 0x004051B6` refuses it). Only a registry read
+    /// against the audio index can clear it; every retail name resolves.
+    pub samples_resolved: bool,
     /// Playback volume in percent, `0..=100`. VERA-internal, gamemd
     /// equivalent UNCHECKED: native keeps no percentage — `ReadINI` converts
     /// straight to [`Self::volume_linear`] and throws the percentage away.
@@ -285,6 +294,7 @@ impl SoundEntry {
         Self {
             id: name.to_string(),
             sounds: Vec::new(),
+            samples_resolved: true,
             // `+0x18` interp seeded to `0x4000` (`0x0040641F`/`0x00406458`).
             volume: 100,
             volume_linear: VOLUME_SCALE,
@@ -343,7 +353,17 @@ impl SoundRegistry {
     ///
     /// Init_Game52C763/52C796 supplies SOUNDMD.INI alone. Source selection
     /// and process lifetime belong to `audio_sources::AudioDefinitions`.
+    ///
+    /// Without an audio index every `Sounds=` name is kept lexically; see
+    /// [`Self::from_ini_admitting`].
     pub fn from_ini(ini: &IniFile) -> Self {
+        Self::from_ini_admitting(ini, None)
+    }
+
+    /// [`Self::from_ini`] with `Sounds=` names admitted against the audio
+    /// index, as `AddSample @ 0x004064A0` does: startup builds the index
+    /// (`52BBC7 -> 406CE8`) before Init_Game reads SOUNDMD (`52C796`).
+    pub fn from_ini_admitting(ini: &IniFile, index: Option<&AudioIndex>) -> Self {
         let mut entries: HashMap<String, SoundEntry> = HashMap::new();
         let mut native_order = Vec::new();
         let defaults = SoundDefaults::read(ini.section("Defaults"));
@@ -378,14 +398,10 @@ impl SoundRegistry {
             if previous.is_none() {
                 native_order.push(key.clone());
             }
-            let name: &str = previous.as_ref().map_or(value, |entry| entry.id.as_str());
-            let mut entry: SoundEntry = read_entry(ini, name, &defaults);
-            if let Some(previous) = previous {
-                let mut sounds: Vec<String> = previous.sounds;
-                sounds.extend(entry.sounds);
-                sounds.truncate(MAX_SAMPLES);
-                entry.sounds = sounds;
-            }
+            let name = previous
+                .as_ref()
+                .map_or_else(|| value.to_string(), |entry| entry.id.clone());
+            let entry: SoundEntry = read_entry(ini, &name, &defaults, index, previous);
             entries.insert(key, entry);
         }
 
@@ -462,29 +478,39 @@ impl SoundRegistry {
 /// files spell all 820/500 `[SoundList]` values exactly as their section
 /// headers, so the two agree on retail data; a mod that spelled one differently
 /// would register the id with [`SoundEntry::unread`]'s silent state here.
-fn read_entry(ini: &IniFile, name: &str, defaults: &SoundDefaults) -> SoundEntry {
+///
+/// `previous` is the object a twice-listed id already built: `ReadINI` runs on
+/// it again, so its samples carry over and `AddSample` appends to them.
+fn read_entry(
+    ini: &IniFile,
+    name: &str,
+    defaults: &SoundDefaults,
+    index: Option<&AudioIndex>,
+    previous: Option<SoundEntry>,
+) -> SoundEntry {
     let Some(section) = ini.section(name) else {
-        return SoundEntry::unread(name);
+        return previous.unwrap_or_else(|| SoundEntry::unread(name));
     };
 
-    // `VocClass::AddSample @ 0x004064A0` skips every leading `$`/`#` and stops
-    // accepting at 32 samples. An absent or token-less `Sounds=` is registered,
-    // not skipped: `ReadINI` reads it with the empty-string default at
-    // `0x0075049D` and simply adds nothing, so the id must still resolve here
+    // `VocClass::AddSample @ 0x004064A0` runs once per token ([`add_sample`]).
+    // An absent or token-less `Sounds=` is registered, not skipped: `ReadINI`
+    // reads it with the empty-string default at `0x0075049D` and simply adds
+    // nothing (`0x007504BE` skips the loop), so the id must still resolve here
     // rather than fall through to the audio-bag path. Eight stock sections take
     // that path — `Dummy`, `CampfireLoop`, `PropagandaTruck`, `DolphinFear`,
     // `OspreyCollision`, `SquidFear`, `SubFear`, `RobotTankPowerDown` — and
     // `Dummy.wav` is a real 1180-byte file in `audiomd.mix`, so registering the
     // silent entry is what keeps `[AudioVisual] Construction=`/`GateUp=`/
     // `GateDown=` from playing a buffer gamemd never starts.
-    let sounds: Vec<String> = strtok(
+    let (mut sounds, mut samples_resolved) = previous.map_or((Vec::new(), true), |entry| {
+        (entry.sounds, entry.samples_resolved)
+    });
+    for token in strtok(
         section.read_name("Sounds", TEXT_CAPACITY).unwrap_or(""),
         TOKEN_DELIMITERS,
-    )
-    .map(|s| s.trim_start_matches(['$', '#']).to_string())
-    .filter(|s| !s.is_empty())
-    .take(MAX_SAMPLES)
-    .collect();
+    ) {
+        add_sample(&mut sounds, &mut samples_resolved, token, index);
+    }
 
     let volume_raw = section.read_double("Volume", f64::from(defaults.volume));
     let volume_linear = volume_linear(volume_raw);
@@ -514,6 +540,7 @@ fn read_entry(ini: &IniFile, name: &str, defaults: &SoundDefaults) -> SoundEntry
     SoundEntry {
         id: name.to_string(),
         sounds,
+        samples_resolved,
         volume,
         volume_linear,
         priority,
@@ -528,6 +555,41 @@ fn read_entry(ini: &IniFile, name: &str, defaults: &SoundDefaults) -> SoundEntry
         vshift,
         attack,
         decay,
+    }
+}
+
+/// `VocClass::AddSample @ 0x004064A0` for one `Sounds=` token.
+///
+/// A full slot table refuses the token before any lookup (`0x004064A6`,
+/// `+0x134 == 0x20`); otherwise every leading `$`/`#` is skipped
+/// (`0x004064C7..0x004064D2`) and the rest is looked up through
+/// `FindSampleIndex @ 0x004015C0` (`0x004064D6`). A hit takes the next slot; a
+/// miss — a sigil-only token included — stores nothing and clears `+0x0C`
+/// (`0x00406502..0x00406510`). `ReadINI` ignores the result and keeps adding
+/// (`0x007504C0..0x007504DA`).
+///
+/// With no index (`0x87E294` null, or VERA's lexical registry) native adds no
+/// slot at all; VERA keeps the name for its standalone-file playback fallback.
+/// Installed Ares replaces this function (`VocClassData_AddSample`
+/// `0x1005AFA0`, hook record in `tools/rules_oracle/ares_audio_bags.json`): a
+/// missed name goes to its loose-sample loader (`0x1005AFF4..0x1005AFFA`) and
+/// `+0x0C` is never cleared, so the Ares build keeps every name too.
+fn add_sample(
+    sounds: &mut Vec<String>,
+    samples_resolved: &mut bool,
+    token: &str,
+    index: Option<&AudioIndex>,
+) {
+    if sounds.len() == MAX_SAMPLES {
+        return;
+    }
+    let name = token.trim_start_matches(['$', '#']);
+    #[cfg(feature = "ares")]
+    let index = index.filter(|_| false);
+    match index {
+        Some(index) if index.find_sample_index(name).is_none() => *samples_resolved = false,
+        _ if !name.is_empty() => sounds.push(name.to_string()),
+        _ => {}
     }
 }
 

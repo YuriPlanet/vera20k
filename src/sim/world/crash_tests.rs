@@ -1989,6 +1989,11 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
             HouseState::new(house, side, None, human, 10_000, 10)
         });
     }
+    // The Americans play this seat: in a network-mode game
+    // `HouseClass::IsHumanPlayer @ 0x0050B6F0` admits only CurrentPlayer,
+    // which gates `VoiceCrashing=` at `0x004DAD1F`.
+    let local = sim.interner.intern("Americans");
+    sim.session.install_current_house(Some(local));
     // A Harrier on open level ground with three flak tracks eight and nine
     // cells east: beyond their sight while it stands, inside their AA range
     // once it lifts off. Each side keeps a power plant out of the fight, so
@@ -2309,6 +2314,11 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
             HouseState::new(house, side, None, human, 10_000, 10)
         });
     }
+    // The Americans play this seat: in a network-mode game
+    // `HouseClass::IsHumanPlayer @ 0x0050B6F0` admits only CurrentPlayer,
+    // which gates `VoiceCrashing=` at `0x004DAD1F`.
+    let local = sim.interner.intern("Americans");
+    sim.session.install_current_house(Some(local));
     // Open level ground: the Nighthawk and the Kirov land west of three flak
     // tracks and are ordered past them. Each side keeps a power plant out of
     // the fight, so neither house is defeated under the Battle mode's
@@ -2601,4 +2611,44 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
         impact_anims(kirov, &bomb_anims) >= 1,
         "the Kirov's BlimpBomb detonates at the impact"
     );
+}
+
+/// `0x004DAD10..0x004DAD59`: the crash edge plays `VoiceCrashing=` for an
+/// owner `HouseClass::IsHumanPlayer @ 0x0050B6F0` admits, which in campaign
+/// includes a `PlayerControl=` house that is not `IsHuman` (`0x0050B703`), as
+/// an unfiltered positional `PlayAt @ 0x007509E0`.
+#[test]
+fn campaign_player_controlled_house_hears_voice_crashing() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AircraftTypes]\n0=ORCA\n[ORCA]\nStrength=150\nVoiceCrashing=OrcaFalls\n",
+    ))
+    .unwrap();
+    let mut orca = crate::sim::game_entity::GameEntity::test_default_of_category(
+        1,
+        "ORCA",
+        "Americans",
+        10,
+        10,
+        EntityCategory::Aircraft,
+    );
+    orca.crash.set_crashing_for_test(true);
+    let mut sim = Simulation::with_seed(0);
+    sim.interner = crate::sim::intern::test_interner();
+    let mut house = crate::sim::house_state::HouseState::new(orca.owner(), 0, None, false, 0, 10);
+    house.set_player_control_for_test(true);
+    sim.houses.register(house);
+    sim.substrate.entities.insert(orca);
+    Simulation::crash_edge_sounds(
+        &sim.interner,
+        &mut sim.substrate,
+        &mut sim.sound_events,
+        &sim.session,
+        &sim.houses,
+        1,
+        &rules,
+    );
+    assert!(sim.sound_events.iter().any(|event| matches!(
+        event,
+        super::SimSoundEvent::VocAt { sound_id, audible_to: None, .. } if sound_id == "OrcaFalls"
+    )));
 }

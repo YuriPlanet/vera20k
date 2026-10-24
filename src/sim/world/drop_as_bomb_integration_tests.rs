@@ -156,6 +156,51 @@ fn remove_deck(sim: &mut Simulation) {
     cell.bridge_walkable = false;
 }
 
+/// FootAI4DAB3C..4DABB1 observes DropAsBomb before the ordinary sinking and
+/// crash sound edges. The new voice runs once through the production turn.
+#[test]
+fn a_bridge_drop_plays_voice_falling_once_through_foot_ai() {
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let mut rules = battle.rules;
+    let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+        "[SoundList]\n0=FallingVoice\n",
+    ));
+    rules.bind_type_sound_references(
+        &IniFile::from_str("[MTNK]\nVoiceFalling=FallingVoice\n"),
+        &sounds,
+    );
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 1);
+    let tank = sim
+        .spawn_object("MTNK", "Americans", CELL.0, CELL.1, 0, &rules)
+        .unwrap();
+    put_on_deck(&mut sim, &rules, tank, false);
+    remove_deck(&mut sim);
+    blow_up_bridge_cell_fallout(
+        &mut sim,
+        &rules,
+        CELL.0,
+        CELL.1,
+        None,
+        FrameEffects::default(),
+    );
+    for expected in [1, 0] {
+        // The app consumes this retained channel between frames; observe
+        // only the new turn's emissions here.
+        sim.sound_events.clear_for_test();
+        let grid = sim.path_grid_snapshot().unwrap();
+        assert!(
+            sim.advance_tick(&[], Some(&rules), Some(&grid), None, 33)
+                .frame_committed
+        );
+        assert_eq!(sim.sound_events.iter().filter(|event| matches!(
+            event, super::SimSoundEvent::VocAt { sound_id, .. } if sound_id == "FallingVoice"
+        )).count(), expected);
+        assert!(sim.substrate.entities.get(tank).unwrap().is_falling_down());
+    }
+}
+
 fn run_drop(sim: &mut Simulation, rules: &RuleSet, carrier: u64, passenger: u64, water: bool) {
     let explosion_anims = rules
         .object(

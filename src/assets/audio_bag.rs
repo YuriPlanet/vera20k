@@ -266,13 +266,20 @@ impl AudioIndex {
         None
     }
 
+    /// `AudioIndex::FindSampleIndex @ 0x004015C0`: `bsearch` of the name table
+    /// with `_stricmp` (`0x007C8D20`), which `0x004013B1..0x004013BA` sorted
+    /// with the same comparator, so a name is found exactly when it equals an
+    /// entry case-insensitively. No extension aliases; the bag is not read.
+    pub fn find_sample_index(&self, name: &str) -> Option<usize> {
+        let upper = name.to_ascii_uppercase();
+        self.entries
+            .binary_search_by(|e| e.name.as_str().cmp(&upper))
+            .ok()
+    }
+
     /// Exact binary search by uppercase name.
     fn get_exact(&self, name: &str) -> Option<(&AudioBagEntry, &[u8])> {
-        let upper = name.to_ascii_uppercase();
-        let idx = self
-            .entries
-            .binary_search_by(|e| e.name.as_str().cmp(&upper))
-            .ok()?;
+        let idx = self.find_sample_index(name)?;
         let entry = &self.entries[idx];
         let start = entry.offset as usize;
         let end = start.checked_add(entry.size as usize)?;

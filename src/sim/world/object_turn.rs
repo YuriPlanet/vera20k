@@ -990,6 +990,20 @@ impl Simulation {
             body_frame_before_process,
             rules,
         );
+        // Foot AI 4DAB3C..4DABB1: a DropAsBomb object starting to fall plays
+        // its type's VoiceFalling at its Location, before the sinking/crash
+        // edges and looping-sound position update (PlayAt7509E0, ungated).
+        if let Some(entity) = sim.substrate.entities.get_mut(stable_id)
+            && entity.observe_falling_edge()
+            && let Some(voice) = sim
+                .interner
+                .object_type(entity.type_ref(), rules)
+                .and_then(|object| object.voice_falling.clone())
+        {
+            let event =
+                super::SimSoundEvent::voc_at_location(voice, entity, sim.resolved_terrain.as_ref());
+            sim.sound_events.emit(event);
+        }
         Self::sinking_edge_sounds(
             &sim.interner,
             &mut sim.substrate,
@@ -1001,6 +1015,7 @@ impl Simulation {
             &sim.interner,
             &mut sim.substrate,
             &mut sim.sound_events,
+            &sim.session,
             &sim.houses,
             stable_id,
             rules,

@@ -449,8 +449,9 @@ impl GameSoundEvent {
 /// `VoiceDeploy=` slot, or the resource-Archive `VoiceHarvest=` override,
 /// before its positional DeploySound. Automatic relocation suppresses the
 /// ordinary line. Deploy/unload input acknowledgement for other categories
-/// remains separate, despite the bound Deploy/Undeploy slots; `VoiceFalling=`
-/// is still unparsed and taunts reach an empty match arm.
+/// remains separate, despite the bound Deploy/Undeploy slots; taunts reach an
+/// empty match arm. `VoiceFalling=` is a positional [`GameSoundEvent::VocAt`]
+/// from Foot AI's falling edge (4DAB3C).
 ///
 /// `VoiceSinking=`/`SinkingSound=` are resolved against fixed SOUNDMD by the
 /// Rules process owner. Foot's +3CD/+3CE edge (4DABC7) emits the positional

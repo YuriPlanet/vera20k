@@ -164,6 +164,51 @@ fn a_tethered_arrival_that_fills_its_cell_scatters_the_men_there() {
     }
 }
 
+/// Per_Cell_Process51A812..51A84A plays the second VoiceComment after
+/// radio8, even for a computer-owned man, without a Main selection draw.
+#[test]
+fn a_computer_owned_tethered_arrival_plays_the_second_comment() {
+    let Some((mut sim, mut rules)) = retail_world() else {
+        return;
+    };
+    let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(
+        &crate::rules::ini_parser::IniFile::from_str("[SoundList]\n0=First\n1=Second\n"),
+    );
+    rules.bind_type_sound_references(
+        &crate::rules::ini_parser::IniFile::from_str("[E1]\nVoiceComment=First,Second\n"),
+        &sounds,
+    );
+    let owner = sim.intern("Russians");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, false, 0, 10,
+        ));
+    assert!(!sim.house_is_human_player(owner));
+    let barracks = sim
+        .spawn_object("GAPILE", "Russians", 4, 4, 0, &rules)
+        .unwrap();
+    let man = sim
+        .spawn_object("E1", "Russians", CELL.0, CELL.1, 0, &rules)
+        .unwrap();
+    mid_arrival(&mut sim, man);
+    sim.substrate.occupancy.remove(CELL.0, CELL.1, man);
+    send(&mut sim, &rules, man, barracks, RadioMessage::Hello);
+    send(&mut sim, &rules, man, barracks, RadioMessage::Tether);
+    sim.sound_events.clear_for_test();
+    let before = sim.main_rng.state();
+    arrive(&mut sim, &rules, man);
+    let comments: Vec<_> = sim
+        .sound_events
+        .iter()
+        .filter_map(|event| match event {
+            SimSoundEvent::VocAt { sound_id, .. } => Some(sound_id.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(comments, ["Second"]);
+    assert_eq!(sim.main_rng.state(), before);
+}
+
 /// `0x0051A88B..0x0051A8C5`: an arrival with nothing queued, no NavCom, no
 /// Target and no radio contact enters idle mode (Guard for a retail GI),
 /// which Commence makes current at once; any one of those keeps his Move.

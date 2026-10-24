@@ -291,6 +291,7 @@ mod tests {
                         delay_ms: (0, 0),
                         entry_volume_linear: VOLUME_SCALE,
                         samples_ok: true,
+                        samples_resolved: true,
                     },
                     volume_linear: VOLUME_SCALE,
                     pan: VOLUME_SCALE / 2,

@@ -167,7 +167,10 @@ impl ProcessAssets {
             } else {
                 None
             };
-            let definitions = crate::rules::audio_sources::AudioDefinitions::select(assets);
+            let definitions = crate::rules::audio_sources::AudioDefinitions::select_admitting(
+                assets,
+                index.as_ref().map(|loaded| &loaded.index),
+            );
             let source_receipt = serde_json::json!({
                 "soundmd": definitions.sound_source(),
                 "evamd": definitions.eva_source(),

@@ -38,7 +38,10 @@ not from executing Windows startup or interpreting Ghidra labels:
   `52F6DA`. Disabled/device-failure paths skip index construction but join
   `406CF8 -> 403ED0`, which sets the factory-ready flag `87E2A0` at `403F1B`.
   Definitions still exist; `4064A0` skips admitted sample slots if the
-  AudioIndex pointer `87E294` is null. Rust lexical names are not admitted slots.
+  AudioIndex pointer `87E294` is null. With an index, a name `4015C0` misses
+  clears the entry's `+0x0C` and `405190` refuses it (`4051B6`); Rust admits
+  names the same way only when the process selected an index, and keeps them
+  lexical otherwise.
 - `406C43` probes AUDIOMD.MIX and mounts either it (`406CAB`) or AUDIO.MIX
   (`406CCF`). It constructs **one** index (`4011C0`) at `406CE8` with basename
   `audio`. This is archive fallback, not per-sample fallback.
