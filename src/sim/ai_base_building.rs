@@ -34,8 +34,11 @@
 //! - Native reads VERA defines: the wall percent is read unchecked at the
 //!   House difficulty (VERA takes 0, no walls, past the vector's end, which
 //!   retail's three values never reach).
-//! - A `-3` node is removed without `0x005082C0`'s perimeter scan; only a map
-//!   plan can hold one.
+//! - Authored perimeter scans whose selected wall/gate type is null fault
+//!   natively (508720/5087DC/50892E/5089F9). VERA stops the scan before
+//!   appending or committing bounds. Stock GADUMY gates admit Allied owners;
+//!   a Soviet/Yuri authored -3 can reach this invalid native dereference.
+//!   All fourteen stock campaign plans were read without a -3 node.
 //! - Dormant in retail data: the `PowersUpBuilding=` arms of `0x0042E820` and
 //!   `AI_Choose_Building` (`0x004FE953..0x004FEA3A`); no retail type sets the
 //!   key and VERA reads no upgrade (as `production_sell` and
@@ -344,10 +347,11 @@ pub(crate) fn choose_building(
         index = next;
     }
     let mut node = plan_node(&sim.houses, owner, index);
-    // `0x004FE4B0..0x004FE518`: remove a perimeter node (its `0x005082C0`
-    // scan is a residual).
+    // Original ChooseBuilding4FE4B0..4FE518 removes the control, calls
+    // ScanBasePerimeter5082C0 and returns. New nodes wait for a later choice.
     if node.type_or_control == -3 {
         remove_node(&mut sim.houses, owner, index);
+        scan_base_perimeter(sim, rules, owner);
         return;
     }
     let wall_tower = rules.building_type_at(node.type_or_control).filter(|ty| {
@@ -421,6 +425,219 @@ pub(crate) fn choose_building(
     if let Some(house) = sim.houses.get_mut(&owner) {
         house.ai_production_mut().building_choice = node.type_or_control;
     }
+}
+
+/// Original gamemd.exe HouseClass::AI_ScanBasePerimeter5082C0. Grow the
+/// reservation rectangle, scan its four edges, then append all walls before
+/// all gates. No RNG draw, timer write or detach belongs to this helper.
+/// Native+5764 staging is raw-save-only (BaseSave42EE40/Load42F080); every
+/// call overwrites it before use. Only the committed+5754 bounds are needed
+/// after return, including for a later expansion after loading.
+fn scan_base_perimeter(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
+    use crate::map::cell_index::NativeCellIdentity;
+    use crate::map::resolved_terrain::NativeCellQuery;
+
+    let (Some(house), Some(terrain)) = (sim.houses.get(&owner), sim.resolved_terrain.as_ref())
+    else {
+        // Mapless component fixtures have no native CellClass receiver.
+        return;
+    };
+    let country = sim.interner.resolve(house.house_type_id());
+    //5083EF..508443: ConcreteWalls, EWGates, NSGates. This is5051E0's
+    // country/side predicate, not the different50C340 wall_type lookup.
+    let [wall_type, ew_gate, ns_gate] = [
+        &rules.concrete_wall_types,
+        &rules.ew_gate_types,
+        &rules.ns_gate_types,
+    ]
+    .map(|types| {
+        crate::sim::ai_buildable::first_buildable_from_array(
+            rules,
+            types,
+            country,
+            house.side_index(),
+            sim.session.game_options().super_weapons,
+        )
+        .and_then(|ty| rules.building_type_index(&ty.id))
+    });
+    let (x, y, width, height) = house.base_reservation().bounds();
+    let grown = (
+        x.wrapping_sub(1),
+        y.wrapping_sub(1),
+        width.wrapping_add(2),
+        height.wrapping_add(2),
+    );
+    let left = grown.0 as i16;
+    let top = grown.1 as i16;
+    let right = grown.0.wrapping_add(grown.2) as i16;
+    let bottom = grown.1.wrapping_add(grown.3).wrapping_sub(1) as i16;
+    let cells = NativeCellQuery::canonical(terrain);
+    let center = house.base_plan_center();
+    let center = cells.lookup((center.0 as i16, center.1 as i16));
+    let center_level = i32::from(cells.ground_fields(center).0 as i8);
+    let mut nodes = (Vec::new(), Vec::new());
+    //508338..5083EB, tables7EA790/7EA7A0: corners occur on the horizontal
+    // edges only. Native word additions wrap at every coordinate step.
+    for (start, end, step, outside, gate_type) in [
+        ((left, top), (right, top), (1, 0), (0, -1), ew_gate),
+        ((left, bottom), (right, bottom), (1, 0), (0, 1), ew_gate),
+        (
+            (left, top.wrapping_add(1)),
+            (left, bottom),
+            (0, 1),
+            (-1, 0),
+            ns_gate,
+        ),
+        (
+            (right.wrapping_sub(1), top.wrapping_add(1)),
+            (right.wrapping_sub(1), bottom),
+            (0, 1),
+            (1, 0),
+            ns_gate,
+        ),
+    ] {
+        let mut cell = start;
+        let mut run_start = start;
+        let mut run_length = 0;
+        let mut soft_breaks = 0;
+        while cell != end {
+            //5084E7..50860A evaluates every query before classifying the
+            // break. Retain both identities across the shared-Dummy stamps.
+            let current = cells.lookup(cell);
+            let outer = cells.lookup((
+                cell.0.wrapping_add(outside.0),
+                cell.1.wrapping_add(outside.1),
+            ));
+            let height_clear =
+                (i32::from(cells.ground_fields(current).0 as i8) - center_level).abs() <= 2;
+            let lands = [cells.land_type(current), cells.land_type(outer)];
+            let land_clear = lands.into_iter().all(|land| !matches!(land, 2 | 3 | 8));
+            let overlay_clear = sim.cell_overlay(current).overlay_id.is_none();
+            let building_clear = [current, outer].into_iter().all(|identity| {
+                if let NativeCellIdentity::Real(_) = identity {
+                    let (x, y) = cells.coord(identity);
+                    sim.substrate
+                        .occupancy
+                        .first_building_on_layer(x as u16, y as u16, MovementLayer::Ground)
+                        .is_none()
+                } else {
+                    true
+                }
+            });
+            let terrain_clear = [current, outer].into_iter().all(|identity| {
+                if let NativeCellIdentity::Real(_) = identity {
+                    let (x, y) = cells.coord(identity);
+                    sim.terrain_objects.id_at((x as u16, y as u16)).is_none()
+                } else {
+                    true
+                }
+            });
+            let slope_clear = cells.ground_fields(current).1 == 0;
+            // Map578460 mode1 performs another lookup of the requested cell.
+            let in_playfield = crate::sim::cell_rect::cell_is_in_playfield_height_aware_in_query(
+                (i32::from(cell.0), i32::from(cell.1)),
+                sim.playfield_bounds(),
+                Some(terrain),
+                Some(&cells),
+            );
+            let hard_break =
+                !height_clear || !land_clear || !building_clear || !terrain_clear || !in_playfield;
+            if !hard_break && overlay_clear && slope_clear {
+                if run_length == 0 {
+                    run_start = cell;
+                }
+                run_length += 1;
+            } else {
+                //508672..5086E7: overlay/slope breaks flush short runs as
+                // walls and suppress a gate at the following hard break.
+                let gate_allowed = hard_break && soft_breaks == 0;
+                if hard_break {
+                    soft_breaks = 0;
+                } else {
+                    soft_breaks += 1;
+                }
+                if (run_length >= 5 || !gate_allowed)
+                    && !append_perimeter_run(
+                        &mut nodes,
+                        run_start,
+                        step,
+                        run_length,
+                        gate_allowed,
+                        (wall_type, gate_type),
+                    )
+                {
+                    return;
+                }
+                run_length = 0;
+            }
+            cell = (cell.0.wrapping_add(step.0), cell.1.wrapping_add(step.1));
+        }
+        //5088D8..508A96 always permits a gate in a long trailing run,
+        // independently of the edge's earlier soft-break counter.
+        if run_length >= 5
+            && !append_perimeter_run(
+                &mut nodes,
+                run_start,
+                step,
+                run_length,
+                true,
+                (wall_type, gate_type),
+            )
+        {
+            return;
+        }
+    }
+    let house = sim
+        .houses
+        .get_mut(&owner)
+        .expect("retained perimeter owner");
+    //508ABA..508BA0 appends after every preexisting node, walls then gates.
+    for node in nodes.0.into_iter().chain(nodes.1) {
+        let plan = house.base_plan_mut();
+        plan.insert(plan.nodes().len(), node);
+    }
+    house
+        .base_reservation_mut()
+        .commit_perimeter_expansion(grown);
+}
+
+/// Shared internal/trailing run emission of ScanBasePerimeter5086AD..508A90.
+/// A gate begins at length/2-1 and consumes three cells. Native null Type
+/// dereferences terminate execution; the caller drops the uncommitted scan.
+fn append_perimeter_run(
+    nodes: &mut (Vec<BasePlanNode>, Vec<BasePlanNode>),
+    mut cell: (i16, i16),
+    step: (i16, i16),
+    length: i32,
+    gate_allowed: bool,
+    (wall_type, gate_type): (Option<i32>, Option<i32>),
+) -> bool {
+    let mut index = 0;
+    while index < length {
+        let is_gate = gate_allowed && index == length / 2 - 1;
+        let Some(type_or_control) = (if is_gate { gate_type } else { wall_type }) else {
+            return false;
+        };
+        let node = BasePlanNode {
+            type_or_control,
+            packed_cell: pack_base_plan_cell(i32::from(cell.0), i32::from(cell.1)),
+            filled: false,
+            retry_count: 0,
+        };
+        let advance = if is_gate {
+            nodes.1.push(node);
+            3
+        } else {
+            nodes.0.push(node);
+            1
+        };
+        index += advance;
+        cell = (
+            cell.0.wrapping_add(step.0.wrapping_mul(advance as i16)),
+            cell.1.wrapping_add(step.1.wrapping_mul(advance as i16)),
+        );
+    }
+    true
 }
 
 /// The power splice gates of `AI_Choose_Building` (`0x004FE6F6..0x004FE8A6`):
@@ -1086,3 +1303,7 @@ fn map_cell_offset(rx: u16, ry: u16, dx: i32, dy: i32) -> Option<(u16, u16)> {
 #[cfg(test)]
 #[path = "ai_base_building_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "ai_base_perimeter_tests.rs"]
+mod perimeter_tests;

@@ -366,6 +366,14 @@ const LISTS: &[(&str, PublishList)] = &[
     ("ConcreteWalls", |rules, ids| {
         rules.concrete_wall_types = rules.ids_with_objects(ids, ObjectCategory::Building);
     }),
+    // Original ReadAI672AE0: NSGates673830..673870 (+A6C), then
+    // EWGates673875..6738A7 (+A88), through the retained list reader67B550.
+    ("NSGates", |rules, ids| {
+        rules.ns_gate_types = rules.ids_with_objects(ids, ObjectCategory::Building);
+    }),
+    ("EWGates", |rules, ids| {
+        rules.ew_gate_types = rules.ids_with_objects(ids, ObjectCategory::Building);
+    }),
     // NeutralTechBuildings +ADC through the list reader `0x0067B550`
     // (`0x006664A7`, `0x00673926`): the random map generator reads it from
     // the processed rules, before any RuleSet exists

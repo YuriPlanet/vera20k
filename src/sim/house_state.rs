@@ -315,6 +315,9 @@ pub struct BaseReservationState {
     min_y: i32,
     width: i32,
     height: i32,
+    /// Primary vector House+5720 (items5724, count5730), maintained by
+    /// Mark455F10/Clear4561F0 and consumed by FindBaseBuildingSite5060B0.
+    /// The separate defense-candidate vector+5738 is not this authority.
     perimeter_cells: Vec<u32>,
 }
 
@@ -339,6 +342,12 @@ impl BaseReservationState {
     pub(crate) fn update_bounds(&mut self, start_x: i32, start_y: i32, width: i32, height: i32) {
         Self::update_axis(&mut self.min_x, &mut self.width, start_x, width);
         Self::update_axis(&mut self.min_y, &mut self.height, start_y, height);
+    }
+
+    /// Original HouseClass::AI_ScanBasePerimeter508BA2..508BCC replaces
+    /// the four committed bounds after appending all generated plan nodes.
+    pub(crate) fn commit_perimeter_expansion(&mut self, bounds: (i32, i32, i32, i32)) {
+        (self.min_x, self.min_y, self.width, self.height) = bounds;
     }
 
     pub(crate) fn append_perimeter_cell_if_absent(&mut self, packed_cell: u32) {
