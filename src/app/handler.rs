@@ -95,6 +95,11 @@ impl App {
         state.match_state.input.tactical_mouse.reset_on_focus_loss();
         state.match_state.input.selection_state.cancel_drag();
         state.match_state.input.minimap_dragging = false;
+        // A touch stream can end without an `Ended` when the window loses
+        // focus with fingers down, and the live gesture owns the edge-scroll
+        // inhibit, so it dies on the same edge as the rest of the pointer
+        // state.
+        state.match_state.input.touch_mapper.reset();
         state
             .match_state
             .match_presentation
@@ -398,6 +403,58 @@ impl ApplicationHandler for App {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let shell_capture_active = self.shell_capture.is_some();
         let tactical_capture_active = self.tactical_capture.is_some();
+        // Set while this call re-dispatches a touch's mouse events: those carry
+        // the parked touch cursor, not the hardware pointer.
+        let from_touch = self.dispatching_touch;
+
+        // Touchscreens have no OS cursor, so each contact is re-issued as the
+        // mouse events its gesture means; `input::touch` owns that mapping and
+        // carries the per-platform gate. Capture sessions stay input-sealed:
+        // a raw touch falls through and counts as a violation below.
+        #[cfg(not(target_os = "linux"))]
+        {
+            if !shell_capture_active
+                && !tactical_capture_active
+                && let WindowEvent::Touch(touch) = &event
+            {
+                let Some(state) = self.state.as_mut() else {
+                    return;
+                };
+                let in_game = state.frontend.screen == GameScreen::InGame;
+                let scale = state.platform.window.scale_factor();
+                let output = state.match_state.input.touch_mapper.translate(
+                    touch,
+                    Instant::now(),
+                    in_game,
+                    scale,
+                );
+                // The pointer is the finger's until a real mouse moves again.
+                state.match_state.input.cursor_from_touch = true;
+                if let Some((dx, dy)) = output.pan
+                    && in_game
+                {
+                    // Screen pixels to world pixels; the camera moves against
+                    // the fingers so the map follows them. The per-frame camera
+                    // clamp keeps an overshoot from leaving the playable area.
+                    let zoom = state.match_state.input.zoom_level.max(0.01);
+                    let (x, y) = (
+                        state.match_state.input.camera_x,
+                        state.match_state.input.camera_y,
+                    );
+                    crate::app::input::camera::set_camera_position(
+                        &mut state.match_state.input,
+                        (x + dx / zoom, y + dy / zoom),
+                    );
+                }
+                self.dispatching_touch = true;
+                for event in output.events.into_iter().flatten() {
+                    self.window_event(event_loop, _id, event);
+                }
+                self.dispatching_touch = false;
+                return;
+            }
+        }
+
         let Some(state) = &mut self.state else { return };
         state.sync_cursor_space();
 
@@ -642,6 +699,9 @@ impl ApplicationHandler for App {
                     crate::app::input::cursor::apply_cursor_confinement(state);
                 }
                 if !active {
+                    // `release_in_game_pointer_state` also drops a touch stream
+                    // that ended without an `Ended`, so no phantom finger turns
+                    // the next tap into a two-finger pan.
                     crate::app::input::cursor::release_cursor_confinement(state);
                     Self::release_in_game_pointer_state(state);
                     if let Some(browser) = state
@@ -1105,6 +1165,12 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
+                // The hardware pointer is back: edge auto-scroll may read the
+                // band again. A touch's synthetic move carries the parked
+                // cursor instead and keeps the inhibit up.
+                if !from_touch {
+                    state.match_state.input.cursor_from_touch = false;
+                }
                 state.set_cursor_from_window(position.x as f32, position.y as f32);
                 if Self::house_outcome_wait_pending(state) {
                     return;

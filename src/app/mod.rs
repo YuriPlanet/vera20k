@@ -138,6 +138,10 @@ pub struct App {
     /// Make sure config.toml names a game folder before the window opens
     /// ([`app_bundle`]).
     ask_for_game_folder: bool,
+    /// Set while `window_event` re-dispatches the mouse events a touch meant
+    /// (`input::touch`). A synthetic `CursorMoved` must not pass for the OS
+    /// pointer, which is what clears the touch-parked cursor.
+    dispatching_touch: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,6 +190,7 @@ impl App {
             spawn_request: None,
             startup_failure: None,
             ask_for_game_folder: false,
+            dispatching_touch: false,
         }
     }
 
@@ -203,6 +208,7 @@ impl App {
             spawn_request: None,
             startup_failure: None,
             ask_for_game_folder: false,
+            dispatching_touch: false,
         }
     }
 
@@ -222,6 +228,7 @@ impl App {
             spawn_request: None,
             startup_failure: None,
             ask_for_game_folder: false,
+            dispatching_touch: false,
         }
     }
 

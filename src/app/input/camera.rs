@@ -590,6 +590,7 @@ pub(crate) fn camera_input_idle(state: &AppState) -> bool {
         && !input.tactical_mouse.right_held
         && !input.tactical_mouse.right_pan_engaged
         && input.edge_scroll.coasting_direction().is_none()
+        && !touch_owns_pointer(input)
         && edge_scroll_intent(
             (input.cursor_x, input.cursor_y),
             state.render_width() as i32,
@@ -1293,7 +1294,9 @@ pub(crate) fn poll_mouse_scroll(state: &mut AppState) -> (f32, f32) {
     // the capture, so the map is frozen for the whole of a band-box or
     // right-drag gesture. The minimap-drag inhibit is VERA-internal: gamemd's
     // minimap re-centres only on press, while this flag owns the gesture here.
-    if !state.match_state.input.tactical_mouse.captured && !state.match_state.input.minimap_dragging
+    if !state.match_state.input.tactical_mouse.captured
+        && !state.match_state.input.minimap_dragging
+        && !touch_owns_pointer(&state.match_state.input)
     {
         let now = state.match_state.input.edge_scroll.radar_timer();
         let scroll_rate = state
@@ -2224,9 +2227,25 @@ fn blocked_mask_to_scroll_dir(mask: u8) -> Option<ScrollDir> {
     })
 }
 
+/// Whether a touch, not the OS pointer, owns the cursor this frame.
+///
+/// gamemd's edge scroll assumes a mouse that leaves the band when the hand
+/// does. A touch device has none: the mapper parks a synthetic cursor at the
+/// last contact, so the band would stay engaged with nothing to carry it away,
+/// and a touch pan holds no button, so it cannot hold the tactical capture that
+/// freezes the band for native's right-drag pan.
+pub(crate) fn touch_owns_pointer(input: &crate::app::input::state::MatchInputState) -> bool {
+    input.cursor_from_touch || input.touch_mapper.pan_active()
+}
+
 /// Active edge intent plus whether the tactical clamp removes all requested
 /// components. Cursor feedback and motion both use this exact probe.
 pub(crate) fn edge_scroll_cursor_state(state: &AppState) -> Option<(ScrollDir, bool)> {
+    // The band is inhibited for motion (`poll_mouse_scroll`), so it must not
+    // light its arrow either.
+    if touch_owns_pointer(&state.match_state.input) {
+        return None;
+    }
     let sw = state.render_width() as f32;
     let sh = state.render_height() as f32;
     let direction = edge_scroll_intent(
