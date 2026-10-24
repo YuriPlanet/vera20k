@@ -137,10 +137,15 @@ impl Simulation {
                     entity.mission_leaf.set_unit_deploy_begin_active(0);
                 } else {
                     entity.mission_leaf.set_unit_deploy_reverse_active(0);
-                    //739D37..739D67: only animated completion takes NearbyLocation.
-                    if deploy_to_land
-                        && let Some((rx, ry)) = self.techno_nearby_location(id, Some(id), rules)
-                    {
+                    //739D4F..739D62: animated completion passes even Empty
+                    //through a fresh Map lookup and the concrete Unit setter.
+                    if deploy_to_land {
+                        let (rx, ry) = self
+                            .techno_nearby_location(id, Some(id), rules)
+                            .unwrap_or((0, 0));
+                        if let Some(terrain) = self.resolved_terrain.as_ref() {
+                            terrain.native_cell_identity((rx, ry));
+                        }
                         self.assign_destination_represented(
                             id,
                             Some(NavTargetRef::cell(rx as u16, ry as u16)),
@@ -278,3 +283,7 @@ impl Simulation {
 #[cfg(test)]
 #[path = "unit_simple_deploy_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "unit_simple_deploy_retail_tests.rs"]
+mod retail_tests;
