@@ -430,7 +430,7 @@ pub(crate) fn choose_building(
 /// Original gamemd.exe HouseClass::AI_ScanBasePerimeter5082C0. Grow the
 /// reservation rectangle, scan its four edges, then append all walls before
 /// all gates. No RNG draw, timer write or detach belongs to this helper.
-/// Native+5764 staging is raw-save-only (BaseSave42EE40/Load42F080); every
+/// Native+5764 staging is raw-save-only (BaseSave42F070/Load42EE30); every
 /// call overwrites it before use. Only the committed+5754 bounds are needed
 /// after return, including for a later expansion after loading.
 fn scan_base_perimeter(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {

@@ -209,7 +209,7 @@ fn perimeter_breaks_preserve_short_walls_and_gate_orientation_without_rng() {
     assert_eq!(gates, [("GAPOWR", (13, 17)), ("GAPILL", (17, 13))]);
 }
 
-/// BaseSave/Load42EE40/42F080 retain the committed bounds. A second scan
+/// BaseSave42F070/Load42EE30 retain the committed bounds. A second scan
 /// grows those loaded bounds; ordinary FactoryAI4500F0 places its first wall.
 #[test]
 fn loaded_perimeter_expands_again_and_the_factory_places_a_generated_wall() {
