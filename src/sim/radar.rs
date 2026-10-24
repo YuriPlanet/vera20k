@@ -159,6 +159,7 @@ mod tests {
                 &sim.interner,
                 sim.session.free_radar(),
                 timer[2] as u32,
+                false,
             );
             sim.power_states.map_mut_for_test().insert(owner, state);
             assert_eq!(

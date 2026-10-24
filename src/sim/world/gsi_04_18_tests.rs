@@ -65,6 +65,11 @@ fn insert_structure(
     );
     entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.set_cell_marked_for_test(false);
+    // These aggregate/map controls supply already-discovered providers.
+    // Controlled campaign Houses require this retained +41B (508FCE).
+    entity
+        .discovery
+        .set_discovered_by_current_house_for_test(true);
     sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(stable_id + 1));
     sim.substrate.entities.insert(entity);
     sim.add_entity_occupancy(stable_id);

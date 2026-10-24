@@ -112,7 +112,8 @@ impl RemovalFacts {
 /// Client-relative Techno discovery history, native +41A/+41B/+41C.
 /// Constructor6F2FB5..6F2FC1 clears all three; InitManagers6F3F40 and
 /// ChangeOwner70173B classify only the current owner. Discovery6F4960 and
-/// Conceal6F4A40 own the two retained observations. Infantry raw Save/Load
+/// Conceal6F4A40 and the silent70D990 shroud probe own the retained
+/// observations. Infantry raw Save/Load
 /// preserves the bytes: never reconstruct them from the restored owner.
 /// Native peer CRC64DAB0 omits them; this is also omitted from the shared
 /// Rust peer hash. The separate diagnostic CRC70C270 is not that checksum.
@@ -1742,6 +1743,39 @@ impl Simulation {
             .is_some_and(|house| !house.is_controlled_by_human(self.session.game_mode_nonzero()))
         {
             self.discover_techno(id, owner, context);
+        }
+    }
+
+    /// TechnoClass virtual+4A0 (`0x0070D990`), shared by all represented
+    /// subclasses: its campaign-only prelude (`70D997..70D9C6`) promotes
+    /// +41B when MapClass::IsShrouded586360 at GetCoords is false. Source:
+    /// original gamemd instructions. Unlike DiscoveredBy6F4960 this stores
+    /// only the history byte: no Tag, House dirty write, RNG, timer or detach.
+    /// A mapless/current-player-less component fixture has no Map receiver.
+    pub(crate) fn update_techno_discovery_from_shroud(&mut self, id: u64) {
+        if self.session.game_mode_nonzero() {
+            return;
+        }
+        let (Some(player), Some(terrain)) =
+            (self.session.current_house(), self.resolved_terrain.as_ref())
+        else {
+            return;
+        };
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if entity.discovery.discovered_by_current_house {
+            return;
+        }
+        let coords = crate::sim::movement::ground_pose::object_get_coords(entity, Some(terrain));
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        if !crate::sim::vision::point_is_shrouded(&self.fog, &cells, player, coords) {
+            self.substrate
+                .entities
+                .get_mut(id)
+                .expect("queried Techno remains stored")
+                .discovery
+                .discovered_by_current_house = true;
         }
     }
 

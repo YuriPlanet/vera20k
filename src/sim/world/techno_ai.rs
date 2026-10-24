@@ -2180,6 +2180,10 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: &RuleSet, _effects: 
     flash_step(&mut sim.substrate, id, sim.session.binary_frame());
 
     sim.update_damage_spark_after_ai(id, rules);
+    // Techno6FAF01..6FAF07 invokes virtual+4A0(0), after damage sparks and
+    // before EMP. Its simulation discovery prelude is independent of radar
+    // presentation, viewport admission and rendering cadence.
+    sim.update_techno_discovery_from_shroud(id);
     // Installed Ares6FAF0D ->10053DF0, after the ordinary Techno tail.
     // No global frame sweep: limbo/skipped/dead visits never reach this slot.
     #[cfg(feature = "ares")]

@@ -2291,6 +2291,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
         owner,
         &sim.interner,
         sim.session.binary_frame(),
+        false,
     );
     assert_eq!(
         json!(sim.power_states[&owner].total_output()),
@@ -2391,6 +2392,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
         owner,
         &sim.interner,
         sim.session.binary_frame(),
+        false,
     );
     assert_eq!(
         json!(sim.power_states[&owner].total_output()),

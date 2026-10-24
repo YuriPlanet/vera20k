@@ -77,6 +77,11 @@ fn building(sim: &mut Simulation, id: u64, owner: InternedId, kind: &str, health
     entity.lifecycle.set_object_alive_for_test(true);
     entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.set_cell_marked_for_test(true);
+    // The original fixture supplies +41B=1 for the plant, drain and radar
+    // providers (house_power_consumers.py:51/59/70).
+    entity
+        .discovery
+        .set_discovered_by_current_house_for_test(true);
     entity.set_in_playfield(true);
     entity.building_art.set_actually_placed_for_test(true);
     entity.finish_building_construction_for_test();
@@ -116,6 +121,9 @@ fn fixture(radar: bool) -> (Simulation, RuleSet, InternedId) {
     )))
     .unwrap();
     let mut sim = Simulation::with_seed(31);
+    // Match the original fixture's GameMode1, not the synthetic default0.
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_game_mode(1));
     // The reused native fixture supplies an unseeded zero Main buffer and
     // seeds Scenario31 through the original seeder. Adopt the Main prior
     // through the existing serialized RNG owner, without a new RNG codec.
@@ -545,6 +553,7 @@ fn native_local_radar_projection_uses_represented_provider_predicates_and_house_
             &sim.interner,
             sim.session.free_radar(),
             sim.session.binary_frame(),
+            false,
         );
         sim.power_states.map_mut_for_test().insert(owner, state);
         assert_eq!(

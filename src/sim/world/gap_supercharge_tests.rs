@@ -11,6 +11,10 @@ use crate::sim::pathfinding::PathGrid;
 
 fn arena(rules: &RuleSet) -> (Simulation, PathGrid, InternedId) {
     let mut sim = Simulation::with_seed(0x44E2BE);
+    // This arena consumes Battle-mode rules; supply its noncampaign session
+    // instead of inheriting the synthetic campaign default.
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
     for (name, human) in [("Russians", false), ("Americans", true)] {
         let id = sim.interner.intern(name);
         sim.houses
@@ -20,6 +24,9 @@ fn arena(rules: &RuleSet) -> (Simulation, PathGrid, InternedId) {
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     let owner = sim.interner.get("Americans").unwrap();
+    // Bind the actual human viewer and map before Unlimbo.
+    sim.session.set_current_house_for_test(Some(owner));
+    sim.fog = vision::FogState::new(32, 32);
     (sim, grid, owner)
 }
 

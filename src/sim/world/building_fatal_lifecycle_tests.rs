@@ -473,6 +473,7 @@ impl Fixture {
                 house,
                 &self.sim.interner,
                 self.sim.session.binary_frame(),
+                false,
             );
         }
     }

@@ -184,6 +184,8 @@ mod engineer_building_repair_tests;
 #[cfg(test)]
 mod engineer_power_consumer_tests;
 #[cfg(test)]
+mod building_discovery_services_tests;
+#[cfg(test)]
 mod fly_height_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod gap_generator_tests;
@@ -5055,6 +5057,15 @@ impl Simulation {
         // Native calls RefreshRadar after the cell/zone rebuild. The distinct
         // playfield revision is the global geometry invalidation seam; the
         // presentation-acknowledged dirty-cell batch remains cell-local.
+        // Action40's final reverse BuildingClass array walk
+        // (6E225C..6E227C) calls virtual+4A0(1) synchronously. The radar
+        // geometry follows the revision; its simulation discovery prelude
+        // must finish here even when no object AI follows this action.
+        for index in (0..self.substrate.entities.building_registry_len()).rev() {
+            if let Some(id) = self.substrate.entities.building_registry_at(index) {
+                self.update_techno_discovery_from_shroud(id);
+            }
+        }
         true
     }
 
@@ -5814,8 +5825,8 @@ impl Simulation {
         }
     }
 
-    /// House4F844B..4F8506: assess dirty power, rewrite all owned Factory
-    /// rates without touching timers, then refresh the radar projection.
+    /// House4F844B..4F850C: assess dirty power, rewrite all owned Factory
+    /// rates without touching timers, then refresh radar and SpySat.
     /// Numeric/order evidence: the engineer-repair native consumer packet.
     fn assess_house_derived_state(
         &mut self,
@@ -5826,6 +5837,8 @@ impl Simulation {
         if !self.houses.contains_key(&owner) {
             return;
         }
+        let require_discovery = self.houses[&owner]
+            .building_services_require_discovery(self.session.game_mode_nonzero());
         #[cfg(feature = "debug-tools")]
         let debug_full_power = self.debug_flags_for(owner).infinite_power;
         let state = self.power_states.house_mut(owner);
@@ -5841,6 +5854,7 @@ impl Simulation {
             owner,
             &self.interner,
             self.session.binary_frame(),
+            require_discovery,
         );
         if assessed {
             production::refresh_factory_rates_for_house(self, rules, owner);
@@ -5853,6 +5867,12 @@ impl Simulation {
                 crate::sim::superweapon::update_owned_supers(self, rules, owner);
             }
         }
+        // House4F84F1..4F850C admits radar THEN SpySat using the same prior
+        // +5779. Radar clears it before SpySat, whose Map callbacks may arm
+        // it again. A silent Techno70D990 promotion never arms this byte.
+        if !self.power_states[&owner].radar_recheck_pending() {
+            return;
+        }
         // 0x004F84FB: once the current house is defeated no House rechecks
         // radar, so the radar its defeat switched on stays on.
         if self.local_player_defeated() {
@@ -5860,6 +5880,7 @@ impl Simulation {
                 .get_mut(&owner)
                 .expect("represented House power state")
                 .skip_radar_recheck();
+            self.assess_house_spy_sat(owner, rules);
             return;
         }
         let buildings = self.houses[&owner].base_projection().buildings();
@@ -5874,6 +5895,7 @@ impl Simulation {
             &self.interner,
             self.session.free_radar(),
             self.session.binary_frame(),
+            require_discovery,
         );
         // House508F39..508F4F compares the actual process Radar flag and
         // calls SetAvailable656DF0 here, before this House's defeat gate.
@@ -5884,6 +5906,7 @@ impl Simulation {
                 power_system::has_active_radar(self.power_states.as_map(), owner),
             );
         }
+        self.assess_house_spy_sat(owner, rules);
     }
 
     /// Append one successfully committed BuildConst Building to its owning
@@ -7159,57 +7182,46 @@ impl Simulation {
         }
     }
 
-    /// Find houses with at least one native-eligible SpySat provider. This is
+    /// Find whether this House has a native-eligible SpySat provider. This is
     /// the House-rung edge detector; consumers read the persisted house latch.
     /// `HouseClass::Update_SpySat @ 0x00508F60` walks the House's building
     /// list (House+0x68, items `+0x6C`, count `+0x78`) in its order.
-    fn collect_spy_sat_candidate_owners(&self, rules: &RuleSet) -> BTreeSet<InternedId> {
+    fn house_has_spy_sat_provider(&self, owner: InternedId, rules: &RuleSet) -> bool {
         let selling =
             crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Selling);
-        let mut active = BTreeSet::new();
-        for (&owner, house) in &self.houses {
-            for &stable_id in house.base_projection().buildings() {
-                let Some(entity) = self.substrate.entities.get(stable_id) else {
-                    continue;
-                };
-                let coarse_candidate = !entity.lifecycle.in_limbo()
-                    && entity.lifecycle.cell_marked()
-                    && entity.mission.current() != selling
-                    && entity.mission.queued() != selling
-                    && self
-                        .object_type(entity.type_ref(), rules)
-                        .is_some_and(|object| object.spy_sat);
-                if !coarse_candidate {
-                    continue;
-                }
-                // The first coarse candidate decides the house. Warp-out is a
-                // blocking result, not a reason to continue to a later uplink.
-                if !entity.is_warped_out() {
-                    active.insert(owner);
-                }
-                break;
+        let house = &self.houses[&owner];
+        let require_discovery =
+            house.building_services_require_discovery(self.session.game_mode_nonzero());
+        for &stable_id in house.base_projection().buildings() {
+            let Some(entity) = self.substrate.entities.get(stable_id) else {
+                continue;
+            };
+            let coarse_candidate = !entity.lifecycle.in_limbo()
+                && entity.lifecycle.cell_marked()
+                && (!require_discovery || entity.discovery.discovered_by_current_house())
+                && entity.mission.current() != selling
+                && entity.mission.queued() != selling
+                && self
+                    .object_type(entity.type_ref(), rules)
+                    .is_some_and(|object| object.spy_sat);
+            if !coarse_candidate {
+                continue;
             }
+            // The first coarse candidate decides the house. Warp-out is a
+            // blocking result, not a reason to continue to a later uplink.
+            return !entity.is_warped_out();
         }
-        active
+        false
     }
 
-    /// Commit aggregate SpySat transitions in the existing pre-House batch,
-    /// preserving gap events around their map callbacks. Commands execute later and
-    /// become visible next frame. Native4F84F1 gates508F60 on the dirty suffix;
-    /// ordinary Unlimbo discovery6F49DE, GrandOpening446A84 and Selling44AB1B
-    /// arm it. Wider dirty/cross-House callback cadence remains a residual;
-    /// this cue chain preserves the existing map/latch scheduling.
-    fn reconcile_active_vision_structures(&mut self, rules: &RuleSet) {
-        let active_owners = self.collect_spy_sat_candidate_owners(rules);
-        let transitions: Vec<_> = self
-            .houses
-            .iter()
-            .filter_map(|(&owner, house)| {
-                let active = active_owners.contains(&owner);
-                (house.spy_sat_active() != active).then_some((owner, active))
-            })
-            .collect();
-        for (owner, active) in transitions {
+    /// HouseClass::Update_SpySat508F60, reached inside its own House's
+    /// dirty-radar suffix (4F850A). The receiver clears +5779 at508F67,
+    /// before the Map callback and its possible discovery/dirty writes.
+    /// Source: original gamemd instructions; map/latch/cue owners are shared.
+    fn assess_house_spy_sat(&mut self, owner: InternedId, rules: &RuleSet) {
+        self.power_states.house_mut(owner).skip_radar_recheck();
+        let active = self.house_has_spy_sat_provider(owner, rules);
+        if self.houses[&owner].spy_sat_active() != active {
             //509064/509012 call Map while577A still has its OLD value.
             if active {
                 self.reveal_map_for_owner(owner, rules);
@@ -7236,6 +7248,15 @@ impl Simulation {
                     }
                 }
             }
+        }
+    }
+
+    /// Raw entity fixtures bypass lifecycle dirty writers and the House rung;
+    /// explicitly assess their supplied providers through the same SpySat owner.
+    #[cfg(any(test, feature = "test-support"))]
+    fn reconcile_active_vision_structures(&mut self, rules: &RuleSet) {
+        for owner in self.houses.order().to_vec() {
+            self.assess_house_spy_sat(owner, rules);
         }
     }
 
@@ -7442,13 +7463,12 @@ impl Simulation {
         effects: FrameEffects<'_>,
         cursor: Option<house_defeat::HouseOutcomeCursor>,
     ) -> Result<FrameTailResult, FrameAdvanceError> {
+        #[cfg(any(test, feature = "test-support"))]
         if cursor.is_none() {
-            #[cfg(any(test, feature = "test-support"))]
             self.trace_master_frame_rung(MasterFrameTestRung::Houses);
-            self.reconcile_active_vision_structures(rules);
         }
         // Factory/production work has already completed in Phase 7. This early
-        // House update follows optional vision reconciliation and precedes both
+        // House update assesses its services before both
         // defeat processing and strategic AI command generation. Native anger
         // decay is unconditional; only the activation substep needs RuleSet.
         // --- Phase 8: Defeat detection, strategy and building choice ---

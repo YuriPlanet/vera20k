@@ -2303,6 +2303,19 @@ impl HouseState {
         self.is_human || (!game_mode_nonzero && self.player_control)
     }
 
+    /// HouseClass's power (AI_AssessPower508CBD..508CF0), radar
+    /// (UpdateTacticalRadarAvailability508ECD..508EF1) and SpySat
+    /// (Update_SpySat508FA2..508FDF) scans share this discovery admission.
+    /// Source: original gamemd instructions. Noncampaign scans admit hidden
+    /// providers, including the current player's; campaign computer Houses
+    /// do too. Only controlled campaign Houses require Techno+41B.
+    pub(crate) const fn building_services_require_discovery(
+        &self,
+        game_mode_nonzero: bool,
+    ) -> bool {
+        !game_mode_nonzero && self.is_controlled_by_human(game_mode_nonzero)
+    }
+
     /// The cell the house bases itself around: the alternate base centre
     /// (`+0x5494`) unless it is the empty cell `(0, 0)` (`0xA8EF98`, zeroed
     /// by its static initializer `0x004F50A0`), else the primary (`+0x5490`,

@@ -558,6 +558,9 @@ impl Simulation {
             .entities
             .get(id)
             .is_some_and(|entity| entity.low_bridge_tube_state.is_none());
+        // Infantry51BACD/Unit7363BB call the same virtual+4A0(0) after the
+        // tube leaf; this early-return path bypasses common Techno AI.
+        self.update_techno_discovery_from_shroud(id);
         Ok(turn)
     }
 
@@ -1459,5 +1462,39 @@ mod tests {
             vehicle.navigation.nav_com(),
             Some(NavTargetRef::Cell { rx: 3, ry: 0 })
         );
+    }
+
+    #[test]
+    fn tube_only_turns_promote_campaign_discovery_without_cell_entry() {
+        // Infantry51BACD and Unit7363BB still call Techno70D990 after their
+        // tube leaf, although neither reaches the common Techno AI bracket.
+        for (mut sim, rules) in [infantry_at_tube_end(), unit_at_tube_end()] {
+            sim.session
+                .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Campaign);
+            let player = sim.intern("Russians");
+            sim.session.set_current_house_for_test(Some(player));
+            sim.fog = crate::sim::vision::FogState::new(4, 1);
+            sim.fog.reveal_all_for_owner(player);
+            let rider = sim.substrate.entities.get_mut(1).unwrap();
+            rider.position.put_location(DriveCoord::cell(0, 0, 0));
+            rider.low_bridge_tube_state = Some(LowBridgeTubeMovementState {
+                tube_id: TubeId(0),
+                cursor: 0,
+                target: DriveCoord::cell(2, 0, 0),
+            });
+            assert!(!rider.discovery.discovered_by_current_house());
+            let turn = sim
+                .tube_object_turn(1, &rules, None, FrameEffects::default())
+                .unwrap();
+            assert!(
+                !turn.per_cell_ran,
+                "movement inside the tube has no cell entry"
+            );
+            let rider = sim.substrate.entities.get(1).unwrap();
+            assert!(rider.low_bridge_tube_state.is_some());
+            assert!(!rider.lifecycle.cell_marked());
+            assert!(rider.discovery.discovered_by_current_house());
+            assert!(!rider.discovery.discovered_by_other_house());
+        }
     }
 }

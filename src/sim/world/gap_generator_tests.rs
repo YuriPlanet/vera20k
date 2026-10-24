@@ -90,6 +90,16 @@ fn insert(
     // Occupancy can discover a Building immediately on a revealed cell, so
     // bind the same Rules that its Type registry lookup requires.
     let _ = sim.mark_entity_put(id, UninitContext::with_rules(rules));
+    if kind == EntityCategory::Structure {
+        // Supply a discovered Building prior for these operational/map controls;
+        // the actual campaign discovery admission is tested separately.
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .discovery
+            .set_discovered_by_current_house_for_test(true);
+    }
 }
 
 fn power(sim: &mut Simulation, rules: &RuleSet) {
