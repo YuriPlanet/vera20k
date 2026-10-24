@@ -144,10 +144,16 @@ pub(super) fn campaign_scene(script: &str) -> Option<(SimRuntime, u64, InternedI
         [Triggers]\nSCOUT-TRIGGER=Russians,<none>,Scout,0,1,1,1,0\n\
         [Events]\nSCOUT-TRIGGER=1,13,0,1\n[Actions]\nSCOUT-TRIGGER=1,4,1,SCOUT-TEAM,0,0,0,0,A\n\
         [Tags]\nSCOUT-TAG=0,Scout,SCOUT-TRIGGER\n").as_bytes()).unwrap();
-    let (rules, _, _, _) = crate::rules::retail_ini_fixture::retail_rules_owner(&assets)
+    let (mut rules, _, art, _) = crate::rules::retail_ini_fixture::retail_rules_owner(&assets)
         .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &map.ini)
         .unwrap()
         .into_parts();
+    // The production loader installs fixed ART and binds its action bank
+    // before actors; the sequence binder resolves each type through that ART.
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    rules.bind_animation_sequences(
+        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
+    );
     let teams = TeamAiIniRegistry::load_retail(&assets, &map.ini, false).unwrap();
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
