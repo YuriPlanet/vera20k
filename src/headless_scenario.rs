@@ -198,13 +198,33 @@ pub fn load_with_launch_and_ini(
                 retail_dir.display()
             )
         })?;
-    let mut map = crate::map::source::load_map_by_name_or_path_with_assets(
-        retail_dir,
-        map_file_name,
-        &assets,
-    )
-    .map_err(|error| format!("load map {map_file_name}: {error}"))?
-    .map;
+    load_with_assets(retail_dir, map_file_name, seed, launch, &mut assets)
+}
+
+/// Reuse the production headless scenario load after retail scenario discovery
+/// has already registered loose YRO archives in the caller's AssetManager.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn load_with_registered_scenario_assets(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    launch: crate::sim::scenario_bootstrap::MatchLaunchDescriptor,
+    assets: &mut AssetManager,
+) -> Result<HeadlessScenario, String> {
+    load_with_assets(retail_dir, map_file_name, seed, launch, assets)
+}
+
+fn load_with_assets(
+    retail_dir: &Path,
+    map_file_name: &str,
+    seed: u32,
+    launch: crate::sim::scenario_bootstrap::MatchLaunchDescriptor,
+    assets: &mut AssetManager,
+) -> Result<HeadlessScenario, String> {
+    let mut map =
+        crate::map::source::load_map_by_name_or_path_with_assets(retail_dir, map_file_name, assets)
+            .map_err(|error| format!("load map {map_file_name}: {error}"))?
+            .map;
     // Preserve the process-owned cold Rules registry before theater archive
     // priority changes. The same owner then performs the active noncampaign
     // reset/rebuild and transfers its move-only native-ID receipt.
@@ -242,7 +262,7 @@ pub fn load_with_launch_and_ini(
         .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?;
     let team_ai_registry =
         crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, true)?;
-    let theater = theater::load_theater(&mut assets, &map.header.theater)
+    let theater = theater::load_theater(assets, &map.header.theater)
         .ok_or_else(|| format!("load theater {}", map.header.theater))?;
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
     let infantry_sequences =
