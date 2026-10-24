@@ -207,7 +207,13 @@ impl TrackingFacts {
                 || ty
                     .undeploys_into
                     .as_deref()
-                    .and_then(|undeploys| rules.object(undeploys))
+                    // TechnoType7132B2's UndeploysInto reader retains a UnitType.
+                    .and_then(|undeploys| {
+                        rules.object_in_category(
+                            crate::rules::object_type::ObjectCategory::Vehicle,
+                            undeploys,
+                        )
+                    })
                     .is_some_and(|undeploys| undeploys.resource_gatherer));
         Self {
             dont_score: ty.dont_score,

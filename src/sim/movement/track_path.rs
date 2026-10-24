@@ -113,7 +113,7 @@ fn jumpjet_unit(entity: &GameEntity) -> bool {
 fn teleporter_unit(sim: &Simulation, entity: &GameEntity, rules: &RuleSet) -> bool {
     entity.category() == EntityCategory::Unit
         && sim
-            .object_type(entity.type_ref(), rules)
+            .entity_object_type(entity, rules)
             .is_some_and(|object| object.teleporter)
 }
 
@@ -832,7 +832,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .and_then(|actor| self.object_type(actor.type_ref(), rules))
+            .and_then(|actor| self.entity_object_type(actor, rules))
             .is_some_and(|object| object.harvester);
         let requested_techno = match requested {
             NavTargetRef::Object { id } => crate::sim::radio::as_techno(self, id),
@@ -846,7 +846,7 @@ impl Simulation {
             && let Some(contact) = unit.radio_contacts.slot(0)
             && !unit.radio_contacts.contains(target)
             && self
-                .object_type(unit.type_ref(), rules)
+                .entity_object_type(unit, rules)
                 .is_some_and(|object| object.passengers > 0)
             && self
                 .substrate
@@ -903,8 +903,7 @@ impl Simulation {
             .filter(|(_, category)| *category == EntityCategory::Structure)
             .map(|(id, _)| id);
         let enter_building = original_building.and_then(|building| {
-            let object =
-                self.object_type(self.substrate.entities.get(building)?.type_ref(), rules)?;
+            let object = self.entity_object_type(self.substrate.entities.get(building)?, rules)?;
             (object.unit_repair || object.dock_unload || object.bunker).then_some((
                 building,
                 object.unit_repair,
@@ -927,7 +926,7 @@ impl Simulation {
             self.substrate
                 .entities
                 .get(building)
-                .and_then(|building| self.object_type(building.type_ref(), rules))
+                .and_then(|building| self.entity_object_type(building, rules))
                 .is_some_and(|object| object.unit_absorb)
         });
         if let Some(target) = mobile_target.or(absorber)
@@ -974,7 +973,7 @@ impl Simulation {
                             .entities
                             .get(id)
                             .and_then(|unit| {
-                                self.object_type(unit.type_ref(), rules)
+                                self.entity_object_type(unit, rules)
                                     .map(|object| !unit.health.is_full(object.strength))
                             })
                             .unwrap_or(false);
@@ -1304,7 +1303,7 @@ impl Simulation {
         let Some(building) = self.substrate.entities.get(dock) else {
             return UnitDockArm::Keep;
         };
-        let Some(object) = self.object_type(actor.type_ref(), rules) else {
+        let Some(object) = self.entity_object_type(actor, rules) else {
             return UnitDockArm::Keep;
         };
         if actor.category() != EntityCategory::Unit
@@ -1432,7 +1431,7 @@ impl Simulation {
                         .is_some_and(|building| {
                             building.category() == EntityCategory::Structure
                                 && self
-                                    .object_type(building.type_ref(), rules)
+                                    .entity_object_type(building, rules)
                                     .is_some_and(|object| object.unit_repair || object.bunker)
                         })
             });
@@ -1508,7 +1507,7 @@ impl Simulation {
             .slot(0)
             .and_then(|contact| self.substrate.entities.get(contact))
             .filter(|contact| contact.category() == EntityCategory::Structure)
-            .and_then(|contact| self.object_type(contact.type_ref(), rules))
+            .and_then(|contact| self.entity_object_type(contact, rules))
             .is_some_and(|object| object.dock_unload);
         // 0x007424D7: CellClass::Get_Unit(0) on the ground object list.
         let pad = dock_contact
@@ -1728,7 +1727,7 @@ impl Simulation {
             return false;
         };
         if !self
-            .object_type(actor.type_ref(), rules)
+            .entity_object_type(actor, rules)
             .is_some_and(|object| object.balloon_hover)
         {
             return false;

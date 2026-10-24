@@ -437,7 +437,7 @@ fn packed_reservation_test_coord(x: i32, y: i32) -> u32 {
 
 fn receiver_authority_rules() -> crate::rules::ruleset::RuleSet {
     crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-        "[VehicleTypes]\n0=TEST\n[BuildingTypes]\n0=BUILDING41\n\
+        "[VehicleTypes]\n0=TEST\n[InfantryTypes]\n0=TEST\n[BuildingTypes]\n0=BUILDING41\n\
          [TEST]\nStrength=100\nArmor=light\n\
          [BUILDING41]\nStrength=100\nArmor=concrete\n\
          [Warheads]\n0=KILLWH\n[KILLWH]\nCellSpread=0\n\
@@ -8364,6 +8364,27 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         expected_rng.logical_state()
     );
     assert_eq!(sim.dynamic_terrain_cells.len(), 20);
+    let published = sim
+        .lighting_sources
+        .pending()
+        .iter()
+        .find_map(|event| match event {
+            crate::sim::light_sources::LightingEvent::CellLevels { cells } => Some(cells),
+            _ => None,
+        })
+        .expect("the actual cliff stamp publishes Cell+11B before later callbacks");
+    assert!(!published.is_empty());
+    for &(coord, level) in published {
+        assert_eq!(
+            sim.resolved_terrain
+                .as_ref()
+                .unwrap()
+                .cell(coord.0, coord.1)
+                .unwrap()
+                .level,
+            level
+        );
+    }
     // Check before any later frame repair: native cliff collapse rebuilds
     // connectivity synchronously with the retained global bridge vector.
     assert_eq!(

@@ -2768,6 +2768,16 @@ impl Simulation {
                             })
                         })
                     {
+                        // Cliff stamps change Cell+11B without refreshing
+                        // retained lighting; publish geometry before any later
+                        // ordered source/owner callback samples these cells.
+                        self.publish_cell_lighting_levels(
+                            mutation
+                                .original_footprint
+                                .iter()
+                                .chain(&mutation.changed_cells)
+                                .copied(),
+                        );
                         // Native performs one complete zone rebuild after the
                         // two sparse stamps and before its three footprint
                         // passes. The Rust navigation owner rebuilds all
@@ -8643,6 +8653,9 @@ mod slave_manager_oracle_tests;
 #[cfg(test)]
 #[path = "slave_manager_cycle_tests.rs"]
 mod slave_manager_cycle_tests;
+
+#[cfg(test)]
+mod slave_manager_reentrancy_tests;
 
 #[cfg(test)]
 #[path = "building_sale_oracle_tests.rs"]

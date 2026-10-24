@@ -5144,7 +5144,7 @@ mod tests {
         use crate::sim::game_entity::GameEntity;
         use crate::sim::movement::ShipLocomotionRuntime;
         use crate::sim::movement::locomotor::LocomotorState;
-        use crate::util::fixed_math::{SIM_HALF, SIM_ONE};
+        use crate::util::fixed_math::SIM_ONE;
 
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Soviet");
@@ -5183,9 +5183,29 @@ mod tests {
             .set_for_test(7);
         assert_ne!(sim.state_hash(), populated_counter_hash);
 
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .foot_speed
+            .set_speed_fraction_native_bits(0x3fc9_9999_9999_999a);
+        let fraction_hash = sim.state_hash();
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .foot_speed
+            .set_speed_fraction_native_bits(0x3fc9_9999_9999_999b);
+        assert_ne!(
+            sim.state_hash(),
+            fraction_hash,
+            "adjacent doubles with the same fixed projection must hash differently"
+        );
         let ship_head = DriveCoord::cell(6, 5, 0);
         let entity = sim.substrate.entities.get_mut(1).expect("SHP unit");
-        entity.foot_speed.set_speed_fraction(SIM_HALF);
+        entity
+            .foot_speed
+            .set_speed_fraction_native_bits(0x3fc9_9999_9999_999a);
         // This serialization fixture supplies a Ship instance explicitly.
         entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Ship));
         entity
@@ -5198,6 +5218,14 @@ mod tests {
                     .with_head_to_for_test(Some(ship_head))
                     .with_target_speed_fraction_for_test(SIM_ONE),
             ));
+        entity
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .store_track_target_fraction_native(
+                crate::sim::movement::track_process::TrackFamily::Ship,
+                crate::util::native_x87::NativeF64Bits::from_bits(0x3ff3_3333_3333_3334),
+            );
         let populated_shp_state_hash = sim.state_hash();
         assert_ne!(populated_shp_state_hash, populated_counter_hash);
 
@@ -5236,9 +5264,26 @@ mod tests {
             .expect("restored Ship runtime");
         assert_eq!(restored_ship.destination(), Some(ship_head));
         assert_eq!(restored_ship.head_to(), Some(ship_head));
-        assert_eq!(restored_ship.target_speed_fraction(), SIM_ONE);
+        assert_eq!(
+            restored
+                .entities()
+                .get(1)
+                .unwrap()
+                .locomotor
+                .as_ref()
+                .unwrap()
+                .track_target_fraction_native(
+                    crate::sim::movement::track_process::TrackFamily::Ship
+                )
+                .unwrap()
+                .bits(),
+            0x3ff3_3333_3333_3334
+        );
         let restored_owner_speed = &restored.substrate.entities.get(1).unwrap().foot_speed;
-        assert_eq!(restored_owner_speed.applied_fraction(), SIM_HALF);
+        assert_eq!(
+            restored_owner_speed.native_applied_fraction().bits(),
+            0x3fc9_9999_9999_999a
+        );
         assert_eq!(restored.state_hash(), populated_shp_state_hash);
     }
 

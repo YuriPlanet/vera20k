@@ -1524,6 +1524,12 @@ fn hash_particle(p: &crate::sim::particles::Particle, hasher: &mut impl Hasher) 
 /// `frame` is the binary frame the pending timers measure against.
 fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     entity.stable_id().hash(hasher);
+    if entity.production_start_price() != 0 {
+        // Techno+300 survives factory release and can suppress FreeUnit at
+        // Grand_Opening446AF2. Native ComputeCRC70C3C6 also consumes it.
+        b"production-start-price".hash(hasher);
+        entity.production_start_price().hash(hasher);
+    }
     // Shared count presence and the raw Techno reload clock affect future
     // firing/reload, including a signed -1 reached from InitialAmmo=-2.
     b"techno-ammo-reload-v1".hash(hasher);
@@ -1923,7 +1929,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     }
     entity.navigation.pending_destination_setter().hash(hasher);
 
-    entity.foot_speed.applied_fraction().hash(hasher);
+    entity.foot_speed.native_applied_fraction().hash(hasher);
     if entity.foot_speed.crush_slowdown() {
         0x6b5_u32.hash(hasher);
         true.hash(hasher);
@@ -2467,8 +2473,8 @@ fn hash_locomotor_payload(
             state.landing_effect_latched().hash(hasher);
             state.airport_bound().hash(hasher);
             state.fall_counter().hash(hasher);
-            state.target_speed().to_bits().hash(hasher);
-            state.current_speed().to_bits().hash(hasher);
+            state.target_speed().bits().hash(hasher);
+            state.current_speed().bits().hash(hasher);
         }
         LocomotorRuntimePayload::Jumpjet(state) => {
             10u8.hash(hasher);
@@ -4536,6 +4542,11 @@ mod bridge161_hash_projection_tests {
             true,
         );
         let mut locomotor = LocomotorState::for_test_kind(kind);
+        if let Some(fly) = locomotor.fly_runtime_mut() {
+            let tenth = crate::util::native_x87::NativeF64Bits::from_bits(0x3fb9_9999_9999_999a);
+            fly.set_target_speed_bits_for_test(tenth);
+            fly.set_current_speed_bits_for_test(tenth);
+        }
         if stashed {
             assert!(locomotor.begin_piggyback(LocomotorKind::Teleport, 0));
         }
@@ -4559,6 +4570,15 @@ mod bridge161_hash_projection_tests {
                 _ => unreachable!(),
             },
             LocomotorRuntimePayload::Hover(state) => state.set_head(Some(coord)),
+            LocomotorRuntimePayload::Fly(state) => {
+                // Adjacent binary64 values share the same old Q16 projection.
+                let next = crate::util::native_x87::NativeF64Bits::from_bits(0x3fb9_9999_9999_999b);
+                match field {
+                    0 => state.set_target_speed_bits_for_test(next),
+                    1 => state.set_current_speed_bits_for_test(next),
+                    _ => unreachable!(),
+                }
+            }
             LocomotorRuntimePayload::Jumpjet(state) => {
                 *state = match field {
                     0 => state.clone().with_destination_for_test(coord),
@@ -4594,6 +4614,7 @@ mod bridge161_hash_projection_tests {
         for (kind, fields) in [
             (LocomotorKind::Walk, 4),
             (LocomotorKind::Hover, 1),
+            (LocomotorKind::Fly, 2),
             (LocomotorKind::Jumpjet, 7),
         ] {
             for stashed in [false, true] {

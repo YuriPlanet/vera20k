@@ -432,14 +432,15 @@ impl Simulation {
     ) {
         let Some((slave_type, count, regen, reload, owner, cell, facing, z)) =
             self.substrate.entities.get(master).and_then(|parent| {
-                let object = self.object_type(parent.type_ref(), rules)?;
+                let object = self.entity_object_type(parent, rules)?;
                 let slave_type = object.enslaves.as_deref()?;
-                let slave_object = rules.object(slave_type)?;
-                if slave_object.category != crate::rules::object_type::ObjectCategory::Infantry {
-                    return None;
-                }
+                // Enslaves714DD7 uses InfantryType reader67BAC0.
+                let slave_object = rules.object_in_category(
+                    crate::rules::object_type::ObjectCategory::Infantry,
+                    slave_type,
+                )?;
                 Some((
-                    slave_object.id.clone(),
+                    slave_object,
                     object.slaves_number.max(0),
                     object.slave_regen_rate,
                     object.slave_reload_rate,
@@ -454,8 +455,8 @@ impl Simulation {
         };
         let mut slaves = Vec::with_capacity(count as usize);
         for _ in 0..count {
-            let slave = self.construct_object_limbo_at_height(
-                &slave_type,
+            let slave = self.construct_resolved_object_limbo_at_height(
+                slave_type,
                 &owner,
                 cell.0,
                 cell.1,
@@ -469,7 +470,7 @@ impl Simulation {
             }
             slaves.push(slave);
         }
-        let slave_type = self.interner.intern(&slave_type);
+        let slave_type = self.interner.intern(&slave_type.id);
         let now = Self::now_frame(&self.session);
         if let Some(parent) = self.substrate.entities.get_mut(master) {
             parent.slave_manager = Some(SlaveManager::new(slave_type, slaves, regen, reload, now));
@@ -1613,11 +1614,9 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let Some(manager) = self
-            .substrate
-            .entities
-            .get_mut(master)
-            .and_then(|entity| entity.slave_manager.take())
+        let Some(count) = self
+            .slave_manager(master)
+            .map(|manager| manager.nodes.len())
         else {
             return;
         };
@@ -1627,7 +1626,17 @@ impl Simulation {
             .map(|entity| entity.owner());
         let new_house = killer_house.or(house).or(civilian);
         let mut first_freed = None;
-        for slave in manager.nodes.iter().rev().filter_map(|node| node.slave) {
+        // 6B0B3C retains the initial count; 6B0B4C..56 rereads each live
+        // node. Keep Techno+2D8 attached so a synchronous slave death in an
+        // owner-change Tag callback can RemoveSlave from a later node.
+        for index in (0..count).rev() {
+            let Some(slave) = self
+                .slave_manager(master)
+                .and_then(|manager| manager.nodes.get(index))
+                .and_then(|node| node.slave)
+            else {
+                continue;
+            };
             let Some(entity) = self.substrate.entities.get_mut(slave) else {
                 continue;
             };
@@ -1650,6 +1659,10 @@ impl Simulation {
         {
             self.sound_events
                 .emit(SimSoundEvent::voc_at(sound, &entity.position));
+        }
+        // 6B0C67 clears the manager's owner only after callbacks and sound.
+        if let Some(entity) = self.substrate.entities.get_mut(master) {
+            entity.slave_manager = None;
         }
     }
 

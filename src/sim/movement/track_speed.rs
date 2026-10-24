@@ -1,6 +1,5 @@
 //! ProcessMovement publishes the class target; TrackProcess consumes it.
-//! The speed prefix works in `SimFixed`, not native binary64 (see
-//! `drive_locomotion::track_speed_prefix`).
+//! Class targets and the speed prefix retain native binary64 values.
 
 use super::track_process::TrackFamily;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -10,8 +9,9 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig;
-use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
-use crate::util::native_x87::sqrt_approx_length;
+#[cfg(test)]
+use crate::util::fixed_math::{SIM_ONE, SimFixed};
+use crate::util::native_x87::{NativeF64Bits, sqrt_approx_length};
 
 /// The native Process_Movement fresh arm's publication for its candidate
 /// Cell (`track_fresh`), with Road's row when the retained height is two or
@@ -38,8 +38,8 @@ pub(super) fn publish_fresh_track_target(
         rules
             .terrain_rules
             .semantics_for_land_type(1)
-            .map_or(SIM_ONE, |road| {
-                road.speed_costs.speed_multiplier_for(speed_type)
+            .map_or(NativeF64Bits::ONE, |road| {
+                road.speed_costs.native_speed_multiplier_for(speed_type)
             })
     });
     let xy = super::ground_pose::position_world_xy(&entity.position);
@@ -58,7 +58,7 @@ pub(super) fn publish_fresh_track_target(
 /// Drive4B3DFA..3E21 / Ship twin: a selector below 64 keeps the request on
 /// the class target (+50); otherwise it goes to the Foot setter
 /// (`SetSpeedFraction`4D3710) when it differs from the applied fraction.
-fn publish_target_fraction(entity: &mut GameEntity, requested: SimFixed) {
+fn publish_target_fraction(entity: &mut GameEntity, requested: NativeF64Bits) {
     let Some(loco) = entity.locomotor.as_mut() else {
         return;
     };
@@ -71,9 +71,22 @@ fn publish_target_fraction(entity: &mut GameEntity, requested: SimFixed) {
     };
     let selector = progress.turn_index();
     if selector < 64 {
-        loco.store_track_target_fraction(family, requested);
-    } else if entity.foot_speed.applied_fraction() != requested {
-        entity.foot_speed.set_speed_fraction(requested);
+        loco.store_track_target_fraction_native(family, requested);
+    } else {
+        // 4B3E08 tests C3: Equal and Unordered skip the setter. The normal
+        // finite stock result is representable in the local double spill.
+        use crate::util::native_x87::{MaskedX87Chop53 as X, MaskedX87Ordering};
+        if matches!(
+            X::compare(
+                X::load_f64(requested),
+                X::load_f64(entity.foot_speed.native_applied_fraction())
+            ),
+            MaskedX87Ordering::Less | MaskedX87Ordering::Greater
+        ) {
+            entity
+                .foot_speed
+                .set_speed_fraction_native_bits(requested.bits());
+        }
     }
 }
 
@@ -149,7 +162,7 @@ pub(super) fn advance(
     let family = TrackFamily::from_kind(kind).unwrap();
     let destination = loco.track_destination(family);
     let selector = loco.track_progress(family).map_or(-1, |p| p.turn_index());
-    let retained_target = loco.track_target_fraction(family);
+    let retained_target = loco.track_target_fraction_native(family);
     let prefix = super::drive_locomotion::TrackSpeedPrefix {
         accelerates: entity.mover_facts.drive_accelerates(),
         unit_passive: entity.category() == crate::map::entities::EntityCategory::Unit
@@ -158,8 +171,8 @@ pub(super) fn advance(
         raw_type_speed: object.map_or(0, |o| {
             crate::util::fixed_math::ra2_speed_to_leptons_per_frame(o.speed)
         }),
-        accel: object.map_or(SIM_ZERO, |o| o.accel_factor),
-        decel: object.map_or(SIM_ZERO, |o| o.decel_factor),
+        accel: object.map_or(NativeF64Bits::POSITIVE_ZERO, |o| o.accel_factor),
+        decel: object.map_or(NativeF64Bits::POSITIVE_ZERO, |o| o.decel_factor),
         slowdown_distance: object.map_or(0, |o| o.slowdown_distance),
         sinking: entity.sinking.is_active(),
         crush_slowdown: entity.foot_speed.crush_slowdown(),
@@ -169,18 +182,20 @@ pub(super) fn advance(
             &prefix,
             || braking_distance(entity, destination, terrain, grid),
             target,
-            entity.foot_speed.applied_fraction(),
+            entity.foot_speed.native_applied_fraction(),
         );
         if let Some(loco) = entity.locomotor.as_mut() {
-            loco.store_track_target_fraction(family, step.target);
+            loco.store_track_target_fraction_native(family, step.target);
         }
         if let Some(fraction) = step.set_fraction {
-            entity.foot_speed.set_speed_fraction(fraction);
+            entity
+                .foot_speed
+                .set_speed_fraction_native_bits(fraction.bits());
         }
     }
-    super::foot_speed::owner_current_speed_from_fraction(
+    super::foot_speed::owner_current_speed_from_native_fraction(
         speed,
-        entity.foot_speed.applied_fraction(),
+        entity.foot_speed.native_applied_fraction(),
     )
 }
 
@@ -337,10 +352,6 @@ mod tests {
         assert_eq!(compared, [14, 14]);
     }
 
-    fn native_f64(value: &serde_json::Value) -> f64 {
-        f64::from_bits(u64::from_str_radix(value.as_str().unwrap(), 16).unwrap())
-    }
-
     /// Drive 0x004B1087 / Ship 0x006A0757 observed distances over a flat
     /// level-2 map (ground 208), the destination cell structural when a row
     /// says `bridge`. The destination's own Z never matters.
@@ -399,11 +410,10 @@ mod tests {
     }
 
     /// Every executed Drive/Ship prefix row through the one production port:
-    /// the target and applied fraction within `SimFixed` precision (see
-    /// `track_speed_prefix`), whether the setter ran, and the invocation
-    /// budget from the production getter of the native applied fraction.
+    /// exact target/applied doubles, whether the setter ran, and the paid
+    /// invocation budget from the production getter of the resulting fraction.
     #[test]
-    fn speed_prefix_matches_original_rows_within_fixed_point() {
+    fn speed_prefix_matches_original_rows_exactly() {
         use crate::sim::movement::drive_locomotion::{TrackSpeedPrefix, track_speed_prefix};
         use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
         let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -426,8 +436,8 @@ mod tests {
                 unit_passive: input["passive"].as_bool().unwrap_or(false),
                 selector: integer(input, "selector", 1),
                 raw_type_speed: integer(getter, "raw", 17),
-                accel: SimFixed::from_num(native_f64(&input["accel_bits"])),
-                decel: SimFixed::from_num(native_f64(&input["decel_bits"])),
+                accel: bits64(&input["accel_bits"]),
+                decel: bits64(&input["decel_bits"]),
                 slowdown_distance: integer(input, "slowdown", 500),
                 sinking: input["sinking"].as_bool().unwrap_or(false),
                 crush_slowdown: input["crush"].as_bool().unwrap_or(false),
@@ -439,8 +449,8 @@ mod tests {
                     measured = true;
                     expected["distance"].as_i64().unwrap() as i32
                 },
-                SimFixed::from_num(native_f64(&input["target_bits"])),
-                SimFixed::from_num(native_f64(&input["applied_bits"])),
+                bits64(&input["target_bits"]),
+                bits64(&input["applied_bits"]),
             );
             assert_eq!(
                 measured,
@@ -452,18 +462,11 @@ mod tests {
                 expected["setters"].as_u64().unwrap() as usize,
                 "setter {input}"
             );
-            // A brake step carries raw speed x half a step of Deceleration=.
-            let tolerance = (f64::from(prefix.raw_type_speed) + 2.0) / 131_072.0;
-            let applied = step
-                .set_fraction
-                .unwrap_or(SimFixed::from_num(native_f64(&input["applied_bits"])))
-                .clamp(SimFixed::ZERO, SimFixed::ONE);
+            let applied = crate::sim::components::FootSpeedState::stored_speed_fraction(
+                step.set_fraction.unwrap_or(bits64(&input["applied_bits"])),
+            );
             for (actual, key) in [(step.target, "target_bits"), (applied, "applied_bits")] {
-                let native = native_f64(&expected[key]);
-                assert!(
-                    (actual.to_num::<f64>() - native).abs() <= tolerance,
-                    "{key}: {actual} vs native {native} for {input}"
-                );
+                assert_eq!(actual, bits64(&expected[key]), "{key}: {input}");
             }
             // The getter, as production runs it, on the native applied value.
             let type_speed = crate::sim::combat::veterancy::current_type_speed(
@@ -478,10 +481,10 @@ mod tests {
                     .then(|| f64::from_bits(bits64(&getter["veteran_bits"]).bits())),
             );
             let mut owner = crate::sim::components::FootSpeedState::default();
-            owner.set_speed_fraction_native_bits(bits64(&expected["applied_bits"]).bits());
-            let speed = crate::sim::movement::owner_current_speed_from_fraction(
+            owner.set_speed_fraction_native_bits(applied.bits());
+            let speed = super::super::foot_speed::owner_current_speed_from_native_fraction(
                 SimFixed::from_num(type_speed * 15),
-                owner.applied_fraction(),
+                owner.native_applied_fraction(),
             );
             assert_eq!(
                 crate::sim::movement::track_process::invocation_budget(

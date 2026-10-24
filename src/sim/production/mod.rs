@@ -48,15 +48,15 @@ pub use self::production_placement::{
     is_within_build_area, placement_preview_for_owner_with_overlays,
 };
 #[cfg(any(test, feature = "test-support"))]
-pub use self::production_queue::{
-    dispatch_production_changes_for_tests, publish_production_changes_for_tests,
-};
-#[cfg(any(test, feature = "test-support"))]
 pub(in crate::sim) use self::production_queue::house_for_test;
 pub use self::production_queue::{
     build_options_for_owner, credits_for_owner, has_build_option_for_owner,
     power_balance_for_owner, publish_production_changes, queue_view_for_owner,
     ready_buildings_for_owner,
+};
+#[cfg(any(test, feature = "test-support"))]
+pub use self::production_queue::{
+    dispatch_production_changes_for_tests, publish_production_changes_for_tests,
 };
 pub(crate) use self::production_refinery::spawn_building_free_unit;
 pub use self::production_repair::can_repair_building;
@@ -117,6 +117,12 @@ mod tests;
 mod industrial_plant_retail_tests;
 
 #[cfg(test)]
+mod free_unit_harvest_retail_tests;
+
+#[cfg(test)]
+mod production_start_price_tests;
+
+#[cfg(test)]
 #[path = "production_queue_tests.rs"]
 mod queue_tests;
 
@@ -137,3 +143,6 @@ mod manual_primary_tests;
 
 #[cfg(test)]
 mod native_event_tests;
+
+#[cfg(test)]
+mod typed_identity_tests;

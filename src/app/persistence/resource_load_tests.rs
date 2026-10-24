@@ -223,6 +223,17 @@ fn snapshot_bytes(
     follow: Option<u64>,
     rules_hash: u64,
 ) -> Vec<u8> {
+    snapshot_bytes_with_lighting(runtime, owner, map, follow, rules_hash, None)
+}
+
+fn snapshot_bytes_with_lighting(
+    runtime: &SimRuntime,
+    owner: &NativeRulesProcessOwner,
+    map: &SavedMapMetadata,
+    follow: Option<u64>,
+    rules_hash: u64,
+    saved_lighting: Option<(&crate::map::lighting::SavedCellLighting, &[(u64, i32)])>,
+) -> Vec<u8> {
     let terrain = runtime
         .resources
         .terrain_template
@@ -254,6 +265,22 @@ fn snapshot_bytes(
     // Authored signed display input: raw save/load must not clamp or seed it.
     view.set_credits_counter(Some(-7));
     view.set_radar_events(saved_radar_for_fixture());
+    let mut lighting = crate::app::presentation::lighting::MatchLighting::default();
+    lighting.install(
+        crate::map::lighting::CellLightGrid::new(),
+        map.lighting().clone(),
+        2,
+        Some((
+            runtime.simulation.resolved_terrain().unwrap(),
+            &runtime.simulation,
+        )),
+        None,
+    );
+    let (cells, anim_intensities) = saved_lighting.map_or_else(
+        || lighting.saved_at(&runtime.simulation),
+        |(cells, anims)| (cells.clone(), anims.to_vec()),
+    );
+    view.set_lighting(cells);
     GameSnapshot::save_validated_with_presentation(
         &runtime.simulation,
         map.map_hash(),
@@ -261,7 +288,7 @@ fn snapshot_bytes(
         "retail resources",
         123,
         &[],
-        &[],
+        &anim_intensities,
         None,
         None,
         Some(&view),
@@ -637,6 +664,307 @@ fn frontend_main() -> crate::sim::rng::MainRng {
 }
 
 #[test]
+fn saved_local_lighting_projects_pending_history_and_rejects_invalid_cells() {
+    use crate::app::presentation::lighting::{MatchLighting, rebuild_lighting_grid_from_sim};
+    use crate::map::lighting::CellLightGrid;
+    use crate::sim::components::AnimClassSpawnDescriptor;
+    use crate::sim::light_sources::{LightingEvent, PaletteUpdate};
+    let Some(mut save) = incoming_save("TEMPERATE", "") else {
+        return;
+    };
+    let sim = &mut save.incoming.simulation;
+    let kind = sim.intern("SQDG");
+    let anim = sim
+        .spawn_anim_object(
+            &save.incoming.resources.rules,
+            AnimClassSpawnDescriptor::new(
+                kind,
+                8,
+                8,
+                crate::util::fixed_math::SimFixed::ZERO,
+                crate::util::fixed_math::SimFixed::ZERO,
+                0,
+            ),
+        )
+        .expect("bound retail SQDG constructor");
+    let house = sim.intern("Americans");
+    sim.anims_mut_for_test().set_anim_house_remap(anim, house);
+    let mut lights = MatchLighting::default();
+    lights.install(
+        CellLightGrid::new(),
+        save.map.lighting().clone(),
+        2,
+        Some((sim.resolved_terrain().unwrap(), sim)),
+        None,
+    );
+    // Exercise the projection shared with PreparedSave's writer: pre-Logic
+    // publications must be replayed instead of reconstructing FC from final light.
+    // Zero ambient is a supplied boundary input; this is not a stock map claim.
+    let frame = sim.session().binary_frame() as i32;
+    sim.session_mut_for_test()
+        .lighting_mut()
+        .set_nuke_flash_for_test(1, frame, 30);
+    sim.session_mut_for_test()
+        .lighting_mut()
+        .select(crate::sim::scenario_session::ScenarioLightingProfile::Nuke);
+    sim.session_mut_for_test()
+        .lighting_mut()
+        .set_current_ambient_for_test(0);
+    sim.publish_global_lighting(PaletteUpdate::from_scenario(sim.session().lighting()));
+    sim.lighting_sources_mut_for_test()
+        .publish_for_test(LightingEvent::RetainAnimIntensity {
+            anim,
+            cell: Some((8, 8)),
+        });
+    sim.session_mut_for_test()
+        .lighting_mut()
+        .set_current_ambient_for_test(120);
+    sim.publish_global_lighting(PaletteUpdate::Preserve);
+    let before = (sim.state_hash(), sim.rng_state());
+    let (mut saved, saved_anims) = lights.clone().saved_at(sim);
+    assert_eq!(
+        saved_anims,
+        [(anim, 0)],
+        "an explicit zero is retained, not absent/default"
+    );
+    assert_eq!(
+        saved.cells.iter().find(|row| row.0 == (8, 8)).unwrap().3,
+        1100
+    );
+    assert_eq!(
+        lights.anim_intensities().get(&anim).copied(),
+        None,
+        "save projection is isolated"
+    );
+    assert_eq!((sim.state_hash(), sim.rng_state()), before);
+
+    // A supplied retained104/108/top history distinguishes the post-load
+    //484680 refresh from both exact top restoration and a fresh gather.
+    let retained = saved.cells.iter_mut().find(|row| row.0 == (8, 8)).unwrap();
+    *retained = ((8, 8), 32768, 25, 333);
+    let terrain = sim.resolved_terrain().unwrap();
+    let iterated: std::collections::BTreeSet<_> =
+        crate::map::lighting::native_lighting_cells(terrain, sim.map_size_diamond().unwrap().0)
+            .collect();
+    assert_eq!(
+        iterated.len(),
+        saved.cells.len(),
+        "this loaded-map fixture allocates exactly its native iterator domain"
+    );
+    assert_eq!(terrain.cell(8, 8).unwrap().level, 0);
+    assert!(
+        crate::map::lighting::native_lighting_cells(terrain, sim.map_size_diamond().unwrap().0)
+            .any(|cell| cell == (8, 8))
+    );
+    let retint = LightingEvent::Global {
+        state: *sim.session().lighting(),
+        cell_profile: sim.lighting_cell_profile(),
+        palette: PaletteUpdate::Normal([1200, 800, 600]),
+        constructor_rgb: sim.palette_constructor_rgb(),
+    };
+    sim.lighting_sources_mut_for_test().publish_for_test(retint);
+    // Loaded Scenario normal RGB differs from the surviving process cache.
+    let normal = sim
+        .session_mut_for_test()
+        .lighting_mut()
+        .normal_mut_for_test();
+    normal.red_percent = 140;
+    normal.green_percent = 130;
+    normal.blue_percent = 120;
+    // Post-load53C280 reselects from effects, not this supplied old selector.
+    sim.session_mut_for_test()
+        .lighting_mut()
+        .set_selected_profile_for_test(
+            crate::sim::scenario_session::ScenarioLightingProfile::Normal,
+        );
+    let before = (sim.state_hash(), sim.rng_state());
+
+    let bytes = snapshot_bytes_with_lighting(
+        &save.incoming,
+        &save.owner,
+        &save.map,
+        None,
+        save.rules_hash,
+        Some((&saved, &saved_anims)),
+    );
+    let outgoing_lighting = *save.incoming.simulation.session().lighting();
+    save.incoming
+        .simulation
+        .session_mut_for_test()
+        .lighting_mut()
+        .set_nuke_flash_for_test(0, -1, -1);
+    let normal_bytes = snapshot_bytes_with_lighting(
+        &save.incoming,
+        &save.owner,
+        &save.map,
+        None,
+        save.rules_hash,
+        Some((&saved, &saved_anims)),
+    );
+    save.incoming
+        .simulation
+        .session_mut_for_test()
+        .set_lighting_for_test(outgoing_lighting);
+    let frontend = frontend_main();
+    let cache = TileVariantSelectorCache::default();
+    let clock = || LOAD_CLOCK_MS;
+    let view = SavedGamePreparationView {
+        repository: &save.repository,
+        current_simulation: Some(&save.incoming.simulation),
+        frontend_main: &frontend,
+        rules_owner: &save.owner,
+        tile_cache: &cache,
+        lighting: &lights,
+        load_clock: &clock,
+    };
+    let prepared = save
+        .assets
+        .prepare_saved_load(|assets| PreparedSavedGame::prepare_resources(&bytes, &view, assets))
+        .unwrap();
+    assert_eq!(prepared.lighting, saved);
+    assert_eq!(prepared.scheme_normal_rgb, [1200, 800, 600]);
+    let incoming = &prepared.world.simulation;
+    assert_eq!(
+        incoming.session().lighting().selected_profile(),
+        crate::sim::scenario_session::ScenarioLightingProfile::Nuke
+    );
+    assert_eq!(incoming.session().lighting().target_ambient(), 200);
+    let terrain = incoming.resolved_terrain().unwrap();
+    let mut staged =
+        rebuild_lighting_grid_from_sim(terrain, save.map.lighting(), Some(incoming), 2);
+    staged.stage_saved_local_lighting(&prepared.lighting, prepared.scheme_normal_rgb);
+    let mut restored = MatchLighting::default();
+    restored.install(
+        staged,
+        save.map.lighting().clone(),
+        2,
+        Some((terrain, incoming)),
+        None,
+    );
+    restored.restore_anim_intensities(prepared.world.anim_intensities.clone());
+    assert_eq!(restored.anim_intensities().get(&anim).copied(), Some(0));
+    assert_eq!(
+        restored.grid().cell_light_at((8, 8)).unwrap().top_scalar,
+        1125
+    );
+    assert_eq!(
+        restored.grid().cell_light_at((8, 8)).unwrap().common_scalar,
+        562
+    );
+    assert_eq!(restored.grid().color_scheme_rgb(), [1750, 1500, 1250]);
+    assert_eq!(restored.grid().color_scheme_normal_rgb(), [1200, 800, 600]);
+
+    // A separate Normal file-load continuation restores that cache, rather than
+    // passing the saved Scenario RGB1400/1300/1200 to53AD00.
+    let mut normal_prepared = save
+        .assets
+        .prepare_saved_load(|assets| {
+            PreparedSavedGame::prepare_resources(&normal_bytes, &view, assets)
+        })
+        .unwrap();
+    let normal_world = &mut normal_prepared.world.simulation;
+    assert_eq!(
+        normal_world.session().lighting().selected_profile(),
+        crate::sim::scenario_session::ScenarioLightingProfile::Normal
+    );
+    assert_eq!(normal_world.session().lighting().target_ambient(), 70);
+    let normal_terrain = normal_world.resolved_terrain().unwrap();
+    let mut normal_grid =
+        rebuild_lighting_grid_from_sim(normal_terrain, save.map.lighting(), Some(normal_world), 2);
+    normal_grid.stage_saved_local_lighting(&saved, prepared.scheme_normal_rgb);
+    let mut normal_lights = MatchLighting::default();
+    normal_lights.install(
+        normal_grid,
+        save.map.lighting().clone(),
+        2,
+        Some((normal_terrain, normal_world)),
+        None,
+    );
+    assert_eq!(normal_lights.grid().color_scheme_rgb(), [1200, 800, 600]);
+    normal_lights.restore_anim_intensities(normal_prepared.world.anim_intensities.clone());
+    assert_eq!(
+        normal_lights.anim_intensities().get(&anim).copied(),
+        Some(0)
+    );
+    assert_eq!(
+        normal_lights
+            .grid()
+            .cell_light_at((8, 8))
+            .unwrap()
+            .top_scalar,
+        1100
+    );
+
+    let archives = save.assets.registered_archive_names();
+    let mut missing = saved.clone();
+    missing.cells.pop();
+    let mut wide = saved.clone();
+    wide.cells[0].2 = 32768;
+    let mut duplicate = saved.clone();
+    duplicate.cells.push(duplicate.cells[0]);
+    let mut extra = saved.clone();
+    extra.cells[0].0 = (u16::MAX, u16::MAX);
+    let mut bright = saved.clone();
+    bright.cells[0].3 = 2001;
+    let mut raw_scale = saved.clone();
+    raw_scale.cells[0].1 = i32::MIN;
+    assert!(
+        crate::app::presentation::lighting::validate_saved_lighting(
+            &raw_scale,
+            &save.incoming.simulation,
+        )
+        .is_ok(),
+        "Cell104 retains its raw dword width"
+    );
+    for (invalid, expected) in [
+        (missing, "Cell allocation"),
+        (wide, "Cell scalar"),
+        (duplicate, "Cell scalar"),
+        (extra, "Cell allocation"),
+        (bright, "Cell scalar"),
+    ] {
+        let bad = snapshot_bytes_with_lighting(
+            &save.incoming,
+            &save.owner,
+            &save.map,
+            None,
+            save.rules_hash,
+            Some((&invalid, &saved_anims)),
+        );
+        let rejected = save
+            .assets
+            .prepare_saved_load(|assets| PreparedSavedGame::prepare_resources(&bad, &view, assets));
+        assert!(matches!(rejected, Err(PreparedLoadError::LocalView(
+            SavedLocalViewError::InvalidLighting { field }
+        )) if field == expected));
+    }
+    assert_eq!(save.assets.registered_archive_names(), archives);
+    assert!(
+        !cache.is_initialized(),
+        "candidate cannot publish process caches"
+    );
+    assert_eq!(
+        (
+            save.incoming.simulation.state_hash(),
+            save.incoming.simulation.rng_state()
+        ),
+        before
+    );
+    assert_eq!(
+        restored.anim_intensities().get(&anim).copied(),
+        Some(0),
+        "failed candidate leaves local owner intact"
+    );
+    restored.refresh(terrain, incoming, 2);
+    assert_eq!(restored.anim_intensities().get(&anim).copied(), Some(0));
+    assert_eq!(
+        lights.grid().color_scheme_rgb(),
+        [1000; 3],
+        "pending retint is projected only on a clone during preparation"
+    );
+}
+
+#[test]
 fn retail_saved_resources_prepare_cold() {
     let Some(save) = incoming_save("TEMPERATE", "") else {
         return;
@@ -662,11 +990,13 @@ fn retail_saved_resources_prepare_cold() {
         frontend_main: &frontend,
         rules_owner: &cold_owner,
         tile_cache: &cold_cache,
+        lighting: &crate::app::presentation::lighting::MatchLighting::default(),
         load_clock: &clock,
     };
     let cold = assets
         .prepare_saved_load(|assets| PreparedSavedGame::prepare_resources(&bytes, &view, assets))
         .unwrap();
+    assert_eq!(cold.scheme_normal_rgb, [1000; 3]);
     assert_incoming_resources(&cold, &incoming, &map);
     assert_next_fill_uses_saved_theater_registry(&cold, &cold_cache);
     assert_eq!(
@@ -756,6 +1086,7 @@ fn unread_cell_anim_loads_its_own_retail_shape_without_replaying_construction() 
         frontend_main: &frontend,
         rules_owner: &save.owner,
         tile_cache: &cache,
+        lighting: &crate::app::presentation::lighting::MatchLighting::default(),
         load_clock: &clock,
     };
     let prepared = save
@@ -802,6 +1133,7 @@ fn unread_cell_anim_loads_its_own_retail_shape_without_replaying_construction() 
         frontend_main: &frontend,
         rules_owner: &save.owner,
         tile_cache: &cache,
+        lighting: &crate::app::presentation::lighting::MatchLighting::default(),
         load_clock: &clock,
     };
     let again = save
@@ -906,6 +1238,7 @@ fn unknown_terrain_type_load_validates_then_commits_and_resaves_its_same_owner()
         frontend_main: &frontend,
         rules_owner: &save.owner,
         tile_cache: &cache,
+        lighting: &crate::app::presentation::lighting::MatchLighting::default(),
         load_clock: &clock,
     };
     let rejected = save
@@ -982,6 +1315,7 @@ fn unknown_terrain_type_load_validates_then_commits_and_resaves_its_same_owner()
         frontend_main: &frontend,
         rules_owner: &save.owner,
         tile_cache: &cache,
+        lighting: &crate::app::presentation::lighting::MatchLighting::default(),
         load_clock: &clock,
     };
     let again = save
@@ -1053,6 +1387,7 @@ fn arctic_type_load_validates_before_mutation_and_resaves_the_same_owner() {
         frontend_main: &frontend,
         rules_owner: &save.owner,
         tile_cache: &cache,
+        lighting: &crate::app::presentation::lighting::MatchLighting::default(),
         load_clock: &clock,
     };
     let rejected = save.assets.prepare_saved_load(|assets| {
@@ -1148,6 +1483,7 @@ fn arctic_type_load_validates_before_mutation_and_resaves_the_same_owner() {
         current_simulation: None,
         frontend_main: &frontend,
         tile_cache: &cache,
+        lighting: &crate::app::presentation::lighting::MatchLighting::default(),
         load_clock: &clock,
     };
     let again = save
@@ -1251,12 +1587,33 @@ fn retail_saved_resources_prepare_cross_map_and_roll_back_late_failure() {
         warm_cache.cached_clear_tile_base(),
         warm_cache.cached_water_set_base(),
     );
+    let mut outgoing_lights = crate::app::presentation::lighting::MatchLighting::default();
+    outgoing_lights.install(
+        crate::map::lighting::CellLightGrid::new(),
+        map.lighting().clone(),
+        2,
+        Some((
+            outgoing.simulation.resolved_terrain().unwrap(),
+            &outgoing.simulation,
+        )),
+        None,
+    );
+    outgoing_lights.apply_events(
+        outgoing.simulation.resolved_terrain().unwrap(),
+        &[crate::sim::light_sources::LightingEvent::Global {
+            state: *outgoing.simulation.session().lighting(),
+            cell_profile: outgoing.simulation.lighting_cell_profile(),
+            palette: crate::sim::light_sources::PaletteUpdate::Normal([1200, 800, 600]),
+            constructor_rgb: None,
+        }],
+    );
     let view = SavedGamePreparationView {
         repository: &repository,
         current_simulation: Some(&outgoing.simulation),
         frontend_main: &frontend,
         rules_owner: &owner,
         tile_cache: &warm_cache,
+        lighting: &outgoing_lights,
         load_clock: &clock,
     };
 
@@ -1335,6 +1692,10 @@ fn retail_saved_resources_prepare_cross_map_and_roll_back_late_failure() {
     let prepared = assets
         .prepare_saved_load(|assets| PreparedSavedGame::prepare_resources(&bytes, &view, assets))
         .unwrap();
+    assert_eq!(
+        prepared.scheme_normal_rgb, [1000; 3],
+        "a different theater recreates the outgoing nonneutral schemes"
+    );
     assert_incoming_resources(&prepared, &incoming, &map);
     assert_next_fill_uses_saved_theater_registry(&prepared, &warm_cache);
     assert_eq!(

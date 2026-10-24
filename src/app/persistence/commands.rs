@@ -289,7 +289,8 @@ impl PreparedSave<'_> {
         let clock_save = clock.begin_save(crate::app::match_runtime::frame_pacer::wall_clock_ms());
         self.resources
             .set_elapsed_buckets(clock_save.accumulated_buckets());
-        let anim_intensities = self.lighting.saved_anim_intensities(sim);
+        let (cell_lighting, anim_intensities) = self.lighting.saved_at(sim);
+        self.local_view.set_lighting(cell_lighting);
         let bytes = crate::sim::snapshot::GameSnapshot::save_validated_with_presentation(
             sim,
             self.map_hash,
@@ -432,6 +433,7 @@ pub(crate) fn try_load_save_file(
                 frontend_main: &state.frontend.frontend_main_rng,
                 rules_owner,
                 tile_cache: &state.process_assets.tile_variant_selector_cache,
+                lighting: &state.match_state.match_presentation.lighting,
                 load_clock: &load_clock,
             },
             &mut assets,

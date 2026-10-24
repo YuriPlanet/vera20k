@@ -313,6 +313,22 @@ impl ScenarioLightingState {
         )
     }
 
+    /// InitMap's direct writes (0059A54E/565/592/5BF/5EC), after synthetic
+    /// Full_Init and before generated constructors. Keep current/target ambient,
+    /// Ground, alternate profiles and transition state from that earlier phase.
+    pub(crate) fn install_generated_lighting(
+        &mut self,
+        value: crate::map::construction_trace::GeneratedLightingOverride,
+    ) {
+        self.normal.ambient_percent = value.ambient_percent;
+        [
+            self.normal.red_percent,
+            self.normal.green_percent,
+            self.normal.blue_percent,
+        ] = value.rgb_percent;
+        self.normal.level_units = value.level_units;
+    }
+
     pub fn profile(&self, profile: ScenarioLightingProfile) -> ScenarioLightProfileUnits {
         match profile {
             ScenarioLightingProfile::Normal => self.normal,

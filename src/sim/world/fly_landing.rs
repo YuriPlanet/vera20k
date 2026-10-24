@@ -1055,8 +1055,8 @@ mod tests {
             );
             assert_eq!(
                 serde_json::json!([
-                    l.fly_runtime().unwrap().target_speed().to_num::<f64>(),
-                    l.fly_runtime().unwrap().current_speed().to_num::<f64>()
+                    f64::from_bits(l.fly_runtime().unwrap().target_speed().bits()),
+                    f64::from_bits(l.fly_runtime().unwrap().current_speed().bits())
                 ]),
                 after["speeds"],
                 "{}",

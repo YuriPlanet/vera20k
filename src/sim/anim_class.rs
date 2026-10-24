@@ -2197,8 +2197,15 @@ impl Simulation {
         };
         let owner_name = self.interner.resolve(owner).to_string();
         let (rx, ry, _, _, _) = location.to_cell_sub_z();
-        let Some(infantry) = self.construct_object_limbo_at_height(
-            kind,
+        // Rules6707DC/67BB10 retains an InfantryType pointer; AnimAI4249F9
+        // calls that type's creator, independent of other name registries.
+        let Some(object) =
+            rules.object_in_category(crate::rules::object_type::ObjectCategory::Infantry, kind)
+        else {
+            return true;
+        };
+        let Some(infantry) = self.construct_resolved_object_limbo_at_height(
+            object,
             &owner_name,
             rx,
             ry,

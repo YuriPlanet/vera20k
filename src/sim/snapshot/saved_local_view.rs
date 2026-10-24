@@ -72,6 +72,9 @@ pub struct SavedLocalView {
     /// None preserves the client's not-yet-observed counter, rather than
     /// replacing an initialized display with the simulation's wallet balance.
     credits_counter: Option<i32>,
+    /// Local Cell104/108/10A value history. Anim+FC remains in its existing
+    /// snapshot envelope, and process ColorScheme cache state is not saved.
+    lighting: Option<crate::map::lighting::SavedCellLighting>,
 }
 
 /// The Display's armed cursor modes. MouseLoad5BDF70 reads the whole Display
@@ -116,6 +119,8 @@ pub enum SavedLocalViewError {
     MissingPowerBar,
     #[error("saved Power bar has invalid {field}")]
     InvalidPowerState { field: &'static str },
+    #[error("saved local lighting has invalid {field}")]
+    InvalidLighting { field: &'static str },
 }
 
 impl SavedLocalView {
@@ -135,6 +140,7 @@ impl SavedLocalView {
             power_bar: None,
             radar_events: None,
             credits_counter: None,
+            lighting: None,
         };
         saved.validate_structure()?;
         Ok(saved)
@@ -195,6 +201,14 @@ impl SavedLocalView {
 
     pub fn take_credits_counter(&mut self) -> Option<i32> {
         self.credits_counter.take()
+    }
+
+    pub fn set_lighting(&mut self, lighting: crate::map::lighting::SavedCellLighting) {
+        self.lighting = Some(lighting);
+    }
+
+    pub fn take_lighting(&mut self) -> Option<crate::map::lighting::SavedCellLighting> {
+        self.lighting.take()
     }
 
     pub fn into_local_input(self) -> (Vec<u64>, bool, Option<u64>) {

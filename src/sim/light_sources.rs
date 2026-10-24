@@ -49,6 +49,10 @@ pub enum LightingEvent {
         center: (u16, u16),
         source: Option<PointLight>,
     },
+    /// Raw Cell+11B writes change later sampling, without refreshing10A.
+    CellLevels {
+        cells: Vec<((u16, u16), u8)>,
+    },
     /// A global refresh (`ScenarioClass::RecalcLighting @ 0x0053AD00`, the
     /// ambient fade's `UpdateCellLighting @ 0x004AE4C0`): the scenario's
     /// lighting, and the profile whose Ground/Level each cell's refresh reads
@@ -93,6 +97,12 @@ impl LightingSources {
         self.pending.push(event);
     }
 
+    /// Supply a controlled producer history across the core/client test boundary.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn publish_for_test(&mut self, event: LightingEvent) {
+        self.publish(event);
+    }
+
     /// Drops the events no consumer took.
     pub fn discard_pending(&mut self) {
         self.pending.clear();
@@ -131,6 +141,25 @@ impl LightingSources {
 }
 
 impl Simulation {
+    pub(crate) fn publish_cell_lighting_levels(
+        &mut self,
+        cells: impl IntoIterator<Item = (u16, u16)>,
+    ) {
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return;
+        };
+        let cells = cells
+            .into_iter()
+            .filter_map(|coord| {
+                terrain
+                    .cell(coord.0, coord.1)
+                    .map(|cell| (coord, cell.level))
+            })
+            .collect();
+        self.lighting_sources
+            .publish(LightingEvent::CellLevels { cells });
+    }
+
     /// Transfer the lighting transaction once, including fresh map creation.
     pub fn take_lighting_events(&mut self) -> Vec<LightingEvent> {
         self.lighting_sources.take_pending()
@@ -305,5 +334,13 @@ impl Simulation {
         };
         self.session.lighting_mut().select(profile);
         self.publish_global_lighting(PaletteUpdate::from_scenario(&self.session.lighting()));
+    }
+
+    /// User-load685120 ->53AB50 reselects from the incoming effect globals.
+    /// The detached client lighting installation consumes this one refresh.
+    pub fn reinitialize_lighting_after_user_load(&mut self) {
+        debug_assert!(self.lighting_sources.pending().is_empty());
+        self.update_lighting();
+        self.lighting_sources.discard_pending();
     }
 }

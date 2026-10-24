@@ -171,7 +171,11 @@ impl Simulation {
 
     fn live_spatial_threat(&self, id: u64, rules: &RuleSet) -> Option<i32> {
         let actor = self.substrate.entities.get(id)?;
-        let object = self.interner.object_type(actor.type_ref(), rules)?;
+        let object = self.interner.object_type_in_category(
+            actor.type_ref(),
+            actor.category().into(),
+            rules,
+        )?;
         Some(crate::sim::combat::live_threat_posed(
             actor,
             Some(object),

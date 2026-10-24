@@ -9,27 +9,36 @@ use super::air_movement::{FlySpeedFacts, MIN_CREEP_SPEED, fly_may_slow};
 #[cfg(any(test, feature = "test-support"))]
 use super::locomotor::AirMovePhase;
 use crate::sim::components::DriveCoord;
-use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
+#[cfg(any(test, feature = "test-support"))]
+use crate::util::fixed_math::SimFixed;
+use crate::util::native_x87::{NativeF64Bits, X87Chop53 as X, X87Ordering, X87Value};
 
-/// Per-tick speed ramp step for Fly aircraft (0.1 per tick).
-/// Original: _DAT_007e3860 = 0.1 (verified from binary).
-/// In SimFixed, 0->1 takes 10 ticks. Native adds the binary64 0.1 (`0x004CE441..
-/// 0x004CE495`): the 10th step stores 0.9999999999999999, so 1.0 arrives on the
-/// 11th, and Apparent_Speed (`0x004CFE20`, ftol) pays one lepton less on such
-/// steps. RESIDUAL under the SimFixed policy: at most one lepton per ramp.
-const FLY_SPEED_RAMP_STEP: SimFixed = SimFixed::lit("0.1");
+/// Original7E3860, added/subtracted with PC53/chop at4CE441..4CE495.
+const FLY_SPEED_RAMP_STEP: NativeF64Bits = NativeF64Bits::from_bits(0x3fb9_9999_9999_999a);
 
 /// The target speed of a Fly crawling in under the 0.1 slowdown floor
 /// (`0x004CE27C`).
-const FLY_CRAWL_SPEED: SimFixed = SimFixed::lit("0.1");
+const FLY_CRAWL_SPEED: NativeF64Bits = FLY_SPEED_RAMP_STEP;
 
 /// Horizontal_Step's arrival distances (`0x004CF4F1`, `0x004CF527`,
 /// `0x004CF543`) and the speeds they ask for.
 pub(crate) const ARRIVAL_STOP: i32 = 0x80;
 const ARRIVAL_HALF: i32 = 0x200;
 pub(crate) const ARRIVAL_THREE_QUARTERS: i32 = 0x300;
-const HALF_SPEED: SimFixed = SimFixed::lit("0.5");
-const THREE_QUARTER_SPEED: SimFixed = SimFixed::lit("0.75");
+const HALF_SPEED: NativeF64Bits = NativeF64Bits::HALF;
+const THREE_QUARTER_SPEED: NativeF64Bits = NativeF64Bits::from_bits(0x3fe8_0000_0000_0000);
+
+fn speed_value(bits: NativeF64Bits) -> X87Value {
+    X::load_f64(bits).expect("constructor-owned Fly speed is finite")
+}
+
+fn stored_speed(value: X87Value) -> u64 {
+    X::store_f64(value).expect("bounded Fly speed store").bits()
+}
+
+const fn speed_is_zero(bits: u64) -> bool {
+    bits & 0x7fff_ffff_ffff_ffff == 0
+}
 
 /// Constructor4CC9EE..4CC9FA clears target+38 and takeoff/landing+50/+51.
 /// Only this owner mutates those fields. Object coordinates own current Z.
@@ -66,35 +75,64 @@ pub struct FlyRuntime {
     /// (`0x004CC9E5`) starts it at 0; Process's slowdown
     /// ([`Self::write_target_speed`]), Horizontal_Step's arrival
     /// ([`Self::slow_for_arrival`]), the takeoff callback and the landing write
-    /// it.
+    /// it. Retain its binary64 store, including bits below one Q16 quantum.
     #[serde(default)]
-    target_speed: SimFixed,
-    /// Fly+48, the current speed fraction, chasing `target_speed` by 0.1 a
-    /// frame (`0x004CE441..0x004CE495`).
+    target_speed_bits: u64,
+    /// Fly+48, the binary64 current fraction, chasing target by stored0.1
+    /// with a PC53/chop operation and qword store each frame4CE441..4CE495.
     #[serde(default)]
-    current_speed: SimFixed,
+    current_speed_bits: u64,
 }
 
 impl FlyRuntime {
     /// See the field.
-    pub(crate) const fn target_speed(&self) -> SimFixed {
-        self.target_speed
+    pub(crate) const fn target_speed(&self) -> NativeF64Bits {
+        NativeF64Bits::from_bits(self.target_speed_bits)
     }
 
     /// See the field.
-    pub(crate) const fn current_speed(&self) -> SimFixed {
-        self.current_speed
+    pub(crate) const fn current_speed(&self) -> NativeF64Bits {
+        NativeF64Bits::from_bits(self.current_speed_bits)
+    }
+
+    pub(crate) fn target_speed_is_zero(&self) -> bool {
+        speed_is_zero(self.target_speed_bits)
+    }
+
+    pub(crate) fn current_speed_is_positive(&self) -> bool {
+        X::compare(speed_value(self.current_speed()), X::load_i32(0)) == X87Ordering::Greater
+    }
+
+    pub(crate) fn current_speed_below_landing_threshold(&self) -> bool {
+        X::compare(
+            speed_value(self.current_speed()),
+            speed_value(MIN_CREEP_SPEED),
+        ) == X87Ordering::Less
     }
 
     /// Process `0x004CE441..0x004CE495`: the current speed (`+0x48`) chases
     /// the target speed (`+0x40`) by 0.1 a frame.
     pub(crate) fn ramp_speed(&mut self) {
-        let target = self.target_speed;
-        let current = self.current_speed;
-        if current < target {
-            self.current_speed = (current + FLY_SPEED_RAMP_STEP).min(target);
-        } else if current > target {
-            self.current_speed = (current - FLY_SPEED_RAMP_STEP).max(target);
+        let target = speed_value(self.target_speed());
+        let current = speed_value(self.current_speed());
+        match X::compare(current, target) {
+            X87Ordering::Less => {
+                let next = X::add(current, speed_value(FLY_SPEED_RAMP_STEP));
+                self.current_speed_bits = if X::compare(next, target) == X87Ordering::Less {
+                    stored_speed(next)
+                } else {
+                    self.target_speed_bits
+                };
+            }
+            X87Ordering::Greater => {
+                let next = X::sub(current, speed_value(FLY_SPEED_RAMP_STEP));
+                self.current_speed_bits = if X::compare(next, target) == X87Ordering::Greater {
+                    stored_speed(next)
+                } else {
+                    self.target_speed_bits
+                };
+            }
+            X87Ordering::Equal => {}
         }
     }
 
@@ -114,16 +152,9 @@ impl FlyRuntime {
     ///   a 0.05 current speed, which only the IsDropship attitude reads before the
     ///   ramp (`0x004CE46F`) takes it back to the zero target: it moves nothing.
     ///
-    /// Native keeps binary64 and VERA SimFixed, each result within one quantum of
-    /// native: the ratio truncates to Q16, and the halving rounds a dropped half
-    /// away from zero, so it is zero exactly when native's is (a speed of one
-    /// quantum truncated to zero would take the creep's branch). The floor test
-    /// is the exact `10 * distance <= SlowdownDistance`, assuming gamemd's chop
-    /// control word `0x0E7F`, under which the oracle runs: the chop quotient of
-    /// an exact tenth falls below the stored 0.1. Rounded to nearest it would
-    /// equal 0.1 and take the ratio arm (a 0.1 target for that frame, no
-    /// halving). The rows of `tools/spatial_oracle/fly_target_speed` hold the
-    /// native outputs.
+    /// The ratio remains on the PC53/chop stack across its qword target store
+    /// at4CE260. The converted integer distance remains below it and supplies
+    /// the current-speed clamp at4CE29A. Neither retained speed is quantized.
     pub(crate) fn write_target_speed(&mut self, facts: &FlySpeedFacts) {
         let taking_off = self.taking_off;
         if facts.health <= 0
@@ -134,39 +165,51 @@ impl FlyRuntime {
             return;
         }
         if !fly_may_slow(self.landing, self.cruise_mode, &facts.slow) {
-            self.target_speed = SIM_ONE;
+            self.target_speed_bits = NativeF64Bits::ONE.bits();
             return;
         }
         if facts.hunter_seeker {
-            self.target_speed = if !taking_off && facts.target {
-                SIM_ONE
+            self.target_speed_bits = if !taking_off && facts.target {
+                NativeF64Bits::ONE.bits()
             } else {
-                SIM_ZERO
+                NativeF64Bits::POSITIVE_ZERO.bits()
             };
             return;
         }
-        let distance = i64::from(facts.distance);
-        let slowdown = i64::from(facts.slowdown_distance);
-        // A zero SlowdownDistance divides to +inf (NaN at distance 0), which the
-        // cap turns into full speed; a negative one is always under the floor.
-        if slowdown == 0 || (slowdown > 0 && distance * 10 > slowdown) {
-            self.target_speed = if slowdown == 0 || distance >= slowdown {
-                SIM_ONE
-            } else {
-                SimFixed::from_bits(((distance << 16) / slowdown) as i32)
-            };
-        } else if distance > 0x55 {
-            self.target_speed = FLY_CRAWL_SPEED;
+        let distance = X::load_i32(facts.distance);
+        let one = speed_value(NativeF64Bits::ONE);
+        //4CE249..4CE25A caps infinity and unordered0/0 to1. Other legal
+        // inputs divide bounded integers and retain a finite ratio.
+        let ratio = if facts.slowdown_distance == 0 {
+            one
         } else {
-            let bits = self.current_speed.to_bits();
-            self.current_speed = SimFixed::from_bits(bits / 2 + bits % 2);
-            self.target_speed = SIM_ZERO;
+            X::div(distance, X::load_i32(facts.slowdown_distance)).unwrap()
+        };
+        let ratio = if X::compare(one, ratio) == X87Ordering::Less {
+            one
+        } else {
+            ratio
+        };
+        self.target_speed_bits = stored_speed(ratio);
+        if X::compare(ratio, speed_value(FLY_CRAWL_SPEED)) == X87Ordering::Less {
+            if facts.distance > 0x55 {
+                self.target_speed_bits = FLY_CRAWL_SPEED.bits();
+            } else {
+                self.current_speed_bits = stored_speed(X::mul(
+                    speed_value(self.current_speed()),
+                    speed_value(HALF_SPEED),
+                ));
+                self.target_speed_bits = NativeF64Bits::POSITIVE_ZERO.bits();
+            }
         }
-        if distance << 16 < i64::from(self.current_speed.to_bits()) {
-            self.current_speed = SimFixed::from_bits((distance << 16) as i32);
+        if X::compare(distance, speed_value(self.current_speed())) == X87Ordering::Less {
+            self.current_speed_bits = stored_speed(distance);
         }
-        if self.target_speed == SIM_ZERO && self.current_speed == SIM_ZERO && distance > 0 {
-            self.current_speed = MIN_CREEP_SPEED;
+        if self.target_speed_is_zero()
+            && speed_is_zero(self.current_speed_bits)
+            && facts.distance > 0
+        {
+            self.current_speed_bits = MIN_CREEP_SPEED.bits();
         }
     }
 
@@ -176,39 +219,49 @@ impl FlyRuntime {
     /// farther Fly keeps its target speed.
     pub(crate) fn slow_for_arrival(&mut self, distance: i32) {
         if distance < ARRIVAL_STOP {
-            self.target_speed = SIM_ZERO;
+            self.target_speed_bits = NativeF64Bits::POSITIVE_ZERO.bits();
         } else if distance < ARRIVAL_HALF {
-            self.target_speed = HALF_SPEED;
+            self.target_speed_bits = HALF_SPEED.bits();
         } else if distance < ARRIVAL_THREE_QUARTERS {
-            self.target_speed = THREE_QUARTER_SPEED;
+            self.target_speed_bits = THREE_QUARTER_SPEED.bits();
         }
     }
 
     /// The takeoff callback (`0x004CE680`) asks full speed.
     pub(crate) fn request_full_speed(&mut self) {
-        self.target_speed = SIM_ONE;
+        self.target_speed_bits = NativeF64Bits::ONE.bits();
     }
 
     /// The landing callback (`0x004CE840`) asks a stop; the current speed
     /// ramps down to it.
     pub(crate) fn request_stop(&mut self) {
-        self.target_speed = SIM_ZERO;
+        self.target_speed_bits = NativeF64Bits::POSITIVE_ZERO.bits();
     }
 
     /// A completed landing stands the Fly still: target and current speed 0.
     pub(crate) fn halt(&mut self) {
-        self.target_speed = SIM_ZERO;
-        self.current_speed = SIM_ZERO;
+        self.target_speed_bits = NativeF64Bits::POSITIVE_ZERO.bits();
+        self.current_speed_bits = NativeF64Bits::POSITIVE_ZERO.bits();
     }
 
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_target_speed_for_test(&mut self, target_speed: SimFixed) {
-        self.target_speed = target_speed;
+        self.target_speed_bits = target_speed.to_num::<f64>().to_bits();
     }
 
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_current_speed_for_test(&mut self, current_speed: SimFixed) {
-        self.current_speed = current_speed;
+        self.current_speed_bits = current_speed.to_num::<f64>().to_bits();
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_target_speed_bits_for_test(&mut self, bits: NativeF64Bits) {
+        self.target_speed_bits = bits.bits();
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_current_speed_bits_for_test(&mut self, bits: NativeF64Bits) {
+        self.current_speed_bits = bits.bits();
     }
 }
 
@@ -293,7 +346,7 @@ impl FlyRuntime {
     /// `Is_Moving_Now` `0x004CCAC0`: the current speed (Fly+48) is not zero.
     /// The +34 request is not asked.
     pub(crate) fn is_moving_now(&self) -> bool {
-        self.current_speed != SimFixed::ZERO
+        !speed_is_zero(self.current_speed_bits)
     }
 
     pub(crate) fn landing_effect_latched(&self) -> bool {
@@ -388,7 +441,10 @@ impl FlyRuntime {
     pub(crate) fn restore_flight_level(&mut self, flight_level: i32) {
         if !self.landing
             && !self.taking_off
-            && self.target_speed >= crate::util::fixed_math::SIM_ONE
+            && X::compare(
+                speed_value(self.target_speed()),
+                speed_value(NativeF64Bits::ONE),
+            ) != X87Ordering::Less
             && self.target_height == 0
         {
             self.target_height = flight_level;

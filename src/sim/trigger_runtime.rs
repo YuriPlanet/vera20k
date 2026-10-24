@@ -4961,6 +4961,10 @@ fn count_techtype(sim: &Simulation, type_id: &str) -> usize {
 mod tests;
 
 #[cfg(test)]
+#[path = "trigger_runtime_factory_owner_tests.rs"]
+mod factory_owner_tests;
+
+#[cfg(test)]
 #[path = "trigger_runtime_duplicate_ini_tests.rs"]
 mod duplicate_ini_tests;
 

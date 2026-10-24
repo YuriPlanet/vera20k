@@ -18,8 +18,9 @@ use crate::assets::vxl_file::{VxlFile, VxlLimb};
 #[cfg(test)]
 use crate::map::voxel_pose::voxel_tilt_applies;
 use crate::map::voxel_pose::{
-    VxlSlopeBlend, compute_slope_blend_rotation, compute_slope_rotation, ground_locomotor_matrix,
-    voxel_body_facing, voxel_table_rotation, voxel_tilt_frame,
+    VxlSlopeBlend, compute_slope_blend_rotation, compute_slope_rotation,
+    crash_fly_locomotor_matrix as voxel_crash_locomotor_matrix, ground_locomotor_matrix,
+    normal_fly_locomotor_matrix, voxel_body_facing, voxel_tilt_frame,
 };
 use crate::render::vxl_normals;
 #[cfg(test)]
@@ -173,24 +174,11 @@ fn voxel_crash_rotation(step: u8, tilt: [f32; 2]) -> Mat4 {
 /// from the crash arm's X-then-Y matrix above; both share the same facing,
 /// lookup-table rotations, affine owner and camera.
 fn voxel_normal_fly_rotation(step: u8, pitch: f32, roll: f32) -> Mat4 {
-    let mut frame = voxel_body_facing(step);
-    if pitch != 0.0 {
-        let (sin, cos) = voxel_table_rotation(pitch);
-        frame = affine::rotate_y(frame, sin, cos);
-    }
-    if roll != 0.0 {
-        let (sin, cos) = voxel_table_rotation(roll);
-        frame = affine::rotate_x(frame, sin, cos);
-    }
-    affine::matrix_product(voxel_camera_view(), frame).expect("finite normal Fly matrix")
-}
-
-/// The locomotor half of [`voxel_crash_rotation`], before the camera.
-fn voxel_crash_locomotor_matrix(step: u8, tilt: [f32; 2]) -> Mat4 {
-    let (sin, cos) = voxel_table_rotation(tilt[0]);
-    let frame = affine::rotate_x(voxel_body_facing(step), sin, cos);
-    let (sin, cos) = voxel_table_rotation(tilt[1]);
-    affine::rotate_y(frame, sin, cos)
+    affine::matrix_product(
+        voxel_camera_view(),
+        normal_fly_locomotor_matrix(step, pitch, roll),
+    )
+    .expect("finite normal Fly matrix")
 }
 
 /// `RocketLocomotionClass::Draw_Matrix @ 0x00663470`: the facing matrix of

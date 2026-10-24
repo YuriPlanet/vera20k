@@ -830,7 +830,7 @@ fn assert_native_takeoff_result(sim: &Simulation, row: &serde_json::Value) {
     );
     assert_eq!(
         loco.fly_runtime().unwrap().target_speed(),
-        SimFixed::from_num(row["speed"].as_f64().unwrap()),
+        crate::util::native_x87::NativeF64Bits::from_bits(row["speed"].as_f64().unwrap().to_bits()),
         "{row}"
     );
     let coord = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
@@ -1376,8 +1376,10 @@ fn fly_paid_step_matches_native_math_and_production_type_speed() {
             "{input}"
         );
         let fraction = SimFixed::from_bits(integer("fraction_bits"));
-        let speed =
-            crate::sim::movement::air_movement::current_fly_speed(native_type_speed, fraction);
+        let speed = crate::sim::movement::air_movement::current_fly_speed(
+            native_type_speed,
+            crate::util::native_x87::NativeF64Bits::from_bits(fraction.to_num::<f64>().to_bits()),
+        );
         assert_eq!(i64::from(speed), row["speed"].as_i64().unwrap(), "{input}");
         let rot = input["rot"].as_i64().unwrap_or(5) as i32;
         let mut primary = crate::sim::movement::FacingClass::new(integer("facing") as u16, rot);

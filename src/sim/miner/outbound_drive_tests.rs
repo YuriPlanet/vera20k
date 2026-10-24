@@ -83,8 +83,10 @@ fn outbound_contract_oracle() -> OutboundContractOracle {
         assert_eq!(object.locomotor, expected_locomotor);
         assert_eq!(object.teleporter, teleporter);
         assert!(object.accelerates);
-        assert_eq!(object.accel_factor, SimFixed::lit("0.03"));
-        assert_eq!(object.decel_factor, SimFixed::lit("0.002"));
+        // Neither miner section authors these keys: TechnoType ctor
+        // 710BD0/710BBC retains its doubles, not widened authored floats.
+        assert_eq!(object.accel_factor.bits(), 0x3f9e_b851_eb85_1eb8);
+        assert_eq!(object.decel_factor.bits(), 0x3f60_624d_d2f1_a9fc);
         assert_eq!(object.slowdown_distance, 500);
     }
 
@@ -602,7 +604,11 @@ fn production_stock_miners_use_drive_command_for_adjacent_ore() {
             );
             // One cell out is inside `SlowdownDistance=500`, so the ramp opens on
             // the destination brake floor and holds there for the whole hop.
-            assert_eq!(entity.foot_speed.applied_fraction(), SimFixed::lit("0.3"));
+            assert_eq!(
+                entity.foot_speed.native_applied_fraction().bits(),
+                0x3fd3_3333_4000_0000,
+                "native Drive brake floor is the promoted float constant"
+            );
         }
 
         let mut physically_departed = position_tuple(&sim, entity_id) != start_position;
@@ -697,7 +703,10 @@ fn production_harv_outbound_drive_uses_rule_profile() {
     // Three cells out is farther than `SlowdownDistance=500`, so the rules accel
     // profile — not the destination brake floor — owns the ramp.
     assert!(3 * 256 > harv.slowdown_distance);
-    let acceleration = harv.accel_factor;
+    // The contract omits AccelerationFactor: the first prefix adds the
+    // original constructor double 0.03 (0x710BD0), without a fixed projection.
+    let acceleration_bits = 0x3f9e_b851_eb85_1eb8;
+    assert_eq!(harv.accel_factor.bits(), acceleration_bits);
 
     // Dispatch precedes movement, so the issuing tick already took one accel step.
     assert_eq!(
@@ -706,8 +715,9 @@ fn production_harv_outbound_drive_uses_rule_profile() {
             .get(entity_id)
             .expect("HARV")
             .foot_speed
-            .applied_fraction(),
-        acceleration,
+            .native_applied_fraction()
+            .bits(),
+        acceleration_bits,
     );
 
     // The epilogue paces the next dispatch 14-16 frames out, so this tick moves
@@ -727,8 +737,9 @@ fn production_harv_outbound_drive_uses_rule_profile() {
         "movement"
     );
     assert_eq!(
-        entity.foot_speed.applied_fraction(),
-        acceleration + acceleration
+        entity.foot_speed.native_applied_fraction().bits(),
+        // Two native additions from zero: binary64 doubling is exact.
+        0x3fae_b851_eb85_1eb8,
     );
     assert_eq!(
         sim.rng_state().scenario,
@@ -831,7 +842,9 @@ fn production_stock_harv_far_return_drive_uses_rule_profile() {
         "under way"
     );
     assert!(
-        entity.foot_speed.applied_fraction() >= harv.accel_factor,
+        // SetSpeedFraction admits only nonnegative finite values, so the
+        // stored bit order is the native >= comparison against constructor 0.03.
+        entity.foot_speed.native_applied_fraction().bits() >= harv.accel_factor.bits(),
         "the rules accel profile ramps once the hull is under way"
     );
     assert!(sim.current_speed_for_test(entity_id, &oracle.rules) > 0);
@@ -1514,11 +1527,11 @@ fn assert_miner_object_contract(contract: &RuleSet, retail: &RuleSet, id: &str) 
     assert_eq!(actual.accelerates, expected.accelerates, "{id} Accelerates");
     assert_eq!(
         actual.accel_factor, expected.accel_factor,
-        "{id} acceleration"
+        "{id} acceleration double"
     );
     assert_eq!(
         actual.decel_factor, expected.decel_factor,
-        "{id} deceleration"
+        "{id} deceleration double"
     );
     assert_eq!(
         actual.slowdown_distance, expected.slowdown_distance,

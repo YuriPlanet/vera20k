@@ -946,7 +946,9 @@ impl Simulation {
         if entity.category() != EntityCategory::Structure {
             return;
         }
-        let Some(object) = interner.object_type(entity.type_ref(), rules) else {
+        let Some(object) =
+            interner.object_type_in_category(entity.type_ref(), entity.category().into(), rules)
+        else {
             return;
         };
         let entry = RegisteredBuilding::new(id, object);

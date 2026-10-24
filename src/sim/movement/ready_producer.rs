@@ -51,7 +51,6 @@
 
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::game_entity::GameEntity;
-use crate::util::fixed_math::SIM_ZERO;
 
 use super::locomotor::LocomotorState;
 use super::locomotor_ready::LocomotorReadyState;
@@ -198,12 +197,12 @@ fn jumpjet(locomotor: &LocomotorState) -> LocomotorReadyState {
 
 /// Walk75AB40 calls IsMoving75AB30, reads Foot+578 >0, then tests the
 /// retained step XYZ. The Walk owner retains all three inputs; NavCom is not
-/// an authority for this query. The fixed fraction's sign projects to 1/0
+/// an authority for this query. The native fraction's sign projects to 1/0
 /// without a float conversion.
 fn walk(entity: &GameEntity, locomotor: &LocomotorState) -> LocomotorReadyState {
     LocomotorReadyState::Walk {
         moving_byte: u8::from(locomotor.walk_is_moving().unwrap_or(false)),
-        applied_speed_bits: if entity.foot_speed.applied_fraction() > SIM_ZERO {
+        applied_speed_bits: if entity.foot_speed.speed_fraction_is_positive() {
             F64_BITS_ONE
         } else {
             0

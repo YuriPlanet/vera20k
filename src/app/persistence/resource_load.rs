@@ -22,14 +22,15 @@ use crate::sim::snapshot::{GameSnapshot, SnapshotError};
 use crate::sim::world::{Simulation, SnapshotProcessState};
 use crate::ui::sidebar::power_bar_anim::PowerBarAnimState;
 
-/// Borrowed preparation capabilities. Outgoing app presentation/input is not
-/// available to the fallible candidate; both menu and game supply this view.
+/// Borrowed preparation capabilities. The fallible candidate lends only the
+/// required outgoing owners and publishes no mutations before commit.
 pub(crate) struct SavedGamePreparationView<'a> {
     pub(crate) repository: &'a SaveRepository,
     pub(crate) current_simulation: Option<&'a Simulation>,
     pub(crate) frontend_main: &'a MainRng,
     pub(crate) rules_owner: &'a NativeRulesProcessOwner,
     pub(crate) tile_cache: &'a TileVariantSelectorCache,
+    pub(crate) lighting: &'a crate::app::presentation::lighting::MatchLighting,
     pub(crate) load_clock: &'a dyn Fn() -> u64,
 }
 
@@ -50,6 +51,8 @@ struct PreparedSavedResources {
     power_bar_anim: PowerBarAnimState,
     radar_events: crate::render::radar::ClientRadarEvents,
     credits_counter: Option<i32>,
+    lighting: crate::map::lighting::SavedCellLighting,
+    scheme_normal_rgb: [i32; 3],
     tile_cache: TileVariantSelectorCache,
     theater: theater::TheaterData,
     elapsed_clock: crate::app::match_runtime::frame_pacer::ScenarioElapsedClock,
@@ -102,6 +105,11 @@ impl PreparedSavedGame {
         let mut saved_view = snapshot
             .take_local_view()
             .ok_or(SnapshotError::MissingLocalView)?;
+        let lighting = saved_view.take_lighting().ok_or(
+            crate::sim::snapshot::saved_local_view::SavedLocalViewError::InvalidLighting {
+                field: "missing Cell values",
+            },
+        )?;
         let power_bar_anim = PowerBarAnimState::from_saved(saved_view.take_power_bar().ok_or(
             crate::sim::snapshot::saved_local_view::SavedLocalViewError::MissingPowerBar,
         )?)?;
@@ -233,7 +241,7 @@ impl PreparedSavedGame {
             SnapshotProcessState::Cold(view.frontend_main),
             SnapshotProcessState::Live,
         );
-        let world = PreparedLoad::prepare_snapshot(
+        let mut world = PreparedLoad::prepare_snapshot(
             snapshot,
             process,
             rules,
@@ -269,6 +277,14 @@ impl PreparedSavedGame {
             theater.rmg_tiles.water_set,
         );
         let local_view = PreparedSavedLocalView::new(saved_view, &world.simulation, rules)?;
+        crate::app::presentation::lighting::validate_saved_lighting(&lighting, &world.simulation)?;
+        // Load685120 ->53AB50 calls the canonical selector after restoring
+        // incoming effects. Its one Cell refresh is staged below; outgoing
+        // process palette/cache state stays immutable during preparation.
+        world.simulation.reinitialize_lighting_after_user_load();
+        let scheme_normal_rgb = view
+            .lighting
+            .normal_scheme_for_user_load(view.current_simulation, &theater_name);
         Ok(PreparedSavedResources {
             world,
             resources,
@@ -278,6 +294,8 @@ impl PreparedSavedGame {
             power_bar_anim,
             radar_events,
             credits_counter,
+            lighting,
+            scheme_normal_rgb,
             tile_cache,
             theater,
             elapsed_clock,
@@ -298,6 +316,8 @@ impl PreparedSavedGame {
             resources,
             map,
             theater,
+            lighting,
+            scheme_normal_rgb,
             ..
         } = &candidate;
         let rules = &resources.rules;
@@ -348,7 +368,7 @@ impl PreparedSavedGame {
             Some(&theater.unit_palette),
             Some(&theater.tiberium_palette),
         );
-        let presentation = init_helpers::finish_presentation_assets(
+        let mut presentation = init_helpers::finish_presentation_assets(
             gpu,
             batch,
             assets,
@@ -364,6 +384,9 @@ impl PreparedSavedGame {
             csf,
         )
         .map_err(|error| PreparedLoadError::Resources(error.to_string()))?;
+        presentation
+            .lighting_grid
+            .stage_saved_local_lighting(lighting, *scheme_normal_rgb);
         Ok(Self {
             candidate,
             presentation,

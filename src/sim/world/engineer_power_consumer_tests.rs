@@ -305,9 +305,31 @@ fn settled_repair_native_health_sample_factory_cadence_radar_and_later_advice() 
             1,
             600
         ));
+        // The native non-null Factory+58 has a real Techno receiver for
+        // TimeToBuild6F47A0, including its actual owner at +21C.
+        let product_id = PRODUCER + 1;
+        sim.substrate
+            .entities
+            .insert(GameEntity::new_at_frame_zero_for_test(
+                product_id,
+                0,
+                0,
+                0,
+                0,
+                owner,
+                Health::new(100),
+                type_ref,
+                EntityCategory::Unit,
+                0,
+                5,
+                false,
+            ));
         // Exact native-produced frame195 prior, not a Rust-derived start.
         let pending = &prior["factory"];
         let factory = sim.production.factories_mut().test_first_mut().unwrap();
+        let mut held = factory.object().unwrap().clone();
+        held.entity_id = Some(product_id);
+        factory.set_object_for_test(Some(held));
         factory.set_progress_for_test(int(&pending["stage"]) as u16);
         factory.set_step_rate_frames_for_test(int(&pending["rate"]) as u16);
         factory.set_step_timer_for_test(CdTimer::from_raw(

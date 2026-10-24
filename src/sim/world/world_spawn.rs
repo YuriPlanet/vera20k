@@ -734,7 +734,7 @@ impl Simulation {
         let entity = self.substrate.entities.get(temporary)?;
         if entity.category() != EntityCategory::Structure
             || self
-                .object_type(entity.type_ref(), rules)?
+                .entity_object_type(entity, rules)?
                 .building_upgrade()
                 .host()
                 .is_none()
@@ -1126,8 +1126,39 @@ impl Simulation {
         init: TechnoConstructorInit,
         frame_effects: FrameEffects<'_>,
     ) -> Result<Option<u64>, GeneratedTechnoInitError> {
-        let Some(ge) =
-            self.construct_runtime_techno(type_id, owner, rx, ry, facing, z, rules, init)?
+        let Some(obj) = rules.object(type_id) else {
+            return Ok(None);
+        };
+        self.spawn_resolved_object_limbo_at_height_with_init(
+            obj,
+            type_id,
+            owner,
+            rx,
+            ry,
+            facing,
+            z,
+            rules,
+            init,
+            frame_effects,
+        )
+    }
+
+    fn spawn_resolved_object_limbo_at_height_with_init(
+        &mut self,
+        obj: &ObjectType,
+        type_id: &str,
+        owner: &str,
+        rx: u16,
+        ry: u16,
+        facing: u8,
+        z: u8,
+        rules: &RuleSet,
+        init: TechnoConstructorInit,
+        frame_effects: FrameEffects<'_>,
+    ) -> Result<Option<u64>, GeneratedTechnoInitError> {
+        let Some(ge) = self.construct_resolved_runtime_techno(
+            obj, type_id, owner, rx, ry, facing, z, rules, init,
+        )?
         else {
             return Ok(None);
         };
@@ -1195,6 +1226,34 @@ impl Simulation {
             rules,
             TechnoConstructorInit::FreshScenario,
             frame_effects,
+        )
+        .expect("fresh Techno constructor initialization cannot fail")
+    }
+
+    /// Retain the already selected Type::CreateInstance pointer through the
+    /// same constructor/store/children/tracking transaction (Factory4C9C70).
+    pub(crate) fn construct_resolved_object_limbo_at_height(
+        &mut self,
+        obj: &ObjectType,
+        owner: &str,
+        rx: u16,
+        ry: u16,
+        facing: u8,
+        z: u8,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) -> Option<u64> {
+        self.spawn_resolved_object_limbo_at_height_with_init(
+            obj,
+            &obj.id,
+            owner,
+            rx,
+            ry,
+            facing,
+            z,
+            rules,
+            TechnoConstructorInit::FreshScenario,
+            effects,
         )
         .expect("fresh Techno constructor initialization cannot fail")
     }
@@ -2293,7 +2352,8 @@ impl Simulation {
         if !matches!(category, EntityCategory::Unit | EntityCategory::Infantry) {
             return;
         }
-        let Some(object) = interner.object_type(type_ref, rules) else {
+        let Some(object) = interner.object_type_in_category(type_ref, category.into(), rules)
+        else {
             return;
         };
         let rank_cloak = has_weapon_ability(rank_from_u16(veterancy), object, Ability::Cloak);

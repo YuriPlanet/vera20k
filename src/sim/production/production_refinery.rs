@@ -7,6 +7,8 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::find_nearby_cell::NearbySearchOptions;
 use crate::sim::houses::Houses;
 use crate::sim::intern::StringInterner;
+use crate::sim::mission::authority::LiveReadyInputProvider;
+use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::{PlacementEvidence, Simulation};
@@ -36,11 +38,10 @@ const FREE_UNIT_FALLBACK_ATTEMPTS: [NearbySearchOptions; 2] = [
 /// building, so its constructor and Unlimbo are visible to subsequent Logic
 /// visits. ScenarioInit/capture gates belong to the caller.
 ///
-/// Residual: the human stored-price300 gate (446AF2..446B10) is not retained
-/// by the existing production object owner. Retail reach requires a refinery
-/// with a nonpositive miner Cost_Of (26 Industrial Plants). Its old late
-/// completion caller also omitted this gate; no basic construction type has
-/// FreeUnit. The original spatial FreeUnit corpus bounds placement below.
+/// Grand_Opening446AE3..446B10 (gamemd) suppresses a human-controlled
+/// House's FreeUnit when its retained nonzero start quote is no greater than
+/// BuildingType::GetCost45ED50. Zero is the nonproduction constructor sentinel.
+/// The original spatial FreeUnit corpus bounds placement below.
 pub(crate) fn spawn_building_free_unit(
     sim: &mut Simulation,
     stable_id: u64,
@@ -51,6 +52,17 @@ pub(crate) fn spawn_building_free_unit(
     let Some((owner_id, type_ref, rx, ry, width, height)) =
         sim.substrate.entities.get(stable_id).and_then(|entity| {
             if entity.category() != EntityCategory::Structure || entity.death.is_dying() {
+                return None;
+            }
+            let object = sim.object_type(entity.type_ref(), rules)?;
+            let human = sim
+                .houses
+                .get(&entity.owner())
+                .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+            if human
+                && entity.production_start_price() != 0
+                && entity.production_start_price() <= rules.type_cost(object)
+            {
                 return None;
             }
             let (width, height) = entity.type_facts.foundation().dimensions();
@@ -236,18 +248,34 @@ fn try_place_free_unit(
     // occupied by their own live building object and therefore enter the native
     // nearby-search sequence; independent occupants are evaluated in that same
     // ordered cell list rather than through the old coarse ground-blocker model.
-    sim.reveal_constructed_object_at_height_with_overlay_context(
+    if sim
+        .reveal_constructed_object_at_height_with_overlay_context(
+            free_unit_id,
+            rx,
+            ry,
+            facing,
+            sim.terrain_cell_level(rx, ry).unwrap_or(0),
+            PlacementEvidence::EvaluateMark,
+            rules,
+            overlay_registry,
+            effects,
+        )
+        .is_none()
+    {
+        return false;
+    }
+    // GrandOpening446EA1..446EB1 assigns Harvest even for a non-harvester
+    // FreeUnit. Queue(false), then Commence, after the successful Unlimbo.
+    let now = sim.session.binary_frame();
+    let _ = sim.mission_queue_exact(
         free_unit_id,
-        rx,
-        ry,
-        facing,
-        sim.terrain_cell_level(rx, ry).unwrap_or(0),
-        PlacementEvidence::EvaluateMark,
-        rules,
-        overlay_registry,
-        effects,
-    )
-    .is_some()
+        MissionId::from_known(MissionType::Harvest),
+        0,
+        now,
+        &LiveReadyInputProvider { rules },
+    );
+    let _ = sim.substrate.mission_commence_exact(free_unit_id, now);
+    true
 }
 
 /// A free unit that cannot be made or placed pays its house its GetRefund with

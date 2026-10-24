@@ -99,7 +99,9 @@ impl Simulation {
         let Some(settings) = substrate
             .entities
             .get(owner)
-            .and_then(|e| interner.object_type(e.type_ref(), rules))
+            .and_then(|e| {
+                interner.object_type_in_category(e.type_ref(), e.category().into(), rules)
+            })
             .map(|o| o.airstrike.clone())
             .filter(|s| s.normal_count > 0)
         else {

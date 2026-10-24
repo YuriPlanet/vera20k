@@ -107,6 +107,10 @@ pub struct GameEntity {
     /// this displacement through70BE50; no simulation/RNG/timer consumer.
     /// Retain the raw datum, not a renderer-owned reconstructed animation.
     native_cloak_displacement: crate::util::native_x87::NativeF32Bits,
+    /// Techno+300: constructor6F2EA4 initializes zero. Factory StartProduction
+    /// 4C9DED retains its owner's Cost_Of quote; Grand_Opening446AF2 consumes
+    /// it independently of remaining debt and later House discounts (gamemd).
+    production_start_price: i32,
     /// Techno+504 and Ares held sparkle. One private counter owner; stock
     /// constructor remains zero and only the feature-gated EMP producer writes it.
     #[serde(default)]
@@ -1361,7 +1365,9 @@ impl GameEntity {
         if self.category != EntityCategory::Aircraft {
             return;
         }
-        let Some(object) = rules.object(type_id) else {
+        let Some(object) =
+            rules.object_in_category(crate::rules::object_type::ObjectCategory::Aircraft, type_id)
+        else {
             return;
         };
         let camera =
@@ -1493,6 +1499,16 @@ impl GameEntity {
     /// TeamType::Get_Group6F1870 supply raw signed values.
     pub(crate) fn assign_object_group(&mut self, group: i32) {
         self.object_group = group;
+    }
+
+    pub(crate) const fn production_start_price(&self) -> i32 {
+        self.production_start_price
+    }
+
+    /// Factory StartProduction4C9DED writes this once on a newly created
+    /// product. Hold/resume, placement and owner changes retain it (gamemd).
+    pub(crate) fn record_production_start_price(&mut self, price: i32) {
+        self.production_start_price = price;
     }
 }
 
@@ -1716,6 +1732,7 @@ impl GameEntity {
             stable_id,
             native_unique_id,
             native_cloak_displacement: crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO,
+            production_start_price: 0,
             emp: Default::default(),
             #[cfg(feature = "ares")]
             attach_effects: Default::default(),

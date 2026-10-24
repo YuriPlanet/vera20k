@@ -432,6 +432,70 @@ struct FireBase<'r> {
     art: Option<&'r ArtEntry>,
 }
 
+/// Installed Fly Draw_Matrix4CF610 at the GetFLH6F3B9B call frame. Height
+/// comes from the live canonical Cell query, independent of display bands,
+/// voxel assets and camera projection. A null native cache key omits no tilt.
+fn fly_locomotor_basis(
+    world: &Simulation,
+    entity: &GameEntity,
+    obj: &ObjectType,
+    secondary: &crate::sim::movement::FacingClass,
+    frame: u32,
+) -> glam::Mat4 {
+    use crate::map::voxel_pose::{
+        crash_fly_locomotor_matrix, normal_fly_locomotor_matrix, voxel_body_facing,
+    };
+    use crate::sim::movement::facing_class::RotationDirection;
+    let step = step32_from_facing16(secondary.current(frame));
+    if crate::sim::movement::air_movement::current_fly_height(
+        entity,
+        world.resolved_terrain.as_ref(),
+    ) <= 0
+    {
+        return voxel_body_facing(step);
+    }
+    let pitching = entity
+        .locomotor
+        .as_ref()
+        .and_then(|loco| loco.current_fly_speed())
+        .is_some_and(|speed| f64::from_bits(speed.bits()) > obj.fly_pitch_speed());
+    if entity.crash.is_crashing() {
+        let mut angles = entity
+            .rocking
+            .as_ref()
+            .map_or([0.; 2], |r| r.angles_native());
+        if pitching {
+            use crate::util::native_x87::{NativeF32Bits, X87Chop53 as X};
+            let single =
+                |value: f32| X::load_f32(NativeF32Bits::from_bits(value.to_bits())).unwrap();
+            angles[1] = f32::from_bits(
+                X::store_f32(X::add(
+                    single(angles[1]),
+                    single(obj.fly_pitch_angle_radians()),
+                ))
+                .expect("finite Fly crash pitch")
+                .bits(),
+            );
+        }
+        return crash_fly_locomotor_matrix(step, angles);
+    }
+    let pitch = if pitching {
+        obj.fly_pitch_angle_radians()
+    } else {
+        0.0
+    };
+    let roll = if pitching {
+        match secondary.rotation_direction_at(frame) {
+            Some(RotationDirection::Positive) => obj.fly_roll_angle_f32(),
+            Some(RotationDirection::Negative) => -obj.fly_roll_angle_f32(),
+            None => 0.0,
+        }
+    } else {
+        0.0
+    };
+    normal_fly_locomotor_matrix(step, pitch, roll)
+}
+
 fn fire_coordinate_base<'r>(
     world: &Simulation,
     rules: &'r RuleSet,
@@ -492,21 +556,26 @@ fn fire_coordinate_base<'r>(
     let art = firer_art(rules, obj);
     // GetFLH6F3B6C..6F3BA3 consumes the actual locomotor Draw_Matrix.
     // The physical half sizes come from the immutable rules binding, never
-    // the renderer's model cache. Ground pose math has one shared owner.
+    // the renderer's model cache. Fly's raw pose has no half-size requirement.
     let locomotor_basis = world
         .substrate
         .entities
         .get(snap.stable_id)
-        .filter(|entity| {
-            entity.locomotor.as_ref().is_some_and(|loco| {
-                matches!(
-                    loco.active_kind(),
-                    crate::rules::locomotor_type::LocomotorKind::Drive
-                        | crate::rules::locomotor_type::LocomotorKind::Ship
-                )
-            })
-        })
         .and_then(|entity| {
+            use crate::rules::locomotor_type::LocomotorKind;
+            let kind = entity.locomotor.as_ref()?.active_kind();
+            if kind == LocomotorKind::Fly {
+                return Some(fly_locomotor_basis(
+                    world,
+                    entity,
+                    obj,
+                    snap.barrel_facing.as_ref().unwrap_or(&snap.hull_facing),
+                    binary_frame,
+                ));
+            }
+            if !matches!(kind, LocomotorKind::Drive | LocomotorKind::Ship) {
+                return None;
+            }
             use crate::map::voxel_pose::{VxlSlopeBlend, ground_locomotor_matrix};
             use crate::sim::movement::slope_transition::{SlopeRenderPhase, state_for_entity};
             let half_sizes = rules.object_voxel_half_sizes(&obj.id)?;
@@ -870,6 +939,88 @@ mod tests {
     const X: i32 = 10 * 256 + 128;
     const Y: i32 = 11 * 256 + 128;
     const Z: i32 = 2 * 104;
+
+    /// GetFLH6F3AD0 -> Fly4CF610 replayed at the first stock Boris/BPLN
+    /// Burst2 release on Death. These are the original outputs at the
+    /// captured Logic146 prior; the test supplies that numeric prior, while
+    /// the ordinary command/creation/release observation remains separate.
+    #[test]
+    fn retail_boris_plane_burst_uses_its_banked_locomotor_matrix() {
+        use crate::sim::movement::FacingClass;
+        use crate::util::native_x87::NativeF64Bits;
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
+        else {
+            return;
+        };
+        // Flat ground supplies the same positive-height gate; this compact
+        // numeric seam does not recreate Death's captured floor416 cell.
+        let mut world = crate::sim::arena_fixture::rival_arena_with_size(&rules, 17, 128);
+        let id = world
+            .spawn_object("BPLN", "Russians", 90, 71, 0, &rules)
+            .unwrap();
+        world.session.set_binary_frame_for_test(146);
+        let facing: FacingClass = serde_json::from_value(serde_json::json!({
+            "current": 11242, "prev": 23140, "start_frame": 146,
+            "duration_frames": 23, "rot_per_frame": 512
+        }))
+        .unwrap();
+        let actor = world.substrate.entities.get_mut(id).unwrap();
+        actor.position.set_sub_x_for_test(SimFixed::from_num(158));
+        actor.position.set_sub_y_for_test(SimFixed::from_num(18));
+        actor.position.set_exact_z_leptons_for_test(Some(1916));
+        actor.body_facing = facing;
+        actor.barrel_facing = Some(facing);
+        actor
+            .locomotor
+            .as_mut()
+            .unwrap()
+            .fly_runtime_mut()
+            .unwrap()
+            .set_current_speed_bits_for_test(NativeF64Bits::ONE);
+        assert_eq!(facing.current(146), 23133);
+        let obj = rules.object("BPLN").unwrap();
+        for (speed, z, expected) in [
+            (
+                NativeF64Bits::ONE,
+                1916,
+                [[23266, 18136, 1867], [23171, 18279, 1965]],
+            ),
+            // Equality at PitchSpeed closes BOTH normal tilt arms. The
+            // original zero-roll control supplies these flat coordinates.
+            (
+                NativeF64Bits::from_bits(0x3fd0_0000_0000_0000),
+                1916,
+                [[23274, 18125, 1916], [23164, 18291, 1916]],
+            ),
+            // This arena's floor is0: the same active turn at zero height
+            // must use yaw alone, irrespective of the retained Air layer.
+            (
+                NativeF64Bits::ONE,
+                0,
+                [[23274, 18125, 0], [23164, 18291, 0]],
+            ),
+        ] {
+            let actor = world.substrate.entities.get_mut(id).unwrap();
+            actor.position.set_exact_z_leptons_for_test(Some(z));
+            actor
+                .locomotor
+                .as_mut()
+                .unwrap()
+                .fly_runtime_mut()
+                .unwrap()
+                .set_current_speed_bits_for_test(speed);
+            let source = FireSource::of_entity(world.substrate.entities.get(id).unwrap());
+            for (burst, [x, y, z]) in expected.into_iter().enumerate() {
+                let fire =
+                    fire_coordinate(&world, &rules, &source, obj, 0, burst as u8, Flh::default());
+                assert_eq!(
+                    fire.coord,
+                    ProjectileCoord::new(x, y, z),
+                    "{speed:?} burst{burst}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn numbered_flh_readers_and_slot_bounds_match_original() {

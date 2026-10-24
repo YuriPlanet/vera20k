@@ -22,7 +22,7 @@ pub(crate) fn body_palette_light(
 ) -> crate::render::palette_light::PaletteLight {
     let top = grid.cell_light_at(cell).map_or(1000, |l| l.top_scalar);
     crate::render::palette_light::PaletteLight::color_scheme(
-        grid.palette_rgb(grid.profiles().default_profile_id()),
+        grid.color_scheme_rgb(),
         top.wrapping_add(extra),
     )
 }
@@ -197,10 +197,7 @@ pub(crate) fn building_palette_light(
     }
     let top = grid.cell_light_at(cell).map_or(1000, |l| l.top_scalar);
     let extra = art.map_or(0, |a| i32::from(a.extra_light as i16));
-    PaletteLight::color_scheme(
-        grid.palette_rgb(grid.profiles().default_profile_id()),
-        top.wrapping_add(extra),
-    )
+    PaletteLight::color_scheme(grid.color_scheme_rgb(), top.wrapping_add(extra))
 }
 
 /// AnimClass DrawIt 00423280..00423354: an instance Convert at `+0xD4` draws
@@ -244,10 +241,7 @@ pub(crate) fn anim_palette_light(
         //474AF2..474AF9 skips the same-name N1 scheme. Original instructions.
         // Invalid-name retained fallback and custom-palette load rebinding
         // are separate reader/load residuals, not encoded by ColorScheme.
-        PaletteLight::color_scheme(
-            grid.palette_rgb(grid.profiles().default_profile_id()),
-            brightness,
-        )
+        PaletteLight::color_scheme(grid.color_scheme_rgb(), brightness)
     } else if config.is_some_and(|c| c.alt_palette) {
         // Default AltPalette uses B054D4[0], the neutral N1 ColorScheme.
         //68C710 supplies RGB1000;53AD4D skips default schemes with N<=1.
@@ -684,6 +678,14 @@ pub(crate) struct MatchLighting {
     /// their existing BuildingTintSample owner and do not populate this map.
     /// No value is fed back to simulation decisions, Hash or RNG.
     anim_intensities: BTreeMap<u64, i32>,
+    /// Cell+11B at its ordered write boundary. A height store alone never
+    /// refreshes the retained Cell scalars or an earlier Anim+FC copy.
+    heights: BTreeMap<(u16, u16), u8>,
+    global_cells: Vec<(u16, u16)>,
+    dimensions: [u16; 2],
+    /// ColorScheme normal RGB survives a same-theater user load and menu
+    /// return; fresh installs and a different Init_Theater recreate it.
+    theater: Option<String>,
 }
 
 impl Default for MatchLighting {
@@ -697,6 +699,10 @@ impl Default for MatchLighting {
             scenario: None,
             detail_level: 2,
             anim_intensities: BTreeMap::new(),
+            heights: BTreeMap::new(),
+            global_cells: Vec::new(),
+            dimensions: [0; 2],
+            theater: None,
         }
     }
 }
@@ -722,24 +728,31 @@ impl MatchLighting {
     /// precede ordinary event publication. Replay that pending prefix into a
     /// temporary copy of this owner, leaving live state and the queue alone.
     /// AnimSave4253B0 -> AbstractSave410320 retains FC in the raw object.
-    pub(crate) fn saved_anim_intensities(mut self, sim: &Simulation) -> Vec<(u64, i32)> {
+    pub(crate) fn saved_at(
+        mut self,
+        sim: &Simulation,
+    ) -> (lighting::SavedCellLighting, Vec<(u64, i32)>) {
         if let Some(terrain) = sim.resolved_terrain() {
             self.apply_events(terrain, sim.lighting_sources().pending());
         }
-        self.anim_intensities
+        let cells = self.grid.saved_local_lighting();
+        let anims = self
+            .anim_intensities
             .into_iter()
             .filter(|(id, _)| sim.anim(*id).is_some())
-            .collect()
+            .collect();
+        (cells, anims)
     }
 
     pub(crate) fn install(
         &mut self,
-        grid: CellLightGrid,
+        mut grid: CellLightGrid,
         config: LightingConfig,
         detail_level: u32,
         live: Option<(&ResolvedTerrainGrid, &Simulation)>,
         initial_events: Option<&[LightingEvent]>,
     ) {
+        let saved = grid.take_saved_local_lighting();
         *self = Self {
             grid,
             config,
@@ -748,6 +761,7 @@ impl MatchLighting {
         };
         self.profile = lighting::normal_profile_units(&self.config).into();
         if let Some((terrain, sim)) = live {
+            self.theater = Some(sim.session().theater().to_owned());
             let mut view = derive_lighting_view(&self.config, Some(sim), detail_level);
             if initial_events.is_some() {
                 // Fresh Fill starts with the installed normal profile before
@@ -758,12 +772,34 @@ impl MatchLighting {
             self.grid = build_lighting_grid_from_view(terrain, &view);
             self.profile = view.profile;
             self.scenario = Some(*sim.session().lighting());
+            self.heights = terrain
+                .iter()
+                .map(|cell| ((cell.rx, cell.ry), cell.level))
+                .collect();
+            self.dimensions = [terrain.width(), terrain.height()];
+            self.global_cells = sim.map_size_diamond().map_or_else(
+                || self.heights.keys().copied().collect(),
+                |(width, _)| lighting::native_lighting_cells(terrain, width).collect(),
+            );
             if let Some(events) = initial_events {
                 self.apply_events(terrain, events);
                 self.refresh(terrain, sim, detail_level);
             } else {
                 (self.buildings, self.radiation) = source_maps(sim);
             }
+        }
+        if let Some((saved, normal_rgb)) = saved {
+            self.grid.apply_saved_local_lighting(&saved);
+            self.grid.restore_color_scheme_normal_rgb(normal_rgb);
+            // Load685120 ->53AB50 ->53C280 ->4AE4C0 refreshes only the
+            // native iterator, using retained104/108. FC has its existing
+            // envelope/commit owner; noniterated Cell10A stays saved.
+            self.grid.refresh_retained_scalars(
+                self.global_cells
+                    .iter()
+                    .filter_map(|cell| self.heights.get(cell).map(|height| (*cell, *height))),
+                self.profile.units,
+            );
         }
     }
 
@@ -790,17 +826,25 @@ impl MatchLighting {
                         Some(source) => self.buildings.insert(*id, source.clone()),
                         None => self.buildings.remove(id),
                     };
-                    queue_area(old.as_ref(), terrain, self.detail_level, &mut dirty);
-                    queue_area(source.as_ref(), terrain, self.detail_level, &mut dirty);
+                    self.queue_area(old.as_ref(), self.detail_level, &mut dirty);
+                    self.queue_area(source.as_ref(), self.detail_level, &mut dirty);
                 }
                 LightingEvent::Radiation { center, source } => {
                     let old = match source {
                         Some(source) => self.radiation.insert(*center, source.clone()),
                         None => self.radiation.remove(center),
                     };
-                    queue_area(old.as_ref(), terrain, 2, &mut dirty);
-                    queue_area(source.as_ref(), terrain, 2, &mut dirty);
+                    self.queue_area(old.as_ref(), 2, &mut dirty);
+                    self.queue_area(source.as_ref(), 2, &mut dirty);
                     rad_centers.push(*center);
+                }
+                LightingEvent::CellLevels { cells } => {
+                    self.commit_source_cells(terrain, &mut dirty);
+                    for &(cell, level) in cells {
+                        if let Some(height) = self.heights.get_mut(&cell) {
+                            *height = level;
+                        }
+                    }
                 }
                 LightingEvent::Global {
                     state,
@@ -818,7 +862,9 @@ impl MatchLighting {
                     }
                     //53AD00 updates Converts before4AE4C0 refreshes Cells.
                     self.grid.refresh_retained_scalars(
-                        terrain.iter().map(|cell| ((cell.rx, cell.ry), cell.level)),
+                        self.global_cells.iter().filter_map(|cell| {
+                            self.heights.get(cell).map(|height| (*cell, *height))
+                        }),
                         self.profile.units,
                     );
                     self.grid.set_constructor_alternate_rgb(*constructor_rgb);
@@ -853,7 +899,7 @@ impl MatchLighting {
 
     fn commit_source_cells(
         &mut self,
-        terrain: &ResolvedTerrainGrid,
+        _terrain: &ResolvedTerrainGrid,
         dirty: &mut BTreeSet<(u16, u16)>,
     ) {
         if dirty.is_empty() {
@@ -861,7 +907,7 @@ impl MatchLighting {
         }
         let heights = std::mem::take(dirty)
             .into_iter()
-            .filter_map(|cell| terrain.cell(cell.0, cell.1).map(|data| (cell, data.level)));
+            .filter_map(|cell| self.heights.get(&cell).map(|height| (cell, *height)));
         let sources = self
             .buildings
             .values()
@@ -893,20 +939,6 @@ impl MatchLighting {
         // loss of Logic/Display membership. Save uses the same store check.
         self.anim_intensities
             .retain(|id, _| sim.anim(*id).is_some());
-        if self.detail_level != detail_level.min(2) {
-            // Existing detail-change full reconstruction is retained as a
-            // compatibility boundary; no claim to native option-history parity.
-            let retained = std::mem::take(&mut self.anim_intensities);
-            self.install(
-                CellLightGrid::new(),
-                self.config.clone(),
-                detail_level,
-                Some((terrain, sim)),
-                None,
-            );
-            self.anim_intensities = retained;
-            return;
-        }
         let (buildings, radiation) = source_maps(sim);
         let mut events = Vec::new();
         for id in self
@@ -964,25 +996,83 @@ impl MatchLighting {
             });
         }
         self.apply_events(terrain, &events);
+        if self.detail_level != detail_level.min(2) {
+            // Display4AE450 ->545000 destroys only Cell Converts. The
+            // synchronous native iterator resample preserves ColorSchemes
+            // and every already copied Anim+FC.
+            self.detail_level = detail_level.min(2);
+            self.grid.reset_cell_converts(sim.palette_constructor_rgb());
+            let mut dirty = self.global_cells.iter().copied().collect();
+            self.commit_source_cells(terrain, &mut dirty);
+        }
+    }
+
+    fn queue_area(
+        &self,
+        source: Option<&PointLight>,
+        detail: u32,
+        dirty: &mut BTreeSet<(u16, u16)>,
+    ) {
+        let Some(source) = source.filter(|source| source.active && source.detail && detail >= 2)
+        else {
+            return;
+        };
+        dirty.extend(
+            lighting::point_light_area_cells(
+                source,
+                self.dimensions[0],
+                self.dimensions[1],
+                |x, y| self.heights.get(&(x, y)).copied(),
+            )
+            .into_iter()
+            .map(|(cell, _)| cell),
+        );
+    }
+
+    /// ClearScene539760 restores normal mode without replacing its RGB.
+    /// The process value is projected on a clone, including pending writes;
+    /// failed preparation cannot mutate outgoing Cells, events or Converts.
+    pub(crate) fn normal_scheme_for_user_load(
+        &self,
+        outgoing: Option<&Simulation>,
+        incoming_theater: &str,
+    ) -> [i32; 3] {
+        if self.theater.as_deref() != Some(incoming_theater) {
+            return [1000; 3];
+        }
+        let mut current = self.clone();
+        if let Some(sim) = outgoing
+            && let Some(terrain) = sim.resolved_terrain()
+        {
+            current.apply_events(terrain, sim.lighting_sources().pending());
+        }
+        current.grid.color_scheme_normal_rgb()
     }
 }
 
-fn queue_area(
-    source: Option<&PointLight>,
-    terrain: &ResolvedTerrainGrid,
-    detail: u32,
-    dirty: &mut BTreeSet<(u16, u16)>,
-) {
-    let Some(source) = source.filter(|source| source.active && source.detail && detail >= 2) else {
-        return;
-    };
-    dirty.extend(
-        lighting::point_light_area_cells(source, terrain.width(), terrain.height(), |x, y| {
-            terrain.cell(x, y).map(|cell| cell.level)
-        })
-        .into_iter()
-        .map(|(cell, _)| cell),
-    );
+/// Only incoming allocated Cell value authority is admitted. Native CellSave
+/// retains104/108/10A; pointers and outgoing palette history are separate.
+pub(crate) fn validate_saved_lighting(
+    saved: &lighting::SavedCellLighting,
+    sim: &Simulation,
+) -> Result<(), crate::sim::snapshot::saved_local_view::SavedLocalViewError> {
+    use crate::sim::snapshot::saved_local_view::SavedLocalViewError;
+    let invalid = |field| SavedLocalViewError::InvalidLighting { field };
+    let terrain = sim.resolved_terrain().ok_or_else(|| invalid("terrain"))?;
+    let expected: BTreeSet<_> = terrain.iter().map(|cell| (cell.rx, cell.ry)).collect();
+    let mut seen = BTreeSet::new();
+    for &(cell, _scale16, additive, top) in &saved.cells {
+        if !seen.insert(cell)
+            || !(0..=2000).contains(&top)
+            || i32::from(additive as i16) != additive
+        {
+            return Err(invalid("Cell scalar"));
+        }
+    }
+    if seen != expected {
+        return Err(invalid("Cell allocation"));
+    }
+    Ok(())
 }
 
 fn source_maps(sim: &Simulation) -> (BTreeMap<u64, PointLight>, BTreeMap<(u16, u16), PointLight>) {

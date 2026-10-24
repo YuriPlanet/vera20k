@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
-use crate::sim::production::{ProductionCategory, construct_active_factory_fixture};
+use crate::sim::production::ProductionCategory;
 use serde_json::{Value, json};
 
 #[cfg(feature = "ares")]
@@ -232,8 +232,34 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
                 .factories_mut()
                 .test_enqueue_kernel(holder, kind, object, 0, 0)
         );
-        construct_active_factory_fixture(&mut sim, rules, holder, kind, object)
-            .expect("the factory's object constructs");
+        // The native oracle supplies +58 independently of the House slot,
+        // including Infantry/Aircraft/Building held in the Ship factory.
+        // Construct that declared object without claiming StartProduction
+        // admits these synthetic cross-family holders.
+        let object_type = rules
+            .object(sim.interner.resolve(object))
+            .expect("the row's unique declared object type");
+        let owner_name = sim.interner.resolve(holder).to_owned();
+        let entity = sim
+            .construct_resolved_object_limbo_at_height(
+                object_type,
+                &owner_name,
+                0,
+                0,
+                0,
+                0,
+                rules,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .expect("the supplied factory object constructs");
+        assert_eq!(
+            sim.production.factories_mut().link_active_entity(
+                crate::sim::production::factory::FactoryHolder::House(holder, kind),
+                entity,
+                0, // This supplied factory prior starts with zero debt.
+            ),
+            Some(entity)
+        );
         for queued in names(&factory["queued"]) {
             let queued = sim.interner.get(queued).unwrap();
             sim.production

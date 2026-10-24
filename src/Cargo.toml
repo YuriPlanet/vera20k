@@ -92,6 +92,8 @@ libc = "0.2"
 # crates' build profile the same. tools/tests/test_cargo_run.py checks the
 # features still match.
 [dev-dependencies]
+# Native binary64 test values must survive their JSON decimal transport exactly.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 bytemuck = { version = "1", default-features = false, features = ["derive", "extern_crate_alloc", "min_const_generics"] }
 half = { version = "2", default-features = false, features = ["num-traits"] }
 hashbrown = { version = "0.16", default-features = false, features = ["default-hasher", "inline-more"] }

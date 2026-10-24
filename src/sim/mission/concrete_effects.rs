@@ -203,7 +203,7 @@ impl<'r> RepresentedConcreteMissionEffects<'r> {
             actor.category(),
             crate::map::entities::EntityCategory::Unit
                 | crate::map::entities::EntityCategory::Infantry
-        ) && sim.object_type(actor.type_ref(), rules).is_none()
+        ) && sim.entity_object_type(actor, rules).is_none()
         {
             return false;
         }
@@ -343,7 +343,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
                 .as_infantry()
                 .is_some_and(|leaf| matches!(leaf.doing(), 27..=30))
             && sim
-                .object_type(entity.type_ref(), self.rules)
+                .entity_object_type(entity, self.rules)
                 .is_some_and(|object| !object.deploy_fire)
         {
             return;
@@ -541,7 +541,7 @@ impl Simulation {
         // Production callers carry rules. A bare-storage fixture without the
         // type cannot establish rally admission and leaves its archive alone.
         let archives = interner
-            .object_type(actor.type_ref(), rules)
+            .object_type_in_category(actor.type_ref(), actor.category().into(), rules)
             .is_some_and(|kind| kind.has_rally_line() || kind.construction_yard);
         if archives {
             substrate
@@ -622,7 +622,7 @@ pub(crate) fn assign_target_stored(
         && (actor.temporal.has_link()
             || types.is_some_and(|(rules, interner)| {
                 interner
-                    .object_type(actor.type_ref(), rules)
+                    .object_type_in_category(actor.type_ref(), actor.category().into(), rules)
                     .and_then(|kind| {
                         crate::sim::combat::combat_weapon::get_weapon(
                             actor, kind, 0, entities, rules, interner,

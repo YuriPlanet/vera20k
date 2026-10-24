@@ -2875,6 +2875,11 @@ impl Simulation {
         crate::sim::world::GeneratedTechnoInitTable,
         crate::sim::world::GeneratedTechnoInitError,
     > {
+        if let Some(lighting) = trace.lighting {
+            self.session
+                .lighting_mut()
+                .install_generated_lighting(lighting);
+        }
         replay_generated_construction_trace_with_rng(
             &mut self.scenario_rng,
             &mut self.native_unique_ids,

@@ -91,10 +91,13 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         }
         definitions.push_str(&weapons);
     }
+    // The oracle supplies a zero-filled Type packet rather than constructing
+    // TechnoTypeClass. Match its flat Fly matrix instead of INI defaults.
     let ini = format!(
         "[General]\nFlightLevel=1500\n[AircraftTypes]\n0=TEST\n[VehicleTypes]\n0=TARGET\n1=DEST\n2=BLOCKER\n{registered}\
          [BuildingTypes]\n0=BUILDING\n[BUILDING]\nFoundation=1x1\n\
          [TEST]\nStrength=100\nSpeed=8\nAmmo=2\nLandable=yes\nLocomotor={{4A582746-9839-11D1-B709-00A024DDAFD1}}\n\
+         PitchAngle=0\nPitchSpeed=0\nRollAngle=0\n\
          Primary={}\n{}AirportBound={}\nCarryall={}\nSpawned={}\nOpenTopped={}\nFighter={}\n\
          [TARGET]\nStrength=100\n[DEST]\nStrength=100\n\
          [BLOCKER]\nStrength=100\nSpawned={}\nSpawns=TEST\nSpawnsNumber=1\n\

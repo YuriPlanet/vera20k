@@ -12,6 +12,11 @@ impl LivePublication<'_> {
     /// not invoke47D2B0: cached class/height and zone IDs stay intact.
     pub(super) fn write_raw_bridge_level(&mut self, cell: Cell, level: u8) -> Result<(), String> {
         let sim = &mut self.sim;
+        let before = sim.resolved_terrain.as_ref().and_then(|terrain| {
+            let Cell::Real(index) = cell else { return None };
+            let resolved = &terrain.cells()[index];
+            Some(((resolved.rx, resolved.ry), resolved.level))
+        });
         let terrain = sim
             .resolved_terrain
             .as_mut()
@@ -22,6 +27,9 @@ impl LivePublication<'_> {
         };
         let resolved = &terrain.cells()[index];
         let coord = (resolved.rx, resolved.ry);
+        if before.is_some_and(|(_, old)| old != level) {
+            sim.publish_cell_lighting_levels([coord]);
+        }
         self.retain_real_write(cell);
         let sim = &mut self.sim;
         crate::sim::world::navigation::NavigationCaches {
@@ -219,15 +227,22 @@ impl IsoTileFloodHost for LiveTileFlood<'_, '_> {
             .and_then(|grid| grid.finalized_map_cell(coord.0, coord.1))
             .ok_or("missing live bridge overlay cell")?;
         let terrain = sim.resolved_terrain.as_mut().unwrap();
-        let outcome = terrain
-            .recalc_resident_bridge_cell(
-                index,
-                overlay,
-                level_override,
-                registry,
-                sim.playfield_bounds,
-            )
-            .map_err(|error| error.to_string())?;
+        let previous_level = terrain.cells()[index].level;
+        let outcome = terrain.recalc_resident_bridge_cell(
+            index,
+            overlay,
+            level_override,
+            registry,
+            sim.playfield_bounds,
+        );
+        let level = terrain.cells()[index].level;
+        if level != previous_level {
+            sim.lighting_sources
+                .publish(crate::sim::light_sources::LightingEvent::CellLevels {
+                    cells: vec![(coord, level)],
+                });
+        }
+        let outcome = outcome.map_err(|error| error.to_string())?;
         // Original47D2B0 publishes Map+68 class/height and Map+70 height
         // before returning to the next ordered repair callback. Publication
         // must survive a later presentation failure and must not rebuild IDs.

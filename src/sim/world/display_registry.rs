@@ -138,7 +138,13 @@ impl GroundSortKeys for GroundSortView<'_> {
             // Only BuildingClass GetYSort reads type terms. Every sort pass
             // and Ground insert evaluates this; the handle hop never allocates.
             let object = (entity.category() == EntityCategory::Structure)
-                .then(|| self.interner.object_type(entity.type_ref(), self.rules))
+                .then(|| {
+                    self.interner.object_type_in_category(
+                        entity.type_ref(),
+                        entity.category().into(),
+                        self.rules,
+                    )
+                })
                 .flatten();
             let key = entity_sort_key(entity, object);
             return (key, KeptSortKey::Key(key));

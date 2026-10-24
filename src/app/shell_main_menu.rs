@@ -127,8 +127,19 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
     }
 
     fn refresh_detail(&mut self) {
-        // Rust-native display invalidation for native `0x004AE450`. The live
-        // presentation reads the projection above on the requested frame.
+        // Display4AE450 resamples synchronously, before the next Logic visit
+        // can copy a Cell's light into a grapple anim. This local operation
+        // never enters Simulation's replay/sync hash.
+        if let Some(runtime) = self.state.match_state.sim_runtime.as_ref()
+            && let Some(terrain) = runtime.simulation.resolved_terrain()
+        {
+            let presentation = &mut self.state.match_state.match_presentation;
+            presentation.lighting.refresh(
+                terrain,
+                &runtime.simulation,
+                presentation.in_game_options.detail_level,
+            );
+        }
         self.state.platform.window.request_redraw();
     }
 

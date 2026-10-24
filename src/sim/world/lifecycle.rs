@@ -1046,8 +1046,11 @@ impl Simulation {
         }
         let aircraft_type = (entity.category() == EntityCategory::Aircraft)
             .then(|| {
-                self.interner
-                    .object_type(entity.type_ref(), context.rules())
+                self.interner.object_type_in_category(
+                    entity.type_ref(),
+                    entity.category().into(),
+                    context.rules(),
+                )
             })
             .flatten();
         if aircraft_type.is_some_and(|object| object.missile_spawn) {
@@ -1182,7 +1185,9 @@ impl Simulation {
         let Some(fire_angle) = substrate
             .entities
             .get(stable_id)
-            .and_then(|entity| interner.object_type(entity.type_ref(), rules))
+            .and_then(|entity| {
+                interner.object_type_in_category(entity.type_ref(), entity.category().into(), rules)
+            })
             .map(|object| object.fire_angle)
         else {
             return;
@@ -1419,7 +1424,7 @@ impl Simulation {
         if high_flight
             && self.substrate.entities.get(stable_id).is_some_and(|e| {
                 self.interner
-                    .object_type(e.type_ref(), context.rules())
+                    .object_type_in_category(e.type_ref(), e.category().into(), context.rules())
                     .map_or(e.category() == EntityCategory::Aircraft, |o| {
                         o.considered_aircraft
                     })
@@ -1435,9 +1440,11 @@ impl Simulation {
                 entity.category(),
                 EntityCategory::Infantry | EntityCategory::Unit | EntityCategory::Aircraft
             )
-            && let Some(object) = self
-                .interner
-                .object_type(entity.type_ref(), context.rules())
+            && let Some(object) = self.interner.object_type_in_category(
+                entity.type_ref(),
+                entity.category().into(),
+                context.rules(),
+            )
         {
             entity
                 .navigation
@@ -1472,8 +1479,11 @@ impl Simulation {
                 .entities
                 .get(stable_id)
                 .and_then(|entity| {
-                    self.interner
-                        .object_type(entity.type_ref(), context.rules())
+                    self.interner.object_type_in_category(
+                        entity.type_ref(),
+                        entity.category().into(),
+                        context.rules(),
+                    )
                 })
                 .is_some_and(|object| object.small_visceroid || object.large_visceroid);
             let value = if visceroid {
@@ -1505,7 +1515,10 @@ impl Simulation {
             let type_id = self.interner.resolve(entity.type_ref());
             entity.retain_aircraft_unlimbo_control(context.rules(), type_id);
             if entity.category() == EntityCategory::Aircraft
-                && let Some(object) = context.rules().object(type_id)
+                && let Some(object) = context.rules().object_in_category(
+                    crate::rules::object_type::ObjectCategory::Aircraft,
+                    type_id,
+                )
             {
                 let height = crate::sim::movement::air_movement::current_fly_height(
                     entity,
@@ -1662,7 +1675,7 @@ impl Simulation {
             .get(stable_id)
             .filter(|entity| entity.category() == EntityCategory::Structure)
             .and_then(|entity| {
-                let object = self.object_type(entity.type_ref(), rules)?;
+                let object = self.entity_object_type(entity, rules)?;
                 Some((
                     entity.owner(),
                     crate::sim::production::factory_category_for_building(object)?,
@@ -6306,7 +6319,7 @@ impl Simulation {
                     entity.category(),
                     EntityCategory::Unit | EntityCategory::Infantry
                 )
-                .then(|| self.object_type(entity.type_ref(), rules))
+                .then(|| self.entity_object_type(entity, rules))
                 .flatten()
                 .filter(|object| {
                     crate::sim::production::can_build(

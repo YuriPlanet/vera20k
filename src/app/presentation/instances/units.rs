@@ -973,8 +973,8 @@ fn body_pose(
 /// Normal `FlyLocomotionClass::Draw_Matrix @ 0x004CF610`: its non-crash arm
 /// exits unless native `current speed > PitchSpeed`, then applies the existing
 /// SecondaryFacing yaw, optional type PitchAngle, and RollAngle selected by
-/// the FacingClass timer/direction helpers. PitchSpeed is compared in f64
-/// against the exact Q16.16 current-speed value; no f32 threshold cast.
+/// the FacingClass timer/direction helpers. Compare the two retained binary64
+/// values directly, including the strict boundary at PitchSpeed.
 fn normal_fly_pose(
     entity: &crate::sim::game_entity::GameEntity,
     band: EntityDrawBand,
@@ -991,17 +991,17 @@ fn normal_fly_pose(
         return None;
     }
     let speed = locomotor.current_fly_speed()?;
-    let speed = f64::from(speed.to_bits()) / 65_536.0;
+    let speed = f64::from_bits(speed.bits());
     if !(speed > object.fly_pitch_speed()) {
         return None;
     }
     let pitch = object.fly_pitch_angle_radians();
     let roll = match bank_direction {
         Some(crate::sim::movement::facing_class::RotationDirection::Positive) => {
-            object.fly_roll_angle_radians() as f32
+            object.fly_roll_angle_f32()
         }
         Some(crate::sim::movement::facing_class::RotationDirection::Negative) => {
-            -(object.fly_roll_angle_radians() as f32)
+            -object.fly_roll_angle_f32()
         }
         None => 0.0,
     };

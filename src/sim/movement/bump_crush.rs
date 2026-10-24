@@ -694,6 +694,9 @@ pub fn select_crush_victims(
                             )
                         },
                     )
+                    // UnitCrush741811..741819 skips Object+8D only here;
+                    // the falling occupant remains crushable for cell entry.
+                    && !victim.is_falling_down()
             })
         })
         .collect()
