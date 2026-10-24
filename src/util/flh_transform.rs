@@ -83,9 +83,9 @@ pub enum FlhBasis {
 ///    that `render/vxl_raster.rs` divides the same field by 8 for its own
 ///    purposes, and that scaling must not leak in here.
 ///
-/// The caller supplies Drive/Ship slopes and rocking through their shared
-/// matrix owner. Other locomotor tilt arms retain their existing flat basis
-/// limitation; this does not certify arbitrary Fly/Jumpjet firing poses.
+/// The caller supplies Drive/Ship slopes and rocking, and Fly yaw/pitch/bank,
+/// through the shared pre-camera matrix owners. Other locomotor tilt arms
+/// retain their existing flat basis limitation.
 pub fn native_flh_world_delta(
     forward: i32,
     lateral: i32,

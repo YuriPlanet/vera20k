@@ -2204,6 +2204,15 @@ impl ObjectType {
         f64::from_bits(self.roll_angle.bits())
     }
 
+    /// Fly4CF7C5..4CF801 stores RollAngle to binary32 with native chop before
+    /// table trig. Negating this stored finite value also preserves the
+    /// negative-turn arm's sign-before-store result.
+    pub fn fly_roll_angle_f32(&self) -> f32 {
+        use crate::util::native_x87::X87Chop53 as X;
+        let angle = X::load_f64(self.roll_angle).expect("finite Fly RollAngle");
+        f32::from_bits(X::store_f32(angle).expect("finite Fly angle store").bits())
+    }
+
     /// Existing typed PitchAngle value shared with Fly approach and normal
     /// Fly rendering. Rendering converts only at the f32 matrix boundary.
     pub fn fly_pitch_angle_radians(&self) -> f32 {

@@ -998,10 +998,10 @@ fn normal_fly_pose(
     let pitch = object.fly_pitch_angle_radians();
     let roll = match bank_direction {
         Some(crate::sim::movement::facing_class::RotationDirection::Positive) => {
-            object.fly_roll_angle_radians() as f32
+            object.fly_roll_angle_f32()
         }
         Some(crate::sim::movement::facing_class::RotationDirection::Negative) => {
-            -(object.fly_roll_angle_radians() as f32)
+            -object.fly_roll_angle_f32()
         }
         None => 0.0,
     };
