@@ -587,7 +587,8 @@ impl Simulation {
             let actor = self.substrate.entities.get(id).unwrap();
             if jumpjet_type
                 || actor.mission.current().raw() != 1
-                || actor.navigation.nav_com() != Some(requested)
+                // Infantry51ABC4 compares the retained NavCom pointer.
+                || !actor.navigation.nav_com().is_some_and(|nav| nav.same_pointer(requested, self.resolved_terrain.as_ref()))
             {
                 self.infantry_stop_driver(id, rules, registry, frame_effects)?;
             }
@@ -602,7 +603,8 @@ impl Simulation {
             .ok_or("destination lost infantry after Stop_Driver")?;
         if human
             && type_allows_up
-            && actor.navigation.nav_com() == Some(requested)
+            // Infantry51ABEA compares the same allocation before DoAction.
+            && actor.navigation.nav_com().is_some_and(|nav| nav.same_pointer(requested, self.resolved_terrain.as_ref()))
             && actor
                 .infantry
                 .as_ref()

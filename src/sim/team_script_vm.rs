@@ -506,9 +506,10 @@ pub struct TeamMember {
 
 /// An `AbstractClass*` a team keeps: its centre (`+0x34`), mission target
 /// (`+0x3C`) or move target (`+0x40`). A cell is the `CellClass` at those
-/// coordinates; natively an out-of-map lookup gives the shared dummy cell,
-/// whose coordinates a later miss restamps (not represented: no ported path
-/// takes a team off the map).
+/// coordinates. Invalid lookup tokens name the shared Dummy allocation;
+/// its live coordinate can change after another map miss. Native pointer
+/// comparisons use NavTargetRef::same_pointer; GetCoords uses the retained
+/// target-coordinate owner rather than coordinate equality or another lookup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TeamTarget {
     Cell { x: i16, y: i16 },
@@ -1198,14 +1199,8 @@ impl TeamScriptVm {
         //70D562/70D577 compare Cell pointers too: fixed-stride aliases and
         //different requests for the shared Dummy identify the same allocation.
         let matches = |held: TeamTarget| {
-            if let (TeamTarget::Cell { .. }, TeamTarget::Cell { .. }, Some(terrain)) =
-                (held, target, terrain)
-            {
-                held.target_kind().cell_identity(terrain)
-                    == target.target_kind().cell_identity(terrain)
-            } else {
-                held == target
-            }
+            crate::sim::components::NavTargetRef::from(held.target_kind())
+                .same_pointer(target.target_kind().into(), terrain)
         };
         for team in self.teams.values_mut().rev() {
             if team.mission_target.is_some_and(matches) {
@@ -1317,6 +1312,24 @@ impl TeamScriptState {
 }
 
 impl TeamScriptVm {
+    /// World-hash retention query. Team+34/+3C/+40 keep Abstract pointers;
+    /// later CalcCenter/CoordinateMove6EAEE0/6EBAD0 reads their live Cell+48.
+    /// Dummy bytes remain with their process/map owner, not in Team state.
+    pub(crate) fn retains_dummy_cell(
+        &self,
+        terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
+    ) -> bool {
+        self.teams.values().any(|team| {
+            [team.zone, team.mission_target, team.focus]
+                .into_iter()
+                .flatten()
+                .any(|target| {
+                    target.target_kind().cell_identity(terrain)
+                        == Some(crate::map::cell_index::NativeCellIdentity::Dummy)
+                })
+        })
+    }
+
     /// Folds each team's creation frame and forming byte, the AI triggers
     /// whose track record left its registered state (tagged), and each team's
     /// recruitment state once it leaves its constructor values plus the
@@ -1602,13 +1615,15 @@ pub(crate) fn join_team_for_test(
 #[cfg(test)]
 mod firesale_retail_tests;
 #[cfg(test)]
+mod group_recruitment_tests;
+#[cfg(test)]
 mod oracle_tests;
+#[cfg(test)]
+mod packed_cell_tests;
 #[cfg(test)]
 mod path_threat_input_tests;
 #[cfg(test)]
 mod recruit_oracle_tests;
-#[cfg(test)]
-mod group_recruitment_tests;
 #[cfg(test)]
 pub(crate) mod reinforcements_tests;
 

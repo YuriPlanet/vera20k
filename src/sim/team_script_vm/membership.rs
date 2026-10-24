@@ -511,15 +511,18 @@ impl Simulation {
             .team_type_id
             .and_then(|id| vm.team_type_ini.get(&id))
             .map_or(-1, |metadata| metadata.waypoint);
-        let origin = if waypoint >= 0 {
-            self.session
-                .waypoint_cell(waypoint)
-                .map_or([0, 0], |(x, y)| {
-                    self.team_target_xy(super::TeamTarget::Cell { x, y })
-                })
-        } else {
-            team.zone.map_or([0, 0], |zone| self.team_target_xy(zone))
-        };
+        // Recruit6EAAAD first queries the retained zone. A nonempty packed
+        // waypoint then overrides it with literal XY/Z0 (6EAAFE..6EAB20),
+        // without Map lookup or terrain height; Empty keeps the zone.
+        let mut origin = team.zone.map_or([0, 0], |zone| self.team_target_xy(zone));
+        if let Some(cell) = (waypoint >= 0)
+            .then(|| self.session.waypoint_cell(waypoint))
+            .flatten()
+            && cell != (0, 0)
+        {
+            let center = crate::sim::cell_kernel::cell_center(cell.into(), 0);
+            origin = [center.x, center.y];
+        }
         let entries = vm.task_force_entries(team);
         let Some(&entry) = entries.get(slot) else {
             return false;

@@ -404,10 +404,20 @@ impl Simulation {
         let (zone, closest) = match center_of(&samples, focus) {
             None => (None, None),
             Some((mean, closest)) => {
-                let cell = TeamTarget::Cell {
-                    x: (mean[0] / 256) as i16,
-                    y: (mean[1] / 256) as i16,
-                };
+                // CalcCenter6EB331 selects Map565730's Cell before CanEnter.
+                let (x, y) = self.resolved_terrain.as_ref().map_or(
+                    ((mean[0] / 256) as i16, (mean[1] / 256) as i16),
+                    |terrain| {
+                        let cells =
+                            crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+                        cells.coord(cells.lookup_world(mean[0], mean[1]))
+                    },
+                );
+                let cell = TeamTarget::Cell { x, y };
+                //6EB33C publishes the pointer before CanEnter's map queries.
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.zone = Some(cell);
+                }
                 let closest = closest.or(head);
                 let zone = match closest {
                     Some(member)
@@ -791,24 +801,16 @@ impl Simulation {
     /// ([`object_get_coords`]): a building's foundation centre
     /// (`0x00447AC0`), any other object's Location.
     pub(super) fn team_target_coord(&self, target: TeamTarget) -> Option<DriveCoord> {
-        match target {
-            TeamTarget::Cell { x, y } => Some(crate::sim::movement::target_cell_coord(
-                x as u16,
-                y as u16,
-                self.resolved_terrain
-                    .as_ref()
-                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
-                    .as_ref(),
-            )),
-            TeamTarget::Object(id) => crate::sim::movement::ground_pose::target_get_coords(
-                crate::sim::combat::TargetKind::Entity(id),
-                self,
-                self.resolved_terrain
-                    .as_ref()
-                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
-                    .as_ref(),
-            ),
-        }
+        // Abstract+48 reads the retained pointer. The coordinate owner also
+        // keeps a Dummy's live coordinate instead of performing a new lookup.
+        crate::sim::movement::ground_pose::target_get_coords(
+            target.target_kind(),
+            self,
+            self.resolved_terrain
+                .as_ref()
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
+                .as_ref(),
+        )
     }
 
     /// A team target's XY (0, 0 for a missing object).

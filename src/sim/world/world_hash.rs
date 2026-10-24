@@ -768,12 +768,16 @@ impl Simulation {
         shared_dummy_overlay.hash(hasher);
         if bridge_keeps_dummy
             || cells_or_entities_retain_dummy
+            || self
+                .resolved_terrain
+                .as_ref()
+                .is_some_and(|terrain| self.team_script_vm.retains_dummy_cell(terrain))
             || self.projectiles.iter().any(|(_, projectile)| {
                 projectile.target() == crate::sim::projectile::ProjectileTarget::DummyCell
             })
         {
-            // Retained Cell pointers make the live coordinate affect
-            // future range, approach and projectile behavior.
+            // Retained Cell pointers make the live coordinate affect future
+            // range, Team orders, approach and projectile behavior.
             b"shared-cell-dummy-target-v3".hash(hasher);
             shared_dummy.coord.hash(hasher);
         }
