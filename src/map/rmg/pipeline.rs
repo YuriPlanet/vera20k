@@ -683,6 +683,7 @@ mod tests {
     fn production_trace_orders_huts_before_mixed_tech_and_binds_final_entities() {
         let expected = ConstructionSnapshot {
             trace: RmgConstructionTrace {
+                lighting: None,
                 events: vec![
                     crate::map::rmg::RmgConstructionEvent {
                         ordinal: 0,

@@ -27,6 +27,9 @@ pub struct RmgSettings {
     pub level_light: Vec<i32>,
     pub temperate_ambient: Vec<i32>,
     pub snow_ambient: Vec<i32>,
+    /// Red, green, blue vectors, indexed by time of day.
+    pub temperate_rgb: [Vec<i32>; 3],
+    pub snow_rgb: [Vec<i32>; 3],
     /// Indexed by map type.
     pub vegetation_min: [i32; MAP_TYPE_BUCKETS],
     pub vegetation_max: [i32; MAP_TYPE_BUCKETS],
@@ -41,6 +44,8 @@ impl Default for RmgSettings {
             level_light: Vec::new(),
             temperate_ambient: Vec::new(),
             snow_ambient: Vec::new(),
+            temperate_rgb: Default::default(),
+            snow_rgb: Default::default(),
             vegetation_min: [0; MAP_TYPE_BUCKETS],
             vegetation_max: [0; MAP_TYPE_BUCKETS],
         }
@@ -91,6 +96,26 @@ impl RmgSettings {
         )))
     }
 
+    /// InitMap's common tail (0059A529..0059A5EC) follows synthetic Full_Init.
+    /// It overwrites configured ambient, raw Level and RGB, not current/target
+    /// ambient, Ground or the alternate profiles.
+    pub(super) fn generated_lighting_override(
+        &self,
+        options: &RmgOptions,
+    ) -> Option<crate::map::construction_trace::GeneratedLightingOverride> {
+        let time = usize::try_from(options.time).ok()?;
+        let (ambient, rgb) = if options.theater == 0 {
+            (&self.temperate_ambient, &self.temperate_rgb)
+        } else {
+            (&self.snow_ambient, &self.snow_rgb)
+        };
+        Some(crate::map::construction_trace::GeneratedLightingOverride {
+            ambient_percent: *ambient.get(time)?,
+            rgb_percent: [*rgb[0].get(time)?, *rgb[1].get(time)?, *rgb[2].get(time)?],
+            level_units: *self.level_light.get(time)?,
+        })
+    }
+
     /// `[General]` through ReadInt over each field and the IntVector reader
     /// (`0x00475D70`) for the lists (`0x005982D0..0x0059877A`).
     pub(super) fn apply(&mut self, ini: &IniFile) {
@@ -109,6 +134,14 @@ impl RmgSettings {
         self.snow_ambient = general
             .read_int_list("SnowAmbientLight")
             .unwrap_or_default();
+        self.temperate_rgb = [
+            "TemperateAmbientRed",
+            "TemperateAmbientGreen",
+            "TemperateAmbientBlue",
+        ]
+        .map(|key| general.read_int_list(key).unwrap_or_default());
+        self.snow_rgb = ["SnowAmbientRed", "SnowAmbientGreen", "SnowAmbientBlue"]
+            .map(|key| general.read_int_list(key).unwrap_or_default());
         if let Some(value) = int_list::<MAP_TYPE_BUCKETS>(general, "RMGVegetationMinimums") {
             self.vegetation_min = value;
         }
