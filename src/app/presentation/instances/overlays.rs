@@ -451,11 +451,6 @@ pub(crate) fn build_display_effect_instances(
         let Ok(frame) = u16::try_from(anim.runtime().current_frame.wrapping_add(start)) else {
             continue;
         };
-        let tint = if is_parachute {
-            [1.0; 3]
-        } else {
-            input.lighting.anim_tint_at((rx, ry), config)
-        };
         let remap_color =
             crate::render::sprite_atlas::anim_remap_color(anim, sim.interner(), input.house_colors);
         let palette_light = crate::app::presentation::lighting::anim_palette_light(
@@ -484,6 +479,18 @@ pub(crate) fn build_display_effect_instances(
             house_color: remap_color.unwrap_or(HouseColorIndex(0)),
         };
         let entry = atlas.get(&key);
+        // DrawIt422CA0's D4 instance Convert carries its palette/FC into
+        // the ordinary native blitter. Sparse FC absence means ctor1000;
+        // it is not a reason to choose the compatibility material.
+        let instance_scheme = remap_color.is_some()
+            && !anim.use_cell_drawer()
+            && entry.is_some_and(|entry| entry.source_palette != 0)
+            && super::anim_draw::ordinary_anim_type(type_name, config);
+        let tint = if is_parachute || instance_scheme {
+            [1.0; 3]
+        } else {
+            input.lighting.anim_tint_at((rx, ry), config)
+        };
         let Some(flags) = anim_instance_flags(
             config,
             anim.draw_flags(),
@@ -500,7 +507,7 @@ pub(crate) fn build_display_effect_instances(
         // Ordinary DrawIt422CA0 -> 4AED70 carries Convert's selector into
         // the packed RGB565 blitter, rather than alpha-blending the source.
         // Original full draw controls: spatial_oracle/anim_translucency.
-        let (alpha, draw_state) = if remap_color.is_none()
+        let (alpha, draw_state) = if (remap_color.is_none() || instance_scheme)
             && super::anim_draw::ordinary_anim_type(type_name, config)
         {
             (

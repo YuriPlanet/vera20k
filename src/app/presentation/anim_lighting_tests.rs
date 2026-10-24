@@ -162,7 +162,7 @@ fn save_projects_pending_anim_reads_without_consuming_live_history() {
     // while ordinary publication still owns the live transaction afterward.
     let before = (sim.state_hash(), sim.rng_state());
     let expected = lights.grid().cell_light_at(cell).unwrap().top_scalar;
-    let saved = lights.clone().saved_anim_intensities(&sim);
+    let (_, saved) = lights.clone().saved_at(&sim);
     assert_eq!(saved, [(id, expected)]);
     assert!(lights.anim_intensities().is_empty());
     assert_eq!(sim.lighting_sources().pending().len(), events.len());

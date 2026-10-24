@@ -8363,6 +8363,27 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
         expected_rng.logical_state()
     );
     assert_eq!(sim.dynamic_terrain_cells.len(), 20);
+    let published = sim
+        .lighting_sources
+        .pending()
+        .iter()
+        .find_map(|event| match event {
+            crate::sim::light_sources::LightingEvent::CellLevels { cells } => Some(cells),
+            _ => None,
+        })
+        .expect("the actual cliff stamp publishes Cell+11B before later callbacks");
+    assert!(!published.is_empty());
+    for &(coord, level) in published {
+        assert_eq!(
+            sim.resolved_terrain
+                .as_ref()
+                .unwrap()
+                .cell(coord.0, coord.1)
+                .unwrap()
+                .level,
+            level
+        );
+    }
     // Check before any later frame repair: native cliff collapse rebuilds
     // connectivity synchronously with the retained global bridge vector.
     assert_eq!(
