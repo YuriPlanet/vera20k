@@ -1,17 +1,23 @@
-# NPatch placeholder
+# Optional NPatch compatibility
 
 NPatch is a long-standing binary patch for Yuri's Revenge that predates the DLL-based Ares and
-Phobos extensions. VERA20K has **no NPatch behavior yet**: this page reserves the capability so
-chains can name it instead of inventing a second mechanism later.
+Phobos extensions. VERA20K implements its supported behavior in Rust; it does not load the
+NPatch executable. Enable the capability explicitly:
 
 ```sh
 cargo run --release --bin vera20k --features npatch
 ```
 
-The feature compiles to `rules::NPATCH_ENABLED`, a placeholder that no reader consults. A build
-without it keeps every stock path, exactly like a build without `ares` or `phobos`. When the first
-NPatch chain lands it reads its INI keys under `#[cfg(feature = "npatch")]` and states its native
-addresses like every other chain.
+A build without the capability ignores NPatch keys and keeps stock behavior, just like a build
+without `ares` or `phobos`.
+
+The AI factory switches are `[General] DisableParallelAIQueues=` and the per-type
+`DisableAIParallelProduction=`. Both default to no. The global switch comes from NPSE 2.0's
+`RulesClass::ReadGeneral` hook (`0xC302E9..0xC3031A`) and its `Factory_AI` fetch hook
+(`0x45033C`, cave `0xC2F07C`). The per-type behavior cites an NPSE manual
+(section 1.4.11.4) that has not been independently located; its type/category scope and the
+queue release semantics remain unverified. It is not a reader found in the cited executable.
+The start gate uses existing live factory state rather than a second set of production counters.
 
 ## Cross-extension compatibility
 
