@@ -8632,6 +8632,9 @@ mod slave_manager_oracle_tests;
 mod slave_manager_cycle_tests;
 
 #[cfg(test)]
+mod slave_manager_reentrancy_tests;
+
+#[cfg(test)]
 #[path = "building_sale_oracle_tests.rs"]
 mod building_sale_oracle_tests;
 

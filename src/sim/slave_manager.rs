@@ -1613,11 +1613,9 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let Some(manager) = self
-            .substrate
-            .entities
-            .get_mut(master)
-            .and_then(|entity| entity.slave_manager.take())
+        let Some(count) = self
+            .slave_manager(master)
+            .map(|manager| manager.nodes.len())
         else {
             return;
         };
@@ -1627,7 +1625,17 @@ impl Simulation {
             .map(|entity| entity.owner());
         let new_house = killer_house.or(house).or(civilian);
         let mut first_freed = None;
-        for slave in manager.nodes.iter().rev().filter_map(|node| node.slave) {
+        // 6B0B3C retains the initial count; 6B0B4C..56 rereads each live
+        // node. Keep Techno+2D8 attached so a synchronous slave death in an
+        // owner-change Tag callback can RemoveSlave from a later node.
+        for index in (0..count).rev() {
+            let Some(slave) = self
+                .slave_manager(master)
+                .and_then(|manager| manager.nodes.get(index))
+                .and_then(|node| node.slave)
+            else {
+                continue;
+            };
             let Some(entity) = self.substrate.entities.get_mut(slave) else {
                 continue;
             };
@@ -1650,6 +1658,10 @@ impl Simulation {
         {
             self.sound_events
                 .emit(SimSoundEvent::voc_at(sound, &entity.position));
+        }
+        // 6B0C67 clears the manager's owner only after callbacks and sound.
+        if let Some(entity) = self.substrate.entities.get_mut(master) {
+            entity.slave_manager = None;
         }
     }
 
