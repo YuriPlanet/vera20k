@@ -23,10 +23,6 @@
 //!   Effect: the team idles on that action for good, keeping its
 //!   members and its TeamType's `Max=` slot, and nothing else sends those
 //!   units out.
-//! - `Coordinate_Attack` keeps a cell target that only a terrain object
-//!   blocks: a team target holds no terrain object. Trigger: a cell target,
-//!   which no ported caller gives (`Greatest_Threat`'s wall fallback is not
-//!   ported). Effect: the members fire at the cell instead of the tree.
 //! - `Coordinate_Attack` orders an unloading unit to attack without asking
 //!   Unit vt+0x4E4 (`0x00736D50`), which keeps it unloading when its type is
 //!   `DeployToFire=`, or when a computer unit's `DeploysInto=` building is
@@ -38,12 +34,6 @@
 //!   natively, as in VERA, those actions take them off Unload in the air.
 //!   Trigger: a member of a modded type deploying when its team attacks.
 //!   Effect: it stops deploying and attacks.
-//! - Non-aircraft ammunition (`+0x2FC`) retains its constructor and chrono
-//!   reinforcement writes; ordinary weapon-fire debits remain unported.
-//!   Actions 0 and 46 therefore do not find an ordinary finite-ammo team spent
-//!   (`team_out_of_ammo`). Trigger: a team of units with `Ammo=` above 0.
-//!   Effect: the team keeps attacking where native would move on once all
-//!   are empty.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectCategory;
@@ -2123,8 +2113,9 @@ impl Simulation {
     /// team clears it and finishes; otherwise the existing CoordinateAttack
     /// owner orders the members. No RNG or timer write in this handler.
     /// Source: original6EC9A0..6ECA64 and6E9605..6E961D in Steam gamemd.exe.
-    /// Terrain targets and retained Dummy identity remain the existing
-    /// TeamTarget residuals; ALL01 Nuke_Repair's waypoint364 names a Building.
+    /// Cell47C5A0's Terrain result retains the same Object identity as a
+    /// Techno, so PointerExpired6EAE97..6EAEA4 clears it after destruction.
+    /// Retained Dummy Cell identity remains a separate TeamTarget residual.
     fn team_action_attack_waypoint(
         &mut self,
         team_id: u64,
@@ -2138,8 +2129,10 @@ impl Simulation {
             let target =
                 self.team_waypoint_blocker(waypoint)
                     .map(|(target, blocker)| match blocker {
-                        Some(BlockingObject::Entity(object)) => TeamTarget::Object(object),
-                        Some(BlockingObject::Terrain(_)) | None => target,
+                        Some(BlockingObject::Entity(object) | BlockingObject::Terrain(object)) => {
+                            TeamTarget::Object(object)
+                        }
+                        None => target,
                     });
             self.team_assign_mission_target(team_id, target, rules, registry, frame_effects);
         }
@@ -2507,14 +2500,15 @@ impl Simulation {
         let mut focus = team.focus;
         let has_members = !team.members.is_empty();
         let leader = self.team_leader(team_id, rules);
-        // `0x006EB51A..0x006EB593`; a terrain object is not a team target
-        // (module residual).
+        // CoordinateAttack6EB51A..6EB593 retains any Cell47C5A0 Object,
+        // including Terrain. Shared Object identity lets the existing
+        // PointerExpired6EAE97..6EAEA4 clear it. Source: gamemd instructions.
         if let Some(TeamTarget::Cell { x, y }) = focus
             && has_members
             && leader
                 .and_then(|leader| self.substrate.entities.get(leader))
                 .is_some_and(|entity| entity.category() != EntityCategory::Aircraft)
-            && let Some(BlockingObject::Entity(object)) =
+            && let Some(BlockingObject::Entity(object) | BlockingObject::Terrain(object)) =
                 self.find_blocking_object((x as u16, y as u16), MovementLayer::Ground)
             && let Some(team) = self.team_script_vm.teams.get_mut(&team_id)
         {

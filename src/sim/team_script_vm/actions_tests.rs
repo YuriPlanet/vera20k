@@ -6,11 +6,193 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::combat::TargetKind;
 use crate::sim::house_state::HouseState;
+use crate::sim::runtime::{SimResources, SimRuntime};
 use crate::sim::team_script_vm::{
     TeamScriptAction, TeamScriptDefinition, TeamScriptVm, TeamTaskForceDefinition,
     TeamTaskForceEntry, TeamTypeDefinition, member_type_identity,
 };
 use crate::util::save_codec;
+
+fn terrain_attack_scene() -> Option<(SimRuntime, u64, u64, u64)> {
+    use crate::map::{overlay, waypoints};
+    use crate::rules::process_owner::NativeScenarioRulesPrefix;
+    use crate::rules::team_ai_ini::TeamAiIniRegistry;
+    use crate::sim::campaign_carry_over::CampaignCarryOver;
+    use crate::sim::scenario_bootstrap as bootstrap;
+    use crate::sim::terrain_spawn::construct_terrain_objects;
+    let (_, mut assets) = crate::rules::retail_ini_fixture::retail_assets()?;
+    // Both positions are inside the native Size32 diamond used by Bullet AI.
+    let map = IniFile::from_str(
+        "[Basic]\nNewINIFormat=4\nPlayer=Americans\n\
+         [Houses]\n0=Russians\n1=Americans\n\
+         [Russians]\nCountry=Russians\n[Americans]\nCountry=Americans\n\
+         [Waypoints]\n0=20020\n1=20025\n\
+         [Terrain]\n20025=TREE01\n\
+         [TeamTypes]\n0=TREE-TEAM\n[TREE-TEAM]\nScript=TREE-SCRIPT\nTaskForce=TREE-FORCE\n\
+         Waypoint=A\nRecruiter=yes\nGroup=-1\nMax=1\n\
+         [ScriptTypes]\n0=TREE-SCRIPT\n[TREE-SCRIPT]\n0=1,1\n1=2,0\n\
+         [TaskForces]\n0=TREE-FORCE\n[TREE-FORCE]\nGroup=-1\n0=1,HTNK\n",
+    );
+    let (mut rules, _, _, _) = crate::rules::retail_ini_fixture::retail_rules_owner(&assets)
+        .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &map)
+        .unwrap()
+        .into_parts();
+    let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+    let roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
+    rules.bind_anim_class_assets(&roots, &assets, theater.extension, "TEMPERATE");
+    rules.bind_effect_assets(&assets, theater.extension, "TEMPERATE");
+    rules.bind_terrain_assets(
+        &assets,
+        theater.extension,
+        crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
+    );
+    let mut sim = Simulation::with_seed(0x6EC9A0);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    sim.session
+        .initialize_campaign_startup(1, 1, None, 0, CampaignCarryOver::CLEARED)
+        .unwrap();
+    sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    let roster = crate::map::houses::parse_house_roster(&map, &rules.color_schemes, Some(&rules));
+    bootstrap::initialize_map_roster_houses(&mut sim, &roster, &rules, Some(&map));
+    bootstrap::initialize_campaign_current_house(&mut sim.session, &mut sim.houses, &map);
+    sim.session
+        .install_waypoints(&waypoints::parse_waypoints(&map));
+    construct_terrain_objects(
+        &mut sim,
+        &overlay::parse_terrain_objects(&map, 4),
+        &rules,
+        false,
+    );
+    let tree = *sim.terrain_objects.objects().keys().next().unwrap();
+    let member = sim
+        .spawn_object("HTNK", "Russians", 20, 20, 0, &rules)
+        .unwrap();
+    let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map, false);
+    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    let owner = sim.interner.get("Russians").unwrap();
+    let ty = sim.interner.get("TREE-TEAM").unwrap();
+    let team = sim.create_team(ty, Some(owner), &rules).unwrap();
+    sim.session.publish_started();
+    let mut runtime = SimRuntime {
+        simulation: sim,
+        resources: SimResources::new(rules),
+    };
+    // Formation, recruitment and dispatch use the ordinary Team AI caller.
+    for _ in 0..30 {
+        runtime.advance_frame_for_tooling(&[], 22).unwrap();
+        let state = runtime.simulation.team_script_vm.team(team).unwrap();
+        if state.mission_target.is_some() {
+            break;
+        }
+    }
+    assert_eq!(
+        runtime
+            .simulation
+            .team_script_vm
+            .team(team)
+            .unwrap()
+            .members()
+            .collect::<Vec<_>>(),
+        [member]
+    );
+    Some((runtime, team, member, tree))
+}
+
+#[test]
+fn script1_tree_identity_survives_reload_then_expiry_advances_the_script() {
+    use crate::sim::snapshot::GameSnapshot;
+    let Some((mut runtime, team, member, tree)) = terrain_attack_scene() else {
+        return;
+    };
+    let sim = &runtime.simulation;
+    let rules = &runtime.resources.rules;
+    let overlays = &runtime.resources.overlay_registry;
+    assert_eq!(
+        sim.team_script_vm.team(team).unwrap().mission_target,
+        Some(TeamTarget::Object(tree))
+    );
+    assert_eq!(
+        sim.entities().get(member).unwrap().attack_target.target(),
+        Some(TargetKind::Entity(tree))
+    );
+    let bytes = GameSnapshot::save_validated(&sim, 0, 0, "team-tree", 0);
+    let mut loaded = GameSnapshot::load_validated(&bytes, 0, 0, sim.session.map_name())
+        .unwrap()
+        .sim;
+    loaded.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&sim));
+    loaded.restore_after_snapshot_load().unwrap();
+    loaded.rebuild_caches_after_load(
+        sim.resolved_terrain().unwrap().clone(),
+        sim.terrain_speed_config().clone(),
+        &rules,
+    );
+    loaded
+        .restore_map_authority_after_snapshot_load(&rules, &overlays, None)
+        .unwrap();
+    loaded.resolve_type_handles(&rules);
+    assert_eq!(
+        loaded.team_script_vm.team(team).unwrap().mission_target,
+        Some(TeamTarget::Object(tree))
+    );
+    runtime.simulation = loaded;
+    for _ in 0..2_000 {
+        runtime.advance_frame_for_tooling(&[], 22).unwrap();
+        if runtime
+            .simulation
+            .team_script_vm
+            .team(team)
+            .unwrap()
+            .cursor()
+            == 1
+        {
+            break;
+        }
+    }
+    let loaded = &runtime.simulation;
+    assert!(
+        !loaded.terrain_objects.objects().contains_key(&tree),
+        "ordinary tank fire removes the tree"
+    );
+    let state = loaded.team_script_vm.team(team).unwrap();
+    assert_eq!((state.mission_target, state.focus), (None, None));
+    assert_eq!(state.cursor(), 1, "pointer expiry lets Script1 finish");
+    let actor = loaded.entities().get(member).unwrap();
+    assert_eq!(actor.attack_target.target(), None);
+}
+
+#[test]
+fn coordinate_attack_resolves_a_cell_focus_to_its_terrain_object() {
+    let Some((mut runtime, team, member, tree)) = terrain_attack_scene() else {
+        return;
+    };
+    let sim = &mut runtime.simulation;
+    let rules = &runtime.resources.rules;
+    let overlays = &runtime.resources.overlay_registry;
+    sim.team_assign_mission_target(
+        team,
+        Some(TeamTarget::Cell { x: 25, y: 20 }),
+        &rules,
+        Some(&overlays),
+        FrameEffects::default(),
+    );
+    let rng = sim.rng_state();
+    sim.team_coordinate_attack(team, &rules, Some(&overlays), FrameEffects::default());
+    assert_eq!(
+        sim.team_script_vm.team(team).unwrap().focus,
+        Some(TeamTarget::Object(tree))
+    );
+    assert_eq!(
+        sim.team_script_vm.team(team).unwrap().mission_target,
+        Some(TeamTarget::Cell { x: 25, y: 20 })
+    );
+    assert_eq!(
+        sim.entities().get(member).unwrap().attack_target.target(),
+        Some(TargetKind::Entity(tree))
+    );
+    assert_eq!(sim.rng_state(), rng);
+}
 
 #[test]
 fn wall_sale_detach_clears_only_matching_team_target_fields() {
