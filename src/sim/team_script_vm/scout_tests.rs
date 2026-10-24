@@ -7,7 +7,7 @@ use crate::sim::world::UninitContext;
 
 #[test]
 fn recruited_scout_keeps_its_selected_shrouded_cell_after_reload_then_finishes() {
-    let Some((mut scene, team, member)) = scene("0=22,777", true, |scene| {
+    let Some((mut scene, team, member)) = scene("0=22,777", "E2", true, |scene| {
         let rules = &scene.runtime.resources.rules;
         // A real Action17 prior exposes the starting area on the player's
         // map, so scouting must select farther than ordinary Team Stray.
@@ -78,7 +78,7 @@ fn recruited_scout_keeps_its_selected_shrouded_cell_after_reload_then_finishes()
 
 #[test]
 fn a_revealed_player_map_returns_the_scout_to_its_center_without_a_search_draw() {
-    let Some((mut scene, team, member)) = scene("0=22,-1", false, |_| {}) else {
+    let Some((mut scene, team, member)) = scene("0=22,-1", "E2", false, |_| {}) else {
         return;
     };
     let sim = &mut scene.runtime.simulation;
@@ -122,7 +122,10 @@ fn a_revealed_player_map_returns_the_scout_to_its_center_without_a_search_draw()
     );
 }
 
-pub(super) fn campaign_scene(script: &str) -> Option<(SimRuntime, u64, InternedId)> {
+pub(super) fn campaign_scene(
+    script: &str,
+    member_type: &str,
+) -> Option<(SimRuntime, u64, InternedId)> {
     use crate::map::map_file::MapFile;
     use crate::rules::process_owner::NativeScenarioRulesPrefix;
     use crate::rules::team_ai_ini::TeamAiIniRegistry;
@@ -137,10 +140,11 @@ pub(super) fn campaign_scene(script: &str) -> Option<(SimRuntime, u64, InternedI
         [Map]\nTheater=TEMPERATE\nSize=0,0,32,32\nLocalSize=2,2,28,24\n\
         [IsoMapPack5]\n1=CAAEABUAAAAAEQAA\n\
         [Houses]\n0=Russians\n1=Americans\n[Russians]\nCountry=Russians\n[Americans]\nCountry=Americans\n\
-        [Infantry]\nSCOUT=Russians,E2,256,20,20,0,Guard,0,None,0,-1,0,1,1\n\
+        [Waypoints]\n1=20025\n\
+        [Infantry]\nSCOUT=Russians,{member_type},256,20,20,0,Guard,0,None,0,-1,0,1,1\n\
         [TeamTypes]\n0=SCOUT-TEAM\n[SCOUT-TEAM]\nHouse=Russians\nScript=SCOUT-SCRIPT\nTaskForce=SCOUT-FORCE\nGroup=-1\nMax=1\n\
         [ScriptTypes]\n0=SCOUT-SCRIPT\n[SCOUT-SCRIPT]\n{script}\n\
-        [TaskForces]\n0=SCOUT-FORCE\n[SCOUT-FORCE]\nGroup=-1\n0=1,E2\n\
+        [TaskForces]\n0=SCOUT-FORCE\n[SCOUT-FORCE]\nGroup=-1\n0=1,{member_type}\n\
         [Triggers]\nSCOUT-TRIGGER=Russians,<none>,Scout,0,1,1,1,0\n\
         [Events]\nSCOUT-TRIGGER=1,13,0,1\n[Actions]\nSCOUT-TRIGGER=1,4,1,SCOUT-TEAM,0,0,0,0,A\n\
         [Tags]\nSCOUT-TAG=0,Scout,SCOUT-TRIGGER\n").as_bytes()).unwrap();
@@ -168,6 +172,7 @@ pub(super) fn campaign_scene(script: &str) -> Option<(SimRuntime, u64, InternedI
     bootstrap::initialize_campaign_current_house(&mut sim.session, &mut sim.houses, &map.ini);
     sim.install_team_ai_registry(&teams, &rules).unwrap();
     sim.initialize_trigger_definitions(&map, &teams, None, None);
+    sim.session.install_waypoints(&map.waypoints);
     assert_eq!(sim.spawn_from_map(&map.entities, Some(&rules)), 1);
     // Full_Init's Fill registers unattached timed Tags after the map actors;
     // definitions alone do not put Event13 into Logic's update list.
@@ -186,7 +191,7 @@ pub(super) fn campaign_scene(script: &str) -> Option<(SimRuntime, u64, InternedI
 
 #[test]
 fn campaign_startup_runs_an_authored_scout_through_its_timed_trigger() {
-    let Some((mut runtime, member, ty)) = campaign_scene("0=22,0") else {
+    let Some((mut runtime, member, ty)) = campaign_scene("0=22,0", "E2") else {
         return;
     };
     let mut observed = None;

@@ -83,6 +83,10 @@ mod scout_tests;
 #[path = "result_tests.rs"]
 mod result_tests;
 
+#[cfg(test)]
+#[path = "spy_waypoint_tests.rs"]
+mod spy_waypoint_tests;
+
 impl TeamScriptState {
     /// TeamFlash6EF5F0 walks +54/+5D8 head first and writes signed Techno+F0.
     /// Script50 inlines the same loop at6E9CFF..6E9D18. Neither caller asks
@@ -136,6 +140,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 12
             | 13
             | 14
+            | 15
             | 16
             | 17
             | 19
@@ -292,6 +297,14 @@ impl Simulation {
                 frame_effects,
             ),
             1 => self.team_action_attack_waypoint(
+                team_id,
+                action.argument,
+                first,
+                rules,
+                registry,
+                frame_effects,
+            ),
+            15 => self.team_action_spy_waypoint(
                 team_id,
                 action.argument,
                 first,
@@ -2347,6 +2360,62 @@ impl Simulation {
             return;
         }
         self.team_coordinate_attack(team_id, rules, registry, frame_effects);
+    }
+
+    /// Script15 / Team6ECE60, dispatched at6E9637 (table6E9FB0).
+    /// Original gamemd6ECE60..6ECF0C: first assign the waypoint Cell, then
+    /// retry its ground-only Cell47C5A0 until an Object appears. Later visits
+    /// retain that Object; PointerExpired leaves NULL, which advances without
+    /// another waypoint query. No outer ammo gate, RNG, timer or detach here.
+    /// The shared CoordinateAttack owns Infiltrate infantry's Capture order.
+    fn team_action_spy_waypoint(
+        &mut self,
+        team_id: u64,
+        waypoint: i32,
+        first: bool,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        if first {
+            let target = self
+                .session
+                .waypoint_cell(waypoint)
+                .map(|cell| self.canonical_team_cell(cell));
+            self.team_assign_mission_target(team_id, target, rules, registry, effects);
+        }
+        let Some(team) = self.team_script_vm.teams.get(&team_id) else {
+            return;
+        };
+        match team.mission_target {
+            Some(target @ TeamTarget::Cell { .. }) => {
+                let cell = target
+                    .target_kind()
+                    .tarcom_cell(self.resolved_terrain.as_ref())
+                    .expect("a retained Cell has a coordinate");
+                let Some(BlockingObject::Entity(object) | BlockingObject::Terrain(object)) =
+                    self.find_blocking_object(cell, MovementLayer::Ground)
+                else {
+                    return;
+                };
+                self.team_assign_mission_target(
+                    team_id,
+                    Some(TeamTarget::Object(object)),
+                    rules,
+                    registry,
+                    effects,
+                );
+            }
+            Some(TeamTarget::Object(_)) => {}
+            None => {
+                self.team_assign_mission_target(team_id, None, rules, registry, effects);
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+                return;
+            }
+        }
+        self.team_coordinate_attack(team_id, rules, registry, effects);
     }
 
     /// Shared Scenario68BCE0 -> Cell47C5A0 selection for Script1 and59.

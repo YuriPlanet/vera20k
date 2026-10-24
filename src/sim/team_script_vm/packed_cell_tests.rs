@@ -21,6 +21,7 @@ pub(super) fn frame(scene: &mut HeadlessScenario) {
 
 pub(super) fn scene(
     script: &str,
+    member_type: &str,
     shroud: bool,
     prepare: impl FnOnce(&mut HeadlessScenario),
 ) -> Option<(HeadlessScenario, u64, u64)> {
@@ -30,14 +31,27 @@ pub(super) fn scene(
     // Retail already defines98/99. Duplicate-key CRC selection changes
     // when an entry is added, so author unused slots instead of shadowing.
     let stock_ini = IniFile::from_str(stock);
-    for index in ["697", "700", "701"] {
+    for index in ["697", "698", "700", "701"] {
         assert!(!stock_ini.section_or_empty("Waypoints").is_present(index));
     }
     let mut map = super::firesale_retail_tests::scenario(stock, script);
+    // Select authored inputs before the production reader; normal recruitment
+    // supplies membership and the live type remains the actor constructor's.
+    map = map
+        .replacen(
+            "FireRifle=Computer,E2,",
+            &format!("FireRifle=Computer,{member_type},"),
+            1,
+        )
+        .replacen(
+            "Name=One stock rifleman\nGroup=-1\n0=1,E2\n",
+            &format!("Name=One stock rifleman\nGroup=-1\n0=1,{member_type}\n"),
+            1,
+        );
     super::firesale_retail_tests::insert_section_records(
         &mut map,
         "Waypoints",
-        "697=85030\n700=-2\n701=-3\n",
+        "697=85030\n698=85036\n700=-2\n701=-3\n",
     );
     let directory = crate::map::source::test_support::TestDirectory::new("team-packed-cell");
     directory.write("packed-cell.map", map.as_bytes());
@@ -60,7 +74,7 @@ pub(super) fn scene(
         .values()
         .find(|entity| {
             entity.owner() == owner
-                && sim.interner.resolve(entity.type_ref()) == "E2"
+                && sim.interner.resolve(entity.type_ref()) == member_type
                 && (entity.position.rx(), entity.position.ry()) == (30, 85)
         })
         .unwrap()
@@ -119,7 +133,8 @@ pub(super) fn reload(scene: &mut HeadlessScenario) {
 fn authored_packed_cell_team_moves_after_reload_and_finishes_at_eof() {
     // Signed packed128 coordinates, not a waypoint number (6E95B7..6E95E5).
     let target = TeamTarget::Cell { x: 36, y: 85 };
-    let Some((mut scene, team, member)) = scene(&format!("0=4,{}", 85 * 128 + 36), false, |_| {})
+    let Some((mut scene, team, member)) =
+        scene(&format!("0=4,{}", 85 * 128 + 36), "E2", false, |_| {})
     else {
         return;
     };
@@ -181,7 +196,7 @@ fn authored_packed_cell_team_moves_after_reload_and_finishes_at_eof() {
 
 #[test]
 fn packed_cell_dummy_keeps_its_pointer_across_restamps_and_reload() {
-    let Some((mut scene, team, member)) = scene("0=4,-1", false, |_| {}) else {
+    let Some((mut scene, team, member)) = scene("0=4,-1", "E2", false, |_| {}) else {
         return;
     };
     let target = TeamTarget::Cell { x: -1, y: 0 };

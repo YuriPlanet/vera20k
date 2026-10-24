@@ -16,7 +16,8 @@ fn doing(sim: &Simulation, member: u64) -> i32 {
 
 #[test]
 fn recruited_infantry_plays_idle_two_across_reload_then_finishes_its_script() {
-    let Some((mut scene, team, member)) = scene("0=5,20\n1=13,1\n2=5,20", false, |_| {}) else {
+    let Some((mut scene, team, member)) = scene("0=5,20\n1=13,1\n2=5,20", "E2", false, |_| {})
+    else {
         return;
     };
     // Normal regrouping must finish before an idle request can remain visible;
@@ -70,7 +71,7 @@ fn recruited_infantry_plays_idle_two_across_reload_then_finishes_its_script() {
 fn idle_request_respects_action_refusal_and_other_foot_classes_are_empty_receivers() {
     use crate::sim::movement::infantry_action::DO_DOWN;
 
-    let Some((mut scene, team, member)) = scene("0=13,1\n1=5,20", false, |_| {}) else {
+    let Some((mut scene, team, member)) = scene("0=13,1\n1=5,20", "E2", false, |_| {}) else {
         return;
     };
     frame(&mut scene);
@@ -127,7 +128,7 @@ fn idle_request_respects_action_refusal_and_other_foot_classes_are_empty_receive
 #[test]
 fn campaign_triggered_team_plays_both_idle_variants_then_releases_its_member() {
     let Some((mut runtime, member, ty)) =
-        super::scout_tests::campaign_scene("0=5,20\n1=13,-1\n2=5,4\n3=13,1\n4=5,4")
+        super::scout_tests::campaign_scene("0=5,20\n1=13,-1\n2=5,4\n3=13,1\n4=5,4", "E2")
     else {
         return;
     };

@@ -6,7 +6,7 @@ use crate::sim::team_script_vm::packed_cell_tests::{frame, reload, scene};
 
 #[test]
 fn scripted_result_win_survives_restore_then_admits_normal_match_exit() {
-    let Some((mut scene, team, member)) = scene("0=7,777", false, |_| {}) else {
+    let Some((mut scene, team, member)) = scene("0=7,777", "E2", false, |_| {}) else {
         return;
     };
     let sim = scene.sim();
@@ -43,7 +43,8 @@ fn scripted_result_win_survives_restore_then_admits_normal_match_exit() {
 
 #[test]
 fn scripted_result_loss_reaches_campaign_result_after_the_retail_delay() {
-    let Some((mut runtime, member, ty)) = super::scout_tests::campaign_scene("0=23,-1") else {
+    let Some((mut runtime, member, ty)) = super::scout_tests::campaign_scene("0=23,-1", "E2")
+    else {
         return;
     };
     let player = runtime.simulation.session.current_house().unwrap();
