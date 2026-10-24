@@ -5290,3 +5290,7 @@ mod building_sale_trigger_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_building_sale_tests.rs"]
 mod building_sale_native_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_skirmish_map_tests.rs"]
+mod skirmish_map_tests;
