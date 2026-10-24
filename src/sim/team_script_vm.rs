@@ -1608,6 +1608,8 @@ mod path_threat_input_tests;
 #[cfg(test)]
 mod recruit_oracle_tests;
 #[cfg(test)]
+mod group_recruitment_tests;
+#[cfg(test)]
 pub(crate) mod reinforcements_tests;
 
 #[cfg(test)]

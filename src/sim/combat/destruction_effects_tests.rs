@@ -219,9 +219,14 @@ fn a_destroyed_building_explodes_per_foundation_cell_then_plays_its_destroy_anim
         let mut replay = sim.scenario_rng.clone();
         let mut marks = Vec::new();
         let mut recorded = Vec::new();
-        sim.building_destruction_effects(&rules, plant, false, &mut recorded, |_, request| {
-            marks.push(request)
-        });
+        sim.building_destruction_effects(
+            &rules,
+            plant,
+            false,
+            &mut recorded,
+            |_, request| marks.push(request),
+            FrameEffects::empty(),
+        );
 
         let mut expected = Vec::new();
         for (rx, ry) in crate::sim::crew_survival::foundation_cells(10, 20, &"2x2".into()) {
@@ -275,14 +280,28 @@ fn a_single_destroy_anim_still_draws_and_no_lists_draw_nothing() {
 
     let mut replay = sim.scenario_rng.clone();
     let mut recorded = Vec::new();
-    sim.building_destruction_effects(&rules, hall, false, &mut recorded, |_, _| {});
+    sim.building_destruction_effects(
+        &rules,
+        hall,
+        false,
+        &mut recorded,
+        |_, _| {},
+        FrameEffects::empty(),
+    );
     let _pick = replay.next_u32();
     assert_eq!(sim.scenario_rng.state(), replay.state());
     assert_eq!(anims(&sim).len(), 1);
 
     let before = sim.scenario_rng.state();
     let mut recorded = Vec::new();
-    sim.building_destruction_effects(&rules, shed, false, &mut recorded, |_, _| {});
+    sim.building_destruction_effects(
+        &rules,
+        shed,
+        false,
+        &mut recorded,
+        |_, _| {},
+        FrameEffects::empty(),
+    );
     assert!(recorded.is_empty());
     assert_eq!(sim.scenario_rng.state(), before);
     assert_eq!(anims(&sim).len(), 1);
@@ -1559,6 +1578,109 @@ fn kill_retail(sim: &mut Simulation, rules: &RuleSet, id: u64, ignore_defenses: 
         None,
         &[hit],
         crate::sim::world::FrameEffects::default(),
+    );
+}
+
+/// Techno7021FB submits nested victims' cues before Building441779 submits
+/// its copied-coordinate request, which also precedes the centre smudge.
+#[test]
+fn stock_oil_derrick_submits_nested_death_sound_before_building_crumble() {
+    use crate::sim::world::{FrameEffects, SimSoundEvent, SoundBoundary};
+    use std::cell::{Cell, RefCell};
+
+    #[derive(Default)]
+    struct Heard {
+        delivered: Cell<usize>,
+        cues: RefCell<Vec<SimSoundEvent>>,
+    }
+    impl SoundBoundary for Heard {
+        fn consume(&self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+            for event in &events[self.delivered.get()..] {
+                let name = match event {
+                    SimSoundEvent::VocAt { sound_id, .. }
+                    | SimSoundEvent::VocAtCoord { sound_id, .. } => sound_id,
+                    SimSoundEvent::EntityDied { die_sound_id, .. } => die_sound_id,
+                    _ => continue,
+                };
+                if matches!(name.as_str(), "ConscriptDie" | "BuildingGenericDie") {
+                    self.cues.borrow_mut().push(event.clone());
+                }
+            }
+            self.delivered.set(events.len());
+        }
+        fn delivered(&self) -> usize {
+            self.delivered.get()
+        }
+    }
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("DryHeat.MAP")
+    else {
+        return;
+    };
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+    let mut rules = retail.rules;
+    let mut roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
+    roots.extend(
+        rules
+            .general
+            .damage_fire_types
+            .iter()
+            .map(|anim| anim.name.clone()),
+    );
+    rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
+    rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let neutral = sim.intern("Neutral");
+    sim.houses
+        .register(HouseState::new(neutral, 0, None, false, 0, 10));
+    let oil = sim
+        .spawn_object("CAOILD", "Neutral", 14, 12, 0, &rules)
+        .unwrap();
+    let victim = sim
+        .spawn_object("E2", "Russians", 16, 12, 0, &rules)
+        .unwrap();
+    let location = crate::sim::movement::ground_pose::object_location(
+        sim.entities().get(oil).unwrap(),
+        sim.resolved_terrain.as_ref(),
+    );
+    let hit = EntityDamageEvent::direct_receiver(
+        oil,
+        100_000,
+        0,
+        RAD_NO_ATTACKER,
+        None,
+        sim.intern("Super"),
+        ReceiverCallFlags {
+            ignore_defenses: false,
+            arg6: false,
+        },
+    );
+    sim.take_sound_events_for_test();
+    let heard = Heard::default();
+    sim.commit_direct_damage_receiver(&rules, None, hit, FrameEffects::for_sound(&heard));
+    let inline = heard.cues.borrow().len();
+    // The ordinary app suffix must neither supply a missing cue nor duplicate one.
+    heard.consume(&sim, &rules, sim.sound_events());
+    assert!(
+        sim.entities()
+            .get(victim)
+            .is_none_or(|entity| entity.health.current() <= 0),
+        "the stock OilExplosion kills the nearby full-health Conscript"
+    );
+    let cues = heard.cues.borrow();
+    assert!(
+        matches!(cues.as_slice(), [
+        SimSoundEvent::VocAt { sound_id: child, .. },
+        SimSoundEvent::VocAtCoord { sound_id: parent, coordinate, flags: 0 },
+    ] if child == "ConscriptDie" && parent == "BuildingGenericDie"
+        && *coordinate == location),
+        "unexpected death cue order/API: {cues:?}"
+    );
+    assert_eq!(
+        inline, 2,
+        "both native calls submit before their receiver returns"
     );
 }
 

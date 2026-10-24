@@ -95,15 +95,6 @@ pub enum GameSoundEvent {
     /// FootLimbo405FD0 stops repetition even for counted loops, then detaches
     /// the owner's handle while the current audio finishes.
     AnimationDetached { anim_id: u64 },
-    /// A weapon fired — play the weapon's Report= sound.
-    WeaponFired {
-        /// sound.ini ID from the weapon's Report= field.
-        sound_id: String,
-        /// Screen position of the sound source (for spatial audio).
-        /// If None, plays at full volume (non-positional).
-        source: Option<SoundSource>,
-    },
-
     /// A unit was selected by the player — play VoiceSelect.
     ///
     /// `speaker_id` is the object that speaks: `TechnoClass::Queue_Voice @
@@ -354,8 +345,7 @@ impl GameSoundEvent {
     /// Get the sound ID for this event.
     pub fn sound_id(&self) -> &str {
         match self {
-            Self::WeaponFired { sound_id, .. }
-            | Self::AnimationStarted { sound_id, .. }
+            Self::AnimationStarted { sound_id, .. }
             | Self::UnitSelected { sound_id, .. }
             | Self::UnitMoveOrder { sound_id, .. }
             | Self::UnitAttackOrder { sound_id, .. }
@@ -397,8 +387,7 @@ impl GameSoundEvent {
     /// Get the positional source for spatial audio, if this event has one.
     pub fn source(&self) -> Option<SoundSource> {
         match self {
-            Self::WeaponFired { source, .. }
-            | Self::AnimationStarted { source, .. }
+            Self::AnimationStarted { source, .. }
             | Self::AnimationStopped { source, .. }
             | Self::EntityDestroyed { source, .. }
             | Self::EntityCrushed { source, .. }

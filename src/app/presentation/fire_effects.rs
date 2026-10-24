@@ -1,37 +1,10 @@
-//! App-owned weapon fire presentation: positioned weapon report sounds and
-//! persistent wave geometry.
+//! App-owned persistent weapon wave geometry.
 //!
 //! The sim owns the fire coordinate (`sim::combat::fire_coord`) and constructs
-//! the muzzle animations itself as `AnimClass` objects; this module only
-//! projects that coordinate for audio and lowers waves to render geometry.
+//! muzzle animations and positioned sound requests; this module lowers waves
+//! to render geometry.
 
-use crate::app::AppState;
-use crate::audio::events::{GameSoundEvent, SoundSource};
-use crate::sim::world::{SimFireEvent, Simulation};
-
-/// The weapon `Report=` cues of a batch of shots, each positioned at its
-/// shot's fire coordinate.
-///
-/// gamemd-derived: `TechnoClass::Fire_At` plays the report at the same local
-/// it hands the muzzle animation (`0x006FF372..0x006FF38F`).
-fn weapon_report_sounds(sim: &Simulation, events: &[SimFireEvent]) -> Vec<GameSoundEvent> {
-    events
-        .iter()
-        .filter_map(|event| {
-            let report_id = event.report_sound_id?;
-            let coord = event.fire_coord;
-            let screen = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
-            let cell = (
-                coord.x.div_euclid(256).clamp(0, i32::from(u16::MAX)) as u16,
-                coord.y.div_euclid(256).clamp(0, i32::from(u16::MAX)) as u16,
-            );
-            Some(GameSoundEvent::WeaponFired {
-                sound_id: sim.interner().resolve(report_id).to_string(),
-                source: Some(SoundSource::new(screen, cell)),
-            })
-        })
-        .collect()
-}
+use crate::sim::world::Simulation;
 
 /// DrawIt75F9F0's shared endpoint fog admission. Each raster consumes the
 /// same simulation coordinates and the same native gate.
@@ -105,23 +78,6 @@ pub(crate) fn build_weapon_wave_draws(
             ))
         })
         .collect()
-}
-
-pub(crate) fn queue_weapon_report_sounds(state: &mut AppState, events: &[SimFireEvent]) {
-    let sounds = {
-        let Some(sim) = state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation)
-        else {
-            return;
-        };
-        weapon_report_sounds(sim, events)
-    };
-    for sound in sounds {
-        state.match_state.match_audio.sound_events.push(sound);
-    }
 }
 
 #[cfg(test)]
@@ -270,19 +226,35 @@ mod tests {
                     flash.z_adjust(),
                     fire_coord::building_muzzle_z_adjust(event.fire_offset_y, false)
                 );
-                let sounds = weapon_report_sounds(&sim, std::slice::from_ref(&event));
                 let coord = event.fire_coord;
-                let expected_source = SoundSource::new(
-                    crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z),
-                    ((coord.x / 256) as u16, (coord.y / 256) as u16),
-                );
-                match sounds.as_slice() {
-                    [GameSoundEvent::WeaponFired { sound_id, source }] => {
+                let reports: Vec<_> = sim.sound_events().iter().filter(|sound| matches!(sound,
+                    crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }
+                        if sound_id == sim.interner().resolve(event.report_sound_id.unwrap())
+                )).collect();
+                match reports.as_slice() {
+                    [
+                        crate::sim::world::SimSoundEvent::VocAt {
+                            sound_id,
+                            rx,
+                            ry,
+                            sub_x,
+                            sub_y,
+                            world_z_leptons,
+                            ..
+                        },
+                    ] => {
                         assert_eq!(
                             sound_id,
                             sim.interner().resolve(event.report_sound_id.unwrap())
                         );
-                        assert_eq!(*source, Some(expected_source));
+                        assert_eq!(
+                            (
+                                i32::from(*rx) * 256 + sub_x.to_num::<i32>(),
+                                i32::from(*ry) * 256 + sub_y.to_num::<i32>(),
+                                *world_z_leptons
+                            ),
+                            (coord.x, coord.y, coord.z)
+                        );
                     }
                     other => panic!("unexpected stock shot audio: {other:?}"),
                 }

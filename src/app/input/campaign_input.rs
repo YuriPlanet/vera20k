@@ -95,7 +95,6 @@ mod tests {
             assert!(input.tactical_mouse.begin_left_press());
             input.tactical_mouse.right_threshold_crossed = true;
             input.selection_order = vec![11, 12];
-            input.control_groups[3] = vec![11, 12];
             input.follow_target = Some(12);
             input.camera_x = 30.0;
             input.camera_y = 60.0;
@@ -117,7 +116,6 @@ mod tests {
             assert!(input.tactical_mouse.left_held());
             assert!(input.tactical_mouse.right_threshold_crossed);
             assert_eq!(input.selection_order, [11, 12]);
-            assert_eq!(input.control_groups[3], [11, 12]);
             assert_eq!(input.follow_target, Some(12));
             assert_eq!((input.camera_x, input.camera_y), (30.0, 60.0));
             assert!(input.keys_held.contains(&KeyCode::ArrowLeft));

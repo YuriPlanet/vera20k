@@ -52,10 +52,10 @@
 //! the selected supported executable, with identity and limits in its sidecar.
 //!
 //! The handle itself is the app/audio owner's, keyed by
-//! [`turret_rotate_sound_owner`] and re-driven by `app`, exactly as the
-//! Gattling report loop and `FootClass`'s `MoveSound` are. VERA publishes the
-//! stop and the start on the ordered `sound_events` channel and leaves the
-//! native `0x00750D40` coordinate update to the app's per-frame owner pass.
+//! [`turret_rotate_sound_owner`]. VERA publishes the stop and the start on the
+//! ordered `sound_events` channel. The calling `techno_common_steps` then
+//! delivers the native `0x006FA04F` position update through the synchronous
+//! client boundary, before promotion, mission work or a later fatal receiver.
 //! Each published Stop/Play/Release reaches `FrameEffects::flush_sound` before
 //! the latch write and later object work. This preserves request ordering;
 //! it does not establish native parity for accepted sources or their RNG draws.
@@ -80,7 +80,9 @@ pub(crate) const fn turret_rotate_sound_owner(techno: u64) -> u64 {
     techno | TURRET_ROTATE_SOUND_TAG
 }
 
-pub(crate) const fn turret_rotate_sound_techno(owner: u64) -> Option<u64> {
+/// The techno whose +488 loop this owner names. Its reached AI visit owns
+/// position updates, so the client must omit its frame-tail poll.
+pub const fn turret_rotate_sound_techno(owner: u64) -> Option<u64> {
     if owner & TURRET_ROTATE_SOUND_TAG != 0 {
         Some(owner & !TURRET_ROTATE_SOUND_TAG)
     } else {

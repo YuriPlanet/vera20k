@@ -93,10 +93,11 @@ fn retail_parked_jumpjet_planning_blocks_scanning_until_player_load_drops_the_qu
     super::super::techno_ai::passive_target_acquire(&mut sim, actor, &rules, Default::default());
     assert_eq!(sim.entities().get(actor).unwrap().passive_scan, before);
     assert_eq!(sim.scenario_rng.native_state_hex(), rng);
-    let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "planning", 0);
-    let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
-        .unwrap()
-        .sim;
+    let bytes = crate::sim::snapshot::GameSnapshot::save_validated(&sim, 0, 0, "planning", 0);
+    let mut restored =
+        crate::sim::snapshot::GameSnapshot::load_validated(&bytes, 0, 0, sim.session.map_name())
+            .unwrap()
+            .sim;
     assert!(
         restored
             .planning

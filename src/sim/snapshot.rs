@@ -709,19 +709,18 @@ impl GameSnapshot {
         )
     }
 
-    /// Deserialize a current-layout snapshot without content validation.
+    /// Deserialize an internal current-layout checkpoint without content validation.
     ///
     /// This exists for internal tests and diagnostics. Production restoration
     /// uses [`Self::load_with_resources`] and validates the incoming resources.
+    /// Keep planning state here; the admitted player-load path alone discards it.
     /// Like retail's post-read Scenario
     /// reinitializer, full deserialization resets the embedded Scenario RNG to
     /// `Random__Seed(0)` even though its saved bytes remain in the wire layout.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn load_unchecked(bytes: &[u8]) -> Result<GameSnapshot, SnapshotError> {
         let _ = Self::read_header(bytes)?;
-        let mut snapshot: GameSnapshot = save_codec::deserialize(bytes)?;
-        snapshot.sim.reset_planning_after_player_load();
-        Ok(snapshot)
+        Ok(save_codec::deserialize(bytes)?)
     }
 
     /// Compatibility alias for existing unit fixtures that intentionally use

@@ -1586,6 +1586,13 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         b"building-secret-production-v382".hash(hasher);
         production.hash(hasher);
     }
+    if entity.object_group() != -1 {
+        // gamemd.exe TechnoClass::ComputeCRC70C270 reads +214 at70C280.
+        // Replay state includes it; native MP checksum64DAB0 is separate and
+        // omits local control groups, as in the original executable.
+        b"techno-object-group-v1".hash(hasher);
+        entity.object_group().hash(hasher);
+    }
     if entity.techno_ctor_random_word() != 0 {
         b"techno-constructor-v1".hash(hasher);
         entity.techno_ctor_random_word().hash(hasher);

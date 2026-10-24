@@ -581,6 +581,11 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
             sfx.stop_animation_sound(owner);
             continue;
         };
+        // Techno6FA04F updates the turret handle at its reached AI visit.
+        // A tail poll could restart it after a later Stop/Release boundary.
+        if crate::sim::world::turret_rotate_sound_techno(owner).is_some() {
+            continue;
+        }
         // `ObjectClass::AI` replays an object's `+0x3C`/`+0x50` handles with
         // `VocClass::PlayAt` on each visit (the sim's `AnimationStarted`);
         // 750D40 never runs on them.
@@ -590,14 +595,15 @@ fn drain_sound_events_inner(state: &mut AppState, redrive_owners: bool) {
             }
             continue;
         }
-        // Foot4DADF0 already re-drove this shared handle at its actual
-        // visit, before Scatter/Parasite and Unit sinking. A final-position
-        // poll would overwrite it or restart a loop after a later callback.
-        // Tagged Gattling/turret/working and Anim handles remain separate.
-        if sim.entities().get(owner).is_some_and(|entity| {
-            use crate::map::entities::EntityCategory::{Aircraft, Infantry, Unit};
-            matches!(entity.category(), Unit | Infantry | Aircraft)
-        }) {
+        // Techno6F9EA8 and Foot4DADF0 re-drive their handles at the actual
+        // AI visit. A tail poll could overwrite that position or restart a
+        // loop after a later callback. Turret/working and Anim stay separate.
+        if crate::sim::combat::gattling::gattling_sound_techno(owner).is_some()
+            || sim.entities().get(owner).is_some_and(|entity| {
+                use crate::map::entities::EntityCategory::{Aircraft, Infantry, Unit};
+                matches!(entity.category(), Unit | Infantry | Aircraft)
+            })
+        {
             continue;
         }
         let Some(world) = sim.looping_sound_owner_coord(owner) else {

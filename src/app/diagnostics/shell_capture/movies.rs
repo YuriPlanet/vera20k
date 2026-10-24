@@ -130,6 +130,7 @@ impl CampaignStartTarget {
             Self::Opening(OpeningTarget::RadarAlert | OpeningTarget::RadarRestored) => {
                 Some("SOV02SMD.MAP")
             }
+            Self::Opening(OpeningTarget::SovietGroups(_)) => Some("SOV07TMD.MAP"),
             Self::Restart(RestartTarget::ObjectiveExpiry) => Some("SOV02SMD.MAP"),
             Self::Restart(RestartTarget::AlternateHomeVictory) => Some("SOV06LMD.MAP"),
             Self::Restart(RestartTarget::InheritedTimerVictory) => Some("SOV01UMD.MAP"),

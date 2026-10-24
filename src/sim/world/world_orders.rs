@@ -624,6 +624,53 @@ impl Simulation {
         }
     }
 
+    /// gamemd.exe TeamAssign731060/TeamClear7310D0: owner admission precedes
+    /// both stores. Selected eligible objects take the requested raw group;
+    /// other eligible objects in that group return to -1. No life/limbo gate.
+    /// Shared by the committed command and its pending input projection.
+    pub(super) fn assigned_control_group(
+        &self,
+        entity: &crate::sim::game_entity::GameEntity,
+        current: i32,
+        group: i32,
+        selected: &std::collections::HashSet<u64>,
+    ) -> i32 {
+        if !(0..10).contains(&group) || !self.house_is_control_group_eligible(entity.owner()) {
+            current
+        } else if selected.contains(&entity.stable_id()) {
+            group
+        } else if current == group {
+            -1
+        } else {
+            current
+        }
+    }
+
+    pub(super) fn assign_control_group(&mut self, group: i32, selected: &[u64]) -> bool {
+        if !(0..10).contains(&group) {
+            return false;
+        }
+        let selected = selected.iter().copied().collect();
+        let changes: Vec<_> = self
+            .substrate
+            .entities
+            .iter_sorted()
+            .filter_map(|(id, entity)| {
+                let next =
+                    self.assigned_control_group(entity, entity.object_group(), group, &selected);
+                (next != entity.object_group()).then_some((id, next))
+            })
+            .collect();
+        for (id, group) in changes {
+            self.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .assign_object_group(group);
+        }
+        true
+    }
+
     /// Virtual+A0: Building44F5C0 or Unit/Infantry/Aircraft Techno700C40.
     /// This is producer-side control admission; Event/lifecycle admission is separate.
     /// House50B6F0, bunker link, Spawned, paralysis, warp, slave ownership and

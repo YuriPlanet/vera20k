@@ -1974,7 +1974,7 @@ pub(crate) fn handle_death(
             )
         });
 
-        if let Some((type_id, location, owner, category, veterancy)) = dead_info {
+        if let Some((type_id, location, owner, _category, veterancy)) = dead_info {
             // `0x00702050..0x00702065`: the death arm first frees a master's
             // slaves to the killing hit's source (FreeSlaves, no house).
             if callbacks_enabled(world) {
@@ -1999,18 +1999,44 @@ pub(crate) fn handle_death(
             }
             let type_id_str = world.interner.resolve(type_id);
             if let Some(obj) = rules.object(type_id_str) {
-                append_selected_death_sounds(
-                    obj,
-                    category,
-                    rules.general.building_die_sound.as_deref(),
-                    world
-                        .houses
-                        .get(&owner)
-                        .is_some_and(|house| house.is_human()),
-                    &world.main_rng,
-                    location.into(),
-                    &mut death_sounds,
-                );
+                // TechnoClass::ReceiveDamage70218B/7021FB: each selection is
+                // followed by direct7509E0 admission before the next choice,
+                // Stun and nested DeathWeapon receivers. House50B6F0 gates
+                // VoiceDie; DieSound has no owner gate.
+                let voice = if world.house_is_human_player(owner) {
+                    obj.voice_die.as_slice()
+                } else {
+                    &[]
+                };
+                for choices in [voice, obj.die_sounds.as_slice()] {
+                    if let Some(sound) = select_death_sound(choices, &world.main_rng) {
+                        if callbacks_enabled(world) {
+                            if sound_enabled(world) {
+                                world.sound_events.emit(SimSoundEvent::voc_at_world_coord(
+                                    sound,
+                                    location.into(),
+                                ));
+                                run.effects().flush_sound(world, rules);
+                            }
+                        } else {
+                            death_sounds.push((sound, location.into()));
+                        }
+                    }
+                }
+                // Numeric receiver fixtures retain their explicit packet
+                // seam. Production's global cue belongs to441779 below.
+                #[cfg(test)]
+                if !callbacks_enabled(world)
+                    && _category == EntityCategory::Structure
+                    && obj.die_sounds.is_empty()
+                    && let Some(sound) = rules
+                        .general
+                        .building_die_sound
+                        .as_deref()
+                        .filter(|name| !name.is_empty())
+                {
+                    death_sounds.push((sound.to_owned(), location.into()));
+                }
                 // 0x00702206..0x00702210: RADIO OVER_OUT to every contact and
                 // the Stun, between the death sounds and the debris.
                 if callbacks_enabled(world) {
@@ -2428,6 +2454,7 @@ fn finish_concrete_death(
                     |world, request| {
                         commit_smudges(world, rules, overlay_registry, vec![request], deferred);
                     },
+                    frame_effects,
                 );
                 if callbacks_enabled(world) {
                     let deferred = &mut effects.smudge_spawn_requests;

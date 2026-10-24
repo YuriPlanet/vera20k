@@ -98,6 +98,7 @@ pub(crate) use move_sound::MoveSoundState;
 pub(crate) use playfield_membership::PlayfieldMembership;
 pub(crate) use selection_voice::DeployVoiceSuppression;
 pub(crate) use turret_rotate_sound::TurretRotateLatch;
+pub use turret_rotate_sound::turret_rotate_sound_techno;
 #[cfg(test)]
 mod main_sound_identity_tests;
 #[cfg(test)]
@@ -1085,7 +1086,7 @@ impl SimSoundEvent {
     }
 
     /// `VocClass::PlayAt @ 0x007509E0` for a source whose authoritative
-    /// location comes from `FootClass::GetCoords` rather than raw Position.
+    /// location is a retained world coordinate rather than raw Position.
     pub(crate) fn voc_at_world_coord(
         sound_id: String,
         coordinate: crate::sim::anim_class::AnimWorldCoord,
@@ -1132,8 +1133,8 @@ pub struct FireOriginSnapshot {
 }
 
 /// One shot, as combat resolved it at the authoritative fire tick. The world
-/// constructs the shot's muzzle animation from it and the app positions the
-/// weapon report sound at `fire_coord`.
+/// constructs the shot's muzzle animation from it. Report playback uses the
+/// separate, ordered `SimSoundEvent` stream at the retained `fire_coord`.
 #[derive(Debug, Clone)]
 pub struct SimFireEvent {
     /// Stable ID of the entity that fired.
@@ -1153,8 +1154,8 @@ pub struct SimFireEvent {
     /// For projectile trajectory: Entity → look up entity position; Cell →
     /// use cell center as the destination.
     pub target: crate::sim::combat::TargetKind,
-    /// Weapon report sound id. The app layer positions this at the resolved
-    /// fire origin for both normal and garrison fire.
+    /// Selected weapon report sound id, retained as shot metadata. Playback
+    /// is submitted inline through `SimSoundEvent`, never replayed from here.
     pub report_sound_id: Option<InternedId>,
     /// The shot's fire coordinate in world leptons (`combat::fire_coord`): the
     /// bullet origin, the muzzle animation and the report sound share it.

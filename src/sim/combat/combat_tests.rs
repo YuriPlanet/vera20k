@@ -41,7 +41,7 @@ use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
 use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::power_system::PowerState;
 use crate::sim::projectile::ProjectileDetonationReason;
-use crate::sim::rng::{MainRng, SimRng};
+use crate::sim::rng::SimRng;
 use crate::sim::vision::FogState;
 use crate::util::save_codec;
 
@@ -3007,7 +3007,7 @@ fn gsi_04_07_a_human_unit_does_not_charge_an_unseen_shooter() {
     }));
 }
 
-/// `ShouldRetaliate 0x00708AF7..0x00708B09` refuses only Verses at or below
+/// Stock `ShouldRetaliate 0x00708AF7..0x00708B09` refuses only Verses at or below
 /// the single `0.01`: a 1% warhead still retaliates, a bare `0.005` (which
 /// GetFireError's zero-Verses test lets through; `0.5%` would parse to 0) and
 /// 0% do not. And a weapon whose
@@ -3016,10 +3016,15 @@ fn gsi_04_07_a_human_unit_does_not_charge_an_unseen_shooter() {
 /// heal test would allow.
 #[test]
 fn gsi_04_07_retaliation_verses_and_healer_gates() {
-    assert!(retaliates(RetaliationCase {
-        verses: "1%",
-        ..Default::default()
-    }));
+    // Ares3.0 parser100523E0 and retaliation hook100543E0 replace the stock
+    // threshold: tools/rules_oracle/ares_armor.json `parse_1%` has Retaliate=false.
+    assert_eq!(
+        retaliates(RetaliationCase {
+            verses: "1%",
+            ..Default::default()
+        }),
+        !crate::rules::ARES_ENABLED,
+    );
     assert!(!retaliates(RetaliationCase {
         verses: "0.005",
         ..Default::default()
@@ -5200,7 +5205,7 @@ fn selected_death_sounds_for(
 /// The fallback is not owner-gated and draws no RNG.
 #[test]
 fn a_building_with_no_die_sound_falls_back_to_the_global_building_die_sound() {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
         "\
 [General]\nFlightLevel=500\n\n\
 [AudioVisual]\nBuildingDieSound=BuildingGenericDie\n\n\
@@ -5214,75 +5219,55 @@ fn a_building_with_no_die_sound_falls_back_to_the_global_building_die_sound() {
     ))
     .expect("building die-sound rules parse");
 
-    const HERE: crate::sim::anim_class::AnimWorldCoord = crate::sim::anim_class::AnimWorldCoord {
-        x: 1152,
-        y: 1920,
-        z: 104,
-    };
-    let selected = |type_name: &str, category: EntityCategory| -> Vec<String> {
-        let rng = MainRng::new(11);
-        let rng_before = rng.state();
-        let mut sounds = Vec::new();
-        super::append_selected_death_sounds(
-            rules.object(type_name).expect("type"),
-            category,
-            rules.general.building_die_sound.as_deref(),
-            true,
-            &rng,
-            HERE,
-            &mut sounds,
+    for (kind, global, expected) in [
+        ("GAPOWR", Some("BuildingGenericDie"), true),
+        ("GATECH", Some("BuildingGenericDie"), false),
+        ("GAPOWR", None, false),
+    ] {
+        let mut rules = rules.clone();
+        rules.general.building_die_sound = global.map(str::to_owned);
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 11);
+        let building = sim
+            .spawn_object(kind, "Americans", 12, 12, 0, &rules)
+            .unwrap();
+        let location = crate::sim::movement::ground_pose::object_location(
+            sim.entities().get(building).unwrap(),
+            sim.resolved_terrain.as_ref(),
+        );
+        sim.take_sound_events_for_test();
+        let before = sim.main_rng.state();
+        sim.building_destruction_effects(
+            &rules,
+            building,
+            false,
+            &mut Vec::new(),
+            |world, _| {
+                assert_eq!(
+                    world.sound_events().len(),
+                    usize::from(expected),
+                    "the global request precedes the centre mark"
+                );
+            },
+            crate::sim::world::FrameEffects::empty(),
         );
         assert_eq!(
-            rng.state() == rng_before,
-            rules.object(type_name).expect("type").die_sounds.is_empty(),
-            "the global cue must not draw; only a non-empty DieSound= list does",
+            sim.main_rng.state(),
+            before,
+            "the global cue selects no list item"
         );
-        sounds
-            .into_iter()
-            .map(|(sound, location)| {
-                assert_eq!(location, HERE, "played at the building's own Location");
-                sound
-            })
-            .collect()
-    };
-
-    assert_eq!(
-        selected("GAPOWR", EntityCategory::Structure),
-        ["BuildingGenericDie"],
-        "no DieSound= on the type, so the global crumble cue plays"
-    );
-    assert_eq!(
-        selected("GATECH", EntityCategory::Structure),
-        ["OwnCrumble"],
-        "0x0044174A skips the global when the type has its own list"
-    );
-    assert_eq!(
-        selected("E1", EntityCategory::Infantry),
-        ["DieA"],
-        "the fallback is BuildingClass-only"
-    );
-
-    // A rules file with no BuildingDieSound= leaves the building silent
-    // rather than inventing a cue.
-    let bare = RuleSet::from_ini(&IniFile::from_str(
-        "\
-[General]\nFlightLevel=500\n\n\
-[InfantryTypes]\n\n[VehicleTypes]\n\n[AircraftTypes]\n\n\
-[BuildingTypes]\n0=GAPOWR\n\n[GAPOWR]\nStrength=750\nArmor=wood\n",
-    ))
-    .expect("bare rules parse");
-    let rng = MainRng::new(11);
-    let mut sounds = Vec::new();
-    super::append_selected_death_sounds(
-        bare.object("GAPOWR").expect("type"),
-        EntityCategory::Structure,
-        bare.general.building_die_sound.as_deref(),
-        true,
-        &rng,
-        HERE,
-        &mut sounds,
-    );
-    assert!(sounds.is_empty());
+        if expected {
+            assert!(
+                matches!(sim.sound_events(), [crate::sim::world::SimSoundEvent::VocAtCoord {
+                sound_id, coordinate, flags: 0,
+            }] if sound_id == "BuildingGenericDie" && *coordinate == location)
+            );
+        } else {
+            assert!(
+                sim.sound_events().is_empty(),
+                "own DieSound or absent global contributes no global cue"
+            );
+        }
+    }
 }
 
 /// `BuildingClass::ReceiveDamage @ 0x00442230`: the global

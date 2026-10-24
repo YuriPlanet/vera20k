@@ -157,7 +157,7 @@ fn healing_uses_the_shield_absorption_and_warhead_override() {
 }
 
 #[test]
-fn a_healing_warhead_can_override_absorption_to_passthrough() {
+fn a_negative_shield_return_keeps_the_original_healing_packet() {
     let rules = rules(
         "AbsorbPercent=1.0\nPassPercent=0",
         "Shield.AbsorbPercent=0\nShield.PassPercent=0.5",
@@ -177,8 +177,10 @@ fn a_healing_warhead_can_override_absorption_to_passthrough() {
     );
     assert_eq!(
         health(&sim),
-        120,
-        "only the warhead's passthrough reaches the hull"
+        140,
+        // Phobos b90ab4bc Hooks.ReceiveDamage.cpp:155..163: a -20 shield
+        // return does not replace the -40 caller packet that heals the hull.
+        "a negative shield return leaves the caller's healing packet intact"
     );
 }
 
@@ -468,8 +470,8 @@ fn a_reversed_received_damage_range_clamps_to_the_native_minimum() {
     assert_eq!(health(&sim), 200);
 }
 
-/// `CanTargetHouse(...) && !pWH->Temporal` failing makes both damage terms
-/// zero, so the shield and the hull are untouched.
+/// A Temporal warhead initializes both calculated damage terms to zero;
+/// the default received-damage bounds leave the shield and hull untouched.
 #[test]
 fn a_temporal_warhead_leaves_the_shield_and_health_untouched() {
     let rules = rules("", "Temporal=yes");
@@ -533,4 +535,73 @@ fn a_broken_shield_draws_only_while_it_can_respawn() {
     let respawning = rules("Respawn=0.5", "");
     let ty = respawning.shield_type("TestShield").unwrap();
     assert!(!state.broken_non_respawning(ty));
+}
+
+/// ShieldClass::CanBePenetrated checks the Psychedelic arm before the
+/// generic Shield.Penetrate flag (Phobos b90ab4bc, receive hook 0x701900).
+#[test]
+fn a_berserk_immune_shield_absorbs_a_normally_penetrating_psychedelic_hit() {
+    let rules = rules(
+        "ImmuneToBerserk=yes",
+        "Psychedelic=yes\nShield.Penetrate=yes",
+    );
+    let (mut sim, _) = scene(&rules);
+    hit(&mut sim, &rules, 40);
+    assert_eq!(shield(&sim).hp(), 60, "the shield intercepts the packet");
+    assert_eq!(health(&sim), 200);
+}
+
+/// Phobos's active-shield receive arm restarts both recovery timers before
+/// the separate non-Psychedelic fallback (Hooks.ReceiveDamage.cpp:153..177).
+#[test]
+fn absorbed_psychedelic_damage_restarts_both_combat_delays() {
+    let rules = rules(
+        "ImmuneToBerserk=yes\nSelfHealing=0.25\nSelfHealing.Rate=0.1\n\
+         SelfHealing.RestartInCombatDelay=10\nRespawn.RestartInCombatDelay=7",
+        "Psychedelic=yes\nShield.Penetrate=yes",
+    );
+    let (mut sim, _) = scene(&rules);
+    hit(&mut sim, &rules, 40);
+    sim.session.set_binary_frame_for_test(30);
+    hit(&mut sim, &rules, 20);
+    assert_eq!(shield(&sim).hp(), 40);
+    assert_eq!(
+        shield(&sim)
+            .timers
+            .self_healing_combat_restart
+            .timer
+            .remaining(30),
+        10,
+    );
+    assert_eq!(
+        shield(&sim)
+            .timers
+            .respawn_combat_restart
+            .timer
+            .remaining(30),
+        7,
+    );
+    sim.session.set_binary_frame_for_test(40);
+    super::tick(&mut sim, 1, &rules);
+    sim.session.set_binary_frame_for_test(129);
+    super::tick(&mut sim, 1, &rules);
+    assert_eq!(
+        shield(&sim).hp(),
+        40,
+        "the restarted healing rate is not due"
+    );
+    sim.session.set_binary_frame_for_test(130);
+    super::tick(&mut sim, 1, &rules);
+    assert_eq!(shield(&sim).hp(), 65);
+}
+
+/// House/Temporal gates zero the calculated packet, but the shared bounds
+/// still apply (Phobos ShieldClass.cpp:204..244, receive hook 0x701900).
+#[test]
+fn a_temporal_warhead_still_applies_the_minimum_shield_damage() {
+    let rules = rules("ReceivedDamage.Minimum=10", "Temporal=yes");
+    let (mut sim, _) = scene(&rules);
+    hit(&mut sim, &rules, 40);
+    assert_eq!(shield(&sim).hp(), 90);
+    assert_eq!(health(&sim), 200);
 }

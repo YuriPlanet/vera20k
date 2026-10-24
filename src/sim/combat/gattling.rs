@@ -344,7 +344,9 @@ pub const fn gattling_sound_owner(techno: u64) -> u64 {
     techno | GATTLING_SOUND_TAG
 }
 
-pub(crate) const fn gattling_sound_techno(owner: u64) -> Option<u64> {
+/// The techno whose +4A4 handle this owner names. Its AI owns positional
+/// updates, so the client must not re-drive it again at the frame tail.
+pub const fn gattling_sound_techno(owner: u64) -> Option<u64> {
     if owner & GATTLING_SOUND_TAG != 0 {
         Some(owner & !GATTLING_SOUND_TAG)
     } else {

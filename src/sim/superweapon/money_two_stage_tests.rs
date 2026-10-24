@@ -360,7 +360,7 @@ fn superweapon_money_two_stage_begin_cancel_reselect_in_one_saved_command_batch(
     }
     assert!(sim.projected_paid_super_weapon_selection(owner).is_none());
     let mut loaded = restore(&sim, &rules);
-    let commands = loaded.take_due_commands();
+    let commands = loaded.take_frame_commands_for_test();
     assert_eq!(commands.len(), 5);
     for (index, command) in commands.iter().enumerate() {
         assert_eq!(

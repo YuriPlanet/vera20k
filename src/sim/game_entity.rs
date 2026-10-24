@@ -118,7 +118,7 @@ pub struct GameEntity {
     /// Phobos ShieldClass state: shield points and their recovery timers.
     #[cfg(feature = "phobos")]
     #[serde(default)]
-    pub shield: Option<crate::sim::shield::ShieldState>,
+    pub(super) shield: Option<crate::sim::shield::ShieldState>,
     /// Low word of the one raw Scenario RNG draw performed by the active-retail
     /// `TechnoClass` constructor (`0x006F3254`, stored at native `+0x3C8`).
     /// Later report-selection consumers read this persistent value; placement
@@ -127,6 +127,11 @@ pub struct GameEntity {
     /// Building+6F4, constructor43B9B5 null; startup68C1B5 assigns a type
     /// pointer and Load453FB0 swizzles it. Capture never rerolls the reward.
     secret_lab_fallback: Option<(crate::rules::object_type::ObjectCategory, InternedId)>,
+    /// gamemd.exe TechnoClass::Constructor @0x006F2B40 stores -1 at6F2D0F.
+    /// One signed +214 owner for scenario recruitment and local control groups.
+    /// Team removal, Limbo and ChangeOwner preserve it; raw Save70C250 and
+    /// Load70BF50 retain it with the rest of the concrete object body.
+    object_group: i32,
     /// One native Techno stage clock. Class receivers mutate through this
     /// owner; animation, miner and buildup components carry no competing copy.
     stage: crate::sim::stage::StageClass,
@@ -877,6 +882,13 @@ fn default_build_rejects_saved_delivery_base_override_and_keeps_base_space() {
 }
 
 impl GameEntity {
+    /// Read-only Phobos shield state for presentation. Construction and the
+    /// shield owner retain simulation-side mutation authority.
+    #[cfg(feature = "phobos")]
+    pub fn shield(&self) -> Option<&crate::sim::shield::ShieldState> {
+        self.shield.as_ref()
+    }
+
     /// Infantry+6D9: building survivor identity, not Type.Nominal.
     /// Added_To_Game502C3C skips its active counter; UI-name51F2C0 uses
     /// TXT_TECHNICIAN. The flag persists across placement and capture.
@@ -1470,11 +1482,27 @@ impl GameEntity {
     pub const fn techno_ctor_random_word(&self) -> u16 {
         self.techno_ctor_random_word
     }
+
+    /// The native signed Techno+214 value, shared by Recruit6EAA90 and
+    /// TeamAssign731060. It is independent of live Team membership.
+    pub const fn object_group(&self) -> i32 {
+        self.object_group
+    }
+
+    /// Callers own admission/order; scenario readers and
+    /// TeamType::Get_Group6F1870 supply raw signed values.
+    pub(crate) fn assign_object_group(&mut self, group: i32) {
+        self.object_group = group;
+    }
 }
 
 /// Fixture setup for the identity a constructor or decoder establishes.
 #[cfg(any(test, feature = "test-support"))]
 impl GameEntity {
+    pub fn set_object_group_for_test(&mut self, group: i32) {
+        self.assign_object_group(group);
+    }
+
     pub fn set_stable_id_for_test(&mut self, stable_id: u64) {
         self.stable_id = stable_id;
     }
@@ -1693,6 +1721,7 @@ impl GameEntity {
             attach_effects: Default::default(),
             techno_ctor_random_word,
             secret_lab_fallback: None,
+            object_group: -1,
             stage: crate::sim::stage::StageClass::constructed(construction_frame as i32),
             discovery: Default::default(),
             building_upgrades: crate::sim::building_upgrades::BuildingUpgrades::default(),

@@ -112,6 +112,84 @@ fn respond(sim: &mut Simulation, rules: &RuleSet) {
 }
 
 #[test]
+fn retail_player_control_on_a_building_hit_suppresses_only_campaign_ai_response() {
+    use crate::sim::combat::{EntityDamageEvent, ReceiverCallFlags};
+    use crate::sim::scenario_session::ScenarioGameMode;
+
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules().unwrap();
+    let map =
+        crate::map::map_file::MapFile::from_bytes(assets.get_ref("ALL01UMD.MAP").unwrap()).unwrap();
+    let roster =
+        crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
+    let control = roster
+        .houses
+        .iter()
+        .find(|house| house.name == "Alliance")
+        .unwrap()
+        .player_control
+        .unwrap();
+    assert!(control);
+    // Reuse the retail House flag in a controlled arena. ALL01's Alliance
+    // does not supply this building/defender scene; this is no mission playthrough.
+    for (mode, player_control, responds) in [
+        (ScenarioGameMode::Campaign, false, true),
+        (ScenarioGameMode::Campaign, control, false),
+        (ScenarioGameMode::Skirmish, control, true),
+    ] {
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x708080);
+        sim.session.set_game_mode(mode);
+        let owner = sim.interner.intern("Russians");
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .assign_player_control(player_control);
+        let victim = sim
+            .spawn_object("GAPOWR", "Russians", 10, 10, 0, &rules)
+            .unwrap();
+        let attacker = sim
+            .spawn_object("E1", "Americans", 15, 10, 0, &rules)
+            .unwrap();
+        let defender = sim
+            .spawn_object("MTNK", "Russians", 12, 10, 0, &rules)
+            .unwrap();
+        let health = sim.substrate.entities.get(victim).unwrap().health.current();
+        let source = sim.interner.get("Americans").unwrap();
+        let warhead = sim.interner.intern("HE");
+        sim.commit_direct_damage_receiver(
+            &rules,
+            None,
+            EntityDamageEvent::direct_receiver(
+                victim,
+                20,
+                0,
+                attacker,
+                Some(source),
+                warhead,
+                ReceiverCallFlags {
+                    ignore_defenses: false,
+                    arg6: false,
+                },
+            ),
+            FrameEffects::default(),
+        );
+        assert!(sim.substrate.entities.get(victim).unwrap().health.current() < health);
+        let defender = sim.substrate.entities.get(defender).unwrap();
+        assert_eq!(
+            defender.archive_target(),
+            responds.then_some(TargetKind::Entity(victim)),
+            "{mode:?}, PlayerControl={player_control}"
+        );
+        assert_eq!(
+            defender.attack_target.target(),
+            responds.then_some(TargetKind::Entity(attacker))
+        );
+    }
+}
+
+#[test]
 fn native_response_uses_the_paid_foot_head_instead_of_navcom() {
     let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/foot_navigation_coordinate.json",

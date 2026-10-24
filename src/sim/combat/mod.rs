@@ -166,7 +166,7 @@ use receiver_call::{
     postmortem_duration_for_event, receiver_anger_delta, resolve_receive_damage,
 };
 use shrapnel::emit_projectile_shrapnel;
-use techno_death::{ConcreteDeathSmudgePlan, append_selected_death_sounds, throw_debris_for_death};
+use techno_death::{ConcreteDeathSmudgePlan, throw_debris_for_death};
 
 #[cfg(any(test, feature = "test-support"))]
 pub use attack_target::{

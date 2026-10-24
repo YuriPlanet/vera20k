@@ -436,7 +436,7 @@ fn planning_internal_checkpoint_restores_shared_nodes_loops_current_records_and_
     let hash = sim.state_hash();
     assert_ne!(hash, empty_hash);
     let bytes = GameSnapshot::save(&sim, 0, 0, "planning", 0);
-    let mut restored = save_codec::deserialize::<GameSnapshot>(&bytes).unwrap().sim;
+    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     assert_eq!(restored.state_hash(), hash);
     assert_eq!(
         save_codec::serialize(&restored.planning).unwrap(),

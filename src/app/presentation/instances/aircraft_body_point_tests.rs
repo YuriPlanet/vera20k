@@ -64,8 +64,9 @@ fn retail_harrier_move_bobs_only_its_body_at_the_committed_draw_frame() {
             .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
         let height =
             crate::sim::movement::air_movement::queried_flight_height(entity, cells.as_ref());
-        let phase =
-            display_binary_frame_for_committed_session(sim.session().binary_frame()) as usize % 20;
+        // MainTick draws before Logic, then increments for the next display
+        // (55D8F2 -> 55DC9E -> 55DE7E). The retained actor is already committed.
+        let phase = sim.session().binary_frame() as usize % 20;
         let expected = if !taking_off && !landing && height > 0 {
             2 * native_y[phase]
         } else {

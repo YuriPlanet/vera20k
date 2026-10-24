@@ -211,7 +211,10 @@ mod tests {
             .iter()
             .filter(|event| {
                 matches!(event,
-                    SimSoundEvent::EntityDied { die_sound_id, .. } if die_sound_id == "GIDie"
+                    SimSoundEvent::VocAt { sound_id, .. }
+                    | SimSoundEvent::VocAtCoord { sound_id, .. }
+                    | SimSoundEvent::EntityDied { die_sound_id: sound_id, .. }
+                        if sound_id == "GIDie"
                 )
             })
             .count();
@@ -296,11 +299,12 @@ mod tests {
             4,
             crate::sim::world::FrameEffects::default(),
         );
-        assert!(
-            !sim.sound_events
-                .iter()
-                .any(|event| matches!(event, SimSoundEvent::EntityDied { .. }))
-        );
+        assert!(!sim.sound_events.iter().any(|event| matches!(
+            event,
+            SimSoundEvent::VocAt { .. }
+                | SimSoundEvent::VocAtCoord { .. }
+                | SimSoundEvent::EntityDied { .. }
+        )));
         assert!(
             sim.substrate
                 .entities

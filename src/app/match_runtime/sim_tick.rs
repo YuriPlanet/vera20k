@@ -22,7 +22,7 @@ use crate::render::unit_atlas;
 use crate::sim::production;
 use crate::sim::replay::ScenarioServiceInput;
 use crate::sim::trigger_runtime::TriggerEffect;
-use crate::sim::world::{FrameEffects, LifecycleOutput, SimFireEvent, SimFrameOutput, TickLane};
+use crate::sim::world::{FrameEffects, LifecycleOutput, SimFrameOutput, TickLane};
 use crate::ui::game_screen::GameScreen;
 
 /// Directory for Rust-only deterministic diagnostic logs.
@@ -1092,7 +1092,6 @@ fn advance_one_simulation_frame(
         } else {
             None
         };
-        let mut drained_fire_events: Vec<SimFireEvent> = Vec::new();
         let mut drained_lifecycle_outputs: Vec<LifecycleOutput> = Vec::new();
         let mut drained_combat_lights = Vec::new();
         let mut frame_overlay_updates = Vec::new();
@@ -1289,7 +1288,6 @@ fn advance_one_simulation_frame(
                 overlay_removals,
                 sound_events: frame_sound_events,
                 sound_events_delivered,
-                fire_events: frame_fire_events,
                 combat_lights,
                 lighting_events,
                 multiplayer_checksum,
@@ -1357,8 +1355,6 @@ fn advance_one_simulation_frame(
                 }
                 sim.prepare_fog_view_for(owner);
             }
-            // Fire events position the weapon report sounds.
-            drained_fire_events = frame_fire_events;
             // The radar event array is the local client's (RadarClass). A
             // match without a minimap renderer has no such client, so nothing
             // is admitted and the radar-gated EVA lines stay silent.
@@ -1533,7 +1529,6 @@ fn advance_one_simulation_frame(
                 | LifecycleOutput::BuildingPlacementSucceeded { .. }
                 | LifecycleOutput::BuildingProductionAbandoned { .. }
                 | LifecycleOutput::FollowReleased { .. }
-                | LifecycleOutput::ControlGroupMemberRemoved { .. }
                 | LifecycleOutput::ObjectSelected { .. } => {}
                 LifecycleOutput::ObjectPointerExpired { stable_id } => {
                     state
@@ -1629,11 +1624,6 @@ fn advance_one_simulation_frame(
                 | LifecycleOutput::ClearRedraw { .. } => {}
             }
         }
-        crate::app::presentation::fire_effects::queue_weapon_report_sounds(
-            state,
-            &drained_fire_events,
-        );
-
         // Black-cell census, on a schedule rather than a keypress: nobody hits a debug key
         // at the exact moment they notice the artifact. Spread-out ticks give a time series,
         // which separates "still exploring" from "these cells will never be revealed" — a

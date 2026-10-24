@@ -1440,7 +1440,8 @@ pub(crate) fn ai_alive(substrate: &ObjectSubstrate, id: u64) -> bool {
 }
 
 /// `TechnoClass::AI_Update`'s leading common steps, in native order: the
-/// Iron Curtain tint stage (`0x006F9EAF`, [`iron_tint_step`]), the berserk
+/// Gattling loop position (`0x006F9EA8`), Iron Curtain tint stage
+/// (`0x006F9EAF`, [`iron_tint_step`]), the berserk
 /// countdown (`0x006F9F0D`, [`berserk_step`]), the
 /// promotion sample (`0x006FA054`) and drain blocks (`0x006FA14B..0x006FA224`),
 /// followed by rocking, target validity, charge turret and the Door clock.
@@ -1462,6 +1463,21 @@ fn techno_common_steps(
     //the stock head. EMP expiry itself must not invent a future-power sweep.
     #[cfg(feature = "ares")]
     sim.update_ares_emp_operability(id, rules, effects);
+    // Techno6F9E70..6F9EA8 re-drives +4A4 at Location before mission
+    // Stop/Release. A zero gain must stop a live loop before Guard can
+    // release it to decay at the previous gain.
+    if let Some(entity) = sim.substrate.entities.get(id)
+        && sim
+            .object_type(entity.type_ref(), rules)
+            .is_some_and(|object| object.is_gattling)
+    {
+        effects.update_looping_sound(
+            sim,
+            rules,
+            crate::sim::combat::gattling::gattling_sound_owner(id),
+            Simulation::movement_sound_world(entity),
+        );
+    }
     iron_tint_step(&sim.session, &mut sim.scenario_rng, &mut sim.substrate, id);
     // Techno6F9EBB follows the tint head and precedes veterancy/drain work.
     // A queued voice probes its handle only when this actor really reaches
@@ -1472,6 +1488,22 @@ fn techno_common_steps(
     // Building Update froze this sample before Temporal and its common AI.
     if let Some(sample) = turret_rotate_sample {
         sim.visit_turret_rotate_sound(id, sample, rules, effects);
+        // Techno6FA027..6FA04F: every Turret-enabled visit re-drives
+        // +488 at the live Location after its controls and latch writes.
+        // A zero gain must stop it before this visit's later C4 expiry,
+        // or another object's hit, can release a still-audible decay.
+        if let Some(entity) = sim.substrate.entities.get(id)
+            && sim
+                .object_type(entity.type_ref(), rules)
+                .is_some_and(|object| object.has_turret)
+        {
+            effects.update_looping_sound(
+                sim,
+                rules,
+                super::turret_rotate_sound::turret_rotate_sound_owner(id),
+                Simulation::movement_sound_world(entity),
+            );
+        }
     }
     veterancy_promotion_step(
         &mut sim.interner,
@@ -3223,6 +3255,7 @@ mod tests {
             trigger_tag: None,
             recruitable_a: true,
             recruitable_b: true,
+            group: -1,
             structure_upgrades: [None, None, None],
             structure_ai_sellable: false,
             structure_ai_repairable: false,

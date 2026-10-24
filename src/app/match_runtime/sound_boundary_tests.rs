@@ -279,3 +279,120 @@ fn frame_boundary_consumes_each_prefix_once_and_preserves_later_facts() {
     assert_eq!(admitted.last(), Some(&(18, 2)));
     assert_eq!(sim.rng_views().main.native_state_hex(), before_main);
 }
+
+/// FireAt6FF38F submits Report to7509E0 before the muzzle constructor6FF3C2;
+/// the Inviso bullet's later AI can then submit Infantry7021FB's death cue.
+#[test]
+fn stock_pillbox_report_reaches_sound_boundary_before_muzzle_and_death() {
+    use crate::sim::combat::TargetKind;
+    use crate::sim::world::{FrameEffects, TickLane};
+    use std::cell::RefCell;
+
+    struct Shots<'a> {
+        client: FrameClientBoundary<'a>,
+        heard: &'a RefCell<Vec<(String, bool)>>,
+    }
+    impl SoundBoundary for Shots<'_> {
+        fn consume(&self, sim: &Simulation, rules: &RuleSet, events: &[SimSoundEvent]) {
+            for event in &events[self.delivered()..] {
+                let sound_id = match event {
+                    SimSoundEvent::VocAt { sound_id, .. } => sound_id,
+                    SimSoundEvent::EntityDied { die_sound_id, .. } => die_sound_id,
+                    _ => continue,
+                };
+                if matches!(sound_id.as_str(), "PillboxAttack" | "ConscriptDie") {
+                    let muzzle_exists = sim.anims().any(|(_, anim)| {
+                        sim.interner().resolve(anim.type_id()).starts_with("MGUN")
+                    });
+                    self.heard
+                        .borrow_mut()
+                        .push((sound_id.clone(), muzzle_exists));
+                }
+            }
+            self.client.consume(sim, rules, events);
+        }
+        fn delivered(&self) -> usize {
+            self.client.delivered()
+        }
+    }
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+    let mut rules = retail.rules;
+    let flashes = rules.weapon("Vulcan2").unwrap().anim.clone();
+    assert!(!flashes.is_empty());
+    for flash in flashes {
+        rules
+            .bind_authored_load_anim(&flash, &assets, "tem", "TEMPERATE")
+            .unwrap();
+    }
+    let mut sim = Simulation::new();
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let gun = sim
+        .spawn_object("GAPILL", "Americans", 12, 12, 0, &rules)
+        .unwrap();
+    let target = sim
+        .spawn_object("E2", "Russians", 14, 12, 0, &rules)
+        .unwrap();
+    // A wounded Conscript lets the first ordinary stock shot be lethal.
+    sim.entities_mut_for_test()
+        .get_mut(target)
+        .unwrap()
+        .health
+        .set_for_test(5);
+    sim.assign_target_represented(
+        gun,
+        Some(TargetKind::Entity(target)),
+        &rules,
+        None,
+        FrameEffects::empty(),
+    )
+    .unwrap();
+    let heard = RefCell::new(Vec::new());
+    let mut output = SoundEventQueue::new();
+    for _ in 0..300 {
+        let mut admit_radar = |_, _, _: &RuleSet| false;
+        let boundary = Shots {
+            client: FrameClientBoundary::new(
+                None,
+                Some("Americans"),
+                &mut output,
+                &mut admit_radar,
+            ),
+            heard: &heard,
+        };
+        let frame = sim
+            .advance_app_frame(
+                &[],
+                &rules,
+                None,
+                67,
+                TickLane::Ordinary,
+                FrameEffects::for_sound(&boundary),
+            )
+            .unwrap();
+        // The app dispatches the suffix that was not consumed inline.
+        boundary.consume(&sim, &rules, &frame.sound_events);
+        if heard
+            .borrow()
+            .iter()
+            .any(|(name, _)| name == "ConscriptDie")
+        {
+            break;
+        }
+    }
+    assert_eq!(
+        *heard.borrow(),
+        [
+            ("PillboxAttack".into(), false),
+            ("ConscriptDie".into(), true)
+        ]
+    );
+    assert!(
+        output.is_empty(),
+        "the production boundary consumes the cues inline"
+    );
+}

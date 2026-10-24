@@ -120,7 +120,9 @@ fn a_recruiting_team_survives_save_load() {
     );
 
     let bytes = GameSnapshot::save_validated(&original, 0, 0, "team_vm_test", 0);
-    let mut restored = GameSnapshot::load(&bytes).expect("snapshot").sim;
+    let mut restored = GameSnapshot::load_validated(&bytes, 0, 0, original.session.map_name())
+        .expect("snapshot")
+        .sim;
     restored
         .restore_after_snapshot_load()
         .expect("references resolve");

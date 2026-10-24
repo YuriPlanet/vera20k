@@ -1,6 +1,6 @@
 [package]
 name = "vera20k"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 description = "Vera20k Engine — a from-scratch Rust engine for Red Alert 2: Yuri's Revenge"
 autobins = false

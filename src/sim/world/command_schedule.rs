@@ -239,6 +239,34 @@ impl Simulation {
             .any(|command| matches!(command.payload, Command::Select { .. }))
     }
 
+    /// Read-only keyboard-slot projection of the one Techno+214 owner and
+    /// accepted local assignment queue. It preserves immediate assign/recall
+    /// input before the next ingress without retaining a second membership
+    /// list. Native731060 stores parameter-1; digit0 registers parameter10.
+    pub fn projected_control_groups(&self) -> [Vec<u64>; 10] {
+        let mut objects: Vec<_> = self
+            .substrate
+            .entities
+            .iter_sorted()
+            .map(|(_, entity)| (entity, entity.object_group()))
+            .collect();
+        for command in self.queued_commands() {
+            if let Command::AssignControlGroup { group, entity_ids } = command.payload {
+                let selected = entity_ids.into_iter().collect();
+                for (entity, current) in &mut objects {
+                    *current = self.assigned_control_group(entity, *current, group, &selected);
+                }
+            }
+        }
+        let mut slots = std::array::from_fn(|_| Vec::new());
+        for (entity, group) in objects {
+            if (0..10).contains(&group) {
+                slots[((group + 1) % 10) as usize].push(entity.stable_id());
+            }
+        }
+        slots
+    }
+
     /// Read-only input projection; accepted commands remain the sole authority.
     pub fn pending_paid_super_weapon_sequence(
         &self,
@@ -870,7 +898,9 @@ impl Simulation {
                             let _ = self.session.apply_in_game_speed(*speed);
                         }
                     }
-                    Command::Select { .. } | Command::MoveFlash { .. } => {
+                    Command::Select { .. }
+                    | Command::AssignControlGroup { .. }
+                    | Command::MoveFlash { .. } => {
                         let _ = self.apply_one_due_command(command, rules, None, frame_effects);
                     }
                     _ => unreachable!("frame-ingress predicate admitted a tail command"),
@@ -1169,3 +1199,7 @@ mod command_admission_tests;
 #[cfg(test)]
 #[path = "move_flash_ingress_tests.rs"]
 mod move_flash_ingress_tests;
+
+#[cfg(test)]
+#[path = "control_group_ingress_tests.rs"]
+mod control_group_ingress_tests;

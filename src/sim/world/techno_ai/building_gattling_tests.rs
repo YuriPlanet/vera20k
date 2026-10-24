@@ -24,6 +24,137 @@ use crate::sim::world::SimSoundEvent;
 /// each stage fires faster than the last).
 const ROF: [i32; 6] = [16, 16, 16, 8, 16, 4];
 
+/// Techno6F9EA8 re-drives +4A4 before Guard4496DA releases it. A client
+/// whose camera just left earshot must stop the live loop before that release
+/// can leave it playing a decay at the previous gain.
+#[test]
+fn retail_gattling_updates_its_loop_position_before_guard_releases_it() {
+    use crate::sim::anim_class::AnimWorldCoord;
+    use crate::sim::world::{FrameEffects, SoundBoundary, TickLane};
+    use std::cell::{Cell, RefCell};
+
+    struct Heard {
+        owner: u64,
+        delivered: Cell<usize>,
+        calls: RefCell<Vec<(&'static str, Option<AnimWorldCoord>)>>,
+    }
+    impl SoundBoundary for Heard {
+        fn consume(&self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+            for event in &events[self.delivered.get()..] {
+                if matches!(event, SimSoundEvent::GattlingLoopRelease { owner } if *owner == self.owner)
+                {
+                    self.calls.borrow_mut().push(("release", None));
+                }
+            }
+            self.delivered.set(events.len());
+        }
+        fn delivered(&self) -> usize {
+            self.delivered.get()
+        }
+        fn update_looping_sound(&self, _: &Simulation, owner: u64, world: AnimWorldCoord) {
+            if owner == self.owner {
+                self.calls.borrow_mut().push(("position", Some(world)));
+            }
+        }
+    }
+
+    let Some(mut retail) =
+        crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+    let roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&retail.rules);
+    retail
+        .rules
+        .bind_anim_class_assets(&roots, &assets, theater.extension, "TEMPERATE");
+    retail
+        .rules
+        .bind_effect_assets(&assets, theater.extension, "TEMPERATE");
+    let rules = retail.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x6f9ea8);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let cannon = sim
+        .spawn_object("YAGGUN", "Americans", 12, 12, 0, &rules)
+        .unwrap();
+    sim.spawn_object("GAPOWR", "Americans", 4, 4, 0, &rules)
+        .unwrap();
+    let target = sim
+        .spawn_object("MTNK", "Russians", 16, 12, 0, &rules)
+        .unwrap();
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Attack {
+            attacker_id: cannon,
+            target_id: target
+        },
+        Some(&rules)
+    ));
+    let started = (0..120).any(|_| {
+        let output = sim
+            .advance_app_frame(
+                &[],
+                &rules,
+                None,
+                33,
+                TickLane::Ordinary,
+                FrameEffects::empty(),
+            )
+            .unwrap();
+        output.sound_events.iter().any(|event| {
+            matches!(event,
+            SimSoundEvent::GattlingLoop { owner, sound_id, .. }
+            if *owner == gattling_sound_owner(cannon) && sound_id == "GattlingGunAttackLoop1")
+        })
+    });
+    assert!(
+        started,
+        "the stock cannon starts its report through its real Attack visit"
+    );
+    assert!(sim.entities().get(cannon).unwrap().gattling.report_latch());
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Stop { entity_id: cannon },
+        Some(&rules)
+    ));
+    let world = Simulation::movement_sound_world(sim.entities().get(cannon).unwrap());
+    let heard = Heard {
+        owner: gattling_sound_owner(cannon),
+        delivered: Cell::new(0),
+        calls: RefCell::new(Vec::new()),
+    };
+    let released = (0..60).any(|_| {
+        heard.delivered.set(0);
+        heard.calls.borrow_mut().clear();
+        sim.advance_app_frame(
+            &[],
+            &rules,
+            None,
+            33,
+            TickLane::Ordinary,
+            FrameEffects::for_sound(&heard),
+        )
+        .unwrap();
+        heard
+            .calls
+            .borrow()
+            .iter()
+            .any(|(kind, _)| *kind == "release")
+    });
+    assert!(
+        released,
+        "the ordinary no-target path reaches Guard's release"
+    );
+    assert_eq!(
+        heard.calls.borrow().as_slice(),
+        [("position", Some(world)), ("release", None)]
+    );
+}
+
 fn golden() -> &'static Value {
     crate::test_fixture::json("tools/spatial_oracle/building_gattling.json")
 }

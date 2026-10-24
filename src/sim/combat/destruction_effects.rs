@@ -18,7 +18,8 @@
 //!
 //! DestructionEffects steps ported here: 1 (`0x004415F9`, the eight damage
 //! fire anims are UnInit), 5 (`0x00441702`, a computer house's
-//! `RevealToAll=` building releases the sight it showed the current house), 7
+//! `RevealToAll=` building releases the sight it showed the current house), 6
+//! (`0x00441779`, the copied-coordinate BuildingDieSound request), 7
 //! (`0x0044177E`, the centre scorch/crater mark), 8 (`0x004418EC`, one
 //! `Explosion=` anim per foundation cell), 9 (`0x00441A31`, delayed FIRE3
 //! beside explosive overlays), 12 (`0x00441C43`, the death fuse
@@ -58,8 +59,7 @@
 //! - Steps with no stock trigger or no VERA state: 2 (radar-spy bits `+0x210`),
 //!   3 and 4 (CloakGenerator, LaserFencePost), 10
 //!   (stored-ore spill; YR never fills building storage), 11 (ShakeScreen, a
-//!   bare `RET`), 14 (`DestroyParticleSystems=` smoke; no stock user). Step 6
-//!   (BuildingDieSound) plays from the Techno death sounds.
+//!   bare `RET`), 14 (`DestroyParticleSystems=` smoke; no stock user).
 //! - Ordinary ground weapon-fire ammo debits remain separate. The shared Ammo
 //!   owner retains constructor and chrono reinforcement writes, which the
 //!   `Death_Explosion` last-entry override reads. No stock `Explodes=` vehicle
@@ -74,7 +74,7 @@ use crate::sim::components::AnimClassSpawnDescriptor;
 use crate::sim::intern::InternedId;
 use crate::sim::movement::ground_pose::position_world_coord;
 use crate::sim::rng::SimRng;
-use crate::sim::world::Simulation;
+use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
 use super::{ExplosionEffect, SmudgeSpawnRequest};
 
@@ -449,6 +449,7 @@ impl Simulation {
         ignore_defenses: bool,
         anims: &mut Vec<ExplosionEffect>,
         mut commit_smudge: impl FnMut(&mut Simulation, SmudgeSpawnRequest),
+        effects: FrameEffects<'_>,
     ) {
         // 1. `0x004415F9..0x00441617`.
         self.clear_building_damage_fire_slots(building_id, rules);
@@ -476,6 +477,27 @@ impl Simulation {
         // (`ReReveal(0, 0, 1, PlayerPtr)`).
         if object.reveal_to_all && !self.house_is_human_player(owner) {
             self.rereveal_sight_to_current_house(building_id, rules);
+        }
+
+        // BuildingClass::DestructionEffects44173F..441779: after nested
+        // Techno/contact deaths, before the centre mark. An empty per-type
+        // DieSound selects the global, through750E20's copied-coordinate
+        // pool (flags0), at Location+9C rather than the foundation centre.
+        if super::world_receiver::callbacks_enabled(self)
+            && super::world_receiver::sound_enabled(self)
+            && object.die_sounds.is_empty()
+            && let Some(sound_id) = rules
+                .general
+                .building_die_sound
+                .as_deref()
+                .filter(|name| !name.is_empty())
+        {
+            self.sound_events.emit(SimSoundEvent::VocAtCoord {
+                sound_id: sound_id.to_owned(),
+                coordinate: location,
+                flags: 0,
+            });
+            effects.flush_sound(self, rules);
         }
 
         // 7. `0x0044177E..0x004418E7`.

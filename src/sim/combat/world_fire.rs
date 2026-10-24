@@ -1897,6 +1897,22 @@ pub(super) fn emit_admitted_fire(
         entity.weapon_burst.complete_shot(weapon.burst.max(1));
         entity.last_fire_frame.record(binary_frame);
     }
+    // TechnoClass::FireAt6FF38F calls VocClass::PlayAt7509E0 before the
+    // muzzle constructor6FF3C2. Admit through the shared sound owner here:
+    // later Bullet AI can submit a death cue competing for the same pool.
+    if let Some(report_id) = report_sound_id
+        && sound_enabled(world)
+    {
+        world.sound_events.emit(SimSoundEvent::voc_at_world_coord(
+            world.interner.resolve(report_id).to_owned(),
+            crate::sim::anim_class::AnimWorldCoord {
+                x: launch_source.coord.x,
+                y: launch_source.coord.y,
+                z: launch_source.coord.z,
+            },
+        ));
+        effects.flush_sound(world, rules);
+    }
     // `0x006FF394..0x006FF43F`, after GetROF: the muzzle anim, appended to the
     // Logic vector behind this shot's bullet.
     if let Some(event) = out.fire_events.last().cloned() {

@@ -219,8 +219,10 @@ fn aircraft_body_anchor(
         sim.entities(),
         rules.map(|rules| (rules, sim.interner())),
     );
+    // MainTick renders before Logic55DC9E, then increments at55DE7E/81.
+    // The next Draw_Point4CF8D8 reads that committed global frame directly.
     let delta = crate::render::locomotor_visual::fly_draw_point_y(
-        display_binary_frame_for_committed_session(sim.session().binary_frame()),
+        sim.session().binary_frame(),
         object.is_dropship(),
         taking_off,
         landing,

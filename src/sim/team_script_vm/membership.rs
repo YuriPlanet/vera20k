@@ -15,10 +15,6 @@
 //! gate) replay in `recruit_oracle_tests`.
 //!
 //! RESIDUALS (none has a retail producer or reader that changes a skirmish):
-//! - An object's team group (`+0x214`), which `Add_Member` writes
-//!   (`0x006F1870`) and `Recruit` filters and penalises by, is not
-//!   represented: every object reads -1, the constructor value, as every
-//!   retail TeamType and TaskForce leaves `Group=` at -1.
 //! - `Remove_Member` sets `+0x6B8` on every object it is called for; only a
 //!   `Weeder=` unit's Mission_Guard reads it (`0x00740A60`), and VERA's
 //!   Weeder takes its own guard arm.
@@ -51,10 +47,6 @@ use super::{TeamMember, TeamRules, member_type_identity, script_action_at};
 /// `Recruit`'s penalty on a candidate outside the team's group, added to
 /// the squared distance (`0x006EABFA`).
 const OTHER_GROUP_PENALTY: i32 = 0x3200;
-
-/// The group every object reads: `+0x214`'s constructor value (module
-/// residual).
-const OBJECT_GROUP: i32 = -1;
 
 /// Whether a TaskForce entry of `amount` with `recruited` members counted
 /// against it wants more (signed), as `TeamClass::AI`'s recruit loop
@@ -318,6 +310,12 @@ impl Simulation {
                 initiated,
             },
         );
+        // gamemd.exe Add_Member6EA500 stores Get_Group6F1870 at6EA57C,
+        // after linking and before Tag inheritance. Remove_Member retains it.
+        let group = vm.team_group(vm.teams.get(&team_id).unwrap());
+        if let Some(entity) = self.substrate.entities.get_mut(entity_id) {
+            entity.assign_object_group(group);
+        }
         //6EA58C..6EA5B0: B3=0 inherits a nonNULL Team Tag on every member;
         //B3=1 requires signed Type+5E0 Passengers>0. The Tag owner preserves
         //the Object attachment when Team+70 is NULL (6EA582..6EA587).
@@ -547,7 +545,9 @@ impl Simulation {
             .map(|(id, entity)| RecruitCandidate {
                 id,
                 xy: position_world_xy(&entity.position),
-                group: OBJECT_GROUP,
+                // gamemd.exe Recruit6EAA90 reads Techno+214, including
+                // authored campaign groups (6EAC7A for Infantry).
+                group: entity.object_group(),
                 // The unit search's own house and type test.
                 matches: class != EntityCategory::Unit
                     || (entity.owner() == owner

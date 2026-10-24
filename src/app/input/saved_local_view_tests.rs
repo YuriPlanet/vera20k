@@ -86,12 +86,11 @@ fn fixture() -> (Simulation, RuleSet, MatchInputState) {
         entity.lifecycle.set_object_alive_for_test(true);
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.selection.set_selected_for_test(id != 2);
+        entity.set_object_group_for_test(if id == 1 { 8 } else { 9 });
         sim.entities_mut_for_test().insert(entity);
     }
     let mut input = MatchInputState::new(Default::default());
     input.selection_order = vec![3, 1];
-    input.control_groups[0] = vec![2, 3];
-    input.control_groups[9] = vec![1];
     input.follow_target = Some(3);
     (sim, rules, input)
 }
@@ -200,7 +199,6 @@ fn saved_view_replaces_reused_ids_and_preserves_order_and_raw_bookmarks() {
         let mut outgoing = MatchInputState::new(Default::default());
         outgoing.selection_order = vec![1, 3];
         outgoing.selection_order_pending = true;
-        outgoing.control_groups[4] = vec![1, 2, 3];
         outgoing.follow_target = Some(1);
         outgoing.last_control_group_press = Some((9, std::time::Instant::now()));
         outgoing.view_bookmarks.seed_all(9, 9);
@@ -213,9 +211,20 @@ fn saved_view_replaces_reused_ids_and_preserves_order_and_raw_bookmarks() {
         commit(prepared, &mut outgoing);
         assert_eq!(outgoing.selection_order, [3, 1]);
         assert!(!outgoing.selection_order_pending);
-        assert_eq!(outgoing.control_groups[0], [2, 3]);
-        assert_eq!(outgoing.control_groups[9], [1]);
-        assert!(outgoing.control_groups[1..9].iter().all(Vec::is_empty));
+        assert_eq!(sim.projected_control_groups()[0], [2, 3]);
+        assert_eq!(sim.projected_control_groups()[9], [1]);
+        assert!(
+            sim.projected_control_groups()[1..9]
+                .iter()
+                .all(Vec::is_empty)
+        );
+        assert!(
+            serde_json::to_value(serialized_capture(&outgoing, &sim, &rules))
+                .unwrap()
+                .get("control_groups")
+                .is_none(),
+            "the entity snapshot is the only group owner"
+        );
         assert_eq!(outgoing.follow_target, Some(3));
         assert_eq!(outgoing.last_control_group_press, None);
         assert_eq!(
@@ -284,14 +293,6 @@ fn malformed_local_view_is_rejected_before_the_outgoing_input_changes() {
         ("selection_order_pending", serde_json::json!(true)),
         ("follow_target", serde_json::json!(99)),
         (
-            "control_groups",
-            serde_json::json!([[2, 3], [], [], [], [], [], [], [], [], [1, 2]]),
-        ),
-        (
-            "control_groups",
-            serde_json::json!([[2, 99], [], [], [], [], [], [], [], [], [1]]),
-        ),
-        (
             "modes",
             serde_json::json!({"repair": false, "sell": false, "planning": false,
                 "targeting": {"SuperWeapon": "MissingSuper"}}),
@@ -325,18 +326,14 @@ fn malformed_local_view_is_rejected_before_the_outgoing_input_changes() {
         );
         assert_eq!(serialized_capture(&input, &sim, &rules), saved);
     }
-    let mut wrong_slots = original;
-    wrong_slots["control_groups"] = serde_json::json!([[], []]);
-    assert!(serde_json::from_value::<SavedLocalView>(wrong_slots).is_err());
 }
 
 #[test]
 fn capture_prunes_departed_references_but_preserves_saved_idle_follow() {
     let (sim, rules, mut input) = fixture();
-    input.control_groups[0].push(99);
     input.follow_target = Some(99);
     let saved = serialized_capture(&input, &sim, &rules);
-    assert_eq!(saved.control_groups()[0], [2, 3]);
+    assert_eq!(sim.projected_control_groups()[0], [2, 3]);
     assert_eq!(saved.follow_target(), None);
     assert_eq!(input.follow_target, Some(99), "capture is read-only");
     let prepared = PreparedSavedLocalView::new(saved, &sim, &rules).unwrap();

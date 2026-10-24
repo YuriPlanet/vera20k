@@ -144,7 +144,14 @@ fn a_computer_houses_opening_shows_the_current_house_its_sight_until_it_dies() {
     assert_eq!(sim.state_hash(), hash);
 
     // DestructionEffects step 5 takes the sight back; the cells stay explored.
-    sim.building_destruction_effects(&rules, id, false, &mut Vec::new(), |_, _| {});
+    sim.building_destruction_effects(
+        &rules,
+        id,
+        false,
+        &mut Vec::new(),
+        |_, _| {},
+        FrameEffects::empty(),
+    );
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
     for &(x, y) in &cells {
         assert!(sim.fog.is_cell_revealed(americans, x, y), "{x},{y}");
@@ -195,7 +202,14 @@ fn captures_keep_the_sight_and_a_shroud_reset_shows_it_again() {
     assert_eq!(sim.fog.alternate_sight_admissions_for_test(), &admitted);
 
     // A human's building skips step 5; its Limbo takes the sight back.
-    sim.building_destruction_effects(&rules, id, false, &mut Vec::new(), |_, _| {});
+    sim.building_destruction_effects(
+        &rules,
+        id,
+        false,
+        &mut Vec::new(),
+        |_, _| {},
+        FrameEffects::empty(),
+    );
     assert_eq!(sim.fog.alternate_sight_admissions_for_test(), &admitted);
     sim.techno_limbo_with_context(id, UninitContext::new(&rules, None));
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
@@ -242,7 +256,14 @@ fn an_allys_building_shows_both_sights_and_takes_both_back() {
         assert!(sim.fog.is_cell_visible(americans, x, y), "{x},{y}");
         assert_eq!(counter(&sim, americans, (x, y)), -1, "{x},{y}");
     }
-    sim.building_destruction_effects(&rules, id, false, &mut Vec::new(), |_, _| {});
+    sim.building_destruction_effects(
+        &rules,
+        id,
+        false,
+        &mut Vec::new(),
+        |_, _| {},
+        FrameEffects::empty(),
+    );
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
     assert!(
         !sim.fog
@@ -461,7 +482,14 @@ fn a_shroud_reset_shows_a_computer_superweapon_still_building_up() {
         assert_eq!(counter(&sim, americans, cell), -2, "{cell:?}");
     }
 
-    sim.building_destruction_effects(&rules, id, false, &mut Vec::new(), |_, _| {});
+    sim.building_destruction_effects(
+        &rules,
+        id,
+        false,
+        &mut Vec::new(),
+        |_, _| {},
+        FrameEffects::empty(),
+    );
     sim.techno_limbo_with_context(id, UninitContext::new(&rules, None));
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
     for &(x, y) in &cells {
@@ -592,7 +620,14 @@ fn no_edge_make_enemy_counts_reveal_to_all_sight_again() {
     }
     // The two ordinary lifecycle releases do not undo extra map-bracket
     //admissions. Keep the native cell counter distinct from source indexes.
-    sim.building_destruction_effects(&rules, id, false, &mut Vec::new(), |_, _| {});
+    sim.building_destruction_effects(
+        &rules,
+        id,
+        false,
+        &mut Vec::new(),
+        |_, _| {},
+        FrameEffects::empty(),
+    );
     sim.techno_limbo_with_context(id, UninitContext::with_rules(&rules));
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
     let config = sim.sight_reveal_config(&rules);

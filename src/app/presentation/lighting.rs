@@ -296,7 +296,7 @@ pub(crate) fn shield_tint(
 ) -> (u16, i32) {
     #[cfg(feature = "phobos")]
     {
-        let Some(shield) = entity.shield.as_ref().filter(|shield| shield.is_active()) else {
+        let Some(shield) = entity.shield().filter(|shield| shield.is_active()) else {
             return (0, 0);
         };
         let Some(shield_type) = rules.shield_type(shield.type_name()) else {

@@ -246,7 +246,6 @@ fn snapshot_bytes(
         [[4, 5], [5, 4], [0, 0], [u16::MAX, 0]],
         Vec::new(),
         false,
-        std::array::from_fn(|_| Vec::new()),
         follow,
         Default::default(),
     )

@@ -87,7 +87,9 @@ fn campaign_without_a_factory_creates_recruits_and_finishes_after_reload() {
     assert_eq!(sim.team_script_vm.team(team_id).unwrap().member_count(), 1);
 
     let bytes = GameSnapshot::save_validated(&sim, 0, 0, "campaign_ai", 0);
-    let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
+    let mut loaded = GameSnapshot::load_validated(&bytes, 0, 0, sim.session.map_name())
+        .unwrap()
+        .sim;
     loaded.restore_after_snapshot_load().unwrap();
     crate::sim::arena_fixture::flat_ground(&mut loaded, &rules);
     // Native load resets Scenario RNG and discards active planning tokens

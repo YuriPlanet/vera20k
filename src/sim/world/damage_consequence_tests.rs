@@ -80,15 +80,19 @@ fn delivered_ids(sim: &Simulation) -> Vec<u64> {
     ids
 }
 
-/// The kill lands in the bullet's tail slot, whose commit admits the death
-/// anims (their `Report=`) before it queues the die sound. RESIDUAL: the
-/// order of same-frame sound starts is not taken from gamemd; inaudible.
+/// Techno ReceiveDamage7021FB submits DieSound before debris and the later
+/// Unit death animation constructors. Each AnimClass owns its Report request.
 fn delivery_sounds(sim: &Simulation) -> Vec<String> {
     sim.sound_events
         .iter()
         .filter_map(|event| match event {
-            SimSoundEvent::EntityDied { die_sound_id, .. } => Some(die_sound_id.clone()),
-            SimSoundEvent::AnimationStarted { sound_id, .. } => Some(sound_id.clone()),
+            SimSoundEvent::VocAt { sound_id, .. }
+            | SimSoundEvent::VocAtCoord { sound_id, .. }
+            | SimSoundEvent::EntityDied {
+                die_sound_id: sound_id,
+                ..
+            }
+            | SimSoundEvent::AnimationStarted { sound_id, .. } => Some(sound_id.clone()),
             _ => None,
         })
         .collect()
@@ -136,7 +140,7 @@ fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
     );
     assert_eq!(
         delivery_sounds(&sim),
-        ["DEATHREPORT", "DESTROYREPORT", "DieA"]
+        ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
     assert!(sim.substrate.entities.get(victim).is_none());
     // Rust stream regressions: 16 Scenario words, three of them the Guard
@@ -167,7 +171,7 @@ fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
     assert_eq!(delivered_ids(&sim), ids[..3]);
     assert_eq!(
         delivery_sounds(&sim),
-        ["DEATHREPORT", "DESTROYREPORT", "DieA"]
+        ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
     assert_eq!(sim.particle_systems().len(), 1);
 }
@@ -210,7 +214,7 @@ fn ordinary_fatal_transport_finishes_cargo_lifecycle_before_consequence_admissio
     );
     assert_eq!(
         delivery_sounds(&sim),
-        ["DEATHREPORT", "DESTROYREPORT", "DieA"]
+        ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
 }
 
@@ -253,7 +257,7 @@ fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
     );
     assert_eq!(
         delivery_sounds(&sim),
-        ["DEATHREPORT", "DESTROYREPORT", "DieA"]
+        ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
     assert!(sim.particle_systems().is_empty());
     // Existing Rust stream regressions from the real Bullet AI.
@@ -264,7 +268,7 @@ fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
     let _ = sim.object_ai_visit_one(projectile, Some(&rules), ObjectAiCtx::default());
     assert_eq!(
         delivery_sounds(&sim),
-        ["DEATHREPORT", "DESTROYREPORT", "DieA"]
+        ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
     assert_eq!(delivered_ids(&sim), ids);
 }
