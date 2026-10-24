@@ -3172,8 +3172,8 @@ fn self_action(
         return None;
     }
     // Unit740023/740107: a unit in a tank bunker skips the transport arm
-    // and offers Deploy whenever CanDeploySlashUnload admits it; its Unload
-    // leaves the bunker (the DEPLOY event, `deploy::issue_order`).
+    // and offers Deploy whenever CanDeploySlashUnload admits it; its normal
+    // Unload mission releases the installed tank from the bunker.
     if entity.category() == EntityCategory::Unit && entity.bunker.link().installed_in().is_some() {
         return Some(Command::DeployMcv {
             entity_id: target.stable_id,
@@ -3193,12 +3193,10 @@ fn self_action(
     }
     if entity.category() == EntityCategory::Structure {
         // Building44731C..447358 keeps self action for cargo/garrisons or
-        // factory primary selection. Repacking is a cell-targeted order.
-        return if entity.bunker.occupant().is_some() {
-            Some(Command::EjectBunker {
-                bunker_id: target.stable_id,
-            })
-        } else if crate::sim::production::can_select_factory_primary(sim, rules, target.stable_id) {
+        // factory primary selection. The tank-bunker link is separate from
+        // those containers and does not grant the Building a self action.
+        // Repacking is a cell-targeted order.
+        return if crate::sim::production::can_select_factory_primary(sim, rules, target.stable_id) {
             // Building4472EC preserves Action4 only for a nonprimary
             // factory; Click443450..443494 queues this target's Event17.
             Some(Command::TogglePrimaryFactory {
@@ -7418,6 +7416,10 @@ mod retail_inactive_unit_tests;
 #[cfg(test)]
 #[path = "context_order_retail_self_deploy_tests.rs"]
 mod retail_self_deploy_tests;
+
+#[cfg(test)]
+#[path = "building_bunker_self_click_tests.rs"]
+mod building_bunker_self_click_tests;
 
 #[cfg(test)]
 #[path = "context_order_retail_ifv_repair_tests.rs"]
