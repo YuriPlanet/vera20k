@@ -704,13 +704,14 @@ impl Iterator for RingSource {
         if self.shared.cancelled.load(Ordering::Acquire) {
             return None;
         }
+        let channels = usize::from(self.channels.get());
         let generation = self.shared.generation.load(Ordering::Acquire);
         if self.generation != generation {
             self.generation = generation;
             self.valid = 0;
-            self.position = 0;
+            self.position %= channels;
         }
-        if self.position == self.valid {
+        if self.position >= self.valid {
             let mut state = self
                 .shared
                 .state
@@ -735,13 +736,18 @@ impl Iterator for RingSource {
             }
             self.sample_rate = state.rate;
             self.valid = state.next_quarter(&mut self.cache, self.provenance.as_deref_mut());
-            self.position = 0;
+            // Native `DSoundBuffer::StartPlayback @ 0x0040A340` refills the
+            // whole buffer (`0x0040A463`). Rodio can pull one stereo sample
+            // before that restart and the next after it, so keep the pending
+            // channel offset. A normal quarter ends at a frame boundary, so
+            // this also resets its next cache offset to zero.
+            self.position %= channels;
             if self.valid == 0 {
                 return None;
             }
         }
         let value = self.cache[self.position];
-        let channel = self.position % usize::from(self.channels.get());
+        let channel = self.position % channels;
         if let Some(trace) = &self.observation {
             let slot = self.provenance.as_ref().unwrap()[self.position];
             if slot != usize::MAX {
@@ -875,5 +881,38 @@ mod tests {
         assert_eq!(source.sample_rate().get(), 11_025);
         let state = source.shared.state.lock().unwrap();
         assert_eq!(state.ring[..4], [0.5, 0.5, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn release_mid_stereo_frame_keeps_decay_channels_aligned() {
+        let mut tail_pcm = vec![
+            0x00, 0x10, 0x00, 0x20, 0x00, 0x30, 0x00, 0x40, 0x00, 0x50, 0x00, 0x60,
+        ];
+        for _ in 3..256 {
+            tail_pcm.extend_from_slice(&[0x00, 0x10, 0x00, 0x20]);
+        }
+        tail_pcm.extend_from_slice(&[0x00, 0x70, 0x00, 0x50, 0x00, 0x60, 0x00, 0x40]);
+        let tail = wav(30, 16, 2, &tail_pcm);
+        let (mut source, control) = ring(
+            "loop decay",
+            &[
+                ("body", wav(30, 16, 2, &[0x00, 0x70, 0x00, 0x80])),
+                ("tail", tail.clone()),
+            ],
+        );
+        control.set_pan(super::super::PAN_SCALE);
+
+        source.next();
+        assert!(control.release_to_decay());
+
+        assert_eq!(source.next(), Some(tail.samples[1]));
+        assert_eq!(source.next(), Some(0.0));
+        assert_eq!(source.next(), Some(tail.samples[3]));
+        assert_eq!(source.next(), Some(0.0));
+        assert_eq!(source.next(), Some(tail.samples[5]));
+
+        source.by_ref().take(506).for_each(drop);
+        assert_eq!(source.next(), Some(0.0));
+        assert_eq!(source.next(), Some(tail.samples[513]));
     }
 }
