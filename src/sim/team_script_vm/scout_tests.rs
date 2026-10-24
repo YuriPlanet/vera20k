@@ -1,6 +1,7 @@
 //! Script22 -> Map580BC0, using the process-current player's shroud.
 
 use super::*;
+use crate::sim::runtime::SimRuntime;
 use crate::sim::team_script_vm::packed_cell_tests::{frame, reload, scene};
 use crate::sim::world::UninitContext;
 
@@ -121,31 +122,28 @@ fn a_revealed_player_map_returns_the_scout_to_its_center_without_a_search_draw()
     );
 }
 
-#[test]
-fn campaign_startup_runs_an_authored_scout_through_its_timed_trigger() {
+pub(super) fn campaign_scene(script: &str) -> Option<(SimRuntime, u64, InternedId)> {
     use crate::map::map_file::MapFile;
     use crate::rules::process_owner::NativeScenarioRulesPrefix;
     use crate::rules::team_ai_ini::TeamAiIniRegistry;
     use crate::sim::campaign_carry_over::CampaignCarryOver;
-    use crate::sim::runtime::{SimResources, SimRuntime};
+    use crate::sim::runtime::SimResources;
     use crate::sim::scenario_bootstrap as bootstrap;
 
-    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
-        return;
-    };
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets()?;
     // An authored campaign arena, not a retail mission playthrough. The
     // campaign rules passes, Basic.Player, Trigger4 and recruitment are real.
-    let map = MapFile::from_bytes(b"[Basic]\nNewINIFormat=4\nPlayer=Americans\n\
+    let map = MapFile::from_bytes(format!("[Basic]\nNewINIFormat=4\nPlayer=Americans\n\
         [Map]\nTheater=TEMPERATE\nSize=0,0,32,32\nLocalSize=2,2,28,24\n\
         [IsoMapPack5]\n1=CAAEABUAAAAAEQAA\n\
         [Houses]\n0=Russians\n1=Americans\n[Russians]\nCountry=Russians\n[Americans]\nCountry=Americans\n\
         [Infantry]\nSCOUT=Russians,E2,256,20,20,0,Guard,0,None,0,-1,0,1,1\n\
         [TeamTypes]\n0=SCOUT-TEAM\n[SCOUT-TEAM]\nHouse=Russians\nScript=SCOUT-SCRIPT\nTaskForce=SCOUT-FORCE\nGroup=-1\nMax=1\n\
-        [ScriptTypes]\n0=SCOUT-SCRIPT\n[SCOUT-SCRIPT]\n0=22,0\n\
+        [ScriptTypes]\n0=SCOUT-SCRIPT\n[SCOUT-SCRIPT]\n{script}\n\
         [TaskForces]\n0=SCOUT-FORCE\n[SCOUT-FORCE]\nGroup=-1\n0=1,E2\n\
         [Triggers]\nSCOUT-TRIGGER=Russians,<none>,Scout,0,1,1,1,0\n\
         [Events]\nSCOUT-TRIGGER=1,13,0,1\n[Actions]\nSCOUT-TRIGGER=1,4,1,SCOUT-TEAM,0,0,0,0,A\n\
-        [Tags]\nSCOUT-TAG=0,Scout,SCOUT-TRIGGER\n").unwrap();
+        [Tags]\nSCOUT-TAG=0,Scout,SCOUT-TRIGGER\n").as_bytes()).unwrap();
     let (rules, _, _, _) = crate::rules::retail_ini_fixture::retail_rules_owner(&assets)
         .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &map.ini)
         .unwrap()
@@ -173,9 +171,17 @@ fn campaign_startup_runs_an_authored_scout_through_its_timed_trigger() {
     let member = sim.entities().values().next().unwrap().stable_id();
     let ty = sim.interner.get("SCOUT-TEAM").unwrap();
     sim.session.publish_started();
-    let mut runtime = SimRuntime {
+    let runtime = SimRuntime {
         simulation: sim,
         resources: SimResources::new(rules),
+    };
+    Some((runtime, member, ty))
+}
+
+#[test]
+fn campaign_startup_runs_an_authored_scout_through_its_timed_trigger() {
+    let Some((mut runtime, member, ty)) = campaign_scene("0=22,0") else {
+        return;
     };
     let mut observed = None;
     let mut scouted = false;

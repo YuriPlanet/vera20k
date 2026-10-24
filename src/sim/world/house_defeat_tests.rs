@@ -10,9 +10,9 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::capture_manager::{CaptureManagerState, MindControlLink};
 use crate::sim::combat::{RAD_NO_ATTACKER, ReceiverCallFlags};
 use crate::sim::game_entity::GameEntity;
-use crate::sim::house_state::HouseState;
+use crate::sim::house_state::{HouseOutcomeKind, HouseState};
 use crate::sim::intern::InternedId;
-use crate::sim::world::Simulation;
+use crate::sim::world::{PlayerOutcomeRequest, Simulation};
 use crate::util::save_codec;
 
 /// `[Sides]` listing country `Country{n}` as side `n`, the one at
@@ -309,7 +309,14 @@ fn network_country_result_actions_keep_each_human_decision_in_both_views() {
         let mut snapshots = Vec::new();
         for local in [0, 1] {
             let (mut sim, owners) = network_result_world(local);
-            assert!(sim.trigger_house_outcome(action, 0, &rules, Default::default()));
+            assert!(sim.request_player_outcome(
+                PlayerOutcomeRequest::Country {
+                    country_index: 0,
+                    win_on_match: action == 1
+                },
+                &rules,
+                Default::default(),
+            ));
             assert_eq!(sim.houses[&owners[0]].has_won(), action == 1);
             assert_eq!(sim.houses[&owners[1]].has_won(), action == 2);
             assert_eq!(sim.houses[&owners[0]].has_lost(), action == 2);
@@ -348,8 +355,19 @@ fn network_results_preserve_the_shared_to_die_and_allow_win_timer() {
         let house = sim.houses.get_mut(&dying).unwrap();
         house.register_allow_win_tag_type();
         house.removed_allow_win_tag(100);
-        assert!(sim.trigger_house_outcome(67, -1, &rules, Default::default()));
-        assert!(sim.trigger_house_outcome(69, -1, &rules, Default::default()));
+        assert!(sim.request_player_outcome(
+            PlayerOutcomeRequest::Flag {
+                kind: HouseOutcomeKind::Victory,
+                skip_timer: true
+            },
+            &rules,
+            Default::default()
+        ));
+        assert!(sim.request_player_outcome(
+            PlayerOutcomeRequest::EndScenario,
+            &rules,
+            Default::default()
+        ));
         let house = sim.houses.get_mut(&dying).unwrap();
         assert!(!house.has_won(), "FlagToDie blocks AnnounceWin/EndScenario");
         assert_eq!(
@@ -363,7 +381,14 @@ fn network_results_preserve_the_shared_to_die_and_allow_win_timer() {
         );
         // Action68 preserves that timer after the destruction latch clears;
         // it must not create a separate result-only countdown.
-        assert!(sim.trigger_house_outcome(68, -1, &rules, Default::default()));
+        assert!(sim.request_player_outcome(
+            PlayerOutcomeRequest::Flag {
+                kind: HouseOutcomeKind::Defeat,
+                skip_timer: true
+            },
+            &rules,
+            Default::default()
+        ));
         assert!(sim.houses[&dying].has_lost());
         assert_eq!(
             sim.houses[&dying].outcome_timer(),
@@ -440,7 +465,11 @@ fn native_flag_result_and_savour_controls() {
         let returned = match input["operation"].as_str().unwrap() {
             "win" => sim.flag_house_to_win(owner, &rules, skip, Default::default()),
             "lose" => sim.flag_house_to_lose(owner, &rules, skip, Default::default()),
-            "end" => sim.trigger_house_outcome(69, 0, &rules, Default::default()),
+            "end" => sim.request_player_outcome(
+                PlayerOutcomeRequest::EndScenario,
+                &rules,
+                Default::default(),
+            ),
             other => panic!("unhandled control {other}"),
         };
         let house = &sim.houses[&owner];

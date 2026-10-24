@@ -61,7 +61,7 @@ mod house_base;
 #[cfg(test)]
 mod house_cheer_tests;
 mod house_defeat;
-pub(crate) use house_defeat::HouseBlowupSubset;
+pub(crate) use house_defeat::{HouseBlowupSubset, PlayerOutcomeRequest};
 mod ion_blast;
 mod spotlight;
 pub(crate) use house_base::HouseBaseState;

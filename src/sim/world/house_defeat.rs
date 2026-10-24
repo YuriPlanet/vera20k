@@ -85,6 +85,7 @@
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
+use crate::sim::house_state::HouseOutcomeKind;
 use crate::sim::intern::InternedId;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::{SimSoundEvent, Simulation, UninitContext};
@@ -97,6 +98,21 @@ pub(crate) enum HouseBlowupSubset {
     Buildings,
     Land,
     Naval,
+}
+
+/// Requests targeting native PlayerPtr, represented for each network human.
+/// House flags, the shared +298 timer and local effects remain owned below.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum PlayerOutcomeRequest {
+    Country {
+        country_index: i32,
+        win_on_match: bool,
+    },
+    Flag {
+        kind: HouseOutcomeKind,
+        skip_timer: bool,
+    },
+    EndScenario,
 }
 
 /// The paused House's result head has already run its assessment prefix.
@@ -671,25 +687,25 @@ impl Simulation {
         effects.flush_sound(self, rules);
     }
 
-    /// TAction1/2/67/68/69 dispatch6DEA37/6DEA67/6DDD77/6DDD93/6DDDAF.
-    /// All target PlayerPtr, not the Trigger's incoming House.1/2 compare
-    /// +90 with that HouseType's Country ordinal;67/68 pass skip-timer1.
+    /// TAction1/2/67/68/69 dispatch6DEA37/6DEA67/6DDD77/6DDD93/6DDDAF
+    /// and TeamAI Script7/23 at6E98C9/6E98E5. All target PlayerPtr, not
+    /// the caller's House. Country compares +90 with its HouseType ordinal;
+    /// Flag preserves the caller's skip-timer argument (scripts pass false).
     /// In a VERA network world the same decision runs for each represented
     /// human viewpoint; current-only effects and app routing stay separate.
-    pub(crate) fn trigger_house_outcome(
+    pub(crate) fn request_player_outcome(
         &mut self,
-        action_kind: i32,
-        country_index: i32,
+        request: PlayerOutcomeRequest,
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) -> bool {
-        if !matches!(action_kind, 1 | 2 | 67 | 68 | 69) {
-            return false;
-        }
         let mut handled = false;
         for owner in self.outcome_viewpoints() {
-            match action_kind {
-                1 | 2 => {
+            let (kind, skip_timer) = match request {
+                PlayerOutcomeRequest::Country {
+                    country_index,
+                    win_on_match,
+                } => {
                     let native_country = self.houses[&owner]
                         .country()
                         .and_then(|country| rules.country_index(self.interner.resolve(country)))
@@ -697,20 +713,15 @@ impl Simulation {
                     let Some(native_country) = native_country else {
                         continue;
                     };
-                    let win = (native_country == country_index) == (action_kind == 1);
-                    if win {
-                        self.flag_house_to_win(owner, rules, false, effects);
+                    let kind = if (native_country == country_index) == win_on_match {
+                        HouseOutcomeKind::Victory
                     } else {
-                        self.flag_house_to_lose(owner, rules, false, effects);
-                    }
+                        HouseOutcomeKind::Defeat
+                    };
+                    (kind, false)
                 }
-                67 => {
-                    self.flag_house_to_win(owner, rules, true, effects);
-                }
-                68 => {
-                    self.flag_house_to_lose(owner, rules, true, effects);
-                }
-                69 => {
+                PlayerOutcomeRequest::Flag { kind, skip_timer } => (kind, skip_timer),
+                PlayerOutcomeRequest::EndScenario => {
                     //4FCDC0 calls the existing FlagWin(0) if neither result is
                     //set; otherwise only resume the same timer's paused anchor.
                     if self.houses[&owner].has_won() || self.houses[&owner].has_lost() {
@@ -718,11 +729,19 @@ impl Simulation {
                             .get_mut(&owner)
                             .unwrap()
                             .resume_result_timer(self.session.binary_frame() as i32);
-                    } else {
-                        self.flag_house_to_win(owner, rules, false, effects);
+                        handled = true;
+                        continue;
                     }
+                    (HouseOutcomeKind::Victory, false)
                 }
-                _ => unreachable!("validated outcome action"),
+            };
+            match kind {
+                HouseOutcomeKind::Victory => {
+                    self.flag_house_to_win(owner, rules, skip_timer, effects);
+                }
+                HouseOutcomeKind::Defeat => {
+                    self.flag_house_to_lose(owner, rules, skip_timer, effects);
+                }
             }
             handled = true;
         }
@@ -731,7 +750,7 @@ impl Simulation {
     }
 
     /// Diagnostic producer for a map's TAction 67/68 on the current
-    /// House, through the same [`Self::trigger_house_outcome`] owner. Only
+    /// House, through the same [`Self::request_player_outcome`] owner. Only
     /// the dev chord's capture routes reach it; shipping builds omit it.
     #[cfg(feature = "dev-overlays")]
     pub fn dev_trigger_current_house_outcome(
@@ -739,11 +758,14 @@ impl Simulation {
         rules: &RuleSet,
         kind: crate::sim::house_state::HouseOutcomeKind,
     ) -> bool {
-        let action = match kind {
-            crate::sim::house_state::HouseOutcomeKind::Victory => 67,
-            crate::sim::house_state::HouseOutcomeKind::Defeat => 68,
-        };
-        self.trigger_house_outcome(action, -1, rules, FrameEffects::empty())
+        self.request_player_outcome(
+            PlayerOutcomeRequest::Flag {
+                kind,
+                skip_timer: true,
+            },
+            rules,
+            FrameEffects::empty(),
+        )
     }
 
     /// Session `+0x300` (`0x00A8B538`), written when the current house is

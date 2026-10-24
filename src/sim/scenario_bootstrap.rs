@@ -3699,6 +3699,65 @@ mod tests {
     }
 
     #[test]
+    fn scripted_result_network_views_keep_both_humans_and_local_exit_consistent() {
+        use crate::rules::team_ai_ini::TeamAiIniRegistry;
+        use crate::sim::house_state::HouseOutcomeKind;
+        let mut finals = Vec::new();
+        for local in [0, 1] {
+            let (mut runtime, actors) = network_hash_perspective(local);
+            let sim = &mut runtime.simulation;
+            let rules = &runtime.resources.rules;
+            let owner = sim.entities().get(actors[0]).unwrap().owner();
+            let ini = IniFile::from_str(
+                "[TeamTypes]\n0=RESULT-TEAM\n[RESULT-TEAM]\n\
+                House=Americans\nScript=RESULT-SCRIPT\nTaskForce=RESULT-FORCE\nGroup=-1\nRecruiter=yes\nMax=1\n\
+                [ScriptTypes]\n0=RESULT-SCRIPT\n[RESULT-SCRIPT]\n0=23,77\n\
+                [TaskForces]\n0=RESULT-FORCE\n[RESULT-FORCE]\nGroup=-1\n0=1,MTNK\n",
+            );
+            let registry = TeamAiIniRegistry::from_sources(&IniFile::empty(), &ini, true);
+            sim.install_team_ai_registry(&registry, rules).unwrap();
+            let ty = sim.interner.get("RESULT-TEAM").unwrap();
+            let team = sim.create_team(ty, Some(owner), rules).unwrap();
+            let player = sim.session.current_house().unwrap();
+            let mut executed = false;
+            for _ in 0..120 {
+                runtime.advance_frame_for_tooling(&[], 22).unwrap();
+                let sim = &runtime.simulation;
+                if let Some(team) = sim.team_script_vm.team(team)
+                    && team.cursor() == 0
+                {
+                    assert!(team.refusal().is_none(), "{:?}", team.refusal());
+                    assert!(team.advance_pending());
+                    assert_eq!(team.members().collect::<Vec<_>>(), [actors[0]]);
+                    executed = true;
+                }
+                if sim.ready_outcome_for_owner(player).is_some() {
+                    break;
+                }
+            }
+            let sim = &runtime.simulation;
+            assert!(executed, "ordinary Team AI reaches the loss action");
+            assert!(sim.houses[&owner].has_lost());
+            let guest = sim.entities().get(actors[1]).unwrap().owner();
+            assert!(sim.houses[&guest].has_lost());
+            assert_eq!(
+                sim.ready_outcome_for_owner(player).unwrap().kind,
+                HouseOutcomeKind::Defeat
+            );
+            assert!(
+                sim.ready_outcome_for_owner(if player == owner { guest } else { owner })
+                    .is_none()
+            );
+            assert!(sim.team_script_vm.team(team).is_none());
+            finals.push(sim.state_hash());
+        }
+        assert_eq!(
+            finals[0], finals[1],
+            "local identity does not select shared House flags"
+        );
+    }
+
+    #[test]
     fn network_local_perspectives_share_startup_fog_and_ordinary_frame_hashes() {
         use crate::sim::command::{Command, CommandEnvelope};
         use crate::sim::world::{FrameEffects, TickLane};

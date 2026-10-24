@@ -75,6 +75,10 @@ use crate::sim::world::ObjectSubstrate;
 #[path = "scout_tests.rs"]
 mod scout_tests;
 
+#[cfg(test)]
+#[path = "result_tests.rs"]
+mod result_tests;
+
 impl TeamScriptState {
     /// TeamFlash6EF5F0 walks +54/+5D8 head first and writes signed Techno+F0.
     /// Script50 inlines the same loop at6E9CFF..6E9D18. Neither caller asks
@@ -120,6 +124,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 4
             | 5
             | 6
+            | 7
             | 8
             | 9
             | 10
@@ -132,6 +137,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 20
             | 21
             | 22
+            | 23
             | 24
             | 25
             | 26
@@ -357,6 +363,27 @@ impl Simulation {
                     );
                 }
                 self.team_coordinate_move(team_id, rules, registry, frame_effects);
+            }
+            // TeamClass::AI Script7/23, table6E9F90/6E9FD0 ->6E98C9/6E98E5:
+            // FlagWin4FC9E0/FlagLose4FCBD0(PlayerPtr, false), then Team+80=1.
+            // Original gamemd instructions: no first-visit/argument gate,
+            // RNG draw, private timer or detach; House owns SavourDelay+298.
+            7 | 23 => {
+                self.request_player_outcome(
+                    crate::sim::world::PlayerOutcomeRequest::Flag {
+                        kind: if action.action_id == 7 {
+                            crate::sim::house_state::HouseOutcomeKind::Victory
+                        } else {
+                            crate::sim::house_state::HouseOutcomeKind::Defeat
+                        },
+                        skip_timer: false,
+                    },
+                    rules,
+                    frame_effects,
+                );
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
             }
             // `0x006E97CE`: the guard timer starts on the first frame at
             // `argument * 15` frames; each frame the team regroups (the result

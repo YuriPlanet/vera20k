@@ -4829,12 +4829,25 @@ impl Simulation {
                 //6DDCB1/6DDD23 and6DF399..6DF3CE use PlayerPtr, not the
                 //incoming Trigger House. The shared House result/timer
                 //owner drives normal frame termination and ScenarioExit.
-                return self.trigger_house_outcome(
-                    action.kind,
-                    value.unwrap_or(0),
-                    rules,
-                    frame_effects,
-                );
+                use crate::sim::house_state::HouseOutcomeKind;
+                use crate::sim::world::PlayerOutcomeRequest;
+                let request = match action.kind {
+                    1 | 2 => PlayerOutcomeRequest::Country {
+                        country_index: value.unwrap_or(0),
+                        win_on_match: action.kind == 1,
+                    },
+                    ACTION_ANNOUNCE_WIN | ACTION_ANNOUNCE_LOSE => PlayerOutcomeRequest::Flag {
+                        kind: if action.kind == ACTION_ANNOUNCE_WIN {
+                            HouseOutcomeKind::Victory
+                        } else {
+                            HouseOutcomeKind::Defeat
+                        },
+                        skip_timer: true,
+                    },
+                    ACTION_END_SCENARIO => PlayerOutcomeRequest::EndScenario,
+                    _ => unreachable!("matched native outcome action"),
+                };
+                return self.request_player_outcome(request, rules, frame_effects);
             }
             _ => return false,
         }
