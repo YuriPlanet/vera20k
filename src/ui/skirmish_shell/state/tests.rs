@@ -825,7 +825,7 @@ fn the_game_starts_with_the_credits_the_slider_reads_back() {
     shell.starting_credits = 7549;
     assert_eq!(shell.credits(), 7500);
     let maps = [test_map_entry("first.mmx")];
-    let session = launch_session(&shell, &maps, &stock_skirmish_modes()).expect("session");
+    let session = launch_session(&shell, &maps, &stock_skirmish_modes(), false).expect("session");
     assert_eq!(session.options.starting_credits, 7500);
 }
 
@@ -933,7 +933,7 @@ fn launch_session_packs_selected_map_and_enabled_slots() {
 
     let maps = [test_map_entry("first.mmx"), test_map_entry("second.mmx")];
     let modes = stock_skirmish_modes();
-    let session = launch_session(&shell, &maps, &modes).expect("session");
+    let session = launch_session(&shell, &maps, &modes, false).expect("session");
 
     assert_eq!(session.mode.id, 1);
     assert_eq!(session.selected_map_file.as_deref(), Some("second.mmx"));
@@ -972,7 +972,7 @@ fn launch_session_forces_the_dialogs_fixed_session_options() {
     shell.launch_options_base.multi_engineer = true;
     let maps = [test_map_entry("first.mmx")];
     let modes = stock_skirmish_modes();
-    let options = launch_session(&shell, &maps, &modes)
+    let options = launch_session(&shell, &maps, &modes, false)
         .expect("session")
         .options;
     assert_eq!(
@@ -996,7 +996,7 @@ fn launch_session_preserves_selected_team_game_mode_id() {
     let modes = stock_skirmish_modes();
     repair_teams_for_selected_mode(&mut shell, &modes);
 
-    let session = launch_session(&shell, &maps, &modes).expect("session");
+    let session = launch_session(&shell, &maps, &modes, false).expect("session");
 
     assert_eq!(session.mode.id, 9);
     assert_eq!(session.mode.ui_name_key, "GUI:TeamGame");
@@ -1012,7 +1012,7 @@ fn launch_session_does_not_synthesize_unknown_mode() {
     let maps = [test_map_entry("map.mmx")];
 
     assert_eq!(
-        launch_session(&shell, &maps, &stock_skirmish_modes()).unwrap_err(),
+        launch_session(&shell, &maps, &stock_skirmish_modes(), false).unwrap_err(),
         LaunchValidationError::NoSelectedMode { mode_id: 99 }
     );
 }
@@ -1021,14 +1021,14 @@ fn launch_session_does_not_synthesize_unknown_mode() {
 fn launch_session_rejects_missing_map_and_bad_color() {
     let mut shell = controlled_country_shell();
     assert_eq!(
-        launch_session(&shell, &[], &stock_skirmish_modes()).unwrap_err(),
+        launch_session(&shell, &[], &stock_skirmish_modes(), false).unwrap_err(),
         LaunchValidationError::NoSelectedMap
     );
 
     shell.player_color_index = HOUSE_COLOR_COUNT;
     let maps = [test_map_entry("map.mmx")];
     assert_eq!(
-        launch_session(&shell, &maps, &stock_skirmish_modes()).unwrap_err(),
+        launch_session(&shell, &maps, &stock_skirmish_modes(), false).unwrap_err(),
         LaunchValidationError::InvalidColorIndex {
             slot: 0,
             color_index: HOUSE_COLOR_COUNT,
@@ -1046,14 +1046,14 @@ fn skirmish_launch_random_country_succeeds_and_flags_slot_for_resolution() {
 
     // A Random local country no longer blocks Start; the session is built with
     // the slot flagged so the concrete country is drawn during resolution.
-    let session = launch_session(&shell, &maps, &stock_skirmish_modes())
+    let session = launch_session(&shell, &maps, &stock_skirmish_modes(), false)
         .expect("random local country must not block Start");
     assert!(session.local_slot().country_random);
 
     shell.player_country_random = false;
     shell.opponents[0].country_random = true;
 
-    let session = launch_session(&shell, &maps, &stock_skirmish_modes())
+    let session = launch_session(&shell, &maps, &stock_skirmish_modes(), false)
         .expect("random AI country must not block Start");
     assert!(!session.local_slot().country_random);
     assert!(session.opponents[0].country_random);
@@ -1066,7 +1066,7 @@ fn launch_session_rejects_map_capacity_overflow() {
     let maps = [test_map_entry_with_starts("tiny.mmx", 2)];
 
     assert_eq!(
-        launch_session(&shell, &maps, &stock_skirmish_modes()).unwrap_err(),
+        launch_session(&shell, &maps, &stock_skirmish_modes(), false).unwrap_err(),
         LaunchValidationError::MapCapacityExceeded {
             capacity: 2,
             requested_players: 3,
@@ -1084,13 +1084,30 @@ fn raw_pack_skips_start_only_validation_for_back_transaction() {
     let modes = stock_skirmish_modes();
 
     assert_eq!(
-        launch_session(&shell, &maps, &modes).unwrap_err(),
+        launch_session(&shell, &maps, &modes, false).unwrap_err(),
         LaunchValidationError::NoEnabledOpponent
     );
     let packed = pack_launch_session_without_start_validation(&shell, &maps, &modes)
         .expect("Back must pack controls without Start-only gates");
     assert!(packed.opponents.is_empty());
     assert_eq!(packed.selected_map_file.as_deref(), Some("one-player.mmx"));
+}
+
+#[test]
+fn solo_skirmish_option_accepts_no_opponent_and_no_team_split() {
+    let mut shell = controlled_country_shell();
+    for opponent in &mut shell.opponents {
+        opponent.row_type = SkirmishAiRowType::None;
+    }
+    // An explicit team with no opponents is not a same-team conflict.
+    shell.player_team = 0;
+    let maps = [test_map_entry_with_starts("solo.mmx", 1)];
+
+    let session = launch_session(&shell, &maps, &stock_skirmish_modes(), true)
+        .expect("one player starts without opponents");
+    assert!(session.opponents.is_empty());
+    assert_eq!(session.ai_player_count, 0);
+    assert_eq!(session.humans.len(), 1);
 }
 
 #[test]
@@ -1146,7 +1163,7 @@ fn launch_session_rejects_same_explicit_team() {
     let maps = [test_map_entry("map.mmx")];
 
     assert_eq!(
-        launch_session(&shell, &maps, &stock_skirmish_modes()).unwrap_err(),
+        launch_session(&shell, &maps, &stock_skirmish_modes(), false).unwrap_err(),
         LaunchValidationError::SameExplicitTeam { team: 0 }
     );
 }
@@ -2078,7 +2095,7 @@ fn launch_session_carries_random_color_marker_and_cached_placeholder() {
     let maps = [test_map_entry("map.mmx")];
     let modes = stock_skirmish_modes();
 
-    let session = launch_session(&shell, &maps, &modes).expect("session");
+    let session = launch_session(&shell, &maps, &modes, false).expect("session");
 
     assert_eq!(session.local_slot().color_index, 3);
     assert!(session.local_slot().color_random);

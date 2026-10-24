@@ -250,6 +250,7 @@ impl App {
             &state.frontend.skirmish_shell_state,
             state.frontend.scenario_catalog.shell_maps(),
             &state.frontend.skirmish_modes,
+            state.persistence.options_profile.solo_skirmish,
         ) {
             Ok(raw_session) => {
                 match state

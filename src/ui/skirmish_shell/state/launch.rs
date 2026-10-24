@@ -37,6 +37,7 @@ pub fn launch_session(
     state: &SkirmishShellState,
     maps: &[MapMenuEntry],
     modes: &[SkirmishGameMode],
+    allow_solo: bool,
 ) -> Result<SkirmishLaunchSession, LaunchValidationError> {
     let selected_map = maps
         .get(state.selected_map_idx)
@@ -55,10 +56,13 @@ pub fn launch_session(
             requested_players,
         });
     }
-    if active_count == 0 {
+    // `[VERA] SoloSkirmish=yes` accepts a match with no opponent for an
+    // undisturbed test game. Retail keeps its "at least two players" gate.
+    if active_count == 0 && !allow_solo {
         return Err(LaunchValidationError::NoEnabledOpponent);
     }
-    if state.player_team >= 0 {
+    // With no opponent active there is no team conflict to report.
+    if state.player_team >= 0 && active_count > 0 {
         let local_team = state.player_team as u8;
         let all_active_ai_same_team = state
             .opponents

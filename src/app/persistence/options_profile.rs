@@ -149,6 +149,10 @@ pub(crate) struct RetailOptionsProfile {
     /// service instead of showing `TXT_APIMISSING`: the Options page's
     /// developer box. Off by default; no real service exists yet.
     pub(crate) wol_test_service: bool,
+    /// `[VERA] SoloSkirmish=`: Start accepts a skirmish whose AI rows are all
+    /// `None`, for an undisturbed test match. Off by default, so retail's
+    /// "at least two players" gate stays.
+    pub(crate) solo_skirmish: bool,
     /// `[VERA] Display=`: the screen the game opens on, by the window system's
     /// own name (`\\.\DISPLAY1`). Absent or empty means the system's choice,
     /// which is how every earlier build behaved. A name no longer attached
@@ -217,6 +221,7 @@ impl Default for RetailOptionsProfile {
             shift_queue: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             wol_test_service: false,
+            solo_skirmish: false,
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
         }
     }
@@ -234,7 +239,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 11],
+    pub(crate) vera: [(&'static str, String); 12],
 }
 
 impl RetailOptionsLoad {
@@ -441,6 +446,7 @@ impl RetailOptionsProfile {
                 vera.read_int("ShiftQueueCount", self.shift_queue_count as i32),
             );
             self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
+            self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             if let Some(value) = vera.read_name("Display", DISPLAY_CAPACITY) {
                 self.display =
                     crate::ui::main_menu_dialogs::options::DisplayTarget::from_ini_value(value);
@@ -536,6 +542,7 @@ impl RetailOptionsProfile {
                     "WolTestService",
                     format_bool(self.wol_test_service).to_string(),
                 ),
+                ("SoloSkirmish", format_bool(self.solo_skirmish).to_string()),
                 (
                     "RenderInterpolation",
                     format_bool(self.render_interpolation).to_string(),
@@ -1329,6 +1336,8 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(!defaults.retained_profile.shift_queue);
         // Internet shows TXT_APIMISSING, as on retail, until it is ticked.
         assert!(!defaults.retained_profile.wol_test_service);
+        // The retail minimum-player gate stays until SoloSkirmish= is enabled.
+        assert!(!defaults.retained_profile.solo_skirmish);
         assert_eq!(
             defaults.retained_profile.shift_queue_count,
             DEFAULT_SHIFT_QUEUE_COUNT
@@ -1336,7 +1345,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
 
         let load = load_snapshot(
             &RetailStartupOptions::default(),
-            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\nShiftQueue=yes\nShiftQueueCount=8\nWolTestService=yes\n",
+            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\nShiftQueue=yes\nShiftQueueCount=8\nWolTestService=yes\nSoloSkirmish=yes\n",
         );
         assert!(load.retained_profile.full_screen);
         // The first release saved the whole factor.
@@ -1346,6 +1355,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(!load.retained_profile.yr_original_style);
         assert!(load.retained_profile.shift_queue);
         assert!(load.retained_profile.wol_test_service);
+        assert!(load.retained_profile.solo_skirmish);
         assert_eq!(load.retained_profile.shift_queue_count, 8);
         // A value this build doesn't know reads as Auto.
         let unknown = load_snapshot(&RetailStartupOptions::default(), b"[VERA]\nZoom=9\n");
@@ -1360,6 +1370,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
             shift_queue: true,
             shift_queue_count: 7,
             wol_test_service: true,
+            solo_skirmish: true,
             ..RetailOptionsProfile::default()
         };
         let output =
@@ -1367,7 +1378,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 .unwrap();
         assert!(
             output.contains(
-                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nYROriginalStyle=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\n"
+                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nYROriginalStyle=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\nSoloSkirmish=yes\r\n"
             ),
             "{output}"
         );
@@ -1379,6 +1390,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(reread.retained_profile.yr_original_style);
         assert!(reread.retained_profile.shift_queue);
         assert!(reread.retained_profile.wol_test_service);
+        assert!(reread.retained_profile.solo_skirmish);
         assert_eq!(reread.retained_profile.shift_queue_count, 7);
     }
 
