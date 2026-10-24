@@ -303,7 +303,7 @@ impl Simulation {
     /// [`NoSurvivor`] (`+0x6E0`), uncrewed or owned by a house outside the
     /// three sides; otherwise the refund over the side's divisor (doubled once
     /// captured), clamped to 1..5.
-    pub(crate) fn building_survivor_count(&self, rules: &RuleSet, building_id: u64) -> i32 {
+    pub fn building_survivor_count(&self, rules: &RuleSet, building_id: u64) -> i32 {
         let Some(entity) = self.substrate.entities.get(building_id) else {
             return 0;
         };

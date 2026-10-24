@@ -167,8 +167,8 @@ fn append(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, actor: u64, 
 }
 
 #[test]
-fn stop_repair_or_uninit_detaches_only_its_actor_from_shared_nodes() {
-    for action in ["stop", "repair_dead", "uninit"] {
+fn stop_repair_sale_or_uninit_detaches_only_its_actor_from_shared_nodes() {
+    for action in ["stop", "repair_dead", "sale_dead", "uninit"] {
         let (mut sim, rules, owner) = fixture();
         for actor in [1, 2] {
             append(&mut sim, &rules, owner, actor, (12, 15));
@@ -180,15 +180,20 @@ fn stop_repair_or_uninit_detaches_only_its_actor_from_shared_nodes() {
                 "UnInit retains +514 until destruction"
             );
             sim.process_pending_delete_with(&rules, None, Default::default(), 1, false);
-        } else if action == "repair_dead" {
+        } else if action == "repair_dead" || action == "sale_dead" {
             sim.substrate
                 .entities
                 .get_mut(1)
                 .unwrap()
                 .lifecycle
                 .set_object_alive_for_test(false);
-            // Event4C6EE0 detaches before the target's +90/alive refusal.
-            let record = sim.encode_repair_record(owner, 1).unwrap();
+            // REPAIR4C6EE0 / SELL4C6F20 detach before +90/alive refusal.
+            let record = if action == "repair_dead" {
+                sim.encode_repair_record(owner, 1)
+            } else {
+                sim.encode_object_action_record(owner, &Command::SellBuilding { entity_id: 1 })
+            }
+            .unwrap();
             let envelope = sim.decode_native_command_record(&record, 0).unwrap();
             assert!(!sim.apply_command("Americans", &envelope.payload, Some(&rules)));
         } else {

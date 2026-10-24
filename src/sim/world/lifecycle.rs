@@ -6900,6 +6900,11 @@ impl Simulation {
         self.trace_lifecycle_for_test(LifecycleTestEvent::FinalizedCommon { stable_id });
     }
 
+    /// Read-only membership in the single deferred object-finalization queue.
+    pub fn object_is_pending_delete(&self, stable_id: u64) -> bool {
+        self.substrate.pending_delete.contains_object(&stable_id)
+    }
+
     /// The pending-delete drain of test fixtures, on the rules an empty INI
     /// reads to (see [`Self::process_pending_delete_with`]).
     #[cfg(any(test, feature = "test-support"))]

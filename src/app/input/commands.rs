@@ -1539,13 +1539,18 @@ mod tests {
         let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
             return;
         };
-        let (mut sim, rules, actor) =
-            Simulation::walk_cell_input_test_scene_with(retail.rules, false);
+        // This packet fixture places buildings, so use the buildable arena
+        // rather than the Foot-only cell-admission comparison map.
+        let rules = retail.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4C6F12);
+        let actor = sim
+            .spawn_object("E1", "Americans", 5, 5, 0, &rules)
+            .unwrap();
         let building = sim
-            .spawn_object("GAPILE", "Local", 3, 6, 0, &rules)
+            .spawn_object("GAPILE", "Americans", 3, 6, 0, &rules)
             .unwrap();
         let second = sim
-            .spawn_object("GAPILE", "Local", 3, 10, 0, &rules)
+            .spawn_object("GAPILE", "Americans", 3, 10, 0, &rules)
             .unwrap();
         assert!(sim.production().is_primary_factory(building));
         let commands = [
@@ -1581,7 +1586,7 @@ mod tests {
             },
         ];
         for command in commands {
-            assert!(schedule_command_in_sim(&mut sim, "Local", command).is_some());
+            assert!(schedule_command_in_sim(&mut sim, "Americans", command).is_some());
         }
         let records: Vec<_> = sim
             .network_command_queues()
@@ -1627,7 +1632,7 @@ mod tests {
         assert!(
             decoded
                 .iter()
-                .all(|command| command.owner == sim.interner().get("Local").unwrap())
+                .all(|command| command.owner == sim.interner().get("Americans").unwrap())
         );
         assert!(matches!(
             decoded[0].payload,
@@ -1659,11 +1664,11 @@ mod tests {
         assert!(
             matches!(decoded[5].payload, Command::EjectBunker { bunker_id } if bunker_id == building)
         );
-        assert!(sim.apply_command("Local", &decoded[6].payload, Some(&rules)));
+        assert!(sim.apply_command("Americans", &decoded[6].payload, Some(&rules)));
         assert_eq!(sim.session().game_options().game_speed, 4);
-        assert!(sim.apply_command("Local", &decoded[7].payload, Some(&rules)));
+        assert!(sim.apply_command("Americans", &decoded[7].payload, Some(&rules)));
         assert!(sim.production().is_primary_factory(second));
-        assert!(sim.apply_command("Local", &decoded[8].payload, Some(&rules)));
+        assert!(sim.apply_command("Americans", &decoded[8].payload, Some(&rules)));
         assert!(sim.production().is_primary_factory(building));
     }
 

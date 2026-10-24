@@ -68,10 +68,10 @@ pub(crate) use self::production_sell::sell_back;
 #[cfg(any(test, feature = "test-support"))]
 pub use self::production_sell::sell_building_now_for_test;
 pub use self::production_sell::sell_stage_zero;
-pub use self::production_sell::{SellOrder, can_sell_building};
+pub use self::production_sell::{SellOrder, can_sell_building, techno_refund};
 pub(crate) use self::production_sell::{
-    archive_less_sale, sell_after_owner_change, sell_complete, sell_stage_one, techno_refund,
-    type_refund, undeploy_target,
+    archive_less_sale, sell_after_owner_change, sell_complete, sell_stage_one, type_refund,
+    undeploy_target,
 };
 pub use self::production_spawn::mark_war_factory_spawn_contact;
 pub use self::production_tech::{

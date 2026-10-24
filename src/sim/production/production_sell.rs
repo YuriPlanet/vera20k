@@ -135,7 +135,7 @@ pub(crate) fn type_refund(
 /// `TechnoClass::GetRefund @ 0x0070ADA0` (vt+0x2BC) for object `id`: its
 /// type's [`type_refund`] to its owner (`+0x21C`), `full` clear. None when
 /// the object, its type or its house is gone.
-pub(crate) fn techno_refund(sim: &Simulation, rules: &RuleSet, id: u64) -> Option<i32> {
+pub fn techno_refund(sim: &Simulation, rules: &RuleSet, id: u64) -> Option<i32> {
     let entity = sim.substrate.entities.get(id)?;
     let object = sim.object_type(entity.type_ref(), rules)?;
     let owner = entity.owner();

@@ -176,7 +176,7 @@ impl LiveLanCapture {
                     | LanTarget::OnlineHost
                     | LanTarget::OnlineGuest
             )
-            .then(battle::BattleOpening::default),
+            .then(|| battle::BattleOpening::new(!target.online())),
             mass: None,
             failure: match target {
                 LanTarget::LiveTimeoutHost | LanTarget::OnlineTimeoutHost => {
@@ -212,8 +212,8 @@ impl LiveLanCapture {
             return frames;
         }
         if self.battle.is_some() {
-            // Includes a barracks rally and paid GI walk, ordinary travel across
-            // the map, object Attack/Stop and a stable separated tail. Every frame
+            // Includes paid GI rally/combat, building repair and sale with an
+            // unfinished Factory queue, natural crew and cleanup. Every frame
             // still belongs to normal production pacing/pathing/combat.
             7200
         } else {
@@ -885,8 +885,14 @@ impl LiveLanCapture {
             .live_network
             .as_ref()
             .context("real live transport")?;
+        // A LAN battle ends at its own committed observation prefix. The peer
+        // can write that same prefix and exit before our next render; waiting
+        // for its final advertisement races that ordinary transport teardown.
+        // The pair runner still requires and compares both complete prefixes.
+        let lan_battle_prefix =
+            self.battle.is_some() && !self.target.online() && committed >= required_frames;
         ensure!(
-            live.peers().len() + 1 == active_players,
+            lan_battle_prefix || live.peers().len() + 1 == active_players,
             "live diagnostic peer disappeared"
         );
         let wait = format!("{:?}", live.wait_info());
@@ -942,10 +948,11 @@ impl LiveLanCapture {
                     .live_network
                     .as_ref()
                     .context("live transport")?;
-                if live
-                    .peers()
-                    .iter()
-                    .all(|peer| peer.frame() >= required_frames as i32)
+                if lan_battle_prefix
+                    || live
+                        .peers()
+                        .iter()
+                        .all(|peer| peer.frame() >= required_frames as i32)
                 {
                     MoviesCapture::restore_neutral_pointer(state);
                     self.phase = Phase::Finished;
@@ -1075,7 +1082,7 @@ impl LiveLanCapture {
         );
         Ok(
             json!({"target":format!("{:?}",self.target),"service_boundary":if self.target.online() {"independent App processes; real HTTPS/UDP relay; ordinary frame boundary"} else {"two independent App processes; real UDP/global/private queues; ordinary frame boundary"},
-            "scope":if self.target.desync_failure() { "real300-frame CRC and strong-hash prefix followed by external scoped FRAMEINFO corruption, actual checksum CE Stop and ordinary LAN lobby cleanup" } else if self.failure.is_some() { "shared 300-frame prefix followed by real peer disappearance and ordinary wait recovery or Quit; bounded runtime validation, not whole-match/native parity" } else if self.target.online() {"observed production match before real outcome; tactical commands and simulation checksums"} else if self.battle.is_some() { "kick/rejoin, Battle opening, tactical barracks rally through raw ARCHIVE, two automatic paid GI deliveries and natural rally walks per Human, tactical GI Move/object Attack, post-command rifle damage and raw Stop, then separation; bounded runtime validation, not whole-match/native parity" } else { "kick/rejoin, 300 native frames and local Move/Stop; bounded runtime validation, not whole-match/native parity" },
+            "scope":if self.target.desync_failure() { "real300-frame CRC and strong-hash prefix followed by external scoped FRAMEINFO corruption, actual checksum CE Stop and ordinary LAN lobby cleanup" } else if self.failure.is_some() { "shared 300-frame prefix followed by real peer disappearance and ordinary wait recovery or Quit; bounded runtime validation, not whole-match/native parity" } else if self.target.online() {"observed production match before real outcome; tactical commands and simulation checksums"} else if self.battle.is_some() { "kick/rejoin, Battle opening, paid GI rally/combat, paid GAPILE repair and sale with an unfinished Infantry queue, natural crew, refunds and cleanup, then former-foundation Move; bounded runtime validation, not whole-match/native parity" } else { "kick/rejoin, 300 native frames and local Move/Stop; bounded runtime validation, not whole-match/native parity" },
             "process_id":std::process::id(),
             "loading_progress":crate::app::diagnostics::shell_capture::loading_runtime::progress_receipt(state)?,
             "participant_count":self.startup.as_ref().and_then(|startup|startup["sources"].as_array()).map_or(self.expected_players,Vec::len),

@@ -101,11 +101,25 @@ fn retail_mcvs_repack_and_follow_the_ground_click_after_deployment() {
             Command::SetRally { rx, ry, .. } => (rx, ry),
             _ => unreachable!(),
         };
-        let envelopes: Vec<_> = orders
-            .into_iter()
-            .map(|payload| CommandEnvelope::new(owner, sim.session().tick(), payload))
-            .collect();
-        sim.queue_commands(envelopes);
+        for payload in orders {
+            assert!(
+                crate::app::input::commands::schedule_command_in_sim(
+                    &mut sim,
+                    "Americans",
+                    payload,
+                )
+                .is_some()
+            );
+        }
+        assert_eq!(
+            sim.network_command_queues()
+                .local_records()
+                .unwrap()
+                .iter()
+                .map(|record| record.opcode())
+                .collect::<Vec<_>>(),
+            [0x1e, 0x16]
+        );
         let mut converted = None;
         for _ in 0..80 {
             step(&mut sim, &rules);
@@ -857,9 +871,9 @@ fn an_object_archive_whose_target_is_gone_clears_the_archive() {
 
 /// Alt or Ctrl+Alt over a Terrain object with a building selected: Techno
 /// What_Action's Alt rung answers Move (a tree is no ally for Ctrl+Alt's
-/// guard rung, `0x004F9A90`), which Building What_Action_OnObject's factory
-/// rungs (`0x004473F4..0x0044750B`) take over the Cell under the tree. The
-/// yard archives the tree (event 0x1E) and its MCV later drives to it.
+/// guard rung, `0x004F9A90`). Building What_Action_OnObject's factory rungs
+/// (`0x004473F4..0x0044750B`) refuse the tree's occupied Cell, while a yard
+/// archives the tree (event 0x1E) and its MCV later drives to it.
 #[test]
 fn a_yard_alt_click_over_a_tree_archives_it_and_its_mcv_drives_there() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
@@ -898,11 +912,12 @@ fn a_yard_alt_click_over_a_tree_archives_it_and_its_mcv_drives_there() {
         let alt = over_tree(&[yard], modifier);
         assert_eq!(archives(&alt), [(yard, tree)], "{modifier:?}");
         assert!(!packs_up(&alt), "{modifier:?}");
-        // The war factory's rungs admit the Cell under the tree, and it
-        // rallies beside it (`Building443860`).
+        // BuildingClass::What_Action_OnObject447506..447527 refuses a
+        // non-ground Cell without a structural bridge. TREE01 publishes
+        // occupation4, giving this Cell zone5 (RecalcZoneType483C80).
         assert_eq!(
-            rallies(&over_tree(&[factory], modifier)),
-            [factory],
+            over_tree(&[factory], modifier),
+            BuildingClick::Nothing,
             "{modifier:?}"
         );
     }

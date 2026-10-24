@@ -1651,7 +1651,10 @@ impl Simulation {
             Command::Stop { entity_id }
             | Command::Scatter { entity_id }
             | Command::DeployMcv { entity_id }
-            | Command::ToggleRepair { entity_id } => Some(*entity_id),
+            | Command::ToggleRepair { entity_id }
+            // EventClass::Execute @ 0x004C6CB0, SELL arm 0x004C6F20:
+            // PlanningDetach precedes the target's alive/owner refusal.
+            | Command::SellBuilding { entity_id } => Some(*entity_id),
             _ => cmd.megamission_actor(),
         };
         if !planned && let Some(actor) = ordinary_actor {
@@ -2157,11 +2160,20 @@ impl Simulation {
                     frame_effects,
                 )
             }
-            // The SELL event (`EventClass::Execute 0x004C6F20`): the target's
-            // owner must be the event's house (`0x004C6F45`); a building
-            // takes `Sell_Back(-1)` (`0x004C6FA2`).
+            // EventClass::Execute @ 0x004C6CB0, SELL arm 0x004C6F12:
+            // the prefix above detaches Planning (4C6F20), then +90/alive
+            // and current Owner+30 must match the signed event House
+            // (4C6F2D..4C6F48). A building takes SellBack(-1) at4C6FA2;
+            // CanSell belongs to input admission, not this receiver.
+            // Depot Unit/Aircraft sales at4C6F5A..4C6F96 remain a separate
+            // unimplemented service lifecycle; this order handles buildings.
             Command::SellBuilding { entity_id } => {
-                if !self.entity_owned_by_id(command_owner, *entity_id) {
+                let Some(entity) = self.substrate.entities.get(*entity_id) else {
+                    return false;
+                };
+                if !entity.lifecycle.object_alive()
+                    || !self.entity_owned_by_id(command_owner, *entity_id)
+                {
                     return false;
                 }
                 production::sell_back(
@@ -3561,6 +3573,98 @@ mod tests {
             sim.substrate.entities.get(42).unwrap().archive_target(),
             None
         );
+    }
+
+    #[test]
+    fn queued_sale_retains_issuer_across_capture_and_does_not_readmit_can_sell() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut rules = retail.rules;
+        crate::map::theater::load_theater(&mut assets, "URBAN");
+        rules.bind_building_buildup_assets(&assets, "URBAN");
+        assert!(rules.has_buildup("GAPILE"));
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4C6F12);
+        let old_owner = sim.interner.get("Americans").unwrap();
+        let new_owner = sim.interner.get("Russians").unwrap();
+        sim.houses
+            .get_mut(&new_owner)
+            .unwrap()
+            .set_is_human_for_test(true);
+        let building = sim
+            .spawn_object("GAPILE", "Americans", 8, 8, 0, &rules)
+            .unwrap();
+        let record = sim
+            .encode_object_action_record(
+                old_owner,
+                &Command::SellBuilding {
+                    entity_id: building,
+                },
+            )
+            .unwrap();
+        assert!(sim.admit_native_command_record(record.clone()));
+        sim.change_owner_with_rules(building, new_owner, &rules, None, FrameEffects::default());
+        let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "sale", 0);
+        let mut sim = crate::sim::snapshot::GameSnapshot::load(&bytes)
+            .unwrap()
+            .sim;
+        sim.restore_after_snapshot_load().unwrap();
+        let admitted = sim.take_frame_commands_for_test();
+        assert_eq!(admitted.len(), 1);
+        assert_eq!(admitted[0].owner, old_owner);
+        assert!(!sim.apply_command("Americans", &admitted[0].payload, Some(&rules)));
+        assert!(
+            !sim.substrate
+                .entities
+                .get(building)
+                .unwrap()
+                .building_down()
+        );
+
+        // A double click can admit two events before the first starts Selling.
+        // The second still reaches SellBack(-1), even though CanSell now refuses.
+        let current = sim
+            .encode_object_action_record(
+                new_owner,
+                &Command::SellBuilding {
+                    entity_id: building,
+                },
+            )
+            .unwrap();
+        let envelope = sim.decode_native_command_record(&current, 0).unwrap();
+        let credits = sim.houses[&new_owner].economy().credits();
+        let (accepted, draws) = crate::sim::rng::trace_draws(|| {
+            sim.apply_command("Russians", &envelope.payload, Some(&rules))
+        });
+        assert!(accepted);
+        assert!(draws.is_empty(), "crew RNG belongs to later Selling visits");
+        let actor = sim.substrate.entities.get(building).unwrap();
+        assert!(actor.building_down());
+        let progress = (actor.mission.handler_state(), *actor.native_stage());
+        assert!(!production::can_sell_building(&sim, &rules, building));
+        assert!(sim.apply_command("Russians", &envelope.payload, Some(&rules)));
+        let actor = sim.substrate.entities.get(building).unwrap();
+        assert_eq!(
+            (actor.mission.handler_state(), *actor.native_stage()),
+            progress
+        );
+        assert_eq!(sim.houses[&new_owner].economy().credits(), credits);
+        // Event4C6F2D..4C6F35 refuses a retained but no-longer-alive target.
+        sim.substrate
+            .entities
+            .get_mut(building)
+            .unwrap()
+            .lifecycle
+            .set_object_alive_for_test(false);
+        sim.sound_events.clear_for_test();
+        assert!(!sim.apply_command("Russians", &envelope.payload, Some(&rules)));
+        assert!(sim.sound_events.iter().next().is_none());
+        sim.substrate.entities.remove(building);
+        let stale = sim.decode_native_command_record(&record, 0).unwrap();
+        assert!(!sim.apply_command("Americans", &stale.payload, Some(&rules)));
     }
 
     #[test]

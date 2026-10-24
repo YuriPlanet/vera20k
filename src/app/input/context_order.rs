@@ -1134,6 +1134,9 @@ fn command_actor_id(command: &Command) -> Option<u64> {
         | Command::ToggleInfantryDeploy { entity_id }
         | Command::DeployMcv { entity_id }
         | Command::UndeployBuilding { entity_id }
+        // BuildingClass::ClickedAction_Cell @ 0x004436F0 emits SELL16 after
+        // ARCHIVE1E; Selection @ 0x004AE750 keeps both at this actor's index.
+        | Command::SellBuilding { entity_id }
         | Command::ArchiveObject { entity_id, .. }
         | Command::Stop { entity_id } => Some(*entity_id),
         Command::Attack { attacker_id, .. }

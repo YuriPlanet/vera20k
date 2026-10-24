@@ -983,15 +983,18 @@ fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
             barracks,
         ));
         let frame = u64::from(runtime.simulation.session.binary_frame()) + 1;
+        let sale = runtime
+            .simulation
+            .encode_object_action_record(
+                owner,
+                &Command::SellBuilding {
+                    entity_id: barracks,
+                },
+            )
+            .unwrap();
         runtime
             .advance_frame(
-                &[CommandEnvelope::new(
-                    owner,
-                    frame,
-                    Command::SellBuilding {
-                        entity_id: barracks,
-                    },
-                )],
+                &[CommandEnvelope::synchronized(sale, frame)],
                 67,
                 TickLane::Ordinary,
                 FrameEffects::default(),
