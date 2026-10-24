@@ -752,6 +752,11 @@ struct CellOverlayInputs<'a> {
     viewport: [f32; 2],
     origin_y: f32,
     world_height: f32,
+    /// Translucent fog: walls are objects, so they leave the draw plan when the
+    /// local viewer does not see their cell.
+    viewer: Option<crate::sim::intern::InternedId>,
+    fog: Option<&'a crate::sim::vision::FogState>,
+    fog_of_war: bool,
 }
 
 /// Cell_ContentRendering @ 0x006D6D10 -> DrawOverlay_Body @ 0x0047F6A0 for
@@ -789,6 +794,19 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
         }
         let overlay_registry = input.registry;
         let overlay_flags = overlay_registry.and_then(|reg| reg.flags(live_overlay_id));
+        // Walls are owned objects, not scenery: translucent fog keeps terrain,
+        // ore and trees visible but must not expose unseen wall lines.
+        if overlay_flags.is_some_and(|flags| flags.wall)
+            && super::helpers::translucent_fog_conceals_cell(
+                input.viewer,
+                input.fog,
+                entry.rx,
+                entry.ry,
+                input.fog_of_war,
+            )
+        {
+            continue;
+        }
         let slope_type = input
             .terrain
             .and_then(|terrain| terrain.cell(entry.rx, entry.ry))
@@ -972,6 +990,22 @@ pub(crate) fn build_overlay_instances(
         .map(|g| (g.origin_y, g.world_height))
         .unwrap_or((0.0, 1.0));
 
+    let (viewer, fog, fog_of_war) =
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map_or((None, None, false), |runtime| {
+                let sim = &runtime.simulation;
+                let viewer = crate::app::input::commands::preferred_local_owner_name(state)
+                    .as_deref()
+                    .and_then(|name| sim.interner().get(name));
+                (
+                    viewer,
+                    Some(sim.fog()),
+                    sim.session().game_options().fog_of_war,
+                )
+            });
     build_cell_overlay_bodies(
         &CellOverlayInputs {
             entries: state.match_state.match_presentation.overlays.as_slice(),
@@ -1000,6 +1034,9 @@ pub(crate) fn build_overlay_instances(
             viewport: [sw, sh],
             origin_y,
             world_height,
+            viewer,
+            fog,
+            fog_of_war,
         },
         bodies,
     );

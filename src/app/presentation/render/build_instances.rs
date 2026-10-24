@@ -405,6 +405,89 @@ pub(super) fn build_world_instances(
     if let Some(rt) = state.match_state.sim_runtime.as_ref() {
         instances::assign_tether_redraws(&rt.simulation, &mut planned_objects);
     }
+    // VERA's translucent fog lifts the A buffer's near-black concealment, so
+    // live enemy objects the local viewer cannot see leave the draw plan fully
+    // (body, shadow, attached anim parts and extras) instead of showing through
+    // the fog. Terrain, overlays and revealed map art stay visible.
+    if !state.match_state.sandbox_full_visibility {
+        let viewer_name = crate::app::input::commands::preferred_local_owner_name(state);
+        if let (Some(rt), Some(viewer_name)) = (
+            state.match_state.sim_runtime.as_ref(),
+            viewer_name.as_deref(),
+        ) {
+            let sim = &rt.simulation;
+            let rules = &rt.resources.rules;
+            let viewer = sim.interner().get(viewer_name);
+            let fog_of_war = sim.session().game_options().fog_of_war;
+            let concealed = |entity: &crate::sim::game_entity::GameEntity| {
+                let owner = sim.interner().resolve(entity.owner());
+                instances::translucent_fog_conceals(
+                    Some(viewer_name),
+                    sim.fog(),
+                    sim.house_alliances(),
+                    &entity.position,
+                    owner,
+                    false,
+                    viewer,
+                    fog_of_war,
+                )
+            };
+            // Particles owned by an object follow it out of the fog.
+            let particle_owners: std::collections::BTreeMap<u64, Option<u64>> = sim
+                .particle_systems()
+                .display_particles()
+                .map(|(system, particle)| {
+                    (
+                        particle.stable_id(),
+                        system.and_then(|system| system.owner_entity()),
+                    )
+                })
+                .collect();
+            planned_objects.retain(|parent| {
+                let id = parent.parent.id;
+                if let Some(entity) = sim.entities().get(id) {
+                    return !concealed(entity);
+                }
+                if let Some(owner) = particle_owners.get(&id) {
+                    return owner.is_none_or(|owner_id| {
+                        sim.entities().get(owner_id).is_none_or(|e| !concealed(e))
+                    });
+                }
+                let Some(anim) = sim.anim(id) else {
+                    return true;
+                };
+                // Building-attached AnimClass parts (idle components, damage
+                // fire) follow their owner object out of the fog, whether the
+                // attachment is the Anim object pointer or a Building slot.
+                if let Some(owner_id) = anim
+                    .owner_entity()
+                    .or_else(|| anim.building_slot().map(|(owner, _)| owner))
+                {
+                    return sim
+                        .entities()
+                        .get(owner_id)
+                        .is_none_or(|entity| !concealed(entity));
+                }
+                // Standalone effect (explosion, fire, smoke): hidden over an
+                // unseen cell unless rules declare it as a superweapon effect.
+                let name = sim.interner().resolve(anim.type_id());
+                if instances::is_superweapon_effect_anim(name, &rules.general) {
+                    return true;
+                }
+                let Some(coord) = sim.anim_absolute_coord(id) else {
+                    return true;
+                };
+                let cell = instances::lepton_cell(coord.x, coord.y);
+                !instances::translucent_fog_conceals_cell(
+                    viewer,
+                    Some(sim.fog()),
+                    cell.0,
+                    cell.1,
+                    fog_of_war,
+                )
+            });
+        }
+    }
     // Native +99 is set before a Building's body opportunity, independently
     // of successful pixels. Empty body frames still have a retained parent.
     let building_body_opportunities = planned_objects

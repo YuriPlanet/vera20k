@@ -347,6 +347,9 @@ impl Probe {
                 viewport: self.size.map(|value| value as f32),
                 origin_y: view.world_origin_y,
                 world_height: view.world_height,
+                viewer: None,
+                fog: None,
+                fog_of_war: false,
             },
             &mut bodies,
         );
@@ -1205,6 +1208,9 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
                 viewport: size.map(|v| v as f32),
                 origin_y: view.world_origin_y,
                 world_height: view.world_height,
+                viewer: None,
+                fog: None,
+                fog_of_war: false,
             },
             &mut bodies,
         );

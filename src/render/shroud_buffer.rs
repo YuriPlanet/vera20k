@@ -29,6 +29,20 @@ use wgpu::util::DeviceExt;
 /// itself a universal RGB brightness multiplier.
 const NEUTRAL: u8 = 0x7F;
 
+/// How much of the native shroud darkening survives. 1000 keeps the original
+/// opaque A; 500 lifts A halfway back to [`NEUTRAL`], so the map stays visible
+/// through the fog. Client-only presentation policy: the simulation's
+/// visibility, shroud knowledge and A bytes are unchanged.
+const FOG_STRENGTH_MILLI: u32 = 500;
+
+/// Lift one A value toward [`NEUTRAL`] by `strength_milli` (0 = no shading,
+/// 1000 = native). The GPU's `tactical_a_at` applies the same integer
+/// expression, so CPU surface lines and world shaders agree pixel for pixel.
+fn fog_lifted_a(a: u8, strength_milli: u32) -> u8 {
+    let delta = i32::from(a) - i32::from(NEUTRAL);
+    (i32::from(NEUTRAL) + delta * strength_milli as i32 / 1000).clamp(0, 255) as u8
+}
+
 /// SHP transparent pixel marker — skip (don't overwrite buffer).
 const TRANSPARENT: u8 = 0xFE;
 const SHROUD_CELL_PAD: i32 = 8;
@@ -180,6 +194,9 @@ pub struct ShroudBuffer {
     map_height: u16,
     /// 256-byte LUT mapping neighbor bitmask to SHROUD.SHP frame index.
     lut: [u8; 256],
+    /// Translucent-fog policy, expressed as the fraction of native A darkening
+    /// that survives; this source's own value keeps native fixtures intact.
+    fog_strength_milli: u32,
 }
 
 /// Align `n` up to the next multiple of `align`.
@@ -271,7 +288,7 @@ impl ShroudBuffer {
         let pixels = vec![NEUTRAL; (row_stride * screen_h) as usize];
         let texture = create_r8_texture(device, screen_w, screen_h);
         let view = texture.create_view(&Default::default());
-        let source_uniform = source_uniform(device, [0.0; 2], true);
+        let source_uniform = source_uniform(device, [0.0; 2], true, FOG_STRENGTH_MILLI);
         let result = Self {
             pixels,
             width: screen_w,
@@ -299,6 +316,7 @@ impl ShroudBuffer {
             map_width,
             map_height,
             lut,
+            fog_strength_milli: FOG_STRENGTH_MILLI,
         };
         result.upload(queue);
         result
@@ -418,7 +436,7 @@ impl ShroudBuffer {
         queue.write_buffer(
             &self.source_uniform,
             0,
-            bytemuck::bytes_of(&SourceUniform::new(origin, true)),
+            bytemuck::bytes_of(&SourceUniform::new(origin, true, self.fog_strength_milli)),
         );
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
@@ -581,6 +599,9 @@ impl ShroudBuffer {
         );
         result.last_cam_x = origin[0].floor();
         result.last_cam_y = origin[1].floor();
+        // Native A fixtures assert the original opaque composition, so this
+        // synthetic source deliberately opts out of the fog policy.
+        result.fog_strength_milli = 1000;
         for (row, source) in pixels.chunks_exact(size[0] as usize).enumerate() {
             let start = row * result.row_stride as usize;
             result.pixels[start..start + source.len()].copy_from_slice(source);
@@ -595,6 +616,19 @@ impl ShroudBuffer {
     /// with camera scroll subtracted before blitting. Callers that build
     /// world-space surface operations use this same source as the GPU blitters.
     pub fn sample_world(&self, world_x: f32, world_y: f32, cam_x: f32, cam_y: f32) -> Option<u8> {
+        self.sample_world_native(world_x, world_y, cam_x, cam_y)
+            .map(|a| fog_lifted_a(a, self.fog_strength_milli))
+    }
+
+    /// Native A at a world-space screen pixel, before the translucent-fog lift.
+    /// Effect owners use it to tell an unseen cell from a lit one.
+    pub fn sample_world_native(
+        &self,
+        world_x: f32,
+        world_y: f32,
+        cam_x: f32,
+        cam_y: f32,
+    ) -> Option<u8> {
         let vx = (world_x - cam_x.floor()).floor() as i32;
         let vy = (world_y - cam_y.floor()).floor() as i32;
         if vx < 0 || vy < 0 || vx >= self.width as i32 || vy >= self.height as i32 {
@@ -681,6 +715,20 @@ mod tests {
         assert_eq!(virtual_dimensions([1280, 720], 0.25), [5120, 2880]);
         assert_eq!(virtual_dimensions([3840, 2160], 0.25), [15360, 8640]);
         assert_eq!(virtual_dimensions([19, 11], 0.75), [26, 15]);
+    }
+
+    /// Translucent fog only lifts the A selector; the same integer expression
+    /// runs in `tactical_a.wgsl`, and 1000 keeps native A exactly.
+    #[test]
+    fn translucent_fog_lifts_a_toward_the_neutral_selector() {
+        assert_eq!(fog_lifted_a(127, 1000), 127);
+        assert_eq!(fog_lifted_a(0, 1000), 0);
+        assert_eq!(fog_lifted_a(255, 1000), 255);
+        assert_eq!(fog_lifted_a(2, 0), 127);
+        assert_eq!(fog_lifted_a(127, 0), 127);
+        assert_eq!(fog_lifted_a(2, 500), 65);
+        assert_eq!(fog_lifted_a(200, 500), 163);
+        assert_eq!(fog_lifted_a(255, 500), 191);
     }
 
     #[test]
@@ -914,21 +962,26 @@ fn create_r8_texture(device: &wgpu::Device, w: u32, h: u32) -> wgpu::Texture {
 struct SourceUniform {
     origin: [f32; 2],
     enabled: u32,
-    _pad: u32,
+    fog_strength_milli: u32,
 }
 impl SourceUniform {
-    fn new(origin: [f32; 2], enabled: bool) -> Self {
+    fn new(origin: [f32; 2], enabled: bool, fog_strength_milli: u32) -> Self {
         Self {
             origin,
             enabled: u32::from(enabled),
-            _pad: 0,
+            fog_strength_milli,
         }
     }
 }
-fn source_uniform(device: &wgpu::Device, origin: [f32; 2], enabled: bool) -> wgpu::Buffer {
+fn source_uniform(
+    device: &wgpu::Device,
+    origin: [f32; 2],
+    enabled: bool,
+    fog_strength_milli: u32,
+) -> wgpu::Buffer {
     device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Tactical A source origin"),
-        contents: bytemuck::bytes_of(&SourceUniform::new(origin, enabled)),
+        contents: bytemuck::bytes_of(&SourceUniform::new(origin, enabled, fog_strength_milli)),
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
     })
 }
@@ -944,7 +997,7 @@ pub(crate) fn neutral_gpu_source(
     crate::render::atlas_growth::write_texels(queue, &texture, [0, 0], [1, 1], 1, &[NEUTRAL]);
     (
         texture.create_view(&Default::default()),
-        source_uniform(device, [0.0; 2], false),
+        source_uniform(device, [0.0; 2], false, 1000),
     )
 }
 

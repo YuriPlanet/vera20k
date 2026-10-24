@@ -5018,7 +5018,7 @@ mod tests {
         // Actual presentation composites advance this owner without any Logic
         // tick. Numeric/native goldens belong to the renderer's own tests.
         for _ in 0..14 {
-            beams.composite(60, viewport);
+            beams.composite(60, viewport, |_| true);
         }
         let draws = beams.draws().to_vec();
         assert!(!draws.is_empty());
@@ -5044,7 +5044,7 @@ mod tests {
         );
         assert_eq!(serde_json::to_value(beams.observation()).unwrap(), retained);
         assert_eq!(beams.draws(), draws.as_slice());
-        beams.composite(60, viewport);
+        beams.composite(60, viewport, |_| true);
         let expired =
             serde_json::to_value(MapRadiationBeamObservation::capture(&beams).unwrap()).unwrap();
         assert!(expired["live"].as_array().unwrap().is_empty());

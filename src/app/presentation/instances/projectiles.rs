@@ -87,9 +87,14 @@ pub(crate) fn build_projectile_visual_instances(
     // Bullet468090's FirersPalette arm (`0x004683A1..0x004683D1`): the
     // retained +114 House's scheme, else the local player's.
     let house_colors = &state.match_state.match_presentation.house_color_map;
-    let local_scheme = crate::app::input::commands::preferred_local_owner_name(state)
-        .and_then(|owner| house_colors.get(&owner).copied())
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+    let local_scheme = local_owner
+        .as_deref()
+        .and_then(|owner| house_colors.get(owner).copied())
         .unwrap_or(crate::rules::house_colors::NO_REMAP);
+    let viewer = local_owner
+        .as_deref()
+        .and_then(|name| sim.interner().get(name));
     for (_, projectile) in sim.projectiles().iter() {
         let Some(type_id) = projectile
             .payload()
@@ -115,6 +120,21 @@ pub(crate) fn build_projectile_visual_instances(
                 PointPose::bullet(projectile),
                 sim.session().binary_frame(),
             );
+        // VERA's translucent fog: enemy bullets and their trails would outline
+        // an unseen firing position. Superweapon impact visuals are separate
+        // effect owners and stay visible.
+        if !state.match_state.sandbox_full_visibility
+            && super::helpers::translucent_fog_conceals_bullet(
+                sim,
+                projectile,
+                painted.coord,
+                local_owner.as_deref(),
+                viewer,
+                sim.session().game_options().fog_of_war,
+            )
+        {
+            continue;
+        }
         if let Some(object) = projectile_draw_instance_sampled(
             projectile,
             painted,

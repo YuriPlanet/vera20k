@@ -49,10 +49,10 @@ mod target_laser_gpu_tests;
 pub(crate) use draw_passes::{draw_bridge_shadows, draw_pooled_cell_bodies};
 pub(crate) mod draw_plan_lowering;
 mod merge_passes;
+pub(crate) mod minimap_transaction;
 mod object_stages;
 #[cfg(test)]
 mod object_stages_gpu_tests;
-pub(crate) mod minimap_transaction;
 
 use anyhow::Result;
 #[cfg(feature = "telemetry-dashboard")]
@@ -470,6 +470,18 @@ pub(crate) fn render_game(
             });
     }
     let presentation = &mut state.match_state.match_presentation;
+    // Effect passes read the frame's CPU A plane: a cell whose native A is
+    // below neutral is unseen, so its effects are withheld.
+    let shroud_gate = presentation.shroud_buffer.as_ref();
+    let effect_hidden = |x: i32, y: i32| {
+        let (rx, ry) = crate::app::presentation::instances::lepton_cell(x, y);
+        let (sx, sy) = crate::map::terrain::iso_to_screen(rx, ry, 0);
+        shroud_gate.is_some_and(|buffer| {
+            buffer
+                .sample_world_native(sx as f32, sy as f32, camera[0], camera[1])
+                .is_some_and(|a| a < 127)
+        })
+    };
     // Tactical6D4669 LaserDraw550240 precedes6D466E EBolt, then6D4673
     // trails, even when this composite ran no Logic. Their shared process
     // Main requests happen here once; GPU uploads only read resolved colors.
@@ -481,7 +493,9 @@ pub(crate) fn render_game(
         presentation.lasers.composite(&mut main);
         presentation
             .electric_bolts
-            .composite(viewport, palette, &mut main)
+            .composite(viewport, palette, &mut main, |birth| {
+                !effect_hidden(birth.to.x, birth.to.y)
+            })
     };
     // Tactical6D48F1 follows Laser/Bolt Main requests and interleaves the
     // opaque action stores with each owning Airstrike designation. Uploads
@@ -497,24 +511,40 @@ pub(crate) fn render_game(
         .sim_runtime
         .as_ref()
         .map(|runtime| runtime.view().simulation());
+    let sandbox = state.match_state.sandbox_full_visibility;
     let segments = presentation.line_trails.composite(|id| {
         let sim = sim?;
-        sim.projectiles().get(id).map(|bullet| {
-            presentation
-                .interpolation
-                .sample_point(
-                    crate::app::presentation::interpolation::PointKind::Bullet,
-                    id,
-                    crate::app::presentation::interpolation::PointPose::bullet(bullet),
-                    sim.session().binary_frame(),
-                )
-                .projectile_coord()
-        })
+        let bullet = sim.projectiles().get(id)?;
+        let sampled = presentation.interpolation.sample_point(
+            crate::app::presentation::interpolation::PointKind::Bullet,
+            id,
+            crate::app::presentation::interpolation::PointPose::bullet(bullet),
+            sim.session().binary_frame(),
+        );
+        // VERA's translucent fog hides enemy bullet trails with their bullets.
+        if !sandbox
+            && crate::app::presentation::instances::translucent_fog_conceals_bullet(
+                sim,
+                bullet,
+                sampled.coord,
+                local_owner.as_deref(),
+                local_owner
+                    .as_deref()
+                    .and_then(|name| sim.interner().get(name)),
+                sim.session().game_options().fog_of_war,
+            )
+        {
+            return None;
+        }
+        Some(sampled.projectile_coord())
     });
     let frame_rate = presentation.detail.borrow().frame_rate();
-    presentation.radiation_beams.composite(frame_rate, viewport);
+    presentation
+        .radiation_beams
+        .composite(frame_rate, viewport, |birth| {
+            !effect_hidden(birth.to.x, birth.to.y)
+        });
     let shroud = presentation.shroud_buffer.as_ref();
-    let sandbox = state.match_state.sandbox_full_visibility;
     let mut alpha = |point: [i32; 2]| {
         if sandbox {
             127
@@ -534,10 +564,15 @@ pub(crate) fn render_game(
     let terrain = &mut state.renderer.terrain_draw_renderer;
     let gpu = &state.renderer.gpu;
     terrain.begin_surface_lines();
+    let laser_draws: Vec<_> = presentation
+        .lasers
+        .draws()
+        .filter(|draw| !effect_hidden(draw.to.x, draw.to.y))
+        .collect();
     let surface_effects = terrain.prepare_surface_lines(
         &gpu.device,
         &gpu.queue,
-        presentation.lasers.draws(),
+        laser_draws.into_iter(),
         bolt_lines
             .iter()
             .copied()

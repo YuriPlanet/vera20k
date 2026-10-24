@@ -404,11 +404,50 @@ pub(crate) fn build_bridge_shadow_instances(state: &AppState, out: &mut Vec<Spri
     );
     let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
     let zoom = state.match_state.input.zoom_level.max(f32::EPSILON);
+    // Translucent fog: the shadow sweep is a second overlay pass, so it needs
+    // the same wall-cell concealment as the body sweep.
+    let concealed_overlay_entries: Vec<_>;
+    let overlay_entries = {
+        let viewer = crate::app::input::commands::preferred_local_owner_name(state)
+            .as_deref()
+            .and_then(|name| sim.interner().get(name));
+        let registry = state.overlay_registry();
+        let fog_of_war = sim.session().game_options().fog_of_war;
+        concealed_overlay_entries = state
+            .match_state
+            .match_presentation
+            .overlays
+            .iter()
+            .filter(|entry| {
+                let live_cell = sim.overlay_grid().map(|grid| grid.cell(entry.rx, entry.ry));
+                let Some((overlay, _)) = super::overlays::overlay_render_identity(
+                    entry.overlay_id,
+                    entry.frame,
+                    live_cell,
+                ) else {
+                    return true;
+                };
+                let wall = registry
+                    .and_then(|registry| registry.flags(overlay))
+                    .is_some_and(|flags| flags.wall);
+                !(wall
+                    && super::helpers::translucent_fog_conceals_cell(
+                        viewer,
+                        Some(sim.fog()),
+                        entry.rx,
+                        entry.ry,
+                        fog_of_war,
+                    ))
+            })
+            .cloned()
+            .collect();
+        concealed_overlay_entries.as_slice()
+    };
     build_bridge_shadow_instances_inner(
         terrain,
         atlas,
         &state.match_state.match_presentation.overlay_names,
-        state.match_state.match_presentation.overlays.as_slice(),
+        overlay_entries,
         sim.overlay_grid(),
         state.overlay_registry(),
         state.rules().map(|rules| (rules, sim.interner())),

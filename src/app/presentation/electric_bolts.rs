@@ -87,6 +87,7 @@ impl ElectricBolts {
         viewport: SurfaceLineViewport,
         palette: Option<ElectricBoltPalette>,
         main: &mut MainRngDraws,
+        mut visible: impl FnMut(&ElectricBoltBirth) -> bool,
     ) -> &[SurfaceLine] {
         self.lines.clear();
         for bolt in self.live.iter_mut().rev() {
@@ -98,13 +99,15 @@ impl ElectricBolts {
                     phase: bolt.phase,
                     alternate_color: bolt.birth.alternate_color,
                 };
-                draw.lines(
-                    viewport,
-                    palette.expect("loaded tactical PALETTE.PAL"),
-                    main,
-                    |line| self.lines.push(line),
-                );
-                bolt.phase = bolt.phase.wrapping_add(1);
+                if visible(&bolt.birth) {
+                    draw.lines(
+                        viewport,
+                        palette.expect("loaded tactical PALETTE.PAL"),
+                        main,
+                        |line| self.lines.push(line),
+                    );
+                    bolt.phase = bolt.phase.wrapping_add(1);
+                }
             }
             bolt.decay >>= 1;
         }

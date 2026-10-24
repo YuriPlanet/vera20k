@@ -81,7 +81,7 @@ fn native_tactical_visits_own_lifetime_reverse_order_and_clear() {
                 bolts.clear_on_load();
                 assert!(bolts.lines.is_empty(), "{at} retained geometry cleared");
             } else {
-                let lines = bolts.composite(viewport, Some(palette), &mut main.draws());
+                let lines = bolts.composite(viewport, Some(palette), &mut main.draws(), |_| true);
                 let expected = visit["segments"]
                     .as_array()
                     .unwrap()
@@ -208,8 +208,12 @@ fn accepted_bolt_composites_preserve_the_next_actual_bullet_identity() {
             .take(composite_count)
         {
             assert!(!visit["segments"].as_array().unwrap().is_empty());
-            let lines =
-                bolts.composite(viewport, Some(palette), &mut sim.presentation_main_draws());
+            let lines = bolts.composite(
+                viewport,
+                Some(palette),
+                &mut sim.presentation_main_draws(),
+                |_| true,
+            );
             assert!(!lines.is_empty(), "accepted composite must consume Main");
             let native_delta = (int(&visit["native_id_after"]) as u32)
                 .wrapping_sub(int(&visit["native_id_before"]) as u32);
