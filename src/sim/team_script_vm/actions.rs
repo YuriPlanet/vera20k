@@ -17,12 +17,10 @@
 //! `deploy` rows (actions 14, 43, 8 and 9) in `transport_tests`.
 //!
 //! RESIDUALS:
-//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 10, 11, 12, 14, 16, 17, 19, 20, 21, 24, 30, 37, 38, 39, 40, 41, 42, 43,
-//!   46, 47, 49, 50, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63 and 64 are not ported. A team
-//!   that reaches one stays on it, as a native handler that has not
-//!   finished does, and records the first as its refusal; the rest of its
-//!   update runs. Trigger: none of the 163 retail AIMD TeamTypes reaches
-//!   one. Effect: the team idles on that action for good, keeping its
+//! - Actions outside [`action_is_ported`] are not ported. A team that reaches
+//!   one stays on it and records the first as its refusal; the rest of its
+//!   update runs. Trigger: an authored script reaches an unsupported action.
+//!   Effect: the team idles on that action for good, keeping its
 //!   members and its TeamType's `Max=` slot, and nothing else sends those
 //!   units out.
 //! - `Coordinate_Attack` keeps a cell target that only a terrain object
@@ -132,6 +130,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 26
             | 27
             | 30
+            | 34
             | 37
             | 38
             | 39
@@ -398,6 +397,38 @@ impl Simulation {
                         "Team {team_id} Script17 names invalid ScriptType ordinal {}",
                         action.argument
                     );
+                }
+            }
+            // Original gamemd.exe TeamClass::AI Script34, table6E9FFC ->
+            //6E9ACF..6E9B6A: Zone+34 GetCoords, Ground578080, then Map565730
+            // bridge flags100/400. Keep subcell XY even for an object Zone.
+            // FocusOn6D2420 copies the coordinate; Team+80 completes now,
+            // independently of the camera's progress. No House/first gate.
+            34 => {
+                let coord = self
+                    .team_script_vm
+                    .teams
+                    .get(&team_id)
+                    .and_then(|team| team.zone)
+                    .and_then(|zone| self.team_target_coord(zone));
+                if let (Some(coord), Some(terrain)) = (coord, self.resolved_terrain.as_ref()) {
+                    let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+                    let ground =
+                        crate::sim::movement::ground_pose::query_ground_height(&cells, coord)
+                            .expect("authored camera ground query requires a valid native slope");
+                    let cell = cells.lookup_world(coord.x, coord.y);
+                    let on_bridge = cells.flags(cell) & 0x100 != 0
+                        || cells.flags(cells.lookup_world(coord.x, coord.y)) & 0x400 != 0;
+                    let z = crate::sim::movement::ground_pose::z_at_height(ground, 0, on_bridge);
+                    self.publish_trigger_effects(vec![
+                        crate::sim::trigger_runtime::TriggerEffect::CameraAtCoord {
+                            coord: [coord.x, coord.y, z],
+                            velocity: Some(action.argument),
+                        },
+                    ]);
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
                 }
             }
             37 => {

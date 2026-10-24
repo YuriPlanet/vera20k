@@ -775,6 +775,95 @@ fn sound_movie_and_music_actions_play_and_advance() {
     ));
 }
 
+/// Script34 uses Zone GetCoords, then the same ground/deck owners as the
+/// original camera-coordinate controls. An object Zone keeps its subcell XY.
+#[test]
+fn script34_focuses_the_zone_at_ground_or_bridge_height_and_finishes_immediately() {
+    use crate::sim::components::DriveCoord;
+    use crate::sim::trigger_runtime::TriggerEffect;
+
+    let controls: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/trigger_action_values.json",
+    ))
+    .unwrap();
+    let controls = controls
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["case_kind"] == "waypoint_coord")
+        .unwrap();
+    for (name, object_zone, offset) in [
+        ("bridge_400", false, [0, 0]),
+        ("both_bridge_flags", true, [17, -19]),
+    ] {
+        let row = controls["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| {
+                row["input"]["name"] == name
+                    && row["calls"].as_array().unwrap().last().unwrap()["call"] == "focus"
+            })
+            .unwrap();
+        let input = &row["input"];
+        let sink = row["calls"].as_array().unwrap().last().unwrap();
+        let point = DriveCoord {
+            x: sink["coord"][0].as_i64().unwrap() as i32 + offset[0],
+            y: sink["coord"][1].as_i64().unwrap() as i32 + offset[1],
+            z: 999,
+        };
+        let cell = (
+            input["cell"][0].as_i64().unwrap() as i16,
+            input["cell"][1].as_i64().unwrap() as i16,
+        );
+        let rules = rules();
+        let mut sim = Simulation::with_seed(0x6E9ACF);
+        crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+        let (team, members, _) = building_team(&mut sim, &rules, &[(34, 4), (5, 1)], &[]);
+        sim.substrate
+            .entities
+            .get_mut(members[0])
+            .unwrap()
+            .position
+            .put_location(point);
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        let identity = terrain.native_cell_identity(cell);
+        terrain.write_native_cell_level(identity, input["level"].as_i64().unwrap_or(0) as u8);
+        terrain
+            .cell_mut_for_test(cell.0 as u16, cell.1 as u16)
+            .unwrap()
+            .slope_type = input["slope"].as_u64().unwrap_or(0) as u8;
+        terrain.write_native_cell_flags(identity, input["flags"].as_u64().unwrap() as u32);
+        let state = sim.team_script_vm.teams.get_mut(&team).unwrap();
+        state.cursor = 0;
+        state.advance_pending = false; // The native handler has no first-only gate.
+        state.zone = Some(if object_zone {
+            TeamTarget::Object(members[0])
+        } else {
+            TeamTarget::Cell {
+                x: cell.0,
+                y: cell.1,
+            }
+        });
+        let rng = sim.rng_state();
+        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        assert_eq!(
+            sim.drain_trigger_effects(),
+            [TriggerEffect::CameraAtCoord {
+                coord: [point.x, point.y, sink["coord"][2].as_i64().unwrap() as i32],
+                velocity: Some(4),
+            }]
+        );
+        assert_eq!(sim.rng_state(), rng);
+        let state = sim.team_script_vm.team(team).unwrap();
+        assert_eq!(state.cursor(), 0);
+        assert!(state.advance_pending());
+        sim.team_step_script(team, &rules, None, FrameEffects::default());
+        assert_eq!(sim.team_script_vm.team(team).unwrap().cursor(), 1);
+        assert!(sim.drain_trigger_effects().is_empty());
+    }
+}
+
 /// The building tests' power plants: the Russians' own, the Americans' near
 /// and far ones, and the Germans'.
 const PLANTS: [(&str, u16, u16); 4] = [

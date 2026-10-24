@@ -435,6 +435,18 @@ impl ShellCaptureCheckpoint {
                 tick,
             )));
         }
+        if let Some(tick) = value.strip_prefix("campaign-sov02-fortresses-tick-") {
+            let tick: u64 = tick
+                .parse()
+                .context("campaign fortress tick is not an integer")?;
+            ensure!(
+                (301..=10000).contains(&tick),
+                "campaign fortress tick must be 301..=10000"
+            );
+            return Ok(Self::CampaignOpening(
+                movies::OpeningTarget::SovietFortresses(tick),
+            ));
+        }
         if let Some(frame) = value.strip_prefix(CHECKPOINT_CREDITS_ROLL_FRAME_PREFIX) {
             let frame: u64 = frame
                 .parse()
@@ -878,6 +890,9 @@ impl ShellCaptureCheckpoint {
             }
             Self::CampaignOpening(movies::OpeningTarget::SovietGroups(_)) => {
                 "campaign-sov07-groups-tick"
+            }
+            Self::CampaignOpening(movies::OpeningTarget::SovietFortresses(_)) => {
+                "campaign-sov02-fortresses-tick"
             }
             Self::CampaignOpening(movies::OpeningTarget::TimerRunning) => {
                 "campaign-sov1-opening-timer-running"
@@ -1784,7 +1799,9 @@ impl ShellCaptureSession {
         // Keep that presentation overhead separate from the bounded play run.
         let frame_limit = match self.request.checkpoint {
             ShellCaptureCheckpoint::CampaignOpening(
-                movies::OpeningTarget::SovietTick(tick) | movies::OpeningTarget::SovietNavy(tick),
+                movies::OpeningTarget::SovietTick(tick)
+                | movies::OpeningTarget::SovietNavy(tick)
+                | movies::OpeningTarget::SovietFortresses(tick),
             ) => MAX_CAPTURE_FRAMES + tick as u32,
             _ => MAX_CAPTURE_FRAMES,
         };
@@ -2972,6 +2989,10 @@ mod tests {
                 "campaign-sov07-groups-tick-8000",
                 movies::OpeningTarget::SovietGroups(8000),
             ),
+            (
+                "campaign-sov02-fortresses-tick-8000",
+                movies::OpeningTarget::SovietFortresses(8000),
+            ),
         ] {
             assert_eq!(
                 ShellCaptureCheckpoint::parse(name).unwrap().movies_target(),
@@ -2988,6 +3009,8 @@ mod tests {
             "campaign-sov1-navy-tick-not-a-tick",
             "campaign-sov07-groups-tick-300",
             "campaign-sov07-groups-tick-10001",
+            "campaign-sov02-fortresses-tick-300",
+            "campaign-sov02-fortresses-tick-10001",
         ] {
             assert!(ShellCaptureCheckpoint::parse(invalid).is_err());
         }

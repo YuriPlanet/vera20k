@@ -12,6 +12,196 @@ use crate::sim::pathfinding::PathGrid;
 use crate::sim::team_script_vm::{TeamScriptMember, member_type_identity};
 use crate::sim::world::ConcealOutcome;
 
+/// SOV02 discovery enables the stock Battle Fortress teams. Their first
+/// Script34 must finish before Load14 can board their infantry. The arena
+/// keeps the authored rules, roster, Tags and scripts; it is not a mission run.
+#[test]
+fn sov02_discovered_battle_fortresses_focus_then_load_after_reload() {
+    use crate::map::map_file::MapFile;
+    use crate::rules::process_owner::NativeScenarioRulesPrefix;
+    use crate::sim::campaign_carry_over::CampaignCarryOver;
+    use crate::sim::snapshot::GameSnapshot;
+    use crate::sim::trigger_runtime::TriggerEffect;
+    use crate::sim::world::{TickLane, UninitContext};
+
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let map = MapFile::from_bytes(assets.get_ref("SOV02SMD.MAP").unwrap()).unwrap();
+    let named = assets.resolve_ref("SOV02SMD.INI").map(|_| {
+        crate::rules::retail_sources::select_ini(&assets, "SOV02SMD.INI")
+            .unwrap()
+            .ini
+    });
+    let (rules, _, _, _) = crate::rules::retail_ini_fixture::retail_rules_owner(&assets)
+        .load_scenario(
+            NativeScenarioRulesPrefix::Campaign(named.as_ref()),
+            &map.ini,
+        )
+        .unwrap()
+        .into_parts();
+    let registry = TeamAiIniRegistry::load_retail(&assets, &map.ini, false).unwrap();
+    let roster =
+        crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
+    let mut sim = Simulation::with_seed(0x6E9ACF);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.session
+        .initialize_campaign_startup(1, 2, None, 0, CampaignCarryOver::CLEARED)
+        .unwrap();
+    crate::sim::scenario_bootstrap::initialize_map_roster_houses(
+        &mut sim,
+        &roster,
+        &rules,
+        Some(&map.ini),
+    );
+    crate::sim::scenario_bootstrap::initialize_campaign_current_house(
+        &mut sim.session,
+        &mut sim.houses,
+        &map.ini,
+    );
+    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    sim.initialize_trigger_definitions(&map, &registry, None, None);
+    let mut placements: Vec<_> = map
+        .entities
+        .iter()
+        .filter(|entity| {
+            entity.trigger_tag.as_deref() == Some("07831C2C")
+                && matches!(entity.type_id.as_str(), "BFRT" | "E1")
+        })
+        .cloned()
+        .collect();
+    assert_eq!(placements.len(), 4);
+    for (index, entity) in placements.iter_mut().enumerate() {
+        entity.cell_x = 10 + (index % 2) as u16;
+        entity.cell_y = 10 + (index / 2) as u16;
+    }
+    assert_eq!(sim.spawn_from_map(&placements, Some(&rules)), 4);
+    sim.classify_map_triggers(&rules);
+    sim.session.publish_started();
+    let members: Vec<_> = sim
+        .entities()
+        .values()
+        .map(|entity| entity.stable_id())
+        .collect();
+    assert!(sim.discover_techno(
+        members[0],
+        sim.session.current_house().unwrap(),
+        UninitContext::with_rules(&rules),
+    ));
+    let types = ["098F40EC", "0990A93C"].map(|name| sim.interner.get(name).unwrap());
+    let mut cameras = Vec::new();
+    for _ in 0..100 {
+        let output = sim
+            .advance_app_frame(
+                &[],
+                &rules,
+                None,
+                67,
+                TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        cameras.extend(output.trigger_effects.into_iter().filter(|effect| {
+            matches!(
+                effect,
+                TriggerEffect::CameraAtCoord {
+                    velocity: Some(4),
+                    ..
+                }
+            )
+        }));
+        for id in types {
+            if let Some(team) = sim.team_script_vm.first_team_of_type(id) {
+                assert!(team.refusal().is_none(), "{:?}", team.refusal());
+            }
+        }
+        if types.iter().all(|&id| {
+            sim.team_script_vm
+                .first_team_of_type(id)
+                .is_some_and(|team| team.cursor() >= 1)
+        }) {
+            break;
+        }
+    }
+    for id in types {
+        assert!(
+            sim.team_script_vm.first_team_of_type(id).is_some(),
+            "stock discovery enables the timed CreateTeam action"
+        );
+    }
+    assert_eq!(
+        cameras.len(),
+        2,
+        "each formed team focuses once before Load14"
+    );
+    let teams = types.map(|id| sim.team_script_vm.first_team_of_type(id).unwrap().id());
+    let bytes = GameSnapshot::save_validated(&sim, 0, 0, "sov02_camera_arena", 0);
+    let mut sim = GameSnapshot::load_validated(&bytes, 0, 0, sim.session.map_name())
+        .unwrap()
+        .sim;
+    sim.restore_after_snapshot_load().unwrap();
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    for _ in 0..250 {
+        let output = sim
+            .advance_app_frame(
+                &[],
+                &rules,
+                None,
+                67,
+                TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        assert!(
+            !output.trigger_effects.iter().any(|effect| matches!(
+                effect,
+                TriggerEffect::CameraAtCoord {
+                    velocity: Some(4),
+                    ..
+                }
+            )),
+            "completed Script34 does not replay after loading"
+        );
+        if teams
+            .iter()
+            .all(|&id| sim.team_script_vm.team(id).unwrap().cursor() >= 3)
+        {
+            break;
+        }
+    }
+    for team in teams {
+        let state = sim.team_script_vm.team(team).unwrap();
+        assert!(
+            state.cursor() >= 3,
+            "Load14 and Flash50 finish before Guard5"
+        );
+        assert!(state.refusal().is_none());
+        let transport = state.members().next().unwrap();
+        assert_eq!(
+            sim.entities()
+                .get(transport)
+                .unwrap()
+                .passenger_role
+                .cargo()
+                .unwrap()
+                .passengers()
+                .len(),
+            1
+        );
+        sim.destroy_team(team, &rules, FrameEffects::default());
+        assert!(sim.team_script_vm.team(team).is_none());
+        assert!(
+            sim.entities()
+                .get(transport)
+                .unwrap()
+                .lifecycle
+                .object_alive()
+        );
+    }
+}
+
 const RULES: &str = "\
 [InfantryTypes]
 0=E1

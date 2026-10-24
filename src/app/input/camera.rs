@@ -1408,7 +1408,7 @@ pub(crate) fn advance_camera_ai(state: &mut AppState, mouse: (f32, f32), frame: 
     state.match_state.input.camera_y = point.1;
 }
 
-/// TAction48 uses FocusOn6D2420 and its literal velocity; TAction112 uses
+/// Team Script34 and TAction48 use FocusOn6D2420 with their literal velocity; TAction112 uses
 /// SetViewToCoordInstant6D6070. Coordinates are resolved by simulation before
 /// its hash, including the canonical CellClass Dummy query effects.
 pub(crate) fn apply_trigger_camera(state: &mut AppState, coord: [i32; 3], velocity: Option<i32>) {

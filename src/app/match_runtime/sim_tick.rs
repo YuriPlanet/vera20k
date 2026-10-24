@@ -1434,7 +1434,7 @@ fn advance_one_simulation_frame(
             state,
             &drained_lifecycle_outputs,
         );
-        // Trigger Focus/lock effects precede TacticalAI in this Logic visit.
+        // Authored Team/trigger Focus and lock effects precede TacticalAI in this Logic visit.
         // Coordinates were resolved by simulation before its final hash.
         apply_trigger_effects(state, &trigger_effects);
         // Scroll_Map (0x4A9840 -> 0x6D8530) accumulates mouse requests;
