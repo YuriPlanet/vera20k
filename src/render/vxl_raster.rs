@@ -20,7 +20,7 @@ use crate::map::voxel_pose::voxel_tilt_applies;
 use crate::map::voxel_pose::{
     VxlSlopeBlend, compute_slope_blend_rotation, compute_slope_rotation,
     crash_fly_locomotor_matrix as voxel_crash_locomotor_matrix, ground_locomotor_matrix,
-    normal_fly_locomotor_matrix, voxel_body_facing, voxel_table_rotation, voxel_tilt_frame,
+    normal_fly_locomotor_matrix, voxel_body_facing, voxel_tilt_frame,
 };
 use crate::render::vxl_normals;
 #[cfg(test)]
