@@ -47,6 +47,9 @@ mod reinforcements;
 mod super_actions;
 mod team_ai;
 
+#[cfg(test)]
+mod ground_strike_tests;
+
 /// One resolved ScriptType action record.
 ///
 /// This matches the `(action, argument)` pair read by `ScriptClass` instead of
