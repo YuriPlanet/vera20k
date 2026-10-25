@@ -41,7 +41,7 @@ pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules:
     }
     //62EDD0: every original child AI forward, even one already marked dead.
     for p in &mut sys.particles {
-        super::system_ai::tick_particle(p, sim, rules);
+        super::system_ai::tick_particle(p, sim, rules, sys.owner_house);
     }
     //62ED40/62F037: backward over the ORIGINAL count. Appended children wait until
     //the next visit; parent deletion compacts only after both births/fades.
