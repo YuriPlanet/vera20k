@@ -1101,7 +1101,7 @@ pub(crate) fn clear_all_spawn_targets(
 /// - `TechnoClass::ImbueLocomotor` (`0x00710021`), the Magnetron lift —
 ///   WIRED, via `Simulation::imbue_locomotor`.
 /// - `TechnoClass::Stun` (`0x006FCD40`) — WIRED via
-///   `Simulation::techno_death_stun`, which a lifted Foot skips.
+///   `Simulation::stun`, which a lifted Foot skips.
 pub(crate) fn kill_all_spawns_with_context(
     sim: &mut Simulation,
     owner_id: u64,

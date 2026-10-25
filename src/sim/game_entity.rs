@@ -107,6 +107,13 @@ pub struct GameEntity {
     /// this displacement through70BE50; no simulation/RNG/timer consumer.
     /// Retain the raw datum, not a renderer-owned reconstructed animation.
     native_cloak_displacement: crate::util::native_x87::NativeF32Bits,
+    /// Techno+3D0: TechnoClass::Constructor `0x006F2B40` clears it at
+    /// `0x006F2F3D`; UnitClass::Mission_Harvest `0x0073E5E0` sets/clears it at
+    /// `0x0073E8FA`/`0x0073E925`, and the repair depot reads it at
+    /// `0x0044C4BC`. This belongs to common Techno state, not the optional
+    /// `Miner`, because owner changes retain it and the depot consumes it.
+    #[serde(default)]
+    useless: bool,
     /// Techno+300: constructor6F2EA4 initializes zero. Factory StartProduction
     /// 4C9DED retains its owner's Cost_Of quote; Grand_Opening446AF2 consumes
     /// it independently of remaining debt and later House discounts (gamemd).
@@ -1682,6 +1689,17 @@ impl GameEntity {
             .is_some_and(|miner| miner.kind() != crate::sim::miner::MinerKind::Slave)
     }
 
+    /// The native Techno+3D0 useless latch read by Repair depots.
+    pub(crate) const fn is_useless(&self) -> bool {
+        self.useless
+    }
+
+    /// `Mission_Harvest`'s two writes to Techno+3D0 (`0x0073E8FA`,
+    /// `0x0073E925`). Other systems only read this shared Techno state.
+    pub(crate) fn set_useless(&mut self, useless: bool) {
+        self.useless = useless;
+    }
+
     /// The committed mission read at TechnoAI6FA697, before its class's
     /// subsequent Ready/Commence checkpoint. Clearing a target or destination
     /// does not change this selector; only the mission owner can commence a
@@ -1732,6 +1750,7 @@ impl GameEntity {
             stable_id,
             native_unique_id,
             native_cloak_displacement: crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO,
+            useless: false,
             production_start_price: 0,
             emp: Default::default(),
             #[cfg(feature = "ares")]
