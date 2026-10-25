@@ -7,6 +7,10 @@
 pub(crate) struct ObjectFallState {
     rate: i32,
     parachuted: bool,
+    /// ObjectClass+88: constructor5F3969 clears it; Paradrop5F5AF1
+    /// publishes the new Anim before SetOwnerObject5F5AFE.
+    #[serde(default)]
+    parachute_animation: Option<u64>,
     falling: bool,
     /// WasFallingDown +8E (constructor `0x005F397B`): only FootClass::AI reads
     /// and writes it ([`Self::observe_falling_edge`]). Not in the world hash.
@@ -16,6 +20,21 @@ pub(crate) struct ObjectFallState {
 }
 
 impl ObjectFallState {
+    pub(crate) fn parachute_animation(&self) -> Option<u64> {
+        self.parachute_animation
+    }
+
+    pub(crate) fn set_parachute_animation(&mut self, animation: Option<u64>) {
+        self.parachute_animation = animation;
+    }
+
+    /// ObjectClass::AnimPointerExpired5F6DA0 and PointerExpired's
+    /// control-insensitive5F5268 arm clear only the matching held identity.
+    pub(crate) fn parachute_animation_expired(&mut self, animation: u64) {
+        if self.parachute_animation == Some(animation) {
+            self.parachute_animation = None;
+        }
+    }
     pub(crate) fn falling(&self) -> bool {
         self.falling
     }
