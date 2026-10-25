@@ -443,11 +443,18 @@ fn harvest_looking(
         snap.state = MinerState::Harvest;
         return;
     }
+    // `Mission_Harvest 0x0073E5E0` checks Techno+0x5A4 at `0x0073E8C3`
+    // only after its ore-search miss. An ArchiveTarget destination may have
+    // installed this NavCom at `0x0073E741`, so read the live field here:
+    // `0x0073E8CB` then clears Techno+3D0 at `0x0073E925`.
     let driving = sim
         .substrate
         .entities
         .get(id)
         .is_some_and(|entity| entity.navigation.nav_com().is_some());
+    if driving && let Some(entity) = sim.substrate.entities.get_mut(id) {
+        entity.set_useless(false);
+    }
     if !driving {
         let archive = sim
             .substrate
@@ -455,12 +462,12 @@ fn harvest_looking(
             .get(id)
             .and_then(|entity| entity.archive_target());
         let Some(archive) = archive else {
-            // `+0x3D0` is not carried on the entity: its only in-handler
-            // reader is the state-4 RepairBay probe, whose outcome the same
-            // dispatch overwrites (see `handle_going_to_idle`), and state 4 is
-            // reachable from this arm alone, where the byte is always 1. Its
-            // other readers (`BuildingClass::MissionRepairAndProduce`
-            // `0x0044C4BC`, AI-house only) are outside this lane.
+            // The no-NavCom/no-archive miss writes Techno+3D0=1 at
+            // `0x0073E8FA`. The state-4 RepairBay probe is inert and its
+            // dispatch is overwritten by `handle_going_to_idle`.
+            if let Some(entity) = sim.substrate.entities.get_mut(id) {
+                entity.set_useless(true);
+            }
             snap.state = MinerState::WaitNoOre;
             if let Some(house) = sim.houses.get_mut(&snap.owner) {
                 // `MOV byte ptr [ECX+0x242], 1` at `0x0073E911`, gated on
