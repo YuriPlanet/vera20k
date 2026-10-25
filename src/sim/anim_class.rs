@@ -2070,7 +2070,7 @@ impl Simulation {
         // animation's House, falling back to an attached Techno's owner.
         // Neither owner is an attacking object; keep RAD_NO_ATTACKER below.
         #[cfg(feature = "ares")]
-        let source_house = anim.owner_house().or_else(|| {
+        let source_house = anim.owner_house.or_else(|| {
             anim.owner_entity
                 .and_then(|owner| self.substrate.entities.get(owner))
                 .map(|owner| owner.owner())
