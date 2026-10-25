@@ -254,6 +254,19 @@ fn a_robot_tank_stops_on_entering_the_first_cell_with_its_target_in_range() {
     spawn(&mut sim, &rules, "GAROBO", "Americans", (6, 20));
     let robot = spawn(&mut sim, &rules, "ROBO", "Americans", (4, 10));
     let tank = spawn(&mut sim, &rules, "MTNK", "Russians", (24, 13));
+    // Placement counts the Center's drain at once (0x00502B48..0x00502B52)
+    // but the plant's output only at the House's first power assessment, so
+    // the Center first counts as powered in the second frame. Its
+    // RobotTanksBackOnline (0x0050E010) Reactivates the tank, which resets
+    // its orders (0x0070FBE0): order the tank after that.
+    let americans = sim.interner.get("Americans").unwrap();
+    for _ in 0..10 {
+        if sim.has_powered_center(americans) {
+            break;
+        }
+        step(&mut sim, &rules);
+    }
+    assert!(sim.has_powered_center(americans), "the Center powers up");
     order(
         &mut sim,
         "Americans",
@@ -329,9 +342,11 @@ fn a_rhino_stops_short_of_its_approach_cell_when_its_target_closes_in() {
             target_id: tank,
         },
     );
+    // Synthetic setup uses the registered human sender without changing
+    // the Russian actor's AI flags or the order's frame-tail timing.
     order(
         &mut sim,
-        "Russians",
+        "Americans",
         Command::Move {
             entity_id: tank,
             target_rx: 4,
@@ -599,9 +614,11 @@ fn a_hunting_conscript_drops_his_walk_to_approach_his_quarry() {
     let mut sim = arena(&rules);
     let conscript = spawn(&mut sim, &rules, "E2", "Russians", (4, 10));
     let tank = spawn(&mut sim, &rules, "MTNK", "Americans", (24, 10));
+    // Synthetic setup uses the registered human sender without changing
+    // the Russian actor's AI flags or the order's frame-tail timing.
     order(
         &mut sim,
-        "Russians",
+        "Americans",
         Command::Move {
             entity_id: conscript,
             target_rx: 4,

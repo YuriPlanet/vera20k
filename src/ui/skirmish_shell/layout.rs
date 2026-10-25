@@ -370,9 +370,7 @@ fn centered_fixed_shell_offset(screen_w: u32, screen_h: u32) -> (i32, i32) {
 
 pub fn translate_layout(mut layout: SkirmishShellLayout, dx: i32, dy: i32) -> SkirmishShellLayout {
     layout.screen = layout.screen.translate(dx, dy);
-    layout.right_panel.top = layout.right_panel.top.translate(dx, dy);
-    layout.right_panel.tile = layout.right_panel.tile.translate(dx, dy);
-    layout.right_panel.bottom = layout.right_panel.bottom.translate(dx, dy);
+    layout.right_panel = layout.right_panel.translate(dx, dy);
     layout.right_panel_text.title = layout.right_panel_text.title.translate(dx, dy);
     layout.right_panel_text.game_type = layout.right_panel_text.game_type.translate(dx, dy);
     layout.right_panel_text.map_label = layout.right_panel_text.map_label.translate(dx, dy);

@@ -49,11 +49,13 @@ pub(super) fn launch(
     (rx, ry): (u16, u16),
     frame_effects: FrameEffects<'_>,
 ) -> bool {
+    // This case plays no positional cue: the target cell's centre, with no
+    // Map lookup (a lookup off the map would stamp the shared Dummy).
+    let world = crate::sim::components::DriveCoord::cell(rx, ry, 0).into();
     sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
-        rx,
-        ry,
+        world,
     });
     let known_type = rules
         .aircraft_ids

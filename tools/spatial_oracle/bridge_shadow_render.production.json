@@ -3,7 +3,6 @@
   "scope": "Retail release app observations for the bridge own-shadow drawing change. Complete strict observation comparisons plus rendered-frame inspection; native framebuffer parity is bounded separately by the saved original-caller/GPU attachment oracle.",
   "tool": {
     "path": "tools/map_observation.py",
-    "sha256": "5251eeba0251c86ace56fe9538e29fbcaaa5ae51da448e3e20f2280822f7a037",
     "schema": "vera20k.map-observation-profile.v2",
     "comparison": "The existing comparator revalidates each sealed bundle and compares actual input bytes, initial/final state, exact steps, presentation clock, map source, atlas data, complete observations, camera, surface format and BGRA bytes."
   },
@@ -14,8 +13,7 @@
       "source": {
         "head": "c60d196d548800cec5494ab1d48f5e022719bb81",
         "branch": "feature/bridge-shadow-depth",
-        "status": "M src/app/presentation/render/draw_passes.rs\n M src/app/presentation/render/mod.rs\n?? src/app/presentation/render/bridge_shadow_gpu_tests.rs\n?? tools/spatial_oracle/bridge_shadow_render.py",
-        "source_sha256": "a42d6cba9f8509823ee509d0dd4062487fa573e45d3bf02564f902792717ca3b"
+        "status": "M src/app/presentation/render/draw_passes.rs\n M src/app/presentation/render/mod.rs\n?? src/app/presentation/render/bridge_shadow_gpu_tests.rs\n?? tools/spatial_oracle/bridge_shadow_render.py"
       },
       "command": [
         "cargo",
@@ -43,8 +41,7 @@
       "source": {
         "head": "c60d196d548800cec5494ab1d48f5e022719bb81",
         "branch": "feature/bridge-shadow-depth",
-        "status": "M src/app/frontend/skirmish.rs\n M src/app/presentation/instances/bridges.rs\n M src/app/presentation/render/build_instances.rs\n M src/app/presentation/render/draw_passes.rs\n M src/app/presentation/render/mod.rs\n M src/render/bridge_atlas.rs\n M src/render/overlay_atlas.rs\n M src/render/terrain_draw.rs\n M src/render/terrain_draw_gpu_tests.rs\n M src/sim/world/bridge_test_evidence.rs\n?? src/app/presentation/render/bridge_shadow_gpu_tests.rs\n?? tools/spatial_oracle/bridge_shadow_render.json\n?? tools/spatial_oracle/bridge_shadow_render.md\n?? tools/spatial_oracle/bridge_shadow_render.meta.json\n?? tools/spatial_oracle/bridge_shadow_render.py",
-        "source_sha256": "84ea91318e43ebec6acd9967468b3e63f2bf31ea8993edaa6d1ce7713b849af5"
+        "status": "M src/app/frontend/skirmish.rs\n M src/app/presentation/instances/bridges.rs\n M src/app/presentation/render/build_instances.rs\n M src/app/presentation/render/draw_passes.rs\n M src/app/presentation/render/mod.rs\n M src/render/bridge_atlas.rs\n M src/render/overlay_atlas.rs\n M src/render/terrain_draw.rs\n M src/render/terrain_draw_gpu_tests.rs\n M src/sim/world/bridge_test_evidence.rs\n?? src/app/presentation/render/bridge_shadow_gpu_tests.rs\n?? tools/spatial_oracle/bridge_shadow_render.json\n?? tools/spatial_oracle/bridge_shadow_render.md\n?? tools/spatial_oracle/bridge_shadow_render.meta.json\n?? tools/spatial_oracle/bridge_shadow_render.py"
       },
       "command": [
         "cargo",
@@ -72,8 +69,7 @@
       "source": {
         "head": "c60d196d548800cec5494ab1d48f5e022719bb81",
         "branch": "feature/bridge-shadow-depth",
-        "status": "M  README.md\nM  src/app/frontend/skirmish.rs\nM  src/app/presentation/instances/bridges.rs\nA  src/app/presentation/render/bridge_shadow_gpu_tests.rs\nM  src/app/presentation/render/build_instances.rs\nM  src/app/presentation/render/draw_passes.rs\nMM src/app/presentation/render/mod.rs\nMM src/render/bridge_atlas.rs\nM  src/render/overlay_atlas.rs\nM  src/render/terrain_draw.rs\nM  src/render/terrain_draw_gpu_tests.rs\nM  src/sim/world/bridge_test_evidence.rs\nA  tools/spatial_oracle/bridge_shadow_render.json\nA  tools/spatial_oracle/bridge_shadow_render.lifecycle.json\nA  tools/spatial_oracle/bridge_shadow_render.md\nA  tools/spatial_oracle/bridge_shadow_render.meta.json\nA  tools/spatial_oracle/bridge_shadow_render.production.json\nA  tools/spatial_oracle/bridge_shadow_render.py\nA  tools/spatial_oracle/bridge_shadow_render.timing.json\nA  tools/spatial_oracle/bridge_shadow_render.validation.json",
-        "source_sha256": "c7cd6b66f2634dbb8f540b1a21aa001be02bd5072a4cc6819e02cb99f28f5931"
+        "status": "M  README.md\nM  src/app/frontend/skirmish.rs\nM  src/app/presentation/instances/bridges.rs\nA  src/app/presentation/render/bridge_shadow_gpu_tests.rs\nM  src/app/presentation/render/build_instances.rs\nM  src/app/presentation/render/draw_passes.rs\nMM src/app/presentation/render/mod.rs\nMM src/render/bridge_atlas.rs\nM  src/render/overlay_atlas.rs\nM  src/render/terrain_draw.rs\nM  src/render/terrain_draw_gpu_tests.rs\nM  src/sim/world/bridge_test_evidence.rs\nA  tools/spatial_oracle/bridge_shadow_render.json\nA  tools/spatial_oracle/bridge_shadow_render.lifecycle.json\nA  tools/spatial_oracle/bridge_shadow_render.md\nA  tools/spatial_oracle/bridge_shadow_render.meta.json\nA  tools/spatial_oracle/bridge_shadow_render.production.json\nA  tools/spatial_oracle/bridge_shadow_render.py\nA  tools/spatial_oracle/bridge_shadow_render.timing.json\nA  tools/spatial_oracle/bridge_shadow_render.validation.json"
       },
       "command": [
         "cargo",

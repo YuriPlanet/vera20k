@@ -24,13 +24,20 @@
 //! holds it. A network visit's mode follows from the service it visits
 //! (`NetworkReturnContext`), so the visit stores no copy either.
 
-use crate::net::lockstep::MultiplayerChecksumHistory;
+use crate::sim::command_queue::MultiplayerChecksumHistory;
+use crate::sim::command_queue::{ChecksumMismatch, FrameChecksumState, FrameInfo};
 use crate::skirmish_launch::{
-    SkirmishAiSlot, SkirmishLaunchOptions, SkirmishLaunchSession, SkirmishLocalSlot,
+    NETWORK_PLAYER_SLOT_COUNT, SkirmishAiSlot, SkirmishLaunchOptions, SkirmishLaunchSession,
+    SkirmishLocalSlot,
 };
 use std::sync::Arc;
 
 pub(crate) use crate::sim::scenario_session::ScenarioGameMode as SessionMode;
+
+mod cooperative_round;
+pub(crate) use cooperative_round::{
+    CooperativeRoundEvent, CooperativeRoundOptions, CooperativeRoundState, CooperativeRoundStep,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NetworkReturnContext {
@@ -63,6 +70,75 @@ pub(crate) enum NetworkVacancy {
     Open,
     Closed,
     OpenObserver,
+    ///5E8EA0's AC11B0: a roster name whose type3 node has not arrived.
+    Waiting,
+}
+
+/// A received5E8EA0 row binding. Human indices refer to the already-admitted
+/// source vector; a display packet never creates a participant or endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NetworkRosterEntry {
+    Human(usize),
+    Vacancy(NetworkVacancy),
+    Ai(crate::skirmish_launch::AiDifficulty),
+}
+
+/// Session's five raw AI-array words (A8B27C/29C/2BC/2DC/2FC).
+/// Active rows are derived from `launch.opponents`; only inactive rows retain
+/// these words, independently of the visible human or vacant-row controls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NetworkAiOptions {
+    pub difficulty: i32,
+    pub country: i32,
+    pub color: i32,
+    pub start: i32,
+    pub team: i32,
+}
+
+impl NetworkAiOptions {
+    /// An active row's words, as the options string writes them.
+    pub(crate) fn of(ai: &crate::skirmish_launch::SkirmishAiSlot) -> Self {
+        Self {
+            difficulty: ai.difficulty.as_i32(),
+            country: if ai.country_random {
+                -2
+            } else {
+                i32::from(ai.country.raw_index())
+            },
+            color: if ai.color_random {
+                -2
+            } else {
+                i32::from(ai.color_index)
+            },
+            start: match ai.start_position {
+                crate::skirmish_launch::LaunchStartPosition::Auto => -2,
+                crate::skirmish_launch::LaunchStartPosition::Position(index) => i32::from(index),
+            },
+            team: match ai.team {
+                crate::skirmish_launch::LaunchTeam::None => -2,
+                crate::skirmish_launch::LaunchTeam::Team(index) => i32::from(index),
+            },
+        }
+    }
+
+    /// Fresh BC: BSS difficulty0, cleared country/color, and5DEC98..BD's
+    /// explicit -2 start/team fills. Later row transitions retain their own
+    /// -1 clears and5EE510's final team write instead of recreating this state.
+    pub(crate) const INITIAL_INACTIVE: Self = Self {
+        difficulty: 0,
+        country: -1,
+        color: -1,
+        start: -2,
+        team: -2,
+    };
+    ///5ED0CF..5ED0EB /5ED17D..5ED199 clear all five words to -1.
+    const CLEARED: Self = Self {
+        difficulty: -1,
+        country: -1,
+        color: -1,
+        start: -1,
+        team: -1,
+    };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +167,10 @@ pub(crate) struct NetworkMapMetadata {
     pub official: bool,
     pub byte_length: i32,
     pub digest: String,
+    /// Exact physical bytes for VERA online agreement and map transfer. Native
+    /// [Digest] text above remains a separate compatibility field.
+    pub source_sha256: String,
+    pub effective_digest: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,10 +219,14 @@ enum NetworkPhase {
     Setup {
         launch: SkirmishLaunchSession,
         admission: Vec<ParticipantAdmission>,
-        vacancies: [NetworkVacancy; 8],
+        vacancies: [NetworkVacancy; NETWORK_PLAYER_SLOT_COUNT],
         /// Authoritative only while the corresponding row is vacant. Entering
         /// a human/AI row makes its canonical participant choices authoritative.
-        inactive_choices: [SkirmishLocalSlot; 8],
+        inactive_choices: [SkirmishLocalSlot; NETWORK_PLAYER_SLOT_COUNT],
+        inactive_ai_options: [NetworkAiOptions; NETWORK_PLAYER_SLOT_COUNT],
+        /// A8DA90 AI display pointers. Roster packets change these without
+        /// changing Session's AI arrays; global packets may arrive reordered.
+        display_ai: [Option<crate::skirmish_launch::AiDifficulty>; NETWORK_PLAYER_SLOT_COUNT],
         /// Native831700/8316A4: prior capacity and independent reserved observer row.
         capacity: i32,
         observer_row: Option<u8>,
@@ -152,10 +236,20 @@ enum NetworkPhase {
         /// Live source membership indexes the immutable historical launch.
         connected: Vec<usize>,
     },
+    /// The co-op result dialog BC6 between missions: the finished start,
+    /// the round's own roster (the next mission's, which the master's
+    /// `+0x68`/`0x0069B8C0` or a received `0x32` changes) and its readiness.
+    CooperativeRound {
+        previous: Arc<crate::app::match_bootstrap::PreparedNetworkStartup>,
+        connected: Vec<usize>,
+        launch: SkirmishLaunchSession,
+        round: CooperativeRoundState,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum NetworkLoadingRequest {
+    ///69AE90's effective display percent; random-map milestones are already halved.
     ReportProgress(i32),
     Disconnect {
         source_index: usize,
@@ -177,12 +271,42 @@ pub(crate) enum NetworkLoadingRequest {
         recipients: Vec<usize>,
         byte: u8,
     },
+    /// A beacon record `0x20`/`0x21` to every other node
+    /// (`0x00430E0C..0x00430E4E`, `0x004313C2..0x004313F5`).
+    Beacon(crate::net::lan_messages::ingame::BeaconRecord),
+    /// BC6's `0x26` to every node.
+    CooperativeReady,
+    /// BC6's `0x24` (Quit) to every node.
+    CooperativeLeave,
+    /// The master's `0x34`.
+    CooperativeBegin,
+    /// The master's `0x32` to every bound human slot.
+    CooperativeOptions(CooperativeRoundOptions),
+    /// A guest's `0x23`.
+    CooperativeAck,
+    /// The master's `0x31`.
+    CooperativeGo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NetworkSession {
+    /// The WOL game channel's kind (`0x0077D940`/`0x0077D970`), fixed for
+    /// the setup it hosts.
+    room: NetworkRoom,
+    /// The WOL start's tournament value and clan lists, taken at
+    /// OnGameStart/Start Game Now for the accepted start.
+    wol_start: WolStartTerms,
     loading_requests: Vec<NetworkLoadingRequest>,
+    /// Node addresses belong to the accepted participants, not discovery UI
+    /// rows. Native node+28 is carried into697B70's House/connection binding.
+    /// The IPv4 LAN adaptation uses the actual global-envelope source endpoint.
+    endpoints: std::collections::BTreeMap<String, std::net::SocketAddrV4>,
     map_metadata: Option<NetworkMapMetadata>,
+    /// Verified local content for the current advertised map. The lobby keeps
+    /// the host's filename; only the frozen local load consumes this source.
+    local_map_source: Option<crate::map::source::LoadedMapSource>,
+    local_map_effective_digest: Option<String>,
+    local_random_map_preview: Option<crate::map::source::LoadedMapSource>,
     proposed_seed: Option<u32>,
     max_ahead_frames: Option<i32>,
     return_context: NetworkReturnContext,
@@ -205,11 +329,9 @@ pub(crate) struct MatchSession {
     offline_player_name: Option<String>,
     network: Option<NetworkSession>,
     host: bool,
-    /// gamemd's 256-entry checksum ring at `0x00B04474`, written once per
-    /// multiplayer frame by `Queue_AI_Multiplayer` (`0x006476A5`) and read by
-    /// the FRAMEINFO comparison. Process-lifetime like the native global: no
-    /// launch or load clears it; only the multiplayer frame-0 reset does.
-    checksum_history: MultiplayerChecksumHistory,
+    /// Process-lifetime checksum history and comparison timer. Launch/load
+    /// retain this owner; only Queue_AI_Multiplayer's reset branch clears it.
+    frame_checksums: FrameChecksumState,
     /// Process byte B07788, set by the first ReadMultiPlayerSettings call.
     /// It survives dialog, match and saved-game transitions.
     multiplayer_settings_initialized: bool,
@@ -238,6 +360,12 @@ impl WallBucketTimer {
             start: Some(now_bucket),
             duration,
         }
+    }
+
+    /// Diagnostic projection of the actual countdown, including recovery
+    /// restarts. The native expiry comparison remains in remaining().
+    pub(crate) fn deadline_bucket(self) -> Option<u32> {
+        self.start.map(|start| start.wrapping_add(self.duration))
     }
 
     /// `0x004F1B20`: a never-started timer returns its duration; otherwise
@@ -277,7 +405,7 @@ impl Default for MatchSession {
             offline_player_name: None,
             network: None,
             host: false,
-            checksum_history: MultiplayerChecksumHistory::new(),
+            frame_checksums: FrameChecksumState::new(),
             multiplayer_settings_initialized: false,
             latency_fudge: 0,
             pause_event_limiters: PauseEventLimiters::default(),
@@ -306,6 +434,17 @@ impl MatchSession {
             !mode.is_network(),
             "offline launch cannot start a network session"
         );
+        self.begin_local_loading(mode, local_player_name);
+    }
+
+    /// A replay retains its recorded mode while the shell constructs a world.
+    /// A recorded network mode admits no live participant table or connection;
+    /// the installed world takes ownership through `hand_mode_to_world`.
+    pub(crate) fn begin_replay(&mut self, mode: SessionMode, local_player_name: String) {
+        self.begin_local_loading(mode, Some(local_player_name));
+    }
+
+    fn begin_local_loading(&mut self, mode: SessionMode, local_player_name: Option<String>) {
         self.mode = ModeHolder::Shell(mode);
         self.offline_player_name = local_player_name;
         self.network = None;
@@ -387,8 +526,14 @@ impl MatchSession {
         self.host = false;
         self.offline_player_name = None;
         self.network = Some(NetworkSession {
+            room: NetworkRoom::default(),
+            wol_start: WolStartTerms::default(),
             loading_requests: Vec::new(),
+            endpoints: Default::default(),
             map_metadata: None,
+            local_map_source: None,
+            local_map_effective_digest: None,
+            local_random_map_preview: None,
             proposed_seed: None,
             max_ahead_frames: None,
             return_context,
@@ -406,7 +551,7 @@ impl MatchSession {
     ) -> anyhow::Result<()> {
         anyhow::ensure!(self.network.is_some(), "no network visit is active");
         anyhow::ensure!(
-            observer_row.is_none_or(|row| row < 8),
+            observer_row.is_none_or(|row| usize::from(row) < NETWORK_PLAYER_SLOT_COUNT),
             "observer reservation is outside setup rows"
         );
         anyhow::ensure!(
@@ -414,8 +559,7 @@ impl MatchSession {
             "network setup has no local participant"
         );
         anyhow::ensure!(
-            launch.humans.len() + launch.opponents.len()
-                <= crate::skirmish_launch::SKIRMISH_PLAYER_SLOT_COUNT,
+            launch.humans.len() + launch.opponents.len() <= NETWORK_PLAYER_SLOT_COUNT,
             "network setup exceeds the participant slots"
         );
         validate_network_rows(&launch)?;
@@ -436,16 +580,79 @@ impl MatchSession {
             .collect();
         let inactive_choices =
             std::array::from_fn(|_| native_network_row_defaults(&launch.mode, false));
+        let display_ai = std::array::from_fn(|row| {
+            launch
+                .opponents
+                .iter()
+                .find(|ai| usize::from(ai.raw_slot_index) == row)
+                .map(|ai| ai.difficulty)
+        });
         network.phase = NetworkPhase::Setup {
+            display_ai,
             capacity: 8,
             observer_row,
             launch,
             admission,
-            vacancies: [NetworkVacancy::Open; 8],
+            vacancies: [NetworkVacancy::Open; NETWORK_PLAYER_SLOT_COUNT],
             inactive_choices,
+            inactive_ai_options: [NetworkAiOptions::INITIAL_INACTIVE; NETWORK_PLAYER_SLOT_COUNT],
         };
         self.host = host;
         Ok(())
+    }
+
+    /// Bind the source of an admitted type3/type6 node. Discovery alone
+    /// cannot create an endpoint for an unaccepted participant. Frozen starts
+    /// retain the same identity/address binding until their cleanup.
+    pub(crate) fn bind_network_endpoint(
+        &mut self,
+        name: &str,
+        endpoint: std::net::SocketAddrV4,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.network_setup()
+                .is_some_and(|launch| launch.humans.iter().any(|human| human.name == name)),
+            "endpoint has no admitted network participant"
+        );
+        anyhow::ensure!(
+            endpoint.port() != 0
+                && !endpoint.ip().is_unspecified()
+                && !endpoint.ip().is_broadcast()
+                && !endpoint.ip().is_multicast(),
+            "participant endpoint is not a direct IPv4 address"
+        );
+        let network = self.network.as_mut().expect("admitted network participant");
+        anyhow::ensure!(
+            !matches!(network.phase, NetworkPhase::Frozen { .. }),
+            "cannot replace endpoint of an accepted start"
+        );
+        anyhow::ensure!(
+            !network
+                .endpoints
+                .iter()
+                .any(|(other, address)| other != name && *address == endpoint),
+            "endpoint already belongs to another participant"
+        );
+        network.endpoints.insert(name.to_owned(), endpoint);
+        Ok(())
+    }
+
+    pub(crate) fn network_endpoint(&self, source_index: usize) -> Option<std::net::SocketAddrV4> {
+        let name = &self.network_setup()?.humans.get(source_index)?.name;
+        self.network.as_ref()?.endpoints.get(name).copied()
+    }
+
+    pub(crate) fn network_endpoint_source(
+        &self,
+        endpoint: std::net::SocketAddrV4,
+    ) -> Option<usize> {
+        self.network_setup()?
+            .humans
+            .iter()
+            .enumerate()
+            .find_map(|(index, _)| {
+                (self.network_endpoint(index) == Some(endpoint)).then_some(index)
+            })
     }
 
     pub(crate) fn network_setup(&self) -> Option<&SkirmishLaunchSession> {
@@ -453,14 +660,66 @@ impl MatchSession {
             NetworkPhase::Lobby => None,
             NetworkPhase::Setup { launch, .. } => Some(launch),
             NetworkPhase::Frozen { startup, .. } => Some(startup.launch_session()),
+            NetworkPhase::CooperativeRound { launch, .. } => Some(launch),
         }
     }
 
     fn editable_network_setup(&mut self) -> anyhow::Result<&mut SkirmishLaunchSession> {
         match self.network.as_mut().map(|network| &mut network.phase) {
-            Some(NetworkPhase::Setup { launch, .. }) => Ok(launch),
+            Some(
+                NetworkPhase::Setup { launch, .. } | NetworkPhase::CooperativeRound { launch, .. },
+            ) => Ok(launch),
             _ => anyhow::bail!("network setup is not editable"),
         }
+    }
+
+    /// VERA online transport adaptation: every client numbers the authenticated
+    /// room roster identically before installing host options or relay peers.
+    /// Native WOL creates the local node first (7A7627), which is a different
+    /// order on each machine. Identity and admission stay owned here; neither
+    /// an options packet nor a relay grant may add an unadmitted participant.
+    pub(crate) fn canonicalize_online_roster(&mut self, names: &[String]) -> anyhow::Result<()> {
+        let Some(NetworkSession {
+            return_context: NetworkReturnContext::Wol,
+            phase: NetworkPhase::Setup {
+                launch, admission, ..
+            },
+            ..
+        }) = self.network.as_mut()
+        else {
+            anyhow::bail!("online roster requires an editable WOL setup");
+        };
+        anyhow::ensure!(
+            names.len() == launch.humans.len(),
+            "online roster membership changed"
+        );
+        let mut order = Vec::with_capacity(names.len());
+        for name in names {
+            let index = launch
+                .humans
+                .iter()
+                .position(|human| &human.name == name)
+                .ok_or_else(|| anyhow::anyhow!("online roster has an unadmitted participant"))?;
+            anyhow::ensure!(
+                !order.contains(&index),
+                "online roster repeats a participant"
+            );
+            order.push(index);
+        }
+        let local_index = order
+            .iter()
+            .position(|index| *index == launch.local_player_index)
+            .ok_or_else(|| anyhow::anyhow!("online roster has no local participant"))?;
+        let humans = order
+            .iter()
+            .map(|index| launch.humans[*index].clone())
+            .collect();
+        let reordered_admission = order.iter().map(|index| admission[*index]).collect();
+        launch.humans = humans;
+        launch.local_player_index = local_index;
+        *admission = reordered_admission;
+        launch.rebuild_house_roster();
+        Ok(())
     }
 
     /// Type3 roster admission appends a remote node. It does not reorder the
@@ -469,35 +728,39 @@ impl MatchSession {
         &mut self,
         human: crate::skirmish_launch::SkirmishHumanSlot,
     ) -> anyhow::Result<usize> {
+        let host = self.host;
         let Some(NetworkSession {
-            phase: NetworkPhase::Setup {
-                launch, admission, ..
-            },
+            phase:
+                NetworkPhase::Setup {
+                    launch,
+                    admission,
+                    display_ai,
+                    ..
+                },
             ..
         }) = self.network.as_mut()
         else {
             anyhow::bail!("network setup is not editable");
         };
         anyhow::ensure!(
-            launch.humans.len() + launch.opponents.len()
-                < crate::skirmish_launch::SKIRMISH_PLAYER_SLOT_COUNT,
+            launch.humans.len() + if host { launch.opponents.len() } else { 0 }
+                < NETWORK_PLAYER_SLOT_COUNT,
             "network setup has no free slot"
         );
         // A WOL guest's node has no row until the host's 'L' binds one.
         anyhow::ensure!(
             human.raw_slot_index.is_none_or(|row| {
-                row < 8
+                usize::from(row) < NETWORK_PLAYER_SLOT_COUNT
                     && !launch
                         .humans
                         .iter()
                         .any(|entry| entry.raw_slot_index == Some(row))
-                    && !launch
-                        .opponents
-                        .iter()
-                        .any(|entry| entry.raw_slot_index == row)
             }),
             "participant row is occupied or out of range"
         );
+        if let Some(row) = human.raw_slot_index {
+            display_ai[usize::from(row)] = None;
+        }
         let index = launch.humans.len();
         launch.humans.push(human);
         admission.push(ParticipantAdmission {
@@ -513,6 +776,7 @@ impl MatchSession {
             phase: NetworkPhase::Setup {
                 launch, admission, ..
             },
+            endpoints,
             ..
         }) = self.network.as_mut()
         else {
@@ -522,7 +786,8 @@ impl MatchSession {
             index < launch.humans.len() && index != launch.local_player_index,
             "remote removal requires a remote participant"
         );
-        launch.humans.remove(index);
+        let removed = launch.humans.remove(index);
+        endpoints.remove(&removed.name);
         admission.remove(index);
         if index < launch.local_player_index {
             launch.local_player_index -= 1;
@@ -597,98 +862,117 @@ impl MatchSession {
             self.editable_network_setup()?.rebuild_house_roster();
             return Ok(change);
         }
-        let launch = self.editable_network_setup()?;
-        let current = launch.humans[index].slot.clone();
-        let native_country =
-            |slot: &SkirmishLocalSlot| (!slot.country_random).then_some(slot.country);
-        let allowed = |country: Option<crate::skirmish_launch::LaunchCountry>| {
-            countries.is_none_or(|list| country.is_none_or(|country| list.contains(&country)))
-        };
-        let mut slot = current.clone();
-        // An observer's country is -3 on both sides.
-        if observer {
-        } else if allowed(native_country(&choices)) {
-            if native_country(&choices) != native_country(&current) {
-                slot.country = choices.country;
-                slot.country_random = choices.country_random;
-                change.options = true;
-            }
-        } else {
-            if !allowed(native_country(&current)) {
-                slot.country_random = true;
-            }
-            change.options = true;
-        }
-        let native_color =
-            |slot: &SkirmishLocalSlot| (!slot.color_random).then_some(slot.color_index);
-        if native_color(&choices) != native_color(&current) {
-            // 0x69B600: every node of the session and every AI row.
-            let taken = native_color(&choices).is_some_and(|color| {
-                launch
-                    .humans
-                    .iter()
-                    .any(|human| native_color(&human.slot) == Some(color))
-                    || launch
-                        .opponents
-                        .iter()
-                        .any(|ai| !ai.color_random && ai.color_index == color)
-            });
-            slot.color_random = choices.color_random || taken;
-            if !slot.color_random {
-                slot.color_index = choices.color_index;
-            }
-            change.options = true;
-        }
-        if choices.start_position != current.start_position {
-            // 0x5E9720: the nodes on a row and every AI row.
-            let taken = choices.start_position != crate::skirmish_launch::LaunchStartPosition::Auto
-                && (launch.humans.iter().any(|human| {
-                    human.raw_slot_index.is_some()
-                        && human.slot.start_position == choices.start_position
-                }) || launch
-                    .opponents
-                    .iter()
-                    .any(|ai| ai.start_position == choices.start_position));
-            slot.start_position = if taken {
-                crate::skirmish_launch::LaunchStartPosition::Auto
-            } else {
-                choices.start_position
-            };
-            change.options = true;
-        }
-        if choices.team != current.team {
-            // Mode +0x34 (0x5D5DE0) admits only 0..3; +0x2C (0x5D5DC0) is
-            // Team 0 under MustAlly, else none.
-            use crate::skirmish_launch::LaunchTeam;
-            slot.team = match choices.team {
-                LaunchTeam::Team(team) if team <= 3 => choices.team,
-                _ if launch.mode.must_ally => LaunchTeam::Team(0),
-                _ => LaunchTeam::None,
-            };
-            change.options = true;
-        }
-        launch.humans[index].slot = slot;
-        launch.rebuild_house_roster();
+        let applied = self.apply_peer_choice_fields(
+            index,
+            choices,
+            observer,
+            PeerChoicePolicy::Wol { countries },
+        )?;
+        change.options |= applied.options;
         Ok(change)
+    }
+
+    /// LAN Type18 receiver5E0D1C..5E0F20: writes country and team directly,
+    /// with the same color/start collision checks as WOL. It does not perform
+    /// WOL's observer row moves or mode country/team validation.
+    pub(crate) fn accept_lan_peer_choices(
+        &mut self,
+        index: usize,
+        choices: SkirmishLocalSlot,
+    ) -> anyhow::Result<PeerChoicesChange> {
+        anyhow::ensure!(self.host, "only the host checks LAN peer choices");
+        let launch = self.editable_network_setup()?;
+        anyhow::ensure!(
+            index != launch.local_player_index,
+            "the host's own row is not a peer's"
+        );
+        let human = launch
+            .humans
+            .get(index)
+            .ok_or_else(|| anyhow::anyhow!("unknown participant"))?;
+        if human.raw_slot_index.is_none() {
+            return Ok(PeerChoicesChange::default());
+        }
+        let observer = human.is_observer();
+        self.apply_peer_choice_fields(index, choices, observer, PeerChoicePolicy::Lan)
+    }
+
+    fn apply_peer_choice_fields(
+        &mut self,
+        index: usize,
+        choices: SkirmishLocalSlot,
+        observer: bool,
+        policy: PeerChoicePolicy<'_>,
+    ) -> anyhow::Result<PeerChoicesChange> {
+        let Some(NetworkSession {
+            phase:
+                NetworkPhase::Setup {
+                    launch,
+                    inactive_ai_options,
+                    ..
+                },
+            ..
+        }) = self.network.as_mut()
+        else {
+            anyhow::bail!("network setup is not editable");
+        };
+        Ok(apply_peer_choices(
+            launch,
+            inactive_ai_options,
+            index,
+            choices,
+            observer,
+            policy,
+        ))
     }
 
     pub(crate) fn network_vacancy(&self, row: u8) -> Option<NetworkVacancy> {
         let NetworkPhase::Setup {
-            launch, vacancies, ..
+            launch,
+            vacancies,
+            display_ai,
+            ..
         } = &self.network.as_ref()?.phase
         else {
             return None;
         };
-        if row >= 8
+        if usize::from(row) >= NETWORK_PLAYER_SLOT_COUNT
             || launch
                 .humans
                 .iter()
                 .any(|human| human.raw_slot_index == Some(row))
-            || launch.opponents.iter().any(|ai| ai.raw_slot_index == row)
+            || display_ai[usize::from(row)].is_some()
         {
             return None;
         }
         Some(vacancies[usize::from(row)])
+    }
+
+    pub(crate) fn network_display_ai(
+        &self,
+        row: u8,
+    ) -> Option<crate::skirmish_launch::AiDifficulty> {
+        let NetworkPhase::Setup { display_ai, .. } = &self.network.as_ref()?.phase else {
+            return None;
+        };
+        display_ai.get(usize::from(row)).copied().flatten()
+    }
+
+    ///69B600 shared by peer-choice changes and5E96A0 new-node admission.
+    pub(crate) fn network_color_in_use(&self, color: u8) -> bool {
+        let Some(NetworkSession {
+            phase:
+                NetworkPhase::Setup {
+                    launch,
+                    inactive_ai_options,
+                    ..
+                },
+            ..
+        }) = self.network.as_ref()
+        else {
+            return false;
+        };
+        network_color_in_use(launch, inactive_ai_options, color)
     }
 
     pub(crate) fn network_row_choices(&self, row: u8) -> Option<SkirmishLocalSlot> {
@@ -707,7 +991,9 @@ impl MatchSession {
         {
             return Some(human.slot.clone());
         }
-        if let Some(ai) = launch.opponents.iter().find(|ai| ai.raw_slot_index == row) {
+        if self.network_display_ai(row).is_some()
+            && let Some(ai) = launch.opponents.iter().find(|ai| ai.raw_slot_index == row)
+        {
             return Some(SkirmishLocalSlot {
                 country: ai.country,
                 country_random: ai.country_random,
@@ -718,6 +1004,108 @@ impl MatchSession {
             });
         }
         inactive_choices.get(usize::from(row)).cloned()
+    }
+
+    /// Build_Options_String5DBD5C reads the AI arrays even where a human
+    /// occupies the same display row. Human start/team never leak into them.
+    pub(crate) fn network_ai_options(&self, row: u8) -> Option<NetworkAiOptions> {
+        let NetworkPhase::Setup {
+            launch,
+            inactive_ai_options,
+            ..
+        } = &self.network.as_ref()?.phase
+        else {
+            return None;
+        };
+        if let Some(ai) = launch.opponents.iter().find(|ai| ai.raw_slot_index == row) {
+            return Some(NetworkAiOptions::of(ai));
+        }
+        inactive_ai_options.get(usize::from(row)).copied()
+    }
+
+    ///5E5BAB..5E5C3C retains every received AI word. Active rows have already
+    /// entered HostSetup's opponents; only the inactive words need retention.
+    pub(crate) fn accept_network_inactive_ai_options<const N: usize>(
+        &mut self,
+        incoming: [NetworkAiOptions; N],
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(!self.host, "host cannot receive its own AI arrays");
+        let Some(NetworkSession {
+            phase:
+                NetworkPhase::Setup {
+                    launch,
+                    inactive_ai_options,
+                    ..
+                },
+            ..
+        }) = self.network.as_mut()
+        else {
+            anyhow::bail!("network setup is not editable");
+        };
+        anyhow::ensure!(N <= NETWORK_PLAYER_SLOT_COUNT, "too many AI option rows");
+        for (row, value) in incoming.into_iter().enumerate() {
+            if !launch
+                .opponents
+                .iter()
+                .any(|ai| usize::from(ai.raw_slot_index) == row)
+            {
+                inactive_ai_options[row] = value;
+            }
+        }
+        Ok(())
+    }
+
+    /// LAN/WOL roster receiver5E8EA0 replaces the eight display pointers,
+    /// retaining source-list order, node acknowledgements and endpoints.
+    /// Unknown names enter as Waiting; a later type3 admission binds its row.
+    pub(crate) fn accept_network_roster<const N: usize>(
+        &mut self,
+        rows: [NetworkRosterEntry; N],
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(!self.host, "a host cannot receive its own roster");
+        let Some(NetworkSession {
+            phase:
+                NetworkPhase::Setup {
+                    launch,
+                    vacancies,
+                    display_ai,
+                    ..
+                },
+            ..
+        }) = self.network.as_mut()
+        else {
+            anyhow::bail!("network setup is not editable");
+        };
+        anyhow::ensure!(N <= NETWORK_PLAYER_SLOT_COUNT, "too many roster rows");
+        let mut candidate = launch.clone();
+        for human in &mut candidate.humans {
+            human.raw_slot_index = None;
+        }
+        let mut next_vacancies = [NetworkVacancy::Open; NETWORK_PLAYER_SLOT_COUNT];
+        let mut next_ai = [None; NETWORK_PLAYER_SLOT_COUNT];
+        for (row, binding) in rows.into_iter().enumerate() {
+            match binding {
+                NetworkRosterEntry::Human(source) => {
+                    let human = candidate
+                        .humans
+                        .get_mut(source)
+                        .ok_or_else(|| anyhow::anyhow!("roster names an unadmitted source"))?;
+                    anyhow::ensure!(
+                        human.raw_slot_index.is_none(),
+                        "duplicate roster participant"
+                    );
+                    human.raw_slot_index = Some(row as u8);
+                }
+                NetworkRosterEntry::Vacancy(vacancy) => next_vacancies[row] = vacancy,
+                NetworkRosterEntry::Ai(difficulty) => next_ai[row] = Some(difficulty),
+            }
+        }
+        validate_network_option_rows(&candidate)?;
+        candidate.rebuild_house_roster();
+        *launch = candidate;
+        *vacancies = next_vacancies;
+        *display_ai = next_ai;
+        Ok(())
     }
 
     /// Sole5EC9F0 row-kind transition: any AI selection resets its choices,
@@ -732,19 +1120,14 @@ impl MatchSession {
         anyhow::ensure!(self.host, "only the host may change participant row kinds");
         //5EC9F0 returns before any reset when the selected item pointer is unchanged.
         let current_kind = self
-            .network_setup()
-            .and_then(|launch| {
-                launch
-                    .opponents
-                    .iter()
-                    .find(|ai| ai.raw_slot_index == row)
-                    .map(|ai| NetworkRowKind::Ai(ai.difficulty))
-            })
+            .network_display_ai(row)
+            .map(NetworkRowKind::Ai)
             .or_else(|| {
-                self.network_vacancy(row).map(|vacancy| match vacancy {
-                    NetworkVacancy::Open => NetworkRowKind::Open,
-                    NetworkVacancy::Closed => NetworkRowKind::Closed,
-                    NetworkVacancy::OpenObserver => NetworkRowKind::OpenObserver,
+                self.network_vacancy(row).and_then(|vacancy| match vacancy {
+                    NetworkVacancy::Open => Some(NetworkRowKind::Open),
+                    NetworkVacancy::Closed => Some(NetworkRowKind::Closed),
+                    NetworkVacancy::OpenObserver => Some(NetworkRowKind::OpenObserver),
+                    NetworkVacancy::Waiting => None,
                 })
             });
         if current_kind == Some(kind) {
@@ -756,6 +1139,8 @@ impl MatchSession {
                     launch,
                     vacancies,
                     inactive_choices,
+                    inactive_ai_options,
+                    display_ai,
                     ..
                 },
             ..
@@ -764,7 +1149,8 @@ impl MatchSession {
             anyhow::bail!("network setup is not editable");
         };
         anyhow::ensure!(
-            row < 8 && launch.local_player().raw_slot_index != Some(row),
+            usize::from(row) < NETWORK_PLAYER_SLOT_COUNT
+                && launch.local_player().raw_slot_index != Some(row),
             "row change cannot replace the local participant"
         );
         let removed = if let Some(index) = launch
@@ -781,6 +1167,12 @@ impl MatchSession {
         let had_ai = launch.opponents.iter().any(|ai| ai.raw_slot_index == row);
         launch.opponents.retain(|ai| ai.raw_slot_index != row);
         let index = usize::from(row);
+        let was_observer = removed.as_ref().is_some_and(|human| human.is_observer())
+            || vacancies[index] == NetworkVacancy::OpenObserver;
+        display_ai[index] = match kind {
+            NetworkRowKind::Ai(difficulty) => Some(difficulty),
+            _ => None,
+        };
         if let NetworkRowKind::Ai(difficulty) = kind {
             let defaults = native_network_row_defaults(&launch.mode, true);
             launch.opponents.push(SkirmishAiSlot {
@@ -795,6 +1187,16 @@ impl MatchSession {
             });
             launch.opponents.sort_by_key(|ai| ai.raw_slot_index);
         } else {
+            //5ECFD7 clears three fields when leaving an observer;5ED0CF
+            //and5ED17D clear five when entering one or removing an AI.
+            //Open <-> Closed alone retains these separate array words.
+            if had_ai || (!was_observer && kind == NetworkRowKind::OpenObserver) {
+                inactive_ai_options[index] = NetworkAiOptions::CLEARED;
+            } else if was_observer && kind != NetworkRowKind::OpenObserver {
+                inactive_ai_options[index].difficulty = -1;
+                inactive_ai_options[index].country = -1;
+                inactive_ai_options[index].color = -1;
+            }
             if had_ai || removed.is_some() || vacancies[index] == NetworkVacancy::OpenObserver {
                 inactive_choices[index] = native_network_row_defaults(&launch.mode, false);
             }
@@ -810,10 +1212,63 @@ impl MatchSession {
                 inactive_choices[index].color_index = 8;
             }
             inactive_choices[index].team = native_network_row_defaults(&launch.mode, false).team;
+            //5ED1B0 ->5EE510 runs after the clear above, including for Open
+            //and Closed rows: the raw team array takes mode+2C last.
+            inactive_ai_options[index].team = match inactive_choices[index].team {
+                crate::skirmish_launch::LaunchTeam::None => -2,
+                crate::skirmish_launch::LaunchTeam::Team(team) => i32::from(team),
+            };
         }
         launch.ai_player_count = launch.opponents.len() as i32;
         launch.rebuild_house_roster();
         Ok(removed)
+    }
+
+    /// Cooperative's country refresh (`0x005C2500`), on the host and a
+    /// guest alike: every row below the setup's capacity (`[0xA8BB0C]`)
+    /// takes `country` (None is Random) in its combo and its node
+    /// (`NodeNameTag__SetCountry`), whoever owns the row. Without `ai_rows`
+    /// the AI rows keep theirs.
+    pub(crate) fn reset_network_countries(
+        &mut self,
+        country: Option<crate::skirmish_launch::LaunchCountry>,
+        ai_rows: bool,
+    ) -> anyhow::Result<()> {
+        let rows = self
+            .network_setup_capacity()
+            .unwrap_or(0)
+            .clamp(0, NETWORK_PLAYER_SLOT_COUNT as i32) as u8;
+        let Some(NetworkSession {
+            phase:
+                NetworkPhase::Setup {
+                    launch,
+                    inactive_choices,
+                    ..
+                },
+            ..
+        }) = self.network.as_mut()
+        else {
+            anyhow::bail!("network setup is not editable");
+        };
+        let set = |current: crate::skirmish_launch::LaunchCountry| match country {
+            Some(country) => (country, false),
+            None => (current, true),
+        };
+        for human in &mut launch.humans {
+            if human.raw_slot_index.is_some_and(|row| row < rows) {
+                (human.slot.country, human.slot.country_random) = set(human.slot.country);
+            }
+        }
+        for ai in launch.opponents.iter_mut().filter(|_| ai_rows) {
+            if ai.raw_slot_index < rows {
+                (ai.country, ai.country_random) = set(ai.country);
+            }
+        }
+        for choices in inactive_choices.iter_mut().take(usize::from(rows)) {
+            (choices.country, choices.country_random) = set(choices.country);
+        }
+        launch.rebuild_house_roster();
+        Ok(())
     }
 
     pub(crate) fn set_network_row_choices(
@@ -845,7 +1300,10 @@ impl MatchSession {
             );
             launch.humans[index].slot = choices;
         } else {
-            anyhow::ensure!(host && row < 8, "only the host may edit AI/vacant choices");
+            anyhow::ensure!(
+                host && usize::from(row) < NETWORK_PLAYER_SLOT_COUNT,
+                "only the host may edit AI/vacant choices"
+            );
             if let Some(ai) = launch
                 .opponents
                 .iter_mut()
@@ -874,6 +1332,7 @@ impl MatchSession {
             NetworkVacancy::Open => NetworkRowKind::Open,
             NetworkVacancy::Closed => NetworkRowKind::Closed,
             NetworkVacancy::OpenObserver => NetworkRowKind::OpenObserver,
+            NetworkVacancy::Waiting => anyhow::bail!("Waiting is admitted by a received roster"),
         };
         anyhow::ensure!(
             self.network_setup().is_none_or(|launch| !launch
@@ -927,7 +1386,9 @@ impl MatchSession {
                 .eq_ignore_ascii_case(incoming.selected_map_file.as_deref().unwrap_or(""))
             || previous.official != metadata.official
             || previous.byte_length != metadata.byte_length
-            || previous.digest != metadata.digest)
+            || previous.digest != metadata.digest
+            || previous.source_sha256 != metadata.source_sha256
+            || previous.effective_digest != metadata.effective_digest)
     }
 
     /// Local qualified map title takes precedence; absent local bytes use the
@@ -948,16 +1409,12 @@ impl MatchSession {
         else {
             anyhow::bail!("network setup is not editable");
         };
-        let expected_capacity = metadata
-            .player_capacity
-            .min(
-                launch
-                    .mode
-                    .class
-                    .setup_player_limit()
-                    .map_or(8, |limit| limit as i32),
-            )
-            .min(8);
+        let expected_capacity = row_capacity(
+            network.return_context.session_mode(),
+            network.room,
+            &launch.mode,
+            metadata.player_capacity,
+        );
         anyhow::ensure!(
             *capacity == expected_capacity,
             "map metadata and derived setup capacity disagree"
@@ -975,7 +1432,89 @@ impl MatchSession {
         } else {
             metadata.display_name = previous_title.to_owned();
         }
+        if network.map_metadata.as_ref().is_none_or(|previous| {
+            previous.source_sha256 != metadata.source_sha256
+                || previous.byte_length != metadata.byte_length
+                || previous.effective_digest != metadata.effective_digest
+        }) {
+            network.local_map_source = None;
+            network.local_map_effective_digest = None;
+            network.local_random_map_preview = None;
+        }
         network.map_metadata = Some(metadata);
+        Ok(())
+    }
+
+    pub(crate) fn network_local_map_source(&self) -> Option<&crate::map::source::LoadedMapSource> {
+        self.network.as_ref()?.local_map_source.as_ref()
+    }
+
+    /// Bind content only to its currently accepted map identity. A late download
+    /// cannot replace a newly selected map or acknowledge it as present.
+    pub(crate) fn accept_verified_network_map_source(
+        &mut self,
+        source: crate::map::source::LoadedMapSource,
+        effective_digest: String,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.network_setup().is_some(),
+            "map binding requires editable setup"
+        );
+        let network = self
+            .network
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("no network visit"))?;
+        let expected = network
+            .map_metadata
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("no map metadata"))?;
+        let (length, digest) = source
+            .physical_identity()
+            .ok_or_else(|| anyhow::anyhow!("map source has no physical identity"))?;
+        anyhow::ensure!(
+            length == usize::try_from(expected.byte_length)?
+                && crate::map::source::valid_source_sha256(digest)
+                && digest == expected.source_sha256
+                && effective_digest == expected.effective_digest,
+            "local source differs from the selected map"
+        );
+        network.local_map_source = Some(source);
+        network.local_map_effective_digest = Some(effective_digest);
+        Ok(())
+    }
+
+    pub(crate) fn network_local_map_effective_digest(&self) -> Option<&str> {
+        self.network.as_ref()?.local_map_effective_digest.as_deref()
+    }
+
+    pub(crate) fn network_random_map_preview(
+        &self,
+    ) -> Option<&crate::map::source::LoadedMapSource> {
+        self.network.as_ref()?.local_random_map_preview.as_ref()
+    }
+    pub(crate) fn clear_network_random_map_preview(&mut self) {
+        if let Some(network) = self.network.as_mut() {
+            network.local_random_map_preview = None;
+        }
+    }
+
+    pub(crate) fn accept_network_random_map_preview(
+        &mut self,
+        seed_digest: &str,
+        source: crate::map::source::LoadedMapSource,
+    ) -> anyhow::Result<()> {
+        let network = self
+            .network
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("no network visit"))?;
+        anyhow::ensure!(
+            network
+                .map_metadata
+                .as_ref()
+                .is_some_and(|meta| meta.source_sha256 == seed_digest),
+            "preview belongs to another seed"
+        );
+        network.local_random_map_preview = Some(source);
         Ok(())
     }
 
@@ -1001,20 +1540,24 @@ impl MatchSession {
     /// The admitted host's options packet (ParsePacket5E3D10) replaces setup
     /// values, never roster identity or its independent ready/map acknowledgements.
     /// The service adapter applies the packet's local-ready invalidation separately.
-    pub(crate) fn accept_network_host_setup(
+    /// A WOL Quick Match host applies the matchbot's options the same way
+    /// (`matchbot`, `0x007A6DE2..0x007A6DF3`).
+    pub(crate) fn accept_network_host_setup<const N: usize>(
         &mut self,
         mut incoming: SkirmishLaunchSession,
-        incoming_vacancies: [NetworkVacancy; 8],
+        incoming_vacancies: [NetworkVacancy; N],
         capacity: i32,
         observer_row: Option<u8>,
+        matchbot: bool,
     ) -> anyhow::Result<()> {
         anyhow::ensure!(
-            !self.host,
+            !self.host || matchbot,
             "a host cannot receive guest-authored host setup"
         );
         anyhow::ensure!(capacity > 0, "host map capacity must be positive");
+        anyhow::ensure!(N <= NETWORK_PLAYER_SLOT_COUNT, "too many vacancy rows");
         anyhow::ensure!(
-            observer_row.is_none_or(|row| row < 8),
+            observer_row.is_none_or(|row| usize::from(row) < NETWORK_PLAYER_SLOT_COUNT),
             "observer reservation is outside setup rows"
         );
         let Some(NetworkSession {
@@ -1027,13 +1570,18 @@ impl MatchSession {
                     ..
                 },
             return_context,
+            room,
             ..
         }) = self.network.as_mut()
         else {
             anyhow::bail!("network setup is not editable");
         };
-        let admitted_capacity =
-            row_capacity(return_context.session_mode(), &incoming.mode, capacity);
+        let admitted_capacity = row_capacity(
+            return_context.session_mode(),
+            *room,
+            &incoming.mode,
+            capacity,
+        );
         anyhow::ensure!(
             launch.local_player_index == incoming.local_player_index
                 && launch.humans.len() == incoming.humans.len()
@@ -1044,11 +1592,12 @@ impl MatchSession {
                     .all(|(old, new)| old.name == new.name),
             "host options cannot replace admitted participant identity or source order"
         );
-        validate_network_rows(&incoming)?;
+        validate_network_option_rows(&incoming)?;
         incoming.opponents.sort_by_key(|ai| ai.raw_slot_index);
         incoming.rebuild_house_roster();
         *launch = incoming;
-        *vacancies = incoming_vacancies;
+        *vacancies = [NetworkVacancy::Open; NETWORK_PLAYER_SLOT_COUNT];
+        vacancies[..N].copy_from_slice(&incoming_vacancies);
         *retained_capacity = admitted_capacity;
         *retained_observer_row = observer_row;
         Ok(())
@@ -1082,9 +1631,35 @@ impl MatchSession {
         }
     }
 
-    /// 5EB060/5EC3A0 service row limit (LAN 8, WOL 6) of the active visit.
+    /// 5EB060/5E6440 service row limit (LAN 8, WOL 6 or a tournament
+    /// room's 2) of the active visit.
     pub(crate) fn network_row_limit(&self) -> Option<i32> {
-        self.network_mode().map(row_limit)
+        let network = self.network.as_ref()?;
+        Some(
+            if self
+                .network_setup_capacity()
+                .is_some_and(|capacity| capacity > 8)
+            {
+                NETWORK_PLAYER_SLOT_COUNT as i32
+            } else {
+                row_limit(network.return_context.session_mode(), network.room)
+            },
+        )
+    }
+
+    /// The WOL game channel's kind; set when its setup opens, before the
+    /// first map selection.
+    pub(crate) fn set_network_room(&mut self, room: NetworkRoom) {
+        if let Some(network) = self.network.as_mut() {
+            network.room = room;
+        }
+    }
+
+    pub(crate) fn network_room(&self) -> NetworkRoom {
+        self.network
+            .as_ref()
+            .map(|network| network.room)
+            .unwrap_or_default()
     }
 
     pub(crate) fn network_observer_row(&self) -> Option<u8> {
@@ -1092,6 +1667,38 @@ impl MatchSession {
             NetworkPhase::Setup { observer_row, .. } => *observer_row,
             _ => None,
         }
+    }
+
+    /// `MPGameOptions__SelectScenario` (`0x005E7BF0`): the map file and the
+    /// row count `[0xA8BB0C]` (the map's players, capped by the mode and
+    /// the WOL room) only. Unlike ChooseMap it re-cuts no rows and keeps
+    /// every start and team.
+    pub(crate) fn select_network_scenario(
+        &mut self,
+        file: String,
+        capacity: i32,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !file.is_empty() && capacity > 0,
+            "map requires a valid participant capacity"
+        );
+        let network = self
+            .network
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("no network visit"))?;
+        let session_mode = network.return_context.session_mode();
+        let room = network.room;
+        let NetworkPhase::Setup {
+            launch,
+            capacity: rows,
+            ..
+        } = &mut network.phase
+        else {
+            anyhow::bail!("network setup is not editable");
+        };
+        *rows = row_capacity(session_mode, room, &launch.mode, capacity);
+        launch.selected_map_file = Some(file);
+        Ok(())
     }
 
     /// Accepted BC ChooseMap5DE520: atomic map/mode selection followed by
@@ -1120,20 +1727,22 @@ impl MatchSession {
                         ..
                     },
                 return_context,
+                room,
                 ..
             }) = candidate.network.as_mut()
             else {
                 anyhow::bail!("network setup is not editable");
             };
             let session_mode = return_context.session_mode();
+            let room = *room;
             let changed = launch.mode != mode;
             if changed && mode.class.uses_cooperative_setup() {
                 *observer_row = None;
             } //5C1A10
-            let new_capacity = row_capacity(session_mode, &mode, capacity);
+            let new_capacity = row_capacity(session_mode, room, &mode, capacity);
             let host_extra = i32::from(
                 *observer_row == launch.local_player().raw_slot_index
-                    && (mode.class.lists_in_skirmish() || new_capacity < row_limit(session_mode)),
+                    && host_extra_row(session_mode, room, &mode, new_capacity),
             );
             let old = *previous;
             *previous = new_capacity;
@@ -1148,15 +1757,33 @@ impl MatchSession {
             .local_player()
             .raw_slot_index;
         if new_capacity < old_capacity {
-            for row in new_capacity.saturating_add(host_extra)..8 {
+            for row in new_capacity.saturating_add(host_extra)..NETWORK_PLAYER_SLOT_COUNT as i32 {
                 let row = row as u8;
-                if Some(row) != local_row && Some(row) != observer_row {
-                    removed.extend(candidate.set_network_row_kind(row, NetworkRowKind::Open)?);
+                let retained_observer = Some(row) == observer_row
+                    && (candidate.network_vacancy(row) == Some(NetworkVacancy::OpenObserver)
+                        || candidate
+                            .network_setup()
+                            .unwrap()
+                            .humans
+                            .iter()
+                            .any(|human| human.raw_slot_index == Some(row) && human.is_observer()));
+                if Some(row) != local_row && !retained_observer {
+                    // Native's hidden eight-row suffix stays Open. Extended
+                    // rows have no native slot and must remain closed until a
+                    // later map explicitly makes them usable again.
+                    let kind = if row >= 8 || new_capacity > 8 {
+                        NetworkRowKind::Closed
+                    } else {
+                        NetworkRowKind::Open
+                    };
+                    removed.extend(candidate.set_network_row_kind(row, kind)?);
                 }
             }
         } else if new_capacity > old_capacity {
             for row in old_capacity.saturating_add(host_extra)
-                ..new_capacity.saturating_add(host_extra).min(8)
+                ..new_capacity
+                    .saturating_add(host_extra)
+                    .min(NETWORK_PLAYER_SLOT_COUNT as i32)
             {
                 let row = row as u8;
                 if Some(row) == local_row || Some(row) == observer_row {
@@ -1188,7 +1815,7 @@ impl MatchSession {
                 .iter()
                 .filter(|human| human.raw_slot_index != local_row && human.is_observer())
                 .filter_map(|human| human.raw_slot_index)
-                .chain((0..8).filter(|row| {
+                .chain((0..NETWORK_PLAYER_SLOT_COUNT as u8).filter(|row| {
                     candidate.network_vacancy(*row) == Some(NetworkVacancy::OpenObserver)
                 }))
                 .collect();
@@ -1202,7 +1829,16 @@ impl MatchSession {
             .mode
             .class
             .allows_observers();
-        let reserved = observer_row.or(ordinary.then_some(7));
+        let default_observer = if new_capacity > 8 {
+            NETWORK_PLAYER_SLOT_COUNT as u8 - 1
+        } else {
+            7
+        };
+        let reserved = observer_row
+            .filter(|row| {
+                Some(*row) == local_row || new_capacity <= 8 || *row >= new_capacity as u8
+            })
+            .or(ordinary.then_some(default_observer));
         if let Some(row) =
             reserved.filter(|row| Some(*row) != local_row && i32::from(*row) > new_capacity)
         {
@@ -1222,6 +1858,7 @@ impl MatchSession {
                 NetworkPhase::Setup {
                     launch,
                     inactive_choices,
+                    inactive_ai_options,
                     observer_row,
                     ..
                 },
@@ -1244,6 +1881,14 @@ impl MatchSession {
         for choices in inactive_choices {
             choices.start_position = crate::skirmish_launch::LaunchStartPosition::Auto;
             choices.team = human_team;
+        }
+        //5EE510 writes A8B2FC even for rows whose display pointer is human
+        //or vacant.5E9E70's start reset affects controls, not A8B2DC.
+        for raw in inactive_ai_options {
+            raw.team = match human_team {
+                crate::skirmish_launch::LaunchTeam::None => -2,
+                crate::skirmish_launch::LaunchTeam::Team(team) => i32::from(team),
+            };
         }
         launch.rebuild_house_roster();
         *self = candidate;
@@ -1353,6 +1998,36 @@ impl MatchSession {
         Ok(())
     }
 
+    /// A new online options revision invalidates every remote agreement,
+    /// even when a local optimistic edit made its echoed values compare equal.
+    /// The host remains implicitly ready, as in clear_guest_readiness; each
+    /// participant must publish fresh map/rules proof for this revision.
+    pub(crate) fn invalidate_network_agreement(&mut self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.network.as_ref().is_some_and(|network| matches!(
+                network.return_context.session_mode(),
+                SessionMode::Lan | SessionMode::Wol
+            )),
+            "multiplayer agreement belongs to a network setup"
+        );
+        self.clear_guest_readiness()?;
+        let Some(NetworkSession {
+            phase: NetworkPhase::Setup {
+                launch, admission, ..
+            },
+            ..
+        }) = self.network.as_mut()
+        else {
+            anyhow::bail!("network setup is not editable");
+        };
+        for (index, entry) in admission.iter_mut().enumerate() {
+            if index != launch.local_player_index {
+                entry.map_status = 0;
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn set_network_map_status(
         &mut self,
         index: usize,
@@ -1380,31 +2055,51 @@ impl MatchSession {
     /// RESIDUAL: a host's own map selection does not set the metadata yet,
     /// so a host reads 8.
     fn network_slot_test_rows(&self) -> i32 {
-        const MAXIMUM_PLAYERS: i32 = 8;
-        let raw = self
-            .network_map_metadata()
-            .map_or(8, |metadata| metadata.player_capacity);
-        MAXIMUM_PLAYERS.min(raw)
+        let maximum_players = if self
+            .network_setup_capacity()
+            .is_some_and(|capacity| capacity > 8)
+        {
+            NETWORK_PLAYER_SLOT_COUNT as i32
+        } else {
+            8
+        };
+        let raw = self.network_map_metadata().map_or_else(
+            || {
+                if maximum_players > 8 {
+                    self.network_setup_capacity().unwrap_or(8)
+                } else {
+                    8
+                }
+            },
+            |metadata| metadata.player_capacity,
+        );
+        maximum_players.min(raw)
     }
 
-    /// `0x005E9510`: no Open player row among the first
-    /// [`Self::network_slot_test_rows`] rows, unless the observer row is 0
-    /// and the row past them is Open.
+    /// Rows admitting players are bounded by the active mode/map capacity.
+    /// The native host-observer row0 exception adds one physical row without
+    /// adding a player, up to the active eight/30-slot allocation.
+    fn network_player_row_limit(&self) -> u8 {
+        let Some(capacity) = self.network_setup_capacity() else {
+            return 0;
+        };
+        let allocation = if capacity > 8 {
+            NETWORK_PLAYER_SLOT_COUNT as i32
+        } else {
+            8
+        };
+        let extra = i32::from(self.network_observer_row() == Some(0) && capacity < allocation);
+        capacity.saturating_add(extra).clamp(0, allocation) as u8
+    }
+
+    /// `0x005E9510`: no Open player row, including the host-observer row0
+    /// exception. Apply the same admitted row range as the actual allocator.
     pub(crate) fn network_no_open_player_row(&self) -> bool {
         if self.network_setup().is_none() {
             return false;
         }
-        let limit = self.network_slot_test_rows();
-        let open = |row: i32| {
-            u8::try_from(row)
-                .ok()
-                .and_then(|row| self.network_vacancy(row))
-                == Some(NetworkVacancy::Open)
-        };
-        if (0..limit).any(open) {
-            return false;
-        }
-        !(self.network_observer_row() == Some(0) && limit < 8 && open(limit))
+        !(0..self.network_player_row_limit())
+            .any(|row| self.network_vacancy(row) == Some(NetworkVacancy::Open))
     }
 
     /// `0x005E9240`'s row for a new node: the first Open row for a player,
@@ -1415,7 +2110,19 @@ impl MatchSession {
         } else {
             NetworkVacancy::Open
         };
-        (0..8u8).find(|row| self.network_vacancy(*row) == Some(wanted))
+        let rows = if observer {
+            self.network_setup_capacity()
+                .unwrap_or(0)
+                .max(8)
+                .max(
+                    self.network_observer_row()
+                        .map_or(0, |row| i32::from(row) + 1),
+                )
+                .min(NETWORK_PLAYER_SLOT_COUNT as i32) as u8
+        } else {
+            self.network_player_row_limit()
+        };
+        (0..rows).find(|row| self.network_vacancy(*row) == Some(wanted))
     }
 
     /// `0x005E95E0`: the nodes, less an observer on the observer row, are
@@ -1490,13 +2197,13 @@ impl MatchSession {
     }
     /// WOL Start Game Now timing block (`0x794F6F..0x7951F0`): MaxAhead
     /// comes from the agreed game speed, identical for host and guest.
-    /// FrameSendRate, the PreCalc values and the IPX retry timing it also
-    /// writes belong to the transport, outside this change.
+    /// Return the transport's outputs to its existing service owner. VERA's
+    /// extended roster uses the same signed maximum across every peer ping.
     pub(crate) fn prepare_wol_timing(
         &mut self,
-        pings: [i32; 8],
+        pings: impl IntoIterator<Item = i32>,
         channel_owner: bool,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<crate::net::lockstep::WolStartTiming> {
         anyhow::ensure!(
             self.network_mode() == Some(SessionMode::Wol),
             "WOL timing needs a WOL visit"
@@ -1512,7 +2219,24 @@ impl MatchSession {
             crate::net::lockstep::wol_start_timing(launch.options.game_speed, pings, channel_owner);
         network.max_ahead_frames = Some(timing.max_ahead);
         self.latency_fudge = timing.latency_fudge;
-        Ok(())
+        Ok(timing)
+    }
+
+    /// OnGameStart's `[0xB779C4]` and Start Game Now's clan lists for the
+    /// accepted WOL start.
+    pub(crate) fn set_wol_start(&mut self, terms: WolStartTerms) {
+        if let Some(network) = self.network.as_mut() {
+            network.wol_start = terms;
+        }
+    }
+
+    /// The WOL start terms: the setup's, then the frozen start's.
+    pub(crate) fn network_wol_start(&self) -> Option<&WolStartTerms> {
+        let network = self.network.as_ref()?;
+        match &network.phase {
+            NetworkPhase::Frozen { startup, .. } => Some(startup.wol_start()),
+            _ => Some(&network.wol_start),
+        }
     }
 
     pub(crate) fn network_max_ahead_frames(&self) -> Option<i32> {
@@ -1554,21 +2278,7 @@ impl MatchSession {
             "accepted host seed differs from admitted setup seed"
         );
         network.proposed_seed = Some(agreed_seed);
-        anyhow::ensure!(
-            launch.house_roster_is_consistent(),
-            "network House constructor cache disagrees with the participant roster"
-        );
-        crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(launch.clone())
-            .map_err(|error| anyhow::anyhow!("network assignments unresolved: {error}"))?;
-        anyhow::ensure!(
-            launch
-                .selected_map_file
-                .as_deref()
-                .is_some_and(|file| !file.is_empty()
-                    && file.trim() == file
-                    && !file.eq_ignore_ascii_case("auto")),
-            "network start requires an exact map selection"
-        );
+        admit_network_start_roster(launch)?;
         let max_ahead_frames = network
             .max_ahead_frames
             .ok_or_else(|| anyhow::anyhow!("network start requires accepted timing"))?;
@@ -1577,13 +2287,21 @@ impl MatchSession {
         else {
             unreachable!()
         };
-        let startup = Arc::new(crate::app::match_bootstrap::PreparedNetworkStartup::new(
-            launch,
-            agreed_seed,
-            network.return_context.session_mode(),
-            self.host,
-            max_ahead_frames,
-        ));
+        let startup = Arc::new(
+            crate::app::match_bootstrap::PreparedNetworkStartup::new(
+                launch,
+                agreed_seed,
+                network.return_context.session_mode(),
+                self.host,
+                max_ahead_frames,
+                std::mem::take(&mut network.wol_start),
+            )
+            .with_local_map_source(
+                network.local_map_source.clone(),
+                network.local_map_effective_digest.clone(),
+            )
+            .with_random_map_preview(network.local_random_map_preview.clone()),
+        );
         network.phase = NetworkPhase::Frozen {
             connected: (0..startup.launch_session().humans.len()).collect(),
             startup: Arc::clone(&startup),
@@ -1593,23 +2311,26 @@ impl MatchSession {
         ))
     }
 
+    /// Read-only identity gate for a synchronous loader resuming after normal
+    /// network reducers ran. A retired/replaced admission cannot install its
+    /// old finished result, even when its local progress already reached100.
+    pub(crate) fn admits_network_start(
+        &self,
+        startup: &Arc<crate::app::match_bootstrap::PreparedNetworkStartup>,
+    ) -> bool {
+        matches!(&self.network,
+            Some(NetworkSession { phase: NetworkPhase::Frozen { startup: admitted, .. }, .. })
+                if Arc::ptr_eq(admitted, startup))
+    }
+
     /// The loader borrows the same frozen owner as the shell. It cannot adopt
     /// a second mutable setup or rewrite LAN/WOL/host identity during loading.
     pub(crate) fn assert_network_start(
         &self,
         startup: &Arc<crate::app::match_bootstrap::PreparedNetworkStartup>,
     ) {
-        let Some(NetworkSession {
-            phase: NetworkPhase::Frozen {
-                startup: admitted, ..
-            },
-            ..
-        }) = &self.network
-        else {
-            panic!("loading requires an admitted network start");
-        };
         assert!(
-            Arc::ptr_eq(admitted, startup),
+            self.admits_network_start(startup),
             "loading must consume the admitted immutable start"
         );
         assert_eq!(self.network_mode(), Some(startup.mode()));
@@ -1620,6 +2341,23 @@ impl MatchSession {
         self.network.as_mut().map_or_else(Vec::new, |network| {
             std::mem::take(&mut network.loading_requests)
         })
+    }
+
+    /// Borrowed synchronous loading drains only its own publications. All chat,
+    /// disconnect and other requests retain their existing FIFO/consumer.
+    pub(crate) fn take_network_loading_progress_reports(&mut self) -> Vec<i32> {
+        let mut reports = Vec::new();
+        if let Some(network) = self.network.as_mut() {
+            network.loading_requests.retain(|request| {
+                if let NetworkLoadingRequest::ReportProgress(percent) = request {
+                    reports.push(*percent);
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        reports
     }
 
     pub(crate) fn report_network_loading_progress(&mut self, percent: i32) {
@@ -1647,11 +2385,27 @@ impl MatchSession {
     /// One in-battle chat packet to `recipients`.
     pub(crate) fn request_chat(&mut self, recipients: Vec<usize>, text: String) {
         if let Some(network) = self.network.as_mut()
-            && matches!(network.phase, NetworkPhase::Frozen { .. })
+            && matches!(
+                network.phase,
+                NetworkPhase::Frozen { .. } | NetworkPhase::CooperativeRound { .. }
+            )
         {
             network
                 .loading_requests
                 .push(NetworkLoadingRequest::Chat { recipients, text });
+        }
+    }
+
+    pub(crate) fn request_beacon(
+        &mut self,
+        record: crate::net::lan_messages::ingame::BeaconRecord,
+    ) {
+        if let Some(network) = self.network.as_mut()
+            && matches!(network.phase, NetworkPhase::Frozen { .. })
+        {
+            network
+                .loading_requests
+                .push(NetworkLoadingRequest::Beacon(record));
         }
     }
 
@@ -1716,7 +2470,10 @@ impl MatchSession {
 
     pub(crate) fn network_connected_source_indices(&self) -> &[usize] {
         match self.network.as_ref().map(|network| &network.phase) {
-            Some(NetworkPhase::Frozen { connected, .. }) => connected,
+            Some(
+                NetworkPhase::Frozen { connected, .. }
+                | NetworkPhase::CooperativeRound { connected, .. },
+            ) => connected,
             _ => &[],
         }
     }
@@ -1726,8 +2483,12 @@ impl MatchSession {
     pub(crate) fn return_to_network_lobby(&mut self) -> Option<NetworkReturnContext> {
         let network = self.network.as_mut()?;
         network.phase = NetworkPhase::Lobby;
+        network.endpoints.clear();
         network.loading_requests.clear();
         network.map_metadata = None;
+        network.local_map_source = None;
+        network.local_map_effective_digest = None;
+        network.local_random_map_preview = None;
         network.proposed_seed = None;
         network.max_ahead_frames = None;
         Some(network.return_context)
@@ -1752,15 +2513,31 @@ impl MatchSession {
     /// runs while `[0x00A8B8B8]` is set; that flag belongs to the network
     /// timing service of a later stage and VERA has no writer for it yet.
     pub(crate) fn record_frame_checksum(&mut self, frame: u32, checksum: u32) {
-        self.checksum_history.record(frame, checksum);
-        if frame == 0 {
-            self.checksum_history = MultiplayerChecksumHistory::new();
-        }
+        self.frame_checksums.record_frame_checksum(frame, checksum);
     }
 
-    #[cfg(test)]
+    /// Queue_AI_Multiplayer647849..647879 resets both the history and its
+    /// comparison grace timer. The native period is literally Frame+256,
+    /// even at a nonzero-frame restart. The other native trigger is A8B8B8;
+    /// its transport writer is not yet implemented here.
+    pub(crate) fn reset_frame_checksum_history(&mut self, frame: u32) {
+        self.frame_checksums.reset_frame_checksum_history(frame);
+    }
+
+    /// Execute_DoList64C668..64C6F2 checks the grace timer before comparing
+    /// an on-time FRAMEINFO against history[(event frame - delay) &255]. The
+    /// queue owns on-time/House admission; this owner stores and compares the
+    /// process checksum state. Source: original gamemd.exe instructions.
+    pub(crate) fn compare_frame_info(
+        &self,
+        info: FrameInfo,
+        current_frame: i32,
+    ) -> Result<bool, ChecksumMismatch> {
+        self.frame_checksums.compare_frame_info(info, current_frame)
+    }
+
     pub(crate) fn checksum_history(&self) -> &MultiplayerChecksumHistory {
-        &self.checksum_history
+        self.frame_checksums.checksum_history()
     }
 
     /// Whether this client owns the match setup: it reads the seed and fixes
@@ -1770,32 +2547,228 @@ impl MatchSession {
     }
 }
 
-/// 5EC3A0 row limit: LAN 8, WOL 6 (`005EC457`). Tournament (`0077D940`)
-/// rooms limit WOL to 2 and clan rooms (`0077D970`) round the map capacity
-/// down to even; VERA's WOL lobby admits only ordinary custom games, so
-/// those room kinds are not reachable here.
-fn row_limit(session_mode: SessionMode) -> i32 {
-    if session_mode == SessionMode::Wol {
-        6
-    } else {
-        8
+/// What a WOL start hands the match: OnGameStart's `[0xB779C4]` (the
+/// channel's tournament value, 2 in a clan room) and Start Game Now's two
+/// clan name lists `[0xB77A04]`/`[0xB76568]`; `quick_coop` is the WOL mode
+/// `[0xA8B244] == 2`, which scenario load reads at `0x0068755E`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct WolStartTerms {
+    pub(crate) tournament: i32,
+    pub(crate) squad_lists: [Vec<String>; 2],
+    pub(crate) quick_coop: bool,
+}
+
+/// A WOL game channel's kind from its record: tournament `+0x14` and the
+/// clan bit `+0x20 & 0x100` of the current channel `[0xB76B10]`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct NetworkRoom {
+    pub(crate) tournament: bool,
+    pub(crate) clan: bool,
+}
+
+impl NetworkRoom {
+    /// `0x0077D940`: a tournament or clan room (GameMode 4 only).
+    pub(crate) const fn tournament_or_clan(self) -> bool {
+        self.tournament || self.clan
     }
 }
 
-/// 5EC3A0: map capacity (5E6520), then the mode's vtable+98 limit, then the
-/// service row limit.
+/// `0x005E6440` (and its inline copies): LAN 8; WOL 6, or 2 in a
+/// tournament room that is not a clan room.
+fn row_limit(session_mode: SessionMode, room: NetworkRoom) -> i32 {
+    match session_mode {
+        SessionMode::Wol if room.tournament && !room.clan => 2,
+        SessionMode::Wol => 6,
+        _ => 8,
+    }
+}
+
+/// `0x005EC3A0` (`0x005EC3C4..0x005EC467`): map capacity (`0x005E6520`),
+/// the mode's vtable+98 limit, then in a WOL clan room an even count, in a
+/// tournament room 2. The row limit applies unless the mode lists in
+/// Skirmish (vtable+40) outside a tournament or clan room.
 fn row_capacity(
     session_mode: SessionMode,
+    room: NetworkRoom,
     mode: &crate::skirmish_launch::SkirmishLaunchMode,
     capacity: i32,
 ) -> i32 {
-    capacity
-        .min(
-            mode.class
-                .setup_player_limit()
-                .map_or(8, |limit| limit as i32),
-        )
-        .min(row_limit(session_mode))
+    let extended = capacity > 8 && !(session_mode == SessionMode::Wol && room.tournament_or_clan());
+    let mut capacity = capacity.min(mode.class.setup_player_limit().map_or(
+        if extended {
+            NETWORK_PLAYER_SLOT_COUNT as i32
+        } else {
+            8
+        },
+        |limit| limit as i32,
+    ));
+    if session_mode == SessionMode::Wol {
+        if room.clan {
+            capacity &= !1;
+        } else if room.tournament {
+            capacity = 2;
+        }
+    }
+    if mode.class.lists_in_skirmish()
+        && !(session_mode == SessionMode::Wol && room.tournament_or_clan())
+    {
+        capacity
+    } else {
+        capacity.min(if extended {
+            NETWORK_PLAYER_SLOT_COUNT as i32
+        } else {
+            row_limit(session_mode, room)
+        })
+    }
+}
+
+/// `0x005EC4A3..0x005EC4EF`: the host's observer row adds a row when the
+/// row limit was skipped or the capacity is under it (WOL limits under 6
+/// count one more).
+fn host_extra_row(
+    session_mode: SessionMode,
+    room: NetworkRoom,
+    mode: &crate::skirmish_launch::SkirmishLaunchMode,
+    capacity: i32,
+) -> bool {
+    let wol_room = session_mode == SessionMode::Wol && room.tournament_or_clan();
+    if mode.class.lists_in_skirmish() && !wol_room {
+        return true;
+    }
+    let limit = row_limit(session_mode, room);
+    let limit = if session_mode == SessionMode::Wol && limit < 6 {
+        limit + 1
+    } else {
+        limit
+    };
+    capacity < limit
+}
+
+#[derive(Clone, Copy)]
+enum PeerChoicePolicy<'a> {
+    Lan,
+    Wol {
+        countries: Option<&'a [crate::skirmish_launch::LaunchCountry]>,
+    },
+}
+
+/// Shared69B600/5E9720 collision checks; caller selects the native country/team policy.
+fn apply_peer_choices(
+    launch: &mut SkirmishLaunchSession,
+    inactive_ai_options: &[NetworkAiOptions; NETWORK_PLAYER_SLOT_COUNT],
+    index: usize,
+    choices: SkirmishLocalSlot,
+    observer: bool,
+    policy: PeerChoicePolicy<'_>,
+) -> PeerChoicesChange {
+    let mut change = PeerChoicesChange::default();
+    let current = launch.humans[index].slot.clone();
+    let native_country = |slot: &SkirmishLocalSlot| (!slot.country_random).then_some(slot.country);
+    let countries = match policy {
+        PeerChoicePolicy::Lan => None,
+        PeerChoicePolicy::Wol { countries } => countries,
+    };
+    let allowed = |country: Option<crate::skirmish_launch::LaunchCountry>| {
+        countries.is_none_or(|list| country.is_none_or(|country| list.contains(&country)))
+    };
+    let mut slot = current.clone();
+    // An observer's country is -3 on both sides.
+    if observer {
+    } else if allowed(native_country(&choices)) {
+        if native_country(&choices) != native_country(&current) {
+            slot.country = choices.country;
+            slot.country_random = choices.country_random;
+            change.options = true;
+        }
+    } else {
+        if !allowed(native_country(&current)) {
+            slot.country_random = true;
+        }
+        change.options = true;
+    }
+    let native_color = |slot: &SkirmishLocalSlot| (!slot.color_random).then_some(slot.color_index);
+    if native_color(&choices) != native_color(&current) {
+        // 0x69B600: every node of the session and every AI row.
+        let taken = native_color(&choices)
+            .is_some_and(|color| network_color_in_use(launch, inactive_ai_options, color));
+        slot.color_random = choices.color_random || taken;
+        if !slot.color_random {
+            slot.color_index = choices.color_index;
+        }
+        change.options = true;
+    }
+    if choices.start_position != current.start_position {
+        // 0x5E9720: the nodes on a row and every AI row.
+        let taken = network_start_in_use(launch, inactive_ai_options, choices.start_position);
+        slot.start_position = if taken {
+            crate::skirmish_launch::LaunchStartPosition::Auto
+        } else {
+            choices.start_position
+        };
+        change.options = true;
+    }
+    if choices.team != current.team {
+        // Mode +0x34 (0x5D5DE0) admits only 0..3; +0x2C (0x5D5DC0) is
+        // Team 0 under MustAlly, else none.
+        use crate::skirmish_launch::LaunchTeam;
+        slot.team = match (policy, choices.team) {
+            (PeerChoicePolicy::Lan, _) => choices.team,
+            (_, LaunchTeam::Team(team)) if team <= 3 => choices.team,
+            _ if launch.mode.must_ally => LaunchTeam::Team(0),
+            _ => LaunchTeam::None,
+        };
+        change.options = true;
+    }
+    launch.humans[index].slot = slot;
+    launch.rebuild_house_roster();
+    change
+}
+
+fn network_color_in_use(
+    launch: &SkirmishLaunchSession,
+    inactive: &[NetworkAiOptions; NETWORK_PLAYER_SLOT_COUNT],
+    color: u8,
+) -> bool {
+    if launch.humans.len() + launch.opponents.len() > 8 {
+        return false;
+    }
+    launch
+        .humans
+        .iter()
+        .any(|human| !human.slot.color_random && human.slot.color_index == color)
+        || launch
+            .opponents
+            .iter()
+            .any(|ai| !ai.color_random && ai.color_index == color)
+        || inactive.iter().enumerate().any(|(row, raw)| {
+            raw.color == i32::from(color)
+                && !launch
+                    .opponents
+                    .iter()
+                    .any(|ai| usize::from(ai.raw_slot_index) == row)
+        })
+}
+
+fn network_start_in_use(
+    launch: &SkirmishLaunchSession,
+    inactive: &[NetworkAiOptions; NETWORK_PLAYER_SLOT_COUNT],
+    start: crate::skirmish_launch::LaunchStartPosition,
+) -> bool {
+    let crate::skirmish_launch::LaunchStartPosition::Position(position) = start else {
+        return false;
+    };
+    launch
+        .humans
+        .iter()
+        .any(|human| human.raw_slot_index.is_some() && human.slot.start_position == start)
+        || launch.opponents.iter().any(|ai| ai.start_position == start)
+        || inactive.iter().enumerate().any(|(row, raw)| {
+            raw.start == i32::from(position)
+                && !launch
+                    .opponents
+                    .iter()
+                    .any(|ai| usize::from(ai.raw_slot_index) == row)
+        })
 }
 
 fn native_network_row_defaults(
@@ -1820,12 +2793,43 @@ fn native_network_row_defaults(
     }
 }
 
+/// Each packet owns one domain. Until both arrive, a display human and a raw
+/// AI slot may share a row; only final start admission requires disjoint rows.
+fn validate_network_option_rows(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        launch.local_player().raw_slot_index.is_some(),
+        "local participant must have a visible setup row"
+    );
+    for rows in [
+        launch
+            .humans
+            .iter()
+            .filter_map(|human| human.raw_slot_index)
+            .collect::<Vec<_>>(),
+        launch
+            .opponents
+            .iter()
+            .map(|ai| ai.raw_slot_index)
+            .collect::<Vec<_>>(),
+    ] {
+        let mut occupied = [false; NETWORK_PLAYER_SLOT_COUNT];
+        for row in rows {
+            anyhow::ensure!(
+                usize::from(row) < NETWORK_PLAYER_SLOT_COUNT && !occupied[usize::from(row)],
+                "duplicate or invalid network row"
+            );
+            occupied[usize::from(row)] = true;
+        }
+    }
+    Ok(())
+}
+
 fn validate_network_rows(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
     anyhow::ensure!(
         launch.local_player().raw_slot_index.is_some(),
         "local participant must have a visible setup row"
     );
-    let mut occupied = [false; 8];
+    let mut occupied = [false; NETWORK_PLAYER_SLOT_COUNT];
     for row in launch
         .humans
         .iter()
@@ -1833,19 +2837,43 @@ fn validate_network_rows(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
         .chain(launch.opponents.iter().map(|ai| ai.raw_slot_index))
     {
         anyhow::ensure!(
-            row < 8 && !occupied[usize::from(row)],
-            "network rows must be distinct and below8"
+            usize::from(row) < NETWORK_PLAYER_SLOT_COUNT && !occupied[usize::from(row)],
+            "network rows must be distinct and below30"
         );
         occupied[usize::from(row)] = true;
     }
     Ok(())
 }
 
+/// A start's admission, shared by the first start and a co-op
+/// continuation: a consistent House roster, resolved assignments and an
+/// exact map.
+fn admit_network_start_roster(launch: &SkirmishLaunchSession) -> anyhow::Result<()> {
+    validate_network_rows(launch)?;
+    anyhow::ensure!(
+        launch.house_roster_is_consistent(),
+        "network House constructor cache disagrees with the participant roster"
+    );
+    crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(launch.clone())
+        .map_err(|error| anyhow::anyhow!("network assignments unresolved: {error}"))?;
+    anyhow::ensure!(
+        launch
+            .selected_map_file
+            .as_deref()
+            .is_some_and(|file| !file.is_empty()
+                && file.trim() == file
+                && !file.eq_ignore_ascii_case("auto")),
+        "network start requires an exact map selection"
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{MatchSession, SessionMode};
+    use super::{MatchSession, NetworkRoom, SessionMode};
+    use crate::net::lockstep::{ChecksumMismatch, FrameInfo, FrameInfoCompareGate};
 
-    fn network_fixture() -> crate::skirmish_launch::SkirmishLaunchSession {
+    pub(super) fn network_fixture() -> crate::skirmish_launch::SkirmishLaunchSession {
         let profile: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/map_observation.command-bar.example.json",
         ))
@@ -1861,6 +2889,200 @@ mod tests {
         launch.humans.push(guest);
         launch.local_player_index = 1;
         launch
+    }
+
+    #[test]
+    fn thirty_player_setup_keeps_last_row_identity_and_cooperative_capacity() {
+        let mut launch = network_fixture();
+        let template = launch.humans[0].clone();
+        launch.humans = (0..30)
+            .map(|row| {
+                let mut human = template.clone();
+                human.name = format!("Player{row}");
+                human.raw_slot_index = Some(row);
+                human
+            })
+            .collect();
+        launch.local_player_index = 29;
+        launch.rebuild_house_roster();
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::Wol);
+        session
+            .accept_network_setup(launch.clone(), false, None)
+            .unwrap();
+        session
+            .accept_network_host_setup(
+                launch.clone(),
+                [super::NetworkVacancy::Open; 30],
+                30,
+                None,
+                false,
+            )
+            .unwrap();
+        assert_eq!(session.network_setup_capacity(), Some(30));
+        assert!(session.network_free_row(false).is_none());
+        let first = session.network_row_choices(0).unwrap();
+        let mut last = session.network_row_choices(29).unwrap();
+        last.start_position = crate::skirmish_launch::LaunchStartPosition::Position(29);
+        session.set_network_row_choices(29, last.clone()).unwrap();
+        session.set_network_player_ready(29, true).unwrap();
+        session.remove_network_participant(7).unwrap();
+        let current = session.network_setup().unwrap();
+        assert_eq!(current.local_player_index, 28);
+        assert_eq!(current.local_player().name, "Player29");
+        assert_eq!(session.network_row_choices(29), Some(last));
+        assert_eq!(session.network_row_choices(0), Some(first));
+        assert!(session.network_player_ready(28));
+        let cooperative = crate::skirmish_launch::SkirmishLaunchMode::from_game_mode(
+            &crate::skirmish_modes::stock_skirmish_modes()
+                .into_iter()
+                .find(|mode| mode.class.uses_cooperative_setup())
+                .unwrap(),
+        );
+        assert_eq!(
+            super::row_capacity(SessionMode::Wol, NetworkRoom::default(), &cooperative, 30),
+            2
+        );
+    }
+
+    #[test]
+    fn extended_player_admission_stops_at_capacity_and_shrink_closes_hidden_rows() {
+        use super::{NetworkRowKind, NetworkVacancy};
+        let mut launch = network_fixture();
+        launch.local_player_index = 0;
+        let template = launch.humans[0].clone();
+        let mode = launch.mode.clone();
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::Wol);
+        session.accept_network_setup(launch, true, None).unwrap();
+        session
+            .select_network_map(mode.clone(), "NINE.MAP".into(), 9)
+            .unwrap();
+        for row in 2..9 {
+            assert_eq!(session.network_free_row(false), Some(row));
+            let mut human = template.clone();
+            human.name = format!("Player{row}");
+            human.raw_slot_index = Some(row);
+            session.add_network_participant(human).unwrap();
+        }
+        assert!(session.network_free_row(false).is_none());
+        assert!(session.network_no_open_player_row());
+
+        session
+            .select_network_map(mode.clone(), "THIRTY.MAP".into(), 30)
+            .unwrap();
+        session
+            .set_network_row_kind(
+                12,
+                NetworkRowKind::Ai(crate::skirmish_launch::AiDifficulty::Easy),
+            )
+            .unwrap();
+        let mut last = template;
+        last.name = "Last".into();
+        last.raw_slot_index = Some(29);
+        session.add_network_participant(last).unwrap();
+        let removed = session
+            .select_network_map(mode.clone(), "NINE.MAP".into(), 9)
+            .unwrap();
+        assert_eq!(
+            removed
+                .iter()
+                .map(|human| human.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Last"]
+        );
+        assert_eq!(session.network_vacancy(12), Some(NetworkVacancy::Closed));
+        assert_eq!(session.network_vacancy(29), Some(NetworkVacancy::Closed));
+        assert!(session.network_display_ai(12).is_none());
+        assert!(session.network_free_row(false).is_none());
+        session
+            .set_network_row_kind(29, NetworkRowKind::OpenObserver)
+            .unwrap();
+        assert_eq!(session.network_free_row(true), Some(29));
+        session
+            .select_network_map(mode, "THIRTY.MAP".into(), 30)
+            .unwrap();
+        assert_eq!(session.network_free_row(false), Some(9));
+        assert_eq!(session.network_free_row(true), Some(29));
+    }
+
+    #[test]
+    fn extended_host_observer_keeps_the_extra_player_row() {
+        let mut launch = network_fixture();
+        launch.local_player_index = 0;
+        launch.humans[0].set_observer(true);
+        let template = launch.humans[1].clone();
+        let mode = launch.mode.clone();
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::LanLobby);
+        session.accept_network_setup(launch, true, Some(0)).unwrap();
+        session
+            .select_network_map(mode, "NINE.MAP".into(), 9)
+            .unwrap();
+        assert_eq!(session.network_observer_row(), Some(0));
+        for row in 2..=9 {
+            assert_eq!(session.network_free_row(false), Some(row));
+            let mut human = template.clone();
+            human.name = format!("Player{row}");
+            human.raw_slot_index = Some(row);
+            session.add_network_participant(human).unwrap();
+        }
+        assert!(session.network_free_row(false).is_none());
+        assert!(session.network_no_open_player_row());
+        assert!(!session.network_over_capacity());
+    }
+
+    #[test]
+    fn online_canonical_roster_preserves_admission_and_local_identity() {
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::Wol);
+        let fixture = network_fixture();
+        let host_name = fixture.humans[0].name.clone();
+        let guest_name = fixture.humans[1].name.clone();
+        session.accept_network_setup(fixture, false, None).unwrap();
+        session.set_network_player_ready(0, true).unwrap();
+        session.set_network_map_status(0, 2).unwrap();
+        session
+            .canonicalize_online_roster(&[guest_name.clone(), host_name.clone()])
+            .unwrap();
+        let launch = session.network_setup().unwrap();
+        assert_eq!(launch.local_player_index, 0);
+        assert_eq!(launch.humans[0].name, guest_name);
+        assert_eq!(launch.humans[1].name, host_name);
+        assert!(session.network_player_ready(1));
+        let unchanged = session.clone();
+        assert!(
+            session
+                .canonicalize_online_roster(&[host_name.clone(), host_name])
+                .is_err()
+        );
+        assert_eq!(
+            session, unchanged,
+            "rejected roster must not partially change admission"
+        );
+    }
+
+    #[test]
+    fn endpoint_bindings_follow_admitted_participants_and_source_compaction() {
+        use super::NetworkReturnContext;
+        use std::net::{Ipv4Addr, SocketAddrV4};
+        let mut session = MatchSession::default();
+        session.enter_network(NetworkReturnContext::LanLobby);
+        let endpoint = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1234);
+        assert!(session.bind_network_endpoint("absent", endpoint).is_err());
+        let launch = network_fixture();
+        let host = launch.humans[0].name.clone();
+        session.accept_network_setup(launch, false, None).unwrap();
+        session.bind_network_endpoint(&host, endpoint).unwrap();
+        assert!(session.bind_network_endpoint("Guest", endpoint).is_err());
+        assert_eq!(session.network_endpoint_source(endpoint), Some(0));
+        assert_eq!(session.network_endpoint(1), None);
+        session.remove_network_participant(0).unwrap();
+        assert_eq!(session.network_endpoint_source(endpoint), None);
+        assert_eq!(session.network_setup().unwrap().local_player_index, 0);
+        session.bind_network_endpoint("Guest", endpoint).unwrap();
+        session.return_to_network_lobby();
+        assert_eq!(session.network_endpoint_source(endpoint), None);
     }
 
     #[test]
@@ -1963,7 +3185,7 @@ mod tests {
     }
 
     #[test]
-    fn wol_caps_rows_at_six_clears_guest_acceptance_and_times_from_game_speed() {
+    fn wol_rows_follow_mode_and_room_clears_guest_acceptance_and_times_from_game_speed() {
         let wol_host = || {
             let mut session = MatchSession::default();
             session.enter_network(super::NetworkReturnContext::Wol);
@@ -1975,12 +3197,74 @@ mod tests {
         let mut session = wol_host();
         let launch = session.network_setup().unwrap().clone();
         let file = launch.selected_map_file.clone().unwrap();
+        let mut man_battle = launch.mode.clone();
+        man_battle.class = crate::skirmish_modes::MpModeClass::ManBattle;
         session
-            .select_network_map(launch.mode.clone(), file.clone(), 8)
+            .select_network_map(man_battle.clone(), file.clone(), 8)
             .unwrap();
         // 5EC3A0 `0x5EC457`: WOL rows stop at six where LAN keeps eight.
         assert_eq!(session.network_setup_capacity(), Some(6));
         assert_eq!(session.network_row_limit(), Some(6));
+        // `0x5EC41C..0x5EC430`: Battle and FreeForAll (vtable+40) skip the
+        // limit outside tournament and clan rooms.
+        session
+            .select_network_map(launch.mode.clone(), file.clone(), 8)
+            .unwrap();
+        assert_eq!(session.network_setup_capacity(), Some(8));
+        // A clan room rounds down to even and keeps the limit; a tournament
+        // room holds two rows.
+        for (room, capacity, expected, limit) in [
+            (
+                NetworkRoom {
+                    tournament: false,
+                    clan: true,
+                },
+                7,
+                6,
+                6,
+            ),
+            (
+                NetworkRoom {
+                    tournament: false,
+                    clan: true,
+                },
+                5,
+                4,
+                6,
+            ),
+            (
+                NetworkRoom {
+                    tournament: true,
+                    clan: false,
+                },
+                8,
+                2,
+                2,
+            ),
+            (
+                NetworkRoom {
+                    tournament: true,
+                    clan: true,
+                },
+                3,
+                2,
+                6,
+            ),
+        ] {
+            let mut session = wol_host();
+            session.set_network_room(room);
+            session
+                .select_network_map(launch.mode.clone(), file.clone(), capacity)
+                .unwrap();
+            assert_eq!(
+                (
+                    session.network_setup_capacity(),
+                    session.network_row_limit()
+                ),
+                (Some(expected), Some(limit)),
+                "{room:?} on a map for {capacity}"
+            );
+        }
         // 5E9850 keeps only the node named 0xA8D610: the host's own name on
         // the host, empty on a guest, which therefore clears its own too.
         session.set_network_player_ready(0, true).unwrap();
@@ -2028,6 +3312,42 @@ mod tests {
     }
 
     #[test]
+    fn online_revision_retracts_all_remote_agreements_and_local_guest_acceptance() {
+        for host in [false, true] {
+            let mut session = MatchSession::default();
+            session.enter_network(super::NetworkReturnContext::Wol);
+            let launch = network_fixture();
+            let local = launch.local_player_index;
+            session.accept_network_setup(launch, host, None).unwrap();
+            for index in 0..2 {
+                session.set_network_player_ready(index, true).unwrap();
+                session.set_network_map_status(index, 1).unwrap();
+            }
+            session.invalidate_network_agreement().unwrap();
+            assert_eq!(session.network_player_ready(local), host);
+            assert!(!session.network_player_ready(1 - local));
+            assert_eq!(session.network_map_status(1 - local), Some(0));
+            assert_eq!(session.network_map_status(local), Some(1));
+        }
+    }
+
+    #[test]
+    fn lan_revision_retracts_local_acceptance_and_prior_peer_map_proof() {
+        let mut guest = MatchSession::default();
+        guest.enter_network(super::NetworkReturnContext::LanLobby);
+        let launch = network_fixture();
+        let local = launch.local_player_index;
+        guest.accept_network_setup(launch, false, None).unwrap();
+        guest.set_network_player_ready(local, true).unwrap();
+        guest.set_network_map_status(local, 1).unwrap();
+        guest.set_network_map_status(1 - local, 1).unwrap();
+        guest.invalidate_network_agreement().unwrap();
+        assert!(!guest.network_player_ready(local));
+        assert_eq!(guest.network_map_status(local), Some(1));
+        assert_eq!(guest.network_map_status(1 - local), Some(0));
+    }
+
+    #[test]
     fn kick_unbinds_row_but_departure_owns_source_roster_compaction() {
         let mut session = MatchSession::default();
         session.enter_network(super::NetworkReturnContext::LanLobby);
@@ -2065,6 +3385,77 @@ mod tests {
     }
 
     #[test]
+    fn cooperative_country_refresh_can_keep_the_ai_rows() {
+        use crate::skirmish_launch::LaunchCountry;
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::LanLobby);
+        let mut launch = network_fixture();
+        launch
+            .opponents
+            .push(crate::skirmish_launch::SkirmishAiSlot {
+                raw_slot_index: 2,
+                country: LaunchCountry::Yuri,
+                country_random: false,
+                color_index: 3,
+                color_random: false,
+                start_position: crate::skirmish_launch::LaunchStartPosition::Auto,
+                team: crate::skirmish_launch::LaunchTeam::None,
+                difficulty: crate::skirmish_launch::AiDifficulty::Easy,
+            });
+        launch.ai_player_count = 1;
+        launch.rebuild_house_roster();
+        session.accept_network_setup(launch, false, None).unwrap();
+        let ai_country = |session: &MatchSession| {
+            let ai = &session.network_setup().unwrap().opponents[0];
+            (ai.country, ai.country_random)
+        };
+        // BC open's refreshes leave the AI rows to the profile restore.
+        session
+            .reset_network_countries(Some(LaunchCountry::Russia), false)
+            .unwrap();
+        let setup = session.network_setup().unwrap();
+        assert!(
+            setup
+                .humans
+                .iter()
+                .all(|human| human.slot.country == LaunchCountry::Russia
+                    && !human.slot.country_random)
+        );
+        assert_eq!(ai_country(&session), (LaunchCountry::Yuri, false));
+        // Use Map's refresh (`+0x18`) takes every row.
+        session.reset_network_countries(None, true).unwrap();
+        assert_eq!(ai_country(&session), (LaunchCountry::Yuri, true));
+    }
+
+    #[test]
+    fn select_scenario_keeps_rows_starts_and_teams() {
+        use crate::skirmish_launch::{LaunchStartPosition, LaunchTeam};
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::LanLobby);
+        let mut launch = network_fixture();
+        launch.local_player_index = 0;
+        launch.humans[0].slot.start_position = LaunchStartPosition::Position(3);
+        launch.humans[1].slot.team = LaunchTeam::Team(2);
+        session
+            .accept_network_setup(launch.clone(), true, None)
+            .unwrap();
+        let before = session.network_setup().unwrap().clone();
+        assert_eq!(
+            before.humans[0].slot.start_position,
+            LaunchStartPosition::Position(3)
+        );
+        // 0x005E7BF0 writes the map and [0xA8BB0C], nothing in the rows.
+        session
+            .select_network_scenario("C1A01MD.MAP".into(), 4)
+            .unwrap();
+        let after = session.network_setup().unwrap();
+        assert_eq!(after.selected_map_file.as_deref(), Some("C1A01MD.MAP"));
+        assert_eq!(session.network_setup_capacity(), Some(4));
+        assert_eq!(after.humans, before.humans);
+        assert_eq!(after.opponents, before.opponents);
+    }
+
+    #[test]
     fn open_rows_and_over_capacity_follow_the_wol_slot_tests() {
         // 0x5E9510 and 0x5E95E0 scan min(8, the options' raw capacity).
         let mut session = MatchSession::default();
@@ -2078,7 +3469,7 @@ mod tests {
         let options =
             |session: &mut MatchSession, vacancies: [super::NetworkVacancy; 8], capacity: i32| {
                 session
-                    .accept_network_host_setup(launch.clone(), vacancies, capacity, None)
+                    .accept_network_host_setup(launch.clone(), vacancies, capacity, None, false)
                     .unwrap();
                 let metadata = super::NetworkMapMetadata {
                     display_name: "Map".into(),
@@ -2086,6 +3477,8 @@ mod tests {
                     official: true,
                     byte_length: 1,
                     digest: "D".into(),
+                    source_sha256: String::new(),
+                    effective_digest: String::new(),
                 };
                 session
                     .accept_network_map_metadata(metadata, None, true)
@@ -2225,6 +3618,8 @@ mod tests {
             official: false,
             byte_length: 83573,
             digest: "CaseSensitive".into(),
+            source_sha256: String::new(),
+            effective_digest: String::new(),
         };
         assert!(
             session
@@ -2276,7 +3671,13 @@ mod tests {
                 .unwrap()
         );
         session
-            .accept_network_host_setup(launch.clone(), [super::NetworkVacancy::Open; 8], 2, Some(7))
+            .accept_network_host_setup(
+                launch.clone(),
+                [super::NetworkVacancy::Open; 8],
+                2,
+                Some(7),
+                false,
+            )
             .unwrap();
         session
             .accept_network_map_metadata(metadata.clone(), None, true)
@@ -2327,6 +3728,105 @@ mod tests {
     }
 
     #[test]
+    fn verified_download_keeps_advertised_name_until_freeze_and_rejects_stale_identity() {
+        use crate::map::source::{TransferResource, install_received_asset, load_received_asset};
+        let directory = crate::map::source::test_support::TestDirectory::new("session-map-lease");
+        let bytes = b"[RandomMap]\nSeed=123\n";
+        let digest = crate::util::sha256::sha256_hex(bytes);
+        let source = install_received_asset(
+            directory.path(),
+            bytes.to_vec(),
+            &digest,
+            bytes.len(),
+            TransferResource::Seed,
+        )
+        .unwrap()
+        .source;
+        let pin = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(directory.path().join(format!(".{digest}.sed.pin")))
+            .unwrap();
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::Wol);
+        let mut launch = network_fixture();
+        launch.rebuild_house_roster();
+        session
+            .accept_network_setup(launch.clone(), false, None)
+            .unwrap();
+        let mut metadata = super::NetworkMapMetadata {
+            display_name: "Shared map".into(),
+            player_capacity: 8,
+            official: false,
+            byte_length: bytes.len() as i32,
+            digest: String::new(),
+            source_sha256: digest.clone(),
+            effective_digest: "c".repeat(64),
+        };
+        session
+            .accept_network_map_metadata(metadata.clone(), None, true)
+            .unwrap();
+        session
+            .accept_verified_network_map_source(source.clone(), "c".repeat(64))
+            .unwrap();
+        assert_eq!(
+            session.network_setup().unwrap().selected_map_file,
+            launch.selected_map_file
+        );
+        assert!(
+            !session.network_player_ready(1),
+            "receiving bytes never readies the guest"
+        );
+        metadata.source_sha256 = "b".repeat(64);
+        session
+            .accept_network_map_metadata(metadata.clone(), None, true)
+            .unwrap();
+        assert!(session.network_local_map_source().is_none());
+        assert!(
+            session
+                .accept_verified_network_map_source(source, "c".repeat(64))
+                .is_err()
+        );
+        pin.try_lock()
+            .expect("a rejected stale completion releases its lease");
+        pin.unlock().unwrap();
+        metadata.source_sha256 = digest.clone();
+        session
+            .accept_network_map_metadata(metadata, None, true)
+            .unwrap();
+        let source = load_received_asset(
+            directory.path(),
+            &digest,
+            bytes.len(),
+            TransferResource::Seed,
+        )
+        .unwrap()
+        .source;
+        session
+            .accept_verified_network_map_source(source, "c".repeat(64))
+            .unwrap();
+        session.prepare_wol_timing([0; 2], false).unwrap();
+        let startup = session.freeze_network_start(13).unwrap();
+        let crate::app::match_bootstrap::LoadingStartup::Network(prepared) = startup else {
+            panic!("network start");
+        };
+        assert_eq!(
+            prepared.launch_session().selected_map_file,
+            launch.selected_map_file
+        );
+        assert!(prepared.local_map_source().is_some());
+        session.return_to_network_lobby();
+        assert!(session.network_local_map_source().is_none());
+        assert!(
+            pin.try_lock().is_err(),
+            "frozen startup retains the admitted source"
+        );
+        drop(prepared);
+        pin.try_lock()
+            .expect("lobby return and final startup drop release the source");
+    }
+
+    #[test]
     fn host_packet_preserves_admission_and_rejects_source_identity_changes_atomically() {
         let mut session = MatchSession::default();
         session.enter_network(super::NetworkReturnContext::LanLobby);
@@ -2341,7 +3841,7 @@ mod tests {
         incoming.humans[0].role = crate::skirmish_launch::LaunchHumanRole::Player { group: 2 };
         let vacancies = [super::NetworkVacancy::Closed; 8];
         session
-            .accept_network_host_setup(incoming, vacancies, 4, Some(7))
+            .accept_network_host_setup(incoming, vacancies, 4, Some(7), false)
             .unwrap();
         assert!(session.network_player_ready(0));
         assert!(session.network_player_ready(1));
@@ -2357,7 +3857,7 @@ mod tests {
         reordered.humans.swap(0, 1);
         assert!(
             session
-                .accept_network_host_setup(reordered, vacancies, 4, Some(7))
+                .accept_network_host_setup(reordered, vacancies, 4, Some(7), false)
                 .is_err()
         );
         assert_eq!(session, accepted);
@@ -2525,17 +4025,101 @@ mod tests {
     #[test]
     fn frame_zero_resets_the_checksum_ring_and_launches_do_not() {
         let mut session = MatchSession::default();
+        assert_eq!(session.frame_checksums.compare_gate(), None);
         session.record_frame_checksum(0x1_05, 0xdead_beef);
         assert_eq!(session.checksum_history().get(0x05), 0xdead_beef);
         assert_eq!(session.checksum_history().get(0x2_05), 0xdead_beef);
+        assert_eq!(
+            session.frame_checksums.compare_gate(),
+            Some(FrameInfoCompareGate::new(0x1_05, 0))
+        );
         session.begin_offline(SessionMode::Skirmish, Some("Commander".to_owned()));
         assert_eq!(session.checksum_history().get(0x05), 0xdead_beef);
+        assert_eq!(
+            session.frame_checksums.compare_gate(),
+            Some(FrameInfoCompareGate::new(0x1_05, 0))
+        );
 
         session.record_frame_checksum(0, 0x1234_5678);
         assert_eq!(session.checksum_history().get(0), 0);
         assert_eq!(session.checksum_history().get(0x05), 0);
+        assert_eq!(
+            session.frame_checksums.compare_gate(),
+            Some(FrameInfoCompareGate::new(0, 256))
+        );
         session.record_frame_checksum(1, 0x1234_5678);
         assert_eq!(session.checksum_history().get(1), 0x1234_5678);
+    }
+
+    #[test]
+    fn frame_info_comparison_starts_at_frame_256_and_reads_current_checksum() {
+        let mut session = MatchSession::default();
+        session.record_frame_checksum(0, 1);
+        session.record_frame_checksum(255, 0x1122_3344);
+        let info = |frame, checksum| FrameInfo {
+            house_id: 2,
+            event_frame: frame,
+            checksum,
+            timing_word: 0,
+            delay: 0,
+        };
+        assert_eq!(session.compare_frame_info(info(255, 0), 255), Ok(false));
+
+        session.record_frame_checksum(256, 0x5566_7788);
+        assert_eq!(
+            session.compare_frame_info(info(256, 0x5566_7788), 256),
+            Ok(true)
+        );
+        assert_eq!(
+            session.compare_frame_info(info(256, 0x99), 256),
+            Err(ChecksumMismatch {
+                house_id: 2,
+                event_frame: 256,
+                delay: 0,
+                history_index: 0,
+                local_checksum: 0x5566_7788,
+                remote_checksum: 0x99,
+            })
+        );
+    }
+
+    #[test]
+    fn first_nonzero_frame_opens_comparison_without_startup_grace() {
+        let mut session = MatchSession::default();
+        session.record_frame_checksum(73, 0x1234_5678);
+        let info = FrameInfo {
+            house_id: 1,
+            event_frame: 73,
+            checksum: 0x1234_5678,
+            timing_word: 0,
+            delay: 0,
+        };
+        assert_eq!(session.compare_frame_info(info, 73), Ok(true));
+    }
+
+    #[test]
+    fn nonzero_checksum_restart_uses_frame_plus_256_as_timer_period() {
+        let mut session = MatchSession::default();
+        session.record_frame_checksum(100, 0x1234_5678);
+        session.reset_frame_checksum_history(100);
+        assert_eq!(session.checksum_history().get(100), 0);
+        assert_eq!(
+            session.frame_checksums.compare_gate(),
+            Some(FrameInfoCompareGate::new(100, 356))
+        );
+        let info = |frame, checksum| FrameInfo {
+            house_id: 1,
+            event_frame: frame,
+            checksum,
+            timing_word: 0,
+            delay: 0,
+        };
+        assert_eq!(session.compare_frame_info(info(455, 1), 455), Ok(false));
+        session.record_frame_checksum(456, 0x8765_4321);
+        assert_eq!(
+            session.compare_frame_info(info(456, 0x8765_4321), 456),
+            Ok(true)
+        );
     }
 
     #[test]

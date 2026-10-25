@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -33,5 +32,5 @@
     "particle_color_prefix": "0x0062BAC5"
   },
   "replay_command": "python -m tools.spatial_oracle.tmp_clear_render --preview",
-  "payload_sha256": "e6cbd94c3344340d7d62bcdc07a8edbd2093875b1d6d49b92a64b388c771fb72"
+  "payload_sha256": "16f78bbafa86037c37db7eefd24ff61dff1c3529eb762104969e7083b7794d70"
 }

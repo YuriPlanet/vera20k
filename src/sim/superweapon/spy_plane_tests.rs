@@ -14,7 +14,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::mission::state::MissionTestFixture;
 use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
 use crate::sim::world::edge_cell::{Edge, find_paradrop_edge_cell};
-use crate::sim::world::{PlacementEvidence, SimSoundEvent, Simulation};
+use crate::sim::world::{FrameEffects, PlacementEvidence, SimSoundEvent, Simulation};
 use crate::util::fixed_math::SimFixed;
 use serde_json::{Value, json};
 
@@ -479,7 +479,9 @@ fn mission_plane(sim: &mut Simulation, rules: &RuleSet, row: &Value) -> u64 {
             plane.position.set_exact_z_leptons_for_test(Some(1500));
             let entities = &sim.substrate.entities;
             let plane = entities.get(id).unwrap();
-            if crate::sim::combat::object_distance_to(plane, &target, &sim) == Some(distance) {
+            if crate::sim::combat::object_distance_to(plane.stable_id(), &target, &sim)
+                == Some(distance)
+            {
                 placed = true;
                 break 'search;
             }
@@ -554,7 +556,7 @@ fn spyplane_missions_match_native() {
         let id = mission_plane(&mut sim, &rules, row);
         if flag(row, "latched") {
             // A snapshot held from before, as the row's `+0x250` stands for.
-            sim.refresh_object_sight(id, Some(&rules), 4);
+            sim.refresh_object_sight(id, &rules, 4, crate::sim::world::FrameEffects::default());
         }
         let opposite = pick.map(|pick| {
             let opposite = edge(pick);
@@ -607,6 +609,126 @@ fn spyplane_missions_match_native() {
             "{row}"
         );
     }
+}
+
+/// A real launch reaches its first camera before Foot's next sight refresh.
+/// RevealArea visits the center before its neighbors; the camera's final
+/// Map567DA0 call (4156D1) must then store the fully open ground frame there.
+#[test]
+fn retail_spy_plane_camera_finishes_its_ground_edge_frames() {
+    let Some(rules) = retail_rules() else {
+        return;
+    };
+    let (rules, mut sim, americans) = world(rules);
+    sim.session.set_current_house_for_test(Some(americans));
+    charge_super(&mut sim, americans, SPY_PLANE);
+    click(&mut sim, &rules, americans, SPY_PLANE, TARGET);
+    let [plane] = spy_planes(&sim)[..] else {
+        panic!("one stock Spy Plane");
+    };
+
+    for _ in 0..3000 {
+        sim.sound_events.clear_for_test();
+        step(&mut sim, &rules);
+        if camera_sounds(&sim) == 0 {
+            continue;
+        }
+        let source = sim.fog.source_sight(plane, americans).unwrap();
+        assert!(source.latched, "the first camera survives this Foot visit");
+        assert_eq!(source.radius, 6, "stock camera Damage, not SPYP Sight=0");
+        let center = crate::sim::vision::sight_border_cells(source.origin, 9, 0)[0];
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(
+            sim.resolved_terrain.as_ref().unwrap(),
+        );
+        assert_eq!(
+            sim.fog
+                .map_cell_edge_frame(americans, center, false, Some(&cells)),
+            -1,
+            "all eight neighbors opened during this camera"
+        );
+        assert_eq!(
+            sim.fog.by_owner_mut_for_test()[&americans]
+                .map_cell_edge_cache_for_test(center)
+                .0[0],
+            -1,
+            "4156D1 must replace the center's early RevealArea edge frame"
+        );
+        return;
+    }
+    panic!("the stock Spy Plane never took a camera snapshot");
+}
+
+/// An enemy camera runs its border on the current client's map even though
+/// RevealArea refuses that enemy's sight. Capture's UpdateReveal70187B has
+/// no border suffix, so it supplies fresh ground with an early center frame.
+#[test]
+fn retail_enemy_spy_plane_refreshes_existing_player_ground_without_revealing() {
+    let Some(rules) = retail_rules() else {
+        return;
+    };
+    let (rules, mut sim, player) = world(rules);
+    sim.session.set_current_house_for_test(Some(player));
+    let computer = sim.interner.get("Russians").unwrap();
+    sim.houses
+        .get_mut(&computer)
+        .unwrap()
+        .set_enemy_house_for_test(Some(player));
+    sim.houses
+        .get_mut(&player)
+        .unwrap()
+        .set_base_center_for_test(Some(TARGET));
+    charge_super(&mut sim, computer, SPY_PLANE);
+    super::ai_fire::try_fire(&mut sim, &rules, computer, None, FrameEffects::default());
+    let [plane] = spy_planes(&sim)[..] else {
+        panic!("one computer Spy Plane");
+    };
+
+    let mut center = None;
+    for _ in 0..3000 {
+        sim.sound_events.clear_for_test();
+        step(&mut sim, &rules);
+        // Leave time for the next 16-frame camera before Logic's periodic
+        // 120-frame edge sweep can repair the newly captured tank's border.
+        if camera_sounds(&sim) > 0 && sim.session.binary_frame() % 120 < 95 {
+            let source = sim.fog.source_sight(plane, player).unwrap();
+            assert_eq!(source.radius, 6);
+            assert!(sim.fog.sight_admission(plane, player).is_none());
+            center = Some(crate::sim::vision::sight_border_cells(source.origin, 9, 0)[0]);
+            break;
+        }
+    }
+    let center = center.expect("an Approach camera before the periodic sweep");
+    assert!(!sim.fog.is_cell_revealed(player, center.0, center.1));
+    let tank = sim
+        .spawn_object("MTNK", "Russians", center.0, center.1, 0, &rules)
+        .expect("a ground tank below the plane");
+    sim.change_owner_with_rules(tank, player, &rules, None, FrameEffects::default());
+    assert!(sim.fog.is_cell_revealed(player, center.0, center.1));
+    assert_eq!(
+        sim.fog.by_owner_mut_for_test()[&player]
+            .map_cell_edge_cache_for_test(center)
+            .0[0],
+        -2,
+        "capture reveals the center before its neighbors"
+    );
+
+    for _ in 0..20 {
+        sim.sound_events.clear_for_test();
+        step(&mut sim, &rules);
+        if camera_sounds(&sim) > 0 {
+            assert!(sim.fog.sight_admission(plane, player).is_none());
+            assert_eq!(
+                sim.fog.by_owner_mut_for_test()[&player]
+                    .map_cell_edge_cache_for_test(center)
+                    .0[0],
+                -1,
+                "the enemy camera refreshes existing player ground frames"
+            );
+            assert!(!sim.fog.is_cell_revealed(player, TARGET.0, TARGET.1));
+            return;
+        }
+    }
+    panic!("the next Approach camera must run at the stock 16-frame interval");
 }
 
 /// The player's Spy Plane on retail rules, from the click through
@@ -682,6 +804,252 @@ fn retail_spy_plane_photographs_the_target_and_leaves() {
     // Overfly photographs on past the target, silently.
     assert!(revealed(&sim) > at_overfly);
     assert!(!sim.fog.is_cell_revealed(americans, 60, 5));
+}
+
+/// Aircraft AI414FDF..415046 clears a retained Dummy CellClass pointer
+/// after Foot AI. The next Overfly visit must make a fresh edge choice.
+/// The stock launch and live object turn run normally; only the retained
+/// pointer at this boundary is supplied, rather than a whole native flight.
+#[test]
+fn retail_spy_plane_drops_dummy_cells_and_picks_another_exit() {
+    for (bad_nav, bad_target) in [(true, false), (false, true), (true, true)] {
+        let Some(rules) = retail_rules() else {
+            return;
+        };
+        let (rules, mut sim, americans) = world(rules);
+        charge_super(&mut sim, americans, SPY_PLANE);
+        click(&mut sim, &rules, americans, SPY_PLANE, TARGET);
+        let [plane] = spy_planes(&sim)[..] else {
+            panic!("one stock Spy Plane");
+        };
+        let mut approach_frames = 0;
+        while sim.substrate.entities.get(plane).unwrap().mission.current()
+            != MissionId::from_known(MissionType::SpyplaneOverfly)
+        {
+            step(&mut sim, &rules);
+            approach_frames += 1;
+            assert!(approach_frames < 3000, "Spy Plane must reach Overfly");
+        }
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(plane)
+                .unwrap()
+                .mission_leaf
+                .as_aircraft()
+                .unwrap()
+                .action_latch(),
+            1,
+            "Approach must latch the straight Overfly heading"
+        );
+        let dummy = (700, 700);
+        assert_eq!(
+            TargetKind::Cell(dummy.0, dummy.1)
+                .cell_identity(sim.resolved_terrain.as_ref().unwrap()),
+            Some(crate::map::cell_index::NativeCellIdentity::Dummy)
+        );
+        let nav = if bad_nav { dummy } else { TARGET };
+        sim.assign_aircraft_destination(
+            plane,
+            Some(NavTargetRef::cell(nav.0, nav.1)),
+            &rules,
+            FrameEffects::default(),
+        );
+        let target = if bad_target { dummy } else { TARGET };
+        sim.assign_target_represented(
+            plane,
+            Some(TargetKind::Cell(target.0, target.1)),
+            &rules,
+            None,
+            FrameEffects::default(),
+        )
+        .unwrap();
+        let now = sim.session.binary_frame();
+        let entity = sim.substrate.entities.get_mut(plane).unwrap();
+        // Keep the mission handler out of this first visit so it cannot
+        // replace the supplied pointers before the class AI reaches them.
+        entity.mission.write_dispatch_epilogue(now as i32, 100);
+
+        step(&mut sim, &rules);
+        let entity = sim.substrate.entities.get(plane).unwrap();
+        assert_eq!(entity.navigation.nav_com(), None, "{bad_nav}/{bad_target}");
+        assert_eq!(
+            entity.attack_target.target(),
+            None,
+            "{bad_nav}/{bad_target}"
+        );
+        assert_eq!(
+            entity.mission.current(),
+            MissionId::from_known(MissionType::SpyplaneOverfly)
+        );
+
+        let mut expected_rng = sim.scenario_rng.clone();
+        let edge = Edge::opposite_edge(sim.aircraft_house_waypoint_edge(plane));
+        let expected = find_paradrop_edge_cell(
+            sim.playfield_bounds(),
+            sim.resolved_terrain.as_ref(),
+            edge,
+            &mut expected_rng,
+        )
+        .unwrap();
+        let now = sim.session.binary_frame();
+        sim.substrate
+            .entities
+            .get_mut(plane)
+            .unwrap()
+            .mission
+            .write_dispatch_epilogue(now as i32, 0);
+        crate::sim::aircraft::tick_aircraft_missions(&mut sim, &rules);
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(plane)
+                .unwrap()
+                .navigation
+                .nav_com(),
+            Some(NavTargetRef::cell(expected.0, expected.1))
+        );
+        assert_eq!(
+            sim.scenario_rng.logical_state(),
+            expected_rng.logical_state()
+        );
+        let mut frames = 0;
+        while sim.substrate.entities.contains(plane) {
+            step(&mut sim, &rules);
+            frames += 1;
+            assert!(
+                frames < 3000,
+                "Spy Plane must still leave the map: {bad_nav}/{bad_target}"
+            );
+        }
+    }
+}
+
+/// Computer MCV Deploy7398D9 -> House505180 -> Paranoid501640 calls
+/// MakeEnemy4F9F90 even without an ally edge. Its4ADEE0/4ADCD0 bracket
+/// replaces the human SPYP's camera radius with its ordinary Sight=0.
+#[test]
+fn a_computer_mcv_deploy_replaces_the_human_spy_photo_with_normal_sight() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let mut rules = retail.rules;
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(
+        &retail.fixed_art,
+    ));
+    let soundmd = crate::rules::retail_ini_fixture::retail_ini("soundmd.ini").unwrap();
+    rules.bind_type_sound_references(&retail.processed_rules, &SoundRegistry::from_ini(&soundmd));
+    assert!(rules.general.allies_allowed && rules.general.paranoid);
+    assert_eq!(rules.weapon("SpyCameraWeapon").unwrap().damage, 6);
+    let (rules, mut sim, americans) = world(rules);
+    let player = sim.interner.get("Russians").unwrap();
+    for (owner, human) in [(americans, false), (player, true)] {
+        let house = sim.houses.get_mut(&owner).unwrap();
+        // The shared flight fixture omits Country; actual AI MCV Recalc
+        // needs the scenario's explicit country and side attachments.
+        house.set_country_for_test(Some(owner));
+        house.set_is_human_for_test(human);
+        house.set_player_control_for_test(human);
+        house.project_country_mults(&rules, &sim.interner);
+        house.resolve_multiplay_passive(&rules, Some(sim.interner.resolve(owner)));
+    }
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    sim.session.set_current_house_for_test(Some(player));
+    sim.session.game_options_mut_for_test().fog_of_war = true;
+    for (kind, owner, at) in [
+        ("NANRCT", "Russians", (20, 24)),
+        ("NARADR", "Russians", (24, 24)),
+        ("GAPOWR", "Americans", (20, 40)),
+    ] {
+        sim.spawn_object_at_height(kind, owner, at.0, at.1, 0, 0, &rules)
+            .unwrap_or_else(|| panic!("{kind} stands at {at:?}"));
+    }
+    step(&mut sim, &rules);
+    let before: Vec<_> = (0..64_u16)
+        .flat_map(|y| (0..64_u16).map(move |x| (x, y)))
+        .map(|(x, y)| sim.fog.is_cell_visible(player, x, y))
+        .collect();
+    charge_super(&mut sim, player, SPY_PLANE);
+    click(&mut sim, &rules, player, SPY_PLANE, TARGET);
+    let [plane] = spy_planes(&sim)[..] else {
+        panic!("one retail Spy Plane");
+    };
+    assert!(sim.entities().get(plane).unwrap().sight.is_zero());
+    let mut witness = None;
+    for _ in 0..1000 {
+        step(&mut sim, &rules);
+        if sim.fog.sight_is_latched(plane, player) {
+            witness = (0..64_u16)
+                .flat_map(|y| (0..64_u16).map(move |x| (x, y)))
+                .find(|&(x, y)| {
+                    !before[usize::from(y) * 64 + usize::from(x)]
+                        && sim.fog.is_cell_visible(player, x, y)
+                });
+            if witness.is_some() {
+                break;
+            }
+        }
+        assert!(sim.entities().contains(plane), "camera must photograph");
+    }
+    let witness = witness.expect("camera opens cells outside ordinary building sight");
+    assert!(
+        sim.entities()
+            .get(plane)
+            .unwrap()
+            .discovery
+            .discovered_by_current_house(),
+        "native Human callback requires Techno41B"
+    );
+    assert!(!sim.houses[&americans].is_defeated());
+    assert!(!sim.session.computer_slot_has_team());
+    assert!(sim.house_alliances.as_map().is_empty());
+    let yard = rules
+        .object("AMCV")
+        .unwrap()
+        .deploys_into
+        .as_deref()
+        .unwrap();
+    let deploy_facing = rules.object(yard).unwrap().deploy_facing;
+    let mcv = sim
+        .spawn_object_at_height("AMCV", "Americans", 22, 44, deploy_facing, 0, &rules)
+        .expect("computer MCV on a clear site after the photograph");
+    assert!(sim.deploy_mcv(mcv, &rules, None, FrameEffects::default()));
+    assert!(
+        sim.entities()
+            .get(mcv)
+            .is_none_or(|entity| entity.death.is_dying()),
+        "MCV completed UnInit; physical removal waits for frame cleanup"
+    );
+    assert!(sim.entities().values().any(|entity| {
+        entity.owner() == americans
+            && sim.interner.resolve(entity.type_ref()) == yard
+            && !entity.death.is_dying()
+    }));
+    assert!(sim.house_alliances.as_map().is_empty());
+    assert!(
+        !sim.fog.sight_is_latched(plane, player),
+        "no-edge MakeEnemy must release the camera; Sight=0 admits no replacement"
+    );
+    assert!(
+        !sim.fog.is_cell_visible(player, witness.0, witness.1),
+        "the camera-only cell loses current sight at the alliance callback"
+    );
+    assert!(sim.fog.is_cell_revealed(player, witness.0, witness.1));
+    // Keep the ordinary flight, later snapshots and destructor in this chain:
+    // the early bracket release must not leave a cache or double-release it.
+    for _ in 0..3000 {
+        if !sim.entities().contains(plane) {
+            break;
+        }
+        step(&mut sim, &rules);
+    }
+    assert!(
+        !sim.entities().contains(plane),
+        "Spy Plane completes its flight"
+    );
+    assert!(sim.fog.sight_admission(plane, player).is_none());
+    assert!(sim.fog.is_cell_revealed(player, witness.0, witness.1));
 }
 
 /// The Super Weapons option off (`0x00A8B263`) withholds only the

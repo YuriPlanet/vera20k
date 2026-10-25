@@ -2,9 +2,10 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.IO;
+using System.Globalization;
 
 // Original LAN callbacks remain unmodified except the six declared transport
-// entries. This fixture requires an explicitly marked isolated game copy.
+// entries. LAN commands require an explicitly marked isolated game copy.
 class NativeLanProbe {
  static string Root, ImagePath;
  delegate bool E(IntPtr h,IntPtr p);
@@ -60,6 +61,35 @@ class NativeLanProbe {
   }finally{if(!resumed)TerminateProcess(pi.process,1);CloseHandle(pi.thread);CloseHandle(pi.process);}
  }
  static long Creation(IntPtr process){FT created,exit,kernel,user;if(!GetProcessTimes(process,out created,out exit,out kernel,out user))throw Error("Creation time");return created.Value();}
+ static void ReadExisting(string[] args) {
+  if(args.Length<4||args.Length>67)throw new Exception("Use read-existing PID EXPECTED_IMAGE ADDRESS:COUNT... (1..64 spans)");
+  uint pid;if(!UInt32.TryParse(args[1],NumberStyles.None,CultureInfo.InvariantCulture,out pid)||pid==0)throw new Exception("Read-existing requires a nonzero decimal Windows PID");
+  string expected=Path.GetFullPath(args[2]),pathRoot=Path.GetPathRoot(args[2]);
+  if(!Path.IsPathRooted(args[2])||pathRoot.Length<3||!String.Equals(Path.GetFileName(expected),"gamemd.exe",StringComparison.OrdinalIgnoreCase))throw new Exception("Read-existing requires an absolute gamemd.exe image path");
+  uint[] addresses=new uint[args.Length-3];int[] counts=new int[addresses.Length];int total=0;
+  for(int i=0;i<addresses.Length;i++) {
+   string[] span=args[i+3].Split(':');uint address;int count;
+   if(span.Length!=2)throw new Exception("Read-existing span requires hexadecimal ADDRESS:decimal COUNT");
+   string hexAddress=span[0];if(hexAddress.StartsWith("0x",StringComparison.OrdinalIgnoreCase))hexAddress=hexAddress.Substring(2);
+   if(!UInt32.TryParse(hexAddress,NumberStyles.AllowHexSpecifier,CultureInfo.InvariantCulture,out address)||!Int32.TryParse(span[1],NumberStyles.None,CultureInfo.InvariantCulture,out count)||count<1||count>4096)throw new Exception("Read-existing span requires a 32-bit hexadecimal address and count 1..4096");
+   if((ulong)address+(ulong)count>0x100000000UL)throw new Exception("Read-existing span exceeds the 32-bit address space");
+   total+=count;if(total>65536)throw new Exception("Read-existing total exceeds 64 KiB");
+   addresses[i]=address;counts[i]=count;
+  }
+  if(IntPtr.Size!=8)throw new Exception("Read-existing requires a 64-bit CLR");
+  ImagePath=expected;
+  IntPtr p=OpenProcess(0x1010,false,pid);if(p==IntPtr.Zero)throw new Exception("Open read-existing target failed");
+  string output;
+  try {
+   Identity(p);long created=Creation(p);byte[][] data=new byte[addresses.Length][];
+   for(int i=0;i<addresses.Length;i++)data[i]=Read(p,addresses[i],counts[i]);
+   Identity(p);if(Creation(p)!=created)throw new Exception("Read-existing process creation changed");
+   var text=new StringBuilder();text.Append("read-existing pid=").Append(pid.ToString(CultureInfo.InvariantCulture)).Append(" created=").Append(created.ToString(CultureInfo.InvariantCulture)).AppendLine();
+   for(int i=0;i<addresses.Length;i++)text.Append("address=").Append(addresses[i].ToString("x8",CultureInfo.InvariantCulture)).Append(" count=").Append(counts[i].ToString(CultureInfo.InvariantCulture)).Append(" hex=").Append(Hex(data[i])).AppendLine();
+   output=text.ToString();
+  }finally{CloseHandle(p);}
+  Console.Write(output);
+ }
  static string Manifest(uint pid){return Path.Combine(Root,"lan-owned-"+pid+".txt");}
  static void Owned(IntPtr process,uint pid){Identity(process);if(Creation(process)!=Int64.Parse(File.ReadAllText(Manifest(pid))))throw new Exception("Owned process creation changed");if(Hex(Read(process,0x10000000,4))!="4c414e31")throw new Exception("Wrong mailbox identity");}
  static uint R32(IntPtr process,uint address){return BitConverter.ToUInt32(Read(process,address,4),0);}
@@ -208,6 +238,7 @@ class NativeLanProbe {
  static void StopOwned(uint pid){IntPtr p=OpenProcess(0x101039,false,pid);if(p==IntPtr.Zero)throw Error("Open owned stop");try{Owned(p,pid);if(!TerminateProcess(p,0))throw Error("Terminate owned fixture");if(WaitForSingleObject(p,5000)!=0)throw new Exception("Owned fixture did not exit");Console.WriteLine("owned fixture stopped pid="+pid);}finally{CloseHandle(p);}}
  static void LanName(uint pid,IntPtr root,string text){uint owner;GetWindowThreadProcessId(root,out owner);if(owner!=pid||text.Length>16)throw new Exception("Wrong target or oversized name");IntPtr p=OpenProcess(0x101038,false,pid);if(p==IntPtr.Zero)throw Error("Open owned text target");try{Owned(p,pid);IntPtr edit=IntPtr.Zero;EnumChildWindows(root,delegate(IntPtr h,IntPtr unused){if(GetDlgCtrlID(h)==0x541){if(edit!=IntPtr.Zero)throw new Exception("Multiple name controls");edit=h;}return true;},IntPtr.Zero);if(edit==IntPtr.Zero)throw new Exception("No BB name edit");SendRaw(edit,0x100,new IntPtr(0x24),IntPtr.Zero);for(int i=0;i<32;i++)SendRaw(edit,0x100,new IntPtr(0x2e),IntPtr.Zero);foreach(char c in text)SendRaw(edit,0x102,new IntPtr(c),IntPtr.Zero);IntPtr buffer=VirtualAllocEx(p,IntPtr.Zero,new UIntPtr(40),0x3000,4);if(buffer==IntPtr.Zero)throw Error("Text read buffer");try{SendRaw(edit,0x4b3,new IntPtr(20),buffer);string actual=Encoding.Unicode.GetString(Read(p,(uint)buffer.ToInt64(),40)).Split('\0')[0];Console.WriteLine("native NewEdit name="+actual+" supplied="+text);if(actual!=text)throw new Exception("Native text readback mismatch");}finally{VirtualFreeEx(p,buffer,UIntPtr.Zero,0x8000);}}finally{CloseHandle(p);}}
  static void Main(string[] args) {
+  if(args.Length>0&&args[0]=="read-existing"){ReadExisting(args);return;}
   Root=Environment.GetEnvironmentVariable("VERA20K_NATIVE_FIXTURE_ROOT");
   ImagePath=Environment.GetEnvironmentVariable("VERA20K_NATIVE_IMAGE");
   if(String.IsNullOrEmpty(Root)||String.IsNullOrEmpty(ImagePath))throw new Exception("Set explicit isolated VERA20K_NATIVE_FIXTURE_ROOT and VERA20K_NATIVE_IMAGE");

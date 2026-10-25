@@ -1,0 +1,31 @@
+[Unit]
+Description=VERA20k authenticated gameplay relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Wait for execve before deployment verifies the running image.
+# https://www.freedesktop.org/software/systemd/man/255/systemd.service.html#Type=
+Type=exec
+User=vera20k-relay
+Group=vera20k-relay
+ExecStart=/usr/local/bin/vera20k-relay
+Environment=VERA_RELAY_BIND=0.0.0.0:5000
+LoadCredential=relay-ticket-key:/etc/vera20k/relay-ticket-key
+StateDirectory=vera20k-relay
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+MemoryMax=384M
+
+[Install]
+WantedBy=multi-user.target

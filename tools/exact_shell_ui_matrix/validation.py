@@ -214,7 +214,6 @@ def _evidence_record(value: object, path: str) -> dict[str, object]:
             "comparison_contract",
             "id",
             "kind",
-            "native_executable_sha256",
             "proof_domain",
         },
     )
@@ -230,37 +229,31 @@ def _evidence_record(value: object, path: str) -> dict[str, object]:
     if not artifacts:
         _fail(f"{path}.artifacts", "at least one hashed artifact is required")
     _sorted_unique(artifacts, f"{path}.artifacts", lambda item: (item["id"], item["path"]))
-    native_sha = _sha(
-        obj["native_executable_sha256"],
-        f"{path}.native_executable_sha256",
-        nullable=True,
-    )
     proof_domain = _string(obj["proof_domain"], f"{path}.proof_domain", nullable=True)
     comparison = None
     if obj["comparison_contract"] is not None:
         comparison = _comparison_contract(obj["comparison_contract"], f"{path}.comparison_contract")
 
     if kind == "native-executable-differential":
-        if native_sha is None or comparison is None or proof_domain is not None:
+        if comparison is None or proof_domain is not None:
             _fail(
                 path,
-                "native evidence requires executable SHA and comparison contract, and forbids proof_domain",
+                "native evidence requires a comparison contract and forbids proof_domain",
             )
     elif kind == "exhaustive-proof":
-        if proof_domain is None or native_sha is not None or comparison is not None:
+        if proof_domain is None or comparison is not None:
             _fail(
                 path,
-                "exhaustive proof requires proof_domain and forbids native/comparison fields",
+                "exhaustive proof requires proof_domain and forbids a comparison contract",
             )
-    elif any(item is not None for item in (native_sha, proof_domain, comparison)):
-        _fail(path, "non-proof evidence forbids native/proof/comparison fields")
+    elif any(item is not None for item in (proof_domain, comparison)):
+        _fail(path, "non-proof evidence forbids proof/comparison fields")
 
     return {
         "artifacts": artifacts,
         "comparison_contract": comparison,
         "id": evidence_id,
         "kind": kind,
-        "native_executable_sha256": native_sha,
         "proof_domain": proof_domain,
     }
 

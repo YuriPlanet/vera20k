@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -126,7 +125,7 @@
   "legacy_payload_preserved": {
     "rows": 420,
     "file_sha256": "261582222f8dbf26484991d9c5cc35c2c4d54e28fabc5f6bf159a0d2d0669ec9",
-    "meta_file_sha256": "f9afe25a815ec6412d1a4b78034716b0fc3f8adc8696a13e665fdca7451a50bd"
+    "meta_file_sha256": "106a5062639f1a2291a3ab63f0f69f08888d9baebe755544155b97ca80e47631"
   },
-  "payload_sha256": "c9668c66590da8aab3bb14c84c318c9c368cd55fc88215e2e7477b592632fe27"
+  "payload_sha256": "a2a30669f4f11692b0dceb7d7eac0beef9de24de0236a122b0c555c601de7fae"
 }

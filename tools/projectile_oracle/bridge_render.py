@@ -8,7 +8,7 @@ import hashlib, json, struct
 from pathlib import Path
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_EIP, UC_X86_REG_ESP
-from tools.native_oracle import NATIVE_SHA256, finish_vectors, provenance
+from tools.native_oracle import finish_vectors, provenance
 from tools.spatial_oracle.bridge_damage_admission import base, call, CELL, MEM, SCENARIO, TABLE, read32, words
 from tools.native_slope import slope_matrices
 
@@ -121,8 +121,7 @@ def generate():
             u.mem_write(CELL+0x140,words(flags))
             rows.append(dict(phase=phase,flags=flags,**render(*state)))
         sequences.append(dict(input=case,rows=rows))
-    return dict(native_sha256=NATIVE_SHA256,
-                type_source_sha256=hashlib.sha256(json.dumps(source,sort_keys=True,separators=(',',':')).encode()).hexdigest(),
+    return dict(type_source_sha256=hashlib.sha256(json.dumps(source,sort_keys=True,separators=(',',':')).encode()).hexdigest(),
                 selected_native_type=native_type,shp_sha256=hashlib.sha256(raw_shp).hexdigest(),
                 rows=[execute(case,native_type,raw_shp) for case in cases],live_structural_sequences=sequences)
 

@@ -72,13 +72,16 @@ pub fn unit_atlas_variants(type_id: &str, rules: Option<&RuleSet>) -> Vec<String
 /// which defaults to the type's ID. The constructor copies the ID into `+0x1F8`
 /// (`0x005F724F..0x005F7276`), `ObjectTypeClass::ReadINI` reads `Image=` over
 /// it (`0x005F9335`), and the voxel loader `0x005F8110` formats every model
-/// name from that field. An art `Image=` does not redirect it: gamemd reads
+/// name from that field. Retain its entry name when a later SHP call mutates
+/// ImageFile (saved Infantry5249AD/B4). An art `Image=` does not redirect it: gamemd reads
 /// that art key for buildings (`0x0045F93A`), not for vehicles or aircraft. A
 /// name that is not a rules type is its own image.
 pub fn voxel_image_id(type_id: &str, rules: Option<&RuleSet>) -> String {
     rules
         .and_then(|rules| rules.object(type_id))
-        .map_or(type_id, |object| object.image.as_str())
+        .map_or(type_id, |object| {
+            object.voxel_image_load().unwrap_or(&object.image)
+        })
         .trim()
         .to_uppercase()
 }

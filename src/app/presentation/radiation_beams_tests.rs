@@ -24,7 +24,7 @@ fn original_manager_histories_match_without_logic_ticks_or_rng() {
             viewport.camera = viewport.camera.map(|v| v + 3000);
         }
         for visit in row["visits"].as_array().unwrap() {
-            beams.composite(30, viewport);
+            beams.composite(30, viewport, |_| true);
             let expected = visit["registered_after"]
                 .as_array()
                 .unwrap()

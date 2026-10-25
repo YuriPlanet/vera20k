@@ -9,8 +9,8 @@ use crate::app::persistence::options_profile::{RetailOptionsLoad, RetailOptionsP
 
 use super::{
     ActiveEventLoop, App, AppState, Arc, AssetManager, BTreeMap, BasicSection, BatchRenderer,
-    BitFont, Fullscreen, GameConfig, GameScreen, GpuContext, HashMap, HouseRoster, Instant,
-    MusicPlayer, PhysicalSize, PlatformState, RandomMapGenerationRetention, Result, SfxPlayer,
+    BitFont, GameConfig, GameScreen, GpuContext, HashMap, HouseRoster, Instant, MusicPlayer,
+    PhysicalSize, PlatformState, RandomMapGenerationRetention, Result, SfxPlayer,
     SidebarChromeLayoutSpec, SidebarTab, StartupAudioDisposition, Window, WindowAttributes,
     frontend::startup_splash,
 };
@@ -101,11 +101,11 @@ where
     LoadProfile: FnOnce(&Path, &RetailStartupOptions) -> RetailOptionsLoad,
 {
     if capture_dimensions.is_some() {
-        RetailOptionsLoad::without_ra2md(&RetailStartupOptions::default())
+        RetailOptionsLoad::without_settings(&RetailStartupOptions::default())
     } else if let Some(ra2_dir) = ra2_dir {
         load_profile(ra2_dir, startup_options)
     } else {
-        RetailOptionsLoad::without_ra2md(startup_options)
+        RetailOptionsLoad::without_settings(startup_options)
     }
 }
 
@@ -118,15 +118,11 @@ trait StartupAudioProfileOperations {
 
 impl StartupAudioProfileOperations for crate::app::audio_runtime::AppAudioRuntime {
     fn set_sound_volume(&mut self, volume: f64) {
-        if let Some(player) = self.sfx_player.as_mut() {
-            player.set_sound_volume(volume);
-        }
+        crate::app::audio_runtime::AppAudioRuntime::set_sound_volume(self, volume);
     }
 
     fn set_voice_volume(&mut self, volume: f64) {
-        if let Some(player) = self.sfx_player.as_mut() {
-            player.set_voice_volume(volume);
-        }
+        crate::app::audio_runtime::AppAudioRuntime::set_voice_volume(self, volume);
     }
 
     fn set_score_volume(&mut self, volume: f32) {
@@ -165,6 +161,7 @@ impl App {
         capture_dimensions: Option<(u32, u32)>,
         startup_options: RetailStartupOptions,
         external_launch: bool,
+        replay_retail_directory: Option<&Path>,
     ) -> Result<Box<AppState>> {
         // One parsed retail profile snapshot yields two ordered products: the
         // independent frontend size selected after the early Video read, and the later
@@ -172,14 +169,36 @@ impl App {
         // automation lane, so it uses exact defaults and its explicit
         // dimensions instead of ingesting operator argv/profile screen state.
         let mut main_menu_shell_error = None;
-        let game_config = startup_asset_or_error(GameConfig::load(), &mut main_menu_shell_error);
+        let mut personal_rules = crate::rules::personal_rules::PersonalRules::default();
+        let game_config = startup_asset_or_error(
+            GameConfig::load().and_then(|config| {
+                let config = match replay_retail_directory {
+                    Some(directory) => config.with_retail_directory(directory.to_owned())?,
+                    None => config,
+                };
+                if capture_dimensions.is_none() {
+                    crate::app::persistence::profile_file::import_legacy(&config.paths).map_err(
+                        |error| anyhow::Error::new(error).context("Could not prepare VERA.INI"),
+                    )?;
+                    let bytes = crate::app::persistence::rules_profile::load_or_create(
+                        config.paths.settings_dir(),
+                    )
+                    .context("Could not prepare VERARULES.INI")?;
+                    personal_rules =
+                        crate::rules::personal_rules::PersonalRules::from_bytes(&bytes)
+                            .context("Could not read VERARULES.INI")?;
+                }
+                Ok(config)
+            }),
+            &mut main_menu_shell_error,
+        );
         let options_load = select_startup_options_load(
             capture_dimensions,
             &startup_options,
             game_config
                 .as_ref()
                 .map(|config| config.paths.settings_dir()),
-            RetailOptionsLoad::from_ra2md,
+            RetailOptionsLoad::from_settings,
         );
         let profile_screen = options_load.startup_shell_screen;
         let mut options_profile = options_load.retained_profile;
@@ -213,7 +232,17 @@ impl App {
         // The saved Full Screen choice goes in at creation: macOS retries it
         // only then, when the first attempt fails (a launch from an app that
         // is itself full screen). The resize that ends the animation re-fits
-        // the surface.
+        // the surface. The saved screen is resolved here too, so full screen
+        // covers it and a windowed launch opens on it; a screen that is no
+        // longer attached leaves both to the system.
+        let displays = if capture {
+            Vec::new()
+        } else {
+            crate::app::display_target::current_displays_for(event_loop)
+        };
+        let wanted_display = super::display_target::screen_for(&displays, &options_profile.display);
+        let fullscreen = (!capture && options_profile.full_screen)
+            .then(|| super::display_target::fullscreen_for(&displays, &options_profile.display));
         let mut window_attrs: WindowAttributes = WindowAttributes::default()
             .with_title(if branded_apple {
                 "王二火大"
@@ -222,11 +251,18 @@ impl App {
             })
             .with_inner_size(inner_size)
             .with_resizable(!capture)
-            .with_fullscreen(
-                (!capture && options_profile.full_screen).then_some(Fullscreen::Borderless(None)),
-            )
+            .with_fullscreen(fullscreen)
             .with_visible(window_visible)
             .with_active(window_visible);
+        // The Wayland app ID and X11 class, which the AppImage's desktop entry
+        // names (StartupWMClass), so docks show its icon for the window.
+        // Unset, Wayland has none and X11 takes the name the program was
+        // started by: an AppImage's own file name, version included.
+        #[cfg(target_os = "linux")]
+        {
+            use winit::platform::wayland::WindowAttributesExtWayland as _;
+            window_attrs = window_attrs.with_name("vera20k", "vera20k");
+        }
         // macOS full screen hides the menu bar and Dock instead of revealing
         // them at the edges the player scrolls against, where the system would
         // draw its own cursor over the game's. winit applies this to its own
@@ -267,6 +303,16 @@ impl App {
             window_attrs = icon.apply(window_attrs);
         }
         let window: Arc<Window> = Arc::new(event_loop.create_window(window_attrs)?);
+        // A windowed launch on a saved screen: the window opens centred there.
+        // Full screen already covers it from the attributes above.
+        if let Some(monitor) = wanted_display
+            .as_ref()
+            .filter(|_| !options_profile.full_screen)
+        {
+            window.set_outer_position(super::display_target::centered_outer_position(
+                &window, monitor,
+            ));
+        }
         // gamemd's WinMain builds WWMouse (`0x006BDF1C`), whose constructor hides
         // the cursor, before the startup splash; from the first frame after it,
         // `show_os_cursor_only_without_game_cursor` owns the cursor.
@@ -275,7 +321,8 @@ impl App {
         if let Some(icon) = &window_icon {
             icon.set_dock_icon();
         }
-        let gpu: GpuContext = GpuContext::new(window.clone())?;
+        let gpu: GpuContext =
+            GpuContext::new(window.clone(), event_loop.owned_display_handle(), capture)?;
         let batch_renderer: BatchRenderer = BatchRenderer::new(&gpu);
         let status_screen_fill = batch_renderer.create_texture(&gpu, &[255; 4], 1, 1);
         let status_card_glow =
@@ -417,7 +464,8 @@ impl App {
                 .as_ref()
                 .map(|config| config.ini.clone())
                 .unwrap_or_default(),
-        );
+        )
+        .with_personal_rules(personal_rules);
         process_assets.csf = startup_csf;
         let (startup_rules, startup_rules_projection) = startup_asset_manager
             .as_ref()
@@ -503,6 +551,9 @@ impl App {
                 },
             )
             .unwrap_or_default();
+        if let Some(assets) = startup_asset_manager.as_ref() {
+            process_assets.install_native_ini_hashes(assets, &skirmish_modes);
+        }
         let mut skirmish_shell_state = crate::ui::skirmish_shell::SkirmishShellState::default();
         // Seed the Credits/Unit Count slider ranges from rulesmd's
         // [MultiplayerDialogSettings] so a mod that changes the money/unit bounds
@@ -529,6 +580,7 @@ impl App {
         let multiplayer_shell_runtime =
             crate::app::frontend::skirmish_session::MultiplayerShellRuntime::initialize(
                 frontend_seed.value,
+                &mut process_assets,
                 game_config
                     .as_ref()
                     .map(|config| config.paths.settings_dir()),
@@ -608,7 +660,7 @@ impl App {
             sfx_player,
             launcher_audio_available,
             theme_startup_suppressed: false,
-            movie_audio: Default::default(),
+            master_groups: Default::default(),
         };
         if let Some(assets) = startup_asset_manager.as_ref() {
             startup_audio_runtime.initialize_theme(assets);
@@ -617,6 +669,18 @@ impl App {
         if let Some(assets) = startup_asset_manager {
             process_assets.return_from_loading(assets);
         }
+        // Phobos `[Phobos]` client switches (RA2MD.INI, imported into
+        // VERA.INI). The `phobos` build is the capability; the profile keys are
+        // the user's switches. Sealed capture keeps the source defaults, like
+        // the retail options snapshot, so operator profile state cannot change
+        // captured output.
+        #[cfg(feature = "phobos")]
+        let phobos_client = match game_config.as_ref() {
+            Some(config) if capture_dimensions.is_none() => {
+                crate::app::persistence::phobos_settings::read(config.paths.settings_dir())
+            }
+            _ => crate::app::persistence::phobos_settings::PhobosClientSettings::default(),
+        };
         let mut state = Box::new(AppState {
             platform: PlatformState::new(
                 window,
@@ -624,8 +688,12 @@ impl App {
                 capture_dimensions.map(|(w, h)| PhysicalSize::new(w, h)),
             ),
             match_state: crate::app::match_runtime::state::MatchState {
+                campaign_names: Default::default(),
                 session: Default::default(),
                 network_wait: Default::default(),
+                network_failure: None,
+                live_network: None,
+                lan_service: None,
                 startup: Default::default(),
                 sim_runtime: None,
                 input: crate::app::input::state::MatchInputState::new(hotkey_bindings),
@@ -653,8 +721,8 @@ impl App {
                         crate::ui::messages::MESSAGE_MAX_VISIBLE_RETAIL,
                         0,
                     ),
-                    message_clock: crate::ui::messages::PauseAwareClock::default(),
                     chat: Default::default(),
+                    beacons: Default::default(),
                     in_game_menu: crate::ui::pause_menu::InGameMenuState::default(),
                     modal_latch: true,
                     pause_menu_has_saves: false,
@@ -664,6 +732,7 @@ impl App {
                     abort_secondary: Default::default(),
                     sound_dialog: None,
                     abort_buttons: Default::default(),
+                    surrender_buttons: Default::default(),
                     diplomacy: Default::default(),
                     restate: Default::default(),
                     restate_text: String::new(),
@@ -671,6 +740,7 @@ impl App {
                     in_game_options: startup_in_game_options,
                     in_game_options_anchor: None,
                     combat_lights: Default::default(),
+                    screen_shake: Default::default(),
                     line_trails: Default::default(),
                     lasers: Default::default(),
                     talk_bubble: Default::default(),
@@ -689,6 +759,13 @@ impl App {
                     radar_content_insets: None,
                     has_radar: false,
                     selection_overlay: None,
+                    #[cfg(feature = "phobos")]
+                    digital_display_enabled: phobos_client.digital_display_enabled,
+                    #[cfg(feature = "phobos")]
+                    show_placement_preview: phobos_client.show_placement_preview,
+                    #[cfg(feature = "phobos")]
+                    placement_preview_art: Default::default(),
+                    beacon_art: None,
                     shroud_buffer: None,
                     theater_name: "TEMPERATE".to_string(),
                     theater_ext: "tem".to_string(),
@@ -766,7 +843,6 @@ impl App {
                 skirmish_shell_state,
                 choose_map_last_mode_row: None,
                 multiplayer_shell_runtime,
-                skirmish_shell_last_painted_pressed_button: None,
                 skirmish_shell_chrome,
                 main_menu_shell_state: crate::ui::main_menu_shell::MainMenuShellState::default(),
                 single_player_shell_state:
@@ -803,6 +879,7 @@ impl App {
                 campaign_art: None,
                 load_saved_game: None,
                 wol: None,
+                online_cleanup: Default::default(),
                 wol_account: Default::default(),
                 wol_test_credentials: Vec::new(),
                 network_options: None,
@@ -816,6 +893,7 @@ impl App {
                 wol_auto_login_art: None,
                 wol_my_info_art: None,
                 wol_buddy_art: None,
+                wol_quick_match_art: None,
                 wol_buddies: Default::default(),
                 wol_test_buddies: crate::app::shell_wol::test_service_buddies(),
                 wol_test_guest: Default::default(),
@@ -824,6 +902,7 @@ impl App {
                 wol_preferences: Default::default(),
                 score_page: None,
                 campaign_score_page: None,
+                coop_score_page: None,
                 score_art: None,
                 campaign_score_art: None,
                 finished_game_count: 0,
@@ -838,6 +917,8 @@ impl App {
                 ios_sidebar_art: None,
                 fps_overlay,
                 combat_light_renderer,
+                screen_presentation:
+                    crate::render::screen_presentation::ScreenPresentationPass::new(),
                 terrain_draw_renderer,
                 instance_pool: crate::render::batch::InstanceBufferPool::new(),
                 depth_view,
@@ -883,11 +964,18 @@ impl App {
         #[cfg(feature = "telemetry-dashboard")]
         attach_dashboard(&mut state);
 
-        if let Ok(quickplay) = std::env::var("RA2_QUICKPLAY") {
+        if replay_retail_directory.is_none()
+            && let Ok(quickplay) = std::env::var("RA2_QUICKPLAY")
+        {
             // The developer shortcut carries an authored-map sandbox through
             // the unverified legacy Battle loader. It has no artificial AI
             // opponent or starting forces; this is not campaign admission.
             let session = quickplay_launch_session(quickplay);
+            #[cfg(feature = "ares")]
+            crate::app::frontend::skirmish_session::prepare_external_skirmish_countries(
+                &mut state.process_assets,
+                &session,
+            );
             let mut clock = crate::app::match_bootstrap::OrdinaryMatchSeedClock;
             let seed = crate::app::match_bootstrap::read_match_seed(&mut clock);
             let request = crate::app::loading::pump::LoadingRequest::unverified_legacy_skirmish(
@@ -1292,7 +1380,7 @@ mod tests {
         assert!(!profile_loader_called.get());
         assert_eq!(
             options_load,
-            RetailOptionsLoad::without_ra2md(&RetailStartupOptions::default())
+            RetailOptionsLoad::without_settings(&RetailStartupOptions::default())
         );
         assert_eq!(
             startup_window_projection(options_load.startup_shell_screen, capture_dimensions),

@@ -50,7 +50,7 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) {
         let Some(requested) = requested else {
-            self.foot_null_destination(id, Some(rules), None, frame_effects);
+            self.foot_null_destination(id, rules, None, frame_effects);
             return;
         };
         let high = requested.object_id().is_some_and(|target| {
@@ -63,7 +63,7 @@ impl Simulation {
             })
         });
         if high {
-            self.foot_null_destination(id, Some(rules), None, frame_effects);
+            self.foot_null_destination(id, rules, None, frame_effects);
             return;
         }
         let entering = self.substrate.entities.get(id).is_some_and(|entity| {
@@ -87,10 +87,10 @@ impl Simulation {
         };
         self.aircraft_pad_departure(id, destination, rules, frame_effects);
         let Some(destination) = destination else {
-            self.foot_null_destination(id, Some(rules), None, frame_effects);
+            self.foot_null_destination(id, rules, None, frame_effects);
             return;
         };
-        if !self.begin_foot_destination(id, true, Some(rules), None, frame_effects) {
+        if !self.begin_foot_destination(id, true, rules, None, frame_effects) {
             return;
         }
         let entity = self.substrate.entities.get_mut(id).unwrap();
@@ -109,7 +109,7 @@ impl Simulation {
         self.aircraft_locomotor_move_to(id, coord, rules);
         // Accepted Foot setter resets both timers even when Fly MoveTo refuses
         // (e.g. powered off). Retry count is preserved.
-        DestinationTiming::from_rules(self.session.binary_frame(), Some(rules))
+        DestinationTiming::from_rules(self.session.binary_frame(), rules)
             .accept(self.substrate.entities.get_mut(id).unwrap());
     }
 
@@ -178,17 +178,12 @@ impl Simulation {
             if holds_aircraft {
                 return ControlFlow::Continue(Some(dock));
             }
-            if radio::transmit_to_contact(
-                self,
-                id,
-                RadioMessage::CanDock,
-                Some(rules),
-                frame_effects,
-            ) == RadioResponse::Roger
+            if radio::transmit_to_contact(self, id, RadioMessage::CanDock, rules, frame_effects)
+                == RadioResponse::Roger
             {
                 return ControlFlow::Break(());
             }
-            radio::transmit_to_contact(self, id, RadioMessage::Break, Some(rules), frame_effects);
+            radio::transmit_to_contact(self, id, RadioMessage::Break, rules, frame_effects);
             if services {
                 archive(self, Some(dock));
                 return ControlFlow::Continue(None);
@@ -203,17 +198,11 @@ impl Simulation {
                 building,
                 RadioMessage::CanDock,
                 RadioPayload::default(),
-                Some(rules),
+                rules,
                 frame_effects,
             );
             if answer != RadioResponse::Roger {
-                radio::transmit_to_contact(
-                    self,
-                    id,
-                    RadioMessage::Break,
-                    Some(rules),
-                    frame_effects,
-                );
+                radio::transmit_to_contact(self, id, RadioMessage::Break, rules, frame_effects);
                 if services {
                     archive(self, Some(dock));
                     destination = None;
@@ -245,7 +234,7 @@ impl Simulation {
                     pad,
                     RadioMessage::CanEnter,
                     RadioPayload::default(),
-                    Some(rules),
+                    rules,
                     frame_effects,
                 ) == RadioResponse::Roger
             });
@@ -257,7 +246,7 @@ impl Simulation {
                         pad,
                         RadioMessage::Hello,
                         RadioPayload::default(),
-                        Some(rules),
+                        rules,
                         frame_effects,
                     );
                     destination = Some(NavTargetRef::object(pad));
@@ -335,7 +324,7 @@ impl Simulation {
         if entity.radio_contacts.slot(0) == Some(pad)
             && destination != Some(NavTargetRef::object(pad))
         {
-            radio::transmit_to_contact(self, id, RadioMessage::Break, Some(rules), frame_effects);
+            radio::transmit_to_contact(self, id, RadioMessage::Break, rules, frame_effects);
         }
     }
 
@@ -360,7 +349,7 @@ impl Simulation {
             .map(|locomotor| locomotor.active_kind());
         match kind {
             Some(LocomotorKind::Jumpjet) => {
-                self.jumpjet_move_to(id, coord, Some(rules));
+                self.jumpjet_move_to(id, coord, rules);
             }
             Some(LocomotorKind::Rocket) => Self::rocket_move_to(
                 &self.interner,
@@ -380,7 +369,7 @@ impl Simulation {
                     id,
                     coord,
                     None,
-                    Some(rules),
+                    rules,
                 );
             }
         }
@@ -427,7 +416,7 @@ impl Simulation {
         id: u64,
         request: DriveCoord,
         timing: Option<DestinationTiming>,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) -> bool {
         let Some(entity) = substrate.entities.get(id) else {
             return false;
@@ -442,8 +431,7 @@ impl Simulation {
         {
             return false;
         }
-        let flight_level =
-            air_movement::type_flight_level(entity, rules.map(|rules| (rules, &*interner)));
+        let flight_level = air_movement::type_flight_level(entity, Some((rules, &*interner)));
         let armed_flight_level = (entity.attack_target.target().is_some()
             && entity.ammo().is_some_and(|a| a.current() != 0))
         .then_some(flight_level);
@@ -473,7 +461,7 @@ impl Simulation {
                 let base = crate::sim::aircraft::landing_base::landing_base(
                     entity,
                     &substrate.entities,
-                    rules.map(|r| (r, &*interner)),
+                    Some((rules, &*interner)),
                 );
                 state.should_begin_takeoff(
                     entity.health.current(),
@@ -502,8 +490,8 @@ impl Simulation {
                 .as_aircraft()
                 .is_some_and(|l| l.action_latch() != 0);
         let non_landable = aircraft
-            && rules
-                .and_then(|r| interner.object_type(entity.type_ref(), r))
+            && interner
+                .object_type(entity.type_ref(), rules)
                 .is_some_and(|o| !o.landable);
         if let Some(state) = entity.locomotor.as_mut().and_then(|l| l.fly_runtime_mut()) {
             let destination = state.destination();
@@ -537,7 +525,7 @@ impl Simulation {
         sound_events: &mut FrameChannel<SimSoundEvent>,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) -> bool {
         let Some(entity) = substrate.entities.get(id) else {
             return false;
@@ -551,7 +539,7 @@ impl Simulation {
         {
             return false;
         }
-        let level = air_movement::type_flight_level(entity, rules.map(|rules| (rules, &*interner)));
+        let level = air_movement::type_flight_level(entity, Some((rules, &*interner)));
         substrate
             .entities
             .get_mut(id)
@@ -583,7 +571,7 @@ impl Simulation {
     pub(crate) fn begin_fly_landing(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
@@ -601,13 +589,14 @@ impl Simulation {
         //4CFA79..4CFA8E: Get_Mission excludes Enter(7), then a successful
         //planning dispatch returns before any Fly landing flags are changed.
         let entering = entity.mission.effective().known() == Some(MissionType::Enter);
-        if !entering && self.planning_start_actor(id) {
+        if !entering && self.planning_start_actor(id, rules) {
             return false;
         }
         let entity = self.substrate.entities.get(id).unwrap();
         let airport_bound = entity.category() == crate::map::entities::EntityCategory::Aircraft
-            && rules
-                .and_then(|r| self.interner.object_type(entity.type_ref(), r))
+            && self
+                .interner
+                .object_type(entity.type_ref(), rules)
                 .is_some_and(|o| o.airport_bound);
         if airport_bound {
             let cell = ground_pose::position_world_coord(&entity.position);
@@ -615,15 +604,7 @@ impl Simulation {
                 .fly_building_at(cell)
                 .is_some_and(|building| entity.radio_contacts.contains(building));
             if !contact {
-                if let Some(rules) = rules {
-                    crate::sim::aircraft::enter_idle_mode_for(
-                        self,
-                        id,
-                        rules,
-                        registry,
-                        frame_effects,
-                    );
-                }
+                crate::sim::aircraft::enter_idle_mode_for(self, id, rules, registry, frame_effects);
                 return false;
             }
         }
@@ -644,21 +625,14 @@ impl Simulation {
     /// Health with `C4Warhead=` ([`Self::receive_own_health_c4`]), after which
     /// the Fly loses its destination (`0x004CD273`); a destination goes
     /// through the owner's class setter (vt+0x480,
-    /// [`Self::assign_aircraft_destination`]). Answers false for a moving
-    /// Aircraft without rules.
+    /// [`Self::assign_aircraft_destination`]). It always answers true.
     pub(crate) fn fly_stop_moving(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
-        let Some(rules) = rules else {
-            return !self.substrate.entities.get(id).is_some_and(|entity| {
-                entity.category() == crate::map::entities::EntityCategory::Aircraft
-                    && crate::sim::movement::motion_query::is_moving(entity).unwrap_or(false)
-            });
-        };
         let order = self.fly_stop_order(id, rules);
         #[cfg(any(test, feature = "test-support"))]
         if let Some(order) = order {

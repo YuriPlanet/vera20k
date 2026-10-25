@@ -1,0 +1,258 @@
+[
+  {
+    "events": [
+      [
+        "supplied_fnpc_empty",
+        "0x7036a1",
+        [
+          10,
+          10
+        ],
+        3,
+        9
+      ],
+      [
+        "map_get_cell",
+        [
+          0,
+          0
+        ]
+      ],
+      [
+        "unit_destination",
+        "real",
+        1
+      ],
+      [
+        "jumpjet_move_to",
+        [
+          128,
+          128,
+          0
+        ]
+      ],
+      [
+        "supplied_fnpc_empty",
+        "0x54b374",
+        [
+          0,
+          0
+        ],
+        3,
+        9
+      ]
+    ],
+    "input": {
+      "missing_zero": false,
+      "mission": "guard"
+    },
+    "output": {
+      "continuation": "0x4d5225",
+      "destination": [
+        128,
+        128,
+        0
+      ],
+      "movement_timer": [
+        100,
+        0
+      ],
+      "moving": true,
+      "nav": "real",
+      "phase": 0,
+      "rng_unchanged": true
+    }
+  },
+  {
+    "events": [
+      [
+        "supplied_fnpc_empty",
+        "0x7036a1",
+        [
+          10,
+          10
+        ],
+        3,
+        9
+      ],
+      [
+        "map_get_cell",
+        [
+          0,
+          0
+        ]
+      ],
+      [
+        "unit_destination",
+        "dummy",
+        1
+      ],
+      [
+        "jumpjet_move_to",
+        [
+          128,
+          128,
+          0
+        ]
+      ],
+      [
+        "supplied_fnpc_empty",
+        "0x54b374",
+        [
+          0,
+          0
+        ],
+        3,
+        9
+      ]
+    ],
+    "input": {
+      "missing_zero": true,
+      "mission": "guard"
+    },
+    "output": {
+      "continuation": "0x4d5225",
+      "destination": [
+        128,
+        128,
+        0
+      ],
+      "movement_timer": [
+        100,
+        0
+      ],
+      "moving": true,
+      "nav": "dummy",
+      "phase": 0,
+      "rng_unchanged": true
+    }
+  },
+  {
+    "events": [
+      [
+        "supplied_fnpc_empty",
+        "0x7036a1",
+        [
+          10,
+          10
+        ],
+        3,
+        9
+      ],
+      [
+        "map_get_cell",
+        [
+          0,
+          0
+        ]
+      ],
+      [
+        "unit_destination",
+        "real",
+        1
+      ],
+      [
+        "jumpjet_move_to",
+        [
+          128,
+          128,
+          0
+        ]
+      ],
+      [
+        "supplied_fnpc_empty",
+        "0x54b374",
+        [
+          0,
+          0
+        ],
+        3,
+        9
+      ]
+    ],
+    "input": {
+      "missing_zero": false,
+      "mission": "attack"
+    },
+    "output": {
+      "continuation": "0x4d4e0d",
+      "destination": [
+        128,
+        128,
+        0
+      ],
+      "movement_timer": [
+        100,
+        0
+      ],
+      "moving": true,
+      "nav": "real",
+      "phase": 0,
+      "rng_unchanged": true
+    }
+  },
+  {
+    "events": [
+      [
+        "supplied_fnpc_empty",
+        "0x7036a1",
+        [
+          10,
+          10
+        ],
+        3,
+        9
+      ],
+      [
+        "map_get_cell",
+        [
+          0,
+          0
+        ]
+      ],
+      [
+        "unit_destination",
+        "dummy",
+        1
+      ],
+      [
+        "jumpjet_move_to",
+        [
+          128,
+          128,
+          0
+        ]
+      ],
+      [
+        "supplied_fnpc_empty",
+        "0x54b374",
+        [
+          0,
+          0
+        ],
+        3,
+        9
+      ]
+    ],
+    "input": {
+      "missing_zero": true,
+      "mission": "attack"
+    },
+    "output": {
+      "continuation": "0x4d4e0d",
+      "destination": [
+        128,
+        128,
+        0
+      ],
+      "movement_timer": [
+        100,
+        0
+      ],
+      "moving": true,
+      "nav": "dummy",
+      "phase": 0,
+      "rng_unchanged": true
+    }
+  }
+]

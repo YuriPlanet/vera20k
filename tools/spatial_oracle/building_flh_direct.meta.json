@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "16 selected original Building453840/GetFLH6F3AD0 no-locomotor coordinate controls: stock cardinal/diagonal/nearby poses and asymmetric FLH/TurretOffset poses with both burst parities.",
+  "assumptions": [
+    "Existing Scene supplied Building/type bytes and original Building vtable are reused; Building/type constructors and INI reads do not execute. Target is null; heading is installed by original FacingClass methods. Location3200,3200,0 and weapon0/FLH/type values are supplied.",
+    "Primary pixel offset is unset; occupancy, BarrelAnimIsVoxel and TurretAnimIsVoxel are clear. The base7,11,13 control is supplied to the Building override. Its actual forwarding, GetWeapon, direction, matrix, table, ftol and GetCoords bodies execute.",
+    "Selected headings cover cardinal, diagonal and nearby stock poses plus asymmetric FLH/pivot inputs in several quadrants; this is not an exhaustive heading comparison or coverage of interpolated FacingClass timing/all authored FLH integers. FPCW0x0E7F.",
+    "Every row requires actual entry at6F3C1A, unchanged actor/type storage and untouched full Main/Scenario/mapgen RNG storage. The entire mapped text must match the source PE before and after execution; no historical whole-image hash is pinned. Complete source AI, FireAt, collision, damage and disk persistence are outside the fixture."
+  ],
+  "substitutions": [
+    "Inherited Scene unrelated SelectWeapon/PlayAnim/operational boundaries remain installed but are not reached by GetFLH. No GetFLH, coordinate, matrix, trigonometry or conversion result is substituted."
+  ],
+  "entry_points": {
+    "building_get_flh": "0x00453840",
+    "techno_get_flh": "0x006F3AD0",
+    "identity_arm": "0x006F3C1A",
+    "building_coords": "0x00459EF0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.building_flh_direct",
+  "payload_sha256": "540ada1763f6222364279c6b00b9335fa116c56aba45e55f843d55fab70c2b4d"
+}

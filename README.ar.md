@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="الصورة الرئيسية لمشروع VERA20K" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <strong lang="ar" dir="rtl">العربية</strong> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
+  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <strong lang="ar" dir="rtl">العربية</strong> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="آخر تشغيل لاختبارات المكتبة على macOS (تُشغّل يدويًا)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="اختبارات المكتبة على macOS" height="23" align="middle"></a>
@@ -38,8 +38,39 @@ VERA20K من صنع اللاعبين ومن أجلهم، وللاعبين الك
 - **الحملات:** يمكن بدء المهام؛ ما زال الدعم غير مكتمل.
 - **الذكاء الاصطناعي:** تتولى أجزاء من الذكاء الاصطناعي الأصلي بناء القواعد وتنفيذ هجمات مبرمجة.
 - **العمل المستمر:** تحسين دقة أسلوب اللعب والرسوم والأداء.
-- **اللعب الجماعي:** اللعب عبر الشبكة غير متاح بعد.
-- **حجم المعارك:** لم تُعرض بعد معارك تضم 30 لاعبًا و20,000 وحدة.
+- **اللعب الجماعي:** تدعم البُنى الحالية من الشيفرة المصدرية اللعب عبر الشبكة المحلية والإنترنت على macOS وLinux.
+- **حجم المعارك:** اجتازت مباراتان متتاليتان عبر الإنترنت التحقق الوظيفي، بمشاركة 30 عملية عميل مستقلة وأكثر من 20,000 وحدة متحركة نشطة في كل مباراة.
+  تقاسمت عمليات عميل Linux آلات افتراضية؛ ولا يثبت ذلك سلاسة الأداء في الزمن الحقيقي.
+
+## التنزيل واللعب
+
+نزّل برنامج التثبيت لنظام Windows أو macOS أو Linux من
+[صفحة الإصدارات](https://github.com/YuriPlanet/vera20k/releases). يعثر البرنامج على نسختك من
+Yuri's Revenge من [Steam](https://store.steampowered.com/app/2229850/) أو
+[تطبيق EA](https://www.ea.com/games/command-and-conquer/command-and-conquer-the-ultimate-collection)،
+ويثبّت VERA20K في مجلد جديد. وستوضع فيه أيضًا المودات والمحتوى الجديد، فلا تتغير ملفات اللعبة نفسها
+أبدًا.
+
+لتشغيل مناوشات YR أو حملاتها للاعب واحد عبر عميل CnCNet، راجع
+[إعداد العميل دون اتصال](integrations/cncnet/README.md).
+
+## الإعدادات
+
+استخدم **Options** للصوت والتحكم، و**Vera Options** لميزات VERA الخاصة.
+تُحفظ تفضيلات اللاعب واختصارات لوحة المفاتيح وخيارات الردهة في `VERA.INI`:
+
+- **نسخة التثبيت على Windows:** بجانب `vera20k.exe`.
+- **macOS:** `~/Library/Application Support/VERA20k/VERA.INI`.
+- **Linux:** `~/.local/share/VERA20k/VERA.INI`، أو في مجلد بيانات XDG الخاص بك.
+
+يحدد `config.toml` مجلد اللعبة، ويمكن استخدامه لاختيار مجلد آخر للإعدادات.
+
+إذا كان ملف `VERA.INI` غير موجود، ينشئه VERA ويستورد التفضيلات الموجودة مرة واحدة. إذا لم توجد
+إعدادات سابقة، يبدأ الملف فارغًا ويستخدم VERA القيم الافتراضية المدمجة إلى أن تُحفظ الإعدادات.
+يُقرأ الملفان الأصليان `RA2MD.INI` و`KeyboardMD.ini` للاستيراد فقط، ولا يُكتب فوقهما أبدًا.
+
+يحتوي `VERARULES.INI`، في المجلد نفسه، على تغييرات اختيارية لقواعد اللعب. يبدأ بأمثلة ضمن تعليقات،
+وتظل الأولوية لقواعد المهمة أو الخريطة. راجع [القواعد الشخصية](docs/personal-rules.md) لمعرفة كيفية تعديلها وتجاوزها.
 
 ## البنية المعمارية
 
@@ -56,18 +87,11 @@ VERA20K من صنع اللاعبين ومن أجلهم، وللاعبين الك
 
 ![يرسل التطبيق الأوامر إلى المحاكاة التي تعيد حالة العالم، ويرسل بيانات الرسم إلى التصيير.](docs/images/architecture.ar.png)
 
-## متطلبات النظام
-
-- **اللعبة:** Red Alert 2: Yuri's Revenge الإصدار 1.001.
-- **نظام التشغيل:** Windows 10 أو أحدث، أو Linux (glibc 2.35 أو أحدث، مثل Ubuntu 22.04 أو Steam Deck)،
-  أو macOS 11 أو أحدث على Apple Silicon.
-- **الرسوميات:** Vulkan أو DirectX 12 أو Metal.
-
 ## البناء والتشغيل
 
 تحتاج إلى:
 
-- **Rust وGit:** [Rust](https://rustup.rs/) 1.88 أو أحدث، مثبتًا عبر rustup، و[Git](https://git-scm.com/).
+- **Rust وGit:** [Rust](https://rustup.rs/) 1.97 أو أحدث، مثبتًا عبر rustup، و[Git](https://git-scm.com/).
 - **أدوات البناء:** على Windows أدوات بناء C++ من Visual Studio، ويعرض مثبّت Rust تثبيتها؛ وعلى macOS الأمر
   `xcode-select --install`؛ وعلى Debian وUbuntu الأمر `sudo apt install build-essential libasound2-dev pkg-config`.
 
@@ -95,13 +119,21 @@ cargo run --release --bin vera20k
 
 ## التخصيص
 
-ينبغي أن تكون الميزات الاختيارية (مثل ميزات Ares) قابلة للضبط عبر ملفات INI،
-مع مفاتيح تشغيل وإيقاف في العميل حيثما كان ذلك مناسبًا.
+يعمل VERA20K افتراضيًا مثل اللعبة الأصلية. يجب أن تبقى كل ميزة جديدة، بما في ذلك الإضافات القادمة
+من تعديلات مثل Ares، معطّلة إلى أن تُفعَّل بإحدى الطرق التالية:
+
+- **خيار للاعب في VERA**، ضمن **Options → Vera Options**، يُحفظ في القسم `[VERA]` من `VERA.INI`.
+- **خيار بناء**، مثل `--features ares` لتضمين [إضافات Ares](docs/ares.md) المدعومة.
+- **خيار في ردهة اللعبة**، يُختار لكل مباراة.
+- **مفتاح INI**، يضبطه تعديل أو خريطة.
+
+تُحفظ إعدادات الصوت والرسوم والتحكم في `VERA.INI`. وتأتي قواعد اللعب من إعدادات الردهة أو التعديلات أو الخرائط.
 
 ## المساهمة
 
 نرحب بالمساعدة. يمكنك كتابة الكود، أو إعادة هيكلة المحرك، أو اختبار اللعبة، أو مشاركة الأفكار، أو لعبها
 جنبًا إلى جنب مع الأصل وإخبارنا بما يبدو غير صحيح. افتح PR وسنتولى الأمر من هناك.
+
 النقاش يجري على [Discord](https://discord.gg/kmjRUn5m5F) وفي مجموعة QQ (1097193563).
 
 ## الدعم

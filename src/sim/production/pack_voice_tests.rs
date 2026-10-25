@@ -51,7 +51,7 @@ fn retail_slave_miner_selling_stage_queues_its_pack_voice_before_deploy_sound() 
                 crate::rules::terrain_rules::LandType::Tiberium.as_index();
         }
         sim.install_resolved_terrain_for_new_map(terrain);
-        sell_stage_zero(&mut sim, Some(&rules), 1, FrameEffects::empty());
+        sell_stage_zero(&mut sim, &rules, 1, FrameEffects::empty());
         let cues: Vec<_> = sim.sound_events.iter().filter_map(|event| match event {
             SimSoundEvent::UnitVoiceRequested { owner: 1, sound_id } =>
                 Some(json!({"kind":"QueueVoice", "sound":sound_id})),

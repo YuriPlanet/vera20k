@@ -46,6 +46,25 @@
 //! then arms its own delayed shot, whose damage grows with the count
 //! ([`prism_arm`], [`ObjectSubstrate::take_support_bonus`](crate::sim::world::ObjectSubstrate::take_support_bonus)).
 //!
+//! An unarmed Mission_Guard of a UnitRepair, UnitReload or Bunker type
+//! (`+0x16A9/+0x16AA/+0x16AB`) queues Repair without Commence from two arms:
+//! at status 1 for a contact in Enter under 64 leptons that answers
+//! NEED_TO_MOVE with ROGER, returning 1 with no draw (`0x00449817..
+//! 0x00449950`), and, for a UnitReload type only, from any status when its
+//! first contact refuses QUERY_RELOADED and answers NEED_TO_MOVE with ROGER,
+//! before the Rate tail's draw (`0x00449970..0x004499B5`). Neither writes
+//! `+0x6DD`: UpdateAnimation sets it on every frame its stage does not step
+//! while BState is -1 or the stage rate (`+0x10C`) is 0 (`0x00451205..
+//! 0x00451218`), past its turret gate (`0x00451145..0x0045116F`). So a
+//! building without a turret on its idle body (rate 0), as every stock type
+//! of the three is, commences that Repair at the after-AI ready check of the
+//! same frame (`0x0043FF91..0x0043FFAD`) and runs its handler
+//! (`docking::building_dock::mission_repair`) on the next. An airfield whose
+//! first contact sits stopped in Enter and refuses QUERY_RELOADED therefore
+//! alternates Guard and Repair every frame, one Scenario draw per Guard
+//! visit, until that contact changes: its Repair skips a contact in Enter and
+//! queues Guard (`docking::airfield_reload`).
+//!
 //! Evidence: `tools/spatial_oracle/building_guard_attack.json`, replayed in
 //! the tests below: Mission_Guard's returns and Scenario draws per arm,
 //! Mission_Attack's return and actions per fire-error code,
@@ -63,14 +82,10 @@
 //! The house-color Prism support/main lasers now emit ordered copied births
 //! through `combat::laser` and share the app LaserDraw/DSurface owner. The
 //! remaining non-house randomized spread path belongs to DrawBeam550260.
-//! - UnitReload/Bunker Guard contact admission remains with those separate
-//!   families (449817..499B5). UnitRepair's raw-distance/NEED_MOVE/Repair
-//!   queue is ported here; DOCK_NOW independently supplies its ready latch.
-//!   Trigger: airfield reload or bunker entry. Effect: Guard's queued mission
-//!   and Scenario draw count still differ on those paths. Foundation waiters
-//!   and the full arrival position producer are bounded by the depot corpus.
-//!   WeaponsFactory ClearBibArea449540 is dormant with retail data because
-//!   every stock WeaponsFactory retains HasStupidGuardMode.
+//! - Guard's status-1 contact arm: foundation waiters and the full arrival
+//!   position producer are bounded by the depot corpus. WeaponsFactory
+//!   ClearBibArea449540 is dormant with retail data because every stock
+//!   WeaponsFactory retains HasStupidGuardMode.
 //! - Voxel HVA frames now reach `emit_building_turret_vxl`: original43DA80
 //!   selects +148 modulo the turret's frames (or the barrel's frames on the
 //!   barrel-only arm); a separate barrel uses frame0. Native component
@@ -220,11 +235,8 @@ const SPECIAL_ANIM_SLOT: u8 = 10;
 
 ///4509D0 runs once before Techno AI. The native type/control owner decides
 /// Stage/ready, including idle and sale; neither mission steps its own clock.
-pub(super) fn update_animation(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
+pub(super) fn update_animation(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(id) else {
-        return;
-    };
-    let Some(rules) = rules else {
         return;
     };
     let Some(object) = sim.object_type(entity.type_ref(), rules) else {
@@ -275,7 +287,7 @@ pub(super) fn apply_queued_body(
 pub(super) fn dispatch(
     sim: &mut Simulation,
     id: u64,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     ctx: ObjectAiCtx<'_>,
     bridge_state_changed: &mut bool,
 ) {
@@ -292,9 +304,6 @@ pub(super) fn dispatch(
         sim.visit_building_down(id, rules, ctx.overlay_registry, ctx.effects);
         return;
     }
-    let Some(rules) = rules else {
-        return;
-    };
     let delay = match current {
         Some(MissionType::Guard | MissionType::Sticky | MissionType::AreaGuard) => {
             mission_guard(sim, id, rules, ctx)
@@ -350,13 +359,7 @@ fn mission_construction(
             .get_mut(id)
             .unwrap()
             .begin_building_body(BuildingBodyMode::Construction, now as i32);
-        transmit_to_contact(
-            sim,
-            id,
-            RadioMessage::DockApproach,
-            Some(rules),
-            ctx.effects,
-        );
+        transmit_to_contact(sim, id, RadioMessage::DockApproach, rules, ctx.effects);
         let sound = sim
             .substrate
             .entities
@@ -379,8 +382,8 @@ fn mission_construction(
             entity.mission.set_handler_state(1);
         }
     } else if status == 1 && entity.building_ready_latch() != 0 {
-        transmit_to_contact(sim, id, RadioMessage::DockArrived, Some(rules), ctx.effects);
-        transmit_to_contact(sim, id, RadioMessage::Break, Some(rules), ctx.effects);
+        transmit_to_contact(sim, id, RadioMessage::DockArrived, rules, ctx.effects);
+        transmit_to_contact(sim, id, RadioMessage::Break, rules, ctx.effects);
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             entity.begin_building_body(BuildingBodyMode::Idle, now as i32);
         }
@@ -424,12 +427,9 @@ fn mission_construction(
 /// then takes its own arm; the factory arm below uses the shared Techno Door,
 /// Drive track and Unit PerCell owners.
 /// Every other building queues Guard
-/// (`vt+0x1E8(5, 0)` at `0x0044E379`) and returns 1.
-///
-/// Residual: a gap generator (`+0xCD1` and `+0xCD3`) first re-toggles its
-/// gap (`0x0044E2BE..0x0044E365`: vt+0x418, `+0x26C`, vt+0x350), not ported;
-/// its Guard tail is. No retail gap generator takes an Unload order (the app
-/// offers Unload only to `CanBeOccupied=` and loaded `InfantryAbsorb=` types).
+/// (`vt+0x1E8(5, 0)` at `0x0044E379`) and returns 1; a gap generator
+/// first toggles its super-charge (`0x0044E29D..0x0044E36B`,
+/// [`Simulation::toggle_gap_supercharge`]).
 fn mission_unload(
     sim: &mut Simulation,
     id: u64,
@@ -467,6 +467,7 @@ fn mission_unload(
     if object.weapons_factory {
         return Some(mission_factory_unload(sim, id, rules, ctx));
     }
+    sim.toggle_gap_supercharge(id, rules);
     let now = sim.session.binary_frame();
     let readiness = LiveReadyInputProvider { rules };
     let _ = sim.mission_queue_exact(
@@ -579,7 +580,7 @@ fn mission_factory_unload(
                         product,
                         0x42,
                         track,
-                        Some(rules),
+                        rules,
                         ctx.overlay_registry,
                         ctx.effects,
                     );
@@ -618,7 +619,7 @@ fn mission_factory_unload(
             entity.mission.set_handler_state(4);
         }
         4 if phase == DoorPhase::ClosedStable || naval => {
-            sim.building_enter_idle_mode(id, false, Some(rules));
+            sim.building_enter_idle_mode(id, false, rules);
         }
         _ => {}
     }
@@ -738,11 +739,7 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
         .unwrap_or(MissionType::Guard);
     // vt+0x2AC, `BuildingClass::Is_Armed 0x00458DB0`.
     if combat_weapon::is_armed(entity, obj) {
-        let empty_garrison = obj.can_be_occupied
-            && entity
-                .passenger_role
-                .cargo()
-                .is_none_or(|cargo| cargo.is_empty());
+        let empty_garrison = obj.can_be_occupied && entity.passenger_role.occupants().is_empty();
         let has_target = entity.attack_target.target().is_some();
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
             // `0x00449701`.
@@ -770,9 +767,12 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
         );
         entity.mission.set_handler_state(1);
     }
-    if status == 1 && obj.unit_repair {
-        //449815..44994A: scan contacts in slot order, raw GetCoords 3D
-        //distance <64 (no Building foundation discount), then NEED_MOVE.
+    // `0x00449817..0x00449833`: UnitRepair, UnitReload or Bunker
+    // (`+0x16A9/+0x16AA/+0x16AB`) takes the contact arm.
+    if status == 1 && (obj.unit_repair || obj.unit_reload || obj.bunker) {
+        //449839..44994A: scan contacts in slot order, raw GetCoords 3D
+        //distance <64 (no Building foundation discount), then NEED_MOVE;
+        //on ROGER queue Repair and return 1 with no Scenario draw.
         let contacts: Vec<_> = sim
             .substrate
             .entities
@@ -809,7 +809,7 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
                 contact,
                 crate::sim::radio::RadioMessage::NeedToMove,
                 crate::sim::radio::RadioPayload::default(),
-                Some(rules),
+                rules,
                 ctx.effects,
             ) == crate::sim::radio::RadioResponse::Roger
             {
@@ -822,6 +822,34 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
                 );
                 return 1;
             }
+        }
+    }
+    // `0x00449970..0x004499B5`, reached from every status: a UnitReload
+    // type in radio contact (`0x0065AE30`, any slot filled) asks its first
+    // contact QUERY_RELOADED 0x1D (vt+0x274, `0x0065ACB0`: slot 0 only, 0
+    // when it is empty); unless that is ROGER it sends NEED_TO_MOVE 0x13 the
+    // same way, and on ROGER queues Repair without Commence (vt+0x1E8). It
+    // falls through to the Rate tail and its draw either way.
+    if obj.unit_reload
+        && sim
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| !entity.radio_contacts.is_empty())
+    {
+        use crate::sim::radio::{RadioMessage, RadioResponse, transmit_to_contact};
+        if transmit_to_contact(sim, id, RadioMessage::QueryReloaded, rules, ctx.effects)
+            != RadioResponse::Roger
+            && transmit_to_contact(sim, id, RadioMessage::NeedToMove, rules, ctx.effects)
+                == RadioResponse::Roger
+        {
+            let _ = sim.mission_queue_exact(
+                id,
+                MissionId::from_known(MissionType::Repair),
+                0,
+                sim.session.binary_frame(),
+                &LiveReadyInputProvider { rules },
+            );
         }
     }
     // `0x004499BB..0x00449A36`: Rate for a depot, three times it otherwise.
@@ -887,13 +915,13 @@ fn attack_prelude(sim: &mut Simulation, id: u64, rules: &RuleSet) -> Option<(Tar
         let _ = sim.assign_target_represented(
             id,
             None,
-            Some(rules),
+            rules,
             None,
             crate::sim::world::FrameEffects::default(),
         );
         clear_support_count(&mut sim.substrate, id);
         //44AFA5..44AFB1: the warp-in readiness gate precedes705D60 ->6385C0.
-        sim.planning_enter_idle(id);
+        sim.planning_enter_idle(id, rules, true);
         if !waits(sim, id) {
             queue_and_commence(sim, id, MissionType::Guard, rules);
         }
@@ -929,16 +957,11 @@ fn attack_arm(
         }
         // `0x0044B0DE`: the drop tail (`+0x664 = 0` at `0x0044B0ED`).
         FireError::Ammo | FireError::Illegal | FireError::Cant | FireError::Range => {
-            let _ = sim.assign_target_represented(
-                id,
-                None,
-                Some(rules),
-                ctx.overlay_registry,
-                ctx.effects,
-            );
+            let _ =
+                sim.assign_target_represented(id, None, rules, ctx.overlay_registry, ctx.effects);
             clear_support_count(&mut sim.substrate, id);
             //44B0F3..44B0FF: retain the Wait queued by planned dispatch.
-            sim.planning_enter_idle(id);
+            sim.planning_enter_idle(id, rules, true);
             if waits(sim, id) {
                 return 1;
             }
@@ -1093,7 +1116,7 @@ fn advance_turret_anim(substrate: &mut ObjectSubstrate, id: u64) {
 
 /// BuildingClass::Update's Gattling block once the Techno AI has returned
 /// with the building alive (`0x0043FE5B`; a dead one returns from the Update),
-/// for a Gattling type only:
+/// with the generic zero-Ammo refill between its two Gattling arms:
 /// - a value above 0 advances `+0x148` (`0x0043FE69..0x0043FE88`);
 /// - unless the building's mission, else its queued one, is Attack
 ///   (`0x0043FEBE..0x0043FECB`): the idle decay
@@ -1116,7 +1139,6 @@ pub(super) fn gattling_idle(
         .entities
         .get(id)
         .and_then(|entity| interner.object_type(entity.type_ref(), rules))
-        .filter(|obj| obj.is_gattling)
     else {
         return;
     };
@@ -1124,8 +1146,20 @@ pub(super) fn gattling_idle(
     let Some(entity) = substrate.entities.get_mut(id) else {
         return;
     };
-    if entity.gattling.value() > 0 {
+    if obj.is_gattling && entity.gattling.value() > 0 {
         entity.turret_anim_frame.advance();
+    }
+    // Building Update43FE8E..43FEB8: after TechnoAI/mission and the first
+    // Gattling step, exactly zero refills from the live type. No timer or
+    // rearm mutation; Hospital/Armory retain their depleted count.
+    if !obj.hospital
+        && !obj.armory()
+        && let Some(ammo) = entity.ammo_mut()
+    {
+        ammo.refill_empty_from_type(obj.ammo);
+    }
+    if !obj.is_gattling {
+        return;
     }
     if entity.mission.effective() == MissionId::from_known(MissionType::Attack) {
         return;
@@ -1539,7 +1573,7 @@ pub(super) fn range_drop(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: Ob
     {
         return;
     }
-    let _ = sim.assign_target_represented(id, None, Some(rules), ctx.overlay_registry, ctx.effects);
+    let _ = sim.assign_target_represented(id, None, rules, ctx.overlay_registry, ctx.effects);
 }
 
 impl Simulation {
@@ -1548,30 +1582,15 @@ impl Simulation {
     /// not operational (vt+0x350, `0x004555D0`) takes none; any other keeps a
     /// target its slot-0 weapon cannot aim (none, or an `AA=` projectile,
     /// BulletType `+0x2A4`) or one in range of SelectWeapon's weapon
-    /// (vt+0x3AC). Other objects admit every target here.
+    /// (vt+0x3AC), including its overlay line-of-fire checks. Other objects
+    /// admit every target here.
     ///
-    /// RESIDUALS:
-    /// - InRange's line of fire reads no OverlayTypeClass table here, because
-    ///   `Simulation` holds none, so a wall between them is not seen. Trigger:
-    ///   retaliation against, or an order onto, a target behind a wall.
-    ///   Effect: the building takes a target native refuses; its next
-    ///   Mission_Attack asks GetFireError with the table and drops it, and
-    ///   the Guard visit that took it queued Attack without its
-    ///   `RandomRanged(0, 2)`. Frequency: rare. Later owner: the overlay table
-    ///   moving into `Simulation`.
-    /// - The restore after a cell target expires
-    ///   (`combat::combat_aoe::expire_cell_target_references`) holds only the
-    ///   entity store and puts the suspended target back without this
-    ///   admission. Trigger: a building whose retaliation suspended its
-    ///   mission and whose later cell target expires. Effect: a Selling,
-    ///   unpowered or out-of-range building keeps that target until its next
-    ///   Mission_Attack or range drop. Frequency: rare. Later owner: that
-    ///   restore moving onto `Simulation`.
     pub(crate) fn building_admits_target(
         &self,
         id: u64,
         requested: Option<TargetKind>,
         rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> bool {
         let Some(entity) = self.substrate.entities.get(id) else {
             return true;
@@ -1591,7 +1610,7 @@ impl Simulation {
             return true;
         }
         let weapon = select_weapon(self, rules, id, Some(target));
-        can_fire_at(self, rules, id, target, weapon, None)
+        can_fire_at(self, rules, id, target, weapon, overlay_registry)
     }
 
     /// The phase-level combat fixture's stand-in for a building's object-pass

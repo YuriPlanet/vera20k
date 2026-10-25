@@ -245,12 +245,9 @@ def generate(mode, map_prior='legacy', inputs=None):
     except Exception as exc:
         fault=dict(type=type(exc).__name__,message=str(exc),pc=f'0x{u.reg_read(UC_X86_REG_EIP):08X}',recent=list(recent),traceback=traceback.format_exc())
     return dict(schema_version=1,kind='bounded-factory-output-research',mode=mode,
-        native_sha256=native.NATIVE_SHA256,native_path=str(native.configured_gamemd()),
-        driver_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        native_path=str(native.configured_gamemd()),
         runtime=dict(python=sys.version,unicorn=__import__('unicorn').__version__),
         source_frozen=str(FROZEN),assets_reference=str(ASSETS),
-        frozen_owner_files={str(Path(m.__file__).resolve().relative_to(FROZEN)):hashlib.sha256(Path(m.__file__).read_bytes()).hexdigest()
-            for m in list(sys.modules.values()) if getattr(m,'__file__',None) and Path(m.__file__).resolve().is_relative_to(FROZEN)},
         selected_inputs=dict(construction_layers=inputs.layers,type_rows=inputs.type_rows,
             death_layers=inputs.death_layers,engineer_layers=inputs.engineer_layers,
             scenario_projection=inputs.death_scenario_projection,native_code_sections=inputs.code_identity),

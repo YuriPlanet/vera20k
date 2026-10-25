@@ -1,5 +1,4 @@
 {
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "row": {
     "after_anim": {
       "anim_count": 0,
@@ -1226,7 +1225,6 @@
       },
       "warhead": "HE"
     },
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "raw_rng_words": [
       {
         "frame": 1,

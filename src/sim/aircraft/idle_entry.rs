@@ -60,11 +60,10 @@
 //! Dock and playfield gates with each dock answer. `idle_entry_tests`
 //! replays every row through [`enter_idle_mode`].
 //!
-//! Not kept: Mission_Attack's state 10 clears `+0x6D5` before the call and
-//! sets it after (`0x00418C9B`, `0x00418D00`). Its one reader, Aircraft
-//! vt+0x430 (`0x0041B9E0`), gates TechnoClass::Enter_Idle_Mode's
-//! planning-path arrival (`0x00709A6B` -> `0x006385C0`), which needs a
-//! waypoint-planning token (`0x00705D20`) VERA never has.
+//! Mission_Attack's state 10 clears `+0x6D5` around its call
+//! ([`enter_idle_mode_after_attack`]). Its one reader, Aircraft vt+0x430
+//! (`0x0041B9E0`), gates TechnoClass::Enter_Idle_Mode's planning-path
+//! arrival (`0x00709A6B` -> `0x006385C0`).
 
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -344,6 +343,34 @@ pub(crate) fn enter_idle_mode_for(
     registry: Option<&OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
+    enter_idle_mode_with(sim, id, rules, registry, frame_effects, true);
+}
+
+/// Mission_Attack state 10's Enter_Idle_Mode (`0x00418CFA`): the state clears
+/// Aircraft `+0x6D5` before it (`0x00418C9B`) and sets it again after
+/// (`0x00418D00`). The constructor writes 1 (`0x00413D81`) and no other code
+/// clears it, so this call alone sees it clear: its planning-path arrival
+/// (Aircraft vt+0x430 `0x0041B9E0`, [`Simulation::planning_enter_idle`])
+/// starts no node.
+pub(crate) fn enter_idle_mode_after_attack(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    registry: Option<&OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+) {
+    enter_idle_mode_with(sim, id, rules, registry, frame_effects, false);
+}
+
+/// `planning_arrival` is Aircraft `+0x6D5` for this call.
+fn enter_idle_mode_with(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    registry: Option<&OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+    planning_arrival: bool,
+) {
     #[cfg(any(test, feature = "test-support"))]
     if RECORDED_CALLS
         .with(|calls| calls.get().map(|n| calls.set(Some(n + 1))))
@@ -354,7 +381,7 @@ pub(crate) fn enter_idle_mode_for(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
-    let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
+    let Some(object) = sim.entity_object_type(entity, rules) else {
         return;
     };
     let landing = super::landing_base::landing_base(
@@ -362,7 +389,7 @@ pub(crate) fn enter_idle_mode_for(
         &sim.substrate.entities,
         Some((rules, &sim.interner)),
     );
-    let landed = sim.entity_display_layer(id, Some(rules)) == Some(DisplayLayer::GROUND)
+    let landed = sim.entity_display_layer(id, rules) == Some(DisplayLayer::GROUND)
         || crate::sim::movement::air_movement::current_fly_height(
             entity,
             sim.resolved_terrain.as_ref(),
@@ -398,6 +425,7 @@ pub(crate) fn enter_idle_mode_for(
             rules,
             registry,
             frame_effects,
+            planning_arrival,
         },
     );
 }
@@ -408,6 +436,8 @@ struct WorldIdle<'a> {
     rules: &'a RuleSet,
     registry: Option<&'a OverlayTypeRegistry>,
     frame_effects: FrameEffects<'a>,
+    /// Aircraft `+0x6D5` ([`enter_idle_mode_after_attack`]).
+    planning_arrival: bool,
 }
 
 impl WorldIdle<'_> {
@@ -436,21 +466,13 @@ impl IdleHost for WorldIdle<'_> {
 
     fn restore(&mut self) -> MissionId {
         self.sim
-            .mission_restore_represented(
-                self.id,
-                Some(self.rules),
-                self.registry,
-                self.frame_effects,
-            )
+            .mission_restore_represented(self.id, self.rules, self.registry, self.frame_effects)
             .expect("Restore setters accept a live aircraft's archived Target and NavCom");
         self.entity().mission.current()
     }
 
-    /// No aircraft Patrol handler is ported, so nothing holds its
-    /// Mission+0xBC; the latch is the aircraft leaf's.
     fn restart_patrol(&mut self) {
-        let entity = self.sim.substrate.entities.get_mut(self.id).unwrap();
-        entity.mission_leaf.set_aircraft_action_latch(false);
+        super::restart_patrol(self.sim.substrate.entities.get_mut(self.id).unwrap());
     }
 
     fn commence(&mut self) {
@@ -462,8 +484,13 @@ impl IdleHost for WorldIdle<'_> {
     }
 
     fn foot_enter_idle(&mut self) -> bool {
-        self.sim
-            .foot_enter_idle_base(self.id, Some(self.rules), self.registry, self.frame_effects)
+        self.sim.foot_enter_idle_base_with(
+            self.id,
+            self.rules,
+            self.registry,
+            self.frame_effects,
+            self.planning_arrival,
+        )
     }
 
     fn team(&mut self) -> bool {
@@ -481,7 +508,7 @@ impl IdleHost for WorldIdle<'_> {
 
     fn leave_team(&mut self) {
         self.sim
-            .leave_team(self.id, false, Some(self.rules), self.frame_effects);
+            .leave_team(self.id, false, self.rules, self.frame_effects);
     }
 
     fn target(&mut self) -> bool {
@@ -502,13 +529,7 @@ impl IdleHost for WorldIdle<'_> {
 
     fn clear_target(&mut self) {
         self.sim
-            .assign_target_represented(
-                self.id,
-                None,
-                Some(self.rules),
-                None,
-                FrameEffects::default(),
-            )
+            .assign_target_represented(self.id, None, self.rules, None, FrameEffects::default())
             .expect("idle-mode aircraft");
     }
 
@@ -528,7 +549,7 @@ impl IdleHost for WorldIdle<'_> {
             dock,
             RadioMessage::Hello,
             RadioPayload::default(),
-            Some(self.rules),
+            self.rules,
             self.frame_effects,
         ) == RadioResponse::Roger
     }

@@ -1,5 +1,4 @@
 {
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "rows": [
     {
       "after_anim": {
@@ -1189,7 +1188,6 @@
         "warhead": "HE"
       },
       "name": "rise_live",
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "raw_rng_words": [
         {
           "frame": 1,
@@ -3078,7 +3076,6 @@
         "warhead": "HE"
       },
       "name": "rise_clear",
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "raw_rng_words": [
         {
           "frame": 32,
@@ -4964,7 +4961,6 @@
         "warhead": "HE"
       },
       "name": "band_live",
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "raw_rng_words": [
         {
           "frame": 32,
@@ -6910,7 +6906,6 @@
         "warhead": "HE"
       },
       "name": "band_clear16",
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "raw_rng_words": [
         {
           "frame": 34,
@@ -8693,7 +8688,6 @@
         "warhead": "HE"
       },
       "name": "band_clear16_repair24",
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "raw_rng_words": [
         {
           "frame": 26,

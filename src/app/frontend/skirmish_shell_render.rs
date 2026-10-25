@@ -25,7 +25,9 @@ pub(crate) use saved_games::{family_saved_game_overlays, render_saved_game_shell
 mod launcher_options;
 pub(crate) use launcher_options::render_launcher_options;
 mod modals;
+mod network_failure;
 pub(crate) use modals::render_saved_game_loading;
+pub(crate) use network_failure::render_network_failure;
 mod preview;
 mod text;
 
@@ -67,9 +69,9 @@ use crate::app::loading::init::MapMenuEntry;
 use crate::map::preview::PreviewSourceBounds;
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
-use crate::render::shell_text::ShellTextDraw;
 #[cfg(test)]
 use crate::render::shell_text::ShellAlign;
+use crate::render::shell_text::ShellTextDraw;
 use crate::render::shell_transition_pass::ShellRenderTarget;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::rules::color_scheme::ColorSchemeEntry;
@@ -451,33 +453,6 @@ fn build_skirmish_shell_instances(
     instances
 }
 
-fn apply_owner_draw_button_paint_state(
-    last_painted_pressed_button: &mut Option<OwnerDrawButton>,
-    pressed: Option<OwnerDrawButton>,
-    mode: ShellRenderMode,
-) -> bool {
-    if mode == ShellRenderMode::TransitionPreview {
-        return false;
-    }
-    let play_sound = pressed.is_some() && last_painted_pressed_button.is_none();
-    *last_painted_pressed_button = pressed;
-    play_sound
-}
-
-fn update_owner_draw_button_paint_sound(state: &mut AppState, mode: ShellRenderMode) {
-    let pressed = state
-        .frontend
-        .skirmish_shell_state
-        .pressed_owner_draw_button;
-    if apply_owner_draw_button_paint_state(
-        &mut state.frontend.skirmish_shell_last_painted_pressed_button,
-        pressed,
-        mode,
-    ) {
-        crate::app::App::play_skirmish_shell_generic_click_sound(state);
-    }
-}
-
 pub(crate) fn render_skirmish_shell(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
@@ -598,13 +573,6 @@ fn render_skirmish_shell_with_atlas(
     // dialog's own surface (`0x00607EC8`, `0x00607EF1` with record `+0xD5`),
     // so no right-panel child shows while either slide runs.
     let sliding = wave.is_some();
-    // No pressed-button click is painted while a slide draws the frames.
-    let paint_mode = if leaving {
-        ShellRenderMode::TransitionPreview
-    } else {
-        mode
-    };
-    update_owner_draw_button_paint_sound(state, paint_mode);
     // `0x6B`'s and `0x105`'s heading and status line, revealed from the
     // entry slide's end.
     let chooser_statics = match (
@@ -931,6 +899,7 @@ fn render_skirmish_shell_with_atlas(
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
+        multiview_mask: None,
     });
     state.renderer.batch_renderer.draw_with_buffer_passthrough(
         &mut pass,
@@ -1055,6 +1024,7 @@ fn clear_shell_target(
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
+        multiview_mask: None,
     });
 }
 
@@ -1161,39 +1131,6 @@ mod tests {
     fn preview_backdrop_sits_behind_fitted_preview_surface() {
         const { assert!(SHELL_PREVIEW_BACKDROP_DEPTH > SHELL_PREVIEW_SURFACE_DEPTH) };
         const { assert!(SHELL_PREVIEW_BACKDROP_DEPTH < 0.00080) };
-    }
-
-    #[test]
-    fn transition_preview_suppresses_owner_draw_paint_side_effects() {
-        let mut last = None;
-        let play_sound = apply_owner_draw_button_paint_state(
-            &mut last,
-            Some(OwnerDrawButton::StartGame0x617),
-            ShellRenderMode::TransitionPreview,
-        );
-
-        assert!(!play_sound);
-        assert_eq!(last, None);
-    }
-
-    #[test]
-    fn visible_render_updates_owner_draw_paint_state_once() {
-        let mut last = None;
-        let play_sound = apply_owner_draw_button_paint_state(
-            &mut last,
-            Some(OwnerDrawButton::StartGame0x617),
-            ShellRenderMode::Visible,
-        );
-        assert!(play_sound);
-        assert_eq!(last, Some(OwnerDrawButton::StartGame0x617));
-
-        let play_sound = apply_owner_draw_button_paint_state(
-            &mut last,
-            Some(OwnerDrawButton::StartGame0x617),
-            ShellRenderMode::Visible,
-        );
-        assert!(!play_sound);
-        assert_eq!(last, Some(OwnerDrawButton::StartGame0x617));
     }
 
     #[test]
@@ -2009,6 +1946,7 @@ mod wol_my_info;
 mod wol_options;
 mod wol_page;
 mod wol_persona;
+mod wol_quick_match;
 pub(crate) use lan_lobby::render_lan_lobby;
 pub(crate) use wol_buddy::paint_wol_buddy_children;
 pub(crate) use wol_lobby::{WolLobbyPaint, paint_wol_lobby_children, paint_wol_lobby_popup};
@@ -2020,7 +1958,10 @@ pub(crate) use wol_page::{
     paint_wol_verify,
 };
 pub(crate) use wol_persona::{paint_wol_auto_login_children, paint_wol_locale_children};
+pub(crate) use wol_quick_match::paint_wol_quick_match_children;
+mod coop_score;
 mod multiplayer_setup;
+pub(crate) use coop_score::render_coop_score;
 pub(crate) use keyboard::render_keyboard_shell;
 pub(crate) use multiplayer_setup::render_multiplayer_setup;
 pub(crate) use network_options::render_network_options;

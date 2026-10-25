@@ -7,13 +7,15 @@ Unicorn versions, substitutions and the payload hash.
 
 ```sh
 python -m tools.voxel_oracle.building_barrel --check
+python -m tools.voxel_oracle.building_barrel --raster --check
 python -m tools.voxel_oracle.barrel_pitch --check
 ```
 
 These are component comparisons. They establish the original filename and slot
 control flow, integer frame/cache selection, submission order and matrices on the
-supplied boundaries. They do not compare native VXL/HVA decoding, raster output,
-cache storage, game scheduling or a complete live match. The existing
+supplied boundaries. The draw corpus does not compare native VXL/HVA decoding,
+raster output, cache storage, game scheduling or a complete live match; the
+[stock gun rasters](#stock-gun-rasters) below add the raster. The existing
 `barrel_pitch` oracle remains the owner of shared unit-pitch/offset comparison;
 this fixture imports its camera and facing setup rather than reproducing it.
 
@@ -69,7 +71,8 @@ matrix product execute. The cell lookup supplies a cell with top 7. Native
 `Techno::DrawVoxel` (`0x706640`, vtable `+0x444`) is intercepted at entry to record
 its ten arguments, including final matrix and per-part cache owner. The point is
 fixture `[100,200]` plus fixture `TurretAnimX/Y=[3,-60]`, hence `[103,140]` for every
-submission. This does not establish any later raster-origin correction.
+submission. The [stock gun rasters](#stock-gun-rasters) follow that point to the
+blit; no later correction applies.
 
 With a native turret VXL (`+0xB8`) present:
 
@@ -100,6 +103,39 @@ negated Y rotation (`0x43E1CB..0x43E1F4`, barrel-only `0x43E4F9..0x43E51F`).
 The 56 cases include fractional/negative recoil, signed frame remainder, offset
 boundaries -9/-8/-7 and7/8/9, pitch, 32 facing centers and VPL absence. Matrix bits
 are recorded before rasterization; matching them does not certify pixel parity.
+
+## Stock gun rasters
+
+`--raster` writes `building_gun_raster.json`. It takes the nine stock gun images
+(GTGCANTUR, GTGCANBARL, FLAKTUR, SMINTUR, SAM, LASER, YAGGUN, OUTP, CAHEAD) from
+the configured install's `ra2md.mix -> localmd.mix`, then `ra2.mix -> local.mix`.
+For each of eight facings, plus the Grand Cannon barrel raised one step, it runs the
+draw above and passes each submitted matrix to the shared
+[raster owner](raster.py). That executes `706ED0`'s Render core through `754510`.
+Each row keeps the six rect words, the crop's SHA-256, lit count and lit bounds,
+with asset identities but no asset bytes. All 80 rows are recoil-free, TurretOffset 0,
+HVA frame 0 submissions with zero matrix translation.
+
+The crop is what both blits draw, at the submitted point plus `rect[0..1]`:
+
+- Cache miss: `706ED0` adds the rect origin to the point (`0x007071CB..0x007071E2`)
+  and blits `rect[2..5]` of the shared raster surface (`753C70`) through `4AF2A0`
+  (`0x00707235`).
+- Cache store: `6C89E0` writes the record's x/y/width/height from rect words
+  0/1/4/5 (`0x006C8A16..0x006C8A34`) and encodes rows from the crop's top-left
+  (`0x006C8A3C`).
+- Cache hit: `707480` adds the record x/y to the point (`0x007076A2..0x007076CE`)
+  before `437A10` (`0x00707736`).
+
+These three blits are instruction readings; the corpus executes the raster only.
+
+`app::presentation::instances::shp::building_voxel_tests::retail_building_guns_draw_the_native_crop_at_the_native_origin`
+loads the same files through the production asset owner and checks their
+identities. Stock ART leaves `TurretOffset` unset on all eight buildings. Each row's
+production atlas sprite must equal the native crop and rect, and the production
+emitter must place it at `[103,140] + rect[0..1]`. Lighting pages are inside that
+crop hash; palette conversion, the RLE blit, cache lifetime and surface pixels
+are not compared.
 
 ## Barrel elevation lifecycle boundaries
 

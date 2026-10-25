@@ -25,12 +25,8 @@
 //! `psychic_reveal_tests.rs`; RevealArea's walk and house gate against
 //! `tools/spatial_oracle/reveal_area.py` in `vision/reveal_area_tests.rs`.
 //!
-//! RESIDUALS:
-//! - A negative `PsychicRevealRadius=` indexes before RevealArea's count
-//!   table natively; VERA reveals nothing. No retail value is negative.
-//! - The activate sound plays at the cell's ground-level centre (the launch
-//!   event carries the cell); native's coordinate has the cell's height.
-//!   Presentation only.
+//! RESIDUAL: a negative `PsychicRevealRadius=` indexes before RevealArea's
+//! count table natively; VERA reveals nothing. No retail value is negative.
 //!
 //! Ledger: no Scenario draws, timer writes or detach calls.
 //!
@@ -97,7 +93,7 @@ pub fn launch(
         .clamp(0, i32::from(u16::MAX)) as u16;
     #[cfg(any(test, feature = "test-support"))]
     observe(Observed::RevealArea(coord, radius));
-    let config = sim.sight_reveal_config(Some(rules));
+    let config = sim.sight_reveal_config(rules);
     let viewers = vision::direct_reveal_viewers(
         &sim.fog,
         sim.house_alliances.as_map(),
@@ -119,11 +115,12 @@ pub fn launch(
             sim.session.current_house(),
         );
     }
+    // `0x006CD717..0x006CD737`, `0x006CD7A1..0x006CD7BF`: the cue plays at
+    // the cell's GetCoords, the reveal's own centre.
     sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
-        rx: target_rx,
-        ry: target_ry,
+        world: ground.into(),
     });
     true
 }

@@ -332,18 +332,125 @@ class CacheTests(unittest.TestCase):
         self.assertEqual(intact['state'], 'under_budget', intact)
         self.assertTrue(first.exists() and second.exists())
 
-    def test_recent_newest_session_yields_only_to_a_short_reserve(self):
-        now = time.time()
-        older = self.write('debug/incremental/crate-123/s-old/object.o', age=now - 86400)
-        recent = self.write('debug/incremental/crate-123/s-new/object.o', age=now - 60)
-        idle = self.write('debug/incremental/crate-456/s-idle/object.o',
-                          age=now - cache.ACTIVE_SESSION_SECONDS - 60)
+    def used(self, profile, seconds_ago, *, checkout=None, target=None):
+        """Register a run of `profile` that long ago, as cargo_run does around Cargo."""
+        with patch.object(cache.time, 'time', return_value=time.time() - seconds_ago):
+            cache.register_locked(checkout or self.root, self.store, target or self.target, profile=profile)
+
+    def worktree(self, name):
+        """Another live checkout of this repository and its owned cache directory."""
+        if subprocess.run(['git', '-C', str(self.root), 'rev-parse', '-q', '--verify', 'HEAD'],
+                          capture_output=True).returncode:
+            subprocess.run(['git', '-C', str(self.root), '-c', 'user.name=Test', '-c',
+                            'user.email=test@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'initial'],
+                           check=True)
+        checkout = self.root / 'worktrees' / name
+        subprocess.run(['git', '-C', str(self.root), 'worktree', 'add', '-q', '--detach', str(checkout)],
+                       check=True)
+        target = cargo_run.owned_target(checkout, cargo_run.build_store(checkout)[1])
+        target.mkdir(parents=True)
+        return checkout, target
+
+    def sessions(self, target, profile):
+        """The newest finalized session of two crates in one cache profile."""
+        return [self.put(target, f'{profile}/incremental/{crate}/s-final/object.o')
+                for crate in ('crate-1', 'crate-2')]
+
+    def test_budgets_evict_idle_profiles_whole_and_least_recently_used_first(self):
+        hour = cache.ACTIVE_PROFILE_SECONDS
+        sessions = {profile: self.sessions(self.target, profile) for profile in ('fast', 'debug', 'release')}
+        self.used('fast', 3 * hour)
+        self.used('debug', 2 * hour)
+        self.used('release', 60)
+        size = cache._allocated(sessions['fast'][0].stat())
+        # One session over the budget takes the least recently used profile whole.
+        result = self.trim(cache.CachePolicy(5 * size, 1 << 40, 0))
+        self.assertEqual(set(result['removed_files']), set(map(str, sessions['fast'])), result)
+        self.assertEqual(result['evicted_profiles'], [str(self.target / 'fast')], result)
+        # No budget takes the working set of a profile used within the window.
         result = self.trim(cache.CachePolicy(0, 0, 0))
-        self.assertEqual(set(result['removed_files']), {str(older), str(idle)}, result)
-        self.assertTrue(recent.exists())
+        self.assertEqual(set(result['removed_files']), set(map(str, sessions['debug'])), result)
+        self.assertTrue(all(path.exists() for path in sessions['release']))
+        self.assertGreater(result['unmet_targets']['incremental_bytes'], 0)
+
+    def test_other_caches_are_ranked_by_their_registered_runs(self):
+        hour = cache.ACTIVE_PROFILE_SECONDS
+        sessions = {}
+        for name, ago in (('newer', 2 * hour), ('older', 3 * hour)):
+            checkout, target = self.worktree(name)
+            sessions[name] = self.sessions(target, 'debug')
+            self.used('debug', ago, checkout=checkout, target=target)
+        sessions['current'] = self.sessions(self.target, 'debug')
+        self.used('debug', 60)
+        size = cache._allocated(sessions['current'][0].stat())
+        result = self.trim(cache.CachePolicy(5 * size, 1 << 40, 0))
+        self.assertEqual(set(result['removed_files']), set(map(str, sessions['older'])), result)
+        self.assertTrue(all(path.exists() for path in sessions['newer'] + sessions['current']))
+
+    def test_short_reserve_evicts_whole_profiles_least_recently_used_first(self):
+        sessions = {profile: self.sessions(self.target, profile) for profile in ('fast', 'debug')}
+        self.used('fast', 120)
+        self.used('debug', 60)
+        size = cache._allocated(sessions['fast'][0].stat())
         with patch.object(cache.shutil, 'disk_usage', return_value=SimpleNamespace(free=100)):
-            result = self.trim(cache.CachePolicy(1 << 40, 1 << 40, 200, 0))
-        self.assertEqual(result['removed_files'], [str(recent)], result)
+            intact = self.trim(cache.CachePolicy(0, 0, 100))
+            # The first removal restores the reserve; the rest of its profile goes too.
+            plan = self.trim(cache.CachePolicy(1 << 40, 1 << 40, 100 + size, 0), dry_run=True)
+        self.assertEqual(intact['removed_files'], [], intact)
+        self.assertEqual(set(plan['selected_files']), set(map(str, sessions['fast'])), plan)
+        self.assertEqual(plan['evicted_profiles'], [str(self.target / 'fast')], plan)
+        self.assertEqual(plan['profile_last_use'][str(self.target / 'debug')],
+                         json.loads((self.store / 'cache-roots.json').read_text())['roots'][
+                             str(self.target)]['profile_use_unix']['debug'])
+
+    def test_disposable_files_of_active_profiles_go_before_any_working_set(self):
+        previous = self.write('debug/incremental/crate-1/s-previous/object.o', age=100)
+        current = self.write('debug/incremental/crate-1/s-current/object.o', age=200)
+        orphan = self.write('debug/deps/orphan.rcgu.o', age=300)
+        idle = self.write('fast/incremental/crate-2/s-final/object.o', age=50)
+        self.used('fast', 3 * cache.ACTIVE_PROFILE_SECONDS)
+        self.used('debug', 60)
+        size = cache._allocated(idle.stat())
+        with patch.object(cache.shutil, 'disk_usage', return_value=SimpleNamespace(free=100)):
+            plan = self.trim(cache.CachePolicy(1 << 40, 1 << 40, 100 + 2 * size, 0), dry_run=True)
+        self.assertEqual(plan['selected_files'], [str(previous), str(orphan)], plan)
+        self.assertEqual(plan['evicted_profiles'], [], plan)
+        self.assertTrue(current.exists() and idle.exists())
+
+    def test_a_working_session_never_makes_the_finalized_one_disposable(self):
+        # rustc starts from the newest finalized session; a stopped build's
+        # working session beside it is newer but is never reused.
+        finalized = self.write('debug/incremental/crate-1/s-final/object.o', age=100)
+        working = self.write('debug/incremental/crate-1/s-next-working/object.o', age=200)
+        self.used('debug', 60)
+        result = self.trim()
+        self.assertEqual(result['removed_files'], [], result)
+        self.assertTrue(finalized.exists() and working.exists())
+
+    def test_thin_lto_sessions_are_complete_rustc_sessions(self):
+        session = 'fast/incremental/vera20k-1/s-final/'
+        files = [self.write(session + name) for name in (
+            'cgu.o', 'cgu.pre-lto.bc', 'thin-lto-past-keys.bin', 'dep-graph.bin', 'query-cache.bin',
+            'work-products.bin', 'metadata.rmeta')]
+        unknown = [self.write('fast/incremental/vera20k-2/s-final/' + name) for name in ('cgu.o', 'cgu.ll')]
+        result = self.trim()
+        self.assertEqual(set(result['removed_files']), set(map(str, files)), result)
+        self.assertTrue(all(path.exists() for path in unknown))
+
+    def test_registry_records_when_each_profile_last_ran(self):
+        entry = lambda: json.loads((self.store / 'cache-roots.json').read_text())['roots'][str(self.target)]
+        for when, profile in ((1000.0, 'debug'), (2000.0, 'fast'), (3000.0, None)):
+            with patch.object(cache.time, 'time', return_value=when):
+                cache.register_locked(self.root, self.store, self.target, profile=profile)
+        self.assertEqual(entry()['profile_use_unix'], {'debug': 1000.0, 'fast': 2000.0})
+        self.assertEqual(entry()['last_use_unix'], 3000.0)
+        # Use times only rank caches: a malformed record starts over, never blocks a build.
+        registry = json.loads((self.store / 'cache-roots.json').read_text())
+        registry['roots'][str(self.target)]['profile_use_unix'] = ['debug']
+        (self.store / 'cache-roots.json').write_text(json.dumps(registry))
+        with patch.object(cache.time, 'time', return_value=4000.0):
+            cache.register_locked(self.root, self.store, self.target, profile='release')
+        self.assertEqual(entry()['profile_use_unix'], {'release': 4000.0})
 
     def abandoned(self, name='gone-checkout', *, idle=cache.ABANDONED_SECONDS + 60, namespace=None):
         """The registered cache of a checkout path that does not exist."""
@@ -693,6 +800,36 @@ class CacheTests(unittest.TestCase):
         self.assertTrue(result['notes'])
         self.assertEqual(cargo_run.resolve_binary(self.root, 'game'), (None, None))
 
+    def test_a_runner_record_blocks_a_pass_only_when_rewritten(self):
+        game = self.write('debug/game', content=b'\xcf\xfa\xed\xfegame')
+        cargo_run.publish_binaries(self.store, self.namespace, self.target, {game})
+        cache.register_locked(self.root, self.store, self.target)
+        records = [self.store / 'cache-roots.json', self.store / 'latest' / f'{self.namespace}.json']
+        orphans = [self.write(f'debug/deps/orphan-{index}.rcgu.o') for index in range(2)]
+        touched = []
+        def touch(binary):
+            # Ctime alone, as macOS changes it some time after each rewrite.
+            for record in records:
+                before = record.stat()
+                os.chmod(record, before.st_mode & 0o7777)
+                touched.append(record.stat().st_ctime_ns != before.st_ctime_ns)
+            return set()
+        result = self.trim(dependencies=touch)
+        if not any(touched):
+            self.skipTest('chmod leaves ctime unchanged on this platform')
+        self.assertEqual(result['state'], 'trimmed', result)
+        self.assertEqual(set(result['removed_files']), set(map(str, orphans)))
+        orphan = self.write('debug/deps/orphan.rcgu.o')
+        game.write_bytes(b'\xcf\xfa\xed\xfegame rebuilt')  # Inspected again.
+        rewrites = []
+        def rewrite(binary):
+            rewrites.append(cache.register_locked(self.root, self.store, self.target))
+            return set()
+        result = self.trim(dependencies=rewrite)
+        self.assert_blocked(result, orphan)
+        self.assertTrue(rewrites)
+        self.assertIn(str(records[0]), result['errors'][0])
+
     def test_candidate_mutation_during_dependency_inspection_blocks_deletion(self):
         self.label()
         orphan = self.write('debug/deps/orphan.rcgu.o')
@@ -751,7 +888,9 @@ class CacheTests(unittest.TestCase):
         self.assertTrue(cold.exists())
         # This is the owner's post-Cargo registration API: an exact emitted
         # executable proves the cross profile; a directory name alone does not.
-        with cargo_run.build_lock(self.store / 'cargo.lock', 0):
+        # The run is older than the active window, so its working set may go too.
+        with cargo_run.build_lock(self.store / 'cargo.lock', 0), \
+             patch.object(cache.time, 'time', return_value=time.time() - cache.ACTIVE_PROFILE_SECONDS - 60):
             cache.register_locked(self.root, self.store, self.target, artifacts={binary})
         recorded = self.trim()
         self.assertEqual(set(recorded['removed_files']), {str(cross_object), str(cold), str(hot)}, recorded)
@@ -986,6 +1125,33 @@ class CacheTests(unittest.TestCase):
         self.assertEqual(automatic(), 4)
         shutil.rmtree(binary.parents[1])  # Retiring the label unprotects its object.
         self.assertEqual(automatic(), 5)
+        self.assertFalse(kept.exists())
+
+    def futile_working_set(self):
+        """An active profile's working set, and a pass the budgets alone made futile."""
+        kept = self.write('debug/incremental/crate-1/s-final/object.o')
+        self.used('debug', 60)
+        receipts = self.store / 'retention'
+        policy = cache.CachePolicy(0, 0, 4096)
+        def automatic(free):
+            with patch.object(cache.shutil, 'disk_usage', return_value=SimpleNamespace(free=free)), \
+                 redirect_stderr(io.StringIO()):
+                cache.automatic_locked(self.root, self.store, policy, [self.target])
+            return len(list(receipts.glob('*.json')))
+        self.assertEqual(automatic(4096), 1)
+        self.assertEqual(automatic(4096), 1)
+        self.assertTrue(kept.exists())
+        return kept, automatic
+
+    def test_a_pass_the_reserve_did_not_start_never_skips_a_short_reserve(self):
+        kept, automatic = self.futile_working_set()
+        self.assertEqual(automatic(4095), 2)
+        self.assertFalse(kept.exists())
+
+    def test_a_profile_going_idle_makes_a_futile_pass_worth_repeating(self):
+        kept, automatic = self.futile_working_set()
+        with patch.object(cache.time, 'time', return_value=time.time() + cache.ACTIVE_PROFILE_SECONDS):
+            self.assertEqual(automatic(4096), 2)
         self.assertFalse(kept.exists())
 
     def older_executable(self):

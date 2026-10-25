@@ -21,16 +21,22 @@
 //! - Part of the app layer — may depend on everything.
 
 #[cfg(test)]
+mod anim_translucency_gpu_tests;
+#[cfg(test)]
 mod bridge_shadow_gpu_tests;
 mod build_instances;
 #[cfg(test)]
 mod building_bracket_gpu_tests;
 #[cfg(test)]
 mod building_shadow_gpu_tests;
+#[cfg(test)]
+mod building_slot_native_gpu_tests;
 mod draw_passes;
 #[cfg(test)]
 mod magnetic_wave_gpu_tests;
 mod object_extras;
+#[cfg(test)]
+mod parachute_native_gpu_tests;
 #[cfg(test)]
 mod parachute_owner_color_gpu_tests;
 #[cfg(test)]
@@ -44,6 +50,9 @@ pub(crate) use draw_passes::{draw_bridge_shadows, draw_pooled_cell_bodies};
 pub(crate) mod draw_plan_lowering;
 mod merge_passes;
 pub(crate) mod minimap_transaction;
+mod object_stages;
+#[cfg(test)]
+mod object_stages_gpu_tests;
 
 use anyhow::Result;
 #[cfg(feature = "telemetry-dashboard")]
@@ -164,8 +173,14 @@ pub(crate) fn render_game(
     let render_started = state.diag.telemetry_observer.active().then(Instant::now);
     // RadarClass::Draw 653100 consumes timeGetTime buckets. The frame owner
     // supplies wall time normally, or the map diagnostic's recorded OS input.
-    if let Some(radar) = state.match_state.match_presentation.radar_anim.as_mut() {
-        radar.tick(&state.renderer.gpu, times.radar_ms);
+    let housing_settled = state
+        .match_state
+        .match_presentation
+        .radar_anim
+        .as_mut()
+        .is_some_and(|radar| radar.tick(&state.renderer.gpu, times.radar_ms));
+    if housing_settled {
+        crate::app::radar_movie::end_radar_sound_loop(state);
     }
     let (sw, sh) = (state.render_width() as f32, state.render_height() as f32);
 
@@ -186,6 +201,8 @@ pub(crate) fn render_game(
     );
 
     let local_owner = preferred_local_owner_name(state);
+    let translucent_fog = state.translucent_fog_enabled();
+    let sandbox = state.match_state.sandbox_full_visibility;
     // Effective viewport in world pixels — zoom shrinks what's visible.
     let z = state.match_state.input.zoom_level;
     let vsw = sw / z;
@@ -252,6 +269,19 @@ pub(crate) fn render_game(
     {
         let view = rt.view();
         let owner_id = view.interner().get(owner).unwrap_or_default();
+        // Rendering may perform native Dummy lookups without changing the
+        // simulation's retained Dummy coordinate or its fog cache bytes.
+        let cells = view
+            .resolved_terrain()
+            .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+        let fog_options = crate::render::shroud_buffer::FogDrawOptions {
+            fog_of_war: view.session().game_options().fog_of_war,
+            current_house_defeated: view
+                .session()
+                .current_house()
+                .and_then(|house| view.houses().get(&house))
+                .is_some_and(|house| house.is_defeated()),
+        };
         shroud_buf.rebuild_if_needed(
             &state.renderer.gpu.device,
             &state.renderer.gpu.queue,
@@ -262,6 +292,8 @@ pub(crate) fn render_game(
             rw,
             rh,
             state.match_state.input.zoom_level,
+            cells.as_ref(),
+            fog_options,
         );
     }
 
@@ -447,11 +479,38 @@ pub(crate) fn render_game(
         state.match_state.sim_runtime.as_mut(),
         &mut state.frontend.frontend_main_rng,
     );
+    let sim = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|runtime| runtime.view().simulation());
+    let viewer = local_owner
+        .as_deref()
+        .and_then(|name| sim?.interner().get(name));
+    // Use the same authoritative cell visibility as object admission. The
+    // shaded screen A plane can include edge blends and height projection;
+    // its brightness is not a separate visibility decision.
+    let effect_hidden = |x: i32, y: i32| {
+        let (rx, ry) = crate::app::presentation::instances::lepton_cell(x, y);
+        translucent_fog
+            && !sandbox
+            && sim.is_some_and(|sim| {
+                crate::app::presentation::instances::translucent_fog_conceals_cell(
+                    viewer,
+                    Some(sim.fog()),
+                    rx,
+                    ry,
+                    sim.session().game_options().fog_of_war,
+                )
+            })
+    };
     let bolt_lines = {
         presentation.lasers.composite(&mut main);
         presentation
             .electric_bolts
-            .composite(viewport, palette, &mut main)
+            .composite(viewport, palette, &mut main, |birth| {
+                !effect_hidden(birth.to.x, birth.to.y)
+            })
     };
     // Tactical6D48F1 follows Laser/Bolt Main requests and interleaves the
     // opaque action stores with each owning Airstrike designation. Uploads
@@ -462,29 +521,49 @@ pub(crate) fn render_game(
         &main,
         viewport,
     );
-    let sim = state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .map(|runtime| runtime.view().simulation());
-    let segments = presentation.line_trails.composite(|id| {
-        let sim = sim?;
-        sim.projectiles().get(id).map(|bullet| {
-            presentation
-                .interpolation
-                .sample_point(
-                    crate::app::presentation::interpolation::PointKind::Bullet,
-                    id,
-                    crate::app::presentation::interpolation::PointPose::bullet(bullet),
-                    sim.session().binary_frame(),
-                )
-                .projectile_coord()
-        })
-    });
+    let segments = presentation.line_trails.composite(
+        |id| {
+            let sim = sim?;
+            let bullet = sim.projectiles().get(id)?;
+            Some(
+                presentation
+                    .interpolation
+                    .sample_point(
+                        crate::app::presentation::interpolation::PointKind::Bullet,
+                        id,
+                        crate::app::presentation::interpolation::PointPose::bullet(bullet),
+                        sim.session().binary_frame(),
+                    )
+                    .projectile_coord(),
+            )
+        },
+        |owner, coord| {
+            if !translucent_fog || sandbox {
+                return true;
+            }
+            let Some(sim) = sim else {
+                return true;
+            };
+            if let Some(bullet) = owner.and_then(|id| sim.projectiles().get(id)) {
+                return !crate::app::presentation::instances::translucent_fog_conceals_bullet(
+                    sim,
+                    bullet,
+                    [coord.x, coord.y, coord.z],
+                    local_owner.as_deref(),
+                    viewer,
+                    sim.session().game_options().fog_of_war,
+                );
+            }
+            !effect_hidden(coord.x, coord.y)
+        },
+    );
     let frame_rate = presentation.detail.borrow().frame_rate();
-    presentation.radiation_beams.composite(frame_rate, viewport);
+    presentation
+        .radiation_beams
+        .composite(frame_rate, viewport, |birth| {
+            !effect_hidden(birth.to.x, birth.to.y)
+        });
     let shroud = presentation.shroud_buffer.as_ref();
-    let sandbox = state.match_state.sandbox_full_visibility;
     let mut alpha = |point: [i32; 2]| {
         if sandbox {
             127
@@ -504,10 +583,14 @@ pub(crate) fn render_game(
     let terrain = &mut state.renderer.terrain_draw_renderer;
     let gpu = &state.renderer.gpu;
     terrain.begin_surface_lines();
+    let laser_draws = presentation
+        .lasers
+        .draws()
+        .filter(|draw| !effect_hidden(draw.to.x, draw.to.y));
     let surface_effects = terrain.prepare_surface_lines(
         &gpu.device,
         &gpu.queue,
-        presentation.lasers.draws(),
+        laser_draws,
         bolt_lines
             .iter()
             .copied()
@@ -600,6 +683,7 @@ pub(crate) fn render_game(
             cell_body_draws: &world.cell_body_draws,
             bridge_shadows: &world.bridge_body_shadow,
             object_layers: &world.object_layers,
+            fogged_objects: &world.fogged_objects,
             building_status_text: &world.building_status_text,
             surface_effects,
             tactical_lines,
@@ -682,6 +766,11 @@ fn upload_to_gpu(
     let (super_timer_fill, super_timer_text) =
         crate::app::presentation::super_timers::build_super_timer_instances(state);
 
+    // GScreenClass_DrawText's Phobos build description, the tactical view's
+    // top-right identity box; empty outside Phobos builds.
+    let (build_text_fill, build_text_text) =
+        crate::app::presentation::build_text::build_instances(state);
+
     let pool: &mut InstanceBufferPool = &mut state.renderer.instance_pool;
 
     // Debug overlays
@@ -700,6 +789,11 @@ fn upload_to_gpu(
         &state.renderer.gpu,
         "building_status_text",
         &world.building_status_text.instances,
+    );
+    pool.upload(
+        &state.renderer.gpu,
+        "fogged_objects",
+        &world.fogged_objects.instances,
     );
     for (layer, objects) in world.object_layers.iter().enumerate() {
         pool.upload_page(
@@ -728,11 +822,18 @@ fn upload_to_gpu(
     pool.upload(&state.renderer.gpu, "cell_sparkles", &world.cell_sparkles);
     pool.upload(&state.renderer.gpu, "super_timer_fill", &super_timer_fill);
     pool.upload(&state.renderer.gpu, "super_timer_text", &super_timer_text);
+    pool.upload(&state.renderer.gpu, "build_text_fill", &build_text_fill);
+    pool.upload(&state.renderer.gpu, "build_text_text", &build_text_text);
 
     // UI overlays
+    for (house, beacons) in ui.beacons.iter().enumerate() {
+        pool.upload_page(&state.renderer.gpu, "beacons", house, beacons);
+    }
     pool.upload(&state.renderer.gpu, "drag", &ui.drag);
     pool.upload(&state.renderer.gpu, "software_cursor", &ui.software_cursor);
     pool.upload(&state.renderer.gpu, "placement", &ui.placement);
+    #[cfg(feature = "phobos")]
+    pool.upload(&state.renderer.gpu, "placement_ghost", &ui.placement_ghost);
     pool.upload(
         &state.renderer.gpu,
         "factory_rally_first",

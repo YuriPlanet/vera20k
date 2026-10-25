@@ -132,7 +132,7 @@ impl Replay {
                 .assign_target_represented(
                     scene.miner,
                     Some(TargetKind::Entity(first)),
-                    Some(&scene.rules),
+                    &scene.rules,
                     None,
                     crate::sim::world::FrameEffects::default(),
                 )
@@ -372,7 +372,7 @@ impl Replay {
                     s.sim.apply_command_with_overlays(
                         "Americans",
                         &command,
-                        Some(&s.rules),
+                        &s.rules,
                         Some(registry()),
                         crate::sim::world::FrameEffects::default()
                     ),
@@ -402,13 +402,11 @@ impl Replay {
                     })
                     .unwrap_or_default();
                 crate::sim::movement::approach_oracle_seam::install_approach_returns(&declared);
-                let config = crate::sim::miner::MinerConfig::from_rules(&s.rules);
                 super::dispatch_foot_mission(
                     &mut s.sim,
                     s.miner,
                     &s.rules,
                     super::ObjectAiCtx {
-                        miner_config: Some(&config),
                         overlay_registry: Some(registry()),
                         ..Default::default()
                     },
@@ -428,7 +426,7 @@ impl Replay {
                     &mut s.sim,
                     s.miner,
                     crate::sim::radio::RadioMessage::Break,
-                    Some(&s.rules),
+                    &s.rules,
                     crate::sim::world::FrameEffects::default(),
                 );
                 assert_eq!(
@@ -449,7 +447,7 @@ impl Replay {
                 let skip_land = input["args"].as_array().is_some_and(|a| a[0] != 0);
                 let result = s.sim.unit_enter_idle_mode(
                     s.miner,
-                    Some(&s.rules),
+                    &s.rules,
                     skip_land,
                     crate::sim::world::FrameEffects::default(),
                 );
@@ -490,7 +488,7 @@ impl Replay {
                     } else {
                         PointerExpiryControl::Uninit
                     },
-                    Some(&s.rules),
+                    &s.rules,
                     None,
                     crate::sim::world::FrameEffects::default(),
                 );

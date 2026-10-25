@@ -418,13 +418,11 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
         ),
         "tick" => {
             s.sim.mission_host_promote(s.miner, now, &s.rules);
-            let config = crate::sim::miner::MinerConfig::from_rules(&s.rules);
             super::dispatch_foot_mission(
                 &mut s.sim,
                 s.miner,
                 &s.rules,
                 super::ObjectAiCtx {
-                    miner_config: Some(&config),
                     overlay_registry: Some(registry()),
                     ..Default::default()
                 },
@@ -462,10 +460,13 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
             "{context}: delay"
         ),
         "find_bay" => {
+            let type_ref = s.sim.substrate.entities.get(s.miner).unwrap().type_ref();
+            let dock_types = &s.sim.interner.object_type(type_ref, &s.rules).unwrap().dock;
             let found = crate::sim::miner::miner_system::find_docking_bay(
                 &mut s.sim,
                 &s.rules,
                 s.miner,
+                dock_types,
                 op["wide"] == 1,
                 op["bypass"] == 1,
                 crate::sim::world::FrameEffects::default(),
@@ -496,7 +497,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                     target,
                     message,
                     RadioPayload::default(),
-                    Some(&s.rules),
+                    &s.rules,
                     crate::sim::world::FrameEffects::default()
                 )
                 .code() as i32,
@@ -539,7 +540,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 &mut s.sim,
                 s.other,
                 RadioMessage::Break,
-                Some(&s.rules),
+                &s.rules,
                 crate::sim::world::FrameEffects::default(),
             );
         }
@@ -580,7 +581,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
             );
             s.sim.set_unit_null_destination(
                 s.miner,
-                Some(&s.rules),
+                &s.rules,
                 Some(registry()),
                 crate::sim::world::FrameEffects::default(),
             );
@@ -588,7 +589,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 .per_cell_process(
                     s.miner,
                     crate::sim::movement::PerCellReason::Arrival,
-                    Some(&s.rules),
+                    &s.rules,
                     Some(registry()),
                     crate::sim::world::FrameEffects::default(),
                 )
@@ -622,7 +623,7 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                 false,
                 Some(owner),
                 PointerExpiryControl::Uninit,
-                Some(&s.rules),
+                &s.rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             );

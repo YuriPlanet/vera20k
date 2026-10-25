@@ -23,8 +23,18 @@ PRODUCERS = tuple('tools.projectile_oracle.' + name for name in (
      'tools.spatial_oracle.magnetron_aircraft_lift',
      'tools.spatial_oracle.foot_path_window',
      'tools.spatial_oracle.captured_building_sale',
-     'tools.procedural_drawing_oracle.airstrike_beam')
+     'tools.spatial_oracle.anim_translucency',
+     'tools.spatial_oracle.building_anim_translucency',
+     'tools.spatial_oracle.building_sale_triggers',
+     'tools.spatial_oracle.campaign_hunt',
+     'tools.spatial_oracle.building_anim_detail',
+     'tools.spatial_oracle.squid_grapple_light',
+     'tools.spatial_oracle.flaming_guy',
+     'tools.procedural_drawing_oracle.airstrike_beam',
+     'tools.storage_oracle.ini_crc')
 HELPERS = ('tools.native_slope', 'tools.projectile_oracle.collision_fixture',
+           'tools.spatial_oracle.building_anim_translucency_setup',
+           'tools.spatial_oracle.building_anim_detail_setup',
            'tools.palette_oracle.check')
 
 
@@ -58,7 +68,6 @@ with ExitStack() as stack:
         guards.extend(stack.enter_context(patch.object(owner, name,
                       side_effect=RuntimeError('forbidden cache operation: ' + name)))
                       for owner, name in ((native_oracle, 'configured_gamemd'),
-                                          (native_oracle, 'image_sha256'),
                                           (Path, 'read_bytes'),
                                           (pickle, 'load'), (pickle, 'loads')))
     if module == 'tools.control_group_text_oracle':
@@ -91,6 +100,33 @@ with ExitStack() as stack:
 
 
 class OracleLifecycleTests(unittest.TestCase):
+    def test_named_asset_inputs_exclude_unrequested_files_and_directories(self):
+        from unittest.mock import patch
+        from tools.rules_oracle.bridge_anim_inputs import read_asset_inputs
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            selected = root / 'dragon.shp'
+            selected.write_bytes(b'named input')
+            (root / 'audio.bag').write_bytes(b'unrequested')
+            (root / 'private.json').write_bytes(b'unrequested')
+            (root / 'subdirectory').mkdir()
+            original = Path.read_bytes
+            reads = []
+            def guarded(path):
+                self.assertEqual(path, selected)
+                reads.append(path.name)
+                return original(path)
+            with patch.object(Path, 'read_bytes', guarded):
+                self.assertEqual(read_asset_inputs(root, ()), {})
+                self.assertEqual(read_asset_inputs(root, ('DRAGON.SHP',)), {'DRAGON.SHP': b'named input'})
+            self.assertEqual(reads, ['dragon.shp'])
+
+    def test_airburst_retained_import_and_help_are_inert(self):
+        for operation in ('import', 'help'):
+            for optimized in (False, True):
+                with self.subTest(operation=operation, optimized=optimized):
+                    self.check_lifecycle(operation, 'tools.projectile_oracle.airburst_retained', optimized)
+
     def check_lifecycle(self, operation, module, optimized, *, arguments=(), environment=None):
         command = [sys.executable] + (['-O'] if optimized else [])
         child_environment = absent_retail_environment()
@@ -120,6 +156,62 @@ class OracleLifecycleTests(unittest.TestCase):
             for module in PRODUCERS:
                 with self.subTest(module=module, optimized=optimized):
                     self.check_lifecycle('help', module, optimized)
+
+    def test_anim_translucency_import_and_help_are_inert(self):
+        for operation in ('import', 'help'):
+            for optimized in (False, True):
+                with self.subTest(operation=operation, optimized=optimized):
+                    self.check_lifecycle(operation, 'tools.spatial_oracle.anim_translucency',
+                                         optimized)
+
+    def test_flaming_guy_import_and_help_are_inert(self):
+        for operation in ('import', 'help'):
+            for optimized in (False, True):
+                with self.subTest(operation=operation, optimized=optimized):
+                    self.check_lifecycle(operation, 'tools.spatial_oracle.flaming_guy',
+                                         optimized)
+
+    def test_building_anim_translucency_import_and_help_are_inert(self):
+        for operation in ('import', 'help'):
+            for optimized in (False, True):
+                with self.subTest(operation=operation, optimized=optimized):
+                    self.check_lifecycle(operation,
+                                         'tools.spatial_oracle.building_anim_translucency',
+                                         optimized)
+        for optimized in (False, True):
+            with self.subTest(helper=True, optimized=optimized):
+                self.check_lifecycle('import',
+                                     'tools.spatial_oracle.building_anim_translucency_setup',
+                                     optimized)
+
+    def test_building_anim_detail_import_and_help_are_inert(self):
+        for operation in ('import', 'help'):
+            for optimized in (False, True):
+                with self.subTest(operation=operation, optimized=optimized):
+                    self.check_lifecycle(operation,
+                                         'tools.spatial_oracle.building_anim_detail',
+                                         optimized)
+        for optimized in (False, True):
+            with self.subTest(helper=True, optimized=optimized):
+                self.check_lifecycle('import',
+                                     'tools.spatial_oracle.building_anim_detail_setup',
+                                     optimized)
+
+    def test_squid_grapple_light_import_and_help_are_inert(self):
+        for operation in ('import', 'help'):
+            for optimized in (False, True):
+                with self.subTest(operation=operation, optimized=optimized):
+                    self.check_lifecycle(operation,
+                                         'tools.spatial_oracle.squid_grapple_light',
+                                         optimized)
+
+    def test_building_flh_direct_import_and_help_are_inert(self):
+        for operation in ('import', 'help'):
+            for optimized in (False, True):
+                with self.subTest(operation=operation, optimized=optimized):
+                    self.check_lifecycle(operation,
+                                         'tools.spatial_oracle.building_flh_direct',
+                                         optimized)
 
     def test_explosion_rejects_retired_cache_before_inputs_deserialization_or_publication(self):
         module = 'tools.spatial_oracle.trigger_action_values'

@@ -7,13 +7,13 @@
 //!
 //! The app owns diagnostic samples and log delivery; gameplay state is read-only.
 
-use crate::app::AppState;
+use crate::app::{AppState, BUILD_STAMP};
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::SpeedType;
 use crate::sim::movement::motion_query;
 use crate::sim::telemetry::{
     DebugPanel, EntityDesc, LandRow, MinerDebug, PathStep, ProcessStats, SelectedDebug,
-    TELEMETRY_MAX_NAME_BYTES, TelemetrySnapshot,
+    SessionContext, TELEMETRY_MAX_NAME_BYTES, TelemetrySnapshot,
 };
 use crate::sim::world::Simulation;
 
@@ -110,10 +110,14 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
         .game_options()
         .game_speed
         .clamp(0, 6) as u8;
-    let mut timing = state
-        .match_state
-        .telemetry_timing
-        .summarize(state.platform.frame_pacer.budget_ms(speed));
+    let mut timing =
+        state
+            .match_state
+            .telemetry_timing
+            .summarize(state.platform.frame_pacer.budget_ms(
+                speed,
+                crate::app::match_runtime::network_match::frame_budget(state),
+            ));
     // Each rate keeps its own owner: FPS is the render loop's, tick_hz is the
     // committed-tick meter's.
     timing.fps = state.diag.frame_timer.fps();
@@ -122,6 +126,23 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
         .telemetry_tick_rate
         .rate(std::time::Instant::now());
     snapshot.timing = Some(timing);
+    let sim = &runtime.simulation;
+    snapshot.session = Some(SessionContext {
+        map_name: bounded_text(sim.session().map_name(), TELEMETRY_MAX_NAME_BYTES),
+        // The app's GameMode holder, not the world's copy read a second way.
+        game_mode: state.match_state.session_mode().as_str().to_owned(),
+        game_speed: speed,
+        local_owner: state
+            .match_state
+            .local_player_owner()
+            .map(|owner| bounded_text(owner, TELEMETRY_MAX_NAME_BYTES)),
+        local_outcome: sim
+            .session()
+            .current_house()
+            .and_then(|owner| sim.ready_outcome_for_owner(owner))
+            .map(|outcome| outcome.kind),
+        build_stamp: BUILD_STAMP.to_owned(),
+    });
     snapshot.debug = Some(capture_debug(state, &runtime.simulation));
     snapshot.process = Some(capture_process(state));
     // Mean per observed frame, accumulated only while a client is watching.
@@ -407,8 +428,8 @@ fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
                 .interner()
                 .object_type(entity.type_ref(), rules)
                 .map(|obj| obj.foundation.clone())
-                .unwrap_or_else(|| "1x1".to_string());
-            let (fw, fh) = crate::rules::foundation::foundation_dimensions(&foundation);
+                .unwrap_or_default();
+            let (fw, fh) = foundation.dimensions();
             let (ex, ey) = (entity.position.rx(), entity.position.ry());
             if cursor_rx >= ex
                 && u32::from(cursor_rx) < u32::from(ex) + u32::from(fw)
@@ -421,7 +442,9 @@ fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
                         sim.interner().resolve(entity.type_ref()),
                         TELEMETRY_MAX_NAME_BYTES
                     ),
-                    bounded_text(&foundation, TELEMETRY_MAX_NAME_BYTES),
+                    // The typed Foundation owner carries its name through
+                    // Display; the capture keeps the name it always showed.
+                    bounded_text(&foundation.to_string(), TELEMETRY_MAX_NAME_BYTES),
                     ex,
                     ey,
                     bounded_text(

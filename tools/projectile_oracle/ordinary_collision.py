@@ -7,10 +7,9 @@ execute the original matrix helpers with supplied matrix bytes. This oracle does
 not certify the upstream launch/trajectory or downstream damage mechanisms.
 """
 
-import hashlib
 import itertools
 from pathlib import Path
-from tools.native_oracle import NATIVE_FPCW, image_bytes, finish_vectors, provenance
+from tools.native_oracle import NATIVE_FPCW, finish_vectors, provenance
 from tools.native_slope import slope_matrices
 from .collision_fixture import admission, reflection, nearest, final_handoff, geometry
 
@@ -34,7 +33,7 @@ def generate():
         for slope, matrix in enumerate(matrices)
         for velocity in [(20, 3, -6), (-100, 71, -41), (0, 0, -6)]
         for elasticity in (0.0, 0.75, 1.0)]
-    output = dict(sha256=hashlib.sha256(image_bytes()).hexdigest(),
+    output = dict(
         fpcw=NATIVE_FPCW, instruction_range=['004677D3', '00467B7A'], admissions=rows,
         slope_matrices=matrices, reflections=reflections,
         geometry=[geometry(case,matrices) for case in [

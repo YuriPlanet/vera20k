@@ -124,7 +124,7 @@ pub(crate) fn can_place_building_at(
     let speed = building_speed_type(ty);
     let mut refused = false;
     let mut admitted = false;
-    for (dx, dy) in crate::rules::foundation::foundation_cell_offsets(&ty.foundation) {
+    for (dx, dy) in ty.foundation.cell_offsets() {
         let cell = cells.lookup((origin.0.wrapping_add(dx), origin.1.wrapping_add(dy)));
         if is_clear_to_build(
             sim,
@@ -279,7 +279,7 @@ pub(crate) fn flush_for_placement(
         .as_deref()
         .is_some_and(|name| name.eq_ignore_ascii_case(&ty.id));
     let mut scattered = false;
-    for (dx, dy) in crate::rules::foundation::foundation_cell_offsets(&ty.foundation) {
+    for (dx, dy) in ty.foundation.cell_offsets() {
         let cell = (origin.0.wrapping_add(dx), origin.1.wrapping_add(dy));
         if !sim.map_cell_in_bounds(cell) {
             continue;

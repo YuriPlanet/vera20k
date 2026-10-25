@@ -874,3 +874,49 @@ fn original_complete_recalculate_preserves_order_and_adjusts_each_strip_scroll()
         assert_eq!(&strips.scroll_rows()[..3], &[0; 3]);
     }
 }
+
+#[test]
+fn scroll_arrows_queue_a_page_and_roll_one_row_per_visit() {
+    // Sidebar Action 0x006A7780 queues; StripClass::AI 0x006A8B30 rolls.
+    let mut interner = StringInterner::new();
+    let entries = (0..11)
+        .map(|i| Cameo {
+            id: CameoId::Object(interner.intern(&format!("U{i}"))),
+            tab: SidebarTab::Vehicle,
+            available: true,
+            key: CameoKey::Techno {
+                own_side: true,
+                considered_aircraft: false,
+                naval: false,
+                tech_level: 1,
+                cost: 100,
+                name: format!("U{i}"),
+            },
+        })
+        .collect();
+    let mut strips = CameoStrips::from_retained([vec![], vec![], vec![], entries], [0; 4]);
+    let tab = SidebarTab::Vehicle;
+    // Six rows, four visible: the last TopRow is 2.
+    assert!(
+        !strips.queue_page_scroll(tab, false, 4),
+        "R-UP at the top scolds"
+    );
+    assert!(strips.queue_page_scroll(tab, true, 4));
+    let mut rows = Vec::new();
+    for _ in 0..4 {
+        strips.step_pending_scroll(4);
+        rows.push(strips.scroll_row(tab));
+    }
+    assert_eq!(rows, [1, 2, 2, 2], "one row per visit, stopping at the end");
+    assert!(
+        !strips.has_pending_scroll(),
+        "the blocked remainder is dropped"
+    );
+    assert!(
+        !strips.queue_page_scroll(tab, true, 4),
+        "R-DN at the end scolds"
+    );
+    assert!(strips.queue_page_scroll(tab, false, 4));
+    strips.step_pending_scroll(4);
+    assert_eq!(strips.scroll_row(tab), 1);
+}

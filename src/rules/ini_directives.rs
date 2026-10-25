@@ -8,6 +8,8 @@ use std::collections::HashSet;
 const ARES: &str = "#include";
 const PHOBOS: &str = "$Include";
 const INHERITS: &str = "$Inherits";
+// Extension safety policy: depth alone cannot bound a wide/repeated DAG.
+const MAX_INCLUDE_REFERENCES: usize = 1024;
 
 #[derive(Clone, Copy, Debug)]
 pub struct DirectiveOptions {
@@ -31,6 +33,7 @@ pub enum DiagnosticKind {
     InvalidDepth,
     IncludeCycle,
     IncludeDepthLimit,
+    IncludeWorkLimit,
     IncludeMissing,
     IncludeLoadFailed,
     InheritanceCycle,
@@ -72,6 +75,7 @@ struct Traversal<'a> {
     path: Vec<String>,
     identities: Vec<String>,
     diagnostics: Vec<DirectiveDiagnostic>,
+    include_references: usize,
 }
 
 impl Traversal<'_> {
@@ -175,6 +179,7 @@ pub fn process_directives(
         path: Vec::new(),
         identities: Vec::new(),
         diagnostics: Vec::new(),
+        include_references: 0,
     };
     if options.max_depth == 0 {
         return Err(DirectiveDiagnostic {
@@ -218,6 +223,7 @@ fn expand_includes(
         return Ok(ini);
     };
     let current_file_wins = section.name == PHOBOS;
+    let remaining = MAX_INCLUDE_REFERENCES - traversal.include_references;
     let mut includes: Vec<_> = section
         .keys()
         .filter_map(|key| {
@@ -229,7 +235,19 @@ fn expand_includes(
                 )
             })
         })
+        .take(remaining + 1)
         .collect();
+    if includes.len() > remaining {
+        return Err(DirectiveDiagnostic {
+            kind: DiagnosticKind::IncludeWorkLimit,
+            source_name: traversal.source.into(),
+            reference_chain: traversal.path.clone(),
+            message: format!("Maximum total include references {MAX_INCLUDE_REFERENCES} exceeded"),
+        });
+    }
+    // Reserve the complete list before loading children, including repeated
+    // references. Exhaustion always fails rather than publishing a partial INI.
+    traversal.include_references += includes.len();
     includes.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
     let mut merged = IniFile::empty();
     if !current_file_wins {
@@ -304,7 +322,7 @@ fn inherit(
         // parent's partially resolved branch. The first parent supplying a
         // key wins; child-authored values always win, even for later parents.
         let parent = ini.section(&parent).unwrap().clone();
-        let index = ini.first_section[name];
+        let index = ini.section_position(name).unwrap();
         let child = &mut ini.sections[index];
         for key in &parent.key_order {
             if !matches!(key.as_str(), INHERITS | PHOBOS | ARES) && !child.is_present(key) {

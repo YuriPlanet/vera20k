@@ -228,10 +228,10 @@ fn simulation_fixture(row: &Value) -> (Simulation, RuleSet) {
         input["cloning"].as_bool().unwrap_or(false)
     )))
     .unwrap();
-    let foundation = format!(
+    let foundation = crate::rules::foundation::Foundation::from(format!(
         "{}x{}",
         row["foundation_size"][0], row["foundation_size"][1]
-    );
+    ));
     (
         simulation_fixture_for_type(row, "FACTORY", &foundation, "Americans", 10),
         rules,
@@ -241,7 +241,7 @@ fn simulation_fixture(row: &Value) -> (Simulation, RuleSet) {
 fn simulation_fixture_for_type(
     row: &Value,
     type_name: &str,
-    foundation: &str,
+    foundation: &crate::rules::foundation::Foundation,
     owner: &str,
     first_id: u64,
 ) -> Simulation {
@@ -267,7 +267,7 @@ fn simulation_fixture_for_type(
         .set_object_alive_for_test(input["alive"].as_bool().unwrap_or(true));
     entity
         .type_facts
-        .set_foundation_for_test(foundation.to_owned());
+        .set_foundation_for_test(foundation.clone());
     let [tx, ty] = input.get("target_cell").map(point).unwrap_or([14, 20]);
     if !input["no_target"].as_bool().unwrap_or(false) {
         if let Some(target) = input.get("target_object") {
@@ -356,7 +356,6 @@ fn native_rally_gates_foundation_ground_bridge_and_object_target_through_product
 #[test]
 fn retail_gapile_house_color_and_production_crop_match_original_rally_and_no_target() {
     use crate::rules::color_scheme::scheme_entry_for_priority;
-    use crate::rules::foundation::{foundation_dimensions, foundation_id};
     use crate::rules::house_colors::HouseColorIndex;
 
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
@@ -373,10 +372,12 @@ fn retail_gapile_house_color_and_production_crop_match_original_rally_and_no_tar
         serde_json::json!(object.factory_rtti()),
         stock["result"]["factory"]
     );
-    assert_eq!(
-        serde_json::json!(foundation_id(&object.foundation)),
-        stock["result"]["foundation"]
-    );
+    let selector = match &object.foundation {
+        crate::rules::foundation::Foundation::Stock(index) => *index,
+        #[cfg(feature = "ares")]
+        _ => panic!("retail fixture must retain a stock foundation"),
+    };
+    assert_eq!(serde_json::json!(selector), stock["result"]["foundation"]);
     assert_eq!(
         serde_json::json!(u8::from(object.unit_repair)),
         stock["result"]["unit_repair"]
@@ -403,7 +404,7 @@ fn retail_gapile_house_color_and_production_crop_match_original_rally_and_no_tar
         assert_eq!(input["foundation"], stock["result"]["foundation"]);
         assert_eq!(input["unit_repair"], serde_json::json!(object.unit_repair));
         assert_eq!(input["cloning"], serde_json::json!(object.cloning));
-        let (width, height) = foundation_dimensions(&object.foundation);
+        let (width, height) = object.foundation.dimensions();
         assert_eq!(
             [i32::from(width), i32::from(height)],
             point(&row["foundation_size"])
@@ -576,6 +577,7 @@ fn production_rally_gpu_matches_native_pixels_and_preserves_depth() {
                             ),
                             timestamp_writes: None,
                             occlusion_query_set: None,
+                            multiview_mask: None,
                         });
                         batch.draw_with_buffer_ui_passthrough(
                             &mut pass,
@@ -712,6 +714,7 @@ fn production_rally_workload_timing() {
                     end_of_pass_write_index: Some(1),
                 }),
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_scissor_rect(
                 clip[0] as u32,

@@ -559,16 +559,64 @@ def generate():
     children = relayout(0xBB, 800, 600)
     return dict(source="unicorn/gamemd.exe", chat=[chat_case(*row) for row in rows],
                 layout_800=children, loading_wait_progress=loading_wait_progress_cases(), starting_mcv_no_match=starting_mcv_no_match_cases(), timing=timing_cases(), host_seed=host_seed_cases(), assignments=assignment_cases(), observer_starts=observer_start_cases(), cooperative=cooperative_cases(),
-                setup_layouts=[dict(dialog=d,width=w,height=h,children=relayout(d,w,h)) for d in (0xBC,0xBD) for w,h in ((800,600),(640,480))],
+                setup_layouts=[dict(dialog=d,width=w,height=h,children=relayout(d,w,h)) for d in (0xBC,0xBD,0xBC6) for w,h in ((800,600),(640,480))],
                 setup_help=[dict(dialog=d,control=c,key=help_label(d,c)) for d in (0xBC,0xBD) for c in
-                            (0x411,0x6A1,0x6A2,0x6A3,0x76D,0x529,0x402,0x54F,0x3E8,0x54E,0x69A,0x69D,0x54D,0x540,0x53F,0x468,0x5A8,0x6D2,0x6DA,2,(0x588 if d==0xBC else 0x59F))],
+                            (0x411,0x6A1,0x6A2,0x6A3,0x76D,0x529,0x402,0x54F,0x3E8,0x54E,0x69A,0x69D,0x54D,0x540,0x53F,0x468,0x5A8,0x6D2,0x6DA,2,(0x588 if d==0xBC else 0x59F))]
+                          + [dict(dialog=0xBC6,control=c,key=help_label(0xBC6,c)) for c in
+                             (0x6D1,0x5C0,0x3EA,0x781,0x783,0x785,0x787,0x789,0x412,0x6A1,0x6DA,0x522,0x6A3,0x732,0x540,0x53F,0x468,0x5A8,0x77E,0x6D2)],
                 help=[dict(control=control, key=help_label(0xBB, control)) for control in
                       (0x6CC, 0x6CD, 0x6CE, 0x5C0, 0x540, 0x541, 0x549, 0x53E, 0x53F, 0x75F, 0x760)])
 
 
 if __name__ == "__main__":
+    import sys
+    if "--messages" in sys.argv:
+        from tools.storage_oracle import lan_messages
+        finish_vectors(lan_messages.generate, Path(__file__).with_name("lan_messages.json"),
+                       provenance=lan_messages.metadata,
+                       argv=[arg for arg in sys.argv[1:] if arg != "--messages"],
+                       source_paths=lan_messages.SOURCE_PATHS)
+        raise SystemExit
+    if "--wait-bars" in sys.argv:
+        from tools.storage_oracle import lan_wait_bars
+        finish_vectors(lan_wait_bars.generate, Path(__file__).with_name("lan_wait_bars.json"),
+                       provenance=lan_wait_bars.metadata,
+                       argv=[arg for arg in sys.argv[1:] if arg != "--wait-bars"],
+                       source_paths=lan_wait_bars.SOURCE_PATHS)
+        raise SystemExit
+    if "--ingame-messages" in sys.argv:
+        from tools.storage_oracle import lan_ingame_messages
+        finish_vectors(lan_ingame_messages.generate, Path(__file__).with_name("lan_ingame_messages.json"),
+                       provenance=lan_ingame_messages.metadata,
+                       argv=[arg for arg in sys.argv[1:] if arg != "--ingame-messages"],
+                       source_paths=lan_ingame_messages.SOURCE_PATHS)
+        raise SystemExit
+    if "--manager-timing" in sys.argv:
+        from tools.storage_oracle import lan_global
+        finish_vectors(lan_global.manager_timing_controls, Path(__file__).with_name("lan_manager_timing.json"),
+                       provenance=lan_global.manager_metadata,
+                       argv=[arg for arg in sys.argv[1:] if arg != "--manager-timing"],
+                       source_paths={"global": Path(lan_global.__file__),
+                                     "native_oracle": Path(__import__("tools.native_oracle", fromlist=["x"]).__file__),
+                                     "shared_machine": Path(__import__("tools.storage_oracle.shell_relayout", fromlist=["x"]).__file__)})
+        raise SystemExit
+    if "--global-connection" in sys.argv:
+        from tools.storage_oracle import lan_global
+        finish_vectors(lan_global.generate, Path(__file__).with_name("lan_global.json"),
+                       provenance=lan_global.metadata,
+                       argv=[arg for arg in sys.argv[1:] if arg != "--global-connection"],
+                       source_paths={"global": Path(lan_global.__file__),
+                                     "native_oracle": Path(__import__("tools.native_oracle", fromlist=["x"]).__file__),
+                                     "shared_machine": Path(__import__("tools.storage_oracle.shell_relayout", fromlist=["x"]).__file__)})
+        raise SystemExit
+    if "--event-packets" in sys.argv:
+        from tools.storage_oracle.lan_event_packets import generate as event_packets, metadata
+        finish_vectors(event_packets, Path(__file__).with_name("lan_event_packets.json"),
+                       provenance=metadata,
+                       argv=[arg for arg in sys.argv[1:] if arg != "--event-packets"])
+        raise SystemExit
     finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=lambda: provenance(
-        scope="Original host/guest LAN MaxAhead blocks 5DD48D/5DD2CD and response getters 5424C0/48BA80; BC host seed block 5DEC3B..5DEC61 (Main RNG -> CRT srand/rand), Battle assignments 69B8C0, observer starts 5D6890, Cooperative AI preparation 5C30C0 and campaign round assignments 5C2710 with full Scenario RNG state/draw order; BB/BC/BD relayout/help and NewEdit 614B30 -> BB 5DDBD0 -> chat cap 5EDD00 -> send 5DE360",
+        scope="Original host/guest LAN MaxAhead blocks 5DD48D/5DD2CD and response getters 5424C0/48BA80; BC host seed block 5DEC3B..5DEC61 (Main RNG -> CRT srand/rand), Battle assignments 69B8C0, observer starts 5D6890, Cooperative AI preparation 5C30C0 and campaign round assignments 5C2710 with full Scenario RNG state/draw order; BB/BC/BD/BC6 relayout/help and NewEdit 614B30 -> BB 5DDBD0 -> chat cap 5EDD00 -> send 5DE360",
         assumptions=[
             "Loading wait controls execute original643C50 signed-percent updates (including regressions/upper clamp),6433D0 average and68444C..684465 completion comparison. Only643AE0 drawing is suppressed. Explicit2/8-row controls include99/100 and signed negative input; native stored doubles and branch destinations are observed, not calculated by Python.",
             "Starting-MCV no-match controls execute complete5D7030, Owner-only505310 and originalCountryName5117D0 with explicit Owner masks and Country0. Unit constructor entry is fail-closed; completeScenario RNG bytes and callback result are observed. Separate original65C7E0(0,FFFF) records the orchestrator tail5D6FFE; no constructor/RNG result is substituted.",

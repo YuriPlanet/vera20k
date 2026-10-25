@@ -89,12 +89,12 @@ fn fixture() -> Fixture {
     }
 }
 
-const SKIRMISH: DiplomacyRules = DiplomacyRules {
+const SKIRMISH: DiplomacyRules<'static> = DiplomacyRules {
     allies_allowed: true,
     quick_coop: false,
     local_inactive: false,
     game_mode_nonzero: true,
-    listeners: [true; 8],
+    listeners: &[true; 8],
 };
 
 fn rows(fixture: &Fixture, switches: DiplomacyRules) -> ResolvedRows {
@@ -119,8 +119,8 @@ fn ally(sim: &mut Simulation, asker: &str, other: &str) {
         .insert(other.to_ascii_uppercase());
 }
 
-/// Row 0 is the local player and its own slot shows House 0; Houses beyond
-/// the array or without Multiplay get no row.
+/// Row 0 is the local player and its own slot shows House 0; missing or
+/// non-Multiplay Houses get no row.
 #[test]
 fn rows_swap_the_local_player_into_row_zero_and_skip_non_multiplay_houses() {
     let fixture = fixture();
@@ -154,6 +154,59 @@ fn rows_swap_the_local_player_into_row_zero_and_skip_non_multiplay_houses() {
         [Some("frai.pcx"), Some("japi.pcx"), Some("usai.pcx")]
     );
     assert!(resolved.rows[0].as_ref().unwrap().allies.is_none());
+    let mut large = self::fixture();
+    for index in 4..32 {
+        let name = format!("Player{index}");
+        let id = large.sim.intern(&name);
+        let country = large
+            .sim
+            .intern(if index == 4 { "Neutral" } else { "Americans" });
+        let mut state = HouseState::new(id, 0, Some(country), index != 4, 0, 10);
+        state.set_ui_name_for_test(crate::sim::house_state::HouseUiName::handle(&name));
+        large.sim.houses_mut_for_test().register(state);
+        if index == 31 {
+            large
+                .sim
+                .session_mut_for_test()
+                .set_current_house_for_test(Some(id));
+        }
+    }
+    let resolved = rows(&large, SKIRMISH);
+    assert_eq!(resolved.rows.len(), 32);
+    assert_eq!(resolved.rows[0].as_ref().unwrap().name, "Player31");
+    assert!(
+        resolved.rows[31].is_some(),
+        "House0 remains reachable when local House is31"
+    );
+    assert_eq!(resolved.rows.iter().flatten().count(), 30);
+
+    // The two fixed House entries after eight players do not create a blank
+    // second page in an ordinary retail-sized match.
+    let mut ordinary = self::fixture();
+    ordinary.sim = Simulation::with_seed(1);
+    for index in 0..10 {
+        let id = ordinary.sim.intern(&format!("House{index}"));
+        let country = ordinary
+            .sim
+            .intern(if index < 8 { "Americans" } else { "Neutral" });
+        ordinary.sim.houses_mut_for_test().register(HouseState::new(
+            id,
+            0,
+            Some(country),
+            index < 8,
+            0,
+            10,
+        ));
+        if index == 7 {
+            ordinary
+                .sim
+                .session_mut_for_test()
+                .set_current_house_for_test(Some(id));
+        }
+    }
+    let resolved = rows(&ordinary, SKIRMISH);
+    assert_eq!(resolved.rows.len(), 8);
+    assert!(resolved.rows.iter().all(Option::is_some));
 }
 
 /// Colours: the House's scheme, Grey once defeated; kills are the
@@ -283,7 +336,7 @@ fn human_rows_enable_allies_until_the_local_player_is_inactive() {
     let mut listeners = [true; 8];
     listeners[index] = false;
     let muted = DiplomacyRules {
-        listeners,
+        listeners: &listeners,
         ..SKIRMISH
     };
     assert!(

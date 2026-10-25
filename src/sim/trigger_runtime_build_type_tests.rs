@@ -96,7 +96,7 @@ fn build_type_events_match_native_house_selection_persistence_and_rng() {
                 },
                 case["incoming_house"].as_u64().map(|i| houses[i as usize]),
                 &mut persistence,
-                Some(&rules),
+                &rules,
                 live,
             )
         };
@@ -220,7 +220,7 @@ fn build_type_event_latches_before_elapsed_time_as_in_native_register_history() 
                 ..Default::default()
             },
             row["repeat"].as_bool().unwrap(),
-            Some(&rules),
+            &rules,
         );
         let state = sim.trigger_runtime.trigger(live).unwrap();
         assert_eq!(result, integer(&row["result"]) != 0, "{row}");
@@ -289,7 +289,7 @@ fn building_discovery_updates_last_type_only_after_admission_outside_init() {
         } else {
             owner
         };
-        let context = UninitContext::new(Some(&rules), None);
+        let context = UninitContext::new(&rules, None);
         let returned = if integer(&row["scenario_init"]) == 2 {
             sim.with_object_placement_scope(|sim| {
                 sim.with_object_placement_scope(|sim| sim.discover_techno(id, viewer, context))
@@ -359,7 +359,7 @@ fn build_type_retail_all07_placement_reaches_house_poll_and_eva_once() {
     crate::sim::scenario_bootstrap::initialize_map_roster_houses(
         &mut sim,
         &roster,
-        Some(&rules),
+        &rules,
         Some(&map.ini),
     );
     sim.intern_rule_type_ids(&rules);
@@ -388,12 +388,12 @@ fn build_type_retail_all07_placement_reaches_house_poll_and_eva_once() {
     .unwrap();
     // Bind the original EVA operand through the ordinary definition reader.
     sim.initialize_trigger_definitions(&excerpt, &Default::default(), Some(&eva), None);
-    sim.classify_map_triggers(Some(&rules));
+    sim.classify_map_triggers(&rules);
     let tag_type = sim.trigger_runtime.definitions.tag_type(tag_id).unwrap();
     let tag = sim.shared_trigger_tag(tag_type);
     let previous = sim.houses[&house].last_built_type_index(ObjectCategory::Building);
     assert_ne!(previous, expected_index);
-    sim.raise_house_tags(house, Some(&rules), None, FrameEffects::default());
+    sim.raise_house_tags(house, &rules, None, FrameEffects::default());
     let product = sim.interner.get("GAWEAP").unwrap();
     production::complete_held_building_for_test(&mut sim, &rules, house, product);
     assert_eq!(
@@ -434,7 +434,7 @@ fn build_type_retail_all07_placement_reaches_house_poll_and_eva_once() {
     );
     for (frame, heard) in [(8, false), (149, false), (152, true), (160, true)] {
         sim.session.set_binary_frame_for_test(frame);
-        sim.raise_house_tags(house, Some(&rules), None, FrameEffects::default());
+        sim.raise_house_tags(house, &rules, None, FrameEffects::default());
         sim.flush_pending_delete();
         assert_eq!(
             sim.sound_events

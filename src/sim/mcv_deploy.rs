@@ -11,7 +11,7 @@ use crate::rules::object_type::ObjectType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
-use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement;
 use crate::sim::movement::ScatterFlags;
@@ -141,7 +141,7 @@ pub(crate) fn ai_queue_hunt(sim: &mut Simulation, id: u64, rules: &RuleSet) {
             Some(MissionType::Hunt | MissionType::Unload)
         );
     if hunts {
-        queue(sim, id, MissionType::Hunt);
+        queue(sim, id, MissionType::Hunt, rules);
     }
 }
 
@@ -238,7 +238,7 @@ pub(crate) fn try_to_deploy(
             .is_some_and(|e| e.navigation.nav_com().is_some())
     };
     let origin_of = |cell: (i16, i16)| (cell.0.wrapping_sub(1), cell.1.wrapping_sub(1));
-    sim.foot_mark_remove(id, Some(rules), registry, effects);
+    sim.foot_mark_remove(id, rules, registry, effects);
     if !has_destination(sim) {
         if crate::sim::build_site::can_place_building_at(
             sim,
@@ -250,7 +250,7 @@ pub(crate) fn try_to_deploy(
             None,
             None,
         ) {
-            sim.foot_mark_put(id, Some(rules), registry, effects);
+            sim.foot_mark_put(id, rules, registry, effects);
             return true;
         }
         // 0x007392CA..0x00739360: the first fallback site the type can stand
@@ -282,7 +282,7 @@ pub(crate) fn try_to_deploy(
             );
         }
     }
-    sim.foot_mark_put(id, Some(rules), registry, effects);
+    sim.foot_mark_put(id, rules, registry, effects);
     // 0x00739372..0x00739394: vt+0x174 Scatter(&ZeroCoord, 0, 0), the Unit
     // receiver's null arm.
     if !has_destination(sim)
@@ -327,17 +327,17 @@ pub(crate) fn is_mcv(sim: &Simulation, entity: &GameEntity, rules: &RuleSet) -> 
             })
 }
 
-pub(crate) fn queue_guard(sim: &mut Simulation, id: u64) {
-    queue(sim, id, MissionType::Guard);
+pub(crate) fn queue_guard(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    queue(sim, id, MissionType::Guard, rules);
 }
 
-fn queue(sim: &mut Simulation, id: u64, mission: MissionType) {
+fn queue(sim: &mut Simulation, id: u64, mission: MissionType, rules: &RuleSet) {
     let _ = sim.mission_queue_exact(
         id,
         MissionId::from_known(mission),
         0,
         sim.session.binary_frame(),
-        &EntityReadyInputProvider,
+        &LiveReadyInputProvider { rules },
     );
 }
 
@@ -361,7 +361,7 @@ pub(crate) fn mission_unload(
             sim,
             id,
             crate::sim::radio::RadioMessage::Break,
-            Some(rules),
+            rules,
             effects,
         );
         if let Some(e) = sim.substrate.entities.get_mut(id) {
@@ -392,7 +392,7 @@ pub(crate) fn mission_unload(
                 }
             } else {
                 sim.deploy_mcv(id, rules, registry, effects);
-                finish_initial_attempt(sim, id);
+                finish_initial_attempt(sim, id, rules);
             }
         }
         Some(2) => {
@@ -407,7 +407,7 @@ pub(crate) fn mission_unload(
             } else {
                 // 0x0073D6CA..0x0073D6DB: Enter_Idle_Mode(0, 1), then
                 // NextMission.
-                sim.unit_enter_idle_mode(id, Some(rules), false, effects);
+                sim.unit_enter_idle_mode(id, rules, false, effects);
                 let _ = sim.substrate.mission_commence_exact(id, now);
             }
         }
@@ -427,7 +427,7 @@ pub(crate) fn mission_unload(
 /// Mission_Unload state 1 after its Deploy (`0x0073DDCB..0x0073DE1E`): a
 /// pending deploy moves to state 2; otherwise a computer house in a nonzero
 /// game mode hunts and everyone else guards.
-pub(crate) fn finish_initial_attempt(sim: &mut Simulation, id: u64) {
+pub(crate) fn finish_initial_attempt(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     if let Some(e) = sim
         .substrate
         .entities
@@ -453,6 +453,7 @@ pub(crate) fn finish_initial_attempt(sim: &mut Simulation, id: u64) {
                 } else {
                     MissionType::Guard
                 },
+                rules,
             );
         }
     }

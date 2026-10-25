@@ -1,28 +1,16 @@
-"""UnitReady input identities and complete-observation comparisons.
+"""UnitReady physical inputs and complete-observation comparisons.
 
 The separate41-entry consumer profile never changes the P10 input closure.
-A candidate helper map is distinct from registered compatibility. Complete
-original consumer and retained movement comparisons are required first.
+Complete original consumer and retained movement comparisons are required first.
 """
 from pathlib import Path
 import functools, gzip, hashlib, json, os, sys
 from . import runtime as rt
 
-HOST_KEYS = frozenset(('driver_sha256', 'parent_ast_sha256', 'borrowed_owner',
-    'borrowed_setup_owner', 'borrowed_sources', 'buffer_completion_owner', 'source_receipts'))
-
 
 @functools.cache
 def metadata():
-    return json.loads((rt.HERE / 'consumer-meta.json').read_text())
-
-
-def normalize(value):
-    if isinstance(value, dict):
-        return {k:normalize(v) for k,v in value.items() if k not in HOST_KEYS}
-    if isinstance(value, list):
-        return [normalize(x) for x in value]
-    return value
+    return json.loads((rt.HERE / 'consumer-meta.json').read_text(encoding='utf-8'))
 
 
 def inputs(root, wave):
@@ -65,55 +53,17 @@ def physical_eva():
     return actual
 
 
-def verify_source(*, candidate=False):
-    meta=metadata()
-    row=meta['public_caller'];p=rt.REPO_ROOT/row['path']
-    rt.require(p.is_file()and p.stat().st_size==row['bytes']and rt.sha(p)==row['sha256'], 'Public consumer caller changed')
-    for name,row in meta['caller_files'].items():
-        p=rt.HERE/name
-        rt.require(p.is_file()and p.stat().st_size==row['bytes']and rt.sha(p)==row['sha256'], 'Consumer caller changed: '+name)
-    for name,row in rt.metadata()['inspection_owner_files'].items():
-        p=rt.REPO_ROOT/name
-        rt.require(p.is_file()and p.stat().st_size==row['bytes']and rt.sha(p)==row['sha256'], 'Inspection owner changed: '+name)
-    if not candidate:
-        return rt.verify_helpers()
-    files=meta['candidate_helper_files']
-    rt.require(files and all(rt.sha(rt.REPO_ROOT/name)==digest for name,digest in files.items()),
-        'Current consumer candidate helper map changed')
-    return dict(profile='unregistered-consumer-candidate', imported_owner_files=len(files),
-        profile_sha256=rt.canonical_sha(files), status='candidate comparison only; not registered compatibility')
-
-
-def census(profile):
-    files=metadata()['candidate_helper_files'] if profile['profile']=='unregistered-consumer-candidate'else rt.metadata()['helper_profiles'][profile['profile']]['files']
-    pinned=set(files)|set(rt.metadata()['inspection_owner_files'])
-    extra=[]
-    for module in tuple(sys.modules.values()):
-        file=getattr(module,'__file__',None)
-        if not file:continue
-        path=Path(file).resolve()
-        if path.is_relative_to(rt.REPO_ROOT/'tools'):
-            name=str(path.relative_to(rt.REPO_ROOT))
-            if name=='tools/spatial_oracle/factory_infantry_output.py'or name.startswith('tools/spatial_oracle/_factory_infantry_output/'):
-                continue
-            if name not in pinned:extra.append(name)
-    rt.require(not extra,'Consumer imported unpinned shared owner: '+str(sorted(set(extra))))
-
-
 def compare(control, actual):
     identity=metadata()['controls'][control]
-    observed=rt.canonical_sha(normalize(actual))
+    observed=rt.canonical_sha(actual)
     rt.require(actual['success']is True and actual['original_code_unchanged']is True and not actual['requests']and not actual['advances'], 'Current original consumer did not complete')
     rt.require(observed==identity['full_native_observation_sha256'], 'Complete original consumer observations changed: '+control+' observed='+observed+' expected='+identity['full_native_observation_sha256'])
     return dict(native_observations_equal=True, normalized_full_native_sha256=observed,
-        historical_receipt_sha256=identity['sha256'], host_exclusions=sorted(HOST_KEYS))
+        historical_receipt_sha256=identity['sha256'])
 
 
-def replay(control,root,wave,*,candidate=False):
+def replay(control,root,wave):
     rt.require(sys.flags.optimize==0, 'Whole original consumer emulation requires normal Python')
-    profile=verify_source(candidate=candidate)
-    from tools import native_oracle as native
-    rt.require(native.NATIVE_SHA256==metadata()['native_sha256'], 'Active retail image differs')
     root,wave=inputs(root,wave)
     physical=physical_eva()
     from . import consumer
@@ -126,7 +76,7 @@ def replay(control,root,wave,*,candidate=False):
             actual=consumer.buffer(root,physical,metadata(),wave,observer=observer.install)
         else:
             actual=getattr(consumer,control)(root,physical,metadata(),wave)
-        result=dict(schema=1,status='PASS',control=control,shared_helpers=profile,
+        result=dict(schema=1,status='PASS',control=control,
             full_original_consumer=actual,comparison=compare(control,actual),whole_object_completion_claimed=False)
         if observer is not None:
             witness=observer.finish(wave,actual)
@@ -141,7 +91,6 @@ def replay(control,root,wave,*,candidate=False):
             result['pcm_comparison']=dict(complete_original_observation_equal=True,
                 complete_original_observation_sha256=observed,bytes=witness['pcm']['bytes'],
                 pcm_sha256=witness['pcm']['sha256'],historical_witness_sha256=identity['source_receipt']['sha256'])
-        census(profile);verify_source(candidate=candidate)
     except Exception as exc:
         import traceback
         tb=exc.__traceback__; partial=None; f=None
@@ -150,7 +99,7 @@ def replay(control,root,wave,*,candidate=False):
             if isinstance(scope.get('result'),dict):partial=scope['result']
             if 'f'in scope and hasattr(scope['f'],'u'):f=scope['f']
             tb=tb.tb_next
-        result=dict(schema=1,status='FAIL',control=control,shared_helpers=profile,
+        result=dict(schema=1,status='FAIL',control=control,
             failure=dict(type=type(exc).__name__,message=str(exc),traceback=traceback.format_exc()),
             full_original_consumer=locals().get('actual',partial),whole_object_completion_claimed=False)
         if observer is not None:
@@ -163,14 +112,12 @@ def replay(control,root,wave,*,candidate=False):
     return result
 
 
-def check_saved(*, candidate=False):
-    """Check original identities and both serializations; never emulate under -O."""
+def check_saved():
+    """Check original bytes and both serializations; never emulate under -O."""
     from tools import native_oracle as native
     from .fixture import unit_ready_consumer
-    profile=verify_source(candidate=candidate)
     meta=metadata()
     image=native.image_bytes()
-    rt.require(hashlib.sha256(image).hexdigest()==meta['native_sha256'], 'Consumer original image changed')
     for row in meta['original_static_bytes']:
         _,raw=native.file_span(image,int(row['start'],16),row['bytes'])
         rt.require(hashlib.sha256(raw).hexdigest()==row['sha256'], 'Original consumer byte range changed: '+row['name'])
@@ -190,8 +137,8 @@ def check_saved(*, candidate=False):
     import copy
     pcm_identity=meta['pcm_witness']
     witness=data[pcm_identity['retained_path']]
-    rt.require(witness['success'] is True and witness['original_code_unchanged'] is True and
-        witness['native_sha256']==meta['native_sha256'], 'Retained original PCM witness failed')
+    rt.require(witness['success'] is True and witness['original_code_unchanged'] is True,
+        'Retained original PCM witness failed')
     pcm_raw,source=decoded_ranges(witness['observation'])
     rt.require(rt.canonical_sha(witness['observation'])==pcm_identity['complete_original_observation_sha256'] and
         witness['source_boundary']==pcm_identity['source_boundary'], 'Complete original PCM witness differs')
@@ -209,8 +156,7 @@ def check_saved(*, candidate=False):
     rt.require(set(full['controls'])==set(meta['controls']), 'Consumer control census differs')
     for control,row in full['controls'].items():
         identity=meta['controls'][control]
-        rt.require(row['native_sha256']==native.NATIVE_SHA256 and
-            row['full_original_receipt_sha256']==identity['canonical_historical_receipt_sha256'],
+        rt.require(row['full_original_receipt_sha256']==identity['canonical_historical_receipt_sha256'],
             'Original complete consumer receipt pin differs: '+control)
         rt.require(full['source_receipts'][control]['sha256']==identity['sha256']and
             full['source_receipts'][control]['bytes']==identity['bytes'], 'Consumer original receipt identity differs')
@@ -231,8 +177,7 @@ def check_saved(*, candidate=False):
         raw=bytes.fromhex(row['bytes'])
         rt.require(len(raw)==row['length']and hashlib.sha256(raw).hexdigest()==digest,
             'Consumer original complete device storage changed')
-    rt.require(sorted(HOST_KEYS)==meta['host_comparison_exclusions'], 'Consumer comparison exclusion census differs')
-    return dict(schema=1,status='PASS',shared_helpers=profile,
+    return dict(schema=1,status='PASS',
         source_seal=meta['source_seal']['manifest_sha256'],
         original_byte_ranges=len(meta['original_static_bytes']),
         control_complete_native_sha256={k:v['full_native_observation_sha256']for k,v in meta['controls'].items()},

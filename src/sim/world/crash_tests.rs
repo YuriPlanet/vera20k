@@ -11,6 +11,113 @@ use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::rng::SimRng;
 use crate::util::fixed_math::SimFixed;
 
+/// Supplied post-Chronosphere arrival: native Chrono7199D2..7199DF puts an
+/// ORCA at height zero and Mark(DOWN). Rules/ART stay stock; the seven Water
+/// neighbours leave the NW cell as the dying transport's only adjacent exit.
+fn retail_aircraft_receiver_scene() -> Option<(Simulation, RuleSet, u64)> {
+    let rules = crate::rules::retail_ini_fixture::retail_battle_rules()?.rules;
+    let aircraft_type = rules.object("ORCA").unwrap();
+    assert!(aircraft_type.landable && !aircraft_type.crashable);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 1);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    crate::sim::arena_fixture::flood(
+        &mut sim,
+        &rules,
+        32,
+        (14..=16).flat_map(|y| {
+            (14..=16)
+                .filter_map(move |x| (!matches!((x, y), (14, 14) | (15, 15))).then_some((x, y)))
+        }),
+    );
+    let aircraft = sim
+        .spawn_object("ORCA", "Americans", 14, 14, 0, &rules)
+        .unwrap();
+    assert!(sim.substrate.entities.get(aircraft).unwrap().is_voxel());
+    assert_eq!(
+        crate::sim::movement::air_movement::current_fly_height(
+            sim.substrate.entities.get(aircraft).unwrap(),
+            sim.resolved_terrain.as_ref(),
+        ),
+        0
+    );
+    assert_eq!(
+        sim.substrate.raw_cell_occupation.ground_bits(14, 14) & 0x40,
+        0x40
+    );
+    Some((sim, rules, aircraft))
+}
+
+/// Aircraft4166A3 UnInits before AreaDamage489AC1 advances to the next
+/// receiver. Its Cell raw CLEAR must precede Unit737F80's passenger Scatter.
+#[test]
+fn retail_landed_aircraft_clears_occupancy_before_the_next_victims_passenger_scatter() {
+    use crate::sim::combat::{RAD_NO_ATTACKER, world_receiver};
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::passenger::{BoardingArm, board_passenger};
+    use crate::sim::projectile::ProjectileCoord;
+    use crate::sim::world::FrameEffects;
+
+    let Some((mut sim, rules, aircraft)) = retail_aircraft_receiver_scene() else {
+        return;
+    };
+    let transport = sim
+        .spawn_object("HTK", "Americans", 15, 15, 0, &rules)
+        .unwrap();
+    let passenger = sim
+        .spawn_object("E1", "Americans", 17, 15, 0, &rules)
+        .unwrap();
+    assert!(board_passenger(
+        &mut sim,
+        &rules,
+        passenger,
+        transport,
+        BoardingArm::InfantryTransport,
+        None,
+        FrameEffects::default()
+    ));
+    let attacker_house = sim.interner.intern("Russians");
+    let warhead_id = sim.interner.intern("NUKE");
+    world_receiver::apply_area_damage(
+        &mut sim,
+        &rules,
+        None,
+        ProjectileCoord {
+            x: 3712,
+            y: 3712,
+            z: 0,
+        },
+        600,
+        rules.warhead("NUKE").unwrap(),
+        (RAD_NO_ATTACKER, Some(attacker_house), warhead_id),
+        FrameEffects::default(),
+    );
+    assert!(
+        !sim.substrate
+            .entities
+            .get(aircraft)
+            .unwrap()
+            .lifecycle
+            .object_alive()
+    );
+    let survivor = sim.substrate.entities.get(passenger).unwrap();
+    assert!(survivor.lifecycle.object_alive() && !survivor.lifecycle.in_limbo());
+    assert_eq!(
+        survivor.navigation.nav_com(),
+        Some(NavTargetRef::cell(14, 14))
+    );
+    let walk = survivor.locomotor.as_ref().unwrap();
+    assert_eq!(walk.walk_is_moving(), Some(true));
+    assert_eq!(
+        walk.walk_destination(),
+        Some(DriveCoord {
+            x: 3712,
+            y: 3712,
+            z: 0
+        })
+    );
+}
+
 /// A supplied impact boundary. C4 hurts the adjacent unarmored observer;
 /// Crush hurts none, and both leave the lightly armored falling owner alive
 /// until its notice explicitly UnInits it. This makes the first blast visible
@@ -291,7 +398,7 @@ fn aircraft_drop_landing_uses_original_wheel_controls() {
         let stats = sim
             .tick_air_movement_with_cell_lists_one(
                 falling,
-                Some(&rules),
+                &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             )
@@ -904,7 +1011,7 @@ fn live_null_crash_books_one_loss_through_impact_and_retirement() {
         if sim
             .tick_air_movement_with_cell_lists_one(
                 1,
-                Some(&rules),
+                &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             )
@@ -927,7 +1034,7 @@ fn live_null_crash_books_one_loss_through_impact_and_retirement() {
         "impact UnInit does not add a second loss"
     );
     sim.process_pending_delete_with(
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
         1,
@@ -1004,7 +1111,7 @@ fn crash_fall_matches_native_frames_to_the_impact() {
                 let stats = sim
                     .tick_air_movement_with_cell_lists_one(
                         1,
-                        Some(&rules),
+                        &rules,
                         None,
                         crate::sim::world::FrameEffects::default(),
                     )
@@ -1048,7 +1155,7 @@ fn crash_fall_matches_native_frames_to_the_impact() {
                 let stats = sim
                     .tick_air_movement_with_cell_lists_one(
                         1,
-                        Some(&rules),
+                        &rules,
                         None,
                         crate::sim::world::FrameEffects::default(),
                     )
@@ -1123,7 +1230,7 @@ fn a_crash_fall_lists_the_wreck_in_its_impact_cell() {
         let stats = sim
             .tick_air_movement_with_cell_lists_one(
                 1,
-                Some(&rules),
+                &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             )
@@ -1843,10 +1950,11 @@ fn a_jumpjet_wreck_scans_only_on_its_committed_guard() {
 }
 
 /// Retail Dustbowl runtime, end to end through production: a Harrier ordered
-/// at three flak tracks takes off, their `FlakTrackAAGun` volleys shoot it
-/// down, and it crashes. It has an Airforce Command to fly home to: after
-/// its strike, idle mode sends an AirportBound aircraft to a dock and crashes
-/// one without (`0x004176F0`). `VoiceCrashing=`/`CrashingSound=` play on the edge,
+/// east across three flak tracks takes off, their `FlakTrackAAGun` volleys
+/// shoot it down, and it crashes. Ordinary Move orders keep it crossing the
+/// AA field instead of spending one Maverick and choosing a return arc. An
+/// Airforce Command remains available for idle mode (`0x004176F0`).
+/// `VoiceCrashing=`/`CrashingSound=` play on the edge,
 /// SGRYSMK1 smoke trails the spinning fall, whose frames are the original
 /// executable's to the impact, and there its current weapon detonates as the
 /// death weapon and `ImpactLandSound=` plays before it is UnInit. Ignored:
@@ -1881,11 +1989,16 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
             HouseState::new(house, side, None, human, 10_000, 10)
         });
     }
+    // The Americans play this seat: in a network-mode game
+    // `HouseClass::IsHumanPlayer @ 0x0050B6F0` admits only CurrentPlayer,
+    // which gates `VoiceCrashing=` at `0x004DAD1F`.
+    let local = sim.interner.intern("Americans");
+    sim.session.install_current_house(Some(local));
     // A Harrier on open level ground with three flak tracks eight and nine
     // cells east: beyond their sight while it stands, inside their AA range
     // once it lifts off. Each side keeps a power plant out of the fight, so
     // neither house is defeated under the Battle mode's ShortGame.
-    let (harrier, flak) = (40..100_u16)
+    let (harrier, _flak, start_cell) = (40..100_u16)
         .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
         .find_map(|(x, y)| {
             let grid = sim.path_grid()?;
@@ -1928,7 +2041,7 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
                     )
                 })?;
             sim.spawn_object("GAAIRC", "Americans", site.0, site.1, 0, &resources.rules)?;
-            Some((harrier, flak))
+            Some((harrier, flak, (x, y)))
         })
         .expect("open level ground for the fight");
     sim.resolve_type_handles(&resources.rules);
@@ -1944,12 +2057,18 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
         .iter()
         .map(|name| sim.interner.intern(name))
         .collect();
+    let destinations = [
+        (start_cell.0 + 24, start_cell.1),
+        (start_cell.0 - 12, start_cell.1),
+    ];
+    let mut direction = 0;
     let order = CommandEnvelope::new(
         americans,
         sim.session.tick() + 1,
-        Command::Attack {
-            attacker_id: harrier,
-            target_id: flak[0],
+        Command::Move {
+            entity_id: harrier,
+            target_rx: destinations[direction].0,
+            target_ry: destinations[direction].1,
         },
     );
     scenario
@@ -1972,6 +2091,36 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
     let mut sounds = Vec::new();
     let mut impact_explosions = Vec::new();
     for frame in 1..=900 {
+        // Turn before either distant destination can request arrival slowdown.
+        // Every reversal uses the same ordinary Move command as the first leg.
+        let reverse = scenario
+            .sim()
+            .substrate
+            .entities
+            .get(harrier)
+            .is_some_and(|entity| {
+                !entity.crash.is_crashing()
+                    && entity.health.current() > 0
+                    && if direction == 0 {
+                        entity.position.rx() >= start_cell.0 + 14
+                    } else {
+                        entity.position.rx() <= start_cell.0 + 2
+                    }
+            });
+        let orders = if reverse {
+            direction ^= 1;
+            vec![CommandEnvelope::new(
+                americans,
+                scenario.sim().session.tick() + 1,
+                Command::Move {
+                    entity_id: harrier,
+                    target_rx: destinations[direction].0,
+                    target_ry: destinations[direction].1,
+                },
+            )]
+        } else {
+            Vec::new()
+        };
         let anims_before: BTreeSet<_> = scenario
             .sim()
             .substrate
@@ -1982,7 +2131,7 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
         let output = scenario
             .runtime
             .advance_frame(
-                &[],
+                &orders,
                 crate::headless_scenario::SIM_TICK_MS,
                 super::TickLane::Ordinary,
                 crate::sim::world::FrameEffects::default(),
@@ -2036,6 +2185,17 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
                 assert!(height > 0, "shot down in the air");
                 assert_eq!(entity.health.current(), 0);
                 assert_eq!(entity.kill_record.killer(), Some(russians));
+                assert_eq!(entity.ammo().map(|ammo| ammo.current()), Some(1));
+                assert_eq!(
+                    entity
+                        .locomotor
+                        .as_ref()
+                        .and_then(|loco| loco.fly_runtime())
+                        .expect("the Harrier uses Fly")
+                        .current_speed(),
+                    crate::util::native_x87::NativeF64Bits::ONE,
+                    "shot down at native full speed",
+                );
             }
             let rocking = entity.rocking.as_ref().expect("a crash spins");
             spun |= rocking.angle_sideways() != SimFixed::ZERO;
@@ -2154,6 +2314,11 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
             HouseState::new(house, side, None, human, 10_000, 10)
         });
     }
+    // The Americans play this seat: in a network-mode game
+    // `HouseClass::IsHumanPlayer @ 0x0050B6F0` admits only CurrentPlayer,
+    // which gates `VoiceCrashing=` at `0x004DAD1F`.
+    let local = sim.interner.intern("Americans");
+    sim.session.install_current_house(Some(local));
     // Open level ground: the Nighthawk and the Kirov land west of three flak
     // tracks and are ordered past them. Each side keeps a power plant out of
     // the fight, so neither house is defeated under the Battle mode's
@@ -2446,4 +2611,44 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
         impact_anims(kirov, &bomb_anims) >= 1,
         "the Kirov's BlimpBomb detonates at the impact"
     );
+}
+
+/// `0x004DAD10..0x004DAD59`: the crash edge plays `VoiceCrashing=` for an
+/// owner `HouseClass::IsHumanPlayer @ 0x0050B6F0` admits, which in campaign
+/// includes a `PlayerControl=` house that is not `IsHuman` (`0x0050B703`), as
+/// an unfiltered positional `PlayAt @ 0x007509E0`.
+#[test]
+fn campaign_player_controlled_house_hears_voice_crashing() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AircraftTypes]\n0=ORCA\n[ORCA]\nStrength=150\nVoiceCrashing=OrcaFalls\n",
+    ))
+    .unwrap();
+    let mut orca = crate::sim::game_entity::GameEntity::test_default_of_category(
+        1,
+        "ORCA",
+        "Americans",
+        10,
+        10,
+        EntityCategory::Aircraft,
+    );
+    orca.crash.set_crashing_for_test(true);
+    let mut sim = Simulation::with_seed(0);
+    sim.interner = crate::sim::intern::test_interner();
+    let mut house = crate::sim::house_state::HouseState::new(orca.owner(), 0, None, false, 0, 10);
+    house.set_player_control_for_test(true);
+    sim.houses.register(house);
+    sim.substrate.entities.insert(orca);
+    Simulation::crash_edge_sounds(
+        &sim.interner,
+        &mut sim.substrate,
+        &mut sim.sound_events,
+        &sim.session,
+        &sim.houses,
+        1,
+        &rules,
+    );
+    assert!(sim.sound_events.iter().any(|event| matches!(
+        event,
+        super::SimSoundEvent::VocAt { sound_id, audible_to: None, .. } if sound_id == "OrcaFalls"
+    )));
 }

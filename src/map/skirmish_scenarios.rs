@@ -217,15 +217,29 @@ pub struct PktEntryFields {
     pub max_players: Option<u8>,
 }
 
+/// The maps `IsValidMap` (`0x005D63E0`) admits for `mode`, in record order.
 pub fn filter_records_for_mode(
     records: &[SkirmishScenarioRecord],
     mode: &SkirmishGameMode,
+    official_only: bool,
 ) -> Vec<usize> {
     records
         .iter()
         .enumerate()
-        .filter_map(|(idx, record)| record_matches_mode(record, mode).then_some(idx))
+        .filter_map(|(idx, record)| is_valid_map(record, mode, official_only).then_some(idx))
         .collect()
+}
+
+/// `IsValidMap` (`0x005D63E0`): `mode` admits the record, and with
+/// `official_only` (a WOL tournament or clan room, `0x0077D940`) an
+/// unofficial concrete map is refused (`0x005D63FF..0x005D6416`). The
+/// random-map row is official.
+pub fn is_valid_map(
+    record: &SkirmishScenarioRecord,
+    mode: &SkirmishGameMode,
+    official_only: bool,
+) -> bool {
+    (record.official || !official_only) && record_matches_mode(record, mode)
 }
 
 pub fn record_matches_mode(record: &SkirmishScenarioRecord, mode: &SkirmishGameMode) -> bool {
@@ -376,8 +390,8 @@ mod tests {
     #[test]
     fn choose_map_empty_game_modes_matches_standard_only() {
         let records = vec![record(0, "Empty", "")];
-        assert_eq!(filter_records_for_mode(&records, &mode(1)), vec![0]);
-        assert!(filter_records_for_mode(&records, &mode(9)).is_empty());
+        assert_eq!(filter_records_for_mode(&records, &mode(1), false), vec![0]);
+        assert!(filter_records_for_mode(&records, &mode(9), false).is_empty());
     }
 
     #[test]
@@ -387,7 +401,7 @@ mod tests {
             record(1, "Alpha", "standard"),
             record(2, "Zoo", "standard"),
         ];
-        let filtered = filter_records_for_mode(&records, &mode(1));
+        let filtered = filter_records_for_mode(&records, &mode(1), false);
         assert_eq!(filtered, vec![0, 1, 2]);
         assert_eq!(records[0].display_name, records[2].display_name);
     }
@@ -404,9 +418,11 @@ mod tests {
             random_maps_allowed: false,
             allies_allowed: true,
             must_ally: false,
+            wonline_tournament_allowed: true,
+            wonline_clan_tournament_allowed: true,
         };
         let records = vec![record(0, "Standard", "standard")];
-        assert_eq!(filter_records_for_mode(&records, &battle), vec![0]);
+        assert_eq!(filter_records_for_mode(&records, &battle, false), vec![0]);
     }
 
     #[test]
@@ -416,8 +432,8 @@ mod tests {
             "Random Map",
             i32::from(RANDOM_MAP_GENERATED_START_QUOTA),
         )];
-        assert_eq!(filter_records_for_mode(&records, &mode(1)), vec![0]);
-        assert!(filter_records_for_mode(&records, &mode(9)).is_empty());
+        assert_eq!(filter_records_for_mode(&records, &mode(1), false), vec![0]);
+        assert!(filter_records_for_mode(&records, &mode(9), false).is_empty());
     }
 
     #[test]

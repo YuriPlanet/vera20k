@@ -31,7 +31,9 @@ oracles, scripts) until steps 1 and 2 are clean.
    - New crates come from crates.io at a pinned version. Git, path or registry
      dependencies need a reason.
    - Large JSON or binary additions must be data that a test or tool reads, not
-     encoded payloads.
+     encoded payloads. Hold them to AGENTS.md's test limits (about 20 cases, under
+     100 KB, only asserted fields): ask the contributor to trim, or trim on
+     integration. The guard lists files over 100 KB.
    - Python tools read retail inputs and write only their own outputs: no network,
      subprocess, home-directory or credential access.
 3. **Authenticity.** Choose the 1–3 claims the behavior depends on most.
@@ -40,8 +42,8 @@ oracles, scripts) until steps 1 and 2 are clean.
      compares, fields read and written, gates, and any RNG, timer or detach calls
      against the Rust. Ghidra names and the PR's prose are leads, not proof.
    - Any `gamemd.exe` release is the same game: sidecars record the replay
-     command, not the executable's hash. A legacy `native_sha256` in an older
-     sidecar is inert history, not something to check.
+     command, not the executable's hash. Reject a hash of `gamemd.exe` or of a
+     repository source in a payload, sidecar or receipt.
    - INI claims must use the native readers in `src/rules/ini_value.rs` and check
      the retail values in every layer.
    - Goldens must come from native execution or retail bytes and run through
@@ -71,8 +73,6 @@ oracles, scripts) until steps 1 and 2 are clean.
      `--wait 3600` in the background rather than creating a worktree.
    - In the slot, `git fetch origin main pull/<N>/head`,
      `git checkout --detach <PR head SHA>`, then merge `origin/main`.
-   - On a snapshot clash, keep both changelog lines and take the next free
-     `SNAPSHOT_VERSION`.
    - Push a slot merge to the contributor's branch, and confirm the PR head
      equals the SHA you pushed.
    - Apply [Contributor attribution](#contributor-attribution) before choosing the
@@ -108,8 +108,13 @@ oracles, scripts) until steps 1 and 2 are clean.
 - Before merging, inspect the exact author/account mapping, subject, body and
   trailers the merge will produce, including GitHub's generated defaults. Resolve
   unexpected identities, unrequested personal names and duplicate credit first.
-  If GitHub's squash would replace the contributor with the PR opener, prepare
-  one combined commit and use a merge method that preserves its author.
+- GitHub's squash authors its commit with the account's profile name and default
+  commit email, not the identity on the PR's commits, even when the contributor
+  opened the PR. Squash only when an earlier squash of that account read back
+  with its verified identity. Otherwise keep the identity on the contributor's
+  own commits: rebase-merge a single commit, or prepare one combined commit with
+  that author and rebase-merge it. When the branch is not editable, use a merge
+  commit.
 - After merging, read back the resulting commit and verify the same attribution.
   Report a mismatch and resolve it before further merges. Do not rewrite shared
   history without the user's explicit authorization.

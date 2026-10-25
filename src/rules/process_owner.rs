@@ -18,6 +18,10 @@ mod selection_voice_tests;
 #[path = "planning_rules_tests.rs"]
 mod planning_rules_tests;
 
+#[cfg(test)]
+#[path = "object_image_tests.rs"]
+mod object_image_tests;
+
 use std::sync::Arc;
 
 use crate::rules::error::RulesError;
@@ -30,6 +34,7 @@ use crate::rules::native_processing::{
     refresh_native_multiplayer_country_bodies,
 };
 use crate::rules::object_type::ObjectCategory;
+use crate::rules::personal_rules::PersonalRules;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
 
@@ -53,6 +58,8 @@ struct NativeRulesSourceSnapshot {
     fixed_sounds: Arc<SoundRegistry>,
     /// The same immutable EVAMD catalog used by process playback.
     fixed_eva: Arc<EvaRegistry>,
+    /// VERA source customization frozen with this process's selected INIs.
+    personal_rules: PersonalRules,
 }
 
 #[derive(Debug)]
@@ -66,6 +73,14 @@ enum NativeRulesRegistryOwner {
     /// Completed scenario Rules inputs and their same live registry. Constructor
     /// events have transferred to Scenario; save reads this owner by reference.
     Scenario(Box<ProcessedRulesLayers>),
+    /// Full_Init's E_multi has run, but its first Draw still reads this live
+    /// registry before Type reset. The owner retains the constructor chronology
+    /// until the matching loading attempt finishes or explicitly retires it.
+    #[cfg(feature = "ares")]
+    PreparedNonCampaign {
+        trace: NativeTypeConstructionTrace,
+        identity: Arc<()>,
+    },
 }
 
 impl NativeRulesRegistryOwner {
@@ -74,6 +89,8 @@ impl NativeRulesRegistryOwner {
             Self::BeforeReset(trace) => trace.registry_state(),
             Self::Live(state) => state,
             Self::Scenario(processed) => processed.native_registry_state(),
+            #[cfg(feature = "ares")]
+            Self::PreparedNonCampaign { trace, .. } => trace.registry_state(),
         }
     }
 
@@ -98,6 +115,10 @@ impl NativeRulesRegistryOwner {
                 .into_ini_and_native_type_construction_trace()
                 .1
                 .into_registry_state_discarding_events(),
+            #[cfg(feature = "ares")]
+            Self::PreparedNonCampaign { .. } => {
+                panic!("prepared Rules prefix requires its loading attempt's ticket")
+            }
         }
     }
 }
@@ -109,6 +130,18 @@ pub struct NativeRulesProcessOwner {
     /// `None` exists only while an in-place transition is executing. Every
     /// ordinary return, including a failed Process/RuleSet parse, restores it.
     registry: Option<NativeRulesRegistryOwner>,
+}
+
+/// Move-only permission to consume or retire one prepared noncampaign prefix.
+///
+/// This ticket contains no Rules state or constructor events. Pointer identity
+/// binds it to the exact preparation, including across different process owners;
+/// allocating this presentation capability consumes no simulation RNG or IDs.
+#[cfg(feature = "ares")]
+#[derive(Debug)]
+#[must_use = "a prepared Rules prefix must be consumed or explicitly cancelled"]
+pub struct NativeNonCampaignPrefixPreparation {
+    identity: Arc<()>,
 }
 
 /// One constructor phase transferred to the independent native-ID cursor.
@@ -172,6 +205,15 @@ pub struct NativeScenarioRulesLoad {
 pub enum NativeScenarioRulesPrefix<'a> {
     NonCampaign(Option<&'a IniFile>),
     Campaign(Option<&'a IniFile>),
+    /// Admitted generated .SED route: Full_Init's saved DL skips ClearClasses.
+    RandomMap(Option<&'a IniFile>),
+    /// Ordinary E_multi already ran before the first loading frame. Consume
+    /// its exact chronology without clearing classes or reading root again.
+    #[cfg(feature = "ares")]
+    PreparedNonCampaign {
+        preparation: NativeNonCampaignPrefixPreparation,
+        mode_rules_override: Option<&'a IniFile>,
+    },
 }
 
 impl NativeScenarioRulesLoad {
@@ -204,6 +246,7 @@ impl NativeRulesProcessOwner {
             fixed_sounds,
             fixed_eva,
             ["RULESMD.INI".into(), "ARTMD.INI".into()],
+            PersonalRules::default(),
         )
     }
 
@@ -216,6 +259,7 @@ impl NativeRulesProcessOwner {
         fixed_sounds: Arc<SoundRegistry>,
         fixed_eva: Arc<EvaRegistry>,
         rules_art_names: [String; 2],
+        personal_rules: PersonalRules,
     ) -> Result<Self, RulesError> {
         let movies = crate::rules::movies::MovieRegistry::from_art(&fixed_art);
         let cold_trace = process_native_rules_cold_start(
@@ -223,6 +267,7 @@ impl NativeRulesProcessOwner {
             &selected_rules_root,
             &fixed_art,
             langrule.as_ref(),
+            &fixed_eva,
         )?;
         Ok(Self {
             sources: NativeRulesSourceSnapshot {
@@ -233,6 +278,7 @@ impl NativeRulesProcessOwner {
                 movies,
                 fixed_sounds,
                 fixed_eva,
+                personal_rules,
             },
             registry: Some(NativeRulesRegistryOwner::BeforeReset(cold_trace)),
         })
@@ -241,6 +287,7 @@ impl NativeRulesProcessOwner {
     /// Session6980C0/475540 against the retained process INI. This mutates the
     /// one live registry before PrepareSession's separate Country body pass.
     pub fn read_multiplayer_country(&mut self, settings: &IniFile, current: i32) -> i32 {
+        self.assert_no_prepared_prefix();
         let (events, state) = self
             .registry
             .take()
@@ -259,6 +306,7 @@ impl NativeRulesProcessOwner {
 
     /// PrepareSession52E123; intentionally separate from D7's6980C0 call.
     pub fn refresh_multiplayer_country_bodies(&mut self) {
+        self.assert_no_prepared_prefix();
         let (events, state) = self
             .registry
             .take()
@@ -285,6 +333,71 @@ impl NativeRulesProcessOwner {
             .map(|(id, _)| id)
     }
 
+    /// Ares loading hooks read the actual retained Country before Full_Init
+    /// destroys the registry. Consumers clone this view once per loading attempt.
+    #[cfg(feature = "ares")]
+    pub fn country_loading(
+        &self,
+        index: crate::rules::ruleset::CountryIdx,
+    ) -> Option<(&crate::rules::country_loading::AresCountryLoading, i32)> {
+        self.registry
+            .as_ref()
+            .expect("Rules transition reentered")
+            .registry_state()
+            .country_projection()
+            .nth(usize::from(index.0))
+            .map(|(_, _, _, side, _, country)| (country.loading(), side))
+    }
+
+    /// Ares1002FB80 reads the retained Country's Side then Country directly
+    /// from CCINI_Rules887048 before Read_Scenario684620. These names use
+    /// ReadTheme4758F0's ReadString128; ThemeRuntime owns name/default binding.
+    /// Mode/map Process projections and ParentCountry are not read here.
+    #[cfg(feature = "ares")]
+    pub fn loading_theme_names(
+        &self,
+        country: crate::rules::ruleset::CountryIdx,
+    ) -> [Option<String>; 2] {
+        let state = self
+            .registry
+            .as_ref()
+            .expect("Rules transition reentered")
+            .registry_state();
+        let Some((country, _, _, side, ..)) =
+            state.country_projection().nth(usize::from(country.0))
+        else {
+            return [None, None];
+        };
+        let read = |id: &str| {
+            self.sources
+                .selected_rules_root
+                .section(id)
+                .and_then(|section| section.read_name("LoadingTheme", 128))
+                .map(str::to_owned)
+        };
+        let side = usize::try_from(side)
+            .ok()
+            .and_then(|index| state.side_projection().nth(index))
+            .and_then(|(name, _)| read(name));
+        [side, read(country)]
+    }
+
+    /// Early Ares6847B7 loading color, resolved against this same retained
+    /// registry before E_multi or the later mode/map Rules reset can change it.
+    /// `None` when the Country sets no color, leaving the stock side color.
+    #[cfg(feature = "ares")]
+    pub fn country_loading_text_hsv(
+        &self,
+        index: crate::rules::ruleset::CountryIdx,
+    ) -> Option<[u8; 3]> {
+        let (loading, _) = self.country_loading(index)?;
+        self.registry
+            .as_ref()
+            .expect("Rules transition reentered")
+            .registry_state()
+            .loading_text_hsv(loading.color_index())
+    }
+
     /// Refresh derived frontend country/side fields without replaying Process
     /// or allocating through the compatibility RuleSet.
     pub fn project_multiplayer_countries(&self, rules: &mut RuleSet) {
@@ -295,7 +408,7 @@ impl NativeRulesProcessOwner {
             .registry_state();
         rules.refresh_country_side_projection(
             registry.country_projection(),
-            registry.side_projection_names(),
+            registry.side_projection(),
         );
     }
 
@@ -312,12 +425,18 @@ impl NativeRulesProcessOwner {
         processed: &ProcessedRulesLayers,
     ) {
         rules.bind_type_sound_references(processed.ini(), &self.sources.fixed_sounds);
+        rules.bind_terrain_type_sound_references(processed, &self.sources.fixed_sounds);
         rules.bind_type_eva_references(processed.ini(), &self.sources.fixed_eva);
     }
 
     /// Immutable startup-selected root for consumers with a root-only native read.
     pub fn selected_rules_root(&self) -> &IniFile {
         &self.sources.selected_rules_root
+    }
+
+    /// Include VERA's extra source and precedence policy in network admission.
+    pub fn personal_rules_compatibility_crc(&self) -> Option<u32> {
+        self.sources.personal_rules.compatibility_crc()
     }
 
     /// Fixed ART snapshot, unaffected by mode/map Rules passes.
@@ -348,6 +467,20 @@ impl NativeRulesProcessOwner {
         ]
     }
 
+    /// Multiplayer agreement follows the frozen process sources, including
+    /// LANGRULE. Reopening those files would hash different state from the
+    /// sources Full_Init686B20 actually consumes.
+    pub fn multiplayer_source_digests(&self) -> [Option<String>; 3] {
+        [
+            Some(self.sources.selected_rules_root.multiplayer_digest()),
+            self.sources
+                .langrule
+                .as_ref()
+                .map(IniFile::multiplayer_digest),
+            Some(self.sources.fixed_art.multiplayer_digest()),
+        ]
+    }
+
     /// RulesLoad675210/type hierarchy581F50 restore the reached native fields.
     /// The VERA envelope stores the existing processed state, including fields
     /// that cannot be recovered by parsing a merged INI or replaying Full_Init.
@@ -355,7 +488,31 @@ impl NativeRulesProcessOwner {
         match self.registry.as_ref()? {
             NativeRulesRegistryOwner::Scenario(processed) => Some(processed.as_ref()),
             NativeRulesRegistryOwner::BeforeReset(_) | NativeRulesRegistryOwner::Live(_) => None,
+            #[cfg(feature = "ares")]
+            NativeRulesRegistryOwner::PreparedNonCampaign { .. } => None,
         }
+    }
+
+    /// TerrainReadMap71CAD2 -> FindOrAllocate71E2A0 mutates the continuing
+    /// family registry, then TerrainCtor71CB6E spends its own identity. The
+    /// caller consumes the move-only new-Type receipt before that instance.
+    pub(crate) fn find_or_allocate_map_terrain_type(
+        &mut self,
+        incoming: &str,
+        rules: &mut RuleSet,
+    ) -> Result<Option<(String, Option<NativeTypeConstructionEvent>)>, RulesError> {
+        let Some(NativeRulesRegistryOwner::Scenario(processed)) = self.registry.as_mut() else {
+            return Err(RulesError::MissingScenarioRegistry);
+        };
+        let Some((terrain, constructor)) = processed.find_or_allocate_map_terrain_type(incoming)
+        else {
+            return Ok(None);
+        };
+        let name = terrain.name.clone();
+        if constructor.is_some() {
+            rules.install_map_terrain_type(terrain);
+        }
+        Ok(Some((name, constructor)))
     }
 
     /// Prepare the compatibility projection without mutating process authority.
@@ -373,6 +530,7 @@ impl NativeRulesProcessOwner {
     /// Commit the validated saved registry, replacing the outgoing authority.
     /// Deserialization excludes constructor receipts, so load cannot replay IDs.
     pub fn install_saved_scenario_rules(&mut self, processed: ProcessedRulesLayers) {
+        self.assert_no_prepared_prefix();
         self.registry = Some(NativeRulesRegistryOwner::Scenario(Box::new(processed)));
     }
 
@@ -392,13 +550,16 @@ impl NativeRulesProcessOwner {
         updates: impl IntoIterator<Item = (ObjectCategory, String, i32)>,
         ambient_change: [Option<crate::util::native_x87::NativeF64Bits>; 2],
         upgrade_art_names: impl IntoIterator<Item = (String, u8, String)>,
+        voxel_damage: impl IntoIterator<Item = (String, i32)>,
     ) -> Result<(), RulesError> {
+        self.assert_no_prepared_prefix();
         let mut registry = self
             .registry
             .take()
             .expect("native Rules registry transition may not be re-entered")
             .into_registry_state();
-        let result = registry.consume_outgoing_type_runtime_fields(updates, upgrade_art_names);
+        let result =
+            registry.consume_outgoing_type_runtime_fields(updates, upgrade_art_names, voxel_damage);
         if result.is_ok() {
             registry.consume_outgoing_ambient_change_inputs(ambient_change);
         }
@@ -410,13 +571,140 @@ impl NativeRulesProcessOwner {
     /// one native registry owner.
     pub fn startup_compatibility_projection(&self) -> Result<ProcessedRulesLayers, RulesError> {
         self.startup_layers()
-            .process_with_fixed_art(&self.sources.fixed_art)
+            .process_with_fixed_art_and_registry_state_recovering(
+                &self.sources.fixed_art,
+                NativeRulesRegistryState::default(),
+                RulesProcessContext::Ordinary,
+                &self.sources.fixed_eva,
+            )
+            .map_err(|failure| failure.into_parts().0)
+    }
+
+    /// RMG InitMapFromSyntheticINI599650 calls ResetTypeRegistriesAndReloadRules
+    /// 6686C0 at59A0F0: root, LANG, then committed Session mode668B8E..668BAA.
+    /// Preview does not Process the synthetic map
+    /// or retain outgoing scenario Type fields. This immutable projection
+    /// supplies preview consumers without replacing the process registry.
+    pub fn random_map_preview_projection(
+        &self,
+        mode_rules_override: Option<&IniFile>,
+        theater_name: &str,
+    ) -> Result<ProcessedRulesLayers, RulesError> {
+        let mut layers = self.startup_layers();
+        if let Some(mode) = mode_rules_override {
+            layers.push(RulesLayerKind::GameMode, self.personalized_layer(mode));
+        }
+        layers
+            .process_with_fixed_art_and_registry_state_recovering(
+                &self.sources.fixed_art,
+                NativeRulesRegistryState::default(),
+                RulesProcessContext::ScenarioReset(
+                    crate::rules::object_image::ImageTheater::from_name(theater_name),
+                ),
+                &self.sources.fixed_eva,
+            )
+            .map_err(|failure| failure.into_parts().0)
+    }
+
+    /// Run ordinary Full_Init's pre-reset E_multi exactly once, before Draw.
+    ///
+    /// Original68741D/68742E/687451 read root Countries, General and Country
+    /// bodies; Draw687588 then observes those fields before TypeReset6876AC.
+    /// Ares6847B7/1002F8F0 color and552D58/1001E0E0 PAL consumers run earlier.
+    /// The app must transfer any retired scene's runtime Rules writes first.
+    /// Generated RMG saved-DL admission deliberately keeps its existing path.
+    #[cfg(feature = "ares")]
+    pub fn prepare_noncampaign_scenario_prefix(&mut self) -> NativeNonCampaignPrefixPreparation {
+        let state = self.take_pre_reset_state(true);
+        let trace =
+            process_native_noncampaign_rules_prepass(state, &self.sources.selected_rules_root);
+        let identity = Arc::new(());
+        self.registry = Some(NativeRulesRegistryOwner::PreparedNonCampaign {
+            trace,
+            identity: Arc::clone(&identity),
+        });
+        NativeNonCampaignPrefixPreparation { identity }
+    }
+
+    /// Retire an attempt which will not reach the destructive Type reset.
+    ///
+    /// Keep the actual post-prefix registry, including consumed Country parent
+    /// flags. Its unconsumed constructor chronology belongs to this cancelled
+    /// attempt and must not be replayed by the next Scenario's numeric cursor.
+    #[cfg(feature = "ares")]
+    pub fn cancel_prepared_noncampaign_scenario_prefix(
+        &mut self,
+        preparation: NativeNonCampaignPrefixPreparation,
+    ) {
+        let trace = self.take_prepared_noncampaign_trace(preparation);
+        self.registry = Some(NativeRulesRegistryOwner::Live(
+            trace.into_registry_state_discarding_events(),
+        ));
+    }
+
+    fn assert_no_prepared_prefix(&self) {
+        #[cfg(feature = "ares")]
+        assert!(
+            !matches!(
+                self.registry.as_ref(),
+                Some(NativeRulesRegistryOwner::PreparedNonCampaign { .. })
+            ),
+            "prepared Rules prefix must be consumed or cancelled before another Rules mutation"
+        );
+    }
+
+    /// The same pre-reset ownership transfer serves both atomic loading and
+    /// first-frame preparation. Check before take so a rejected transition
+    /// cannot drop the pending trace or leave the owner empty during unwinding.
+    fn take_pre_reset_state(&mut self, clear_classes: bool) -> NativeRulesRegistryState {
+        self.assert_no_prepared_prefix();
+        let state = self
+            .registry
+            .take()
+            .expect("native Rules registry transition may not be re-entered")
+            .into_registry_state();
+        #[cfg(feature = "ares")]
+        let state = {
+            let mut state = state;
+            // Full_Init686B5D/686B65 clears classes before the early map/rules
+            // pass on ordinary loads. Generated RMG retains RulesExt, and the
+            // later TypeReset6686C0 is a separate, retaining transaction.
+            if clear_classes {
+                state.clear_scenario_global_controls();
+            }
+            state
+        };
+        #[cfg(not(feature = "ares"))]
+        let _ = clear_classes;
+        state
+    }
+
+    #[cfg(feature = "ares")]
+    fn take_prepared_noncampaign_trace(
+        &mut self,
+        preparation: NativeNonCampaignPrefixPreparation,
+    ) -> NativeTypeConstructionTrace {
+        match self.registry.as_ref() {
+            Some(NativeRulesRegistryOwner::PreparedNonCampaign { identity, .. }) => assert!(
+                Arc::ptr_eq(identity, &preparation.identity),
+                "Rules prefix ticket does not belong to the current loading attempt"
+            ),
+            _ => panic!("Rules prefix ticket has no pending loading attempt"),
+        }
+        let Some(NativeRulesRegistryOwner::PreparedNonCampaign { trace, .. }) =
+            self.registry.take()
+        else {
+            unreachable!("prepared Rules prefix validated before take")
+        };
+        trace
     }
 
     /// Execute the active Full_Init Rules chronology in place.
     ///
     /// Noncampaign runs `E_multi` against the process-retained registry;
     /// campaign runs optional scenario-basename INI P against that registry.
+    /// Ordinary Full_Init first clears RulesExt global controls; the admitted
+    /// RandomMap arm preserves them under its saved-DL ClearClasses bypass.
     /// The common reset deletes Types, processes root, clears ColorAdd,
     /// processes LANG, then rereads only root ColorAdd before (noncampaign
     /// mode)/map P. The four AudioVisual selectors retain LANG's last read.
@@ -427,25 +715,35 @@ impl NativeRulesProcessOwner {
         prefix: NativeScenarioRulesPrefix<'_>,
         map_rules_overrides: &IniFile,
     ) -> Result<NativeScenarioRulesLoad, RulesError> {
-        let registry_owner = self
-            .registry
-            .take()
-            .expect("native Rules registry transition may not be re-entered");
-        let pre_reset_state = registry_owner.into_registry_state();
-
+        let clear_classes = !matches!(&prefix, NativeScenarioRulesPrefix::RandomMap(_));
         let (pre_reset_trace, mode_rules_override) = match prefix {
-            NativeScenarioRulesPrefix::NonCampaign(mode) => (
-                process_native_noncampaign_rules_prepass(
-                    pre_reset_state,
-                    &self.sources.selected_rules_root,
-                ),
-                mode,
+            NativeScenarioRulesPrefix::NonCampaign(mode)
+            | NativeScenarioRulesPrefix::RandomMap(mode) => {
+                let state = self.take_pre_reset_state(clear_classes);
+                (
+                    process_native_noncampaign_rules_prepass(
+                        state,
+                        &self.sources.selected_rules_root,
+                    ),
+                    mode,
+                )
+            }
+            #[cfg(feature = "ares")]
+            NativeScenarioRulesPrefix::PreparedNonCampaign {
+                preparation,
+                mode_rules_override,
+            } => (
+                self.take_prepared_noncampaign_trace(preparation),
+                mode_rules_override,
             ),
             NativeScenarioRulesPrefix::Campaign(named) => {
+                let state = self.take_pre_reset_state(true);
+                let named = named.map(|ini| self.personalized_layer(ini));
                 let trace = match process_native_campaign_rules_prepass(
-                    pre_reset_state,
-                    named,
+                    state,
+                    named.as_ref(),
                     &self.sources.fixed_art,
+                    &self.sources.fixed_eva,
                 ) {
                     Ok(trace) => trace,
                     Err(failure) => {
@@ -464,7 +762,10 @@ impl NativeRulesProcessOwner {
         let mut processed = match layers.process_with_fixed_art_and_registry_state_recovering(
             &self.sources.fixed_art,
             pre_reset_state,
-            RulesProcessContext::ScenarioReset,
+            RulesProcessContext::ScenarioReset(crate::rules::object_image::ImageTheater::from_map(
+                map_rules_overrides,
+            )),
+            &self.sources.fixed_eva,
         ) {
             Ok(processed) => processed,
             Err(failure) => {
@@ -522,13 +823,84 @@ impl NativeRulesProcessOwner {
     ) -> RulesLayerStack {
         let mut layers = self.startup_layers();
         if let Some(mode) = mode_rules_override {
-            layers.push(RulesLayerKind::GameMode, mode.clone());
+            layers.push(RulesLayerKind::GameMode, self.personalized_layer(mode));
         }
-        layers.push(RulesLayerKind::Scenario, map_rules_overrides.clone());
+        layers.push(
+            RulesLayerKind::Scenario,
+            self.personalized_layer(map_rules_overrides),
+        );
         layers
+    }
+
+    fn personalized_layer(&self, original: &IniFile) -> IniFile {
+        let mut rules = original.clone();
+        self.sources.personal_rules.apply_later_layer(&mut rules);
+        rules
     }
 }
 
 #[cfg(test)]
 #[path = "session_country_tests.rs"]
 mod session_country_tests;
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "ares_eva_process_tests.rs"]
+mod ares_eva_tests;
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "process_owner_global_controls_tests.rs"]
+mod global_controls_tests;
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "country_loading_prefix_tests.rs"]
+mod country_loading_prefix_tests;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rules::native_processing::RulesLayerStack;
+
+    #[test]
+    fn retired_voxel_damage_survives_omitted_read_until_type_reset() {
+        let root = IniFile::from_str("[VoxelAnims]\n0=CHUNK\n[CHUNK]\nName=Chunk\n");
+        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+            root.clone(),
+            None,
+            IniFile::empty(),
+            Arc::default(),
+            Arc::default(),
+        )
+        .unwrap();
+        let loaded = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::Campaign(None),
+                &IniFile::from_str("[CHUNK]\nDamage=20\n"),
+            )
+            .unwrap();
+        let damage = |rules: &RuleSet| {
+            rules
+                .voxel_anim_type(rules.voxel_anim_type_id_by_name("CHUNK").unwrap())
+                .damage
+        };
+        assert_eq!(damage(&loaded.rules), 20);
+
+        // Voxel74A91B can mutate Type.Damage during a scene. Read74B3D8
+        // uses that current field when the next Process omits Damage.
+        owner
+            .consume_outgoing_scenario_rules([], [None; 2], [], [("CHUNK".into(), 3)])
+            .unwrap();
+        let state = owner.registry.take().unwrap().into_registry_state();
+        let reread = RulesLayerStack::new(root)
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), state)
+            .unwrap();
+        assert_eq!(damage(&RuleSet::from_processed_rules(&reread).unwrap()), 3);
+
+        // Full_Init's later TypeReset6686C0 deletes the old type; its new
+        // constructor74AD80 starts Damage at zero rather than transplanting3.
+        owner.install_saved_scenario_rules(reread);
+        let reset = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &IniFile::empty())
+            .unwrap();
+        assert_eq!(damage(&reset.rules), 0);
+    }
+}

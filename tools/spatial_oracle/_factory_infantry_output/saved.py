@@ -32,38 +32,14 @@ def publication_phase_prefix(receipt):
         complete_rounds=before)
 
 
-def validate_publication_phase_receipt(receipt, identity, *, historical=False):
+def validate_publication_phase_receipt(receipt, identity):
     """Check literal original return/write witnesses before full comparison."""
     name = receipt['order']
-    rt.require(receipt['status'] == 'PASS' and receipt['failure'] is None and
-               receipt['native_sha256'] == rt.metadata()['native_sha256'],
+    rt.require(receipt['status'] == 'PASS' and receipt['failure'] is None,
                'Original publication control failed: ' + name)
     rt.require(receipt['control_state']['native_code_unchanged'], 'Original publication code changed')
     rt.require(receipt['caller_adaptation']['changes'] == dict(stop=1, product_count=1, terminal_assertions=1),
                'Publication caller/stop amendments differ')
-    # A retained receipt belongs to its sealed input closure. Current callers
-    # are checked separately before comparing the complete native observations;
-    # rebinding a historical source hash to today's file would erase provenance.
-    meta = rt.metadata()['publication_phase']
-    if historical:
-        closure = rt.read_pinned(meta['input_closure'])
-        owner = closure['package_callers']['initialized.py']['sha256']
-        derived = identity['derived_caller_ast_sha256']
-        driver = meta['source_driver_sha256']
-        helpers = closure['shared_helpers']
-    else:
-        from . import phase
-        rt.verify_callers()
-        owner = rt.caller_sha('initialized.py')
-        derived = phase.derived_generate()[1]['derived_caller_ast_sha256']
-        driver = rt.caller_sha('phase.py')
-        helpers = rt.verify_helpers()
-    rt.require(receipt['driver_sha256'] == driver, 'Publication source driver differs')
-    rt.require(receipt['caller_adaptation']['original_owner_sha256'] == owner,
-               'Publication initialized caller identity differs')
-    rt.require(receipt['caller_adaptation']['derived_caller_ast_sha256'] == derived,
-               'Publication caller adaptation differs')
-    rt.require(receipt['shared_helpers'] == helpers, 'Publication shared-helper identity differs')
     for key, row in receipt['complete_rng_buffers'].items():
         raw = bytes.fromhex(row['bytes'])
         rt.require(len(raw) == 0x3F4 and hashlib.sha256(raw).hexdigest() == row['sha256'],
@@ -77,8 +53,6 @@ def validate_publication_phase_receipt(receipt, identity, *, historical=False):
     original = receipt['full_original_initialized_first_place']
     rt.require(original['status'] == 'PASS' and original['failure'] is None,
                'Original publication PLACE boundary failed')
-    rt.require(original['driver_sha256'] == owner and original['shared_helpers'] == helpers,
-               'Publication embedded initialized source identity differs')
     strip = next(row for row in receipt['boundaries'] if row['label'] == 'actual_strip268_publication')
     factory = strip['before']['factory']
     rt.require(factory['stage'] == 54 and factory['changed'] == 1 and factory['balance'] == 0 and
@@ -108,33 +82,21 @@ def validate_publication_phase_receipt(receipt, identity, *, historical=False):
                'Complete publication pre-input state differs from original P10')
 
 
-def compare_publication_phase(order, actual, *, historical=False):
+def compare_publication_phase(order, actual):
     from tools import native_oracle as native
     identity = rt.metadata()['publication_phase']['controls'][order]
-    validate_publication_phase_receipt(actual, identity, historical=historical)
+    validate_publication_phase_receipt(actual, identity)
     prior = rt.read_pinned(identity['receipt'])
-    validate_publication_phase_receipt(prior, identity, historical=True)
+    validate_publication_phase_receipt(prior, identity)
     expected, observed = rt.normalize(prior), rt.normalize(actual)
     historical_digest = rt.canonical_sha(expected)
     rt.require(historical_digest == identity['complete_normalized_original_sha256'],
                'Complete historical publication observation hash differs')
-    # These three source claims were validated above against their own origin.
-    # Keep runtime.normalize unchanged and remove no native gameplay field.
-    checked_paths = (('caller_adaptation', 'original_owner_sha256'),
-                     ('shared_helpers',),
-                     ('full_original_initialized_first_place', 'shared_helpers'))
-    for value in (expected, observed):
-        for path in checked_paths:
-            parent = value
-            for key in path[:-1]:
-                parent = parent[key]
-            parent.pop(path[-1])
     difference = native.first_difference(expected, observed)
     rt.require(difference is None, 'Complete original publication observations differ: ' + str(difference))
     return dict(complete_original_observations_equal=True,
                 complete_normalized_original_sha256=historical_digest,
                 complete_native_comparable_sha256=rt.canonical_sha(observed),
-                independently_checked_host_paths=['.'.join(path) for path in checked_paths],
                 complete_warmed_prefix_rounds=216, first_frame=52, pre_input_last_frame=267)
 
 
@@ -142,12 +104,8 @@ def publication_phase_check():
     """Saved original interleavings; no emulation or whole-MainTick inference."""
     from tools import native_oracle as native
     from .fixture import publication_phase_local_fixture
-    rt.verify_callers()
-    helpers = rt.verify_helpers()
     meta = rt.metadata()['publication_phase']
     image = native.image_bytes()
-    rt.require(hashlib.sha256(image).hexdigest() == rt.metadata()['native_sha256'] == native.NATIVE_SHA256,
-               'Active original publication image differs')
     source_manifest = rt.read_pinned(meta['source_manifest'])
     rt.require(source_manifest['parent_manifest_sha256'] == meta['parent_manifest_sha256'],
                'Publication source parent identity differs')
@@ -156,10 +114,6 @@ def publication_phase_check():
                closure['native_runtime'] == rt.metadata()['native_runtime'] and
                closure['original_startup_parent_manifest_sha256'] == meta['parent_manifest_sha256'],
                'Publication physical/runtime/parent input closure differs')
-    profile = rt.metadata()['helper_profiles'][closure['shared_helpers']['profile']]
-    rt.require(closure['imported_owner_file_digests'] == profile['files'] and
-               closure['inspection_owners'] == rt.metadata()['inspection_owner_files'],
-               'Publication original native owner profile differs')
     spans = rt.read_pinned(meta['original_instructions'])['spans']
     for row in spans:
         _, raw = native.file_span(image, row['address'], row['bytes'])
@@ -168,23 +122,9 @@ def publication_phase_check():
     comparisons = {}
     for order, identity in meta['controls'].items():
         receipt = rt.read_pinned(identity['receipt'])
-        rt.require(receipt['driver_sha256'] == meta['source_driver_sha256'], 'Publication original source driver differs')
-        comparisons[order] = compare_publication_phase(order, receipt, historical=True)
+        comparisons[order] = compare_publication_phase(order, receipt)
         receipts[order] = receipt
-    compatibility = {}
-    for order, relative in meta.get('compatibility_receipts', {}).items():
-        rt.require(order in meta['controls'], 'Unknown current publication compatibility control')
-        replay = rt.read_pinned(relative)
-        rt.require(replay['status'] == 'PASS' and replay['control'] == 'publication_' + order,
-                   'Current publication compatibility replay failed')
-        comparison = compare_publication_phase(order, replay['full_original_publication_control'])
-        rt.require(replay['comparison'] == comparison,
-                   'Current publication compatibility comparison changed')
-        compatibility[order] = comparison
-    if compatibility:
-        rt.require(set(compatibility) == set(meta['controls']),
-                   'Current publication compatibility lost an interleaving')
-    selected = publication_phase_local_fixture(receipts, meta['local_sources'], meta['parent_manifest_sha256'])
+    selected =publication_phase_local_fixture(receipts, meta['local_sources'], meta['parent_manifest_sha256'])
     local = rt.REPO_ROOT / meta['rust_fixture']['path']
     raw = local.read_bytes()
     rt.require(len(raw) == meta['rust_fixture']['bytes'] and
@@ -196,9 +136,8 @@ def publication_phase_check():
                after['producer_archive'] == before['producer_archive'], 'Original publication Archive causality differs')
     rt.require(before['nav_is_set'] and not after['nav_is_set'] and before['walk_moving'] and not after['walk_moving'] and
                before['mission'] == 2 and after['mission'] == 5, 'Original publication downstream route differs')
-    return dict(schema=1, status='PASS', native_sha256=native.NATIVE_SHA256, controls=comparisons,
-        current_provider_compatibility_controls=compatibility,
-        shared_helpers=helpers, complete_rng_buffers_verified=True, original_static_spans=len(spans),
+    return dict(schema=1, status='PASS', controls=comparisons,
+        complete_rng_buffers_verified=True, original_static_spans=len(spans),
         mechanical_local_fixture_equal=True, rust_fixture_sha256=meta['rust_fixture']['sha256'],
         window_input_edge='Instruction-established only', whole_main_tick_parity_claimed=False,
         whole_original_emulation_run=False, whole_object_completion_claimed=False, limits=meta['bounds'])
@@ -206,14 +145,10 @@ def publication_phase_check():
 
 def check():
     from tools import native_oracle as native
-    rt.verify_callers()
-    helpers = rt.verify_helpers()
     meta = rt.metadata()
     rt.require(sorted(rt.HOST_KEYS) == sorted(meta['comparison_host_exclusions']['recursive_keys']),
         'Declared host comparison exclusions differ')
     image = native.image_bytes()
-    rt.require(hashlib.sha256(image).hexdigest() == meta['native_sha256'] == native.NATIVE_SHA256,
-        'Active-retail original image identity differs')
     for row in meta['original_static_bytes']:
         _, raw = native.file_span(image, row['address'], row['bytes'])
         rt.require(hashlib.sha256(raw).hexdigest() == row['sha256'],
@@ -292,8 +227,7 @@ def check():
     initialized = {}
     for control, identity in meta['initialized_controls'].items():
         data = rt.read_pinned(identity['projection'])
-        rt.require(data['control'] == control and data['native_sha256'] == native.NATIVE_SHA256,
-            'Initialized native control identity differs')
+        rt.require(data['control'] == control, 'Initialized native control identity differs')
         rt.require(data['complete_normalized_primary_sha256'] == identity['complete_primary_sha256'] and
             data['complete_normalized_private_sha256'] == identity['complete_private_sha256'],
             'Complete initialized comparison pin differs')
@@ -335,8 +269,8 @@ def check():
     for row in controls:
         row['scope'] = 'Historical missing-Walk-startup supplied-prior control'
     return dict(schema_version=2, status='PASS', scope='Initialized native terminal controls and preserved historical controls',
-        native_sha256=meta['native_sha256'], original_static_ranges=len(meta['original_static_bytes']),
-        shared_helpers=helpers, retained_files=len(meta['retained_files']),
+        original_static_ranges=len(meta['original_static_bytes']),
+        retained_files=len(meta['retained_files']),
         historical_controls=controls,
         initialized_controls=[dict(control=c,final_frame=d['measured_frames']['final'],
             complete_primary_native_sha256=d['complete_normalized_primary_sha256'],

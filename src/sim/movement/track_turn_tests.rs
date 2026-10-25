@@ -1,5 +1,5 @@
 //! Bounded comparisons with original gamemd entry and turn-latch execution.
-//! The corpus metadata records executable SHA and callback substitutions.
+//! The corpus metadata records callback substitutions.
 //! The 120 sampler rows establish the latch transition, including the state
 //! visible before reason0. Supplied callback mutations are not Rust world
 //! parity: this production corridor has no callback-observation seam yet.
@@ -437,7 +437,7 @@ fn actual_turn_completion_reason_zero_does_not_promote_queued_mission() {
         sim.unit_per_cell_process(
             1,
             PerCellReason::Arrival,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         );

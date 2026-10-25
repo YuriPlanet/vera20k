@@ -203,7 +203,7 @@ fn native_bridge_destinations_survive_camera_zoom_and_ordinary_move_records() {
                     for mover in movers {
                         let command = ordinary_move(&sim, owner, mover, goal);
                         sim.queue_command(command.clone());
-                        assert_eq!(sim.take_due_commands(), vec![command]);
+                        assert_eq!(sim.take_frame_commands_for_test(), vec![command]);
                     }
                 }
             }

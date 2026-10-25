@@ -50,9 +50,7 @@ an immediate, and are recorded as such.
 
 ## Provenance of the committed fixture
 
-The committed fixture was extracted from a launcher-patched copy. Its sidecar's
-legacy `native_sha256` and `binary_is_stock` fields are inert history; new
-sidecars record neither.
+The committed fixture was extracted from a launcher-patched copy.
 It is usable because the tool refuses to read a binary until five anchor checks
 pass — the table-base `lea` at `0x005BDC95`, the dispatch `jmp` at `0x004AB453`,
 the `call [edx+0x48]` at `0x004AB43C`, and the Building vtable slots `+0x4E4`

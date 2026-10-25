@@ -1,11 +1,13 @@
-//! The WOL flow's `wolinfoMD.ini` consumers and the two persona pages:
+//! The WOL flow's `wolinfoMD.ini` consumers and the persona pages:
 //! `WOL_Main`'s nickname prefill, the welcome's persona stats, the locale
-//! sink, the locale page `0xFE` and the auto-login query `0x112`.
+//! sink, the locale page `0xFE`, the auto-login query `0x112` and Quick
+//! Match's postmatch add-buddy query `0x122`.
 
+use std::path::Path;
 use std::time::Instant;
 
-use super::WolPage;
 use super::service::{self, WolServiceRequest};
+use super::{WolPage, WolProvider};
 use crate::app::frontend::{shell_layout, shell_transition::ShellExitThen};
 use crate::app::persistence::wol_profile::{WolInfoFile, WolPersona};
 use crate::app::{App, AppState};
@@ -14,10 +16,18 @@ use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::shell::list::{ListMetrics, ShellListGeometry};
 use crate::ui::wol_persona::*;
 
-/// The file next to RA2MD.INI, when the process has a settings directory.
+/// Native diagnostics use the file next to VERA.INI; modern online visits
+/// never read or create the legacy account/persona file.
 pub(super) fn info_file(state: &AppState) -> Option<WolInfoFile> {
     let config = state.platform.game_config.as_ref()?;
-    Some(WolInfoFile::in_directory(config.paths.settings_dir()))
+    native_info_file(
+        state.frontend.wol.as_ref().map(|visit| visit.provider),
+        config.paths.settings_dir(),
+    )
+}
+
+fn native_info_file(provider: Option<WolProvider>, directory: &Path) -> Option<WolInfoFile> {
+    (provider != Some(WolProvider::Online)).then(|| WolInfoFile::in_directory(directory))
 }
 
 /// `WOLPlayerInfo__LoadRecord` `0x00778A20` for `name`.
@@ -26,6 +36,30 @@ pub(super) fn load(state: &AppState, name: &str) -> WolPersona {
         Some(file) => file.load_persona(name, &|key| service::resolve(state, key)),
         None => WolPersona::default(),
     }
+}
+
+/// The persona's Country and Color as the MultiPlayer picks at Create
+/// (`0x00789F55`) and in the joined user list (`0x007A7110`), as connect
+/// does (`0x00786938`). Online visits have no persona file, so the picks the
+/// player saved in VERA.INI stay instead of becoming Random.
+pub(super) fn take_side_and_color(state: &mut AppState, name: &str) {
+    if let Some((country, color)) = persona_picks(info_file(state).as_ref(), name, &|key| {
+        service::resolve(state, key)
+    }) {
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .set_side_and_color(country, color);
+    }
+}
+
+fn persona_picks(
+    file: Option<&WolInfoFile>,
+    name: &str,
+    csf: &dyn Fn(&str) -> String,
+) -> Option<(i32, i32)> {
+    let persona = file?.load_persona(name, csf);
+    Some((persona.country, persona.color))
 }
 
 /// `WOLInfo__SaveProfileToINI` `0x0077A080` under `name`.
@@ -64,8 +98,24 @@ pub(super) fn fill_welcome(state: &mut AppState) {
         profile_texts(state, &nickname, &persona)
     };
     if let Some(visit) = state.frontend.wol.as_mut() {
-        visit.welcome_texts = texts;
+        // The online page's lobby counts arrive on their own and stay.
+        visit
+            .welcome_texts
+            .retain(|(id, _)| crate::ui::wol_shell::LOBBY_STATS_IDS.contains(id));
+        visit.welcome_texts.extend(texts);
     }
+}
+
+/// `GET /v1/stats` answered: the online welcome's counts.
+pub(super) fn lobby_stats(state: &mut AppState, stats: crate::ui::wol_shell::WolLobbyStats) {
+    let Some(visit) = state.frontend.wol.as_mut() else {
+        return;
+    };
+    visit
+        .welcome_texts
+        .retain(|(id, _)| !crate::ui::wol_shell::LOBBY_STATS_IDS.contains(id));
+    visit.welcome_texts.extend(stats.texts());
+    state.platform.window.request_redraw();
 }
 
 /// `0x0077A9F0`'s texts by control id: the heading (`GUI:UserProfileLabel`,
@@ -228,6 +278,52 @@ pub(crate) fn commit_auto_login(state: &mut AppState, answer: AutoLoginAnswer) {
     service::finish_login(state);
 }
 
+/// `0x007A2970`'s modal `0x122` (`0x006241F0`) over the empty backdrop;
+/// its init formats `WOL:AddBuddyQuery` with the opponent (`0x007A2ABC`).
+pub(super) fn open_add_buddy_query(state: &mut AppState, opponent: &str) {
+    let Some(visit) = state.frontend.wol.as_mut() else {
+        return;
+    };
+    visit.page = WolPage::AddBuddyQuery(Box::new(AddBuddyQuery {
+        opponent: opponent.to_owned(),
+        query: WolAutoLoginQuery::default(),
+    }));
+    state.frontend.shell_route = crate::app::shell_route::ShellRoute::Wol;
+    let _ = App::ensure_skirmish_shell_chrome(state);
+    state
+        .frontend
+        .shell_controller
+        .reset_to(ADD_BUDDY_DIALOG, false);
+    state.platform.window.request_redraw();
+}
+
+/// `0x122` while it exists: the controls and the opponent its question
+/// names.
+#[derive(Debug, Clone)]
+pub(crate) struct AddBuddyQuery {
+    pub(crate) opponent: String,
+    pub(crate) query: WolAutoLoginQuery,
+}
+
+/// `0x122`'s question.
+pub(crate) fn add_buddy_text(state: &AppState) -> Option<String> {
+    let WolPage::AddBuddyQuery(page) = &state.frontend.wol.as_ref()?.page else {
+        return None;
+    };
+    Some(format_csf(
+        &service::resolve(state, ADD_BUDDY_TEXT_KEY),
+        &[CsfArg::Str(&page.opponent)],
+    ))
+}
+
+/// `0x122`'s teardown has run with Yes or No.
+pub(crate) fn commit_add_buddy(state: &mut AppState, yes: bool, ask_again: bool) {
+    if let Some(visit) = state.frontend.wol.as_mut() {
+        visit.page = WolPage::Backdrop { wait: None };
+    }
+    super::quick_match::add_buddy_answered(state, yes, ask_again);
+}
+
 /// `0xFE`'s teardown has run with its result.
 pub(crate) fn commit_locale(state: &mut AppState, locale: i32) {
     if let Some(visit) = state.frontend.wol.as_mut() {
@@ -238,11 +334,12 @@ pub(crate) fn commit_locale(state: &mut AppState, locale: i32) {
 }
 
 pub(super) fn page_open(state: &AppState) -> bool {
-    state
-        .frontend
-        .wol
-        .as_ref()
-        .is_some_and(|visit| matches!(visit.page, WolPage::AutoLoginQuery(_) | WolPage::Locale(_)))
+    state.frontend.wol.as_ref().is_some_and(|visit| {
+        matches!(
+            visit.page,
+            WolPage::AutoLoginQuery(_) | WolPage::Locale(_) | WolPage::AddBuddyQuery(_)
+        )
+    })
 }
 
 /// The open page's dialog.
@@ -250,6 +347,7 @@ fn dialog(state: &AppState) -> Option<crate::ui::shell::descriptor::DialogId> {
     match state.frontend.wol.as_ref()?.page {
         WolPage::AutoLoginQuery(_) => Some(AUTO_LOGIN_DIALOG),
         WolPage::Locale(_) => Some(LOCALE_DIALOG),
+        WolPage::AddBuddyQuery(_) => Some(ADD_BUDDY_DIALOG),
         _ => None,
     }
 }
@@ -279,6 +377,7 @@ pub(crate) fn status_key(state: &AppState) -> Option<&'static str> {
     let dialog = dialog(state)?;
     let hovered = match &state.frontend.wol.as_ref()?.page {
         WolPage::AutoLoginQuery(query) => query.hovered,
+        WolPage::AddBuddyQuery(page) => page.query.hovered,
         WolPage::Locale(page) => page.hovered,
         _ => None,
     }?;
@@ -296,6 +395,10 @@ pub(super) fn cursor_moved(state: &mut AppState) {
         Some(WolPage::AutoLoginQuery(query)) => {
             query.hovered = over;
             query.buttons.hovered = button;
+        }
+        Some(WolPage::AddBuddyQuery(page)) => {
+            page.query.hovered = over;
+            page.query.buttons.hovered = button;
         }
         Some(WolPage::Locale(page)) => {
             page.hovered = over;
@@ -332,6 +435,17 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                 .release(button)
                 .and_then(|id| query.activate(id))
                 .map(ShellExitThen::WolAutoLoginClose),
+            // Both buttons write [Ask] AddMatchBuddies from Don't Ask
+            // (0x007A2B2F, 0x007A2B66).
+            WolPage::AddBuddyQuery(page) => {
+                page.query
+                    .buttons
+                    .release(button)
+                    .map(|id| ShellExitThen::WolAddBuddyClose {
+                        yes: id == ACCEPT,
+                        ask_again: page.query.ask_again(),
+                    })
+            }
             WolPage::Locale(locale) => {
                 locale.scroll.cancel();
                 locale
@@ -348,27 +462,9 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         state.platform.window.request_redraw();
         return;
     }
-    let scale = layout.page.scale;
     let press = match page {
-        WolPage::AutoLoginQuery(query) => match over {
-            Some(id @ (ACCEPT | DECLINE)) => {
-                query.buttons.press(Some(id));
-                Press::Button
-            }
-            // OwnerDraw_CheckBox 0x006163A0 admits only its 18x18 icon and
-            // toggles on the press.
-            Some(DO_NOT_ASK)
-                if crate::ui::skirmish_shell::checkbox_icon_rect(layout.control, scale)
-                    .contains(x, y) =>
-            {
-                query.toggle();
-                Press::Cue(LauncherCue::Checkbox)
-            }
-            _ => {
-                query.buttons.press(None);
-                Press::Nothing
-            }
-        },
+        WolPage::AutoLoginQuery(query) => press_query(query, over, &layout, x, y),
+        WolPage::AddBuddyQuery(page) => press_query(&mut page.query, over, &layout, x, y),
         WolPage::Locale(locale) => {
             let geometry = list_geometry(&layout, locale);
             match over {
@@ -404,6 +500,35 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     state.platform.window.request_redraw();
 }
 
+/// A press on `0x112` or `0x122`.
+fn press_query(
+    query: &mut WolAutoLoginQuery,
+    over: Option<u16>,
+    layout: &WolPersonaLayout,
+    x: i32,
+    y: i32,
+) -> Press {
+    match over {
+        Some(id @ (ACCEPT | DECLINE)) => {
+            query.buttons.press(Some(id));
+            Press::Button
+        }
+        // OwnerDraw_CheckBox 0x006163A0 admits only its 18x18 icon and
+        // toggles on the press.
+        Some(DO_NOT_ASK)
+            if crate::ui::skirmish_shell::checkbox_icon_rect(layout.control, layout.page.scale)
+                .contains(x, y) =>
+        {
+            query.toggle();
+            Press::Cue(LauncherCue::Checkbox)
+        }
+        _ => {
+            query.buttons.press(None);
+            Press::Nothing
+        }
+    }
+}
+
 /// The list scrollbar's repeats.
 pub(super) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
     let layout = layout(state)?;
@@ -419,4 +544,48 @@ pub(super) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
         state.platform.window.request_redraw();
     }
     page.scroll.repeat_at()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn online_visits_cannot_open_a_missing_or_retained_native_persona_file() {
+        use crate::app::persistence::wol_profile::WOLINFO_INI;
+        let directory = crate::map::source::test_support::TestDirectory::new("online-persona");
+        let path = directory.path().join(WOLINFO_INI);
+        assert!(native_info_file(Some(WolProvider::Online), directory.path()).is_none());
+        assert!(!path.exists());
+        let retained = b"[DefaultPersona]\r\nAutoLogin=SavedNative\r\nLastValid=LastNative\r\n[_Default_]\r\nServer=Legacy\r\n";
+        directory.write(WOLINFO_INI, retained);
+        assert!(native_info_file(Some(WolProvider::Online), directory.path()).is_none());
+        assert_eq!(std::fs::read(&path).unwrap(), retained);
+        let native = native_info_file(Some(WolProvider::TestService), directory.path()).unwrap();
+        assert_eq!(native.auto_login(), "SavedNative");
+        assert_eq!(native.last_valid(), "LastNative");
+        assert_eq!(
+            native.load_persona("Player", &str::to_owned).server,
+            "Legacy"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), retained);
+    }
+
+    /// Create and Join keep an online player's own side and colour; native
+    /// visits still take the persona's.
+    #[test]
+    fn only_native_visits_take_the_persona_side_and_color() {
+        use crate::app::persistence::wol_profile::WOLINFO_INI;
+        let directory = crate::map::source::test_support::TestDirectory::new("persona-picks");
+        directory.write(WOLINFO_INI, b"[player]\r\nCountry=3\r\nColor=4\r\n");
+        let picks = |provider| {
+            persona_picks(
+                native_info_file(Some(provider), directory.path()).as_ref(),
+                "Player",
+                &str::to_owned,
+            )
+        };
+        assert_eq!(picks(WolProvider::Online), None);
+        assert_eq!(picks(WolProvider::TestService), Some((3, 4)));
+    }
 }

@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from tools import oracle_sources
 from tools.native_oracle import OracleError
 from tools.spatial_oracle.anytown_damage import validate_packet as packet
 
@@ -16,25 +17,23 @@ class PacketReceiptTests(unittest.TestCase):
     def fixture(self, root):
         directory = root / 'packet'
         directory.mkdir()
-        (root / 'helper.py').write_text('current helper')
         (directory / 'golden.json').write_text('original golden')
-        document = {'owned': {'golden.json': packet.sha(directory / 'golden.json')},
-                    'imported_sources': {'helper.py': 'historical digest'}}
+        (directory / 'golden.meta.json').write_text('original sidecar')
+        document = {'owned': {name: packet.sha(directory / name)
+                              for name in ('golden.json', 'golden.meta.json')}}
         (directory / 'history.json').write_text(json.dumps(document))
         (directory / 'receipt.json').write_text(json.dumps({'owned': {
             'history.json': packet.sha(directory / 'history.json')}}))
         return directory
 
-    def test_historical_sources_report_drift_while_artifacts_remain_guarded(self):
+    def test_historical_artifacts_remain_guarded_while_sidecars_are_republished(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); directory = self.fixture(root)
             historical = (directory / 'history.json').read_bytes()
             with patch.multiple(packet, ROOT=root, HERE=directory,
                                 FROZEN_RECEIPTS=('history.json',)):
-                differences = packet.check_frozen_receipts()
-                self.assertEqual(differences, {'history.json': {'helper.py': {
-                    'historical_sha256': 'historical digest',
-                    'current_sha256': packet.sha(root / 'helper.py')}}})
+                (directory / 'golden.meta.json').write_text('republished sidecar')
+                packet.check_frozen_receipts()
                 self.assertEqual((directory / 'history.json').read_bytes(), historical)
                 (directory / 'golden.json').write_text('altered reference')
                 with self.assertRaisesRegex(OracleError, 'artifact changed'):
@@ -44,7 +43,7 @@ class PacketReceiptTests(unittest.TestCase):
         for name in ('first', 'second'):
             (directory / (name + '.json.gz')).write_bytes(packet.packet_io.compressed(b'{"native": 17}'))
             (directory / (name + '.meta.json')).write_text(json.dumps({
-                'sources': {'helper.py': 'old'}, 'native_sha256': 'unchanged',
+                oracle_sources.REPLAY_FIELD: 'python -m old', 'unicorn_binding': '2.1.4',
                 'entry_points': {'entry': 123}, 'assumptions': ['bounded']}))
 
     def candidate_runner(self, directory, *, payload=None, metadata=None, fail_last=False):
@@ -56,12 +55,12 @@ class PacketReceiptTests(unittest.TestCase):
             candidate.write_bytes(original.read_bytes() if payload is None else
                                   packet.packet_io.compressed(json.dumps(payload).encode()))
             doc = json.loads(packet.sidecar_path(original).read_bytes())
-            doc['sources'] = {'helper.py': 'current'}
+            doc[oracle_sources.REPLAY_FIELD] = 'python -m current'
             doc.update(metadata or {})
             packet.sidecar_path(candidate).write_text(json.dumps(doc))
         return run
 
-    def test_refresh_runs_candidates_then_publishes_only_identity_sidecars_and_receipt(self):
+    def test_refresh_runs_candidates_then_publishes_only_sidecars_and_receipt(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); directory = self.fixture(root)
             self.staged_fixture(directory)
@@ -80,13 +79,14 @@ class PacketReceiptTests(unittest.TestCase):
             for name, raw in original.items():
                 if name == 'receipt.json':
                     continue
-                if name.endswith('.meta.json'):
-                    self.assertEqual(json.loads((directory / name).read_bytes())['sources'], {'helper.py': 'current'})
+                if name in ('first.meta.json', 'second.meta.json'):
+                    published = json.loads((directory / name).read_bytes())
+                    self.assertEqual(published[oracle_sources.REPLAY_FIELD], 'python -m current')
                 else:
                     self.assertEqual((directory / name).read_bytes(), raw)
 
-    def test_shared_publisher_replay_command_is_identity_too(self):
-        provenance = {'replay_command': 'python -m tools.spatial_oracle.anytown_damage.first'}
+    def test_runtime_versions_are_not_evidence(self):
+        runtime = {'unicorn_binding': '2.1.5', 'unicorn_core': [2, 1, 5]}
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); directory = self.fixture(root)
             self.staged_fixture(directory)
@@ -96,16 +96,16 @@ class PacketReceiptTests(unittest.TestCase):
                  patch.object(packet, 'inputs', return_value={}), \
                  patch.object(packet, 'manifest', return_value={}), \
                  patch.object(packet.subprocess, 'run',
-                              side_effect=self.candidate_runner(directory, metadata=provenance)):
+                              side_effect=self.candidate_runner(directory, metadata=runtime)):
                 packet.main(['--refresh-receipt'])
             for name in ('first', 'second'):
                 published = json.loads((directory / (name + '.meta.json')).read_bytes())
-                self.assertEqual({key: published[key] for key in provenance}, provenance)
+                self.assertEqual({key: published[key] for key in runtime}, runtime)
 
     def test_bad_candidates_and_late_failures_publish_nothing(self):
         for changes, error in (({'payload': {'native': 18}}, 'payload changed'),
                                ({'metadata': {'entry_points': {'entry': 456}}}, 'evidence metadata changed'),
-                               ({'metadata': {'native_sha256': 'other'}}, 'evidence metadata changed'),
+                               ({'metadata': {'scope': 'broader'}}, 'evidence metadata changed'),
                                ({'fail_last': True}, None)):
             with self.subTest(changes=changes), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary); directory = self.fixture(root)
@@ -125,7 +125,7 @@ class PacketReceiptTests(unittest.TestCase):
                             packet.main(['--refresh-receipt'])
                 self.assertEqual({p.name: p.read_bytes() for p in directory.iterdir()}, original)
 
-    def test_source_change_during_publication_restores_sidecars_and_receipt(self):
+    def test_artifact_change_during_publication_restores_sidecars_and_receipt(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); directory = self.fixture(root)
             self.staged_fixture(directory)
@@ -134,7 +134,7 @@ class PacketReceiptTests(unittest.TestCase):
                                 RUNNERS=('first',), PROJECTIONS=(),
                                 PROMOTIONS=(), FROZEN_RECEIPTS=('history.json',)), \
                  patch.object(packet, 'inputs', return_value={}), \
-                 patch.object(packet, 'manifest', side_effect=[{'source': 1}, {'source': 1}, {'source': 2}]), \
+                 patch.object(packet, 'manifest', side_effect=[{'artifacts': 1}, {'artifacts': 1}, {'artifacts': 2}]), \
                  patch.object(packet.subprocess, 'run', side_effect=self.candidate_runner(directory)):
                 with self.assertRaisesRegex(OracleError, 'changed during publication'):
                     packet.main(['--refresh-receipt'])
@@ -208,7 +208,7 @@ class PacketReceiptTests(unittest.TestCase):
             (directory / 'receipt.json').write_text('{"old": true}')
             with patch.multiple(packet, HERE=directory, PROJECTIONS=(), PROMOTIONS=(), FROZEN_RECEIPTS=()), \
                  patch.object(packet, 'inputs', return_value={}), \
-                 patch.object(packet, 'check_frozen_receipts', return_value={}), \
+                 patch.object(packet, 'check_frozen_receipts'), \
                  patch.object(packet, 'manifest', return_value={'new': True}):
                 with self.assertRaisesRegex(OracleError, 'manifest changed'):
                     packet.main(['--check', '--manifest-only'])
@@ -226,14 +226,14 @@ class PacketReceiptTests(unittest.TestCase):
                     packet.main(['--refresh-receipt'])
                 run.assert_not_called()
 
-    def test_source_change_during_replay_prevents_refresh(self):
+    def test_artifact_change_during_replay_prevents_refresh(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); directory = self.fixture(root)
             retained = (directory / 'receipt.json').read_bytes()
             with patch.multiple(packet, ROOT=root, HERE=directory, RUNNERS=(),
                                 PROJECTIONS=(), PROMOTIONS=(), FROZEN_RECEIPTS=('history.json',)), \
                  patch.object(packet, 'inputs', return_value={}), \
-                 patch.object(packet, 'manifest', side_effect=[{'source': 1}, {'source': 2}]):
+                 patch.object(packet, 'manifest', side_effect=[{'artifacts': 1}, {'artifacts': 2}]):
                 with self.assertRaisesRegex(OracleError, 'changed during replay'):
                     packet.main(['--refresh-receipt'])
             self.assertEqual((directory / 'receipt.json').read_bytes(), retained)

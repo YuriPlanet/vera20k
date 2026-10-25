@@ -5,7 +5,6 @@ and outside raw calls. It never supplies selected-object state or expected nativ
 outcomes. The native generator imports neither this module nor production data.
 """
 from pathlib import Path
-import hashlib
 import re
 
 REPO = Path(__file__).resolve().parents[3]
@@ -48,7 +47,6 @@ def source_line(site, receipts=None, source_root=REPO):
     path = source_root / file
     raw = path.read_bytes()
     return dict(file=file, line=int(line), column=int(column),
-                sha256=hashlib.sha256(raw).hexdigest(),
                 source=raw.decode().splitlines()[int(line)-1])
 
 

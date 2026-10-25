@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -38,7 +37,6 @@
   },
   "inherited_fixture": {
     "schema_version": 1,
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "unicorn_binding": "2.1.4",
     "unicorn_core": [
       2,
@@ -120,5 +118,5 @@
       "building_power_output": "0x0044E7B0"
     }
   },
-  "payload_sha256": "6ce9aa96aa057fbbbeb6964d4fb1cc43c0d289ed305b832e730ae555da4609da"
+  "payload_sha256": "8dbe02c9a7619946e4c6b03c1d2d0ac32c331ebeecb9f80d1090cdff97336ef0"
 }

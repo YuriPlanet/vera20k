@@ -1,0 +1,982 @@
+{
+  "binaries": {
+    "Ares.dll": {
+      "bytes": 875520,
+      "sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83"
+    },
+    "gamemd.exe": {
+      "bytes": 4816864
+    }
+  },
+  "bounds": [
+    "Country name/vector readers, whole Requirements prefix, full CanBuild limits/prerequisites and FindFactory are not executed.",
+    "Owner transfer/loss is represented by explicit current membership; actual capture/death/limbo/snapshot transitions remain instruction-level dependencies.",
+    "Existing CountryFixture forbids monitored RNG65C780/65C7E0/65C6D0 and detach7258D0; no such call occurred in these slices.",
+    "No timers or playback/rendering/assets are involved; native code bytes remained unchanged."
+  ],
+  "build_limit_rows": [
+    {
+      "can_build": 0,
+      "input": {
+        "family": "infantry",
+        "held": false,
+        "human_controlled": true,
+        "include_queued": false,
+        "limit": -2147483648,
+        "name": "int_min_produced_zero",
+        "owned": 0,
+        "produced": 0,
+        "session_mode": 1,
+        "skip_tech": true,
+        "type_index": 0
+      },
+      "reached": [
+        "10021B00",
+        "10021BEB",
+        "10003220"
+      ]
+    },
+    {
+      "can_build": 1,
+      "input": {
+        "family": "infantry",
+        "held": false,
+        "human_controlled": true,
+        "include_queued": false,
+        "limit": -2147483648,
+        "name": "int_min_produced_one",
+        "owned": 0,
+        "produced": 1,
+        "session_mode": 1,
+        "skip_tech": true,
+        "type_index": 0
+      },
+      "reached": [
+        "10021B00",
+        "10021BEB",
+        "10003220"
+      ]
+    },
+    {
+      "can_build": 1,
+      "input": {
+        "family": "infantry",
+        "held": false,
+        "human_controlled": true,
+        "include_queued": false,
+        "limit": -2147483648,
+        "name": "int_min_produced_int_max",
+        "owned": 0,
+        "produced": 2147483647,
+        "session_mode": 1,
+        "skip_tech": true,
+        "type_index": 0
+      },
+      "reached": [
+        "10021B00",
+        "10021BEB",
+        "10003220"
+      ]
+    },
+    {
+      "can_build": 0,
+      "input": {
+        "family": "infantry",
+        "held": false,
+        "human_controlled": true,
+        "include_queued": false,
+        "limit": -2147483648,
+        "name": "int_min_produced_int_min",
+        "owned": 0,
+        "produced": -2147483648,
+        "session_mode": 1,
+        "skip_tech": true,
+        "type_index": 0
+      },
+      "reached": [
+        "10021B00",
+        "10021BEB",
+        "10003220"
+      ]
+    },
+    {
+      "can_build": 0,
+      "input": {
+        "family": "infantry",
+        "held": false,
+        "human_controlled": true,
+        "include_queued": false,
+        "limit": 0,
+        "name": "zero_limit_owned_zero",
+        "owned": 0,
+        "produced": 0,
+        "session_mode": 1,
+        "skip_tech": true,
+        "type_index": 0
+      },
+      "reached": [
+        "10021B00",
+        "10021BEB",
+        "10020AF0"
+      ]
+    },
+    {
+      "can_build": 0,
+      "input": {
+        "family": "infantry",
+        "held": false,
+        "human_controlled": true,
+        "include_queued": true,
+        "limit": 0,
+        "name": "zero_limit_owned_one",
+        "owned": 1,
+        "produced": 0,
+        "session_mode": 1,
+        "skip_tech": true,
+        "type_index": 0
+      },
+      "reached": [
+        "10021B00",
+        "10021BEB",
+        "10020AF0"
+      ]
+    },
+    {
+      "can_build": 1,
+      "input": {
+        "family": "infantry",
+        "held": false,
+        "human_controlled": true,
+        "include_queued": false,
+        "limit": -1,
+        "name": "negative_one_produced_zero",
+        "owned": 0,
+        "produced": 0,
+        "session_mode": 1,
+        "skip_tech": true,
+        "type_index": 0
+      },
+      "reached": [
+        "10021B00",
+        "10021BEB",
+        "10003220"
+      ]
+    },
+    {
+      "can_build": 0,
+      "input": {
+        "family": "infantry",
+        "held": false,
+        "human_controlled": true,
+        "include_queued": false,
+        "limit": -1,
+        "name": "negative_one_produced_one",
+        "owned": 0,
+        "produced": 1,
+        "session_mode": 1,
+        "skip_tech": true,
+        "type_index": 0
+      },
+      "reached": [
+        "10021B00",
+        "10021BEB",
+        "10003220"
+      ]
+    },
+    {
+      "can_build": 1,
+      "input": {
+        "family": "infantry",
+        "held": true,
+        "human_controlled": true,
+        "include_queued": true,
+        "limit": 2,
+        "name": "infantry_over_positive_limit_held_counted",
+        "owned": 3,
+        "produced": 3,
+        "session_mode": 1,
+        "skip_tech": true,
+        "type_index": 0
+      },
+      "reached": [
+        "10021B00",
+        "10021BEB",
+        "10020AF0",
+        "100212F0",
+        "004F83C0",
+        "004CA160",
+        "004CA160"
+      ]
+    },
+    {
+      "can_build": -1,
+      "input": {
+        "family": "infantry",
+        "held": true,
+        "human_controlled": true,
+        "include_queued": false,
+        "limit": 2,
+        "name": "infantry_over_positive_limit_held_ignored",
+        "owned": 3,
+        "produced": 3,
+        "session_mode": 1,
+        "skip_tech": true,
+        "type_index": 0
+      },
+      "reached": [
+        "10021B00",
+        "10021BEB",
+        "10020AF0"
+      ]
+    },
+    {
+      "can_build": 1,
+      "input": {
+        "family": "infantry",
+        "held": true,
+        "human_controlled": true,
+        "include_queued": true,
+        "limit": 2,
+        "name": "infantry_at_positive_limit_held_counted",
+        "owned": 2,
+        "produced": 2,
+        "session_mode": 1,
+        "skip_tech": true,
+        "type_index": 0
+      },
+      "reached": [
+        "10021B00",
+        "10021BEB",
+        "10020AF0",
+        "100212F0",
+        "004F83C0",
+        "004CA160",
+        "004CA160"
+      ]
+    },
+    {
+      "can_build": -1,
+      "input": {
+        "family": "infantry",
+        "held": true,
+        "human_controlled": true,
+        "include_queued": true,
+        "limit": 2,
+        "name": "infantry_over_positive_limit_wrong_held_type",
+        "owned": 3,
+        "produced": 3,
+        "session_mode": 1,
+        "skip_tech": true,
+        "type_index": 0,
+        "wrong_held_type": true
+      },
+      "reached": [
+        "10021B00",
+        "10021BEB",
+        "10020AF0",
+        "100212F0",
+        "004F83C0",
+        "004CA160",
+        "004CA160"
+      ]
+    }
+  ],
+  "declared_priors": {
+    "earlier_qualification_gates": "already passed",
+    "house": "TechLevel10, GameMode1, superweapons enabled",
+    "lists": "Retained Country pointers and currently owned Building list are supplied inputs; no rules/constructor/transfer result is supplied as a golden.",
+    "target": "BuildingType, actual vtable7E4570, TechLevel1, SuperWeapon=-1"
+  },
+  "entry": "100221A0",
+  "evidence": "Executed original installed Ares qualification suffix with admitted earlier gates; not whole CanBuild or owner lifecycle parity.",
+  "global_controls": {
+    "initial": {
+      "allow_bypass_by_difficulty": [
+        0,
+        0,
+        0
+      ],
+      "phase": 0
+    },
+    "rows": [
+      {
+        "after": [
+          0,
+          0,
+          0
+        ],
+        "before": [
+          0,
+          0,
+          0
+        ],
+        "name": "omitted",
+        "phase_after": 2,
+        "read_events": [
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "AllowParallelAIQueues",
+            "section": "GlobalControls",
+            "value": null
+          },
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "AllowBypassBuildLimit",
+            "section": "GlobalControls",
+            "value": null
+          },
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "DebugKeysEnabled",
+            "section": "GlobalControls",
+            "value": null
+          }
+        ],
+        "supplied_ascii": null
+      },
+      {
+        "after": [
+          0,
+          0,
+          1
+        ],
+        "before": [
+          0,
+          0,
+          0
+        ],
+        "name": "one_yes",
+        "phase_after": 2,
+        "read_events": [
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "AllowParallelAIQueues",
+            "section": "GlobalControls",
+            "value": null
+          },
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "AllowBypassBuildLimit",
+            "section": "GlobalControls",
+            "value": "yes"
+          },
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "DebugKeysEnabled",
+            "section": "GlobalControls",
+            "value": null
+          }
+        ],
+        "supplied_ascii": "yes"
+      },
+      {
+        "after": [
+          0,
+          1,
+          0
+        ],
+        "before": [
+          0,
+          0,
+          1
+        ],
+        "name": "two_bools",
+        "phase_after": 2,
+        "read_events": [
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "AllowParallelAIQueues",
+            "section": "GlobalControls",
+            "value": null
+          },
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "AllowBypassBuildLimit",
+            "section": "GlobalControls",
+            "value": "no,yes"
+          },
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "DebugKeysEnabled",
+            "section": "GlobalControls",
+            "value": null
+          }
+        ],
+        "supplied_ascii": "no,yes"
+      },
+      {
+        "after": [
+          1,
+          0,
+          1
+        ],
+        "before": [
+          0,
+          1,
+          0
+        ],
+        "name": "three_bools",
+        "phase_after": 2,
+        "read_events": [
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "AllowParallelAIQueues",
+            "section": "GlobalControls",
+            "value": null
+          },
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "AllowBypassBuildLimit",
+            "section": "GlobalControls",
+            "value": "yes,no,yes"
+          },
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "DebugKeysEnabled",
+            "section": "GlobalControls",
+            "value": null
+          }
+        ],
+        "supplied_ascii": "yes,no,yes"
+      },
+      {
+        "after": [
+          1,
+          0,
+          1
+        ],
+        "before": [
+          1,
+          0,
+          1
+        ],
+        "name": "first_invalid",
+        "phase_after": 2,
+        "read_events": [
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "AllowParallelAIQueues",
+            "section": "GlobalControls",
+            "value": null
+          },
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "AllowBypassBuildLimit",
+            "section": "GlobalControls",
+            "value": "bad,yes,no"
+          },
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "DebugKeysEnabled",
+            "section": "GlobalControls",
+            "value": null
+          }
+        ],
+        "supplied_ascii": "bad,yes,no"
+      },
+      {
+        "after": [
+          1,
+          0,
+          0
+        ],
+        "before": [
+          1,
+          0,
+          1
+        ],
+        "name": "partial_valid_invalid",
+        "phase_after": 2,
+        "read_events": [
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "AllowParallelAIQueues",
+            "section": "GlobalControls",
+            "value": null
+          },
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "AllowBypassBuildLimit",
+            "section": "GlobalControls",
+            "value": "no,bad,yes"
+          },
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "DebugKeysEnabled",
+            "section": "GlobalControls",
+            "value": null
+          }
+        ],
+        "supplied_ascii": "no,bad,yes"
+      },
+      {
+        "after": [
+          1,
+          0,
+          0
+        ],
+        "before": [
+          1,
+          0,
+          0
+        ],
+        "name": "empty",
+        "phase_after": 2,
+        "read_events": [
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "AllowParallelAIQueues",
+            "section": "GlobalControls",
+            "value": null
+          },
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "AllowBypassBuildLimit",
+            "section": "GlobalControls",
+            "value": ""
+          },
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "DebugKeysEnabled",
+            "section": "GlobalControls",
+            "value": null
+          }
+        ],
+        "supplied_ascii": ""
+      },
+      {
+        "after": [
+          0,
+          1,
+          0
+        ],
+        "before": [
+          1,
+          0,
+          0
+        ],
+        "name": "extra_ignored",
+        "phase_after": 2,
+        "read_events": [
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "AllowParallelAIQueues",
+            "section": "GlobalControls",
+            "value": null
+          },
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "AllowBypassBuildLimit",
+            "section": "GlobalControls",
+            "value": "no,yes,no,yes"
+          },
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "DebugKeysEnabled",
+            "section": "GlobalControls",
+            "value": null
+          }
+        ],
+        "supplied_ascii": "no,yes,no,yes"
+      }
+    ]
+  },
+  "human_tech_level_rows": [
+    {
+      "admitted": false,
+      "input": {
+        "human": true,
+        "name": "human_minus_one",
+        "player_control": false,
+        "session_mode": 1,
+        "tech_level": -1
+      },
+      "reached": [
+        "100220F8",
+        "10020AD0",
+        "1002210B",
+        "10022325"
+      ],
+      "stop": "10022325"
+    },
+    {
+      "admitted": true,
+      "input": {
+        "human": false,
+        "name": "ai_minus_one",
+        "player_control": false,
+        "session_mode": 1,
+        "tech_level": -1
+      },
+      "reached": [
+        "100220F8",
+        "10020AD0",
+        "10022118"
+      ],
+      "stop": "10022118"
+    },
+    {
+      "admitted": true,
+      "input": {
+        "human": false,
+        "name": "nonzero_mode_control_only_minus_one",
+        "player_control": true,
+        "session_mode": 1,
+        "tech_level": -1
+      },
+      "reached": [
+        "100220F8",
+        "10020AD0",
+        "10022118"
+      ],
+      "stop": "10022118"
+    },
+    {
+      "admitted": false,
+      "input": {
+        "human": false,
+        "name": "zero_mode_control_only_minus_one",
+        "player_control": true,
+        "session_mode": 0,
+        "tech_level": -1
+      },
+      "reached": [
+        "100220F8",
+        "10020AD0",
+        "10020ADF",
+        "1002210B",
+        "10022325"
+      ],
+      "stop": "10022325"
+    },
+    {
+      "admitted": true,
+      "input": {
+        "human": true,
+        "name": "human_zero",
+        "player_control": false,
+        "session_mode": 1,
+        "tech_level": 0
+      },
+      "reached": [
+        "100220F8",
+        "10020AD0",
+        "1002210B",
+        "10022118"
+      ],
+      "stop": "10022118"
+    },
+    {
+      "admitted": true,
+      "input": {
+        "human": true,
+        "name": "human_minus_two",
+        "player_control": false,
+        "session_mode": 1,
+        "tech_level": -2
+      },
+      "reached": [
+        "100220F8",
+        "10020AD0",
+        "1002210B",
+        "10022118"
+      ],
+      "stop": "10022118"
+    }
+  ],
+  "owned_count_rows": [
+    {
+      "count_owned": -2147483648,
+      "input": {
+        "building_tracked": 2147483647,
+        "building_undeploys_into_unit": true,
+        "powers_up_building": "",
+        "type_indices": 0,
+        "unit_tracked": 1
+      },
+      "name": "building_undeploy_counter_wrap",
+      "raw": 2147483648,
+      "reached": [
+        "10020AF0"
+      ]
+    },
+    {
+      "count_owned": 3,
+      "input": {
+        "active_counts": "All zero; no Active host-count gate in this count path",
+        "host_types": [
+          "HOST_A",
+          "HOST_A"
+        ],
+        "powers_up_building": "HOST_A",
+        "registered_building_ids": [
+          "HOST_A"
+        ],
+        "slots": [
+          [
+            "UPGRADE",
+            null,
+            "UPGRADE"
+          ],
+          [
+            null,
+            "UPGRADE",
+            null
+          ]
+        ],
+        "upgrade_tracked_same_index": 777
+      },
+      "name": "upgrade_counts_all_matching_host_slots",
+      "reached": [
+        "10020AF0",
+        "10020B6C",
+        "10007E50",
+        "10020B90",
+        "10020BA7",
+        "10020BA7",
+        "10020BA7",
+        "10020B90",
+        "10020BA7",
+        "10020BA7",
+        "10020BA7"
+      ]
+    }
+  ],
+  "owner": "tools.rules_oracle.ares_country_veterancy.CountryFixture (existing Probe VM/image/arena/return services)",
+  "rows": [
+    {
+      "input": {
+        "allowed": [],
+        "factories": [],
+        "forbidden": [],
+        "name": "empty_restrictions_no_factory",
+        "plans": []
+      },
+      "qualification_status": 3,
+      "reached": [
+        "100221A0",
+        "10022220",
+        "10022255"
+      ]
+    },
+    {
+      "input": {
+        "allowed": [
+          "CountryA"
+        ],
+        "factories": [
+          "CountryA"
+        ],
+        "factory_rtti": 7,
+        "forbidden": [],
+        "name": "matching_owned_construction_factory",
+        "plans": []
+      },
+      "qualification_status": 3,
+      "reached": [
+        "100221A0",
+        "100222B0",
+        "100222F9",
+        "1002221C",
+        "10022220",
+        "10022255"
+      ]
+    },
+    {
+      "input": {
+        "allowed": [
+          "CountryB"
+        ],
+        "factories": [
+          "CountryA"
+        ],
+        "factory_rtti": 7,
+        "forbidden": [],
+        "name": "wrong_factory_country",
+        "plans": []
+      },
+      "qualification_status": 2,
+      "reached": [
+        "100221A0",
+        "100222B0",
+        "10022325"
+      ]
+    },
+    {
+      "input": {
+        "allowed": [
+          "CountryA"
+        ],
+        "factories": [
+          "CountryA"
+        ],
+        "factory_rtti": 16,
+        "forbidden": [],
+        "has_all_plans": true,
+        "name": "has_all_plans_wrong_factory_rtti",
+        "plans": []
+      },
+      "qualification_status": 3,
+      "reached": [
+        "100221A0",
+        "100222B0",
+        "100222F9",
+        "1002230B",
+        "1002221C",
+        "10022220",
+        "10022255"
+      ]
+    },
+    {
+      "input": {
+        "allowed": [
+          "CountryA"
+        ],
+        "factories": [
+          "CountryA"
+        ],
+        "factory_rtti": 16,
+        "forbidden": [],
+        "name": "no_all_plans_wrong_factory_rtti",
+        "plans": []
+      },
+      "qualification_status": 2,
+      "reached": [
+        "100221A0",
+        "100222B0",
+        "100222F9",
+        "1002230B",
+        "10022325"
+      ]
+    },
+    {
+      "input": {
+        "allowed": [
+          "CountryA"
+        ],
+        "factories": [
+          "CountryA"
+        ],
+        "factory_rtti": 7,
+        "forbidden": [
+          "CountryA"
+        ],
+        "has_all_plans": true,
+        "name": "forbidden_also_allowed_rejects_same_candidate",
+        "plans": []
+      },
+      "qualification_status": 2,
+      "reached": [
+        "100221A0",
+        "100222B0",
+        "10022325"
+      ]
+    },
+    {
+      "input": {
+        "allowed": [
+          "CountryA"
+        ],
+        "factories": [],
+        "forbidden": [],
+        "name": "permanent_plan_without_live_factory",
+        "plans": [
+          "CountryA"
+        ]
+      },
+      "qualification_status": 3,
+      "reached": [
+        "100221A0",
+        "100221E8",
+        "1002221C",
+        "10022220",
+        "10022255"
+      ]
+    },
+    {
+      "input": {
+        "allowed": [
+          "CountryA"
+        ],
+        "factories": [],
+        "forbidden": [],
+        "name": "lost_live_factory_without_permanent_plan",
+        "plans": []
+      },
+      "qualification_status": 2,
+      "reached": [
+        "100221A0",
+        "10022325"
+      ]
+    },
+    {
+      "input": {
+        "allowed": [],
+        "factories": [
+          null
+        ],
+        "factory_rtti": 7,
+        "forbidden": [
+          "CountryA"
+        ],
+        "name": "forbidden_only_null_original_country",
+        "plans": []
+      },
+      "qualification_status": 3,
+      "reached": [
+        "100221A0",
+        "100222B0",
+        "100222F9",
+        "1002221C",
+        "10022220",
+        "10022255"
+      ]
+    },
+    {
+      "input": {
+        "allowed": [
+          "CountryA"
+        ],
+        "factories": [
+          null
+        ],
+        "factory_rtti": 7,
+        "forbidden": [],
+        "name": "nonempty_allowed_null_original_country",
+        "plans": []
+      },
+      "qualification_status": 2,
+      "reached": [
+        "100221A0",
+        "100222B0",
+        "10022325"
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "stop": "30000000 (original ret4)"
+}

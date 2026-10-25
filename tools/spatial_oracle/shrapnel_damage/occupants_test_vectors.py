@@ -56,8 +56,7 @@ def generate():
     promotion=json.loads((HERE/'occupants_promotion.json').read_bytes())['results']['occupants.json']
     identity=packet_io.digest(_canonical(source))
     assert identity==promotion['published_payload_sha256']
-    meta=json.loads((HERE/'occupants.meta.json').read_bytes())
-    return dict(schema=1,native_sha256=meta['native_sha256'],
+    return dict(schema=1,
         published_native_payload_sha256=identity,scene=source['scene'],
         native_actor_inputs=source['cases'][0]['native_inputs'],
         **project_cases(source))
@@ -70,8 +69,7 @@ def metadata():
         'Actor+178 padding is preserved as a raw native write; semantic RadarCombatFlash fields are+174 start/+17C duration. Pointer argument fields are retained for provenance, not stable engine entity identifiers.',
     ],substitutions=[],entry_points={'occupants':0x487A10,'damage':0x737C90,'detach':0x70D4A0})|dict(
         source_files={name:packet_io.digest((HERE/name).read_bytes())for name in
-            ('occupants.json.gz','occupants_promotion.json')},
-        projection_source_sha256=packet_io.digest(Path(__file__).read_bytes()))
+            ('occupants.json.gz','occupants_promotion.json')})
 
 
 if __name__=='__main__':

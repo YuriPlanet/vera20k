@@ -295,6 +295,31 @@ fn inaudible_requests_use_the_independent_native200_pool_and_reap_in_order() {
     });
 }
 
+/// `GamePause::Enter @ 0x00406F00` skips the sound half while ChronoScreen
+/// runs (`0x0053BAD0`); `Exit @ 0x00406F40` resumes it unconditionally.
+#[test]
+fn a_pause_exit_resumes_sounds_even_while_chrono_screen_runs() {
+    with_player(|player, registry, _assets, _index| {
+        let sound = cue("sound_index");
+        let gain = gain("coordinate_before_nested_pause", sound, registry).unwrap();
+        assert!(player.play_sound_at_coord(
+            sound,
+            coordinate(),
+            request_flags(),
+            source(),
+            Some(gain),
+            registry
+        ));
+        player.set_paused(true, 1000);
+        assert_eq!(player.coordinate_requests[0].suspend_depth, 1);
+        player.set_chrono_screen_active(true);
+        player.set_paused(false, 2000);
+        assert_eq!(player.coordinate_requests[0].suspend_depth, 0);
+        player.set_paused(true, 3000);
+        assert_eq!(player.coordinate_requests[0].suspend_depth, 0);
+    });
+}
+
 #[test]
 fn retained_request_depths_and_newborn_depth_match_executed_nested_pause() {
     with_player(|player, registry, _assets, _index| {

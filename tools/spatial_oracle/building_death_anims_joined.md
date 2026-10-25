@@ -60,7 +60,10 @@ directly; it does not execute or claim the FireAt/Bullet/LimboLaunch producer.
 Scenario map-lighting/reset and cell relight are also excluded. The initial
 lighting record preserves the actual Scenario current profile, raw fields,
 effect globals and selected Cell scalars. Consumers import that component
-profile: original `629DDE` copies signed Cell `+10A` into the held Anim Z-adjust.
+profile. Snapshot `z_adjust` reads Anim `+100`; the signed Cell `+10A` copy
+at `629DDE`/`629DE5` instead writes Anim `+FC`. This corpus does not record that
+field or pixels. The additive [squid_grapple_light](squid_grapple_light.md)
+control distinguishes the fields under original nonzero Cell relighting.
 The zero prior here is not the ordinary full-map lighting default.
 The initial signed `game_speed` readback similarly preserves the inherited
 GameOptions `A8EB60` input used by original `5FB2E0` to normalize Anim rates.

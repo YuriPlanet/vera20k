@@ -147,7 +147,7 @@ def generate():
     from tools.rmg_oracle.cliff_materialization import StatePool
     fixture, pool = RiverFixture(), StatePool()
     rows = [fixture.run(case, pool) for case in controls()]
-    return dict(schema=1, native_sha256=native.image_sha256(),
+    return dict(schema=1,
                 scene=dict(stride=33, bounds=[16, 48], map_size=[16, 16],
                            common=[0, 0, 0, 0, 0, 0], water_base=fixture.water),
                 rng_states_hex=pool.states, rows=rows)

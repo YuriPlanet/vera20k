@@ -1,5 +1,5 @@
-# cargo-about configuration for the third-party notices shipped in release
-# archives (THIRD_PARTY_LICENSES.html). Every accepted license is compatible
+# cargo-about configuration for the third-party notices shipped in the release
+# installers (THIRD_PARTY_LICENSES.html). Every accepted license is compatible
 # with VERA20k's GPLv3; the release fails when a crate needs any other. Where a
 # crate offers a choice, the first accepted license in this order is used.
 accepted = [
@@ -17,6 +17,9 @@ accepted = [
     "Unicode-3.0",
     "MPL-2.0",
     "NCSA",
+    # webpki-roots trust data; section 2.1 requires the license text we ship.
+    # https://spdx.org/licenses/CDLA-Permissive-2.0.html
+    "CDLA-Permissive-2.0",
 ]
 # The platforms release.yml builds.
 targets = [

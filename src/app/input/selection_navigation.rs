@@ -45,7 +45,7 @@ fn next_object(
                 rules,
                 Some(sim.interner()),
             )
-            && sim.object_is_selectable(id, rules)
+            && rules.is_some_and(|rules| sim.object_is_selectable(id, rules))
     };
     match direction {
         ObjectDirection::Next => after_anchor(ids, anchor, eligible),
@@ -194,7 +194,7 @@ fn combatant_selection(
                     Some(rules),
                     Some(sim.interner()),
                 )
-                && sim.object_is_selectable(*id, Some(rules))
+                && sim.object_is_selectable(*id, rules)
         })
     };
     let screen: Vec<_> = if across_map {
@@ -759,7 +759,7 @@ mod tests {
             sim.reveal(20);
             sim.advance_app_frame(
                 &[],
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
                 67,
                 TickLane::Ordinary,
@@ -790,7 +790,7 @@ mod tests {
                 .unwrap()
                 .selection
                 .set_selected_for_test(false);
-            super::super::reconcile_selection_order_for_sim(&mut input, &sim, Some(&rules));
+            super::super::reconcile_selection_order_for_sim(&mut input, &sim, Some(&rules), &[]);
             assert_eq!(input.category_navigation.candidates, [10, 20, 30]);
 
             if conceal {
@@ -802,7 +802,7 @@ mod tests {
             let frame = sim
                 .advance_app_frame(
                     &[],
-                    None,
+                    crate::rules::ruleset::RuleSet::empty_for_test(),
                     None,
                     67,
                     TickLane::Ordinary,
@@ -863,7 +863,7 @@ mod tests {
             let next = sim
                 .advance_app_frame(
                     &[],
-                    None,
+                    crate::rules::ruleset::RuleSet::empty_for_test(),
                     None,
                     67,
                     TickLane::Ordinary,

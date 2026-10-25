@@ -98,7 +98,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: &OverlayTypeRegistry,
         type_id: InternedId,
-        foundation: &str,
+        foundation: &crate::rules::foundation::Foundation,
         origin: (u16, u16),
         effects: FrameEffects<'_>,
     ) {
@@ -132,7 +132,7 @@ impl Simulation {
             if navigation_installed {
                 self.publish_cell_and_assign_orphaned_zone(rules, cell, &blocked);
             }
-            self.stop_all_targeting_cell(cell.0, cell.1, Some(rules), Some(registry), effects);
+            self.stop_all_targeting_cell(cell.0, cell.1, rules, Some(registry), effects);
         }
         if let Some(grid) = self.overlay_grid.as_mut() {
             grid.set_rubble_building_type(origin.0, origin.1, type_id);

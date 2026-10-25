@@ -27,7 +27,7 @@ use crate::ui::main_menu_shell::{
     MainMenuControlId, MainMenuMovieBase, MainMenuShellLayout, csf_key_for_control,
     tooltip_csf_key_for_control,
 };
-use crate::ui::shell::geom::{SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW, ShellScale};
+use crate::ui::shell::geom::{SDBTNANM_CELL_H, SDBTNANM_CELL_W_NARROW};
 use crate::ui::shell::static_reveal::{Kind1PaintWindow, Kind1RevealReceipt, Kind1RevealWindow};
 
 /// Archive holding the Red Alert 2 menu loop used by the unchecked default.
@@ -745,44 +745,6 @@ fn render_main_menu_shell_to_target_inner(
         .and_then(|sequence| sequence.frames.first())
         .map(|frame| &frame.texture);
 
-    // Quit-cascade fade-to-black: a full-screen black quad over EVERYTHING (incl.
-    // the cursor), alpha ramped 0→1 by the cascade. Reuses the 1×1 opaque
-    // white_pixel + the ALPHA_BLENDING passthrough pipeline; no new shader. Built
-    // here (like every other layer) so it outlives the render pass. Only present on
-    // the SHP path (the atlas is unavailable on the utility error card).
-    let fade_alpha = state
-        .frontend
-        .quit_cascade
-        .as_ref()
-        .map_or(0.0, |cascade| cascade.overlay_alpha());
-    let fade_buffer = if fade_alpha > 0.0 {
-        skirmish_chrome
-            .and_then(|sk| sk.white_pixel)
-            .and_then(|white| {
-                let quad = [crate::render::batch::SpriteInstance {
-                    position: [0.0, 0.0],
-                    size: [
-                        state.renderer.gpu.config.width as f32,
-                        state.renderer.gpu.config.height as f32,
-                    ],
-                    uv_origin: white.uv_origin,
-                    uv_size: white.uv_size,
-                    // Passthrough compares depth Always and this draws last, so any
-                    // depth sits on top; the frontmost value is used for clarity.
-                    depth: 0.0,
-                    tint: [0.0, 0.0, 0.0],
-                    alpha: fade_alpha,
-                    ..Default::default()
-                }];
-                state
-                    .renderer
-                    .batch_renderer
-                    .create_instance_buffer(&state.renderer.gpu, &quad)
-            })
-    } else {
-        None
-    };
-
     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("Main Menu Shell"),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -804,6 +766,7 @@ fn render_main_menu_shell_to_target_inner(
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
+        multiview_mask: None,
     });
     if let Some((buffer, count)) = background_buffer.as_ref() {
         state.renderer.batch_renderer.draw_with_buffer_passthrough(
@@ -899,16 +862,6 @@ fn render_main_menu_shell_to_target_inner(
             .batch_renderer
             .draw_with_buffer_passthrough(&mut pass, texture, buffer, *count);
     }
-    // Quit-cascade fade-to-black overlay, drawn LAST so it blackens everything
-    // including the cursor (the original's palette fade affects the whole frame).
-    if let (Some((buffer, count)), Some(sk_chrome)) = (fade_buffer.as_ref(), skirmish_chrome) {
-        state.renderer.batch_renderer.draw_with_buffer_passthrough(
-            &mut pass,
-            &sk_chrome.texture,
-            buffer,
-            *count,
-        );
-    }
     drop(pass);
 
     Ok(MainMenuShellRenderResult::Rendered {
@@ -925,8 +878,8 @@ const EXIT_CONFIRM_MODAL_DEPTHS: shell_paint::ModalDepths = shell_paint::ModalDe
     text: 0.00040,
 };
 
-/// Build the shell message box (0x120) SHP modal overlay when it is open: the centered
-/// PUDLGBGN panel + MNBTTN OK/Cancel buttons + body/OK/Cancel labels, sourced from
+/// Build the shell message box (0xCE/0x120) SHP modal overlay when it is open: the centered
+/// PUDLGBGN panel + populated MNBTTN buttons and labels, sourced from
 /// the skirmish chrome atlas (the only atlas that loads PUDLGBGN/MNBTTN). The
 /// pressed button is read from the shared shell controller (its top dialog is the
 /// modal while open). Returns `None` when the modal is closed or its art is absent.
@@ -934,29 +887,19 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
     use crate::ui::shell::modal;
     let modal_state = &state.frontend.shell_message_box.as_ref()?.labels;
     let atlas = state.frontend.skirmish_shell_chrome.as_ref()?;
-    let layout = modal::quit_confirm_layout(
-        state.renderer.gpu.config.width as i32,
-        state.renderer.gpu.config.height as i32,
-    );
+    let layout = shell_layout::shell_message_box_layout(state, modal_state.kind());
     let pressed = state.frontend.shell_controller.pressed();
     let ok_pressed = pressed == Some(modal::control::OK);
     let cancel_pressed = pressed == Some(modal::control::CANCEL);
     let frames = crate::app::frontend::skirmish_shell_render::type3_button_frames(atlas);
-    let buttons = [
-        shell_paint::ModalButton {
-            rect: layout.ok,
-            pressed: ok_pressed,
-            enabled: true,
-        },
-        shell_paint::ModalButton {
-            rect: layout.cancel,
-            pressed: cancel_pressed,
-            enabled: true,
-        },
-    ];
+    let mut buttons = vec![shell_paint::ModalButton {
+        rect: layout.ok,
+        pressed: ok_pressed,
+        enabled: true,
+    }];
     // Body left-top wrapped; OK/Cancel centered on their buttons with the MNBTTN
     // press sink — same conventions as the skirmish validation modal.
-    let labels = [
+    let mut labels = vec![
         PaintLabel {
             text: (&modal_state.title).into(),
             rect: layout.body,
@@ -966,19 +909,30 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         },
         PaintLabel {
             text: (&modal_state.confirm).into(),
-            rect: owner_draw_button_label_rect(layout.ok, ok_pressed),
-            align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
-            rgb: SHELL_TEXT_RGB_ENABLED,
-            path_a_reveal: None,
-        },
-        PaintLabel {
-            text: (&modal_state.cancel).into(),
-            rect: owner_draw_button_label_rect(layout.cancel, cancel_pressed),
+            rect: layout.scale.derive_rect(layout.ok, |rect| {
+                owner_draw_button_label_rect(rect, ok_pressed)
+            }),
             align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: None,
         },
     ];
+    if let Some(rect) = layout.cancel {
+        buttons.push(shell_paint::ModalButton {
+            rect,
+            pressed: cancel_pressed,
+            enabled: true,
+        });
+        labels.push(PaintLabel {
+            text: (&modal_state.cancel).into(),
+            rect: layout.scale.derive_rect(rect, |rect| {
+                owner_draw_button_label_rect(rect, cancel_pressed)
+            }),
+            align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            rgb: SHELL_TEXT_RGB_ENABLED,
+            path_a_reveal: None,
+        });
+    }
     Some(shell_paint::paint_modal_shp(
         &state.renderer.bit_font,
         atlas.mode_two_dialog_background(None),
@@ -986,7 +940,7 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         layout.dialog,
         &buttons,
         &labels,
-        ShellScale::RETAIL,
+        layout.scale,
         EXIT_CONFIRM_MODAL_DEPTHS,
     ))
 }

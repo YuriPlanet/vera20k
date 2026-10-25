@@ -92,7 +92,7 @@ pub(super) enum MoviesTarget {
         entry_tick: Option<u32>,
         /// Rest the pointer here instead of at the neutral point.
         hover: Option<(i32, i32)>,
-        /// The page captured: VERA's is reached by pressing VERA20K Options on
+        /// The page captured: VERA's is reached by pressing Vera Options on
         /// the settled main page.
         page: crate::ui::main_menu_dialogs::options::OptionsPage,
     },
@@ -105,6 +105,7 @@ pub(super) enum MoviesTarget {
     /// Main Menu -> Internet: `0x10E` settled (pointer at `hover` or
     /// neutral), held at `entry_tick`, or after one of its buttons.
     WolWelcome {
+        provider: crate::app::shell_wol::WolProvider,
         entry_tick: Option<u32>,
         hover: Option<(i32, i32)>,
         press: WolPress,
@@ -115,9 +116,30 @@ pub(super) enum MoviesTarget {
 pub(super) enum CampaignStartTarget {
     LoadingFirst,
     FirstLive,
+    InitialSaved,
+    /// Explicit-map CnCNet admission, without playing preceding missions.
+    ExplicitFirstLive(&'static str),
     AbortReturn,
     Opening(OpeningTarget),
     Restart(RestartTarget),
+}
+
+impl CampaignStartTarget {
+    fn explicit_scenario(self) -> Option<&'static str> {
+        match self {
+            Self::ExplicitFirstLive(scenario) => Some(scenario),
+            Self::Opening(
+                OpeningTarget::RadarAlert
+                | OpeningTarget::RadarRestored
+                | OpeningTarget::SovietFortresses(_),
+            ) => Some("SOV02SMD.MAP"),
+            Self::Opening(OpeningTarget::SovietGroups(_)) => Some("SOV07TMD.MAP"),
+            Self::Restart(RestartTarget::ObjectiveExpiry) => Some("SOV02SMD.MAP"),
+            Self::Restart(RestartTarget::AlternateHomeVictory) => Some("SOV06LMD.MAP"),
+            Self::Restart(RestartTarget::InheritedTimerVictory) => Some("SOV01UMD.MAP"),
+            _ => None,
+        }
+    }
 }
 
 /// A `0x10E` button the capture presses once the page has settled.
@@ -149,6 +171,7 @@ enum Phase {
     /// The emblem press has been presented; the next frame releases it.
     CampaignPressed,
     CampaignStarting,
+    CampaignInitialSaved,
     CampaignReturning,
     CampaignAbortMenu,
     CampaignLeaving,
@@ -186,17 +209,26 @@ pub(super) struct MoviesCapture {
     observed_exit_cascade: bool,
     abort_input: Option<abort_return::AbortReturnInput>,
     restart: Option<campaign_restart::RestartCapture>,
+    restart_save_directory: PathBuf,
+    saves_isolated: bool,
     opening: Option<opening::OpeningCapture>,
     lan: Option<lan::LanCapture>,
     wol: Option<wol::WolCapture>,
 }
 
 impl MoviesCapture {
-    pub(super) fn new(target: MoviesTarget, output: &Path) -> Self {
+    pub(super) fn new(
+        target: MoviesTarget,
+        output: &Path,
+        live_lan: Option<super::LiveLanConfig>,
+        live_online: Option<super::LiveOnlineConfig>,
+    ) -> Self {
         Self {
             target,
             lan: if let MoviesTarget::Lan(target) = target {
-                Some(lan::LanCapture::new(target))
+                let mut capture = lan::LanCapture::new(target);
+                capture.configure_live(live_lan, live_online);
+                Some(capture)
             } else {
                 None
             },
@@ -212,6 +244,20 @@ impl MoviesCapture {
             observed_exit_cascade: false,
             abort_input: None,
             restart: None,
+            restart_save_directory: output.with_extension(
+                if matches!(
+                    target,
+                    MoviesTarget::CampaignStart {
+                        target: CampaignStartTarget::Opening(_),
+                        ..
+                    }
+                ) {
+                    "opening-saves"
+                } else {
+                    "restart-saves"
+                },
+            ),
+            saves_isolated: false,
             opening: match target {
                 MoviesTarget::CampaignStart {
                     target: CampaignStartTarget::Opening(target),
@@ -260,6 +306,12 @@ impl MoviesCapture {
         rendered: PresentedShell,
         frame: u32,
     ) -> Result<()> {
+        if matches!(self.target, MoviesTarget::CampaignStart { .. }) && !self.saves_isolated {
+            state
+                .persistence
+                .isolate_capture_saves(&self.restart_save_directory)?;
+            self.saves_isolated = true;
+        }
         if let Some(lan) = self.lan.as_mut() {
             return lan.after_present(state, rendered, frame);
         }
@@ -268,6 +320,53 @@ impl MoviesCapture {
         }
         if let Some(restart) = self.restart.as_mut() {
             return restart.after_present(state, rendered, &mut self.route, frame);
+        }
+        if matches!(
+            self.target,
+            MoviesTarget::CampaignStart {
+                target: CampaignStartTarget::InitialSaved,
+                ..
+            }
+        ) && self.phase == Phase::CampaignStarting
+            && state.frontend.screen == GameScreen::InGame
+        {
+            self.observed_campaign_runtime = Some(campaign_runtime_receipt(state)?);
+            let owner = crate::app::input::commands::preferred_local_owner_name(state)
+                .context("initial save control has no local player")?;
+            // The ordinary Options producer queues this before the admitted
+            // frame. The automatic file must contain its consumed value.
+            crate::app::input::commands::schedule_command(
+                state,
+                &owner,
+                crate::sim::command::Command::SetGameSpeed { speed: 2 },
+            );
+            crate::app::match_runtime::sim_tick::advance_in_game_runtime_exact_step(state)?;
+            self.route.push(
+                json!({"frame": frame, "action": "initial campaign Logic step",
+                "input": "ordinary Options SetGameSpeed producer", "speed": 2}),
+            );
+            let entries = state.persistence.repository.browser_entries();
+            ensure!(entries.len() == 1, "initial save did not create one slot");
+            let path = entries[0].0.path.clone();
+            let bytes = state.persistence.repository.read(&path)?;
+            let modified = std::fs::metadata(&path)?.modified()?;
+            crate::app::persistence::commands::try_load_save_file(state, &path)
+                .context("load the initial automatic save through the ordinary loader")?;
+            crate::app::match_runtime::sim_tick::advance_in_game_runtime_exact_step(state)?;
+            ensure!(
+                state.persistence.repository.read(&path)? == bytes
+                    && std::fs::metadata(&path)?.modified()? == modified,
+                "loading the initial save rewrote it on the next Logic step"
+            );
+            self.route.push(
+                json!({"frame": frame, "action": "initial save loaded and resumed",
+                "save_file_unchanged": true}),
+            );
+            self.phase = Phase::CampaignInitialSaved;
+            return Ok(());
+        }
+        if self.phase == Phase::CampaignInitialSaved {
+            return Ok(());
         }
         let starting_campaign = matches!(self.target, MoviesTarget::CampaignStart { .. })
             && self.phase == Phase::CampaignStarting;
@@ -365,6 +464,7 @@ impl MoviesCapture {
                     state,
                     &mut self.route,
                     frame,
+                    &self.restart_save_directory,
                 )?);
                 self.phase = Phase::CampaignRestart;
             }
@@ -683,7 +783,7 @@ impl MoviesCapture {
                         .iter()
                         .find(|(button, _)| *button == LauncherButton::Page(OptionsPage::Vera))
                         .map(|(_, rect)| *rect)
-                        .context("D5 VERA20K Options button")?;
+                        .context("D5 Vera Options button")?;
                     state.match_state.input.cursor_x = (rect.x + rect.w / 2) as f32;
                     state.match_state.input.cursor_y = (rect.y + rect.h / 2) as f32;
                     App::handle_launcher_options_mouse(state, None);
@@ -691,10 +791,10 @@ impl MoviesCapture {
                     App::handle_launcher_options_mouse(state, Some(false));
                     ensure!(
                         state.frontend.shell_exit.is_some(),
-                        "VERA20K Options must run the main page's teardown slide"
+                        "Vera Options must run the main page's teardown slide"
                     );
                     self.route.push(json!({"dialog": 0xd5, "frame": frame,
-                        "action": "VERA20K Options through ordinary pointer handler"}));
+                        "action": "Vera Options through ordinary pointer handler"}));
                 } else if rendered == PresentedShell::Options
                     && showing == Some(page)
                     && state.frontend.shell_exit.is_none()
@@ -714,6 +814,25 @@ impl MoviesCapture {
             }
             (Phase::Campaign, PresentedShell::Campaign) => {
                 if Self::slide_settled(state, ShellSlideKind::Campaign) {
+                    if let MoviesTarget::CampaignStart { side, target } = self.target
+                        && let Some(scenario) = target.explicit_scenario()
+                    {
+                        let side = match side {
+                            crate::ui::campaign_shell::CampaignSide::Allied => 0,
+                            crate::ui::campaign_shell::CampaignSide::Soviet => 1,
+                        };
+                        let request = crate::app::frontend::cncnet_spawn::SpawnRequest::parse(
+                            &format!(
+                                "[Settings]\nIsSinglePlayer=Yes\nScenario={scenario}\nSide={side}\nDifficultyModeHuman=1\nDifficultyModeComputer=1\nGameSpeed=2\nSeed=1\n"
+                            ),
+                        )?;
+                        App::start_spawn_session(state, request)?;
+                        self.route.push(json!({"frame": frame,
+                            "action": "explicit campaign spawn", "scenario": scenario,
+                            "difficulty": 1, "seed": 1}));
+                        self.phase = Phase::CampaignStarting;
+                        return Ok(());
+                    }
                     let layout = crate::ui::campaign_shell::compute_layout(
                         state.renderer.gpu.config.width,
                         state.renderer.gpu.config.height,
@@ -907,6 +1026,7 @@ impl MoviesCapture {
                     entry_tick,
                     hover,
                     press,
+                    ..
                 } = self.target
                 else {
                     bail!("WOL phase without a WOL target");
@@ -1170,10 +1290,18 @@ impl MoviesCapture {
             return restart.ready(state);
         }
         if let MoviesTarget::CampaignStart { side, target } = self.target {
+            if target == CampaignStartTarget::InitialSaved
+                && self.phase == Phase::CampaignInitialSaved
+            {
+                initial_save_receipt(state, &self.restart_save_directory)?;
+                return Ok(true);
+            }
             if self.phase != Phase::CampaignStarting {
                 return Ok(false);
             }
-            if let Some(startup) = crate::app::loading::pump::loading_campaign_startup(state) {
+            if target.explicit_scenario().is_none()
+                && let Some(startup) = crate::app::loading::pump::loading_campaign_startup(state)
+            {
                 ensure!(
                     startup
                         .campaign()
@@ -1195,7 +1323,7 @@ impl MoviesCapture {
                     }
                     Ok(ready)
                 }
-                CampaignStartTarget::FirstLive => {
+                CampaignStartTarget::FirstLive | CampaignStartTarget::ExplicitFirstLive(_) => {
                     if state.frontend.screen != GameScreen::InGame {
                         return Ok(false);
                     }
@@ -1206,6 +1334,7 @@ impl MoviesCapture {
                     campaign_runtime_receipt(state)?;
                     Ok(true)
                 }
+                CampaignStartTarget::InitialSaved => Ok(false),
                 CampaignStartTarget::Opening(_) => {
                     if state.frontend.screen != GameScreen::InGame {
                         return Ok(false);
@@ -1422,6 +1551,32 @@ impl MoviesCapture {
             "frame": {"path": FRAME_FILE_NAME, "byte_length": pixels.len(),
                 "sha256": crate::util::sha256::sha256_hex(pixels)}
         });
+        if let MoviesTarget::WolWelcome {
+            provider,
+            press: WolPress::None,
+            ..
+        } = self.target
+        {
+            let visit = state.frontend.wol.as_ref().context("captured WOL visit")?;
+            let page = visit.welcome_page_spec();
+            let expected = if provider == crate::app::shell_wol::WolProvider::Online {
+                &crate::ui::wol_shell::WOL_ONLINE_WELCOME_PAGE
+            } else {
+                &crate::ui::wol_shell::WOL_WELCOME_PAGE
+            };
+            let button_ids: Vec<_> = page.buttons().map(|button| button.id).collect();
+            ensure!(
+                button_ids
+                    .iter()
+                    .copied()
+                    .eq(expected.buttons().map(|button| button.id)),
+                "captured WOL welcome provider changed"
+            );
+            manifest["wol_welcome"] = json!({
+                "provider": format!("{provider:?}"),
+                "button_ids": button_ids
+            });
+        }
         if let MoviesTarget::CampaignStart { target, .. } = self.target {
             let startup = crate::app::loading::pump::loading_campaign_startup(state)
                 .map(campaign_startup_receipt)
@@ -1432,6 +1587,8 @@ impl MoviesCapture {
                     crate::app::loading::pump::loading_map_source(state)
                 }
                 CampaignStartTarget::FirstLive
+                | CampaignStartTarget::InitialSaved
+                | CampaignStartTarget::ExplicitFirstLive(_)
                 | CampaignStartTarget::AbortReturn
                 | CampaignStartTarget::Opening(_)
                 | CampaignStartTarget::Restart(_) => state.match_state.loaded_map_source.as_ref(),
@@ -1456,26 +1613,75 @@ impl MoviesCapture {
             manifest["checkpoint_phase"] = json!(match target {
                 CampaignStartTarget::LoadingFirst => "loading-first-frame",
                 CampaignStartTarget::FirstLive => "first-live-frame",
+                CampaignStartTarget::InitialSaved => "initial-save",
+                CampaignStartTarget::ExplicitFirstLive(_) => "explicit-first-live-frame",
                 CampaignStartTarget::AbortReturn => "abort-return",
                 CampaignStartTarget::Opening(target) => target.phase(),
                 CampaignStartTarget::Restart(RestartTarget::AbortShown) => "abort-restart-shown",
                 CampaignStartTarget::Restart(RestartTarget::AbortRestarted) => "abort-restarted",
                 CampaignStartTarget::Restart(RestartTarget::DefeatPrompt) => "defeat-replay-prompt",
                 CampaignStartTarget::Restart(RestartTarget::DefeatReplayed) => "defeat-replayed",
+                CampaignStartTarget::Restart(RestartTarget::DefeatReturned) => "defeat-returned",
+                CampaignStartTarget::Restart(RestartTarget::DefeatReturnedEnter) =>
+                    "defeat-returned-enter",
+                CampaignStartTarget::Restart(RestartTarget::DefeatReturnedNumpadEnter) =>
+                    "defeat-returned-numpad-enter",
+                CampaignStartTarget::Restart(RestartTarget::DefeatReturnedEscape) =>
+                    "defeat-returned-escape",
+                CampaignStartTarget::Restart(RestartTarget::DefeatReturnedRepeatedEnter) =>
+                    "defeat-returned-repeated-enter",
                 CampaignStartTarget::Restart(RestartTarget::Restate) => "restate",
+                CampaignStartTarget::Restart(RestartTarget::ObjectiveExpiry) =>
+                    "objective-expired-after-menu",
+                CampaignStartTarget::Restart(RestartTarget::SavedVictory) =>
+                    "saved-victory-next-mission",
+                CampaignStartTarget::Restart(RestartTarget::AlternateHomeVictory) =>
+                    "alternate-home-victory-next-mission",
+                CampaignStartTarget::Restart(RestartTarget::InheritedTimerVictory) =>
+                    "inherited-timer-victory-next-mission",
+                CampaignStartTarget::Restart(RestartTarget::MapSelectFailurePrompt) =>
+                    "mapsel-failure-prompt",
+                CampaignStartTarget::Restart(RestartTarget::MapSelectFailureReplayed) =>
+                    "mapsel-failure-replayed",
+                CampaignStartTarget::Restart(RestartTarget::MapSelectFailureEscape) =>
+                    "mapsel-failure-escape",
+                CampaignStartTarget::Restart(RestartTarget::SavedAbortRestarted) =>
+                    "saved-abort-restarted",
+                CampaignStartTarget::Restart(RestartTarget::MenuDefeatReplayed) =>
+                    "menu-defeat-replayed",
             });
             manifest["runtime"] = match target {
                 CampaignStartTarget::LoadingFirst => Value::Null,
-                CampaignStartTarget::FirstLive => campaign_runtime_receipt(state)?,
+                CampaignStartTarget::FirstLive | CampaignStartTarget::ExplicitFirstLive(_) => {
+                    campaign_runtime_receipt(state)?
+                }
+                CampaignStartTarget::InitialSaved => installed_campaign_runtime_receipt(state)?,
                 CampaignStartTarget::AbortReturn | CampaignStartTarget::Restart(_) => self
                     .observed_campaign_runtime
                     .clone()
                     .context("campaign route has no first-live runtime observation")?,
                 CampaignStartTarget::Opening(_) => installed_campaign_runtime_receipt(state)?,
             };
+            if matches!(target, CampaignStartTarget::Restart(target) if target.next_scenario().is_some())
+            {
+                // This readback presents the next mission. The restart receipt
+                // separately retains the initial and loaded mission identities.
+                manifest["startup"] = campaign_startup_receipt(
+                    state
+                        .match_state
+                        .startup
+                        .installed_campaign()
+                        .context("continued mission has no campaign admission")?,
+                );
+                manifest["runtime"] = campaign_runtime_receipt(state)?;
+            }
             if target == CampaignStartTarget::AbortReturn {
                 manifest["runtime_observation"] = json!("first-live-frame-before-Escape-press");
                 manifest["cleanup"] = campaign_abort_cleanup_receipt(state)?;
+            }
+            if target == CampaignStartTarget::InitialSaved {
+                manifest["initial_save"] =
+                    initial_save_receipt(state, &self.restart_save_directory)?;
             }
             manifest["coverage"] = json!({
                 "loading_readback": "first presented loading screen only; later synchronous milestones are not captured",
@@ -1539,18 +1745,31 @@ impl MoviesCapture {
         if let Some(restart) = self.restart.as_ref() {
             return restart.owns_simulation_steps(state);
         }
+        if matches!(
+            self.target,
+            MoviesTarget::CampaignStart {
+                target: CampaignStartTarget::Opening(opening::OpeningTarget::RealtimeUnlocked),
+                ..
+            }
+        ) {
+            return false;
+        }
 
         matches!(
             self.target,
             MoviesTarget::CampaignStart {
                 target: CampaignStartTarget::FirstLive
+                    | CampaignStartTarget::InitialSaved
+                    | CampaignStartTarget::ExplicitFirstLive(_)
                     | CampaignStartTarget::AbortReturn
                     | CampaignStartTarget::Opening(_)
                     | CampaignStartTarget::Restart(_),
                 ..
             }
-        ) && self.phase == Phase::CampaignStarting
-            && state.frontend.screen == GameScreen::InGame
+        ) && matches!(
+            self.phase,
+            Phase::CampaignStarting | Phase::CampaignInitialSaved
+        ) && state.frontend.screen == GameScreen::InGame
     }
 }
 
@@ -1586,6 +1805,7 @@ fn campaign_startup_receipt(
     json!({
         "campaign": {"id": campaign.id(), "index": startup.campaign_index(), "cd": campaign.cd(),
             "scenario": campaign.scenario(), "final_movie": campaign.final_movie()},
+        "scenario": startup.scenario(),
         "difficulty": startup.difficulty(),
         "seed": {"value": startup.seed.value, "source": format!("{:?}", startup.seed.source),
             "seed_authority_certifying": startup.seed.seed_authority_certifying},
@@ -1684,6 +1904,67 @@ fn campaign_runtime_receipt(state: &AppState) -> Result<Value> {
     installed_campaign_runtime_receipt(state)
 }
 
+fn initial_save_receipt(state: &AppState, directory: &Path) -> Result<Value> {
+    let runtime = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .context("initial save has no world")?;
+    ensure!(
+        runtime.simulation.session().tick() == 1,
+        "initial save capture passed its first Logic step"
+    );
+    let entries = state.persistence.repository.browser_entries();
+    ensure!(
+        entries.len() == 1,
+        "initial save capture expected one automatic file, got {}",
+        entries.len()
+    );
+    let entry = &entries[0].0;
+    ensure!(
+        entry.path.parent() == Some(directory),
+        "initial save escaped capture directory"
+    );
+    ensure!(
+        entry.header.tick == 0,
+        "automatic save was written after Logic"
+    );
+    let saved = crate::sim::snapshot::GameSnapshot::load_with_resources(
+        &state.persistence.repository.read(&entry.path)?,
+    )?;
+    ensure!(
+        saved.sim.session().game_options().game_speed == 2,
+        "automatic save preceded the Options input"
+    );
+    let pending_speed = saved.sim.pending_command_snapshot().iter().any(|command| {
+        matches!(
+            command.payload,
+            crate::sim::command::Command::SetGameSpeed { .. }
+        )
+    });
+    ensure!(
+        !pending_speed,
+        "automatic save retained already-consumed Options input"
+    );
+    let browser =
+        App::open_saved_game_rows(state, crate::ui::skirmish_shell::SavedSeedMode::Save, 8);
+    ensure!(
+        browser
+            .selected_entry()
+            .is_some_and(|row| row.file_name.is_none()),
+        "Save did not select its new slot"
+    );
+    Ok(json!({
+        "filename": entry.path.file_name().unwrap().to_string_lossy(),
+        "description": entry.header.description, "tick": entry.header.tick,
+        "map_name": entry.header.map_name,
+        "game_speed": saved.sim.session().game_options().game_speed,
+        "pending_speed_input": pending_speed,
+        "new_save_description": browser.description_edit.display_text(),
+        "observation": "ordinary save browser model; dialog not opened",
+    }))
+}
+
 fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
     let runtime = state
         .match_state
@@ -1743,6 +2024,18 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
         })
     };
     let rules = &runtime.resources.rules;
+    let player_buildings: Vec<_> = sim.entities().iter_sorted().filter_map(|(id, entity)| {
+        (entity.owner() == current && entity.category() == crate::map::entities::EntityCategory::Structure)
+            .then(|| json!({
+                "id": id, "type": sim.interner().resolve(entity.type_ref()),
+                "cell": [entity.position.rx(), entity.position.ry()],
+                "in_playfield": entity.in_playfield(),
+                "discovered": entity.discovery.discovered_by_current_house(),
+                "opened": entity.building_art.actually_placed(),
+                "ready": entity.building_ready_latch(),
+                "mission": entity.mission.current().raw(), "queued": entity.mission.queued().raw(),
+            }))
+    }).collect();
     Ok(json!({
         "tick": sim.session().tick(), "binary_frame": sim.session().binary_frame(),
         "scenario_started": sim.session().started(),
@@ -1751,8 +2044,25 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
             "saved_world_restored": state.match_state.startup.restored()},
         "seed": sim.session().seed(), "map_name": sim.session().map_name(), "theater": sim.session().theater(),
         "game_mode_nonzero": sim.session().game_mode_nonzero(), "campaign_mission_counter": mission_counter,
+        "destinations": {"next": state.match_state.map_basic.next_scenario,
+            "alternate": state.match_state.map_basic.alt_next_scenario},
         "campaign_difficulty_rows": {"player": player_difficulty as i32, "computer": computer_difficulty as i32},
         "current_house": {"name": sim.interner().resolve(current), "native_unique_id": current_native_id},
+        "fog": {"enabled": sim.session().game_options().fog_of_war,
+            "shroud_growth": {"enabled": rules.general.shroud_grow,
+                "interval": rules.general.shroud_growth_interval_frames(),
+                "start": sim.session().shroud_growth_timer().start_frame(),
+                "duration": sim.session().shroud_growth_timer().duration()},
+            "regrow_timer": {"start": sim.session().fog_regrow_timer().start_frame(),
+                "duration": sim.session().fog_regrow_timer().duration()},
+            "snapshots": sim.fog().fogged_objects().values().filter_map(|record| {
+                let drawing = record.drawing.as_ref()?;
+                Some(json!({"id": record.id, "viewer": sim.interner().resolve(record.viewer),
+                    "source": record.source_entity_id, "owner": sim.interner().resolve(drawing.owner),
+                    "location": drawing.location, "records": drawing.records.iter().map(|row| {
+                        json!({"type": sim.interner().resolve(row.type_ref), "frame": row.frame})
+                    }).collect::<Vec<_>>()}))
+            }).collect::<Vec<_>>()},
         "flags": {"inert": flags.inert, "tiberium_grows": flags.tiberium_grows,
             "tiberium_spreads": flags.tiberium_spreads, "destroyable_bridges": flags.destroyable_bridges,
             "free_radar": sim.session().free_radar(), "ignore_global_ai_triggers": sim.session().ignore_global_ai_triggers()},
@@ -1760,6 +2070,11 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
             "simulation_config_hash": format!("{:016x}", rules.simulation_config_hash()),
             "domain": "parsed Rules projection and semantic config; not retail byte SHA256"},
         "house_roster": roster,
+        "campaign_names": {"name_utf16": state.match_state.campaign_names.name_units(),
+            "ui_name": state.match_state.campaign_names.ui_name(),
+            "save_title_utf16": state.match_state.campaign_names.save_title_units(),
+            "save_title": state.match_state.campaign_names.save_title()},
+        "player_buildings": player_buildings,
         "scalar_difficulty_order": ["Firepower", "Groundspeed", "Airspeed", "Armor", "ROF", "Cost", "BuildTime", "RepairDelay", "BuildDelay"],
         "native_identity_cursor": sim.native_identity_cursor(),
         "rng": {"main": rng_receipt(&rng.main), "scenario": rng_receipt(&rng.scenario), "mapgen": rng_receipt(&rng.mapgen)},

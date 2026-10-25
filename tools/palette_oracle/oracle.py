@@ -1,7 +1,7 @@
 """Read-only original gamemd x86 execution for palette table research.
 
-No Ghidra/process mutation. Only isolated Unicorn memory is initialized. The
-executable hash is checked; output goldens are bytes executed from that image.
+No Ghidra/process mutation. Only isolated Unicorn memory is initialized. Output
+goldens are bytes executed from the configured image.
 """
 from pathlib import Path
 import hashlib
@@ -289,7 +289,7 @@ def generate():
     # Every palette channel takes all 256 byte values, with decorrelated RGB.
     pal = bytes(c for i in range(256) for c in (i, (i * 73) % 256, 255 - i))
     scales = base_scales()
-    report = {'exe': native_oracle.configured_gamemd().name, 'sha256': native_oracle.NATIVE_SHA256, 'unicorn': __import__('unicorn').__version__, 'x87_control_word': '0x0e7f', 'cached_x87_control_word': hex(struct.unpack('<I', native_oracle.file_span(native_oracle.image_bytes(), 0x822d80, 4)[1])[0]), 'scope': 'isolated original x86 table/scanline execution; RGB565 only; no retail scene capture', 'tables': [], 'scanlines': []}
+    report = {'exe': native_oracle.configured_gamemd().name, 'unicorn': __import__('unicorn').__version__, 'x87_control_word': '0x0e7f', 'cached_x87_control_word': hex(struct.unpack('<I', native_oracle.file_span(native_oracle.image_bytes(), 0x822d80, 4)[1])[0]), 'scope': 'isolated original x86 table/scanline execution; RGB565 only; no retail scene capture', 'tables': [], 'scanlines': []}
     ground = ground_level_samples()
     # This original-output golden is pinned with CRLF bytes in provenance.json.
     # Emit the same bytes on every platform, independent of text-mode newlines.
@@ -418,7 +418,7 @@ def receipt(outputs, fixtures, identity):
     )
     result.update({
         'checked_at_utc': datetime.now(timezone.utc).isoformat(),
-        **identity,
+        'historical_provenance_sha256': identity['historical_provenance_sha256'],
         'fixtures_reproduced': fixtures,
         'generated_sha256': {name: hashlib.sha256(data).hexdigest() for name, data in outputs.items()},
         'limits': 'Fresh isolated execution does not refresh historical active-runtime observations, establish scene reachability, or certify non-clear A-buffer composition, map gathering or whole-scene parity.',

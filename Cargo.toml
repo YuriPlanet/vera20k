@@ -1,6 +1,6 @@
 [package]
 name = "vera20k"
-version = "0.1.0"
+version = "0.2.2"
 edition = "2024"
 description = "Vera20k Engine — a from-scratch Rust engine for Red Alert 2: Yuri's Revenge"
 autobins = false
@@ -13,7 +13,7 @@ publish = false
 # asset tools and the game binary). The core manifest sits in `src/`, so rustc
 # still names every source file `src/...`.
 [workspace]
-members = ["src"]
+members = ["src", "services/relay-protocol", "services/relay"]
 # Plain `cargo build`/`cargo test --lib` cover both crates.
 default-members = [".", "src"]
 
@@ -43,12 +43,19 @@ required-features = ["telemetry-dashboard"]
 default = ["dev-overlays"]
 # Optional gameplay extensions. Neither default nor shipping builds enable this.
 ares = ["vera20k-core/ares"]
+# Optional Phobos extensions, independent of the Ares capability; neither
+# default nor shipping builds enable this either.
+phobos = ["vera20k-core/phobos"]
+# Placeholder for the NPatch capability; no chain reads it yet.
+npatch = ["vera20k-core/npatch"]
+# VERA20K's own first-party extension capability; VeraX-gated chains read it.
+verax = ["vera20k-core/verax"]
 # The Ctrl+Shift dev chord: renderer-native diagnostic overlays (grid, heightmap,
 # pathgrid, foot path, fog), the debug pause and quicksave/quickload. Captures
 # rely on it (literal Ctrl+Shift+M/N quicksave/quickload).
 dev-overlays = ["vera20k-core/dev-overlays"]
 # Optional read-only local browser dashboard, absent from default/shipping builds.
-telemetry-dashboard = ["vera20k-core/telemetry", "dep:getrandom", "dep:sha1"]
+telemetry-dashboard = ["vera20k-core/telemetry", "dep:sha1"]
 # Explicit offline trainer and per-unit event hooks. Never enabled by the
 # dashboard alone or the default/shipping feature set.
 debug-tools = ["telemetry-dashboard", "dev-overlays", "vera20k-core/debug-tools"]
@@ -57,15 +64,23 @@ debug-tools = ["telemetry-dashboard", "dev-overlays", "vera20k-core/debug-tools"
 # The GPU-free engine. Its dev features follow this package's.
 vera20k-core = { path = "src" }
 
-# OS session credentials and RFC6455 handshake; no simulation RNG or command intake.
-getrandom = { version = "=0.3.4", optional = true }
+# Background HTTPS lobby I/O; verified TLS is independent of simulation.
+ureq = { version = "3.5", default-features = false, features = ["rustls", "json"] }
+base64 = "0.22"
+
+# OS multiplayer session nonces and RFC6455 handshake; no simulation RNG or command intake.
+getrandom = { version = "=0.3.4" }
 sha1 = { version = "=0.10.6", optional = true }
 
 # --- GPU rendering ---
-wgpu = "27"
+wgpu = "29.0.4"
 # winit 0.30 is the latest stable. 0.31 is still in beta.
 # Uses the ApplicationHandler trait pattern (deferred window creation).
-winit = "0.30"
+# The supported no-title CSD keeps Wayland borders/buttons and window title
+# metadata, but omits drawn title text when the compositor needs client-side
+# decorations. It avoids ab_glyph's unmaintained ttf-parser; X11/server-side
+# decorations and the macOS/Windows title bars keep their normal text.
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita-notitle"] }
 # raw-window-handle + windows-sys let us clip the OS cursor to the game window
 # with the Win32 ClipCursor API . That is reliable on frameless
 # windows. winit's CursorGrabMode::Confined instead clips a *hidden* cursor to a
@@ -112,15 +127,25 @@ libc = "0.2"
 jni = "=0.21.1"
 ndk-context = "=0.1.1"
 
-# --- macOS application icon ---
+# --- macOS application icon and game folder chooser ---
 # macOS has no per-window icon; the Dock shows NSApplication's icon image, which
-# `app::window_icon` sets at startup. objc2 0.6 and Foundation 0.3 are the
-# versions already in the lock (via cpal), and AppKit 0.3 matches them; default
-# features are off because they enable every AppKit framework class.
+# `app::window_icon` sets at startup. The app bundle's first launch asks for the
+# game folder with NSAlert and NSOpenPanel (`app::app_bundle`). objc2 0.6 and Foundation 0.3
+# are the versions already in the lock (via cpal), and AppKit 0.3 matches them;
+# default features are off because they enable every AppKit framework class.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSImage", "NSResponder"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSImage", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSView", "NSWindow"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSLocale", "NSString", "NSURL"] }
+
+# --- Windows program icon and version details ---
+# build.rs compiles them into vera20k.exe with the Windows SDK's resource
+# compiler. A target table for build dependencies matches the host, so other
+# hosts never build this. The default `toml` feature reads
+# [package.metadata.winresource], which build.rs does not use; 0.1.34 has
+# `compile_for`, which keeps them to the game.
+[target.'cfg(windows)'.build-dependencies]
+winresource = { version = "0.1.34", default-features = false }
 
 [dev-dependencies]
 # Client tests use core's test fixtures and helpers.
@@ -135,7 +160,7 @@ serde_json = "1"
 # thiserror for structured library errors (AssetError, RulesError, etc.)
 thiserror = "2"
 # anyhow for application-level error propagation (main.rs, app facade)
-anyhow = "1"
+anyhow = "1.0.104"
 log = "0.4"
 
 [lints]

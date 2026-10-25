@@ -237,6 +237,7 @@ fn present(
                     view.resolved_terrain(),
                     cells,
                     generation,
+                    None,
                 );
                 if index == 0 {
                     consumed = current;

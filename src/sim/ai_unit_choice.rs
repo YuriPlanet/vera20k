@@ -30,13 +30,13 @@
 //! Available_Money, IsRecruitable and the draws hooked (the
 //! `ai_unit_choice_tests` goldens).
 //!
-//! RESIDUALS:
-//! - Native tallies need in stack arrays of 100 entries: a class with more
-//!   than 100 types, or more than 100 candidate types, writes past them.
-//!   VERA sizes them by the class. Retail classes hold fewer than 100 types.
-//! - A team's `+0x79` (full) and `+0x77` (forced) are written only by
-//!   recruitment, which is not ported (`sim::team_script_vm`), so a
-//!   `Reinforce=` team counts as needing members forever.
+//! A team's `+0x79` (full) comes from `TeamClass::Recalc @ 0x006EA3E0` and
+//! team creation, its `+0x77` (forced) from reinforcement creation
+//! (`0x0065DD64`), all in `sim::team_script_vm`.
+//!
+//! RESIDUAL: native tallies need in stack arrays of 100 entries: a class with
+//! more than 100 types, or more than 100 candidate types, writes past them.
+//! VERA sizes them by the class. Retail classes hold fewer than 100 types.
 
 use serde::{Deserialize, Serialize};
 
@@ -53,10 +53,11 @@ use crate::util::native_x87::{NativeF64Bits, X87Chop53};
 /// `0.01` (`[0x007E3808]`).
 const PERCENT_SCALE: NativeF64Bits = NativeF64Bits::from_bits(0x3F84_7AE1_47AE_147B);
 
-/// One of the three choices.
+/// One of the house's mobile production choices.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum UnitChoiceKind {
     Unit,
+    NavalUnit,
     Infantry,
     Aircraft,
 }
@@ -65,15 +66,18 @@ impl UnitChoiceKind {
     /// The class array the choice indexes.
     pub(crate) const fn category(self) -> ObjectCategory {
         match self {
-            Self::Unit => ObjectCategory::Vehicle,
+            Self::Unit | Self::NavalUnit => ObjectCategory::Vehicle,
             Self::Infantry => ObjectCategory::Infantry,
             Self::Aircraft => ObjectCategory::Aircraft,
         }
     }
 
     /// The choice a produced object of `category` fills; none for a building.
-    pub(crate) const fn of(category: ObjectCategory) -> Option<Self> {
+    pub(crate) const fn of(category: ObjectCategory, naval: bool) -> Option<Self> {
         match category {
+            ObjectCategory::Vehicle if crate::rules::NPATCH_ENABLED && naval => {
+                Some(Self::NavalUnit)
+            }
             ObjectCategory::Vehicle => Some(Self::Unit),
             ObjectCategory::Infantry => Some(Self::Infantry),
             ObjectCategory::Aircraft => Some(Self::Aircraft),
@@ -84,11 +88,27 @@ impl UnitChoiceKind {
 
 /// `HouseClass+0x5650`, `+0x5654` and `+0x5658`: a type index in its class
 /// array, -1 for none.
+///
+/// NPSE adds a second vehicle slot at `House+0x16130` (initialised to -1 at
+/// `0xC31275`) for naval yards, so a shipyard and a war factory stop sharing
+/// one choice: `Suggest_New_Object`'s hook (`0x4FBDAF -> 0xC2F130`) reads the
+/// producer's `Naval=` (`Type+0xCCE`) and takes `+0x16130` for a naval
+/// producer, `+0x5650` otherwise. An ordinary build keeps the vanilla single
+/// slot and never reads the naval choice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct HouseAiUnitChoices {
     unit: i32,
     infantry: i32,
     aircraft: i32,
+    /// `House+0x16130` (NPSE): the naval yard's vehicle choice, -1 for none.
+    #[serde(default = "no_choice")]
+    naval_unit: i32,
+}
+
+/// The constructor's `-1` for a choice slot, also the value a saved state
+/// without the NPSE field loads as.
+fn no_choice() -> i32 {
+    -1
 }
 
 impl Default for HouseAiUnitChoices {
@@ -97,6 +117,7 @@ impl Default for HouseAiUnitChoices {
             unit: -1,
             infantry: -1,
             aircraft: -1,
+            naval_unit: -1,
         }
     }
 }
@@ -105,6 +126,7 @@ impl HouseAiUnitChoices {
     pub(crate) const fn get(&self, kind: UnitChoiceKind) -> i32 {
         match kind {
             UnitChoiceKind::Unit => self.unit,
+            UnitChoiceKind::NavalUnit => self.naval_unit,
             UnitChoiceKind::Infantry => self.infantry,
             UnitChoiceKind::Aircraft => self.aircraft,
         }
@@ -113,14 +135,19 @@ impl HouseAiUnitChoices {
     fn slot_mut(&mut self, kind: UnitChoiceKind) -> &mut i32 {
         match kind {
             UnitChoiceKind::Unit => &mut self.unit,
+            UnitChoiceKind::NavalUnit => &mut self.naval_unit,
             UnitChoiceKind::Infantry => &mut self.infantry,
             UnitChoiceKind::Aircraft => &mut self.aircraft,
         }
     }
 
-    /// `AI_Manage_Build_Queue`'s restart clears the three unit choices.
+    /// `AI_Manage_Build_Queue` 4FE09A..4FE0B5 clears the original three
+    /// choices. NPSE 2.0 preserves an unconsumed naval choice here; held
+    /// objects clear their own channel through AbandonProduction first.
     pub(crate) fn clear_all(&mut self) {
-        *self = Self::default();
+        self.unit = -1;
+        self.infantry = -1;
+        self.aircraft = -1;
     }
 
     /// An exit or abandon of `kind`'s object.
@@ -161,11 +188,17 @@ pub(crate) fn choose(
     }
     let fill_earliest_percent =
         house.difficulty_value(&rules.general.fill_earliest_team_probability);
-    let choice = match (kind == UnitChoiceKind::Unit)
+    let choice = match matches!(kind, UnitChoiceKind::Unit | UnitChoiceKind::NavalUnit)
         .then(|| harvester_choice(sim, rules, owner))
         .flatten()
     {
-        Some(index) => Some(index),
+        // NPSE 2.0 C339D0..C33A34 returns from the harvester branch even
+        // for the other channel's type: no team fallback or chooser RNG.
+        Some(index) => (!crate::rules::NPATCH_ENABLED
+            || rules
+                .type_array_at(ObjectCategory::Vehicle, index)
+                .is_some_and(|ty| ty.naval == (kind == UnitChoiceKind::NavalUnit)))
+        .then_some(index),
         None => {
             let candidates = candidates(sim, rules, owner, kind);
             pick(&candidates, fill_earliest_percent, |low, high| {
@@ -296,6 +329,15 @@ fn candidates(
     let type_index = |id: InternedId| {
         rules
             .type_array_index(category, sim.interner.resolve(id))
+            // NPSE 2.0 C33B30 filters needed vehicle types before their
+            // recruitment, CanBuild, cost and random-choice consumers.
+            .filter(|&index| {
+                !crate::rules::NPATCH_ENABLED
+                    || category != ObjectCategory::Vehicle
+                    || rules
+                        .type_array_at(category, index)
+                        .is_some_and(|ty| ty.naval == (kind == UnitChoiceKind::NavalUnit))
+            })
             .and_then(|index| usize::try_from(index).ok())
             .filter(|&index| index < type_count)
     };
@@ -393,11 +435,12 @@ fn tally<T>(
 }
 
 /// `FootClass::IsRecruitable @ 0x004DA230` for house `owner`: owned by it
-/// (`+0x21C`), out of limbo (`+0x81`; VERA's dead await their removal, so
-/// they count as in limbo, see `GameEntity::is_ai_alive`), in no team
+/// (`+0x21C`), out of limbo (`+0x81`), in no team
 /// (`+0x5D4`), on a mission (`Get_Mission`) MissionControl lets recruit
 /// (`0x005B36E0`: none, -1, is recruitable), and its first scenario
 /// recruit byte (`+0x421`) set.
+/// Native has no Health gate: retained Infantry corpses still cover needs.
+/// `is_active` only excludes VERA's records awaiting native-equivalent removal.
 fn is_recruitable(
     sim: &Simulation,
     rules: &RuleSet,
@@ -405,7 +448,7 @@ fn is_recruitable(
     owner: InternedId,
 ) -> bool {
     entity.owner() == owner
-        && entity.is_ai_alive()
+        && entity.is_active()
         && !entity.lifecycle.in_limbo()
         && sim
             .team_script_vm

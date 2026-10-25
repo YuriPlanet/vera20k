@@ -130,10 +130,7 @@ fn grinder_seek_keeps_the_last_registered_building_on_distance_ties() {
             .nav_com(),
         Some(NavTargetRef::object(last))
     );
-    sim.uninit_with_context(
-        last,
-        crate::sim::world::UninitContext::new(Some(&rules), None),
-    );
+    sim.uninit_with_context(last, crate::sim::world::UninitContext::new(&rules, None));
     assert!(sim.foot_enter_grinder(civ, &rules, None, FrameEffects::default()));
     assert_eq!(
         sim.substrate
@@ -186,7 +183,7 @@ fn vehicle_grinding_refunds_both_cargo_levels_and_removes_each_passenger() {
     let outer = spawn(&mut sim, &rules, "TANK", "Russians", 11, 10);
     let nested = spawn(&mut sim, &rules, "CIV", "Russians", 12, 10);
     let sibling = spawn(&mut sim, &rules, "CIV", "Russians", 13, 10);
-    let context = crate::sim::world::UninitContext::new(Some(&rules), None);
+    let context = crate::sim::world::UninitContext::new(&rules, None);
     assert!(sim.add_cargo_passenger_chain(outer, &[(nested, 1.0)], context));
     assert!(sim.add_cargo_passenger_chain(tank, &[(sibling, 1.0)], context));
     assert!(sim.add_cargo_passenger_chain(tank, &[(outer, 1.0)], context));
@@ -210,7 +207,7 @@ fn vehicle_grinding_refunds_both_cargo_levels_and_removes_each_passenger() {
     sim.per_cell_process(
         tank,
         PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     )
@@ -366,6 +363,11 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
     use crate::rules::team_ai_ini::TeamAiIniRegistry;
     use crate::sim::house_state::HouseState;
 
+    // Keep the declared flat crop's source building and waypoints inside
+    // its native Size diamond, preserving the original fixture's spacing.
+    const CROP_X: u16 = 14;
+    const CROP_Y: u16 = 12;
+
     let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
@@ -386,6 +388,17 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
     rules.install_art_data(ArtRegistry::from_ini(&art));
     let aimd = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI").unwrap();
     let teams = TeamAiIniRegistry::from_sources(&aimd.ini, &authored.ini, true);
+    // The actual AA civilian origin is beside this Neutral building. Keep
+    // that relationship in the flat crop so Action80 must also exercise
+    // reinforcement65D8E0's generic building ExitObject path.
+    let source_origin = authored.waypoints[&26];
+    assert_eq!((source_origin.rx, source_origin.ry), (131, 84));
+    let source_building = authored
+        .entities
+        .iter()
+        .find(|entity| entity.type_id == "CAPARS07" && (entity.cell_x, entity.cell_y) == (130, 85))
+        .expect("physical SOV03 civilian source building");
+    assert_eq!(source_building.owner, "Neutral");
     assert!(rules.object("YAGRND").unwrap().grinding);
     assert_eq!(
         rules.object("YAGRND").unwrap().power,
@@ -427,7 +440,12 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
             }
         }
         let waypoints: String = (26..=32)
-            .map(|index| format!("{index}={}\n", (index - 18) * 1000 + 10))
+            .map(|index| {
+                format!(
+                    "{index}={}\n",
+                    (index - 26 + u32::from(CROP_Y)) * 1000 + u32::from(CROP_X)
+                )
+            })
             .collect();
         // Original trigger/event/action/Tag records and Team definitions;
         //the declared flat crop relocates all seven AA..AG reinforcement cells.
@@ -455,15 +473,38 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
         let mut state = HouseState::new(house, 2, Some(country), false, 0, 1);
         state.project_country_mults(&rules, &sim.interner);
         sim.houses.register(state);
+        let neutral = sim.interner.intern(&source_building.owner);
+        let neutral_country = sim.interner.intern("Neutral");
+        let mut neutral_state = HouseState::new(neutral, 1, Some(neutral_country), false, 0, 1);
+        neutral_state.project_country_mults(&rules, &sim.interner);
+        neutral_state.resolve_multiplay_passive(&rules, Some("Neutral"));
+        assert!(
+            neutral_state.multiplay_passive(),
+            "retail Neutral country is passive"
+        );
+        sim.houses.register(neutral_state);
         sim.install_team_ai_registry(&teams, &rules).unwrap();
         sim.session.install_waypoints(&cropped.waypoints);
-        spawn(&mut sim, &rules, "YAGRND", "Civie3", 18, 10);
+        spawn(&mut sim, &rules, "YAGRND", "Civie3", CROP_X + 8, CROP_Y + 2);
+        let cropped_origin = cropped.waypoints[&26];
+        let source_x = i32::from(cropped_origin.rx) + i32::from(source_building.cell_x)
+            - i32::from(source_origin.rx);
+        let source_y = i32::from(cropped_origin.ry) + i32::from(source_building.cell_y)
+            - i32::from(source_origin.ry);
+        spawn(
+            &mut sim,
+            &rules,
+            &source_building.type_id,
+            &source_building.owner,
+            u16::try_from(source_x).unwrap(),
+            u16::try_from(source_y).unwrap(),
+        );
         sim.initialize_trigger_definitions(&cropped, &teams, None, None);
-        sim.classify_map_triggers(Some(&rules));
+        sim.classify_map_triggers(&rules);
         let frame = |sim: &mut Simulation| {
             sim.advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 None,
                 67,
                 crate::sim::world::TickLane::Ordinary,
@@ -477,7 +518,20 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
         //unrelated campaign. The real Event13 timer and Action80 run here.
         sim.session.set_tick_for_test(1600);
         sim.session.set_binary_frame_for_test(1600);
+        // Only the Neutral source building's ExitObject clears this House's
+        // pending Infantry choice; ordinary waypoint placement leaves it.
+        let infantry_choice = crate::sim::ai_unit_choice::UnitChoiceKind::Infantry;
+        sim.houses
+            .get_mut(&neutral)
+            .unwrap()
+            .ai_unit_choices_mut()
+            .set(infantry_choice, 0);
         frame(&mut sim);
+        assert_eq!(
+            sim.houses[&neutral].ai_unit_choices().get(infantry_choice),
+            -1,
+            "{type_id}: the authored source building must run ExitObject"
+        );
         let members: Vec<_> = sim
             .substrate
             .entities
@@ -503,7 +557,7 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
                     .substrate
                     .entities
                     .get(civilian)
-                    .is_some_and(|actor| actor.position.rx() > 10)
+                    .is_some_and(|actor| actor.position.rx() > CROP_X)
                 {
                     approached.insert(civilian);
                 }
@@ -592,7 +646,7 @@ fn infantry_arrival_switches_active_to_special_without_a_foot_tail() {
     sim.per_cell_process(
         civ,
         PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     )
@@ -626,10 +680,7 @@ fn eaten_idles_when_its_grinder_expires_without_falling_back_to_hunt() {
     let civ = spawn(&mut sim, &rules, "CIV", "Russians", 10, 10);
     assert!(sim.foot_enter_grinder(civ, &rules, None, FrameEffects::default()));
     mission(&mut sim, civ, MissionType::Eaten, MissionId::NONE);
-    sim.uninit_with_context(
-        grinder,
-        crate::sim::world::UninitContext::new(Some(&rules), None),
-    );
+    sim.uninit_with_context(grinder, crate::sim::world::UninitContext::new(&rules, None));
     assert_eq!(
         sim.substrate
             .entities
@@ -746,7 +797,7 @@ fn arrival_callbacks_precede_refund_and_playback_precedes_the_next_main_draw() {
     .unwrap();
     let teams = TeamAiIniRegistry::from_sources(&IniFile::from_str(""), &map.ini, false);
     sim.initialize_trigger_definitions(&map, &teams, None, None);
-    sim.classify_map_triggers(Some(&rules));
+    sim.classify_map_triggers(&rules);
     sim.attach_object_trigger_tag(grinder, Some("OWNER_TAG"));
     sim.attach_object_trigger_tag(civ, Some("DONE_TAG"));
     sim.clear_tag_dispatch_trace_for_test();

@@ -151,6 +151,32 @@ impl Simulation {
         }
     }
 
+    /// gamemd.exe InfantryClass::PlayIdleAnim521C60 (Foot virtual520).
+    /// Argument1 requests Idle2; every other value requests Idle1, with
+    /// force0/random-stage0. Do_Action owns admission and the retained clock.
+    /// Unit/Aircraft inherit the empty Foot41C120 receiver. No idle-action
+    /// timer rearm or VoiceComment selection belongs to this receiver.
+    pub(crate) fn foot_play_idle_animation(
+        &mut self,
+        id: u64,
+        variant: i32,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        if !self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|actor| actor.category() == EntityCategory::Infantry)
+        {
+            return;
+        }
+        let action = if variant == 1 { DO_IDLE2 } else { DO_IDLE1 };
+        if let Err(cause) = self.infantry_do_action(id, action, false, rules, effects) {
+            log::debug!("infantry {id} PlayIdleAnim: {cause}");
+        }
+    }
+
     /// `InfantryClass::Do_Action` 0x0051D6F0 for `requested` with the
     /// caller's `force` and a random-frame argument 0, as the class's own
     /// receivers request it. Answers whether the action was accepted.
@@ -379,14 +405,20 @@ impl Simulation {
         }
         //51D939/51D981: the admitted Deploy/Undeploy sound observes the
         // previous Doing and Stage. Refused actions do not emit this cue.
+        let previous_sound_count = self.sound_events.len();
         Self::emit_deploy_action_sound(
             &mut self.interner,
             &self.substrate,
+            self.resolved_terrain.as_ref(),
             &mut self.sound_events,
             id,
             requested,
             rules,
         )?;
+        if self.sound_events.len() != previous_sound_count {
+            // DoAction51D94F..51D9CA submits PlayAt before the Doing store.
+            effects.flush_sound(self, rules);
+        }
         let actor = self
             .substrate
             .entities
@@ -461,7 +493,7 @@ impl Simulation {
                 .set_foot_firing_sequence(0);
             self.infantry_do_action(id, requested, false, rules, effects)?;
         }
-        self.object_ai_post_movement_promote_one(id, Some(rules));
+        self.object_ai_post_movement_promote_one(id, rules);
         //51BF0B is after Process and the second Ready/Commence, including a
         // retained death sequence. Shared DoAction decides stance refusal.
         let bridge_changed = self.infantry_fear_turn(id, rules, registry, effects)?;
@@ -583,12 +615,14 @@ impl Simulation {
                     true
                 }
                 38 => {
-                    let requested = if self
-                        .substrate
-                        .entities
-                        .get(id)
-                        .is_some_and(|actor| actor.mission.current().raw() == 10)
-                    {
+                    // `0x00520B61..0x00520B84`: Get_Mission (vt+0x184,
+                    // `0x005B3040`, current or else queued) == Harvest asks
+                    // a forced Shovel; anything else takes the forced Ready
+                    // at `0x00520E42`.
+                    let requested = if self.substrate.entities.get(id).is_some_and(|actor| {
+                        actor.mission.effective().known()
+                            == Some(crate::sim::mission::MissionType::Harvest)
+                    }) {
                         38
                     } else {
                         DO_READY
@@ -711,7 +745,7 @@ impl Simulation {
             } else {
                 0
             },
-            Some(rules),
+            rules,
             registry,
             effects,
         );
@@ -809,7 +843,7 @@ impl Simulation {
         {
             return Ok(());
         }
-        self.assign_null_destination(id, Some(rules), registry, effects);
+        self.assign_null_destination(id, rules, registry, effects);
         Ok(())
     }
 
@@ -892,7 +926,7 @@ impl Simulation {
         };
         let moving_now = super::motion_query::is_really_moving_now(
             actor,
-            Some(super::SpeedRules::new(rules, &self.interner, &self.houses)),
+            super::SpeedRules::new(rules, &self.interner, &self.houses),
             self.session.binary_frame(),
         );
         let requested = if moving_now {

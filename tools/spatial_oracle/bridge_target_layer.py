@@ -10,7 +10,7 @@ from itertools import product
 from pathlib import Path
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_EBX, UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_ESP
-from tools.native_oracle import SCRATCH, STACK_BASE, STACK_SIZE, load_image, run_checked, finish_vectors, provenance, NATIVE_SHA256
+from tools.native_oracle import SCRATCH, STACK_BASE, STACK_SIZE, load_image, run_checked, finish_vectors, provenance
 from tools.spatial_oracle.map_queries import dwords, packed, TABLE, DUMMY, EMPTY_TABLE
 
 BEGIN, ACCEPT, REJECT = 0x6F8682, 0x6F86FE, 0x6F894F
@@ -107,7 +107,7 @@ def controls():
 
 
 def generate():
-    return dict(native_sha256=NATIVE_SHA256, rows=[execute(c) for c in controls()])
+    return dict(rows=[execute(c) for c in controls()])
 
 
 def metadata():

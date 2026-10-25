@@ -286,19 +286,16 @@ pub(crate) fn scan(
 pub(super) fn passive_acquire_step(
     sim: &mut Simulation,
     id: u64,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     ctx: ObjectAiCtx<'_>,
 ) {
-    let Some(rules) = rules else {
-        return;
-    };
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
     match targeting_slot(entity, sim.session.binary_frame()) {
         TargetingSlot::Skip => {}
         TargetingSlot::ArrivalHandler => sim.foot_arrival_target_handler(id, rules, ctx),
-        TargetingSlot::PassiveAcquire(_) => {
+        TargetingSlot::PassiveAcquire => {
             passive_target_acquire(sim, id, rules, ctx);
         }
     }
@@ -311,7 +308,7 @@ pub(super) enum TargetingSlot {
     /// An attack-mover's Arrival_Target_Handler.
     ArrivalHandler,
     /// [`passive_target_acquire`] on this mission.
-    PassiveAcquire(MissionType),
+    PassiveAcquire,
 }
 
 /// Where the passive block of `TechnoClass::AI_Update` goes for `entity` at
@@ -333,7 +330,7 @@ pub(super) fn targeting_slot(
     ) {
         return TargetingSlot::Skip;
     }
-    TargetingSlot::PassiveAcquire(mission)
+    TargetingSlot::PassiveAcquire
 }
 
 /// `TechnoClass::Passive_Target_Acquire @ 0x00709480`: false unless
@@ -381,7 +378,8 @@ pub(crate) fn passive_target_acquire(
 ///    `Aggressive=yes` and `Suicide=no`, passes on Move without
 ///    CanAcquireTarget (`0x0070929A..0x007092EC`);
 /// 2. otherwise [`can_acquire_target`] must pass;
-/// 3. on Move, an object parked on its NavCom's cell passes, and a
+/// 3. on Move, an eligible object parked on its NavCom's cell without
+///    remaining planned nodes passes, and a
 ///    `BalloonHover=` object that is no Foot fails ([`parked_on_move`],
 ///    `0x00709301..0x007093D3`);
 /// 4. `OpportunityFire=` (`+0x6AF`) passes (`0x007093D5`);
@@ -424,7 +422,7 @@ pub(super) fn passive_acquire_gate(
         return false;
     };
     if mission == MissionType::Move
-        && let Some(passes) = parked_on_move(entity, obj, is_foot)
+        && let Some(passes) = parked_on_move(sim, entity, obj, is_foot)
     {
         return passes;
     }
@@ -434,7 +432,7 @@ pub(super) fn passive_acquire_gate(
     if mission != MissionType::Guard {
         return false;
     }
-    let slot = if obj.spray_attack { 0 } else { 1 };
+    let (slot, _) = combat_weapon::deploy_weapon(obj, entity.veterancy.rank());
     let target = entity.attack_target.target();
     let area_fire = fire_subject(sim, rules, id, target, slot, None)
         .and_then(|subject| subject.weapon_at(slot).map(|weapon| weapon.area_fire))
@@ -455,38 +453,51 @@ pub(super) fn passive_acquire_gate(
 /// the Location, which `position.rx`/`ry` name. Answers the gate's verdict, or
 /// `None` to go on.
 ///
-/// RESIDUAL: VERA has no waypoint-planning mode (the token's setter
-/// `0x00705D10` is called only from the planning code), so every object
-/// passes as with a token of no nodes. Trigger: a player planning any
-/// waypoint path for these types (its count positive). Effect: native keeps
-/// such a parked object from scanning. Frequency: waypoint mode only.
-///
-/// RESIDUAL (scatter frame): when a parked Jumpjet yields its cell's air slot,
-/// native's `Set_Destination` writes the new NavCom inside that frame's
-/// Process; VERA's adapter writes it in the next frame's locomotor step, after
-/// that frame's passive block, whose gate still sees the old cell. Trigger:
-/// two Jumpjets contending for one cell's air slot while a scan is due.
-/// Effect: one early scan (its Scenario draw and timer). Frequency: rare.
 fn parked_on_move(
+    sim: &Simulation,
     entity: &crate::sim::game_entity::GameEntity,
     obj: &crate::rules::object_type::ObjectType,
     is_foot: bool,
 ) -> Option<bool> {
-    let on_own_cell = entity.navigation.nav_com()
-        == Some(crate::sim::components::NavTargetRef::cell(
-            entity.position.rx(),
-            entity.position.ry(),
-        ));
+    // Each admitted arm calls +1BC independently, including its two ordered
+    // physical Map queries. Comparing an already-retained NavCom pointer must
+    // not itself look up/stamp Dummy again.
+    let on_own_cell = || {
+        let Some(terrain) = sim.resolved_terrain.as_ref() else {
+            // Bare fixtures without a map retain their coordinate projection.
+            return entity.navigation.nav_com()
+                == Some(crate::sim::components::NavTargetRef::cell(
+                    entity.position.rx(),
+                    entity.position.ry(),
+                ));
+        };
+        let query = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        let physical = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+        let cell = crate::sim::movement::ground_pose::query_object_cell(&query, physical);
+        match entity.navigation.nav_com() {
+            Some(crate::sim::components::NavTargetRef::Cell { rx, ry }) => {
+                use crate::map::cell_index::NativeCellIdentity;
+                let nav = terrain
+                    .native_fixed_cell_index(rx as i16, ry as i16)
+                    .map_or(NativeCellIdentity::Dummy, NativeCellIdentity::Real);
+                cell == nav
+            }
+            _ => false,
+        }
+    };
     if obj.balloon_hover {
         if !is_foot {
             return Some(false);
         }
-        if on_own_cell {
+        if on_own_cell() && !sim.planning_has_remaining_nodes(entity.stable_id()) {
             return Some(true);
         }
     }
-    (entity.category() == EntityCategory::Unit && obj.is_simple_deployer && on_own_cell)
-        .then_some(true)
+    (entity.category() == EntityCategory::Unit
+        && obj.is_simple_deployer
+        && on_own_cell()
+        && !sim.planning_has_remaining_nodes(entity.stable_id()))
+    .then_some(true)
 }
 
 /// `TechnoClass::CanAcquireTarget @ 0x007091D0`: false when
@@ -519,10 +530,7 @@ pub(super) fn can_acquire_target(sim: &Simulation, id: u64, rules: &RuleSet) -> 
     }
     if entity.category() == EntityCategory::Structure
         && obj.can_be_occupied
-        && entity
-            .passenger_role
-            .cargo()
-            .is_none_or(|cargo| cargo.count() == 0)
+        && entity.passenger_role.occupants().is_empty()
     {
         return false;
     }
@@ -764,7 +772,7 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
         crate::sim::spawn_manager::clear_all_spawn_targets(
             self.sim,
             self.id,
-            Some(self.rules),
+            self.rules,
             None,
             self.ctx.effects,
         );
@@ -774,26 +782,21 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
         let _ = self.sim.assign_target_represented(
             self.id,
             target,
-            Some(self.rules),
+            self.rules,
             self.ctx.overlay_registry,
             self.ctx.effects,
         );
     }
 
-    /// Through the object's `+0x3C4` override, or this pass's batched answer
-    /// ([`super::scan_batch`]).
+    /// Through the object's live `+0x3C4` override. Hunt4D5392,
+    /// AreaGuard4D6F06 and passive/arrival acquisition709820 observe all
+    /// earlier object turns, including newly admitted candidates. Reusing a
+    /// frame-start result would omit their ranking and query/RNG effects.
     fn greatest_threat(&mut self, mask: ScanMission) -> Option<TargetKind> {
         let (rules, registry) = (self.rules, self.ctx.overlay_registry);
-        let outcome =
-            match self
-                .sim
-                .take_batched_scan(rules, registry, self.id, mask, self.scan_coord)
-            {
-                Some(outcome) => outcome,
-                None => self
-                    .sim
-                    .threat_scan(rules, registry, self.id, mask, self.scan_coord),
-            };
+        let outcome = self
+            .sim
+            .threat_scan(rules, registry, self.id, mask, self.scan_coord);
         Simulation::commit_threat_scan(
             &mut self.sim.scenario_rng,
             &mut self.sim.substrate,
@@ -1017,7 +1020,7 @@ mod tests {
                 overlay_registry: Some(&registry),
                 ..ObjectAiCtx::default()
             };
-            passive_acquire_step(&mut sim, scanner, Some(rules), ctx);
+            passive_acquire_step(&mut sim, scanner, rules, ctx);
             let actor = sim.substrate.entities.get(scanner).unwrap();
             assert_eq!(
                 actor.attack_target.target(),
@@ -1060,7 +1063,7 @@ mod tests {
             let jitter = expected_scenario.next_range_u32_inclusive(0, 2);
             let main = sim.main_rng.state();
             let mapgen = sim.mapgen_rng.state();
-            passive_acquire_step(&mut sim, scanner, Some(rules), ctx);
+            passive_acquire_step(&mut sim, scanner, rules, ctx);
             let actor = sim.substrate.entities.get(scanner).unwrap();
             assert_eq!(actor.passive_scan.last_scan_frame(), 100);
             assert_eq!(actor.passive_scan.timer().start_frame(), 100);
@@ -1078,7 +1081,7 @@ mod tests {
             );
             assert_eq!(actor.passive_scan.acquired(), !blocked);
             let after_scan = sim.scenario_rng.state();
-            passive_acquire_step(&mut sim, scanner, Some(rules), ctx);
+            passive_acquire_step(&mut sim, scanner, rules, ctx);
             assert_eq!(
                 sim.scenario_rng.state(),
                 after_scan,
@@ -1414,8 +1417,9 @@ mod tests {
     /// Parity with `tools/spatial_oracle/passive_acquire_gate.json`: the
     /// original gate and CanAcquireTarget, through the production gate with a
     /// type carrying the row's flags. A token of no nodes compares as VERA's
-    /// absent token. Not compared: a token with nodes and a Foot class without
-    /// the Foot flag, which VERA cannot hold; and the Temporal, slave,
+    /// absent token. Positive counts use real planned-order ingress. Not
+    /// compared: a Foot class without the Foot flag, which VERA cannot hold;
+    /// and the Temporal, slave,
     /// CaptureManager, team, garrison and AreaFire-selection rows, whose
     /// inputs this fixture does not build (those arms predate the Move arms).
     #[test]
@@ -1431,8 +1435,7 @@ mod tests {
         .expect("corpus parses");
         let native_only = |input: &Value| {
             let name = input["name"].as_str().unwrap();
-            input["token"].as_i64().is_some_and(|nodes| nodes > 0)
-                || input["foot"] == false
+            input["foot"] == false
                 || input["team"].is_object()
                 || [
                     "warping",
@@ -1521,6 +1524,7 @@ mod tests {
             let input = &row["input"];
             let name = input["name"].as_str().unwrap();
             let mut sim = Simulation::new();
+            sim.install_fixture_path_grid(Some(&crate::sim::pathfinding::PathGrid::new(40, 40)));
             let owner = sim.interner.intern("Americans");
             let human = input["human"].as_bool().unwrap_or(true);
             sim.houses
@@ -1542,6 +1546,23 @@ mod tests {
                     _ => Some(NavTargetRef::cell(10, 10)),
                 });
             sim.substrate.entities.insert(entity);
+            for index in 0..input["token"].as_i64().unwrap_or(0).max(0) {
+                let record = sim
+                    .encode_planning_order_record(
+                        owner,
+                        &crate::sim::command::Command::Move {
+                            entity_id: 1,
+                            target_rx: 12 + index as u16,
+                            target_ry: 10,
+                        },
+                        None,
+                    )
+                    .unwrap();
+                let envelope = sim
+                    .decode_native_command_record(&record, sim.session.tick())
+                    .unwrap();
+                assert!(sim.apply_command("Americans", &envelope.payload, Some(&rules)));
+            }
             let mission = match input["mission"].as_str().unwrap_or("move") {
                 "attack" => MissionType::Attack,
                 "sleep" => MissionType::Sleep,
@@ -1558,6 +1579,6 @@ mod tests {
             );
             compared.push(name);
         }
-        assert_eq!(compared.len(), 32, "{compared:?}");
+        assert_eq!(compared.len(), 35, "{compared:?}");
     }
 }

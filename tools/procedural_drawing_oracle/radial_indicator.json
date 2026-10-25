@@ -272,7 +272,6 @@
       256
     ]
   },
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "ray_controls": [
     {
       "a_unchanged": true,
@@ -54392,7 +54391,6 @@
     }
   },
   "superweapon_range": {
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "fpcw": "0E3F",
     "loop_controls": [
       {

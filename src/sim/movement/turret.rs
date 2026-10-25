@@ -162,7 +162,7 @@ pub(crate) struct FacingUpdate {
 /// Native execution of this arm pair frame by frame:
 /// `tools/spatial_oracle/turret_cadence.py`.
 ///
-/// RESIDUAL (GSI-08.14) — two Facing_Update inputs have no VERA analogue:
+/// RESIDUAL (GSI-08.14) — one Facing_Update input has no VERA analogue:
 /// - The per-weapon-slot lock byte `WeaponStruct+0x18` (`0x00736A02`,
 ///   `0x00736B96`). Executed: with a target it aims the turret at the hull's
 ///   current facing instead of the target, and its idle return ignores the
@@ -170,18 +170,13 @@ pub(crate) struct FacingUpdate {
 ///   no stock type authors the adjacent `WeaponXTurretLocked` art key.
 ///   Downstream risk: the aim feeds the fire-facing gate, so a modded locked
 ///   weapon would fire on VERA's aim, not native's.
-/// - The locomotor-piggyback flag `+0x6AD` (`0x00736BB1`). Trigger: a
-///   piggybacked unit losing its target while it has a NavCom. Player effect:
-///   its turret turns toward the move destination where retail holds the
-///   last aim. Frequency: low; only while the flag is set, with a NavCom
-///   and no target. Downstream risk: none, a pure suppression.
 ///
 /// Recoil's separate presentation state (+3D8/+3F8) is owned by
 /// `game_entity::voxel_recoil`; it does not change aim or consume RNG.
 pub(crate) fn facing_update(
     entity: &GameEntity,
     world: &crate::sim::world::Simulation,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     interner: &crate::sim::intern::StringInterner,
     binary_frame: u32,
 ) -> FacingUpdate {
@@ -192,7 +187,7 @@ pub(crate) fn facing_update(
         hull_destination: None,
         turret_destination_is_idle_return: false,
     };
-    let obj = rules.and_then(|r| interner.object_type(entity.type_ref(), r));
+    let obj = interner.object_type(entity.type_ref(), rules);
     let has_turret = entity.barrel_facing.is_some();
 
     // --- A. AIM ---------------------------------------------------------
@@ -248,16 +243,23 @@ pub(crate) fn facing_update(
         // against a mover.
         let committed_to_an_arc = barrel.is_rotating(binary_frame);
         if !committed_to_an_arc && entity.attack_target.target().is_none() {
-            let dwell = rules.map_or(NATIVE_IDLE_TURRET_DWELL_FALLBACK, |r| {
-                i64::from(r.general.guard_area_targeting_delay)
-            }) + NATIVE_IDLE_TURRET_DWELL_BIAS;
+            let dwell =
+                i64::from(rules.general.guard_area_targeting_delay) + NATIVE_IDLE_TURRET_DWELL_BIAS;
             let dwell_elapsed = i64::from(binary_frame) - entity.last_fire_frame.frame() >= dwell;
             // `+0x2E4` — a tank riding a Battle Bunker holds its aim forever,
             // as does a deployed simple deployer (`0x00736B60..0x00736B78`).
             let bunkered = entity.bunker.link().installed_in().is_some();
             let deployed_simple_deployer =
                 obj.is_some_and(|obj| obj.is_simple_deployer) && entity.is_fully_deployed();
-            if dwell_elapsed && !bunkered && !deployed_simple_deployer {
+            // Facing_Update736BA3..736BB9 keeps the last aim while a
+            // Magnetron's +6AD latch and NavCom are both set. This is the
+            // lift owner's byte, not generic locomotor piggyback state;
+            // Imbue710326/710352 sets the destination and latch, and
+            // Jumpjet End_Piggyback54DA50 clears the latch on landing.
+            // Native controls: turret_cadence.json idle_navcom_magnetron.
+            let lifted_with_destination =
+                entity.lift.swap_active() && entity.navigation.nav_com().is_some();
+            if dwell_elapsed && !bunkered && !deployed_simple_deployer && !lifted_with_destination {
                 out.turret_destination = Some(match nav_destination_facing(entity, world) {
                     Some(nav) => nav,
                     None => entity.body_facing_current(binary_frame),
@@ -284,10 +286,6 @@ pub(crate) fn turret_spin_destination(current: u16) -> u16 {
         .wrapping_shl(8)
 }
 
-/// `[General] GuardAreaTargetingDelay=` fallback for rules-less fixtures. Stock
-/// rulesmd sets 36; `RulesClass` stores it at `+0xE04` (`0x006701B4`).
-const NATIVE_IDLE_TURRET_DWELL_FALLBACK: i64 = 36;
-
 /// The `+5` the idle-return comparison adds to `GuardAreaTargetingDelay`
 /// (`ADD EDX,0x5` at `0x00736B4B`), giving 41 frames in stock.
 const NATIVE_IDLE_TURRET_DWELL_BIAS: i64 = 5;
@@ -312,10 +310,9 @@ fn nav_destination_facing(
 pub(crate) fn current_weapon_is_omni_fire(
     entity: &GameEntity,
     entities: &EntityStore,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     interner: &crate::sim::intern::StringInterner,
 ) -> bool {
-    let Some(rules) = rules else { return false };
     let Some(obj) = interner.object_type(entity.type_ref(), rules) else {
         return false;
     };
@@ -352,7 +349,7 @@ mod tests {
         for (mode, turns) in [(0, true), (2, false), (0, true)] {
             entity.set_gunner_weapon(mode, object);
             assert_eq!(
-                facing_update(&entity, &sim, Some(&rules), &sim.interner, 100)
+                facing_update(&entity, &sim, &rules, &sim.interner, 100)
                     .turret_destination
                     .is_some(),
                 turns,

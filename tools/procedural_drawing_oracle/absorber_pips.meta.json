@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -49,5 +48,5 @@
     "leaf": "0x004912B0"
   },
   "replay_command": "python -m tools.procedural_drawing_oracle.shroud --absorber-pips",
-  "payload_sha256": "dca148a7b68d74223c66e9f6dd42473e711f3ac7e07d561d79bf7879ed545c6f"
+  "payload_sha256": "9407c9259fc82f77c2072088087b62aa35c2e6aca1231fb22e08d3b75c7e645a"
 }

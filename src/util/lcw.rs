@@ -214,8 +214,9 @@ fn replicate_previous(dest: &mut [u8], di: usize, src_idx: usize, count: usize) 
 /// Decompress chunked LCW data (same chunk format as LZO).
 ///
 /// Chunk layout: [u16 LE src_len][u16 LE dst_len][src_len bytes of LCW data]
-/// Chunks repeat until all data is consumed.
-pub fn decompress_chunks(data: &[u8]) -> Result<Vec<u8>, LcwError> {
+/// Chunks repeat until all data is consumed. The caller supplies the maximum
+/// total decoded size; every advertised chunk is checked before allocation.
+pub fn decompress_chunks(data: &[u8], maximum_output: usize) -> Result<Vec<u8>, LcwError> {
     let mut result: Vec<u8> = Vec::new();
     let mut offset: usize = 0;
 
@@ -228,12 +229,23 @@ pub fn decompress_chunks(data: &[u8]) -> Result<Vec<u8>, LcwError> {
             return Err(LcwError::InputTruncated);
         }
 
-        let mut temp: Vec<u8> = vec![0u8; dst_len.max(262_144)];
-        let written: usize = lcw_decompress(&data[offset..offset + src_len], &mut temp)?;
-
-        // Use dst_len bytes (the expected output), not necessarily all written bytes.
-        let copy_len: usize = dst_len.min(written);
-        result.extend_from_slice(&temp[..copy_len]);
+        let start = result.len();
+        let end = start
+            .checked_add(dst_len)
+            .filter(|&end| end <= maximum_output)
+            .ok_or(LcwError::OutputOverflow {
+                needed: start.saturating_add(dst_len),
+                capacity: maximum_output,
+            })?;
+        result
+            .try_reserve_exact(dst_len)
+            .map_err(|_| LcwError::OutputOverflow {
+                needed: end,
+                capacity: result.capacity(),
+            })?;
+        result.resize(end, 0);
+        let written = lcw_decompress(&data[offset..offset + src_len], &mut result[start..end])?;
+        result.truncate(start + written);
         offset += src_len;
     }
 
@@ -297,7 +309,7 @@ mod tests {
         chunk.extend_from_slice(&3u16.to_le_bytes()); // dst_len
         chunk.extend_from_slice(lcw_data);
 
-        let result: Vec<u8> = decompress_chunks(&chunk).unwrap();
+        let result: Vec<u8> = decompress_chunks(&chunk, 3).unwrap();
         assert_eq!(result, vec![0xAA, 0xBB, 0xCC]);
     }
 }

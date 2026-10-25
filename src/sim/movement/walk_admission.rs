@@ -39,11 +39,10 @@ impl Simulation {
     pub(crate) fn run_walk_admission_request(
         &mut self,
         request: WalkAdmissionRequest,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<Option<FootPathRequest>, String> {
-        let rules = rules.ok_or("Walk admission requires rules")?;
         let id = request.entity_id;
         if self.walk_tube_head(id, rules, registry, frame_effects)? {
             return Ok(None);
@@ -131,13 +130,8 @@ impl Simulation {
         let id = request.entity_id;
         let packed = coord_cell(candidate);
         if code == 0 {
-            let selected = self.walk_find_sub_cell_dest(
-                id,
-                Some(candidate),
-                Some(rules),
-                registry,
-                frame_effects,
-            )?;
+            let selected =
+                self.walk_find_sub_cell_dest(id, Some(candidate), rules, registry, frame_effects)?;
             let actor = self
                 .substrate
                 .entities
@@ -209,7 +203,7 @@ impl Simulation {
                     .get_mut(id)
                     .ok_or("retired Walk stop owner")?;
                 actor.foot_speed.set_speed_fraction(SIM_ZERO);
-                self.walk_stop_moving(id, Some(rules), frame_effects)?;
+                self.walk_stop_moving(id, rules, frame_effects)?;
                 let actor = self
                     .substrate
                     .entities
@@ -325,11 +319,13 @@ impl Simulation {
         let destination = super::path_batch::code2_ladder_destination(actor)
             .unwrap_or(DriveCoord { x: 0, y: 0, z: 0 });
         // A batched re-path waits for the next frame's batch as if the +640
-        // timer still ran (`path_batch`, a proposed deviation).
+        // timer still ran (`path_batch`, a proposed deviation), unless it
+        // heads for the Foot's own cell.
         if Self::defer_path_search(
             &mut self.path_batch,
             &self.resolved_terrain,
             &self.overlay_grid,
+            &self.substrate.entities,
             id,
             super::path_batch::WaitingRequest::Code2Ladder { urgency },
         ) {
@@ -360,7 +356,7 @@ impl Simulation {
             if self.foot_path_zone_precheck(id, destination, rules)? {
                 self.walk_failed_path_receiver(id, rules, frame_effects)?;
             } else {
-                self.assign_null_destination(id, Some(rules), None, frame_effects);
+                self.assign_null_destination(id, rules, None, frame_effects);
             }
         } else {
             self.walk_short_path_receiver(id, rules)?;
@@ -403,14 +399,14 @@ impl Simulation {
             if let Some(loco) = actor.locomotor.as_mut() {
                 loco.set_step_head(None);
             }
-            self.walk_stop_moving(id, Some(rules), frame_effects)?;
+            self.walk_stop_moving(id, rules, frame_effects)?;
             self.substrate
                 .entities
                 .get_mut(id)
                 .ok_or("Walk code6 owner retired during its callback")?
                 .foot_speed
                 .set_speed_fraction(SIM_ZERO);
-            self.assign_null_destination(id, Some(rules), None, frame_effects);
+            self.assign_null_destination(id, rules, None, frame_effects);
             self.substrate.clear_walk_admission_path(id)?;
             return Ok(());
         }
@@ -511,9 +507,9 @@ impl Simulation {
             .get(id)
             .ok_or("retired Walk failed-path receiver")?;
         if actor.mission.effective().raw() == 15 {
-            self.assign_target_represented(id, None, Some(rules), None, frame_effects)
+            self.assign_target_represented(id, None, rules, None, frame_effects)
                 .map_err(|error| format!("{error:?}"))?;
-            self.assign_null_destination(id, Some(rules), None, frame_effects);
+            self.assign_null_destination(id, rules, None, frame_effects);
         }
         let actor = self
             .substrate

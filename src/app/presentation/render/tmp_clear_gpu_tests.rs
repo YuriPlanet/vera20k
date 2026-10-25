@@ -179,6 +179,7 @@ fn assert_paid_deso_light_lifecycle(packet_path: &'static str, profile_path: &'s
                 crate::map::lighting::parse_lighting(&scene.map.ini),
                 2,
                 Some((scene.sim().resolved_terrain().unwrap(), scene.sim())),
+                None,
             );
             a = Some(ShroudBuffer::new(
                 &gpu.device,
@@ -286,6 +287,8 @@ fn assert_paid_deso_light_lifecycle(packet_path: &'static str, profile_path: &'s
             size[0],
             size[1],
             1.0,
+            None,
+            Default::default(),
         );
         let actual_a: Vec<_> = gpu
             .read_float_texels(a.gpu_source().0, [0, 0], size)
@@ -488,6 +491,7 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
         crate::map::lighting::parse_lighting(&scene.map.ini),
         2,
         Some((scene.sim().resolved_terrain().unwrap(), scene.sim())),
+        None,
     );
     let mut renderers = [
         wgpu::TextureFormat::Bgra8UnormSrgb,
@@ -555,7 +559,7 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
             assert!(
                 runtime
                     .simulation
-                    .change_visible_map_area([2, 2, 1, 1], Some(&runtime.resources.rules),)
+                    .change_visible_map_area([2, 2, 1, 1], &runtime.resources.rules,)
             );
             assert!(
                 !runtime
@@ -568,7 +572,7 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
             assert!(
                 runtime
                     .simulation
-                    .change_visible_map_area(restore_local_size, Some(&runtime.resources.rules),)
+                    .change_visible_map_area(restore_local_size, &runtime.resources.rules,)
             );
             assert!(
                 runtime
@@ -655,6 +659,8 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
             size[0],
             size[1],
             1.0,
+            None,
+            Default::default(),
         );
         let actual_a: Vec<_> = gpu
             .read_float_texels(source.gpu_source().0, [0, 0], size)
@@ -1016,6 +1022,7 @@ fn assert_retail_tmp_rasters(packet: &Value, filename: &str, sub_tile: u8) {
                 crate::map::lighting::parse_lighting(&scene.map.ini),
                 2,
                 Some((scene.sim().resolved_terrain().unwrap(), scene.sim())),
+                None,
             );
             (scene, lighting, hash)
         });

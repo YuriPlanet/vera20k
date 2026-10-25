@@ -63,6 +63,7 @@ fn pose(slot: u32, step: u32) -> RenderPose {
         body: (step as u16).wrapping_mul(173),
         turret: (step as u16).wrapping_mul(251),
         barrel: (step as u16).wrapping_mul(47),
+        fly_bank_direction: None,
         angles: [step as f32 * -0.125, slot as f32 * 0.001],
         rocket_pitch: step as f32 * 0.005,
         visual_lift: (step % 3) as f32,

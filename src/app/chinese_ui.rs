@@ -32,6 +32,9 @@ pub(crate) fn project(csf: CsfFile, ordinary_ui: bool) -> CsfFile {
         let mut failures = 0;
         let mut values: Vec<_> = csf
             .entries()
+            // Ares diagnostics retain duplicate slots. Translate the value
+            // selected by the table's native lookup, including its null gate.
+            .filter_map(|(key, _)| csf.get(key).map(|selected| (key, selected)))
             .map(|(key, original)| {
                 let text = csf_override(key).map_or_else(
                     || {

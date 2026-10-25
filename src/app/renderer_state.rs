@@ -19,6 +19,8 @@ pub(crate) struct RendererState {
     pub(crate) fps_overlay: crate::app::diagnostics::fps_overlay::FpsOverlay,
     pub(crate) terrain_draw_renderer: crate::render::terrain_draw::TerrainDrawRenderer,
     pub(crate) combat_light_renderer: crate::render::combat_light::CombatLightRenderer,
+    /// Process GPU resources for the native final client-pixel shake copy.
+    pub(crate) screen_presentation: crate::render::screen_presentation::ScreenPresentationPass,
     /// Reusable GPU instance buffers — avoids per-frame GPU buffer allocation.
     pub(crate) instance_pool: crate::render::batch::InstanceBufferPool,
     /// GPU depth texture for back-to-front depth ordering. Recreated on window resize.

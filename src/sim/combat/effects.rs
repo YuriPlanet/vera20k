@@ -50,6 +50,14 @@ pub enum CombatLightRequest {
     },
 }
 
+/// One Bullet detonation's screen-shake writes, in native X-then-Y order.
+/// `None` leaves that axis' prior process-owned value untouched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScreenShakeUpdate {
+    pub x: Option<i32>,
+    pub y: Option<i32>,
+}
+
 /// One smudge producer payload. Production commits it synchronously through
 /// the world receiver; phase-level combat fixtures retain it in their result as
 /// a test adapter.
@@ -67,8 +75,8 @@ pub enum SmudgeSpawnRequest {
         rx: u16,
         ry: u16,
         building_z: i32,
-        foundation_w: u8,
-        foundation_h: u8,
+        foundation_w: u16,
+        foundation_h: u16,
     },
     /// One foundation cell's mark, committed by `SpawnSurvivors` after that
     /// cell's survivor roll (never for a building owing no survivor).
@@ -145,7 +153,7 @@ pub(crate) struct DeathEffects {
     /// admitted cell inline, before the cell's damage.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) tiberium_reduction_requests: Vec<TiberiumReductionRequest>,
-    pub(crate) death_sounds: Vec<(String, u16, u16)>,
+    pub(crate) death_sounds: Vec<(String, crate::sim::anim_class::AnimWorldCoord)>,
     pub(crate) smudge_spawn_requests: Vec<SmudgeSpawnRequest>,
     pub(crate) rad_detonations: Vec<crate::sim::radiation::RadDetonation>,
     pub(crate) under_attack_events: Vec<UnderAttackEvent>,

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Installed Ares Audio_Load loop, paired BAG admission/IDX layout, casefold sort/merge and original FindSampleIndex, bounded synthetic component execution.",
+  "assumptions": [
+    "Synthetic CCFile transport objects and pre-opened bags are inputs; native MIX resolver, OS handles, whole startup/hook installer, driver and audible output are not executed.",
+    "Open controls supply byte-exact synthetic files, Exists/Open outcomes and read transfer. The actual DLL tests read lengths, owns paired admission and sorts metadata. Malformed sizes large enough to exhaust memory are outside scope.",
+    "Merge controls supply existing entry arrays and opaque file tokens; actual native casefold tree merge overwrites complete metadata and backing file, then original FindSampleIndex executes.",
+    "No whole mechanism or audio RNG/mixer parity is claimed; no mod payloads are used. All selected text is checked unchanged by CountryFixture. Existing fixture rejects RNG and detach entries."
+  ],
+  "substitutions": [
+    "Reuses public CountryFixture/Probe image mapping, arena, call execution and heap leaves; no second VM owner.",
+    "Additional game allocator10001B60 and delete100033C0 are heap boundaries. CCFile ctor/Exists/Open/Read/destructor are declared in-memory transport leaves.",
+    "Bounded snprintf for literal %s.idx, %s.bag and audio%02d is supplied. Thus order control proves loop bounds/order, not formatter equivalence."
+  ],
+  "entry_points": {
+    "audio_load": "0x1005ADD0",
+    "bag_open": "0x1005AA00",
+    "merge": "0x1005A170",
+    "find": "0x004015C0"
+  },
+  "replay_command": "python -m tools.rules_oracle.ares_audio_bags",
+  "payload_sha256": "62b9a6d0c0f04877a221cfd5aeab2565920a9caa37e7c2b9d67ef65e2e210115"
+}

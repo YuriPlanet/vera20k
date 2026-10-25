@@ -15,12 +15,10 @@
 //! Residuals:
 //! - VERA has no replay playback, so the bit-2 branch that skips the prompt is
 //!   not modeled.
-//! - The record restore's money, TimerInherit and Scenario+0x35A0 are not
-//!   carried (inert on retail data; see `sim::campaign_carry_over`).
-//! - A restored saved game carries no campaign index, so Yes returns to the
-//!   shell instead of restarting.
-//! - Enter on the box: callback `0x005D36A0` maps IDOK to result 1 (the
-//!   shell); VERA's shell message boxes answer only clicks and Escape.
+//! Saved campaigns use the retained Scenario index and incoming carry-over
+//! through the same retry path as freshly started campaigns.
+//! Message-box keyboard admission maps Enter's IDOK and Escape's IDCANCEL
+//! through callback `0x005D36A0` to result 1 (the shell).
 
 use super::{App, AppState};
 use crate::app::match_bootstrap::PreparedCampaignStartup;

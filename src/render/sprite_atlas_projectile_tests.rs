@@ -328,6 +328,7 @@ fn retail_hills_projectile_assets_match_original_reader_and_physical_bytes() {
         "TEMPERATE",
         Some(rules),
         Some(art),
+        ShpImageKind::Object,
     )
     .unwrap();
     source.draw_offsets = (0, 0);

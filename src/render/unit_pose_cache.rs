@@ -1,5 +1,5 @@
 //! Per-frame sprites of posed bodies: tilted (crashing) bodies, pitched
-//! rockets, rocking Drive/Ship unit parts and tumbling voxel debris.
+//! rockets, rocking Drive/Ship/Hover unit parts and tumbling voxel debris.
 //!
 //! `FlyLocomotionClass` Draw_Matrix's crashing arm (`0x004CF610`) and
 //! `JumpjetLocomotionClass`'s `TiltCrashJumpjet=` arm (`0x0054DCC0`) key their
@@ -55,6 +55,10 @@ struct PosePage {
 #[derive(PartialEq, Eq, Hash)]
 enum PoseTiltKey {
     Fly([u32; 2]),
+    FlyNormal {
+        pitch: u32,
+        roll: u32,
+    },
     Jumpjet([u32; 2]),
     Rocket(u32),
     Ground {
@@ -77,6 +81,10 @@ impl From<PoseTilt> for PoseTiltKey {
     fn from(tilt: PoseTilt) -> Self {
         match tilt {
             PoseTilt::Fly(angles) => Self::Fly(angles.map(f32::to_bits)),
+            PoseTilt::FlyNormal { pitch, roll } => Self::FlyNormal {
+                pitch: pitch.to_bits(),
+                roll: roll.to_bits(),
+            },
             PoseTilt::Jumpjet(angles) => Self::Jumpjet(angles.map(f32::to_bits)),
             PoseTilt::Rocket(pitch) => Self::Rocket(pitch.to_bits()),
             PoseTilt::Ground(pose) => Self::Ground {
@@ -794,5 +802,109 @@ mod tests {
                 .all(|page| page.pixels.iter().all(|&pixel| pixel == 0))
         );
         assert_eq!(cache.pages.iter().map(PosePage::used_rows).sum::<u32>(), 0);
+    }
+
+    #[test]
+    fn retail_spy_plane_normal_bank_rasterizes_both_signs_and_keeps_crash_identity() {
+        use crate::render::unit_atlas::VxlLayer;
+
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let key = UnitSpriteKey {
+            type_id: "SPYP".into(),
+            turret_index: 0,
+            facing: 64,
+            layer: VxlLayer::Body,
+            frame: 0,
+            slope_type: 0,
+            barrel_pitch: 0,
+        };
+        let roll = battle
+            .rules
+            .object("SPYP")
+            .expect("stock Spy Plane type")
+            .fly_roll_angle_radians() as f32;
+        let mut cache = VxlPoseFrameCache::default();
+        cache.begin_frame();
+        let positive = cache
+            .render(
+                &assets,
+                Some(&battle.rules),
+                &key,
+                PoseTilt::FlyNormal { pitch: 0.0, roll },
+            )
+            .expect("stock SPYP VXL accepts a normal positive bank");
+        let positive_texels = pose_texels(&cache, positive);
+        let negative = cache
+            .render(
+                &assets,
+                Some(&battle.rules),
+                &key,
+                PoseTilt::FlyNormal {
+                    pitch: 0.0,
+                    roll: -roll,
+                },
+            )
+            .expect("stock SPYP VXL accepts a normal negative bank");
+        let negative_texels = pose_texels(&cache, negative);
+        assert_ne!(positive.uv_origin, negative.uv_origin);
+        assert_ne!(
+            positive_texels, negative_texels,
+            "bank sign changes VXL pixels"
+        );
+
+        // With pitch zero, the crash arm's X(roll)-then-Y(0) matrix equals
+        // normal Y(0)-then-X(roll), but they remain distinct pose identities.
+        let crash = cache
+            .render(
+                &assets,
+                Some(&battle.rules),
+                &key,
+                PoseTilt::Fly([roll, 0.0]),
+            )
+            .expect("stock SPYP VXL accepts the existing crash pose");
+        assert_ne!(positive.uv_origin, crash.uv_origin);
+        assert_eq!(positive_texels, pose_texels(&cache, crash));
+
+        let pitch = 20.0_f32.to_radians();
+        let pitched_normal = cache
+            .render(
+                &assets,
+                Some(&battle.rules),
+                &key,
+                PoseTilt::FlyNormal { pitch, roll },
+            )
+            .expect("stock SPYP VXL accepts a pitched normal-flight matrix");
+        let pitched_crash = cache
+            .render(
+                &assets,
+                Some(&battle.rules),
+                &key,
+                PoseTilt::Fly([roll, pitch]),
+            )
+            .expect("stock SPYP VXL accepts the existing pitched crash matrix");
+        assert_ne!(
+            pose_texels(&cache, pitched_normal),
+            pose_texels(&cache, pitched_crash),
+            "normal yaw→pitch→roll and crash yaw→roll→pitch keep their native matrix order"
+        );
+    }
+
+    fn pose_texels(cache: &VxlPoseFrameCache, entry: UnitSpriteEntry) -> Vec<u8> {
+        let page = &cache.pages[entry.page];
+        let x = (entry.uv_origin[0] * PAGE_SIZE as f32).round() as u32;
+        let y = (entry.uv_origin[1] * PAGE_SIZE as f32).round() as u32;
+        let width = entry.pixel_size[0] as u32;
+        let height = entry.pixel_size[1] as u32;
+        (0..height)
+            .flat_map(|row| {
+                let start = ((y + row) * PAGE_SIZE + x) as usize;
+                page.pixels[start..start + width as usize].iter().copied()
+            })
+            .collect()
     }
 }

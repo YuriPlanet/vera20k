@@ -4,6 +4,61 @@ use super::*;
 use crate::util::save_codec;
 
 #[test]
+fn checked_digest_removal_preserves_the_sorted_duplicate_section_order() {
+    // ReadCCFile47425B sorts the section index through ReadUUBlock526FB0;
+    // Clear47427D/RemoveKey52B2B0 compacts that sorted array without sorting
+    // its survivors again. Base64_Decode42FF14 emits a byte even for "A".
+    let text = concat!(
+        "[Map]\nTheater=NEWURBAN\n",
+        "[IsoMapPack5]\n1=AAAA\n",
+        "[Basic]\nName=Digest history\n",
+        "[Triggers]\nROOT=First\n",
+        "[Events]\nROOT=1,13,0,5\n",
+        "[Actions]\nROOT=1,67,0,0,0,0,0,0,A\n",
+        "[Tags]\nROOT_TAG=0,Announce victory,ROOT\n",
+        "[Triggers]\nROOT=Second\n",
+        "[Digest]\n1=A\n",
+    );
+    let mut checked = IniFile::from_str(text);
+    assert_eq!(checked.section_count(), 9);
+    assert_eq!(
+        checked
+            .section_or_empty("Triggers")
+            .read_string("ROOT", "", 32),
+        "Second"
+    );
+
+    checked.remove_digest_for_checked_load();
+
+    assert!(checked.section("Digest").is_none());
+    assert_eq!(checked.section_count(), 8);
+    assert_eq!(
+        checked
+            .section_or_empty("Triggers")
+            .read_string("ROOT", "", 32),
+        "Second"
+    );
+    let fresh = IniFile::from_str(text.strip_suffix("[Digest]\n1=A\n").unwrap());
+    assert_eq!(
+        fresh
+            .section_or_empty("Triggers")
+            .read_string("ROOT", "", 32),
+        "First"
+    );
+}
+
+#[test]
+fn packed_reader_visits_duplicate_physical_keys_through_the_value_index() {
+    // ReadUUBlock526FB0 uses the physical entry count at52708C and walks
+    // each physical key at5270C5, then resolves its value at527108.
+    let ini = IniFile::from_str("[PreviewPack]\nROOT=QQ==\nROOT=Qg==\nSHOW=Qw==\n");
+    assert_eq!(
+        ini.section_or_empty("PreviewPack").read_packed_text(),
+        "Qg==Qg==Qw=="
+    );
+}
+
+#[test]
 fn saved_standalone_reader_body_rejects_inconsistent_indexes() {
     let ini = IniFile::from_str("[E1]\nCost=100\nStrength=125\n");
     let section = ini.section("E1").unwrap();
@@ -178,11 +233,37 @@ fn omitted_fixture_key_preserves_source_order_case_and_reader_defaults() {
 }
 
 #[test]
-fn duplicate_key_compatibility_lookup_keeps_first_definition() {
-    let ini = IniFile::from_str("[General]\nBuildSpeed=.7\nBuildSpeed=.58\n");
+fn fresh_duplicate_lookup_keeps_physical_bytes_and_projection_copy_separate() {
+    // FindEntryByNames526B10 -> signed CRC qsort52B6A0 and midpoint52B6D0.
+    // The original physical ROOT/ROOT/SHOW control selects the second ROOT;
+    // SaveToPipe526470 still writes both original values, in physical order.
+    let ini = IniFile::from_str("[Triggers]\nROOT=First\nROOT=Second\nSHOW=Show\n");
+    let section = ini.section("Triggers").unwrap();
+    assert_eq!(section.read_string("ROOT", "", 32), "Second");
     assert_eq!(
-        ini.section("General").unwrap().get("BuildSpeed"),
-        Some(".7")
+        ini.save_to_pipe(None),
+        b"[Triggers]\r\nROOT=First\r\nROOT=Second\r\nSHOW=Show\r\n"
+    );
+
+    // Include copies remain the existing compatibility policy; an ordered
+    // Rules pass instead projects the value the physical native reader saw.
+    let mut included = IniFile::empty();
+    included.merge(&ini);
+    assert_eq!(
+        included
+            .section("Triggers")
+            .unwrap()
+            .read_string("ROOT", "", 32),
+        "First"
+    );
+    let mut projected = IniFile::empty();
+    projected.merge_rules_projection(&ini);
+    assert_eq!(
+        projected
+            .section("Triggers")
+            .unwrap()
+            .read_string("ROOT", "", 32),
+        "Second"
     );
 }
 
@@ -269,4 +350,66 @@ fn content_hash_is_deterministic_and_value_sensitive() {
     // Comments and surrounding whitespace are stripped at parse → no effect.
     let c = IniFile::from_str("; header\n[General]\nBuildSpeed = .7   ; speed\nFlightLevel=1500\n");
     assert_eq!(a.content_hash(), c.content_hash());
+}
+
+/// Retail AIMD.INI carries `[Digest] 1=` (base64 SHA-1), which
+/// `ReadCCFile(file, 1, 0)` compares at `0x004742FA` against SHA-1 of the
+/// `SaveToPipe` bytes without `[Digest]`. Retail bytes, not prior Rust,
+/// fix the serialization of a file without padding or comments.
+#[test]
+fn aimd_digest_matches_its_save_to_pipe_bytes() {
+    let Some(ai) = crate::rules::retail_ini_fixture::retail_ini("aimd.ini") else {
+        return;
+    };
+    let stored = ai.section_or_empty("Digest").read_string("1", "", 0x40);
+    let digest = crate::util::sha1::sha1_bytes(&ai.save_to_pipe(Some("Digest")));
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut encoded = String::new();
+    for chunk in digest.chunks(3) {
+        let bits = chunk.iter().enumerate().fold(0_u32, |bits, (index, byte)| {
+            bits | u32::from(*byte) << (16 - 8 * index)
+        });
+        for index in 0..4 {
+            encoded.push(if index <= chunk.len() {
+                char::from(ALPHABET[(bits >> (18 - 6 * index) & 63) as usize])
+            } else {
+                '='
+            });
+        }
+    }
+    assert_eq!(encoded, stored);
+}
+
+/// `SaveToPipe` streams captured from native `GetCRC` on the synthetic
+/// controls of tools/storage_oracle/ini_crc: duplicate keys and sections,
+/// empty sections, spacing, comments and an unterminated last line.
+#[test]
+fn save_to_pipe_matches_the_native_streams() {
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/storage_oracle/ini_crc.json",
+    ))
+    .unwrap();
+    for case in corpus["synthetic"].as_array().unwrap() {
+        if case["absent"].as_bool() == Some(true) {
+            continue;
+        }
+        let input = case["input"].as_str().unwrap();
+        let ini = IniFile::from_bytes(&crate::util::native_string::narrow_widened(input)).unwrap();
+        assert_eq!(
+            crate::util::native_string::widen_bytes(&ini.save_to_pipe(None)),
+            case["stream"].as_str().unwrap(),
+            "{}",
+            case["name"]
+        );
+    }
+}
+
+#[test]
+fn multiplayer_digest_ignores_comments_but_keeps_duplicate_value_order() {
+    let base = IniFile::from_str("[General]\nBuildSpeed=.7\nBuildSpeed=.9\n");
+    let padded =
+        IniFile::from_str("; comment\n[General]\nBuildSpeed = .7 ; comment\nBuildSpeed=.9\n");
+    let reordered = IniFile::from_str("[General]\nBuildSpeed=.9\nBuildSpeed=.7\n");
+    assert_eq!(base.multiplayer_digest(), padded.multiplayer_digest());
+    assert_ne!(base.multiplayer_digest(), reordered.multiplayer_digest());
 }

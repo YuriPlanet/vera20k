@@ -4,7 +4,7 @@ This adds no launch/world admission proof; it executes the admitted tail explici
 import importlib.util,inspect,json
 from pathlib import Path
 from unicorn.x86_const import *
-from tools.native_oracle import run_checked,NATIVE_SHA256,finish_vectors,provenance
+from tools.native_oracle import run_checked,finish_vectors,provenance
 from tools.spatial_oracle.building_body_rules import SP,dwords
 spec=importlib.util.spec_from_file_location('_trail_impact',Path(__file__).with_name('ifv_impact.py'));impact=importlib.util.module_from_spec(spec);spec.loader.exec_module(impact)
 old=impact.launch.launch
@@ -21,7 +21,7 @@ impact.launch.launch=launch
 src=inspect.getsource(impact.execute).replace("0x4690b0:'Detonate'", "0x556b30:'TrailDetach',0x5f5210:'DetachAll',0x5f528e:'DetachAllTrailCall',0x5f3d56:'ObjectDtorTrailCall',0x4690b0:'Detonate'")
 exec(src,impact.__dict__)
 def generate():
- r=impact.execute();assert 'failure' not in r,r.get('failure');m,b,t=last;r['trail_after']=dict(owner=hex(m.read32(t+4)),owner_slot=hex(m.read32(b+0xa8)),registry_count=m.read32(0xabcb88));return dict(native_sha256=NATIVE_SHA256,row=r)
+ r=impact.execute();assert 'failure' not in r,r.get('failure');m,b,t=last;r['trail_after']=dict(owner=hex(m.read32(t+4)),owner_slot=hex(m.read32(b+0xa8)),registry_count=m.read32(0xabcb88));return dict(row=r)
 def metadata():
  return provenance(scope='Native admitted-Unlimbo LineTrail creation joined to selected Bullet impact and Conceal/DetachAll detachment before drain',assumptions=[
   'Reuses ifv_impact selected rise_live case. Explicitly enters already-admitted Unlimbo tail5F514B..5F5210 after launch: this is not prior world admission proof. Native DRAGON ARTUseLineTrail/RGB/decrement drive allocation/constructor and Bullet+A8 owner attachment.',

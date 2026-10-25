@@ -239,10 +239,10 @@ impl App {
             BrowserInputResult::PromptAnswer(answer) => {
                 Self::resolve_saved_game_prompt(state, answer)
             }
-            BrowserInputResult::ButtonPressed => {
-                Self::play_skirmish_shell_generic_click_sound(state)
+            // B7/2B4/2B5's action and Back are owner-draw (0x0061376B).
+            BrowserInputResult::ButtonPressed | BrowserInputResult::PromptButtonPressed => {
+                Self::play_main_menu_button_sound(state)
             }
-            BrowserInputResult::PromptButtonPressed => Self::play_main_menu_button_sound(state),
             BrowserInputResult::RowClicked => Self::play_skirmish_shell_generic_click_sound(state),
         }
     }

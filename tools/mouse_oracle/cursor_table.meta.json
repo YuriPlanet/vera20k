@@ -1,9 +1,5 @@
 {
  "schema_version": 1,
- "native_sha256": "7b8a068535d6af06845edf95ae829b113d00c02909330e16f197426cd7db94b6",
- "stock_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
- "binary_is_stock": false,
- "binary_size": 4813072,
  "command": "py -3 -m tools.mouse_oracle.cursor_table --exe <path> --write",
  "scope": "Compiled mouse-cursor descriptor table and the DisplayClass::SetCursorFromAction action-to-row switch. Static reads of the executable; no native execution and no rendered pixels.",
  "anchor_checks": [

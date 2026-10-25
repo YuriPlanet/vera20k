@@ -43,7 +43,6 @@ use crate::map::cell_index::NativeCellIdentity;
 use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseAllianceMap;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
-use crate::rules::foundation::foundation_dimensions;
 use crate::rules::projectile_type::ProjectileType;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::weapon_type::WeaponType;
@@ -141,7 +140,7 @@ fn foundation_reach_leptons(
     interner
         .object_type(target.type_ref(), rules)
         .map_or(0, |object| {
-            let (width, height) = foundation_dimensions(&object.foundation);
+            let (width, height) = object.foundation.dimensions();
             (width as i64 + height as i64) * 0x40
         })
 }
@@ -1301,14 +1300,14 @@ mod tests {
             let mut actor =
                 GameEntity::test_default(1, "ATKR", "Test", (x / 256) as u16, (y / 256) as u16);
             let category = if let Some(building) = input.get("building") {
-                actor
-                    .type_facts
-                    .set_foundation_for_test(rules.object("ATKR").unwrap().foundation.clone());
-                let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0.0);
-                for id in 2..2 + building["occupants"].as_u64().unwrap_or(1) {
-                    cargo.board_forced_chain(&[(id, 1.0)]);
-                }
-                actor.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+                actor.type_facts.set_foundation_for_test(
+                    rules.object("ATKR").unwrap().foundation.clone().into(),
+                );
+                actor.passenger_role.occupants_mut().set_ids_for_test(
+                    (2..2 + building["occupants"].as_u64().unwrap_or(1))
+                        .rev()
+                        .collect(),
+                );
                 EntityCategory::Structure
             } else if input["unit"] == true {
                 EntityCategory::Unit

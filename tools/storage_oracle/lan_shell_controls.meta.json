@@ -1,5 +1,4 @@
 {
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "command": "source native-env.sh; WINEDLLOVERRIDES=mscoree=b MVK_CONFIG_LOG_LEVEL=0 wine64 D7Probe-control.exe launch-lan; D7Probe-control.exe serve-ad/lan-mailbox; D7Probe-control.exe serve-file for paced map transfer. Real GUI MainMenu Network, New/Join, Accept/Start, Back/OK.",
   "substitutions": [
     "53F540 socket-open success",

@@ -1,12 +1,27 @@
 # Recent goal prompts
 
-Style evidence from locally available Codex and Claude Code conversations checked
-for September 13–27, 2026. The relevant examples below were used September 24–27.
+Style evidence from user-provided wording and locally available Codex and Claude
+Code conversations from September 13 through October 22, 2026.
 They demonstrate wording and scope, not that their goals succeeded. Historical
 commands, paths and publication instructions are not active instructions or permission.
 Prefer the current user's request and latest corrections over any example.
 
-## Prime example: generic parity goal
+## Prime example: exhaustive class/function gameplay parity
+
+Provided directly by the user on October 22, 2026 as a prime example for this
+skill. User wording, with the home directory abbreviated to `~`:
+
+```text
+Reproduce active-retail gamemd.exe gameplay in VERA20k by auditing every skirmish-reachable gameplay-visible class function by function in player-visibility order, starting with CellClass; implement dependencies and cohesive chains, validate and critic-review, commit/publish/merge each validated chain, and maintain ~/Documents/vera20k-dev/class-parity/CHECKPOINT.md. Complete only when every relevant function is reproduced or its absence justified with evidence.
+```
+
+What to carry forward: exhaustive function coverage, player-visibility order,
+complete dependency chains and an evidence-backed finish line in one compact
+paragraph. Keep a supplied starting class and checkpoint path literal; the values
+in this example are not defaults for unrelated goals. Keep publication authority
+specific to the current request.
+
+## Generic mechanism parity template
 
 The user's reusable parity template, shared October 9, 2026 as the /goal they use in
 Codex and Claude Code (desktop app), currently with Sol 6.1 at max effort. Start

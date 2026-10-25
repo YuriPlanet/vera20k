@@ -25,7 +25,7 @@ use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::components::DriveCoord;
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::mission::MissionId;
-use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellObjectMember;
 use crate::sim::pathfinding::CODE2_CHAIN_MAX_HOPS;
@@ -37,6 +37,7 @@ use crate::sim::world::SimSoundEvent;
 use crate::sim::world::Simulation;
 use crate::util::direction::DIRECTION_DELTAS;
 use crate::util::direction_tables::dir_from_facing16;
+#[cfg(test)]
 use crate::util::fixed_math::SIM_ZERO;
 
 /// AStar429F54's live Foot +1AC receiver: Infantry 0x0051BF90 or Unit
@@ -214,7 +215,7 @@ impl Simulation {
             if !foot.category().is_foot() {
                 return Ok(true);
             }
-            let direction = if foot.foot_speed.applied_fraction() == SIM_ZERO {
+            let direction = if !foot.foot_speed.speed_fraction_is_positive() {
                 let Some(&word) = foot.navigation.path_replay().remaining_directions().first()
                 else {
                     return Ok(false);
@@ -395,7 +396,7 @@ impl Simulation {
     pub(crate) fn run_foot_path_request(
         &mut self,
         request: &FootPathRequest,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<FootPathOutcome, String> {
@@ -403,11 +404,13 @@ impl Simulation {
         // timer still ran (`path_batch`, a proposed deviation): 75AF4B..75AF66
         // calls the owner's vt+0x548 and returns. So does the admission
         // retry's recursion, whose +640 the retry just expired, unless it is
-        // the Foot's first request in a frame the batch answered.
+        // the Foot's first request in a frame the batch answered. A request
+        // for the Foot's own cell never waits.
         if Self::defer_path_search(
             &mut self.path_batch,
             &self.resolved_terrain,
             &self.overlay_grid,
+            &self.substrate.entities,
             request.entity_id,
             super::path_batch::WaitingRequest::NoQueue,
         ) {
@@ -535,7 +538,7 @@ impl Simulation {
                 self.infantry_stop_driver(id, rules, registry, frame_effects)
             }
             EntityCategory::Unit | EntityCategory::Aircraft => {
-                self.locomotor_stop_moving(id, Some(rules), registry, frame_effects)
+                self.locomotor_stop_moving(id, rules, registry, frame_effects)
             }
             EntityCategory::Structure => {
                 Err("Foot +0x500 receiver for this class is not represented".into())
@@ -559,7 +562,7 @@ impl Simulation {
         if self.path_grid.is_none() {
             return Err("Find_Path core requires PathGrid; no native failure inferred".into());
         }
-        self.foot_mark_remove(id, Some(rules), registry, frame_effects);
+        self.foot_mark_remove(id, rules, registry, frame_effects);
         #[cfg(test)]
         self.export_bridge_engineer_entry_inputs(id, rules, "mark0");
         let searched = match self.take_batched_search(request, goal) {
@@ -574,9 +577,10 @@ impl Simulation {
                     &mut self.substrate.entities,
                     grid,
                     self.resolved_terrain.as_ref(),
+                    &self.terrain_objects,
                     self.overlay_grid.as_ref(),
                     &self.interner,
-                    Some(rules),
+                    rules,
                 );
                 let counts = self.movement_pass_cache.current_blocker_plane();
                 //The track_fresh_response oracle substitutes the whole AStar
@@ -607,7 +611,7 @@ impl Simulation {
             }
         };
         //4D3EAC restores Mark1 before inspecting the core result.
-        self.foot_mark_put(id, Some(rules), registry, frame_effects);
+        self.foot_mark_put(id, rules, registry, frame_effects);
         if let Err(super::movement_path::MovePathFailure::Search(
             crate::sim::pathfinding::zone_search::PathSearchFailure::CellEntryUnavailable(cause),
         )) = &searched
@@ -674,13 +678,13 @@ impl Simulation {
         let mover_peer = super::path_markers::bridge_marker_peer(
             &self.substrate.entities,
             id,
-            Some(rules),
+            rules,
             &self.interner,
         );
         let marker_context = super::path_markers::DeferredBridgeMarker {
             mover_id: id,
             mover: mover_peer.as_ref(),
-            rules: Some(rules),
+            rules,
             interner: &self.interner,
             grid,
             terrain: self.resolved_terrain.as_ref(),
@@ -818,16 +822,16 @@ impl Simulation {
                 }
             };
             drive_end(self, false);
-            self.leave_team(id, false, Some(rules), frame_effects);
+            self.leave_team(id, false, rules, frame_effects);
             drive_end(self, true);
         }
         //0x4D413A: the class SetDestination(NULL, true): Infantry 0x51AA40 ->
         //Foot 0x4D94B0 -> Walk 0x75ADA0, or Unit 0x741970 -> Foot 0x4D94B0 ->
         //Drive 0x4AFE00 / Ship 0x69F510.
-        self.assign_null_destination(id, Some(rules), registry, frame_effects);
+        self.assign_null_destination(id, rules, registry, frame_effects);
         //4D4149 dispatches the concrete target setter, including an owned
         //Airstrike's cancellation before its TarCom changes.
-        self.assign_target_represented(id, None, Some(rules), registry, frame_effects)
+        self.assign_target_represented(id, None, rules, registry, frame_effects)
             .map_err(|_| "retired failed Find_Path actor")?;
         let human = self.owner_is_human(owner);
         let mission = if human {
@@ -843,7 +847,7 @@ impl Simulation {
             MissionId::from_known(mission),
             0,
             now,
-            &EntityReadyInputProvider,
+            &LiveReadyInputProvider { rules },
         );
         //0x4D4174..0x4D41C2: with GameMode ([0xA8B238]) nonzero, a nonhuman
         //actor asks its own House (ecx = +0x21C) for a post, House500200 at
@@ -856,7 +860,7 @@ impl Simulation {
             self.assign_destination_represented(
                 id,
                 Some(crate::sim::components::NavTargetRef::cell(rx, ry)),
-                Some(rules),
+                rules,
                 registry,
                 frame_effects,
             )
@@ -1101,6 +1105,30 @@ impl Simulation {
         goal_bridge: bool,
         rules: &RuleSet,
     ) -> Result<i32, String> {
+        self.estimate_zone_cost_in_query(
+            id,
+            ZoneQueryCell::Copied(start),
+            ZoneQueryCell::Copied(goal),
+            start_bridge,
+            goal_bridge,
+            rules,
+        )
+    }
+
+    /// The same native query with the caller's actual CellStruct arguments.
+    /// Patrol also passes retained Cell+24 pointers. Resolve each at its own
+    /// read: the second lookup and the bridge helpers may restamp Dummy,
+    /// including before the original arguments are reread for distances.
+    /// The bridge booleans are copied inputs, not live Cell flag queries.
+    pub(crate) fn estimate_zone_cost_in_query(
+        &self,
+        id: u64,
+        start: ZoneQueryCell,
+        goal: ZoneQueryCell,
+        start_bridge: bool,
+        goal_bridge: bool,
+        rules: &RuleSet,
+    ) -> Result<i32, String> {
         use crate::sim::cell_rect::get_cellclass_fallback;
         use crate::sim::pathfinding::zone_build::find_high_bridge_record_index;
         use crate::sim::pathfinding::zone_hierarchy::{
@@ -1127,8 +1155,9 @@ impl Simulation {
         let lookup = |cell: (i16, i16)| {
             get_cellclass_fallback(Some(terrain), i32::from(cell.0), i32::from(cell.1))
         };
-        let start_cell = lookup(start); //42D1A1
-        let goal_cell = lookup(goal); //42D1B2, before the first projection
+        let cells = NativeCellQuery::canonical(terrain);
+        let start_cell = lookup(start.coord(&cells)); //42D1A1
+        let goal_cell = lookup(goal.coord(&cells)); //42D1B2, after start's lookup
         let start_projection = live_hierarchy_projection(
             terrain,
             zones.bridge_records(),
@@ -1175,7 +1204,7 @@ impl Simulation {
         };
         let packed = |cell: (i16, i16)| (cell.0 as u16, cell.1 as u16);
         let signed = |cell: (u16, u16)| (cell.0 as i16, cell.1 as i16);
-        let direct = chebyshev(start, goal);
+        let direct = chebyshev(start.coord(&cells), goal.coord(&cells));
         let fine_path = &path.paths[0];
         let count = fine_path.len();
         let mut cost = 2 * (count as i32 - 1);
@@ -1184,10 +1213,18 @@ impl Simulation {
             if start_bridge {
                 // Both copied bridge booleans true: the same nonnegative
                 // high-record index bypasses every bridge-distance term.
-                let goal_record =
-                    find_high_bridge_record_index(zones.bridge_records(), 0, packed(goal), 3);
-                let start_record =
-                    find_high_bridge_record_index(zones.bridge_records(), 0, packed(start), 3);
+                let goal_record = find_high_bridge_record_index(
+                    zones.bridge_records(),
+                    0,
+                    packed(goal.coord(&cells)),
+                    3,
+                );
+                let start_record = find_high_bridge_record_index(
+                    zones.bridge_records(),
+                    0,
+                    packed(start.coord(&cells)),
+                    3,
+                );
                 if goal_record.is_some() && goal_record == start_record {
                     return Ok(direct);
                 }
@@ -1196,7 +1233,7 @@ impl Simulation {
             if count >= 4 {
                 adjacent = zones.bridge_cell_for_hierarchy_zone(
                     terrain,
-                    packed(goal),
+                    packed(goal.coord(&cells)),
                     0,
                     fine_path[count - 2],
                     self.playfield_bounds(),
@@ -1205,7 +1242,7 @@ impl Simulation {
             if adjacent == (0, 0) {
                 adjacent = zones.bridge_cell_for_hierarchy_zone(
                     terrain,
-                    packed(goal),
+                    packed(goal.coord(&cells)),
                     0,
                     fine_path[count - 1],
                     self.playfield_bounds(),
@@ -1215,7 +1252,7 @@ impl Simulation {
                 adjacent = goal_projection;
             }
             if adjacent != (0, 0) {
-                cost += chebyshev(goal, signed(adjacent));
+                cost += chebyshev(goal.coord(&cells), signed(adjacent));
             }
         }
         if start_bridge {
@@ -1223,7 +1260,7 @@ impl Simulation {
             if count >= 4 {
                 adjacent = zones.bridge_cell_for_hierarchy_zone(
                     terrain,
-                    packed(start),
+                    packed(start.coord(&cells)),
                     0,
                     fine_path[1],
                     self.playfield_bounds(),
@@ -1232,7 +1269,7 @@ impl Simulation {
             if adjacent == (0, 0) {
                 adjacent = zones.bridge_cell_for_hierarchy_zone(
                     terrain,
-                    packed(start),
+                    packed(start.coord(&cells)),
                     0,
                     fine_path[0],
                     self.playfield_bounds(),
@@ -1242,7 +1279,7 @@ impl Simulation {
                 adjacent = start_projection;
             }
             if adjacent != (0, 0) {
-                cost += chebyshev(start, signed(adjacent));
+                cost += chebyshev(start.coord(&cells), signed(adjacent));
             }
         };
         Ok(cost.max(direct))
@@ -1263,14 +1300,8 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), String> {
         let requested = crate::sim::components::NavTargetRef::cell(cell.0 as u16, cell.1 as u16);
-        self.assign_destination_represented(
-            id,
-            Some(requested),
-            Some(rules),
-            registry,
-            frame_effects,
-        )
-        .map_err(|cause| format!("Find_Path redirect: {cause}"))
+        self.assign_destination_represented(id, Some(requested), rules, registry, frame_effects)
+            .map_err(|cause| format!("Find_Path redirect: {cause}"))
     }
 
     /// Foot+320/4DA1D0, shared by class admission and the path-zone precheck.

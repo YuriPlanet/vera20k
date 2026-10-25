@@ -89,7 +89,7 @@ def project(source):
             initial_span=[cell(row) for row in case['states'][0]['span']],
             final_span=[cell(row) for row in case['states'][-1]['span']]))
     frozen = json.loads((HERE / 'promotion.json').read_bytes())['results']
-    result = dict(schema=1, native_sha256=source['native_sha256'],
+    result = dict(schema=1,
                   source_sha256=frozen['paid_conditional_v26.json']['frozen_source_sha256'],
                   input_sha256=source['input_sha256'], cases=cases)
     return result
@@ -107,8 +107,7 @@ def metadata():
                      'The source input supplies declared constructor identity/options/RNG boundary and outside-world raw calls. This does not establish native whole-Scenario population or outside-producer scheduling parity.'],
         substitutions=['JSON selection and native raw-byte decoding only. No gameplay values are computed from Rust, and no native control flow is simulated here.'])
     result.update(source_sha256=sha(SOURCE.read_bytes()),
-                  source_metadata_sha256=sha(SOURCE.with_suffix('').with_suffix('.meta.json').read_bytes()),
-                  projection_sha256=sha(Path(__file__).read_bytes()))
+                  source_metadata_sha256=sha(SOURCE.with_suffix('').with_suffix('.meta.json').read_bytes()))
     return result
 
 

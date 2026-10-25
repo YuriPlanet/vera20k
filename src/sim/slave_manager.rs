@@ -92,7 +92,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::InternedId;
-use crate::sim::miner::{CargoBale, MinerConfig, ResourceType};
+use crate::sim::miner::CargoBale;
 use crate::sim::mission::authority::queue_entity_mission_deferred;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::bump_crush;
@@ -432,14 +432,15 @@ impl Simulation {
     ) {
         let Some((slave_type, count, regen, reload, owner, cell, facing, z)) =
             self.substrate.entities.get(master).and_then(|parent| {
-                let object = self.object_type(parent.type_ref(), rules)?;
+                let object = self.entity_object_type(parent, rules)?;
                 let slave_type = object.enslaves.as_deref()?;
-                let slave_object = rules.object(slave_type)?;
-                if slave_object.category != crate::rules::object_type::ObjectCategory::Infantry {
-                    return None;
-                }
+                // Enslaves714DD7 uses InfantryType reader67BAC0.
+                let slave_object = rules.object_in_category(
+                    crate::rules::object_type::ObjectCategory::Infantry,
+                    slave_type,
+                )?;
                 Some((
-                    slave_object.id.clone(),
+                    slave_object,
                     object.slaves_number.max(0),
                     object.slave_regen_rate,
                     object.slave_reload_rate,
@@ -454,8 +455,8 @@ impl Simulation {
         };
         let mut slaves = Vec::with_capacity(count as usize);
         for _ in 0..count {
-            let slave = self.construct_object_limbo_at_height(
-                &slave_type,
+            let slave = self.construct_resolved_object_limbo_at_height(
+                slave_type,
                 &owner,
                 cell.0,
                 cell.1,
@@ -469,7 +470,7 @@ impl Simulation {
             }
             slaves.push(slave);
         }
-        let slave_type = self.interner.intern(&slave_type);
+        let slave_type = self.interner.intern(&slave_type.id);
         let now = Self::now_frame(&self.session);
         if let Some(parent) = self.substrate.entities.get_mut(master) {
             parent.slave_manager = Some(SlaveManager::new(slave_type, slaves, regen, reload, now));
@@ -1143,9 +1144,9 @@ impl Simulation {
         let owner = self.substrate.entities.get(master)?;
         let object = self.object_type(owner.type_ref(), rules)?;
         let foundation = if owner.category() == EntityCategory::Structure {
-            crate::rules::foundation::foundation_dimensions(&object.foundation)
+            object.foundation.dimensions()
         } else if let Some(into) = object.deploys_into.as_deref().and_then(|n| rules.object(n)) {
-            crate::rules::foundation::foundation_dimensions(&into.foundation)
+            into.foundation.dimensions()
         } else {
             (1, 1)
         };
@@ -1230,7 +1231,7 @@ impl Simulation {
         let owner = self.substrate.entities.get(master)?;
         let foundation = self
             .object_type(owner.type_ref(), rules)
-            .map(|object| crate::rules::foundation::foundation_dimensions(&object.foundation));
+            .map(|object| object.foundation.dimensions());
         let (x, y) = deploy_center(owner, foundation)?;
         Some((x as u16, y as u16))
     }
@@ -1248,7 +1249,7 @@ impl Simulation {
         if let Err(cause) = self.assign_destination_represented(
             slave,
             Some(crate::sim::components::NavTargetRef::cell(cell.0, cell.1)),
-            Some(rules),
+            rules,
             registry,
             frame_effects,
         ) {
@@ -1318,7 +1319,7 @@ impl Simulation {
                 &self.substrate.raw_cell_occupation,
                 &self.substrate.occupancy,
                 &self.substrate.entities,
-                Some(rules),
+                rules,
                 &self.interner,
                 &mut self.scenario_rng,
                 coords,
@@ -1385,7 +1386,7 @@ impl Simulation {
             slave,
             RevealPosition::new(cell.0, cell.1, z, None, request.0, request.1),
             PlacementEvidence::EvaluateMark,
-            Some(rules),
+            rules,
             registry,
         ) else {
             return false;
@@ -1397,7 +1398,7 @@ impl Simulation {
                 placement,
                 logic_eligible: true,
             },
-            UninitContext::new(Some(rules), registry)
+            UninitContext::new(rules, registry)
                 .with_effects(frame_effects)
                 .with_unlimbo_facing(Some(0)),
         );
@@ -1414,7 +1415,7 @@ impl Simulation {
     ) {
         let _ = self.techno_limbo_with_context(
             slave,
-            UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+            UninitContext::new(rules, registry).with_effects(frame_effects),
         );
     }
 
@@ -1497,7 +1498,6 @@ impl Simulation {
                 self.slave_do_action(slave, DO_SHOVEL, rules, frame_effects);
             }
             // ftol(min(1.0, Storage - total)): one level while not full.
-            let config = MinerConfig::from_rules(rules);
             if let Some(bale) = crate::sim::miner::extract_bale(
                 &self.terrain_objects,
                 &self.ore_growth_config,
@@ -1511,7 +1511,6 @@ impl Simulation {
                 rules,
                 registry,
                 cell,
-                &config,
             ) && let Some(entity) = self.substrate.entities.get_mut(slave)
             {
                 entity.slave.cargo.push(bale);
@@ -1537,12 +1536,12 @@ impl Simulation {
     }
 
     /// The slave's deposit (`InfantryClass 0x00522D50` with the master as its
-    /// argument): each non-empty Storage slot in order (ore, then gems) leaves
+    /// argument): each non-empty Storage slot in native type order leaves
     /// whole and is paid to the master's house, the base amount and then the
     /// purifier bonus ([`crate::sim::miner::pay_refinery_owner`]); any payment
     /// ends with the master's `vt+0x468` (a building's refinery smoke).
     pub(crate) fn slave_deposit(&mut self, slave: u64, master: u64, rules: &RuleSet) {
-        let Some(cargo) = self
+        let Some(mut cargo) = self
             .substrate
             .entities
             .get_mut(slave)
@@ -1551,16 +1550,8 @@ impl Simulation {
             return;
         };
         let mut paid = false;
-        for kind in [ResourceType::Ore, ResourceType::Gem] {
-            let slot: Vec<&CargoBale> = cargo
-                .iter()
-                .filter(|bale| bale.resource_type == kind)
-                .collect();
-            if slot.is_empty() {
-                continue;
-            }
-            let value: i32 = slot.iter().map(|bale| i32::from(bale.value)).sum();
-            crate::sim::miner::pay_refinery_owner(self, rules, master, value, slot.len() as i32);
+        while let Some((slot, bales)) = crate::sim::miner::drain_first_slot(&mut cargo) {
+            crate::sim::miner::pay_refinery_owner(self, rules, master, slot, bales);
             paid = true;
         }
         if paid
@@ -1606,48 +1597,6 @@ impl Simulation {
         }
     }
 
-    /// The destructors' slave links, at the pending-delete drain: a slave's
-    /// InfantryClass destructor leaves its node (RemoveSlave at
-    /// `0x00517E22`), and a master still holding its manager frees its
-    /// slaves with no killer and no house (TechnoClass destructor
-    /// `0x006F4571`). A rules-less drain (test fixtures) has no house to hand
-    /// the ones outside to: they only lose their link, and the ones inside
-    /// are UnInit.
-    pub(crate) fn release_slave_links_at_destruction(
-        &mut self,
-        id: u64,
-        rules: Option<&RuleSet>,
-        registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
-    ) {
-        Self::remove_slave(&self.session, &mut self.substrate, id);
-        match rules {
-            Some(rules) => self.free_slaves(id, None, None, rules, registry, frame_effects),
-            None => {
-                let Some(manager) = self
-                    .substrate
-                    .entities
-                    .get_mut(id)
-                    .and_then(|entity| entity.slave_manager.take())
-                else {
-                    return;
-                };
-                for slave in manager.nodes.iter().rev().filter_map(|node| node.slave) {
-                    let Some(entity) = self.substrate.entities.get_mut(slave) else {
-                        continue;
-                    };
-                    entity.slave.owner = None;
-                    if entity.lifecycle.in_limbo() {
-                        self.uninit_with_context(
-                            slave,
-                            UninitContext::default().with_effects(frame_effects),
-                        );
-                    }
-                }
-            }
-        }
-    }
-
     /// FreeSlaves (`0x006B0AE0`, `killer`, `house`), last node first. Each
     /// slave loses its SlaveOwner. One inside (limbo) dies with its master:
     /// the kill is recorded for `killer` (`vt+0xE0`) and it is UnInit. One
@@ -1665,11 +1614,9 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let Some(manager) = self
-            .substrate
-            .entities
-            .get_mut(master)
-            .and_then(|entity| entity.slave_manager.take())
+        let Some(count) = self
+            .slave_manager(master)
+            .map(|manager| manager.nodes.len())
         else {
             return;
         };
@@ -1679,7 +1626,17 @@ impl Simulation {
             .map(|entity| entity.owner());
         let new_house = killer_house.or(house).or(civilian);
         let mut first_freed = None;
-        for slave in manager.nodes.iter().rev().filter_map(|node| node.slave) {
+        // 6B0B3C retains the initial count; 6B0B4C..56 rereads each live
+        // node. Keep Techno+2D8 attached so a synchronous slave death in an
+        // owner-change Tag callback can RemoveSlave from a later node.
+        for index in (0..count).rev() {
+            let Some(slave) = self
+                .slave_manager(master)
+                .and_then(|manager| manager.nodes.get(index))
+                .and_then(|node| node.slave)
+            else {
+                continue;
+            };
             let Some(entity) = self.substrate.entities.get_mut(slave) else {
                 continue;
             };
@@ -1703,6 +1660,10 @@ impl Simulation {
             self.sound_events
                 .emit(SimSoundEvent::voc_at(sound, &entity.position));
         }
+        // 6B0C67 clears the manager's owner only after callbacks and sound.
+        if let Some(entity) = self.substrate.entities.get_mut(master) {
+            entity.slave_manager = None;
+        }
     }
 
     /// `vt+0xE0` (TechnoClass::RecordKill) for `killer`, then `vt+0xF8`
@@ -1719,11 +1680,11 @@ impl Simulation {
             slave,
             crate::sim::combat::KillSource::Techno(killer),
             crate::sim::combat::KillCallback::Terminal,
-            UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+            UninitContext::new(rules, registry).with_effects(frame_effects),
         );
         self.uninit_with_context(
             slave,
-            UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+            UninitContext::new(rules, registry).with_effects(frame_effects),
         );
     }
 

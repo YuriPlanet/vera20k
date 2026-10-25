@@ -43,12 +43,13 @@
 //! choices with the draws and the site search call.
 //!
 //! RESIDUALS:
-//! - The perimeter vector variant (`HouseClass+0x5738`, passed when `+0x5748`
-//!   is positive, `0x004FE61D..0x004FE62F`) is not ported: only the `-3`
-//!   perimeter scan `0x005082C0` fills it, and VERA removes `-3` nodes without
-//!   it (`sim::ai_base_building`). Trigger: a map plan with a `-3` node.
-//!   Effect: its defenses are keyed by the whole perimeter rather than the
-//!   weakest quadrant's cells.
+//! - The separate defense-cell vector (`HouseClass+0x5738`, passed when
+//!   `+0x5748` is positive, `0x004FE61D..0x004FE62F`) is not ported. It is
+//!   distinct from the primary reservation perimeter+5720. ScanBasePerimeter
+//!   5082C0 appends wall/gate plan nodes, not cells to either vector.
+//!   Trigger: loading positive defense cells (BaseLoad42EFFC..42F038);
+//!   a fresh gameplay producer remains unestablished. Effect: VERA searches
+//!   a site instead of consuming a supplied cell from the weakest quadrant.
 //! - Native reads VERA defines, none reachable with retail rules: a quadrant
 //!   total of 999999 or more in all four quadrants leaves the weakest at -1,
 //!   whose sums are read from the stack (VERA reads 0); the fudge vector is

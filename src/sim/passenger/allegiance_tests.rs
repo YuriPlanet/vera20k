@@ -121,8 +121,10 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
     building.building_art.set_actually_placed_for_test(true);
     building.mission_leaf =
         crate::sim::mission::leaf::MissionLeafState::for_entity_category(EntityCategory::Structure);
-    let mut cargo = PassengerCargo::new(10, 1.0);
-    cargo.garrison_fire_index = integer(&input["fire_index"]) as u8;
+    building
+        .passenger_role
+        .occupants_mut()
+        .set_fire_index_for_test(integer(&input["fire_index"]));
     for owner in input["occupant_owners"].as_array().unwrap() {
         let passenger_id = sim.substrate.allocate_stable_id();
         let mut passenger = GameEntity::test_default_of_category(
@@ -142,10 +144,9 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
                 crate::rules::locomotor_type::LocomotorKind::Walk,
             ),
         );
-        cargo.add_occupant(passenger_id, 1.0);
+        building.passenger_role.occupants_mut().add(passenger_id);
         sim.substrate.entities.insert(passenger);
     }
-    building.passenger_role = PassengerRole::transport(cargo);
     sim.substrate.entities.insert(building);
     assert!(matches!(
         sim.reveal_entity_with_rules(id, &rules),
@@ -203,14 +204,14 @@ fn allegiance_matches_native_decisions_for_valid_rosters() {
         let expected_owner = houses[expected["owner_after_callback"].as_u64().unwrap() as usize];
         assert_eq!(building.owner(), expected_owner, "{name}");
         assert_eq!(changed, old_owner != expected_owner, "{name}");
-        let cargo = building.passenger_role.cargo().unwrap();
+        let occupants = building.passenger_role.occupants();
         assert_eq!(
-            cargo.garrison_fire_index,
-            integer(&expected["fire_index_after_callback"]) as u8,
+            occupants.fire_index(),
+            integer(&expected["fire_index_after_callback"]),
             "{name}"
         );
-        let actual_owners: Vec<_> = cargo
-            .passengers
+        let actual_owners: Vec<_> = occupants
+            .ids()
             .iter()
             .map(|id| sim.substrate.entities.get(*id).unwrap().owner())
             .collect();

@@ -89,7 +89,7 @@ fn reached_alternate_events_match_executed_hook_controls() {
                 ));
             }
             "unit_dtor" | "infantry_dtor" | "aircraft_dtor" => {
-                assert!(sim.discard_constructed_limbo(id, Some(&rules), FrameEffects::default()));
+                assert!(sim.discard_constructed_limbo(id, &rules, FrameEffects::default()));
             }
             "change_owner" => {
                 sim.change_owner_with_rules(id, other, &rules, None, FrameEffects::default());
@@ -97,7 +97,12 @@ fn reached_alternate_events_match_executed_hook_controls() {
             "discovered" => {
                 // Use the common Techno body directly: Building's separate
                 //44D61A tail requests its own refresh after this body returns.
-                assert!(sim.record_techno_discovery(id, other, UninitContext::with_rules(&rules)));
+                assert!(sim.record_techno_discovery(
+                    id,
+                    other,
+                    UninitContext::with_rules(&rules),
+                    0
+                ));
             }
             other => panic!("unhandled native refresh hook {other}"),
         }
@@ -130,7 +135,7 @@ fn alternate_dtor_rechecks_with_another_copy_and_obeys_game_state_gate() {
                 FrameEffects::default(),
             )
             .unwrap();
-        assert!(sim.discard_constructed_limbo(first, Some(&rules), FrameEffects::default()));
+        assert!(sim.discard_constructed_limbo(first, &rules, FrameEffects::default()));
         let type_id = sim.interner.get("ALT").unwrap();
         let category = sim.entities().get(second).unwrap().category();
         assert_eq!(
@@ -163,7 +168,7 @@ fn repeated_successful_discovery_does_not_repeat_the_hook() {
             .unwrap()
             .discovery
             .classify_owner(current == owner);
-        assert!(sim.record_techno_discovery(id, viewer, UninitContext::with_rules(&rules)));
+        assert!(sim.record_techno_discovery(id, viewer, UninitContext::with_rules(&rules), 0));
         assert_eq!(
             sim.houses[&owner].tech_recheck_pending(),
             crate::rules::ARES_ENABLED
@@ -173,7 +178,7 @@ fn repeated_successful_discovery_does_not_repeat_the_hook() {
             "the live owner is the receiver"
         );
         sim.houses.get_mut(&owner).unwrap().take_tech_recheck();
-        assert!(!sim.record_techno_discovery(id, viewer, UninitContext::with_rules(&rules)));
+        assert!(!sim.record_techno_discovery(id, viewer, UninitContext::with_rules(&rules), 0));
         assert!(!sim.houses[&owner].tech_recheck_pending());
     }
 }
@@ -218,7 +223,7 @@ fn alternate_membership_uses_actual_class_when_type_names_collide() {
         entity.discovery.classify_owner(false);
         sim.substrate.entities.insert(entity);
         sim.houses.get_mut(&owner).unwrap().take_tech_recheck();
-        assert!(sim.record_techno_discovery(id, viewer, UninitContext::with_rules(&rules)));
+        assert!(sim.record_techno_discovery(id, viewer, UninitContext::with_rules(&rules), 0));
         assert_eq!(
             sim.houses[&owner].tech_recheck_pending(),
             expected,
@@ -312,15 +317,19 @@ fn captured_alternate_refreshes_cameos_then_retracts_queued_product_on_loss() {
     let cancellation_order = events
         .iter()
         .map(|event| {
-            assert_eq!(event.owner, owner);
             assert_eq!(event.execute_tick, sim.session.tick() + 1);
-            match event.payload {
-                crate::sim::command::Command::CancelProductionByType { type_id, all } => {
-                    assert_eq!(type_id, query);
-                    all
-                }
-                ref other => panic!("unexpected prerequisite-loss output {other:?}"),
-            }
+            let crate::sim::command::Command::SynchronizedRecord { record } = &event.payload else {
+                panic!("prerequisite-loss cancellation must retain its native record");
+            };
+            let event = crate::sim::command::ProductionRecord::decode(record).unwrap();
+            assert_eq!(event.house_id, 0);
+            assert_eq!(
+                event.type_index,
+                rules
+                    .type_array_index(crate::rules::object_type::ObjectCategory::Vehicle, "Q")
+                    .unwrap()
+            );
+            event.event == crate::sim::command::ProductionEvent::AbandonAll
         })
         .collect::<Vec<_>>();
     assert_eq!(

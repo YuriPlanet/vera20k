@@ -28,7 +28,7 @@ mod surface_lines;
 pub(crate) use batching::TerrainBatchStats;
 use batching::{TerrainBatches, TerrainCommand};
 pub(crate) use ion_blasts::IonBlastDraw;
-pub(crate) use packed::{PackedComposite, PackedCompositePiece, PackedSpriteKind};
+pub(crate) use packed::{PackedComposite, PackedCompositePiece, PackedSpriteKind, packed_wave_key};
 use submission::PassSubmission;
 pub(crate) use surface_lines::SurfaceLineBatch;
 
@@ -162,14 +162,14 @@ impl TerrainDrawRenderer {
         let snapshot_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Terrain snapshot layout"),
-                bind_group_layouts: &[&source_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&source_layout)],
+                immediate_size: 0,
             });
         let read_only_snapshot_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Native read-only snapshot/reset layout"),
-                bind_group_layouts: &[&source_layout, &read_only_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&source_layout), Some(&read_only_layout)],
+                immediate_size: 0,
             });
         let target = |format| {
             Some(wgpu::ColorTargetState {
@@ -200,7 +200,7 @@ impl TerrainDrawRenderer {
                 primitive: Default::default(),
                 depth_stencil: None,
                 multisample: Default::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         };
@@ -223,11 +223,11 @@ impl TerrainDrawRenderer {
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Terrain edit layout"),
             bind_group_layouts: &[
-                batch.camera_bind_group_layout(),
-                batch.texture_bind_group_layout(),
-                &snapshot_layout,
+                Some(batch.camera_bind_group_layout()),
+                Some(batch.texture_bind_group_layout()),
+                Some(&snapshot_layout),
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
         let pipeline = |fragment, depth_write_enabled| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -252,15 +252,15 @@ impl TerrainDrawRenderer {
                 primitive: Default::default(),
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled,
+                    depth_write_enabled: Some(depth_write_enabled),
                     // Manual comparison must precede wrapped storage. Hardware Less
                     // on low16(candidate) is not equivalent for signed candidates.
-                    depth_compare: wgpu::CompareFunction::Always,
+                    depth_compare: Some(wgpu::CompareFunction::Always),
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
                 multisample: Default::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         };
@@ -268,12 +268,12 @@ impl TerrainDrawRenderer {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Native read-only admitted body/shadow layout"),
                 bind_group_layouts: &[
-                    batch.camera_bind_group_layout(),
-                    batch.texture_bind_group_layout(),
-                    &snapshot_layout,
-                    &read_only_layout,
+                    Some(batch.camera_bind_group_layout()),
+                    Some(batch.texture_bind_group_layout()),
+                    Some(&snapshot_layout),
+                    Some(&read_only_layout),
                 ],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
         let read_only_pipeline = |fragment| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -302,7 +302,7 @@ impl TerrainDrawRenderer {
                 primitive: Default::default(),
                 depth_stencil: None,
                 multisample: Default::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         };
@@ -315,8 +315,8 @@ impl TerrainDrawRenderer {
         });
         let resolve_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Native read-only resolve layout"),
-            bind_group_layouts: &[&snapshot_layout, &read_only_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&snapshot_layout), Some(&read_only_layout)],
+            immediate_size: 0,
         });
         let read_only_resolve_pipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -337,7 +337,7 @@ impl TerrainDrawRenderer {
                 primitive: Default::default(),
                 depth_stencil: None,
                 multisample: Default::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
         Self {
@@ -380,6 +380,17 @@ impl TerrainDrawRenderer {
         }
     }
 
+    /// Every pixel one ordinary sprite or destination edit reads or writes:
+    /// its quad as the sprite vertex shaders place it, clipped to `tactical`.
+    /// `None` when it draws nothing.
+    pub(crate) fn piece_footprint(
+        &self,
+        instance: &SpriteInstance,
+        tactical: [u32; 4],
+    ) -> Option<[u32; 4]> {
+        piece_scissor(instance, self.camera, tactical)
+    }
+
     /// App-owned ordinary passes share the same bounded submission budget.
     /// The caller must have ended its render pass; attachments resume with Load.
     pub(crate) fn note_external_passes(
@@ -393,6 +404,12 @@ impl TerrainDrawRenderer {
     #[cfg(test)]
     pub(crate) fn submissions(&self) -> usize {
         self.submission.submissions()
+    }
+
+    /// Every pass closed since the last `prepare`, ordinary passes included.
+    #[cfg(test)]
+    pub(crate) fn closed_passes(&self) -> usize {
+        self.submission.closed_passes()
     }
 
     /// Called after composition resize and after the optional upscale depth
@@ -673,6 +690,7 @@ impl TerrainDrawRenderer {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 });
                 pass.set_pipeline(&self.read_only_snapshot_pipeline);
                 pass.set_bind_group(0, &targets.source, &[]);
@@ -695,6 +713,7 @@ impl TerrainDrawRenderer {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 });
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, batch.camera_bind_group(), &[]);
@@ -729,6 +748,7 @@ impl TerrainDrawRenderer {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 });
                 pass.set_pipeline(&self.read_only_resolve_pipeline);
                 pass.set_bind_group(0, &targets.snapshot, &[]);
@@ -820,6 +840,7 @@ impl TerrainDrawRenderer {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&self.snapshot_pipeline);
             pass.set_bind_group(0, &targets.source, &[]);
@@ -842,6 +863,7 @@ impl TerrainDrawRenderer {
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
         pass.set_bind_group(0, batch.camera_bind_group(), &[]);
         pass.set_bind_group(2, &targets.snapshot, &[]);

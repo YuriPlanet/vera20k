@@ -34,19 +34,39 @@ pub(crate) struct AppState {
     pub(crate) persistence: crate::app::persistence::PersistenceState,
 }
 
-/// Drop app-owned scenario-exit runtime after a successful world replacement.
-/// Serialized HouseState remains the sole authority for any loaded SavourDelay;
-/// wall waits are reconstructed from its expiry latch without replaying EVA.
+/// Drop app-owned scenario-exit runtime and failure modal after a successful world replacement.
+/// Serialized HouseState owns SavourDelay and pending flags; ScenarioSession
+/// retains admitted requests. A saved frame cursor resumes its House wait
+/// with a fresh process clock, without replaying the result announcement.
 /// ClearScene685213..68521F and ordinary load cleanup69BB40 reset the shared
 /// 87E758 output scalar, not Theme's slots/fading. ThemeLoad721040 must see
 /// that process state unchanged; fresh-start request cancellation stays there.
 pub(crate) fn reset_scenario_exit_runtime(state: &mut AppState) {
     state.match_state.scenario_outcome = None;
     state.match_state.scenario_exit = None;
-    state.audio.set_master_output_scale(1.0);
+    state.match_state.network_failure = None;
+    crate::app::lan_service::return_transport(state);
+    state.audio.restore_sound_master();
 }
 
 impl AppState {
+    /// Client presentation preference; the simulation never reads this option.
+    pub(crate) fn translucent_fog_enabled(&self) -> bool {
+        self.platform
+            .game_config
+            .as_ref()
+            .is_some_and(|config| config.graphics.translucent_fog)
+    }
+
+    /// Is the match frozen because the window is not the foreground? Only the
+    /// configured freeze, and only offline: `Main_Tick` (`0x0055D38D`) sleeps
+    /// until reactivated in GameMode 0 or 5, but a network game sleeps 10 ms
+    /// and runs on, so peers never stall on a deactivated player.
+    pub(crate) fn focus_freeze_active(&self) -> bool {
+        self.platform.focus_freeze_configured()
+            && self.match_state.session_mode().is_single_player()
+    }
+
     /// Current projection: frontend/result use physical window pixels; tactical
     /// rendering and pending tactical installation use the optional zoom pass.
     /// Loading artwork explicitly uses GPU/window dimensions in loading::pump.
@@ -123,9 +143,15 @@ impl AppState {
     /// screen reads it in.
     pub(crate) fn set_cursor_from_window(&mut self, x: f32, y: f32) {
         let zoom = self.tactical_zoom();
-        let input = &mut self.match_state.input;
-        (input.cursor_x, input.cursor_y) = zoom.map_or((x, y), |zoom| zoom.window_to_source(x, y));
-        input.cursor_zoom = zoom;
+        // macOS Locked already integrates relative motion into this physical
+        // point in `input::cursor::macos`. The other confinement backends need
+        // the shared window-delta anchor to escape zoom letterbox overshoot.
+        let window_delta_confined = !cfg!(target_os = "macos")
+            && self.platform.pointer_held.get()
+            && self.platform.window_active;
+        self.match_state
+            .input
+            .set_cursor_from_window((x, y), zoom, window_delta_confined);
     }
 
     /// Move the stored cursor into the space the current screen reads it in,
@@ -133,12 +159,7 @@ impl AppState {
     /// otherwise leave it in the old space until the pointer moves.
     pub(crate) fn sync_cursor_space(&mut self) {
         let zoom = self.tactical_zoom();
-        let input = &mut self.match_state.input;
-        if input.cursor_zoom != zoom {
-            (input.cursor_x, input.cursor_y) =
-                cursor_in_space((input.cursor_x, input.cursor_y), input.cursor_zoom, zoom);
-            input.cursor_zoom = zoom;
-        }
+        self.match_state.input.sync_cursor_space(zoom);
     }
 
     /// The pointer in the pixels the current screen paints and hit-tests in:
@@ -171,7 +192,9 @@ impl AppState {
     /// Asset-independent status cards and diagnostic modals use the OS cursor,
     /// and so does the pointer once it leaves the client area: mouse.shp has no
     /// art for the title bar or resize border, and the OS arrow is drawn there
-    /// whether VERA asks for it or not.
+    /// whether VERA asks for it or not. Main-menu dialogs (Options, Keyboard,
+    /// the exit confirm) are shell pages that draw mouse.shp themselves, so
+    /// they keep it; excluding them showed the OS arrow beside it.
     pub(crate) fn use_software_cursor(&self) -> bool {
         !self.touch_input_mode()
             && self.platform.pointer_in_client
@@ -189,7 +212,6 @@ impl AppState {
                     .match_presentation
                     .in_game_menu
                     .draws_over_battlefield())
-            && !self.main_menu_dialog_open()
     }
 
     /// Whether any main-menu modal dialog (exit confirm, options, keyboard)
@@ -291,22 +313,6 @@ pub(crate) fn process_main_draws(
         Some(runtime) => runtime.simulation.presentation_main_draws(),
         None => frontend.draws(),
     }
-}
-
-/// A stored cursor point re-expressed for a new space (`None` is window
-/// pixels). Leaving a zoom or changing it maps the point through the window.
-/// Entering one from window pixels keeps it: the tactical install
-/// (`loading::transitions`) has already placed it in source pixels.
-fn cursor_in_space(
-    point: (f32, f32),
-    from: Option<crate::render::upscale_pass::ZoomGeometry>,
-    to: Option<crate::render::upscale_pass::ZoomGeometry>,
-) -> (f32, f32) {
-    let Some(from) = from else {
-        return point;
-    };
-    let (x, y) = from.source_to_window(point.0, point.1);
-    to.map_or((x, y), |to| to.window_to_source(x, y))
 }
 
 #[cfg(test)]

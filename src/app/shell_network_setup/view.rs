@@ -23,7 +23,7 @@ fn label(state: &AppState, key: &str) -> String {
         .unwrap_or(key)
         .to_owned()
 }
-fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
+pub(crate) fn choice(state: &AppState, item: SkirmishComboItem) -> SetupChoice {
     let value = match item {
         SkirmishComboItem::Country(SkirmishCountryChoice::Random) => -2,
         SkirmishComboItem::Country(SkirmishCountryChoice::Country(country)) => {
@@ -61,6 +61,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
     let host = session.host();
     let host_name = protocol.wol_host.as_deref();
     let local = launch.humans.get(launch.local_player_index)?;
+    let room = session.network_room();
+    // 0x4E5C5B..0x4E5C90, 0x4E5FD5..0x4E6004: a WOL clan room hides every
+    // team combo and the team header 0x794.
+    let clan_room = profile_is_wol(state) && room.clan;
     // A guest shows its own copy of the map only when it verified, and on
     // WOL only from a mixfile (0x005E74E0); otherwise its preview is the
     // host's Preview.bin.
@@ -77,7 +81,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 .iter()
                 .position(|map| map.file_name.eq_ignore_ascii_case(file))
         });
-    let capacity = session.network_setup_capacity()?.clamp(0, 8) as usize;
+    let capacity = session
+        .network_setup_capacity()?
+        .clamp(0, crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32)
+        as usize;
     let observer_row = session.network_observer_row().map(usize::from);
     let row_limit = session.network_row_limit()?;
     let visible_limit = if observer_row == Some(0) && (capacity as i32) < row_limit {
@@ -86,23 +93,33 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         capacity
     };
     let cooperative = mode.class.uses_cooperative_setup();
-    let coop = cooperative
-        .then(|| {
-            state
-                .frontend
-                .multiplayer_shell_runtime
-                .cooperative_setup_view()
-        })
-        .flatten();
+    let coop = cooperative.then(|| {
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .cooperative_setup_view()
+    });
+    let row_count = visible_limit
+        .max(observer_row.map_or(0, |row| row + 1))
+        .min(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT);
+    let first_row = state
+        .frontend
+        .multiplayer_setup
+        .as_ref()
+        .map_or(0, |ui| ui.first_row(row_count));
     let mut combos = Vec::with_capacity(40);
     let mut row_icons = std::array::from_fn(|_| None);
-    for row in 0..8u8 {
+    for visible_row in 0..VISIBLE_SETUP_ROWS {
+        let row = (first_row + visible_row) as u8;
+        if usize::from(row) >= crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT {
+            break;
+        }
         let human = launch
             .humans
             .iter()
             .enumerate()
             .find(|(_, human)| human.raw_slot_index == Some(row));
-        let ai = launch.opponents.iter().find(|ai| ai.raw_slot_index == row);
+        let ai = session.network_display_ai(row);
         let vacancy = session.network_vacancy(row);
         let is_local = local.raw_slot_index == Some(row);
         let observer = human.is_some_and(|(_, human)| human.is_observer())
@@ -130,7 +147,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         let slot_value = if human.is_some() {
             0
         } else if let Some(ai) = ai {
-            match ai.difficulty {
+            match ai {
                 AiDifficulty::Easy => 4,
                 AiDifficulty::Normal => 5,
                 AiDifficulty::Hard => 6,
@@ -140,6 +157,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 NetworkVacancy::Open => 2,
                 NetworkVacancy::Closed => 3,
                 NetworkVacancy::OpenObserver => 7,
+                NetworkVacancy::Waiting => 1,
             }
         };
         let slot_label = human
@@ -203,7 +221,8 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         }
         let selected = players.iter().position(|item| item.value == slot_value);
         combos.push(SetupCombo {
-            id: SetupColumn::Player.control(usize::from(row)),
+            id: SetupColumn::Player.control(visible_row),
+            row,
             enabled: host || is_local,
             visible,
             selected,
@@ -216,10 +235,10 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             .into_iter()
             .map(|item| choice(state, item))
             .collect();
-        if let Some(coop) = &coop {
+        if let Some(player_countries) = coop.as_ref().and_then(|coop| coop.player_countries) {
             //5C23B0 rebuilds country entries in the campaign's authored order.
             let mut allowed = Vec::new();
-            if coop.player_countries.len() > 1 {
+            if player_countries.len() > 1 {
                 allowed.push(SetupChoice {
                     value: -2,
                     text: label(state, "GUI:Random"),
@@ -265,6 +284,8 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                     .filter(|ai| ai.raw_slot_index != row && !ai.color_random)
                     .map(|ai| usize::from(ai.color_index)),
             );
+        let color_claims =
+            color_claims.filter(|_| launch.humans.len() + launch.opponents.len() <= 8);
         let colors =
             skirmish_shell::available_color_choices(usize::try_from(color).ok(), color_claims)
                 .into_iter()
@@ -309,15 +330,18 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         ] {
             let selected = choices.iter().position(|item| item.value == value);
             combos.push(SetupCombo {
-                id: column.control(usize::from(row)),
+                id: column.control(visible_row),
+                row,
                 enabled: editable && (column != SetupColumn::Team || mode.allies_allowed),
-                visible: visible && (column == SetupColumn::Country || !observer),
+                visible: visible
+                    && (column == SetupColumn::Country || !observer)
+                    && !(column == SetupColumn::Team && clan_room),
                 selected,
                 choices,
             });
         }
         if visible {
-            row_icons[usize::from(row)] = Some(SetupRowIcon {
+            row_icons[visible_row] = Some(SetupRowIcon {
                 country: flag_pcx_for_side_item_data(country).map(str::to_owned),
                 // 0x5EA3E0: wolhost.pcx on the human row named [0xA8D610];
                 // a WOL guest learns it from the user list, otherwise the
@@ -370,16 +394,23 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         let human = launch
             .humans
             .iter()
-            .find(|human| human.raw_slot_index == Some(row as u8))?;
+            .find(|human| human.raw_slot_index == Some((first_row + row) as u8))?;
         ping_icon(protocol.ping(&human.name)?)
     });
     Some(SetupView {
+        first_row,
+        row_count,
         dialog,
         ping_icons,
         host,
         locked: protocol.locked,
+        // C2's lockout (0x78F85E..0x78F907, 0x79132A..0x7913D1): Short Game
+        // checked and disabled in a tournament or clan room.
+        short_game_locked: host && profile_is_wol(state) && room.tournament_or_clan(),
+        team_header: !clan_room,
         accept_enabled: protocol.accept_eligible
-            && !session.network_player_ready(launch.local_player_index),
+            && !session.network_player_ready(launch.local_player_index)
+            && crate::app::shell_wol::local_choices_agreed(state),
         start_requested: protocol.start_requested
             && !session.network_player_ready(launch.local_player_index),
         combos,
@@ -406,15 +437,17 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
         no_preview: protocol.wol_no_preview().0,
         preview_hidden: protocol.wol_no_preview().1,
         cooperative,
-        cooperative_description: coop.as_ref().map(|coop| {
-            label(
-                state,
-                &format!(
-                    "NAME:COOPDESC{}{}",
-                    coop.campaign_index + 1,
-                    coop.stage_index + 1
-                ),
-            )
-        }),
+        cooperative_description: coop.as_ref().and_then(|coop| coop.description).map(
+            |(campaign, stage)| {
+                label(
+                    state,
+                    &format!("NAME:COOPDESC{}{}", campaign + 1, stage + 1),
+                )
+            },
+        ),
     })
+}
+
+fn profile_is_wol(state: &AppState) -> bool {
+    state.match_state.session_mode() == crate::app::match_runtime::session::SessionMode::Wol
 }

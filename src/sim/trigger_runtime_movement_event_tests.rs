@@ -21,6 +21,276 @@ fn rng(sim: &Simulation) -> [String; 3] {
     ]
 }
 
+/// Infantry519B53 and519F44 independently raise Entered. Native519F71
+/// reads the entrant's owner after the second callback and Tag transfer.
+#[test]
+fn engineer_capture_uses_live_owner_after_both_entered_callbacks() {
+    use crate::map::entities::EntityCategory;
+    use crate::sim::command::Command;
+    use crate::sim::house_state::HouseState;
+    use crate::sim::world::{SimSoundEvent, TickLane};
+
+    let native =
+        crate::test_fixture::json("tools/spatial_oracle/engineer_capture_entered_owner.json");
+    assert_eq!(native["source"], "unicorn/gamemd.exe");
+    let controls = native["controls"].as_array().unwrap();
+    assert_eq!(controls.len(), 4);
+    for control in controls {
+        assert_eq!(control["runtime_game_mode"], 5);
+        let first_change = control["first_change"].as_bool().unwrap();
+        let second_change = control["second_change"].as_bool().unwrap();
+        let expected_index = usize::try_from(control["owner"].as_u64().unwrap()).unwrap();
+        let (mut sim, rules, registry, initial_houses) =
+            super::tests::event_ingress_fixture_with_rules(
+                "[BuildingTypes]\n1=DEPOT\n[DEPOT]\nStrength=500\nCost=800\n\
+                 Capturable=yes\nRepairable=yes\n",
+            );
+        let country2 = sim.interner.intern("Country2");
+        sim.houses
+            .get_mut(&initial_houses[2])
+            .unwrap()
+            .set_country_for_test(Some(country2));
+        let house3 = sim.interner.intern("House3");
+        let country3 = sim.interner.intern("Country3");
+        sim.houses
+            .register(HouseState::new(house3, 3, Some(country3), true, 0, 10));
+        let houses = [
+            initial_houses[0],
+            initial_houses[1],
+            initial_houses[2],
+            house3,
+        ];
+        for owner in houses {
+            sim.houses
+                .get_mut(&owner)
+                .unwrap()
+                .set_is_human_for_test(true);
+        }
+        sim.session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+        sim.session.game_options_mut_for_test().multi_engineer = false;
+        sim.session.game_options_mut_for_test().short_game = false;
+        // Keep all four participants alive through the ordinary House visits;
+        // the native continuation supplies the same live-House prior.
+        for (index, owner) in houses.into_iter().enumerate() {
+            let name = sim.interner.resolve(owner).to_owned();
+            sim.spawn_object("TAGUNIT", &name, 18 + index as u16, 17, 0, &rules)
+                .unwrap();
+        }
+        let source = if first_change { 7 } else { 0 };
+        let first_action = if first_change {
+            "36,0,7,0,0,0,0,A,"
+        } else {
+            ""
+        };
+        let second_action = if second_change {
+            "36,0,3,0,0,0,0,A,"
+        } else {
+            ""
+        };
+        install_event_ingress_map(
+            &mut sim,
+            &rules,
+            &format!(
+                "[Triggers]\nT0=Country0,T1,First,0,1,1,1,0\n\
+                 T1=Country{source},<none>,Second,0,1,1,1,0\n\
+                 CARRY=Country0,<none>,Carry,1,1,1,1,1\n\
+                 [Tags]\nENTRY=2,Entry,T0\nCARRYTAG=2,Carry,CARRY\n\
+                 [Events]\nT0=2,1,0,0,28,0,11\nT1=2,1,0,{source},27,0,11\n\
+                 CARRY=1,1,0,-1\n[Actions]\n\
+                 T0={},{first_action}28,0,11,0,0,0,0,A\n\
+                 T1={},{second_action}28,0,13,0,0,0,0,A\nCARRY=0\n",
+                1 + usize::from(first_change),
+                1 + usize::from(second_change)
+            ),
+        );
+        let building = sim
+            .spawn_object("DEPOT", "House2", 16, 16, 0, &rules)
+            .unwrap();
+        let engineer = sim
+            .spawn_object("ENGINEER", "House0", 12, 16, 0, &rules)
+            .unwrap();
+        let start = crate::sim::movement::ground_pose::position_world_xy(
+            &sim.substrate.entities.get(engineer).unwrap().position,
+        );
+        let depot_type = sim.interner.get("DEPOT").unwrap();
+        let engineer_type = sim.interner.get("ENGINEER").unwrap();
+        sim.attach_object_trigger_tag(building, Some("ENTRY"));
+        sim.attach_object_trigger_tag(engineer, Some("CARRYTAG"));
+        let (entry, _) = tag(&mut sim, "ENTRY");
+        let (carry, carry_trigger) = tag(&mut sim, "CARRYTAG");
+        let entry_triggers = sim.trigger_runtime.tag(entry).unwrap().triggers.clone();
+        let live_order: Vec<_> = entry_triggers
+            .iter()
+            .map(|&index| {
+                let trigger = sim.trigger_runtime.trigger(index).unwrap();
+                sim.trigger_runtime.definitions.trigger_types[trigger.type_index]
+                    .id
+                    .as_str()
+            })
+            .collect();
+        assert_eq!(live_order, ["T1", "T0"]);
+        assert!(!sim.trigger_runtime.trigger(carry_trigger).unwrap().enabled);
+        assert!(sim.apply_command(
+            "House0",
+            &Command::CaptureBuilding {
+                engineer_id: engineer,
+                target_building_id: building,
+            },
+            Some(&rules)
+        ));
+        let mut moved = false;
+        let mut arrivals = Vec::new();
+        let mut announcements = Vec::new();
+        for frame in 0..256 {
+            let trace_start = sim.trigger_runtime.dispatch_trace.len();
+            let output = sim
+                .advance_app_frame(
+                    &[],
+                    &rules,
+                    Some(&registry),
+                    67,
+                    TickLane::Ordinary,
+                    FrameEffects::default(),
+                )
+                .unwrap();
+            arrivals.extend(
+                sim.trigger_runtime.dispatch_trace[trace_start..]
+                    .iter()
+                    .filter(|&&(index, kind)| index == entry && kind == 1)
+                    .map(|_| frame),
+            );
+            announcements.extend(
+                output
+                    .sound_events
+                    .into_iter()
+                    .filter(|event| matches!(event, SimSoundEvent::BuildingCaptured { .. })),
+            );
+            if let Some(actor) = sim.substrate.entities.get(engineer) {
+                moved |=
+                    crate::sim::movement::ground_pose::position_world_xy(&actor.position) != start;
+            } else {
+                break;
+            }
+        }
+        assert!(moved, "the ordinary Walk route must move before arrival");
+        assert!(
+            sim.substrate.entities.get(engineer).is_none(),
+            "Engineer must retire"
+        );
+        assert!(!sim.logic_order().contains(&engineer));
+        assert_eq!(sim.substrate.entities.infantry_registry_len(), 0);
+        assert_eq!(arrivals.len(), 2);
+        assert_eq!(arrivals[0], arrivals[1]);
+        let expected_owner = houses[expected_index];
+        let target = sim.substrate.entities.get(building).unwrap();
+        assert_eq!(
+            target.owner(),
+            expected_owner,
+            "first={first_change}, second={second_change}"
+        );
+        assert_eq!(
+            target.capture_infantry_type_index.get(),
+            rules
+                .type_array_index(
+                    crate::rules::object_type::ObjectCategory::Infantry,
+                    "ENGINEER"
+                )
+                .unwrap()
+        );
+        assert_eq!(announcements.len(), 1);
+        let SimSoundEvent::BuildingCaptured {
+            old_owner,
+            new_owner,
+            tech_building,
+            radar,
+            ..
+        } = &announcements[0]
+        else {
+            unreachable!()
+        };
+        assert_eq!(
+            (*old_owner, *new_owner, *tech_building),
+            (houses[2], expected_owner, false)
+        );
+        let radar = radar.as_ref().unwrap();
+        assert_eq!((radar.rx, radar.ry), (16, 16));
+        let mut actions = Vec::new();
+        if first_change {
+            actions.push((36, 7));
+        }
+        actions.push((28, 11));
+        if second_change {
+            actions.push((36, 3));
+        }
+        actions.push((28, 13));
+        assert_eq!(sim.trigger_runtime.action_trace, actions);
+        for (index, owner) in houses.into_iter().enumerate() {
+            let house = sim.houses.get(&owner).unwrap();
+            assert_eq!(house.building_capture_notified(), index == 2);
+            let owns = i32::from(index == expected_index);
+            assert_eq!(
+                house
+                    .tracking()
+                    .owned_count(EntityCategory::Structure, depot_type),
+                owns
+            );
+            assert_eq!(
+                house
+                    .tracking()
+                    .active_count(EntityCategory::Structure, depot_type),
+                owns
+            );
+            assert_eq!(house.tracking().buildings(), owns);
+            assert_eq!(
+                house.base_projection().buildings(),
+                if owns == 1 { vec![building] } else { vec![] }
+            );
+            assert_eq!(
+                house
+                    .tracking()
+                    .owned_count(EntityCategory::Infantry, engineer_type),
+                0
+            );
+            assert_eq!(
+                house
+                    .tracking()
+                    .active_count(EntityCategory::Infantry, engineer_type),
+                0
+            );
+            assert_eq!(house.stats().buildings_lost(), u32::from(index == 2));
+            assert_eq!(
+                house.stats().buildings_killed(),
+                u32::from(index == expected_index)
+            );
+        }
+        assert_eq!(
+            sim.trigger_runtime
+                .attachments
+                .get(&TagAttachment::Object(building)),
+            Some(&carry)
+        );
+        //519F6C copies the attachment. Object5F3B80 removes the consumed
+        //Engineer's index without decrementing the retained Tag+2C count.
+        assert_eq!(sim.trigger_runtime.tag(carry).unwrap().refs, 2);
+        assert!(
+            !sim.trigger_runtime
+                .attachments
+                .contains_key(&TagAttachment::Object(engineer))
+        );
+        assert_eq!(sim.trigger_runtime.tag(entry).unwrap().refs, 0);
+        assert!(!sim.trigger_runtime.trigger(carry_trigger).unwrap().enabled);
+        for index in entry_triggers {
+            let trigger = sim.trigger_runtime.trigger(index).unwrap();
+            let typ = &sim.trigger_runtime.definitions.trigger_types[trigger.type_index];
+            let entered_index = typ.events.iter().position(|event| event.kind == 1).unwrap();
+            assert_eq!(trigger.completed & (1 << entered_index), 0);
+            let source = if typ.id == "T1" && first_change { 1 } else { 0 };
+            assert_eq!(trigger.retained_house, Some(houses[source]));
+        }
+    }
+}
+
 fn tag(sim: &mut Simulation, name: &str) -> (usize, usize) {
     let typ = sim.trigger_runtime.definitions.tag_type(name).unwrap();
     let tag = sim.shared_trigger_tag(typ);
@@ -102,7 +372,7 @@ fn team(
         sim.team_script_vm.mark_member_team_leaving_map(actor);
     }
     if !head {
-        sim.team_remove_member(id, actor, true, Some(rules), FrameEffects::default());
+        sim.team_remove_member(id, actor, true, rules, FrameEffects::default());
     }
     id
 }
@@ -236,7 +506,7 @@ fn twelve_original_team_predicates_keep_type_head_leaving_house_and_persistence_
                 },
                 house.then_some(houses[0]),
                 &mut persistence,
-                Some(&rules),
+                &rules,
                 live,
             )
         };
@@ -311,14 +581,7 @@ fn fourteen_original_near_waypoint_distance_controls_reuse_the_numeric_owner() {
             ..Default::default()
         };
         assert_eq!(
-            sim.has_occurred(
-                0,
-                input,
-                Some(houses[0]),
-                &mut persistence,
-                Some(&rules),
-                live
-            ),
+            sim.has_occurred(0, input, Some(houses[0]), &mut persistence, &rules, live),
             expected,
             "{delta:?}"
         );
@@ -329,7 +592,7 @@ fn fourteen_original_near_waypoint_distance_controls_reuse_the_numeric_owner() {
                 TagEventInput { kind: 8, ..input },
                 Some(houses[0]),
                 &mut persistence,
-                Some(&rules),
+                &rules,
                 live
             ));
             assert!(!sim.with_buildup_bypass(|sim| sim.has_occurred(
@@ -337,7 +600,7 @@ fn fourteen_original_near_waypoint_distance_controls_reuse_the_numeric_owner() {
                 input,
                 Some(houses[0]),
                 &mut persistence,
-                Some(&rules),
+                &rules,
                 live
             )));
         }
@@ -392,7 +655,7 @@ fn ordinary_per_cell_arrival_raises_attached_near_event_before_next_poll_and_sur
         sim.per_cell_process(
             actor,
             crate::sim::movement::PerCellReason::TurnComplete,
-            Some(&rules),
+            &rules,
             Some(&registry),
             FrameEffects::default(),
         )
@@ -401,7 +664,7 @@ fn ordinary_per_cell_arrival_raises_attached_near_event_before_next_poll_and_sur
         sim.per_cell_process(
             actor,
             crate::sim::movement::PerCellReason::Arrival,
-            Some(&rules),
+            &rules,
             Some(&registry),
             FrameEffects::default(),
         )
@@ -444,7 +707,7 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
     let _ = sim.assign_destination_represented(
         infantry,
         Some(crate::sim::components::NavTargetRef::object(reactor)),
-        Some(&rules),
+        &rules,
         Some(&registry),
         FrameEffects::default(),
     );
@@ -465,14 +728,14 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
             y: 16 * 256 + 128,
             z: 0,
         },
-        Some(&rules),
+        &rules,
         Some(&registry),
         FrameEffects::default(),
     );
     sim.per_cell_process(
         infantry,
         crate::sim::movement::PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         Some(&registry),
         FrameEffects::default(),
     )
@@ -487,4 +750,428 @@ fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
             .inside_transport_id(),
         Some(reactor)
     );
+}
+
+/// Puts `infantry` on `mission`, heading for `building`, standing on the
+/// building's cell through the shared Foot writer, then runs its arrival.
+fn arrive_at_building(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+    infantry: u64,
+    building: u64,
+    mission: crate::sim::mission::MissionType,
+) {
+    let (rx, ry) = {
+        let building = sim.substrate.entities.get(building).unwrap();
+        (building.position.rx(), building.position.ry())
+    };
+    sim.substrate
+        .mission_assign_exact(
+            infantry,
+            crate::sim::mission::MissionId::from_known(mission),
+            0,
+        )
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(infantry)
+        .unwrap()
+        .navigation
+        .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::object(building)));
+    sim.foot_set_location_marked(
+        infantry,
+        DriveCoord {
+            x: i32::from(rx) * 256 + 128,
+            y: i32::from(ry) * 256 + 128,
+            z: 0,
+        },
+        rules,
+        Some(registry),
+        FrameEffects::default(),
+    );
+    sim.per_cell_process(
+        infantry,
+        crate::sim::movement::PerCellReason::Arrival,
+        rules,
+        Some(registry),
+        FrameEffects::default(),
+    )
+    .unwrap();
+}
+
+/// Infantry PerCellProcess's occupier arm raises event 1 (Entered by) on the
+/// Tag of the building it garrisons, with the infantryman as the actor
+/// (`0x00519710..0x00519725`), before AddGarrisonOccupant (`0x0051972D`).
+/// XArena's CATECH01 crates hang on this event.
+#[test]
+fn an_occupier_garrisoning_a_building_raises_its_entered_by_event() {
+    let (mut sim, rules, registry, houses) = super::tests::event_ingress_fixture_with_rules(
+        "[InfantryTypes]\n0=TAGOCC\n[TAGOCC]\nStrength=100\nSpeed=4\nSpeedType=Foot\n\
+         Occupier=yes\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+         [BuildingTypes]\n0=TAGCIV\n[TAGCIV]\nStrength=500\nCanBeOccupied=yes\n\
+         MaxNumberOccupants=5\n",
+    );
+    let owner = sim.interner.resolve(houses[0]).to_owned();
+    let building = sim
+        .spawn_object("TAGCIV", &owner, 16, 16, 0, &rules)
+        .unwrap();
+    let infantry = sim
+        .spawn_object("TAGOCC", &owner, 17, 16, 0, &rules)
+        .unwrap();
+    install(&mut sim, &rules, "1,0,-1");
+    sim.attach_object_trigger_tag(building, Some("MOVETAG"));
+
+    arrive_at_building(
+        &mut sim,
+        &rules,
+        &registry,
+        infantry,
+        building,
+        crate::sim::mission::MissionType::Capture,
+    );
+
+    assert!(sim.trigger_runtime.globals_set.contains(&7));
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(building)
+            .unwrap()
+            .passenger_role
+            .occupants()
+            .count(),
+        1
+    );
+}
+
+/// Infantry PerCellProcess's C4 arm raises event 1 (Entered by) on the Tag
+/// of its NavCom building on every arrival, with the planter as the actor
+/// (`0x0051A507..0x0051A51C`), before the Selling and invulnerability
+/// refusals (`0x0051A525..`). XBermuda's CAAIRP ends its storms this way.
+#[test]
+fn a_c4_planter_arriving_at_a_building_raises_its_entered_by_event() {
+    for selling in [false, true] {
+        let (mut sim, rules, registry, houses) = super::tests::event_ingress_fixture_with_rules(
+            "[InfantryTypes]\n0=TAGC4\n[TAGC4]\nStrength=100\nSpeed=4\nSpeedType=Foot\n\
+             C4=yes\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+             [BuildingTypes]\n0=TAGAIR\n[TAGAIR]\nStrength=500\n",
+        );
+        let (ours, theirs) = (
+            sim.interner.resolve(houses[0]).to_owned(),
+            sim.interner.resolve(houses[1]).to_owned(),
+        );
+        let building = sim
+            .spawn_object("TAGAIR", &theirs, 16, 16, 0, &rules)
+            .unwrap();
+        let infantry = sim.spawn_object("TAGC4", &ours, 17, 16, 0, &rules).unwrap();
+        install(&mut sim, &rules, "1,0,-1");
+        sim.attach_object_trigger_tag(building, Some("MOVETAG"));
+        if selling {
+            sim.substrate
+                .mission_assign_exact(
+                    building,
+                    crate::sim::mission::MissionId::from_known(
+                        crate::sim::mission::MissionType::Selling,
+                    ),
+                    0,
+                )
+                .unwrap();
+        }
+
+        arrive_at_building(
+            &mut sim,
+            &rules,
+            &registry,
+            infantry,
+            building,
+            crate::sim::mission::MissionType::Sabotage,
+        );
+
+        assert!(
+            sim.trigger_runtime.globals_set.contains(&7),
+            "selling {selling}"
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(building)
+                .unwrap()
+                .pending_c4_detonation
+                .pending()
+                .is_some(),
+            !selling
+        );
+    }
+}
+
+/// Infantry519710 raises the building's Entered event with the entering
+/// infantryman, before AddGarrisonOccupant522910 conceals him. A rejected
+/// admission must not raise it, and the building's House is not the actor.
+#[test]
+fn garrison_arrival_raises_entered_by_only_for_an_admitted_infantryman() {
+    for (actor_house, health, entered) in [(0, 500, true), (1, 500, false), (0, 50, false)] {
+        let (mut sim, rules, registry, houses) = super::tests::event_ingress_fixture_with_rules(
+            "[Country7]\nMultiplayPassive=yes\n\
+             [InfantryTypes]\n0=TAGINF\n[TAGINF]\nStrength=100\nSpeed=4\n\
+             Occupier=yes\nSpeedType=Foot\n\
+             Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+             [BuildingTypes]\n0=TAGGARRISON\n[TAGGARRISON]\nStrength=500\n\
+             CanBeOccupied=yes\nMaxNumberOccupants=3\n",
+        );
+        sim.houses
+            .get_mut(&houses[1])
+            .unwrap()
+            .resolve_multiplay_passive(&rules, Some("Country7"));
+        let building = sim
+            .spawn_object("TAGGARRISON", "House1", 16, 16, 0, &rules)
+            .unwrap();
+        let actor_owner = sim.interner.resolve(houses[actor_house]).to_owned();
+        let infantry = sim
+            .spawn_object("TAGINF", &actor_owner, 15, 16, 0, &rules)
+            .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(building)
+            .unwrap()
+            .health
+            .set_for_test(health);
+        install(&mut sim, &rules, "1,0,0");
+        sim.attach_object_trigger_tag(building, Some("MOVETAG"));
+        arrive_at_building(
+            &mut sim,
+            &rules,
+            &registry,
+            infantry,
+            building,
+            crate::sim::mission::MissionType::Capture,
+        );
+        assert_eq!(
+            sim.trigger_runtime.globals_set.contains(&7),
+            entered,
+            "actor House{actor_house}, building health {health}"
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(infantry)
+                .unwrap()
+                .passenger_role
+                .inside_transport_id(),
+            (health == 500).then_some(building),
+        );
+    }
+}
+
+/// The physical ALL03 Space Needle links Entered events to full-map reveal
+/// on campaign rows 0/1 and six waypoint reveals on row 2. Exercise the
+/// selected original trigger chain on flat ground through Capture, Walk and
+/// PerCell; this is not a replay of the whole campaign or its authored terrain.
+#[test]
+fn all03_needle_garrison_runs_the_authored_difficulty_specific_reveal() {
+    use crate::map::map_file::MapFile;
+    use crate::rules::process_owner::NativeScenarioRulesPrefix;
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let map = MapFile::from_bytes(assets.get_ref("ALL03UMD.MAP").unwrap()).unwrap();
+    let named = assets.resolve_ref("ALL03UMD.INI").map(|_| {
+        crate::rules::retail_sources::select_ini(&assets, "ALL03UMD.INI")
+            .unwrap()
+            .ini
+    });
+    let mut reader = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+    let (rules, _, _, _) = reader
+        .load_scenario(
+            NativeScenarioRulesPrefix::Campaign(named.as_ref()),
+            &map.ini,
+        )
+        .unwrap()
+        .into_parts();
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&map.ini, None);
+    let roster =
+        crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
+    let needle = map
+        .entities
+        .iter()
+        .find(|entity| entity.type_id == "CASEAT01")
+        .unwrap();
+    assert_eq!(needle.trigger_tag.as_deref(), Some("0BFA637C"));
+    assert_eq!(map.tags["0BFA637C"].trigger(), Some("0B7BAC0C"));
+    assert_eq!(map.triggers["092589AC"].difficulty(), [true, true, false]);
+    assert_eq!(map.triggers["092C7F3C"].difficulty(), [false, false, true]);
+    for trigger in ["092589AC", "092C7F3C", "0BFA668C"] {
+        assert_eq!(map.events[trigger].conditions()[0].kind, 1);
+        assert_eq!(map.events[trigger].conditions()[0].value, 0);
+    }
+    assert_eq!(map.actions["092589AC"].entries()[0].kind, 16);
+    assert_eq!(
+        map.actions["092C7F3C"]
+            .entries()
+            .iter()
+            .filter(|entry| entry.kind == 17)
+            .count(),
+        6
+    );
+    assert!(rules.object("CASEAT01").unwrap().can_be_occupied);
+    let radar = map
+        .entities
+        .iter()
+        .find(|entity| entity.trigger_tag.as_deref() == Some("0BFA6C7C"))
+        .unwrap();
+    assert_eq!(radar.type_id, "GAAIRC");
+
+    // Keep the authored linked triggers and radar attachment, excluding
+    // unrelated mission scripts from this small scene's House polling.
+    let triggers = [
+        "0BFA3F3C", "0BFA668C", "0B7BAC0C", "092C7F3C", "0B7BCAAC", "092589AC",
+    ];
+    let tags = ["0BFA6C7C", "0BFA637C"];
+    let mut chain = String::new();
+    for (section_name, ids) in [
+        ("Tags", tags.as_slice()),
+        ("Triggers", triggers.as_slice()),
+        ("Events", triggers.as_slice()),
+        ("Actions", triggers.as_slice()),
+    ] {
+        chain.push_str(&format!("[{section_name}]\n"));
+        let section = map.ini.section(section_name).unwrap();
+        for key in section.keys().filter(|key| ids.contains(key)) {
+            chain.push_str(&format!("{key}={}\n", section.get_for_test(key).unwrap()));
+        }
+    }
+
+    for (difficulty, whole_map) in [(0, true), (1, true), (2, false)] {
+        let mut sim = Simulation::with_seed(3);
+        crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        // A Size 16x16 diamond fits the arena's 32x32 cell storage.
+        sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
+            theater: "TEMPERATE".into(),
+            fill: "Clear".into(),
+            level: 0,
+            width: 16,
+            height: 16,
+            local_left: 0,
+            local_top: 0,
+            local_width: 16,
+            local_height: 16,
+        });
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
+        );
+        sim.session
+            .initialize_campaign_startup(
+                difficulty,
+                3,
+                None,
+                0,
+                crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+            )
+            .unwrap();
+        sim.session.game_options_mut_for_test().short_game = false;
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        crate::sim::scenario_bootstrap::initialize_map_roster_houses(
+            &mut sim,
+            &roster,
+            &rules,
+            Some(&map.ini),
+        );
+        let player = sim.interner.get("Americans").unwrap();
+        sim.session.set_current_house_for_test(Some(player));
+        sim.houses
+            .get_mut(&player)
+            .unwrap()
+            .set_is_human_for_test(true);
+        sim.session.install_waypoints(&map.waypoints);
+        install_event_ingress_map(&mut sim, &rules, &chain);
+        let building = sim
+            .spawn_object(&needle.type_id, &needle.owner, 16, 16, 0, &rules)
+            .unwrap();
+        sim.attach_object_trigger_tag(building, needle.trigger_tag.as_deref());
+        let radar_building = sim
+            .spawn_object(&radar.type_id, &radar.owner, 7, 17, 0, &rules)
+            .unwrap();
+        sim.attach_object_trigger_tag(radar_building, radar.trigger_tag.as_deref());
+        sim.spawn_object("GAPOWR", "Americans", 11, 20, 0, &rules)
+            .unwrap();
+        let infantry = sim
+            .spawn_object("E1", "Americans", 13, 16, 0, &rules)
+            .unwrap();
+        assert!(!sim.fog.whole_map_revealed_for_owner(player));
+        assert!(!sim.fog.is_cell_revealed(player, 24, 16));
+        assert!(sim.apply_command(
+            "Americans",
+            &crate::sim::command::Command::CaptureBuilding {
+                engineer_id: infantry,
+                target_building_id: building,
+            },
+            Some(&rules)
+        ));
+        let mut garrisoned = false;
+        for _ in 0..256 {
+            sim.advance_app_frame(
+                &[],
+                &rules,
+                Some(&registry),
+                67,
+                crate::sim::world::TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .unwrap();
+            if sim
+                .substrate
+                .entities
+                .get(infantry)
+                .unwrap()
+                .passenger_role
+                .inside_transport_id()
+                == Some(building)
+            {
+                garrisoned = true;
+                break;
+            }
+        }
+        assert!(
+            garrisoned,
+            "difficulty {difficulty}: ordinary Capture must enter the Needle"
+        );
+        assert_eq!(
+            sim.fog.whole_map_revealed_for_owner(player),
+            whole_map,
+            "difficulty {difficulty}"
+        );
+        assert_eq!(sim.fog.is_cell_revealed(player, 24, 16), whole_map);
+        let actions: Vec<_> = sim
+            .trigger_runtime
+            .action_trace
+            .iter()
+            .map(|row| row.0)
+            .collect();
+        assert_eq!(
+            actions.iter().filter(|&&kind| kind == 16).count(),
+            usize::from(whole_map)
+        );
+        assert_eq!(
+            actions.iter().filter(|&&kind| kind == 17).count(),
+            if whole_map { 0 } else { 6 }
+        );
+        assert!(
+            actions.contains(&53),
+            "entry also enables the authored radar reward"
+        );
+        for _ in 0..16 {
+            sim.advance_app_frame(
+                &[],
+                &rules,
+                Some(&registry),
+                67,
+                crate::sim::world::TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        }
+        assert_eq!(sim.fog.whole_map_revealed_for_owner(player), whole_map);
+        assert_eq!(sim.fog.is_cell_revealed(player, 24, 16), whole_map);
+    }
 }

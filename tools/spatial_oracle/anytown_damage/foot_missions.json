@@ -20,7 +20,6 @@
   ],
   "draw_stage_modulo_receipt": {
     "boundary": "Original isolated Infantry draw signed sequence-count clamp and StageCDQ/IDIV only; supplied caller EAX/EBX/EBP/ESP and scratch count table. Stops before518E21, so Facing, frame-index composition, drawing and renderer effects are not executed.",
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "native_span": {
       "address": "0x00518E08",
       "file_offset": 1150472,
@@ -979199,10 +979198,9 @@
         ]
       }
     },
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "preserved_payload": {
-      "canonical_bytes": 10896182,
-      "canonical_sha256": "e40988fa2524a3a11376a54add8a54014053252909db2e83128ae27e3c80fb3f",
+      "canonical_bytes": 10895933,
+      "canonical_sha256": "35c0e43f412d76cf9cdd1dd65a4cb13801e7e979d672314de39f15574e4e6fb7",
       "ground_firing_cases": 8,
       "row_counts": {
         "empty_rescue_rows": 2,
@@ -1098071,11 +1098069,10 @@
         "sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
       }
     ],
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "native_text_unchanged": true,
     "preserved_payload": {
-      "canonical_bytes": 7335318,
-      "canonical_sha256": "bbc321dd3de71f87a2762508df6e7bcd3845510e3cd2dc0458eefaaff29314a0",
+      "canonical_bytes": 7335235,
+      "canonical_sha256": "a7f520feedbcc1adbc479951356a0bd6049d3626bb6003952b48fc51b013c995",
       "row_counts": {
         "empty_rescue_rows": 2,
         "greatest_threat_rows": 86,
@@ -1227139,7 +1227136,6 @@
       "setup": "Fresh existing FootMissions.initialize_companion original E1 type/Infantry/Walk constructors, layered readers and successful Unlimbo; explicit Ready fixture baseline and supplied House/crop retained.",
       "type_reader": "0x005240A0"
     },
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "native_span": {
       "address": "0x00518D80",
       "file_offset": 1150336,
@@ -1887444,8 +1887440,8 @@
       }
     ],
     "preserved_payload": {
-      "canonical_bytes": 17535932,
-      "canonical_sha256": "54a2a1f2b554a404ed0e6530b4dc2bdea0f666584bf03f1ed8f873bb45a28e91",
+      "canonical_bytes": 17535517,
+      "canonical_sha256": "94db9dcd2cb08ecbc23867f5e11f09f5cb1b2d1e3db7f29eebf491dbb59a8a09",
       "old_draw_modulo_rows": 80
     },
     "primary_facing_lookup": {
@@ -2176875,7 +2176871,6 @@
       "sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
     }
   ],
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "navigation_rows": [
     {
       "after": {
@@ -2648341,12 +2648336,11 @@
         }
       }
     ],
-    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "native_text_unchanged": true,
     "native_vtables_unchanged": true,
     "preserved_payload": {
-      "canonical_bytes": 9101254,
-      "canonical_sha256": "f7662e010a04347bc900c3d97887de09aaa7e40a90726bd66e11e50b6c1c5434",
+      "canonical_bytes": 9101088,
+      "canonical_sha256": "0fc230b21725dd9c13a84c548c76423f173b481057239d5e2b7899a1ad9f0dba",
       "ground_firing_cases": 8,
       "row_counts": {
         "empty_rescue_rows": 2,

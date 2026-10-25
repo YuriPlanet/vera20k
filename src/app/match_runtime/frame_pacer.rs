@@ -64,7 +64,7 @@ pub(crate) fn wall_clock_ms() -> u64 {
 
 #[derive(Debug, Default)]
 pub(crate) struct LocalFramePacer {
-    last_frame_start_bucket: Option<u32>,
+    last_frame_start_ms: Option<u32>,
 }
 
 /// App-owned elapsed-time clock used by the end-of-match score dialog.
@@ -207,14 +207,28 @@ impl ScenarioElapsedClock {
 }
 
 impl LocalFramePacer {
+    /// The sequencer owns the agreed network cadence. Buffered complete
+    /// frames, rather than a second local timer, admit recovery ticks.
+    /// Frame zero is the startup handshake and must keep servicing its owner.
+    pub(crate) fn admits_canonical_frame(frame: u32, committed_frontier: u32) -> bool {
+        frame == 0 || frame <= committed_frontier
+    }
+
+    pub(crate) fn permits_catch_up(attempts: usize, elapsed: std::time::Duration) -> bool {
+        attempts < 8 && elapsed < std::time::Duration::from_millis(8)
+    }
+
     pub(crate) const fn new() -> Self {
         Self {
-            last_frame_start_bucket: None,
+            last_frame_start_ms: None,
         }
     }
 
     /// Read the same bucket interval used by `should_admit`, for diagnostics.
-    pub(crate) fn budget_ms(&self, game_speed: u8) -> Option<f32> {
+    pub(crate) fn budget_ms(&self, game_speed: u8, network_fps: Option<(u16, u32)>) -> Option<f32> {
+        if let Some((fps, delay)) = network_fps {
+            return Some(network_interval_ms(fps).saturating_add(delay) as f32);
+        }
         (game_speed != 0).then(|| {
             f32::from(game_speed.clamp(MIN_TIMED_GAME_SPEED, MAX_TIMED_GAME_SPEED))
                 * FRAME_BUCKET_MS as f32
@@ -225,18 +239,34 @@ impl LocalFramePacer {
     /// Use the pacer's bucket origin, not the end of a potentially expensive
     /// simulation/render preparation, to avoid restarting visual time late.
     pub(crate) fn interpolation_elapsed_ms(&self, now_ms: u64) -> Option<u32> {
-        self.last_frame_start_bucket
-            .map(|bucket| (now_ms as u32).wrapping_sub(bucket << FRAME_BUCKET_SHIFT))
+        self.last_frame_start_ms.map(|ms| {
+            (now_ms as u32).wrapping_sub((ms >> FRAME_BUCKET_SHIFT) << FRAME_BUCKET_SHIFT)
+        })
     }
 
-    pub(crate) fn should_admit(&self, now_ms: u64, game_speed: u8, paused: bool) -> bool {
+    pub(crate) fn should_admit(
+        &self,
+        now_ms: u64,
+        game_speed: u8,
+        network_fps: Option<(u16, u32)>,
+        paused: bool,
+    ) -> bool {
         if paused {
             return false;
+        }
+        // MainTick55D4FB chooses 1000/FPS for network games, and
+        // MainThrottle55E1BC consumes that millisecond timer. Offline pacing
+        // retains its distinct 16ms bucket clock (55E2B4).
+        if let Some((fps, delay)) = network_fps {
+            return self.last_frame_start_ms.is_none_or(|last| {
+                (now_ms as u32).wrapping_sub(last) as i32
+                    >= network_interval_ms(fps).saturating_add(delay) as i32
+            });
         }
         if game_speed == 0 {
             return true;
         }
-        let Some(last_bucket) = self.last_frame_start_bucket else {
+        let Some(last_bucket) = self.last_frame_start_ms.map(|ms| ms >> FRAME_BUCKET_SHIFT) else {
             return true;
         };
         let required_buckets =
@@ -246,12 +276,12 @@ impl LocalFramePacer {
     }
 
     pub(crate) fn record_admitted_frame(&mut self, frame_start_ms: u64) {
-        self.last_frame_start_bucket = Some(frame_bucket(frame_start_ms));
+        self.last_frame_start_ms = Some(frame_start_ms as u32);
     }
 
     /// Forget the prior pacing window so the next unpaused frame runs now.
     pub(crate) fn reset_for_immediate_frame(&mut self) {
-        self.last_frame_start_bucket = None;
+        self.last_frame_start_ms = None;
     }
 
     /// Suppress another automatic frame until one full pacing window passes.
@@ -259,7 +289,7 @@ impl LocalFramePacer {
     /// This is for explicit single-step/capture work. Normal match entry and
     /// modal resume use `reset_for_immediate_frame`.
     pub(crate) fn reanchor(&mut self, now_ms: u64) {
-        self.last_frame_start_bucket = Some(frame_bucket(now_ms));
+        self.last_frame_start_ms = Some(now_ms as u32);
     }
 
     #[cfg(test)]
@@ -267,7 +297,7 @@ impl LocalFramePacer {
         if game_speed == 0 {
             return None;
         }
-        let last_bucket = self.last_frame_start_bucket?;
+        let last_bucket = self.last_frame_start_ms? >> FRAME_BUCKET_SHIFT;
         let required_buckets =
             u32::from(game_speed.clamp(MIN_TIMED_GAME_SPEED, MAX_TIMED_GAME_SPEED));
         Some(
@@ -278,7 +308,16 @@ impl LocalFramePacer {
     }
 }
 
-const fn frame_bucket(now_ms: u64) -> u32 {
+fn network_interval_ms(frames_per_second: u16) -> u32 {
+    // MainTick55D499 has the explicit FPS0 fallback of33 milliseconds.
+    if frames_per_second == 0 {
+        33
+    } else {
+        1000 / u32::from(frames_per_second)
+    }
+}
+
+pub(crate) const fn frame_bucket(now_ms: u64) -> u32 {
     (now_ms as u32) >> FRAME_BUCKET_SHIFT
 }
 
@@ -290,6 +329,49 @@ pub(crate) fn wall_clock_bucket() -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn canonical_frontier_admits_buffered_ticks_without_a_local_timer_and_bounds_work() {
+        assert!(
+            LocalFramePacer::admits_canonical_frame(0, 0),
+            "startup keeps polling"
+        );
+        assert!(LocalFramePacer::admits_canonical_frame(17, 19));
+        assert!(LocalFramePacer::admits_canonical_frame(19, 19));
+        assert!(
+            !LocalFramePacer::admits_canonical_frame(20, 19),
+            "no missing frame is skipped"
+        );
+        assert!(LocalFramePacer::permits_catch_up(
+            7,
+            std::time::Duration::from_millis(7)
+        ));
+        assert!(!LocalFramePacer::permits_catch_up(
+            8,
+            std::time::Duration::ZERO
+        ));
+        assert!(!LocalFramePacer::permits_catch_up(
+            1,
+            std::time::Duration::from_millis(8)
+        ));
+    }
+
+    #[test]
+    fn network_fps_uses_millisecond_timer_and_resets_for_rematch() {
+        let mut pacer = LocalFramePacer::new();
+        pacer.record_admitted_frame(17);
+        assert!(!pacer.should_admit(38, 0, Some((45, 0)), false));
+        assert!(pacer.should_admit(39, 6, Some((45, 0)), false));
+        assert_eq!(pacer.budget_ms(0, Some((45, 0))), Some(22.0));
+        assert!(!pacer.should_admit(68, 0, Some((45, 30)), false));
+        assert!(pacer.should_admit(69, 0, Some((45, 30)), false));
+        assert!(!pacer.should_admit(49, 0, Some((0, 0)), false));
+        assert!(pacer.should_admit(50, 0, Some((0, 0)), false));
+        pacer.record_admitted_frame(u64::from(u32::MAX - 7));
+        assert!(pacer.should_admit(8, 6, Some((60, 0)), false));
+        pacer.reset_for_immediate_frame();
+        assert!(pacer.should_admit(8, 6, Some((30, 0)), false));
+    }
 
     #[test]
     fn render_interpolation_phase_uses_pacing_bucket_and_wraps_with_uptime() {
@@ -348,8 +430,8 @@ mod tests {
             let mut pacer = LocalFramePacer::new();
             pacer.record_admitted_frame(32);
             let deadline = 32 + u64::from(speed) * FRAME_BUCKET_MS;
-            assert!(!pacer.should_admit(deadline - 1, speed, false));
-            assert!(pacer.should_admit(deadline, speed, false));
+            assert!(!pacer.should_admit(deadline - 1, speed, None, false));
+            assert!(pacer.should_admit(deadline, speed, None, false));
             assert_eq!(pacer.next_deadline_ms(speed), Some(deadline));
         }
     }
@@ -359,7 +441,7 @@ mod tests {
         let mut pacer = LocalFramePacer::new();
         pacer.record_admitted_frame(u64::from(u32::MAX - 7));
 
-        assert!(!pacer.should_admit(u64::from(u32::MAX) + 1, 1, false));
+        assert!(!pacer.should_admit(u64::from(u32::MAX) + 1, 1, None, false));
     }
 
     #[test]

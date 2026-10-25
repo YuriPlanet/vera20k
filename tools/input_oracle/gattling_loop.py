@@ -636,10 +636,8 @@ def metadata():
         input_environment=['VERA20K_GAMEMD_EXE or RA2_DIR', 'VERA20K_GATTLING_INPUTS', 'VERA20K_GATTLING_VOXELS'],
         shared_owner_extensions={
             'tools/spatial_oracle/engineer_repair_admission.py': {
-                'source_before_normalized_lf_sha256': '7a4cc38f9ab1d9b1483dc1b61782e2a74fab878df7e99818363e5c5aff6e889c',
                 'purpose': 'Explicit pinned absent prepared-file input at existing immutable RawFile OS seam; original reader and failure branch remain active'},
             'tools/spatial_oracle/_factory_infantry_output/pcm.py': {
-                'source_before_normalized_lf_sha256': 'b66d26e739d9504d1844736078db5b92e3cf014aaa10889a6fbf5c73298418a2',
                 'purpose': 'Opt-in observation of original409D90 raw copy/REP writes; default IMA-only observation and old corpus projection retained'}},
         legacy_GI_payload_identity={
             'file': 'tools/input_oracle/unit_voice_playback.json',

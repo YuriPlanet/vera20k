@@ -176,12 +176,11 @@ fn retail_gi_group_boards_a_4x4_garrison_from_its_far_side() {
                 "frame {frame}: GI {gi} must not target the castle while entering"
             );
         }
-        let cargo = sim
+        let occupants = sim
             .entities()
             .get(castle)
-            .and_then(|b| b.passenger_role.cargo())
-            .map(|c| c.count());
-        if cargo == Some(gis.len() as u32) {
+            .map(|b| b.passenger_role.occupants().count());
+        if occupants == Some(gis.len() as i32) {
             boarded_frame = Some(frame);
             break;
         }
@@ -250,7 +249,7 @@ fn retail_capture_walk_rechecks_admission_and_respects_a_replacement_order() {
             Some(crate::sim::components::NavTargetRef::Object { id: castle })
         );
 
-        let expected_cargo = match control {
+        let expected_occupants = match control {
             "red_health" => {
                 runtime
                     .simulation
@@ -337,8 +336,8 @@ fn retail_capture_walk_rechecks_admission_and_respects_a_replacement_order() {
         );
         let building = runtime.simulation.entities().get(castle).unwrap();
         assert_eq!(
-            building.passenger_role.passenger_count(),
-            expected_cargo,
+            building.passenger_role.occupants().count(),
+            expected_occupants as i32,
             "{control}"
         );
         if control == "other_owner" {

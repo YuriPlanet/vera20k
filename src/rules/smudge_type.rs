@@ -13,6 +13,9 @@ use crate::rules::ini_parser::IniFile;
 #[derive(Debug, Clone)]
 pub struct SmudgeTypeDef {
     pub name: String,
+    /// Inherited `ObjectTypeClass::ReadINI @ 0x005F92D0` AlphaImage buffer
+    /// (`+0x213`, `char[25]`); absent or empty body reads retain constructor text.
+    pub(crate) alpha_image: String,
     pub crater: bool,
     pub burn: bool,
     pub width: u8,
@@ -62,11 +65,13 @@ impl SmudgeTypeRegistry {
             let image_name: Option<String> = section
                 .and_then(|s| s.read_name("Image", 0x19))
                 .map(str::to_string);
+            let alpha_image = section.map_or_else(String::new, |s| s.read_object_alpha_image(""));
 
             let id: u16 = types.len() as u16;
             by_name.insert(name_upper.clone(), id);
             types.push(SmudgeTypeDef {
                 name: name_upper,
+                alpha_image,
                 crater,
                 burn,
                 width,

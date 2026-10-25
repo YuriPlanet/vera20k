@@ -116,7 +116,7 @@ fn scene(row: &Value) -> (Simulation, RuleSet, InternedId) {
             10,
         );
         house.set_player_control_for_test(*owner == "NEW" && boolean(&input["new_owner_player"]));
-        house.resolve_multiplay_passive(Some(&rules), Some(&country_name));
+        house.resolve_multiplay_passive(&rules, Some(&country_name));
         sim.houses.register(house);
     }
     crate::sim::production::tests::spawn_structure(

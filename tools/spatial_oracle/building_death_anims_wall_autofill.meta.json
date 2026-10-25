@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -36,5 +35,5 @@
     "drain": "0x00725C70"
   },
   "replay_command": "python -m tools.spatial_oracle.building_death_anims --wall-autofill --autofill-output-dir \"$HOME\"/Documents/vera20k-dev/class-parity/cell-class/cell-autofill-native-controls-v3",
-  "payload_sha256": "3d580ea63036f39754c7beda69d4f73b5327549f5db2be81b412e19fa591f8cf"
+  "payload_sha256": "4be593fdbe2973fadf63c43f23a5df84ee1a692e40aa2d8138f1340b706448dc"
 }

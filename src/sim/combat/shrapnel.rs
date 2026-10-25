@@ -31,7 +31,7 @@ fn ground_head(
             rx,
             ry,
             crate::sim::movement::locomotor::MovementLayer::Ground,
-            world.terrain_objects.cell_index().get(&(rx, ry)).copied(),
+            world.terrain_objects.members_at((rx, ry)),
         )
         .next()
 }

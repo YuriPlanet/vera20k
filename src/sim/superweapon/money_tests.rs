@@ -101,7 +101,7 @@ fn fire(
             target_rx: cell.0,
             target_ry: cell.1,
         },
-        Some(rules),
+        rules,
         None,
         FrameEffects::default(),
     )

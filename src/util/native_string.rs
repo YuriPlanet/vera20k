@@ -13,6 +13,14 @@ pub fn widen_bytes(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| char::from(*byte)).collect()
 }
 
+/// The inverse of [`widen_bytes`]: each scalar back to its narrow byte. A
+/// scalar above U+00FF, which no widened byte gives, becomes `?`.
+pub fn narrow_widened(text: &str) -> Vec<u8> {
+    text.chars()
+        .map(|scalar| u8::try_from(u32::from(scalar)).unwrap_or(b'?'))
+        .collect()
+}
+
 /// Encode UTF-16 text through the Windows active ANSI code page.
 #[cfg(windows)]
 pub fn acp_encode(text: &str) -> Vec<u8> {

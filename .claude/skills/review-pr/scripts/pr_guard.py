@@ -48,6 +48,8 @@ RISKY = [
                    r'|do not (tell|mention|report)'),
 ]
 RISKY = [(name, re.compile(pattern)) for name, pattern in RISKY]
+# AGENTS.md caps committed test data at about 100 KB per file.
+LARGE_FILE_BYTES = 100 * 1024
 HEX_ONLY = re.compile(r'^[0-9a-fA-F]+$')
 HIDDEN = re.compile('[​-‏‪-‮⁦-⁩﻿­]')
 DEPENDENCY = re.compile(r'^\s*[\w-]+\s*=\s*(\{.*\}|"[^"]*")\s*$|\b(git|path|registry)\s*=')
@@ -89,6 +91,27 @@ def risky_hits(path: str, added: list[tuple[int, str]]) -> list[str]:
     return hits
 
 
+def large_additions(files: dict[str, dict], limit: int = LARGE_FILE_BYTES) -> list[str]:
+    """Files whose added text exceeds AGENTS.md's test-data limit."""
+    sizes = {p: sum(len(t.encode('utf-8')) + 1 for _, t in f['added']) for p, f in files.items()}
+    return [f'{p}: {size // 1024} KB added' for p, size in sorted(sizes.items(), key=lambda i: -i[1])
+            if size > limit]
+
+
+def added_line_split(files: dict[str, dict]) -> str:
+    """Added lines as code, tests and other (tools, data, docs), to spot bloat."""
+    code = tests = other = 0
+    for path, f in files.items():
+        count = len(f['added'])
+        if path.endswith('.rs') and 'test' not in path:
+            code += count
+        elif 'test' in path:
+            tests += count
+        else:
+            other += count
+    return f'code {code}, tests {tests}, other {other}'
+
+
 def maintainer_only_findings(paths: list[str], author: str, commit_authors: set[str],
                              maintainer: str) -> list[str]:
     touched = [path for path in paths if MAINTAINER_ONLY.search(path)]
@@ -125,12 +148,14 @@ def main(argv: list[str] | None = None) -> int:
     print(f'PR #{args.number} by {author} from {view["headRepositoryOwner"]["login"]}, '
           f'head {view["headRefOid"]}, maintainer edits {"allowed" if view["maintainerCanModify"] else "BLOCKED"}')
     print(f'Commit authors: {", ".join(sorted(commit_authors))}')
+    print(f'Added lines: {added_line_split(files)}')
     blocks = maintainer_only_findings(paths, author, commit_authors, args.maintainer)
     sections = [
         ('STOP: maintainer-only AGENTS.md edit', blocks),
         ('STOP: AGENTS.md commits on the default branch not by the maintainer', foreign_history),
         ('Protected paths (read every changed line)', [p for p in paths if PROTECTED.search(p)]),
         ('Binary files', [p for p, f in files.items() if f['binary']]),
+        ('Files over 100 KB (AGENTS.md test-data limit)', large_additions(files)),
         ('Dependency lines', [f'{p}:{n} {t.strip()}' for p, f in files.items() if p.endswith('Cargo.toml')
                               for n, t in f['added'] if DEPENDENCY.search(t)]),
         ('Risky added lines (read in context)', [h for p, f in files.items() for h in risky_hits(p, f['added'])]),

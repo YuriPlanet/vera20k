@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -40,14 +39,14 @@
   "selected_profile": "all",
   "projection_limits": "Existing finish_vectors retains the complete raw archive. Projection selects named original controls/receiver steps/24projection outputs and referenced full RNG states/PCM bytes; no derived answers. Selected original CellSpread startup/ready-faced FireAt/impact and full receiver are executed on declared fixture inputs; the Fire routes are archived, not projected. Full scenario admission and input/approach/turning/rearm cadence are outside this comparison.",
   "replay_command": "python -m tools.spatial_oracle.building_death_anims --damage-sound-joined",
-  "payload_sha256": "9d7567b4516610743c4a352f7c6e5ffd9587677854d5a94d0d04c372ac52aca7",
+  "payload_sha256": "caf3afcac64a6fea7a9dcce7ae8787d7bfca61b34e73d0fd7202fc6890564808",
   "raw_archive": {
     "file": "building_damage_sound_joined.raw.json.gz",
-    "sha256": "d6e552008639ac3f9a9d80e7b985c43aaeaf8862e916b66feeecb95d8ff371be",
-    "bytes": 4709978,
-    "uncompressed_sha256": "3d73ea9b98daa191f7b4412ad9af205e8286c6f2593ad4d374d87706c1da1470",
-    "uncompressed_bytes": 80549784,
-    "canonical_payload_sha256": "b2884a56a74b6d2c46cbac8ce0374483a1308296479690bbe158618ad17a7a1b",
+    "sha256": "84c6bfdebb8c50ba6ba7b8624cc1fd5cfe22ece497437ee66dd3bb7701546097",
+    "bytes": 4709985,
+    "uncompressed_sha256": "33cd619e3aa294b5495021f34029a502877c8654c353f3966a2460137161c2be",
+    "uncompressed_bytes": 80549697,
+    "canonical_payload_sha256": "62a720301c9c95cd4d9fe176398985d8947a5f1898cd38337c0813f8bdfd0a7c",
     "compression": {
       "format": "gzip",
       "level": 9,

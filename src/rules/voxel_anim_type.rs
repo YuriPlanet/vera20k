@@ -50,6 +50,9 @@ const DEFAULT_MAX_XY_VEL: f64 = 15.0;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VoxelAnimType {
     pub name: String,
+    /// Inherited `ObjectTypeClass::ReadINI @ 0x005F92D0` AlphaImage buffer
+    /// (`+0x213`, `char[25]`), separate from the VoxelAnim model Image.
+    pub(crate) alpha_image: String,
     /// `ImageFile` (`+0x1F8`): the type's ID until `ObjectTypeClass::ReadINI`
     /// reads `Image=` over it (`0x005F92F8..0x005F933B`, 25 bytes, the current
     /// value as default). `ReadINI` loads the model from it, `%s.VXL` with no
@@ -116,6 +119,7 @@ impl VoxelAnimType {
     pub fn with_defaults(name: &str) -> Self {
         Self {
             name: name.to_string(),
+            alpha_image: String::new(),
             image: name.to_string(),
             normalized: false,
             translucent: false,
@@ -151,6 +155,7 @@ impl VoxelAnimType {
     /// `ObjectTypeClass::ReadINI` (`0x0074B06E`).
     pub fn from_ini_section(name: &str, section: &IniSection) -> Self {
         let mut out = Self::with_defaults(name);
+        out.alpha_image = section.read_object_alpha_image(&out.alpha_image);
         out.image = section.read_string("Image", &out.image, 25);
         out.normalized = section.read_bool("Normalized", out.normalized);
         out.translucent = section.read_bool("Translucent", out.translucent);
@@ -180,7 +185,7 @@ impl VoxelAnimType {
         out.stop_sound = section
             .read_type_name("StopSound", 0x80)
             .map(str::to_string);
-        out.damage = section.read_int("Damage", out.damage);
+        out.damage = read_damage(section, out.damage);
         out.damage_radius = section.read_int("DamageRadius", out.damage_radius);
 
         out.share_source = section
@@ -199,6 +204,12 @@ impl VoxelAnimType {
     pub fn shares_data(&self) -> bool {
         self.share_body_data || self.share_turret_data || self.share_barrel_data
     }
+}
+
+/// VoxelAnimTypeReadINI74B3D8..74B3F2: signed Damage+2F0 uses its current
+/// value, including a previous contact write. Shared by cold and retained reads.
+pub(crate) fn read_damage(section: &IniSection, current: i32) -> i32 {
+    section.read_int("Damage", current)
 }
 
 /// The two angular-velocity keys, including native's sentinel bug.

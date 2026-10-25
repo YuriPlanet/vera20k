@@ -87,7 +87,7 @@ pub(crate) fn enabled(state: &AppState) -> bool {
         && state.match_state.sim_runtime.is_some()
         && state.match_state.scenario_outcome.is_none()
         && state.match_state.scenario_exit.is_none()
-        && !state.platform.focus_freeze_active()
+        && !state.focus_freeze_active()
 }
 
 pub(crate) fn layout(state: &AppState) -> LandscapeLayout {

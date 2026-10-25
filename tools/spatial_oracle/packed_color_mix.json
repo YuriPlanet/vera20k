@@ -1,0 +1,142 @@
+[
+  {
+    "amount": 0,
+    "first": 65535,
+    "format": "rgb565",
+    "output": 4660,
+    "second": 4660
+  },
+  {
+    "amount": 24,
+    "first": 65535,
+    "format": "rgb565",
+    "output": 65535,
+    "second": 4660
+  },
+  {
+    "amount": 25,
+    "first": 65535,
+    "format": "rgb565",
+    "output": 59292,
+    "second": 4660
+  },
+  {
+    "amount": 26,
+    "first": 65535,
+    "format": "rgb565",
+    "output": 65535,
+    "second": 4660
+  },
+  {
+    "amount": 50,
+    "first": 65535,
+    "format": "rgb565",
+    "output": 34041,
+    "second": 4660
+  },
+  {
+    "amount": 75,
+    "first": 65535,
+    "format": "rgb565",
+    "output": 59292,
+    "second": 4660
+  },
+  {
+    "amount": 100,
+    "first": 65535,
+    "format": "rgb565",
+    "output": 65535,
+    "second": 4660
+  },
+  {
+    "amount": 101,
+    "first": 65535,
+    "format": "rgb565",
+    "output": 65535,
+    "second": 4660
+  },
+  {
+    "amount": 4294967295,
+    "first": 65535,
+    "format": "rgb565",
+    "output": 65535,
+    "second": 4660
+  },
+  {
+    "amount": 25,
+    "first": 0,
+    "format": "rgb565",
+    "output": 0,
+    "second": 65535
+  },
+  {
+    "amount": 50,
+    "first": 56896,
+    "format": "rgb565",
+    "output": 48549,
+    "second": 42282
+  },
+  {
+    "amount": 50,
+    "first": 34833,
+    "format": "rgb565",
+    "output": 37517,
+    "second": 42282
+  },
+  {
+    "amount": 25,
+    "first": 56896,
+    "format": "rgb565",
+    "output": 50688,
+    "second": 42282
+  },
+  {
+    "amount": 25,
+    "first": 34833,
+    "format": "rgb565",
+    "output": 32784,
+    "second": 42282
+  },
+  {
+    "amount": 50,
+    "first": 56896,
+    "format": "rgb565",
+    "output": 27424,
+    "second": 0
+  },
+  {
+    "amount": 50,
+    "first": 56896,
+    "format": "rgb565",
+    "output": 50658,
+    "second": 48549
+  },
+  {
+    "amount": 50,
+    "first": 34833,
+    "format": "rgb565",
+    "output": 16392,
+    "second": 0
+  },
+  {
+    "amount": 25,
+    "first": 32767,
+    "format": "rgb555",
+    "output": 29596,
+    "second": 4660
+  },
+  {
+    "amount": 50,
+    "first": 32767,
+    "format": "rgb555",
+    "output": 18169,
+    "second": 4660
+  },
+  {
+    "amount": 75,
+    "first": 32767,
+    "format": "rgb555",
+    "output": 29596,
+    "second": 4660
+  }
+]

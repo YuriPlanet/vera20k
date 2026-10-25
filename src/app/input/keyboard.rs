@@ -186,7 +186,11 @@ pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
             description: localized(state, metadata.description_key, metadata.parameter),
         })
         .collect();
-    state.frontend.keyboard_dialog = Some(KeyboardState::new(parent, commands));
+    state.frontend.keyboard_dialog = Some(KeyboardState::new(
+        parent,
+        commands,
+        vec![localized(state, hotkeys::catalog::VERA_CATEGORY_KEY, None)],
+    ));
     state.platform.window.request_redraw();
 }
 fn reload(state: &mut AppState, reset: bool) {
@@ -264,7 +268,7 @@ pub(crate) fn commit_close(state: &mut AppState, exit: KeyboardExit) {
                 &state.match_state.input.hotkey_bindings,
             )
         {
-            log::warn!("Could not save KeyboardMD.ini: {error}");
+            log::warn!("Could not save VERA.INI keyboard settings: {error}");
         }
     } else if exit.binding_action() == BindingExit::Reload {
         // IDCANCEL5FB6D4 reloads CURRENT disk, including a preceding Reset All.
@@ -408,7 +412,9 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     dialog.scroll.cancel();
     dialog.buttons.press(over);
     match hit {
-        Some(KeyboardControl::Button(_)) => App::play_skirmish_shell_generic_click_sound(state),
+        // Back, Assign and Reset All are owner-draw: GUIMainButtonSound
+        // (0x0061376B).
+        Some(KeyboardControl::Button(_)) => App::play_main_menu_button_sound(state),
         Some(KeyboardControl::Category) => {
             dialog.capture_focused = false;
             dialog.category_open = true;

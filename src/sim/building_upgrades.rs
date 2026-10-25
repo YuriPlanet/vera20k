@@ -260,6 +260,44 @@ impl BuildingUpgrades {
 }
 
 impl Simulation {
+    /// Phobos BuildingTypeExt::GetUpgradesAmount (Ext/BuildingType/Body.cpp):
+    /// read the owning House's Building array and the host's installed types,
+    /// without counting the temporary/producing upgrade object. A non-upgrade
+    /// returns None so the caller can use the normal presence counters.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn count_owned_building_upgrades(
+        &self,
+        owner: InternedId,
+        upgrade: &ObjectType,
+        rules: &RuleSet,
+    ) -> Option<i32> {
+        let host = rules.object_in_category(
+            crate::rules::object_type::ObjectCategory::Building,
+            upgrade.building_upgrade().host()?,
+        )?;
+        let host_id = self.interner.get(&host.id)?;
+        let upgrade_id = self.interner.get(&upgrade.id)?;
+        Some(self.houses.get(&owner).map_or(0, |house| {
+            house
+                .base_projection()
+                .buildings()
+                .iter()
+                .filter_map(|id| self.substrate.entities.get(*id))
+                .filter(|building| {
+                    building.type_ref() == host_id && building.building_upgrades().count() != 0
+                })
+                .map(|building| {
+                    building
+                        .building_upgrades()
+                        .types()
+                        .iter()
+                        .filter(|id| **id == Some(upgrade_id))
+                        .count() as i32
+                })
+                .fold(0i32, i32::wrapping_add)
+        }))
+    }
+
     /// Original Building452670; Unlimbo4408DF repeats this same predicate.
     /// One owner serves placement UI, flush, site search and installation.
     pub(crate) fn can_install_building_upgrade(
@@ -338,11 +376,15 @@ impl Simulation {
         if let Some(host) = self.substrate.entities.get_mut(host_id) {
             host.commit_building_upgrade_type(type_id);
         }
+        // Ares4409F4 ->10014490/100144CD uses the installed host's retained
+        // Country, after the new upgrade pointer has been committed.
+        #[cfg(feature = "ares")]
+        self.grant_factory_plans(host_id, rules);
         crate::sim::superweapon::grant_provided_supers(self, rules, owner);
         self.houses.request_house_tech_tree_recheck(owner);
         // Ordinary power-up path has no satellite flag. The satellite-upgrade
         // mechanism remains separate; generic pointer disposal always runs.
-        self.uninit_with_context(temporary_id, context.requiring_rules(rules));
+        self.uninit_with_context(temporary_id, context);
         true
     }
 

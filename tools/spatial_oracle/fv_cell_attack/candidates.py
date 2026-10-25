@@ -74,13 +74,13 @@ def generate():
  try:
   results=[q.control(row)for row in rows]
   numeric=geometry(q)
-  result=dict(schema=1,native_sha256=base.NATIVE_SHA256,original_constants=base.original_constants(),cases=results,numeric=numeric)
+  result=dict(schema=1,original_constants=base.original_constants(),cases=results,numeric=numeric)
   assert base.proof.sha(bytes(q.u.mem_read(base.proof.TEXT_START,base.proof.TEXT_SIZE)))==q.prefix['text_sha256']
   return result
  finally:q.close()
 
 def metadata():
- result=base.metadata();result['scope']=__doc__;result['pursuit_harness_sha256']=result['harness_sha256'];result['harness_sha256']=base.proof.sha(Path(__file__).read_bytes());result['assumptions'] += [
+ result=base.metadata();result['scope']=__doc__;result['assumptions'] += [
   'Additional complete MissionDispatch controls begin with supplied retained Cell+124 raw ground-occupation bytes. Native4834A0 reads them and determines rejection. No owner/actor/mark producer of these inputs is claimed; underlying frozen Terrain/class/zone data is unchanged. These input controls are not manufactured callback returns.',
   'Numeric-only controls enter original4D5C53 and4D5FFE with declared stack/source inputs in the same native-initialized VM, ambientFPCW0E3F. Native facing conversion and Sin/Cos/ftol execute; no numeric expected result is hand-computed. Negative/zero-delta poses and shorter radii are boundary inputs, not stock map states.'
  ];return result
@@ -139,7 +139,7 @@ def cleg_approach_vectors():
  from tools.spatial_oracle.locomotor_head_coordinates import INITIALIZER_CONTROLS
  from unicorn import Uc,UC_ARCH_X86,UC_MODE_32
  from unicorn.x86_const import UC_X86_REG_EDI
- from tools.native_oracle import (load_image,image_bytes,file_span,image_sha256,
+ from tools.native_oracle import (load_image,image_bytes,file_span,
                                 STACK_BASE,STACK_SIZE,SCRATCH,SCRATCH_SIZE,RET_MAGIC,call)
  u=Uc(UC_ARCH_X86,UC_MODE_32);load_image(u)
  u.mem_map(STACK_BASE,STACK_SIZE);u.mem_map(SCRATCH,SCRATCH_SIZE);u.mem_map(RET_MAGIC,0x1000)
@@ -188,7 +188,7 @@ def cleg_approach_vectors():
  numeric=geometry(q,poses=poses,
                   radius_indices=[(radius,index)for radius in (358,486,614,870,1126)
                                   for index in (0,1,2,23,24)])
- return dict(schema=1,native_sha256=image_sha256(),
+ return dict(schema=1,
              infantry_identity=dict(vtable='007eb058',rtti_entry=f'{rtti_address:08x}',rtti=rtti),
              startup=startup,cases=rows,numeric=numeric,
              candidate_heights=cleg_candidate_heights())

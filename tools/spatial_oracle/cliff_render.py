@@ -137,7 +137,7 @@ def generate():
     rows.append(draw(m, head, source, dict(name='retail_hills_cliff', coords=[103, 64], level=2,
         scene_map='Hills.mmx', scene_lighting=inputs['profiles']['Hills'],
         full_view=dict(view_origin=[1074, 2394], redraw_rect=[0, 0, WIDTH, HEIGHT]))))
-    return dict(native_sha256=native.NATIVE_SHA256, inputs=inputs,
+    return dict(inputs=inputs,
         surface=dict(width=WIDTH, height=HEIGHT, baseline=32768, bytes_per_pixel=2), rows=rows)
 
 

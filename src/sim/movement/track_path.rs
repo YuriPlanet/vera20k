@@ -110,10 +110,10 @@ fn jumpjet_unit(entity: &GameEntity) -> bool {
 /// A `Teleporter=` Unit (TechnoType+0xCD4): Unit 0x741970 runs its
 /// Teleporter arm, which swaps a Drive in over the Teleport primary or ends
 /// it, before the Foot tail.
-fn teleporter_unit(sim: &Simulation, entity: &GameEntity, rules: Option<&RuleSet>) -> bool {
+fn teleporter_unit(sim: &Simulation, entity: &GameEntity, rules: &RuleSet) -> bool {
     entity.category() == EntityCategory::Unit
-        && rules
-            .and_then(|rules| sim.object_type(entity.type_ref(), rules))
+        && sim
+            .entity_object_type(entity, rules)
             .is_some_and(|object| object.teleporter)
 }
 
@@ -164,7 +164,9 @@ fn facing_octant(entity: &GameEntity, frame: u32) -> u8 {
 /// the next setter call runs for an unchanged NavCom (`0x00741A88`); every
 /// setter call that passes that check clears it (`0x00741A9C`). Unlimbo's
 /// own raise and clear (`0x006F6E1B`/`0x006F6E34`) bracket one call and
-/// leave nothing behind. Only this module's setters write it.
+/// leave nothing behind, but Teleport Move_To reads it inside that bracket
+/// (its infantry Scatter_Objects arm `0x0071816F..0x0071819F`, not ported;
+/// reachability unproven). Only this module's setters write it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub(crate) struct SetterForceReassign {
@@ -197,11 +199,10 @@ impl Simulation {
     pub(crate) fn run_track_path_request(
         &mut self,
         request: &FootPathRequest,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<FootPathOutcome, String> {
-        let rules = rules.ok_or("Drive/Ship path request requires rules")?;
         let id = request.entity_id;
         let frame = self.session.binary_frame();
         //4B284B..4B286D / 6A1EA0..6A1EBD arm the caller timer first.
@@ -298,7 +299,7 @@ impl Simulation {
         //Unit receiver may already have cleared (Cell(0,0) refuses).
         let probe = destination.unwrap_or(super::foot_coordinate::NULL_COORD);
         if !self.foot_path_zone_precheck(id, probe, rules)? {
-            self.set_unit_null_destination(id, Some(rules), None, frame_effects);
+            self.set_unit_null_destination(id, rules, None, frame_effects);
             return Ok(FootPathOutcome::Returned);
         }
         //4B28F5..4B2917: a null destination returns.
@@ -403,7 +404,7 @@ impl Simulation {
         if let Some((team_id, _)) = self.team_script_vm.team_for_member(id) {
             self.team_scan_limit(team_id, rules, registry, frame_effects);
         }
-        let _ = self.assign_target_represented(id, None, Some(rules), registry, frame_effects);
+        let _ = self.assign_target_represented(id, None, rules, registry, frame_effects);
     }
 
     /// 0x4B2E77..0x4B2F1A / 0x6A24C7..: a stopped Foot holding a target it
@@ -594,11 +595,11 @@ impl Simulation {
         };
         clear_track_head(actor);
         if actor.navigation.nav_queue().is_empty() {
-            self.set_unit_null_destination(id, Some(rules), None, frame_effects);
+            self.set_unit_null_destination(id, rules, None, frame_effects);
             return false;
         }
         actor.navigation.stop_moving();
-        self.unit_enter_idle_mode(id, Some(rules), false, frame_effects)
+        self.unit_enter_idle_mode(id, rules, false, frame_effects)
     }
 
     /// The outer Process stop at a same-cell Cell NavCom (0x4B066C..0x4B06D2)
@@ -608,7 +609,7 @@ impl Simulation {
     pub(super) fn track_navcom_stop(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         frame_effects: FrameEffects<'_>,
     ) {
         let Some(actor) = self.substrate.entities.get_mut(id) else {
@@ -657,34 +658,16 @@ impl Simulation {
     /// call sees is the override's (Override_Mission saved NavCom at
     /// `0x004D8F5B` and set its own at `0x004D8F6D`), not the saved one.
     ///
-    /// Residual: native Restore runs this setter inside the restore; VERA runs
-    /// it at the object's next Process entry, without the override's NavCom.
-    /// Trigger: an AoE cell target expiring under a suspended mission
-    /// (`restore_entity_after_target_expiry`, whose broadcast holds only the
-    /// entity store), or a Restore made without rules. Effects:
-    /// - the setter's timers, NavQueue clear, Move_To and admission effects
-    ///   (the deployment refusal's NavCom clear, the UnitRepair radio arm, the
-    ///   Teleporter arm's locomotor swap) land up to one frame late, inside the
-    ///   Process host chosen before the call;
-    /// - an override NavCom equal to the saved one takes the whole setter,
-    ///   where native's unchanged-NavCom return (`0x00741A80`) writes nothing;
-    /// - a setter that refuses before the Foot tail leaves NavCom and
-    ///   NavComAux empty, where native keeps the override's.
-    ///
-    /// Frequency: rare. Risk: timing, plus the rare same-NavCom and refusal
-    /// cases. The Teleporter swap needs a `Teleporter=` Unit holding a cell
-    /// target; a text search of retail `rulesmd.ini` finds only the unarmed
-    /// CMIN among Units.
+    /// Compatibility path for retained state or fixture-only restores without
+    /// a represented class setter. Production AreaDamage calls the full world
+    /// Restore synchronously before capturing the current spread cell.
     pub(crate) fn complete_pending_order(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let Some(rules) = rules else {
-            return;
-        };
         let Some(actor) = self.substrate.entities.get_mut(id) else {
             return;
         };
@@ -701,14 +684,8 @@ impl Simulation {
         if let Some(actor) = self.substrate.entities.get_mut(id) {
             actor.navigation.stop_moving();
         }
-        self.assign_destination_represented(
-            id,
-            Some(requested),
-            Some(rules),
-            registry,
-            frame_effects,
-        )
-        .expect("checked deferred destination setter");
+        self.assign_destination_represented(id, Some(requested), rules, registry, frame_effects)
+            .expect("checked deferred destination setter");
     }
 
     /// The class setter vt+0x480 with a NULL destination from outside the
@@ -733,7 +710,7 @@ impl Simulation {
     pub(crate) fn assign_null_destination(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
@@ -765,7 +742,7 @@ impl Simulation {
     /// team, harvest and undeploy callers use it: a Drive, Ship, Hover, Walk,
     /// Jumpjet or Teleport receiver, or a `Teleporter=` Unit whatever its
     /// locomotor.
-    pub(crate) fn unit_setter_receiver(&self, id: u64, rules: Option<&RuleSet>) -> bool {
+    pub(crate) fn unit_setter_receiver(&self, id: u64, rules: &RuleSet) -> bool {
         self.substrate.entities.get(id).is_some_and(|actor| {
             track_unit(actor)
                 || hover_unit(actor)
@@ -818,7 +795,7 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
-        let teleporter = teleporter_unit(self, actor, Some(rules));
+        let teleporter = teleporter_unit(self, actor, rules);
         let hover = hover_unit(actor);
         let jumpjet = jumpjet_unit(actor);
         if !(track_unit(actor)
@@ -831,7 +808,12 @@ impl Simulation {
         {
             return false;
         }
-        if actor.navigation.nav_com() == Some(requested) && !actor.setter_force_reassign.raised {
+        if actor
+            .navigation
+            .nav_com()
+            .is_some_and(|held| held.same_pointer(requested, self.resolved_terrain.as_ref()))
+            && !actor.setter_force_reassign.raised
+        {
             return true;
         }
         let actor = self
@@ -850,7 +832,7 @@ impl Simulation {
             .substrate
             .entities
             .get(id)
-            .and_then(|actor| self.object_type(actor.type_ref(), rules))
+            .and_then(|actor| self.entity_object_type(actor, rules))
             .is_some_and(|object| object.harvester);
         let requested_techno = match requested {
             NavTargetRef::Object { id } => crate::sim::radio::as_techno(self, id),
@@ -864,7 +846,7 @@ impl Simulation {
             && let Some(contact) = unit.radio_contacts.slot(0)
             && !unit.radio_contacts.contains(target)
             && self
-                .object_type(unit.type_ref(), rules)
+                .entity_object_type(unit, rules)
                 .is_some_and(|object| object.passengers > 0)
             && self
                 .substrate
@@ -876,7 +858,7 @@ impl Simulation {
                 self,
                 id,
                 crate::sim::radio::RadioMessage::Break,
-                Some(rules),
+                rules,
                 frame_effects,
             );
         }
@@ -921,8 +903,7 @@ impl Simulation {
             .filter(|(_, category)| *category == EntityCategory::Structure)
             .map(|(id, _)| id);
         let enter_building = original_building.and_then(|building| {
-            let object =
-                self.object_type(self.substrate.entities.get(building)?.type_ref(), rules)?;
+            let object = self.entity_object_type(self.substrate.entities.get(building)?, rules)?;
             (object.unit_repair || object.dock_unload || object.bunker).then_some((
                 building,
                 object.unit_repair,
@@ -945,7 +926,7 @@ impl Simulation {
             self.substrate
                 .entities
                 .get(building)
-                .and_then(|building| self.object_type(building.type_ref(), rules))
+                .and_then(|building| self.entity_object_type(building, rules))
                 .is_some_and(|object| object.unit_absorb)
         });
         if let Some(target) = mobile_target.or(absorber)
@@ -981,7 +962,7 @@ impl Simulation {
                             self,
                             id,
                             crate::sim::radio::RadioMessage::Break,
-                            Some(rules),
+                            rules,
                             frame_effects,
                         );
                         destination = None;
@@ -992,7 +973,7 @@ impl Simulation {
                             .entities
                             .get(id)
                             .and_then(|unit| {
-                                self.object_type(unit.type_ref(), rules)
+                                self.entity_object_type(unit, rules)
                                     .map(|object| !unit.health.is_full(object.strength))
                             })
                             .unwrap_or(false);
@@ -1006,7 +987,7 @@ impl Simulation {
                                 self,
                                 id,
                                 crate::sim::radio::RadioMessage::Break,
-                                Some(rules),
+                                rules,
                                 frame_effects,
                             );
                         }
@@ -1026,7 +1007,7 @@ impl Simulation {
                         building,
                         crate::sim::radio::RadioMessage::CanDock,
                         crate::sim::radio::RadioPayload::default(),
-                        Some(rules),
+                        rules,
                         frame_effects,
                     ) != crate::sim::radio::RadioResponse::Roger
                     {
@@ -1036,7 +1017,7 @@ impl Simulation {
                             self,
                             id,
                             crate::sim::radio::RadioMessage::Break,
-                            Some(rules),
+                            rules,
                             frame_effects,
                         );
                         if unit_repair && let Some(unit) = self.substrate.entities.get_mut(id) {
@@ -1089,7 +1070,7 @@ impl Simulation {
                 depot,
                 crate::sim::radio::RadioMessage::Hello,
                 crate::sim::radio::RadioPayload::default(),
-                Some(rules),
+                rules,
                 frame_effects,
             ) == crate::sim::radio::RadioResponse::Roger
             {
@@ -1097,7 +1078,7 @@ impl Simulation {
                     self,
                     id,
                     crate::sim::radio::RadioMessage::CanDock,
-                    Some(rules),
+                    rules,
                     frame_effects,
                 ) != crate::sim::radio::RadioResponse::Roger
                 {
@@ -1105,7 +1086,7 @@ impl Simulation {
                         self,
                         id,
                         crate::sim::radio::RadioMessage::Break,
-                        Some(rules),
+                        rules,
                         frame_effects,
                     );
                     destination = None;
@@ -1128,7 +1109,7 @@ impl Simulation {
                     bunker,
                     crate::sim::radio::RadioMessage::Hello,
                     crate::sim::radio::RadioPayload::default(),
-                    Some(rules),
+                    rules,
                     frame_effects,
                 ) == crate::sim::radio::RadioResponse::Roger
             {
@@ -1136,7 +1117,7 @@ impl Simulation {
                     self,
                     id,
                     crate::sim::radio::RadioMessage::CanDock,
-                    Some(rules),
+                    rules,
                     frame_effects,
                 ) == crate::sim::radio::RadioResponse::Roger
                 {
@@ -1146,7 +1127,7 @@ impl Simulation {
                         self,
                         id,
                         crate::sim::radio::RadioMessage::Break,
-                        Some(rules),
+                        rules,
                         frame_effects,
                     );
                     destination = None;
@@ -1157,11 +1138,12 @@ impl Simulation {
             if teleporter {
                 let _ = self.unit_teleporter_arm(id, None, rules);
             }
-            if self.unit_factory_exit_arm(id, None, Some(rules), None, frame_effects) {
+            if !dock_fast_return && self.unit_factory_exit_arm(id, None, rules, None, frame_effects)
+            {
                 return true;
             }
-            self.unit_destination_power_on(id, Some(rules));
-            self.foot_null_destination(id, Some(rules), None, frame_effects);
+            self.unit_destination_power_on(id, rules);
+            self.foot_null_destination(id, rules, None, frame_effects);
             return true;
         };
         // 7424B1..7424F0 casts the requested receiver to CellClass. A Foot
@@ -1171,7 +1153,15 @@ impl Simulation {
             _ => None,
         };
         let skip_move_to = teleporter && self.unit_teleporter_arm(id, requested_cell, rules);
-        if self.unit_factory_exit_arm(id, Some(requested), Some(rules), None, frame_effects) {
+        // UnitClass::Set_Destination 0x00741970: successful UnitRepair/Bunker
+        // docking jumps from 0x00742C8E/0x00742D08 to Foot's setter at
+        // 0x00742D09 and returns before the WeaponsFactory arm (0x00742D46).
+        // Retail naval yards have both flags; running that arm here queues
+        // the repair destination as a factory-exit order while Enter is pending.
+        // Source: gamemd.exe instructions 0x00742C14..0x00742E47.
+        if !dock_fast_return
+            && self.unit_factory_exit_arm(id, Some(requested), rules, None, frame_effects)
+        {
             return true;
         }
         let requested = match original_building.filter(|_| !dock_fast_return) {
@@ -1180,8 +1170,8 @@ impl Simulation {
                     UnitDockArm::Keep => requested,
                     UnitDockArm::Cell((rx, ry)) => NavTargetRef::Cell { rx, ry },
                     UnitDockArm::Null => {
-                        self.unit_destination_power_on(id, Some(rules));
-                        self.foot_null_destination(id, Some(rules), None, frame_effects);
+                        self.unit_destination_power_on(id, rules);
+                        self.foot_null_destination(id, rules, None, frame_effects);
                         return true;
                     }
                 }
@@ -1189,16 +1179,16 @@ impl Simulation {
             None => requested,
         };
         if !dock_fast_return {
-            self.unit_destination_power_on(id, Some(rules));
+            self.unit_destination_power_on(id, rules);
         }
-        if !self.begin_foot_destination(id, true, Some(rules), None, frame_effects) {
+        if !self.begin_foot_destination(id, true, rules, None, frame_effects) {
             if dock_fast_return && let Some(actor) = self.substrate.entities.get_mut(id) {
                 actor.navigation.path_replay_mut().clear_live_head();
             }
             return false;
         }
         let frame = self.session.binary_frame();
-        let timing = super::DestinationTiming::from_rules(frame, Some(rules));
+        let timing = super::DestinationTiming::from_rules(frame, rules);
         let coord = (!skip_move_to).then(|| {
             super::navcom::nav_target_coordinate(
                 requested,
@@ -1218,7 +1208,7 @@ impl Simulation {
             {
                 super::navcom::publish_nav_com(actor, requested);
                 let accepted = self
-                    .jumpjet_move_to(id, coord.expect("captured destination +4C"), Some(rules))
+                    .jumpjet_move_to(id, coord.expect("captured destination +4C"), rules)
                     .is_some();
                 Some(accepted)
             } else {
@@ -1313,7 +1303,7 @@ impl Simulation {
         let Some(building) = self.substrate.entities.get(dock) else {
             return UnitDockArm::Keep;
         };
-        let Some(object) = self.object_type(actor.type_ref(), rules) else {
+        let Some(object) = self.entity_object_type(actor, rules) else {
             return UnitDockArm::Keep;
         };
         if actor.category() != EntityCategory::Unit
@@ -1346,7 +1336,7 @@ impl Simulation {
                 dock,
                 crate::sim::radio::RadioMessage::Hello,
                 crate::sim::radio::RadioPayload::default(),
-                Some(rules),
+                rules,
                 frame_effects,
             ) != crate::sim::radio::RadioResponse::Roger
             || mission_is_enter_or_harvest(self);
@@ -1357,7 +1347,7 @@ impl Simulation {
                 crate::sim::mission::MissionId::from_known(MissionType::Enter),
                 0,
                 now,
-                &crate::sim::mission::authority::EntityReadyInputProvider,
+                &crate::sim::mission::authority::LiveReadyInputProvider { rules },
             );
             return UnitDockArm::Null;
         }
@@ -1399,7 +1389,7 @@ impl Simulation {
     /// This is independent of contacts and the requested destination; the
     /// successful depot handshake742D24 and earlier setter guards skip it.
     /// Original executable controls: building_repair.depot_service.{json,md}.
-    fn unit_destination_power_on(&mut self, id: u64, rules: Option<&RuleSet>) {
+    fn unit_destination_power_on(&mut self, id: u64, rules: &RuleSet) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
         };
@@ -1440,8 +1430,8 @@ impl Simulation {
                         .get(candidate)
                         .is_some_and(|building| {
                             building.category() == EntityCategory::Structure
-                                && rules
-                                    .and_then(|rules| self.object_type(building.type_ref(), rules))
+                                && self
+                                    .entity_object_type(building, rules)
                                     .is_some_and(|object| object.unit_repair || object.bunker)
                         })
             });
@@ -1502,7 +1492,7 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
-        if !teleporter_unit(self, actor, Some(rules))
+        if !teleporter_unit(self, actor, rules)
             || actor.chrono_warp_latch()
             || actor.lift.source().is_some()
             || actor.lift.swap_active()
@@ -1517,7 +1507,7 @@ impl Simulation {
             .slot(0)
             .and_then(|contact| self.substrate.entities.get(contact))
             .filter(|contact| contact.category() == EntityCategory::Structure)
-            .and_then(|contact| self.object_type(contact.type_ref(), rules))
+            .and_then(|contact| self.entity_object_type(contact, rules))
             .is_some_and(|object| object.dock_unload);
         // 0x007424D7: CellClass::Get_Unit(0) on the ground object list.
         let pad = dock_contact
@@ -1539,7 +1529,7 @@ impl Simulation {
                 return false;
             }
             // 0x0074250E..0x0074258A: a piggyback that may end ends instead.
-            if self.try_end_piggyback(id, Some(rules)) {
+            if self.try_end_piggyback(id, rules) {
                 return false;
             }
             let actor = self.substrate.entities.get_mut(id).expect("same arm actor");
@@ -1555,7 +1545,7 @@ impl Simulation {
                 crate::sim::mission::MissionId::from_known(MissionType::Enter),
                 0,
                 frame,
-                &crate::sim::mission::authority::EntityReadyInputProvider,
+                &crate::sim::mission::authority::LiveReadyInputProvider { rules },
             );
             return true;
         }
@@ -1594,11 +1584,11 @@ impl Simulation {
     pub(crate) fn set_unit_null_destination(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
-        if rules.is_some_and(|rules| self.balloon_hover_keeps_nav_com(id, rules)) {
+        if self.balloon_hover_keeps_nav_com(id, rules) {
             return false;
         }
         let Some(actor) = self.substrate.entities.get(id) else {
@@ -1616,7 +1606,7 @@ impl Simulation {
                 return false;
             }
         }
-        if teleporter && let Some(rules) = rules {
+        if teleporter {
             let _ = self.unit_teleporter_arm(id, None, rules);
         }
         let Some(actor) = self.substrate.entities.get_mut(id) else {
@@ -1665,11 +1655,11 @@ impl Simulation {
         &mut self,
         id: u64,
         destination: Option<NavTargetRef>,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
-        let (Some(rules), Some(actor)) = (rules, self.substrate.entities.get(id)) else {
+        let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
         let Some(factory) = actor
@@ -1688,7 +1678,7 @@ impl Simulation {
                 self,
                 id,
                 crate::sim::radio::RadioMessage::Break,
-                Some(rules),
+                rules,
                 frame_effects,
             );
             return false;
@@ -1737,7 +1727,7 @@ impl Simulation {
             return false;
         };
         if !self
-            .object_type(actor.type_ref(), rules)
+            .entity_object_type(actor, rules)
             .is_some_and(|object| object.balloon_hover)
         {
             return false;

@@ -11,8 +11,8 @@
 //!   operational dispatcher (`0x004549B0`) and the `+0x6C8` store follow.
 //! - On an unchanged visit with either sound, `UpdateLoopingSound @
 //!   0x00750D40` re-drives the handle at `Location` (`0x0043FBF7..0x0043FC34`).
-//!   That is the app's per-frame owner pass, which asks
-//!   [`Simulation::looping_sound_owner_coord`].
+//!   The reached callback precedes later damage, mission and C4 work in the
+//!   same visit; the app's final owner pass must not repeat it.
 //! - The destructor releases the handle (`0x00406060` at `0x0043BD1A`). Limbo
 //!   leaves it alone, and Load starts it empty (`0x00405BE0` at `0x00453FAB`)
 //!   while `+0x6C8` is restored, so a loaded loop waits for the next edge.
@@ -46,7 +46,7 @@ pub(crate) const fn working_sound_owner(building: u64) -> u64 {
 }
 
 /// The building whose `+0x6B4` handle `owner` names.
-pub(crate) const fn working_sound_building(owner: u64) -> Option<u64> {
+pub const fn working_sound_building(owner: u64) -> Option<u64> {
     if owner & WORKING_SOUND_TAG != 0 {
         Some(owner & !WORKING_SOUND_TAG)
     } else {
@@ -55,6 +55,31 @@ pub(crate) const fn working_sound_building(owner: u64) -> Option<u64> {
 }
 
 impl Simulation {
+    ///43FBF7..43FC34: only the unchanged operational branch updates +6B4.
+    /// Either resolved cue admits the call, even when the current state has
+    /// no cue or the handle contains a positional one-shot rather than a loop.
+    pub(super) fn update_building_working_sound(
+        &self,
+        id: u64,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        if object.working_sound.is_some() || object.not_working_sound.is_some() {
+            effects.update_looping_sound(
+                self,
+                rules,
+                working_sound_owner(id),
+                Self::movement_sound_world(entity),
+            );
+        }
+    }
+
     /// `0x0043FB6D..0x0043FBE3`: an operational edge's detach and PlayAt,
     /// before the dispatcher.
     pub(super) fn building_working_sound_edge(
@@ -89,7 +114,7 @@ impl Simulation {
                 world,
             });
         }
-        effects.flush_sound(self, Some(rules));
+        effects.flush_sound(self, rules);
     }
 
     /// The `0x00750D40` re-drive coordinate of a `+0x6B4` owner: the
@@ -108,7 +133,7 @@ impl Simulation {
         substrate: &ObjectSubstrate,
         sound_events: &mut FrameChannel<SimSoundEvent>,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) {
         let Some(entity) = substrate.entities.get(id) else {
             return;
@@ -116,8 +141,8 @@ impl Simulation {
         if entity.category() != EntityCategory::Structure {
             return;
         }
-        let authored = rules
-            .and_then(|rules| interner.object_type(entity.type_ref(), rules))
+        let authored = interner
+            .object_type(entity.type_ref(), rules)
             .is_some_and(|object| {
                 object.working_sound.is_some() || object.not_working_sound.is_some()
             });

@@ -1,5 +1,6 @@
-//! Input-time Building443860 rally search; decoded event1E stores its result.
-//! The input domain borrows current map state and isolates the fallback Cell.
+//! Building443860 rally search and Grand_Opening's naval default producer.
+//! Input isolates the fallback Cell; the opening uses the live simulation Cell.
+//! Both publish prepared targets through the existing event1E command owner.
 
 use super::Simulation;
 use crate::map::resolved_terrain::NativeCellQuery;
@@ -9,7 +10,8 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::components::DriveCoord;
 use crate::sim::find_nearby_cell::{
-    NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell, map_owned_radius_cap,
+    NearbyArgs, NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell,
+    map_owned_radius_cap,
 };
 use crate::sim::occupancy::RawCellOccupationGrid;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
@@ -20,11 +22,24 @@ impl Simulation {
     /// factory. AircraftType changes them to Winged/Fly; Naval overrides both.
     /// Source zone uses physical Location, and the clicked cell's bridge flag.
     /// Native FNPC selection reads binary frame; it makes no RNG draw.
+    /// Answers the Cell event 0x1E archives, or `None` when the click
+    /// archives nothing.
     pub fn factory_rally_cell_input(
         &self,
         id: u64,
         clicked: (u16, u16),
         rules: &RuleSet,
+    ) -> Result<Option<(u16, u16)>, String> {
+        self.factory_rally_cell(id, clicked, rules, false)
+    }
+
+    /// The sole SetRallyPoint443860 search, shared by input and live Logic.
+    fn factory_rally_cell(
+        &self,
+        id: u64,
+        clicked: (u16, u16),
+        rules: &RuleSet,
+        live: bool,
     ) -> Result<Option<(u16, u16)>, String> {
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(None);
@@ -35,7 +50,7 @@ impl Simulation {
         let terrain = self
             .resolved_terrain
             .as_ref()
-            .ok_or("rally input lacks terrain")?;
+            .ok_or("rally search lacks terrain")?;
         let zones = self
             .zone_grid
             .as_ref()
@@ -46,8 +61,12 @@ impl Simulation {
         let size = self
             .map_size_diamond()
             .ok_or("rally input lacks native map dimensions")?;
-        let cells = NativeCellQuery::isolated(terrain);
-        resolve_rally_cell_click(
+        let cells = if live {
+            NativeCellQuery::canonical(terrain)
+        } else {
+            NativeCellQuery::isolated(terrain)
+        };
+        let found = resolve_rally_cell_click(
             &cells,
             zones,
             &self.substrate.raw_cell_occupation,
@@ -61,9 +80,95 @@ impl Simulation {
                 factory: object.factory_type(),
                 naval: object.naval,
             },
-        )
-        // A miss sends no rally event and keeps ArchiveTarget. The click
-        // owner still queues the following SELL for an UndeploysInto type.
+        )?;
+        if found.is_some() {
+            return Ok(found);
+        }
+        // FNPC searches only rings 0..31 around the click (`0x0056DCE1`),
+        // so a click with no reachable ground nearby misses. A miss
+        // (`0x0044395E..0x00443977`) sends no event, and an older
+        // ArchiveTarget stays, except for a Construction Yard that passes
+        // the redeploy gates again (`0x00443A7B..0x00443AB8`: ConstructionYard
+        // `Type+0x16B9`, owner IsControlledByHuman, GameMode, the MCV-redeploy
+        // option, not mind-controlled): it archives the Cell under its own
+        // GetCoords (vt+0x48 -> Map565730, `0x00443ABE..0x00443B4B`, event
+        // 0x1E), so the MCV it packs into stays. A yard never announces
+        // (`0x00443A4B` refuses ConstructionYard); any other factory's miss
+        // still reaches the announcement (`0x00443A89` -> `0x00443A2B`),
+        // which the click owner plays. It also queues the following SELL.
+        let redeploy_yard = object.construction_yard
+            && self.session.game_mode_nonzero()
+            && self.construction_yard_redeploy_core_gate(entity);
+        Ok(if redeploy_yard {
+            self.object_coords_cell(id)
+        } else {
+            None
+        })
+    }
+
+    /// Grand_Opening445F80's naval branch44699A..446A5B. An empty archive on
+    /// any WeaponsFactory+Naval building admits a 5x5 Float/Water search from
+    /// physical GetMapCoords41BEA0. Add2 to BOTH signed Cell words before the
+    /// null-cell test, including when FNPC returns the null cell itself.
+    /// Original-byte caller controls confirm the wrapping and miss arms.
+    /// SetRallyPoint443860 then searches again with its own naval arguments
+    /// and enqueues ARCHIVE1E with announce=false; it never stores immediately.
+    /// No RNG, timer writes or detach calls. Queue/replay policy stays with
+    /// issue_local_command; this branch never overwrites an existing archive.
+    ///
+    /// Residual: preplaced map buildings can open before runtime population
+    /// publishes native zones. Their missing Map567110 initialization remains
+    /// a separate loader dependency; do not substitute guessed zone IDs here.
+    pub(crate) fn initialize_naval_rally_point(&mut self, id: u64, rules: &RuleSet) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        if !object.weapons_factory || !object.naval || entity.archive_target().is_some() {
+            return;
+        }
+        let owner = entity.owner();
+        let location = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
+        let origin = (
+            i32::from((location.x / 256) as i16),
+            i32::from((location.y / 256) as i16),
+        );
+        let found = self
+            .nearby_passable_cell(
+                origin,
+                NearbyArgs::plain(
+                    PassabilityArgs {
+                        speed_type: SpeedType::Float,
+                        required_zone_id: None,
+                        movement_zone: MovementZone::Water,
+                        bridge_aware_zone: false,
+                    },
+                    NearbyFootprint::new(5, 5),
+                ),
+            )
+            .unwrap_or((0, 0));
+        let clicked = (found.0.wrapping_add(2), found.1.wrapping_add(2));
+        if clicked == (0, 0) {
+            return;
+        }
+        let prepared = self.factory_rally_cell(id, clicked, rules, true);
+        match prepared {
+            Ok(Some((rx, ry))) => {
+                let _ = self.issue_local_command(crate::sim::command::CommandEnvelope::new(
+                    owner,
+                    self.session.tick().saturating_add(1),
+                    crate::sim::command::Command::SetRally {
+                        rx,
+                        ry,
+                        producer_ids: vec![id],
+                    },
+                ));
+            }
+            Ok(None) => {}
+            Err(cause) => log::warn!("Shipyard {id} default rally: {cause}"),
+        }
     }
 }
 
@@ -131,6 +236,10 @@ fn resolve_rally_cell_click(
     )
     .filter(|cell| *cell != (0, 0)))
 }
+
+#[cfg(test)]
+#[path = "naval_opening_tests.rs"]
+mod naval_opening_tests;
 
 #[cfg(test)]
 mod tests {

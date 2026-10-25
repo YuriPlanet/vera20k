@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -30,5 +29,5 @@
     "ftol": "0x007C5F00"
   },
   "replay_command": "python -m tools.rmg_oracle.river_branch",
-  "payload_sha256": "210eefdede5477765876a6b652501c48ed9082a468654c627d51880332b9a8e3"
+  "payload_sha256": "7bb2a22666e0a97306ba80ccb01ef9047760530d571101ad2d9d09084ee5de37"
 }

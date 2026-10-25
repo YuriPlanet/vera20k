@@ -456,11 +456,11 @@ fn default_build_stock_launch_ignores_extension_money_and_building_tags() {
         auxiliary: vec!["YARD".into()],
         negative: Vec::new(),
     });
-    assert!(crate::sim::superweapon::building_requirements_met(
+    assert!(crate::sim::superweapon::super_weapon_available(
         &sim,
         &rules,
         owner,
-        rules.super_weapon("SpyPlaneSpecial").unwrap()
+        "SpyPlaneSpecial"
     ));
     let wallet = sim.houses[&owner].economy().available_money();
     assert!(
@@ -486,11 +486,11 @@ fn default_build_stock_launch_ignores_extension_money_and_building_tags() {
         .get_mut("SpyPlaneSpecial")
         .unwrap()
         .aux_building = Some("YARD".into());
-    assert!(!crate::sim::superweapon::building_requirements_met(
+    assert!(!crate::sim::superweapon::super_weapon_available(
         &sim,
         &rules,
         owner,
-        rules.super_weapon("SpyPlaneSpecial").unwrap()
+        "SpyPlaneSpecial"
     ));
 }
 

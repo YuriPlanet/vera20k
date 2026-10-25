@@ -87,6 +87,7 @@ impl ElectricBolts {
         viewport: SurfaceLineViewport,
         palette: Option<ElectricBoltPalette>,
         main: &mut MainRngDraws,
+        mut visible: impl FnMut(&ElectricBoltBirth) -> bool,
     ) -> &[SurfaceLine] {
         self.lines.clear();
         for bolt in self.live.iter_mut().rev() {
@@ -98,11 +99,20 @@ impl ElectricBolts {
                     phase: bolt.phase,
                     alternate_color: bolt.birth.alternate_color,
                 };
+                // EBoltMgr::UpdateAndDrawAll @ 0x004C2830 calls Draw4C1F20
+                // before incrementing phase at4C293D, then shifts decay at
+                //4C2942. Conceal only emitted pixels: the optional fog style
+                // must not skip geometry's shared Main draws or either update.
+                let emit = visible(&bolt.birth);
                 draw.lines(
                     viewport,
                     palette.expect("loaded tactical PALETTE.PAL"),
                     main,
-                    |line| self.lines.push(line),
+                    |line| {
+                        if emit {
+                            self.lines.push(line);
+                        }
+                    },
                 );
                 bolt.phase = bolt.phase.wrapping_add(1);
             }

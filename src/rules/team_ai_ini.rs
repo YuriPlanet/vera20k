@@ -100,8 +100,9 @@ pub enum AiTriggerOwnerIni {
 /// One AITriggerType after the fixed/map replacement pass.
 ///
 /// The typed fields are limited to storage proven in the active YR raw reader
-/// at `0x0041F580`. `tokens` remains authoritative for token 12 and for the
-/// still-untraced semantic names of tokens 11 through 14.
+/// at `0x0041F580`. Token 11 is read and discarded (the `strtok` at
+/// `0x0041F942`); 12 is [`Self::side`], 13 [`Self::storage_flag_d1`] and 14
+/// [`Self::secondary_team_type`]. `tokens` keeps every token's raw text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiTriggerTypeIni {
     pub id: String,
@@ -222,7 +223,11 @@ impl TeamAiIniRegistry {
         game_mode_nonzero: bool,
     ) -> Result<Self, String> {
         let name = assets.ini_roots().ai();
-        let fixed = crate::rules::retail_sources::select_ini(assets, name)?.ini;
+        let mut fixed = crate::rules::retail_sources::select_ini(assets, name)?.ini;
+        // Load_Game_Rules52D378 reads AIMD through ReadCCFile4741F0 with
+        // checkDigest=1 before Full_Init68797F..6879DA consumes its registries.
+        // Raw source inspection and metadata keep their unchecked INI view.
+        fixed.remove_digest_for_checked_load();
         let registry = Self::from_sources(&fixed, scenario, game_mode_nonzero);
         if !registry.fixed_source_is_complete() {
             return Err(format!(
@@ -473,9 +478,15 @@ impl TeamAiIniRegistry {
                     member_type: member_type.to_string(),
                 });
             }
+            // gamemd.exe TaskForceClass::Read_INI6E8420 passes its current
+            // +98 Group as ReadInt's default at6E84CD..6E84E2. A reread that
+            // omits Group retains it; only the constructor starts at -1.
+            let group_default = index
+                .get(&canonical_identity(id))
+                .map_or(-1, |&position| self.task_forces[position].group);
             let definition = TaskForceIni {
                 id: id.to_string(),
-                group: section.read_int("Group", -1),
+                group: section.read_int("Group", group_default),
                 entries,
                 source,
             };
@@ -843,6 +854,14 @@ mod tests {
         );
         assert_eq!(loaded.task_forces[0].entries.len(), 1);
         assert_eq!(loaded.task_forces[0].entries[0].count, 2);
+        assert_eq!(
+            loaded.task_forces[0].group, 3,
+            "omitted map Group retains the fixed value"
+        );
+        assert_eq!(
+            loaded.task_forces[1].group, -1,
+            "a new TaskForce starts ungrouped"
+        );
         assert_eq!(loaded.ai_triggers.len(), 2);
         assert!(!loaded.ai_triggers[0].enabled);
         assert!(loaded.ai_triggers[1].enabled);

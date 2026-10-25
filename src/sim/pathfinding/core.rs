@@ -1868,7 +1868,7 @@ impl PathGrid {
         &mut self,
         cell_rx: u16,
         cell_ry: u16,
-        foundation: &str,
+        foundation: &crate::rules::foundation::Foundation,
         has_bib: bool,
     ) {
         let foundation_cells =

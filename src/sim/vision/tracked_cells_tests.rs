@@ -19,7 +19,7 @@ fn reveal_between_frames(
     viewer: InternedId,
     firer_owner: InternedId,
 ) {
-    let config = sim.sight_reveal_config(Some(rules));
+    let config = sim.sight_reveal_config(rules);
     let heights = sim.sight_height_grid(&config);
     if frame % 25 == 0
         && let Some(coord) = sim
@@ -103,7 +103,9 @@ fn tracked_fog_passes_match_visiting_every_cell() {
             sim.interner.intern("Russians"),
         );
         let start = sim.substrate.entities.len();
-        let hashes: Vec<u64> = (0..400)
+        // Allow the retail armies to reach each other and exercise a death's
+        // sight release as well as moving/transient footprints.
+        let hashes: Vec<u64> = (0..600)
             .map(|frame| {
                 let commands = if frame == 0 { &orders[..] } else { &[] };
                 sim.advance_tick(commands, Some(&rules), Some(&grid), None, 67);

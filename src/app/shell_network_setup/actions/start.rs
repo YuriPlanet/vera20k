@@ -6,7 +6,6 @@ use super::*;
 use crate::assets::csf_file::CsfArg;
 use crate::skirmish_launch::{LaunchHumanRole, LaunchTeam};
 use crate::skirmish_modes::ModeStartEffect;
-use std::time::{Duration, Instant};
 
 use super::super::chat_notice as message;
 
@@ -25,7 +24,12 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         "setup is locked"
     );
     // C2 ignores Start while its StartGame request is pending (00B77DEC).
-    if super::super::wol::start_pending(state) {
+    if state
+        .frontend
+        .network_setup_protocol
+        .as_ref()
+        .is_some_and(|protocol| protocol.start_in_progress())
+    {
         return Ok(());
     }
     super::super::remember_setup(state);
@@ -40,7 +44,7 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .iter()
         .filter(|human| !human.is_observer())
         .count() as i32;
-    if humans < 2 {
+    if !has_minimum_players(&launch) {
         message(state, "TXT_ONLY_ONE", &[]);
         return Ok(());
     }
@@ -85,9 +89,9 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .network_setup_capacity()
         .unwrap_or(0);
     if wol {
-        // C2 0x79071E..0x7908D5: allies, readiness, then capacity. The
-        // missing AI trackbar 0x552 reads 0 through TBM_GETPOS, so only the
-        // humans count against the map.
+        // C2 0x79071E..0x7908D5: allies, readiness, then capacity. VERA's
+        // explicit AI rows share the map with human players, even though
+        // only humans belong to the network/relay roster.
         if all_allied(state, &mode) {
             message(state, "TXT_CANNOT_ALLY", &[]);
             return Ok(());
@@ -95,7 +99,7 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         if !all_ready(state) {
             return Ok(());
         }
-        if capacity < humans {
+        if capacity < humans + launch.opponents.len() as i32 {
             message(
                 state,
                 "TXT_SCENARIO_TOO_SMALL",
@@ -103,12 +107,33 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
             );
             return Ok(());
         }
-        if launch.humans.len() >= 7 {
+        // VERA online/LAN clients use the shared thirty-player admission
+        // owner; the original C2 six-user service limit does not apply.
+        if launch.humans.len() > crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT {
             message(state, "TXT_TOO_MANY_PLAYERS", &[]);
             return Ok(());
         }
         if !mode_start(state, &mode)? {
             return Ok(());
+        }
+        // 0x79096A..0x790B18: a clan room starts only with two squads of
+        // equal size; the observer row's node is not counted.
+        if state.match_state.session.network_room().clan {
+            let observer = state
+                .match_state
+                .session
+                .network_observer_row()
+                .and_then(|row| {
+                    launch
+                        .humans
+                        .iter()
+                        .find(|human| human.raw_slot_index == Some(row) && human.is_observer())
+                })
+                .map(|human| human.name.clone());
+            if !crate::app::shell_wol::lobby::clan_teams_even(state, observer.as_deref()) {
+                message(state, "TXT_CLAN_NOSTART", &[]);
+                return Ok(());
+            }
         }
     } else {
         let capacity_ok = capacity >= humans + launch.ai_player_count;
@@ -139,6 +164,9 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .network_setup()
         .expect("validated setup")
         .clone();
+    if !wol {
+        crate::app::lan_service::prepare_host_timing(state)?;
+    }
     let max_ahead_frames = if wol {
         // Start Game Now derives WOL timing after OnGameStart.
         None
@@ -247,17 +275,40 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
             max_ahead_frames,
         },
     );
+    let go_pending = state
+        .match_state
+        .session
+        .network_setup()
+        .map_or_else(Vec::new, |launch| {
+            (0..launch.humans.len())
+                .filter(|source| *source != launch.local_player_index)
+                .collect()
+        });
     if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
         protocol.locked = true;
-        // Native host completes even after its600-bucket GO reply wait times
-        // out. Real queue/transfer service completion is supplied separately.
-        protocol.go_deadline = Some(Instant::now() + Duration::from_millis(600 * 16));
+        // The transport starts the native drain only after all GO packets
+        // have entered its existing global send queue.
+        protocol.lan_go = Some(super::super::LanGoWait::HostSending {
+            pending: go_pending,
+        });
         // Native's offer blocks the dialog until it ends, so Start cannot
         // follow a pending one; GO drops it.
         protocol.drop_preview_offer();
     }
     state.frontend.skirmish_preview_texture = None;
     Ok(())
+}
+
+/// VERA's shared LAN/online admission allows a human to play the ordinary
+/// skirmish AI without creating another network participant. Observers and
+/// a stale declared AI count cannot stand in for an actual opponent slot.
+fn has_minimum_players(launch: &SkirmishLaunchSession) -> bool {
+    let humans = launch
+        .humans
+        .iter()
+        .filter(|human| !human.is_observer())
+        .count();
+    humans >= 1 && humans + launch.opponents.len() >= 2
 }
 
 /// The all-allied scan (BC 5DD0EA, C2 0x79071E after team copy 5E9E00):
@@ -354,4 +405,43 @@ fn mode_start(
         }
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture() -> SkirmishLaunchSession {
+        let profile = crate::test_fixture::json("tools/map_observation.command-bar.example.json");
+        serde_json::from_value(profile["launch"].clone()).unwrap()
+    }
+
+    #[test]
+    fn one_human_can_start_against_an_actual_ai_slot() {
+        let mut launch = fixture();
+        assert_eq!(launch.humans.len(), 1);
+        assert_eq!(launch.opponents.len(), 1);
+        assert!(has_minimum_players(&launch));
+
+        launch.opponents.clear();
+        assert_eq!(launch.ai_player_count, 1);
+        assert!(
+            !has_minimum_players(&launch),
+            "a declared count without an AI House is not an opponent"
+        );
+    }
+
+    #[test]
+    fn observers_do_not_replace_playing_humans_or_opponents() {
+        let mut launch = fixture();
+        launch.humans[0].set_observer(true);
+        assert!(!has_minimum_players(&launch));
+
+        let mut player = fixture().local_player().clone();
+        player.name = "Guest".into();
+        player.raw_slot_index = Some(2);
+        launch.humans.push(player);
+        launch.opponents.clear();
+        assert!(!has_minimum_players(&launch));
+    }
 }

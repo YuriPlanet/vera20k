@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Installed Ares loading-score selection and original retail ReadTheme/From_Name/call-tail on two bounded synthetic histories.",
+  "assumptions": [
+    "Campaign mode0 uses selected mapBasic; noncampaign mode1 uses retained globalRulesSide thenCountry. Existing Country/Side/StartSpot andTheme registries are supplied world inputs, not fullDLL/session/Scenario initialization.",
+    "ReadString128 inputs are supplied existing parsed ASCII values; actual ReadTheme4758F0, From_Name721210, both Areshooks andretail683D05..683D1F call-tail execute. Missing/empty defaults andunknown-name replacement are observed, not Python decisions.",
+    "Theme registry layout reuses trigger_action_values.music_theme_case. Play_Song720BB0 records requestedindex; audio decoding/device/stream execution is excluded.",
+    "All3nativeRNGstreams are seeded by existingEmpProbe; observedRNG/detach calls are rejected andfullstreamstates/codebytes remain unchanged. No timer producers on selected route.",
+    "Exactly2new histories; public observations are lossless projections of their receipts, apart from private timing/executable identity. No old corpus is replayed."
+  ],
+  "substitutions": [
+    "Existing EmpProbe/Probe ownVM/call/arena/CRT/ReadString; no secondmapper orparser.",
+    "Only explicit parsedINI input, existingregistryworld priors andPlay_Song request-recording service. Selection/read/name-lookup/call-order bodies are not replaced."
+  ],
+  "entry_points": {
+    "select": "0x1002FB80",
+    "apply": "0x1002FC20",
+    "read_theme": "0x004758F0",
+    "from_name": "0x00721210",
+    "retail_tail": "0x00683D05",
+    "play_request_boundary": "0x00720BB0"
+  },
+  "ares_sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83",
+  "replay_command": "python -m tools.rules_oracle.ares_loading_themes",
+  "payload_sha256": "9b49b6a48d78ea54e6df6b749a6d888dcc3a443bf4b33838f0a28dd43139a464"
+}

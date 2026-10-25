@@ -2,7 +2,7 @@
 //!
 //! Distinct from `terrain_rules` (which parses LAND types like Clear/Rough/Water).
 //! These are per-object-type definitions for terrain decorations — currently
-//! all terrain objects contribute their theater-selected occupation byte to
+//! bound terrain objects contribute their theater-selected occupation byte to
 //! resolved terrain. Animation fields drive retained Terrain AI, including
 //! the TIBTRE (Tiberium Tree) midpoint's forced ore spread.
 
@@ -18,6 +18,18 @@ use crate::util::native_x87::NativeF32Bits;
 pub struct TerrainObjectType {
     /// Section name, e.g. "TIBTRE01".
     pub name: String,
+    /// ObjectType ImageFile+1F8 and Theater+22C, retained by the process reader.
+    image_file: String,
+    theater: bool,
+    /// Inherited `ObjectTypeClass::ReadINI @ 0x005F92D0` AlphaImage buffer
+    /// (`+0x213`, `char[25]`), separate from TerrainType art metadata.
+    pub(crate) alpha_image: String,
+    /// ObjectTypeCtor5F7140 starts at-1. The process owner resolves only this
+    /// Terrain member's reached Rules reads through ObjectRead5F93C1..5F9403.
+    ambient_sound: Option<String>,
+    /// Inherited IsLogic, initialized by TerrainType ctor71DB1E and cleared
+    /// by the reached IsVeinhole post-read71DF05. It is not an INI key.
+    is_logic: bool,
     /// `SpawnsTiberium=yes` — periodically spawns ore in adjacent cells.
     pub spawns_tiberium: bool,
     /// `IsAnimated=yes` — required gate for SpawnsTiberium logic.
@@ -37,20 +49,56 @@ pub struct TerrainObjectType {
     pub immune: bool,
     /// Inherited `LegalTarget=`. `IsVeinhole=yes` force-enables it in gamemd.
     pub legal_target: bool,
+    /// `IsFlammable`: `TerrainTypeClass::ReadINI @ 0x0071DEA0` passes the
+    /// current `+0x2B2` byte to `CCINIClass::ReadBool @ 0x005295F0` at
+    /// `0x0071DF56`; `TerrainTypeClass::Constructor @ 0x0071DA80` defaults it
+    /// to false.
+    pub is_flammable: bool,
+    /// Inherited `Bombable=` (`+0x22E`): ObjectTypeClass::ReadINI's
+    /// ReadBool over the constructor's 1 (`0x005F9417..0x005F9431`). No
+    /// retail TerrainType sets it, so a Crazy Ivan may bomb every one.
+    pub bombable: bool,
     /// Inherited `Insignificant=`. TerrainTypeClass constructor defaults true.
     pub insignificant: bool,
     /// Inherited `RadarInvisible=`. TerrainTypeClass constructor defaults true.
     pub radar_invisible: bool,
+    /// TerrainTypeClass constructor `0x0071DA80` clears +0x29C..+0x29E.
+    /// Each successful TerrainTypeClass::ReadINI pass `0x0071DEA0` replaces
+    /// this with Image frame 0's SHP header RGB before reading `RadarColor`.
+    /// GenerateTerrainPreview641602 uses this RGB for a Terrain ground head.
+    pub radar_color: [u8; 3],
+    /// Ordered per-pass inputs projected from NativeRulesProcessOwner until
+    /// the terrain asset binder applies the deferred SHP-derived defaults.
+    /// `radar_color` remains the only final typed value.
+    #[serde(skip)]
+    pub(crate) radar_color_read_passes: Vec<TerrainRadarColorReadPass>,
     /// `WaterBound=`.
     pub water_bound: bool,
     /// `IsVeinhole=`; when true, gamemd also forces `LegalTarget=true`.
     pub is_veinhole: bool,
-    /// `TemperateOccupationBits=`.
-    pub temperate_occupation_bits: u8,
-    /// `SnowOccupationBits=`.
-    pub snow_occupation_bits: u8,
+    /// Raw `TemperateOccupationBits=` ReadInt, including signed/high bits.
+    temperate_occupation_bits: i32,
+    /// Raw `SnowOccupationBits=` ReadInt, including signed/high bits.
+    snow_occupation_bits: i32,
     /// Art `Foundation=`. Defaults to 1x1 until art.ini merge patches it.
     pub foundation: String,
+    /// Phobos `TerrainTypeExt`'s five `SpawnsTiberium.*` fields. Absent without
+    /// the Phobos capability, which is also how a retail build behaves: the
+    /// stock spawner keeps its own-cell-neighbour spread and Riparius fallback.
+    #[cfg(feature = "phobos")]
+    #[serde(default = "PhobosSpawnsTiberium::ctor")]
+    pub spawns_tiberium_ext: PhobosSpawnsTiberium,
+    /// TerrainType+2B8 is null after71DAF1, independently of index+298.
+    /// ReadINI71DF96 and saved Load71E22D bind that index's static list.
+    #[serde(default = "legacy_bound_terrain_field")]
+    occupy_list_bound: bool,
+    /// A reached resource request, not proof that a physical SHP exists.
+    #[serde(default = "legacy_bound_terrain_field")]
+    shape_requested: bool,
+}
+
+fn legacy_bound_terrain_field() -> bool {
+    true
 }
 
 impl TerrainObjectType {
@@ -68,23 +116,40 @@ impl TerrainObjectType {
         section: &IniSection,
         tree_strength: i32,
     ) -> Self {
+        let mut read_state = TerrainTypeReadState::new();
+        let mut image = crate::rules::object_image::ObjectImageState::new(name);
+        read_state.read_pass(
+            section,
+            &crate::rules::ini_parser::IniFile::empty(),
+            &mut image,
+            crate::rules::object_image::ImageTheater::Uninitialized,
+            tree_strength,
+        );
+        Self::from_retained(name, section, &read_state, &image)
+    }
+
+    /// Immutable projection of this family's actual retained body. A late
+    /// FindOrAllocate71E2A0 never reads an earlier same-named Rules/ART body.
+    pub(crate) fn from_retained(
+        name: &str,
+        section: &IniSection,
+        read_state: &TerrainTypeReadState,
+        image: &crate::rules::object_image::ObjectImageState,
+    ) -> Self {
         let armor = section
             .read_name("Armor", 0x80)
             .unwrap_or("wood")
             .to_ascii_lowercase();
-        // ReadDouble -> `FSTP dword [ESI+0x2A4]` (`0x0071E073`) over the
-        // constructor's zero (`0x0071DACD`).
         let animation_probability =
             section.read_double_to_float("AnimationProbability", NativeF32Bits::POSITIVE_ZERO);
-        let is_veinhole = section.read_bool("IsVeinhole", false);
-        // Terrain ctor71DBAC initializes Strength=-1. ObjectType5F94D3 reads
-        // with that current default; Terrain71DEC8..71DEDC substitutes
-        // Rules+1144 when the stored result is exactly -1, including an
-        // authored -1. Original execution: tools/spatial_oracle/terrain_strength.
-        let strength = section.read_int("Strength", -1);
 
-        Self {
+        let mut terrain = Self {
             name: name.to_string(),
+            image_file: image.image().to_string(),
+            theater: image.theater(),
+            alpha_image: section.read_object_alpha_image(""),
+            ambient_sound: None,
+            is_logic: read_state.is_logic,
             spawns_tiberium: section.read_bool("SpawnsTiberium", false),
             is_animated: section.read_bool("IsAnimated", false),
             animation_rate: section.read_int("AnimationRate", 0),
@@ -93,34 +158,341 @@ impl TerrainObjectType {
             // armor-name lookup, over the constructor's Wood (`0x0071DBB6`).
             armor_id: crate::rules::armor::armor_index(&armor),
             armor,
-            strength: if strength == -1 {
-                tree_strength
-            } else {
-                strength
-            },
+            strength: read_state.strength,
             immune: section.read_bool("Immune", false),
-            legal_target: section.read_bool("LegalTarget", false) || is_veinhole,
+            legal_target: read_state.legal_target,
+            is_flammable: section.read_bool("IsFlammable", false),
+            bombable: section.read_bool("Bombable", true),
             insignificant: section.read_bool("Insignificant", true),
             radar_invisible: section.read_bool("RadarInvisible", true),
+            radar_color: [0; 3],
+            radar_color_read_passes: Vec::new(),
             water_bound: section.read_bool("WaterBound", false),
-            is_veinhole,
-            temperate_occupation_bits: section.read_int("TemperateOccupationBits", 7).clamp(0, 7)
-                as u8,
-            snow_occupation_bits: section.read_int("SnowOccupationBits", 7).clamp(0, 7) as u8,
-            foundation: foundation::foundation_name("1x1").to_string(),
+            is_veinhole: read_state.is_veinhole,
+            // TerrainTypeCtor71DAB7/71DABD starts both dwords at7.
+            // TerrainTypeReadINI71E079..71E0A0 stores ReadInt directly,
+            // without clamps; the shared reader folds prior rule passes.
+            temperate_occupation_bits: section.read_int("TemperateOccupationBits", 7),
+            snow_occupation_bits: section.read_int("SnowOccupationBits", 7),
+            foundation: foundation::FOUNDATION_TABLE[usize::from(read_state.foundation)]
+                .name
+                .to_string(),
+            occupy_list_bound: read_state.has_occupy_list(),
+            shape_requested: image.theater() || !image.shp_loads().is_empty(),
+            #[cfg(feature = "phobos")]
+            spawns_tiberium_ext: PhobosSpawnsTiberium::ctor(),
+        };
+        read_state.project_into(&mut terrain, image);
+        terrain
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn merge_art_foundation(&mut self, foundation_name: &str) {
+        self.foundation = foundation::foundation_name(foundation_name).to_string();
+    }
+
+    /// Terrain InitTheater71DCD8..71DD3B loads its stored ID and extension.
+    /// The fresh non-theater reader71DF9E..71DFC0 loads only ImageFile.SHP;
+    /// neither branch follows ART Image redirects or alternate candidates.
+    pub(crate) fn shape_filename(&self, theater_ext: &str) -> String {
+        if self.theater {
+            format!("{}.{}", self.name, theater_ext)
+        } else {
+            format!("{}.SHP", self.image_file)
         }
     }
 
-    pub fn merge_art_foundation(&mut self, foundation_name: &str) {
-        self.foundation = foundation::foundation_name(foundation_name).to_string();
+    pub(crate) fn uses_theater_shape(&self) -> bool {
+        self.theater
+    }
+
+    pub(crate) fn shape_requested(&self) -> bool {
+        self.shape_requested
+    }
+
+    pub fn has_occupy_list(&self) -> bool {
+        self.occupy_list_bound
+    }
+
+    /// TerrainTypeOccupyList71DE40 returns the cached Terrain list, not the
+    /// Building list selected by the same ReadFoundation474DA0 token. Original
+    /// initializer71D580 builds selectors0..6 as the named rectangles, but
+    /// selector7 atB0EED8 is4x2 despite the reader's `3x5` name. The remaining
+    /// source is zeroed/unterminated71DA51..75; refuse its execution rather than
+    /// inventing Building geometry. An unused retained Type is still valid.
+    pub fn occupied_cell_offsets(
+        &self,
+    ) -> Result<Vec<(i16, i16)>, crate::rules::error::RulesError> {
+        if !self.occupy_list_bound {
+            return Ok(Vec::new());
+        }
+        match foundation::foundation_id(&self.foundation) {
+            0..=6 => Ok(foundation::foundation_cell_offsets(&self.foundation)),
+            7 => Ok(foundation::foundation_cell_offsets("4x2")),
+            _ => Err(crate::rules::error::RulesError::InvalidValue {
+                section: self.name.clone(),
+                key: "Foundation".into(),
+                expected: "an initialized Terrain list (native selector0..7)".into(),
+                value: self.foundation.clone(),
+            }),
+        }
     }
 
     pub fn armor_id(&self) -> crate::rules::armor::ArmorId {
         self.armor_id
     }
 
+    pub fn raw_occupation_bits(&self, snow_theater: bool) -> i32 {
+        if snow_theater {
+            self.snow_occupation_bits
+        } else {
+            self.temperate_occupation_bits
+        }
+    }
+
+    pub(crate) fn is_logic(&self) -> bool {
+        self.is_logic
+    }
+
     pub(crate) fn bind_armor(&mut self, armor: crate::rules::armor::ArmorId) {
         self.armor_id = armor;
+    }
+
+    pub(crate) fn bind_sound_references(
+        &mut self,
+        section: &IniSection,
+        sounds: &crate::rules::sound_ini::SoundRegistry,
+    ) {
+        // TerrainRead71DEBB inherits ObjectRead5F93E4: own Rules section,
+        // ReadString128, registered Voc lookup, current-ID retention on misses.
+        self.ambient_sound = sounds.read_rules_reference(section, "AmbientSound");
+    }
+
+    pub(crate) fn ambient_sound(&self) -> Option<&str> {
+        self.ambient_sound.as_deref()
+    }
+}
+
+/// Phobos `TerrainTypeExt`'s ore-spawner fields
+/// (`src/Ext/TerrainType/Body.{h,cpp}`). `TerrainTypeExt::LoadFromINI` runs at
+/// the `TerrainTypeClass_LoadFromINI @ 0x0071E0A6` hook — the end of every
+/// `TerrainTypeClass::ReadINI @ 0x0071DEA0` pass — and each `Valueable` read
+/// retains the current field when its key is absent or cannot be parsed.
+///
+/// Constructor defaults are `Body.h`'s initializer list: type 0, range 1, one
+/// growth stage 3, one cell per animation 1 and no particle (-1).
+#[cfg(feature = "phobos")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct PhobosSpawnsTiberium {
+    /// `SpawnsTiberium.Type=`: the `[Tiberiums]` index the spawner germinates.
+    pub tiberium_type: i32,
+    /// `SpawnsTiberium.Range=`: the CellSpread radius searched per attempt.
+    pub range: i32,
+    /// `SpawnsTiberium.GrowthStage=`: the density written, or its random range.
+    pub growth_stage: crate::rules::ini_value::PartialIntPair,
+    /// `SpawnsTiberium.CellsPerAnim=`: forced spreads one animation emits.
+    pub cells_per_anim: crate::rules::ini_value::PartialIntPair,
+    /// `SpawnsTiberium.Particle=`: the `[Particles]` type emitted at the
+    /// spawner's Location. `None` is Phobos' -1.
+    pub particle: Option<String>,
+}
+
+#[cfg(feature = "phobos")]
+impl PhobosSpawnsTiberium {
+    /// `TerrainTypeExt`'s member initializers.
+    pub const fn ctor() -> Self {
+        Self {
+            tiberium_type: 0,
+            range: 1,
+            growth_stage: crate::rules::ini_value::PartialIntPair::single(3),
+            cells_per_anim: crate::rules::ini_value::PartialIntPair::single(1),
+            particle: None,
+        }
+    }
+
+    /// The five reads in `TerrainTypeExt::LoadFromINI`'s order. `find_particle`
+    /// answers with the canonical section name when a token resolves in the
+    /// live `ParticleTypeClass` array: `ValueableIdx<ParticleTypeClass>::Read`
+    /// uses `FindIndex` without allocating, so an unknown name reports a parse
+    /// failure and retains the current reference.
+    pub fn read_pass(
+        &mut self,
+        section: &IniSection,
+        mut find_particle: impl FnMut(&str) -> Option<String>,
+    ) {
+        self.tiberium_type = section.read_ares_int("SpawnsTiberium.Type", self.tiberium_type);
+        self.range = section.read_ares_int("SpawnsTiberium.Range", self.range);
+        self.growth_stage =
+            section.read_ares_partial_int_pair("SpawnsTiberium.GrowthStage", self.growth_stage);
+        self.cells_per_anim =
+            section.read_ares_partial_int_pair("SpawnsTiberium.CellsPerAnim", self.cells_per_anim);
+        if let Some(name) = section.read_name("SpawnsTiberium.Particle", 2048) {
+            // Phobos TemplateDef.h ValueableIdx::Read updates only on a found
+            // index or an explicit blank sentinel; an unknown name retains.
+            if let Some(particle) = find_particle(name) {
+                self.particle = Some(particle);
+            } else if crate::rules::ini_parser::is_native_none_type_name(name) {
+                self.particle = None;
+            }
+        }
+    }
+}
+
+/// The two relevant native inputs in one admitted TerrainTypeClass::ReadINI
+/// pass. Image is the inherited ObjectTypeClass `+0x1F8` buffer; its asset
+/// color is deferred until the existing terrain asset binding phase.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TerrainRadarColorReadPass {
+    pub(crate) image: Option<String>,
+    pub(crate) radar_color: Option<String>,
+}
+
+/// Process-owned TerrainType state that cannot be reconstructed from a merged
+/// section: current Strength, ordered color inputs and the IsVeinhole
+/// post-read. Inherited image fields live in the same ProcessedType's
+/// ObjectImageState.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TerrainTypeReadState {
+    strength: i32,
+    foundation: u8,
+    /// Missing in older processed saves: admitted reads already identify
+    /// their bound list. New constructor-only state explicitly retains null.
+    #[serde(default)]
+    occupy_list_bound: Option<bool>,
+    #[serde(default)]
+    reads: Vec<TerrainRadarColorReadPass>,
+    is_logic: bool,
+    is_veinhole: bool,
+    legal_target: bool,
+    /// Phobos reads its extension at the end of the same ReadINI pass, so the
+    /// per-pass retention belongs to this state, not the merged section.
+    #[cfg(feature = "phobos")]
+    #[serde(default = "PhobosSpawnsTiberium::ctor")]
+    spawns_tiberium_ext: PhobosSpawnsTiberium,
+}
+
+impl TerrainTypeReadState {
+    /// Fresh Terrain subclass fields, alongside its inherited image owner.
+    pub(crate) fn new() -> Self {
+        Self {
+            // TerrainTypeCtor71DBAC overwrites ObjectType Strength to -1.
+            strength: -1,
+            foundation: foundation::DEFAULT_FOUNDATION_ID,
+            occupy_list_bound: Some(false),
+            reads: Vec::new(),
+            is_logic: true,
+            is_veinhole: false,
+            legal_target: false,
+            #[cfg(feature = "phobos")]
+            spawns_tiberium_ext: PhobosSpawnsTiberium::ctor(),
+        }
+    }
+
+    /// TerrainTypeClass::ReadINI @0x0071DEA0 first calls inherited
+    /// ObjectTypeClass::ReadINI @0x005F92D0, whose current Image buffer is
+    /// the default to ReadString("Image", ..., 0x19). The derived reader then
+    /// loads frame 0 and reads RadarColor with that current RGB as default.
+    pub(crate) fn read_pass(
+        &mut self,
+        section: &crate::rules::ini_parser::IniSection,
+        fixed_art: &crate::rules::ini_parser::IniFile,
+        image: &mut crate::rules::object_image::ObjectImageState,
+        theater: crate::rules::object_image::ImageTheater,
+        tree_strength: i32,
+    ) {
+        // ObjectTypeReadINI5F94D3..5F94ED reads over CURRENT Strength.
+        // TerrainTypeReadINI71DEC8..71DEDC substitutes this pass's current
+        // Rules+1144 only when that stored result is exactly -1. Missing type
+        // sections never enter this body; an explicit -1 repeats the fallback.
+        // Original single-pass controls: spatial_oracle/terrain_strength.
+        self.strength = section.read_int("Strength", self.strength);
+        if self.strength == -1 {
+            self.strength = tree_strength;
+        }
+        let cached_art = image.read_ini(
+            section,
+            fixed_art,
+            crate::rules::object_image::ObjectImageKind::Terrain,
+            theater,
+        );
+        // INI ReadFoundation71DF79 reuses the ImageFile pointer cached by
+        // ObjectRead5F9592..5F962E. A hit retains the pre-Arctic section; a
+        // miss clears the cache and permits lookup under the mutated name.
+        let image_art = cached_art.unwrap_or_else(|| fixed_art.section_or_empty(image.image()));
+        self.foundation = foundation::read_foundation(image_art, self.foundation);
+        self.occupy_list_bound = Some(true);
+        // Original instructions: ObjectTypeClass::ReadINI5F9499..5F94C2
+        // reads LegalTarget with its current value. TerrainTypeClass::ReadINI
+        //71DEEA..71DF0C then reads IsVeinhole and, when true, clears IsLogic
+        // and forces LegalTarget. A later false never restores IsLogic.
+        self.legal_target = section.read_bool("LegalTarget", self.legal_target);
+        self.is_veinhole = section.read_bool("IsVeinhole", self.is_veinhole);
+        if self.is_veinhole {
+            self.is_logic = false;
+            self.legal_target = true;
+        }
+        if !image.theater() {
+            image.load_plain_shp();
+        }
+        self.reads.push(TerrainRadarColorReadPass {
+            // Object LoadSHP5F9203/5F923E clears then skips TerrainType.
+            // Only fresh non-theater71DF9C..71DFC0 reloads ImageFile.SHP
+            // before the optional GetColor71DFD0..71DFF5.
+            image: image.shp_loads().first().map(|load| load.image.clone()),
+            radar_color: section.raw_value("RadarColor").map(str::to_string),
+        });
+    }
+
+    pub(crate) fn project_into(
+        &self,
+        terrain: &mut TerrainObjectType,
+        image: &crate::rules::object_image::ObjectImageState,
+    ) {
+        terrain.strength = self.strength;
+        terrain.is_logic = self.is_logic;
+        terrain.is_veinhole = self.is_veinhole;
+        terrain.legal_target = self.legal_target;
+        terrain.image_file = image.image().to_string();
+        terrain.theater = image.theater();
+        terrain.foundation = foundation::FOUNDATION_TABLE[usize::from(self.foundation)]
+            .name
+            .to_string();
+        terrain.occupy_list_bound = self.has_occupy_list();
+        terrain.shape_requested = image.theater() || !image.shp_loads().is_empty();
+        terrain.radar_color_read_passes.clone_from(&self.reads);
+        #[cfg(feature = "phobos")]
+        terrain
+            .spawns_tiberium_ext
+            .clone_from(&self.spawns_tiberium_ext);
+    }
+
+    /// The `TerrainTypeExt::LoadFromINI @ 0x0071E0A6` half of this ReadINI pass.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn read_phobos_pass(
+        &mut self,
+        section: &crate::rules::ini_parser::IniSection,
+        find_particle: impl FnMut(&str) -> Option<String>,
+    ) {
+        self.spawns_tiberium_ext.read_pass(section, find_particle);
+    }
+
+    fn has_occupy_list(&self) -> bool {
+        self.occupy_list_bound.unwrap_or(!self.reads.is_empty())
+    }
+
+    /// TerrainTypeLoad71E21D..71E22D rebinds the retained Foundation index;
+    /// it does not place any already saved Terrain instance into Cell content.
+    pub(crate) fn restore_occupy_list(&mut self) {
+        self.occupy_list_bound = Some(true);
+    }
+
+    pub(crate) fn validate_saved_state(&self) -> Result<(), crate::rules::error::RulesError> {
+        if usize::from(self.foundation) >= foundation::FOUNDATION_TABLE.len() {
+            return Err(crate::rules::error::RulesError::InvalidSavedState(
+                "Terrain Foundation is outside its native table",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -149,6 +521,7 @@ mod tests {
         );
         assert!(!t.immune);
         assert!(!t.legal_target);
+        assert!(!t.is_flammable);
         assert!(t.insignificant);
         assert!(t.radar_invisible);
         assert!(!t.water_bound);
@@ -156,6 +529,113 @@ mod tests {
         assert_eq!(t.temperate_occupation_bits, 7);
         assert_eq!(t.snow_occupation_bits, 7);
         assert_eq!(t.foundation, "1x1");
+    }
+
+    /// Phobos' five `SpawnsTiberium.*` keys, read through the production
+    /// layered process owner: `TerrainTypeExt`'s constructor defaults, the
+    /// `PartialVector2D<int>` value count, and a later pass that retains every
+    /// key it does not name.
+    #[test]
+    #[cfg(feature = "phobos")]
+    fn spawns_tiberium_extension_defaults_counts_and_retains_across_passes() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let authored = |extra: &str| {
+            IniFile::from_str(&format!(
+                "[TerrainTypes]\n0=TIBTRE01\n[TIBTRE01]\nSpawnsTiberium=yes\n\
+                 IsAnimated=yes\n{extra}\
+                 [Particles]\n0=SPARKA\n[SPARKA]\n"
+            ))
+        };
+        let extension = |ini: IniFile| {
+            let rules = RuleSet::from_rules_layers(&RulesLayerStack::new(ini))
+                .expect("authored phobos terrain keys");
+            rules
+                .terrain_object_type_case_insensitive("TIBTRE01")
+                .expect("TIBTRE01")
+                .spawns_tiberium_ext
+                .clone()
+        };
+
+        let defaults = extension(authored(""));
+        assert_eq!((defaults.tiberium_type, defaults.range), (0, 1));
+        assert!(defaults.growth_stage.is_single());
+        assert_eq!(defaults.growth_stage.low, 3);
+        assert_eq!(defaults.cells_per_anim.low, 1);
+        assert_eq!(defaults.particle, None);
+
+        let mut layers = RulesLayerStack::new(authored(
+            "SpawnsTiberium.Type=1\nSpawnsTiberium.Range=2\n\
+             SpawnsTiberium.GrowthStage=4,8\nSpawnsTiberium.CellsPerAnim=1,3\n\
+             SpawnsTiberium.Particle=sparka\n",
+        ));
+        layers.push(
+            RulesLayerKind::GameMode,
+            IniFile::from_str(
+                "[TIBTRE01]\nSpawnsTiberium.Range=5\nSpawnsTiberium.Particle=UNKNOWN\n",
+            ),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).expect("layered phobos terrain keys");
+        let extended = &rules
+            .terrain_object_type_case_insensitive("TIBTRE01")
+            .expect("TIBTRE01")
+            .spawns_tiberium_ext;
+        assert_eq!((extended.tiberium_type, extended.range), (1, 5));
+        assert_eq!(
+            (
+                extended.growth_stage.low,
+                extended.growth_stage.high,
+                extended.growth_stage.values
+            ),
+            (4, 8, 2),
+            "a two-value range keeps both slots and draws"
+        );
+        assert_eq!(extended.cells_per_anim.low, 1);
+        assert_eq!(extended.particle.as_deref(), Some("SPARKA"));
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[TIBTRE01]\nSpawnsTiberium.Particle=<none>\n"),
+        );
+        let cleared = RuleSet::from_rules_layers(&layers).expect("explicit particle clear");
+        assert!(
+            cleared
+                .terrain_object_type_case_insensitive("TIBTRE01")
+                .unwrap()
+                .spawns_tiberium_ext
+                .particle
+                .is_none()
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "phobos")]
+    fn spawns_tiberium_retained_process_state_changes_compatibility_hash() {
+        use crate::rules::native_processing::RulesLayerStack;
+        use crate::rules::ruleset::RuleSet;
+        let current = RulesLayerStack::new(IniFile::from_str(
+            "[TerrainTypes]\n0=TIBTRE01\n[TIBTRE01]\nSpawnsTiberium=yes\n",
+        ));
+        let continued = |cells| {
+            let earlier = RulesLayerStack::new(IniFile::from_str(&format!(
+                "[TerrainTypes]\n0=TIBTRE01\n[TIBTRE01]\nSpawnsTiberium.CellsPerAnim={cells}\n",
+            )))
+            .process()
+            .unwrap();
+            let (_, trace) = earlier.into_ini_and_native_type_construction_trace();
+            let registry = trace.into_registry_state_discarding_events();
+            let next = current
+                .process_with_fixed_art_and_registry_state(&IniFile::empty(), registry)
+                .unwrap();
+            RuleSet::from_processed_rules(&next).unwrap()
+        };
+        let first = continued(1);
+        let second = continued(2);
+        assert_eq!(first.source_ini_hash(), second.source_ini_hash());
+        assert_ne!(
+            first.simulation_config_hash(),
+            second.simulation_config_hash()
+        );
     }
 
     #[test]
@@ -235,6 +715,410 @@ mod tests {
                     .strength
             ),
             row["strength"].as_i64().unwrap()
+        );
+    }
+
+    #[test]
+    fn retail_tree_strength_retains_pass_value_before_later_general_override() {
+        use crate::rules::ruleset::RuleSet;
+        use crate::sim::world::Simulation;
+
+        let Some(stock) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let constructed_health = |rules: &RuleSet| {
+            let mut sim = Simulation::new();
+            crate::sim::terrain_spawn::construct_terrain_objects(
+                &mut sim,
+                &[crate::map::overlay::TerrainObject {
+                    rx: 3,
+                    ry: 4,
+                    name: "TREE01".to_owned(),
+                }],
+                rules,
+                false,
+            );
+            let tree = sim.terrain_objects().objects().values().next().unwrap();
+            (tree.health(), tree.max_health())
+        };
+        let established = stock
+            .rules
+            .terrain_object_type_case_insensitive("TREE01")
+            .unwrap()
+            .strength;
+        assert_eq!(established, 200, "stock ROOT's admitted TREE01 fallback");
+        assert_eq!(constructed_health(&stock.rules), (established, established));
+
+        let fallback = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
+            &IniFile::from_str("[General]\nTreeStrength=375\n[TREE01]\nStrength=-1\n"),
+        )
+        .unwrap();
+        assert_eq!(
+            fallback
+                .rules
+                .terrain_object_type_case_insensitive("TREE01")
+                .unwrap()
+                .strength,
+            375
+        );
+        assert_eq!(constructed_health(&fallback.rules), (375, 375));
+
+        let later_general = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
+            &IniFile::from_str("[General]\nTreeStrength=375\n"),
+        )
+        .unwrap();
+        assert_eq!(later_general.rules.general.tree_strength, 375);
+        // ObjectTypeReadINI5F94D3 retains current Strength; TerrainTypeReadINI
+        // 71DEC8 substitutes only -1. TerrainCtor71BC28 copies it into health.
+        assert_eq!(
+            constructed_health(&later_general.rules),
+            (established, established)
+        );
+        assert_eq!(
+            later_general
+                .rules
+                .terrain_object_type_case_insensitive("TREE01")
+                .unwrap()
+                .strength,
+            established
+        );
+    }
+
+    #[test]
+    fn retained_tree_strength_survives_saved_rules_and_damaged_snapshot_continuation() {
+        use crate::rules::native_processing::{
+            ProcessedRulesLayers, RulesLayerKind, RulesLayerStack,
+        };
+        use crate::sim::combat::world_receiver::apply_area_damage;
+        use crate::sim::snapshot::GameSnapshot;
+        use crate::sim::world::{FrameEffects, Simulation};
+        use crate::util::save_codec;
+
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let (_, assets) = crate::rules::retail_ini_fixture::retail_scenario_assets().unwrap();
+        let mut owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+        let continued = |strength: i32| {
+            let mut layers = RulesLayerStack::new((*battle.authored_rules).clone());
+            layers.push(
+                RulesLayerKind::GameMode,
+                IniFile::from_str(&format!("[TREE01]\nStrength={strength}\n")),
+            );
+            let first = layers.process_with_fixed_art(&battle.fixed_art).unwrap();
+            let (_, trace) = first.into_ini_and_native_type_construction_trace();
+            RulesLayerStack::new(IniFile::from_str(
+                "[General]\nTreeStrength=375\n[TREE01]\nStrength=$invalid\n",
+            ))
+            .process_with_fixed_art_and_registry_state(
+                &battle.fixed_art,
+                trace.into_registry_state_discarding_events(),
+            )
+            .unwrap()
+        };
+        let processed = continued(200);
+        let rules = owner.project_saved_scenario_rules(&processed).unwrap();
+        let other_history = owner.project_saved_scenario_rules(&continued(375)).unwrap();
+        assert_eq!(rules.source_ini_hash(), other_history.source_ini_hash());
+        assert_ne!(
+            rules.simulation_config_hash(),
+            other_history.simulation_config_hash(),
+            "the effective Terrain Strength must identify equal current source text"
+        );
+
+        // TerrainTypeLoad71E1D0 restores the retained field; it never repeats
+        // ReadINI71DEC8's TreeStrength substitution during saved projection.
+        let bytes = save_codec::serialize(&processed).unwrap();
+        let saved: ProcessedRulesLayers = save_codec::deserialize(&bytes).unwrap();
+        let restored_rules = owner.project_saved_scenario_rules(&saved).unwrap();
+        owner.install_saved_scenario_rules(saved);
+        assert_eq!(restored_rules.general.tree_strength, 375);
+        assert_eq!(
+            restored_rules
+                .terrain_object_type_case_insensitive("TREE01")
+                .unwrap()
+                .strength,
+            200
+        );
+        assert_eq!(
+            rules.simulation_config_hash(),
+            restored_rules.simulation_config_hash()
+        );
+
+        let template = crate::map::resolved_terrain::test_retail_clear_grid(8, 8);
+        let mut sim = Simulation::new();
+        sim.session_mut_for_test().set_map_width_for_test(8);
+        sim.session_mut_for_test().set_map_height_for_test(8);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        sim.install_resolved_terrain_for_new_map(template.clone());
+        sim.install_overlay_grid_for_load(crate::sim::overlay_grid::OverlayGrid::new(8, 8));
+        crate::sim::terrain_spawn::construct_terrain_objects(
+            &mut sim,
+            &[crate::map::overlay::TerrainObject {
+                rx: 3,
+                ry: 4,
+                name: "TREE01".to_owned(),
+            }],
+            &rules,
+            false,
+        );
+        let id = sim.terrain_objects().id_at((3, 4)).unwrap();
+        let impact = sim.terrain_objects().get(id).unwrap().world_coord();
+        let hit = |sim: &mut Simulation, rules: &crate::rules::ruleset::RuleSet| {
+            let weapon = rules.weapon("105mm").unwrap();
+            let warhead = rules.warhead(weapon.warhead.as_deref().unwrap()).unwrap();
+            let warhead_ref = sim.interner.intern(&warhead.id);
+            apply_area_damage(
+                sim,
+                rules,
+                Some(rules.overlay_registry()),
+                impact,
+                weapon.damage,
+                warhead,
+                (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
+                FrameEffects::default(),
+            );
+        };
+        hit(&mut sim, &rules);
+        let health = sim.terrain_objects().get(id).unwrap().health();
+        assert!(health > 0 && health < 200, "stock AP must damage the tree");
+        let bytes = GameSnapshot::save_validated(
+            &sim,
+            1,
+            rules.simulation_config_hash(),
+            "retained Terrain Strength",
+            0,
+        );
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        restored.restore_after_snapshot_load().unwrap();
+        restored.rebuild_caches_after_load(template, Default::default(), &restored_rules);
+        restored
+            .restore_map_authority_after_snapshot_load(
+                &restored_rules,
+                restored_rules.overlay_registry(),
+                None,
+            )
+            .unwrap();
+        restored.intern_rule_type_ids(&restored_rules);
+        restored.resolve_type_handles(&restored_rules);
+        let tree = restored.terrain_objects().get(id).unwrap();
+        assert_eq!((tree.health(), tree.max_health()), (health, 200));
+        hit(&mut sim, &rules);
+        hit(&mut restored, &restored_rules);
+        assert_eq!(
+            sim.terrain_objects().get(id).unwrap().health(),
+            restored.terrain_objects().get(id).unwrap().health()
+        );
+        assert!(restored.terrain_objects().get(id).unwrap().health() < health);
+    }
+
+    #[test]
+    fn terrain_flammability_retains_stock_battle_tree01_value() {
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let tree = battle
+            .rules
+            .terrain_object_type_case_insensitive("TREE01")
+            .expect("stock Battle rules register TREE01");
+
+        assert!(!tree.is_flammable);
+    }
+
+    #[test]
+    fn terrain_flammability_retains_native_bool_across_rule_passes() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let mut layers = RulesLayerStack::new((*battle.authored_rules).clone());
+        layers.push(
+            RulesLayerKind::GameMode,
+            IniFile::from_str("[TREE01]\nIsFlammable=yes\n"),
+        );
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[TREE01]\nIsFlammable=invalid\n"),
+        );
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[TREE01]\nSpawnsTiberium=yes\n"),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).expect("production layered rules parse");
+        let tree = rules
+            .terrain_object_type_case_insensitive("TREE01")
+            .expect("retail root registers TREE01");
+
+        assert!(tree.is_flammable);
+    }
+
+    #[test]
+    fn occupation_reads_retain_signed_values_across_rule_passes() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let mut layers = RulesLayerStack::new((*battle.authored_rules).clone());
+        layers.push(
+            RulesLayerKind::GameMode,
+            IniFile::from_str("[TREE01]\nTemperateOccupationBits=8\nSnowOccupationBits=-1\n"),
+        );
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str(
+                "[TREE01]\nTemperateOccupationBits=$invalid\nSnowOccupationBits=$invalid\n",
+            ),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).unwrap();
+        let tree = rules
+            .terrain_object_type_case_insensitive("TREE01")
+            .unwrap();
+        // TerrainTypeReadINI71E079..71E0A0 stores each ReadInt over its
+        // current dword, without clamping. ReadInt527856..527874 leaves
+        // that current value when a later hexadecimal scan fails.
+        assert_eq!(tree.raw_occupation_bits(false), 8);
+        assert_eq!(tree.raw_occupation_bits(true), -1);
+    }
+
+    #[test]
+    fn terrain_veinhole_logic_disable_survives_later_rule_passes() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+        use crate::sim::world::Simulation;
+
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let mut layers = RulesLayerStack::new((*battle.authored_rules).clone());
+        layers.push(
+            RulesLayerKind::GameMode,
+            IniFile::from_str("[TREE01]\nIsVeinhole=yes\n"),
+        );
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[TREE01]\nIsVeinhole=no\nSpawnsTiberium=yes\n"),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).expect("layered retail types");
+        let tree = rules
+            .terrain_object_type_case_insensitive("TREE01")
+            .unwrap();
+        assert!(!tree.is_veinhole);
+        assert!(
+            tree.legal_target,
+            "the earlier derived-reader write persists"
+        );
+        let mut sim = Simulation::new();
+        crate::sim::terrain_spawn::construct_terrain_objects(
+            &mut sim,
+            &[crate::map::overlay::TerrainObject {
+                rx: 3,
+                ry: 4,
+                name: "TREE01".to_owned(),
+            }],
+            &rules,
+            false,
+        );
+        assert!(sim.live_object_order_snapshot().is_empty());
+    }
+
+    #[test]
+    fn retained_occupation_defaults_change_configuration_identity() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let continued = |initial: i32| {
+            let mut layers = RulesLayerStack::new((*battle.authored_rules).clone());
+            layers.push(
+                RulesLayerKind::GameMode,
+                IniFile::from_str(&format!("[TREE01]\nTemperateOccupationBits={initial}\n")),
+            );
+            let first = layers.process_with_fixed_art(&battle.fixed_art).unwrap();
+            let (_, trace) = first.into_ini_and_native_type_construction_trace();
+            let next = RulesLayerStack::new(IniFile::from_str(
+                "[TREE01]\nTemperateOccupationBits=$invalid\n",
+            ))
+            .process_with_fixed_art_and_registry_state(
+                &battle.fixed_art,
+                trace.into_registry_state_discarding_events(),
+            )
+            .unwrap();
+            RuleSet::from_processed_rules(&next).unwrap()
+        };
+        let zero_mask = continued(8);
+        let one_mask = continued(9);
+        assert_eq!(zero_mask.source_ini_hash(), one_mask.source_ini_hash());
+        assert_eq!(
+            zero_mask
+                .terrain_object_type_case_insensitive("TREE01")
+                .unwrap()
+                .raw_occupation_bits(false),
+            8
+        );
+        assert_eq!(
+            one_mask
+                .terrain_object_type_case_insensitive("TREE01")
+                .unwrap()
+                .raw_occupation_bits(false),
+            9
+        );
+        assert_ne!(
+            zero_mask.simulation_config_hash(),
+            one_mask.simulation_config_hash()
+        );
+    }
+
+    #[test]
+    fn retained_terrain_logic_changes_configuration_identity() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let continued = |initial: &str| {
+            let mut layers = RulesLayerStack::new((*battle.authored_rules).clone());
+            layers.push(
+                RulesLayerKind::GameMode,
+                IniFile::from_str(&format!("[TREE01]\nIsVeinhole={initial}\n")),
+            );
+            let first = layers.process_with_fixed_art(&battle.fixed_art).unwrap();
+            let (_, trace) = first.into_ini_and_native_type_construction_trace();
+            let next = RulesLayerStack::new(IniFile::from_str(
+                "[TREE01]\nIsVeinhole=no\nLegalTarget=no\nSpawnsTiberium=yes\n",
+            ))
+            .process_with_fixed_art_and_registry_state(
+                &battle.fixed_art,
+                trace.into_registry_state_discarding_events(),
+            )
+            .unwrap();
+            RuleSet::from_processed_rules(&next).unwrap()
+        };
+        let enabled = continued("no");
+        let disabled = continued("yes");
+        assert!(
+            enabled
+                .terrain_object_type_case_insensitive("TREE01")
+                .unwrap()
+                .is_logic()
+        );
+        assert!(
+            !disabled
+                .terrain_object_type_case_insensitive("TREE01")
+                .unwrap()
+                .is_logic()
+        );
+        assert_eq!(enabled.source_ini_hash(), disabled.source_ini_hash());
+        assert_ne!(
+            enabled.simulation_config_hash(),
+            disabled.simulation_config_hash()
         );
     }
 }

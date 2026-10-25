@@ -36,6 +36,10 @@ use crate::sim::world::ObjectSubstrate;
 const RELAXED_STRAY_ACTIONS: [i32; 2] = [0x35, 0x36];
 
 #[cfg(test)]
+#[path = "guard_slower_tests.rs"]
+mod guard_slower_tests;
+
+#[cfg(test)]
 #[path = "retreat_tests.rs"]
 mod retreat_tests;
 
@@ -400,10 +404,20 @@ impl Simulation {
         let (zone, closest) = match center_of(&samples, focus) {
             None => (None, None),
             Some((mean, closest)) => {
-                let cell = TeamTarget::Cell {
-                    x: (mean[0] / 256) as i16,
-                    y: (mean[1] / 256) as i16,
-                };
+                // CalcCenter6EB331 selects Map565730's Cell before CanEnter.
+                let (x, y) = self.resolved_terrain.as_ref().map_or(
+                    ((mean[0] / 256) as i16, (mean[1] / 256) as i16),
+                    |terrain| {
+                        let cells =
+                            crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+                        cells.coord(cells.lookup_world(mean[0], mean[1]))
+                    },
+                );
+                let cell = TeamTarget::Cell { x, y };
+                //6EB33C publishes the pointer before CanEnter's map queries.
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.zone = Some(cell);
+                }
                 let closest = closest.or(head);
                 let zone = match closest {
                     Some(member)
@@ -424,7 +438,8 @@ impl Simulation {
 
     /// `FootClass vt+0x4E0` (`0x004DBFD0`), which a `GuardSlower=` team's
     /// centre weights twice: unarmed (`GetWeapon(0)`), or of `TechLevel=-1`,
-    /// or `DeploysInto=` a building, or of `Speed=` 13 or less.
+    /// or `DeploysInto=` a building, or converted speed of 13 leptons/frame
+    /// or less (`TechnoTypeClass::Read_INI @ 0x0071465F`).
     fn guard_slower_weight(&self, entity: &GameEntity, rules: &RuleSet) -> bool {
         self.object_type(entity.type_ref(), rules)
             .is_some_and(|object| {
@@ -436,7 +451,7 @@ impl Simulation {
                 .is_none()
                     || self.object_tech_level(object) == -1
                     || object.deploys_into.is_some()
-                    || object.speed <= 13
+                    || crate::util::fixed_math::ra2_speed_to_leptons_per_frame(object.speed) <= 13
             })
     }
 
@@ -786,24 +801,16 @@ impl Simulation {
     /// ([`object_get_coords`]): a building's foundation centre
     /// (`0x00447AC0`), any other object's Location.
     pub(super) fn team_target_coord(&self, target: TeamTarget) -> Option<DriveCoord> {
-        match target {
-            TeamTarget::Cell { x, y } => Some(crate::sim::movement::target_cell_coord(
-                x as u16,
-                y as u16,
-                self.resolved_terrain
-                    .as_ref()
-                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
-                    .as_ref(),
-            )),
-            TeamTarget::Object(id) => crate::sim::movement::ground_pose::target_get_coords(
-                crate::sim::combat::TargetKind::Entity(id),
-                self,
-                self.resolved_terrain
-                    .as_ref()
-                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
-                    .as_ref(),
-            ),
-        }
+        // Abstract+48 reads the retained pointer. The coordinate owner also
+        // keeps a Dummy's live coordinate instead of performing a new lookup.
+        crate::sim::movement::ground_pose::target_get_coords(
+            target.target_kind(),
+            self,
+            self.resolved_terrain
+                .as_ref()
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
+                .as_ref(),
+        )
     }
 
     /// A team target's XY (0, 0 for a missing object).

@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -31,5 +30,5 @@
     "redraw_clear": "0x006D4B37"
   },
   "replay_command": "python -m tools.spatial_oracle.bridge_shadow_render --tile-partial --partial-output-dir \"$HOME\"/Documents/vera20k-dev/class-parity/cell-class/cell-partial-native-controls-v3",
-  "payload_sha256": "92a49662c740a9533ea24cde3fc4a92b4776e8c5c8cbdabfad0e49e32c8a2355"
+  "payload_sha256": "fceb377f6f9143602ea075efce5b4119cedac6c0983087d56e6b2337910f3c6a"
 }

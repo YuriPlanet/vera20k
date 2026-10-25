@@ -331,6 +331,11 @@ impl TacticalCaptureSession {
                 bail!("sealed tactical launch was not accepted: {reason:?}")
             }
         };
+        #[cfg(feature = "ares")]
+        crate::app::frontend::skirmish_session::prepare_external_skirmish_countries(
+            &mut state.process_assets,
+            &launch,
+        );
         let correlation = crate::app::match_bootstrap::allocate_match_correlation(
             &mut state.frontend.next_match_correlation,
         )
@@ -356,7 +361,6 @@ impl TacticalCaptureSession {
             .frontend
             .skirmish_shell_state
             .pressed_owner_draw_button = None;
-        state.frontend.skirmish_shell_last_painted_pressed_button = None;
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
         state.frontend.shell_first_paint_slide = None;
         state.frontend.skirmish_preview_texture = None;

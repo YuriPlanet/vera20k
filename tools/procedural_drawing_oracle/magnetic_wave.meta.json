@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -62,5 +61,5 @@
     "object_destructor": "0x005F3B80"
   },
   "replay_command": "python -m tools.procedural_drawing_oracle.magnetic_wave",
-  "payload_sha256": "52625fbcea23ded9695e40f204c7feb57a7e51ae4a9eaa2231c64e91f6054c17"
+  "payload_sha256": "1ed5b709939de89647545b80d059f93a5986e7273006f5f87bfaa1d8fdc84587"
 }

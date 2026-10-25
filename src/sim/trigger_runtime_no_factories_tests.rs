@@ -214,7 +214,7 @@ fn no_factories_event_matches_original_incoming_house_list_and_raw_class() {
                     .as_u64()
                     .map(|slot| houses[slot as usize]),
                 &mut persistence,
-                Some(&rules),
+                &rules,
                 live,
             )
         };
@@ -309,7 +309,7 @@ fn fire_sale_action_matches_original_selector_state_and_unchanged_timer() {
                 input: TagEventInput::default(),
             },
             &mut Vec::new(),
-            Some(&rules),
+            &rules,
             None,
             FrameEffects::default(),
         );
@@ -372,7 +372,7 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
     crate::sim::scenario_bootstrap::initialize_map_roster_houses(
         &mut sim,
         &roster,
-        Some(&rules),
+        &rules,
         Some(&map.ini),
     );
     let house_name = retail["house_name"].as_str().unwrap();
@@ -446,7 +446,7 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
         .unwrap();
     assert!(!sim.trigger_runtime.trigger(delayed).unwrap().enabled);
     sim.session.set_binary_frame_for_test(8);
-    sim.raise_house_tags(house, Some(&rules), None, FrameEffects::default());
+    sim.raise_house_tags(house, &rules, None, FrameEffects::default());
     assert!(!sim.trigger_runtime.trigger(delayed).unwrap().enabled);
     // Both list and accounting move through the real ChangeOwner owner.
     sim.change_owner_with_rules(factory, other, &rules, None, FrameEffects::default());
@@ -464,12 +464,12 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
             .contains(&factory)
     );
     sim.session.set_binary_frame_for_test(16);
-    sim.raise_house_tags(house, Some(&rules), None, FrameEffects::default());
+    sim.raise_house_tags(house, &rules, None, FrameEffects::default());
     assert!(!sim.trigger_runtime.trigger(delayed).unwrap().enabled);
-    sim.techno_limbo_with_context(factory, UninitContext::new(Some(&rules), None));
+    sim.techno_limbo_with_context(factory, UninitContext::new(&rules, None));
     assert_eq!(sim.houses[&house].tracking().buildings(), 3);
     sim.session.set_binary_frame_for_test(24);
-    sim.raise_house_tags(house, Some(&rules), None, FrameEffects::default());
+    sim.raise_house_tags(house, &rules, None, FrameEffects::default());
     assert!(sim.trigger_runtime.trigger(delayed).unwrap().enabled);
     assert_eq!(sim.houses[&house].strategy_emergency().mode(), 0);
     sim.houses
@@ -483,7 +483,7 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
     let timer = *sim.houses[&house].strategy_timer();
     for (frame, mode) in [(698, 0), (700, 4)] {
         sim.session.set_binary_frame_for_test(frame);
-        sim.advance_triggers(Some(&rules), None, FrameEffects::default());
+        sim.advance_triggers(&rules, None, FrameEffects::default());
         assert_eq!(sim.houses[&house].strategy_emergency().mode(), mode);
         assert_eq!(*sim.houses[&house].strategy_timer(), timer);
         assert!(

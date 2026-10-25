@@ -115,7 +115,13 @@ fn actual_local_loss_refuses_eligible_cheer_without_consuming_the_input_clock() 
     let loss_frame = loss_frame.expect("ordinary last-yard sale must reach MPlayer_Defeated");
     assert!(!scenes[1].sim().local_player_defeated());
     let local = &scenes[0].sim().houses()[&owners[0].0];
-    assert!(local.has_lost() && !local.outcome().unwrap().exit_ready);
+    assert!(local.has_lost());
+    assert!(
+        scenes[0]
+            .sim()
+            .ready_outcome_for_owner(owners[0].0)
+            .is_none()
+    );
     for (scene, input) in scenes.iter().zip(&inputs) {
         assert_eq!(scene.sim().session().binary_frame(), loss_frame);
         assert!(
@@ -179,11 +185,19 @@ fn actual_local_loss_refuses_eligible_cheer_without_consuming_the_input_clock() 
             )
             .unwrap();
         let admitted = output.take_admitted_commands();
+        let house_id = scene
+            .sim()
+            .houses()
+            .order()
+            .iter()
+            .position(|owner| *owner == owners[index].0)
+            .unwrap() as i8;
         assert_eq!(
             admitted
                 .iter()
                 .filter(|command| {
-                    command.owner == owners[index].0 && command.payload == Command::Cheer
+                    matches!(&command.payload, Command::SynchronizedRecord { record }
+                        if record.opcode() == crate::sim::command::CHEER_OPCODE && record.house_id() == house_id)
                 })
                 .count(),
             usize::from(index == 1)

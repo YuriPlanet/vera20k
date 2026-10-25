@@ -16,15 +16,13 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::{LocomotorKind, MovementZone};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::miner::{CargoBale, Miner, MinerConfig, MinerState, ResourceType};
-use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::miner::{CargoBale, Miner, MinerState};
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::locomotor::MovementLayer;
-use crate::sim::pathfinding::zone_map::{ZONE_INVALID, ZoneGrid};
 use crate::sim::radio::{self, RadioMessage, RadioPayload, RadioResponse};
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
-use crate::util::direction::DIRECTION_DELTAS;
 
 use crate::sim::intern::InternedId;
 
@@ -289,7 +287,7 @@ pub(crate) fn unit_ai_nudge_off_refinery_pad(
         return;
     };
     if in_contact {
-        radio::transmit_to_contact(sim, id, RadioMessage::Break, Some(rules), frame_effects);
+        radio::transmit_to_contact(sim, id, RadioMessage::Break, rules, frame_effects);
     }
     drive_off_refinery(sim, rules, id, refinery, overlay_registry, frame_effects);
     let now = sim.session.binary_frame();
@@ -305,7 +303,6 @@ pub(crate) fn unit_ai_nudge_off_refinery_pad(
 pub(super) fn process_miner(
     sim: &mut Simulation,
     rules: &RuleSet,
-    config: &MinerConfig,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
     frame_effects: FrameEffects<'_>,
@@ -326,7 +323,7 @@ pub(super) fn process_miner(
     // through the empty loop; both houses end on Guard, so the human test is
     // inert and not modelled.
     if !house_owns_dock_instance(sim, rules, snap) {
-        queue_guard_from_harvest(sim, snap);
+        queue_guard_from_harvest(sim, snap, rules);
         snap.dispatch_delay = DISPATCH_NEXT_FRAME;
         return;
     }
@@ -334,16 +331,14 @@ pub(super) fn process_miner(
     let state_before = format!("{:?}", snap.state);
     match snap.state {
         MinerState::SearchOre => harvest_looking(sim, rules, overlay_registry, snap, frame_effects),
-        MinerState::Harvest => {
-            harvest_cutting(sim, rules, config, overlay_registry, snap, frame_effects)
-        }
+        MinerState::Harvest => harvest_cutting(sim, rules, overlay_registry, snap, frame_effects),
         // Native return/finding-home state has no per-frame exit: every
         // dispatch leaves through the default Rate epilogue.
         MinerState::ReturnToRefinery => {
             handle_return(sim, rules, snap, frame_effects);
             arm_rate_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, snap);
         }
-        MinerState::Dock => handle_handoff(sim, snap),
+        MinerState::Dock => handle_handoff(sim, snap, rules),
         MinerState::WaitNoOre => {
             handle_going_to_idle(sim, rules, overlay_registry, snap, frame_effects);
             // Native state 4 has no `return 1` exit: every dispatch falls
@@ -427,7 +422,7 @@ fn harvest_looking(
                 .is_some_and(|loco| loco.active_kind() == LocomotorKind::Teleport)
     });
     if teleport_with_nav {
-        sim.set_unit_null_destination(id, Some(rules), None, frame_effects);
+        sim.set_unit_null_destination(id, rules, None, frame_effects);
     }
     let range = super::ore_scan::scan_cells(rules.general.tiberium_long_scan);
     if super::ore_scan::search_for_tiberium_and_move(
@@ -485,7 +480,9 @@ fn harvest_looking(
 /// the GOING-TO-IDLE state dispatches. Not an INI value.
 const NO_ORE_DELAY: i32 = 0x69;
 
-/// `vt+0x480(ArchiveTarget, 1)`: the class setter towards an archived cell.
+/// `vt+0x480(ArchiveTarget, 1)` (`0x0073E741`, `0x0073E8DF`): pass the
+/// retained pointer directly. Unlike an ore/departure coordinate, an archive
+/// must not perform a fresh Map lookup that restamps the shared Dummy cell.
 fn assign_archive_destination(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -494,8 +491,14 @@ fn assign_archive_destination(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
-    if let crate::sim::combat::TargetKind::Cell(x, y) = archive {
-        assign_miner_cell_destination(sim, rules, id, (x, y), overlay_registry, frame_effects);
+    if let Err(cause) = sim.assign_destination_represented(
+        id,
+        Some(archive.into()),
+        rules,
+        overlay_registry,
+        frame_effects,
+    ) {
+        log::warn!("Miner archive destination {id}: {cause}");
     }
 }
 
@@ -531,7 +534,6 @@ fn load_rate(rules: &RuleSet) -> u32 {
 fn harvest_cutting(
     sim: &mut Simulation,
     rules: &RuleSet,
-    config: &MinerConfig,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
     frame_effects: FrameEffects<'_>,
@@ -553,7 +555,7 @@ fn harvest_cutting(
     {
         return;
     }
-    if harvest_ore_tick(sim, rules, config, overlay_registry, snap) {
+    if harvest_ore_tick(sim, rules, overlay_registry, snap) {
         return;
     }
     snap.miner.harvesting = false;
@@ -601,8 +603,7 @@ pub(crate) fn harvest_ore_tick_for_test(
     id: u64,
 ) -> bool {
     let mut snap = build_miner_snapshot(sim, id).expect("a dispatchable miner");
-    let config = MinerConfig::from_rules(rules);
-    let ok = harvest_ore_tick(sim, rules, &config, overlay_registry, &mut snap);
+    let ok = harvest_ore_tick(sim, rules, overlay_registry, &mut snap);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.miner = Some(snap.miner);
     }
@@ -623,13 +624,11 @@ pub(crate) fn harvest_ore_tick_for_test(
 ///   density-0 cell clears for nothing: false, stage untouched.
 ///
 /// RESIDUAL: the Weeder= branch (`0x0073D4F4`, `HarvesterLoadRate * 3`),
-/// dormant (no retail Weeder=). Cargo is integer bales per Ore/Gem kind where
-/// native keeps float `StorageClass` slots per tiberium type (see the Unload
-/// payout residual).
+/// dormant (no retail Weeder=). Cargo retains native tiberium identities but uses whole bales
+/// where native keeps float StorageClass amounts (see the Unload residual).
 fn harvest_ore_tick(
     sim: &mut Simulation,
     rules: &RuleSet,
-    config: &MinerConfig,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     snap: &mut MinerSnapshot,
 ) -> bool {
@@ -671,25 +670,16 @@ fn harvest_ore_tick(
         &mut sim.dirty_cells,
         cell,
         request,
-        Some(rules),
+        rules,
         overlay_registry,
     );
-    let Some(resource_type) = reduction
-        .resource_type
-        .filter(|_| reduction.removed_amount > 0)
-    else {
+    let Some(bale) = CargoBale::from_reduction(reduction, rules) else {
         return false;
     };
-    let value = match resource_type {
-        ResourceType::Ore => config.ore_bale_value,
-        ResourceType::Gem => config.gem_bale_value,
-    };
-    snap.miner
-        .cargo
-        .extend((0..reduction.removed_amount).map(|_| CargoBale {
-            resource_type,
-            value,
-        }));
+    snap.miner.cargo.extend(std::iter::repeat_n(
+        bale,
+        usize::from(reduction.removed_amount),
+    ));
     arm_stage(&mut sim.substrate, id, now, load_rate(rules));
     true
 }
@@ -735,7 +725,19 @@ fn handle_return(
     // The narrow pass takes only a bay with a free contact slot
     // (`FUN_0065ADF0` at `0x004DEF09`), so a driving Teleporter keeps its
     // NavCom while every bay is busy.
-    let narrow = find_docking_bay(sim, rules, snap.entity_id, false, false, frame_effects);
+    let Some(requester_type) = sim.interner.object_type(snap.type_id, rules) else {
+        return;
+    };
+    let dock_types = &requester_type.dock;
+    let narrow = find_docking_bay(
+        sim,
+        rules,
+        snap.entity_id,
+        dock_types,
+        false,
+        false,
+        frame_effects,
+    );
     if driving {
         if narrow.is_none() {
             return;
@@ -757,14 +759,22 @@ fn handle_return(
             bay,
             RadioMessage::Hello,
             RadioPayload::default(),
-            None,
+            rules,
             frame_effects,
         ) == RadioResponse::Roger
     {
         snap.state = MinerState::Dock;
         return;
     }
-    let Some(bay) = find_docking_bay(sim, rules, snap.entity_id, true, true, frame_effects) else {
+    let Some(bay) = find_docking_bay(
+        sim,
+        rules,
+        snap.entity_id,
+        dock_types,
+        true,
+        true,
+        frame_effects,
+    ) else {
         return;
     };
     if !teleporter
@@ -783,7 +793,7 @@ fn handle_return(
             );
         }
         None => {
-            sim.assign_null_destination(id, Some(rules), None, frame_effects);
+            sim.assign_null_destination(id, rules, None, frame_effects);
         }
     }
 }
@@ -826,14 +836,14 @@ fn refinery_staging_cell(sim: &Simulation, rules: &RuleSet, bay: u64) -> Option<
 
 /// Mission_Harvest state 3 (`0x0073EE8A`): `Queue_Mission(Enter, 0); return
 /// 1`. UnitClass::AI's Ready/Commence step promotes it.
-fn handle_handoff(sim: &mut Simulation, snap: &MinerSnapshot) {
+fn handle_handoff(sim: &mut Simulation, snap: &MinerSnapshot, rules: &RuleSet) {
     let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         snap.entity_id,
         MissionId::from_known(MissionType::Enter),
         0,
         now,
-        &EntityReadyInputProvider,
+        &LiveReadyInputProvider { rules },
     );
 }
 
@@ -913,17 +923,17 @@ fn handle_going_to_idle(
             frame_effects,
         );
     }
-    queue_guard_from_harvest(sim, snap);
+    queue_guard_from_harvest(sim, snap, rules);
 }
 
 /// vt+0x480(cell, 1) to the Cell NearbyLocation finds near `refinery`
 /// (`0x00703590`), as Mission_Harvest state 4 (`0x0073EF1F..`) and the
 /// stuck-harvester nudge (`0x0073690A..0x0073696D`) send a miner off its pad.
 ///
-/// RESIDUAL: native always calls the setter with `Map[cell]`; VERA skips it
-/// when NearbyLocation finds no Cell or one outside the path grid
-/// ([`assign_miner_cell_destination`]). Trigger: no passable Cell in reach
-/// of the refinery. Frequency: none seen.
+/// A failed search still returns packed CellStruct::Empty (0,0), not NULL.
+/// Both callers freshly look up that cell (`0x0073EF5A`, `0x00736965`) and
+/// call the setter even when it is the shared Dummy. Mission selection stays
+/// with the caller: Harvest queues Guard; the AI nudge queues Move.
 fn drive_off_refinery(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -932,24 +942,23 @@ fn drive_off_refinery(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
-    if let Some(exit) = sim
+    let exit = sim
         .techno_nearby_location(id, Some(refinery), rules)
-        .and_then(|(x, y)| Some((u16::try_from(x).ok()?, u16::try_from(y).ok()?)))
-    {
-        assign_miner_cell_destination(sim, rules, id, exit, overlay_registry, frame_effects);
-    }
+        .map(|(x, y)| (x as u16, y as u16))
+        .unwrap_or((0, 0));
+    assign_miner_cell_destination(sim, rules, id, exit, overlay_registry, frame_effects);
 }
 
 /// `Queue_Mission(Guard, 0)` from inside the Harvest handler (preamble and
 /// state 4). No Commence: the host's Ready-to-Commence step promotes it.
-fn queue_guard_from_harvest(sim: &mut Simulation, snap: &MinerSnapshot) {
+fn queue_guard_from_harvest(sim: &mut Simulation, snap: &MinerSnapshot, rules: &RuleSet) {
     let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         snap.entity_id,
         MissionId::from_known(MissionType::Guard),
         0,
         now,
-        &EntityReadyInputProvider,
+        &LiveReadyInputProvider { rules },
     );
 }
 
@@ -992,7 +1001,6 @@ pub(crate) fn extract_bale(
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     cell: (u16, u16),
-    config: &MinerConfig,
 ) -> Option<CargoBale> {
     let outcome = Simulation::reduce_tiberium_at_with_native_context(
         terrain_objects,
@@ -1006,26 +1014,16 @@ pub(crate) fn extract_bale(
         dirty_cells,
         cell,
         1,
-        Some(rules),
+        rules,
         overlay_registry,
     );
-    if outcome.removed_amount == 0 {
-        return None;
-    }
-    let resource_type = outcome.resource_type?;
-    let value = match resource_type {
-        ResourceType::Ore => config.ore_bale_value,
-        ResourceType::Gem => config.gem_bale_value,
-    };
-    Some(CargoBale {
-        resource_type,
-        value,
-    })
+    CargoBale::from_reduction(outcome, rules)
 }
 
 /// One `FootClass::Find_Docking_Bay @ 0x004DF040` pass for a miner or an
-/// aircraft (`AircraftClass::Find_Docking_Bay @ 0x0041BBD0` calls it): each
-/// `Dock=` type in list order goes to the scanner ([`scan_docking_type`]),
+/// aircraft (`AircraftClass::Find_Docking_Bay @ 0x0041BBD0` calls it), and
+/// Unit Mission_Repair740EF0: each caller supplies its actual list (`Dock=`
+/// or Rules' `RepairBay=`). Each type goes to the scanner ([`scan_docking_type`]),
 /// and the pass keeps a type's answer when it has none yet, when that
 /// answer is strictly nearer than the best so far, when the best is -1 or
 /// when the answer is a primary factory (0x004DF08E..0x004DF0A7).
@@ -1038,15 +1036,14 @@ pub(crate) fn find_docking_bay(
     sim: &mut Simulation,
     rules: &RuleSet,
     requester: u64,
+    dock_types: &[String],
     wide: bool,
     ignore_dock_capacity: bool,
     frame_effects: FrameEffects<'_>,
 ) -> Option<u64> {
-    let type_id = sim.substrate.entities.get(requester)?.type_ref();
-    let requester_type = sim.interner.object_type(type_id, rules)?;
     let mut result: Option<u64> = None;
     let mut best = -1_i32;
-    for dock_type in &requester_type.dock {
+    for dock_type in dock_types {
         if let Some((found, nearest)) = scan_docking_type(
             sim,
             rules,
@@ -1111,7 +1108,7 @@ pub(crate) fn find_docking_bay_of_type(
 ///   them through `Contacts::has_free_or` (actual-slot oracle controls);
 /// - `MapClass::Can_Reach_Zone` from the requester's cell to the building's
 ///   `GetCoords` cell, skipped for an Aircraft (`WhatAmI() == 2`,
-///   0x004DEF20) — see `refinery_zone_reachable`;
+///   0x004DEF20) — see [`dock_zone_reachable`];
 /// - `Receive_Radio(0xF)` must return 1 — the shared building radio receiver;
 /// - distance `FUN_005F6500`: `dx² + dy²` in leptons between both objects'
 ///   `GetCoords` (Z ignored), 32-bit wrapping `IMUL`/`ADD`; the candidate
@@ -1127,19 +1124,13 @@ fn scan_docking_type(
     ignore_dock_capacity: bool,
     frame_effects: FrameEffects<'_>,
 ) -> Option<(u64, i32)> {
-    let (owner, own_x, own_y, own_cell, unit_mz, aircraft) = {
+    let (owner, own_x, own_y, aircraft) = {
         let entity = sim.substrate.entities.get(requester)?;
         let coords = object_get_coords(entity, sim.resolved_terrain.as_ref());
         (
             entity.owner(),
             coords.x,
             coords.y,
-            (entity.position.rx(), entity.position.ry()),
-            entity
-                .locomotor
-                .as_ref()
-                .map(|loc| loc.movement_zone())
-                .unwrap_or(MovementZone::Normal),
             entity.category() == EntityCategory::Aircraft,
         )
     };
@@ -1181,17 +1172,12 @@ fn scan_docking_type(
         if !wide && !entity.radio_contacts.has_free_or(requester) {
             continue;
         }
-        if !aircraft {
-            let dock = refinery_dock_cell(entity.position.rx(), entity.position.ry());
-            if !refinery_zone_reachable(
-                sim,
-                sim.substrate.entities.get(requester)?,
-                unit_mz,
-                own_cell,
-                dock,
-            ) {
-                continue;
-            }
+        // `BuildingClass::GetCoords @ 0x00447AC0`: foundation centre, the
+        // point the zone gate and the distance measure to, and the same point
+        // the state-2 too-far test measures to.
+        let centre = object_get_coords(entity, sim.resolved_terrain.as_ref());
+        if !aircraft && !dock_zone_reachable(sim, rules, requester, centre) {
+            continue;
         }
         if crate::sim::radio::transmit(
             sim,
@@ -1199,20 +1185,12 @@ fn scan_docking_type(
             sid,
             crate::sim::radio::RadioMessage::CanEnter,
             crate::sim::radio::RadioPayload::docking_query(ignore_dock_capacity),
-            Some(rules),
+            rules,
             frame_effects,
         ) != crate::sim::radio::RadioResponse::Roger
         {
             continue;
         }
-        let entity = sim
-            .substrate
-            .entities
-            .get(sid)
-            .expect("read-only CAN_LOAD retains candidate");
-        // `BuildingClass::GetCoords @ 0x00447AC0`: foundation centre, the
-        // same point the state-2 too-far test measures to.
-        let centre = object_get_coords(entity, sim.resolved_terrain.as_ref());
         let dx = own_x.wrapping_sub(centre.x);
         let dy = own_y.wrapping_sub(centre.y);
         let distance = dy.wrapping_mul(dy).wrapping_add(dx.wrapping_mul(dx));
@@ -1224,97 +1202,46 @@ fn scan_docking_type(
     found.map(|found| (found, nearest))
 }
 
-/// `MapClass::Can_Reach_Zone` gate of the scanner `FUN_004DEE80`, called
-/// natively with the unit type's MovementZone, the miner's cell and the
-/// building's `GetCoords` cell. VERA's zone map marks building footprints
-/// `ZONE_INVALID`, so the probe targets the refinery's dock cell and its 8
-/// neighbours instead of the foundation centre — VERA-internal
-/// approximation, gamemd equivalent UNCHECKED for the exact probed cell.
-/// Without a zone grid or a valid miner anchor the gate is skipped.
-fn refinery_zone_reachable(
-    sim: &Simulation,
-    miner: &crate::sim::game_entity::GameEntity,
-    mz: MovementZone,
-    miner_cell: (u16, u16),
-    dock: (u16, u16),
-) -> bool {
-    let Some(zone_grid) = sim.zone_grid.as_ref() else {
-        return true;
-    };
-    let Some(anchor) = effective_zone_cell(zone_grid, mz, miner_cell.0, miner_cell.1) else {
-        return true;
-    };
-    let layer = miner.movement_layer_or_ground();
-    zone_grid.can_reach(mz, anchor, layer, dock, layer)
-        || neighbour_reachable(zone_grid, mz, layer, anchor, dock)
-}
-
-/// The dock pad a refinery at NW `(rx, ry)` sends its miner to
-/// ([`crate::sim::radio::receive::dock_pad_cell`]).
-pub(crate) fn refinery_dock_cell(rx: u16, ry: u16) -> (u16, u16) {
-    crate::sim::radio::receive::dock_pad_cell(rx, ry)
-}
-
-/// Return a cell whose zone serves as the harvester's anchor for the
-/// refinery-dock zone gate.
+/// The `MapClass::Can_Reach_Zone @ 0x0056D100` gate of the scanner
+/// `FUN_004DEE80` (`0x004DEF29..0x004DEFDD`): from the cell of the
+/// requester's `vt+0x4C` coordinate on its ShouldBeOnBridge layer, with its
+/// type's MovementZone ([`harvest_reach`], the request Is_Cell_Harvestable
+/// makes), to the cell of the building's GetCoords (`building`), with no
+/// destination bridge and no fringe shortcut. Native re-queries the source
+/// for each candidate. A world without native zone topology, or a requester
+/// without a navigation coordinate, skips the gate.
 ///
-/// The harvester's own cell may be on Tiberium (impassable in the path grid,
-/// hence `ZONE_INVALID`); when so, probe its 8 neighbors and return the
-/// first cell with a valid zone. Returns `None` if neither the harvester's
-/// cell nor any neighbor has a valid zone — the gate is then skipped.
-fn effective_zone_cell(
-    zone_grid: &ZoneGrid,
-    mz: MovementZone,
-    rx: u16,
-    ry: u16,
-) -> Option<(u16, u16)> {
-    let zone_map = zone_grid.map_for(mz)?;
-    if zone_map.zone_at(rx, ry, MovementLayer::Ground) != ZONE_INVALID {
-        return Some((rx, ry));
-    }
-    for &(dx, dy) in &DIRECTION_DELTAS {
-        let nx = (rx as i32) + dx;
-        let ny = (ry as i32) + dy;
-        if nx < 0 || ny < 0 || nx > u16::MAX as i32 || ny > u16::MAX as i32 {
-            continue;
-        }
-        let (nx, ny) = (nx as u16, ny as u16);
-        if zone_map.zone_at(nx, ny, MovementLayer::Ground) != ZONE_INVALID {
-            return Some((nx, ny));
-        }
-    }
-    None
-}
-
-/// True if any 8-neighbor of `cell` is in the harvester's connected zone
-/// component: the refinery-dock gate probes the dock cell's neighbours, as
-/// VERA's zone map marks building footprint cells `ZONE_INVALID`.
-fn neighbour_reachable(
-    zone_grid: &ZoneGrid,
-    mz: MovementZone,
-    layer: MovementLayer,
-    harvester_zone_cell: (u16, u16),
-    cell: (u16, u16),
+/// [`harvest_reach`]: crate::sim::miner::ore_scan::harvest_reach
+fn dock_zone_reachable(
+    sim: &Simulation,
+    rules: &RuleSet,
+    requester: u64,
+    building: crate::sim::components::DriveCoord,
 ) -> bool {
-    for &(dx, dy) in &DIRECTION_DELTAS {
-        let nx = (cell.0 as i32) + dx;
-        let ny = (cell.1 as i32) + dy;
-        if nx < 0 || ny < 0 || nx > u16::MAX as i32 || ny > u16::MAX as i32 {
-            continue;
-        }
-        let (nx, ny) = (nx as u16, ny as u16);
-        if zone_grid.can_reach(mz, harvester_zone_cell, layer, (nx, ny), layer) {
-            return true;
-        }
-    }
-    false
+    let (Some(terrain), Some(reach)) = (
+        sim.resolved_terrain.as_ref(),
+        crate::sim::miner::ore_scan::harvest_reach(sim, rules, requester),
+    ) else {
+        return true;
+    };
+    // `CDQ; AND EDX,0xFF; ADD; SAR 8` (`0x004DEF3B..0x004DEF5A`).
+    let cell = crate::util::lepton::lepton_to_cell_packed;
+    reach
+        .reaches(
+            sim,
+            &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
+            (cell(building.x), cell(building.y)),
+        )
+        .unwrap_or(true)
 }
 
-/// A miner's `vt+0x480(cell, 1)` through the class setter: Search_For_Tiberium
-/// (`0x004DD086`) and Mission_Harvest state 4's `Set_Destination`. For a Unit
+/// A freshly looked-up miner cell through `vt+0x480(cell, 1)`:
+/// Search_For_Tiberium (`0x004DD07E..0x004DD086`), Mission_Harvest state 4
+/// (`0x0073EF5A..0x0073EF62`) and the AI nudge. For a Unit
 /// that is `0x741970`, which returns on an unchanged NavCom and whose
 /// Teleporter arm gives a Chrono Miner out of radio contact a Drive. The
-/// setter is void; a cell outside the path grid is not ordered.
+/// setter is void; Map lookup can return the shared Dummy outside the path
+/// grid. It precedes even the setter's unchanged-pointer early return.
 pub(crate) fn assign_miner_cell_destination(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -1323,18 +1250,15 @@ pub(crate) fn assign_miner_cell_destination(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
-    let Some(grid) = sim.path_grid() else {
-        return;
-    };
-    if target.0 >= grid.width() || target.1 >= grid.height() {
-        return;
+    if let Some(terrain) = sim.resolved_terrain.as_ref() {
+        terrain.native_cell_identity((target.0 as i16, target.1 as i16));
     }
     if let Err(cause) = sim.assign_destination_represented(
         entity_id,
         Some(crate::sim::components::NavTargetRef::cell(
             target.0, target.1,
         )),
-        Some(rules),
+        rules,
         overlay_registry,
         frame_effects,
     ) {
@@ -1424,5 +1348,5 @@ pub(crate) fn effective_purifier_count(
     }
     let table = rules.general.ai_virtual_purifiers;
     let virtual_count = table[house.difficulty().table_index()];
-    real + virtual_count
+    real.wrapping_add(virtual_count)
 }

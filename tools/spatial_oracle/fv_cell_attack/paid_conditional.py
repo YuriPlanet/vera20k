@@ -10,7 +10,7 @@ import json
 
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_ESI
-from tools.native_oracle import NATIVE_SHA256, RET_MAGIC, provenance
+from tools.native_oracle import RET_MAGIC, provenance
 from tools.spatial_oracle.fv_cell_attack.publication import finish_vectors
 from tools.spatial_oracle.building_body_rules import dwords
 from tools.spatial_oracle.fv_cell_attack import paid_world as owner, move_sound
@@ -199,7 +199,7 @@ def generate():
     names = [world['stage'] for world in worlds]
     order = lambda case: names.index(case['stage']) if case['stage'] in names else len(names)
     cases = [run(by_stage[physical(case)], case) for case in sorted(supplied, key=order)]
-    return dict(schema=1, native_sha256=NATIVE_SHA256, input_sha256=sha(INPUT.read_bytes()),
+    return dict(schema=1, input_sha256=sha(INPUT.read_bytes()),
                 cases=cases)
 
 
@@ -212,16 +212,15 @@ def metadata():
         assumptions=[
             'The input declares the Scenario identity cursor before actual FV construction, original GameOptions speed3, declared Scenario seed (default31) executed by original65C6D0 immediately before the actual FV ctor, command frame1, constructor RNG-boundary hashes and outside raw-Next prefix/suffix receipts. It contains no expected selected-object outcomes. Boundary hashes are checked, never imported.',
             'Original constructor/placement/Event, Mission/Approach/Drive, MoveSound/FireAt, Bullet flight/impact/bridge damage, Anim AI and live-vector removal/append/deferred cleanup execute unchanged through the supplied bounded frame schedule. Full native states, raw calls/ranged requests/results, native IDs, velocity bytes, Anim runtime/config and ordered callbacks remain output.',
-            'The physical four-stage map is freshly produced by the existing owner and matches its frozen cells/navigation/hierarchies before selected execution. Source pins and compact production input provenance are preserved.'],
+            'The physical four-stage map is freshly produced by the existing owner and matches its frozen cells/navigation/hierarchies before selected execution. Compact production input provenance is preserved.'],
         substitutions=[
             'Whole native Scenario startup/population and other-world AI are not executed. Their recorded Next calls run original65C780 as explicit outside-world inputs. This is selected-owner native evidence conditional on incoming identity/options/RNG scheduling, not whole-world parity.',
             'Shared Paid OS/assets/physical-world boundaries and MoveSound sound-device boundary remain. No selected RNG return, constructed object ID, movement, timer, projectile, damage or cleanup result is supplied.'])
-    result.update(input_sha256=sha(INPUT.read_bytes()), harness_sha256=sha(Path(__file__).read_bytes()),
-                  source_pins=owner.sources())
+    result.update(input_sha256=sha(INPUT.read_bytes()))
     frozen = json.loads((HERE / 'promotion.json').read_bytes())['results']['paid_conditional_v26.json']
     result.update(frozen_source_sha256=frozen['frozen_source_sha256'],
                   supersedes='paid_conditional_drive_crt.json.gz',
-                  publication_changes=['Original selected execution uses the new sealed bridge-fv-current-v26 outside-call boundary. All six original declarations and horizons remain; prior conditional inputs and native packets are preserved. Drive CRT initialization remains enabled.', 'Copied lexical INI text is represented by SHA256 and checkout references become relative. Imported Python source census stays in metadata; historical Rust input receipts stay sealed in the compact input.'])
+                  publication_changes=['Original selected execution uses the new sealed bridge-fv-current-v26 outside-call boundary. All six original declarations and horizons remain; prior conditional inputs and native packets are preserved. Drive CRT initialization remains enabled.', 'Copied lexical INI text is represented by SHA256 and checkout references become relative. Historical Rust input receipts stay sealed in the compact input.'])
     return result
 
 

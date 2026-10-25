@@ -13,12 +13,21 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 
 pub(crate) fn layout(state: &AppState) -> MultiplayerSetupLayout {
     let (w, h) = shell_layout::shell_screen_size(state);
-    MultiplayerSetupLayout::new(
+    let mut layout = MultiplayerSetupLayout::new(
         crate::app::shell_network_setup::dialog(state),
         w as i32,
         h as i32,
         shell_layout::fills_window(state),
-    )
+    );
+    if state
+        .match_state
+        .session
+        .network_setup_capacity()
+        .is_some_and(|rows| rows > 8)
+    {
+        layout.arrange_extended_rows();
+    }
+    layout
 }
 
 pub(crate) fn update_geometry(state: &mut AppState) {
@@ -48,7 +57,9 @@ fn transfer_active(state: &AppState) -> bool {
         .frontend
         .network_setup_protocol
         .as_ref()
-        .is_some_and(|protocol| protocol.transfer_progress().is_some())
+        .is_some_and(|protocol| {
+            protocol.blocking_map_transfer() && protocol.transfer_progress().is_some()
+        })
 }
 
 fn notice_feed(state: &AppState) -> [crate::ui::shell::layout::LaidOutControl; 1] {
@@ -81,6 +92,32 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
     };
     key_press(state, code, event.text.as_deref());
 }
+
+/// The chat NewEdit while it takes keys, for the input method
+/// (`app::input::ime`): [`key_press`] reaches the focused chat with no
+/// transfer, verify box, page dialog, notice or ChooseMap over the dialog.
+pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
+    let routed = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
+        && state.frontend.shell_route.network_setup()
+        && state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .is_none()
+        && !shell_transition::blocks_shell_input(state)
+        && !transfer_active(state)
+        && crate::app::shell_network_setup::verify(state).is_none()
+        && !crate::app::shell_wol::page::open(state)
+        && !notice_active(state)
+        && crate::app::shell_network_setup::view(state).is_some();
+    state
+        .frontend
+        .multiplayer_setup
+        .as_ref()
+        .filter(|ui| routed && ui.focused_control == CHAT)
+        .map(|_| layout(state).chat)
+}
+
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
     if transfer_active(state) {
         return;
@@ -352,6 +389,8 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 CHOOSE_MAP => Some(SetupAction::ChooseMap),
                 EMOTE => Some(SetupAction::Emote),
                 PAGE => Some(SetupAction::Page),
+                PREVIOUS_ROWS => Some(SetupAction::RosterPage { forward: false }),
+                NEXT_ROWS => Some(SetupAction::RosterPage { forward: true }),
                 _ => None,
             };
         }
@@ -368,6 +407,9 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
 /// Original scrollbar timers: one callback, no catch-up burst; no wheel or
 /// arrow-key path exists in the native ComboDropWin/list subclasses.
 pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
+    if crate::app::shell_network_setup::verify(state).is_some() {
+        return crate::app::shell_network_setup::verify_poll_scroll(state);
+    }
     if transfer_active(state) {
         return None;
     }

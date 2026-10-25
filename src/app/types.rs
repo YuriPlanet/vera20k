@@ -325,21 +325,21 @@ pub(crate) enum CursorFeedbackKind {
     PanBlocked(ScrollDir),
     /// Radar (minimap) cursor — the payload is one of the descriptor table's
     /// mini frame sets. The original's RadarClass mouse handler (`0x006539D0`)
-    /// asks `SetCursorFromAction` (`0x004AAE90`) for the cursor with
-    /// `mini = 1`, so the mini switch (byte table `0x004AB838` indexed by
-    /// action, jump table `0x004AB7D0`) — not the tactical one — picks the
-    /// row. Its default is row 0's mini set, the plain arrow (frame 1): the
+    /// asks `SetCursorFromAction` (`0x004AAE90`) with `mini = 1`. The normal
+    /// action switch picks the row on revealed cells; its shroud branch uses
+    /// byte table `0x004AB838` and jump table `0x004AB7D0` instead.
+    /// Its default is row 0's mini set, the plain arrow (frame 1): the
     /// keep-table filter (`0x00653F04`) drops every action outside
     /// {1,2,3,5,6,9,16,20,26,38,41,65,66,67,72} to row 0, and the
-    /// fallthrough exit is `SetCursorRow(0, mini = 1)` at `0x00653D62`. Only
-    /// the move family (row 18, frames 42-51) and the superweapon targeting
-    /// rows reach a mini set of their own.
+    /// fallthrough exit is `SetCursorRow(0, mini = 1)` at `0x00653D62`.
     Minimap(CursorId),
     /// Deploy/undeploy cursor — shown when a Deployer unit hovers over itself.
     Deploy,
     NoDeploy,
     /// Enter cursor — garrison, capture, board transport, sabotage, grind.
     Enter,
+    /// Grind (11) shares Enter's cursor but is excluded by the radar keep table.
+    Grind,
     /// NoEnter cursor (action 0x1F, row 0x1A at `0x004AB382`).
     NoEnter,
     /// Engineer action28 damage cursor. Its uncommon authored-threshold
@@ -350,10 +350,16 @@ pub(crate) enum CursorFeedbackKind {
     /// C4 plant cursor — SEAL/Tanya/PTROOP hovering a CanC4 enemy structure
     /// (action 0x10 in gamemd, distinct mouse.shp frames from Enter).
     Demolish,
+    /// Weapon SabotageCursor action64 shares C4's drawing (16), but radar
+    /// excludes64. Its click remains an ordinary Attack mission.
+    WeaponDemolish,
     /// Weapon MigAttackCursor, action71; still an ordinary Attack command.
     AirStrike,
     /// Crazy Ivan bomb cursor (action 0x35 `IvanBomb`, cursor row 38).
     IvanBomb,
+    /// Native action54 shares NoMove's drawing but is excluded by radar's
+    /// keep table, unlike ordinary NoMove (2).
+    NoIvanBomb,
     /// Engineer defuse cursor (action 0x39 `DisarmBomb`, cursor row 59).
     DisarmBomb,
     /// Repair cursor mode active (sidebar wrench). `true` = an own building is
@@ -366,6 +372,9 @@ pub(crate) enum CursorFeedbackKind {
     /// and the cursor is over the tactical map. Payload is the per-SW
     /// CursorId resolved from the `Action=` INI string.
     SuperWeaponTarget(CursorId),
+    /// Beacon placement mode with nothing selected: action 0x3C, row 0x4E
+    /// (`0x004AB754` revealed, `0x004AB3DB` shrouded).
+    PlaceBeacon,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

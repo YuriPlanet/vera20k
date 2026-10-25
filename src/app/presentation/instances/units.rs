@@ -21,7 +21,7 @@ use crate::render::draw_state::{DrawState, FX_SHADOW};
 use crate::render::native_z::{
     SHP_DRAW_Z_ADJUST_PX, ZGradient, pack_voxel_z_gradient, pack_z_gradient,
 };
-use crate::render::sprite_atlas::ShpSpriteKey;
+use crate::render::sprite_atlas::{HARVEST_OVERLAY_IMAGE, ShpPaletteContext, ShpSpriteKey};
 use crate::render::tactical_draw_plan::RenderZPolicy;
 use crate::render::unit_atlas::{
     UnitSpriteEntry, UnitSpriteKey, VxlLayer, canonical_turret_facing, canonical_unit_facing,
@@ -35,12 +35,20 @@ use crate::sim::movement::slope_transition::SLOPE_TRANSITION_FRAMES;
 use std::borrow::Cow;
 
 #[cfg(test)]
+#[path = "hover_draw_tests.rs"]
+mod hover_draw_tests;
+
+#[cfg(test)]
 #[path = "naval_draw_tests.rs"]
 mod naval_draw_tests;
 
 #[cfg(test)]
 #[path = "unit_body_draw_tests.rs"]
 mod unit_body_draw_tests;
+
+#[cfg(test)]
+#[path = "aircraft_body_point_tests.rs"]
+mod aircraft_body_point_tests;
 
 const NATIVE_TURRET_FIRST_START: u8 = 32;
 const NATIVE_TURRET_FIRST_END_EXCLUSIVE: u8 = 160;
@@ -98,20 +106,30 @@ fn clamp_slope_for_render(slope: u8) -> u8 {
     if slope <= 16 { slope } else { 0 }
 }
 
-fn terrain_slope_for_render(state: &AppState, rx: u16, ry: u16) -> u8 {
-    state
-        .terrain_template()
+fn terrain_slope_for_render(
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    rx: u16,
+    ry: u16,
+) -> u8 {
+    terrain
         .and_then(|t| t.cell(rx, ry))
         .map(|c| clamp_slope_for_render(c.slope_type))
         .unwrap_or(0)
 }
 
+/// The slope a Unit body's locomotor Draw_Matrix draws it at. `terrain`
+/// supplies the fallback's cell slope, `cells` is the draw's isolated query
+/// of the live map, and `angles` are the rocking angles the body is drawn
+/// with, the ones [`ground_pose_with_angles`] tilts it by.
 fn unit_render_slope_state(
-    state: &AppState,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
     entity: &crate::sim::game_entity::GameEntity,
     display_binary_frame: u32,
     band: EntityDrawBand,
+    angles: [f32; 2],
 ) -> UnitRenderSlopeState {
+    use crate::rules::locomotor_type::LocomotorKind;
     // Drive/Ship Draw_Matrix reads the locomotor-owned cache even when the
     // cached slope is zero. Terrain is only a compatibility fallback for
     // locomotor classes excluded from the native override pair.
@@ -121,25 +139,79 @@ fn unit_render_slope_state(
     if entity.category() == EntityCategory::Aircraft {
         return UnitRenderSlopeState::Stable(0);
     }
+    let kind = entity
+        .locomotor
+        .as_ref()
+        .map(|locomotor| locomotor.active_kind());
     // `JumpjetLocomotionClass` Draw_Matrix (`0x0054DCC0`) is the facing matrix
     // of `LocomotionClass::Draw_Matrix @ 0x0055A730`, tilted only by its
     // `TiltCrashJumpjet=` arm: a Jumpjet body never takes a cell slope, landed
     // or airborne.
-    let jumpjet = entity.locomotor.as_ref().is_some_and(|locomotor| {
-        locomotor.active_kind() == crate::rules::locomotor_type::LocomotorKind::Jumpjet
-    });
     // A body that has left the floor has no cell slope to sit on, so it never
     // enters the drive-track tilt transition. Upper-layer bodies therefore
     // keep their stable atlas shape.
-    if jumpjet || band != EntityDrawBand::Ground {
+    if kind == Some(LocomotorKind::Jumpjet) || band != EntityDrawBand::Ground {
         return UnitRenderSlopeState::Stable(0);
     }
-
+    // `HoverLocomotionClass::Draw_Matrix @ 0x00513F40`: the level facing
+    // matrix while rocking or powered, its cell's slope otherwise
+    // ([`hover_draw_slope`](crate::sim::movement::hover::hover_draw_slope));
+    // a rocking body's tilt is [`ground_pose_with_angles`]'s.
+    if kind == Some(LocomotorKind::Hover) {
+        return UnitRenderSlopeState::Stable(clamp_slope_for_render(
+            crate::sim::movement::hover::hover_draw_slope(entity, cells, angles),
+        ));
+    }
+    // RESIDUAL: every other locomotor that reaches here draws through the
+    // base `LocomotionClass::Draw_Matrix @ 0x0055A730`, the level facing
+    // matrix (Teleport's vtable slot `0x007F5024`, Walk's `0x007F6A1C`,
+    // Mech's `0x007EDB90`), but takes its cell's slope here. Trigger: a voxel
+    // Unit with one of them active on a sloped cell: a Chrono Miner (CMIN,
+    // Teleport primary) before the Drive its next move installs, a vehicle
+    // inside a Chronosphere warp's Teleport piggyback, and the unbuildable
+    // CMON and SMON; no retail vehicle uses Walk or Mech. Effect: the body
+    // tilts with the ground where gamemd draws it level; its shadow (base
+    // `0x0055A7D0`) lies on the slope either way. Frequency: whenever one of
+    // them stands on a ramp in that state. Risk: visual only.
     UnitRenderSlopeState::Stable(terrain_slope_for_render(
-        state,
+        terrain,
         entity.position.rx(),
         entity.position.ry(),
     ))
+}
+
+/// The slope a Unit's ground shadow lies on. Hover's Shadow_Matrix
+/// (`0x005142A0`) keys a rocking draw -1 and returns the base
+/// `LocomotionClass::Shadow_Matrix @ 0x0055A7D0`, its cell's slope and its
+/// facing, whatever its body draws: a powered Hover's shadow stays on the
+/// ramp its level body crosses. Every other body's shadow keeps its body
+/// slope here.
+///
+/// RESIDUAL: Drive's and Ship's Shadow_Matrix (`0x004B0410`, `0x0069FB20`)
+/// key -1 while their slope changes or they rock, then also end in
+/// `0x0055A7D0`, so natively their shadow lies on the slope of the cell under
+/// their Location as well. Trigger: a Drive or Ship body whose slope state
+/// (the transition's `to_slope` mid-transition) differs from that cell's
+/// slope. Effect: its shadow lies on the other slope. Frequency: untraced, at
+/// most the frames around a slope change. Risk: visual only.
+fn unit_shadow_slope(
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    entity: &crate::sim::game_entity::GameEntity,
+    body: UnitRenderSlopeState,
+) -> u8 {
+    if entity.locomotor.as_ref().is_some_and(|locomotor| {
+        locomotor.active_kind() == crate::rules::locomotor_type::LocomotorKind::Hover
+    }) {
+        // Base Shadow_Matrix 0x0055A801..0x0055A80C reads the current
+        // Map cell, including replacements made by cliff collapse.
+        terrain_slope_for_render(
+            cells.map(crate::map::resolved_terrain::NativeCellQuery::terrain),
+            entity.position.rx(),
+            entity.position.ry(),
+        )
+    } else {
+        stable_slope_for_key(body)
+    }
 }
 
 fn locomotor_render_slope_state(
@@ -184,6 +256,48 @@ fn render_slope_phase(
 /// completed, including the unsigned wrap at the initial committed frame.
 const fn display_binary_frame_for_committed_session(committed_binary_frame: u32) -> u32 {
     committed_binary_frame.wrapping_sub(1)
+}
+
+/// Aircraft4145FD and Foot4DAF5E each add the locomotor's Draw_Point.
+/// Keep this body point separate from the physical/interpolated entity anchor.
+fn aircraft_body_anchor(
+    sim: &crate::sim::world::Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    anchor: [f32; 2],
+) -> [f32; 2] {
+    if entity.category() != EntityCategory::Aircraft {
+        return anchor;
+    }
+    let Some((taking_off, landing)) = entity
+        .locomotor
+        .as_ref()
+        .and_then(|locomotor| locomotor.fly_phase_callbacks())
+    else {
+        return anchor;
+    };
+    let Some(object) = rules.and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
+    else {
+        return anchor;
+    };
+    let height = crate::sim::movement::air_movement::queried_flight_height(entity, cells);
+    let base = crate::sim::movement::air_movement::aircraft_landing_base(
+        entity,
+        sim.entities(),
+        rules.map(|rules| (rules, sim.interner())),
+    );
+    // MainTick renders before Logic55DC9E, then increments at55DE7E/81.
+    // The next Draw_Point4CF8D8 reads that committed global frame directly.
+    let delta = crate::render::locomotor_visual::fly_draw_point_y(
+        sim.session().binary_frame(),
+        object.is_dropship(),
+        taking_off,
+        landing,
+        height,
+        base,
+    ) as f32;
+    [anchor[0], anchor[1] + delta + delta]
 }
 
 /// Depth key for one voxel body, from the screen row it was drawn at.
@@ -247,7 +361,9 @@ pub(crate) fn build_unit_instances(
         .sim_runtime
         .as_ref()
         .and_then(|rt| rt.view().resolved_terrain());
-    let light_cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+    // The draw's own query of the live map: lighting and Hover's Is_Powered
+    // height read through it, and a miss stamps its dummy, not the simulation's.
+    let cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::isolated);
     state
         .match_state
         .match_presentation
@@ -318,16 +434,18 @@ pub(crate) fn build_unit_instances(
         };
         // Interpolate continuous attitude, including the last interval back
         // to level. Native admission/type/model choice is left unchanged.
-        let tilt_crash = state
+        let object_type = state
             .rules()
-            .and_then(|r| sim.interner().object_type(entity.type_ref(), r))
-            .is_some_and(|o| o.tilt_crash_jumpjet);
+            .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules));
+        let tilt_crash = object_type.is_some_and(|object| object.tilt_crash_jumpjet);
         if let Some(tilt) = body_pose_with_angles(
             entity,
             band,
             tilt_crash,
             render_pose.angles,
             render_pose.rocket_pitch,
+            object_type,
+            render_pose.fly_bank_direction,
         ) {
             body = BodyDraw::Pose(tilt);
         } else if matches!(body, BodyDraw::Pose(_)) {
@@ -374,16 +492,21 @@ pub(crate) fn build_unit_instances(
         let slope_state = render_pose
             .slope
             .map(render_slope_phase)
-            .unwrap_or_else(|| unit_render_slope_state(state, entity, display_binary_frame, band));
+            .unwrap_or_else(|| {
+                unit_render_slope_state(
+                    state.terrain_template(),
+                    cells.as_ref(),
+                    entity,
+                    display_binary_frame,
+                    band,
+                    render_pose.angles,
+                )
+            });
+        let shadow_slope = unit_shadow_slope(cells.as_ref(), entity, slope_state);
         let interp_z = pos.z();
         let draw_state = draw_decision.state;
         let extra_light = state.rules().map_or(0, |rules| {
-            crate::app::presentation::lighting::body_extra_light(
-                entity,
-                rules,
-                sim,
-                light_cells.as_ref(),
-            )
+            crate::app::presentation::lighting::body_extra_light(entity, rules, sim, cells.as_ref())
         });
         let tint = vxl_body_tint(
             state.match_state.match_presentation.lighting.grid(),
@@ -414,12 +537,15 @@ pub(crate) fn build_unit_instances(
             tint,
             palette_light,
             sim,
+            state.rules(),
+            crate::app::presentation::lighting::TechnoDraw::Voxel,
         );
         let (body_tint, body_light) = crate::app::presentation::lighting::unit_voxel_effect_light(
             entity,
             body_tint,
             body_light,
             state.rules(),
+            sim,
             sim.session().binary_frame(),
         );
         let center_x: f32 = sx;
@@ -502,6 +628,8 @@ pub(crate) fn build_unit_instances(
             };
             emit_pose_sprite(
                 state,
+                sim,
+                cells.as_ref(),
                 &mut pieces,
                 entity,
                 &key,
@@ -544,6 +672,7 @@ pub(crate) fn build_unit_instances(
                 turret_frame,
                 dock_depth_y_offset,
                 slope_state,
+                shadow_slope,
                 band,
                 ground_pose,
                 &mut pieces,
@@ -565,7 +694,8 @@ pub(crate) fn build_unit_instances(
                 barrel_pitch: 0,
             };
             if let Some((entry, texture_source)) = unit_entry_for_pose(state, atlas, &key, None) {
-                let depth_y: f32 = sy + entry.offset_y + entry.pixel_size[1] + dock_depth_y_offset;
+                let depth_y: f32 =
+                    center_y + entry.offset_y + entry.pixel_size[1] + dock_depth_y_offset;
                 let depth: f32 = body_sort_depth(state, entity, depth_y, interp_z);
                 let voxel_adjust =
                     super::foot_depth::unit_z_adjust(state, entity, true, None) as f32;
@@ -594,22 +724,38 @@ pub(crate) fn build_unit_instances(
                         center_y,
                         depth,
                         draw_state,
-                        slope_state,
+                        shadow_slope,
                         band,
                         &mut pieces,
                     );
                 }
-                let bounds = composite_draw_bounds([(entry, [center_x, center_y])]);
+                let body_center = aircraft_body_anchor(
+                    sim,
+                    entity,
+                    state.rules(),
+                    cells.as_ref(),
+                    [center_x, center_y],
+                );
+                let body_depth = body_sort_depth(
+                    state,
+                    entity,
+                    body_center[1] + entry.offset_y + entry.pixel_size[1] + dock_depth_y_offset,
+                    interp_z,
+                );
+                let bounds = composite_draw_bounds([(entry, body_center)]);
                 let (composite_rect, split) =
                     bounds.depth_rect(super::foot_depth::unit_bridge_split(state, entity, true));
                 let body_draw_state =
                     unit_body_draw_state(state, entity, draw_state, split, bounds);
                 let sprite = SpriteInstance {
-                    position: [center_x + entry.offset_x, center_y + entry.offset_y],
+                    position: [
+                        body_center[0] + entry.offset_x,
+                        body_center[1] + entry.offset_y,
+                    ],
                     size: entry.pixel_size,
                     uv_origin: entry.uv_origin,
                     uv_size: entry.uv_size,
-                    depth,
+                    depth: body_depth,
                     tint: body_tint,
                     palette_light: body_light,
                     alpha,
@@ -633,7 +779,7 @@ pub(crate) fn build_unit_instances(
                         center_y,
                         depth,
                         draw_state,
-                        slope_state,
+                        shadow_slope,
                         band,
                         &mut pieces,
                     );
@@ -656,11 +802,11 @@ pub(crate) fn build_unit_instances(
 
         // OREGATH is an SHP sprite from sprite_atlas, but remains an owned piece
         // of its harvester's Ground slot so atlas identity cannot re-sort it.
-        if let Some(frame) = harvest_overlay_frame(state.rules(), sim, entity, display_binary_frame)
+        if let Some(overlay) = harvest_overlay(state.rules(), sim, entity, display_binary_frame)
             && let Some((page, instance)) = emit_harvest_overlay(
                 state,
                 entity,
-                frame,
+                &overlay,
                 {
                     let arm = harvest_arm_screen_position(entity, sim.session().binary_frame());
                     (
@@ -897,7 +1043,45 @@ fn body_pose(
         .as_ref()
         .and_then(|l| l.rocket_runtime())
         .map_or(0., |r| r.draw_pitch());
-    body_pose_with_angles(entity, band, tilt_crash_jumpjet, angles, pitch)
+    body_pose_with_angles(entity, band, tilt_crash_jumpjet, angles, pitch, None, None)
+}
+
+/// Normal `FlyLocomotionClass::Draw_Matrix @ 0x004CF610`: its non-crash arm
+/// exits unless native `current speed > PitchSpeed`, then applies the existing
+/// SecondaryFacing yaw, optional type PitchAngle, and RollAngle selected by
+/// the FacingClass timer/direction helpers. Compare the two retained binary64
+/// values directly, including the strict boundary at PitchSpeed.
+fn normal_fly_pose(
+    entity: &crate::sim::game_entity::GameEntity,
+    band: EntityDrawBand,
+    object: &crate::rules::object_type::ObjectType,
+    bank_direction: Option<crate::sim::movement::facing_class::RotationDirection>,
+) -> Option<crate::render::unit_atlas::PoseTilt> {
+    use crate::render::unit_atlas::PoseTilt;
+    use crate::rules::locomotor_type::LocomotorKind;
+    if band == EntityDrawBand::Ground || entity.crash.is_crashing() {
+        return None;
+    }
+    let locomotor = entity.locomotor.as_ref()?;
+    if locomotor.active_kind() != LocomotorKind::Fly {
+        return None;
+    }
+    let speed = locomotor.current_fly_speed()?;
+    let speed = f64::from_bits(speed.bits());
+    if !(speed > object.fly_pitch_speed()) {
+        return None;
+    }
+    let pitch = object.fly_pitch_angle_radians();
+    let roll = match bank_direction {
+        Some(crate::sim::movement::facing_class::RotationDirection::Positive) => {
+            object.fly_roll_angle_f32()
+        }
+        Some(crate::sim::movement::facing_class::RotationDirection::Negative) => {
+            -object.fly_roll_angle_f32()
+        }
+        None => 0.0,
+    };
+    (pitch != 0.0 || roll != 0.0).then_some(PoseTilt::FlyNormal { pitch, roll })
 }
 
 fn body_pose_with_angles(
@@ -906,9 +1090,18 @@ fn body_pose_with_angles(
     tilt_crash_jumpjet: bool,
     angles: [f32; 2],
     pitch: f32,
+    object_type: Option<&crate::rules::object_type::ObjectType>,
+    bank_direction: Option<crate::sim::movement::facing_class::RotationDirection>,
 ) -> Option<crate::render::unit_atlas::PoseTilt> {
     use crate::render::unit_atlas::PoseTilt;
     use crate::rules::locomotor_type::LocomotorKind;
+    // Normal Fly Draw_Matrix has its own airborne/speed gate and does not
+    // depend on RockingState (native `Draw_Matrix @ 0x004CF610`).
+    if let Some(object_type) = object_type
+        && let Some(tilt) = normal_fly_pose(entity, band, object_type, bank_direction)
+    {
+        return Some(tilt);
+    }
     let locomotor = entity.locomotor.as_ref()?;
     if locomotor.rocket_runtime().is_some() {
         return (pitch != 0.0).then_some(PoseTilt::Rocket(pitch));
@@ -928,7 +1121,14 @@ fn body_pose_with_angles(
 }
 
 /// Drive4AFFB0..4AFFE8 / Ship69F6C0..69F6F8 key dynamic draws for an unsettled slope or either
-/// qualifying angle. Model loading stays with UnitModel; no ART boolean is
+/// qualifying angle. Hover's rocking arm (`0x00513F53..0x00513F7F`, keyed -1
+/// at `0x005140A2`) is that dynamic matrix without a slope: it multiplies the
+/// lift by `LocomotionClass::Draw_Matrix @ 0x0055A730`'s facing matrix and
+/// then by the shifted, rolled and pitched frame (`0x00514262`,
+/// `0x00514270`). The shared owner's extra identity-slope product is exact,
+/// so a rocking Hover draws through it at the slope 0
+/// [`unit_render_slope_state`] gives it, gun parts included.
+/// Model loading stays with UnitModel; no ART boolean is
 /// used as evidence that a VXL loaded. Read-only: no RNG/timer/detach writes.
 #[cfg(test)]
 fn ground_pose(
@@ -953,10 +1153,10 @@ fn ground_pose_with_angles(
     binary_frame: u32,
     angles: [f32; 2],
 ) -> Option<crate::render::vxl_raster::GroundPose> {
+    use crate::rules::locomotor_type::LocomotorKind;
     if !matches!(
         entity.locomotor.as_ref()?.active_kind(),
-        crate::rules::locomotor_type::LocomotorKind::Drive
-            | crate::rules::locomotor_type::LocomotorKind::Ship
+        LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Hover
     ) {
         return None;
     }
@@ -977,6 +1177,8 @@ fn ground_pose_with_angles(
 /// callers emit their shadow separately in native order.
 fn emit_pose_sprite(
     state: &AppState,
+    sim: &crate::sim::world::Simulation,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
     pieces: &mut Vec<ObjectPieceInstance>,
     entity: &crate::sim::game_entity::GameEntity,
     key: &UnitSpriteKey,
@@ -999,6 +1201,8 @@ fn emit_pose_sprite(
     else {
         return;
     };
+    let [center_x, center_y] =
+        aircraft_body_anchor(sim, entity, state.rules(), cells, [center_x, center_y]);
     let depth_y = center_y + entry.offset_y + entry.pixel_size[1];
     let depth = body_sort_depth(state, entity, depth_y, z);
     let voxel_adjust = super::foot_depth::unit_z_adjust(state, entity, true, None) as f32;
@@ -1051,7 +1255,8 @@ fn turret_screen_offset(
 /// (`0x004AFFB0..0x004AFFE8`, `[0x007E44E8]`): the binary32 gate
 /// [`voxel_tilt_applies`](crate::map::voxel_pose::voxel_tilt_applies) owns,
 /// which [`ground_pose`] reads too. Otherwise it keys -1 (`0x004B0187`), and
-/// the turret and barrel draw uncached (`0x0073B74C`, `0x007067EF`).
+/// the turret and barrel draw uncached (`0x0073B74C`, `0x007067EF`). Hover's
+/// keys by the angles alone (`0x00513F53..0x00513F7F`, -1 at `0x005140A2`).
 fn turret_images_cached(
     entity: &crate::sim::game_entity::GameEntity,
     slope_state: UnitRenderSlopeState,
@@ -1273,6 +1478,7 @@ fn shadow_lookup_key(mut key: UnitSpriteKey, native_shadow: bool) -> UnitSpriteK
 /// Cloak states suppress this shadow; aircraft and building VXL paths remain
 /// separate. The voxel pipeline reads depth and uses FX_SHADOW alpha darkening;
 /// packed RGB565 half and full native cache lifecycle remain outside this fix.
+/// `shadow_slope` is [`unit_shadow_slope`]'s.
 fn emit_unit_shadow_sprite(
     native_shadow: bool,
     no_shadow: bool,
@@ -1285,7 +1491,7 @@ fn emit_unit_shadow_sprite(
     center_y: f32,
     depth: f32,
     draw_state: DrawState,
-    slope_state: UnitRenderSlopeState,
+    shadow_slope: u8,
     band: EntityDrawBand,
     pieces: &mut Vec<ObjectPieceInstance>,
 ) {
@@ -1299,7 +1505,7 @@ fn emit_unit_shadow_sprite(
         facing: canonical_unit_facing(body_facing),
         layer: VxlLayer::Shadow,
         frame: 0,
-        slope_type: stable_slope_for_key(slope_state),
+        slope_type: shadow_slope,
         barrel_pitch: 0,
     };
     let lookup_key = shadow_lookup_key(key.clone(), native_shadow);
@@ -1758,6 +1964,7 @@ fn emit_turret_unit_sprites(
     turret_frame: u32,
     dock_depth_y_offset: f32,
     slope_state: UnitRenderSlopeState,
+    shadow_slope: u8,
     band: EntityDrawBand,
     mut ground_pose: Option<crate::render::vxl_raster::GroundPose>,
     pieces: &mut Vec<ObjectPieceInstance>,
@@ -1904,7 +2111,7 @@ fn emit_turret_unit_sprites(
             center_y,
             entity_depth,
             draw_state,
-            slope_state,
+            shadow_slope,
             band,
             pieces,
         );
@@ -1975,11 +2182,26 @@ fn emit_turret_unit_sprites(
             center_y,
             entity_depth,
             draw_state,
-            slope_state,
+            shadow_slope,
             band,
             pieces,
         );
     }
+}
+
+/// Frames per facing in `OREGATH.SHP`, the literal `15` of
+/// `0x0073D1E2..0x0073D273`.
+const STOCK_GATHER_FRAMES_PER_DIR: i32 = 15;
+
+/// `UnitClass::DrawIt @ 0x0073CEC0`'s gather overlay: which SHP it draws and
+/// which frame of that SHP. Phobos' `UnitClass_DrawIt_OreGath @ 0x73D223` hook
+/// selects both from the resource the harvester is standing on.
+struct HarvestOverlay<'a> {
+    /// The stock OREGATH identity or the selected AnimType identity. The
+    /// animation source owner, rather than raw Image text, resolves its Shape.
+    type_id: &'a str,
+    palette_context: ShpPaletteContext,
+    frame: u16,
 }
 
 /// `UnitClass::DrawIt @ 0x0073CEC0`'s OREGATH.SHP frame, when it draws one: a
@@ -1989,16 +2211,15 @@ fn emit_turret_unit_sprites(
 /// no Temporal weapon is warping (`+0x278`), warping out (vt+0x1D4) or warping
 /// in (vt+0x1D8) (`0x0073D0DB..0x0073D221`). So a miner hopping to its next
 /// ore cell shows none.
-fn harvest_overlay_frame(
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+fn harvest_overlay<'a>(
+    rules: Option<&'a crate::rules::ruleset::RuleSet>,
     sim: &crate::sim::world::Simulation,
     entity: &crate::sim::game_entity::GameEntity,
     display_binary_frame: u32,
-) -> Option<u16> {
-    let harvester = rules
-        .and_then(|rules| sim.interner().object_type(entity.type_ref(), rules))
-        .is_some_and(|object| object.harvester);
-    if !harvester
+) -> Option<HarvestOverlay<'a>> {
+    let rules = rules?;
+    let object = sim.interner().object_type(entity.type_ref(), rules)?;
+    if !object.harvester
         || !entity
             .miner
             .as_ref()
@@ -2008,32 +2229,90 @@ fn harvest_overlay_frame(
         || entity.is_warping_in()
         || crate::sim::movement::motion_query::is_moving_now(
             entity,
-            rules.map(|rules| {
-                crate::sim::movement::SpeedRules::new(rules, sim.interner(), sim.houses())
-            }),
+            crate::sim::movement::SpeedRules::new(rules, sim.interner(), sim.houses()),
             display_binary_frame,
         )
     {
         return None;
     }
     let frame = sim.session().binary_frame();
-    oregath_frame(
-        entity.body_frame_counter.get(),
-        frame,
-        entity.body_facing_current(frame),
-    )
+    let facing = entity.body_facing_current(frame);
+    let counter = entity.body_frame_counter.get();
+    #[cfg(feature = "phobos")]
+    if let Some((anim, frames_per_dir)) = gather_animation(rules, object, sim, entity) {
+        let (type_id, palette_context) = anim
+            .map_or((HARVEST_OVERLAY_IMAGE, ShpPaletteContext::Legacy), |anim| {
+                (anim, ShpPaletteContext::Harvest)
+            });
+        return Some(HarvestOverlay {
+            type_id,
+            palette_context,
+            frame: oregath_frame(counter, frame, facing, frames_per_dir)?,
+        });
+    }
+    Some(HarvestOverlay {
+        type_id: HARVEST_OVERLAY_IMAGE,
+        palette_context: ShpPaletteContext::Legacy,
+        frame: oregath_frame(counter, frame, facing, STOCK_GATHER_FRAMES_PER_DIR)?,
+    })
 }
 
-/// OREGATH.SHP's frame (`0x0073D1E2..0x0073D273`): `(Foot+0x538 + Frame) % 15`,
-/// a signed remainder, in the row `7 - ((((Current >> 12) + 1) >> 1) & 7)` of
-/// the body facing (`+0x388`), 15 frames to a row. A negative index draws
-/// nothing.
-fn oregath_frame(body_frame_counter: u32, frame: u32, body_facing: u16) -> Option<u16> {
-    let within = (body_frame_counter as i32).wrapping_add(frame as i32) % 15;
+/// Phobos' `UnitClass_DrawIt_OreGath @ 0x73D223` selection: the cell's
+/// `GetContainedTiberiumIndex @ 0x00485010` indexes `OreGathering.Tiberiums=`,
+/// and the slot it answers picks the animation and its frames per facing. An
+/// empty `Tiberiums=` list means slot 0 for every resource; an empty `Anims=`
+/// list keeps OREGATH.SHP and only takes the custom frame count. `None` means
+/// the cell holds no resource, which leaves the stock draw.
+#[cfg(feature = "phobos")]
+fn gather_animation<'a>(
+    rules: &'a crate::rules::ruleset::RuleSet,
+    object: &'a crate::rules::object_type::ObjectType,
+    sim: &crate::sim::world::Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+) -> Option<(Option<&'a str>, i32)> {
+    let gathering = object.ore_gathering();
+    let resource = crate::sim::tiberium::tiberium_cell_view(
+        sim.overlay_grid().as_ref()?,
+        rules.overlay_registry(),
+        &rules.tiberium_types,
+        (entity.position.rx(), entity.position.ry()),
+    )?;
+    let slot = if gathering.tiberiums.is_empty() {
+        0
+    } else {
+        gathering
+            .tiberiums
+            .iter()
+            .position(|index| *index == i32::from(resource.tiberium_type.0))?
+    };
+    let anim = gathering.anims.get(slot).map(String::as_str);
+    // A slot past the shorter list, or a non-positive frame count, would read
+    // out of the vector or divide-fault the native `%`; both keep the stock
+    // 15-frame row here.
+    let frames = gathering
+        .frames_per_dir
+        .get(slot)
+        .filter(|frames| **frames > 0)
+        .copied()
+        .unwrap_or(STOCK_GATHER_FRAMES_PER_DIR);
+    Some((anim, frames))
+}
+
+/// The gather overlay's frame (`0x0073D1E2..0x0073D273`): `(Foot+0x538 + Frame)
+/// % frames`, a signed remainder, in the row
+/// `7 - ((((Current >> 12) + 1) >> 1) & 7)` of the body facing (`+0x388`),
+/// `frames` frames to a row. A negative index draws nothing.
+fn oregath_frame(
+    body_frame_counter: u32,
+    frame: u32,
+    body_facing: u16,
+    frames_per_dir: i32,
+) -> Option<u16> {
+    let within = (body_frame_counter as i32).wrapping_add(frame as i32) % frames_per_dir;
     let row = 7 - i32::from(crate::util::direction_tables::dir_from_facing16(
         body_facing,
     ));
-    u16::try_from(row * 15 + within).ok()
+    u16::try_from(row * frames_per_dir + within).ok()
 }
 
 /// `UnitClass::DrawIt`'s OREGATH point (`0x0073D122..0x0073D1D6`): the render
@@ -2052,14 +2331,13 @@ fn harvest_arm_screen_position(
     crate::render::locomotor_visual::facing_step_screen_position(entity, eighth, 30)
 }
 
-/// Emit the oregath.shp harvest overlay sprite at `frame`
-/// ([`harvest_overlay_frame`]) on the arm point `arm`
-/// ([`harvest_arm_screen_position`]), from the sprite atlas (keyed as
-/// "OREGATH").
+/// Emit the harvest overlay sprite [`harvest_overlay`] selected (OREGATH.SHP,
+/// or a Phobos `OreGathering.Anims=` type's loaded Shape) on the arm point `arm`
+/// ([`harvest_arm_screen_position`]), using the selected type's atlas identity.
 fn emit_harvest_overlay(
     state: &AppState,
     entity: &crate::sim::game_entity::GameEntity,
-    frame: u16,
+    overlay: &HarvestOverlay<'_>,
     arm: (f32, f32),
     z: u8,
     tint: [f32; 3],
@@ -2068,10 +2346,10 @@ fn emit_harvest_overlay(
 ) -> Option<(usize, SpriteInstance)> {
     let sprite_atlas = state.match_state.match_presentation.sprite_atlas.as_ref()?;
     let key = ShpSpriteKey {
-        palette_context: crate::render::sprite_atlas::ShpPaletteContext::Legacy,
-        type_id: "OREGATH".to_string(),
+        palette_context: overlay.palette_context,
+        type_id: overlay.type_id.to_string(),
         facing: 0,
-        frame,
+        frame: overlay.frame,
         house_color: HouseColorIndex::default(),
     };
     let entry = sprite_atlas.get(&key)?;
@@ -2138,17 +2416,28 @@ mod tests {
     /// row is `(Foot+0x538 + Frame) % 15`, signed (`0x0073D25C..0x0073D273`).
     #[test]
     fn oregath_frame_rounds_the_facing_row_and_adds_the_global_frame() {
-        assert_eq!(oregath_frame(0, 0, 0x0000), Some(105));
-        assert_eq!(oregath_frame(0, 0, 0x0FFF), Some(105));
-        assert_eq!(oregath_frame(0, 0, 0x1000), Some(90));
-        assert_eq!(oregath_frame(0, 0, 0x2FFF), Some(90));
-        assert_eq!(oregath_frame(0, 0, 0x3000), Some(75));
-        assert_eq!(oregath_frame(0, 0, 0xEFFF), Some(0));
-        assert_eq!(oregath_frame(0, 0, 0xF000), Some(105));
+        assert_eq!(oregath_frame(0, 0, 0x0000, 15), Some(105));
+        assert_eq!(oregath_frame(0, 0, 0x0FFF, 15), Some(105));
+        assert_eq!(oregath_frame(0, 0, 0x1000, 15), Some(90));
+        assert_eq!(oregath_frame(0, 0, 0x2FFF, 15), Some(90));
+        assert_eq!(oregath_frame(0, 0, 0x3000, 15), Some(75));
+        assert_eq!(oregath_frame(0, 0, 0xEFFF, 15), Some(0));
+        assert_eq!(oregath_frame(0, 0, 0xF000, 15), Some(105));
         // (7 + 20) % 15 in row 6.
-        assert_eq!(oregath_frame(7, 20, 0x2000), Some(102));
+        assert_eq!(oregath_frame(7, 20, 0x2000, 15), Some(102));
         // A negative sum leaves a negative remainder, which row 0 cannot hold.
-        assert_eq!(oregath_frame(u32::MAX - 20, 0, 0xE000), None);
+        assert_eq!(oregath_frame(u32::MAX - 20, 0, 0xE000, 15), None);
+    }
+
+    /// Phobos' `UnitClass_DrawIt_OreGath @ 0x73D223` keeps the same row and
+    /// signed remainder with `OreGathering.FramesPerDir=` in place of the
+    /// literal 15.
+    #[test]
+    fn oregath_frame_uses_the_custom_frames_per_facing_row() {
+        assert_eq!(oregath_frame(0, 0, 0x0000, 10), Some(70));
+        assert_eq!(oregath_frame(3, 24, 0x0000, 10), Some(77));
+        // The same facing at the stock count lands in a different row.
+        assert_eq!(oregath_frame(0, 0, 0x0000, 15), Some(105));
     }
 
     /// All51 active RGB565 rows execute original Unit73BF7B..73C166.
@@ -2206,13 +2495,20 @@ mod tests {
                     .with_colour_word(int(&row["word"]) as u16);
             sim.session_mut_for_test()
                 .set_binary_frame_for_test(int(&row["frame"]) as u32);
-            let (lit_tint, lit) =
-                crate::app::presentation::lighting::techno_effect_light(&unit, tint, light, &sim);
+            let (lit_tint, lit) = crate::app::presentation::lighting::techno_effect_light(
+                &unit,
+                tint,
+                light,
+                &sim,
+                None,
+                crate::app::presentation::lighting::TechnoDraw::Voxel,
+            );
             let (lit_tint, lit) = crate::app::presentation::lighting::unit_voxel_effect_light(
                 &unit,
                 lit_tint,
                 lit,
                 Some(&rules_by_iron_index[&int(&row["iron_color"])]),
+                &sim,
                 sim.session().binary_frame(),
             );
             let out = int(&row["out_intensity"]);

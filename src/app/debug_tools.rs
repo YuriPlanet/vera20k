@@ -178,7 +178,7 @@ fn set_flags(state: &mut crate::app::AppState, flags: CheatFlags) {
     }
     runtime
         .simulation
-        .apply_debug_tools(Some(&runtime.resources.rules));
+        .apply_debug_tools(&runtime.resources.rules);
     state.match_state.sandbox_full_visibility = runtime.simulation.debug_reveal_map();
 }
 
@@ -208,7 +208,7 @@ fn apply(state: &mut crate::app::AppState, command: DebugCommand) {
                 match runtime.simulation.request_trainer_action(action) {
                     Ok(()) => runtime
                         .simulation
-                        .apply_debug_tools(Some(&runtime.resources.rules)),
+                        .apply_debug_tools(&runtime.resources.rules),
                     Err(error) => log::warn!("Debug trainer action rejected: {error}"),
                 }
             }

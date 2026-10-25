@@ -210,7 +210,7 @@ def launch_provenance(*, scope, assumptions, substitutions=(), entry_points=None
     return provenance(
         scope=scope,
         assumptions=[
-            "Each case starts a fresh emulator with the pinned retail executable. Synthetic source, target, type, weapon, Bullet, Rules, virtual table and stack state supply the FireAt tail at 0x006FE8EE; constructors, full FireAt admission, aim selection and retail INI loading are not executed.",
+            "Each case starts a fresh emulator with the configured retail executable. Synthetic source, target, type, weapon, Bullet, Rules, virtual table and stack state supply the FireAt tail at 0x006FE8EE; constructors, full FireAt admission, aim selection and retail INI loading are not executed.",
             "Source X/Y are 1280/1280; Rules gravity is 6. The producer supplies delta, speed and selected type flags. Unwritten mapped fixture memory and native BSS remain zero; this is not a Windows process initialization claim.",
             "Ambient x87 control word is 0x0E7F: 53-bit precision, truncation, masked exceptions. Native velocity bytes are observed as binary64 including signed zero; this corpus does not establish physical x87 hardware equivalence.",
             "Execution must reach 0x006FF01A or the failed-launch boundary 0x006FF93C within 200000 instructions and the checked runner's time limit. At the normal boundary the FireAt stack vector must equal persistent Bullet velocity bytes. Failed-launch vector/pitch bytes are observations, not valid launched velocities.",

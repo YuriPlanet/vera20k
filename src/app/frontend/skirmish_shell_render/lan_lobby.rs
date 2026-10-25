@@ -2,16 +2,13 @@
 //! NewEdit614B30, list619230 and scrollbar61C690. Discovery rows are UI views.
 
 use super::chrome::*;
-use super::controls::{
-    ControlPaint, NewEditPaint, list_controls, paint_control, push_new_edit_instances,
-};
+use super::controls::{ControlPaint, list_controls, paint_control, push_new_edit};
 use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
 };
 use super::text::{button_text_rect, localized_label, rect_to_text_rect};
 use super::{
-    SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH,
-    SHELL_EDIT_CARET_DEPTH, SHELL_EDIT_FRAME_DEPTH, SHELL_LABEL_TEXT_RGB,
+    SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB,
 };
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
@@ -130,35 +127,26 @@ pub(crate) fn render_lan_lobby(
                 SHELL_LABEL_TEXT_RGB,
             ));
         }
-        for (rect, edit) in [(layout.name, &lobby.name), (layout.chat, &lobby.chat.edit)] {
-            let field = scale.derive_rect(rect, |rect| {
-                RectPx::new(rect.x + 2, rect.y, rect.w - 1, rect.h + 1)
-            });
-            push_new_edit_instances(
+        let chat_composition = state
+            .platform
+            .ime
+            .composition(crate::app::input::ime::ImeTarget::LanLobbyChat);
+        for (rect, edit, composition) in [
+            (layout.name, &lobby.name, None),
+            (layout.chat, &lobby.chat.edit, chat_composition),
+        ] {
+            push_new_edit(
                 &mut controls,
+                &mut texts,
                 atlas,
                 font,
                 edit,
-                NewEditPaint {
-                    frame: scale.derive_rect(rect, |rect| {
-                        RectPx::new(rect.x - 2, rect.y - 2, rect.w + 5, rect.h + 5)
-                    }),
-                    text: field,
-                    background: None,
-                    frame_depth: SHELL_EDIT_FRAME_DEPTH,
-                    caret_depth: SHELL_EDIT_CARET_DEPTH,
-                    caret_visible: lobby.enabled && lobby.caret_visible(now),
-                },
+                composition,
+                rect,
+                lobby.enabled && lobby.caret_visible(now),
+                SHELL_CONTROL_TEXT_DEPTH,
                 scale,
             );
-            texts.push(text(
-                &String::from_utf16_lossy(
-                    &edit.units[edit.first_visible_unit.min(edit.units.len())..],
-                ),
-                field,
-                ShellAlign::V_CENTER,
-                SHELL_LABEL_TEXT_RGB,
-            ));
         }
         paint_control(
             &mut controls,
@@ -194,7 +182,7 @@ pub(crate) fn render_lan_lobby(
             atlas,
             players,
             &lobby.player_list,
-            false,
+            true,
             scale,
         );
         list_controls(&mut controls, atlas, chat, &lobby.chat.list, false, scale);

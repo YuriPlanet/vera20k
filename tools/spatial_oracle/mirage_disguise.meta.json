@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -52,5 +51,5 @@
     "retirement_drain": "0x00725C70"
   },
   "command": "python -m tools.spatial_oracle.mirage_disguise --check",
-  "payload_sha256": "f0b19446ef23b220061cff5dec4e2bcb5f0ce2d515ea529a73ecb6ef8949f47a"
+  "payload_sha256": "eec6b57ba26d2b4577a19ce9571d43840a3172a91e276d5f25feaaa9ec4a76bd"
 }

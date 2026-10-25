@@ -32,7 +32,7 @@ fn repeated_redraws_cannot_multiply_offline_scroll_steps() {
             // Poll far faster than every supported paced frame. The production
             // pacer decides admission; the assertion concerns extra input work.
             for now_ms in 0..=192 {
-                let admitted = pacer.should_admit(now_ms, game_speed, false);
+                let admitted = pacer.should_admit(now_ms, game_speed, None, false);
                 let decision = decide_runtime_pass(ordinary_pass(mode, admitted));
                 if decision.run_sim {
                     frames += 1;

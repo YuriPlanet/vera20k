@@ -57,6 +57,10 @@ fn debris_contact_matches_original_tree_damage_gates_radius_and_retirement() {
             false,
         );
         let id = sim.terrain_objects.cell_index()[&(10, 20)];
+        // The native receiver component supplies Logic membership at entry
+        // (terrain_debris_receiver.py sets Object+98 and the live vector).
+        // Ordinary static-tree Unlimbo does not establish that prior.
+        assert!(sim.register_live_object(id));
         sim.terrain_objects
             .objects_mut_for_test()
             .get_mut(&id)

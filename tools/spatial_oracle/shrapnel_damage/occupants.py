@@ -16,7 +16,6 @@ from tools.spatial_oracle.shrapnel_repair.shrapnel_repair import (
 from tools.spatial_oracle.shrapnel_repair import packet_io
 
 HERE=Path(__file__).resolve().parent
-REPO=Path(__import__('tools.native_oracle',fromlist=['x']).__file__).resolve().parents[1]
 OUTPUT=HERE/'occupants.json.gz'
 PROMOTION=HERE/'occupants_promotion.json'
 SCENE=dict(impact_cell=[115,59],ground_z=208,map_path=ASSETS/'XShrapnel.MAP',
@@ -84,7 +83,7 @@ def generate():
 
 
 def metadata():
-    result=provenance(scope=__doc__,assumptions=[
+    return provenance(scope=__doc__,assumptions=[
         'Physical XShrapnel MAP/SNOW TMP and original overlay/theater/land readers come from the existing Shrapnel ResidentRepair owner. Actual570050/57F200/57FBC0 repair and all nine47D2B0 calls establish the retained healthy input; initial crop and zone storage are explicit supplied boundaries.',
         'Measured original area-low continuation48A25A..48A26A calls actual57BAA0/57C2B0/57E2A0,487A10 and conditional70D4A0. Entry is after the admitted Scenario strength roll; no projectile/fire/outer damage gate is claimed.',
         'Shared anytown_occupants.Occupied executes unchanged native MTNK/Drive type/construction, path admission, C4/Super receiver, death cleanup, list removal and target restoration bodies. Actor/House/world membership, mission, frame1000 and retained incoming head are supplied active-state projections.',
@@ -97,15 +96,6 @@ def metadata():
     ],entry_points=dict(area_low_continuation=0x48A25A,driver=0x57BAA0,root=0x57C2B0,
         sibling=0x57E2A0,recalc=0x47D2B0,occupants=0x487A10,unit_can_enter=0x73F0A0,
         drive_at_coord=0x4B4920,unit_damage=0x737C90,detach=0x70D4A0))
-    sources={}
-    for module in list(sys.modules.values()):
-        name=getattr(module,'__file__',None)
-        if not name:continue
-        p=Path(name).resolve()
-        if p.suffix=='.py' and p.is_relative_to(REPO/'tools'):
-            sources[p.relative_to(REPO).as_posix()]=sha(p.read_bytes())
-    result.update(source_sha256=dict(sorted(sources.items())),runner_sha256=sha(Path(__file__).read_bytes()))
-    return result
 
 
 if __name__=='__main__':

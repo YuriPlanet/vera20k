@@ -2,7 +2,6 @@
  "format": 1,
  "pass": "2026-10-04 VERA-cited names",
  "tag": "[2026-10-04 VERA-cited names]",
- "program_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
  "planned_against": "Saved shared gamemd.exe on 2026-10-05, with current entries and original PE body/table bytes admitted. The earlier working archive remains historical context; this pass creates no missing functions.",
  "atomic": true,
  "description": "Conservative names and static evidence for Rust-cited addresses; no signatures, typed this, type layouts, function boundaries, reachability or arithmetic/RNG parity are certified by this name pass. Atomic conflicts require individual review.",
@@ -160,7 +159,7 @@
   {
    "op": "append_plate",
    "address": "0x004059D0",
-   "text": "Native switch jump table: 5 entries of 4 byte(s), used by the indirect JMP at 0x004055E4. Entries in storage order: 0x00405639, 0x004059C9, 0x004055EB, 0x004057DC, 0x00405974. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 5 entries of 4 byte(s), used by the indirect JMP at 0x004055E4. Entries in storage order: 0x00405639, 0x004059C9, 0x004055EB, 0x004057DC, 0x00405974. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "rename_function",
@@ -360,37 +359,37 @@
   {
    "op": "append_plate",
    "address": "0x00418D98",
-   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x00418345. Entries in storage order: 0x00, 0x04, 0x01, 0x02, 0x04, 0x04, 0x04, 0x04, 0x04, 0x03. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x00418345. Entries in storage order: 0x00, 0x04, 0x01, 0x02, 0x04, 0x04, 0x04, 0x04, 0x04, 0x03. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "append_plate",
    "address": "0x00418DB8",
-   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x0041861C. Entries in storage order: 0x00, 0x04, 0x01, 0x02, 0x04, 0x04, 0x04, 0x04, 0x04, 0x03. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x0041861C. Entries in storage order: 0x00, 0x04, 0x01, 0x02, 0x04, 0x04, 0x04, 0x04, 0x04, 0x03. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "append_plate",
    "address": "0x00418DD0",
-   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x004187EB. Entries in storage order: 0x00, 0x02, 0x00, 0x02, 0x02, 0x02, 0x02, 0x02, 0x01, 0x00. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x004187EB. Entries in storage order: 0x00, 0x02, 0x00, 0x02, 0x02, 0x02, 0x02, 0x02, 0x01, 0x00. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "append_plate",
    "address": "0x00418DE8",
-   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x004188FA. Entries in storage order: 0x00, 0x02, 0x00, 0x02, 0x02, 0x02, 0x02, 0x02, 0x01, 0x00. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x004188FA. Entries in storage order: 0x00, 0x02, 0x00, 0x02, 0x02, 0x02, 0x02, 0x02, 0x01, 0x00. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "append_plate",
    "address": "0x00418E00",
-   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x00418A09. Entries in storage order: 0x00, 0x02, 0x00, 0x02, 0x02, 0x02, 0x02, 0x02, 0x01, 0x00. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x00418A09. Entries in storage order: 0x00, 0x02, 0x00, 0x02, 0x02, 0x02, 0x02, 0x02, 0x01, 0x00. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "append_plate",
    "address": "0x00418E14",
-   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x00418B18. Entries in storage order: 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x00418B18. Entries in storage order: 0x00, 0x01, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "append_plate",
    "address": "0x0041957C",
-   "text": "Native switch index table: 26 entries of 1 byte(s), used by the indirect JMP at 0x00419102. Entries in storage order: 0x00, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x01, 0x02, 0x0A, 0x0A, 0x03, 0x04, 0x0A, 0x05, 0x0A, 0x06, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x07, 0x0A, 0x08, 0x0A, 0x09. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch index table: 26 entries of 1 byte(s), used by the indirect JMP at 0x00419102. Entries in storage order: 0x00, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x01, 0x02, 0x0A, 0x0A, 0x03, 0x04, 0x0A, 0x05, 0x0A, 0x06, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x07, 0x0A, 0x08, 0x0A, 0x09. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "rename_function",
@@ -545,17 +544,17 @@
   {
    "op": "append_plate",
    "address": "0x00442C18",
-   "text": "Native switch jump table: 4 entries of 4 byte(s), used by the indirect JMP at 0x00442476. Entries in storage order: 0x004426AC, 0x004426C8, 0x004424A2, 0x0044247D. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 4 entries of 4 byte(s), used by the indirect JMP at 0x00442476. Entries in storage order: 0x004426AC, 0x004426C8, 0x004424A2, 0x0044247D. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "append_plate",
    "address": "0x00446FC0",
-   "text": "Native switch jump table: 10 entries of 4 byte(s), used by the indirect JMP at 0x00446948. Entries in storage order: 0x0044694F, 0x0044695B, 0x00446967, 0x0044698B, 0x0044699A, 0x0044699A, 0x0044699A, 0x00446973, 0x0044699A, 0x0044697F. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 10 entries of 4 byte(s), used by the indirect JMP at 0x00446948. Entries in storage order: 0x0044694F, 0x0044695B, 0x00446967, 0x0044698B, 0x0044699A, 0x0044699A, 0x0044699A, 0x00446973, 0x0044699A, 0x0044697F. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "append_plate",
    "address": "0x0044B728",
-   "text": "Native switch jump table: 11 entries of 4 byte(s), used by the indirect JMP at 0x0044B0D7. Entries in storage order: 0x0044B2BC, 0x0044B0DE, 0x0044B187, 0x0044B1DE, 0x0044B14E, 0x0044B0DE, 0x0044B0DE, 0x0044B14E, 0x0044B0DE, 0x0044B284, 0x0044B24F. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 11 entries of 4 byte(s), used by the indirect JMP at 0x0044B0D7. Entries in storage order: 0x0044B2BC, 0x0044B0DE, 0x0044B187, 0x0044B1DE, 0x0044B14E, 0x0044B0DE, 0x0044B0DE, 0x0044B14E, 0x0044B0DE, 0x0044B284, 0x0044B24F. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "rename_function",
@@ -845,7 +844,7 @@
   {
    "op": "append_plate",
    "address": "0x004B2608",
-   "text": "Native switch jump table: 7 entries of 4 byte(s), used by the indirect JMP at 0x004B1C4D. Entries in storage order: 0x004B1C54, 0x004B1E52, 0x004B1C54, 0x004B1E6D, 0x004B1F48, 0x004B1F48, 0x004B1EC0. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 7 entries of 4 byte(s), used by the indirect JMP at 0x004B1C4D. Entries in storage order: 0x004B1C54, 0x004B1E52, 0x004B1C54, 0x004B1E6D, 0x004B1F48, 0x004B1F48, 0x004B1EC0. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "rename_function",
@@ -895,7 +894,7 @@
   {
    "op": "append_plate",
    "address": "0x004C8114",
-   "text": "Native switch jump table: 46 entries of 4 byte(s), used by the indirect JMP at 0x004C6CD7. Entries in storage order: 0x004C6CF0, 0x004C6D4D, 0x004C6DEE, 0x004C71CA, 0x004C71CA, 0x004C74CB, 0x004C7859, 0x004C7BDF, 0x004C76BC, 0x004C7823, 0x004C70E1, 0x004C7929, 0x004C794B, 0x004C711B, 0x004C7140, 0x004C7163, 0x004C718C, 0x004C78D6, 0x004C7903, 0x004C6FDE, 0x004C6ED2, 0x004C6F12, 0x004C6FB3, 0x004C6E48, 0x004C8109, 0x004C8109, 0x004C79FF, 0x004C8109, 0x004C7A14, 0x004C6DAA, 0x004C7B4D, 0x004C800C, 0x004C80B1, 0x004C80F6, 0x004C7B73, 0x004C7F35, 0x004C8109, 0x004C8109, 0x004C7CF5, 0x004C7BF1, 0x004C7C12, 0x004C6CDE, 0x004C6CDE, 0x004C6CDE, 0x004C6E2E, 0x004C7188. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 46 entries of 4 byte(s), used by the indirect JMP at 0x004C6CD7. Entries in storage order: 0x004C6CF0, 0x004C6D4D, 0x004C6DEE, 0x004C71CA, 0x004C71CA, 0x004C74CB, 0x004C7859, 0x004C7BDF, 0x004C76BC, 0x004C7823, 0x004C70E1, 0x004C7929, 0x004C794B, 0x004C711B, 0x004C7140, 0x004C7163, 0x004C718C, 0x004C78D6, 0x004C7903, 0x004C6FDE, 0x004C6ED2, 0x004C6F12, 0x004C6FB3, 0x004C6E48, 0x004C8109, 0x004C8109, 0x004C79FF, 0x004C8109, 0x004C7A14, 0x004C6DAA, 0x004C7B4D, 0x004C800C, 0x004C80B1, 0x004C80F6, 0x004C7B73, 0x004C7F35, 0x004C8109, 0x004C8109, 0x004C7CF5, 0x004C7BF1, 0x004C7C12, 0x004C6CDE, 0x004C6CDE, 0x004C6CDE, 0x004C6E2E, 0x004C7188. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "rename_function",
@@ -1155,17 +1154,17 @@
   {
    "op": "append_plate",
    "address": "0x00518D58",
-   "text": "Native switch jump table: 10 entries of 4 byte(s), used by the indirect JMP at 0x005185CE. Entries in storage order: 0x005185D5, 0x00518635, 0x00518647, 0x0051869D, 0x005186F7, 0x0051875A, 0x005187C0, 0x00518826, 0x005188AE, 0x00518B3E. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 10 entries of 4 byte(s), used by the indirect JMP at 0x005185CE. Entries in storage order: 0x005185D5, 0x00518635, 0x00518647, 0x0051869D, 0x005186F7, 0x0051875A, 0x005187C0, 0x00518826, 0x005188AE, 0x00518B3E. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "append_plate",
    "address": "0x00520EFC",
-   "text": "Native switch jump table: 8 entries of 4 byte(s), used by the indirect JMP at 0x00520B27. Entries in storage order: 0x00520BC6, 0x00520CB8, 0x00520B2E, 0x00520B89, 0x00520E52, 0x00520BB9, 0x00520B61, 0x00520CE6. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 8 entries of 4 byte(s), used by the indirect JMP at 0x00520B27. Entries in storage order: 0x00520BC6, 0x00520CB8, 0x00520B2E, 0x00520B89, 0x00520E52, 0x00520BB9, 0x00520B61, 0x00520CE6. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "append_plate",
    "address": "0x00520F1C",
-   "text": "Native switch index table: 28 entries of 1 byte(s), used by the indirect JMP at 0x00520B27. Entries in storage order: 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x07, 0x07, 0x07, 0x01, 0x01, 0x07, 0x07, 0x07, 0x07, 0x07, 0x02, 0x07, 0x07, 0x07, 0x03, 0x07, 0x04, 0x05, 0x07, 0x01, 0x07, 0x06. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch index table: 28 entries of 1 byte(s), used by the indirect JMP at 0x00520B27. Entries in storage order: 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x07, 0x07, 0x07, 0x01, 0x01, 0x07, 0x07, 0x07, 0x07, 0x07, 0x02, 0x07, 0x07, 0x07, 0x03, 0x07, 0x04, 0x05, 0x07, 0x01, 0x07, 0x06. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "rename_function",
@@ -1185,12 +1184,12 @@
   {
    "op": "append_plate",
    "address": "0x0052D848",
-   "text": "Native switch jump table: 5 entries of 4 byte(s), used by the indirect JMP at 0x0052D7E5. Entries in storage order: 0x0052D816, 0x0052D7EC, 0x0052D7FA, 0x0052D808, 0x0052D840. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 5 entries of 4 byte(s), used by the indirect JMP at 0x0052D7E5. Entries in storage order: 0x0052D816, 0x0052D7EC, 0x0052D7FA, 0x0052D808, 0x0052D840. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "append_plate",
    "address": "0x0052D85C",
-   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x0052D7E5. Entries in storage order: 0x00, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x01, 0x02, 0x03. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch index table: 10 entries of 1 byte(s), used by the indirect JMP at 0x0052D7E5. Entries in storage order: 0x00, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x01, 0x02, 0x03. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "rename_function",
@@ -1315,7 +1314,7 @@
   {
    "op": "append_plate",
    "address": "0x0054B19C",
-   "text": "Native switch jump table: 7 entries of 4 byte(s), used by the indirect JMP at 0x0054B03C. Entries in storage order: 0x0054B043, 0x0054B04D, 0x0054B057, 0x0054B061, 0x0054B06B, 0x0054B075, 0x0054B07D. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 7 entries of 4 byte(s), used by the indirect JMP at 0x0054B03C. Entries in storage order: 0x0054B043, 0x0054B04D, 0x0054B057, 0x0054B061, 0x0054B06B, 0x0054B075, 0x0054B07D. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "rename_function",
@@ -1500,7 +1499,7 @@
   {
    "op": "append_plate",
    "address": "0x005B34E8",
-   "text": "Native switch jump table: 32 entries of 4 byte(s), used by the indirect JMP at 0x005B30C1. Entries in storage order: 0x005B30C8, 0x005B3172, 0x005B334E, 0x005B34C4, 0x005B3194, 0x005B32E8, 0x005B3480, 0x005B310C, 0x005B330A, 0x005B332C, 0x005B31B6, 0x005B31D8, 0x005B31FA, 0x005B321C, 0x005B323E, 0x005B3370, 0x005B3260, 0x005B34A2, 0x005B312E, 0x005B3150, 0x005B3282, 0x005B3392, 0x005B32C6, 0x005B30EA, 0x005B32A4, 0x005B33B4, 0x005B33D6, 0x005B33F8, 0x005B345E, 0x005B34C4, 0x005B341A, 0x005B343C. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 32 entries of 4 byte(s), used by the indirect JMP at 0x005B30C1. Entries in storage order: 0x005B30C8, 0x005B3172, 0x005B334E, 0x005B34C4, 0x005B3194, 0x005B32E8, 0x005B3480, 0x005B310C, 0x005B330A, 0x005B332C, 0x005B31B6, 0x005B31D8, 0x005B31FA, 0x005B321C, 0x005B323E, 0x005B3370, 0x005B3260, 0x005B34A2, 0x005B312E, 0x005B3150, 0x005B3282, 0x005B3392, 0x005B32C6, 0x005B30EA, 0x005B32A4, 0x005B33B4, 0x005B33D6, 0x005B33F8, 0x005B345E, 0x005B34C4, 0x005B341A, 0x005B343C. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "rename_function",
@@ -1910,7 +1909,7 @@
   {
    "op": "append_plate",
    "address": "0x00645BF8",
-   "text": "Native switch jump table: 11 entries of 4 byte(s), used by the indirect JMP at 0x00645BB8. Entries in storage order: 0x00645BF5, 0x00645BBF, 0x00645BC5, 0x00645BCB, 0x00645BD1, 0x00645BD7, 0x00645BDD, 0x00645BF5, 0x00645BE3, 0x00645BE9, 0x00645BEF. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 11 entries of 4 byte(s), used by the indirect JMP at 0x00645BB8. Entries in storage order: 0x00645BF5, 0x00645BBF, 0x00645BC5, 0x00645BCB, 0x00645BD1, 0x00645BD7, 0x00645BDD, 0x00645BF5, 0x00645BE3, 0x00645BE9, 0x00645BEF. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "rename_function",
@@ -2110,12 +2109,12 @@
   {
    "op": "append_plate",
    "address": "0x006AFD40",
-   "text": "Native switch jump table: 6 entries of 4 byte(s), used by the indirect JMP at 0x006AF734. Entries in storage order: 0x006AF73B, 0x006AF8A4, 0x006AF8E4, 0x006AF9FE, 0x006AFCC3, 0x006AFCFC. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 6 entries of 4 byte(s), used by the indirect JMP at 0x006AF734. Entries in storage order: 0x006AF73B, 0x006AF8A4, 0x006AF8E4, 0x006AF9FE, 0x006AFCC3, 0x006AFCFC. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "append_plate",
    "address": "0x006B0238",
-   "text": "Native switch jump table: 7 entries of 4 byte(s), used by the indirect JMP at 0x006AFD73. Entries in storage order: 0x006AFD7A, 0x006AFDC1, 0x006AFEC0, 0x006AFF43, 0x006AFF8E, 0x006B003C, 0x006B020F. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 7 entries of 4 byte(s), used by the indirect JMP at 0x006AFD73. Entries in storage order: 0x006AFD7A, 0x006AFDC1, 0x006AFEC0, 0x006AFF43, 0x006AFF8E, 0x006B003C, 0x006B020F. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "rename_function",
@@ -2195,7 +2194,7 @@
   {
    "op": "append_plate",
    "address": "0x006CBEA8",
-   "text": "Native switch jump table: 12 entries of 4 byte(s), used by the indirect JMP at 0x006CBDE6. Entries in storage order: 0x006CBDED, 0x006CBDF9, 0x006CBE11, 0x006CBE29, 0x006CBE68, 0x006CBE35, 0x006CBE35, 0x006CBE1D, 0x006CBE41, 0x006CBE4D, 0x006CBE05, 0x006CBE59. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 12 entries of 4 byte(s), used by the indirect JMP at 0x006CBDE6. Entries in storage order: 0x006CBDED, 0x006CBDF9, 0x006CBE11, 0x006CBE29, 0x006CBE68, 0x006CBE35, 0x006CBE35, 0x006CBE1D, 0x006CBE41, 0x006CBE4D, 0x006CBE05, 0x006CBE59. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "rename_function",
@@ -2275,7 +2274,7 @@
   {
    "op": "append_plate",
    "address": "0x006E9F74",
-   "text": "Native switch jump table: 65 entries of 4 byte(s), used by the indirect JMP at 0x006E945B. Entries in storage order: 0x006E9783, 0x006E9605, 0x006E95AB, 0x006E95EC, 0x006E95B3, 0x006E97CE, 0x006E98AE, 0x006E98C9, 0x006E9CC8, 0x006E97B5, 0x006E9832, 0x006E9812, 0x006E982B, 0x006E9879, 0x006E979C, 0x006E9637, 0x006E961E, 0x006E972C, 0x006E96BD, 0x006E984B, 0x006E9683, 0x006E9650, 0x006E9583, 0x006E98E5, 0x006E94BA, 0x006E9901, 0x006E9921, 0x006E993E, 0x006E9958, 0x006E99C8, 0x006E99E1, 0x006E99FD, 0x006E9A74, 0x006E9AAE, 0x006E9ACF, 0x006E9B6B, 0x006E9B86, 0x006E954D, 0x006E9530, 0x006E9BA1, 0x006E9BBE, 0x006E9BDB, 0x006E9C09, 0x006E9C22, 0x006E9462, 0x006E94C9, 0x006E9C64, 0x006E9C7D, 0x006E9CAF, 0x006E9CE1, 0x006E9CF7, 0x006E9D29, 0x006E9D42, 0x006E9D63, 0x006E9D7C, 0x006E9D95, 0x006E9DAE, 0x006E9DC7, 0x006E9C96, 0x006E9DE0, 0x006E9DF9, 0x006E9E3E, 0x006E9E83, 0x006E9EC8, 0x006E9F0D. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 65 entries of 4 byte(s), used by the indirect JMP at 0x006E945B. Entries in storage order: 0x006E9783, 0x006E9605, 0x006E95AB, 0x006E95EC, 0x006E95B3, 0x006E97CE, 0x006E98AE, 0x006E98C9, 0x006E9CC8, 0x006E97B5, 0x006E9832, 0x006E9812, 0x006E982B, 0x006E9879, 0x006E979C, 0x006E9637, 0x006E961E, 0x006E972C, 0x006E96BD, 0x006E984B, 0x006E9683, 0x006E9650, 0x006E9583, 0x006E98E5, 0x006E94BA, 0x006E9901, 0x006E9921, 0x006E993E, 0x006E9958, 0x006E99C8, 0x006E99E1, 0x006E99FD, 0x006E9A74, 0x006E9AAE, 0x006E9ACF, 0x006E9B6B, 0x006E9B86, 0x006E954D, 0x006E9530, 0x006E9BA1, 0x006E9BBE, 0x006E9BDB, 0x006E9C09, 0x006E9C22, 0x006E9462, 0x006E94C9, 0x006E9C64, 0x006E9C7D, 0x006E9CAF, 0x006E9CE1, 0x006E9CF7, 0x006E9D29, 0x006E9D42, 0x006E9D63, 0x006E9D7C, 0x006E9D95, 0x006E9DAE, 0x006E9DC7, 0x006E9C96, 0x006E9DE0, 0x006E9DF9, 0x006E9E3E, 0x006E9E83, 0x006E9EC8, 0x006E9F0D. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "rename_function",
@@ -2325,7 +2324,7 @@
   {
    "op": "append_plate",
    "address": "0x00702D24",
-   "text": "Native switch jump table: 5 entries of 4 byte(s), used by the indirect JMP at 0x00702049. Entries in storage order: 0x007027F7, 0x00702713, 0x00702695, 0x007027F7, 0x00702050. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 5 entries of 4 byte(s), used by the indirect JMP at 0x00702049. Entries in storage order: 0x007027F7, 0x00702713, 0x00702695, 0x007027F7, 0x00702050. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "rename_function",
@@ -2675,12 +2674,12 @@
   {
    "op": "append_plate",
    "address": "0x00737148",
-   "text": "Native switch jump table: 12 entries of 4 byte(s), used by the indirect JMP at 0x00736E77. Entries in storage order: 0x00736EE9, 0x00737063, 0x00736F78, 0x00737063, 0x00737063, 0x00736E7E, 0x00737054, 0x00737063, 0x0073704B, 0x00737023, 0x00737063, 0x0073704B. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 12 entries of 4 byte(s), used by the indirect JMP at 0x00736E77. Entries in storage order: 0x00736EE9, 0x00737063, 0x00736F78, 0x00737063, 0x00737063, 0x00736E7E, 0x00737054, 0x00737063, 0x0073704B, 0x00737023, 0x00737063, 0x0073704B. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "append_plate",
    "address": "0x0073E5C0",
-   "text": "Native switch jump table: 5 entries of 4 byte(s), used by the indirect JMP at 0x0073D707. Entries in storage order: 0x0073D70E, 0x0073D892, 0x0073E289, 0x0073D8B7, 0x0073DCBA. Original PE SHA-256 1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c; see tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
+   "text": "Native switch jump table: 5 entries of 4 byte(s), used by the indirect JMP at 0x0073D707. Entries in storage order: 0x0073D70E, 0x0073D892, 0x0073E289, 0x0073D8B7, 0x0073DCBA. See tools/ghidra_pass/evidence/2026-10-05-cited-names-review.json for the index/bounds instruction window. The entries are data, not function starts; enum names and runtime reachability are not inferred from this table."
   },
   {
    "op": "rename_function",

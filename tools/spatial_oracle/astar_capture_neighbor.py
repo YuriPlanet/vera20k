@@ -8,7 +8,7 @@ from collections import Counter
 import argparse,copy,hashlib,json,struct
 from unicorn import UC_HOOK_CODE,UC_HOOK_MEM_READ
 from unicorn.x86_const import *
-from tools.native_oracle import NATIVE_SHA256,RET_MAGIC,run_checked,provenance,finish_vectors
+from tools.native_oracle import RET_MAGIC,run_checked,provenance,finish_vectors
 from tools.rules_oracle.bridge_anim_inputs import Reader
 from tools.projectile_oracle.bridge_render_inputs import lexical,assets_root
 from tools.spatial_oracle.building_body_rules import INI,SP,dwords
@@ -167,11 +167,10 @@ def synthetic_cases():
 
 def generate(input_path=None):
     rows=json.loads(input_path.read_text())['cases'] if input_path else synthetic_cases()
-    return dict(schema_version=1,native_sha256=NATIVE_SHA256,scope=__doc__,
+    return dict(schema_version=1,scope=__doc__,
                 source=input_path.name if input_path else 'explicit synthetic cases',
                 source_sha256=hashlib.sha256(input_path.read_bytes()).hexdigest() if input_path else None,
-                cases=[execute(row) for row in rows],
-                harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
+                cases=[execute(row) for row in rows])
 
 def metadata():
     return provenance(scope=__doc__,assumptions=['Supplied interior AStar frame after zone/closed-list candidate admission; sparse native map, actor/type and hut storage come from each explicitly labelled input case. No full42C900/429A90 or route reconstruction executes.','Original Pathfinder scalar constructor prefix42A6D0..42A718 supplies cost scale1 and flag1. Search current/goal heights, generation stamp, selected list, raw table pointers and re-based single closed index supplied.','Physical applicable rules layers are processed by original674000 using lexical INI caches; all selected land-speed bytes come from native reading, not Rust scalar conversion.','Original unmodified Infantry/Building vtables, original51BF90+4D9C60, mission, warping and IronCurtain readers, original429830 and CMP7 branch execute.','ScenarioInit false, no team/slave and ordinary Infantry receiver explicitly supplied. Counterfactuals are labelled separately.'],substitutions=['Setup INI reader inherits allocator/free/TLS/file seams; none is reached during measured AStar neighbor corridor.'],entry_points={'astar_neighbor':0x429F37,'can_enter':0x51BF90,'height_gate':0x4D9C60,'edge_cost':0x429830,'cost_class_cmp':0x429FEA,'admitted_before_create_node':0x42A01E,'blocked_goal_tail':0x42A3DE})

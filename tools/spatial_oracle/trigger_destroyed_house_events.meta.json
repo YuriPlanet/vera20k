@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -24,5 +23,5 @@
     "counter_total": "0x0049FB60"
   },
   "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --destroyed-house-events",
-  "payload_sha256": "fbe1050b0c86df836879e5750caf7a0d2ad1dd38236fe7583c47177fe2368768"
+  "payload_sha256": "99947a933c58021df02f30fe45a8a9c57f7d955ff8854ed14f3afde81a979747"
 }

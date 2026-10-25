@@ -106,6 +106,7 @@ pub struct GenerationPointView<'a> {
     geometry: MapGeometry,
     grid: &'a grid::RmgGrid,
     waypoints: &'a [(u8, u16, u16)],
+    terrain: &'a [(String, i16, i16)],
 }
 
 impl GenerationPointView<'_> {
@@ -115,16 +116,16 @@ impl GenerationPointView<'_> {
 
     /// Project the grid as it stands into a `MapFile`.
     ///
-    /// Trees and tech buildings are left out: the pipeline collects them as it
-    /// goes and hands them over only at the end, and the preview draws neither
-    /// — it reads cells and overlays.
+    /// Terrain placements borrow the pipeline's chronological accumulator,
+    /// so an early snapshot contains only constructors already reached.
+    /// Projection uses the same emitter as the final generated map.
     pub fn snapshot(&self) -> GenerationSnapshot {
         let mut map_file = emit::empty_map_file(
             self.options,
             self.geometry.gen_w as u32,
             self.geometry.gen_h as u32,
         );
-        emit::populate(&mut map_file, self.grid, &[], &[], self.waypoints);
+        emit::populate(&mut map_file, self.grid, self.terrain, &[], self.waypoints);
         GenerationSnapshot {
             map_file,
             start_waypoints: self.waypoints.to_vec(),
@@ -221,18 +222,23 @@ pub fn generate_map_observed(
         geometry,
         grid: &grid,
         waypoints: &[],
+        terrain: &[],
     });
 
-    let mut on_stage = |stage: Stage, grid: &grid::RmgGrid, waypoints: &[(u8, u16, u16)]| {
+    let mut on_stage = |stage: Stage,
+                        grid: &grid::RmgGrid,
+                        waypoints: &[(u8, u16, u16)],
+                        terrain: &[(String, i16, i16)]| {
         observe(GenerationPointView {
             point: GenerationPoint::After(stage),
             options: &options,
             geometry,
             grid,
             waypoints,
+            terrain,
         });
     };
-    let output = pipeline::run_pipeline(
+    let mut output = pipeline::run_pipeline(
         &mut grid,
         &mut scratch,
         &mut rng,
@@ -242,7 +248,11 @@ pub fn generate_map_observed(
         &mut on_stage,
     );
 
+    output.construction_trace.lighting = settings.generated_lighting_override(&options);
     let mut map_file = emit::empty_map_file(&options, geometry.gen_w as u32, geometry.gen_h as u32);
+    if let Some(lighting) = settings.generated_lighting_ini(&options) {
+        map_file.ini = lighting;
+    }
     emit::populate(
         &mut map_file,
         &grid,
@@ -856,6 +866,96 @@ mod tests {
                     "map type {map_type} seed {seed}: IslandPasses must remain island-only"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn accepted_generated_map_uses_retail_night_lighting() {
+        use crate::map::lighting::parse_lighting_profiles;
+        let mut settings = RmgSettings::default();
+        // RMGMD.INI: retail night differs by theater; level 3 emits zero.
+        settings.apply(&IniFile::from_str(
+            "[General]\nTemperateAmbientLight=75,100,75,35\n\
+             SnowAmbientLight=75,100,75,55\nRMGLevelLightSettings=3,3,3,3\n\
+             TemperateAmbientRed=109,108,71,51\nTemperateAmbientGreen=80,94,81,46\n\
+             TemperateAmbientBlue=49,68,119,141\nSnowAmbientRed=112,99,106,76\n\
+             SnowAmbientGreen=80,104,107,74\nSnowAmbientBlue=133,107,154,118\n",
+        ));
+        for (theater, ambient) in [(0, 35), (1, 55)] {
+            let options = RmgOptions {
+                theater,
+                time: 3,
+                ..options(1, theater)
+            };
+            let mut preview_has_no_synthetic_lighting = false;
+            let generated = generate_map_observed(
+                &options,
+                &settings,
+                &resolved(),
+                &one_by_one(),
+                &[],
+                &mut |view| {
+                    if view.point() == GenerationPoint::Initial {
+                        preview_has_no_synthetic_lighting = view.snapshot().map_file.ini.is_empty();
+                    }
+                },
+            );
+            assert!(preview_has_no_synthetic_lighting);
+            let section = generated.map_file.ini.section("Lighting").unwrap();
+            assert_eq!(section.entry_count(), 12);
+            assert_eq!(section.get_for_test("RedTint"), Some("1.000000"));
+            let profiles = parse_lighting_profiles(&generated.map_file.ini);
+            assert_eq!(profiles.normal.ambient_percent, ambient);
+            assert_eq!(profiles.normal.ground_units, 0);
+            assert_eq!(profiles.normal.level_units, 0);
+            let descriptor = crate::sim::scenario_session::ScenarioDescriptor {
+                lighting: crate::sim::scenario_session::ScenarioLightingState::from_map(&profiles),
+                ..Default::default()
+            };
+            let mut simulation = crate::sim::world::Simulation::from_descriptor(&descriptor);
+            // This no-tech/no-bridge fixture isolates the real initialization
+            // replay from Building IDs/RNG; it still uses its production owner.
+            assert!(generated.construction_trace.events.is_empty());
+            let rng_before = simulation.rng_state();
+            simulation
+                .replay_staged_generated_construction_trace(&generated.construction_trace)
+                .unwrap();
+            assert_eq!(simulation.rng_state(), rng_before);
+            let lighting = simulation.session().lighting();
+            assert_eq!(
+                (lighting.current_ambient(), lighting.target_ambient()),
+                (ambient, ambient)
+            );
+            assert_eq!(lighting.normal().level_units, 3);
+            let expected_rgb = if theater == 0 {
+                [51, 46, 141]
+            } else {
+                [76, 74, 118]
+            };
+            let normal = lighting.normal();
+            assert_eq!(
+                [
+                    normal.red_percent,
+                    normal.green_percent,
+                    normal.blue_percent
+                ],
+                expected_rgb
+            );
+            assert_eq!(normal.ground_units, 0);
+            assert_eq!(lighting.ion().level_units, 0);
+            assert_eq!(profiles.ion.ambient_percent, ambient);
+            assert_eq!(
+                [
+                    profiles.ion.red_percent,
+                    profiles.ion.green_percent,
+                    profiles.ion.blue_percent
+                ],
+                [30, 40, 75]
+            );
+            assert_eq!(
+                (profiles.ion.ground_units, profiles.ion.level_units),
+                (0, 0)
+            );
         }
     }
 }

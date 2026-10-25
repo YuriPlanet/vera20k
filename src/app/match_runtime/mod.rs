@@ -1,10 +1,12 @@
 //! Match runtime owner (F12): the per-frame simulation advance transaction,
 //! the local frame pacer, and the scenario exit cascade.
 
+pub(crate) mod beacons;
 pub(crate) mod eva_producers;
 mod frame_effects;
 pub(crate) mod frame_pacer;
 pub(crate) mod network_match;
+pub(crate) mod network_failure;
 pub(crate) mod scenario_exit;
 pub(crate) mod scenario_pause;
 pub(crate) mod session;

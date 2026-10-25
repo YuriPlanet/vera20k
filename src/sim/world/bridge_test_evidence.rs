@@ -184,7 +184,6 @@ pub fn visit_starting_mtnk_concrete_attack(
     )
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
-    scene.runtime.simulation.batch_target_scans();
     // Periodic frame hashes feed replay and sync checks, which nothing here
     // reads; an interval no tick reaches skips them (11-12% of each frame in
     // this unoptimized test build).

@@ -137,12 +137,12 @@ fn assert_native_landing_inputs(rules: &RuleSet) {
             "{name}"
         );
         assert_eq!(
-            serde_json::json!(actual.temperate_occupation_bits),
+            serde_json::json!(actual.raw_occupation_bits(false)),
             expected["temperate_occupation_bits"],
             "{name}"
         );
         assert_eq!(
-            serde_json::json!(actual.snow_occupation_bits),
+            serde_json::json!(actual.raw_occupation_bits(true)),
             expected["snow_occupation_bits"],
             "{name}"
         );

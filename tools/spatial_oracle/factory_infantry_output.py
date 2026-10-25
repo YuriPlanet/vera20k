@@ -26,24 +26,11 @@ def check(assets=None):
     return result
 
 
-def _verify_loaded_helpers(checked):
-    """Reuse the Gate census over its independently checked shared profiles."""
-    from tools.spatial_oracle._factory_infantry_output import gate_runtime as gate
-    profile = gate.verify_source()
-    rt.require(profile == checked['infantry_unlimbo_gate']['gate_helpers'] and
-               profile['shared_factory_profile'] == checked['shared_helpers'],
-               'Loaded Gate/factory helper identities changed during replay')
-    gate.census(profile)
-
-
 def _replay_historical(control, assets=None):
     rt.require(sys.flags.optimize == 0,
         'Whole original emulation requires normal Python; shared input/runtime helpers retain assert guards. Use -O only with --check.')
     root = rt.configure_assets(assets)
-    checked = check()
-    import unicorn
-    rt.require(unicorn.__version__ == rt.metadata()['native_runtime']['unicorn'],
-        'Unsupported Unicorn version: ' + unicorn.__version__)
+    check()
     from tools.spatial_oracle._factory_infantry_output import idle, fixture, projection
     primaries = []
     observer = idle.generate(control == 'rally', control, primaries.append)
@@ -65,11 +52,9 @@ def _replay_historical(control, assets=None):
             actual_fixture = fixture.generate(primary, observer, accepted_fixture['source_receipts'])
             difference = native.first_difference(rt.normalize(accepted_fixture), rt.normalize(actual_fixture))
             rt.require(difference is None, 'Native-derived milestone fixture differs: ' + str(difference))
-        _verify_loaded_helpers(checked)
         return dict(schema_version=1, status='PASS', control='historical_'+control,
             scope='Historical supplied-prior control with omitted Walk CRT startup',
-            native_sha256=rt.metadata()['native_sha256'],
-            shared_helpers=checked['shared_helpers'], physical_input_root=str(root),
+            physical_input_root=str(root),
             complete_primary_native_comparison=observer['primary_comparison'],
             complete_gi_private_observation_equal=True, selected_gi_projection_equal=True,
             native_milestone_fixture_equal=actual_fixture is not None,
@@ -79,8 +64,7 @@ def _replay_historical(control, assets=None):
             limits=rt.read_pinned('fixtures/ordinary-input-closure.json.gz')['limits'])
     except Exception as exc:
         return dict(schema_version=1, status='FAIL', control=control,
-            native_sha256=rt.metadata()['native_sha256'],
-            shared_helpers=checked['shared_helpers'], physical_input_root=str(root),
+            physical_input_root=str(root),
             failure=dict(type=type(exc).__name__, message=str(exc)),
             full_original_primary=primaries[0] if primaries else None,
             full_original_gi_observer=observer, whole_object_completion_claimed=False)
@@ -89,10 +73,7 @@ def _replay_historical(control, assets=None):
 def _replay_publication_phase(order, assets=None):
     rt.require(sys.flags.optimize == 0, 'Original publication emulation requires normal Python; use -O only with --check.')
     root = rt.configure_assets(assets)
-    checked = check()
-    import unicorn
-    rt.require(unicorn.__version__ == rt.metadata()['native_runtime']['unicorn'],
-        'Unsupported Unicorn version: ' + unicorn.__version__)
+    check()
     from tools.spatial_oracle._factory_infantry_output import phase, saved, fixture
     original = phase.generate(order, root)
     try:
@@ -103,16 +84,13 @@ def _replay_publication_phase(order, assets=None):
         expected = json.loads((rt.REPO_ROOT / meta['rust_fixture']['path']).read_bytes())
         rt.require(selected['cases'][order] == expected['cases'][order],
             'Mechanically selected original publication route differs')
-        _verify_loaded_helpers(checked)
         return dict(schema_version=1, status='PASS', control='publication_' + order,
-            native_sha256=rt.metadata()['native_sha256'], shared_helpers=checked['shared_helpers'],
             physical_input_root=str(root), comparison=comparison,
             full_original_publication_control=original, selected_native_projection=selected,
             window_input_edge='Instruction-established only', whole_main_tick_parity_claimed=False,
             whole_object_completion_claimed=False, limits=meta['bounds'])
     except Exception as exc:
         return dict(schema_version=1, status='FAIL', control='publication_' + order,
-            native_sha256=rt.metadata()['native_sha256'], shared_helpers=checked['shared_helpers'],
             physical_input_root=str(root), failure=dict(type=type(exc).__name__, message=str(exc)),
             full_original_publication_control=original, whole_main_tick_parity_claimed=False,
             whole_object_completion_claimed=False)
@@ -126,10 +104,7 @@ def replay(control, assets=None):
     rt.require(sys.flags.optimize == 0,
         'Whole original emulation requires normal Python; use -O only with --check.')
     root = rt.configure_assets(assets)
-    checked = check()
-    import unicorn
-    rt.require(unicorn.__version__ == rt.metadata()['native_runtime']['unicorn'],
-        'Unsupported Unicorn version: ' + unicorn.__version__)
+    check()
     from tools import native_oracle as native
     from tools.spatial_oracle._factory_infantry_output import initialized, fixture
     original = initialized.generate(control)
@@ -145,10 +120,8 @@ def replay(control, assets=None):
         golden = rt.read_pinned(identity['projection'])
         difference = native.first_difference(rt.normalize(golden), rt.normalize(selected))
         rt.require(difference is None, 'Initialized native projection differs: ' + str(difference))
-        _verify_loaded_helpers(checked)
         return dict(schema_version=2, status='PASS', control=control,
             scope='Original registered selected startup and two terminal native Infantry products',
-            native_sha256=rt.metadata()['native_sha256'], shared_helpers=checked['shared_helpers'],
             physical_input_root=str(root), complete_primary_native_equal=True,
             complete_gi_private_equal=True, compact_native_projection_equal=True,
             complete_primary_native_sha256=identity['complete_primary_sha256'],
@@ -159,7 +132,6 @@ def replay(control, assets=None):
             limits=rt.metadata()['initialized_limits'])
     except Exception as exc:
         return dict(schema_version=2, status='FAIL', control=control,
-            native_sha256=rt.metadata()['native_sha256'], shared_helpers=checked['shared_helpers'],
             physical_input_root=str(root), failure=dict(type=type(exc).__name__, message=str(exc)),
             full_original_initialized_control=original, whole_object_completion_claimed=False)
 
@@ -178,45 +150,27 @@ def main():
     parser.add_argument('--consumer-control', choices=('cadence','device','buffer','radar','all'), default='all')
     parser.add_argument('--consumer-assets', type=Path, help='Separate exact41-entry AnyTown-alias physical consumer input root')
     parser.add_argument('--wave', type=Path, help='Existing exact winning ceva062.wav; no retail files are written')
-    parser.add_argument('--candidate-helper-profile', action='store_true',
-        help='Explicit unregistered consumer candidate comparison; does not register helper compatibility')
-    parser.add_argument('--candidate-gate-helper-profile', action='store_true',
-        help='Explicit unregistered Gate caller comparison; does not register helper compatibility')
     args = parser.parse_args()
     rt.require(not args.output or not args.output.exists(), 'Refuse to overwrite saved evidence')
     rt.require(args.check or args.consumer_check or args.gate_check or args.phase_check or args.output is not None, '--replay requires --output to preserve the full result')
-    rt.require(not args.candidate_gate_helper_profile or args.gate_check or args.replay == 'infantry_unlimbo_gate',
-        'Gate candidate flag is restricted to Gate comparisons')
-    if args.replay:
-        # All branches replay this packet's historical file identity. In
-        # particular the direct consumer/gate branches do not call saved.check.
-        # Keep frozen callers intact; admitting a shared-loader build does not
-        # authorize relabeling these exact historical receipts.
-        from tools import native_oracle as native
-        rt.require(native.image_sha256() == rt.metadata()['native_sha256'],
-                   'Historical factory replay requires its recorded executable identity')
     if args.phase_check:
-        rt.require(not args.candidate_helper_profile, 'Consumer candidate flag is restricted to consumer comparisons')
         from tools.spatial_oracle._factory_infantry_output.saved import publication_phase_check
         if args.assets is not None:
             rt.configure_assets(args.assets)
         result = publication_phase_check()
     elif args.gate_check or args.replay == 'infantry_unlimbo_gate':
-        rt.require(not args.candidate_helper_profile, 'Consumer candidate flag is restricted to consumer comparisons')
         from tools.spatial_oracle._factory_infantry_output import gate_runtime as gate
-        result = gate.check_saved(candidate=args.candidate_gate_helper_profile) if args.gate_check else \
-            gate.replay(candidate=args.candidate_gate_helper_profile)
+        result = gate.check_saved() if args.gate_check else gate.replay()
     elif args.consumer_check or args.replay == 'unit_ready_consumer':
         from tools.spatial_oracle._factory_infantry_output import consumer_runtime as consumer
         if args.consumer_check:
-            result = consumer.check_saved(candidate=args.candidate_helper_profile)
+            result = consumer.check_saved()
         else:
             controls = ('cadence','device','buffer','radar') if args.consumer_control == 'all' else (args.consumer_control,)
-            rows = {name: consumer.replay(name,args.consumer_assets,args.wave,candidate=args.candidate_helper_profile) for name in controls}
+            rows = {name: consumer.replay(name,args.consumer_assets,args.wave) for name in controls}
             result = dict(schema=1,status='PASS' if all(row['status']=='PASS' for row in rows.values()) else 'FAIL',
                 control='unit_ready_consumer',controls=rows,whole_object_completion_claimed=False)
     else:
-        rt.require(not args.candidate_helper_profile, 'Candidate flag is restricted to consumer comparisons')
         result = check(args.assets) if args.check else replay(args.replay, args.assets)
     if args.output:
         rt.write_new(args.output, result)

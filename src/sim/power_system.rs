@@ -129,6 +129,13 @@ impl PowerState {
         self.total_drain
     }
 
+    /// House::Update_Power_And_EVA5018DD..5018E1 adds retained drain
+    /// immediately; it neither clamps nor sets the assessment dirty byte.
+    pub(crate) fn add_building_drain(&mut self, drain: i32) {
+        self.total_drain = self.total_drain.wrapping_add(drain);
+        self.is_low_power = !self.retained_full_power();
+    }
+
     /// House+577B.
     pub fn has_drained_power_source(&self) -> bool {
         self.has_drained_power_source
@@ -189,6 +196,12 @@ impl PowerState {
     /// `LightningStorm::Start` sets it for the player (`0x0053A002`).
     pub(crate) fn recheck_radar(&mut self) {
         self.radar_dirty = true;
+    }
+
+    /// House4F84F1 admits both radar and SpySat from this same byte. Retain
+    /// its entry value before the radar receiver clears it (508DF0).
+    pub(crate) fn radar_recheck_pending(&self) -> bool {
+        self.radar_dirty
     }
 
     /// `RadarClass::SetTacticalMapAvailable(1)` from the current house's
@@ -399,6 +412,35 @@ pub(crate) fn native_building_power_drain(power: i32) -> i32 {
     if power < 0 { power.wrapping_neg() } else { 0 }
 }
 
+/// BuildingClass::GetPowerDrain44E880: both immediate House registration
+/// and the later assessment read this same live contribution. Health does
+/// not scale drain; a nonzero upgrade count admits all three type slots.
+pub(crate) fn building_power_drain(
+    entity: &GameEntity,
+    rules: &RuleSet,
+    interner: &crate::sim::intern::StringInterner,
+) -> i32 {
+    if entity.is_warped_out() || !entity.building_online() {
+        return 0;
+    }
+    let Some(object) = interner.object_type(entity.type_ref(), rules) else {
+        return 0;
+    };
+    let mut drain = native_building_power_drain(object.power);
+    if entity.gap_generator.supercharged() {
+        drain = drain.wrapping_add(object.extra_power.drain());
+    }
+    let upgrades = entity.building_upgrades();
+    if upgrades.count() != 0 {
+        for type_ref in upgrades.types().iter().flatten() {
+            if let Some(upgrade) = interner.object_type(*type_ref, rules) {
+                drain = drain.wrapping_add(native_building_power_drain(upgrade.power));
+            }
+        }
+    }
+    drain
+}
+
 /// The fields `BuildingClass::Is_Operational_For_Output` (vt+0x350,
 /// `0x004555D0`) reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -448,21 +490,13 @@ pub(crate) fn is_operational_for_output(
         && facts.effective_mission != 0x13
 }
 
-/// House508CB0/508CB8 tests limbo(+81) and cell-marked(+74), not ObjectAlive
-/// (+90) or actual HP. Rust tombstones remain excluded until physical removal.
-fn participates_in_power_accounting(entity: &GameEntity) -> bool {
-    entity.category() == EntityCategory::Structure
-        && !entity.death.is_dying()
-        && !entity.lifecycle.in_limbo()
-        && entity.lifecycle.cell_marked()
-}
-
 /// Recalculate power totals for a single owner from their buildings.
 ///
 /// Building44E85F..44E86A multiplies native signed-health/live-Strength x87
 /// ratio by the signed output contribution and consumes _ftol's low EAX.
 /// Ratio-first PC53/chop arithmetic intentionally differs from integer division.
-/// Drain is always the full rated `|Power|` regardless of health.
+/// Drain is always the full rated `|Power|` regardless of health, plus a
+/// super-charged gap generator's negated `ExtraPower=`.
 ///
 /// `UnitAbsorb`/`InfantryAbsorb` buildings (e.g., Yuri Bio-Reactor) add
 /// `ExtraPower × OccupantCount` to their pre-scaled output when at least
@@ -473,16 +507,28 @@ fn participates_in_power_accounting(entity: &GameEntity) -> bool {
 fn recalculate_power_for_owner(
     state: &mut PowerState,
     entities: &EntityStore,
+    building_order: &[u64],
     rules: &RuleSet,
-    owner_id: InternedId,
     interner: &crate::sim::intern::StringInterner,
     binary_frame: u32,
+    require_discovery: bool,
 ) {
     let mut produced: i32 = 0;
     let mut drained: i32 = 0;
     let mut has_drained_power_source = false;
-    for entity in entities.values() {
-        if !participates_in_power_accounting(entity) || entity.owner() != owner_id {
+    // House508C8B..508D3E scans the retained House+68 roster, not all stored
+    // entities. Destroy/expiry4FBC1C removes a building before an Explodes
+    // zero-fuse body necessarily leaves the map. It skips NULL, limbo(+81),
+    // unmarked(+74), and (campaign-only508CC7) undiscovered(+41B) entries;
+    // health, Alive and death do not gate it.
+    for &id in building_order {
+        let Some(entity) = entities.get(id) else {
+            continue;
+        };
+        if entity.lifecycle.in_limbo()
+            || !entity.lifecycle.cell_marked()
+            || (require_discovery && !entity.discovery.discovered_by_current_house())
+        {
             continue;
         }
         let Some(obj) = interner.object_type(entity.type_ref(), rules) else {
@@ -495,10 +541,12 @@ fn recalculate_power_for_owner(
         // construction-state exclusion.
 
         // A building being warped out gives and takes nothing
-        // (GetPowerOutput `0x0044E7C7`, GetPowerDrain `0x0044E885`). The
-        // drain's online-latch test (`0x0044E88F`) adds nothing while the
-        // warp is the latch's only represented writer.
-        if entity.is_warped_out() {
+        // (GetPowerOutput `0x0044E7C7`, GetPowerDrain `0x0044E885`), nor
+        // does an offline one (Building+660): GetPowerDrain returns 0 before
+        // any addend (`0x0044E88F`), GetPowerOutput after summing a positive
+        // total (`0x0044E855`; a non-positive total is 0 anyway), and
+        // House508D1E's drained-source test repeats that zero output.
+        if entity.is_warped_out() || !entity.building_online() {
             continue;
         }
 
@@ -510,12 +558,12 @@ fn recalculate_power_for_owner(
         // for InfantryAbsorb/UnitAbsorb buildings (gate is strict on all
         // three conditions, matching gamemd's GetPowerOutput).
         let mut output_contribution: i32 = obj.power.max(0);
-        let mut drain_contribution = native_building_power_drain(obj.power);
-        if obj.absorbs_passengers() && obj.extra_power > 0 {
+        let extra_output = obj.extra_power.output();
+        if obj.absorbs_passengers() && extra_output > 0 {
             let occupants = entity.passenger_role.cargo().map_or(0, |c| c.count()) as i32;
             if occupants > 0 {
                 output_contribution =
-                    output_contribution.wrapping_add(obj.extra_power.wrapping_mul(occupants));
+                    output_contribution.wrapping_add(extra_output.wrapping_mul(occupants));
             }
         }
         // Original44E826..44E84D and44E8B5..44E8DA (Steam gamemd):
@@ -530,8 +578,6 @@ fn recalculate_power_for_owner(
                     continue;
                 };
                 output_contribution = output_contribution.wrapping_add(upgrade.power.max(0));
-                drain_contribution =
-                    drain_contribution.wrapping_add(native_building_power_drain(upgrade.power));
             }
         }
         if output_contribution > 0 {
@@ -551,7 +597,7 @@ fn recalculate_power_for_owner(
 
         // Drain branch: always full rated value regardless of health.
         // Parser46108A NEG and House508D16 ADD both consume dwords.
-        drained = drained.wrapping_add(drain_contribution);
+        drained = drained.wrapping_add(building_power_drain(entity, rules, interner));
     }
 
     //508D4A stores the assessment byte;508D79 forces output to zero for
@@ -585,7 +631,7 @@ pub(crate) fn tick_power_states(
     owners.extend(
         entities
             .values()
-            .filter(|entity| participates_in_power_accounting(entity))
+            .filter(|entity| entity.category() == EntityCategory::Structure)
             .map(GameEntity::owner),
     );
     owners.sort_unstable();
@@ -594,7 +640,6 @@ pub(crate) fn tick_power_states(
     for &owner_id in &owners {
         let state = power_states.house_mut(owner_id);
         state.invalidate(true);
-        assess_house_power(state, entities, rules, owner_id, interner, binary_frame);
         let buildings: Vec<u64> = entities
             .values()
             .filter(|entity| {
@@ -602,6 +647,16 @@ pub(crate) fn tick_power_states(
             })
             .map(|entity| entity.stable_id())
             .collect();
+        // This raw-store fixture has no House/session discovery policy.
+        assess_house_power(
+            state,
+            entities,
+            &buildings,
+            rules,
+            interner,
+            binary_frame,
+            false,
+        );
         assess_house_radar_projection(
             state,
             entities,
@@ -611,6 +666,7 @@ pub(crate) fn tick_power_states(
             interner,
             false,
             binary_frame,
+            false,
         );
     }
 }
@@ -624,10 +680,11 @@ pub(crate) fn tick_power_states(
 pub(crate) fn assess_house_power(
     state: &mut PowerState,
     entities: &EntityStore,
+    building_order: &[u64],
     rules: &RuleSet,
-    owner: InternedId,
     interner: &crate::sim::intern::StringInterner,
     binary_frame: u32,
+    require_discovery: bool,
 ) -> bool {
     if state.blackout_remaining(binary_frame) == 1 {
         state.blackout_timer.start(binary_frame as i32, 0);
@@ -642,7 +699,15 @@ pub(crate) fn assess_house_power(
     }
     //508C79 clears the byte before scanning, not at a health writer.
     state.power_dirty = false;
-    recalculate_power_for_owner(state, entities, rules, owner, interner, binary_frame);
+    recalculate_power_for_owner(
+        state,
+        entities,
+        building_order,
+        rules,
+        interner,
+        binary_frame,
+        require_discovery,
+    );
     state.radar_dirty = true;
     true
 }
@@ -658,6 +723,7 @@ fn radar_provider_available(
     rules: &RuleSet,
     owner: InternedId,
     interner: &crate::sim::intern::StringInterner,
+    require_discovery: bool,
 ) -> bool {
     if state.low_power() {
         return false;
@@ -673,6 +739,7 @@ fn radar_provider_available(
             || !entity.lifecycle.cell_marked()
             || entity.death.is_dying()
             || !entity.building_online()
+            || (require_discovery && !entity.discovery.discovered_by_current_house())
             || entity.mission.current().known() == Some(crate::sim::mission::MissionType::Selling)
             || entity.mission.queued().known() == Some(crate::sim::mission::MissionType::Selling)
             || !interner
@@ -691,7 +758,8 @@ fn radar_provider_available(
 
 /// House508DF0: a running radar outage (`0x00508E07..0x00508E31`, any
 /// remaining time) denies radar before Scenario FreeRadar (`+0x34A4`), power
-/// and the providers are asked.
+/// and the providers are asked. Returns whether this visit assessed radar,
+/// so the local House can reach the process setter at the same boundary.
 pub(crate) fn assess_house_radar_projection(
     state: &mut PowerState,
     entities: &EntityStore,
@@ -701,7 +769,8 @@ pub(crate) fn assess_house_radar_projection(
     interner: &crate::sim::intern::StringInterner,
     free_radar: bool,
     binary_frame: u32,
-) {
+    require_discovery: bool,
+) -> bool {
     if state.radar_dirty {
         state.radar_dirty = false;
         state.radar_available = state.radar_outage_timer.remaining(binary_frame as i32) == 0
@@ -713,8 +782,11 @@ pub(crate) fn assess_house_radar_projection(
                     rules,
                     owner,
                     interner,
+                    require_discovery,
                 ));
+        return true;
     }
+    false
 }
 
 /// Check whether a specific building is functionally active (not disabled by low power).
@@ -865,7 +937,7 @@ mod tests {
             };
             state.set_radar_outage_for_test(CdTimer::from_raw(int(&row[0]), int(&row[1])));
             let frame = int(&row[2]) as u32;
-            let _ = assess_house_power(&mut state, &entities, &rules, owner, &interner, frame);
+            let _ = assess_house_power(&mut state, &entities, &[], &rules, &interner, frame, false);
             assert_eq!(
                 (state.radar_outage_timer, state.radar_dirty),
                 (CdTimer::from_raw(int(&row[3]), int(&row[4])), row[5] == 1),
@@ -887,6 +959,7 @@ mod tests {
                 &interner,
                 true,
                 frame,
+                false,
             );
             assert_eq!(state.radar_available, row[3] == 1, "{row}");
         }
@@ -969,10 +1042,7 @@ BuildSpeed=0.02
             let input = &row["input"];
             // These native branches have no equivalent Rust lifecycle producers
             // yet. The native corpus records them but cannot prove them migrated.
-            if !input["online"].as_bool().unwrap()
-                || input["warped"].as_bool().unwrap()
-                || input["overpowered"].as_bool().unwrap()
-            {
+            if input["warped"].as_bool().unwrap() || input["overpowered"].as_bool().unwrap() {
                 continue;
             }
             let value = |key: &str| input[key].as_i64().unwrap() as i32;
@@ -989,6 +1059,7 @@ BuildSpeed=0.02
             ));
             let mut store = EntityStore::new();
             let mut building = make_building(1, "TEST", "Owner", value("actual"));
+            building.set_building_online_for_test(input["online"].as_bool().unwrap());
             let occupants = value("occupants") as u32;
             let mut cargo = crate::sim::passenger::PassengerCargo::new(occupants, 0.0);
             cargo.set_passengers_for_test((0..occupants).map(|i| 100 + u64::from(i)).collect());
@@ -1028,7 +1099,7 @@ BuildSpeed=0.02
             );
             compared += 1;
         }
-        assert_eq!(compared, 422);
+        assert_eq!(compared, 423);
     }
 
     #[test]
@@ -1068,11 +1139,18 @@ BuildSpeed=0.02
                         .then(|| intern::test_intern("OTHER")),
                 ],
             );
-            let owner = host.owner();
             let mut entities = EntityStore::new();
             entities.insert(host);
             let mut state = PowerState::default();
-            recalculate_power_for_owner(&mut state, &entities, &rules, owner, &test_interner(), 0);
+            recalculate_power_for_owner(
+                &mut state,
+                &entities,
+                &[1],
+                &rules,
+                &test_interner(),
+                0,
+                false,
+            );
             assert_eq!(
                 (state.total_output(), state.total_drain()),
                 (
@@ -1106,9 +1184,16 @@ BuildSpeed=0.02
                 .lifecycle
                 .set_in_limbo_for_test(input["limbo"].as_bool().unwrap());
             store.insert(plant);
-            let owner = intern::test_intern("Allies");
             let mut state = PowerState::default();
-            recalculate_power_for_owner(&mut state, &store, &rules, owner, &test_interner(), 0);
+            recalculate_power_for_owner(
+                &mut state,
+                &store,
+                &[1],
+                &rules,
+                &test_interner(),
+                0,
+                false,
+            );
             assert_eq!(
                 state.total_output,
                 if row["admitted"].as_bool().unwrap() {

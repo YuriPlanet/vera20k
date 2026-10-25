@@ -18,7 +18,135 @@ fn arena(rules: &RuleSet) -> Simulation {
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
+    // The native corpus rows hover mapped ground; Foot's shroud wrapper
+    // (`0x004DDE64..0x004DDEBE`) would rewrite their answers otherwise.
+    let rows = sim.session().map_height();
+    reveal_rows(&mut sim, house.unwrap(), rows);
     sim
+}
+
+/// The player's map shows rows `0..rows` and shrouds the rest.
+fn reveal_rows(sim: &mut Simulation, owner: crate::sim::intern::InternedId, rows: u16) {
+    let (width, height) = (sim.session().map_width(), sim.session().map_height());
+    let fog = sim.fog_mut_for_test();
+    *fog = crate::sim::vision::FogState::new(width, height);
+    fog.reveal_cells_for_owner(
+        owner,
+        (0..width).flat_map(|x| (0..rows).map(move |y| (x, y))),
+    );
+}
+
+#[test]
+fn ares_no_manual_fire_native_modifier_cursors_use_the_shared_action() {
+    let corpus = crate::test_fixture::json("tools/spatial_oracle/no_manual_fire.json");
+    let rows = corpus["rows"].as_array().unwrap();
+    for setting in [false, true] {
+        let patch = crate::rules::ini_parser::IniFile::from_str(&format!(
+            "[MTNK]\nNoManualFire={}\n",
+            if setting { "yes" } else { "no" },
+        ));
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+            "XMP03T4.MAP",
+            &patch,
+        ) else {
+            return;
+        };
+        for row in rows
+            .iter()
+            .filter(|row| row["no_manual_fire_native_reader_value"] == u64::from(setting))
+        {
+            let case = &row["input"];
+            // The same authored key is ignored by the default build. Its
+            // expected result is the actual DLL control with the flag off.
+            let expected = if crate::rules::ARES_ENABLED {
+                row
+            } else {
+                rows.iter()
+                    .find(|other| {
+                        other["input"] == *case && other["no_manual_fire_native_reader_value"] == 0
+                    })
+                    .unwrap()
+            };
+            let mut sim = arena(&retail.rules);
+            let actor = sim
+                .spawn_object("MTNK", "Americans", 16, 16, 64, &retail.rules)
+                .unwrap();
+            let target = sim
+                .spawn_object("MTNK", "Russians", 17, 16, 64, &retail.rules)
+                .unwrap();
+            let alt = case["alt"].as_bool().unwrap();
+            let modifier = crate::app::input::context_order::resolve_order_modifiers(
+                case["ctrl"].as_bool().unwrap(),
+                case["shift"].as_bool().unwrap(),
+                alt,
+            );
+            let before = sim.state_hash();
+            let feedback = if case["route"] == "object" {
+                promote_attack_move_feedback(
+                    capability_cursor_for_hover(
+                        &sim,
+                        &[actor],
+                        Some(actor),
+                        &HoverTargetKindWithId {
+                            stable_id: target,
+                            kind: HoverTargetKind::EnemyUnit,
+                        },
+                        Some(&retail.rules),
+                        None,
+                        modifier,
+                        alt,
+                        false,
+                    ),
+                    modifier == OrderModifier::AttackMove,
+                )
+            } else {
+                let forced = (modifier == OrderModifier::ForceFire)
+                    .then(|| {
+                        force_fire_feedback(
+                            &sim,
+                            actor,
+                            &combat::TargetKind::Cell(17, 16),
+                            1,
+                            Some(&retail.rules),
+                            None,
+                        )
+                    })
+                    .flatten();
+                forced
+                    .map(|kind| kind.unwrap_or(CursorFeedbackKind::Default))
+                    .unwrap_or_else(|| {
+                        empty_cell_cursor(
+                            &sim,
+                            Some(&retail.rules),
+                            None,
+                            sim.session().current_house(),
+                            Some(actor),
+                            (17, 16),
+                            modifier,
+                            crate::app::types::OrderMode::Move,
+                            true,
+                        )
+                    })
+            };
+            let native_cursor = match expected["cursor_row"].as_u64().unwrap() {
+                0 => CursorId::Default,
+                17 => CursorId::Select,
+                18 => CursorId::Move,
+                19 => CursorId::NoMove,
+                20 => CursorId::Attack,
+                21 => CursorId::AttackOutOfRange,
+                22 => CursorId::GuardArea,
+                71 => CursorId::AttackMove,
+                other => panic!("unexpected native cursor {other}"),
+            };
+            assert_eq!(
+                cursor_id_for_feedback(feedback),
+                Some(native_cursor),
+                "{setting} {case}"
+            );
+            assert_eq!(sim.state_hash(), before, "hover cannot mutate gameplay/RNG");
+        }
+    }
 }
 
 #[test]
@@ -78,6 +206,13 @@ fn retail_weapon_cursor_overrides_survive_distance() {
                 Some(expected),
                 "{actor_type} -> {target_type} x={x}"
             );
+            // Native radar653F04 keeps C4's16, but excludes the weapon
+            // override64 (retail Tanya/Sapper on a tank) and Boris's71.
+            assert_eq!(
+                crate::app::input::radar::RadarAction::kept(feedback).is_some(),
+                actor_type == "TANY" && target_type == "NAPOWR",
+                "radar admission: {actor_type} -> {target_type} x={x}"
+            );
             assert_eq!(
                 sim.state_hash(),
                 before,
@@ -109,6 +244,7 @@ fn retail_cell_chords_have_their_native_cursors() {
             (30, 30),
             modifier,
             crate::app::types::OrderMode::Move,
+            true,
         );
         assert_eq!(
             cursor_id_for_feedback(feedback),
@@ -116,6 +252,58 @@ fn retail_cell_chords_have_their_native_cursors() {
             "{modifier:?}"
         );
     }
+}
+
+/// Techno's Ctrl+Alt rung (`0x00700815..0x007008A3`) answers GuardArea on
+/// mapped ground. Over shroud a Foot's wrapper (`0x004DDE64..0x004DDEBE`)
+/// makes it Move for a MoveToShroud type, and the click asks the same rung.
+/// A berserk tank never reaches it.
+#[test]
+fn retail_ctrl_alt_over_shroud_is_a_move_for_a_foot() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = arena(rules);
+    let tank = sim
+        .spawn_object("MTNK", "Americans", 16, 16, 64, rules)
+        .unwrap();
+    let owner = sim.interner().get("Americans").unwrap();
+    reveal_rows(&mut sim, owner, 20);
+    let cursor = |sim: &Simulation, cell| {
+        cursor_id_for_feedback(empty_cell_cursor(
+            sim,
+            Some(rules),
+            None,
+            sim.session().current_house(),
+            Some(tank),
+            cell,
+            OrderModifier::GuardArea,
+            crate::app::types::OrderMode::Move,
+            true,
+        ))
+    };
+    let guards = |sim: &Simulation, cell| {
+        crate::app::input::context_order::cell_guard_area_action(
+            sim,
+            rules,
+            tank,
+            Some(owner),
+            cell,
+        )
+    };
+    assert_eq!(cursor(&sim, (10, 10)), Some(CursorId::GuardArea));
+    assert_eq!(cursor(&sim, (10, 30)), Some(CursorId::Move));
+    assert!(guards(&sim, (10, 10)));
+    assert!(!guards(&sim, (10, 30)));
+    // A berserk tank answers 0 before the rung (`0x00700609`): the arrow.
+    sim.entities_mut_for_test()
+        .get_mut(tank)
+        .unwrap()
+        .berserk
+        .set_active_for_test(true);
+    assert!(!guards(&sim, (10, 10)));
+    assert_eq!(cursor(&sim, (10, 10)), Some(CursorId::Default));
 }
 
 #[test]
@@ -229,6 +417,7 @@ fn native_modifier_controls_match_production_cursor_queries() {
                         (17, 16),
                         modifier,
                         crate::app::types::OrderMode::Move,
+                        true,
                     )
                 })
         };
@@ -355,21 +544,8 @@ fn native_infantry_weapon_suffix_controls_match_shared_action_owner() {
         } else {
             CursorFeedbackKind::EnemyUnit
         };
-        let feedback = infantry_weapon_feedback(
-            &sim,
-            Some(&rules),
-            actor,
-            &HoverTargetKindWithId {
-                stable_id: target,
-                kind: if building {
-                    HoverTargetKind::EnemyStructure
-                } else {
-                    HoverTargetKind::EnemyUnit
-                },
-            },
-            base,
-        )
-        .unwrap_or(base);
+        let feedback =
+            infantry_weapon_feedback(&sim, Some(&rules), actor, target, base).unwrap_or(base);
         let expected = match row["output"]["cursor_row"].as_u64().unwrap() {
             17 => CursorId::Select,
             20 => CursorId::Attack,

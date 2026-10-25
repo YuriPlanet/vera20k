@@ -15,10 +15,10 @@ original Drive Do_Turn and FacingClass::Current with retained original state.
 """
 from pathlib import Path
 import struct
-from unicorn import Uc, UC_ARCH_X86, UC_MODE_32
+from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_EBX, UC_X86_REG_ESI, UC_X86_REG_ECX, UC_X86_REG_ESP
 from tools.native_oracle import (SCRATCH, SCRATCH_SIZE, STACK_BASE, STACK_SIZE, call, load_image,
-                                run_checked, finish_vectors, provenance)
+                                RET_MAGIC, run_checked, finish_vectors, provenance)
 
 UNIT = SCRATCH
 IFACE = SCRATCH + 0x2000
@@ -136,21 +136,89 @@ def try_to_deploy_sites():
     raw = bytes(uc.mem_read(SITES, SITES_END - SITES))
     return [list(struct.unpack_from('<hh', raw, i)) for i in range(0, len(raw), 4)]
 
+
+def deploy_admission():
+    """Whole original CanDeploy and its Deploy caller's admission boundary.
+
+    Uses the actual Unit vtable and prepared ordinary cell/MCV/yard data. No
+    predicate, EMP result, coordinate result or continuation result is supplied.
+    """
+    rows = []
+    typ, yard, table, cell = (SCRATCH + n for n in (0x2000, 0x5000, 0x7000, 0x8000))
+    for entry, counter, death_frame in [
+            ('can_deploy', 0, -1), ('can_deploy', 1, -1),
+            ('can_deploy', -1, -1), ('can_deploy', 0x7fffffff, -1),
+            ('can_deploy', 0, 0),
+            ('unit_deploy', 0, -1), ('unit_deploy', 1, -1)]:
+        uc = Uc(UC_ARCH_X86, UC_MODE_32)
+        load_image(uc)
+        uc.mem_map(SCRATCH, SCRATCH_SIZE)
+        uc.mem_map(STACK_BASE, STACK_SIZE)
+        writes = {
+            UNIT: u32(0x7F5C70), UNIT + 0x6C4: u32(typ),
+            UNIT + 0x6D8: u32(death_frame), UNIT + 0x684: b'\xff',
+            UNIT + 0x504: u32(counter), UNIT + 0x68C: b'\1',
+            UNIT + 0x9C: struct.pack('<iii', 128, 128, 0),
+            typ + 0x404: u32(yard), yard + 0x16B9: b'\1',
+            0x87F924: u32(table), table: u32(cell),
+            cell + 0x116: struct.pack('<h', -1),
+        }
+        for at, raw in writes.items():
+            uc.mem_write(at, raw)
+        before = bytes(uc.mem_read(UNIT, 0x1000))
+        original = bytes(uc.mem_read(0x401000, 0x3e1000))
+        frame_before = bytes(uc.mem_read(FRAME, 4))
+        visits = []
+        def observe(_uc, address, _size, _data):
+            if address in (0x65C6D0, 0x65C780, 0x65C7E0, 0x7258D0):
+                raise RuntimeError(f'unexpected RNG/Detach entry {address:08X}')
+            if address in (0x7393C0, 0x700D50, 0x484AE0, 0x700E47,
+                           0x746C90, 0x70EFD0):
+                visits.append(f'{address:08X}')
+        uc.hook_add(UC_HOOK_CODE, observe)
+        sp = STACK_BASE + STACK_SIZE - 0x1000
+        uc.mem_write(sp, u32(RET_MAGIC))
+        uc.reg_write(UC_X86_REG_ESP, sp)
+        uc.reg_write(UC_X86_REG_ECX, UNIT)
+        # Allowed Deploy stops before locomotion/placement; the refused path
+        # executes its complete return, including resetting +68C.
+        stops = (RET_MAGIC, 0x7393DA) if entry == 'unit_deploy' else RET_MAGIC
+        stop = run_checked(uc, 0x7393C0 if entry == 'unit_deploy' else 0x700D50,
+                           stops, count=20000,
+                           required_addresses=(0x700D50, 0x484AE0, 0x700E47, 0x746C90))
+        after = bytes(uc.mem_read(UNIT, 0x1000))
+        assert original == bytes(uc.mem_read(0x401000, 0x3e1000))
+        assert frame_before == bytes(uc.mem_read(FRAME, 4))
+        rows.append(dict(entry=entry, emp_counter=counter, death_frame=death_frame,
+            result=dict(allowed=stop == 0x7393DA if entry == 'unit_deploy'
+                        else bool(uc.reg_read(UC_X86_REG_EAX) & 255),
+                        stop_address=f'{stop:08X}',
+                        counter_unchanged=before[0x504:0x508] == after[0x504:0x508],
+                        changed_unit_offsets=[i for i, (a, b) in enumerate(zip(before, after)) if a != b],
+                        deploy_retry=after[0x68C], native_visits=visits)))
+    return rows
+
 def generate():
     return {'source':'unicorn/gamemd.exe','mission_branches':branches(),'turns':turns(),'turn_completion':turn_completion(),
-            'try_to_deploy_sites':try_to_deploy_sites()}
+            'try_to_deploy_sites':try_to_deploy_sites(),'deploy_admission':deploy_admission()}
 
 if __name__ == '__main__':
     finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=lambda: provenance(
-        scope='13 continuation interior branch cases, 322 complete native turn/current samples, four turn-completion latch cases and the 36-entry TryToDeploy site table',
+        scope='13 continuation interior branch cases, 322 complete native turn/current samples, four turn-completion latch cases, the 36-entry TryToDeploy site table and seven MCV EMP admission/caller controls',
         assumptions=['Unit and FacingClass layouts from live Ghidra disassembly; fresh emulator per case',
                      'mission fixtures start after substituted Deploy return, or after state0 radio call',
                      'no mission timing, RNG, placement, successful conversion or visual parity claim',
                      'FacingClass timer padding ignored; global frame is explicitly initialized',
                      'same-target duplicate Do_Turn at frame101 must preserve entire FacingClass state',
                      'turn completion executes original rotation predicate/latch branch, stopping before PerCellProcess call',
-                     'site table runs the one-time initializer with the guard bit clear, stopping before its atexit call'],
+                     'site table runs the one-time initializer with the guard bit clear, stopping before its atexit call',
+                     'MCV admission executes whole700D50 using actual Unit vtable7F5C70, actual cell tunnel check484AE0 and Unit EMP query746C90 to70EFD0; alive DeathFrame=-1 and a separate dying-unit control',
+                     'Prepared ordinary cell, no tube, no parasite/mind controller, DeploysInto construction yard, no passengers; no final conversion/placement claim',
+                     'Deploy7393C0 caller runs refused path to return; allowed path stops7393DA before locomotion/placement',
+                     'Admission/caller controls preserve original executable bytes, the global frame and EMP counter; monitored RNG/Detach entries fail, but valid whole RNG stream initialization and all other timers are not claimed'],
         substitutions=['mission blocks supply Deploy return and resulting unit alive/flag/NavCom inputs; stop before further calls'],
         entry_points={'state0':0x73DD8E,'initial_result':0x73DDCB,'retry_result':0x73DD62,
                       'Drive_Do_Turn':0x4B0EF0,'Facing_Current':0x4C93D0,'Drive_turn_completion':0x4B0775,
-                      'TryToDeploy_site_init':0x738F9C}))
+                      'TryToDeploy_site_init':0x738F9C,'CanDeploySlashUnload':0x700D50,
+                      'Unit_EMP_query':0x746C90,'Techno_EMP_query':0x70EFD0,
+                      'Unit_Deploy_admission_caller':0x7393C0}))

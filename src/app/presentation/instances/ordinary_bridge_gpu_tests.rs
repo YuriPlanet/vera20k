@@ -29,7 +29,6 @@ use crate::render::terrain_draw::TerrainDrawRenderer;
 use crate::render::terrain_draw_gpu_tests::{
     Gpu, assert_native_color_and_depth, camera, clear, encoded,
 };
-use crate::rules::ini_parser::IniFile;
 use crate::rules::terrain_rules::LandType;
 use crate::util::sha256::sha256_hex;
 use serde_json::{Value, json};
@@ -148,7 +147,6 @@ struct Probe {
     atlas: OverlayAtlas,
     assets: AssetManager,
     palette: Palette,
-    rules_ini: IniFile,
     terrain: ResolvedTerrainGrid,
     entries: Vec<OverlayEntry>,
     names: BTreeMap<u8, String>,
@@ -173,13 +171,6 @@ impl Probe {
     ) -> Self {
         let root = PathBuf::from(std::env::var_os("RA2_DIR").expect("physical retail root"));
         let mut assets = AssetManager::new(&root, MediaArchiveMode::STOCK_DIGITAL).unwrap();
-        let mode = IniFile::from_bytes(assets.get_ref("MPBattleMD.ini").unwrap()).unwrap();
-        let (_, rules_ini, _, _) = crate::app::loading::init_helpers::load_rules_with_merged_ini(
-            &assets,
-            Some(&mode),
-            Some(&scene.map.ini),
-        )
-        .unwrap();
         let theater = crate::map::theater::load_theater(&mut assets, &scene.map.header.theater)
             .expect("activate the physical map's theater before name lookup");
         let center = fixture.center();
@@ -223,10 +214,7 @@ impl Probe {
             theater.extension,
             &scene.map.header.theater,
             registry,
-            &rules.tiberium_types,
-            &rules.crate_rules,
-            &rules_ini,
-            rules.art(),
+            rules,
             None,
             &[],
         )
@@ -260,8 +248,6 @@ impl Probe {
                 theater.extension,
                 &scene.map.header.theater,
                 registry,
-                &rules_ini,
-                rules.art(),
                 &[],
             )
             .unwrap();
@@ -275,6 +261,7 @@ impl Probe {
             parse_lighting(&scene.map.ini),
             2,
             Some((&terrain, scene.sim())),
+            None,
         );
         let palette = assets.resolve_ref(fixture.theater().3).unwrap();
         let profile = crate::map::lighting::normal_profile_units(&parse_lighting(&scene.map.ini));
@@ -310,7 +297,6 @@ impl Probe {
             atlas,
             assets,
             palette: theater.iso_palette,
-            rules_ini,
             terrain,
             entries,
             names,
@@ -361,6 +347,9 @@ impl Probe {
                 viewport: self.size.map(|value| value as f32),
                 origin_y: view.world_origin_y,
                 world_height: view.world_height,
+                viewer: None,
+                fog: None,
+                fog_of_war: false,
             },
             &mut bodies,
         );
@@ -421,11 +410,16 @@ impl Probe {
                 "land":cell.land_type,"raw_bridge_flags":cell.bridge_facts.raw_flags}));
         }
         let name = &self.names[&id];
-        assert_eq!(
-            rules.art().resolve_overlay_image_id(name, &self.rules_ini),
-            *name
-        );
         let filename = format!("{}.{}", name.to_ascii_lowercase(), self.fixture.theater().1);
+        let (bound_file, _) = crate::rules::effect_asset_catalog::load_overlay_shape(
+            &self.assets,
+            rules.overlay_registry(),
+            name,
+            self.fixture.theater().1,
+            self.fixture.theater().0,
+        )
+        .expect("processed overlay image binding");
+        assert!(bound_file.eq_ignore_ascii_case(&filename));
         let asset = self
             .assets
             .resolve_ref(&filename)
@@ -454,7 +448,7 @@ impl Probe {
                 self.atlas
                     .get(&OverlaySpriteKey {
                         name: name.clone(),
-                        frame: frame_index as u8
+                        frame: frame_index as i32
                     })
                     .is_none(),
                 "flank must not substitute populated body art"
@@ -672,6 +666,7 @@ impl Probe {
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             crate::app::presentation::render::draw_pooled_cell_bodies(
                 &mut pass,
@@ -792,6 +787,8 @@ impl Probe {
             self.size[0],
             self.size[1],
             1.0,
+            None,
+            Default::default(),
         );
         let actual_a = self
             .gpu
@@ -1049,13 +1046,6 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
     let rules = &scene.runtime.resources.rules;
     let registry = &scene.runtime.resources.overlay_registry;
     let mut assets = AssetManager::new(&root, MediaArchiveMode::STOCK_DIGITAL).unwrap();
-    let mode = IniFile::from_bytes(assets.get_ref("MPBattleMD.ini").unwrap()).unwrap();
-    let (_, rules_ini, _, _) = crate::app::loading::init_helpers::load_rules_with_merged_ini(
-        &assets,
-        Some(&mode),
-        Some(&scene.map.ini),
-    )
-    .unwrap();
     assert_eq!(scene.map.header.theater, "TEMPERATE");
     let theater = crate::map::theater::load_theater(&mut assets, &scene.map.header.theater)
         .expect("activate the physical theater before asset lookup");
@@ -1181,10 +1171,7 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
             theater.extension,
             &scene.map.header.theater,
             registry,
-            &rules.tiberium_types,
-            &rules.crate_rules,
-            &rules_ini,
-            rules.art(),
+            rules,
             None,
             &rubble_arts,
         )
@@ -1200,8 +1187,6 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
             theater.extension,
             &scene.map.header.theater,
             registry,
-            &rules_ini,
-            rules.art(),
             &rubble_arts,
         )
         .expect("physical rubble shadow atlas and overlay proxy");
@@ -1223,6 +1208,9 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
                 viewport: size.map(|v| v as f32),
                 origin_y: view.world_origin_y,
                 world_height: view.world_height,
+                viewer: None,
+                fog: None,
+                fog_of_war: false,
             },
             &mut bodies,
         );

@@ -8,8 +8,8 @@ VERA20K_GAMEMD_EXE='<original-gamemd.exe>' python -m tools.spatial_oracle.buildi
 
 The corpus contains 15 admission/install, 6 power and 4 removal controls. It uses
 the existing `building_art_transition.ArtFixture`, original executable mapping,
-and checked Unicorn execution. The metadata records the actual executable SHA,
-original byte slices, fixture priors and substituted callout boundaries. No game
+and checked Unicorn execution. The metadata records the original byte slices,
+fixture priors and substituted callout boundaries. No game
 assets, mod archives or local paths are needed or included.
 
 ## Native behavior established

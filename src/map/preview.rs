@@ -164,6 +164,11 @@ impl ScenarioStartStaging {
 pub const PALETTED_PREVIEW_COLORS: usize = 64;
 /// `LZOPipe(0, 0x2000)` for `Preview.bin` (`0x005E837E`).
 const PREVIEW_BIN_BLOCK_SIZE: usize = 0x2000;
+// VERA resource ceiling for authored/network thumbnails, not a native format
+// limit. Custom previews up to 2048x2048 remain supported (16 MiB decoded RGBA).
+const MAX_PREVIEW_SIDE: u32 = 2048;
+const MAX_PREVIEW_PIXELS: usize = MAX_PREVIEW_SIDE as usize * MAX_PREVIEW_SIDE as usize;
+const MAX_PALETTED_PREVIEW_BYTES: usize = 12 + 256 * 2 + MAX_PREVIEW_PIXELS;
 
 /// `CreatePalettedPreview 0x00642130`: the LAN host's preview, halved and
 /// cut to `colors` 12-bit colours, as the blob
@@ -245,9 +250,14 @@ pub fn paletted_preview_image(blob: &[u8]) -> Option<DecodedPreview> {
         Some(u32::from_le_bytes(blob.get(at..at + 4)?.try_into().ok()?) as usize)
     };
     let (width, height, colors) = (field(0)?, field(4)?, field(8)?);
+    let rgba_len =
+        expected_preview_rgba_len(width.try_into().ok()?, height.try_into().ok()?).ok()?;
+    if colors > 256 {
+        return None;
+    }
     let indices_at = 12usize.checked_add(colors.checked_mul(2)?)?;
-    let indices = blob.get(indices_at..indices_at.checked_add(width.checked_mul(height)?)?)?;
-    let mut rgba = Vec::with_capacity(indices.len() * 4);
+    let indices = blob.get(indices_at..indices_at.checked_add(rgba_len / 4)?)?;
+    let mut rgba = Vec::with_capacity(rgba_len);
     for &index in indices {
         let at = 12 + 2 * usize::from(index);
         let code = blob
@@ -282,7 +292,10 @@ pub fn preview_bin_bytes(blob: &[u8]) -> Vec<u8> {
 /// length, and `LZOStraw(1, 0x2000)` decodes the rest.
 pub fn preview_bin_blob(bytes: &[u8]) -> Option<Vec<u8>> {
     let length = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?) as usize;
-    let mut blob = decompress_chunks(&bytes[4..]).ok()?;
+    if !(12..=MAX_PALETTED_PREVIEW_BYTES).contains(&length) {
+        return None;
+    }
+    let mut blob = decompress_chunks(&bytes[4..], length).ok()?;
     (blob.len() >= length).then(|| {
         blob.truncate(length);
         blob
@@ -348,7 +361,9 @@ impl fmt::Display for PreviewDecodeError {
                     "PreviewPack byte count {actual} did not match expected {expected}"
                 )
             }
-            Self::PixelBufferTooLarge => write!(f, "PreviewPack dimensions overflowed"),
+            Self::PixelBufferTooLarge => {
+                write!(f, "PreviewPack dimensions exceed supported bounds")
+            }
         }
     }
 }
@@ -382,7 +397,8 @@ pub fn parse_preview_section(ini: &IniFile) -> PreviewSection {
 fn preview_size(ini: &IniFile) -> Option<(u32, u32)> {
     let [_, _, width, height] = ini.section("Preview")?.read_rect("Size", [0; 4]);
     let size = (u32::try_from(width).ok()?, u32::try_from(height).ok()?);
-    (size.0 > 0 && size.1 > 0).then_some(size)
+    expected_preview_pixels(size.0, size.1).ok()?;
+    Some(size)
 }
 
 fn preview_pack_text(ini: &IniFile) -> Option<String> {
@@ -390,24 +406,26 @@ fn preview_pack_text(ini: &IniFile) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
+pub(crate) fn expected_preview_pixels(
+    width: u32,
+    height: u32,
+) -> Result<usize, PreviewDecodeError> {
+    if !(1..=MAX_PREVIEW_SIDE).contains(&width) || !(1..=MAX_PREVIEW_SIDE).contains(&height) {
+        return Err(PreviewDecodeError::PixelBufferTooLarge);
+    }
+    usize::try_from(width * height).map_err(|_| PreviewDecodeError::PixelBufferTooLarge)
+}
+
 fn expected_preview_rgb_len(width: u32, height: u32) -> Result<usize, PreviewDecodeError> {
-    let pixels = width
-        .checked_mul(height)
-        .ok_or(PreviewDecodeError::PixelBufferTooLarge)?;
-    let bytes = pixels
+    expected_preview_pixels(width, height)?
         .checked_mul(3)
-        .ok_or(PreviewDecodeError::PixelBufferTooLarge)?;
-    usize::try_from(bytes).map_err(|_| PreviewDecodeError::PixelBufferTooLarge)
+        .ok_or(PreviewDecodeError::PixelBufferTooLarge)
 }
 
 fn expected_preview_rgba_len(width: u32, height: u32) -> Result<usize, PreviewDecodeError> {
-    let pixels = width
-        .checked_mul(height)
-        .ok_or(PreviewDecodeError::PixelBufferTooLarge)?;
-    let bytes = pixels
+    expected_preview_pixels(width, height)?
         .checked_mul(4)
-        .ok_or(PreviewDecodeError::PixelBufferTooLarge)?;
-    usize::try_from(bytes).map_err(|_| PreviewDecodeError::PixelBufferTooLarge)
+        .ok_or(PreviewDecodeError::PixelBufferTooLarge)
 }
 
 /// `[PreviewPack]` pixels are stored in RGB order.
@@ -426,9 +444,9 @@ pub fn decode_preview_pack(
         return Err(PreviewDecodeError::MissingPreviewPack);
     }
 
-    let compressed = base64_decode(encoded).map_err(PreviewDecodeError::InvalidBase64)?;
-    let rgb = decompress_chunks(&compressed)?;
     let expected = expected_preview_rgb_len(width, height)?;
+    let compressed = base64_decode(encoded).map_err(PreviewDecodeError::InvalidBase64)?;
+    let rgb = decompress_chunks(&compressed, expected)?;
     if rgb.len() != expected {
         return Err(PreviewDecodeError::PixelByteCount {
             expected,
@@ -494,14 +512,31 @@ mod tests {
 
     #[test]
     fn decode_preview_pack_rejects_wrong_byte_count() {
-        let err = decode_preview_pack("CgAGABcBAgMEBQYRAAA=", 1, 1).unwrap_err();
+        let err = decode_preview_pack("CgAGABcBAgMEBQYRAAA=", 3, 1).unwrap_err();
         assert_eq!(
             err,
             PreviewDecodeError::PixelByteCount {
-                expected: 3,
+                expected: 9,
                 actual: 6,
             }
         );
+    }
+
+    #[test]
+    fn preview_limits_dimensions_and_cumulative_decoded_bytes() {
+        // Two independent three-byte RGB chunks cannot fit one declared pixel.
+        assert!(matches!(
+            decode_preview_pack("BwADABQBAgMRAAAHAAMAFAECAxEAAA==", 1, 1),
+            Err(PreviewDecodeError::Lzo(_))
+        ));
+        // Dimensions are refused before even decoding the packed input.
+        assert_eq!(
+            decode_preview_pack("invalid base64", 2049, 1),
+            Err(PreviewDecodeError::PixelBufferTooLarge)
+        );
+        let mut bin = 16u32.to_le_bytes().to_vec();
+        bin.extend(crate::util::lzo::compress_chunks(&[0; 32], 16));
+        assert!(preview_bin_blob(&bin).is_none());
     }
 
     #[test]

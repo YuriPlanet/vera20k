@@ -1,36 +1,54 @@
 name: Release
 
-# Downloadable builds of the game for players who do not compile it.
+# Downloadable builds of the game for players who do not compile it: one
+# installer per platform and nothing else (a Windows setup program, a macOS disk
+# image and a Linux AppImage). This project changes too fast for every main
+# commit to be a release, so there are two kinds, both started by hand (and
+# nightly.yml starts a dev build of main each day that main has changed):
 #
-# Two ways in, both publishing from the *same* run (never by pushing a tag and
-# waiting for a second trigger -- GitHub suppresses `on: push` for refs written
-# with GITHUB_TOKEN, so a tag created by a job can never start another one):
+#   dev build -- dispatch with `promote` empty. Builds all platforms and runs the
+#                library tests on each at the same time; nothing is tagged or
+#                published unless every build and every test run passes (publish
+#                mode `none` runs them too). Names every installer after its
+#                build time and the commit it was built from, tags it
+#                v<Cargo.toml version>-<build time>, and lists the changes since
+#                the previous release of either kind. Publishes a draft
+#                pre-release by default, so a bad build is discarded instead of
+#                shipped. Only the newest published dev builds are kept.
+#   release   -- dispatch with `promote` set to the tag of a published dev build
+#                that testers played. Publishes the same installers as release
+#                v<version>, checked against their build provenance and never
+#                rebuilt: the stable toolchain can change between runs. Only
+#                their names change, to plain vera20k-<version>-<platform> ones.
+#                Its notes list the changes since the previous release. It is a
+#                draft, for notes written for players; once published, it is the
+#                repository's Latest release. Then raise the Cargo.toml version,
+#                so later dev builds carry the next one; a dev build refuses to
+#                start until it is above every release.
 #
-#   tag push `v*`     -- the versioned release path. The tag must equal
-#                        `v` + the Cargo.toml version, publishes a pre-release.
-#   workflow_dispatch -- the maintainer's path, because this project changes too
-#                        fast for every main commit to be a release. Builds all
-#                        platforms, names every archive after its build time and
-#                        the commit it was built from, and writes release notes
-#                        that list the commits since the previous release.
-#                        Publishes a draft by default, so a bad build is
-#                        discarded instead of shipped.
+# The job that creates a tag also publishes its release: GitHub suppresses
+# `on: push` for refs written with GITHUB_TOKEN, so a tag created by a job can
+# never start another workflow.
 #
-# Archives hold the game program, config.toml.example, the license, the
-# third-party notices (THIRD_PARTY_LICENSES.html) and a README.txt made from
-# .github/release/README.txt.in. They never hold game files: this repository
-# ships no retail assets, and neither do its releases (README.md, README.txt.in).
+# Each installer holds the game program, the license, the third-party notices
+# (THIRD_PARTY_LICENSES.html) and a README.txt made from
+# .github/release/README.txt.in; the Windows one also config.toml.example. They
+# never hold game files (README.md, README.txt.in). Their one piece of game art
+# is the app icon, Red Alert 2's red star from retail game.exe
+# (.github/release/icon.png).
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
+      promote:
+        description: 'Release: the dev build tag to promote. Empty = build a new dev build.'
+        type: string
+        required: false
       tag:
-        description: 'Release tag. Empty = v<Cargo.toml version>-<build time>.'
+        description: 'Dev build tag. Empty = v<Cargo.toml version>-<build time>.'
         type: string
         required: false
       publish:
-        description: 'Publish how? "none" only uploads workflow artifacts.'
+        description: 'Dev build: publish how? "none" only uploads workflow artifacts.'
         type: choice
         options: [draft, prerelease, none]
         default: draft
@@ -44,6 +62,9 @@ env:
   # VCRUNTIME140.dll, which Windows does not ship. x86-64 Windows only.
   CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: rust-lld
   CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+  # The oldest macOS the Mac build runs on, for rustc, for the C code built
+  # with it, and for the app's Info.plist (.github/release/macos/app.sh).
+  MACOSX_DEPLOYMENT_TARGET: '11.0'
 
 jobs:
   # One cheap job decides the names and the publish mode, so all platform jobs
@@ -51,6 +72,8 @@ jobs:
   # over midnight mid-run.
   prepare:
     name: prepare
+    # A release reuses a dev build's installers; only a dev build builds.
+    if: inputs.promote == ''
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -63,7 +86,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           # The short build sha comes from the checkout, so it is the commit the
-          # archives were actually built from.
+          # installers were actually built from.
           fetch-depth: 1
       - name: Decide version, build time, sha, tag and publish mode
         id: names
@@ -80,24 +103,25 @@ jobs:
             echo "No [package] version found in Cargo.toml" >&2
             exit 1
           fi
-          # UTC keeps archive names identical for maintainers in any timezone.
+          # A dev build is a pre-release of its version, which sorts before that
+          # version's release. After a release, a dev build of the same or a
+          # lower version would look older than the release it follows.
+          released="$(git ls-remote --tags --refs origin 'refs/tags/v*' \
+            | sed -n 's|.*refs/tags/v\([0-9]*\.[0-9]*\.[0-9]*\)$|\1|p' | sort -V | tail -n 1)"
+          if [ -n "$released" ] \
+            && [ "$(printf '%s\n' "$released" "$version" | sort -V | tail -n 1)" = "$released" ]; then
+            echo "::error::v$released is released; raise the version in Cargo.toml above $released before the next dev build."
+            exit 1
+          fi
+          # UTC keeps installer names identical for maintainers in any timezone.
           # YYYYMMDD-HHMMSS: a sortable build time, so two builds of one
           # Cargo.toml version never collide.
           stamp="$(date -u +%Y%m%d-%H%M%S)"
-          # Short build sha: the archive name carries the commit it came from,
+          # Short build sha: the installer name carries the commit it came from,
           # so a downloaded file can be traced without opening the release.
           sha="$(git rev-parse --short=7 HEAD)"
-          if [ "$GITHUB_EVENT_NAME" = 'push' ]; then
-            tag="$GITHUB_REF_NAME"
-            if [ "$tag" != "v$version" ]; then
-              echo "Tag $tag does not match Cargo.toml version $version (expected v$version)" >&2
-              exit 1
-            fi
-            publish='prerelease'
-          else
-            tag="${INPUT_TAG:-v$version-$stamp}"
-            publish="${INPUT_PUBLISH:-draft}"
-          fi
+          tag="${INPUT_TAG:-v$version-$stamp}"
+          publish="${INPUT_PUBLISH:-draft}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "stamp=$stamp" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
@@ -156,75 +180,432 @@ jobs:
           cargo about generate --locked --fail -c .github/release/about.toml \
             -o dist/THIRD_PARTY_LICENSES.html .github/release/about.hbs
       - uses: Swatinem/rust-cache@v2
+      # The AppImage step also needs desktop-file-validate.
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config desktop-file-utils
+      - name: Install Inno Setup 7.1.0
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Pin the official compiler instead of using the runner's older copy.
+          $installer = Join-Path $env:RUNNER_TEMP 'innosetup-7.1.0-x64.exe'
+          $compilerDir = Join-Path $env:RUNNER_TEMP 'innosetup-7.1.0'
+          Invoke-WebRequest -Uri 'https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe' -OutFile $installer
+          $expectedSha256 = '0362a383ed217d4c4239b5933866dd96d3eb2102737da92f80f6057a4b40df2f'
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne $expectedSha256) {
+            throw 'Inno Setup download checksum mismatch'
+          }
+          $install = Start-Process $installer -Wait -PassThru -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', '/TASKS=',
+            "/DIR=`"$compilerDir`"")
+          if ($install.ExitCode -ne 0) { throw "Inno Setup installation failed: $($install.ExitCode)" }
+          $iscc = Join-Path $compilerDir 'ISCC.exe'
+          if (-not (Test-Path $iscc -PathType Leaf)) { throw 'Inno Setup compiler was not installed' }
+          "INNO_SETUP_ISCC=$iscc" >> $env:GITHUB_ENV
       - name: Build the game
         # Shipped binaries leave out the default `dev-overlays` (the Ctrl+Shift dev chord),
         # and use the whole-program `shipping` profile (Cargo.toml).
         run: cargo build --profile shipping --locked -p vera20k --no-default-features --bin vera20k
       - name: Package
+        id: package
         shell: bash
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           STAMP: ${{ needs.prepare.outputs.stamp }}
           SHA7: ${{ needs.prepare.outputs.sha }}
-          TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
           # Name = version + platform + build time + the commit built. The time
           # keeps two builds of one Cargo.toml version apart; the short sha makes
-          # a downloaded archive traceable to its commit.
+          # a downloaded installer traceable to its commit. A release drops both
+          # (the promote job).
           name="vera20k-${VERSION}-${{ matrix.target }}-${STAMP}-${SHA7}"
           mkdir -p "dist/$name"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          # The files the platform's installer takes from this folder.
           cp "target/shipping/${{ matrix.program }}" config.toml.example LICENSE-GPL \
             dist/THIRD_PARTY_LICENSES.html "dist/$name/"
-          sed "s/@VERSION@/${TAG}/" .github/release/README.txt.in > "dist/$name/README.txt"
+          # The README names the version and build, which stay true when a
+          # release republishes this installer.
+          sed -e "s/@VERSION@/${VERSION}/" -e "s/@BUILD@/${STAMP}/" \
+            .github/release/README.txt.in > "dist/$name/README.txt"
+      # Windows gets an installer of those files: it finds the Yuri's Revenge
+      # folder and writes config.toml (.github/release/windows).
+      - name: Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          STAMP: ${{ needs.prepare.outputs.stamp }}
+          NAME: ${{ steps.package.outputs.name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dist = (Resolve-Path dist).Path
+          & $env:INNO_SETUP_ISCC "/DAppVersion=$env:VERSION" "/DBuild=$env:STAMP" `
+            "/DPackageDir=$dist\$env:NAME" "/DOutputDir=$dist" `
+            "/DOutputBaseFilename=$env:NAME-setup" .github\release\windows\vera20k.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+      # Install, upgrade and uninstall silently against stand-in game folders, so
+      # a broken installer stops the release here instead of reaching players.
+      - name: Test the Windows installer
+        if: runner.os == 'Windows'
+        # A dialog left open in a silent install waits forever.
+        timeout-minutes: 10
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          NAME: ${{ steps.package.outputs.name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = (Resolve-Path "dist\$env:NAME-setup.exe").Path
+          $root = Join-Path $env:RUNNER_TEMP 'installer-test'
+          $app = Join-Path $root 'VERA20K'
+          $log = Join-Path $root 'setup.log'
+          New-Item -ItemType Directory -Force $root | Out-Null
+          # Exercise the real picker functions and controls in both UI
+          # languages. This test setup aborts before installing anything.
+          $definition = Get-Content '.github\release\windows\vera20k.iss' -Raw -Encoding utf8
+          $messagesStart = $definition.IndexOf('[Languages]')
+          $filesStart = $definition.IndexOf('[Files]')
+          $codeStart = $definition.IndexOf('[Code]')
+          $messages = $definition.Substring($messagesStart, $filesStart - $messagesStart)
+          $code = $definition.Substring($codeStart).Replace(
+            'procedure InitializeWizard();', 'procedure ProductionInitializeWizard();')
+          $testHeader = @'
+          [Setup]
+          AppId=VERA20K-Picker-Tests
+          AppName=VERA20K picker tests
+          AppVersion=1
+          DefaultDirName={tmp}\picker-tests
+          PrivilegesRequired=lowest
+          Uninstallable=no
+          CreateAppDir=no
+          WizardStyle=modern
+          DisableWelcomePage=no
+          '@
+          $testBody = Get-Content '.github\release\windows\picker-tests.iss' -Raw -Encoding utf8
+          $testScript = Join-Path $root 'picker-tests.iss'
+          [IO.File]::WriteAllText($testScript, "$testHeader`n$messages`n$code`n$testBody",
+            [Text.UTF8Encoding]::new($false))
+          & $env:INNO_SETUP_ISCC "/O$root" '/Fpicker-tests' $testScript
+          if ($LASTEXITCODE -ne 0) { throw 'picker test setup did not compile' }
+          foreach ($language in 'english', 'chinesesimplified') {
+            $result = Join-Path $root 'picker-test-result.txt'
+            Remove-Item $result -ErrorAction SilentlyContinue
+            $p = Start-Process (Join-Path $root 'picker-tests.exe') -Wait -PassThru -ArgumentList `
+              '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LANG=$language"
+            # The test deliberately calls Abort, so its success marker is
+            # authoritative; the setup process itself exits with code 1.
+            if (-not (Test-Path $result) -or (Get-Content $result -Raw) -ne 'passed') {
+              if (Test-Path $result) { Get-Content $result }
+              throw "picker tests failed in $language"
+            }
+          }
+          # Without a game folder, setup takes the one from before or finds one.
+          function Install([string]$Game) {
+            $arguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$log`"",
+              "/DIR=`"$app`"")
+            if ($Game) { $arguments += "/GAMEDIR=`"$Game`"" }
+            $p = Start-Process $setup -Wait -PassThru -ArgumentList $arguments
+            return $p.ExitCode
+          }
+          # Tiny authored MIX/CSF fixtures exercise the bundled real reader.
+          # No retail data or validation bypass is used in the installer.
+          function New-Game([string]$Dir) {
+            if (-not [IO.Path]::IsPathRooted($Dir)) { $Dir = Join-Path $root $Dir }
+            New-Item -ItemType Directory -Force $Dir | Out-Null
+            Copy-Item '.github\release\windows\test-game\*' $Dir -Exclude README.md
+            return $Dir
+          }
+          function Read-Config { Get-Content (Join-Path $app 'config.toml') -Raw -Encoding utf8 }
+          function Ra2Dir([string]$Dir) { 'ra2_dir = "' + ($Dir -replace '\\', '/') + '"' }
+          # A setup that found the wrong folder shows where it looked (its log).
+          function Assert-Found([string]$Dir) {
+            $config = Read-Config
+            if (-not $config.Contains((Ra2Dir $Dir))) {
+              Get-Content $log -Encoding utf8 | Select-String 'Steam|Yuri'
+              $config -split "`n" | Select-String '^ra2_dir'
+              throw "setup did not find $Dir"
+            }
+          }
+          # Non-ASCII from code points, so the script's own encoding cannot matter.
+          $yuri = -join [char[]](0x5C24, 0x91CC, 0x7684, 0x590D, 0x4EC7)
+          $commander = -join [char[]](0x6307, 0x6325, 0x5B98)
 
-          # Files sit at the archive root so they can be extracted straight into
-          # the game folder.
-          cd "dist/$name"
-          if [ "$RUNNER_OS" = Windows ]; then
-            7z a -tzip "../$name.zip" ./* > /dev/null
-          else
-            tar -czf "../$name.tar.gz" ./*
-          fi
+          # A folder without the game is refused before anything is installed.
+          $empty = Join-Path $root 'empty'
+          New-Item -ItemType Directory -Force $empty | Out-Null
+          if ((Install $empty) -eq 0) { throw 'setup accepted a folder without Yuri''s Revenge' }
+          if (Test-Path (Join-Path $app 'vera20k.exe')) { throw 'a refused setup installed files' }
+          $report = Get-Content $log -Raw -Encoding utf8
+          foreach ($f in 'ra2md.mix', 'ra2.mix', 'ra2md.csf', 'rulesmd.ini', 'artmd.ini', 'aimd.ini') {
+            if (-not $report.Contains($f)) { throw "setup did not report missing $f" }
+          }
+
+          # Having both masters is insufficient if another required archive
+          # is missing. A later choice retries with fresh results.
+          $partial = New-Game 'incomplete'
+          Remove-Item (Join-Path $partial 'cameomd.mix')
+          if ((Install $partial) -eq 0) { throw 'setup accepted missing required cameo data' }
+          if (-not (Get-Content $log -Raw -Encoding utf8).Contains('cameomd.mix')) {
+            throw 'setup did not name the missing required archive'
+          }
+
+          # A fresh install writes config.toml from the example.
+          $first = New-Game 'game one'
+          $code = Install $first
+          if ($code -ne 0) { Get-Content $log; throw "setup failed with exit code $code" }
+          $report = Get-Content $log -Raw -Encoding utf8
+          if (-not $report.Contains('test-song.wav') -or -not $report.Contains('Optional content')) {
+            throw 'setup did not warn about optional music'
+          }
+          foreach ($f in 'vera20k.exe', 'config.toml', 'config.toml.example', 'README.txt',
+                         'LICENSE-GPL', 'THIRD_PARTY_LICENSES.html') {
+            if (-not (Test-Path (Join-Path $app $f))) { throw "setup did not install $f" }
+          }
+          $config = Read-Config
+          if (-not $config.Contains((Ra2Dir $first))) { throw "config.toml lacks $(Ra2Dir $first)" }
+          if ($config -notmatch '(?m)^settings_dir = "\."\r?$') { throw 'config.toml lacks settings_dir = "."' }
+          # The program carries its icon and version details (build.rs).
+          $exe = Join-Path $app 'vera20k.exe'
+          Add-Type -Namespace Win32 -Name Shell -MemberDefinition @'
+          [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+          public static extern uint ExtractIconEx(string file, int index, IntPtr[] large, IntPtr[] small, uint count);
+          '@
+          if ([Win32.Shell]::ExtractIconEx($exe, -1, $null, $null, 0) -lt 1) { throw 'vera20k.exe has no icon' }
+          $details = (Get-Item $exe).VersionInfo
+          if ($details.ProductName -ne 'VERA20k' -or $details.ProductVersion -ne $env:VERSION) {
+            throw "vera20k.exe names itself $($details.ProductName) $($details.ProductVersion)"
+          }
+
+          # An upgrade moves ra2_dir only, keeping the player's own settings.
+          [IO.File]::AppendAllText((Join-Path $app 'config.toml'),
+            "`n[profile]`nname = `"$commander`"`n", [Text.UTF8Encoding]::new($false))
+          $second = New-Game $yuri
+          $code = Install $second
+          if ($code -ne 0) { Get-Content $log; throw "upgrade failed with exit code $code" }
+          $config = Read-Config
+          if (-not $config.Contains((Ra2Dir $second))) { throw "upgrade did not write $(Ra2Dir $second)" }
+          if ([regex]::Matches($config, '(?m)^ra2_dir =').Count -ne 1) { throw 'config.toml repeats ra2_dir' }
+          if (-not $config.Contains("name = `"$commander`"")) { throw 'upgrade lost the [profile] name' }
+          if ([IO.File]::ReadAllBytes((Join-Path $app 'config.toml'))[0] -eq 0xEF) {
+            throw 'config.toml starts with a byte order mark'
+          }
+
+          # Uninstalling removes the program and keeps what the player made.
+          $p = Start-Process (Join-Path $app 'unins000.exe') -Wait -PassThru `
+            -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          if ($p.ExitCode -ne 0) { throw "uninstall failed with exit code $($p.ExitCode)" }
+          # The uninstaller finishes in a copy of itself, which deletes the
+          # uninstaller last; give it time to. Until then, a new setup could
+          # still read the uninstalled one's game folder.
+          $deadline = (Get-Date).AddSeconds(60)
+          while ((Test-Path (Join-Path $app 'unins000.exe')) -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+          }
+          if (Test-Path (Join-Path $app 'unins000.exe')) { throw 'uninstall did not finish' }
+          if (Test-Path (Join-Path $app 'vera20k.exe')) { throw 'uninstall left vera20k.exe behind' }
+          if (-not (Test-Path (Join-Path $app 'config.toml'))) { throw 'uninstall removed config.toml' }
+
+          # With nothing from before, setup finds the game: in a Steam library
+          # before the EA app's default folder. Steam records its folder with
+          # forward slashes, and lists its libraries in UTF-8 with doubled
+          # backslashes.
+          $eaGame = New-Game (Join-Path $env:ProgramFiles 'EA Games\Command and Conquer Red Alert II')
+          Copy-Item '.github\release\windows\test-language-german.csf' (Join-Path $eaGame 'ra2md.csf')
+          $steam = Join-Path $root 'Steam'
+          $library = Join-Path $root "library $yuri"
+          $steamGame = New-Game "library $yuri\steamapps\common\Command & Conquer Red Alert II"
+          New-Item -ItemType Directory -Force (Join-Path $steam 'steamapps') | Out-Null
+          New-Item -Force 'HKCU:\Software\Valve\Steam' | Out-Null
+          Set-ItemProperty 'HKCU:\Software\Valve\Steam' SteamPath ($steam -replace '\\', '/')
+          $libraries = "`"libraryfolders`"`n{`n"
+          # The same library appears twice with different case and a trailing
+          # separator. It must produce one installation in the picker.
+          foreach ($i in 0, 1, 2) {
+            $folder = @($steam, $library, ($library.ToUpperInvariant() + '\'))[$i] -replace '\\', '\\'
+            $libraries += "`t`"$i`"`n`t{`n`t`t`"path`"`t`t`"$folder`"`n`t`t`"label`"`t`t`"`"`n`t}`n"
+          }
+          [IO.File]::WriteAllText((Join-Path $steam 'steamapps\libraryfolders.vdf'), "$libraries}`n",
+            [Text.UTF8Encoding]::new($false))
+          # Steam appears first and has both masters, but lacks another
+          # required archive. Both installations must be listed, with the
+          # valid German EA copy recommended instead of the damaged one.
+          Remove-Item (Join-Path $steamGame 'cameomd.mix')
+          $code = Install ''
+          if ($code -ne 0) { Get-Content $log; throw "setup failed to recommend the valid game: exit code $code" }
+          Assert-Found $eaGame
+          $report = Get-Content $log -Raw -Encoding utf8
+          foreach ($text in 'Detected game installations: 2',
+                            "Detected game installation: $steamGame", "Detected game installation: $eaGame",
+                            'Language: English (US)', 'Language: German', 'cameomd.mix',
+                            "Recommended game folder: $eaGame") {
+            if (-not $report.Contains($text)) { throw "picker report lacks $text" }
+          }
+          # Explicit automation must still fail for its chosen bad folder,
+          # even while another detected installation passes validation.
+          if ((Install $steamGame) -eq 0) { throw 'setup ignored the invalid explicit /GAMEDIR' }
+          Assert-Found $eaGame
+          # A damaged previous choice must not hide another valid install.
+          Copy-Item '.github\release\windows\test-game\cameomd.mix' $steamGame
+          Remove-Item (Join-Path $eaGame 'ra2.mix')
+          $code = Install ''
+          if ($code -ne 0) { Get-Content $log; throw "setup failed to recommend Steam: exit code $code" }
+          Assert-Found $steamGame
+          Copy-Item '.github\release\windows\test-game\ra2.mix' $eaGame
+          # Without the game there, setup recommends the EA app's folder.
+          Remove-Item (Join-Path $steamGame '*.mix')
+          $code = Install ''
+          if ($code -ne 0) { Get-Content $log; throw "setup failed to find the EA app game: exit code $code" }
+          Assert-Found $eaGame
+          Write-Output 'Installer: refused, installed, upgraded, uninstalled and found the game as expected.'
+      # macOS gets the program as VERA20K.app on a disk image: it keeps its
+      # files in ~/Library/Application Support/VERA20k and finds or asks for the
+      # Yuri's Revenge folder on its first launch (.github/release/macos).
+      - name: macOS app
+        if: runner.os == 'macOS'
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          STAMP: ${{ needs.prepare.outputs.stamp }}
+          NAME: ${{ steps.package.outputs.name }}
+        run: bash .github/release/macos/app.sh "dist/$NAME" "dist/$NAME.dmg"
+      # Check the image's layout and signature and start the packaged app, so a
+      # broken disk image stops the release here instead of reaching players.
+      - name: Test the macOS app
+        if: runner.os == 'macOS'
+        timeout-minutes: 10
+        env:
+          STAMP: ${{ needs.prepare.outputs.stamp }}
+          NAME: ${{ steps.package.outputs.name }}
+        run: |
+          set -euo pipefail
+          mount="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "dist/$NAME.dmg" > /dev/null
+          trap 'hdiutil detach "$mount" > /dev/null || true' EXIT
+          app="$mount/VERA20K.app"
+          plist="$app/Contents/Info.plist"
+          test -L "$mount/Applications"
+          # The window's arrow and layout (dmg_settings.py).
+          test -f "$mount/.background.tiff"
+          test -f "$mount/.DS_Store"
+          test -f "$app/Contents/Resources/README.txt"
+          test -f "$app/Contents/Resources/VERA20K.icns"
+          test -f "$app/Contents/Resources/zh-Hans.lproj/InfoPlist.strings"
+          codesign --verify --strict --verbose=2 "$app"
+          # About VERA20K tells builds apart, and the program and its
+          # Info.plist name the same oldest macOS.
+          build="$(plutil -extract CFBundleVersion raw "$plist")"
+          test "$build" = "${STAMP/-/.}" || { echo "CFBundleVersion is $build" >&2; exit 1; }
+          for minimum in "$(plutil -extract LSMinimumSystemVersion raw "$plist")" \
+            "$(vtool -show-build "$app/Contents/MacOS/VERA20K" | awk '$1 == "minos" { print $2 }')"; do
+            test "$minimum" = "$MACOSX_DEPLOYMENT_TARGET" \
+              || { echo "oldest macOS $minimum, not $MACOSX_DEPLOYMENT_TARGET" >&2; exit 1; }
+          done
+          # Started from the bundle, it works in its data folder: the usage
+          # switch logs there and exits before the folder chooser or a window.
+          data="$HOME/Library/Application Support/VERA20k"
+          rm -rf "$data"
+          (cd / && "$app/Contents/MacOS/VERA20K" -h > /dev/null)
+          grep -q 'VERA20k .* starting' "$data/logs/ra2.log"
+          echo 'macOS app: signed, on the disk image, and starting in its data folder.'
+      # Linux gets the program as an AppImage: it keeps its files in
+      # ~/.local/share/VERA20k and finds or asks for the Yuri's Revenge folder
+      # on its first launch (.github/release/linux).
+      - name: Linux AppImage
+        if: runner.os == 'Linux'
+        env:
+          NAME: ${{ steps.package.outputs.name }}
+        run: bash .github/release/linux/appimage.sh "dist/$NAME" "dist/$NAME.AppImage"
+      # Check the image's contents and start the packaged program, so a broken
+      # AppImage stops the release here instead of reaching players.
+      - name: Test the Linux AppImage
+        if: runner.os == 'Linux'
+        timeout-minutes: 10
+        env:
+          NAME: ${{ steps.package.outputs.name }}
+        run: |
+          set -euo pipefail
+          image="$(realpath "dist/$NAME.AppImage")"
+          test -x "$image"
+          work="$(mktemp -d)"
+          (cd "$work" && "$image" --appimage-extract > /dev/null)
+          root="$work/squashfs-root"
+          test "$(readlink "$root/AppRun")" = usr/bin/vera20k
+          cmp "$root/usr/bin/vera20k" "dist/$NAME/vera20k"
+          test -f "$root/usr/share/doc/vera20k/README.txt"
+          test -f "$root/vera20k.png"
+          test -f "$root/.DirIcon"
+          desktop-file-validate "$root/vera20k.desktop"
+          # Started from the image, it works in its data folder: the usage
+          # switch logs there and exits before the folder chooser or a window.
+          # Unpacked rather than mounted, so the test needs no FUSE.
+          data="${XDG_DATA_HOME:-$HOME/.local/share}/VERA20k"
+          rm -rf "$data"
+          (cd / && APPIMAGE_EXTRACT_AND_RUN=1 "$image" -h > /dev/null)
+          grep -q 'VERA20k .* starting' "$data/logs/ra2.log"
+          echo 'Linux AppImage: complete, and starting in its data folder.'
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
           path: |
-            dist/*.zip
-            dist/*.tar.gz
+            dist/*-setup.exe
+            dist/*.dmg
+            dist/*.AppImage
           if-no-files-found: error
+
+  # The library tests on each platform a dev build ships, from the commit it
+  # builds. No CI runs by itself, so this is where a change first has to pass on
+  # Windows and Linux before it reaches testers. They run beside the builds,
+  # and `publish` needs them. As in the per-platform workflows, there is no
+  # retail game data here: retail-data tests print SKIPPED and pass.
+  test:
+    # A release republishes a tested dev build's files; only a dev build tests.
+    if: inputs.promote == ''
+    strategy:
+      fail-fast: false
+      matrix:
+        # The per-platform workflows' runners. Linux tests on the current Ubuntu,
+        # not the build's 22.04: rust-cache keys on the OS family, not its
+        # version, so a cache saved on the newer image could hand 22.04 build
+        # scripts linked against a glibc it lacks.
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    uses: ./.github/workflows/test.yml
+    with:
+      os: ${{ matrix.os }}
 
   publish:
     name: publish
-    needs: [prepare, build]
-    # Tag pushes always publish; a dispatch chooses, and "none" stops here with
-    # the archives left as workflow artifacts.
+    needs: [prepare, build, test]
+    # "none" stops here, with the installers left as workflow artifacts.
     if: needs.prepare.outputs.publish != 'none'
     #
-    # MAINTENANCE DECISION, left to the maintainers: `needs: build` means one
-    # platform failing stops the release. That is deliberate -- a release that
-    # silently lacks macOS is worse than no release -- but hosted runners do
-    # drop jobs ("not acquired by Runner of type hosted"), and then a fully
-    # built Windows and Linux are discarded too.
+    # MAINTENANCE DECISION, left to the maintainers: `needs: [build, test]`
+    # means one platform failing to build or to pass its tests stops the
+    # release. That is deliberate -- a release that silently lacks macOS is
+    # worse than no release -- but hosted runners do drop jobs ("not acquired
+    # by Runner of type hosted"), and then a fully built Windows and Linux are
+    # discarded too.
     #
-    # To publish whatever succeeded instead, add `always()` to the condition
-    # above and assert the expected archives exist before `gh release create`;
-    # the Checksums step already fails on a missing file. The trade-off is that
-    # a capacity failure would ship a release missing a platform, so the
-    # assertion has to name all three.
+    # To publish whatever built instead, make the condition above `always() &&
+    # needs.prepare.outputs.publish != 'none' && needs.test.result ==
+    # 'success'`, so the tests still have to pass, and let the installer check
+    # below accept a missing platform. The trade-off is that a capacity failure
+    # would ship a release missing a platform.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write
-      # Signed SLSA build provenance: `gh attestation verify <archive>
-      # --repo YuriPlanet/vera20k` proves an archive came from this workflow.
+      # Signed SLSA build provenance: `gh attestation verify <installer>
+      # --repo YuriPlanet/vera20k` proves an installer came from this workflow.
       id-token: write
       attestations: write
     steps:
-      # Notes need real history to list commits since the previous release.
+      # The notes list the changes since the previous release, which needs
+      # history.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -232,156 +613,30 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - uses: actions/attest@v4
-        with:
-          subject-path: dist/vera20k-*
-      - name: Checksums
+      - name: Check the installers
         shell: bash
         run: |
           set -euo pipefail
-          # `gh release create TAG dist/*` hands each match to the uploader, so a
-          # leftover directory (or a symlink) would fail or be skipped silently.
-          # Assert the download really left only regular files.
-          nonfile="$(find dist -mindepth 1 -not -type f -print)"
-          if [ -n "$nonfile" ]; then
-            echo "!! non-file entries in dist/, refusing to publish:" >&2
-            echo "$nonfile" >&2
-            exit 1
-          fi
+          # `gh release create TAG dist/*` uploads every match, so dist/ must hold
+          # exactly the three installers, as regular files.
           cd dist
-          sha256sum vera20k-* > SHA256SUMS.txt
-          cat SHA256SUMS.txt
+          ls -l
+          for pattern in 'vera20k-*-windows-x64-*-setup.exe' 'vera20k-*-macos-arm64-*.dmg' \
+            'vera20k-*-linux-x64-*.AppImage'; do
+            test "$(find . -maxdepth 1 -type f -name "$pattern" | wc -l)" -eq 1 \
+              || { echo "!! dist/ needs exactly one $pattern" >&2; exit 1; }
+          done
+          test "$(find . -mindepth 1 | wc -l)" -eq 3 \
+            || { echo '!! dist/ holds more than the three installers' >&2; exit 1; }
+      - uses: actions/attest@v4
+        with:
+          subject-path: dist/vera20k-*
       - name: Write release notes
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.prepare.outputs.tag }}
-          STAMP: ${{ needs.prepare.outputs.stamp }}
-          SHA7: ${{ needs.prepare.outputs.sha }}
-          VERSION: ${{ needs.prepare.outputs.version }}
-        run: |
-          set -euo pipefail
-          repo_url="https://github.com/$GITHUB_REPOSITORY"
-
-          # Base = the newest *published* release. Drafts are excluded on
-          # purpose: an unpublished draft must not become the diff base.
-          prev_tag="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts \
-            --limit 1 --json tagName --jq '.[0].tagName // empty' 2>/dev/null || true)"
-
-          # Compare by commit, not by tag object: checkout does not fetch tags,
-          # and a scope that names a missing tag fails with "unknown revision".
-          base=""
-          if [ -n "$prev_tag" ]; then
-            base="$(gh release view "$prev_tag" --repo "$GITHUB_REPOSITORY" \
-              --json targetCommitish --jq '.targetCommitish // empty' 2>/dev/null || true)"
-            # targetCommitish may name a branch; resolve it to a commit.
-            if [ -n "$base" ] && git cat-file -e "${base}^{commit}" 2>/dev/null; then
-              : # already a commit in this history
-            else
-              base="$(git rev-parse --verify --quiet "refs/tags/$prev_tag^{commit}" \
-                || git rev-parse --verify --quiet "$prev_tag^{commit}" || true)"
-            fi
-            if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
-              base=""
-            fi
-          fi
-          if [ -n "$base" ]; then
-            base_label="$prev_tag"
-          else
-            base="$(git rev-list --max-parents=0 HEAD | tail -n 1)"
-            base_label="the first commit"
-          fi
-
-          # `tformat` (not `format`) terminates every record with a newline;
-          # `format` drops the last one, so `read` at EOF discards the final
-          # line -- which silently hides the only commit in a one-commit range.
-          #
-          # A release page cannot show a whole project's history. The first
-          # release has no previous tag, so its range is every commit ever
-          # made; cap the list and link the full comparison instead.
-          CHANGELOG_LIMIT=30
-          total="$(git rev-list --count --no-merges "$base..$GITHUB_SHA")"
-          compare_url="$repo_url/compare/$base...$GITHUB_SHA"
-          : > commits.md
-          git log --no-merges --max-count="$CHANGELOG_LIMIT" \
-            --pretty=tformat:'%H%x09%s' "$base..$GITHUB_SHA" \
-            | while IFS=$'\t' read -r h s; do
-                if [ -z "$h" ]; then continue; fi
-                printf -- '- [`%s`](%s/commit/%s) %s\n' "${h:0:7}" "$repo_url" "$h" "$s" >> commits.md
-              done
-          n="$(grep -c '^- ' commits.md || true)"
-
-          cat > notes.md <<EOF
-          ## VERA20k \`$TAG\`
-
-          VERA20k is a free, open-source reimplementation of Command & Conquer: Yuri's
-          Revenge. **It contains no game files**: you need your own copy of Yuri's
-          Revenge 1.001.
-
-          - Version: \`$VERSION\`
-          - Build time: \`$STAMP\` (UTC)
-          - Built from commit [\`$SHA7\`]($repo_url/commit/$GITHUB_SHA)
-
-          ### Changelog
-
-          EOF
-          if [ "$n" -gt 0 ]; then
-            if [ "$total" -gt "$n" ]; then
-              # Newest first, so the cap keeps what a player most wants to read.
-              printf '%s commits since %s; the newest %s are below.\n\n' \
-                "$total" "$base_label" "$n" >> notes.md
-            else
-              printf '%s commit(s) since %s.\n\n' "$total" "$base_label" >> notes.md
-            fi
-            cat commits.md >> notes.md
-            if [ "$total" -gt "$n" ]; then
-              printf '\n_%s more not shown — [full comparison](%s)._\n' \
-                "$((total - n))" "$compare_url" >> notes.md
-            fi
-          else
-            echo 'No commits were added since the previous release.' >> notes.md
-          fi
-
-          cat >> notes.md <<EOF
-
-          ### Downloads
-
-          Extract the archive straight into your Yuri's Revenge folder, or keep it in
-          its own folder and point \`config.toml\` at the game (see the README.txt inside).
-
-          | archive | platform |
-          |---|---|
-          | \`vera20k-$VERSION-windows-x64-$STAMP-$SHA7.zip\` | Windows x64 |
-          | \`vera20k-$VERSION-linux-x64-$STAMP-$SHA7.tar.gz\` | Linux x64 |
-          | \`vera20k-$VERSION-macos-arm64-$STAMP-$SHA7.tar.gz\` | macOS Apple Silicon |
-
-          \`SHA256SUMS.txt\` lists every archive's checksum. Builds are signed with
-          GitHub build provenance; verify one with:
-
-          \`\`\`sh
-          gh attestation verify <archive> --repo $GITHUB_REPOSITORY
-          \`\`\`
-
-          VERA20k is licensed under the GNU General Public License version 3.
-          Source: $repo_url
-
-          Command & Conquer, Red Alert and Yuri's Revenge are trademarks of Electronic
-          Arts Inc. VERA20k is not affiliated with or endorsed by Electronic Arts.
-          EOF
-
-          # Assert the substitution happened instead of shipping a literal
-          # placeholder to players. Both the shell form ($VAR / ${VAR}) and an
-          # @@NAME@@ template marker are checked; a quoted heredoc <<'EOF' would
-          # silently keep either one. Commit lines are skipped: a subject may
-          # legitimately mention a variable such as $RA2_DIR.
-          placeholder='(\$[{]?[A-Z_]+[}]?|@@[A-Z_]+@@)'
-          if grep -v '^- \[`' notes.md | grep -qE "$placeholder"; then
-            echo "!! release notes still contain an unexpanded placeholder:" >&2
-            grep -v '^- \[`' notes.md | grep -nE "$placeholder" >&2
-            exit 1
-          fi
-          echo "--- notes.md ($(wc -l < notes.md) lines) ---"
-          head -20 notes.md
+          COMMIT: ${{ github.sha }}
+        run: bash .github/release/notes.sh notes.md
       - name: Create the tag and the release
         shell: bash
         env:
@@ -393,22 +648,132 @@ jobs:
           # Creating the tag here, before the release, keeps it pinned to the
           # commit that was actually built even when dispatching from a branch.
           # `gh release create --verify-tag` then refuses to invent a different
-          # target. A tag push already has its tag, so only dispatch creates one.
-          if [ "$GITHUB_EVENT_NAME" != 'push' ]; then
-            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
-              echo "Tag $TAG already exists; choose another tag with the 'tag' input." >&2
-              exit 1
-            fi
-            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
-              -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" > /dev/null
-            echo "Created tag $TAG at $GITHUB_SHA"
-          fi
+          # target.
+          bash .github/release/tag.sh "$TAG" "$GITHUB_SHA"
 
-          args=(--repo "$GITHUB_REPOSITORY" --verify-tag --title "VERA20k $TAG" --notes-file notes.md)
+          # A dev build is a pre-release even as a draft, so publishing the
+          # draft cannot make it the repository's Latest release.
+          args=(--repo "$GITHUB_REPOSITORY" --verify-tag --prerelease
+            --title "VERA20K dev build $TAG" --notes-file notes.md)
           case "$PUBLISH" in
             draft)      args+=(--draft) ;;
-            prerelease) args+=(--prerelease) ;;
+            prerelease) ;;
             *) echo "Unsupported publish mode: $PUBLISH" >&2; exit 1 ;;
           esac
           gh release create "$TAG" "${args[@]}" dist/*
           echo "Published $TAG ($PUBLISH)"
+      - name: Prune old dev builds
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Enough for testers to step back a few builds to find a regression.
+          KEEP_DEV_BUILDS: 10
+        run: |
+          set -euo pipefail
+          # Only published pre-releases with a dev build tag qualify: releases,
+          # drafts and builds dispatched with a custom tag are never deleted.
+          # A release keeps its own copies of a promoted dev build's installers.
+          gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 1000 \
+            --json tagName,isPrerelease,createdAt \
+            --jq '[.[] | select(.isPrerelease
+                     and (.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+-[0-9]{8}-[0-9]{6}$")))]
+                  | sort_by(.createdAt) | reverse
+                  | .[(env.KEEP_DEV_BUILDS | tonumber):][] | .tagName' \
+            | while read -r old; do
+                gh release delete "$old" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+                echo "Pruned dev build $old"
+              done
+
+  # A release is a dev build that testers played, published again under its
+  # version. The installers are the dev build's own, checked against their
+  # build provenance, so players get exactly the files that were tested.
+  promote:
+    name: promote
+    if: inputs.promote != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      # `gh attestation verify` reads the dev build's provenance.
+      attestations: read
+    steps:
+      # The notes list the changes since the previous release, which needs
+      # history.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Check the dev build and download its installers
+        id: source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FROM: ${{ inputs.promote }}
+        run: |
+          set -euo pipefail
+          # The release takes the version from the dev build's tag, which the
+          # installer names already carry.
+          if ! [[ "$FROM" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-([0-9]{8}-[0-9]{6})$ ]]; then
+            echo "$FROM is not a dev build tag (v<version>-<YYYYMMDD>-<HHMMSS>)." >&2
+            exit 1
+          fi
+          version="${BASH_REMATCH[1]}"
+          stamp="${BASH_REMATCH[2]}"
+          state="$(gh release view "$FROM" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"')"
+          if [ "$state" != 'false true' ]; then
+            echo "$FROM must be a published dev build (pre-release, not a draft)." >&2
+            exit 1
+          fi
+          git fetch --quiet --no-tags origin "+refs/tags/$FROM:refs/tags/$FROM"
+          commit="$(git rev-parse --verify "refs/tags/$FROM^{commit}")"
+
+          mkdir dist
+          gh release download "$FROM" --repo "$GITHUB_REPOSITORY" --dir dist
+          cd dist
+          # Exactly one installer per platform with this workflow's provenance,
+          # and nothing else: an asset added to the dev build by hand fails here
+          # rather than reach players.
+          ls -l
+          if [ "$(find . -mindepth 1 | wc -l)" -ne 3 ]; then
+            echo "!! $FROM must hold exactly its three installers" >&2
+            exit 1
+          fi
+          shopt -s nullglob
+          for kind in 'windows-x64 -setup.exe' 'macos-arm64 .dmg' 'linux-x64 .AppImage'; do
+            read -r platform ext <<< "$kind"
+            found=(vera20k-"$version"-"$platform"-"$stamp"-*"$ext")
+            if [ "${#found[@]}" -ne 1 ]; then
+              echo "!! $FROM needs exactly one $platform installer" >&2
+              exit 1
+            fi
+            gh attestation verify "${found[0]}" --repo "$GITHUB_REPOSITORY" > /dev/null
+            # The plain release name drops the dev build's time and commit. The
+            # provenance is bound to the file's contents, so it still verifies.
+            mv "${found[0]}" "vera20k-$version-$platform$ext"
+            echo "provenance verified: ${found[0]} -> vera20k-$version-$platform$ext"
+          done
+          {
+            echo "tag=v$version"
+            echo "commit=$commit"
+          } >> "$GITHUB_OUTPUT"
+      - name: Write release notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ steps.source.outputs.commit }}
+          PROMOTED_FROM: ${{ inputs.promote }}
+        run: bash .github/release/notes.sh notes.md
+      - name: Create the tag and the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.source.outputs.tag }}
+          COMMIT: ${{ steps.source.outputs.commit }}
+          FROM: ${{ inputs.promote }}
+        run: |
+          set -euo pipefail
+          bash .github/release/tag.sh "$TAG" "$COMMIT"
+          # A draft, so the maintainer adds notes for players before publishing.
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+            --title "VERA20K $TAG" --notes-file notes.md dist/*
+          echo "Drafted release $TAG from dev build $FROM"

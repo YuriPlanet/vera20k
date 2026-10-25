@@ -247,7 +247,7 @@ fn ground_command_fixture(
     // occupation projection. These setup calls are outside the comparison.
     assert!(sim.foot_mark_remove(
         id,
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default()
     ));
@@ -255,12 +255,12 @@ fn ground_command_fixture(
         &mut sim.substrate.entities,
         id,
         location,
-        Some(&rules),
+        &rules,
         &sim.interner,
     );
     assert!(sim.foot_mark_put(
         id,
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default()
     ));
@@ -316,7 +316,7 @@ fn ground_command_fixture(
         sim.assign_target_represented(
             id,
             Some(TargetKind::Entity(target)),
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -1021,7 +1021,7 @@ pub fn check_initialized_unit_shift_resolver(produce: GroundCommandProducer) {
 
 pub fn check_initialized_ground_reissues(names: &[&str], produce: GroundCommandProducer) {
     use crate::sim::mission::MissionId;
-    use crate::sim::mission::authority::EntityReadyInputProvider;
+    use crate::sim::mission::authority::LiveReadyInputProvider;
 
     let corpus = ground_command_corpus();
     for &name in names {
@@ -1057,7 +1057,9 @@ pub fn check_initialized_ground_reissues(names: &[&str], produce: GroundCommandP
                     MissionId::from_raw(producer["args"][0].as_i64().unwrap().try_into().unwrap()),
                     producer["args"][1].as_i64().unwrap().try_into().unwrap(),
                     sim.session.binary_frame(),
-                    &EntityReadyInputProvider,
+                    &LiveReadyInputProvider {
+                        rules: crate::rules::ruleset::RuleSet::empty_for_test(),
+                    },
                 )
                 .unwrap();
                 assert_ground_command_fields(&sim, id, row, &producer["after"]);
@@ -1109,7 +1111,7 @@ pub fn check_initialized_ground_reissues(names: &[&str], produce: GroundCommandP
             assert!(sim.apply_command_with_overlays(
                 "Americans",
                 &decoded.payload,
-                Some(&rules),
+                &rules,
                 Some(&registry),
                 crate::sim::world::FrameEffects::default()
             ));
@@ -1150,7 +1152,7 @@ pub fn check_initialized_unit_paid_reissues(produce: GroundCommandProducer) {
             assert!(sim.apply_command_with_overlays(
                 "Americans",
                 &Command::Stop { entity_id: id },
-                Some(&rules),
+                &rules,
                 Some(&registry),
                 crate::sim::world::FrameEffects::default()
             ));
@@ -1170,7 +1172,7 @@ pub fn check_initialized_unit_paid_reissues(produce: GroundCommandProducer) {
         assert!(sim.apply_command_with_overlays(
             "Americans",
             &decoded.payload,
-            Some(&rules),
+            &rules,
             Some(&registry),
             crate::sim::world::FrameEffects::default()
         ));
@@ -1221,7 +1223,7 @@ fn initialized_unit_delayed_move_reaches_original_class_refusal() {
                 target_rx: rx,
                 target_ry: ry,
             },
-            Some(&rules),
+            &rules,
             Some(&registry),
             crate::sim::world::FrameEffects::default()
         ),
@@ -1274,7 +1276,7 @@ fn initialized_gi_move_clears_original_archive_before_destination() {
             target_rx: resolved.0,
             target_ry: resolved.1,
         },
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default()
     ));
@@ -1354,7 +1356,7 @@ fn initialized_gi_retained_priors_and_stop_reissues_match_original_returns() {
                 target_rx: resolved.0,
                 target_ry: resolved.1,
             },
-            Some(&rules),
+            &rules,
             Some(&registry),
             crate::sim::world::FrameEffects::default()
         ));
@@ -1645,7 +1647,7 @@ fn initialized_gi_non_deployer_input_reaches_original_class_refusal() {
             target_rx: resolved.0,
             target_ry: resolved.1,
         },
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default(),
     ));
@@ -1956,7 +1958,8 @@ fn joined_two_paid_gi(route: OutputRoute) {
                 producer_ids: vec![producer],
             },
         );
-        sim.advance_tick(&[command], Some(&rules), None, Some(&registry), TICK_MS);
+        assert!(sim.issue_local_command(command));
+        sim.advance_tick(&[], Some(&rules), None, Some(&registry), TICK_MS);
         assert_eq!(
             sim.substrate.entities.get(producer).unwrap().rally_cell(),
             rally_cell,
@@ -2002,7 +2005,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
             && products[0].placed_frame.is_none()
         {
             let (rx, ry) = rally_cell.unwrap();
-            sim.queue_command(CommandEnvelope::new(
+            sim.issue_local_command(CommandEnvelope::new(
                 owner,
                 sim.session.tick() + 1,
                 Command::SetRally {
@@ -2014,15 +2017,18 @@ fn joined_two_paid_gi(route: OutputRoute) {
         }
         // The ordinary app drains player ingress before advancing each frame.
         let due = sim.take_due_commands();
+        let visits = sim.production.factories().strip_visits_for_test(owner);
+        let effects =
+            crate::sim::world::FrameEffects::default().with_production_strip(&visits, &|_| {});
         if route == OutputRoute::RallyBetweenCompletionAndPlace {
             let mut output = sim
                 .advance_app_frame(
                     &due,
-                    Some(&rules),
+                    &rules,
                     Some(&registry),
                     TICK_MS,
                     super::TickLane::Ordinary,
-                    crate::sim::world::FrameEffects::default(),
+                    effects,
                 )
                 .expect("the ordinary app frame completes");
             let admitted = output.take_admitted_commands();
@@ -2034,8 +2040,16 @@ fn joined_two_paid_gi(route: OutputRoute) {
                 let event_types: Vec<_> = admitted
                     .iter()
                     .map(|command| match command.payload {
-                        Command::SetRally { .. } => 0x1E,
-                        Command::PlaceProducedMobile { .. } => 0x0B,
+                        Command::SynchronizedRecord { ref record }
+                            if crate::sim::command::ArchiveRecord::decode(record).is_some() =>
+                        {
+                            0x1E
+                        }
+                        Command::SynchronizedRecord { ref record }
+                            if crate::sim::command::PlaceRecord::decode(record).is_some() =>
+                        {
+                            0x0B
+                        }
                         _ => panic!("unexpected admitted race command: {command:?}"),
                     })
                     .collect();
@@ -2062,7 +2076,16 @@ fn joined_two_paid_gi(route: OutputRoute) {
                 );
             }
         } else {
-            sim.advance_tick(&due, Some(&rules), None, Some(&registry), TICK_MS);
+            sim.advance_master_frame(
+                &due,
+                &rules,
+                Some(&registry),
+                TICK_MS,
+                super::TickLane::Ordinary,
+                false,
+                effects,
+            )
+            .unwrap();
         }
         let log = radio::take_transmit_log();
         if let Some(view) = sim
@@ -2104,7 +2127,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
                 assert!(entity.lifecycle.in_limbo() && !entity.in_logic_vector.is_member());
                 assert!(
                     !sim.pending_command_snapshot().iter().any(|command| {
-                        matches!(command.payload, Command::PlaceProducedMobile { .. })
+                        matches!(&command.payload, Command::SynchronizedRecord { record } if crate::sim::command::PlaceRecord::decode(record).is_some())
                     }),
                     "Factory completion retains its change flag until the next Strip prefix"
                 );

@@ -42,7 +42,7 @@ impl ParasiteState {
 impl Simulation {
     /// Shared AttachTo/ExitUnit/grapple cleanup. Delete broadcasts expiry before
     /// the held pointer and invalidation latch clear (62A7E0..62A84B).
-    pub(crate) fn reset_parasite_grapple(&mut self, owner: u64, rules: Option<&RuleSet>) {
+    pub(crate) fn reset_parasite_grapple(&mut self, owner: u64, rules: &RuleSet) {
         let anim = self
             .substrate
             .entities
@@ -285,12 +285,12 @@ impl Simulation {
                 {
                     self.start_grapple_roll(owner, victim, origin, rules);
                 } else {
-                    self.reset_parasite_grapple(owner, Some(rules));
+                    self.reset_parasite_grapple(owner, rules);
                 }
             }
             _ => self.parasite_exit_unit(owner, rules, effects),
         }
-        //629D97: attachment/remap/Z-adjust only when the Anim changes owner.
+        //629D97: attachment/remap only when the Anim changes owner.
         let Some(anim) = self
             .substrate
             .entities
@@ -310,21 +310,15 @@ impl Simulation {
                     .anims
                     .set_anim_house_remap(anim, source.owner());
             }
-            if let Some(target) = self.substrate.entities.get(victim)
-                && let Some(cell) = self
-                    .resolved_terrain
-                    .as_ref()
-                    .and_then(|terrain| terrain.cell(target.position.rx(), target.position.ry()))
-            {
-                let frame = self.anim(anim).unwrap().runtime().current_frame;
-                self.substrate.set_anim_frame_and_z_adjust(
-                    anim,
-                    frame,
-                    crate::map::lighting::cell_ground_z_adjust(
-                        self.session.lighting().normal().into(),
-                        cell.level,
-                    ),
-                );
+            // Original ParasiteUpdateSquidGrapple629DE5 copies Cell+10A
+            // into Anim+FC only at this owner-change edge, not on later ticks.
+            let cell = self
+                .substrate
+                .entities
+                .get(victim)
+                .map(|entity| (entity.position.rx(), entity.position.ry()));
+            if let Some(cell) = cell {
+                self.retain_anim_cell_light(anim, Some(cell));
             }
         }
     }
@@ -463,7 +457,7 @@ impl Simulation {
             rules,
             effects,
         );
-        self.reset_parasite_grapple(owner, Some(rules));
+        self.reset_parasite_grapple(owner, rules);
         if let Some(source) = self.substrate.entities.get_mut(owner) {
             source.parasite.end_paralysis(self.session.binary_frame());
         }

@@ -9,7 +9,7 @@ from pathlib import Path
 import hashlib, struct
 from unicorn.x86_const import *
 from tools import native_oracle as native
-from tools.native_oracle import NATIVE_SHA256, run_checked
+from tools.native_oracle import run_checked
 from tools.rules_oracle.bridge_child_sound import sections
 from tools.spatial_oracle import building_death_anims as owner, building_construction as bc, engineer_repair_admission as er
 from tools.spatial_oracle.building_body_rules import INI, SP

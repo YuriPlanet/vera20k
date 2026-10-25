@@ -12,7 +12,7 @@ import struct
 
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDI, UC_X86_REG_EIP, UC_X86_REG_ESP
 from tools import native_inspect, native_oracle
-from tools.native_oracle import NATIVE_SHA256, SCRATCH, RET_MAGIC, finish_vectors, provenance, run_checked
+from tools.native_oracle import SCRATCH, RET_MAGIC, finish_vectors, provenance, run_checked
 from tools.native_inspect import decode_ranges, instruction_row, selected_ranges
 from tools.native_oracle import image_bytes
 from tools.spatial_oracle import infantry_deploy_action, map_queries
@@ -179,7 +179,7 @@ def generate():
         ('signed_wrap_due',1,dict(now=-2147483648,timer_start=2147483647,timer_delay=1)))]
     f = Probe()
     cases = [f.probe(row) for row in rows]
-    return dict(schema=1, native_sha256=NATIVE_SHA256,
+    return dict(schema=1,
                 infantry_ai_vtable=dict(base=hex(VTABLE), slot='0x5c', target=hex(f.read(VTABLE+0x5C))),
                 vtable_slots={hex(slot):hex(f.read(VTABLE+slot))
                               for slot in (0x5C,0x78,0xF8,0x124,0x174,0x184,0x1D4,0x1D8,0x1EC,0x200,0x3A0,0x484,0x4A0,0x558)},

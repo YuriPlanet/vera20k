@@ -155,7 +155,7 @@ fn all_to_hunt_action_matches_original_selector_mode_timer_and_ordinary_foot() {
                 input: TagEventInput::default(),
             },
             &mut Vec::new(),
-            Some(&rules),
+            &rules,
             None,
             FrameEffects::default(),
         );
@@ -224,6 +224,15 @@ fn all_to_hunt_action_matches_original_selector_mode_timer_and_ordinary_foot() {
 
 #[test]
 fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team() {
+    all06_elapsed_enable_chain(true);
+}
+
+#[test]
+fn all_to_hunt_retail_all06_scan_miss_marches_toward_the_player_base() {
+    all06_elapsed_enable_chain(false);
+}
+
+fn all06_elapsed_enable_chain(with_enemy: bool) {
     use crate::rules::{process_owner::NativeScenarioRulesPrefix, team_ai_ini::TeamAiIniRegistry};
     use crate::sim::mission::MissionType;
     let corpus = corpus();
@@ -307,7 +316,7 @@ fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team
     crate::sim::scenario_bootstrap::initialize_map_roster_houses(
         &mut sim,
         &roster,
-        Some(&rules),
+        &rules,
         Some(&map.ini),
     );
     sim.intern_rule_type_ids(&rules);
@@ -363,9 +372,21 @@ fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team
             id
         })
         .collect();
-    let enemy = sim
-        .spawn_object("HTNK", "Americans", 20, 10, 0, &rules)
-        .unwrap();
+    let enemy = with_enemy.then(|| {
+        sim.spawn_object("HTNK", "Americans", 20, 10, 0, &rules)
+            .unwrap()
+    });
+    if !with_enemy {
+        // Supplied continuation: no target remains in this cropped world,
+        // but the player's House retains its base. Whole ALL06 placement
+        // and defeat handling are not part of this trigger/mission replay.
+        let player = sim.interner.get("Americans").unwrap();
+        sim.session.set_current_house_for_test(Some(player));
+        sim.houses
+            .get_mut(&player)
+            .unwrap()
+            .set_base_center((20, 10));
+    }
     let enabled = |sim: &Simulation, id: &str| {
         sim.trigger_runtime.trigger_order.iter().any(|&live| {
             let trigger = sim.trigger_runtime.trigger(live).unwrap();
@@ -389,14 +410,14 @@ fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team
             input: TagEventInput::default()
         },
         &mut Vec::new(),
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default()
     ));
     assert!(enabled(&sim, chain[0]));
     for frame in [0, 3599, 3600, 4049, 4050] {
         sim.session.set_binary_frame_for_test(frame);
-        sim.advance_triggers(Some(&rules), None, FrameEffects::default());
+        sim.advance_triggers(&rules, None, FrameEffects::default());
         for &id in &actors {
             assert_eq!(
                 sim.team_script_vm.team_for_member(id).is_none(),
@@ -427,30 +448,30 @@ fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team
                 .unwrap()
         );
     }
+    let completed = |sim: &Simulation| {
+        actors.iter().all(|id| {
+            let actor = sim.substrate.entities.get(*id).unwrap();
+            if let Some(enemy) = enemy {
+                actor.attack_target.target() == Some(crate::sim::combat::TargetKind::Entity(enemy))
+            } else {
+                actor.attack_target.target().is_none()
+                    && actor.navigation.nav_com()
+                        == Some(crate::sim::components::NavTargetRef::cell(20, 10))
+                    && actor.mission.current().known() == Some(MissionType::Move)
+            }
+        })
+    };
     for frame in 4051..4091 {
         sim.session.set_binary_frame_for_test(frame);
         for &id in &actors {
             sim.object_ai_visit_one(id, Some(&rules), crate::sim::world::ObjectAiCtx::default());
         }
-        if actors.iter().all(|id| {
-            sim.substrate
-                .entities
-                .get(*id)
-                .unwrap()
-                .attack_target
-                .target()
-                == Some(crate::sim::combat::TargetKind::Entity(enemy))
-        }) {
+        if completed(&sim) {
             break;
         }
     }
-    assert!(actors.iter().all(|id| {
-        sim.substrate
-            .entities
-            .get(*id)
-            .unwrap()
-            .attack_target
-            .target()
-            == Some(crate::sim::combat::TargetKind::Entity(enemy))
-    }));
+    assert!(
+        completed(&sim),
+        "retail Hunt continuation, enemy={with_enemy}"
+    );
 }

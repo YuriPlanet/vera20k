@@ -1,5 +1,6 @@
 //! The existing campaign capture route continues through the actual app
-//! runtime. It supplies no trigger state, teams, camera targets or RNG draws.
+//! runtime. Timer captures explicitly replay a later mission's parsed timer
+//! actions after opening unlock; they do not claim those objectives were played.
 
 use super::*;
 use crate::app::input::{camera, hotkeys, keyboard};
@@ -16,12 +17,29 @@ pub enum OpeningTarget {
     Flash,
     Arrows,
     Unlocked,
+    /// Let the normal wall-clock pacer and audio device run through SOV01.
+    RealtimeUnlocked,
     RestoreUnlocked,
     /// ALL01, whose first authored action locks input: an unlocked save
     /// loaded from the Esc menu while a replay of the opening holds the lock.
     LoadUnlockedWhileLocked,
     /// A fixed committed production tick, for opening aircraft raster diagnosis.
     AlliedTick(u64),
+    /// Observe the ordinary SOV01 simulation after its opening unlock.
+    SovietTick(u64),
+    /// Issue ordinary naval attack orders, then observe the committed tick.
+    SovietNavy(u64),
+    /// Stock SOV07: ordinary player attack-move toward the NE setpiece.
+    SovietGroups(u64),
+    /// Stock SOV02: ordinary player attack-move toward the Battle Fortresses.
+    SovietFortresses(u64),
+    /// SOV01 timer actions replayed after opening unlock, then ordinary expiry.
+    TimerRunning,
+    TimerExpired,
+    /// SOV02's ordinary briefing Action55 creates a type-5 alert.
+    RadarAlert,
+    /// Save/load that naturally created alert, then present the restored radar.
+    RadarRestored,
 }
 
 impl OpeningTarget {
@@ -32,9 +50,18 @@ impl OpeningTarget {
             Self::Flash => "opening-flash",
             Self::Arrows => "opening-arrows",
             Self::Unlocked => "opening-unlocked",
+            Self::RealtimeUnlocked => "opening-realtime-unlocked",
             Self::RestoreUnlocked => "opening-restore-unlocked",
             Self::LoadUnlockedWhileLocked => "opening-load-unlocked-while-locked",
             Self::AlliedTick(_) => "opening-allied-tick",
+            Self::SovietTick(_) => "opening-soviet-tick",
+            Self::SovietNavy(_) => "soviet-naval-encounter",
+            Self::SovietGroups(_) => "sov07-group-encounter",
+            Self::SovietFortresses(_) => "sov02-fortress-encounter",
+            Self::TimerRunning => "opening-timer-running",
+            Self::TimerExpired => "opening-timer-expired",
+            Self::RadarAlert => "radar-alert",
+            Self::RadarRestored => "radar-restored",
         }
     }
 
@@ -48,6 +75,11 @@ impl OpeningTarget {
     fn step_limit(self) -> usize {
         match self {
             Self::LoadUnlockedWhileLocked => 6_000,
+            Self::SovietTick(tick)
+            | Self::SovietNavy(tick)
+            | Self::SovietGroups(tick)
+            | Self::SovietFortresses(tick) => tick as usize + 1,
+            Self::TimerRunning | Self::TimerExpired => 8_000,
             _ => 2_500,
         }
     }
@@ -65,6 +97,9 @@ pub(super) struct OpeningCapture {
     previous_projection: Option<Value>,
     saw_lock: bool,
     saw_unlock: bool,
+    saw_countdown: bool,
+    last_running_countdown: Option<Value>,
+    timer_action_replay: Option<Value>,
     lock_probe: Option<Value>,
     unlock_probe: Option<Value>,
     locked_mouse_probe: Option<Value>,
@@ -78,6 +113,8 @@ pub(super) struct OpeningCapture {
     steps_after_load: u32,
     /// The (tick, binary frame) a load installed, until the next step.
     loaded_frame: Option<(u64, u32)>,
+    saved_radar: Option<crate::sim::snapshot::saved_local_view::SavedRadarEvents>,
+    group_orders: Option<Value>,
 }
 
 impl OpeningCapture {
@@ -91,6 +128,9 @@ impl OpeningCapture {
             previous_projection: None,
             saw_lock: false,
             saw_unlock: false,
+            saw_countdown: false,
+            last_running_countdown: None,
+            timer_action_replay: None,
             lock_probe: None,
             unlock_probe: None,
             locked_mouse_probe: None,
@@ -101,17 +141,57 @@ impl OpeningCapture {
             load_while_locked: None,
             steps_after_load: 0,
             loaded_frame: None,
+            saved_radar: None,
+            group_orders: None,
         }
     }
 
     pub(super) fn timeout(&self) -> Duration {
         Duration::from_secs(match self.target {
-            OpeningTarget::LoadUnlockedWhileLocked => 600,
+            OpeningTarget::LoadUnlockedWhileLocked
+            | OpeningTarget::SovietTick(_)
+            | OpeningTarget::SovietNavy(_)
+            | OpeningTarget::SovietGroups(_)
+            | OpeningTarget::SovietFortresses(_) => 600,
+            OpeningTarget::TimerRunning | OpeningTarget::TimerExpired => 600,
             _ => 180,
         })
     }
 
     pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
+        if matches!(
+            self.target,
+            OpeningTarget::RadarAlert | OpeningTarget::RadarRestored
+        ) {
+            let Some(expected) = self.saved_radar.as_ref() else {
+                return Ok(false);
+            };
+            let radar = state
+                .match_state
+                .match_presentation
+                .minimap
+                .as_ref()
+                .context("restored radar")?;
+            let actual = radar.saved_radar_events();
+            // after_present may have just resumed the first gameplay frame
+            // after load. Wait for its minimap draw before comparing it.
+            if actual.last_advanced_frame < expected.last_advanced_frame {
+                return Ok(false);
+            }
+            ensure!(
+                actual == *expected,
+                "first radar redraw changed the retained alert state: actual={actual:?}, expected={expected:?}"
+            );
+            let visible = state
+                .match_state
+                .match_presentation
+                .radar_anim
+                .as_ref()
+                .is_none_or(|radar| radar.is_minimap_visible());
+            return Ok(
+                visible && (self.target == OpeningTarget::RadarAlert || self.restored.is_some())
+            );
+        }
         let sim = &state
             .match_state
             .sim_runtime
@@ -129,34 +209,80 @@ impl OpeningCapture {
                     .iter_sorted()
                     .any(|(_, entity)| entity.is_active() && entity.flashing.flashed()),
                 OpeningTarget::Arrows => sim.anims().any(|(_, anim)| anim.no_effects()),
-                OpeningTarget::Unlocked => self.saw_unlock && !locked,
+                OpeningTarget::Unlocked | OpeningTarget::RealtimeUnlocked => {
+                    self.saw_unlock && !locked
+                }
                 OpeningTarget::RestoreUnlocked => {
                     self.saw_unlock && !locked && self.restored.is_some()
                 }
                 OpeningTarget::LoadUnlockedWhileLocked => {
                     self.load_while_locked.is_some() && self.steps_after_load >= STEPS_AFTER_LOAD
                 }
-                OpeningTarget::AlliedTick(tick) => sim.session().tick() == tick,
+                OpeningTarget::AlliedTick(tick)
+                | OpeningTarget::SovietTick(tick)
+                | OpeningTarget::SovietNavy(tick)
+                | OpeningTarget::SovietGroups(tick)
+                | OpeningTarget::SovietFortresses(tick) => sim.session().tick() == tick,
+                OpeningTarget::TimerRunning => sim.session().scenario_timer_view().is_some(),
+                OpeningTarget::TimerExpired => {
+                    self.saw_countdown && sim.session().scenario_timer_view().is_none()
+                }
+                OpeningTarget::RadarAlert | OpeningTarget::RadarRestored => unreachable!(),
             })
     }
 
     pub(super) fn after_present(&mut self, state: &mut AppState) -> Result<()> {
         if self.initial_runtime.is_none() {
-            self.initial_runtime = Some(campaign_runtime_receipt(state)?);
+            if self.target == OpeningTarget::RealtimeUnlocked {
+                ensure!(
+                    state.audio.sfx_player.is_some(),
+                    "realtime opening requires audio output"
+                );
+            }
+            self.initial_runtime = Some(if self.target == OpeningTarget::RealtimeUnlocked {
+                installed_campaign_runtime_receipt(state)?
+            } else {
+                campaign_runtime_receipt(state)?
+            });
             // A real pointer press before the first authored lock. Action46
             // must cancel its capture while preserving physical button state.
-            crate::app::input::dispatch::handle_mouse_input(
-                state,
-                MouseButton::Left,
-                ElementState::Pressed,
-            );
+            if !matches!(
+                self.target,
+                OpeningTarget::RadarAlert | OpeningTarget::RadarRestored
+            ) {
+                crate::app::input::dispatch::handle_mouse_input(
+                    state,
+                    MouseButton::Left,
+                    ElementState::Pressed,
+                );
+            }
         }
         self.observe(state)?;
+        if matches!(
+            self.target,
+            OpeningTarget::RadarAlert | OpeningTarget::RadarRestored
+        ) {
+            self.capture_radar_load(state)?;
+            if self.saved_radar.is_some() {
+                return Ok(());
+            }
+        }
         let locked = crate::app::input::campaign_input::is_locked(state);
-        if locked && self.lock_probe.is_none() {
+        if !matches!(
+            self.target,
+            OpeningTarget::RadarAlert | OpeningTarget::RadarRestored
+        ) && locked
+            && self.lock_probe.is_none()
+        {
             self.lock_probe = Some(probe_arrow_edge(state, true)?);
             self.locked_mouse_probe = Some(probe_locked_mouse_edges(state)?);
-        } else if self.saw_unlock && !locked && self.unlock_probe.is_none() {
+        } else if !matches!(
+            self.target,
+            OpeningTarget::RadarAlert | OpeningTarget::RadarRestored
+        ) && self.saw_unlock
+            && !locked
+            && self.unlock_probe.is_none()
+        {
             self.unlock_probe = Some(probe_arrow_edge(state, false)?);
             self.unlocked_mouse_probe = Some(probe_unlocked_mouse_edges(state)?);
         }
@@ -164,6 +290,29 @@ impl OpeningCapture {
         // exact state that was drawn, including the first unlocked frame.
         if self.ready(state)? {
             return Ok(());
+        }
+        if self.target == OpeningTarget::RealtimeUnlocked {
+            return Ok(());
+        }
+        if matches!(self.target, OpeningTarget::SovietNavy(_)) && self.saw_unlock && !locked {
+            self.issue_naval_orders(state)?;
+        }
+        if matches!(
+            self.target,
+            OpeningTarget::SovietGroups(_) | OpeningTarget::SovietFortresses(_)
+        ) && !locked
+        {
+            self.issue_campaign_encounter_orders(state)?;
+        }
+        if matches!(
+            self.target,
+            OpeningTarget::TimerRunning | OpeningTarget::TimerExpired
+        ) && self.saw_unlock
+            && !locked
+            && self.timer_action_replay.is_none()
+        {
+            self.replay_timer_actions(state)?;
+            self.observe(state)?;
         }
         if self.target == OpeningTarget::RestoreUnlocked
             && self.restored.is_none()
@@ -238,6 +387,112 @@ impl OpeningCapture {
         Ok(())
     }
 
+    fn capture_radar_load(&mut self, state: &mut AppState) -> Result<()> {
+        if self.saved_radar.is_some() {
+            return Ok(());
+        }
+        let Some(minimap) = state.match_state.match_presentation.minimap.as_ref() else {
+            return Ok(());
+        };
+        let before = minimap.saved_radar_events();
+        // SOV02's ordinary briefing: Action55 type5 at waypoint1=(80,58).
+        // No radar request or gameplay order is injected by this capture.
+        if !before.events.iter().any(|event| {
+            event.event_type == crate::sim::radar::RadarEventType::EnemyObjectSensed
+                && event.cell == (80, 58)
+                && event.needs_draw
+        }) {
+            return Ok(());
+        }
+        self.saved_radar = Some(before.clone());
+        if self.target == OpeningTarget::RadarAlert {
+            return Ok(());
+        }
+        state
+            .persistence
+            .isolate_capture_saves(&self.save_directory)?;
+        let ring_before = state
+            .match_state
+            .match_presentation
+            .minimap
+            .as_mut()
+            .unwrap()
+            .cycle_radar_event(Instant::now());
+        ensure!(
+            ring_before.is_some(),
+            "authored alert did not enter the review ring"
+        );
+        let path =
+            crate::app::persistence::commands::save_game(state, "SOV02 live radar alert", None)?;
+        crate::app::persistence::commands::try_load_save_file(state, &path)?;
+        let minimap = state
+            .match_state
+            .match_presentation
+            .minimap
+            .as_mut()
+            .context("incoming saved radar")?;
+        let after = minimap.saved_radar_events();
+        ensure!(
+            before == after,
+            "ordinary load discarded saved radar alerts"
+        );
+        ensure!(
+            minimap.cycle_radar_event(Instant::now()).is_none(),
+            "load retained outgoing Spacebar history"
+        );
+        // The ordinary post-load frame refreshes House-derived radar
+        // availability. Freezing before it leaves the newly installed radar
+        // housing offline, even though its live alert array loaded correctly.
+        let receipt =
+            crate::app::match_runtime::sim_tick::advance_in_game_runtime_exact_step(state)?;
+        let mut expected = crate::render::radar::ClientRadarEvents::from_saved(before.clone())?;
+        expected.advance_to_frame(
+            receipt.tick_after,
+            &state
+                .rules()
+                .context("restored radar rules")?
+                .radar_event_config,
+        );
+        self.saved_radar = Some(expected.saved());
+        self.steps.push(receipt);
+        self.restored = Some(
+            json!({"path":path,"radar_before":before,"radar_after_load":after,
+            "ring_before":ring_before,"ring_after":null,
+            "first_resumed_frame":receipt,
+            "scope":"ordinary SOV02 briefing Action55 type5 at waypoint1; explicit campaign admission, no preceding mission completion; normal VERA save/load; first radar redraw checked separately"}),
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "dev-overlays")]
+    fn replay_timer_actions(&mut self, state: &mut AppState) -> Result<()> {
+        let runtime = state
+            .match_state
+            .sim_runtime
+            .as_mut()
+            .context("timer replay has no runtime")?;
+        let sim = &mut runtime.simulation;
+        let count = sim
+            .dev_replay_scenario_timer_actions(&runtime.resources.rules, "0952F87C")
+            .context("SOV01 has no parsed timer actions")?;
+        ensure!(
+            count == 3 && sim.session().scenario_timer_view() == Some((1800, "MISSION:TmeTimer")),
+            "SOV01 timer replay differs from its retail actions"
+        );
+        self.timer_action_replay = Some(json!({
+            "mode": "retail-timer-actions-after-opening-unlock", "trigger": "0952F87C",
+            "action_count": count, "tick": sim.session().tick(),
+            "binary_frame": sim.session().binary_frame(),
+            "scope": "later time-machine/power/Jurassic objectives were not played; only timer actions27/23/103 were replayed",
+        }));
+        Ok(())
+    }
+
+    #[cfg(not(feature = "dev-overlays"))]
+    fn replay_timer_actions(&mut self, _state: &mut AppState) -> Result<()> {
+        anyhow::bail!("timer action replay requires dev-overlays")
+    }
+
     /// Save before ALL01's first authored lock and again after its unlock,
     /// replay the opening from the first save, then load the unlocked save the
     /// way the Esc menu's Load does (`apply_saved_game_outcome`: open B5, load,
@@ -304,11 +559,40 @@ impl OpeningCapture {
 
     fn observe(&mut self, state: &AppState) -> Result<()> {
         let facts = opening_observation(state)?;
+        if self.target == OpeningTarget::RealtimeUnlocked {
+            ensure!(
+                facts["game_speed"] == 2,
+                "ordinary campaign lost its native speed"
+            );
+            ensure!(
+                facts["eva_event"].as_str().is_none_or(|event| !event.eq_ignore_ascii_case("EVA_PsychicDominatorDetected")),
+                "unpowered SOV01 Dominator warning interrupted the opening"
+            );
+        }
         let locked = facts["input_locked"]
             .as_bool()
             .context("lock observation missing")?;
         self.saw_unlock |= self.saw_lock && !locked;
         self.saw_lock |= locked;
+        self.saw_countdown |= !facts["scenario_timer"].is_null();
+        if !facts["scenario_timer"].is_null() {
+            self.last_running_countdown = Some(json!({
+                "tick": facts["tick"], "binary_frame": facts["binary_frame"],
+                "timer": facts["scenario_timer"],
+            }));
+        }
+        if matches!(
+            self.target,
+            OpeningTarget::SovietTick(_) | OpeningTarget::SovietNavy(_)
+        ) && self.saw_unlock
+            && facts["tick"].as_u64().is_some_and(|tick| tick % 120 != 0)
+            && self
+                .observations
+                .last()
+                .is_some_and(|last| last["input_locked"] == facts["input_locked"])
+        {
+            return Ok(());
+        }
         // Simulation time is attached to changes; it does not make every
         // moving pixel or every countdown visit into a new observation row.
         let mut projection = facts.clone();
@@ -320,6 +604,13 @@ impl OpeningCapture {
             .as_object_mut()
             .expect("observation object")
             .remove("binary_frame");
+        projection
+            .as_object_mut()
+            .expect("observation object")
+            .remove("wall_ms");
+        if let Some(timer) = projection["scenario_timer"].as_object_mut() {
+            timer.remove("remaining");
+        }
         projection["camera"]
             .as_object_mut()
             .expect("camera object")
@@ -359,6 +650,164 @@ impl OpeningCapture {
         Ok(())
     }
 
+    /// A bounded play input for the first retail objective. It uses the client
+    /// command queue; damage, navigation, reinforcements and triggers remain
+    /// entirely in the ordinary simulation.
+    fn issue_naval_orders(&mut self, state: &mut AppState) -> Result<()> {
+        use crate::sim::command::Command;
+        let sim = &mut state
+            .match_state
+            .sim_runtime
+            .as_mut()
+            .context("naval runtime")?
+            .simulation;
+        let tick = sim.session().tick();
+        if tick < 1100 || tick % 30 != 0 {
+            return Ok(());
+        }
+        let viewer = sim.session().current_house().context("campaign player")?;
+        let cells = sim
+            .resolved_terrain()
+            .map(crate::map::resolved_terrain::NativeCellQuery::isolated)
+            .context("campaign terrain")?;
+        let mut orders = Vec::new();
+        for (id, actor) in sim.entities().iter_sorted() {
+            if !actor.is_active()
+                || actor.lifecycle.in_limbo()
+                || sim.interner().resolve(actor.owner()) != "Russians"
+                || actor.attack_target.target().is_some()
+            {
+                continue;
+            }
+            let kind = sim.interner().resolve(actor.type_ref());
+            if !matches!(kind, "SUB" | "SQD" | "DRED") {
+                continue;
+            }
+            let target = sim
+                .entities()
+                .iter_sorted()
+                .filter(|(_, enemy)| enemy.is_active() && !enemy.lifecycle.in_limbo())
+                .filter(|(_, enemy)| {
+                    !crate::sim::vision::cell_is_shrouded(
+                        sim.fog(),
+                        &cells,
+                        viewer,
+                        (enemy.position.rx(), enemy.position.ry()),
+                    )
+                })
+                .filter(|(_, enemy)| {
+                    let owner = sim.interner().resolve(enemy.owner());
+                    let ty = sim.interner().resolve(enemy.type_ref());
+                    if kind == "DRED" {
+                        owner == "Alliance" && ty == "GTGCAN"
+                    } else {
+                        owner == "Americans" && matches!(ty, "CARRIER" | "DEST")
+                    }
+                })
+                .min_by_key(|(_, enemy)| {
+                    let dx = i64::from(actor.position.rx()) - i64::from(enemy.position.rx());
+                    let dy = i64::from(actor.position.ry()) - i64::from(enemy.position.ry());
+                    dx * dx + dy * dy
+                })
+                .map(|(id, _)| id);
+            if let Some(target_id) = target {
+                orders.push(Command::Attack {
+                    attacker_id: id,
+                    target_id,
+                });
+            }
+        }
+        for order in orders {
+            log::info!("SOV01 capture ordinary player order at {tick}: {order:?}");
+            ensure!(
+                crate::app::input::commands::schedule_command_in_sim(sim, "Russians", order)
+                    .is_some(),
+                "naval order rejected"
+            );
+        }
+        Ok(())
+    }
+
+    /// Player input only. The stock map owns discovery, creation, recruitment,
+    /// movement, damage and cleanup. No Tag or AI action is called here.
+    fn issue_campaign_encounter_orders(&mut self, state: &mut AppState) -> Result<()> {
+        use crate::sim::combat::TargetKind;
+        use crate::sim::command::Command;
+        if self.group_orders.is_some() {
+            return Ok(());
+        }
+        let sim = &state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .context("group runtime")?
+            .simulation;
+        let tick = sim.session().tick();
+        if tick < 300 {
+            return Ok(());
+        }
+        let viewer = sim.session().current_house().context("campaign player")?;
+        let owner = sim.interner().resolve(viewer).to_owned();
+        let rules = state.rules().context("campaign rules")?;
+        let ids: Vec<_> = sim
+            .entities()
+            .iter_sorted()
+            .filter_map(|(id, actor)| {
+                let object = rules.object(sim.interner().resolve(actor.type_ref()))?;
+                (actor.owner() == viewer
+                    && actor.is_active()
+                    && !actor.lifecycle.in_limbo()
+                    && actor.category() != crate::map::entities::EntityCategory::Structure
+                    && !object.resource_gatherer
+                    && crate::sim::combat::combat_weapon::is_armed(actor, object))
+                .then_some(id)
+            })
+            .collect();
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let (target, group) = match self.target {
+            OpeningTarget::SovietGroups(_) => ((141, 92), Some(0)),
+            OpeningTarget::SovietFortresses(_) => ((112, 81), None),
+            _ => unreachable!("encounter inputs require a selected stock encounter"),
+        };
+        if let Some(group) = group {
+            ensure!(
+                crate::app::input::commands::try_schedule_command(
+                    state,
+                    &owner,
+                    Command::AssignControlGroup {
+                        group,
+                        entity_ids: ids.clone()
+                    }
+                )
+                .is_some(),
+                "group input rejected"
+            );
+        }
+        for &entity_id in &ids {
+            ensure!(
+                crate::app::input::commands::try_schedule_command(
+                    state,
+                    &owner,
+                    Command::AttackMove {
+                        entity_id,
+                        target: None,
+                        destination: Some(TargetKind::Cell(target.0, target.1))
+                    }
+                )
+                .is_some(),
+                "attack-move input rejected"
+            );
+        }
+        self.group_orders = Some(json!({"tick": tick, "owner": owner, "ids": ids,
+            "requested_native_group": group, "attack_move_cell": target}));
+        if group.is_some() {
+            camera::center_camera_on_cell(state, target.0, target.1);
+        }
+        Ok(())
+    }
+
     pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
         ensure!(
             self.ready(state)?,
@@ -368,17 +817,42 @@ impl OpeningCapture {
             "target": self.target.phase(), "initial_runtime": self.initial_runtime,
             "exact_steps": self.steps, "observations": self.observations,
             "saw_lock": self.saw_lock, "saw_unlock": self.saw_unlock,
+            "saw_countdown": self.saw_countdown,
+            "last_running_countdown": self.last_running_countdown,
+            "timer_action_replay": self.timer_action_replay,
             "locked_arrow_probe": self.lock_probe, "unlocked_arrow_probe": self.unlock_probe,
             "locked_mouse_probe": self.locked_mouse_probe,
             "unlocked_mouse_probe": self.unlocked_mouse_probe,
             "save_restore": self.restored, "current": opening_observation(state)?,
+            "retained_radar": self.saved_radar,
+            "radar_display": state.match_state.match_presentation.radar_anim.as_ref()
+                .map(|radar| json!({"phase": format!("{:?}", radar.phase()),
+                    "minimap_visible": radar.is_minimap_visible()})),
             "pre_lock_save": self.pre_lock_save, "unlocked_save": self.unlocked_save,
             "load_while_locked": self.load_while_locked,
-            "requested_tick": match self.target { OpeningTarget::AlliedTick(tick) => Some(tick), _ => None },
+            "group_orders": self.group_orders,
+            "requested_tick": match self.target { OpeningTarget::AlliedTick(tick) | OpeningTarget::SovietTick(tick) | OpeningTarget::SovietNavy(tick) | OpeningTarget::SovietGroups(tick) | OpeningTarget::SovietFortresses(tick) => Some(tick), _ => None },
+            "encounter_entities": if matches!(self.target, OpeningTarget::SovietTick(_) | OpeningTarget::SovietNavy(_) | OpeningTarget::SovietGroups(_) | OpeningTarget::SovietFortresses(_)) {
+                let sim = &state.match_state.sim_runtime.as_ref().context("encounter runtime")?.simulation;
+                Some(sim.entities().iter_sorted().map(|(_, entity)| json!({
+                    "id": entity.stable_id(), "type": sim.interner().resolve(entity.type_ref()),
+                    "owner": sim.interner().resolve(entity.owner()), "active": entity.is_active(),
+                    "limbo": entity.lifecycle.in_limbo(),
+                    "cell": [entity.position.rx(), entity.position.ry()],
+                    "health": entity.health.current(), "mission": format!("{:?}", entity.mission),
+                    "group": entity.object_group(),
+                    "target": format!("{:?}", entity.attack_target),
+                    "spawn_manager": entity.spawn_manager,
+                })).collect::<Vec<_>>())
+            } else { None },
             "aircraft_raster": if matches!(self.target, OpeningTarget::AlliedTick(_)) {
                 Some(aircraft::observe(state, &self.save_directory)?)
             } else { None },
-            "clock_domain": "one exact production sim/app frame per presented game frame; audio/message service uses its ordinary wall clock",
+            "clock_domain": if self.target == OpeningTarget::RealtimeUnlocked {
+                "ordinary wall-clock frame pacing and audio service"
+            } else {
+                "one exact production sim/app frame per presented game frame; audio/message service uses its ordinary wall clock"
+            },
         }))
     }
 }
@@ -496,6 +970,12 @@ fn opening_observation(state: &AppState) -> Result<Value> {
                 "id": team.id(), "type": team.team_type_id().map(|id| sim.interner().resolve(id)),
                 "script": sim.interner().resolve(team.script_id()), "cursor": team.cursor(),
                 "members": team.members().collect::<Vec<_>>(),
+                "transports": team.members().filter_map(|id| {
+                    let entity = sim.entities().get(id)?;
+                    let cargo = entity.passenger_role.cargo()?;
+                    Some(json!({"id": id, "cell": [entity.position.rx(), entity.position.ry()],
+                        "passengers": cargo.passengers()}))
+                }).collect::<Vec<_>>(),
             })
         })
         .collect::<Vec<_>>();
@@ -505,6 +985,8 @@ fn opening_observation(state: &AppState) -> Result<Value> {
     Ok(json!({
         "tick": sim.session().tick(), "binary_frame": sim.session().binary_frame(),
         "input_locked": sim.session().input_locked(),
+        "scenario_timer": sim.session().scenario_timer_view().map(|(remaining, caption)|
+            json!({"remaining": remaining, "caption": caption})),
         "cursor_depth": state.match_state.input.cursor_visibility.level(),
         "camera": camera::saved_tactical_view(state),
         "camera_origin": [state.match_state.input.camera_x, state.match_state.input.camera_y],
@@ -520,6 +1002,9 @@ fn opening_observation(state: &AppState) -> Result<Value> {
                 .collect::<Vec<_>>()).unwrap_or_default(),
         "teams": teams, "messages": messages,
         "eva_active": state.audio.sfx_player.as_ref().is_some_and(|sfx| sfx.voices_active()),
+        "eva_event": state.audio.sfx_player.as_ref().and_then(|sfx| sfx.current_eva_event()),
+        "game_speed": sim.session().game_options().game_speed,
+        "wall_ms": crate::app::match_runtime::frame_pacer::wall_clock_ms(),
     }))
 }
 

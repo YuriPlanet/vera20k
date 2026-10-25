@@ -16,7 +16,7 @@ fn complete(
             target_rx: cell.0,
             target_ry: cell.1,
         },
-        Some(rules),
+        rules,
         None,
         FrameEffects::default(),
     )
@@ -32,7 +32,7 @@ fn cancel(
     sim.apply_command_with_overlays(
         &name,
         &Command::CancelPaidSuperWeapon { selection },
-        Some(rules),
+        rules,
         None,
         FrameEffects::default(),
     )
@@ -358,16 +358,19 @@ fn superweapon_money_two_stage_begin_cancel_reselect_in_one_saved_command_batch(
     for command in &commands {
         sim.queue_command(CommandEnvelope::new(owner, 0, command.clone()));
     }
-    assert!(sim.projected_paid_super_weapon_selection(owner).is_none());
+    assert!(
+        sim.projected_paid_super_weapon_selection(owner, &rules)
+            .is_none()
+    );
     let mut loaded = restore(&sim, &rules);
-    let commands = loaded.take_due_commands();
+    let commands = loaded.take_frame_commands_for_test();
     assert_eq!(commands.len(), 5);
     for (index, command) in commands.iter().enumerate() {
         assert_eq!(
             loaded.apply_command_with_overlays(
                 "Americans",
                 &command.payload,
-                Some(&rules),
+                &rules,
                 None,
                 FrameEffects::default()
             ),
@@ -381,7 +384,7 @@ fn superweapon_money_two_stage_begin_cancel_reselect_in_one_saved_command_batch(
     assert!(!loaded.apply_command_with_overlays(
         "Americans",
         &commands[0].payload,
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default()
     ));
@@ -459,7 +462,7 @@ fn superweapon_money_two_stage_refused_source_request_id_is_never_reused() {
     assert!(!sim.apply_command_with_overlays(
         "Americans",
         &request,
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default()
     ));
@@ -480,7 +483,7 @@ fn superweapon_money_two_stage_refused_source_request_id_is_never_reused() {
     assert!(sim.apply_command_with_overlays(
         "Americans",
         &request,
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default()
     ));

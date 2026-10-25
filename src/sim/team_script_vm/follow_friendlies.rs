@@ -11,6 +11,7 @@ use crate::map::houses::is_allied_with;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::combat_weapon::is_armed;
+use crate::sim::components::NavTargetRef;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::motion_query::is_moving;
 use crate::sim::world::{FrameEffects, Simulation};
@@ -72,10 +73,8 @@ impl Simulation {
             .as_ref()
             .and_then(|state| self.resolved_terrain.as_ref()?.tube(state.tube_id()))
             .map_or(TeamTarget::Object(friendly.stable_id()), |tube| {
-                TeamTarget::Cell {
-                    x: tube.exit.0 as i16,
-                    y: tube.exit.1 as i16,
-                }
+                // CalcCenter's Script10 arm resolves the exit at6EB17E.
+                self.canonical_team_cell((tube.exit.0 as i16, tube.exit.1 as i16))
             });
         (Some(zone), Some(head))
     }
@@ -133,7 +132,13 @@ impl Simulation {
                 return;
             };
             let target = followed.attack_target.target();
-            if entity.attack_target.target().is_some() && entity.attack_target.target() != target {
+            // Script10/6EDBDD compares TarCom allocation identity.
+            if let Some(held) = entity.attack_target.target()
+                && !target.is_some_and(|target| {
+                    NavTargetRef::from(held)
+                        .same_pointer(target.into(), self.resolved_terrain.as_ref())
+                })
+            {
                 self.team_member_clear_target(id, rules);
             }
             let Some(target) = self

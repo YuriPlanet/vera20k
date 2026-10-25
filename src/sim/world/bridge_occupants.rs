@@ -174,6 +174,7 @@ impl BridgeOccupantHost for Occupants<'_, '_> {
             }
             CellObjectMember::Terrain(id) => {
                 let event = TerrainDamageEvent {
+                    damage_writeback: None,
                     stable_id: id,
                     rx: member.list_cell.0 as u16,
                     ry: member.list_cell.1 as u16,
@@ -186,6 +187,7 @@ impl BridgeOccupantHost for Occupants<'_, '_> {
                     self.live.rules,
                     self.live.registry,
                     event,
+                    true,
                     self.live.frame_effects,
                 );
             }

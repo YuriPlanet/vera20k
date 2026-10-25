@@ -89,7 +89,7 @@ fn scene(rules: &RuleSet) -> (Simulation, [u64; 2], u64, u64) {
     sim.assign_target_represented(
         gun,
         Some(TargetKind::Entity(target)),
-        Some(rules),
+        rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -126,7 +126,7 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
             &quiet.houses,
             quiet_squids[0],
             0,
-            Some(&rules),
+            &rules,
         );
         Simulation::tick_move_sound_after_process(
             &quiet.interner,
@@ -137,7 +137,7 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
             &quiet.houses,
             quiet_squids[1],
             0,
-            Some(&rules),
+            &rules,
         );
     });
     let (_, serviced_draws) = crate::sim::rng::trace_draws(|| {
@@ -150,7 +150,7 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
             &serviced.houses,
             serviced_squids[0],
             0,
-            Some(&rules),
+            &rules,
         );
         // One ordinary inclusive presentation draw between otherwise identical
         // paid Foot visits. No Scenario or MapGen capability is lent.
@@ -164,7 +164,7 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
             &serviced.houses,
             serviced_squids[1],
             0,
-            Some(&rules),
+            &rules,
         );
     });
     let rng: Value = serde_json::from_str(crate::test_fixture::text(

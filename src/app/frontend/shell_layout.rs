@@ -70,6 +70,28 @@ pub(crate) fn main_menu_layout(state: &AppState) -> MainMenuShellLayout {
     }
 }
 
+/// Count-rule message boxes over the front-end shell use the same mapping for
+/// their art, labels and controller hit rectangles as the page beneath them.
+pub(crate) fn shell_message_box_layout(
+    state: &AppState,
+    kind: crate::ui::shell::modal::ModalKind,
+) -> crate::ui::shell::modal::MessageBoxLayout {
+    message_box_layout_for_screen(kind, shell_screen_size(state))
+}
+
+fn message_box_layout_for_screen(
+    kind: crate::ui::shell::modal::ModalKind,
+    size: (u32, u32),
+) -> crate::ui::shell::modal::MessageBoxLayout {
+    use crate::ui::shell::geom::ShellScale;
+    let scale = if window_takes_fitted_shell(size) {
+        ShellScale::from_screen(size.0 as i32, size.1 as i32)
+    } else {
+        ShellScale::RETAIL
+    };
+    crate::ui::shell::modal::message_box_layout_on(kind, size.0 as i32, size.1 as i32, scale)
+}
+
 /// The shared right-panel menu pages (`0x100` Single Player, `0x101` Movies &
 /// Credits) and any other [`MenuPageSpec`]-driven page.
 pub(crate) fn menu_page_layout(state: &AppState, spec: &MenuPageSpec) -> MenuPageLayout {
@@ -196,10 +218,17 @@ pub(crate) fn art_key_screen_width(state: &AppState) -> u32 {
 /// Westwood Online welcome `0x10E`.
 pub(crate) fn wol_welcome_layout(state: &AppState) -> crate::ui::wol_shell::WolWelcomeLayout {
     let (width, height) = shell_screen_size(state);
+    let spec = state
+        .frontend
+        .wol
+        .as_ref()
+        .map_or(&crate::ui::wol_shell::WOL_WELCOME_PAGE, |visit| {
+            visit.welcome_page_spec()
+        });
     if fills_window(state) {
-        crate::ui::wol_shell::compute_responsive_layout(width, height)
+        crate::ui::wol_shell::compute_responsive_layout(width, height, spec)
     } else {
-        crate::ui::wol_shell::compute_layout(width, height)
+        crate::ui::wol_shell::compute_layout(width, height, spec)
     }
 }
 
@@ -221,6 +250,26 @@ pub(crate) fn keyboard_layout(
 #[cfg(test)]
 mod tests {
     use super::window_takes_fitted_shell;
+
+    #[test]
+    fn exit_message_box_follows_fitted_menu_and_keeps_button_hits() {
+        use crate::ui::shell::geom::RectPx;
+        use crate::ui::shell::modal::ModalKind;
+        let layout = super::message_box_layout_for_screen(ModalKind::Confirm, (2560, 1600));
+        assert_eq!(layout.dialog, RectPx::new(680, 365, 1202, 870));
+        assert_eq!(layout.ok, RectPx::new(1509, 1037, 336, 67));
+        let cancel = layout.cancel.unwrap();
+        assert_eq!(cancel, RectPx::new(1509, 1123, 336, 66));
+        assert!(layout.ok.contains(1673, 1071));
+        assert!(cancel.contains(1673, 1156));
+        assert!(!layout.ok.contains(1673, 1156));
+        assert!(!cancel.contains(1673, 1071));
+        for size in [(800, 600), (640, 480)] {
+            let layout = super::message_box_layout_for_screen(ModalKind::Confirm, size);
+            assert_eq!((layout.dialog.w, layout.dialog.h), (451, 326));
+            assert!(layout.scale.is_retail());
+        }
+    }
 
     #[test]
     fn only_the_retail_shell_sizes_keep_the_retail_layout() {

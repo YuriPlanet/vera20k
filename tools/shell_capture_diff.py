@@ -45,8 +45,20 @@ CAMPAIGN_CHECKPOINTS = {
 CAMPAIGN_CHECKPOINTS["campaign-back-return"] = (None, "campaign-back-return")
 CAMPAIGN_CHECKPOINTS["campaign-all1-opening-load-unlocked"] = (
     "all1", "opening-load-unlocked-while-locked")
+EXPLICIT_CAMPAIGN_MAPS = {
+    "campaign-all02-first-live-frame": "ALL02UMD.MAP",
+    "campaign-sov05-first-live-frame": "SOV05UMD.MAP",
+    "campaign-sov07-first-live-frame": "SOV07TMD.MAP",
+}
+for checkpoint in EXPLICIT_CAMPAIGN_MAPS:
+    # The native external-start owner retains catalog record0 even when an
+    # explicit filename selects a mission from the other campaign.
+    CAMPAIGN_CHECKPOINTS[checkpoint] = ("all1", "explicit-first-live-frame")
+CAMPAIGN_CHECKPOINTS["campaign-all1-initial-save"] = ("all1", "initial-save")
+CAMPAIGN_CHECKPOINTS["campaign-sov1-initial-save"] = ("sov1", "initial-save")
 for phase in ("opening-locked", "opening-pan", "opening-flash", "opening-arrows",
-              "opening-unlocked", "opening-restore-unlocked"):
+              "opening-unlocked", "opening-restore-unlocked",
+              "opening-timer-running", "opening-timer-expired"):
     CAMPAIGN_CHECKPOINTS[f"campaign-sov1-{phase}"] = ("sov1", phase)
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 TILE = 50
@@ -115,14 +127,21 @@ def validate_campaign_capture(manifest):
                  "campaign Back did not retire the campaign/loading route")
         return {"phase": phase, "parity_certification": "NONE"}
 
-    press_index, press = route_action("emblem press", 0x94, new_index)
-    release_index, release = route_action("emblem release", 0x94, press_index)
+    explicit_map = EXPLICIT_CAMPAIGN_MAPS.get(checkpoint)
+    if explicit_map:
+        release_index, press = route_action("explicit campaign spawn", after=new_index)
+        release = press
+        _require(press.get("scenario") == explicit_map and press.get("seed") == 1,
+                 "explicit campaign admission changed")
+    else:
+        press_index, press = route_action("emblem press", 0x94, new_index)
+        release_index, release = route_action("emblem release", 0x94, press_index)
+        emblem = {"all1": 0x6EA, "sov1": 0x6EC}[campaign_id]
+        _require(press.get("emblem") == emblem and release.get("emblem") == emblem
+                 and press.get("campaign") == campaign_id and release.get("campaign") == campaign_id,
+                 "campaign route selected a different emblem")
+        _require(press["frame"] < release["frame"], "emblem press was not presented before release")
     admitted_index, _ = route_action("campaign loading admitted", after=release_index)
-    emblem = {"all1": 0x6EA, "sov1": 0x6EC}[campaign_id]
-    _require(press.get("emblem") == emblem and release.get("emblem") == emblem
-             and press.get("campaign") == campaign_id and release.get("campaign") == campaign_id,
-             "campaign route selected a different emblem")
-    _require(press["frame"] < release["frame"], "emblem press was not presented before release")
     startup = manifest["startup"]
     campaign = startup["campaign"]
     _require(str(campaign["id"]).lower() == campaign_id, "admitted campaign differs from emblem")
@@ -147,7 +166,19 @@ def validate_campaign_capture(manifest):
     selected_name = source["logical_name"] if source["kind"] == "mix" else source["path"]
     _require(isinstance(selected_name, str), "selected map filename is missing")
     selected_name = selected_name.replace("\\", "/").rsplit("/", 1)[-1].lower()
-    scenario_name = campaign["scenario"].replace("\\", "/").rsplit("/", 1)[-1].lower()
+    selected_scenario = startup.get("scenario", campaign["scenario"])
+    scenario_name = selected_scenario.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    if explicit_map:
+        _require(startup.get("scenario") == explicit_map, "explicit campaign selected another map")
+    if explicit_map == "ALL02UMD.MAP":
+        buildings = manifest["runtime"].get("player_buildings", [])
+        flaks = [b for b in buildings if b.get("type") == "NAFLAK" and b.get("cell") == [159, 165]]
+        _require(len(flaks) == 1, "ALL02 capture omitted its authored player Flak")
+        flak = flaks[0]
+        _require(flak.get("in_playfield") is False and flak.get("discovered") is False
+                 and flak.get("opened") is False and flak.get("ready") == 0
+                 and flak.get("mission") == -1 and flak.get("queued") == 5,
+                 "ALL02 hidden player Flak was prematurely opened or ready")
     _require(selected_name == scenario_name, "map byte source differs from the admitted scenario")
     if source["kind"] == "mix":
         _require(isinstance(source["source_archive"], str) and source["source_archive"]
@@ -155,10 +186,10 @@ def validate_campaign_capture(manifest):
     hashes = manifest["process_source_ini_hashes"]
     _require("parsed cache" in hashes["domain"], "process hashes are not labelled as parsed cache")
     sources = hashes["sources"]
-    _require(isinstance(sources, list) and [row["name"] for row in sources]
+    _require(isinstance(sources, list) and [row["name"].upper() for row in sources]
              == ["RULESMD.INI", "LANGRULE.INI", "ARTMD.INI"], "process source receipt changed")
     _require(all(_hex_hash(row["parsed_cache_hash"], 16) or (
-        row["name"] == "LANGRULE.INI" and row["parsed_cache_hash"] is None
+        row["name"].upper() == "LANGRULE.INI" and row["parsed_cache_hash"] is None
     ) for row in sources), "process parsed-cache hash missing")
     runtime = manifest["runtime"]
     if phase == "loading-first-frame":
@@ -166,7 +197,8 @@ def validate_campaign_capture(manifest):
     else:
         opening_phase = phase.startswith("opening-")
         _require(isinstance(runtime, dict) and _integer(runtime.get("tick"))
-                 and (runtime["tick"] > 0 if opening_phase else runtime["tick"] == 0)
+                 and (runtime["tick"] > 0 if opening_phase else
+                      runtime["tick"] == (1 if phase == "initial-save" else 0))
                  and runtime.get("game_mode_nonzero") is False,
                  "campaign capture is outside its admitted runtime frame domain")
         _require(_integer(runtime["campaign_mission_counter"]), "campaign counter missing")
@@ -202,6 +234,16 @@ def validate_campaign_capture(manifest):
                  "campaign camera/bookmark receipt missing")
         if opening_phase:
             _validate_campaign_opening(manifest, phase, runtime)
+        if phase == "initial-save":
+            saved = manifest.get("initial_save", {})
+            _require(saved.get("game_speed") == 2 and saved.get("pending_speed_input") is False,
+                     "initial save preceded the consumed Options input")
+            title = {"all1": "Allied 01 - Time Lapse", "sov1": "Soviet 01 - Time Shift"}[campaign_id]
+            expected_filename = scenario_name.rsplit(".", 1)[0] + ".sav"
+            _require(saved.get("filename", "").lower() == expected_filename
+                     and saved.get("description") == f"[{title}]" and saved.get("tick") == 0
+                     and saved.get("new_save_description") == title,
+                     "initial campaign save/title does not match native startup")
     if phase == "abort-return":
         _require(manifest.get("runtime_observation") == "first-live-frame-before-Escape-press",
                  "abort return has no pre-Escape installed-runtime observation")
@@ -268,7 +310,7 @@ def validate_campaign_capture(manifest):
                  and returned["campaign_mission_counter"] == cleanup["campaign_mission_counter"],
                  "campaign abort omitted EXIT consumption/lease return/retained Session counter reset")
     _require("mission_opening_1308" in manifest["coverage"], "capture omits its mission-opening limit")
-    return {"campaign": campaign_id, "phase": phase, "scenario": campaign["scenario"],
+    return {"campaign": campaign_id, "phase": phase, "scenario": selected_scenario,
             "selected_map_sha256": source["source_sha256"],
             "map_admission": manifest["map_admission"], "parity_certification": "NONE"}
 
@@ -289,6 +331,7 @@ def _validate_campaign_opening(manifest, phase, runtime):
     _require(initial["tick"] == 0 and initial["game_mode_nonzero"] is False,
              "opening skipped the ordinary tick-zero installation")
     in_lock_load = phase == "opening-load-unlocked-while-locked"
+    countdown = phase in ("opening-timer-running", "opening-timer-expired")
     restores = phase == "opening-restore-unlocked" or in_lock_load
     for observation, admission in ((initial, CAMPAIGN_INSTALLED),
                                    (runtime, SAVED_WORLD_RESTORED if restores else CAMPAIGN_INSTALLED)):
@@ -297,7 +340,7 @@ def _validate_campaign_opening(manifest, phase, runtime):
         _require(observation.get("startup_admission") == admission,
                  "opening has no checked campaign installation or saved-world admission")
     steps = opening["exact_steps"]
-    _require(isinstance(steps, list) and 0 < len(steps) <= (6000 if in_lock_load else 2500),
+    _require(isinstance(steps, list) and 0 < len(steps) <= (8000 if countdown else 6000 if in_lock_load else 2500),
              "opening has no bounded production step sequence")
     tick, frame = initial["tick"], initial["binary_frame"]
     loads = []
@@ -389,6 +432,31 @@ def _validate_campaign_opening(manifest, phase, runtime):
                          for row in observations)),
                  "opening missed a required flash/message/arrow consumer before unlock")
     restored = opening["save_restore"]
+    if countdown:
+        replay = opening.get("timer_action_replay", {})
+        _require(replay.get("mode") == "retail-timer-actions-after-opening-unlock"
+                 and replay.get("trigger") == "0952F87C" and replay.get("action_count") == 3
+                 and (replay.get("tick"), replay.get("binary_frame")) in clock_boundaries,
+                 "countdown capture omits its declared retail-action replay")
+        _require(opening.get("saw_countdown") is True
+                 and any(isinstance(row.get("scenario_timer"), dict)
+                         and row["scenario_timer"].get("remaining", 0) > 0
+                         and row["scenario_timer"].get("caption") == "MISSION:TmeTimer"
+                         for row in observations),
+                 "opening did not observe the authored running countdown")
+        timer = current.get("scenario_timer")
+        if phase == "opening-timer-running":
+            _require(isinstance(timer, dict) and timer.get("remaining", 0) > 0,
+                     "running countdown readback has no time remaining")
+        else:
+            _require(timer is None, "completed countdown is still visible")
+            last = opening.get("last_running_countdown", {})
+            # The receipt uses the committed post-step frame. At zero the
+            # next Logic poll observes expiry and stops the running timer.
+            _require(last.get("timer", {}).get("remaining") == 0
+                     and last.get("tick") == tick - 1
+                     and last.get("binary_frame") == (frame - 1) & 0xFFFFFFFF,
+                     "countdown did not stop on its next production poll")
     if in_lock_load:
         _require(len(loads) == 2 and len(steps) - loads[1] >= 45,
                  "ALL01 did not observe both loads and the post-load production steps")

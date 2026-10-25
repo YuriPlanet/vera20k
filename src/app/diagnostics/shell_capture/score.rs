@@ -636,7 +636,7 @@ fn campaign_score_layout(state: &AppState) -> CampaignScoreLayout {
     )
 }
 
-fn click_campaign_continue(state: &mut AppState) -> Result<()> {
+pub(super) fn click_campaign_continue(state: &mut AppState) -> Result<()> {
     let layout = campaign_score_layout(state);
     let button = layout.continue_button;
     state.match_state.input.cursor_x = (button.x + button.w / 2) as f32;

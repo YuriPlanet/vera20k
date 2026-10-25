@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -43,5 +42,5 @@
     "main_raw": "0x0065C780"
   },
   "replay_command": "python -m tools.spatial_oracle.bunker_attack_action --move-order-voice",
-  "payload_sha256": "b4d447531bdd8107b8545a3e3199dbcf5d82907882f30ff16891b03135a15142"
+  "payload_sha256": "29cf5076bf227b7b10f3b59e19b9866238ef745393c8693d622ff508d4105075"
 }

@@ -189,7 +189,7 @@ fn a_crush_charge_takes_the_per_cell_range_stop() {
     sim.per_cell_process(
         rhino,
         crate::sim::movement::PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )

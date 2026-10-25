@@ -30,8 +30,8 @@ checks for every native region/function. Early stops, instruction/time exhaustio
 and faults abort; comparison gates remain active under `python -O`. Live and cached
 x87 state retain their original chronology. All 14 historical fixture bytes,
 including CRLF in `ground-level.json`, remain unchanged. `checked-run.json` records
-fresh checked execution and source identities separately from the immutable
-historical `fixtures/provenance.json`; it does not refresh its runtime observations.
+fresh checked execution separately from the immutable historical
+`fixtures/provenance.json`; it does not refresh its runtime observations.
 
 `oracle.py` validates 2,001 x87 base scales, complete scalar/CMOV/MMX
 LightConvert tables, ordinary Convert tables, 832 SHP/VXL scanline samples and

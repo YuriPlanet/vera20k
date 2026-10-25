@@ -176,7 +176,7 @@ pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) ->
         sim.foot_set_location_marked(
             id,
             coord,
-            Some(&rules),
+            &rules,
             Some(&registry),
             crate::sim::world::FrameEffects::default(),
         );

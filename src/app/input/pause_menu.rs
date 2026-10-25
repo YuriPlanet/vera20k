@@ -67,7 +67,7 @@ fn select_template(state: &AppState) -> PauseMenuTemplate {
         .as_ref()
         .is_some_and(|runtime| runtime.simulation.local_player_defeated());
     PauseMenuTemplate::select(
-        matches!(mode, SessionMode::Campaign | SessionMode::Skirmish),
+        mode.is_single_player(),
         mode == SessionMode::Wol,
         local_defeated,
     )
@@ -212,8 +212,9 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     if pressed {
         interaction.press(over);
         if over.is_some() {
-            // Common type2 button61374B..613771: generic cue at button-down.
-            App::play_skirmish_shell_generic_click_sound(state);
+            // Owner-draw button-down: GUIMainButtonSound (Rules+0x188,
+            // 0x0061374B..0x00613771).
+            App::play_main_menu_button_sound(state);
         }
     } else if let Some(button) = interaction.release(over) {
         activate(state, button);
@@ -229,12 +230,19 @@ fn activate(state: &mut AppState, button: PauseMenuButton) {
             resume_internet_events(state);
             App::enter_in_game_menu_state(state, InGameMenuState::Closed)
         }
-        // 0x522 (`0x004F16C4..0x004F16E0`): mode4 writes state 2 and keeps it
-        // only while `0xB779C4` is set; only the WOL chat sink and MPCooperative
-        // write that byte, and VERA's WOL service never sets it, so every
-        // mode reaches state 3.
+        // 0x522 (`0x004F16C0..0x004F16EA`): GameMode 4 writes state 2 while
+        // `[0xB779C4]` is set, every other game state 3.
         PauseMenuButton::Abort => {
-            App::enter_in_game_menu_state(state, InGameMenuState::AbortConfirm)
+            if state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .is_some_and(|runtime| runtime.simulation.session().wol_tournament_game())
+            {
+                crate::app::input::surrender::open(state);
+            } else {
+                App::enter_in_game_menu_state(state, InGameMenuState::AbortConfirm)
+            }
         }
         PauseMenuButton::Load => App::open_saved_game_browser(state, SavedSeedMode::Load),
         PauseMenuButton::Save => App::open_saved_game_browser(state, SavedSeedMode::Save),
@@ -308,20 +316,23 @@ fn resume_internet_events(state: &mut AppState) {
         state.match_state.session.pause_event_limiters_mut(),
         now_bucket,
     );
-    if let Some(fudge) = resume.latency_fudge {
-        state.match_state.session.set_latency_fudge(fudge);
-    }
-    if let Some(speed) = resume.game_speed
-        && let Some(owner) = crate::app::input::commands::preferred_local_owner(state)
-    {
-        // EVENT_GAMESPEED with `6 - position`, the existing speed command.
-        // Residual: it rides the shared command schedule rather than native
-        // ingress timing, and the remote-sender message (format 0x00820DF0)
-        // belongs to the transport.
+    let Some(owner) = crate::app::input::commands::preferred_local_owner(state) else {
+        return;
+    };
+    // Resume4F1595..4F167A emits latency first, then speed. The limiters above
+    // have already advanced even when OutList refuses either event.
+    if let Some(value) = resume.latency_fudge {
         crate::app::input::commands::schedule_command(
             state,
             &owner,
-            crate::sim::command::Command::SetGameSpeed { speed: speed as u8 },
+            crate::sim::command::Command::SetLatencyFudge { value },
+        );
+    }
+    if let Some(speed) = resume.game_speed {
+        crate::app::input::commands::schedule_command(
+            state,
+            &owner,
+            crate::sim::command::Command::LiveGameSpeed { speed: speed as u8 },
         );
     }
 }

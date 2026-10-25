@@ -313,8 +313,8 @@ impl SurfaceLineGpu {
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Surface line shared snapshot layout"),
-            bind_group_layouts: &[snapshot, &layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(snapshot), Some(&layout)],
+            immediate_size: 0,
         });
         let attrs = wgpu::vertex_attr_array![0=>Float32x4,1=>Uint32x2];
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -343,7 +343,7 @@ impl SurfaceLineGpu {
             primitive: Default::default(),
             depth_stencil: None,
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
         Self {
@@ -672,6 +672,7 @@ impl TerrainDrawRenderer {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 });
                 pass.set_scissor_rect(x, y, w, h);
                 pass.set_pipeline(&self.snapshot_pipeline);
@@ -685,6 +686,7 @@ impl TerrainDrawRenderer {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 });
                 pass.set_scissor_rect(x, y, w, h);
                 pass.set_pipeline(&self.surface_lines.pipeline);

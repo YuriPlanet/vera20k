@@ -47,16 +47,9 @@ pub(crate) struct CellBody {
 
 /// Append `bodies` in sweep order, each instance's draw beside it.
 ///
-/// RESIDUAL: a body with no ported Z shape (`RenderZPolicy::None`: sloped
-/// resources, veins, the veinhole monster) cannot take part in a front-to-back
-/// sweep that relies on Z, so these are painted first, back to front, and the
-/// Z-tested bodies follow in sweep order. Trigger: such a cell in view, as at
-/// every sloped edge of an ore field. Effect: a Z-tested body behind one covers
-/// the art it raises into that cell, where native's slope Z would keep it:
-/// strips of flat ore along those edges, and rarely a wall, crate, rubble or
-/// bridge pillar. The overlay index order this replaced kept that case but
-/// painted sloped ore and veins over a raised high-bridge deck, and grown
-/// cells over nearer bodies. Presentation only.
+/// Valid native overlays, including sloped resources and veins, all use Z.
+/// Unregistered compatibility records retain their old no-depth painting
+/// order; they have no native OverlayType from which to select a draw policy.
 pub(crate) fn submit_cell_body_sweep(
     mut bodies: Vec<CellBody>,
     instances: &mut Vec<SpriteInstance>,

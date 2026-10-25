@@ -117,8 +117,8 @@ impl IonBlastGpu {
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("IonBlast shared snapshot layout"),
-            bind_group_layouts: &[snapshot, &layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(snapshot), Some(&layout)],
+            immediate_size: 0,
         });
         let attributes =
             wgpu::vertex_attr_array![0 => Float32x4, 1 => Sint32x2, 2 => Uint32x2, 3 => Float32];
@@ -148,7 +148,7 @@ impl IonBlastGpu {
             primitive: Default::default(),
             depth_stencil: None,
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
         let reach = (1..=u8::MAX)
@@ -369,6 +369,7 @@ impl TerrainDrawRenderer {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 });
                 let [x, y, w, h] = blast.read;
                 pass.set_scissor_rect(x, y, w, h);
@@ -383,6 +384,7 @@ impl TerrainDrawRenderer {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 });
                 let [x, y, w, h] = blast.edit;
                 pass.set_scissor_rect(x, y, w, h);

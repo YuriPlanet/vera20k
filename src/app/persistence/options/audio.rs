@@ -72,17 +72,13 @@ impl AudioVolumeOperations for AppState {
         self.persistence.options_profile.sound_volume = volume;
     }
     fn apply_sound_output(&mut self, volume: f32) {
-        if let Some(player) = self.audio.sfx_player.as_mut() {
-            player.set_sound_volume(f64::from(volume));
-        }
+        self.audio.set_sound_volume(f64::from(volume));
     }
     fn store_voice_volume(&mut self, volume: f32) {
         self.persistence.options_profile.voice_volume = volume;
     }
     fn apply_voice_output(&mut self, volume: f32) {
-        if let Some(player) = self.audio.sfx_player.as_mut() {
-            player.set_voice_volume(f64::from(volume));
-        }
+        self.audio.set_voice_volume(f64::from(volume));
     }
     fn play_generic_beep(&mut self, local_multiplier: f32) {
         let sound = self

@@ -25,6 +25,8 @@ pub(crate) struct ProcessAssets {
     /// Launch request and its first resolved names survive a lost asset lease.
     ini_config: crate::util::ini_roots::IniRootConfig,
     selected_ini_roots: Option<crate::util::ini_roots::IniRoots>,
+    /// Personal rules are frozen at startup, like the selected game sources.
+    personal_rules: crate::rules::personal_rules::PersonalRules,
     manager: Option<AssetManager>,
     leased: bool,
     /// Frozen launch policy, including deferred recovery after assetless startup.
@@ -49,6 +51,9 @@ pub(crate) struct ProcessAssets {
     /// loads, reseeds, and save transitions must not clear it.
     pub(crate) tile_variant_selector_cache:
         crate::map::tile_variant_selector::TileVariantSelectorCache,
+    /// The network games' Rules/AI/Art INI hashes, computed once from the
+    /// process sources; `None` without them.
+    native_ini_hashes: Option<crate::rules::native_ini_hash::NativeIniHashes>,
 }
 
 /// Immutable process sources; output players and match queues have separate
@@ -78,6 +83,7 @@ impl ProcessAssets {
             media_archive_mode,
             ini_config: Default::default(),
             selected_ini_roots: None,
+            personal_rules: Default::default(),
             manager: None,
             leased: false,
             load_audio_index,
@@ -87,6 +93,7 @@ impl ProcessAssets {
             shared_cell_dummy: Default::default(),
             csf: None,
             tile_variant_selector_cache: Default::default(),
+            native_ini_hashes: None,
         }
     }
 
@@ -98,6 +105,14 @@ impl ProcessAssets {
         let mut process = Self::new(media, audio);
         process.ini_config = config;
         process
+    }
+
+    pub(crate) fn with_personal_rules(
+        mut self,
+        rules: crate::rules::personal_rules::PersonalRules,
+    ) -> Self {
+        self.personal_rules = rules;
+        self
     }
 
     /// Recovery uses the process's already resolved choice, never a new Auto
@@ -152,18 +167,26 @@ impl ProcessAssets {
             } else {
                 None
             };
-            let definitions = crate::rules::audio_sources::AudioDefinitions::select(assets);
-            log::info!(
-                "Process audio catalog selected: {}",
-                serde_json::json!({
-                    "soundmd": definitions.sound_source(),
-                    "evamd": definitions.eva_source(),
-                    "index_enabled": self.load_audio_index,
-                    "index": index.as_ref().map(|loaded| &loaded.sources),
-                    "sound_count": definitions.sounds().len(),
-                    "eva_count": definitions.eva().len(),
-                })
+            let definitions = crate::rules::audio_sources::AudioDefinitions::select_admitting(
+                assets,
+                index.as_ref().map(|loaded| &loaded.index),
             );
+            let source_receipt = serde_json::json!({
+                "soundmd": definitions.sound_source(),
+                "evamd": definitions.eva_source(),
+                "index_enabled": self.load_audio_index,
+                "index": index.as_ref().map(|loaded| &loaded.sources),
+                "sound_count": definitions.sounds().len(),
+                "eva_count": definitions.eva().len(),
+            });
+            #[cfg(feature = "ares")]
+            let source_receipt = {
+                let mut receipt = source_receipt;
+                receipt["additional_indexes"] =
+                    serde_json::json!(index.as_ref().map(|loaded| &loaded.additional_sources));
+                receipt
+            };
+            log::info!("Process audio catalog selected: {source_receipt}");
             self.audio_catalog = Some(ProcessAudioCatalog { definitions, index });
         }
         if self.native_rules.is_some() {
@@ -173,6 +196,7 @@ impl ProcessAssets {
             std::sync::Arc::clone(self.audio_catalog.as_ref().unwrap().definitions.sounds());
         let eva = std::sync::Arc::clone(self.audio_catalog.as_ref().unwrap().definitions.eva());
         let startup = crate::rules::retail_sources::RetailRulesSources::select(assets)?
+            .with_personal_rules(self.personal_rules.clone())
             .into_startup(sounds, eva)?;
         let (rules, projection, owner) = startup.into_parts();
         self.native_rules = Some(owner);
@@ -202,6 +226,12 @@ impl ProcessAssets {
         {
             return;
         }
+        self.refresh_campaigns_if_available();
+    }
+
+    /// ClearScene685609 re-reads the process-retained Campaign registry on
+    /// saved loads too. It never infers campaign identity from a map name.
+    pub(crate) fn refresh_campaigns_if_available(&mut self) {
         let selected = self
             .manager
             .as_ref()
@@ -252,6 +282,117 @@ impl ProcessAssets {
         &self,
     ) -> Option<&crate::rules::process_owner::NativeRulesProcessOwner> {
         self.native_rules.as_ref()
+    }
+
+    pub(crate) fn native_ini_hashes(
+        &self,
+    ) -> Option<crate::rules::native_ini_hash::NativeIniHashes> {
+        self.native_ini_hashes
+    }
+
+    /// The VERA protocol compares the exact process-selected Rules/LANGRULE/ART
+    /// plus the selected mode and AIMD snapshots used by scenario loading.
+    /// The legacy advertisement CRC remains a separate native UI value.
+    pub(crate) fn multiplayer_rules_digest(&self, mode: &str) -> Result<String, String> {
+        use crate::rules::retail_sources::{select_ini, select_mode_ini};
+        let rules = self
+            .native_rules
+            .as_ref()
+            .ok_or("retail rules not loaded")?;
+        let assets = self.manager.as_ref().ok_or("retail sources are loading")?;
+        let ai = select_ini(assets, assets.ini_roots().ai())?;
+        let selected_mode = select_mode_ini(assets, Some(mode))?;
+        let mut digests = rules.multiplayer_source_digests().to_vec();
+        digests.push(Some(ai.ini.multiplayer_digest()));
+        digests.push(
+            selected_mode
+                .as_ref()
+                .map(crate::rules::ini_parser::IniFile::multiplayer_digest),
+        );
+        let mut bytes = b"VERA20k rules agreement v1\0".to_vec();
+        for digest in digests {
+            bytes.push(u8::from(digest.is_some()));
+            if let Some(digest) = digest {
+                bytes.extend_from_slice(digest.as_bytes());
+            }
+        }
+        Ok(crate::util::sha256::sha256_hex(&bytes))
+    }
+
+    /// A seed regenerates its map after Start, so its rules agreement also
+    /// covers the inputs selected by the ordinary generation preparation.
+    pub(crate) fn multiplayer_generated_rules_digest(
+        &mut self,
+        mode: &str,
+        options: &crate::map::rmg::RmgOptions,
+    ) -> Result<String, String> {
+        let rules = self.multiplayer_rules_digest(mode)?;
+        let assets = self.manager.as_mut().ok_or("retail sources are loading")?;
+        let mode_rules = crate::rules::retail_sources::select_mode_ini(assets, Some(mode))?;
+        let prepared = crate::app::shell_random_map::prepare_random_map_generation(
+            assets,
+            options,
+            self.native_rules.as_ref(),
+            mode_rules.as_ref(),
+        )
+        .ok_or("generated map theater is unavailable")?;
+        let mut bytes = b"VERA20k generated rules agreement v1\0".to_vec();
+        bytes.extend_from_slice(rules.as_bytes());
+        bytes.extend_from_slice(prepared.multiplayer_digest().as_bytes());
+        Ok(crate::util::sha256::sha256_hex(&bytes))
+    }
+
+    /// Hash the process sources once (`crate::rules::native_ini_hash`):
+    /// the selected rules root and ART, AIMD, each mode's INI by id
+    /// `1..=count` and CoopCampMD.
+    pub(crate) fn install_native_ini_hashes(
+        &mut self,
+        assets: &AssetManager,
+        modes: &[crate::skirmish_modes::SkirmishGameMode],
+    ) {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::retail_sources::{select_ini, select_mode_ini};
+        let Some(rules) = self.native_rules.as_ref() else {
+            return;
+        };
+        let ai = match select_ini(assets, assets.ini_roots().ai()) {
+            Ok(selected) => selected.ini,
+            Err(error) => {
+                log::warn!("No INI hashes without the AI root: {error}");
+                return;
+            }
+        };
+        // 0x00679D90 walks the ids 1..=count (0x005D5ED0) and finds each
+        // mode by id (0x005D5F30); 0x005D67B0 gives an empty INI for a
+        // missing file. Retail ids are 1..9 without a gap.
+        let mode_inis: Vec<IniFile> = (1..=modes.len() as i32)
+            .filter_map(|id| crate::skirmish_modes::mode_by_id(modes, id))
+            .map(|mode| {
+                select_mode_ini(assets, Some(&mode.override_file))
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(IniFile::empty)
+            })
+            .collect();
+        let cooperative = select_ini(
+            assets,
+            crate::app::frontend::skirmish_session::cooperative::COOPERATIVE_CAMPAIGN_INI,
+        )
+        .ok()
+        .map(|selected| selected.ini);
+        let mut hashes = crate::rules::native_ini_hash::NativeIniHashes::compute(
+            rules.selected_rules_root(),
+            &mode_inis,
+            cooperative.as_ref(),
+            &ai,
+            rules.fixed_art(),
+        );
+        // VERA extension: peers must agree on both personal rules and whether
+        // they may replace map-authored rules. An inactive file adds nothing.
+        if let Some(crc) = rules.personal_rules_compatibility_crc() {
+            hashes.rules = hashes.rules.wrapping_add(crc);
+        }
+        self.native_ini_hashes = Some(hashes);
     }
 
     pub(crate) fn read_multiplayer_country(
@@ -375,6 +516,110 @@ mod tests {
     use crate::assets::asset_manager::AssetManager;
 
     #[test]
+    fn generated_rules_agreement_covers_rmg_settings_and_theater_inputs() {
+        let dir = crate::assets::asset_manager::test_support::audio_test_install("rmg-agreement");
+        for (name, bytes) in [
+            ("rulesmd.ini", "[General]\nBuildSpeed=.7\n"),
+            ("artmd.ini", "[UNIT]\nVoxel=yes\n"),
+            ("aimd.ini", "[AI]\nValue=1\n"),
+            ("rmgmd.ini", "[General]\nMaxTrees=500\n"),
+            (
+                "temperatmd.ini",
+                "[General]\n[TileSet0000]\nFileName=clear\nTilesInSet=1\nMorphable=yes\n",
+            ),
+        ] {
+            std::fs::write(dir.path().join(name), bytes).unwrap();
+        }
+        for name in ["unittem.pal", "isotem.pal", "temperat.pal"] {
+            std::fs::write(dir.path().join(name), [0_u8; 768]).unwrap();
+        }
+        let digest = || {
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+            let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+            process.initialize_sources_if_needed(&assets).unwrap();
+            process.return_from_loading(assets);
+            process
+                .multiplayer_generated_rules_digest("", &crate::map::rmg::RmgOptions::default())
+                .unwrap()
+        };
+        let original = digest();
+        std::fs::write(dir.path().join("rmgmd.ini"), "[General]\nMaxTrees=501\n").unwrap();
+        assert_ne!(original, digest(), "generator tuning must agree");
+        std::fs::write(dir.path().join("rmgmd.ini"), "[General]\nMaxTrees=500\n").unwrap();
+        std::fs::write(
+            dir.path().join("temperatmd.ini"),
+            "[General]\n[TileSet0000]\nFileName=clear\nTilesInSet=1\nMorphable=no\n",
+        )
+        .unwrap();
+        assert_ne!(original, digest(), "resolved theater inputs must agree");
+    }
+
+    #[test]
+    fn multiplayer_agreement_covers_frozen_langrule_and_the_selected_mode() {
+        let dir =
+            crate::assets::asset_manager::test_support::audio_test_install("multiplayer-agreement");
+        for (name, bytes) in [
+            ("rulesmd.ini", "[General]\nBuildSpeed=.7\n"),
+            ("artmd.ini", "[UNIT]\nVoxel=yes\n"),
+            ("aimd.ini", "[AI]\nValue=1\n"),
+            ("langrule.ini", "[General]\nBuildSpeed=.8\n"),
+            ("mode.ini", "[General]\nBuildSpeed=.6\n"),
+        ] {
+            std::fs::write(dir.path().join(name), bytes).unwrap();
+        }
+        let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+        let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+        process.initialize_sources_if_needed(&assets).unwrap();
+        process.return_from_loading(assets);
+        let original = process.multiplayer_rules_digest("mode.ini").unwrap();
+        assert_ne!(original, process.multiplayer_rules_digest("").unwrap());
+        std::fs::write(
+            dir.path().join("langrule.ini"),
+            "[General]\nBuildSpeed=.4\n",
+        )
+        .unwrap();
+        assert_eq!(
+            original,
+            process.multiplayer_rules_digest("mode.ini").unwrap(),
+            "the live process retains its source snapshot"
+        );
+        let mut fresh = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false);
+        let assets = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+        fresh.initialize_sources_if_needed(&assets).unwrap();
+        fresh.return_from_loading(assets);
+        assert_ne!(
+            original,
+            fresh.multiplayer_rules_digest("mode.ini").unwrap()
+        );
+    }
+
+    #[test]
+    fn personal_rules_and_map_priority_participate_in_network_compatibility() {
+        use crate::map::source::test_support::TestDirectory;
+        use crate::rules::personal_rules::PersonalRules;
+
+        let dir = TestDirectory::new("personal-rules-network");
+        dir.write("rulesmd.ini", b"[General]\nBuildSpeed=.7\n");
+        dir.write("artmd.ini", b"[Test]\nVoxel=no\n");
+        dir.write("aimd.ini", b"[Test]\nValue=1\n");
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        let hashes = |bytes: &[u8]| {
+            let mut process = ProcessAssets::new(MediaArchiveMode::STOCK_DIGITAL, false)
+                .with_personal_rules(PersonalRules::from_bytes(bytes).unwrap());
+            process.initialize_sources_if_needed(&assets).unwrap();
+            process.install_native_ini_hashes(&assets, &[]);
+            process.native_ini_hashes().unwrap()
+        };
+        let stock = hashes(b"");
+        assert_eq!(stock, hashes(b";[General]\n;BuildSpeed=.5\n"));
+        let personal = hashes(b"[General]\nBuildSpeed=.5\n");
+        assert_ne!(stock.rules, personal.rules);
+        let priority = hashes(b"[General]\nBuildSpeed=.5\n[VERA]\nOverrideMapRules=yes\n");
+        assert_ne!(personal.rules, priority.rules);
+        assert_eq!((stock.ai, stock.art), (priority.ai, priority.art));
+    }
+
+    #[test]
     fn ini_roots_process_recovery_keeps_auto_choice_and_refuses_a_foreign_triplet() {
         use crate::util::ini_roots::{IniProfile, IniRootConfig};
         let dir =
@@ -423,6 +668,35 @@ mod tests {
                 .section_or_empty("TEST")
                 .read_bool("Voxel", false),
             true
+        );
+    }
+
+    /// The production install over the retail sources against the native
+    /// run of `0x00679D90`/`0x00679ED0`/`0x00679EC0`
+    /// (tools/storage_oracle/ini_crc).
+    #[test]
+    fn retail_ini_hashes_match_the_native_composite() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut process = ProcessAssets::new_with_ini_config(
+            MediaArchiveMode::STOCK_DIGITAL,
+            false,
+            Default::default(),
+        );
+        process.initialize_sources_if_needed(&assets).unwrap();
+        let modes = crate::skirmish_modes::skirmish_modes_from_assets(&assets).unwrap();
+        process.install_native_ini_hashes(&assets, &modes);
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/ini_crc.json",
+        ))
+        .unwrap();
+        let composite = &corpus["composite"];
+        let value = |key: &str| composite[key]["unsigned"].as_u64().unwrap() as u32;
+        let hashes = process.native_ini_hashes().expect("retail INI hashes");
+        assert_eq!(
+            (hashes.rules, hashes.ai, hashes.art),
+            (value("rules"), value("ai"), value("art"))
         );
     }
 

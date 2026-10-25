@@ -157,7 +157,7 @@ python -m tools.shell_certification.skirmish C:\path\to\new-skirmish-capture
 
 The hidden process has a 60-second capture budget after initialization. As with
 other capture modes, startup options use deterministic defaults rather than
-loading the physical RA2MD.INI options profile; skirmish selections still follow
+loading the physical VERA.INI options profile; skirmish selections still follow
 their production initialization. Record executable, config, asset and selection
 identity for any comparison. The built-in command records selection state but
 does not itself enroll or hash all external inputs.

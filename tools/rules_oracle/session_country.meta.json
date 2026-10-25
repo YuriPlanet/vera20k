@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -21,5 +20,5 @@
     "house_body": "0x00511850"
   },
   "replay_command": "python -m tools.rules_oracle.session_country",
-  "payload_sha256": "6575adf6f16b7c51c3fc0f3117535c5accf6dd7769cef0be3b322a5560d97a3f"
+  "payload_sha256": "2ce2df313348939a946395cf98d38b4d124a4e144857f105d3b94bee2cdd60b1"
 }

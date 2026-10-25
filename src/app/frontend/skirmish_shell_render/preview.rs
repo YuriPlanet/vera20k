@@ -34,6 +34,17 @@ pub(crate) struct SkirmishPreviewTexture {
     pub received_preview: Option<u32>,
 }
 
+fn preview_fits_texture(width: u32, height: u32, rgba_len: usize, maximum_side: u32) -> bool {
+    width != 0
+        && height != 0
+        && width <= maximum_side
+        && height <= maximum_side
+        && u64::from(width)
+            .checked_mul(u64::from(height))
+            .and_then(|pixels| pixels.checked_mul(4))
+            == Some(rgba_len as u64)
+}
+
 /// A LAN guest whose map did not verify shows the host's `Preview.bin`, or
 /// nothing until it arrives (`0x005E1D3B` skips a null preview).
 pub(super) fn ensure_received_preview_texture(state: &mut AppState) {
@@ -46,6 +57,17 @@ pub(super) fn ensure_received_preview_texture(state: &mut AppState) {
         state.frontend.skirmish_preview_texture = None;
         return;
     };
+    // Network admission bounds the format; the live device can request a
+    // smaller edge limit. Refuse an unavailable surface before wgpu validation.
+    if !preview_fits_texture(
+        preview.width,
+        preview.height,
+        preview.rgba.len(),
+        state.renderer.gpu.device.limits().max_texture_dimension_2d,
+    ) {
+        state.frontend.skirmish_preview_texture = None;
+        return;
+    }
     if state
         .frontend
         .skirmish_preview_texture
@@ -108,20 +130,26 @@ pub(super) fn project_preview_start_positions(
         return Vec::new();
     }
 
+    // VERA authored maps can expose thirty admitted starts. The projection
+    // remains the same for native maps. Reject a malformed header as a whole
+    // rather than dropping one point and renumbering every later start label.
     bounds
         .start_points
         .iter()
-        .take(8)
+        .take(crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT)
         .map(|point| {
-            let x_per_mille = ((point.x - bounds.origin_x) as i64 * 1000) / bounds.width as i64;
-            let y_per_mille = ((point.y - bounds.origin_y) as i64 * 1000) / bounds.height as i64;
-            let x = fitted_preview_rect.x
-                + ((x_per_mille * fitted_preview_rect.w as i64) / 1000) as i32;
-            let y = fitted_preview_rect.y
-                + ((y_per_mille * fitted_preview_rect.h as i64) / 1000) as i32;
-            (x, y)
+            let x_per_mille = ((i64::from(point.x) - i64::from(bounds.origin_x)) * 1000)
+                / i64::from(bounds.width);
+            let y_per_mille = ((i64::from(point.y) - i64::from(bounds.origin_y)) * 1000)
+                / i64::from(bounds.height);
+            let x = i64::from(fitted_preview_rect.x)
+                .checked_add(x_per_mille.checked_mul(i64::from(fitted_preview_rect.w))? / 1000)?;
+            let y = i64::from(fitted_preview_rect.y)
+                .checked_add(y_per_mille.checked_mul(i64::from(fitted_preview_rect.h))? / 1000)?;
+            Some((i32::try_from(x).ok()?, i32::try_from(y).ok()?))
         })
-        .collect()
+        .collect::<Option<Vec<_>>>()
+        .unwrap_or_default()
 }
 
 pub(super) fn build_start_marker_instances(
@@ -270,6 +298,15 @@ pub(super) fn ensure_random_map_setup_preview_texture(state: &mut AppState) -> b
         state.frontend.skirmish_preview_texture = None;
         return true;
     };
+    if !preview_fits_texture(
+        preview.width,
+        preview.height,
+        preview.rgba.len(),
+        state.renderer.gpu.device.limits().max_texture_dimension_2d,
+    ) {
+        state.frontend.skirmish_preview_texture = None;
+        return true;
+    }
     let generation = modal.preview_generation;
     let already_current = state
         .frontend
@@ -371,6 +408,15 @@ pub(super) fn ensure_map_preview_texture(state: &mut AppState, selected_map_idx:
         state.frontend.skirmish_preview_texture = None;
         return;
     };
+    if !preview_fits_texture(
+        decoded.width,
+        decoded.height,
+        decoded.rgba.len(),
+        state.renderer.gpu.device.limits().max_texture_dimension_2d,
+    ) {
+        state.frontend.skirmish_preview_texture = None;
+        return;
+    }
 
     let texture = state.renderer.batch_renderer.create_texture(
         &state.renderer.gpu,
@@ -438,4 +484,46 @@ pub(super) fn build_preview_surface_instance(
         alpha: 1.0,
         ..Default::default()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn received_preview_upload_respects_device_edges_and_exact_rgba_shape() {
+        assert!(preview_fits_texture(1024, 1, 4096, 1024));
+        assert!(!preview_fits_texture(1024, 1, 4096, 1023));
+        assert!(!preview_fits_texture(1, 1024, 4096, 1023));
+        assert!(!preview_fits_texture(1024, 1, 4095, 1024));
+        assert!(!preview_fits_texture(0, 1, 0, 1024));
+    }
+
+    #[test]
+    fn verified_thirty_start_header_projects_every_marker_without_integer_wrap() {
+        let mut text =
+            "[Header]\nStartX=0\nStartY=0\nWidth=100\nHeight=100\nNumberStartingPoints=30\n"
+                .to_owned();
+        for index in 1..=30 {
+            text.push_str(&format!("Waypoint{index}={index},{index}\n"));
+        }
+        let ini = IniFile::from_str(&text);
+        let mut bounds =
+            crate::map::scenario_menu::preview_source_bounds_from_verified_source(&ini).unwrap();
+        let positions = project_preview_start_positions(&bounds, RectPx::new(10, 20, 200, 100));
+        assert_eq!(
+            positions.len(),
+            30,
+            "VERA's admitted start slots were truncated to the native eight-marker prefix"
+        );
+        assert!(positions.last().unwrap().0 > positions[7].0);
+        bounds.origin_x = i32::MIN;
+        bounds.width = 1;
+        bounds.start_points.truncate(1);
+        bounds.start_points[0].x = i32::MAX;
+        assert!(
+            project_preview_start_positions(&bounds, RectPx::new(10, 20, 200, 100)).is_empty(),
+            "unrepresentable untrusted Header coordinates must not wrap into the preview"
+        );
+    }
 }

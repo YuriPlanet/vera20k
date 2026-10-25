@@ -2072,7 +2072,6 @@
     "index": 5,
     "table": "0x004c8114"
   },
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "schema": 1,
   "unit_slots": {
     "0x1e8": "0x005b35e0",

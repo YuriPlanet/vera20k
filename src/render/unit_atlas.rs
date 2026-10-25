@@ -72,6 +72,11 @@ pub enum PoseTilt {
     /// `FlyLocomotionClass`'s crashing arm (`0x004CF610`): roll and pitch in
     /// radians (`TechnoClass+0x328`, `+0x32C`).
     Fly([f32; 2]),
+    /// `FlyLocomotionClass::Draw_Matrix @ 0x004CF610` normal-flight arm:
+    /// optional type PitchAngle about Y and signed RollAngle about X, after
+    /// SecondaryFacing yaw. This is distinct from the crashing arm's X-then-Y
+    /// `TechnoClass+0x328/+0x32C` pose.
+    FlyNormal { pitch: f32, roll: f32 },
     /// `JumpjetLocomotionClass`'s `TiltCrashJumpjet=` arm (`0x0054DCC0`), with
     /// the same roll and pitch.
     Jumpjet([f32; 2]),
@@ -79,6 +84,7 @@ pub enum PoseTilt {
     /// radians above the horizon, never zero here.
     Rocket(f32),
     /// Shared Drive4AFF60/Ship69F670 dynamic matrix, retained per Unit part.
+    /// Hover513F40's rocking arm draws it at slope 0.
     Ground(vxl_raster::GroundPose),
 }
 
@@ -1363,6 +1369,7 @@ impl UnitModel {
         }
         let body_tilt = match tilt {
             PoseTilt::Fly(angles) => vxl_raster::BodyTilt::Fly(angles),
+            PoseTilt::FlyNormal { pitch, roll } => vxl_raster::BodyTilt::FlyNormal { pitch, roll },
             PoseTilt::Jumpjet(angles) => vxl_raster::BodyTilt::Jumpjet {
                 angles,
                 half_sizes: crate::rules::voxel_asset_catalog::voxel_tilt_half_sizes(body.vxl())

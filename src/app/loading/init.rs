@@ -17,8 +17,6 @@ use crate::app::frontend::skirmish::{
 use crate::app::loading::fresh_scenario::{
     FreshMapMaterialization, FreshScenarioLoadContextDescriptor, FreshScenarioParts,
 };
-#[cfg(test)]
-use crate::app::loading::init_helpers::load_rules_with_merged_ini;
 use crate::app::loading::init_helpers::{
     DebugSpawnMarch, build_tile_atlas, cells_by_distance_from, parse_debug_spawn_march_env,
     parse_debug_spawn_units_env, theater_ext_for,
@@ -145,7 +143,7 @@ mod map_wall_owner_candidate_tests {
     fn detonate_radiation(
         sim: &mut Simulation,
         detonation: RadDetonation,
-        rules: &crate::rules::ruleset::RadiationRules,
+        rules: &crate::rules::ruleset::RuleSet,
     ) {
         let theater = sim.session().theater().to_owned();
         let mut lights = std::mem::take(sim.lighting_sources_mut_for_test());
@@ -186,7 +184,7 @@ mod map_wall_owner_candidate_tests {
         );
         entity
             .type_facts
-            .set_foundation_for_test(foundation.to_string());
+            .set_foundation_for_test(foundation.to_string().into());
         entity.lifecycle.set_object_alive_for_test(true);
         entity.lifecycle.set_cell_marked_for_test(true);
         entity
@@ -330,9 +328,7 @@ mod map_wall_owner_candidate_tests {
             assert!(entity.lifecycle.cell_marked());
             assert!(!entity.lifecycle.in_limbo());
             if entity.category() == EntityCategory::Structure {
-                for (dx, dy) in crate::rules::foundation::foundation_cell_offsets(
-                    entity.type_facts.foundation(),
-                ) {
+                for (dx, dy) in entity.type_facts.foundation().cell_offsets() {
                     let cell = terrain
                         .cell((origin.0 as i16 + dx) as u16, (origin.1 as i16 + dy) as u16)
                         .unwrap();
@@ -364,10 +360,10 @@ mod map_wall_owner_candidate_tests {
             Some(neutral),
             "native47D210 measures Building→Cell without a Building-target foundation discount"
         );
-        // Delivered Computer PRODUCE is admitted by native Event4C7130 /
-        // House4FA350 without a Human flag. This is a supplied normal event,
-        // not a claim that autonomous AI selects this wall and site.
-        use crate::sim::command::{Command, CommandEnvelope};
+        // Exercise the existing production receivers for this synthetic AI
+        // setup. Execute_DoList64C4FB does not admit player events from this
+        // computer House; keep its AI flags and the wall-ownership assertions.
+        use crate::sim::command::Command;
         use crate::sim::world::{FrameEffects, TickLane};
         let wall_type = scene.runtime.simulation.intern("GAWALL");
         let rules = &scene.runtime.resources.rules;
@@ -377,21 +373,17 @@ mod map_wall_owner_candidate_tests {
         let cost = scene
             .sim()
             .cost_of(computer, rules.object("GAWALL").unwrap(), rules);
+        let computer_name = scene.sim().interner().resolve(computer).to_owned();
+        assert!(scene.runtime.apply_command_for_test(
+            &computer_name,
+            &Command::QueueProduction { type_id: wall_type },
+        ));
         let mut ready = None;
         for step in 0..4096 {
-            let commands = if step == 0 {
-                vec![CommandEnvelope::new(
-                    computer,
-                    scene.sim().session().tick(),
-                    Command::QueueProduction { type_id: wall_type },
-                )]
-            } else {
-                Vec::new()
-            };
             scene
                 .runtime
                 .advance_frame(
-                    &commands,
+                    &[],
                     crate::app::types::SIM_TICK_MS,
                     TickLane::Ordinary,
                     FrameEffects::default(),
@@ -420,19 +412,18 @@ mod map_wall_owner_candidate_tests {
             scene.sim().houses()[&computer].economy().spent_credits(),
             spent_before + cost
         );
-        let command = CommandEnvelope::new(
-            computer,
-            scene.sim().session().tick(),
-            Command::PlaceReadyBuilding {
+        assert!(!scene.runtime.apply_command_for_test(
+            &computer_name,
+            &Command::PlaceReadyBuilding {
                 type_id: wall_type,
                 rx: 90,
                 ry: 44,
             },
-        );
+        ));
         scene
             .runtime
             .advance_frame(
-                &[command],
+                &[],
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
                 FrameEffects::default(),
@@ -457,18 +448,17 @@ mod map_wall_owner_candidate_tests {
             0x10,
             "refusal keeps damaged material"
         );
-        let command = CommandEnvelope::new(
-            computer,
-            scene.sim().session().tick(),
-            Command::CancelProductionByType {
+        assert!(scene.runtime.apply_command_for_test(
+            &computer_name,
+            &Command::CancelProductionByType {
                 type_id: wall_type,
                 all: false,
             },
-        );
+        ));
         scene
             .runtime
             .advance_frame(
-                &[command],
+                &[],
                 crate::app::types::SIM_TICK_MS,
                 TickLane::Ordinary,
                 FrameEffects::default(),
@@ -498,130 +488,6 @@ mod map_wall_owner_candidate_tests {
         let wall = scene.sim().overlay_grid().unwrap().cell(90, 44);
         assert_eq!(wall.wall_owner, Some(neutral));
         assert_eq!(wall.overlay_data & 0xF0, 0x10);
-    }
-
-    #[test]
-    fn gsi_04_10_all_terrain_clears_same_cell_tiberium_before_entity_admission() {
-        let ini = IniFile::from_str(
-            "[General]\nTreeStrength=200\n\
-             [TerrainTypes]\n0=TREE01\n1=TIBTRE01\n\
-             [TREE01]\nSpawnsTiberium=no\n\
-             [TIBTRE01]\nSpawnsTiberium=yes\n\
-             [OverlayTypes]\n0=ORE\n1=ROCK\n\
-             [ORE]\nTiberium=yes\n\
-             [ROCK]\nIsARock=yes\n",
-        );
-        let rules = RuleSet::from_ini(&ini).expect("rules");
-        let registry = OverlayTypeRegistry::from_ini(&ini, None);
-        assert!(
-            !rules
-                .terrain_object_type_case_insensitive("TREE01")
-                .expect("ordinary tree type")
-                .spawns_tiberium
-        );
-        let mut sim = Simulation::with_seed(0x0410);
-        let rng_before = sim.scenario_rng().state();
-
-        let mut terrain = flat_terrain(6, 3);
-        let mut overlays = OverlayGrid::new(6, 3);
-        overlays.place_overlay(1, 1, 0, 7);
-        overlays.place_overlay(2, 1, 0, 8);
-        overlays.place_overlay(3, 1, 1, 9);
-        overlays.place_overlay(4, 1, 0, 10);
-        for rx in 1..=4 {
-            crate::sim::overlay_grid::recalc_overlay_passability(
-                &mut overlays,
-                &mut terrain,
-                &registry,
-                rx,
-                1,
-            );
-        }
-        assert_eq!(
-            terrain.cell(1, 1).unwrap().land_type,
-            LandType::Tiberium.as_index()
-        );
-        assert_eq!(
-            terrain.cell(2, 1).unwrap().land_type,
-            LandType::Tiberium.as_index()
-        );
-        assert_eq!(
-            terrain.cell(4, 1).unwrap().land_type,
-            LandType::Tiberium.as_index(),
-            "the unknown Terrain fixture starts with the same projected ore state"
-        );
-        overlays.take_dirty_cells();
-        let terrain_objects = [
-            TerrainObject {
-                rx: 1,
-                ry: 1,
-                name: "TREE01".to_string(),
-            },
-            TerrainObject {
-                rx: 2,
-                ry: 1,
-                name: "TIBTRE01".to_string(),
-            },
-            TerrainObject {
-                rx: 3,
-                ry: 1,
-                name: "TREE01".to_string(),
-            },
-            TerrainObject {
-                rx: 4,
-                ry: 1,
-                name: "UNKNOWN".to_string(),
-            },
-        ];
-
-        let cleared = crate::sim::terrain_spawn::clear_tiberium_source_cells_for_terrain(
-            &mut overlays,
-            &mut terrain,
-            &terrain_objects,
-            &rules,
-            &registry,
-        );
-
-        assert_eq!(cleared, BTreeSet::from([(1, 1), (2, 1)]));
-        assert_eq!(overlays.cell(1, 1).overlay_id, None);
-        assert_eq!(overlays.cell(1, 1).overlay_data, 0);
-        assert_eq!(overlays.cell(2, 1).overlay_id, None);
-        assert_eq!(overlays.cell(2, 1).overlay_data, 0);
-        assert_eq!(overlays.cell(3, 1).overlay_id, Some(1));
-        assert_eq!(overlays.cell(3, 1).overlay_data, 9);
-        assert_eq!(overlays.cell(4, 1).overlay_id, Some(0));
-        assert_eq!(overlays.cell(4, 1).overlay_data, 10);
-        assert_eq!(
-            terrain.cell(1, 1).unwrap().land_type,
-            LandType::Clear.as_index()
-        );
-        assert_eq!(
-            terrain.cell(2, 1).unwrap().land_type,
-            LandType::Clear.as_index()
-        );
-        assert_eq!(
-            terrain.cell(4, 1).unwrap().land_type,
-            LandType::Tiberium.as_index(),
-            "an unknown TerrainType leaves the resolved ore projection intact"
-        );
-        assert!(
-            overlays.take_dirty_cells().is_empty(),
-            "map-load TerrainClass::Unlimbo clearing must not emit runtime dirtiness"
-        );
-
-        let constructed = crate::sim::terrain_spawn::construct_terrain_objects(
-            &mut sim,
-            &terrain_objects,
-            &rules,
-            false,
-        );
-        assert_eq!(constructed, 3);
-        assert_eq!(
-            *sim.terrain_objects().cell_index(),
-            BTreeMap::from([((1, 1), 1), ((2, 1), 2), ((3, 1), 3)]),
-            "recognized Terrain entries construct in source order while UNKNOWN is skipped"
-        );
-        assert_eq!(sim.scenario_rng().state(), rng_before);
     }
 
     #[test]
@@ -703,6 +569,7 @@ mod map_wall_owner_candidate_tests {
             LightingConfig::default(),
             2,
             Some((&terrain, &sim)),
+            None,
         );
         let before =
             crate::render::palette_light::PaletteLight::cell(lighting.grid(), (24, 24), false);
@@ -753,6 +620,7 @@ mod map_wall_owner_candidate_tests {
             LightingConfig::default(),
             2,
             Some((&terrain, &sim)),
+            None,
         );
         let tint_a = lights.grid().terrain_tile_tint_at((1, 1));
         lights.refresh(&terrain, &sim, 2);
@@ -813,6 +681,7 @@ mod map_wall_owner_candidate_tests {
             LightingConfig::default(),
             2,
             Some((&terrain, &sim)),
+            None,
         );
         let restored_tint = lights.grid().terrain_tile_tint_at((1, 1));
         sim.session_mut_for_test()
@@ -832,8 +701,11 @@ mod map_wall_owner_candidate_tests {
                 ry: 120,
                 rad_level: 500,
                 spread: 1,
+                rad_type: None,
+                firing_house: None,
+                invoker: None,
             },
-            &rules.radiation,
+            &rules,
         );
         assert!(matches!(
             sim.lighting_sources().pending().last(),
@@ -851,6 +723,7 @@ mod map_wall_owner_candidate_tests {
             LightingConfig::default(),
             2,
             Some((&terrain, &sim)),
+            None,
         );
         for _ in 0..3 {
             assert_eq!(lights.grid().terrain_tile_tint_at((1, 1)), restored_tint);
@@ -872,6 +745,7 @@ mod map_wall_owner_candidate_tests {
             LightingConfig::default(),
             1,
             Some((&terrain, &sim)),
+            None,
         );
         assert_eq!(
             lights
@@ -994,6 +868,7 @@ mod map_wall_owner_candidate_tests {
                 LightingConfig::default(),
                 2,
                 Some((&terrain, &sim)),
+                None,
             );
             sim.lighting_sources_mut_for_test().discard_pending();
             (sim, lights)
@@ -1080,6 +955,7 @@ mod map_wall_owner_candidate_tests {
             LightingConfig::default(),
             2,
             Some((&terrain, &sim)),
+            None,
         );
         sim.lighting_sources_mut_for_test().discard_pending();
 
@@ -1187,6 +1063,7 @@ mod map_wall_owner_candidate_tests {
             LightingConfig::default(),
             2,
             Some((&terrain, &sim)),
+            None,
         );
         sim.lighting_sources_mut_for_test().discard_pending();
         sim.lighting_sources_mut_for_test()
@@ -1196,8 +1073,11 @@ mod map_wall_owner_candidate_tests {
             ry: 15,
             rad_level: 500,
             spread: 1,
+            rad_type: None,
+            firing_house: None,
+            invoker: None,
         };
-        detonate_radiation(&mut sim, radiation, &rules.radiation);
+        detonate_radiation(&mut sim, radiation.clone(), &rules);
         sim.session_mut_for_test()
             .lighting_mut()
             .set_current_ambient_for_test(250);
@@ -1206,7 +1086,7 @@ mod map_wall_owner_candidate_tests {
         ));
         sim.lighting_sources_mut_for_test()
             .set_building_light_active(41, true);
-        detonate_radiation(&mut sim, radiation, &rules.radiation);
+        detonate_radiation(&mut sim, radiation, &rules);
         assert!(matches!(
             sim.lighting_sources().pending(),
             [
@@ -1273,6 +1153,7 @@ mod map_wall_owner_candidate_tests {
             LightingConfig::default(),
             2,
             Some((&terrain, &sim)),
+            None,
         );
         let original_key = lights.grid().cell_light_at((4, 5)).unwrap().rgb_key;
         //555E50 reads the live storm flag when constructing a new Convert;
@@ -1357,18 +1238,20 @@ mod map_wall_owner_candidate_tests {
              LightRedTint=.1\nLightGreenTint=.2\nLightBlueTint=.3\n",
         ))
         .expect("lighting rules");
-        rules.radiation = crate::rules::ruleset::RadiationRules {
-            duration_multiple: 1,
-            application_delay: 16,
-            level_max: 500,
-            level_delay: 90,
-            light_delay: 90,
-            level_factor: 0.2,
-            light_factor: crate::util::fixed_math::SimFixed::from_num(0.1_f32),
-            tint_factor: crate::util::fixed_math::SimFixed::from_num(1.0_f32),
-            color: (0, 255, 0),
-            site_warhead: "RadSite".to_string(),
-        };
+        // Field-by-field from the reader defaults: the Phobos catalog is a
+        // core-crate type the client never constructs.
+        let mut radiation = crate::rules::ruleset::RadiationRules::default();
+        radiation.duration_multiple = 1;
+        radiation.application_delay = 16;
+        radiation.level_max = 500;
+        radiation.level_delay = 90;
+        radiation.light_delay = 90;
+        radiation.level_factor = 0.2;
+        radiation.light_factor = crate::util::fixed_math::SimFixed::from_num(0.1_f32);
+        radiation.tint_factor = crate::util::fixed_math::SimFixed::from_num(1.0_f32);
+        radiation.color = (0, 255, 0);
+        radiation.site_warhead = "RadSite".to_string();
+        rules.radiation = radiation;
         rules
     }
 
@@ -1523,8 +1406,11 @@ mod map_wall_owner_candidate_tests {
                 ry: 5,
                 rad_level: 500,
                 spread: 10,
+                rad_type: None,
+                firing_house: None,
+                invoker: None,
             },
-            &rules.radiation,
+            &rules,
         );
 
         let terrain = flat_terrain(10, 10);
@@ -1567,12 +1453,15 @@ mod map_wall_owner_candidate_tests {
             ry: 11,
             rad_level: 500,
             spread: 10,
+            rad_type: None,
+            firing_house: None,
+            invoker: None,
         };
-        detonate_radiation(&mut sim, detonation, &rules.radiation);
+        detonate_radiation(&mut sim, detonation.clone(), &rules);
         let first = derive_lighting_view(&LightingConfig::default(), Some(&sim), 2);
         assert_eq!(first.point_lights.len(), 1);
 
-        detonate_radiation(&mut sim, detonation, &rules.radiation);
+        detonate_radiation(&mut sim, detonation, &rules);
         let merged = derive_lighting_view(&LightingConfig::default(), Some(&sim), 2);
         assert_eq!(merged.point_lights.len(), 1);
         assert_ne!(first, merged);
@@ -1587,6 +1476,7 @@ mod map_wall_owner_candidate_tests {
 /// sim runtime and match view facts consume. The constructed Simulation
 /// already holds the trigger runtime's definitions.
 pub struct ScenarioLoadInputs {
+    pub(crate) campaign_names: Option<crate::rules::campaign_loading::CampaignScenarioNames>,
     pub(crate) startup: LoadingStartup,
     pub(crate) map_source: LoadedMapSource,
     /// Digest of the parsed source map INI used for strict save compatibility.
@@ -1676,6 +1566,8 @@ pub(crate) struct MapLoadInitial {
     retained_process_mapgen: Option<crate::rng_continuation::MapGenRngContinuation>,
     /// Inactive current-bit defaults from the outgoing Scenario's owners.
     retained_campaign_special_flags: Option<crate::map::basic::SpecialFlagsSection>,
+    /// ClearScene retains local values across fresh Scenario reads.
+    retained_local_variables: Option<crate::sim::trigger_runtime::RetainedLocalVariables>,
     /// Ordered launch-generation Building constructor effects. Preview traces
     /// never reach this owner; fixed maps carry none.
     generated_construction_trace: Option<crate::map::rmg::RmgConstructionTrace>,
@@ -1686,7 +1578,9 @@ impl MapLoadInitial {
     /// the one process owner for this inactive attempt. Authored loading does
     /// not reset or advance MapGen before installation (ReadScenario684620 ->
     /// Full_Init/Fill); failures can discard this snapshot without losing it.
-    pub(super) fn retain_process_mapgen(
+    /// The same inactive transfer retains current SpecialFlags and local values;
+    /// ClearScene clears global variables, but leaves ReadLocal's prior values.
+    pub(super) fn retain_process_state(
         &mut self,
         retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,
         mut resident: Option<&mut crate::sim::world::Simulation>,
@@ -1694,6 +1588,9 @@ impl MapLoadInitial {
         self.retained_campaign_special_flags = resident
             .as_deref()
             .map(crate::sim::world::Simulation::retained_campaign_special_flags);
+        self.retained_local_variables = resident
+            .as_deref()
+            .map(crate::sim::world::Simulation::retain_local_variables_for_fresh_load);
         if let Some(generated) = self.mapgen_rng_continuation.take() {
             retention.publish_mapgen_continuation(resident.as_deref_mut(), generated);
             self.mapgen_rng_continuation =
@@ -1712,6 +1609,20 @@ impl MapLoadInitial {
         &self.map_data
     }
 
+    /// Physical cached .SED names must not become shared Scenario identity.
+    /// ReadScenario684620 regenerates from the supplied path, while the
+    /// accepted network record remains the common logical seed name.
+    pub(crate) fn bind_network_logical_seed_name(&mut self, logical: &str) -> anyhow::Result<()> {
+        if let LoadedMapSource::Generated { seed_name, .. } = &mut self.map_source {
+            anyhow::ensure!(
+                crate::map::rmg::is_seed_selection(logical),
+                "generated source needs a seed record"
+            );
+            *seed_name = logical.to_owned();
+        }
+        Ok(())
+    }
+
     pub(crate) fn map_source(&self) -> &LoadedMapSource {
         &self.map_source
     }
@@ -1724,6 +1635,7 @@ impl MapLoadInitial {
             mapgen_rng_continuation: None,
             retained_process_mapgen: None,
             retained_campaign_special_flags: None,
+            retained_local_variables: None,
             generated_construction_trace: None,
         }
     }
@@ -1777,6 +1689,75 @@ mod fresh_transport_tests {
     use super::*;
 
     #[test]
+    fn retained_start_metadata_uses_the_declared_map_capacity() {
+        let mut source = String::from(
+            "[Basic]\nMaxPlayers=30\n[Map]\nSize=0,0,64,64\nLocalSize=0,0,64,64\n[Waypoints]\n",
+        );
+        for index in 0..30 {
+            source.push_str(&format!("{index}={}\n", 30030 + index));
+        }
+        // The production map reader requires a terrain pack before metadata
+        // reaches this consumer. Use the existing one-cell map fixture bytes.
+        source.push_str("[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n");
+        let map = MapFile::from_bytes(source.as_bytes()).unwrap();
+        let starts = scenario_start_waypoints_for_load(&map, None);
+        assert_eq!(starts.len(), 30);
+        assert_eq!(starts[&29], (map.waypoints[&29].rx, map.waypoints[&29].ry));
+        let ordinary =
+            MapFile::from_bytes(source.replace("MaxPlayers=30\n", "").as_bytes()).unwrap();
+        assert_eq!(scenario_start_waypoints_for_load(&ordinary, None).len(), 8);
+    }
+
+    #[test]
+    fn fresh_load_retains_local_values_without_mutating_the_outgoing_world() {
+        let map = |variables: &str| {
+            let mut map = crate::map::rmg::emit::empty_map_file(
+                &crate::map::rmg::RmgOptions::default(),
+                16,
+                16,
+            );
+            map.local_variables = crate::map::variable_names::parse_local_variables(
+                &IniFile::from_str(&format!("[VariableNames]\n{variables}")),
+            );
+            map
+        };
+        let mut resident = Simulation::new();
+        resident.initialize_trigger_definitions(
+            &map("7=Prior,1\n8=ClearLater,1\n"),
+            &Default::default(),
+            None,
+            None,
+        );
+        let resident_hash = resident.state_hash();
+        let mut initial = MapLoadInitial::from_test_map_source(
+            map("7=Renamed\n8=Explicit,0\n"),
+            LoadedMapSource::Loose {
+                cache_lease: Default::default(),
+                path: PathBuf::from("LOCAL.MAP"),
+                payload_len: 1,
+                source_sha256: crate::util::sha256::sha256_hex(b"local retention control"),
+            },
+        );
+        initial.retain_process_state(&mut Default::default(), Some(&mut resident));
+        // A failed attempt may discard this initial state; the resident is
+        // unchanged until a successful load installs the replacement.
+        assert_eq!(resident.state_hash(), resident_hash);
+        let mut staged = Simulation::new();
+        staged.inherit_local_variables_for_fresh_load(
+            initial.retained_local_variables.take().unwrap(),
+        );
+        staged.initialize_trigger_definitions(&initial.map_data, &Default::default(), None, None);
+        let mut cold = Simulation::new();
+        cold.initialize_trigger_definitions(&initial.map_data, &Default::default(), None, None);
+        assert_ne!(
+            staged.state_hash(),
+            cold.state_hash(),
+            "retained local state is installed"
+        );
+        assert_eq!(resident.state_hash(), resident_hash);
+    }
+
+    #[test]
     fn generated_missing_journal_stays_generated_until_its_post_fill_error() {
         validate_fresh_transport_before_effects(
             FreshMapMaterialization::AcceptedGenerated,
@@ -1823,7 +1804,7 @@ mod fresh_transport_tests {
 /// Authored loads retain their parsed waypoint table. Accepted RMG loads have
 /// already copied setup staging into the active Scenario array before `.SED`
 /// regeneration, so the prefix plan—not regenerated map content—owns these
-/// eight entries for loading markers, save/restore, and deterministic hashing.
+/// start entries for loading markers, save/restore, and deterministic hashing.
 /// Installs the startup's GameMode into the scenario session, with the
 /// admitted MaxAhead for a network start. The frame tail's `Queue_AI` route
 /// reads this mode, so a LAN/WOL start must arrive as LAN/WOL.
@@ -1834,6 +1815,8 @@ pub(super) fn install_startup_session_mode(
     simulation.install_session_mode(startup.session_mode());
     if let LoadingStartup::Network(accepted) = startup {
         simulation.install_network_timing(accepted.max_ahead_frames());
+        let wol = accepted.wol_start();
+        simulation.install_wol_start(wol.tournament, wol.squad_lists.clone());
     }
 }
 
@@ -1844,10 +1827,13 @@ pub(crate) fn scenario_start_waypoints_for_load(
     let active_waypoints = projection
         .map(StockOfflinePrefixProjection::active_scenario_waypoints)
         .unwrap_or(&map_data.waypoints);
-    waypoints::multiplayer_start_waypoints(active_waypoints)
-        .into_iter()
-        .map(|waypoint| (waypoint.index, (waypoint.rx, waypoint.ry)))
-        .collect()
+    waypoints::multiplayer_start_waypoints_for_capacity(
+        active_waypoints,
+        waypoints::skirmish_player_capacity(&map_data.ini),
+    )
+    .into_iter()
+    .map(|waypoint| (waypoint.index, (waypoint.rx, waypoint.ry)))
+    .collect()
 }
 
 #[cfg(test)]
@@ -1898,8 +1884,14 @@ pub(crate) struct RandomMapStartupCrateProjection {
     pub(crate) body_frame: u8,
 }
 
+//The last field is the actual CellClass slope used by Mark5FC5CD..5FC5E3.
 #[cfg(test)]
-type StartupCrateSlot = (usize, crate::sim::crates::CrateSlot, Option<(u8, u8)>);
+type StartupCrateSlot = (
+    usize,
+    crate::sim::crates::CrateSlot,
+    Option<(u8, u8)>,
+    Option<u8>,
+);
 
 #[cfg(test)]
 #[derive(Debug, PartialEq, Eq)]
@@ -1940,6 +1932,7 @@ impl MapLoadInitial {
             mapgen_rng_continuation,
             retained_process_mapgen: _,
             retained_campaign_special_flags: _,
+            retained_local_variables: _,
             generated_construction_trace,
         } = self;
         assert_eq!(fresh_scenario_context.physical_source(), &map_source);
@@ -2048,16 +2041,19 @@ impl MapLoadInitial {
             Some(&match_launch_descriptor.session().mode.override_file),
         )
         .expect("select the generated-map mode INI layer");
-        let (mut rules, rules_ini, art_ini, native_rules_receipt) = load_rules_with_merged_ini(
-            asset_manager,
-            mode_override_ini.as_ref(),
-            Some(&map_data.ini),
-        )
-        .expect("retail generated-map rules");
+        let (mut rules, _, art_ini, native_rules_receipt) =
+            crate::app::loading::init_helpers::load_rules_with_prefix_for_test(
+                asset_manager,
+                crate::rules::process_owner::NativeScenarioRulesPrefix::RandomMap(
+                    mode_override_ini.as_ref(),
+                ),
+                Some(&map_data.ini),
+            )
+            .expect("retail generated-map rules");
         rules.install_art_data(ArtRegistry::from_ini(&art_ini));
         let infantry_sequences =
             crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini);
-        let overlay_registry = OverlayTypeRegistry::from_ini(&rules_ini, Some(&art_ini));
+        let overlay_registry = rules.overlay_registry().clone();
         // Stage the one Simulation before terrain Fill, as the match load does:
         // the prefix cursors, Fill and every later load constructor mutate the
         // identity that reaches gameplay.
@@ -2087,6 +2083,9 @@ impl MapLoadInitial {
             harvester_immune: match_launch_descriptor.session().options.harvester_truce,
             free_radar: map_data.basic.free_radar.unwrap_or(false),
             ignore_global_ai_triggers: map_data.basic.ignore_global_ai_triggers.unwrap_or(false),
+            timer_inherit: map_data.basic.timer_inherit.unwrap_or(false),
+            carry_over_money: map_data.basic.carry_over_money,
+            carry_over_cap: map_data.basic.carry_over_cap,
             train_crate: map_data.basic.train_crate.unwrap_or(false),
             truck_crate: map_data.basic.truck_crate.unwrap_or(false),
             ice_growth_enabled: map_data.basic.ice_growth_enabled,
@@ -2171,11 +2170,10 @@ impl MapLoadInitial {
         rules.bind_effect_assets(asset_manager, theater_ext, &map_data.header.theater);
         rules.bind_building_buildup_assets(asset_manager, &map_data.header.theater);
         rules.bind_building_rubble_assets(asset_manager, theater_ext, &map_data.header.theater);
-        rules.bind_terrain_spawner_assets(
-            &rules_ini,
+        rules.bind_terrain_assets(
             asset_manager,
             theater_ext,
-            &map_data.header.theater,
+            crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
         );
         rules.bind_animation_sequences(&infantry_sequences);
         drop(variant_draw);
@@ -2205,7 +2203,7 @@ impl MapLoadInitial {
         let scenario_after_trace = simulation.rng_state().scenario;
 
         let mut overlay_grid =
-            generated_overlay_grid(&map_data, &mut resolved_terrain, &rules, &overlay_registry)
+            generated_overlay_grid(&map_data, &mut resolved_terrain, &overlay_registry)
                 .expect("random-map snapshot precedes authored pack consumption");
         let house_roster =
             houses::parse_house_roster(&map_data.ini, &rules.color_schemes, Some(&rules));
@@ -2226,7 +2224,7 @@ impl MapLoadInitial {
             &map_data,
             &resolved_terrain,
             &map_data.header.theater,
-            Some(&rules),
+            &rules,
             Some(&overlay_registry),
             Some(&overlay_grid),
             bridge_destroyability_mode,
@@ -2343,14 +2341,17 @@ impl MapLoadInitial {
             .enumerate()
             .filter(|(_, slot)| !slot.is_empty())
             .map(|(index, slot)| {
-                let live_overlay = u16::try_from(slot.cell_x)
+                let cell = u16::try_from(slot.cell_x)
                     .ok()
-                    .zip(u16::try_from(slot.cell_y).ok())
-                    .and_then(|(rx, ry)| {
-                        let cell = simulation.overlay_grid()?.cell(rx, ry);
-                        Some((cell.overlay_id?, cell.overlay_data))
-                    });
-                (index, slot, live_overlay)
+                    .zip(u16::try_from(slot.cell_y).ok());
+                let live_overlay = cell.and_then(|(rx, ry)| {
+                    let cell = simulation.overlay_grid()?.cell(rx, ry);
+                    Some((cell.overlay_id?, cell.overlay_data))
+                });
+                let slope = cell.and_then(|(rx, ry)| {
+                    Some(simulation.resolved_terrain()?.cell(rx, ry)?.slope_type)
+                });
+                (index, slot, live_overlay, slope)
             })
             .collect();
         let final_rng = simulation.rng_state();
@@ -2372,12 +2373,16 @@ impl MapLoadInitial {
 pub(crate) fn load_csf(
     asset_manager: &AssetManager,
 ) -> anyhow::Result<crate::assets::csf_file::CsfFile> {
-    let bytes = asset_manager
-        .get_ref("ra2md.csf")
-        .ok_or_else(|| anyhow::anyhow!("required retail string table ra2md.csf is missing"))?;
-    let csf = crate::assets::csf_file::CsfFile::from_bytes(bytes)
-        .map_err(|err| anyhow::anyhow!("could not parse required ra2md.csf: {err:#}"))?;
-    log::info!("Loaded CSF string table: ra2md.csf");
+    let (csf, supplements) =
+        crate::assets::csf_file::CsfFile::load_active(|name| asset_manager.get_ref(name)).map_err(
+            |err| match err {
+                crate::assets::error::AssetError::AssetNotFound { .. } => {
+                    anyhow::anyhow!("required retail string table ra2md.csf is missing")
+                }
+                err => anyhow::anyhow!("could not parse required ra2md.csf: {err:#}"),
+            },
+        )?;
+    log::info!("Loaded CSF string table: ra2md.csf; supplements={supplements:?}");
     Ok(csf)
 }
 
@@ -2488,7 +2493,7 @@ pub(crate) fn load_map_initial_with_assets(
             );
         }
 
-        progress.milestone(8);
+        progress.milestone(8)?;
         let mapgen_rng_continuation = generated.take_mapgen_continuation();
         let generated_construction_trace = generated.construction_trace;
         return Ok(MapLoadInitial {
@@ -2500,6 +2505,7 @@ pub(crate) fn load_map_initial_with_assets(
             mapgen_rng_continuation: Some(mapgen_rng_continuation),
             retained_process_mapgen: None,
             retained_campaign_special_flags: None,
+            retained_local_variables: None,
             generated_construction_trace: Some(generated_construction_trace),
         });
     }
@@ -2515,6 +2521,7 @@ pub(crate) fn load_map_initial_with_assets(
             LoadedMap {
                 map: MapFile::from_bytes(&bytes)?,
                 source: LoadedMapSource::Loose {
+                    cache_lease: Default::default(),
                     path: PathBuf::from("testmap1.map"),
                     payload_len: bytes.len(),
                     source_sha256: crate::util::sha256::sha256_hex(&bytes),
@@ -2554,7 +2561,7 @@ pub(crate) fn load_map_initial_with_assets(
     // First post-render-handoff milestone: the selected map has been opened and
     // parsed. (gamemd emits 8 at theater-init entry; in our pipeline the map is
     // parsed first, so 8 marks the end of this initial phase.)
-    progress.milestone(8);
+    progress.milestone(8)?;
 
     Ok(MapLoadInitial {
         map_data,
@@ -2562,52 +2569,93 @@ pub(crate) fn load_map_initial_with_assets(
         mapgen_rng_continuation: None,
         retained_process_mapgen: None,
         retained_campaign_special_flags: None,
+        retained_local_variables: None,
         generated_construction_trace: None,
     })
 }
 
-/// The overlay grid of a generated launch, shared by its match and snapshot
-/// routes: the generator's own cell writes
-/// ([`OverlayGrid::from_generated_overlays`]; native runs no
-/// `OverlayClass::Mark` for them), then the same-cell tiberium a recognized
-/// tree clears.
-///
-/// [`OverlayGrid::from_generated_overlays`]: crate::sim::overlay_grid::OverlayGrid::from_generated_overlays
+/// The generator's final CellClass overlay state, shared by generated match
+/// and snapshot routes. RMG PlaceField5A28C0 constructs Terrain at5A2C05
+/// before painting its source5A2C4C; materialization must retain that later
+/// write. Generate598960 then Recalc's59937D, builds queues59939B/5993A0,
+/// and germinates59944C. Original instructions; no second Unlimbo here.
 fn generated_overlay_grid(
     map_data: &MapFile,
     resolved_terrain: &mut ResolvedTerrainGrid,
-    rules: &RuleSet,
     overlay_registry: &OverlayTypeRegistry,
 ) -> anyhow::Result<crate::sim::overlay_grid::OverlayGrid> {
     let data = map_data
         .overlay_data_pack()
         .map_err(|_| anyhow::anyhow!("generated overlay packs were already consumed"))?;
-    let mut overlay_grid = crate::sim::overlay_grid::OverlayGrid::from_generated_overlays(
-        &map_data.overlays,
-        data,
-        resolved_terrain,
-        overlay_registry,
-    );
-    let cleared = crate::sim::terrain_spawn::clear_tiberium_source_cells_for_terrain(
-        &mut overlay_grid,
-        resolved_terrain,
-        &map_data.terrain_objects,
-        rules,
-        overlay_registry,
-    );
-    if !cleared.is_empty() {
-        log::info!(
-            "Cleared {} same-cell tiberium overlay cell(s) for recognized terrain",
-            cleared.len(),
-        );
-    }
-    Ok(overlay_grid)
+    Ok(
+        crate::sim::overlay_grid::OverlayGrid::from_generated_overlays(
+            &map_data.overlays,
+            data,
+            resolved_terrain,
+            overlay_registry,
+        ),
+    )
 }
 
 #[cfg(test)]
 mod generated_overlay_grid_tests {
     use super::*;
     use crate::map::rmg::{RmgGrid, RmgOptions, emit};
+
+    #[test]
+    fn startup_presentation_projects_live_dirty_overlays_without_empty_cells_or_duplicates() {
+        let registry = OverlayTypeRegistry::from_ini(
+            &IniFile::from_str("[OverlayTypes]\n0=CRATE\n[CRATE]\nCrate=yes\n"),
+            None,
+        );
+        let id = registry.id_for_name("CRATE").unwrap();
+        let mut grid = crate::sim::overlay_grid::OverlayGrid::new(4, 4);
+        grid.place_overlay(1, 1, id, u8::MAX);
+        grid.place_overlay(1, 1, id, u8::MAX);
+        grid.place_overlay(2, 2, id, u8::MAX);
+        grid.clear_overlay(2, 2);
+        let mut sim = Simulation::new();
+        sim.install_overlay_grid_for_load(grid);
+        let mut presented = Vec::new();
+        assert_eq!(connect_startup_crate_overlays(&mut presented, &sim), 1);
+        assert_eq!(presented.len(), 1);
+        let visible = &presented[0];
+        assert_eq!(
+            (visible.rx, visible.ry, visible.overlay_id, visible.frame),
+            (1, 1, id, u8::MAX)
+        );
+        assert_eq!(sim.overlay_grid().unwrap().cell(2, 2).overlay_id, None);
+    }
+
+    #[test]
+    fn retail_generated_drill_keeps_the_ore_painted_after_its_constructor() {
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let registry = OverlayTypeRegistry::from_ini(&battle.processed_rules, None);
+        // Original RMG PlaceField5A2C05 constructs Terrain, then paints the
+        // source overlay5A2C4C. The later generated loader must retain it.
+        let ore = registry.id_for_name("TIB01").unwrap();
+        assert_eq!(ore, 102, "native RMG's literal ore base");
+        let mut generated = RmgGrid::new(45, 20, 68);
+        let source = generated.get_mut(24, 24).unwrap();
+        source.tile = 0;
+        source.overlay = i32::from(ore);
+        source.density = 7;
+        source.occupied = true;
+        let mut map = emit::empty_map_file(&RmgOptions::default(), 16, 12);
+        emit::populate(
+            &mut map,
+            &generated,
+            &[("TIBTRE01".to_string(), 24, 24)],
+            &[],
+            &[],
+        );
+        let mut terrain = ResolvedTerrainGrid::build_generated_materialized_for_test(&map);
+        let grid = generated_overlay_grid(&map, &mut terrain, &registry).unwrap();
+        assert_eq!(grid.cell(24, 24).overlay_id, Some(ore));
+        assert_eq!(grid.cell(24, 24).overlay_data, 7);
+    }
 
     /// The random-map path from the generator's grid: its `MapFile`
     /// projection, the generated terrain build and the overlay grid both
@@ -2623,10 +2671,6 @@ mod generated_overlay_grid_tests {
             ),
             None,
         );
-        let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n",
-        ))
-        .expect("rules");
         let (map_w, map_h) = (20, 24);
         let mut generated = RmgGrid::new((map_w + map_h + 1) as usize, map_w, map_w + 2 * map_h);
         for ((x, y), overlay, density) in [((22, 22), 0, 3), ((22, 24), 1, 7), ((24, 24), 1, 7)] {
@@ -2647,7 +2691,7 @@ mod generated_overlay_grid_tests {
             .expect("sloped ore cell")
             .slope_type = 1;
 
-        let grid = generated_overlay_grid(&map, &mut terrain, &rules, &registry)
+        let grid = generated_overlay_grid(&map, &mut terrain, &registry)
             .expect("a generated map retains its overlay data");
 
         let cell = |rx, ry| {
@@ -2674,6 +2718,9 @@ pub(crate) fn load_map_from_initial(
     theater_cache_mismatch: bool,
     runtime_color_scheme_count: usize,
     native_rules_owner: &mut crate::rules::process_owner::NativeRulesProcessOwner,
+    #[cfg(feature = "ares")] prepared_noncampaign_prefix: &mut Option<
+        crate::rules::process_owner::NativeNonCampaignPrefixPreparation,
+    >,
     audio: Option<&crate::app::process_assets::ProcessAudioCatalog>,
     shared_cell_dummy: crate::map::resolved_terrain::SharedCellDummy,
     tile_variant_selector_cache: &mut crate::map::tile_variant_selector::TileVariantSelectorCache,
@@ -2685,6 +2732,7 @@ pub(crate) fn load_map_from_initial(
         mapgen_rng_continuation,
         retained_process_mapgen,
         retained_campaign_special_flags,
+        retained_local_variables,
         generated_construction_trace,
     } = initial;
     let signed_new_ini_format = map_data.basic.new_ini_format.unwrap_or(0);
@@ -2748,18 +2796,18 @@ pub(crate) fn load_map_from_initial(
     let theater_result: Option<theater::TheaterData> =
         theater::load_theater(asset_manager, &map_data.header.theater);
     if theater_cache_mismatch {
-        progress.milestone(12);
+        progress.milestone(12)?;
         // Native advances while rebuilding each color scheme. Rust's theater
         // loader is monolithic, so present the verified pre-load-count sequence
         // synchronously after that work instead of faking per-item callbacks.
         for value in
             crate::app::loading::pump::theater_ramp_changed_values(runtime_color_scheme_count)
         {
-            progress.milestone(value);
+            progress.milestone(value)?;
         }
-        progress.milestone(25);
+        progress.milestone(25)?;
     }
-    progress.milestone(30);
+    progress.milestone(30)?;
 
     let theater_ext: &'static str = match &theater_result {
         Some(td) => td.extension,
@@ -2799,16 +2847,44 @@ pub(crate) fn load_map_from_initial(
     } else {
         None
     };
-    let rules_prefix = if game_mode_nonzero {
+    #[cfg(feature = "ares")]
+    let prepared_prefix = prepared_noncampaign_prefix.take();
+    let rules_prefix = if materialization == FreshMapMaterialization::AcceptedGenerated {
+        #[cfg(feature = "ares")]
+        assert!(
+            prepared_prefix.is_none(),
+            "generated loading cannot consume an ordinary prefix"
+        );
+        crate::rules::process_owner::NativeScenarioRulesPrefix::RandomMap(
+            mode_override_ini.as_ref(),
+        )
+    } else if game_mode_nonzero {
+        #[cfg(feature = "ares")]
+        if let Some(preparation) = prepared_prefix {
+            crate::rules::process_owner::NativeScenarioRulesPrefix::PreparedNonCampaign {
+                preparation,
+                mode_rules_override: mode_override_ini.as_ref(),
+            }
+        } else {
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
+                mode_override_ini.as_ref(),
+            )
+        }
+        #[cfg(not(feature = "ares"))]
         crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
             mode_override_ini.as_ref(),
         )
     } else {
+        #[cfg(feature = "ares")]
+        assert!(
+            prepared_prefix.is_none(),
+            "campaign loading cannot consume an ordinary prefix"
+        );
         crate::rules::process_owner::NativeScenarioRulesPrefix::Campaign(
             campaign_named_ini.as_ref(),
         )
     };
-    let (loaded_rules, rules_ini, fixed_art_ini, native_rules_receipt) = native_rules_owner
+    let (loaded_rules, _, fixed_art_ini, native_rules_receipt) = native_rules_owner
         .load_scenario(rules_prefix, &map_data.ini)
         .map_err(|error| anyhow::anyhow!("failed native scenario rules rebuild: {error}"))?
         .into_parts();
@@ -2828,12 +2904,11 @@ pub(crate) fn load_map_from_initial(
     );
     // Rules + art parsed, merged, and processed (gamemd command-bar/CD/rules
     // milestones).
-    progress.milestone(31);
-    progress.milestone(35);
-    progress.milestone(45);
+    progress.milestone(31)?;
+    progress.milestone(35)?;
+    progress.milestone(45)?;
     let csf = Some(load_csf(asset_manager)?);
-    let overlay_registry: OverlayTypeRegistry =
-        OverlayTypeRegistry::from_ini(&rules_ini, Some(&fixed_art_ini));
+    let overlay_registry = rules.overlay_registry().clone();
     // Campaign House construction and its map reads precede Map Resize/Fill.
     // The same roster later supplies presentation and post-load consumers.
     let house_roster =
@@ -2882,6 +2957,11 @@ pub(crate) fn load_map_from_initial(
             difficulty: campaign.difficulty(),
             mission_counter: campaign.mission_counter(),
             game_options: campaign_game_options.as_ref(),
+            campaign_index: i32::try_from(campaign.campaign_index())?,
+            restart_carry_over: campaign
+                .carry_over()
+                .copied()
+                .unwrap_or(crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED),
         }
     };
     let scenario_descriptor = crate::sim::scenario_session::ScenarioDescriptor {
@@ -2914,6 +2994,9 @@ pub(crate) fn load_map_from_initial(
         },
         free_radar: map_data.basic.free_radar.unwrap_or(false),
         ignore_global_ai_triggers: map_data.basic.ignore_global_ai_triggers.unwrap_or(false),
+        timer_inherit: map_data.basic.timer_inherit.unwrap_or(false),
+        carry_over_money: map_data.basic.carry_over_money,
+        carry_over_cap: map_data.basic.carry_over_cap,
         train_crate: map_data.basic.train_crate.unwrap_or(false),
         truck_crate: map_data.basic.truck_crate.unwrap_or(false),
         ice_growth_enabled: map_data.basic.ice_growth_enabled,
@@ -2943,8 +3026,14 @@ pub(crate) fn load_map_from_initial(
     let (mut staged_simulation, scenario_prefix_projection) =
         bootstrap_rng.into_fresh_staged_simulation(&scenario_descriptor, fresh_prefix)?;
     install_startup_session_mode(&mut staged_simulation, &startup);
+    if let Some(native_id_prefix) = startup.native_id_prefix() {
+        staged_simulation.install_accepted_native_id_prefix(native_id_prefix)?;
+    }
     staged_simulation.bind_shared_cell_dummy(shared_cell_dummy.clone());
     staged_simulation.install_waypoints(&map_data.waypoints);
+    if let Some(prior) = retained_local_variables {
+        staged_simulation.inherit_local_variables_for_fresh_load(prior);
+    }
     staged_simulation.initialize_trigger_definitions(
         &map_data,
         &team_ai_registry,
@@ -3035,12 +3124,13 @@ pub(crate) fn load_map_from_initial(
     ));
     crate::app::loading::init_helpers::bind_rules_asset_closure(
         &mut rules,
-        &rules_ini,
         &fixed_art_ini,
+        &overlay_registry,
         &roots,
         asset_manager,
         theater_ext,
         &map_data.header.theater,
+        crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
     )?;
     // `Read_Map_Section_And_IsoMapPacks @ 0x004ACE70` snapshots the fresh
     // prefix before theater Tile##Anim resolution, then sets the cursor from
@@ -3112,8 +3202,6 @@ pub(crate) fn load_map_from_initial(
                 .expect("authored materialization retained its pending Fill owner");
             let overlay_shp_ids = resolved_overlay_shp_ids(
                 &overlay_registry,
-                &rules_ini,
-                rules.art(),
                 asset_manager,
                 theater_ext,
                 &map_data.header.theater,
@@ -3125,6 +3213,7 @@ pub(crate) fn load_map_from_initial(
                 theater,
                 asset_manager,
                 &mut rules,
+                native_rules_owner,
                 &overlay_registry,
                 &overlay_shp_ids,
                 signed_new_ini_format,
@@ -3148,13 +3237,13 @@ pub(crate) fn load_map_from_initial(
                 .as_mut()
                 .expect("generated materialization retained its eager terrain");
             let mut overlay_grid =
-                generated_overlay_grid(&map_data, resolved_terrain, &rules, &overlay_registry)?;
+                generated_overlay_grid(&map_data, resolved_terrain, &overlay_registry)?;
             crate::app::loading::init_helpers::populate_staged_app_scenario(
                 &mut staged_simulation,
                 &map_data,
                 resolved_terrain,
                 &map_data.header.theater,
-                Some(&rules),
+                &rules,
                 Some(&overlay_registry),
                 Some(&overlay_grid),
                 bridge_destroyability_mode,
@@ -3234,10 +3323,10 @@ pub(crate) fn load_map_from_initial(
         .and_then(crate::map::theater::BridgeMiddleTiles::from_theater);
     let grid: TerrainGrid =
         terrain::build_terrain_grid_from_resolved(&resolved_terrain, bridge_middle_tiles);
-    progress.milestone(50);
-    progress.milestone(55);
-    progress.milestone(58);
-    progress.milestone(60);
+    progress.milestone(50)?;
+    progress.milestone(55)?;
+    progress.milestone(58)?;
+    progress.milestone(60)?;
     let tile_atlas: Option<TileAtlas> = match &theater_result {
         Some(td) => build_tile_atlas(
             asset_manager,
@@ -3252,9 +3341,9 @@ pub(crate) fn load_map_from_initial(
     };
     // Read_Map_Section emits 63, 65 and 67 (`0x004AD011`, `0x004AD0AF`,
     // `0x004AD339`) after Read_INI_Basic's 55/58/60 and before 68/69.
-    progress.milestone(63);
-    progress.milestone(65);
-    progress.milestone(67);
+    progress.milestone(63)?;
+    progress.milestone(65)?;
+    progress.milestone(67)?;
     let (unit_palette, overlay_iso_palette, overlay_tiberium_palette) = match theater_result {
         Some(td) => (
             Some(td.unit_palette),
@@ -3263,16 +3352,16 @@ pub(crate) fn load_map_from_initial(
         ),
         None => (None, None, None),
     };
-    progress.milestone(68);
-    progress.milestone(69);
-    progress.milestone(70);
+    progress.milestone(68)?;
+    progress.milestone(69)?;
+    progress.milestone(70)?;
 
     // Terrain/tiberium + units/infantry/buildings created from the map
     // (gamemd terrain/units/objects/buildings milestones).
-    progress.milestone(72);
-    progress.milestone(74);
-    progress.milestone(76);
-    progress.milestone(78);
+    progress.milestone(72)?;
+    progress.milestone(74)?;
+    progress.milestone(76)?;
+    progress.milestone(78)?;
     // Pre-intern all rule type IDs so that build_option_for_owner can resolve
     // InternedIds for types that haven't been spawned yet (e.g. GAPOWR).
     // Without this, sidebar cameo lookups fail because unspawned types get
@@ -3456,7 +3545,6 @@ pub(crate) fn load_map_from_initial(
         batch,
         theater_ext,
         &map_data.header.theater,
-        &rules_ini,
         &rules,
         &overlay_registry,
         overlay_iso_palette.as_ref(),
@@ -3577,21 +3665,22 @@ pub(crate) fn load_map_from_initial(
         overlay_assets,
         house_color_map,
         csf,
-    );
+    )?;
     // Final post-map-init milestones (cell attributes, beacon art, post-map
     // init, tactical cleanup, final pre-render refresh). 100 is emitted by the
     // pump at Finished.
-    progress.milestone(82);
-    progress.milestone(86);
-    progress.milestone(90);
-    progress.milestone(93);
-    progress.milestone(96);
-    progress.milestone(98);
+    progress.milestone(82)?;
+    progress.milestone(86)?;
+    progress.milestone(90)?;
+    progress.milestone(93)?;
+    progress.milestone(96)?;
+    progress.milestone(98)?;
 
     // Move fields out of map_data (last use) instead of cloning.
     let theater_name = map_data.header.theater;
     Ok(MapLoadResult {
         scenario: ScenarioLoadInputs {
+            campaign_names: None,
             startup,
             map_source,
             map_hash,
@@ -3646,7 +3735,9 @@ mod random_map_retail_tests {
 
     struct SilentProgress;
     impl crate::app::loading::pump::LoadingProgressSink for SilentProgress {
-        fn milestone(&mut self, _percent: u32) {}
+        fn milestone(&mut self, _percent: u32) -> anyhow::Result<()> {
+            Ok(())
+        }
     }
 
     /// The configurations the dialog itself can emit.
@@ -3830,6 +3921,39 @@ mod milestone_order_tests {
         assert!(
             values.windows(2).all(|pair| pair[0] <= pair[1]),
             "{values:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod network_seed_source_tests {
+    use super::*;
+    #[test]
+    fn network_seed_cache_preserves_logical_name_and_consumed_identity() {
+        let options = crate::map::rmg::RmgOptions::default();
+        let bytes = options.to_sed_bytes();
+        let source = crate::map::source::GeneratedSeedSource::from_consumed_bytes(
+            std::env::temp_dir().join("seed-cache.sed"),
+            &bytes,
+        );
+        let expected = (source.payload_len, source.source_sha256.clone());
+        let mut loaded = MapLoadInitial::from_test_map_source(
+            crate::map::rmg::emit::empty_map_file(&options, 100, 100),
+            LoadedMapSource::Generated {
+                seed_name: "local-cache.sed".into(),
+                seed_source: Some(source),
+            },
+        );
+        loaded
+            .bind_network_logical_seed_name("RandMap.Sed")
+            .unwrap();
+        let LoadedMapSource::Generated { seed_name, .. } = loaded.map_source() else {
+            panic!("generated source");
+        };
+        assert_eq!(seed_name, "RandMap.Sed");
+        assert_eq!(
+            loaded.map_source().physical_identity(),
+            Some((expected.0, expected.1.as_str()))
         );
     }
 }

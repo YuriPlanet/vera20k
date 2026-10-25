@@ -1982,7 +1982,7 @@ def welding_generate(map_paths=()):
     points = welding_draw_cases(types, live['first_produced_particle'])
     systems, masks, stages, mixed = welding_system_draw_cases(types,
         next(row['input'] for row in points if row['input']['name'] == 'a_127'))
-    return dict(schema_version=1, native_sha256=native.image_sha256(),
+    return dict(schema_version=1,
         type_inputs=dict(profiles=profiles), constructor_priors=mobile_inputs,
         constructor_cases=constructors, birth_cases=births, admission_cases=admissions,
         lifecycle_cases=welding_expiry_cases(), live_case=live,
@@ -2007,7 +2007,7 @@ def generate():
         dict(name='one_frame_light', system_type_overrides={'OneFrameLight':'yes'}),
         dict(name='native_id_wrap', native_id=0x7FFFFFFE, seed=2),
         dict(name='system_allocation_failure', fail_system_allocation=True))]
-    return dict(schema_version=1, native_sha256=native.image_sha256(),
+    return dict(schema_version=1,
                 palette=physical_palette(),
                 type_inputs={name: prism.laser_type_inputs(name) for name in ('TESLA', 'GAPOWR')},
                 weapon_inputs=physical_weapon()[2], birth_cases=births, spark_cases=spark,

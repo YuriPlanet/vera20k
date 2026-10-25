@@ -81,7 +81,7 @@ impl Simulation {
     pub(crate) fn handle_navigation_list(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
@@ -126,7 +126,7 @@ impl Simulation {
         if entity.archive_target() != Some(TargetKind::from(head)) {
             return;
         }
-        self.send_to_navigation_head(id, head, Some(rules), registry, effects);
+        self.send_to_navigation_head(id, head, rules, registry, effects);
     }
 
     /// The send both consumers make: vt+0x480(head, 1) (`0x004DA062`,
@@ -138,7 +138,7 @@ impl Simulation {
         &mut self,
         id: u64,
         head: NavTargetRef,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {

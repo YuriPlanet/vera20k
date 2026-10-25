@@ -9,6 +9,78 @@
 
 use crate::rules::ini_parser::IniFile;
 
+/// Full_Init686D80..687000's retained mission names. They are presentation
+/// values, resolved against the active CSF at admission and saved verbatim;
+/// restoring a game must not retranslate them through a different string table.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CampaignScenarioNames {
+    name: Vec<u16>,
+    ui_name: String,
+    save_title: Vec<u16>,
+}
+
+impl CampaignScenarioNames {
+    /// Call only after MISSIONMD opened. A missing file bypasses this entire
+    /// native block; a present file with no section clears Name/UIName while
+    /// retaining the previous save title.
+    pub fn apply_ini(
+        &mut self,
+        ini: &IniFile,
+        filename: &str,
+        csf: &crate::assets::csf_file::CsfFile,
+    ) {
+        self.name.clear();
+        self.ui_name.clear();
+        let Some(section) = ini.section(filename) else {
+            return;
+        };
+        self.name = section.read_comma_hex_utf16("Name", &[], 45);
+        if section.is_present("UIName") {
+            self.ui_name = section.read_string("UIName", "", 32);
+        }
+        if self.ui_name.is_empty() {
+            return;
+        }
+        // 686F37..686F6C and686F73..686FF9 copy45 units then explicitly
+        // terminate at index44. Retain UTF-16 so a split surrogate is not
+        // silently changed before the presentation consumer sees it.
+        self.name = csf
+            .text(&self.ui_name)
+            .encode_utf16()
+            .take_while(|&unit| unit != 0)
+            .take(44)
+            .collect();
+        self.save_title = csf
+            .text(&format!("{}Sav", self.ui_name))
+            .encode_utf16()
+            .take_while(|&unit| unit != 0)
+            .take(44)
+            .collect();
+        if self
+            .save_title
+            .starts_with(&[77, 73, 83, 83, 73, 78, 71, 58])
+        {
+            self.save_title.clone_from(&self.name);
+        }
+    }
+
+    pub fn name_units(&self) -> &[u16] {
+        &self.name
+    }
+
+    pub fn ui_name(&self) -> &str {
+        &self.ui_name
+    }
+
+    pub fn save_title_units(&self) -> &[u16] {
+        &self.save_title
+    }
+
+    pub fn save_title(&self) -> String {
+        String::from_utf16_lossy(&self.save_title)
+    }
+}
+
 /// The CSF key the mission restate briefing shows
 /// (`ScenarioClass::ShowMissionRestateBriefing 0x0065F520`, Restate.cpp): the
 /// `Briefing` entry of the scenario file name's section, read with
@@ -124,9 +196,92 @@ impl CampaignLoadingMetadata {
 
 #[cfg(test)]
 mod tests {
-    use super::{CampaignLoadingMetadata, restate_briefing_key};
+    use super::{CampaignLoadingMetadata, CampaignScenarioNames, restate_briefing_key};
     use crate::rules::ini_parser::IniFile;
     use serde_json::Value;
+
+    #[test]
+    fn campaign_mission_names_match_original_reader_and_retention() {
+        let native = crate::test_fixture::json("tools/input_oracle/campaign_mission_titles.json");
+        let entries: Vec<_> = native["csf_entries"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str().unwrap()))
+            .collect();
+        let csf = crate::assets::csf_file::test_csf(&entries);
+        let units = |value: &Value| {
+            value
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_u64().unwrap() as u16)
+                .collect::<Vec<_>>()
+        };
+        for row in native["name_rows"].as_array().unwrap() {
+            let mut names = CampaignScenarioNames {
+                name: units(&row["prior_name_utf16"]),
+                ui_name: row["prior_ui_name"].as_str().unwrap().into(),
+                save_title: units(&row["prior_save_title_utf16"]),
+            };
+            if row["mission_file_exists"].as_bool().unwrap() {
+                let mut text = String::new();
+                for (name, section) in row["sections"].as_object().unwrap() {
+                    text.push_str(&format!("[{name}]\n"));
+                    for (key, value) in section.as_object().unwrap() {
+                        text.push_str(&format!("{key}={}\n", value.as_str().unwrap()));
+                    }
+                }
+                names.apply_ini(
+                    &IniFile::from_str(&text),
+                    row["filename"].as_str().unwrap(),
+                    &csf,
+                );
+            }
+            assert_eq!(
+                names.name_units(),
+                units(&row["name_utf16"]),
+                "{}",
+                row["name"]
+            );
+            assert_eq!(
+                names.save_title_units(),
+                units(&row["save_title_utf16"]),
+                "{}",
+                row["name"]
+            );
+            assert_eq!(
+                names.ui_name(),
+                row["ui_name"].as_str().unwrap(),
+                "{}",
+                row["name"]
+            );
+            let bytes = crate::util::save_codec::serialize(&names).unwrap();
+            let restored: CampaignScenarioNames =
+                crate::util::save_codec::deserialize(&bytes).unwrap();
+            assert_eq!(restored, names);
+        }
+    }
+
+    #[test]
+    fn campaign_mission_names_use_physical_mission_and_csf_inputs() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mission = IniFile::from_bytes(assets.get_ref("MISSIONMD.INI").unwrap()).unwrap();
+        let csf =
+            crate::assets::csf_file::CsfFile::from_bytes(assets.get_ref("ra2md.csf").unwrap())
+                .unwrap();
+        for (filename, expected) in [
+            ("ALL01UMD.MAP", "Allied 01 - Time Lapse"),
+            ("ALL02UMD.MAP", "Allied 02 - Hollywood and Vain"),
+            ("SOV01UMD.MAP", "Soviet 01 - Time Shift"),
+        ] {
+            let mut names = CampaignScenarioNames::default();
+            names.apply_ini(&mission, filename, &csf);
+            assert_eq!(names.save_title(), expected);
+        }
+    }
 
     fn native() -> &'static Value {
         let fixture = crate::test_fixture::json("tools/input_oracle/campaign_start.json");

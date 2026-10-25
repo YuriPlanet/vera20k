@@ -84,12 +84,19 @@ impl ResolvedTerrainGrid {
     pub(crate) fn set_terrain_object_occupation(
         &mut self,
         cell: (u16, u16),
-        occupation: Option<u8>,
+        occupation: Option<i32>,
     ) {
-        let Some(terrain_cell) = self.cell_mut(cell.0, cell.1) else {
+        // Terrain's packed Location may name a fixed512 alias. PlaceDown/
+        // PickUp568471/5688A1 admit only allocated CellClass identities.
+        let Some(index) = self.native_fixed_cell_index(cell.0 as i16, cell.1 as i16) else {
             return;
         };
-        let blocked = occupation.is_some_and(|occupation| occupation != 0);
+        let (x, y) =
+            self.native_cell_coord(crate::map::cell_index::NativeCellIdentity::Real(index));
+        let Some(terrain_cell) = self.cell_mut(x as u16, y as u16) else {
+            return;
+        };
+        let blocked = occupation.is_some_and(|occupation| occupation & 0x07 != 0);
         terrain_cell.terrain_object_occupation = occupation;
         terrain_cell.terrain_object_blocks = blocked;
         terrain_cell.ground_walk_blocked =

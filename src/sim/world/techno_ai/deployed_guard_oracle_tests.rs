@@ -315,6 +315,14 @@ fn supplied_fixture(row: &Value) -> (Simulation, RuleSet, u64) {
 
 fn assert_actor(actor: &GameEntity, expected: &Value, row: &Value, rearm: bool) {
     let name = row["input"]["name"].as_str().unwrap();
+    let speed_bits = u64::from_str_radix(expected["speed_fraction_bits"].as_str().unwrap(), 16)
+        .unwrap()
+        .swap_bytes();
+    assert_eq!(
+        actor.foot_speed.native_applied_fraction().bits(),
+        speed_bits,
+        "{name}: retained native speed fraction"
+    );
     let stage = actor.native_stage();
     let raw = serde_json::to_value(stage).unwrap();
     let loco = actor.locomotor.as_ref().unwrap();
@@ -532,16 +540,22 @@ fn native_deployed_guard_full_returns_match_state_cadence_and_three_rng_streams(
             continue;
         }
         let name = row["input"]["name"].as_str().unwrap();
-        if matches!(
-            name,
-            "fire_error_ammo_zero"
-                | "fire_error_speed_above_point_one"
-                | "deployed_DeployFire_false"
-        ) {
+        if matches!(name, "fire_error_ammo_zero" | "deployed_DeployFire_false") {
             unsupported.push(name);
             continue;
         }
         let (mut sim, rules, id) = supplied_fixture(row);
+        if name == "fire_error_speed_above_point_one" {
+            assert!(
+                sim.substrate
+                    .entities
+                    .get(id)
+                    .unwrap()
+                    .foot_speed
+                    .above_tenth(),
+                "{name}: native moving-fire admission boundary"
+            );
+        }
         let (_, observations) = trace_fire_visits(|| {
             dispatch_foot_mission(&mut sim, id, &rules, ObjectAiCtx::default())
         });
@@ -581,14 +595,10 @@ fn native_deployed_guard_full_returns_match_state_cadence_and_three_rng_streams(
         assert_rng(&sim, &row["rng_streams_after"], name);
         compared += 1;
     }
-    assert_eq!((compared, declined), (36, 1));
+    assert_eq!((compared, declined), (37, 1));
     assert_eq!(
         unsupported,
-        [
-            "fire_error_ammo_zero",
-            "fire_error_speed_above_point_one",
-            "deployed_DeployFire_false"
-        ]
+        ["fire_error_ammo_zero", "deployed_DeployFire_false"]
     );
 }
 
@@ -681,21 +691,5 @@ fn native_deployed_guard_unsupported_controls_remain_declared() {
             .unwrap()
             .ammo()
             .is_some_and(|ammo| ammo.current() == -1)
-    );
-    let speed = rows
-        .iter()
-        .find(|row| row["input"]["name"] == "fire_error_speed_above_point_one")
-        .unwrap();
-    let (sim, _rules, id) = supplied_fixture(speed);
-    // The supplied native double is one ULP above0.1; the existing documented
-    // fixed-point speed owner cannot retain that control's admission boundary.
-    assert!(speed["input"]["speed_fraction"].as_f64().unwrap() > 0.1);
-    assert!(
-        !sim.substrate
-            .entities
-            .get(id)
-            .unwrap()
-            .foot_speed
-            .above_tenth()
     );
 }

@@ -44,7 +44,14 @@ fn retained_weapon_speed_matches_original_reader_controls() {
         }
         let mut pass = IniFile::empty();
         pass.replace_first_section(section);
-        processor.apply_pass(&pass, &IniFile::empty()).unwrap();
+        processor
+            .apply_pass(
+                &pass,
+                &IniFile::empty(),
+                &crate::rules::sound_ini::EvaRegistry::default(),
+                false,
+            )
+            .unwrap();
         assert_eq!(
             processor.families[&RulesTypeFamily::Weapon][index]
                 .weapon
@@ -71,9 +78,15 @@ fn full_process_speed_uses_prior_gravity_across_absent_sections_and_owner_handof
         );
         if let Some(gravity) = sequence["cold_audio_visual"]["authored_gravity"].as_i64() {
             let cold = IniFile::from_str(&format!("[AudioVisual]\nGravity={gravity}\n"));
-            state = process_native_rules_cold_start(state, &cold, &IniFile::empty(), None)
-                .unwrap()
-                .into_registry_state_discarding_events();
+            state = process_native_rules_cold_start(
+                state,
+                &cold,
+                &IniFile::empty(),
+                None,
+                &crate::rules::sound_ini::EvaRegistry::default(),
+            )
+            .unwrap()
+            .into_registry_state_discarding_events();
         }
         for (index, row) in sequence["rows"].as_array().unwrap().iter().enumerate() {
             let mut pass = cached_ini(&row["cached_sections"]);

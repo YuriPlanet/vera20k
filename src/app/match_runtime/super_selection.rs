@@ -296,8 +296,7 @@ mod tests {
             let launched = |owner| SimSoundEvent::SuperWeaponLaunched {
                 owner,
                 sw_type,
-                rx: 10,
-                ry: 10,
+                world: crate::sim::components::DriveCoord::cell(10, 10, 0).into(),
             };
             let mut selected = Some(TargetingMode::SuperWeapon("Other".to_owned()));
             follow_selection_writes(
@@ -345,8 +344,7 @@ mod tests {
         let launched = |owner, sw_type| SimSoundEvent::SuperWeaponLaunched {
             owner,
             sw_type,
-            rx: 21,
-            ry: 21,
+            world: crate::sim::components::DriveCoord::cell(21, 21, 0).into(),
         };
         let mut targeting = None;
         follow_selection_writes(
@@ -413,8 +411,7 @@ mod tests {
         let launched = |owner| SimSoundEvent::SuperWeaponLaunched {
             owner,
             sw_type: dominator,
-            rx: 21,
-            ry: 21,
+            world: crate::sim::components::DriveCoord::cell(21, 21, 0).into(),
         };
         let selected = || {
             Some(TargetingMode::SuperWeapon(
@@ -483,8 +480,7 @@ mod tests {
                     vec![SimSoundEvent::SuperWeaponLaunched {
                         owner,
                         sw_type,
-                        rx: 40,
-                        ry: 40,
+                        world: crate::sim::components::DriveCoord::cell(40, 40, 0).into(),
                     }]
                 } else {
                     Vec::new()
@@ -523,8 +519,7 @@ mod tests {
         let launched = |owner, sw_type| SimSoundEvent::SuperWeaponLaunched {
             owner,
             sw_type,
-            rx: 21,
-            ry: 21,
+            world: crate::sim::components::DriveCoord::cell(21, 21, 0).into(),
         };
         let selected = || Some(TargetingMode::SuperWeapon("NukeSpecial".to_string()));
         let oracle: serde_json::Value =

@@ -11,7 +11,7 @@ use crate::sim::world::{FrameEffects, Simulation};
 
 const OWNER: &str = "Americans";
 
-fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Simulation, u64, u64) {
+pub(in crate::app) fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Simulation, u64, u64) {
     let mut sim = Simulation::new();
     for (name, side) in [(OWNER, 0), ("Russians", 1)] {
         let owner = sim.intern(name);
@@ -72,7 +72,7 @@ fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Simulation, u64, u64) 
     (sim, ifv, tank)
 }
 
-fn repair_ifv(rules: &RuleSet) -> (Simulation, u64, u64) {
+pub(in crate::app) fn repair_ifv(rules: &RuleSet) -> (Simulation, u64, u64) {
     let (sim, ifv, tank) = boarded_ifv(rules, "ENGINEER");
     assert_eq!(sim.entities().get(ifv).unwrap().current_weapon_number(), 1);
     assert_eq!(
@@ -86,6 +86,124 @@ fn repair_ifv(rules: &RuleSet) -> (Simulation, u64, u64) {
         -50
     );
     (sim, ifv, tank)
+}
+
+/// UnitClass::What_Action_OnCell (`0x007404FD..0x00740522`): an IFV carrying
+/// an Engineer heals, so Ctrl on the ground answers AttackSupport (0x3B), not
+/// Attack, and Foot's ClickedAction_Cell (`0x004D7D50`, default case
+/// `0x004D8237`) sends nothing for it. With a GI aboard it fires at the ground.
+#[test]
+fn retail_engineer_ifv_ctrl_on_the_ground_orders_nothing() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &retail.processed_rules,
+        Some(&retail.fixed_art),
+    );
+    let ground = crate::sim::combat::TargetKind::Cell(16, 19);
+    let (sim, ifv, _) = repair_ifv(rules);
+    assert_eq!(
+        attack_action(&sim, rules, ifv, &ground, true, Some(&registry)),
+        AttackAction::AttackSupport
+    );
+    let prior = sim.state_hash();
+    let click = attack_branch_orders(
+        &sim,
+        rules,
+        &[ifv],
+        ground,
+        true,
+        OrderMode::Move,
+        &registry,
+    );
+    assert!(click.consumed && !click.select_fallback);
+    assert_eq!(click.receivers, [ifv].into_iter().collect());
+    assert!(click.commands.is_empty(), "{:?}", click.commands);
+    assert_eq!(
+        sim.state_hash(),
+        prior,
+        "input must not mutate gameplay/RNG"
+    );
+
+    let (sim, ifv, _) = boarded_ifv(rules, "E1");
+    assert_eq!(
+        attack_action(&sim, rules, ifv, &ground, true, Some(&registry)),
+        AttackAction::Attack
+    );
+    assert_eq!(
+        attack_branch_orders(
+            &sim,
+            rules,
+            &[ifv],
+            ground,
+            true,
+            OrderMode::Move,
+            &registry
+        )
+        .commands,
+        [Command::ForceAttackCell {
+            attacker_id: ifv,
+            target_rx: 16,
+            target_ry: 19,
+        }]
+    );
+}
+
+/// UnitClass::What_Action_OnObject's healer arm (`0x0073FD7C`):
+/// Is_Ally_ByObject (`0x004F9A90`) refuses a tree's null House, so an
+/// Engineer IFV's Ctrl over it answers 0, which the Unit tail makes NoMove
+/// (`0x007403EB`): the click moves it near the tree. A GI's IFV attacks it.
+#[test]
+fn retail_engineer_ifv_ctrl_on_a_tree_moves_near_it() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &retail.processed_rules,
+        Some(&retail.fixed_art),
+    );
+    let with_tree = |(mut sim, ifv, _): (Simulation, u64, u64)| {
+        assert_eq!(
+            crate::sim::terrain_spawn::construct_terrain_objects(
+                &mut sim,
+                &[crate::map::overlay::TerrainObject {
+                    rx: 16,
+                    ry: 20,
+                    name: "TREE01".into(),
+                }],
+                rules,
+                false,
+            ),
+            1
+        );
+        let tree = sim.terrain_objects().id_at((16, 20)).unwrap();
+        (sim, ifv, crate::sim::combat::TargetKind::Entity(tree))
+    };
+    let (sim, ifv, tree) = with_tree(repair_ifv(rules));
+    assert_eq!(
+        attack_action(&sim, rules, ifv, &tree, true, Some(&registry)),
+        AttackAction::NoMove
+    );
+    let click = attack_branch_orders(&sim, rules, &[ifv], tree, true, OrderMode::Move, &registry);
+    assert!(click.consumed);
+    assert!(
+        matches!(
+            click.commands.as_slice(),
+            [Command::Move { entity_id, .. } | Command::MoveToObject { entity_id, .. }]
+                if *entity_id == ifv
+        ),
+        "{:?}",
+        click.commands
+    );
+
+    let (sim, ifv, tree) = with_tree(boarded_ifv(rules, "E1"));
+    assert_eq!(
+        attack_action(&sim, rules, ifv, &tree, true, Some(&registry)),
+        AttackAction::Attack
+    );
 }
 
 fn repair_click(sim: &Simulation, rules: &RuleSet, ifv: u64, tank: u64) -> Command {
@@ -259,6 +377,74 @@ fn retail_berserk_engineer_ifv_keeps_cursor_but_refuses_click() {
     assert_eq!(
         sim.entities().get(ifv).unwrap().attack_target.target(),
         Some(TargetKind::Entity(tank))
+    );
+}
+
+/// A repair IFV being erased by a Chrono Legionnaire keeps the Repair cursor,
+/// and native's click still sends the order: the selection loop
+/// (`0x004AE829..0x004AE844`), Unit ClickedAction_Object (`0x00738890`),
+/// Foot `0x004D74E0`'s Attack case (`0x004D769F`), ClickedMission
+/// (`0x006FFBE0`) and the MEGAMISSION arm of Event::Execute
+/// (`0x004C71F6..0x004C74BA`, with Queue_Mission `0x005B35E0` and SetTarget
+/// `0x006FCDB0`) never read BeingWarpedOut (vt+0x1D4). The event queues
+/// Attack and sets the target; the next frozen Unit AI frame drops it
+/// (`0x00736321..0x00736331`, vt+0x3C8(0)) and returns (`0x0073635A`) before
+/// MissionClass::AI, so the IFV never repairs and Attack stays queued.
+#[test]
+fn retail_warped_engineer_ifv_repair_click_is_accepted_then_dropped() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (mut sim, ifv, tank) = repair_ifv(rules);
+    sim.entities_mut_for_test()
+        .get_mut(ifv)
+        .unwrap()
+        .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(99));
+    assert!(sim.entities().get(ifv).unwrap().is_warped_out());
+    let hover = HoverTargetKindWithId {
+        kind: HoverTargetKind::FriendlyUnit,
+        stable_id: tank,
+    };
+    let feedback = capability_cursor_for_hover(
+        &sim,
+        &[ifv],
+        Some(ifv),
+        &hover,
+        Some(rules),
+        None,
+        crate::app::input::context_order::OrderModifier::Normal,
+        false,
+        false,
+    );
+    assert_eq!(feedback, CursorFeedbackKind::RepairAction(true));
+    assert_eq!(sim.click_order_receivers(&[ifv]), [ifv]);
+    let command = repair_click(&sim, rules, ifv, tank);
+    assert!(sim.apply_command(OWNER, &command, Some(rules)));
+    let attack =
+        crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Attack);
+    let ifv_state = |sim: &Simulation| {
+        let ifv = sim.entities().get(ifv).unwrap();
+        (ifv.attack_target.target(), ifv.mission.queued())
+    };
+    assert_eq!(ifv_state(&sim), (Some(TargetKind::Entity(tank)), attack));
+    let grid = sim.path_grid_snapshot().unwrap();
+    let before = sim.entities().get(tank).unwrap().health.current();
+    sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+    assert_eq!(
+        ifv_state(&sim),
+        (None, attack),
+        "the frozen prologue drops TarCom; MissionClass::AI never runs"
+    );
+    for _ in 0..120 {
+        sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+    }
+    assert!(sim.entities().get(ifv).unwrap().is_warped_out());
+    assert_eq!(ifv_state(&sim), (None, attack));
+    assert_eq!(
+        sim.entities().get(tank).unwrap().health.current(),
+        before,
+        "a warped-out IFV must not repair"
     );
 }
 

@@ -47,7 +47,7 @@ fn fixture(threshold: i32, target_action: bool) -> Simulation {
         None,
         None,
     );
-    sim.classify_map_triggers(None);
+    sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     sim.session.publish_started();
     sim.session.set_map_width_for_test(32);
     sim.session.set_map_height_for_test(32);
@@ -88,7 +88,11 @@ fn ambient_events_poll_current_signed_scalar_and_include_equality() {
             sim.scenario_rng.native_state_hex(),
             sim.mapgen_rng.native_state_hex(),
         );
-        sim.advance_triggers(None, None, FrameEffects::default());
+        sim.advance_triggers(
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            None,
+            FrameEffects::default(),
+        );
         assert_eq!(
             sim.trigger_local_is_set_for_test(0),
             below,
@@ -118,7 +122,7 @@ fn saved_pending_ambient_event_fires_after_the_production_frame_fade() {
     let first = original
         .advance_app_frame(
             &[],
-            Some(&rules),
+            &rules,
             None,
             67,
             TickLane::Ordinary,
@@ -144,7 +148,7 @@ fn saved_pending_ambient_event_fires_after_the_production_frame_fade() {
         let frame = sim
             .advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 None,
                 67,
                 TickLane::Ordinary,

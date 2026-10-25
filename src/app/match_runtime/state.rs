@@ -18,6 +18,15 @@ pub(crate) struct MatchState {
     /// The in-match connection wait and its dialog 0xEA
     /// (`Wait_For_Players 0x00648710`).
     pub(crate) network_wait: super::network_match::NetworkMatchWait,
+    /// Input state for ExecuteDoList's blocking checksum-error message box.
+    /// The suspended frame and mismatch remain owned by Simulation.
+    pub(crate) network_failure: Option<super::network_failure::NetworkFailureModal>,
+    /// Physical byte transport and packet progress for an installed match.
+    /// Session owns the accepted participant roster and checksum history.
+    pub(crate) live_network: Option<crate::net::live_commands::LiveCommandSession>,
+    /// LAN visit transport before the match, then discovery metadata while the
+    /// same sockets are owned by live_network. Session owns admitted endpoints.
+    pub(crate) lan_service: Option<crate::app::lan_service::LanService>,
     pub(crate) sim_runtime: Option<crate::sim::runtime::SimRuntime>,
     /// Match input owner (F12): camera, zoom, cursor, keys, hotkeys.
     pub(crate) input: crate::app::input::state::MatchInputState,
@@ -43,6 +52,9 @@ pub(crate) struct MatchState {
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) telemetry_tick_rate: super::telemetry::TickRateMeter,
     pub(crate) map_basic: BasicSection,
+    /// Resolved Full_Init mission strings; retained independently of the
+    /// current CSF and outside deterministic simulation state.
+    pub(crate) campaign_names: crate::rules::campaign_loading::CampaignScenarioNames,
     /// Parsed `[Ranking]` values used by the campaign victory page.
     pub(crate) map_ranking: crate::map::ranking::RankingSection,
     /// Exact source whose bytes produced the active parsed map.
@@ -50,8 +62,8 @@ pub(crate) struct MatchState {
     /// Deterministic digest of the parsed source map INI. `None` only for
     /// generated/fallback worlds without an authoritative source-map payload.
     pub(crate) loaded_map_hash: Option<u64>,
-    /// App-owned wall-clock outcome-EVA drain. The deterministic accepted
-    /// result and SavourDelay target live in serialized `HouseState`.
+    /// App-owned wall-clock House Vox drain. HouseState owns pending flags
+    /// and SavourDelay; ScenarioSession retains the admitted result request.
     pub(crate) scenario_outcome:
         Option<crate::app::match_runtime::scenario_exit::ScenarioOutcomeVoiceWait>,
     /// Active running-scenario audio teardown. While present the tactical
@@ -105,17 +117,20 @@ impl MatchState {
     /// Main_Tick (`0x0055D360`) is not running. A LAN/WOL modal's pump
     /// `0x00623120` keeps calling it in GameMode 3/4, so what Main_Tick
     /// drives keeps going under the dialog: `MessageListClass::Manage`
-    /// (`0x005D4430`, its only caller) ages the rows. The debug pause and
-    /// the radar movie pause still stop it.
+    /// (`0x005D4430`, its only caller) ages the rows. Debug pause remains a
+    /// local diagnostic gate; native offline Scenario62C gates all its holds.
     pub(crate) fn main_tick_frozen(&self) -> bool {
-        self.debug_pause
-            || self
-                .match_presentation
-                .radar_anim
-                .as_ref()
-                .is_some_and(|radar| radar.movie_pause())
-            || (self.match_presentation.in_game_menu.is_open()
-                && !self.session_mode().is_network())
+        self.sim_runtime
+            .as_ref()
+            .is_some_and(|rt| rt.simulation.pending_network_failure().is_some())
+            || self.debug_pause
+            || super::scenario_pause::blocks_main_tick(
+                self.session_mode(),
+                self.sim_runtime
+                    .as_ref()
+                    .is_some_and(|rt| rt.simulation.session().scenario_paused()),
+            )
+            || (self.match_presentation.in_game_menu.is_open() && !self.session_mode().is_network())
     }
 
     /// `GameMode` (`0x00A8B238`) from whichever side holds it: the installed

@@ -485,7 +485,7 @@ fn original_welding_pointer_expiry_and_target_setters_preserve_their_distinct_au
                 sim.assign_target_represented(
                     roles["owner"],
                     target(&roles, requested),
-                    Some(rules),
+                    rules,
                     None,
                     crate::sim::world::FrameEffects::default(),
                 )

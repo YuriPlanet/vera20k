@@ -17,6 +17,112 @@ use crate::rules::voxel_frame_catalog::{
 };
 use crate::sim::world::Simulation;
 
+#[test]
+fn normal_fly_pose_uses_strict_pitch_speed_gate_and_secondary_turn_sign() {
+    use crate::rules::retail_ini_fixture::retail_battle_rules;
+    use crate::sim::movement::{FacingClass, facing_class::RotationDirection};
+    use crate::util::fixed_math::SimFixed;
+
+    let Some(retail) = retail_battle_rules() else {
+        return;
+    };
+    let object = retail.rules.object("SPYP").expect("stock Spy Plane");
+    let mut sim = Simulation::new();
+    let id = sim
+        .spawn_object_limbo_at_height("SPYP", "Americans", 10, 10, 0, 0x40, &retail.rules)
+        .expect("construct stock Fly");
+    let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+    entity
+        .locomotor
+        .as_mut()
+        .unwrap()
+        .set_current_fly_speed_for_test(SimFixed::from_bits(16_384));
+    let mut secondary = FacingClass::new(0, 4);
+    assert!(secondary.set(0x4000, 0));
+    entity.barrel_facing = Some(secondary);
+
+    let production_pose = |sim: &Simulation| {
+        let entity = sim.entities().get(id).unwrap();
+        let (model, body) = unit_body_draw(
+            entity,
+            sim.interner(),
+            Some(&retail.rules),
+            EntityDrawBand::Top,
+            sim.session().binary_frame(),
+            crate::render::draw_state::ObserverDrawContext::default(),
+        )
+        .expect("stock Spy Plane passes production body admission");
+        assert_eq!(model, "SPYP");
+        assert!(
+            entity.rocking.is_none(),
+            "normal Fly pose has no rocking state"
+        );
+        let direction = entity
+            .barrel_facing
+            .as_ref()
+            .and_then(|facing| facing.rotation_direction_at(sim.session().binary_frame()));
+        let tilt = body_pose_with_angles(
+            entity,
+            EntityDrawBand::Top,
+            object.tilt_crash_jumpjet,
+            [0.0; 2],
+            0.0,
+            Some(object),
+            direction,
+        );
+        (body, direction, tilt)
+    };
+
+    let (body, direction, tilt) = production_pose(&sim);
+    assert_eq!(direction, Some(RotationDirection::Positive));
+    assert!(matches!(body, BodyDraw::Composite));
+    assert_eq!(tilt, None);
+
+    let locomotor = sim
+        .entities_mut_for_test()
+        .get_mut(id)
+        .unwrap()
+        .locomotor
+        .as_mut()
+        .unwrap();
+    // Supplied numeric boundary: one binary64 ULP above stock PitchSpeed.
+    // The renderer must retain this distinction even below one Q16 quantum.
+    let above_threshold = 0x3fd0_0000_0000_0001_u64;
+    let mut saved = serde_json::to_value(&*locomotor).unwrap();
+    saved["runtime_payload"]["Fly"]["current_speed_bits"] = serde_json::json!(above_threshold);
+    *locomotor = serde_json::from_value(saved).unwrap();
+    assert_eq!(
+        locomotor.current_fly_speed().unwrap().bits(),
+        above_threshold
+    );
+    let (_, direction, pose) = production_pose(&sim);
+    assert_eq!(direction, Some(RotationDirection::Positive));
+    let pose = pose.unwrap();
+    assert!(
+        matches!(pose, crate::render::unit_atlas::PoseTilt::FlyNormal { pitch: 0.0, roll } if (roll - 30.0_f32.to_radians()).abs() < 1.0e-6)
+    );
+
+    let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+    let mut secondary = FacingClass::new(0, 4);
+    assert!(secondary.set(0xC000, 0));
+    entity.barrel_facing = Some(secondary);
+    let (_, direction, pose) = production_pose(&sim);
+    assert_eq!(direction, Some(RotationDirection::Negative));
+    let pose = pose.unwrap();
+    assert!(
+        matches!(pose, crate::render::unit_atlas::PoseTilt::FlyNormal { pitch: 0.0, roll } if (roll + 30.0_f32.to_radians()).abs() < 1.0e-6)
+    );
+
+    let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+    entity.barrel_facing.as_mut().unwrap().snap(0xC000, 0);
+    let (_, direction, pose) = production_pose(&sim);
+    assert_eq!(direction, None);
+    assert_eq!(
+        pose, None,
+        "an ended SecondaryFacing turn with stock PitchAngle=0 draws no normal bank pose"
+    );
+}
+
 /// One body draw of `id`: its model, and whether it asks the atlas for
 /// separate hull and turret sprites. A model the atlas does not seed for the
 /// object's type, or seeds without the sprite asked for, is an `Err`.
@@ -349,7 +455,6 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
     )
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
-    scene.runtime.simulation.batch_target_scans();
     // A skirmish never admits the human's authored radar (`0x0044F8CB`); the
     // computer's stock NARADR charges this Super.
     let owner = scene.sim().interner().get("Computer1").unwrap();
@@ -402,7 +507,11 @@ fn retail_spy_plane_flight_counter_reaches_both_physical_hva_frames_on_gpu() {
         if plane.body_frame_counter.get() == 0
             || !crate::sim::movement::motion_query::is_moving_now(
                 plane,
-                None,
+                crate::sim::movement::SpeedRules::new(
+                    &scene.runtime.resources.rules,
+                    sim.interner(),
+                    sim.houses(),
+                ),
                 sim.session().binary_frame(),
             )
         {

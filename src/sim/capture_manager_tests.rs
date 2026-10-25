@@ -1616,7 +1616,10 @@ fn an_attack_order_captures_without_damage() {
     let mind = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
     let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
     let health = sim.substrate.entities.get(gi).unwrap().health.current();
-    let owner_id = sim.interner.intern("YuriCountry");
+    // The human Americans send the computer Yuri's order: the DoList skips computer Houses' events
+    // (0x0064C4FB..0x0064C50D), and MegaMission never compares sender and actor
+    // (0x004C71F6..0x004C721F).
+    let owner_id = sim.interner.intern("Americans");
     sim.queue_command(CommandEnvelope::new(
         owner_id,
         sim.session.tick() + 1,
@@ -1977,7 +1980,7 @@ fn a_captive_boarding_an_absorber_is_freed_first() {
     sim.per_cell_process(
         gi,
         crate::sim::movement::PerCellReason::Arrival,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -2035,7 +2038,10 @@ fn an_iron_curtained_target_refuses_the_capture_at_fire_time() {
         crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain,
     );
     let health = sim.substrate.entities.get(gi).unwrap().health.current();
-    let owner_id = sim.interner.intern("YuriCountry");
+    // The human Americans send the computer Yuri's order: the DoList skips computer Houses' events
+    // (0x0064C4FB..0x0064C50D), and MegaMission never compares sender and actor
+    // (0x004C71F6..0x004C721F).
+    let owner_id = sim.interner.intern("Americans");
     sim.queue_command(CommandEnvelope::new(
         owner_id,
         sim.session.tick() + 1,
@@ -2336,6 +2342,73 @@ fn control_link_timer_selection_ports_cleanup_and_snapshot_share_the_manager() {
     assert_eq!(sim.capture_link_coordinates(controller, &rules).len(), 2);
     sim.free_unit(controller, first, &rules, None, FrameEffects::default());
     assert_eq!(sim.capture_link_coordinates(controller, &rules).len(), 1);
-    sim.uninit_with_context(second, UninitContext::new(Some(&rules), None));
+    sim.uninit_with_context(second, UninitContext::new(&rules, None));
     assert!(sim.capture_link_coordinates(controller, &rules).is_empty());
+}
+
+/// A retail Yuri Prime's Inviso capture changes an existing building's colour.
+/// Its first draw must refresh the SHP atlas even when no entity is spawned.
+#[test]
+fn yuri_prime_building_capture_and_release_request_atlas_refresh() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 79);
+    let yuri = spawn(&mut sim, &rules, "YURIPR", "Americans", 10, 10);
+    let plant = spawn(&mut sim, &rules, "GAPOWR", "Russians", 14, 10);
+    let americans = sim.interner.intern("Americans");
+    let body_before = sim.entities().get(plant).unwrap().building_body_state();
+    sim.queue_command(CommandEnvelope::new(
+        americans,
+        sim.session.tick() + 1,
+        Command::Attack {
+            attacker_id: yuri,
+            target_id: plant,
+        },
+    ));
+    let mut captured = None;
+    for _ in 0..90 {
+        let commands = sim.take_due_commands();
+        let tick = sim.advance_tick(&commands, Some(&rules), None, None, 67);
+        if sim.entities().get(plant).unwrap().owner() == americans {
+            captured = Some(tick);
+            break;
+        }
+        assert!(!tick.ownership_changed);
+    }
+    let tick = captured.expect("the stock SuperMindControl shot captures the power plant");
+    assert!(
+        tick.ownership_changed,
+        "refresh the captured building before its first draw"
+    );
+    assert!(
+        !tick.spawned_entities,
+        "capture does not rely on another entity spawning"
+    );
+    let building = sim.entities().get(plant).unwrap();
+    assert_eq!(building.mind_control.controller(), Some(yuri));
+    assert_eq!(building.building_body_state(), body_before);
+    assert_eq!(
+        crate::sim::building_art::building_image(building, rules.has_buildup("GAPOWR")),
+        crate::sim::building_art::BuildingImage::Body,
+    );
+    assert!(
+        !sim.advance_tick(&[], Some(&rules), None, None, 67)
+            .ownership_changed
+    );
+
+    sim.free_all_captures(yuri, &rules, None, FrameEffects::default());
+    assert_eq!(owner(&sim, plant), "Russians");
+    assert!(
+        sim.advance_tick(&[], Some(&rules), None, None, 67)
+            .ownership_changed,
+        "the original owner's colour must also refresh on release"
+    );
+    assert!(
+        !sim.advance_tick(&[], Some(&rules), None, None, 67)
+            .ownership_changed,
+        "a consumed ownership change must not refresh every frame"
+    );
 }

@@ -144,7 +144,6 @@ class OriginalCoordinates:
                 before_value=list(struct.unpack(encoding, tail[:stride])),
                 after_value=list(struct.unpack(encoding, tail_after[:stride])),
                 meaning='unwritten memory, not a ninth compass entry'),
-            image_excluding_selected_table_sha256=dict(before=before_rest, after=after_rest),
             original_text_sha256=dict(before=text_before, after=text_after),
             count_budget=100, timeout_us=10_000_000,
         )

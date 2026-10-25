@@ -419,6 +419,10 @@ mod tests {
             image: None,
             cameo: None,
             alt_cameo: None,
+            #[cfg(feature = "ares")]
+            cameo_pcx: None,
+            #[cfg(feature = "ares")]
+            alt_cameo_pcx: None,
             new_theater: false,
             theater: false,
             scorch: false,
@@ -482,6 +486,7 @@ mod tests {
             deployed_fire_frames: None,
             z_shape_point_move: (0, 0),
             normal_z_adjust: 0,
+            building_double_thick: false,
         }
     }
 

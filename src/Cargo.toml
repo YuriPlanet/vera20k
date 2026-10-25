@@ -1,6 +1,6 @@
 [package]
 name = "vera20k-core"
-version = "0.1.0"
+version = "0.2.2"
 edition = "2024"
 description = "VERA20k's GPU-free engine: assets, rules, map, simulation, lockstep and the headless scenario"
 publish = false
@@ -24,9 +24,22 @@ path = "bin/parity-digest.rs"
 name = "sim-bench"
 path = "bin/sim-bench.rs"
 
+# External two-client LAN fault proof; absent from normal game builds.
+[[bin]]
+name = "lan-fault-proxy"
+path = "bin/lan-fault-proxy.rs"
+required-features = ["test-support"]
+
 [features]
 # Compile the supported Ares behavior; INIs cannot enable an absent capability.
 ares = []
+# Compile the supported Phobos behavior; INIs cannot enable an absent capability.
+# Independent of `ares`: Phobos itself does not require Ares.
+phobos = []
+# Placeholder: NPatch-specific readers land with their first chain.
+npatch = []
+# VERA20K's own first-party extension capability.
+verax = []
 # The client's Ctrl+Shift dev chord reaches simulation and utility hooks.
 dev-overlays = []
 # Read-only snapshots and opt-in frame timing for the browser dashboard.
@@ -38,6 +51,8 @@ debug-tools = ["telemetry"]
 test-support = []
 
 [dependencies]
+# Shared authenticated datagram codec used by the standalone relay.
+vera20k-relay-protocol = { path = "../services/relay-protocol" }
 glam = { workspace = true }
 # Fixed-point arithmetic for simulation positions and other fixed-width mechanisms.
 # Native floating-point mechanisms document their numeric contract at their owner.
@@ -51,7 +66,7 @@ serde_json = { workspace = true }
 # RA2's binary asset formats (.mix, .shp, .vxl, .pal, .tmp, .hva) are parsed by
 # hand-written readers in `assets/` — no parser library, no RA2-specific crates.
 # memmap2 maps disk MIX archives instead of reading them into memory.
-memmap2 = "0.9"
+memmap2 = "0.9.12"
 
 # --- Error handling ---
 thiserror = { workspace = true }
@@ -87,11 +102,18 @@ libc = "0.2"
 # crates' build profile the same. tools/tests/test_cargo_run.py checks the
 # features still match.
 [dev-dependencies]
+# Native binary64 test values must survive their JSON decimal transport exactly.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 bytemuck = { version = "1", default-features = false, features = ["derive", "extern_crate_alloc", "min_const_generics"] }
 half = { version = "2", default-features = false, features = ["num-traits"] }
 hashbrown = { version = "0.16", default-features = false, features = ["default-hasher", "inline-more"] }
 num-traits = { version = "0.2", features = ["libm"] }
 unicode-ident = "1"
+
+# winit's Wayland decorations (this is winit's cfg) enable tiny-skia's SIMD,
+# which adds bytemuck's aarch64_simd feature to the client build.
+[target.'cfg(all(unix, not(any(target_os = "redox", target_family = "wasm", target_os = "android", target_os = "ios", target_os = "macos"))))'.dev-dependencies]
+bytemuck = { version = "1", default-features = false, features = ["aarch64_simd"] }
 
 [lints]
 workspace = true

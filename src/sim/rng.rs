@@ -186,6 +186,12 @@ impl MainRng {
             .logical_state()
     }
 
+    /// A detached, draw-free cursor checkpoint. It never grants another live
+    /// owner of the process cell; replay construction may retain this value.
+    pub fn checkpoint(&self) -> SimRng {
+        self.state.lock().expect("Main RNG poisoned").clone()
+    }
+
     pub fn state(&self) -> u64 {
         self.state.lock().expect("Main RNG poisoned").state()
     }
@@ -198,7 +204,7 @@ impl MainRng {
     /// An explicitly detached test reference, never a live draw capability.
     #[cfg(any(test, feature = "test-support"))]
     pub fn snapshot_for_test(&self) -> SimRng {
-        self.state.lock().expect("Main RNG poisoned").clone()
+        self.checkpoint()
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -303,6 +309,13 @@ impl SimRngLogicalState {
 }
 
 impl SimRng {
+    /// Reject malformed external cursor checkpoints before any indexed draw.
+    pub fn valid_checkpoint(&self) -> bool {
+        self.state.len() == RNG_TABLE_LEN
+            && (0..RNG_TABLE_LEN as i32).contains(&self.index_a)
+            && (0..RNG_TABLE_LEN as i32).contains(&self.index_b)
+    }
+
     /// Create a new RNG with the given seed.
     pub fn new(seed: u64) -> Self {
         Self {

@@ -2,28 +2,26 @@
   "status": "PASS",
   "prior": {
     "path": "accepted/findpath_existing_idle_MTNK-r8.json.gz",
-    "bytes": 267588,
-    "sha256": "69dae4b02826f58f8a0a30d095a6c1467053648dd51d639d51f7878fd602a262",
-    "uncompressed_bytes": 5800669,
-    "uncompressed_sha256": "2ec010b0df693eae6c34a54f90f5437a1f54f4738d27a6f22d07f1b7b84480ef",
+    "bytes": 266924,
+    "sha256": "46ef32fd91c54f6d1ac553803d79f06d5feb04b22feed1497fa456d6d12ad010",
+    "uncompressed_bytes": 5799682,
+    "uncompressed_sha256": "3e6db10a122e94614cc89c04a19e3e73e23960109cb004debf95c5e08a3cc21c",
     "name": "findpath_existing_idle_MTNK",
-    "source_boundary": "as-run-r8",
-    "projected_sha256": "3bceda671426b806451b4c6f8b69a4eb3e5200376f7050de69b887b110fadbe0"
+    "projected_sha256": "4c3d2a658671f3e51934f9a9571c89a92b9aa838e025724b80d4cbadc1d4bfad"
   },
   "observed": {
     "path": "accepted/findpath_existing_idle_MTNK-r10.json.gz",
-    "bytes": 276284,
-    "sha256": "811f14e45193e7978841140cd5213245388b0d56f4011935b8be565e6cbb84cb",
-    "uncompressed_bytes": 5843254,
-    "uncompressed_sha256": "6d45f37c62203eb09c2269c1f566f7e59cd8899076e7016dccf49ad4a97f1f3d",
+    "bytes": 275739,
+    "sha256": "d3f05327a3d3c8a0777d126ad0967ad863c6d6ff0efcd0953c547d0ac6404b0c",
+    "uncompressed_bytes": 5842267,
+    "uncompressed_sha256": "8295d32f5e6e06d5e8ce22cb607966bc3929c8e2fcdf6651cdc80c78faa98dae",
     "name": "findpath_existing_idle_MTNK",
-    "source_boundary": "as-run-r10",
-    "projected_sha256": "119e577d3759e1df41d8bed257f5db1f205ee5879b66715f9c12afe82ca1d3cd"
+    "projected_sha256": "d050cfbf6c5dca7cfc6feaa07c12c4454d5bbf1770cd98613cf62d4ca34525a9"
   },
   "new_readonly_fields": [
     "input_context",
     "ambient"
   ],
   "first_prior_native_field_difference": null,
-  "prior_fields_sha256": "3bceda671426b806451b4c6f8b69a4eb3e5200376f7050de69b887b110fadbe0"
+  "prior_fields_sha256": "4c3d2a658671f3e51934f9a9571c89a92b9aa838e025724b80d4cbadc1d4bfad"
 }

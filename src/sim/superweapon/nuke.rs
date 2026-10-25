@@ -38,9 +38,6 @@
 //!   consumers are outside the simulation's revoke/grant migration.
 //! - The launch-mute global `0x00A8B538` that skips the EVA line
 //!   (`0x006CDDEE`) is not modeled: the line always plays.
-//! - `DigSound=` plays at the cell (the launch event carries it); native's
-//!   coordinate has the cell's floor height (`0x00578080`). Presentation
-//!   only.
 //! - A `NUKEBALL` VERA cannot construct (a type without its SHP, as in lib
 //!   tests) holds no anim, and the bullet detonates at its next AI; retail
 //!   binds `NUKEBALL.SHP`.
@@ -138,7 +135,8 @@ pub(crate) fn nuke_ball_type(rules: &RuleSet) -> bool {
 /// owner's first building of it ([`find_building_of_type`]) queues and
 /// commences Missile, the owner's NukeTarget (`+0x5784`) becomes the cell
 /// and the silo's firing type (`+0x5F8`) the type's `Type=`
-/// (`0x006CDDA3..0x006CDDD7`). The app plays `DigSound=` at the cell and
+/// (`0x006CDDA3..0x006CDDD7`). The app plays `DigSound=` at the cell's
+/// centre and ground height (no deck, `0x006CDD62..0x006CDDE9`) and
 /// `EVA_NuclearMissileLaunched` (`0x006CDDE9`, `0x006CDE01`) for the launch
 /// event. A charged call still requests the House tail without a silo
 /// (`0x006CDE06..0x006CDE2F`; executed `nuke_launch.recheck`).
@@ -167,16 +165,17 @@ pub(super) fn launch(
             None,
             Some(owner),
         );
-        if launched {
+        // The cue (`0x006CDCAE`) plays at the strike coordinate
+        // `0x006CDA88..0x006CDAF5` built.
+        if let Some(location) = launched {
             sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
                 owner,
                 sw_type: sw_type_id,
-                rx: cell.0,
-                ry: cell.1,
+                world: location.into(),
             });
         }
         sim.houses.request_house_tech_tree_recheck(owner); //common6CDE2F tail
-        return launched;
+        return launched.is_some();
     }
     let Some(index) = rules.super_weapon_index(&sw.id) else {
         return false;
@@ -212,11 +211,14 @@ pub(super) fn launch(
             .mission_leaf
             .set_building_firing_super_weapon(sw.kind.native_index());
     }
+    // `0x006CDD62..0x006CDDE9`: the cell centre at Map578080's ground height,
+    // no deck. At its centre that is the cell's own GetCoords (`0x00486840`).
+    let ground =
+        crate::sim::projectile::cell_ground_coord(sim.resolved_terrain.as_ref(), cell.0, cell.1);
     sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type: sw_type_id,
-        rx: cell.0,
-        ry: cell.1,
+        world: ground.into(),
     });
     sim.houses.request_house_tech_tree_recheck(owner); //Launch common tail6CDE2F
     true

@@ -237,7 +237,7 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                 .assign_target_represented(
                     scene.source,
                     Some(TargetKind::Entity(scene.target)),
-                    Some(&scene.rules),
+                    &scene.rules,
                     None,
                     FrameEffects::default(),
                 )
@@ -250,7 +250,9 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                         MissionId::from_known(MissionType::Attack),
                         0,
                         scene.sim.session.binary_frame(),
-                        &crate::sim::mission::authority::EntityReadyInputProvider,
+                        &crate::sim::mission::authority::LiveReadyInputProvider {
+                            rules: crate::rules::ruleset::RuleSet::empty_for_test(),
+                        },
                     )
                     .unwrap();
                 scene
@@ -277,8 +279,6 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
             let ai = super::techno_ai::ObjectAiCtx {
                 effects: FrameEffects::default(),
                 overlay_registry: None,
-                terrain_spawner_cells: None,
-                miner_config: None,
             };
             if ordinary {
                 compare_native_phase(&scene, native_phase(row, "after_schedule_start"));
@@ -289,7 +289,7 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                     scene.sim.session.set_binary_frame_for_test(frame);
                     scene
                         .sim
-                        .advance_live_object_turn(scene.source, Some(&scene.rules), ai)
+                        .advance_live_object_turn(scene.source, &scene.rules, ai)
                         .unwrap();
                 }
             }
@@ -313,7 +313,7 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                     .set_binary_frame_for_test(visit["frame"].as_u64().unwrap() as u32);
                 scene
                     .sim
-                    .advance_live_object_turn(scene.source, Some(&scene.rules), ai)
+                    .advance_live_object_turn(scene.source, &scene.rules, ai)
                     .unwrap();
                 let source = scene.sim.substrate.entities.get(scene.source).unwrap();
                 compare_native_fields(
@@ -324,7 +324,7 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
             }
             compare_native_phase(&scene, native_phase(row, "before_deferred_destruction"));
             scene.sim.process_pending_delete_with(
-                Some(&scene.rules),
+                &scene.rules,
                 None,
                 FrameEffects::default(),
                 1,
@@ -415,7 +415,7 @@ fn ordinary_terror_attack_finishes_die2_and_retires_its_source() {
             .sim
             .advance_app_frame(
                 &commands,
-                Some(&scene.rules),
+                &scene.rules,
                 None,
                 33,
                 super::TickLane::Ordinary,
@@ -591,7 +591,7 @@ fn assert_suicide_blast_reports_building_loss(direct: bool) {
             .sim
             .advance_app_frame(
                 &commands,
-                Some(&scene.rules),
+                &scene.rules,
                 None,
                 33,
                 super::TickLane::Ordinary,

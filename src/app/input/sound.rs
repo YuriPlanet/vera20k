@@ -216,7 +216,8 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     dialog.scroll.cancel();
     dialog.buttons.press(over_button);
     match hit {
-        Some(SoundControl::Button(_)) => App::play_skirmish_shell_generic_click_sound(state),
+        // Back, Play and Stop are owner-draw: GUIMainButtonSound (0x0061376B).
+        Some(SoundControl::Button(_)) => App::play_main_menu_button_sound(state),
         Some(SoundControl::Slider(id)) => {
             if let Some(volume) = dialog.press_slider(id, layout.sliders[id as usize], x, y) {
                 apply_volume(state, channel(id), volume, true);

@@ -66,7 +66,10 @@ fn frame(s: &mut Scene) -> Sample {
         chrono_sounds: s.sim.sound_events[sounds_before..]
             .iter()
             .filter_map(|event| match event {
-                SimSoundEvent::ChronoTeleport { rx, ry, .. } => Some((*rx, *ry)),
+                SimSoundEvent::ChronoTeleport { world, .. } => {
+                    let (rx, ry, ..) = world.to_cell_sub_z();
+                    Some((rx, ry))
+                }
                 _ => None,
             })
             .collect(),
@@ -208,6 +211,7 @@ fn spawn_returning_cmin(s: &mut Scene, cell: (u16, u16)) -> u64 {
         .set_handler_state(MinerState::ReturnToRefinery.cursor());
     entity.miner.as_mut().unwrap().set_cargo_for_test(vec![
         CargoBale {
+            tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(0),
             resource_type: ResourceType::Ore,
             value: 25,
         };

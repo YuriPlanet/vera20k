@@ -8,7 +8,7 @@
 use super::audio::{AudioVolume, AudioVolumeOperations, apply_volume};
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::ui::main_menu_dialogs::options::{
-    LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels, LauncherOptionsPacked,
+    DisplayTarget, LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels, LauncherOptionsPacked,
     LauncherOptionsValues, LauncherParentResult, OptionsDialogState, SidebarSize, Zoom,
     admitted_initial_position, admitted_volume_position,
 };
@@ -35,6 +35,7 @@ pub(crate) fn launcher_values_from_profile(
         original_shape: profile.original_shape,
         yr_original_style: profile.yr_original_style,
         render_interpolation: profile.render_interpolation,
+        mouse_wheel_zoom: profile.mouse_wheel_zoom,
         shift_queue: profile.shift_queue,
         wol_test_service: profile.wol_test_service,
         fps_counter: false,
@@ -57,13 +58,21 @@ pub(crate) fn launcher_dialog_from_profile(
     full_screen: bool,
     fps_counter: bool,
     launcher_audio_available: bool,
+    displays: Vec<crate::ui::main_menu_dialogs::options::DisplayChoice>,
 ) -> OptionsDialogState {
     let values = LauncherOptionsValues {
         full_screen,
         fps_counter,
         ..launcher_values_from_profile(profile)
     };
-    OptionsDialogState::new(labels, values, profile.zoom, launcher_audio_available)
+    OptionsDialogState::new(
+        labels,
+        values,
+        profile.zoom,
+        launcher_audio_available,
+        displays,
+        profile.display.clone(),
+    )
 }
 
 /// Concrete effects admitted by one launcher UI frame.
@@ -74,10 +83,13 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn play_cue(&mut self, cue: LauncherCue);
     fn store_zoom(&mut self, zoom: Zoom);
     fn store_sidebar(&mut self, size: SidebarSize);
+    /// Move the window to the picked screen, or hand it back to the system.
+    fn set_display(&mut self, display: DisplayTarget);
     fn set_full_screen(&mut self, full_screen: bool);
     fn store_original_shape(&mut self, original_shape: bool);
     fn store_yr_original_style(&mut self, yr_original_style: bool);
     fn store_render_interpolation(&mut self, enabled: bool);
+    fn store_mouse_wheel_zoom(&mut self, enabled: bool);
     fn store_shift_queue(&mut self, shift_queue: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
     fn set_fps_counter(&mut self, shown: bool);
@@ -94,6 +106,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::Cue(cue) => operations.play_cue(cue),
         LauncherOptionsEvent::ZoomSelected(zoom) => operations.store_zoom(zoom),
         LauncherOptionsEvent::SidebarSelected(size) => operations.store_sidebar(size),
+        LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
         LauncherOptionsEvent::FullScreenChanged(full_screen) => {
             operations.set_full_screen(full_screen);
         }
@@ -105,6 +118,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         }
         LauncherOptionsEvent::RenderInterpolationChanged(enabled) => {
             operations.store_render_interpolation(enabled);
+        }
+        LauncherOptionsEvent::MouseWheelZoomChanged(enabled) => {
+            operations.store_mouse_wheel_zoom(enabled);
         }
         LauncherOptionsEvent::ShiftQueueChanged(shift_queue) => {
             operations.store_shift_queue(shift_queue);
@@ -293,6 +309,7 @@ mod tests {
             show_hidden: true,
             yr_original_style: true,
             render_interpolation: false,
+            mouse_wheel_zoom: true,
             shift_queue: true,
             wol_test_service: true,
             ..RetailOptionsProfile::default()
@@ -302,6 +319,7 @@ mod tests {
         assert!(booleans.show_hidden);
         assert!(booleans.yr_original_style);
         assert!(!booleans.render_interpolation);
+        assert!(booleans.mouse_wheel_zoom);
         assert!(booleans.shift_queue);
         assert!(booleans.wol_test_service);
     }

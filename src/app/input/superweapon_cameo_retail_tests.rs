@@ -11,7 +11,7 @@ fn frame(sim: &mut Simulation, rules: &RuleSet) -> SimFrameOutput {
     let due = sim.take_due_commands();
     sim.advance_app_frame(
         &due,
-        Some(rules),
+        rules,
         None,
         67,
         TickLane::Ordinary,
@@ -345,4 +345,86 @@ fn retail_supers_recheck_live_admission_after_power_loss_and_recovery() {
         "unpowered controls: {covered:?}"
     );
     eprintln!("retail Super click/power controls: {covered:?}");
+}
+
+/// Retail root plus authored mode/map reads; readiness is supplied at the
+/// client boundary. This covers Nuke/None selection, not all Action cursors.
+#[test]
+fn authored_stock_action_case_and_unknown_layer_drive_cursor_and_press() {
+    use crate::app::types::CursorId;
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+    let Some((root, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let mut layers = RulesLayerStack::new(root);
+    let mut sim = Simulation::new();
+    let owner = sim.intern("Americans");
+    let id = sim.intern("NukeSpecial");
+    sim.houses_mut_for_test()
+        .register(HouseState::new(owner, 0, Some(owner), true, 0, 10));
+    let mut instance = SuperWeaponInstance::new(id, owner, 0);
+    instance.set_is_active_for_test(true);
+    instance.set_is_ready_for_test(true);
+    sim.super_weapons_mut_for_test()
+        .entry(owner)
+        .or_default()
+        .insert(id, instance);
+    for (kind, raw, canonical, expected, cursor) in [
+        (
+            RulesLayerKind::GameMode,
+            "nUkE",
+            "Nuke",
+            SuperWeaponClick::Target,
+            Some(CursorId::Nuke),
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "UnknownAction",
+            "None",
+            SuperWeaponClick::Launch(id),
+            None,
+        ),
+    ] {
+        layers.push(
+            kind,
+            IniFile::from_str(&format!("[NukeSpecial]\nAction={raw}\n")),
+        );
+        let processed = layers.process_with_fixed_art(&art).unwrap();
+        let rules = RuleSet::from_processed_rules(&processed).unwrap();
+        let action = rules.super_weapon("NukeSpecial").unwrap().action.as_deref();
+        assert_eq!(action, Some(canonical));
+        assert_eq!(
+            super::super::super::cursor::super_weapon_cursor_id(action.unwrap()),
+            cursor
+        );
+        let views = superweapon_views_for_owner(&sim, &rules, &owner);
+        let live = views.iter().find(|view| view.type_id == id).unwrap();
+        let mut input = MatchInputState::new(Default::default());
+        input.begin_building_placement("GAPILE", 0, owner);
+        let mut gadgets = SidebarGadgetState::default();
+        gadgets.repair_mode_on = true;
+        // SelectAction6AAEEA..6AAF9D: canonical Action0 directly launches
+        // without clearing the prior modes; targeted actions replace them.
+        assert_eq!(
+            press(&mut input, &mut gadgets, Some(live), action, false),
+            expected
+        );
+        if expected == SuperWeaponClick::Target {
+            assert_eq!(
+                input.targeting_mode.as_ref().unwrap().as_super_weapon(),
+                Some("NukeSpecial")
+            );
+            assert!(!gadgets.repair_mode_on);
+        } else {
+            assert_eq!(
+                input
+                    .targeting_mode
+                    .as_ref()
+                    .unwrap()
+                    .as_building_placement(),
+                Some("GAPILE")
+            );
+            assert!(gadgets.repair_mode_on);
+        }
+    }
 }

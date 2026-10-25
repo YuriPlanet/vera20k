@@ -103,15 +103,34 @@
 //! - rules/ does NOT depend on (outside tests): sim/, render/, ui/, audio/, net/
 
 pub mod airstrike;
+pub mod digital_display;
+#[cfg(feature = "phobos")]
+pub mod phobos_placement_preview;
+pub mod phobos_radiation;
+pub mod phobos_shields;
 /// Whether this binary includes the supported Ares extensions. INIs cannot change it.
 pub const ARES_ENABLED: bool = cfg!(feature = "ares");
+/// Whether this binary includes the supported Phobos extensions. INIs cannot change it.
+pub const PHOBOS_ENABLED: bool = cfg!(feature = "phobos");
+/// Whether this binary includes supported NPatch behavior. INIs cannot change it.
+pub const NPATCH_ENABLED: bool = cfg!(feature = "npatch");
+/// Whether this binary includes VERA20K's own extension behaviors. INIs cannot
+/// change it; builds without the feature keep every stock path.
+pub const VERAX_ENABLED: bool = cfg!(feature = "verax");
 pub(crate) mod ares_prerequisites;
 pub(crate) mod ares_armor;
+pub(crate) mod ares_emp;
+pub(crate) mod ares_warhead;
 pub mod armor;
+pub mod alpha_image_assets;
+pub mod country_loading;
+#[cfg(test)]
+mod ares_manual_control_tests;
 pub mod compatibility;
 pub mod animation_sequence;
 pub mod art_data;
 pub mod bridge_warheads;
+pub mod building_extra_power;
 pub mod building_light;
 pub mod building_rubble;
 pub mod building_upgrade;
@@ -146,11 +165,14 @@ pub mod mind_control_rules;
 pub mod missile_spawn;
 pub mod mission_data;
 pub mod movies;
+pub mod native_ini_hash;
 pub mod native_processing;
 pub mod object_type;
+pub mod object_image;
 pub mod overlay_types;
 pub mod particle_system_type;
 pub mod particle_type;
+pub mod personal_rules;
 pub mod powerups;
 pub mod prerequisite;
 pub mod process_owner;

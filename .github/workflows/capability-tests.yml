@@ -1,0 +1,59 @@
+name: Capability tests
+
+# The optional capabilities (ares, phobos, npatch, the diagnostic builds) used
+# to be compiled by nobody: the default-features suite, the release job and the
+# nightly all skip them, so a break could sit on main until someone happened to
+# build that combination by hand (#2798, #2789). This workflow runs
+# `tools/capability_tests.py check` daily and on demand: every
+# capability compiled and tested, the declared combinations compiled, and the
+# shipping `--no-default-features` configuration checked.
+#
+# The capability list lives in the tool, not here, so registering a new
+# capability there covers it here in the same change; the Python guard
+# (tools/tests/test_capability_tests.py) fails a manifest feature nobody
+# compiles. Adding an OS arm is a one-line change: the gates are
+# platform-independent cfg flags, and the runner is plain cargo, so a matrix
+# does not contend on tools/cargo_run.py's build lock.
+on:
+  schedule:
+    # 03:17 UTC daily, away from the busy start of the hour.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+env:
+  # rust-lld links the large test binary much faster than link.exe.
+  CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: rust-lld
+
+jobs:
+  capabilities:
+    name: capabilities (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    # A cold arm compiles every capability, every combination and each
+    # capability's suite once; the shared target keeps the dependency builds.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      # The registry and the committed maps are pinned by these two guards; they
+      # need no build, so they run first and fail a manifest or map change before
+      # the matrix spends an hour compiling.
+      - name: Capability registry and test map guards
+        run: python -m unittest tools.tests.test_capability_tests tools.tests.test_test_map
+      - name: Capability compile and test coverage
+        # `--soft-tests`: library and test compilation/linking block; suite
+        # failures are reported next to the ones that predate this job (the two
+        # replay hashes, the prerequisite lifecycle, the crash controls) instead
+        # of turning the whole job red on arrival. Drop the flag once that list
+        # is empty, so a regression in a suite blocks like a compile error does.
+        run: python -m tools.capability_tests check --soft-tests

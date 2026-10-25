@@ -14,12 +14,14 @@ from tools.spatial_oracle.fv_cell_attack.paid_conditional_input_tools import REP
 
 sha=lambda raw:hashlib.sha256(raw).hexdigest()
 
+def producer_key(proof):
+    return sha(json.dumps(proof,sort_keys=True,separators=(',',':')).encode())
+
 def extract(production_dir, manifest_path, declarations, *, historical=None, source_root=REPO):
     raw_manifest=manifest_path.read_bytes();manifest=json.loads(raw_manifest)
     assert len(manifest['artifacts'])==1
     build=dict(label=manifest_path.parent.name,manifest_sha256=sha(raw_manifest),
-        head=manifest['source']['head'],source_sha256=manifest['source']['source_sha256'],
-        binary_sha256=manifest['artifacts'][0]['sha256'],command=manifest['command'],rustc=manifest['rustc'])
+        head=manifest['source']['head'],binary_sha256=manifest['artifacts'][0]['sha256'],command=manifest['command'],rustc=manifest['rustc'])
     if historical is None:
         current = source_identity(source_root)
         assert current['head'] == manifest['source']['head']
@@ -35,7 +37,6 @@ def extract(production_dir, manifest_path, declarations, *, historical=None, sou
             assert key not in receipts or receipts[key] == proof
             receipts[key] = proof
     producers={};cases=[]
-    extractor=Path(__file__).with_name('paid_conditional_input_tools.py')
     for declaration in declarations:
         stage=declaration['stage'];path=production_dir/(stage+'.json');raw=path.read_bytes();production=json.loads(raw)
         previous = next((c for c in historical['cases'] if c['stage'] == stage), None) if historical else None
@@ -54,7 +55,7 @@ def extract(production_dir, manifest_path, declarations, *, historical=None, sou
                 for call in source:
                     assert call['supplied_external']
                     proof={k:call[k] for k in ('reason','callers','source_proof')}
-                    key=sha(json.dumps(proof,sort_keys=True,separators=(',',':')).encode())
+                    key=producer_key(proof)
                     assert key not in producers or producers[key]==proof
                     producers[key]=proof
                     result.append({**{k:call[k] for k in ('stream','logic_object','before_indices','value')},'producer_ref':key})
@@ -64,13 +65,13 @@ def extract(production_dir, manifest_path, declarations, *, historical=None, sou
         case=dict(stage=stage,physical_stage=declaration['physical_stage'],boundary=boundary,
             production_source=dict(file=path.name,sha256=sha(raw),build=build),
             attribution=dict(method='Observed Logic object identity separates the selected FV, its Bullets and newly created Anims from outside producers. Null contexts require an established outside global producer. Selected Guard calls remain native. Caller/source receipts are historical input provenance for this retained build.',
-                extractor_sha256=previous['attribution']['extractor_sha256'] if previous else sha(extractor.read_bytes()),selected_logic_ids=selected_logic_ids(production)),frames=frames)
+                selected_logic_ids=selected_logic_ids(production)),frames=frames)
         if declaration.get('followup_commands'):
             case['followup_commands']=declaration['followup_commands']
         cases.append(case)
         print(stage,'states',len(production['frames']),'outside',sum(len(f['prefix'])+len(f['suffix']) for f in frames),'selected',sum(f['selected'] for f in rows),flush=True)
     return dict(schema=2,boundary='Selected native owner continuation under declared constructor ID/options/seed and outside raw-call schedule. Does not prove whole-Scenario population or external producer cadence.',
-        provenance=dict(extractor_sha256=historical['provenance']['extractor_sha256'] if historical else sha(Path(__file__).read_bytes()),declarations=declarations,historical_build=build),producers=producers,cases=cases)
+        provenance=dict(declarations=declarations,historical_build=build),producers=producers,cases=cases)
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)

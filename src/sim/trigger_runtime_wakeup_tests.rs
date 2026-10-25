@@ -147,7 +147,7 @@ fn wakeup_selection_and_deferred_mission_state_match_original_controls() {
                 input: TagEventInput::default(),
             },
             &mut Vec::new(),
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             FrameEffects::default(),
         );
@@ -272,7 +272,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     crate::sim::scenario_bootstrap::initialize_map_roster_houses(
         &mut sim,
         &roster,
-        Some(&rules),
+        &rules,
         Some(&map.ini),
     );
     sim.intern_rule_type_ids(&rules);
@@ -292,7 +292,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     let cropped = super::tests::install_event_ingress_map(&mut sim, &rules, &body);
     sim.install_team_ai_registry(&teams, &rules).unwrap();
     sim.initialize_trigger_definitions(&cropped, &teams, None, None);
-    sim.classify_map_triggers(Some(&rules));
+    sim.classify_map_triggers(&rules);
 
     for id in [chain[0], chain[1]] {
         for raw in native["routes"][id]["attachments"].as_array().unwrap() {
@@ -383,7 +383,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     assert_eq!(guards.len(), 8);
     assert_eq!(sim.trigger_runtime.tag(wake_tag).unwrap().refs, 7);
     let poll = |sim: &mut Simulation| {
-        sim.advance_triggers(Some(&rules), Some(&overlays), FrameEffects::default());
+        sim.advance_triggers(&rules, Some(&overlays), FrameEffects::default());
     };
     poll(&mut sim);
     assert!(sim.trigger_runtime.action_trace.is_empty());
@@ -462,7 +462,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
         }
         assert_eq!(candidate.rng_state(), rng);
         candidate.process_pending_delete_with(
-            Some(&rules),
+            &rules,
             Some(&overlays),
             FrameEffects::default(),
             1,

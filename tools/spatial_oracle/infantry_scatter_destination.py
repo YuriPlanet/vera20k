@@ -4,7 +4,7 @@ import hashlib
 import os
 import struct
 import sys
-from tools.native_oracle import finish_vectors, provenance, image_bytes, image_sha256, file_span, NATIVE_SHA256
+from tools.native_oracle import finish_vectors, provenance, image_bytes, file_span
 from tools.spatial_oracle.infantry_source_scatter import query
 
 
@@ -491,8 +491,7 @@ def generate_teleport(cases=None):
              (0x51DAF0, 0xDF), (0x51D6F0, 0x400),
              (0x5217C0, 0x8F), (0x521850, 0x89), (0x51BF90, 0xAE8),
              (0x50B730, 0x23), (0x5236A0, 0x2D7), (0x5240A0, 0x6A9)]
-    identity = dict(native_sha256=NATIVE_SHA256,
-                    spans=[dict(address=hex(address), bytes=length,
+    identity = dict(spans=[dict(address=hex(address), bytes=length,
                                 sha256=hashlib.sha256(file_span(image, address, length)[1]).hexdigest())
                            for address, length in spans],
                     limits='File-backed byte identity for explicit spans; sizes do not assert exhaustive function or caller coverage.')
@@ -500,8 +499,7 @@ def generate_teleport(cases=None):
                 type_inputs=type_inputs, native_identity=identity,
                 rows=[query(case, teleport_records=records, teleport_type_inputs=type_inputs)
                       for case in (teleport_cases() if cases is None else cases)],
-                transport_native_identity=dict(native_sha256=image_sha256(),
-                    spans=[dict(address=hex(address), bytes=length,
+                transport_native_identity=dict(spans=[dict(address=hex(address), bytes=length,
                                 sha256=hashlib.sha256(file_span(image, address, length)[1]).hexdigest())
                            for address, length in ((0x746E20, 6), (0x41BEA0, 0x3D),
                                                    (0x4DBDF0, 0x13C), (0x75AA90, 0x120),
@@ -509,8 +507,7 @@ def generate_teleport(cases=None):
                 transport_rows=[teleport_transport_reference(query(
                                     case, teleport_records=records, teleport_type_inputs=type_inputs))
                                 for case in teleport_transport_cases()],
-                refused_enter_native_identity=dict(native_sha256=image_sha256(),
-                    spans=[dict(address=hex(address), bytes=length,
+                refused_enter_native_identity=dict(spans=[dict(address=hex(address), bytes=length,
                                 sha256=hashlib.sha256(file_span(image, address, length)[1]).hexdigest())
                            for address, length in ((0x51A488, 0x35), (0x51D0D0, 0xBD4),
                                                    (0x56DC20, 0x958), (0x7192F0, 0x8ED),
@@ -653,7 +650,7 @@ def generate_teleport_prologue():
                             state=struct.unpack('<i', u.mem_read(LOCO + 0x38, 4))[0],
                             timer=list(struct.unpack('<iii', u.mem_read(LOCO + 0x3C, 12))),
                             original_code_unchanged=True, trace=trace)))
-    return dict(schema_version=1, native_sha256=image_sha256(), rows=rows)
+    return dict(schema_version=1, rows=rows)
 
 
 def teleport_prologue_metadata():

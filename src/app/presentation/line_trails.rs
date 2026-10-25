@@ -86,6 +86,7 @@ impl LineTrails {
     pub(crate) fn composite(
         &mut self,
         mut coordinate: impl FnMut(u64) -> Option<ProjectileCoord>,
+        mut visible: impl FnMut(Option<u64>, ProjectileCoord) -> bool,
     ) -> &[LineTrailSegment] {
         self.segments.clear();
         let mut compact = false;
@@ -122,12 +123,17 @@ impl LineTrails {
                 {
                     break;
                 }
-                self.segments.push(LineTrailSegment {
-                    from: newer.coord,
-                    to: older.coord,
-                    color: trail.color,
-                    strength: newer.strength,
-                });
+                // LineTrailMgr::UpdateAndDrawAll556D40 updates556B70 before
+                // drawing556C00. Fog conceals output, never owner sampling,
+                // ring advancement or the normal556B30 detach lifecycle.
+                if visible(trail.owner, newer.coord) {
+                    self.segments.push(LineTrailSegment {
+                        from: newer.coord,
+                        to: older.coord,
+                        color: trail.color,
+                        strength: newer.strength,
+                    });
+                }
             }
         }
         if compact {

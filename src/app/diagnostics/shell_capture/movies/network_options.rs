@@ -22,7 +22,7 @@ pub enum NetworkOptionsTarget {
     Warning2,
     Back,
     /// Accept both warnings, save D7, then leave D5 to persist LAN fields.
-    /// This checkpoint writes RA2MD.INI; its game directory must be isolated.
+    /// This checkpoint writes VERA.INI; its settings directory must be isolated.
     SaveReturn,
 }
 
@@ -68,18 +68,16 @@ fn profile_state(state: &AppState) -> Value {
 }
 
 fn persisted_state(state: &AppState) -> Result<Value> {
-    let path = state
+    let config = state
         .platform
         .game_config
         .as_ref()
-        .context("D7 capture game config")?
-        .paths
-        .settings_dir()
-        .join("RA2MD.INI");
+        .context("D7 capture game config")?;
+    let path = crate::app::persistence::profile_file::path(config.paths.settings_dir());
     let bytes =
         std::fs::read(&path).with_context(|| format!("read saved settings {}", path.display()))?;
     let ini = crate::rules::ini_parser::IniFile::from_bytes(&bytes)
-        .context("parse physically saved RA2MD.INI")?;
+        .context("parse physically saved VERA.INI")?;
     let network = ini.section("Network").context("saved Network section")?;
     let multiplayer = ini
         .section("MultiPlayer")
@@ -113,7 +111,7 @@ fn verify_saved_settings(state: &AppState) -> Result<Value> {
     let persisted = persisted_state(state)?;
     ensure!(
         persisted["state"] == case["state"],
-        "physical RA2MD.INI differs from native final state"
+        "physical VERA.INI differs from native final state"
     );
     Ok(persisted)
 }

@@ -12,6 +12,137 @@ use crate::sim::ai_team_creation::tests::{Draws, dword, events, flag, index, nat
 use crate::sim::house_state::HouseState;
 use serde_json::Value;
 
+/// HouseChooseInfantry4FEEE0 counts Foot4DA230's free objects without an HP
+/// gate. SA's retained Die1 corpse therefore covers a stock team's GI need
+/// until DoType_Sequencer520CAD UnInits it. The lethal receiver is invoked
+/// explicitly; the sequence then completes through ordinary simulation ticks.
+#[test]
+fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
+    use crate::sim::world::FrameEffects;
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let mut rules = retail.rules;
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+    let roots = crate::rules::effect_asset_catalog::anim_class_roots(&rules);
+    rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
+    rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+    let mut sim = Simulation::with_seed(0x4FF050);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.resolve_rule_animation_lists(&rules);
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(HouseState::new(owner, 0, Some(owner), false, 10_000, 10));
+    let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+        &assets,
+        &crate::rules::ini_parser::IniFile::from_str(""),
+        sim.session.game_mode_nonzero(),
+    )
+    .unwrap();
+    assert!(
+        sim.install_team_ai_registry(&registry, &rules)
+            .unwrap()
+            .is_empty()
+    );
+    // Physical AIMD: Allied Base Guard - Refine needs three E1 and three GGI.
+    let team_type = sim.interner.get("06175EFC-G").unwrap();
+    sim.create_team(team_type, Some(owner), &rules).unwrap();
+    let mut victim = None;
+    for (index, type_name) in ["E1", "E1", "E1", "GGI", "GGI", "GGI"]
+        .into_iter()
+        .enumerate()
+    {
+        let id = sim
+            .spawn_object(type_name, "Americans", 8 + index as u16 * 2, 8, 0, &rules)
+            .unwrap();
+        victim.get_or_insert(id);
+    }
+    let victim = victim.unwrap();
+    let hit = crate::sim::combat::EntityDamageEvent::direct_receiver(
+        victim,
+        100_000,
+        0,
+        crate::sim::combat::RAD_NO_ATTACKER,
+        None,
+        sim.interner.intern("SA"),
+        crate::sim::combat::ReceiverCallFlags {
+            ignore_defenses: false,
+            arg6: false,
+        },
+    );
+    assert_eq!(rules.warhead("SA").unwrap().inf_death, 1);
+    sim.commit_noncombat_aoe_hits(&rules, None, &[hit], FrameEffects::default());
+    let corpse = sim.substrate.entities.get(victim).unwrap();
+    assert_eq!(corpse.health.current(), 0);
+    assert!(corpse.lifecycle.object_alive());
+    assert!(!corpse.lifecycle.in_limbo());
+    assert!(!corpse.death.is_dying());
+    assert_eq!(corpse.mission_leaf.as_infantry().unwrap().doing(), 11);
+    assert_eq!(
+        corpse.mission.effective(),
+        crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard)
+    );
+    assert!(corpse.base_defense_response.recruitable_a());
+    assert!(sim.team_script_vm.team_for_member(victim).is_none());
+    crate::sim::ai_base_building::update_production_choices(&mut sim, &rules, owner, None);
+    assert_eq!(
+        sim.houses
+            .get(&owner)
+            .unwrap()
+            .ai_unit_choices()
+            .get(UnitChoiceKind::Infantry),
+        -1,
+        "the retained body still covers the GI need"
+    );
+    let barracks_rtti = rules.object("GAPILE").unwrap().factory_rtti();
+    assert!(
+        crate::sim::ai_base_building::suggest_new_object(&sim, &rules, owner, barracks_rtti, false)
+            .is_none()
+    );
+
+    for _ in 0..180 {
+        let grid = sim.path_grid_snapshot().unwrap();
+        sim.advance_tick(&[], Some(&rules), Some(&grid), None, 33);
+        let retained = sim
+            .substrate
+            .entities
+            .get(victim)
+            .is_some_and(|entity| entity.lifecycle.object_alive());
+        let choice = sim
+            .houses
+            .get(&owner)
+            .unwrap()
+            .ai_unit_choices()
+            .get(UnitChoiceKind::Infantry);
+        if !retained && choice != -1 {
+            assert_eq!(
+                crate::sim::ai_base_building::suggest_new_object(
+                    &sim,
+                    &rules,
+                    owner,
+                    barracks_rtti,
+                    false
+                )
+                .map(|object| object.id.as_str()),
+                Some("E1"),
+                "the barracks now receives the replacement GI choice"
+            );
+            return;
+        }
+        if retained {
+            assert_eq!(choice, -1, "no replacement while the body remains");
+        }
+    }
+    panic!("the physical GI Die1 sequence must retire and permit its replacement");
+}
+
 #[test]
 fn the_choosers_match_the_original() {
     for (number, row) in rows("choosers").iter().enumerate() {
@@ -150,4 +281,49 @@ fn the_harvester_branch_matches_the_original() {
             "harvester row {number}: draws"
         );
     }
+}
+
+/// A state saved before the NPSE naval slot existed keeps its land channel and
+/// loads the naval one as "no choice".
+#[test]
+fn a_saved_state_without_the_naval_slot_loads_as_none() {
+    let choices: HouseAiUnitChoices =
+        serde_json::from_str(r#"{"unit":0,"infantry":-1,"aircraft":-1}"#).unwrap();
+    assert_eq!(choices.get(UnitChoiceKind::Unit), 0);
+    assert_eq!(choices.get(UnitChoiceKind::NavalUnit), -1);
+    let round_trip: HouseAiUnitChoices =
+        serde_json::from_str(&serde_json::to_string(&choices).unwrap()).unwrap();
+    assert_eq!(round_trip, choices);
+    let mut restarted = choices;
+    restarted.set(UnitChoiceKind::NavalUnit, 1);
+    restarted.clear_all();
+    assert_eq!(restarted.get(UnitChoiceKind::Unit), -1);
+    assert_eq!(
+        restarted.get(UnitChoiceKind::NavalUnit),
+        1,
+        "native restart preserves an unconsumed naval choice"
+    );
+}
+
+/// NPSE 2.0 House Update C33AB0 asks both channels without a shipyard
+/// gate; both calls share the harvester return at C339D0..C33A34.
+#[cfg(feature = "npatch")]
+#[test]
+fn naval_choice_runs_the_shared_harvester_branch_without_a_shipyard() {
+    use crate::rules::ini_parser::IniFile;
+
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nHarvesterUnit=SHIP\nAISlaveMinerNumber=1,1,1\n\
+         [IQ]\nHarvester=0\n[Countries]\n0=AI\n[AI]\nSide=GDI\n\
+         [VehicleTypes]\n0=SHIP\n[SHIP]\nOwner=AI\nNaval=yes\nTechLevel=1\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(39);
+    let owner = sim.interner.intern("AI");
+    sim.houses
+        .register(HouseState::new(owner, 0, Some(owner), false, 1_000, 10));
+    crate::sim::ai_base_building::update_production_choices(&mut sim, &rules, owner, None);
+    let choices = sim.houses[&owner].ai_unit_choices();
+    assert_eq!(choices.get(UnitChoiceKind::Unit), -1);
+    assert_eq!(choices.get(UnitChoiceKind::NavalUnit), 0);
 }

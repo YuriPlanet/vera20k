@@ -378,7 +378,7 @@ macro_rules! object_kinds {
         /// | `VoxelAnim` | member | Object's (`0x005F5230`): nothing to clear | VERA removes it on its AI's Delete (`visit_voxel_anim`); native's UnInit (`0x005F65F0`) queues it |
         /// | `Spotlight` | member | `0x00436A00`, apart from the roster | `!ObjectAlive` |
         /// | `ParticleSystem` | member | listens | done and empty (`0x0062FE60`) |
-        /// | `Terrain` | member | `0x0071CFD0`: Object's and its type: nothing to clear | dead and out of Logic |
+        /// | `Terrain` | member | `0x0071CFD0`: Object's retained successor relink | dead and out of Logic |
         /// | `Projectile` | member | listens | out of Logic |
         /// | `Wave` | member | listens | out of Logic |
         /// | `Smudge` | never | Object's: nothing to clear | `!ObjectAlive` |
@@ -478,6 +478,10 @@ pub struct ObjectSubstrate {
     /// Plain-struct entity storage (dense, in stable_id order, + infantry registry).
     /// The authoritative object store — serialized verbatim (NOT skipped).
     pub(crate) entities: EntityStore,
+    /// Synchronous Phobos limbo hook controls; stable saves restore enabled/idle.
+    #[cfg(feature = "phobos")]
+    #[serde(skip)]
+    pub(crate) phobos_limbo_control: crate::sim::house_tracking::PhobosLimboControl,
     /// Separate AnimClass registry sharing the global object ID namespace and
     /// LogicVector with entities.
     #[serde(default)]
@@ -518,6 +522,8 @@ impl ObjectSubstrate {
             air_slots: AirSlotGrid::default(),
             base_reservations: CellReservationGrid::new(),
             entities: EntityStore::new(),
+            #[cfg(feature = "phobos")]
+            phobos_limbo_control: Default::default(),
             anims: AnimStore::default(),
             voxel_anims: VoxelAnimStore::default(),
             spotlights: Default::default(),

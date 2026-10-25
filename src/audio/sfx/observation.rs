@@ -291,6 +291,7 @@ mod tests {
                         delay_ms: (0, 0),
                         entry_volume_linear: VOLUME_SCALE,
                         samples_ok: true,
+                        samples_resolved: true,
                     },
                     volume_linear: VOLUME_SCALE,
                     pan: VOLUME_SCALE / 2,
@@ -435,7 +436,7 @@ mod tests {
     #[test]
     fn playback_owner_records_real_fill_pull_and_retirement_independent_of_queue_end() {
         use super::super::playback::{PlaylistCursor, RingSource};
-        use super::super::{DecodedAudio, LoadedPlayback, PlaybackDraws};
+        use super::super::{DecodedAudio, LoadedPlayback, PlayShifts, PlaybackDraws};
         use crate::rules::{ini_parser::IniFile, sound_ini::SoundRegistry};
 
         // Synthetic decoded fixture bytes through the actual sound reader,
@@ -451,7 +452,8 @@ mod tests {
                 samples: vec![0.25; 8],
                 sample_rate: 22_050,
                 channels: 2,
-                native_frame_bytes: 2,
+                native_channels: 1,
+                native_sample_bytes: 2,
             })
         })
         .unwrap();
@@ -462,7 +464,7 @@ mod tests {
             cursor,
             initial,
             draws,
-            22_050,
+            PlayShifts::UNITY,
             VOLUME_SCALE / 2,
             Some(&entry.sounds),
         )

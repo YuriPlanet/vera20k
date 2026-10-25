@@ -3,8 +3,8 @@
 
 use super::chrome::*;
 use super::controls::{
-    ControlPaint, NewEditPaint, dropdown_scroll_part, house_color_tint, list_controls,
-    paint_control, push_new_edit_instances, push_popup_instances,
+    ControlPaint, dropdown_scroll_part, house_color_tint, list_controls, paint_control,
+    push_new_edit, push_popup_instances,
 };
 use super::in_game_shell::{
     self, InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
@@ -19,8 +19,7 @@ use super::text::{
 };
 use super::{
     SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH,
-    SHELL_EDIT_CARET_DEPTH, SHELL_EDIT_FRAME_DEPTH, SHELL_LABEL_TEXT_RGB,
-    SHELL_PARENT_BACKGROUND_DEPTH,
+    SHELL_LABEL_TEXT_RGB, SHELL_PARENT_BACKGROUND_DEPTH,
 };
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
@@ -38,6 +37,7 @@ pub(crate) fn render_multiplayer_setup(
         .frontend
         .network_setup_protocol
         .as_ref()
+        .filter(|protocol| protocol.blocking_map_transfer())
         .and_then(|protocol| protocol.transfer_progress())
     {
         let (progress_meter, texts) =
@@ -212,11 +212,73 @@ pub(crate) fn render_multiplayer_setup(
         )
     };
     if !leaving && ui.notice.is_none() {
-        for (key, rect) in &layout.labels {
+        if let Some((completed, total)) = state
+            .frontend
+            .network_setup_protocol
+            .as_ref()
+            .and_then(|protocol| protocol.transfer_progress())
+        {
+            let caption = format!(
+                "Map transfer: {}%",
+                completed.saturating_mul(100) / total.max(1)
+            );
+            let rect = scale.derive_rect(layout.map_label, |mut rect| {
+                rect.y += 36;
+                rect
+            });
+            texts.push(text(
+                &caption,
+                rect,
+                ShellAlign::H_CENTER,
+                SHELL_LABEL_TEXT_RGB,
+                SHELL_CONTROL_TEXT_DEPTH,
+            ));
+        }
+        for (key, rect) in layout
+            .labels
+            .iter()
+            .filter(|(key, _)| view.team_header || *key != "GUI:Team")
+        {
             texts.push(text(
                 &localized_label(state, key, key),
                 *rect,
                 ShellAlign::NONE,
+                SHELL_LABEL_TEXT_RGB,
+                SHELL_CONTROL_TEXT_DEPTH,
+            ));
+        }
+        if view.row_count > VISIBLE_SETUP_ROWS {
+            for (id, caption) in [(PREVIOUS_ROWS, "Previous"), (NEXT_ROWS, "Next")] {
+                let rect = layout.control_rect(id).expect("roster navigation rect");
+                let pressed = ui.buttons.is_pressed(id);
+                push_right_panel_button_shp(
+                    &mut controls,
+                    atlas,
+                    rect,
+                    crate::ui::shell::button::ButtonVisual {
+                        pressed,
+                        highlighted: false,
+                    },
+                    false,
+                    SHELL_CONTROL_DEPTH,
+                );
+                texts.push(text(
+                    caption,
+                    rect,
+                    ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                    super::text::button_label_color_for_disabled(!view.enabled(id)),
+                    SHELL_CONTROL_TEXT_DEPTH,
+                ));
+            }
+            texts.push(text(
+                &format!(
+                    "Players {}–{} / {}",
+                    view.first_row + 1,
+                    (view.first_row + VISIBLE_SETUP_ROWS).min(view.row_count),
+                    view.row_count
+                ),
+                layout.roster_page_label,
+                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
                 SHELL_LABEL_TEXT_RGB,
                 SHELL_CONTROL_TEXT_DEPTH,
             ));
@@ -364,34 +426,21 @@ pub(crate) fn render_multiplayer_setup(
                 ));
             }
         }
-        let edit = &ui.chat.edit;
-        let field = scale.derive_rect(layout.chat, |rect| {
-            RectPx::new(rect.x + 2, rect.y, rect.w - 1, rect.h + 1)
-        });
-        push_new_edit_instances(
+        push_new_edit(
             &mut controls,
+            &mut texts,
             atlas,
             font,
-            edit,
-            NewEditPaint {
-                frame: scale.derive_rect(layout.chat, |rect| {
-                    RectPx::new(rect.x - 2, rect.y - 2, rect.w + 5, rect.h + 5)
-                }),
-                text: field,
-                background: None,
-                frame_depth: SHELL_EDIT_FRAME_DEPTH,
-                caret_depth: SHELL_EDIT_CARET_DEPTH,
-                caret_visible: ui.caret_visible(now),
-            },
+            &ui.chat.edit,
+            state
+                .platform
+                .ime
+                .composition(crate::app::input::ime::ImeTarget::SetupChat),
+            layout.chat,
+            ui.caret_visible(now),
+            SHELL_CONTROL_TEXT_DEPTH,
             scale,
         );
-        texts.push(text(
-            &String::from_utf16_lossy(&edit.units[edit.first_visible_unit.min(edit.units.len())..]),
-            field,
-            ShellAlign::V_CENTER,
-            SHELL_LABEL_TEXT_RGB,
-            SHELL_CONTROL_TEXT_DEPTH,
-        ));
         let chat = ui
             .chat
             .list
@@ -462,12 +511,21 @@ pub(crate) fn render_multiplayer_setup(
                             .preview_source_bounds()
                     })
                     .flatten();
-                if let Some(bounds) = received_bounds.as_ref().or_else(|| {
-                    view.selected_map_index
-                        .and_then(|index| state.frontend.scenario_catalog.shell_maps().get(index))
-                        .filter(|entry| !super::preview::is_random_map_sentinel_entry(entry))
-                        .and_then(|entry| entry.preview_source_bounds.as_ref())
-                }) {
+                if let Some(bounds) = state
+                    .frontend
+                    .network_setup_protocol
+                    .as_ref()
+                    .and_then(|protocol| protocol.received_preview_bounds())
+                    .or(received_bounds.as_ref())
+                    .or_else(|| {
+                        view.selected_map_index
+                            .and_then(|index| {
+                                state.frontend.scenario_catalog.shell_maps().get(index)
+                            })
+                            .filter(|entry| !super::preview::is_random_map_sentinel_entry(entry))
+                            .and_then(|entry| entry.preview_source_bounds.as_ref())
+                    })
+                {
                     let fitted = aspect_fit_rect(layout.map_preview, preview.width, preview.height);
                     let positions = project_preview_start_positions(bounds, fitted);
                     push_start_marker_sprites(&mut controls, atlas, &positions, scale, 0.00056);

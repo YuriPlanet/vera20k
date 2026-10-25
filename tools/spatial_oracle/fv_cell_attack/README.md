@@ -157,11 +157,10 @@ as goldens.
 
 `paid_conditional_v26.input.json` contains only declarations, assertion hashes
 and outside-call receipts. Its source catalog and capture receipt are sealed to
-retained build `bridge-fv-current-v26`, source SHA256
-`39745093dc8d0e77db748cb0ba9b5984ae60c387258e72eaa8b23b61bbbcc34b` and executable
+retained build `bridge-fv-current-v26`, commit `10c01f0e` and executable
 SHA256 `9f61c3df261986cb9798c1ed094b891ffd4090ce958eec5de0ba0725b72f407d`.
 The previous `paid_conditional.input.json` and its `bridge-fv-mission-v11a`
-receipts remain unchanged. All six declarations, seeds and frame horizons are
+receipts are retained. All six declarations, seeds and frame horizons are
 preserved; only the newly observed outside inputs define this new comparison.
 
 Current main moved Infantry idle calls from a global suffix to the mission's

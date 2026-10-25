@@ -258,7 +258,7 @@ impl ResponseSelection {
                 .assign_target_represented(
                     responder.entity_id,
                     Some(TargetKind::Entity(attacker_id)),
-                    Some(rules),
+                    rules,
                     None,
                     FrameEffects::default(),
                 )
@@ -445,10 +445,11 @@ pub(crate) fn respond_to_base_attack(
         world.house_alliances.as_map(),
         interner.resolve(victim_owner),
         interner.resolve(attacker_owner),
-    ) || world
-        .houses
-        .get(&victim_owner)
-        .is_some_and(|house| house.is_human())
+    )
+        // gamemd.exe, RespondToBaseAttack @ 0x00708080 (call at 0x007080F9):
+        // HouseClass::IsControlledByHuman @ 0x0050B730 also rejects campaign
+        // PlayerControl, before suspension, responder RNG and cooldown writes.
+        || world.owner_is_human(victim_owner)
         || attacker.lifecycle.in_limbo()
         // `0x00708114`: `[g_GameMode 0x00A8B238] == 0 && this->Is_Armed
         // (vt+0x2AC)` — an armed victim in that game mode defends itself

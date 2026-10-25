@@ -57,7 +57,7 @@ impl Simulation {
         houses: &Houses,
         stable_id: u64,
         body_frame_before_process: u32,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) {
         let Some(entity) = substrate.entities.get(stable_id) else {
             return;
@@ -68,15 +68,15 @@ impl Simulation {
         let changed_or_moving = body_frame_before_process != entity.body_frame_counter.get()
             || crate::sim::movement::motion_query::is_moving_now(
                 entity,
-                rules.map(|rules| crate::sim::movement::SpeedRules::new(rules, interner, houses)),
+                crate::sim::movement::SpeedRules::new(rules, interner, houses),
                 session.binary_frame(),
             );
         // Native +8D/+425. A retained parachute object alone is not this gate.
         let falling_or_crashing = entity.is_falling_down() || entity.crash.is_crashing();
         let state = entity.move_sound;
         if changed_or_moving && !falling_or_crashing {
-            let sounds = rules
-                .and_then(|rules| interner.object_type(entity.type_ref(), rules))
+            let sounds = interner
+                .object_type(entity.type_ref(), rules)
                 .map_or(&[][..], |object| object.move_sound.as_slice());
             let mut started = false;
             if !state.active && !sounds.is_empty() {

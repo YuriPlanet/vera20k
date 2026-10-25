@@ -67,6 +67,9 @@ impl Default for HouseSpatialThreat {
 impl<'de> serde::Deserialize<'de> for HouseSpatialThreat {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let values = <Vec<i32> as serde::Deserialize>::deserialize(deserializer)?;
+        if crate::util::save_codec::layout::describing() {
+            return Ok(Self::default());
+        }
         if values.len() != LENGTH {
             return Err(serde::de::Error::custom(
                 "native House threat grid must contain 16900 dwords",
@@ -168,7 +171,11 @@ impl Simulation {
 
     fn live_spatial_threat(&self, id: u64, rules: &RuleSet) -> Option<i32> {
         let actor = self.substrate.entities.get(id)?;
-        let object = self.interner.object_type(actor.type_ref(), rules)?;
+        let object = self.interner.object_type_in_category(
+            actor.type_ref(),
+            actor.category().into(),
+            rules,
+        )?;
         Some(crate::sim::combat::live_threat_posed(
             actor,
             Some(object),

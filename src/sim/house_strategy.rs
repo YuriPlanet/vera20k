@@ -59,7 +59,7 @@ use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::house_state::HouseState;
 use crate::sim::houses::Houses;
 use crate::sim::intern::{InternedId, StringInterner};
-use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::production::{SellOrder, sell_back};
 use crate::sim::scenario_session::ScenarioSession;
@@ -372,13 +372,13 @@ pub(crate) fn all_to_hunt(
             );
             continue;
         }
-        sim.leave_team(id, false, Some(rules), frame_effects);
+        sim.leave_team(id, false, rules, frame_effects);
         let _ = sim.mission_queue_exact(
             id,
             hunt,
             0,
             sim.session.binary_frame(),
-            &EntityReadyInputProvider,
+            &LiveReadyInputProvider { rules },
         );
     }
     if let Some(house) = sim.houses.get_mut(&owner) {

@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -47,5 +46,5 @@
     "infantry_bomb_tail_boundary": "0x0051EB81"
   },
   "replay_command": "python -m tools.spatial_oracle.bunker_attack_action --allied-objects",
-  "payload_sha256": "dc448defe115e2255773123ad3a79fd3e642ec0a7b0d09a713d0bce00ce6b586"
+  "payload_sha256": "6ac6ed4a150040a67ee6a6948862b5593be4bcd7e381b2086a946ba11458b605"
 }

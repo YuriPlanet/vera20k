@@ -211,6 +211,7 @@ fn a_mixed_ctrl_click_keeps_the_armed_order_without_an_unarmed_attack() {
         &selected,
         TargetKind::Entity(enemy),
         true,
+        OrderMode::Move,
         &overlays,
     );
     assert_eq!(armed.receivers, [tank].into_iter().collect());

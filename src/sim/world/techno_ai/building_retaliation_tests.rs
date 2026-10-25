@@ -116,6 +116,10 @@ fn fixture(rules: &RuleSet, input: &Value) -> (Simulation, u64, Option<u64>) {
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     for (house, human) in [
         ("Americans", input["human"].as_bool().unwrap_or(false)),
+        // Original block fixture supplies the source House index3, leaving
+        // two intervening registry slots. They own no actors or callbacks.
+        ("Unused1", false),
+        ("Unused2", false),
         ("Russians", false),
     ] {
         let id = sim.interner.intern(house);
@@ -154,6 +158,8 @@ fn fixture(rules: &RuleSet, input: &Value) -> (Simulation, u64, Option<u64>) {
     }
     sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
     let entity = sim.substrate.entities.get_mut(building).unwrap();
+    // The original block fixture supplies this retained +53C prior.
+    entity.initialize_building_loss_index(0x7777);
     entity.mission.apply_test_fixture(MissionTestFixture {
         current: mission(input["mission"].as_str().unwrap_or("guard")),
         suspended: MissionId::NONE,
@@ -200,8 +206,8 @@ fn indices(rng: &SimRng) -> Value {
 }
 
 /// Every row through [`Simulation::building_hit_response`]: its ping, TarCom,
-/// mission, Scenario draws (values and generator indices) and `+0x388`.
-/// `+0x53C` (`who_last`) has no VERA state (module doc). RESIDUAL (dormant
+/// mission, Scenario draws (values and generator indices), `+0x388` and
+/// retained `+0x53C` (`who_last`). RESIDUAL (dormant
 /// with retail data): `ai_artillary_out_of_range`'s sale, BuildingClass::
 /// SetTarget's TickTank/Artillary arm (`building_missions` module doc).
 #[test]
@@ -229,9 +235,15 @@ fn the_block_matches_the_original() {
             result(input["result"].as_i64().unwrap_or(1)),
             &rules,
             None,
+            crate::sim::world::FrameEffects::default(),
         );
 
         let after = sim.substrate.entities.get(building).unwrap();
+        assert_eq!(
+            i64::from(after.building_loss_index()),
+            row["who_last"].as_i64().unwrap(),
+            "{name} source-house loss index"
+        );
         // NotifyUnderAttack's cell is GetCoords': a 2x2's foundation centre
         // lies 128 leptons past its anchor cell's centre on both axes, in the
         // next cell (native GetCoords rows in building_fire_facing.json).
@@ -352,8 +364,9 @@ fn production_fixture(
 }
 
 /// One `AP` hit of 10 on `building` from `source`, through the production
-/// receiver; returns its pings.
+/// receiver; returns the number of newly submitted inline warnings.
 fn hit(sim: &mut Simulation, rules: &RuleSet, building: u64, source: u64) -> usize {
+    let sound_prefix = sim.sound_events.len();
     let house = sim.substrate.entities.get(source).unwrap().owner();
     let warhead = sim.interner.intern("AP");
     let event = EntityDamageEvent::area(building, 10, 0, source, Some(house), warhead);
@@ -365,7 +378,12 @@ fn hit(sim: &mut Simulation, rules: &RuleSet, building: u64, source: u64) -> usi
         rules,
         None,
     );
-    pings.len()
+    assert!(pings.is_empty(), "building warnings are already submitted");
+    sim.sound_events
+        .iter()
+        .skip(sound_prefix)
+        .filter(|event| matches!(event, SimSoundEvent::UnderAttack { .. }))
+        .count()
 }
 
 /// A 2x2 building that undeploys and gathers (the deployed Slave Miner)
@@ -385,15 +403,7 @@ fn a_deployed_slave_miner_pings_the_ore_miner_line() {
         &rules,
         None,
     );
-    Simulation::dispatch_under_attack_events(
-        &sim.interner,
-        &sim.session,
-        &sim.house_alliances,
-        &mut sim.sound_events,
-        &sim.houses,
-        &pings,
-        &rules,
-    );
+    assert!(pings.is_empty(), "building warning is already submitted");
     assert_eq!(
         sim.sound_events
             .iter()

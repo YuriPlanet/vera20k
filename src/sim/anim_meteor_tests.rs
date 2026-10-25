@@ -266,27 +266,24 @@ fn retail_meteor_profiles_keep_missing_stock_images_explicit() {
             .is_meteor
     );
     for name in ["METSMALL", "METLARGE"] {
-        let error = fixture
+        fixture
             .rules
             .bind_scheduler_anim_assets(&[name.to_string()], &assets, "TEM", "TEMPERATE")
-            .unwrap_err();
-        assert!(
-            matches!(error, crate::rules::art_data::AnimAssetBindError::MissingShp(ref missing) if missing == name),
-            "{error}"
-        );
-        assert!(
+            .unwrap();
+        assert_eq!(
             fixture
                 .rules
                 .art()
                 .anim_runtime_config(name)
                 .unwrap()
-                .raw_shp_frame_count
-                .is_none()
+                .raw_shp_frame_count,
+            Some(0),
+            "native null image is a bound zero-frame result"
         );
     }
-    //The bounded stock Battle install lacks these SHPs. No substitute images
-    //or invented frame counts are admitted; numeric/flight tests supply their
-    //own explicit formed profiles and image bounds.
+    // The bounded stock Battle install lacks these SHPs. Native loading keeps
+    // null images; no substitute image or invented positive frame count is used.
+    // Numeric/flight tests supply their own formed image profiles and bounds.
     let registry = OverlayTypeRegistry::from_ini(&rules_ini, Some(&art));
     let roots = crate::map::resolved_terrain::scheduler_anim_roots(&fixture.rules, &registry, &[]);
     for name in ["CRYSTAL1", "CRYSTAL2", "CRYSTAL3", "CRYSTAL4"] {

@@ -97,9 +97,8 @@ pub fn candidate_allowed(
     if !owner_allows(candidate, country.owner, rules) {
         return false;
     }
-    if !candidate.required_houses.is_empty()
-        && rules.house_type_mask(&candidate.required_houses) & country.actual == 0
-    {
+    let required = candidate.required_houses_mask(rules);
+    if required != u32::MAX && required & country.actual == 0 {
         return false;
     }
     // FirstBuildable505259 skips ForbiddenHouses==-1, including a

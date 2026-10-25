@@ -1,4 +1,4 @@
-"""Execute bounded Foot Z fixtures in the original, hash-pinned gamemd image.
+"""Execute bounded Foot Z fixtures in the original gamemd image.
 
 Run ``python -m tools.render_depth_oracle`` with RA2_DIR or
 VERA20K_GAMEMD_EXE set. ``--check`` compares fresh native results to the saved
@@ -30,7 +30,7 @@ from unicorn.x86_const import (
 )
 
 from tools.native_oracle import (
-    NATIVE_FPCW, NATIVE_SHA256, OracleError, load_image, run_checked,
+    NATIVE_FPCW, OracleError, load_image, run_checked,
     finish_vectors, provenance,
 )
 
@@ -244,7 +244,6 @@ def generate() -> dict:
         case["native"] = fixture.execute(case)
     return {
         "schema_version": 2,
-        "native_sha256": NATIVE_SHA256,
         "unicorn_version": unicorn_version,
         "scope": "Raw-function emulation of original Foot Z composition and its original helpers over supplied Unit/type/cell/TMP fixtures; not full-game or pixel parity.",
         "restrictions": [

@@ -40,8 +40,7 @@ def generate():
     promotion = json.loads((HERE / 'occupants_joined_promotion.json').read_bytes())
     identity = packet_io.digest(_canonical(source))
     assert identity == promotion['results']['occupants_joined.json']['published_payload_sha256']
-    meta = json.loads((HERE / 'occupants_joined.meta.json').read_bytes())
-    return dict(schema=1, native_sha256=meta['native_sha256'],
+    return dict(schema=1,
                 joined_native_payload_sha256=identity, scene=source['scene'],
                 native_actor_inputs=source['cases'][0]['native_inputs'], **project_joined_cases(source))
 
@@ -56,9 +55,7 @@ def metadata():
     ], substitutions=[], entry_points={'occupants':0x487A10,'anim_constructor':0x421EA0,
         'bounce_init':0x4397E0,'anim_start':0x424CE0}) | dict(
         source_files={name:packet_io.digest((HERE/name).read_bytes()) for name in (
-            'occupants_joined.json.gz', 'occupants_joined_promotion.json',
-            'occupants_test_vectors.py')},
-        projection_source_sha256=packet_io.digest(Path(__file__).read_bytes()))
+            'occupants_joined.json.gz', 'occupants_joined_promotion.json')})
 
 
 if __name__ == '__main__':

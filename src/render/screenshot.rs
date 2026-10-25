@@ -90,6 +90,7 @@ struct PresentedFrameCacheState {
     client_width: u32,
     client_height: u32,
     client_format: Option<wgpu::TextureFormat>,
+    presented_screen_shake_offset: [i32; 2],
 }
 
 impl PresentedFrameCache {
@@ -159,10 +160,49 @@ impl PresentedFrameCache {
         client_width: u32,
         client_height: u32,
         upscale: Option<&crate::render::upscale_pass::UpscalePass>,
+        screen_presentation: &mut crate::render::screen_presentation::ScreenPresentationPass,
+        central_rect_px: [u32; 4],
     ) -> Result<Option<crate::render::frame_readback::PendingBgra8Readback>> {
         let mut state = self.state.borrow_mut();
         if !requested || state.slots.presented().is_none() {
             return Ok(None);
+        }
+
+        if state.presented_screen_shake_offset != [0, 0] {
+            state.ensure_client_readback_texture(
+                device,
+                client_format,
+                client_width,
+                client_height,
+            );
+            let target = state
+                .client_readback_texture
+                .as_ref()
+                .expect("client screenshot target was just ensured");
+            state.encode_previous_composition(
+                device,
+                encoder,
+                target,
+                (client_width, client_height),
+                upscale,
+            )?;
+            screen_presentation.apply_offset_px(
+                device,
+                encoder,
+                target,
+                central_rect_px,
+                state.presented_screen_shake_offset,
+            );
+            return crate::render::frame_readback::PendingBgra8Readback::encode(
+                device,
+                encoder,
+                target,
+                client_format,
+                client_width,
+                client_height,
+            )
+            .map(Some)
+            .map_err(anyhow::Error::new);
         }
 
         if state.width == client_width && state.height == client_height {
@@ -207,8 +247,13 @@ impl PresentedFrameCache {
 
     /// Commit the staged composition only after its cursor-bearing counterpart
     /// has been submitted and presented.
-    pub(crate) fn commit_presented(&self) {
-        self.state.borrow_mut().slots.commit_presented();
+    pub(crate) fn commit_presented(&self, shake_offset_px: [i32; 2]) {
+        let mut state = self.state.borrow_mut();
+        let has_staged_frame = state.slots.staging_valid;
+        state.slots.commit_presented();
+        if has_staged_frame {
+            state.presented_screen_shake_offset = shake_offset_px;
+        }
     }
 
     /// Restore the last presented cursor-free backing for a retained modal
@@ -338,6 +383,7 @@ impl PresentedFrameCacheState {
         self.client_width = 0;
         self.client_height = 0;
         self.client_format = None;
+        self.presented_screen_shake_offset = [0, 0];
     }
 
     fn ensure_client_readback_texture(
@@ -365,7 +411,9 @@ impl PresentedFrameCacheState {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         }));
         self.client_width = width;
@@ -505,10 +553,11 @@ mod tests {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
         }
         gpu.queue.submit([encoder.finish()]);
-        cache.commit_presented();
+        cache.commit_presented([0, 0]);
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         // A staged successor is not the visible frame until present commits it.
         cache.stage_pre_cursor_composition(&gpu.device, &mut encoder, &source, format, 2, 2, 2, 2);
@@ -519,7 +568,7 @@ mod tests {
         );
         let read = gpu.read(&mut encoder, &destination);
         assert_eq!(gpu.finish(encoder, &[read], size)[0], original);
-        cache.commit_presented();
+        cache.commit_presented([0, 0]);
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         assert!(
             cache

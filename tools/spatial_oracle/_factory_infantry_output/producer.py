@@ -119,11 +119,9 @@ def generate(inputs=None):
     except Exception as exc:
         fault=dict(type=type(exc).__name__,message=str(exc),pc=f'0x{u.reg_read(UC_X86_REG_EIP):08X}',
                    recent=list(recent),traceback=traceback.format_exc())
-    return dict(schema_version=1,kind='bounded-native-producer-admission',native_sha256=native.NATIVE_SHA256,
-        native_path=str(native.configured_gamemd()),driver_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+    return dict(schema_version=1,kind='bounded-native-producer-admission',
+        native_path=str(native.configured_gamemd()),
         source_frozen=str(FROZEN),assets_reference=str(ASSETS),
-        frozen_owner_files={str(Path(m.__file__).resolve().relative_to(FROZEN)):hashlib.sha256(Path(m.__file__).read_bytes()).hexdigest()
-            for m in list(sys.modules.values()) if getattr(m,'__file__',None) and Path(m.__file__).resolve().is_relative_to(FROZEN)},
         selected_inputs=dict(construction_layers=inputs.layers,type_rows=inputs.type_rows,scenario_projection=inputs.death_scenario_projection),
         steps=steps,events=events,writes=writes,requests=f.draws,advances=f.advances,transport_trace=f.trace,
         final=state(),fault=fault,executed=[f'0x{p:08X}' for p in sorted(f.executed)],original_code_unchanged=f.code_unchanged(),

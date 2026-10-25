@@ -10,10 +10,10 @@ from pathlib import Path
 
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import (
-    UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_ECX,
+    UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_EDX,
     UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_ESP, UC_X86_REG_FPCW,
 )
-from tools.native_oracle import NATIVE_SHA256, RET_MAGIC, NativeCallTrace, configured_gamemd, finish_vectors, provenance, run_checked
+from tools.native_oracle import RET_MAGIC, NativeCallTrace, configured_gamemd, finish_vectors, provenance, run_checked
 from tools.spatial_oracle.bridge_shadow_render import (
     prepare as prepare_shared, CELL, POINT, CLIP, WIDTH, HEIGHT, COUNT,
     PIXELS, Z, A, ints, snapshot, physical_assets,
@@ -166,8 +166,8 @@ def theater_tile_files(m, raw, selected_tile, extension):
     return tiles, mapping
 
 
-def prepare(*, tmp_names=(), hills=False, prepared_files=None):
-    m, _types, inputs = prepare_shared(body=True)
+def prepare(*, tmp_names=(), hills=False, prepared_files=None, native_format_masks=False):
+    m, _types, inputs = prepare_shared(body=True, native_format_masks=native_format_masks)
     u = m.u
     # Actual WinMain6BDF5F ->5355D0 ->4E6190 calls both original CPU probes.
     # Their MMX/CMOV bytes govern7DE200 palette construction, independently
@@ -443,7 +443,7 @@ def generate():
             output=dict(top_scalar=top, common_scalar=common, bottom_scalar=bottom,
                 cell_normalized_rgb=list(struct.unpack('<3h', m.u.mem_read(CELL + 0x110, 6))),
                 convert_rgb_key=ints(m.u, m.read32(CELL + 0x34) + 0x198, 3))))
-    return dict(native_sha256=NATIVE_SHA256, inputs=inputs,
+    return dict(inputs=inputs,
                 surface=dict(width=WIDTH, height=HEIGHT, baseline=32768, bytes_per_pixel=2), rows=rows,
                 light_height_scene_lighting=neutral, light_height_controls=light_controls)
 
@@ -467,6 +467,23 @@ def metadata():
                           cpu_dispatch=0x4E6190, cpu_mmx=0x7C5F3D, cpu_cmov=0x7C5FFF))
 
 
+def derive_surface_format(m, descriptor_masks, *, complete_masks=False):
+    """Run the existing original descriptor reader, optionally through masks.
+
+    The historical preview stops before the mask stores. Numeric packed-color
+    controls continue through those same original startup instructions.
+    """
+    u = m.u
+    u.mem_write(0x8A0958, dwords(*descriptor_masks))
+    u.reg_write(UC_X86_REG_ESP, SP)
+    required = (0x4BA9EE, 0x4BAA27, 0x4BAA61, 0x4BAA83)
+    if complete_masks:
+        required += (0x4BAAC1, 0x4BAAFF)
+    run_checked(u, 0x4BA9CD, 0x4BAB06 if complete_masks else 0x4BAA89,
+                required_addresses=required)
+    return ints(u, 0x8A0DD0, 6)
+
+
 def generate_preview():
     """Original TMP height tables and selected Cell preview, in the same VM.
 
@@ -478,11 +495,7 @@ def generate_preview():
     # Native primary-surface mask derivation, on the existing owner's declared
     # enrolled RGB565 descriptor masks. This is not universal Windows startup.
     descriptor_masks = [0xF800, 0x07E0, 0x001F]
-    u.mem_write(0x8A0958, dwords(*descriptor_masks))
-    u.reg_write(UC_X86_REG_ESP, SP)
-    run_checked(u, 0x4BA9CD, 0x4BAA89,
-                required_addresses=(0x4BA9EE, 0x4BAA27, 0x4BAA61, 0x4BAA83))
-    format_globals = ints(u, 0x8A0DD0, 6)
+    format_globals = derive_surface_format(m, descriptor_masks)
     assert format_globals == [11, 3, 0, 3, 5, 2]
     inputs['surface_format'] = dict(descriptor_masks=descriptor_masks,
         shift_loss_globals=format_globals, derivation=['004BA9CD', '004BAA89'],
@@ -648,7 +661,7 @@ def generate_preview():
              for name, address in streams.items()}
     assert before == after and not draws
     assert reached >= {0x549E90, 0x549E50, 0x47BDB0, 0x661020, 0x661190, 0x544E00, 0x4814F0}
-    return dict(native_sha256=NATIVE_SHA256, inputs=inputs,
+    return dict(inputs=inputs,
         producer=dict(entry='00549E90', subtile_count=count, levels=13,
             bytes_per_level=4, table_hex=packed_table, brightness_f32_bits=f'{scale_bits:08x}',
             fraction_multiplier_f64_bits=f'{struct.unpack("<Q", u.mem_read(0x7ECD28, 8))[0]:016x}',
@@ -674,6 +687,62 @@ def preview_metadata():
             scale=0x661190, interpolate=0x661020, mask_derivation=0x4BA9CD,
             tmp_constructor=0x5447C0, tmp_loader=0x547020, selector=0x4814F0,
             file_walk=0x544E00, particle_color_prefix=0x62BAC5))
+
+
+def generate_packed_color_mix():
+    """Small shared integer-kernel controls; no raster or gameplay execution."""
+    from tools.projectile_oracle.bridge_render_inputs_palette import PaletteReader, initialize
+
+    assets, _sources = physical_assets(body=True)
+    m = PaletteReader({})
+    m.assets.update(assets)
+    initialize(m, native_format_masks=True)
+    u, rows = m.u, []
+    for name, masks, cases in (
+            ('rgb565', [0xF800, 0x07E0, 0x001F],
+             [(0xFFFF, 0x1234, amount) for amount in (0, 24, 25, 26, 50, 75, 100, 101, 0xFFFFFFFF)]
+             + [(0, 0xFFFF, 25)]),
+            ('rgb555', [0x7C00, 0x03E0, 0x001F],
+             [(0x7FFF, 0x1234, amount) for amount in (25, 50, 75)])):
+        derive_surface_format(m, masks, complete_masks=True)
+        if name == 'rgb565':
+            # Declared retail-reader TIB01/GEM01 RadarColor inputs. Original
+            # RMG packing instructions produce words; Python does not pack RGB.
+            overlay = m.alloc(0x300)
+            for rgb in ((220, 200, 0), (140, 0, 140)):
+                u.mem_write(overlay + 0x2B6, bytes(rgb))
+                u.reg_write(UC_X86_REG_ESP, SP)
+                u.reg_write(UC_X86_REG_EDI, overlay)
+                u.reg_write(UC_X86_REG_EAX, m.read32(0x8A0DDC))
+                run_checked(u, 0x641409, 0x641470,
+                            required_addresses=(0x64143C, 0x641452, 0x64146E))
+                # 42282 is the low word of existing tmp_preview level0's
+                # original Cell47BDB0 output, supplied here as numeric input.
+                cases.append((u.reg_read(UC_X86_REG_ESI), 42282, 50))
+            # Native packed ore/gem inputs, zero high-half controls, and the
+            # chained ore half-mix. 48549 is the existing original first mix.
+            cases.extend(((56896, 42282, 25), (34833, 42282, 25),
+                          (56896, 0, 50), (56896, 48549, 50),
+                          (34833, 0, 50)))
+        for first, second, amount in cases:
+            u.reg_write(UC_X86_REG_EDX, second)
+            output = m.invoke(0x4BF650, first, (amount,)) & 0xFFFF
+            rows.append(dict(format=name, first=first, second=second,
+                             amount=amount, output=output))
+    return rows
+
+
+def packed_color_mix_metadata():
+    return provenance(
+        scope='Twenty original packed-color mixer4BF650 controls for RGB565/RGB555; logical packed-word inputs and low-word outputs only.',
+        assumptions=[
+            'The existing physical-archive and PaletteReader initialization owners supply the shared runtime. Original4BA9CD..4BAB06 derives shifts, losses and half/quarter masks from declared device descriptor masks; no host mask or color-mix implementation is used.',
+            'Declared source/amount controls include exact0/25/50/75/100 cases, adjacent default classifications, unsigned out-of-range and a zero source. RGB555 covers25/50/75 separately.',
+            'RGB565 ore/gem inputs use production-reader retail TIB01 RadarColor220,200,0 and GEM01 RadarColor140,0,140. Original641409..641470 packs those supplied RGBs. Ground input42282 is retained tmp_preview level0 Cell47BDB0 output; zero and native first-mix48549 inputs cover the following RMG operations. This mode does not rerun that gameplay caller.',
+        ],
+        substitutions=['Existing PaletteReader allocator/TLS/physical byte transport and conditional device descriptors only; native mask derivation, RGB packing and mixer instructions execute unchanged. No RMG, raster, RNG or gameplay lifecycle result is claimed.'],
+        entry_points=dict(mix=0x4BF650, mask_derivation=0x4BA9CD,
+                          mask_end=0x4BAB06, retail_rgb_pack=0x641409))
 
 
 def generate_partial_redraw(*, detail=False):
@@ -866,7 +935,7 @@ def generate_partial_redraw(*, detail=False):
                 phases=phases, calls=list(calls), rng_requests=list(requests)))
     finally:
         u.hook_del(hook)
-    data = dict(schema_version=1, native_sha256=NATIVE_SHA256, inputs=inputs,
+    data = dict(schema_version=1, inputs=inputs,
         scene=dict(cells=scene, map_size=map_size, registration_bounds=[0, 0, 32, 32],
                    every_draw_receiver_real=True,
                    camera=camera, lighting=lighting, native_shroud=identity,
@@ -952,8 +1021,14 @@ def partial_redraw_main(argv):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument('--preview', action='store_true')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--preview', action='store_true')
+    mode.add_argument('--packed-color-mix', action='store_true')
     args, rest = parser.parse_known_args()
-    finish_vectors(generate_preview if args.preview else generate,
-        Path(__file__).with_name('tmp_preview.json') if args.preview else Path(__file__).with_suffix('.json'),
-        provenance=preview_metadata if args.preview else metadata, argv=rest)
+    if args.packed_color_mix:
+        finish_vectors(generate_packed_color_mix, Path(__file__).with_name('packed_color_mix.json'),
+                       provenance=packed_color_mix_metadata, argv=rest)
+    else:
+        finish_vectors(generate_preview if args.preview else generate,
+            Path(__file__).with_name('tmp_preview.json') if args.preview else Path(__file__).with_suffix('.json'),
+            provenance=preview_metadata if args.preview else metadata, argv=rest)

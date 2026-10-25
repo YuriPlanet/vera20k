@@ -160,25 +160,53 @@ fn append(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, actor: u64, 
                 target_rx: cell.0,
                 target_ry: cell.1,
             },
+            None,
         )
         .unwrap();
     apply(sim, rules, record);
 }
 
 #[test]
-fn stop_or_uninit_detaches_only_its_actor_from_shared_nodes() {
-    for uninit in [false, true] {
+fn stop_repair_sale_or_uninit_detaches_only_its_actor_from_shared_nodes() {
+    for action in ["stop", "repair_dead", "sale_dead", "uninit"] {
         let (mut sim, rules, owner) = fixture();
         for actor in [1, 2] {
             append(&mut sim, &rules, owner, actor, (12, 15));
         }
-        if uninit {
+        if action == "uninit" {
             sim.uninit(1);
+            assert!(
+                sim.planning_has_remaining_nodes(1),
+                "UnInit retains +514 until destruction"
+            );
+            sim.process_pending_delete_with(&rules, None, Default::default(), 1, false);
+        } else if action == "repair_dead" || action == "sale_dead" {
+            sim.substrate
+                .entities
+                .get_mut(1)
+                .unwrap()
+                .lifecycle
+                .set_object_alive_for_test(false);
+            // REPAIR4C6EE0 / SELL4C6F20 detach before +90/alive refusal.
+            let record = if action == "repair_dead" {
+                sim.encode_repair_record(owner, 1)
+            } else {
+                sim.encode_object_action_record(owner, &Command::SellBuilding { entity_id: 1 })
+            }
+            .unwrap();
+            let envelope = sim.decode_native_command_record(&record, 0).unwrap();
+            assert!(!sim.apply_command("Americans", &envelope.payload, Some(&rules)));
         } else {
             assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 1 }, Some(&rules)));
         }
-        assert!(!sim.planning.paths.contains_key(&1), "uninit={uninit}");
-        assert!(sim.planning.paths.contains_key(&2), "uninit={uninit}");
+        assert!(!sim.planning.paths.contains_key(&1), "{action}");
+        assert_eq!(sim.planning.house_charges[0], 1, "{action}");
+        assert_eq!(
+            sim.planning.registered_tokens.contains(&1),
+            action != "uninit",
+            "only destruction unregisters the token: {action}"
+        );
+        assert!(sim.planning.paths.contains_key(&2), "{action}");
         assert_eq!(
             sim.planning.nodes[&0]
                 .orders
@@ -186,7 +214,7 @@ fn stop_or_uninit_detaches_only_its_actor_from_shared_nodes() {
                 .map(|(id, _)| *id)
                 .collect::<Vec<_>>(),
             vec![2],
-            "uninit={uninit}"
+            "{action}"
         );
     }
 }
@@ -249,7 +277,7 @@ fn special_ordinary_retask_cancels_shared_route(kind: &str) {
         sim.apply_command_with_overlays(
             "Americans",
             &command,
-            Some(&rules),
+            &rules,
             Some(&registry),
             crate::sim::world::FrameEffects::default()
         ),
@@ -268,7 +296,11 @@ fn special_ordinary_retask_cancels_shared_route(kind: &str) {
         );
     }
     assert!(
-        !sim.planning_enter_idle(actor),
+        !sim.planning_enter_idle(
+            actor,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            true
+        ),
         "{kind} must not restart an old leg"
     );
     assert!(sim.pending_command_snapshot().is_empty());
@@ -349,6 +381,8 @@ fn native_dispatch_latches_match_production_flags_and_keep_path_shape() {
     }
 }
 
+/// The node start queues Deliberate with commence 1 (`0x00638606`), so a
+/// ready object makes it current at once and queues nothing.
 #[test]
 fn guard_commit_consumes_first_node_stages_deliberate_and_retains_next_node() {
     let (mut sim, rules, owner) = fixture();
@@ -370,27 +404,25 @@ fn guard_commit_consumes_first_node_stages_deliberate_and_retains_next_node() {
     assert_eq!(path.nodes.len(), 1);
     assert_eq!(path.pending, -1);
     assert_eq!(path.current.as_ref().unwrap().payload()[22], 2);
+    let mission = &sim.substrate.entities.get(1).unwrap().mission;
     assert_eq!(
-        sim.substrate
-            .entities
-            .get(1)
-            .unwrap()
-            .mission
-            .queued()
-            .known(),
+        mission.current().known(),
         Some(crate::sim::mission::MissionType::Deliberate)
     );
+    assert_eq!(mission.queued(), crate::sim::mission::MissionId::NONE);
     assert!(sim.take_due_commands().is_empty());
     sim.session.set_tick_for_test(sim.session.tick() + 1);
-    let due = sim.take_due_commands();
+    sim.session
+        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let due = sim.take_frame_commands_for_test();
     assert_eq!(due.len(), 1);
     assert_eq!(due[0].execute_tick, sim.session.tick() + 1);
     assert!(matches!(&due[0].payload, Command::PlanningRecord { record }
-        if record.payload()[22] == 2 && record.frame_stamp() == sim.session.binary_frame() as i32 + 1));
+        if record.payload()[22] == 2 && record.frame_stamp() == sim.session.binary_frame() as i32));
 }
 
 #[test]
-fn planning_snapshot_restores_shared_nodes_loops_current_records_and_hash() {
+fn planning_internal_checkpoint_restores_shared_nodes_loops_current_records_and_hash() {
     use crate::sim::snapshot::GameSnapshot;
     let (mut sim, rules, owner) = fixture();
     // Snapshot loading intentionally reseeds the unsaved Scenario RNG to zero.
@@ -452,7 +484,8 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
     // Techno701585 ->638840 clears the path, not the published DoList event.
     sim.change_owner(1, new_owner);
     assert_eq!(sim.substrate.entities.get(1).unwrap().owner(), new_owner);
-    assert!(!sim.planning.paths.contains_key(&1));
+    assert!(sim.planning.paths[&1].nodes.is_empty());
+    assert!(sim.planning.paths[&1].executing);
     assert_eq!(sim.planning.nodes.len(), 1);
     assert!(
         sim.planning
@@ -464,17 +497,20 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
     assert_eq!(sim.pending_command_snapshot(), generated);
     let hash = sim.state_hash();
     let bytes = GameSnapshot::save(&sim, 0, 0, "planning", 0);
-    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+    let mut restored = save_codec::deserialize::<GameSnapshot>(&bytes).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
     assert_eq!(restored.state_hash(), hash);
-    assert!(!restored.planning.paths.contains_key(&1));
+    assert!(restored.planning.paths[&1].nodes.is_empty());
+    assert!(restored.planning.paths[&1].executing);
     assert_eq!(restored.planning_paths(owner)[0].cells, vec![(20, 15)]);
     sim.session.set_tick_for_test(sim.session.tick() + 1);
-    let due = sim.take_due_commands();
+    sim.session
+        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let due = sim.take_frame_commands_for_test();
     assert_eq!(due, generated);
     sim.apply_due_commands(
         &due,
-        Some(&rules),
+        &rules,
         sim.session.tick() + 1,
         None,
         crate::sim::world::FrameEffects::default(),
@@ -485,7 +521,8 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
         "a published flag2 event still executes after capture"
     );
     assert_eq!(sim.substrate.entities.get(1).unwrap().owner(), new_owner);
-    assert!(!sim.planning.paths.contains_key(&1));
+    assert!(!sim.planning_has_remaining_nodes(1));
+    assert!(!sim.planning.paths[&1].executing);
 }
 
 #[test]
@@ -510,12 +547,13 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
                 target_rx: 12,
                 target_ry: 15,
             },
+            None,
         )
         .unwrap();
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     let batch = [edit, commit]
         .map(|record| CommandEnvelope::new(owner, 1, Command::PlanningRecord { record }));
-    sim.apply_due_commands(&batch, Some(&rules), 1, None, FrameEffects::default());
+    sim.apply_due_commands(&batch, &rules, 1, None, FrameEffects::default());
     assert_eq!(
         sim.planning.paths[&1].pending, 0,
         "commit runs before staged flag1 even when flag1 was inserted first"
@@ -529,12 +567,14 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
         Command::PlanningRecord { record: commit },
     )];
     sim.session.set_tick_for_test(1);
-    sim.apply_due_commands(&batch, Some(&rules), 2, None, FrameEffects::default());
+    sim.apply_due_commands(&batch, &rules, 2, None, FrameEffects::default());
     assert_eq!(sim.planning.paths[&1].pending, -1);
     assert!(sim.planning.paths[&1].executing);
     assert!(sim.take_due_commands().is_empty());
     sim.session.set_tick_for_test(sim.session.tick() + 1);
-    let due = sim.take_due_commands();
+    sim.session
+        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let due = sim.take_frame_commands_for_test();
     assert_eq!(due.len(), 1);
     assert!(
         matches!(&due[0].payload, Command::PlanningRecord { record } if record.payload()[22] == 2)
@@ -585,7 +625,7 @@ fn planning_restore_rejects_broken_graph_record_actor_and_house_references() {
             sim.houses.remove_for_test(&owner);
         }
         let bytes = GameSnapshot::save(&sim, 0, 0, "planning", 0);
-        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        let mut restored = save_codec::deserialize::<GameSnapshot>(&bytes).unwrap().sim;
         assert!(matches!(
             restored.restore_after_snapshot_load(),
             Err(crate::sim::snapshot::SnapshotRestoreError::InvalidPlanningReferences { .. })
@@ -691,6 +731,7 @@ fn object_nodes_follow_live_xyz_share_and_retain_target_through_connect_delete()
                 attacker_id: 1,
                 target_id: 3,
             },
+            None,
         )
         .unwrap();
     apply(&mut sim, &rules, record);
@@ -710,6 +751,7 @@ fn object_nodes_follow_live_xyz_share_and_retain_target_through_connect_delete()
                 attacker_id: 2,
                 target_id: 3,
             },
+            None,
         )
         .unwrap();
     apply(&mut sim, &rules, record);
@@ -734,7 +776,12 @@ fn object_nodes_follow_live_xyz_share_and_retain_target_through_connect_delete()
         .set_rx_for_test(22);
     apply(&mut sim, &rules, delete);
     assert!(sim.planning.nodes.is_empty());
-    assert!(sim.planning.paths.is_empty());
+    assert!(
+        sim.planning
+            .paths
+            .values()
+            .all(|path| path.nodes.is_empty())
+    );
 }
 
 #[test]
@@ -754,6 +801,7 @@ fn object_node_sharing_compares_z_and_screen_hit_box_is_half_open() {
                     attacker_id: actor,
                     target_id: target,
                 },
+                None,
             )
             .unwrap();
         apply(&mut sim, &rules, record);
@@ -788,6 +836,7 @@ fn planning_target_priority_is_secondary_auxiliary_destination() {
     use crate::sim::command::{MegaMissionOrder, MegaMissionRecord, MegaMissionTarget};
     let mut record = CommandRecord::encode(4, 0, 0, &[]).unwrap();
     MegaMissionRecord {
+        auxiliary: MegaMissionTarget::Null,
         house_id: 0,
         frame: 0,
         source_id: 1,
@@ -831,9 +880,14 @@ fn planning_append_rejects_exact_sixteen_and_any_loop() {
                 target_rx: 16,
                 target_ry: 15,
             },
+            None,
         )
         .unwrap();
-    assert!(!sim.apply_planning_record("Americans", &record, None));
+    assert!(!sim.apply_planning_record(
+        "Americans",
+        &record,
+        crate::rules::ruleset::RuleSet::empty_for_test()
+    ));
     assert_eq!(sim.planning.paths[&1].nodes.len(), 16);
     append(&mut sim, &rules, owner, 2, (20, 15));
     let record = sim.encode_plan_connect_record(owner, 2, (20, 15)).unwrap();
@@ -846,9 +900,14 @@ fn planning_append_rejects_exact_sixteen_and_any_loop() {
                 target_rx: 16,
                 target_ry: 15,
             },
+            None,
         )
         .unwrap();
-    assert!(!sim.apply_planning_record("Americans", &record, None));
+    assert!(!sim.apply_planning_record(
+        "Americans",
+        &record,
+        crate::rules::ruleset::RuleSet::empty_for_test()
+    ));
 }
 
 #[test]
@@ -876,14 +935,15 @@ fn connect_rotates_source_loop_suffix_and_preserves_auxiliary_provenance() {
             Some(usize::from(clicked == 0))
         );
         assert!(sim.planning.paths[&2].loop_changed);
+        let template = sim.planning.nodes[&(clicked as u64)].order(1).unwrap();
         let record = sim.planning.nodes[&(clicked as u64)].order(2).unwrap();
         assert_eq!(
             i32::from_le_bytes(record.payload()[0..4].try_into().unwrap()),
             2
         );
         assert_eq!(
-            i32::from_le_bytes(record.payload()[17..21].try_into().unwrap()),
-            1,
+            &record.payload()[17..22],
+            &template.payload()[17..22],
             "connect rewrites only source, preserving native auxiliary provenance"
         );
         let bytes = save_codec::serialize(&sim.planning).unwrap();
@@ -897,12 +957,9 @@ fn connect_actor_group_follows_tail_encounter_order_and_deduplicates() {
     for actor in [2, 1] {
         append(&mut sim, &rules, owner, actor, (12, 15));
     }
-    assert_eq!(
-        sim.planning_connect_actors(owner, &[1, 2, 3]),
-        vec![2, 1, 3]
-    );
+    assert_eq!(sim.planning_connect_actors(&[1, 2, 3]), vec![2, 1, 3]);
     sim.planning_detach_actor(2);
-    assert_eq!(sim.planning_connect_actors(owner, &[1, 3]), vec![1, 3]);
+    assert_eq!(sim.planning_connect_actors(&[1, 3]), vec![1, 3]);
 }
 
 #[test]
@@ -938,6 +995,7 @@ fn cell_attack_and_area_guard_tails_are_terminal_for_append() {
         let (mut sim, rules, owner) = fixture();
         let mut record = CommandRecord::encode(4, 0, 0, &[]).unwrap();
         MegaMissionRecord {
+            auxiliary: MegaMissionTarget::Null,
             house_id: 0,
             frame: 0,
             source_id: 1,
@@ -955,9 +1013,14 @@ fn cell_attack_and_area_guard_tails_are_terminal_for_append() {
                     target_rx: 16,
                     target_ry: 15,
                 },
+                None,
             )
             .unwrap();
-        assert!(!sim.apply_planning_record("Americans", &record, None));
+        assert!(!sim.apply_planning_record(
+            "Americans",
+            &record,
+            crate::rules::ruleset::RuleSet::empty_for_test()
+        ));
         assert_eq!(sim.planning.paths[&1].nodes.len(), 1);
     }
 }
@@ -985,6 +1048,7 @@ fn planned_force_attack_preserves_admitted_friendly_target_through_native_dispat
                 attacker_id: 1,
                 target_id: 2,
             },
+            None,
         )
         .unwrap();
     apply(&mut sim, &rules, record);
@@ -992,7 +1056,9 @@ fn planned_force_attack_preserves_admitted_friendly_target_through_native_dispat
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     apply(&mut sim, &rules, commit);
     sim.session.set_tick_for_test(sim.session.tick() + 1);
-    let due = sim.take_due_commands();
+    sim.session
+        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let due = sim.take_frame_commands_for_test();
     assert_eq!(due.len(), 1);
     assert!(
         matches!(&due[0].payload, Command::PlanningRecord { record } if record.payload()[22] == 2)
@@ -1069,7 +1135,9 @@ fn captured_actor_path_commits_for_current_house_and_preserves_original_issuer()
     sim.planning = save_codec::deserialize(&bytes).unwrap();
     sim.validate_planning_references().unwrap();
     sim.session.set_tick_for_test(sim.session.tick() + 1);
-    let due = sim.take_due_commands();
+    sim.session
+        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+    let due = sim.take_frame_commands_for_test();
     assert!(sim.apply_command("Americans", &due[0].payload, Some(&rules)));
     assert_eq!(
         sim.substrate.entities.get(1).unwrap().navigation.nav_com(),
@@ -1143,6 +1211,7 @@ fn overlapping_connect_consumption_preserves_occurrences_and_loop_first_record()
                     attacker_id: 1,
                     target_id: 3,
                 },
+                None,
             )
             .unwrap();
         apply(&mut sim, &rules, attack);
@@ -1163,7 +1232,7 @@ fn overlapping_connect_consumption_preserves_occurrences_and_loop_first_record()
             .into_iter()
             .enumerate()
         {
-            assert!(sim.planning_start_actor(1));
+            assert!(sim.planning_start_actor(1, crate::rules::ruleset::RuleSet::empty_for_test()));
             assert_eq!(
                 sim.planning.paths[&1].current.as_ref().unwrap().payload()[5],
                 mission,
@@ -1183,7 +1252,7 @@ fn overlapping_connect_consumption_preserves_occurrences_and_loop_first_record()
             assert_eq!(sim.planning.paths[&1].nodes, vec![0, 1, 2, 1]);
             assert_eq!(sim.planning.nodes[&1].orders[&1].len(), 2);
         } else {
-            assert!(!sim.planning.paths.contains_key(&1));
+            assert!(!sim.planning_has_remaining_nodes(1));
             assert!(!sim.planning.nodes[&1].orders.contains_key(&1));
         }
     }
@@ -1205,6 +1274,7 @@ fn connect_suffix_copies_the_selected_source_actor_order_at_shared_node() {
                 attacker_id: 3,
                 target_id: 1,
             },
+            None,
         )
         .unwrap();
     apply(&mut sim, &rules, attack);
@@ -1387,6 +1457,7 @@ fn attack_move_loop_keeps_task_badges_on_entry_and_closing_legs() {
                     target: None,
                     destination: Some(TargetKind::Cell(x, y)),
                 },
+                None,
             )
             .unwrap();
         apply(&mut sim, &rules, record);
@@ -1574,6 +1645,7 @@ fn retained_highlight_keeps_hidden_node_coordinates_and_full_membership() {
                 target_rx: 12,
                 target_ry: 15,
             },
+            None,
         )
         .unwrap();
     let envelope = sim
@@ -1650,6 +1722,10 @@ fn press_refusals_and_hover_follow_the_selected_paths() {
     assert!(!sim.planning_release_refused(&[1], first));
     // A node hit skips 639DA0, so an aircraft without a token passes.
     assert_eq!(sim.planning_press_refusal(&[4, 5], first), None);
+    // Radar653CD1 calls639DA0 directly: even a tactical node that admits
+    // this selection cannot bypass the radar's selection-only check.
+    assert_eq!(sim.planning_selection_refusal(&[4, 5]), Some(NoAircraft));
+    assert_eq!(sim.planning_selection_refusal(&[1, 3]), None);
 
     // 639DA0 with no node hit: the first object that cannot use waypoints.
     let open = [first[0] + 200, first[1] + 200];
@@ -1680,4 +1756,189 @@ fn press_refusals_and_hover_follow_the_selected_paths() {
     assert_eq!(sim.planning.paths[&1].loop_start, Some(0));
     assert_eq!(sim.planning_invalid_node_reason(&[1], 1), Some(1));
     assert_eq!(sim.planning_press_refusal(&[1], first), Some(InvalidNode));
+}
+
+/// TechnoClass::Enter_Idle_Mode asks vt+0x430 before the node start
+/// (`0x00709A6B`): an Aircraft answers its `+0x6D5` byte (`0x0041B9E0`),
+/// which only Mission_Attack state 10 clears around its idle call, so that
+/// call starts no planned node; a later idle entry does.
+#[test]
+fn an_aircraft_starts_its_planned_node_only_with_its_arrival_byte_set() {
+    let (mut sim, rules, owner) = fixture();
+    assert_eq!(sim.substrate.allocate_stable_id(), 4);
+    crate::sim::world::lifecycle_tests::insert_entity(
+        &mut sim,
+        4,
+        crate::map::entities::EntityCategory::Aircraft,
+    );
+    let jet = sim.substrate.entities.get_mut(4).unwrap();
+    jet.lifecycle.set_in_limbo_for_test(false);
+    jet.in_logic_vector.set_for_test(true);
+    append(&mut sim, &rules, owner, 4, (12, 15));
+    append(&mut sim, &rules, owner, 4, (16, 15));
+    let path = sim.planning.paths.get_mut(&4).unwrap();
+    path.pending = 1;
+    path.executing = false;
+    assert!(!sim.planning_enter_idle(4, &rules, false));
+    assert!(!sim.planning.paths[&4].executing);
+    assert!(sim.planning_enter_idle(4, &rules, true));
+    assert!(sim.planning.paths[&4].executing);
+}
+
+/// The local player's Planning Mode byte (`0x00AC4CF4`).
+struct PlanningMode;
+
+impl crate::sim::world::LocalPlanningBoundary for PlanningMode {
+    fn leave_planning(
+        &self,
+        _: &Simulation,
+        _: &RuleSet,
+    ) -> Option<crate::sim::command::CommandEnvelope> {
+        None
+    }
+
+    fn planning_active(&self) -> bool {
+        true
+    }
+}
+
+/// A connect (`0x0063AD50`, no owner check; receiver `0x00637F4D..0x00637F64`
+/// checks only the node's house) can put another house's object on the
+/// player's node. Selecting the player's actor then runs `0x00637840` over
+/// it: each member's `TechnoClass::Select @ 0x006FBFA0` admits it only when
+/// discovered (`+0x41B`) or the human player's, and `ObjectClass::Select @
+/// 0x005F4520` runs Unselect_All (`0x0048DC90`) when its owner's human status
+/// differs from the first selected object's or that one is not the
+/// player's (`0x005F45AF..0x005F45F8`). Members [player 1, enemy 2, player
+/// 3]: the enemy drains the actor and the player's member drains the enemy,
+/// each Deselect (`0x005F44A0`) releasing Follow.
+#[test]
+fn a_tail_node_enemy_passes_the_select_gate_and_unselects_all() {
+    for discovered in [true, false] {
+        let (mut sim, rules, owner) = fixture();
+        let enemy = sim.interner.intern("Russians");
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                enemy, 1, None, false, 0, 10,
+            ));
+        append(&mut sim, &rules, owner, 1, (12, 15));
+        let connect = sim.encode_plan_connect_record(owner, 2, (12, 15)).unwrap();
+        sim.change_owner(2, enemy);
+        apply(&mut sim, &rules, connect);
+        append(&mut sim, &rules, owner, 3, (12, 15));
+        assert_eq!(sim.planning_select_partners(1, true), [1, 2, 3]);
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .discovery
+            .set_discovered_by_current_house_for_test(discovered);
+        sim.lifecycle_outputs.clear_for_test();
+
+        assert!(sim.techno_select(
+            1,
+            false,
+            crate::sim::world::UninitContext::new(&rules, None).with_effects(
+                crate::sim::world::FrameEffects::default().with_local_planning(&PlanningMode)
+            ),
+        ));
+        let selected: Vec<u64> = (1..=3)
+            .filter(|&id| {
+                sim.substrate
+                    .entities
+                    .get(id)
+                    .unwrap()
+                    .selection
+                    .is_selected()
+            })
+            .collect();
+        // Each Unselect_All Deselect releases Follow (`0x005F4503..
+        // 0x005F4513`) before the draining Select inserts its object.
+        let outputs: Vec<(&str, u64)> = sim
+            .lifecycle_outputs
+            .as_slice()
+            .iter()
+            .filter_map(|output| match output {
+                crate::sim::world::LifecycleOutput::ObjectSelected { stable_id } => {
+                    Some(("select", *stable_id))
+                }
+                crate::sim::world::LifecycleOutput::FollowReleased { stable_id } => {
+                    Some(("release", *stable_id))
+                }
+                _ => None,
+            })
+            .collect();
+        if discovered {
+            assert_eq!(selected, [3]);
+            assert_eq!(
+                outputs,
+                [
+                    ("select", 1),
+                    ("release", 1),
+                    ("select", 2),
+                    ("release", 2),
+                    ("select", 3)
+                ]
+            );
+        } else {
+            assert_eq!(selected, [1, 3], "an undiscovered enemy is refused");
+            assert_eq!(outputs, [("select", 1), ("select", 3)]);
+        }
+    }
+}
+
+/// `0x0063AD50` expands a selected actor's tail group whatever the actor's
+/// owner (`0x0063ADB0..0x0063AEBC`).
+#[test]
+fn connect_actor_group_expands_another_houses_actor() {
+    let (mut sim, rules, owner) = fixture();
+    let enemy = sim.interner.intern("Russians");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            enemy, 1, None, false, 0, 10,
+        ));
+    append(&mut sim, &rules, owner, 1, (12, 15));
+    let connect = sim.encode_plan_connect_record(owner, 2, (12, 15)).unwrap();
+    sim.change_owner(2, enemy);
+    apply(&mut sim, &rules, connect);
+    assert_eq!(sim.planning_connect_actors(&[2]), vec![1, 2]);
+}
+
+#[test]
+fn finalized_target_pruning_retains_the_empty_token_and_its_house_charge() {
+    let (mut sim, rules, owner) = fixture();
+    let record = sim
+        .encode_planning_order_record(
+            owner,
+            &Command::Attack {
+                attacker_id: 1,
+                target_id: 3,
+            },
+            None,
+        )
+        .unwrap();
+    apply(&mut sim, &rules, record);
+    sim.uninit(3);
+    sim.prune_invalid_planning_nodes();
+    assert!(
+        sim.planning_has_remaining_nodes(1),
+        "the retired target remains registered until actual destruction"
+    );
+    let frame = sim.session.binary_frame();
+    assert!(sim.commit_frame_tail(&rules, None, 33, sim.session.tick() + 1, Default::default()));
+    assert_eq!(sim.session.binary_frame(), frame.wrapping_add(1));
+    assert!(!sim.substrate.entities.contains(3));
+    assert!(!sim.planning_has_remaining_nodes(1));
+    assert!(sim.planning.registered_tokens.contains(&1));
+    assert_eq!(
+        sim.planning.house_charges[0], 1,
+        "late pruning does not release the retained charge"
+    );
+    append(&mut sim, &rules, owner, 1, (16, 15));
+    assert_eq!(sim.planning.house_charges[0], 2);
+    sim.planning_detach_actor(1);
+    assert_eq!(
+        sim.planning.house_charges[0], 1,
+        "ordinary cancellation releases only the new nonempty path"
+    );
 }

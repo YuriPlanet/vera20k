@@ -7,9 +7,12 @@
 //! tools/spatial_oracle/ambient_playout.{py,json,meta.json}.
 
 use super::arbiter::{PlayoutEnd, delay_below_floor};
-use super::{DecodedAudio, LoadedPlayback, LoadedSampleIndices, PlaybackDraws, SampleRng};
+use super::{
+    DecodedAudio, LoadedPlayback, LoadedSampleIndices, PlayShifts, PlaybackDraws, SampleRng,
+};
 use crate::rules::sound_ini::control;
 use rodio::Source;
+use std::collections::BTreeMap;
 use std::num::NonZero;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -166,21 +169,74 @@ impl PlaylistCursor {
 /// Native40A4A6..40A551: round_up_1024((avgBytes*3 /100)*8), then four
 /// quarters. The source rate, not its shifted playback frequency, is used.
 fn quarter_samples(clip: &DecodedAudio) -> Option<usize> {
-    let bytes_per_second = clip
-        .sample_rate
-        .checked_mul(u32::from(clip.native_frame_bytes))?;
+    let frame_bytes = u32::from(clip.native_channels) * u32::from(clip.native_sample_bytes);
+    let bytes_per_second = clip.sample_rate.checked_mul(frame_bytes)?;
     let nominal = (bytes_per_second.checked_mul(3)? / 100).checked_mul(8)?;
     let quarter_bytes = nominal.checked_add(1023)? & !1023;
-    let frames = quarter_bytes.checked_div(u32::from(clip.native_frame_bytes))?;
+    let frames = quarter_bytes.checked_div(frame_bytes)?;
     usize::try_from(frames.checked_mul(u32::from(clip.channels))?)
         .ok()
         .filter(|n| *n != 0)
+}
+
+/// The buffer format `DSoundBuffer::StartPlayback @ 0x0040A340` compares:
+/// rate, channels and bytes per sample (`0x0040A380..0x0040A3A4`).
+fn native_format(clip: &DecodedAudio) -> (u32, u16, u16) {
+    (
+        clip.sample_rate,
+        clip.native_channels,
+        clip.native_sample_bytes,
+    )
+}
+
+/// A chained clip's samples as a ring of another channel count or width
+/// (`layout`: channels, bytes per sample) plays them; `None` when the layouts
+/// match and its samples copy unchanged.
+///
+/// Mid-ring, `OnChannelSampleEnd @ 0x00405AC0` only moves the data cursor
+/// (`DSoundBuffer::SetSample @ 0x00402790`), and `Fill @ 0x00409880`
+/// (`0x00409A9D`) → `ConfigureSampleDecoder @ 0x00409C40` re-selects only
+/// the decode callback: a byte copy for PCM of any width (`0x00409D90`), or
+/// `IMA_ADPCM__DecodeBlock @ 0x0040AA70`, which writes 16-bit samples in the
+/// clip's own channel order (`0x0040AB8D`, channels from `0x00409C94`).
+/// Nothing re-creates the buffer or sets its frequency, so the ring reads
+/// the clip's PCM bytes at its own rate, channels and width. The decoders'
+/// maps `(b - 128) / 128` and `s / 32768` are exact, so the bytes rebuild
+/// exactly.
+///
+/// RESIDUAL: an odd byte count read as 16-bit drops its last byte. Native's
+/// ring is one byte stream, so every later 16-bit sample in that playout is
+/// read one byte off and plays as noise; VERA plays the following clips
+/// cleanly. Trigger: an odd-length 8-bit mono clip chained into a 16-bit
+/// ring; no retail entry chains one.
+pub(super) fn chained_samples(clip: &DecodedAudio, layout: (u16, u16)) -> Option<Vec<f32>> {
+    if (clip.native_channels, clip.native_sample_bytes) == layout {
+        return None;
+    }
+    let step = if clip.native_channels == 1 { 2 } else { 1 };
+    let mut bytes = Vec::new();
+    for &value in clip.samples.iter().step_by(step) {
+        if clip.native_sample_bytes == 1 {
+            bytes.push((value * 128.0 + 128.0) as u8);
+        } else {
+            bytes.extend_from_slice(&((value * 32768.0) as i16).to_le_bytes());
+        }
+    }
+    let (channels, width) = layout;
+    let mut pcm = Vec::new();
+    if let Some(mut cursor) = crate::assets::wav_file::WavPcmCursor::pcm(width * 8) {
+        while cursor.decode_next(&bytes, &mut pcm) {}
+    }
+    let mut samples = Vec::new();
+    super::upmix_i16_to_f32_stereo(&mut samples, &pcm, channels);
+    Some(samples)
 }
 
 struct RingState {
     loaded: LoadedPlayback,
     cursor: PlaylistCursor,
     rng: PlaybackDraws,
+    shifts: PlayShifts,
     current: Option<usize>,
     clip_offset: usize,
     ring: Vec<f32>,
@@ -189,7 +245,12 @@ struct RingState {
     read_quarter: usize,
     first_pull: bool,
     cancelled: bool,
+    /// The buffer's [`native_format`] and shifted frequency, set per start.
     format: (u32, u16, u16),
+    rate: NonZero<u32>,
+    /// [`chained_samples`] of each loaded clip whose layout differs from
+    /// the buffer's.
+    reinterpreted: BTreeMap<usize, Vec<f32>>,
     observation: Option<Arc<PlaybackTrace>>,
     // Diagnostic provenance follows every actual ring write, including
     // replacement on release. It never supplies a playback decision.
@@ -197,6 +258,52 @@ struct RingState {
 }
 
 impl RingState {
+    /// `DSoundBuffer::StartPlayback @ 0x0040A340` for one start: a playout's
+    /// first clip and the release→decay restart (`SoundEvent::UpdateState`
+    /// `0x004058DC` → `SoundEvent::StartPlayback @ 0x004054A0`). A clip
+    /// whose format differs from the buffer's releases it and creates one in
+    /// its own (`0x0040A48A..0x0040A587`). `0x00402800` (at `0x0040A36D`)
+    /// copies the clip's format into the channel (`+0x17C`, rate `+0x184`),
+    /// and `ApplyVolumePanFrequency @ 0x0040A6D0` sets the frequency from that
+    /// rate and the event's pitch (`+0xD8`). Only a start (`0x0040A36D`) and
+    /// init (`0x0040A2C6`) write `+0x184`, so the rate never changes mid-ring.
+    /// Either way the ring refills whole (`0x0040A463`). False when the clip's
+    /// format admits no ring.
+    fn start(&mut self, index: Option<usize>) -> bool {
+        let mut usable = true;
+        // With no buffer yet (0x0040A378) it creates one without comparing.
+        if let Some(clip) = index.and_then(|index| self.loaded.clips.get(&index))
+            && (self.ring.is_empty() || native_format(clip) != self.format)
+        {
+            let format = native_format(clip);
+            let rate = NonZero::new(self.shifts.shifted_sample_rate(clip.sample_rate));
+            let quarter = quarter_samples(clip).filter(|quarter| quarter.checked_mul(4).is_some());
+            if let (Some(rate), Some(quarter)) = (rate, quarter) {
+                self.format = format;
+                self.rate = rate;
+                self.quarter_samples = quarter;
+                self.ring = vec![0.0; quarter * 4];
+                if let Some(provenance) = &mut self.provenance {
+                    *provenance = vec![usize::MAX; quarter * 4];
+                }
+                self.reinterpreted = self
+                    .loaded
+                    .clips
+                    .iter()
+                    .filter_map(|(&index, clip)| {
+                        Some((index, chained_samples(clip, (format.1, format.2))?))
+                    })
+                    .collect();
+            } else {
+                usable = false;
+            }
+        }
+        self.current = index.filter(|_| usable);
+        self.clip_offset = 0;
+        self.fill_initial();
+        usable
+    }
+
     fn fill(&mut self, start: usize, capacity: usize) -> usize {
         let mut copied = 0;
         let mut empty_selections = 0;
@@ -216,17 +323,9 @@ impl RingState {
                 self.clip_offset = 0;
                 continue;
             };
-            let compatible =
-                (clip.sample_rate, clip.channels, clip.native_frame_bytes) == self.format;
-            let available = if compatible {
-                clip.samples.len().saturating_sub(self.clip_offset)
-            } else {
-                // Preserve the previous shared player's mixed-format limit.
-                // Stock Loop1/Loop2 are uniform; native format transitions
-                // outside that corpus remain a separate required mechanism.
-                log::warn!("SFX: dropped chained sample with mismatched PCM format");
-                0
-            };
+            // The clip plays in the buffer's format (see chained_samples).
+            let samples = self.reinterpreted.get(&index).unwrap_or(&clip.samples);
+            let available = samples.len().saturating_sub(self.clip_offset);
             if available == 0 {
                 empty_selections += 1;
                 if empty_selections
@@ -256,7 +355,7 @@ impl RingState {
                     .fill(slot);
             }
             self.ring[start + copied..start + copied + count]
-                .copy_from_slice(&clip.samples[self.clip_offset..self.clip_offset + count]);
+                .copy_from_slice(&samples[self.clip_offset..self.clip_offset + count]);
             self.clip_offset += count;
             copied += count;
             empty_selections = 0;
@@ -431,18 +530,19 @@ impl PlaybackControl {
         }
     }
 
+    /// The release→decay restart: UpdateState4058DC advances to the decay
+    /// clip and starts the channel again (`RingState::start`).
     pub(super) fn release_to_decay(&self) -> bool {
         let mut state = self.0.state.lock().expect("SFX boundary gate poisoned");
         if state.cancelled {
             return false;
         }
         state.cursor.prevent_replay();
-        state.current = {
+        let next = {
             let RingState { cursor, rng, .. } = &mut *state;
             cursor.advance(rng)
         };
-        state.clip_offset = 0;
-        state.fill_initial();
+        state.start(next);
         self.0.generation.fetch_add(1, Ordering::Release);
         state.valid.iter().any(|n| *n != 0)
     }
@@ -487,15 +587,11 @@ impl RingSource {
         cursor: PlaylistCursor,
         initial: usize,
         rng: PlaybackDraws,
-        shifted_rate: u32,
+        shifts: PlayShifts,
         pan: i32,
         observed_names: Option<&[String]>,
     ) -> Option<(Self, PlaybackControl)> {
-        let clip = loaded.clips.get(&initial)?;
-        let channels = NonZero::new(clip.channels)?;
-        let sample_rate = NonZero::new(shifted_rate)?;
-        let quarter = quarter_samples(clip)?;
-        let format = (clip.sample_rate, clip.channels, clip.native_frame_bytes);
+        let channels = NonZero::new(loaded.clips.get(&initial)?.channels)?;
         let observation = observed_names.map(|names| {
             Arc::new(PlaybackTrace {
                 clips: loaded
@@ -516,21 +612,28 @@ impl RingSource {
             loaded,
             cursor,
             rng,
-            current: Some(initial),
+            shifts,
+            current: None,
             clip_offset: 0,
-            ring: vec![0.0; quarter.checked_mul(4)?],
+            ring: Vec::new(),
             valid: [0; 4],
-            quarter_samples: quarter,
+            quarter_samples: 0,
             read_quarter: 0,
             first_pull: true,
             cancelled: false,
-            format,
+            // The first start creates the buffer and sets these.
+            format: (0, 0, 0),
+            rate: NonZero::<u32>::MIN,
+            reinterpreted: BTreeMap::new(),
             observation: observation.clone(),
-            provenance: observation.as_ref().map(|_| vec![usize::MAX; quarter * 4]),
+            provenance: observation.as_ref().map(|_| Vec::new()),
         };
         // Native40A463 fills the complete ring synchronously at start. Later
         // callbacks refill consumed quarters on the same Main capability.
-        state.fill_initial();
+        if !state.start(Some(initial)) {
+            return None;
+        }
+        let (quarter, sample_rate) = (state.quarter_samples, state.rate);
         let shared = Arc::new(SharedOutput {
             state: Mutex::new(state),
             cancelled: AtomicBool::new(false),
@@ -601,13 +704,14 @@ impl Iterator for RingSource {
         if self.shared.cancelled.load(Ordering::Acquire) {
             return None;
         }
+        let channels = usize::from(self.channels.get());
         let generation = self.shared.generation.load(Ordering::Acquire);
         if self.generation != generation {
             self.generation = generation;
             self.valid = 0;
-            self.position = 0;
+            self.position %= channels;
         }
-        if self.position == self.valid {
+        if self.position >= self.valid {
             let mut state = self
                 .shared
                 .state
@@ -616,14 +720,34 @@ impl Iterator for RingSource {
             // Pair the fetched quarter with its reset epoch under the gate;
             // otherwise release during acquisition could skip new decay PCM.
             self.generation = self.shared.generation.load(Ordering::Acquire);
+            // A restart in another format created a new buffer: take its
+            // quarter and frequency (RingState::start). RESIDUAL: rodio
+            // re-reads a source's rate only where the span it last read ends
+            // (rodio 0.22.2 `UniformSourceIterator::bootstrap`), so the rest
+            // of that span, at most one quarter (about 0.24 s), plays the
+            // decay clip at the previous rate; native's new buffer starts at
+            // its own (0x40A587). Trigger: a Control=decay clip of another
+            // rate than the playing one; no retail entry has one.
+            if self.cache.len() != state.quarter_samples {
+                self.cache.resize(state.quarter_samples, 0.0);
+                if let Some(provenance) = &mut self.provenance {
+                    provenance.resize(state.quarter_samples, usize::MAX);
+                }
+            }
+            self.sample_rate = state.rate;
             self.valid = state.next_quarter(&mut self.cache, self.provenance.as_deref_mut());
-            self.position = 0;
+            // Native `DSoundBuffer::StartPlayback @ 0x0040A340` refills the
+            // whole buffer (`0x0040A463`). Rodio can pull one stereo sample
+            // before that restart and the next after it, so keep the pending
+            // channel offset. A normal quarter ends at a frame boundary, so
+            // this also resets its next cache offset to zero.
+            self.position %= channels;
             if self.valid == 0 {
                 return None;
             }
         }
         let value = self.cache[self.position];
-        let channel = self.position % usize::from(self.channels.get());
+        let channel = self.position % channels;
         if let Some(trace) = &self.observation {
             let slot = self.provenance.as_ref().unwrap()[self.position];
             if slot != usize::MAX {
@@ -659,7 +783,8 @@ const MAX_SPAN_FRAMES: usize = 8192;
 impl Source for RingSource {
     fn current_span_len(&self) -> Option<usize> {
         // rodio0.22.2 Source::current_span_len permits Some(0) only at
-        // exhaustion, and PCM quarters never change this source's format.
+        // exhaustion. Only a restart in another rate changes this source's
+        // format (see Iterator::next).
         // A bounded span only restarts the mixer's converter (see
         // MAX_SPAN_FRAMES). At a quarter boundary the next quarter, if any,
         // holds exactly one cache length; an ended source still ends early
@@ -679,5 +804,115 @@ impl Source for RingSource {
     }
     fn total_duration(&self) -> Option<Duration> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::tests::build_test_wav;
+    use super::super::{SoundRegistry, decode_wav};
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+
+    fn wav(rate: u32, bits: u16, channels: u16, pcm: &[u8]) -> DecodedAudio {
+        decode_wav(&build_test_wav(rate, bits, channels, pcm), "test.wav").unwrap()
+    }
+
+    /// The production ring for one `[Test]` entry over `clips`, in order.
+    fn ring(control: &str, clips: &[(&str, DecodedAudio)]) -> (RingSource, PlaybackControl) {
+        let names: Vec<_> = clips.iter().map(|(name, _)| *name).collect();
+        let registry = SoundRegistry::from_ini(&IniFile::from_str(&format!(
+            "[SoundList]\n1=Test\n[Test]\nSounds={}\nControl={control}\n",
+            names.join(" ")
+        )));
+        let entry = registry.get("Test").unwrap();
+        let mut draws = PlaybackDraws::new(|low, _| low);
+        let loaded = LoadedPlayback::load(entry, &mut draws, |name| {
+            clips
+                .iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, clip)| clip.clone())
+        })
+        .unwrap();
+        let mut cursor = PlaylistCursor::new(loaded.selected.clone(), entry.control, (0, 0), 0);
+        let initial = cursor.prepare(&mut draws, true).unwrap();
+        RingSource::new(
+            loaded,
+            cursor,
+            initial,
+            draws,
+            PlayShifts::UNITY,
+            0x2000,
+            None,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_chained_clip_plays_its_pcm_bytes_in_the_rings_format() {
+        // A stereo 16-bit ring copies the next clip's mono 8-bit bytes
+        // 00 40 00 C0 (ConfigureSampleDecoder409C40 → memcpy 409D90) and
+        // reads them as one frame (0x4000, 0xC000), at its own rate.
+        let (source, _) = ring(
+            "all",
+            &[
+                ("first", wav(22_050, 16, 2, &[0x00, 0x20, 0x00, 0xE0])),
+                ("second", wav(11_025, 8, 1, &[0x00, 0x40, 0x00, 0xC0])),
+            ],
+        );
+        assert_eq!(source.sample_rate().get(), 22_050);
+        let state = source.shared.state.lock().unwrap();
+        assert_eq!(state.ring[..6], [0.25, -0.25, 0.5, -0.5, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn release_restarts_a_decay_clip_in_its_own_format() {
+        // StartPlayback40A340 creates a new buffer for a decay clip of
+        // another rate and width (0x40A48A..0x40A587) and plays it at its own.
+        let (mut source, control) = ring(
+            "loop decay",
+            &[
+                ("body", wav(22_050, 16, 1, &[0x00, 0x20])),
+                ("tail", wav(11_025, 8, 1, &[0xC0])),
+            ],
+        );
+        assert!(control.release_to_decay());
+        source.next();
+        assert_eq!(source.sample_rate().get(), 11_025);
+        let state = source.shared.state.lock().unwrap();
+        assert_eq!(state.ring[..4], [0.5, 0.5, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn release_mid_stereo_frame_keeps_decay_channels_aligned() {
+        let mut tail_pcm = vec![
+            0x00, 0x10, 0x00, 0x20, 0x00, 0x30, 0x00, 0x40, 0x00, 0x50, 0x00, 0x60,
+        ];
+        for _ in 3..256 {
+            tail_pcm.extend_from_slice(&[0x00, 0x10, 0x00, 0x20]);
+        }
+        tail_pcm.extend_from_slice(&[0x00, 0x70, 0x00, 0x50, 0x00, 0x60, 0x00, 0x40]);
+        let tail = wav(30, 16, 2, &tail_pcm);
+        let (mut source, control) = ring(
+            "loop decay",
+            &[
+                ("body", wav(30, 16, 2, &[0x00, 0x70, 0x00, 0x80])),
+                ("tail", tail.clone()),
+            ],
+        );
+        control.set_pan(super::super::PAN_SCALE);
+
+        source.next();
+        assert!(control.release_to_decay());
+
+        assert_eq!(source.next(), Some(tail.samples[1]));
+        assert_eq!(source.next(), Some(0.0));
+        assert_eq!(source.next(), Some(tail.samples[3]));
+        assert_eq!(source.next(), Some(0.0));
+        assert_eq!(source.next(), Some(tail.samples[5]));
+
+        source.by_ref().take(506).for_each(drop);
+        assert_eq!(source.next(), Some(0.0));
+        assert_eq!(source.next(), Some(tail.samples[513]));
     }
 }

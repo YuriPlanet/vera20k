@@ -229,9 +229,23 @@ fn stock_plant_gain_and_sale_preserve_tank_debt_and_settle_current_price() {
                 .into_iter()
                 .map(|command| CommandEnvelope::new(owner, sim.session.tick(), command))
                 .collect();
+            // Mobile completion belongs to the local Strip visit, which emits
+            // the ordinary PLACE record. A resource-bound headless frame alone
+            // has no sidebar and leaves a fully paid tank in its Factory.
+            let visits = scene
+                .runtime
+                .simulation
+                .production
+                .factories()
+                .strip_visits_for_test(owner);
             scene
                 .runtime
-                .advance_frame(&commands, 22, TickLane::Ordinary, FrameEffects::default())
+                .advance_frame(
+                    &commands,
+                    22,
+                    TickLane::Ordinary,
+                    FrameEffects::default().with_production_strip(&visits, &|_| {}),
+                )
                 .expect("ordinary bound-resource frame");
             let sim = scene.sim();
             let rules = &scene.runtime.resources.rules;
@@ -371,7 +385,13 @@ fn stock_plant_gain_and_sale_preserve_tank_debt_and_settle_current_price() {
             assert!(sim.entities().get(id).is_none());
         }
         let tank = sim.entities().get(delivered.unwrap()).unwrap();
-        assert!(tank.is_active() && tank.is_alive() && !tank.lifecycle.in_limbo());
+        assert!(
+            tank.is_active() && tank.is_alive() && !tank.lifecycle.in_limbo(),
+            "sell={sell}, factory={:?}",
+            sim.production
+                .factories()
+                .factory(FactoryHolder::House(owner, CATEGORY)),
+        );
         assert_eq!(sim.interner.resolve(tank.type_ref()), "HTNK");
         assert_eq!(tank.health.current(), 400);
         assert_eq!(sim.entities().get(plant.unwrap()).is_none(), sell);

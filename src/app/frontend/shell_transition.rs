@@ -11,7 +11,7 @@
 //! screen to a shell dialog, (re)starts/advances the wave on entry edges, plays
 //! the slide-in start cue, and dispatches the per-frame shell repaint while the
 //! wave is live. The slide-in start cue is `GUIMoveInSound` (stock `MenuSlideIn`);
-//! the stock-empty end cue (`ShellButtonSlideSound`) stays silent.
+//! the end cue `ShellButtonSlideSound` is empty in stock rules.
 
 use std::time::{Duration, Instant};
 
@@ -19,6 +19,7 @@ use anyhow::{Result, bail};
 
 use crate::app::AppState;
 use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::menu_page::MenuPageSpec;
 
 // Re-export the render-agnostic schedule types from the shared substrate so the
 // shell renderers (and the `AppState` field) keep their existing import paths.
@@ -82,6 +83,10 @@ pub(crate) enum ShellSlideKind {
     WolMyInformation,
     /// Dialog 0x116 — the WOL Buddy List.
     WolBuddyList,
+    /// Dialog 0x117 — WOL Quick Match's status page.
+    WolQuickMatch,
+    /// Dialog 0x122 — WOL Quick Match's postmatch add-buddy query.
+    WolAddBuddyQuery,
     /// Dialog 0xA3 — Options' Keyboard page (front-end parent only).
     Keyboard,
     /// Dialog D7, Options' Network child.
@@ -95,11 +100,23 @@ pub(crate) enum ShellSlideKind {
     Score,
     /// Dialog 0x103 — campaign victory StandaloneScore.
     CampaignScore,
+    /// Dialog 0xBC7 — the LAN Cooperative campaign end.
+    CampaignEnd,
     /// Dialog 0x105 — Choose Map's random-map dialog.
     RandomMap,
 }
 
 impl ShellSlideKind {
+    /// The shell of a campaign score page's dialog.
+    pub(crate) fn campaign_score(
+        dialog: crate::ui::campaign_score_shell::CampaignScoreDialog,
+    ) -> Self {
+        match dialog {
+            crate::ui::campaign_score_shell::CampaignScoreDialog::Victory => Self::CampaignScore,
+            crate::ui::campaign_score_shell::CampaignScoreDialog::CampaignEnd => Self::CampaignEnd,
+        }
+    }
+
     /// The Win32 dialog resource id this shell maps to. The slide's eligibility
     /// and column are looked up from this id in the data-driven `slide` table
     /// (no hardcoded per-kind counts here).
@@ -122,6 +139,8 @@ impl ShellSlideKind {
             ShellSlideKind::WolLocale => 0x00FE,
             ShellSlideKind::WolMyInformation => 0x0114,
             ShellSlideKind::WolBuddyList => 0x0116,
+            ShellSlideKind::WolQuickMatch => 0x0117,
+            ShellSlideKind::WolAddBuddyQuery => 0x0122,
             ShellSlideKind::Keyboard => 0x00A3,
             ShellSlideKind::NetworkOptions => 0x00D7,
             ShellSlideKind::LanLobby => 0xBB,
@@ -129,6 +148,7 @@ impl ShellSlideKind {
             ShellSlideKind::ChooseMap => 0x006B,
             ShellSlideKind::Score => 0x0108,
             ShellSlideKind::CampaignScore => 0x0103,
+            ShellSlideKind::CampaignEnd => 0x0BC7,
             ShellSlideKind::RandomMap => 0x0105,
         })
     }
@@ -136,16 +156,22 @@ impl ShellSlideKind {
     /// The dialog's slide column with the panel's `rows` tile rows. Every
     /// rendered shell has a `slide` table entry, so a miss is a programming
     /// error. Options' two pages adjust `0xD5`'s retail column to VERA's
-    /// buttons: the main page slides VERA20K Options under Network too, and
+    /// buttons: the main page slides Vera Options under Network too, and
     /// VERA's page has only Back, as on the Keyboard page `0xA3`.
-    pub(crate) fn column(self, rows: u32) -> SlideColumn {
+    pub(crate) fn column(self, rows: u32, page: Option<&MenuPageSpec>) -> SlideColumn {
         let spec = crate::ui::shell::slide::slide_spec_for(self.dialog_id())
             .expect("rendered shell dialog must have a slide column");
-        let top_buttons = match self {
-            ShellSlideKind::Options => spec.top_buttons + 1,
-            ShellSlideKind::VeraOptions => 0,
-            _ => spec.top_buttons,
-        };
+        // WOL's simplified pages must slide only their visible buttons too.
+        let top_buttons = page
+            .filter(|page| page.dialog == self.dialog_id())
+            .map_or_else(
+                || match self {
+                    ShellSlideKind::Options => spec.top_buttons + 1,
+                    ShellSlideKind::VeraOptions => 0,
+                    _ => spec.top_buttons,
+                },
+                |page| page.stacked.len() as u32,
+            );
         crate::ui::shell::slide::SlideDialogSpec {
             top_buttons,
             ..spec
@@ -170,12 +196,30 @@ fn visible_main_menu_top_buttons(state: &AppState) -> u32 {
         .count() as u32
 }
 
-fn column_with_visible_menu_buttons(kind: ShellSlideKind, rows: u32, count: u32) -> SlideColumn {
-    let mut column = kind.column(rows);
+fn column_with_visible_menu_buttons(
+    kind: ShellSlideKind,
+    rows: u32,
+    count: u32,
+    page: Option<&MenuPageSpec>,
+) -> SlideColumn {
+    let mut column = kind.column(rows, page);
     if kind == ShellSlideKind::MainMenu {
         column.top_buttons = count;
     }
     column
+}
+
+fn column_page_spec(
+    visit: Option<&crate::app::shell_wol::WolVisit>,
+    kind: Option<ShellSlideKind>,
+) -> Option<&'static MenuPageSpec> {
+    let visit = visit?;
+    match kind? {
+        ShellSlideKind::WolWelcome => Some(visit.welcome_page_spec()),
+        ShellSlideKind::WolLogin => Some(visit.login()?.policy.page_spec()),
+        ShellSlideKind::WolLobby => Some(visit.lobby()?.ui.page_spec()),
+        _ => None,
+    }
 }
 
 /// Right-panel tile rows at the current surface size (`[0x00B0FA20]`).
@@ -268,6 +312,9 @@ pub(crate) enum ShellExitThen {
     /// Campaign victory Continue (`0x423`, result 1): `0x103` slides out
     /// before GameExit::Victory continues the campaign.
     CampaignScoreContinue,
+    /// Campaign-end Continue (`0x6D1`, result 1): `0xBC7` slides out and
+    /// Main_Game returns to the mode's shell.
+    CampaignEndContinue,
     /// A Westwood Online mode button: `0x10E` closes with the mode written
     /// and `WOL_Main` runs that mode's flow.
     WolAction(crate::ui::wol_shell::WolMode),
@@ -300,6 +347,11 @@ pub(crate) enum ShellExitThen {
     WolMyInformationClose(u16),
     /// `0x116` ended with Create, Join or Back.
     WolBuddyClose(u16),
+    /// `0x122` closed with Yes or No; both write Don't Ask.
+    WolAddBuddyClose {
+        yes: bool,
+        ask_again: bool,
+    },
 }
 
 impl ShellExitThen {
@@ -347,8 +399,10 @@ impl ShellExitThen {
             Self::WolLocaleClose(_) => ShellSlideKind::WolLocale,
             Self::WolMyInformationClose(_) => ShellSlideKind::WolMyInformation,
             Self::WolBuddyClose(_) => ShellSlideKind::WolBuddyList,
+            Self::WolAddBuddyClose { .. } => ShellSlideKind::WolAddBuddyQuery,
             Self::ScoreContinue => ShellSlideKind::Score,
             Self::CampaignScoreContinue => ShellSlideKind::CampaignScore,
+            Self::CampaignEndContinue => ShellSlideKind::CampaignEnd,
         }
     }
 }
@@ -421,6 +475,7 @@ pub(crate) fn begin_shell_exit(state: &mut AppState, then: ShellExitThen) -> She
                 kind,
                 panel_rows(state),
                 visible_main_menu_top_buttons(state),
+                column_page_spec(state.frontend.wol.as_ref(), Some(kind)),
             );
             state.frontend.shell_exit = Some(ShellExit {
                 wave: ShellFrameWave::new_slide_out(column, Instant::now()),
@@ -533,6 +588,7 @@ struct ShellLifecycleReducer<'a> {
     panel_rows: u32,
     /// Derived from the same visible layout used by painting and hit-testing.
     main_menu_top_buttons: u32,
+    page_spec: Option<&'static MenuPageSpec>,
     active_shell: &'a mut Option<ShellSlideKind>,
     first_paint_slide: &'a mut Option<ShellFrameWave>,
     slide_generation: &'a mut u64,
@@ -547,6 +603,10 @@ impl<'a> ShellLifecycleReducer<'a> {
         Self {
             panel_rows: panel_rows(state),
             main_menu_top_buttons: visible_main_menu_top_buttons(state),
+            page_spec: column_page_spec(
+                state.frontend.wol.as_ref(),
+                current_shell_slide_target(state),
+            ),
             active_shell: &mut state.frontend.shell_slide_active_shell,
             first_paint_slide: &mut state.frontend.shell_first_paint_slide,
             slide_generation: &mut state.frontend.shell_slide_generation,
@@ -584,6 +644,7 @@ impl<'a> ShellLifecycleReducer<'a> {
                     kind,
                     self.panel_rows,
                     self.main_menu_top_buttons,
+                    self.page_spec,
                 );
                 *self.first_paint_slide = Some(if kind == ShellSlideKind::MainMenu {
                     *self.slide_generation = self.slide_generation.wrapping_add(1);
@@ -636,6 +697,8 @@ impl<'a> ShellLifecycleReducer<'a> {
             | ShellSlideKind::WolLocale
             | ShellSlideKind::WolMyInformation
             | ShellSlideKind::WolBuddyList
+            | ShellSlideKind::WolQuickMatch
+            | ShellSlideKind::WolAddBuddyQuery
             | ShellSlideKind::Keyboard
             | ShellSlideKind::NetworkOptions
             | ShellSlideKind::LanLobby => ShellWaveCompletion::MenuPage,
@@ -644,7 +707,9 @@ impl<'a> ShellLifecycleReducer<'a> {
             ShellSlideKind::ChooseMap => ShellWaveCompletion::ChooseMap,
             ShellSlideKind::RandomMap => ShellWaveCompletion::RandomMap,
             ShellSlideKind::Score => ShellWaveCompletion::Score,
-            ShellSlideKind::CampaignScore => ShellWaveCompletion::CampaignScore,
+            ShellSlideKind::CampaignScore | ShellSlideKind::CampaignEnd => {
+                ShellWaveCompletion::CampaignScore
+            }
         })
     }
 
@@ -791,10 +856,14 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
                 .then_some(ShellSlideKind::Score);
         }
         if crate::app::App::campaign_score_shell_active(state) {
-            return crate::ui::shell::slide::is_slide_eligible(
-                ShellSlideKind::CampaignScore.dialog_id(),
-            )
-            .then_some(ShellSlideKind::CampaignScore);
+            let kind = ShellSlideKind::campaign_score(
+                state
+                    .frontend
+                    .campaign_score_page
+                    .as_ref()
+                    .map_or_else(Default::default, |page| page.dialog),
+            );
+            return crate::ui::shell::slide::is_slide_eligible(kind.dialog_id()).then_some(kind);
         }
         return None;
     }
@@ -867,6 +936,10 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
                 ShellSlideKind::WolMyInformation
             }
             Some(crate::app::shell_wol::WolPage::Buddy(_)) => ShellSlideKind::WolBuddyList,
+            Some(crate::app::shell_wol::WolPage::QuickMatch(_)) => ShellSlideKind::WolQuickMatch,
+            Some(crate::app::shell_wol::WolPage::AddBuddyQuery(_)) => {
+                ShellSlideKind::WolAddBuddyQuery
+            }
             _ => return None,
         }
     } else if state.frontend.shell_route.wol_lobby() {
@@ -950,8 +1023,7 @@ pub(crate) fn poll_main_menu_first_paint_before_acquire(
             let generation = wave
                 .presented_generation()
                 .expect("presented poll has generation");
-            // Active-retail stock leaves ShellButtonSlideSound empty, but the
-            // completion hook remains a named lifecycle edge.
+            // The slide-in's end cue precedes its SHOW completion (`0x00607F59`).
             crate::app::App::play_shell_slide_completion_sound(state);
             let title = crate::app::frontend::main_menu_shell_render::main_menu_title_text(state)
                 .into_owned();
@@ -1081,7 +1153,9 @@ pub(crate) fn render_shell_first_paint_slide(
         | ShellSlideKind::WolAutoLoginQuery
         | ShellSlideKind::WolLocale
         | ShellSlideKind::WolMyInformation
-        | ShellSlideKind::WolBuddyList => {
+        | ShellSlideKind::WolBuddyList
+        | ShellSlideKind::WolQuickMatch
+        | ShellSlideKind::WolAddBuddyQuery => {
             crate::app::frontend::wol_welcome_render::render_wol_page(state, encoder, destination)?
         }
         ShellSlideKind::Options | ShellSlideKind::VeraOptions => {
@@ -1131,7 +1205,7 @@ pub(crate) fn render_shell_first_paint_slide(
             encoder,
             destination,
         )?,
-        ShellSlideKind::CampaignScore => {
+        ShellSlideKind::CampaignScore | ShellSlideKind::CampaignEnd => {
             crate::app::frontend::campaign_score_shell_render::render_campaign_score_page(
                 state,
                 encoder,
@@ -1157,6 +1231,10 @@ pub(crate) fn render_shell_first_paint_slide(
     }
 
     let completion = ShellLifecycleReducer::from_state(state).finish_completed_wave(kind);
+    // The slide-in's end cue precedes its SHOW completion (`0x00607F59`).
+    if completion.is_some() {
+        crate::app::App::play_shell_slide_completion_sound(state);
+    }
     match completion {
         // `0x102`'s SHOW completion: its own statics start, or repaint when
         // the dialog shows again after Choose Map.
@@ -1224,6 +1302,7 @@ pub(crate) fn render_shell_first_paint_slide(
         }
         // 0x103's SHOW completion (`0x4EC` on the dialog) starts every kind-1
         // static and, after playing ScoreAnimSound, the 0x72B kind-4 timer.
+        // 0xBC7's (`0x00470D30`) plays no sound.
         Some(ShellWaveCompletion::CampaignScore) => {
             let now = Instant::now();
             let frames = state
@@ -1232,8 +1311,16 @@ pub(crate) fn render_shell_first_paint_slide(
                 .as_ref()
                 .and_then(|art| art.scra.as_ref())
                 .map_or(0, |strip| strip.frames.len());
+            let victory = state
+                .frontend
+                .campaign_score_page
+                .as_ref()
+                .is_some_and(|page| {
+                    page.dialog == crate::ui::campaign_score_shell::CampaignScoreDialog::Victory
+                });
             let sound = state
                 .rules()
+                .filter(|_| victory)
                 .and_then(|rules| rules.general.score_anim_sound())
                 .map(str::to_owned);
             if let Some(page) = state.frontend.campaign_score_page.as_mut() {
@@ -1388,7 +1475,7 @@ mod tests {
 
     /// Last presented tick of a `0xE2` entry at 800x600 (9 tile rows).
     fn main_menu_terminal_tick() -> u8 {
-        ShellSlideKind::MainMenu.column(9).total_ticks() as u8 - 1
+        ShellSlideKind::MainMenu.column(9, None).total_ticks() as u8 - 1
     }
 
     #[test]
@@ -1396,7 +1483,7 @@ mod tests {
         // Movie list 0x129 at 800x600: 9 tile rows, 9 + 9 = 18 ticks of 30 ms.
         let t0 = Instant::now();
         let mut exit = ShellExit {
-            wave: ShellFrameWave::new_slide_out(ShellSlideKind::MovieList.column(9), t0),
+            wave: ShellFrameWave::new_slide_out(ShellSlideKind::MovieList.column(9, None), t0),
             then: ShellExitThen::MovieListBack,
             completed_at: None,
         };
@@ -1422,7 +1509,7 @@ mod tests {
     #[test]
     fn shell_kinds_resolve_their_slide_columns() {
         let top_and_bottom = |kind: ShellSlideKind| {
-            let column = kind.column(9);
+            let column = kind.column(9, None);
             (column.top_buttons, column.bottom_button, column.map_button)
         };
         assert_eq!(top_and_bottom(ShellSlideKind::MainMenu), (5, true, false));
@@ -1437,7 +1524,7 @@ mod tests {
         assert_eq!(top_and_bottom(ShellSlideKind::MovieList), (1, true, false));
         assert_eq!(top_and_bottom(ShellSlideKind::Skirmish), (2, true, true));
         // Retail `0xD5` slides Keyboard and Network; VERA's main page adds
-        // VERA20K Options under them, and VERA's page slides only Back.
+        // Vera Options under them, and VERA's page slides only Back.
         assert_eq!(
             crate::ui::shell::slide::slide_spec_for(DialogId(0x00D5))
                 .unwrap()
@@ -1449,6 +1536,31 @@ mod tests {
             top_and_bottom(ShellSlideKind::VeraOptions),
             (0, true, false)
         );
+    }
+
+    #[test]
+    fn modern_wol_slides_only_animate_the_visible_button_faces() {
+        let welcome = ShellSlideKind::WolWelcome
+            .column(9, Some(&crate::ui::wol_shell::WOL_ONLINE_WELCOME_PAGE));
+        assert_eq!((welcome.top_buttons, welcome.bottom_button), (1, true));
+        let lobby = crate::ui::wol_lobby::WolLobbyState::new(false, true);
+        let column = ShellSlideKind::WolLobby.column(9, Some(lobby.page_spec()));
+        assert_eq!((column.top_buttons, column.bottom_button), (3, true));
+        assert_eq!(ShellSlideKind::WolWelcome.column(9, None).top_buttons, 6);
+        assert_eq!(ShellSlideKind::WolLobby.column(9, None).top_buttons, 8);
+    }
+
+    #[test]
+    fn branded_menu_button_count_preserves_modern_wol_page_columns() {
+        let menu = column_with_visible_menu_buttons(ShellSlideKind::MainMenu, 9, 4, None);
+        assert_eq!((menu.top_buttons, menu.bottom_button), (4, true));
+        let welcome = column_with_visible_menu_buttons(
+            ShellSlideKind::WolWelcome,
+            9,
+            4,
+            Some(&crate::ui::wol_shell::WOL_ONLINE_WELCOME_PAGE),
+        );
+        assert_eq!((welcome.top_buttons, welcome.bottom_button), (1, true));
     }
 
     #[test]
@@ -1508,6 +1620,7 @@ mod tests {
         ShellLifecycleReducer {
             panel_rows: 9,
             main_menu_top_buttons: 5,
+            page_spec: None,
             active_shell: &mut active_shell,
             first_paint_slide: &mut first_paint_slide,
             slide_generation: &mut slide_generation,
@@ -1526,6 +1639,7 @@ mod tests {
         ShellLifecycleReducer {
             panel_rows: 9,
             main_menu_top_buttons: 5,
+            page_spec: None,
             active_shell: &mut active_shell,
             first_paint_slide: &mut first_paint_slide,
             slide_generation: &mut slide_generation,
@@ -1543,6 +1657,7 @@ mod tests {
         let effect = ShellLifecycleReducer {
             panel_rows: 9,
             main_menu_top_buttons: 5,
+            page_spec: None,
             active_shell: &mut active_shell,
             first_paint_slide: &mut first_paint_slide,
             slide_generation: &mut slide_generation,
@@ -1605,6 +1720,7 @@ mod tests {
             ShellLifecycleReducer {
                 panel_rows: 9,
                 main_menu_top_buttons: 5,
+                page_spec: None,
                 active_shell: &mut active_shell,
                 first_paint_slide: &mut first_paint_slide,
                 slide_generation: &mut slide_generation,
@@ -1662,6 +1778,7 @@ mod tests {
         let effect = ShellLifecycleReducer {
             panel_rows: 9,
             main_menu_top_buttons: 5,
+            page_spec: None,
             active_shell: &mut active_shell,
             first_paint_slide: &mut first_paint_slide,
             slide_generation: &mut slide_generation,
@@ -1686,7 +1803,7 @@ mod tests {
         let mut active_shell = Some(ShellSlideKind::MainMenu);
         let mut first_paint_slide = Some(ShellFrameWave::new_presented_main_menu(
             52,
-            ShellSlideKind::MainMenu.column(9),
+            ShellSlideKind::MainMenu.column(9, None),
         ));
         let mut slide_generation = 52;
         let mut title_reveal = Kind1StaticReveal::default();
@@ -1719,6 +1836,7 @@ mod tests {
             !ShellLifecycleReducer {
                 panel_rows: 9,
                 main_menu_top_buttons: 5,
+                page_spec: None,
                 active_shell: &mut active_shell,
                 first_paint_slide: &mut first_paint_slide,
                 slide_generation: &mut slide_generation,

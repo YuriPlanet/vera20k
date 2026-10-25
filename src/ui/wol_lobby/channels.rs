@@ -22,6 +22,8 @@ pub(crate) const LOBBY_PREFIX: &str = "Lob_41_";
 pub(crate) const LOBBY_KEY: &str = "zotclot9";
 /// `0x00777B50`: the exInfo version (`[0x822D1C]`).
 pub(crate) const EX_INFO_VERSION: i32 = 25;
+/// The byte every exInfo caller terminates its 80-byte buffer at.
+const EX_INFO_BYTES: usize = 40;
 /// `0x00788180` skips lobbies with at least this many users (`cmp 0x19`).
 const LOBBY_CROWDED: i32 = 0x1A;
 
@@ -33,6 +35,9 @@ pub(crate) const GAME_LIMIT_640: u32 = 0x200;
 pub(crate) const GAME_LIMIT_800: u32 = 0x400;
 /// Quick Match / World Domination games (`>> 0xB & 1`, `>> 0xC & 1`).
 const GAME_RANKED: u32 = 0x1800;
+/// `0x00789EC4..0x00789EEE`: the bit a Quick Match or Quick Co-op create
+/// sets.
+pub(crate) const GAME_QUICK_MATCH: u32 = 0x800;
 
 /// One channel record (`0x10C` bytes): a chat lobby in `0xB73E18` or a game
 /// in `0xB76AE8`.
@@ -94,6 +99,27 @@ impl ExInfo {
         }
     }
 
+    /// `0x0077E7A0`'s `"%d,%d,%d,%d,%d,%s"`, terminated at byte 40 as
+    /// every caller does before use (`0x00789D15`, `0x007A5827`,
+    /// `0x0078F1C5`, `0x0077FF83`), which can cut the scenario name.
+    pub(crate) fn write(&self) -> String {
+        let mut text = format!(
+            "{},{},{},{},{},{}",
+            self.version,
+            self.hash,
+            self.ai_players,
+            self.observer_taken,
+            self.observer_open,
+            self.scenario
+        );
+        let mut end = text.len().min(EX_INFO_BYTES);
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+        text
+    }
+
     /// `f4 || f5`: one of the max users is the observer slot.
     fn observer_slot(&self) -> bool {
         self.observer_taken != 0 || self.observer_open != 0
@@ -117,6 +143,13 @@ impl WolChannel {
     /// `atol(name + 7)` of a `Lob_41_` channel.
     pub(crate) fn lobby_number(&self) -> Option<i32> {
         self.name.strip_prefix(LOBBY_PREFIX).map(crt_atoi)
+    }
+
+    /// `[0xB77DD4]` from the join sink (`0x007A5ED5..0x007A5EFD`):
+    /// `atoi(name + strlen("Lob_41_"))` of any chat lobby, whatever its
+    /// prefix (`Lob_40_3` gives 3).
+    pub(crate) fn joined_lobby_number(&self) -> i32 {
+        self.name.get(LOBBY_PREFIX.len()..).map_or(0, crt_atoi)
     }
 
     /// The shown player count and capacity (`cur - f4 + f3`, `max - (f4||f5)`).
@@ -174,12 +207,22 @@ impl WolChannel {
 pub(crate) struct WolMember {
     /// `+0x00`: [`MEMBER_OPERATOR`], [`MEMBER_VOICE`]; `0x8000` marks the local user.
     pub(crate) flags: u32,
+    /// `+0x14`: the user's squad id, 0 for none.
+    pub(crate) squad: i32,
     /// `+0x24`.
     pub(crate) name: String,
     /// `+0x2E`: the clan column's tooltip.
     pub(crate) clan_name: String,
     /// `+0x57`.
     pub(crate) clan_tag: String,
+}
+
+/// A squad record as the squad sink reads it: `+0x168` the name, `+0x191`
+/// the tag.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct WolSquad {
+    pub(crate) name: String,
+    pub(crate) tag: String,
 }
 
 pub(crate) const MEMBER_OPERATOR: u32 = 1;
@@ -489,10 +532,10 @@ pub(crate) fn pick_lobby(
 pub(crate) struct AdmissionContext {
     /// `[0xA8B244]` is Quick Match 1, 2 or 3.
     pub(crate) quick_match: bool,
-    /// `[0xB77DE4]`: the user's clan id; no clan service feeds VERA, so 0.
+    /// `[0xB77DE4]`: the user's squad id.
     pub(crate) clan_id: i32,
-    /// Rules ^ AI ^ Art of `0x00476D80`; VERA has no owner of those INI
-    /// CRCs, so the hash comparison is skipped while this is `None`.
+    /// Rules ^ AI ^ Art (`crate::rules::native_ini_hash`); `None` only
+    /// without the process sources, which skips the comparison.
     pub(crate) local_hash: Option<i32>,
 }
 
@@ -543,10 +586,17 @@ pub(crate) fn password_accepted(units: &[u16]) -> bool {
 
 /// The membership insert of the player list's sort mode (`0x007A5E40`'s
 /// dispatch): operators stay in a leading block. Alpha (mode 0 ascending,
-/// 1 descending) compares `_strcmpi` names; rank (2/3) without ladder
-/// records orders names ascending; clan (4 ascending, 5 descending) orders
-/// by tag, empty tags last, then names ascending within a tag.
-pub(crate) fn insert_member(members: &mut Vec<WolMember>, member: WolMember, sort: PlayerSort) {
+/// 1 descending) compares `_strcmpi` names; rank (`0x00782320`: 2
+/// ascending, 3 descending) orders by `rank`, the user's ladder rank or -1,
+/// unranked users last, then names ascending within a rank; clan (4
+/// ascending, 5 descending) orders by tag, empty tags last, then names
+/// ascending within a tag.
+pub(crate) fn insert_member(
+    members: &mut Vec<WolMember>,
+    member: WolMember,
+    sort: PlayerSort,
+    rank: &dyn Fn(&str) -> i32,
+) {
     let operators = members.iter().take_while(|m| m.operator()).count();
     let (start, end) = if member.operator() {
         (0, operators)
@@ -585,7 +635,28 @@ pub(crate) fn insert_member(members: &mut Vec<WolMember>, member: WolMember, sor
                 })
                 .unwrap_or(end)
         }
-        // 0 and the rank modes without ladder records (0x00782320).
+        2 | 3 => {
+            // 0x00782320 phase 1: past ranked users that sort before this
+            // rank (every ranked user when this one is unranked). A rank of
+            // 0 stops the walk.
+            let key = rank(&member.name);
+            let rank_at = (start..end)
+                .find(|i| {
+                    let existing = rank(&members[*i].name);
+                    existing <= 0
+                        || (key != -1
+                            && if sort == 2 {
+                                existing >= key
+                            } else {
+                                existing <= key
+                            })
+                })
+                .unwrap_or(end);
+            // Phase 2: past same-rank names that sort before this one.
+            (rank_at..end)
+                .find(|i| rank(&members[*i].name) != key || name_before(&members[*i]))
+                .unwrap_or(end)
+        }
         _ => (start..end)
             .find(|i| name_before(&members[*i]))
             .unwrap_or(end),
@@ -594,9 +665,13 @@ pub(crate) fn insert_member(members: &mut Vec<WolMember>, member: WolMember, sor
 }
 
 /// A sort button re-inserts every member in the current order.
-pub(crate) fn resort_members(members: &mut Vec<WolMember>, sort: PlayerSort) {
+pub(crate) fn resort_members(
+    members: &mut Vec<WolMember>,
+    sort: PlayerSort,
+    rank: &dyn Fn(&str) -> i32,
+) {
     for member in std::mem::take(members) {
-        insert_member(members, member, sort);
+        insert_member(members, member, sort, rank);
     }
 }
 
@@ -619,6 +694,7 @@ mod tests {
     fn member(name: &str, flags: u32, tag: &str) -> WolMember {
         WolMember {
             flags,
+            squad: 0,
             name: name.into(),
             clan_tag: tag.into(),
             ..Default::default()
@@ -642,6 +718,26 @@ mod tests {
         let info = ExInfo::parse("25,,3");
         assert_eq!((info.version, info.hash, info.ai_players), (25, 3, 0));
         assert_eq!(info.scenario, "");
+    }
+
+    #[test]
+    fn ex_info_writes_six_fields_cut_at_byte_forty() {
+        let info = ExInfo {
+            version: 25,
+            hash: -1_234_567_890,
+            ai_players: 2,
+            observer_taken: 0,
+            observer_open: 1,
+            scenario: "yrmap.map".into(),
+        };
+        assert_eq!(info.write(), "25,-1234567890,2,0,1,yrmap.map");
+        assert_eq!(ExInfo::parse(&info.write()), info);
+        let long = ExInfo {
+            scenario: "a_scenario_name_of_thirty_bytes.map".into(),
+            ..info
+        };
+        assert_eq!(long.write(), "25,-1234567890,2,0,1,a_scenario_name_of_");
+        assert_eq!(long.write().len(), 40);
     }
 
     #[test]
@@ -843,31 +939,66 @@ mod tests {
         ];
         let mut members = Vec::new();
         for m in incoming.iter().cloned() {
-            insert_member(&mut members, m, 0);
+            insert_member(&mut members, m, 0, &|_| -1);
         }
         assert_eq!(
             names(&members),
             ["abe", "Zed", "alice", "bob", "Carl", "dora"]
         );
-        resort_members(&mut members, 1);
+        resort_members(&mut members, 1, &|_| -1);
         assert_eq!(
             names(&members),
             ["Zed", "abe", "dora", "Carl", "bob", "alice"]
         );
-        resort_members(&mut members, 3);
+        resort_members(&mut members, 3, &|_| -1);
         assert_eq!(
             names(&members),
             ["abe", "Zed", "alice", "bob", "Carl", "dora"]
         );
-        resort_members(&mut members, 4);
+        resort_members(&mut members, 4, &|_| -1);
         assert_eq!(
             names(&members),
             ["abe", "Zed", "Carl", "bob", "dora", "alice"]
         );
-        resort_members(&mut members, 5);
+        resort_members(&mut members, 5, &|_| -1);
         assert_eq!(
             names(&members),
             ["abe", "Zed", "bob", "dora", "Carl", "alice"]
+        );
+    }
+
+    #[test]
+    fn rank_inserts_order_ranked_users_and_put_the_unranked_last() {
+        let names = |members: &[WolMember]| -> Vec<String> {
+            members.iter().map(|m| m.name.clone()).collect()
+        };
+        let rank = |name: &str| match name {
+            "Zed" => 3,
+            "abe" => 9,
+            "alice" => 2,
+            "bob" | "erin" => 5,
+            _ => -1,
+        };
+        let mut members = Vec::new();
+        for m in [
+            member("dora", 0, ""),
+            member("erin", 0, ""),
+            member("abe", 1, ""),
+            member("bob", 0, ""),
+            member("Carl", 0, ""),
+            member("Zed", 1, ""),
+            member("alice", 0, ""),
+        ] {
+            insert_member(&mut members, m, 2, &rank);
+        }
+        assert_eq!(
+            names(&members),
+            ["Zed", "abe", "alice", "bob", "erin", "Carl", "dora"]
+        );
+        resort_members(&mut members, 3, &rank);
+        assert_eq!(
+            names(&members),
+            ["abe", "Zed", "bob", "erin", "alice", "Carl", "dora"]
         );
     }
 }

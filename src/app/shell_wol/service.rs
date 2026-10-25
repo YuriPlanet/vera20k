@@ -10,7 +10,7 @@
 use std::time::{Duration, Instant};
 
 use super::{WolBoxThen, WolPage, WolVisit};
-use crate::app::persistence::wol_profile::WolPersona;
+use crate::app::persistence::wol_profile::{WolInfoFile, WolPersona};
 use crate::app::{App, AppState};
 use crate::ui::wol_chat::WolChatLine;
 use crate::ui::wol_lobby::{WolChannel, WolMember};
@@ -23,6 +23,8 @@ use crate::ui::wol_shell::{
 /// Which WOLAPI stands behind the visit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WolProvider {
+    /// VERA's authenticated HTTPS lobby and UDP relay.
+    Online,
     /// No Westwood online components (every retail install today): the
     /// WOLAPI object cannot be created (`0x00786390` -> `0x00785711`).
     Unavailable,
@@ -80,7 +82,7 @@ pub(crate) struct WolLoginAccepted {
     pub(crate) motd: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) enum WolServiceRequest {
     /// `WOL__EnsureWolapiObject` `0x00786390`.
     EnsureApi,
@@ -127,6 +129,9 @@ pub(crate) enum WolServiceRequest {
     JoinChannel { channel: WolChannel, key: String },
     /// API+0x24: leave the current channel.
     LeaveChannel,
+    /// VERA HTTPS cleanup intent when the visit returns while its live service
+    /// is borrowed by a callback. The same service owns the match/finish ID.
+    MatchReturned,
     /// API+0x34 from the logout `0x00785EA0`.
     Logout,
     /// `0x00789B60`: API+0x1C with the new game channel's record and its
@@ -142,6 +147,10 @@ pub(crate) enum WolServiceRequest {
     SetLangFilter(i32),
     /// `0x0077E110`: API+0x68 with AllowFind and AllowPage.
     SetFindPage { find: i32, page: i32 },
+    /// API+0xB0: a squad's record; 0 asks for the user's own (the lobby
+    /// runner's entry `0x00787B33..0x00787B53`, a joiner's at
+    /// `0x007A62B7..0x007A62EE`). The answer is [`WolServiceEvent::Squad`].
+    SquadInfo { id: i32 },
     /// API+0xDC: the buddy list (`0x116`'s init, the lobby runner's entry
     /// `0x00787BC8`); the answer is [`WolServiceEvent::Buddies`].
     ListBuddies,
@@ -153,9 +162,34 @@ pub(crate) enum WolServiceRequest {
     /// API+0x60 for one buddy of the locate queue `0xB76980`; the find sink
     /// answers with [`WolServiceEvent::Located`].
     Locate(String),
-    /// `0x0079D110`: the ladder API `[0xAC1170]` vt+0x14/+0x38 for up to
-    /// ten names; the answer is [`WolServiceEvent::Ladder`].
+    /// The ladder API `[0xAC1170]` vt+0x14 for the names (SKU
+    /// `[0xB77A90]`); the answer is [`WolServiceEvent::Ladder`].
     LadderRecords(Vec<String>),
+    /// The ladder API vt+0x38 for the names; the answer is
+    /// [`WolServiceEvent::HighScores`].
+    HighScores(Vec<String>),
+    /// `0x007A0690`: API+0x30, the private ANSI text
+    /// [`super::quick_match::MatchRequest::text`] to the Quick Match lobby's
+    /// matchbot. The service fills the transport fields
+    /// ([`super::quick_match::MatchTransport`]).
+    RequestMatch {
+        matchbot: String,
+        request: super::quick_match::MatchRequest,
+    },
+    /// VERA's chat translation of a received line into `[VERA]
+    /// TranslateChat=`'s language; [`super::translation`] shows the reply.
+    Translate {
+        text: Vec<u16>,
+        line: super::translation::TranslatedLine,
+    },
+}
+
+impl std::fmt::Debug for WolServiceRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WolServiceRequest")
+            .field("kind", &std::mem::discriminant(self))
+            .finish_non_exhaustive()
+    }
 }
 
 /// One ladder record (`0x6C` bytes) of the ladder sink
@@ -173,6 +207,20 @@ pub(crate) struct WolLadderRecord {
     pub(crate) rank: i32,
     /// `+0x20`.
     pub(crate) disconnects: i32,
+}
+
+/// One high-score record (`0x44` bytes) of `CNetUtilEventSink+0x24`
+/// (`0x007A3B30`); the player list compares its fields unsigned.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct WolHighScoreRecord {
+    /// `+0x1C`.
+    pub(crate) name: String,
+    /// `+0x0C`: the badge's points.
+    pub(crate) points: u32,
+    /// `+0x10`: the rank the digits show.
+    pub(crate) rank: u32,
+    /// `+0x14`: one bit per finished co-op campaign.
+    pub(crate) coop: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -227,6 +275,12 @@ pub(crate) enum WolServiceEvent {
         from: String,
         status: u8,
     },
+    /// The squad sink `+0x80` (`0x007A4EC0`): the id it reports and the
+    /// record, or the failure.
+    Squad {
+        id: i32,
+        squad: Result<crate::ui::wol_lobby::WolSquad, u32>,
+    },
     /// The private sink's `P<scenario>` from a guest (`0x007A8BF3`).
     #[expect(
         dead_code,
@@ -249,12 +303,18 @@ pub(crate) enum WolServiceEvent {
     PageResult(Result<(), u32>),
     /// A chat or action line from another user: the chat sinks
     /// `0x007A8DA0` (public), `0x007A8FC0` (private), `0x007AB170` (public
-    /// action), `0x007AAFB0` (private action) and their UTF-16 forms.
+    /// action), `0x007AAFB0` (private action) and, without `ansi`, their
+    /// UTF-16 forms (`0x007A8ED0`, `0x007A9110`, `0x007AB260`,
+    /// `0x007AB0A0`). A matchbot's private `Start <options>:<players>`
+    /// carries its options decoded (`0x005E3D10`'s default arm, as for a
+    /// host's options).
     Message {
         from: WolMember,
         text: Vec<u16>,
         private: bool,
         action: bool,
+        ansi: bool,
+        options: Option<Box<crate::app::shell_network_setup::HostOptions>>,
     },
     /// The find sink `0x007A9970`: the channel the located user is in, or
     /// the result code.
@@ -262,6 +322,9 @@ pub(crate) enum WolServiceEvent {
     /// The ladder sink `CNetUtilEventSink+0x10` (`0x007A3100`): records
     /// for the table `[0xB77E0C]`.
     Ladder(Vec<WolLadderRecord>),
+    /// The high-score sink `CNetUtilEventSink+0x24` (`0x007A3B30`): records
+    /// for the table `0xB76640`, or a failed result (only logged).
+    HighScores(Result<Vec<WolHighScoreRecord>, u32>),
     /// The buddy-list sink `CChatEventSink+0x94` (`0x007AC220`): the
     /// users of the list, or a negative result.
     Buddies(Result<Vec<String>, u32>),
@@ -486,7 +549,9 @@ impl WolVisit {
         let awaiting = std::mem::take(&mut self.awaiting);
         match (awaiting, event) {
             (awaiting, WolServiceEvent::Credentials(credentials)) => {
-                self.credentials = credentials;
+                if self.provider != WolProvider::Online {
+                    self.credentials = credentials;
+                }
                 self.awaiting = awaiting;
                 WolStep::Stay
             }
@@ -496,30 +561,24 @@ impl WolVisit {
                 then: WolBoxThen::Leave(-2),
             },
             (Awaiting::Api, WolServiceEvent::Api(WolApiStatus::Available)) => {
-                if !matches!(
-                    self.mode,
-                    Some(WolMode::CustomMatch | WolMode::MyInformation | WolMode::PlayBuddy)
-                ) {
-                    log::warn!(
-                        "WOL mode {:?} after WOLAPI creation is not implemented",
-                        self.mode
-                    );
-                    return WolStep::Welcome;
-                }
                 // 0x00786390 creates the object once per visit ([0xB77E75]);
                 // only then does it reset the WOL globals (0x00780110),
-                // including [0xB77AD0], the selected record and the ladder
-                // and locale tables, and set [0xB77DC0] (0x00786485) until a
+                // including [0xB77AD0], the selected record and the locale
+                // table, and set [0xB77DC0] (0x00786485) until a
                 // connect clears it.
                 if !self.api {
                     self.api = true;
                     self.last_error = None;
                     self.selected_server = 0;
-                    self.ladder.clear();
                     self.locales.clear();
+                    // 0x0078061B..0x0078065F.
+                    self.squad_id = 0;
+                    self.squad_own_pending = false;
                     self.connected = false;
                 }
-                self.requests.push(WolServiceRequest::ListCredentials);
+                if self.provider != WolProvider::Online {
+                    self.requests.push(WolServiceRequest::ListCredentials);
+                }
                 self.requests
                     .push(WolServiceRequest::FetchServers { flags: 0x2900 });
                 self.awaiting = Awaiting::Servers {
@@ -645,7 +704,7 @@ pub(super) fn begin_my_information(state: &mut AppState) {
 }
 
 /// Queue a request from the login page (credential store changes).
-pub(super) fn request(state: &mut AppState, request: WolServiceRequest) {
+pub(crate) fn request(state: &mut AppState, request: WolServiceRequest) {
     if let Some(visit) = state.frontend.wol.as_mut() {
         visit.requests.push(request);
     }
@@ -655,13 +714,33 @@ pub(super) fn request(state: &mut AppState, request: WolServiceRequest) {
 /// `0x007864C0` with `server`: the nickname and password go into the
 /// record (+0xE4/+0xEE) and the connect waits behind `0xC4`.
 fn connect(state: &mut AppState, server: WolServer, auto: bool, remember_locale: i32) -> WolStep {
-    let globals = state.frontend.wol_account.clone();
+    let online = state
+        .frontend
+        .wol
+        .as_ref()
+        .is_some_and(|visit| visit.provider == WolProvider::Online);
+    let (nickname, password, changed) = if online {
+        // The shared native request retains its credential fields for the
+        // test service; modern HTTPS admission uses only this username.
+        (
+            state.frontend.wol_account.nickname.clone(),
+            String::new(),
+            false,
+        )
+    } else {
+        let globals = &state.frontend.wol_account;
+        (
+            globals.nickname.clone(),
+            globals.password.clone(),
+            globals.changed,
+        )
+    };
     let visit = state.frontend.wol.as_mut().expect("WOL visit");
     visit.requests.push(WolServiceRequest::Connect {
         server: server.clone(),
-        nickname: globals.nickname,
-        password: globals.password,
-        changed: globals.changed,
+        nickname,
+        password,
+        changed,
     });
     visit.awaiting = Awaiting::Connect {
         deadline: Instant::now() + WAIT_LIMIT,
@@ -678,6 +757,15 @@ fn connect(state: &mut AppState, server: WolServer, auto: bool, remember_locale:
 /// `0x00787010` past the server list (`0x007870F5..0x00787359`): with
 /// `[DefaultPersona] AutoLogin` naming a stored account, connect silently.
 fn after_server_list(state: &mut AppState) {
+    if state
+        .frontend
+        .wol
+        .as_ref()
+        .is_some_and(|visit| visit.provider == WolProvider::Online)
+    {
+        super::login::open(state);
+        return;
+    }
     let auto_name = super::persona::info_file(state)
         .map(|file| file.auto_login())
         .unwrap_or_default();
@@ -762,7 +850,16 @@ fn auto_login_failed(state: &mut AppState) {
 /// the persona's preferred server picks the record.
 pub(super) fn begin_connect(state: &mut AppState) {
     let nickname = state.frontend.wol_account.nickname.clone();
-    let persona = super::persona::load(state, &nickname);
+    let online = state
+        .frontend
+        .wol
+        .as_ref()
+        .is_some_and(|visit| visit.provider == WolProvider::Online);
+    let persona = if online {
+        WolPersona::default()
+    } else {
+        super::persona::load(state, &nickname)
+    };
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
@@ -797,8 +894,20 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             text,
             private,
             action,
+            ansi,
+            options,
         } => {
-            super::lobby::message_received(state, from, text, private, action);
+            super::lobby::message_received(
+                state,
+                super::lobby::ReceivedMessage {
+                    from,
+                    text,
+                    private,
+                    action,
+                    ansi,
+                    options,
+                },
+            );
             return;
         }
         WolServiceEvent::Located(result) => {
@@ -826,6 +935,10 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             super::buddies::ladder_received(state, records);
             return;
         }
+        WolServiceEvent::HighScores(result) => {
+            super::lobby::high_scores_received(state, result);
+            return;
+        }
         WolServiceEvent::Buddies(result) => {
             super::buddies::buddy_list_received(state, result);
             return;
@@ -849,6 +962,11 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
             } else {
                 super::persona::locale_count(state, count);
             }
+            return;
+        }
+        WolServiceEvent::Squad { id, squad } => {
+            super::lobby::squad(state, id, squad);
+            answer_unavailable(state);
             return;
         }
         event @ (WolServiceEvent::Channels { .. }
@@ -902,6 +1020,19 @@ pub(super) fn message_box_text(state: &AppState, body: String, yes_no: bool) -> 
     WolMessageBox { body, buttons }
 }
 
+/// A live-service refusal whose reason no CSF label carries: the box its
+/// failure opened shows `body` instead. False when no box is open.
+pub(super) fn replace_open_box_body(state: &mut AppState, body: &str) -> bool {
+    match state.frontend.wol.as_mut().map(|visit| &mut visit.page) {
+        Some(WolPage::Message { message, .. }) => {
+            message.body = body.to_owned();
+            state.platform.window.request_redraw();
+            true
+        }
+        _ => false,
+    }
+}
+
 fn apply(state: &mut AppState, step: WolStep) {
     match step {
         WolStep::Stay => {}
@@ -952,6 +1083,31 @@ fn apply(state: &mut AppState, step: WolStep) {
     }
 }
 
+/// Login's persona load/save (`0x00786821..0x007868F9`) for native diagnostics.
+/// `persona::info_file` excludes modern visits; their nickname still needs
+/// validation here, including providers bypassing the HTTP worker.
+fn connected_persona(
+    file: Option<&WolInfoFile>,
+    nickname: &str,
+    online: bool,
+    server: Option<&str>,
+    csf: &dyn Fn(&str) -> String,
+) -> anyhow::Result<WolPersona> {
+    if online {
+        crate::app::frontend::skirmish_session::validate_online_handle(nickname)?;
+    }
+    let mut persona =
+        file.map_or_else(WolPersona::default, |file| file.load_persona(nickname, csf));
+    // Modes 4 and 5 retain the connected server and save the named persona.
+    if let Some(server) = server {
+        persona.set_server(server);
+        if let Some(file) = file {
+            file.save_persona(&mut persona, nickname, csf);
+        }
+    }
+    Ok(persona)
+}
+
 /// `0x007864C0`'s success continuation (`0x00786795..0x00786A48`), up to
 /// the locale wait.
 fn connect_succeeded(state: &mut AppState) {
@@ -965,26 +1121,59 @@ fn connect_succeeded(state: &mut AppState) {
         crate::app::shell_main_menu::MultiplayerSettingsContext::Shell,
     );
     let nickname = state.frontend.wol_account.nickname.clone();
-    let mut persona = super::persona::load(state, &nickname);
     let visit = state.frontend.wol.as_ref().expect("WOL visit");
-    let server = visit.flow.as_ref().map(|flow| flow.server.clone());
-    // Modes 4 and 5 keep the connected server as the persona's (and save
-    // it, the first write of a named section).
-    if let Some(server) = server
-        && matches!(visit.mode.map(WolMode::native), Some(4 | 5))
-    {
-        persona.set_server(server.persona_server());
-        super::persona::save(state, &mut persona, &nickname);
-    }
+    let online = visit.provider == WolProvider::Online;
+    let server = visit
+        .flow
+        .as_ref()
+        .filter(|_| matches!(visit.mode.map(WolMode::native), Some(4 | 5)))
+        .map(|flow| flow.server.clone());
+    let file = super::persona::info_file(state);
+    let persona = connected_persona(
+        file.as_ref(),
+        &nickname,
+        online,
+        server.as_ref().map(WolServer::persona_server),
+        &|key| resolve(state, key),
+    );
+    let Ok(persona) = persona else {
+        if let Some(visit) = state.frontend.wol.as_mut() {
+            visit.authenticated = false;
+            visit.connected = false;
+            visit.requests.push(WolServiceRequest::Logout);
+        }
+        apply(
+            state,
+            WolStep::Message {
+                key: "TXT_CANT_CONNECT",
+                yes_no: false,
+                then: WolBoxThen::Welcome,
+            },
+        );
+        return;
+    };
     // The nickname becomes the session handle [0xA8B380], the persona's
     // Country and Color the MultiPlayer picks, and WriteMultiPlayerSettings
     // 0x006990A0 saves them.
     let runtime = &mut state.frontend.multiplayer_shell_runtime;
-    runtime.set_handle(&nickname);
-    runtime.set_side_and_color(persona.country, persona.color);
+    if online {
+        runtime
+            .accept_online_handle(&nickname)
+            .expect("online nickname admitted before persona access");
+    } else {
+        runtime.set_handle(&nickname);
+    }
+    if !online {
+        runtime.set_side_and_color(persona.country, persona.color);
+    }
     runtime.persist_local_preferences();
-    if let Some(file) = super::persona::info_file(state) {
+    if let Some(file) = file {
         file.set_last_valid(&nickname);
+    }
+    if online {
+        state.frontend.wol.as_mut().expect("WOL visit").flow = None;
+        finish_login(state);
+        return;
     }
     // 0x00786964..0x007869E3: the ladder requests need the ladder service
     // ([0xAC1170]); none is modelled, so none is sent.
@@ -1136,7 +1325,7 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;
     };
-    if matches!(visit.page, WolPage::Lobby) {
+    if matches!(visit.page, WolPage::Lobby | WolPage::QuickMatch(_)) {
         super::lobby::box_command(state, control);
         answer_unavailable(state);
         state.platform.window.request_redraw();
@@ -1234,6 +1423,75 @@ mod tests {
                 .collect(),
             selected,
         }
+    }
+
+    #[test]
+    fn online_admission_never_requests_or_retains_native_credentials() {
+        let mut visit = visit();
+        visit.provider = WolProvider::Online;
+        assert_eq!(
+            visit.reduce(WolServiceEvent::Api(WolApiStatus::Available)),
+            WolStep::Wait("TXT_FETCHING_SERVLIST")
+        );
+        assert_eq!(
+            visit.take_service_requests(),
+            [WolServiceRequest::FetchServers { flags: 0x2900 }]
+        );
+        assert_eq!(
+            visit.reduce(WolServiceEvent::Credentials(vec![WolCredential {
+                slot: 1,
+                nickname: "Alpha".into(),
+                password: "12345678".into(),
+            }])),
+            WolStep::Stay
+        );
+        assert!(visit.credentials.is_empty());
+        assert!(matches!(visit.awaiting, Awaiting::Servers { .. }));
+    }
+
+    #[test]
+    fn login_slide_policy_has_only_the_modern_or_native_forms_buttons() {
+        use crate::app::frontend::shell_transition::ShellSlideKind;
+        use crate::ui::wol_login::{LoginPolicy, WolAccountGlobals, WolLoginState};
+        let mut visit = visit();
+        let mut globals = WolAccountGlobals::default();
+        visit.page = WolPage::Login(Box::new(WolLoginState::open_online(&mut globals)));
+        let modern = visit.login().unwrap().policy.page_spec();
+        assert_eq!(modern, LoginPolicy::Online.page_spec());
+        let column = ShellSlideKind::WolLogin.column(9, Some(modern));
+        assert_eq!((column.top_buttons, column.bottom_button), (1, true));
+        visit.page = WolPage::Login(Box::new(WolLoginState::open(&mut globals, &[])));
+        let native = visit.login().unwrap().policy.page_spec();
+        assert_eq!(native, LoginPolicy::Legacy.page_spec());
+        let column = ShellSlideKind::WolLogin.column(9, Some(native));
+        assert_eq!((column.top_buttons, column.bottom_button), (3, true));
+    }
+
+    #[test]
+    fn online_login_validates_without_persona_io_and_native_login_still_saves() {
+        use crate::app::persistence::wol_profile::WOLINFO_INI;
+        let directory = crate::map::source::test_support::TestDirectory::new("login-persona");
+        let file = WolInfoFile::in_directory(directory.path());
+        let path = directory.path().join(WOLINFO_INI);
+        let nickname = "a]\r\n[Ask]\r\nAutoLogin=no\r\n[b";
+        let csf = |key: &str| key.to_owned();
+        assert!(connected_persona(Some(&file), nickname, true, Some("Online"), &csf).is_err());
+        assert!(
+            !path.exists(),
+            "rejected identity must not create a profile"
+        );
+        let previous = b"; retained profile\r\n[Ask]\r\nAutoLogin=yes\r\n";
+        directory.write(WOLINFO_INI, previous);
+        assert!(connected_persona(Some(&file), nickname, true, Some("Online"), &csf).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), previous);
+
+        // The production persona owner supplies no file for modern visits.
+        let persona = connected_persona(None, "Player_Alpha", true, Some("Online"), &csf).unwrap();
+        assert_eq!(persona.server, "Online");
+        assert_eq!(std::fs::read(&path).unwrap(), previous);
+        connected_persona(Some(&file), "Player_Alpha", false, Some("Legacy"), &csf).unwrap();
+        assert!(file.ask_auto_login());
+        assert_eq!(file.load_persona("Player_Alpha", &csf).server, "Legacy");
     }
 
     #[test]

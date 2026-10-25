@@ -1,6 +1,6 @@
 //! GPU-independent main-voxel admission shared by gameplay and presentation.
 //!
-//! Source: fixed ART's Voxel flag, final rules Image/Unit gun configuration,
+//! Source: the process-owned reached VXL request and Unit gun configuration,
 //! and the match's AssetManager bytes. RuleSet rebuilds this immutable catalog
 //! alongside effect assets; replacing ART invalidates it. An unbound catalog
 //! admits no type. No renderer cache or per-entity flag can change this input.
@@ -60,7 +60,8 @@ pub fn voxel_tilt_half_sizes(vxl: &VxlFile) -> Option<[f32; 2]> {
 }
 
 /// ObjectType5F8110's body and Unit gun loading. TechnoType716090's Voxel
-/// declaration gates the call. Main VXL ctor755CD0/755CFE retains an error byte;
+/// declaration gates the fresh call; saved family loads can reach it
+/// unconditionally before SHP mutates ImageFile. Main VXL ctor755CD0/755CFE retains an error byte;
 /// IsVoxel6F9E10 requires the resulting B0 pointer and error byte zero.
 /// Missing/invalid main HVA sets failure5F8245; cleanup5F8A60..5F8AA4 clears
 /// B0/B4. Indexed TUR/HVA and present BARL/HVA failures share that cleanup.
@@ -76,8 +77,7 @@ pub fn load_main_voxel(
 ) -> Option<MainVoxelParts> {
     let object = rules.and_then(|rules| rules.object(type_id));
     if let Some(object) = object
-        && (object.category == ObjectCategory::Building
-            || !rules?.art().get(&object.image).is_some_and(|art| art.voxel))
+        && (object.category == ObjectCategory::Building || object.voxel_image_load().is_none())
     {
         return None;
     }
@@ -186,13 +186,13 @@ mod tests {
     use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
 
     fn body_rules(voxel: bool) -> RuleSet {
-        let mut rules = RuleSet::from_ini(&IniFile::from_str(
-            "[VehicleTypes]\n0=TEST\n[TEST]\nImage=BODY\nStrength=300\n",
-        ))
+        let art = IniFile::from_str(&format!("[BODY]\nVoxel={voxel}\n"));
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str("[VehicleTypes]\n0=TEST\n[TEST]\nImage=BODY\nStrength=300\n"),
+            &art,
+        )
         .unwrap();
-        rules.install_art_fixture(ArtRegistry::from_ini(&IniFile::from_str(&format!(
-            "[BODY]\nVoxel={voxel}\n"
-        ))));
+        rules.install_art_fixture(ArtRegistry::from_ini(&art));
         rules
     }
 
@@ -246,8 +246,14 @@ mod tests {
         assert!(rules.object_voxel_half_sizes("TEST").is_none());
         rules.bind_effect_assets(&load_assets(), "TEM", "TEMPERATE");
         assert!(
+            loaded(&rules, "TEST"),
+            "ART metadata replacement cannot replay ReadINI or discard its retained VXL request"
+        );
+        rules = body_rules(false);
+        rules.bind_effect_assets(&load_assets(), "TEM", "TEMPERATE");
+        assert!(
             !loaded(&rules, "TEST"),
-            "a physical VXL is not a declaration"
+            "without a reached VXL request, a physical model alone is insufficient"
         );
         rules = body_rules(true);
         std::fs::remove_file(directory.path().join("BODY.HVA")).unwrap();

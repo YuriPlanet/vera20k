@@ -790,7 +790,6 @@ def generate_authored_init(*, natural_context=False):
     parser, Overlay implementation or expected queue on the host.
     """
     from collections import Counter
-    from tools.native_oracle import image_sha256
     from tools.spatial_oracle.anytown_damage.navigation_inputs import (
         Inputs, identity, ASSETS, extract_tiles,
     )
@@ -942,7 +941,7 @@ def generate_authored_init(*, natural_context=False):
         pointer = reader.overlay_ptrs[index]
         flat_overlays.append(dict(index=index, name=reader.names[index],
                                   cell_anim_null=reader.read32(pointer + 0x29C) == 0))
-    result = dict(source='unicorn/gamemd.exe', native_sha256=image_sha256(),
+    result = dict(source='unicorn/gamemd.exe',
         native_rect=native_map.case['size'], capacity=capacity,
         inputs=dict(manifest=manifest, type_readers=reader.tiberium_timer_layers,
             effective_types=effective_types, gates=gates, scenario_theater=scenario_theater,
@@ -1088,7 +1087,7 @@ def generate_authored_natural():
         else:
             previous_after, previous_frame = actual, step['frame']
     assert snapshot() == previous_after
-    return dict(source=initialized['source'], native_sha256=initialized['native_sha256'],
+    return dict(source=initialized['source'],
                 inputs=dict(**initialized['inputs'], geometry=geometry, session=session,
                             seed=0, actors_present=False, frames=[0, 660],
                             runtime_registry_setup='original startup vtables/spare4096; populated B0F670 preserved'),

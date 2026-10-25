@@ -1,274 +1,214 @@
-# Networking: CnCNet-style UDP multiplayer
+# Multiplayer behavior and ownership
 
-Roadmap for multiplayer in VERA20k. It describes the CnCNet model, the pieces the
-repository already has, the target ownership inside `src/`, and the implementation
-chains in dependency order so they can be built and merged one at a time.
+Current macOS and Linux source builds provide LAN and online multiplayer through
+the normal game menus. Both paths use the existing
+owners for session setup, synchronized commands, reliable UDP delivery, frame
+pacing, checksums, disconnects, results and rematches. The function-level
+active-retail `gamemd.exe` parity audit remains separate from runtime validation.
 
-Status: design. Nothing below is implemented unless the "Current state" section says so.
+Legacy IPX sockets and the IPX protocol are excluded. Shared behavior in
+IPX-named classes remains relevant. Retail's Network menu constructs the IPX
+interface (`52E3D2`); VERA uses IPv4 UDP for this LAN entry point. That replacement,
+including limited broadcast on port 1234, is an explicit transport adaptation.
+Online play uses the Cloudflare HTTPS lobby and an authenticated UDP gameplay
+relay on DigitalOcean. Relay admission handles client source-address changes;
+the relay orders modern online commands while clients retain simulation authority. Matches are between
+VERA20k clients; legacy IPX and gamemd wire compatibility are not supported.
 
-## Goal and non-goals
+## Current production path
 
-Goals:
+The Network menu enters the LAN lobby. The physical service handles discovery,
+join, options, roster, readiness and GO, then transfers the same socket pair into
+the running match. For online play, choose Internet → Custom Match, enter a
+username and press OK. Names use 1–24 ASCII letters, digits, underscores or hyphens;
+each active player needs a different name. No password or account creation is
+required. Players enter German Bunker, then create or join a game. A host can
+select Easy, Normal or Hard AI from an open player slot in Battle or Free For All.
+The HTTPS service supplies match-specific relay credentials before the same loading
+and command handoff. Both paths transfer selected authored maps or generated
+seed/preview data and verify build, rules and effective-map agreement before start.
 
-- Several VERA20k clients play one deterministic lockstep match over UDP.
-- On a local network, clients find each other from inside the app and play without
-  any external program, internet service or configuration file. This is what gamemd's
-  Network button does over IPX, and it is the native experience VERA20k reproduces
-  over UDP.
-- Over the internet, play first through the CnCNet client and its tunnels, later
-  from VERA20k's own lobby.
+Typing `/translate zh` (or `en`, `zh-tw`, `ja`, `ko`, `de`, `fr`, `es`, `pt`) in an
+online chat edit turns on chat translation, saved as `[VERA] TranslateChat=`;
+`/translate off` stops it. Received lobby, room and match chat written in the other
+script (Latin versus CJK) is sent to the lobby's translation service. The original
+stays; its translation follows as a line from the same sender marked `»`.
 
-Non-goals:
+The app services reliable messages and intermediate progress while loading, and
+continues servicing transport during frame waits. Gameplay uses the same
+OutList/DoList owners as offline play; the transport does not own a second
+simulation command queue.
 
-- Playing against gamemd. Lockstep needs bit-identical simulation. VERA20k uses
-  `SimFixed` where native uses x87, so a mixed session desyncs. CnCNet provides
-  matchmaking and NAT traversal, not compatibility.
-- IPX. gamemd's Network button opens an `AF_IPX` socket (`0x007B10C0`). Modern
-  systems have no IPX, so VERA20k replaces it with UDP behind the same role. This is
-  a recorded, necessary divergence from native.
-- Reproducing gamemd's wire format. Only VERA20k clients talk to each other, so the
-  packet layout is VERA20k's own. The native event semantics (opcodes, send policies,
-  frame stamps, checksum history) are kept, because they decide gameplay behavior.
+Online games admitted with exactly one human use local command scheduling: commands
+run at the next dispatch opportunity without a multiplayer lead-time buffer. The
+first simulation frame still primes the existing network queue. Game-speed and CPU
+timing continue through the same timing owner. Games originally admitted with
+multiple human sources, including observers, retain synchronized scheduling even
+after other players leave. AI players never acquire network identities.
 
-## How CnCNet works
+Online matches with two or more human sources use a lobby-certified fixed clock
+and one immutable relay command stream. All originally admitted clients must agree
+to the initial world before it starts. At each deadline, missing input is empty;
+late commands are assigned a future frame. The sender also waits for that commit.
+Frames use the existing Event codec and simulation queues, with a fresh compression
+cache per self-contained encrypted batch. The relay never receives payload keys.
 
-CnCNet is three separate GPL-3 programs:
+Each client reads retained history independently. A paused or slow client catches
+up through at most eight ordinary simulation transactions or eight milliseconds
+per service wake, then yields to input/rendering. It never skips simulation ticks.
+Peer lag, acknowledgements and CPU reports cannot slow the shared clock. The
+initial speed stays fixed for the match. The relay keeps a bounded RAM cache and the full encrypted match journal on
+disk. Temporary connection loss keeps the player's identity, units, input cursor
+and world in the match; the client renews its ticket and reads missed frames when
+connectivity returns. Network silence never writes an exit. The UI shows
+Reconnecting or Catching up while healthy clients continue. Explicit Leave or the
+24-hour match lifetime ends membership. The relay remains required for progress.
 
-| Piece | What it does | Relevance to VERA20k |
-|---|---|---|
-| Client (`xna-cncnet-client`, C#) | IRC lobby, game negotiation, writes `spawn.ini`, launches the game, relays game UDP through tunnels | Launcher for the initial port |
-| Tunnel server (`cncnet-server`, C#) | UDP relay for NAT traversal, announces itself to an HTTP master list | Transport VERA20k can talk to directly later |
-| YR spawner (`yrpp-spawner`, injected DLL) | Makes gamemd start a match from `spawn.ini` instead of its menus | Not needed: VERA20k reads `spawn.ini` itself |
+Authored Battle matches record reconstructible JSON replays in `replays/`.
+`vera20k --replay <replay.json> --ra2-dir <retail-directory>` opens read-only
+playback with camera controls and Escape to close.
+`vera20k --replay-verify <replay.json> --ra2-dir <retail-directory>` reconstructs the
+accepted launch and replays the production frame transaction without connecting
+to the lobby. Startup version, rules, map bytes, seed and initial state must match;
+recorded state hashes are checked during playback. Generated maps, campaigns and
+restored mid-match segments currently lack standalone replay startup.
 
-### Tunnel protocol, version 3
-
-From `CnCNet/Net/Tunnel/TunnelV3.cs` in the tunnel server:
-
-- UDP, default port 50001. Datagrams shorter than 8 bytes are dropped; receive buffer 1024 bytes.
-- Header: `u32 sender_id` at offset 0, `u32 receiver_id` at offset 4, native byte
-  order on the server (little-endian in practice). Payload follows unchanged.
-- Ping: sender 0, receiver 0, exactly 50 bytes. The server echoes the first 12 bytes.
-- Sender 0 with receiver `u32::MAX` is a maintenance command; any other sender-0 packet is dropped.
-- A sender id is bound to the first endpoint that uses it. Packets with equal
-  sender and receiver ids are dropped. Default limit 8 ids per IP, 200 clients.
-- Master list: the server sends `GET <master>?version=3&name=..&port=..&clients=..&maxclients=..&masterpw=..&maintenance=..`
-  every 60 seconds. Clients read `http://cncnet.org/master-list`, one tunnel per
-  line, semicolon-separated: `address:port;country;countrycode;name;password;clients;maxclients;status;lat;lon;version;distance`.
-
-### How the client launches a game (v3 mode)
-
-From `GameLobbyBase.cs` and `CnCNetGameLobby.cs` in the client:
-
-- The client reserves a local UDP port and writes `[Tunnel] Ip=127.0.0.1 Port=<reserved>`
-  into `spawn.ini`. The game sends everything to loopback; the client's bridge
-  forwards per player through the tunnels. The game never needs NAT traversal.
-- `[Settings]`: `Name`, `Scenario`, `UIGameMode`, `UIMapName`, `MapID` (official maps only),
-  `PlayerCount`, `Side`, `IsSpectator`, `Color`, `CustomLoadScreen`, `AIPlayers`, `Seed`,
-  `MapSHA1`, `GameID`, `Host`, `Port`, plus `CoachMode`, `AutoSurrender` and any
-  `[ForcedSpawnIniOptions]` keys from the client's `GameOptions.ini`.
-- `[Other1]`..`[OtherN]`: one per remote human. `Name`, `Side`, `IsSpectator`, `Color`, `Ip`, `Port`.
-- `[HouseHandicaps]`, `[HouseCountries]`, `[HouseColors]`, `[SpawnLocations]`, `[IsSpectator]`:
-  keyed `MultiN`. AI players appear only here and in `AIPlayers`, never in `[OtherN]`.
-- The host broadcasts `STARTV3 <GameID>;<id>;<name>;<tunnelIp>:<tunnelPort>;...` to the
-  lobby; each client's bridge resolves the per-player route from it.
-- The client then starts the configured executable with the spawner flags
-  (`-SPAWN` for gamemd) and waits for it to exit.
-
-Facts to confirm from client source before implementing stage 5 (not verified here):
-how the loopback bridge distinguishes remote players (one local port per player, or a
-single port with the game's own addressing), what `GetIPAddressForPlayer` returns in the
-CnCNet lobby, and which statistics or result packets the client expects after the match.
-The authoritative files are `V3GameTunnelHandler.cs`, `TunnelHandler.cs` and
-`GameProcessLogic.cs`.
-
-## Current state in the repository
-
-| Area | State |
+| Responsibility | Authoritative owner |
 |---|---|
-| `src/net/lockstep.rs` | Ported native command staging and dispatch: send policies, FrameInfo (opcode `0x1c`), checksum history, single-player and network transfer. Test-only; no production caller. |
-| `src/net/lockstep_sim_convergence_tests.rs` | Convergence tests over the queue, including the stage 0 two-instance test: live semantic commands against the same orders as native records (Move, Area Guard, Scatter), with sync checksums compared every frame and an injected desync caught. |
-| `src/sim/multiplayer_checksum.rs` | Stage 0: per-frame sync checksum ported from `0x0064DAB0`, computed in the frame tail before command dispatch only on the multiplayer `Queue_AI` route (`CommandQueueRoute`, selected by the scenario session's GameMode, which the loader installs from `MatchSession`). `MatchSession` records it into the `MultiplayerChecksumHistory` ring, with the native frame-0 ring reset. Offline frames never compute it. Its parity is bounded by VERA's object registries (open display-layer writers in `display_registry.rs`). |
-| `MatchSession` (`src/app/match_runtime/session.rs`) | Stage 1 done: the live session owner (mode, participant list, local participant, host flag). The launch path writes Campaign or Skirmish and the saved-game restore follows the persisted classification; the modal pump, elapsed clock and command bar read it. No writer produces `Lan` or `Wol` yet. |
-| `src/app/frontend/skirmish_session.rs` | Reads the local multiplayer preferences (handle, game mode) that native refreshes before the Network dialog. |
-| `src/skirmish_launch.rs` | Pre-fill plan already models several human nodes plus AI slots. |
-| Main menu Network button | `bounce_network_to_main_menu` in `src/app/shell_main_menu.rs` reproduces native's silent return when the IPX socket fails. |
-| Sockets, protocol, lobby | None. `src/net/mod.rs` reserves `protocol`. |
+| Pending and scheduled simulation commands, native event dispatch | `sim::command_queue`, `sim::world::network_commands` |
+| Event compression/decompression and persistent caches | `net::event_packet` |
+| Packet construction, cumulative counts and peer frame progress | `net::command_exchange` |
+| Shared reliable send queue, retransmission and response-time history | `net::reliable` |
+| Global application message admission, acknowledgements and retirement | `net::global` |
+| UDP sockets, datagram checksum and retained raw send attempts | `net::udp` |
+| Startup agreement, native send cadence and command wait | `net::live_commands` |
+| LAN packet layouts and options parsing | `net::lan_messages` |
+| Participant membership, admitted endpoints, launch state and checksum history | `app::match_runtime::session::MatchSession` |
+| Discovery projection and physical LAN lobby/setup service | `app::lan_service` |
+| Online session, lobby and relay-admission adapter | `app::shell_wol::live_service` |
+| Shared map source, generated staging and verified transfer admission | `map::source`, `app::shell_network_setup::maps` |
+| Setup UI, map admission and pending handoff | `app::shell_network_setup` |
+| Production frame boundary and post-Logic continuation | `app::match_runtime::sim_tick` and `sim::world` |
+| Connection dialogs, votes and participant cleanup | `app::match_runtime::network_match` |
 
-## Target ownership
+Simulation never reads a socket. The app lends the transport-backed command
+boundary to the simulation at the established multiplayer queue phase. A pending
+network wait saves the post-Logic continuation; resuming it does not repeat Logic
+or input admission. Presentation and local input state do not select the shared
+simulation update order.
 
-`sim/` stays transport-agnostic. `net/` depends on `sim/` only. App code orchestrates.
+The service retains admitted setup traffic in the global receive queue during
+the asynchronous lobby-to-setup transition. Loading retains the frozen setup,
+so that transition guard does not block loading progress. Row bindings and
+participant membership remain distinct: replacing a human row sends the native
+kick, while its departure removes the admitted participant and endpoint.
 
-| Responsibility | Owner |
-|---|---|
-| Command staging, frame stamps, dispatch order, checksum history | `net::lockstep` (exists) |
-| Wire framing, peer table, send and receive, tunnel header | `net::protocol` (new) |
-| LAN discovery: announce, listen, game list | `net::discovery` (new, stage 7) |
-| Tunnel discovery: master list, ping, selection | `net::tunnel` (new, stage 8) |
-| Session mode, player list, local player id, host flag | `app::match_runtime::session::MatchSession` (exists) |
-| `spawn.ini` parsing into a launch descriptor | `app/frontend` launch path, reusing `skirmish_launch` types |
-| Per-frame network service in the game loop | `app/match_runtime/sim_tick` (stage 6) |
-| Lobby UI | `ui/` on top of the skirmish shell (stages 7 and 9) |
+## Native behavior and deliberate bounds
 
-Rules that apply throughout: one owner per state, no competing command paths, every
-RNG draw and timer in native frame order, presentation never reads the socket.
+The following native scheduling/reliability details apply to LAN and legacy routing;
+modern online ordering above is an intentional adaptation.
 
-## Implementation chains, in dependency order
+- Event packets use the native layouts and persistent compression caches from
+  `64B4D0`, `64B660` and `64BDD0`. The packet boundary rejects a semantic event
+  without a supported raw command producer rather than inventing a wire form.
+- `649CA0` mirrors the local OutList before broadcasting it. Send failures do not
+  undo that mirror; the reached native wait and recovery paths decide what
+  happens next. Transport queues retain bytes, not gameplay decisions.
+- Private and global connections share the `48C3E0` send/retry owner. Global
+  admission and FIFO retirement preserve `53FCB0`, `53FF10` and `5400D0` behavior.
+- Ordinary acknowledgements use the primary socket even after an alternate-socket
+  receive. The native exception is the separate CDEF router connection, which is
+  not implemented here.
+- Raw UDP send attempts follow `7B23B0`/`7B3AA0`: hard errors retain the exact FIFO
+  head; WouldBlock retires that raw attempt. The reliable owner still controls its
+  retry. Portable polling supplies write opportunities in place of Win32 events.
+- LAN pre/post-GO timing preserves the distinct host and guest paths, including
+  conditional primary-global response-time reads and signed versus unsigned
+  arithmetic. Guest GO completion gives the primary global channel its separate
+  timing. After gameplay peers are installed, `52EA18`/`52EA4F` select independent
+  private and primary-global retry intervals.
+- The initial successful player barrier resets response history through the
+  shared `48BAA0` owner. This preserves pending traffic, original send timestamps,
+  sequence counters and receive history. WOL's periodic reset scheduling and its
+  additional channels remain outside the current LAN path.
+- Ordinary waits use the private response maximum from `542450`; primary-global
+  acknowledgement history is excluded. The native optional extra channel at
+  manager `+50` remains an unimplemented dependency.
+- Setup Back retains transport history within a lobby visit. A fresh post-match
+  visit resets queues, sequence history, observations and lobby timing while
+  retaining the portable socket bindings.
 
-Each stage is one PR. A stage is done when its "Done when" holds and the usual lib
-suite passes. Stages 1 to 6 produce the initial game port: a VERA20k that the
-CnCNet client can launch and play. Stage 7 adds native LAN play from the app. Stages 8
-and 9 move internet play into the app.
+## Validation and native audit
 
-Stages 3, 4 and 6 are shared by LAN and internet play and must not assume loopback:
-the transport binds a LAN-reachable address, and the peer table holds real endpoints.
+Two consecutive online matches passed functional validation with 30 independent
+client processes and more than 20,000 active mobile units per match. The clients
+ran across seven machines: two local macOS clients on one Mac and 28 Linux clients
+cohosted on six VMs. The run covered real Move/Stop input, matching shared
+simulation checksums and hashes, both results screens and lobby returns, a rematch
+in the same client processes, and final Main Menu return.
 
-### Stage 0: determinism groundwork (in-process guard done; cross-platform open)
+The Linux clients used software rendering. Sampled host traces showed approximately
+0.74 simulation frames per wall-clock second in each match. These samples
+measure observed simulation progress, not display FPS or the selected TIMING rate.
+This establishes functional scale behavior; smooth, real-time performance remains
+unproven. Exhaustive fault coverage and Windows multiplayer validation are not
+claimed here.
 
-Scope: hook `compute_retail_multiplayer_checksum` into `MultiplayerChecksumHistory`
-per frame, and extend the convergence tests to cover the command types the live game
-issues. Add a headless two-instance test that runs a scenario for N frames and compares
-checksums every frame.
+The native-function audit continues through the existing owners, including wider
+gameplay command producers and cooperative handoffs. Native extra-channel/router
+behavior, interface selection and local MoveFlash drawing retain their separate
+audit scope. VERA's IPv4/relay transport and bounded command admission do not claim
+legacy wire compatibility or exhaustive gamemd behavior.
 
-Done when: the two-instance test passes on macOS, Linux and Windows CI with identical
-checksums per frame.
+Solo AI validation also completed two 600-frame online rounds with Move and Stop
+applied in their issue frame, real AI activity, lobby return, rematch and acknowledged
+logout. This covers local input scheduling; it does not measure human-to-human
+Internet latency or establish complete AI or cooperative-campaign behavior.
 
-Delivered: the synthetic two-instance test runs in the lib suite without retail assets,
-and the ignored retail headless test (`RA2_DIR`) compares per-frame checksums on a real
-map. Both compare instances inside one process, so they catch in-process nondeterminism
-and command-path divergence, not platform differences.
+## Reproducible validation tools
 
-Residuals:
-- Cross-platform equality is not yet shown. Each CI platform runs the test alone and no
-  per-frame checksum sequence is pinned or compared across platforms.
-- `Queue_AI`'s playback branch (`0x00A8D5F8 & 2`) also computes the checksum
-  (`0x0064731C`); VERA has no production playback route.
-- The ring reset driven by `[0x00A8B8B8]` belongs to the stage 6 timing service.
+The `tools/storage_oracle/lan_*` harnesses execute original instruction slices
+for the packet, checksum, queue, timing and message controls their Rust tests
+consume. Metadata states the input boundaries and substitutions. These small
+corpora establish only their covered cases.
 
-Why first: every later stage debugs against this. A desync found after the transport
-exists is far harder to attribute.
+The `lan-live-host` and `lan-live-guest` shell-capture targets drive independent
+App processes through the ordinary LAN service and gameplay frame boundary.
+They require isolated mutable copies of the retail game directory, each with a
+`.vera20k-lan-capture-root` containing `VERA20k isolated shell capture fixture`
+followed by a newline. Set each process's `RA2_DIR` to its own copy and keep its
+own `config.toml`.
 
-### Stage 1: live session mode (done)
+After building the normal app with `--profile fast`, run the host with
+`--shell-capture lan-live-host --width 800 --height 600 --cursor-x 400
+--cursor-y 300 --output <new-host-directory> --lan-bind 127.0.0.1:32100
+--lan-peer 127.0.0.1:32110`. Run the guest with `lan-live-guest`, a separate output
+directory, and the bind/peer endpoints exchanged. The output manifest's
+`lan.rounds[n].runtime.native_checksums` records per-frame checksums for each
+round. The live targets drive real Move/Stop input, results, lobby rematch and
+Main Menu return across two games.
+This loopback example alone does not establish separate-machine or scale coverage.
+Normal players do not need these diagnostic flags. Validation results belong in
+the task's validation records, not the tree.
 
-Scope: replace the hard-coded `current_session_mode` with a value the launch path
-writes. Introduce the session owner holding mode, player list, local player index and
-host flag. Skirmish and campaign keep writing their modes.
+The `lan-battle-host` and `lan-battle-guest` targets use the same isolated setup
+and endpoints. Both select Americans through setup, deploy their AMCV (host D
+key, guest self-click), and produce a GAPOWR. The input driver holds, resumes,
+cancels with a refund check, then builds and places a fresh product while
+retaining its paid identity. Both clients must observe both completed power
+plants. The manifest retains 7,200 frame checksums and the observed production
+actions. This is a bounded opening check with a 300-second default diagnostic
+budget; simulation timing and network timeouts still belong to production.
 
-Done when: the modal pump, elapsed clock and any other `is_network` consumer read the
-live value, and offline play is unchanged.
-
-### Stage 2: lockstep queue in production, offline path
-
-Scope: route live command issue through `SynchronizedCommandQueue`, using
-`transfer_single_player` and `dispatch_due_offline`. Delete the direct command path it
-replaces. Keep RNG and same-frame ordering identical; the convergence tests and the
-stage 0 checksum test guard this.
-
-Done when: skirmish and campaign play through the queue with no behavior change, and
-the old path is gone.
-
-Why before transport: the queue's frame-stamp and ahead-window semantics are native
-behavior the game must already obey before a second client exists.
-
-### Stage 3: UDP transport and network lockstep
-
-Scope: `net::protocol` with a `Transport` abstraction over a UDP socket bound to a
-configurable address, loopback for the CnCNet bridge and the LAN interface for native
-play. Wire format: a small versioned little-endian header (protocol version, game id,
-player id, packet kind) followed by lockstep command records. Peer table keyed by
-player id with an address per peer. Enable `transfer_network` and `dispatch_due_network`, exchange
-FrameInfo, compare checksums, raise a desync event.
-
-Done when: two VERA20k instances on one machine, started from a test harness or a
-command-line flag, play a scenario in lockstep and detect an injected desync.
-
-Evidence: a headless two-process test plus side-by-side play.
-
-### Stage 4: multi-human match bootstrap
-
-Scope: the loading path builds houses from a negotiated player list instead of one
-local human plus AI slots. Each human gets its house index, side, color, spawn
-location and spectator flag from the launch descriptor. Seed comes from the host.
-
-Done when: the two instances from stage 3 load the same map with different local
-players and identical world state (stage 0 checksum).
-
-### Stage 5: `spawn.ini` launch and CnCNet client bridge
-
-Scope: a `-SPAWN` style command-line flag that reads `spawn.ini` from the game
-directory, builds the launch descriptor from `[Settings]`, `[OtherN]`, `[House*]`,
-`[SpawnLocations]` and `[IsSpectator]`, points the transport at `[Tunnel]` on loopback,
-and starts the match directly. Parse with the native readers in `src/rules/ini_value.rs`.
-Confirm the bridge addressing facts listed above first.
-
-Done when: a VERA20k-configured CnCNet client hosts a game, launches VERA20k on two
-machines through a tunnel, and both play to completion.
-
-Deliverable outside the repo: a client configuration package (executable name, game
-id, `GameOptions.ini` with `[ForcedSpawnIniOptions]`) kept in its own repository.
-
-### Stage 6: in-game network service
-
-Scope: per-frame send and receive inside `advance_in_game_runtime`, the ahead-window
-pacing and frame-send-rate policy, timeout and player-drop handling, and opcode `0x13`
-EXIT routing for local versus remote players, which `net::lockstep` leaves to the
-session owner. Reconnect is not native and is out of scope.
-
-Done when: a player quitting or losing connection is removed as in native, the others
-continue, and the match reports its result.
-
-This stage completes the initial game port.
-
-### Stage 7: LAN discovery and native LAN play
-
-Scope: `net::discovery` announces a hosted game by UDP broadcast on a fixed port
-(game id, protocol version, host name, map, mode, player count, game port) and lists
-announcements heard on that port, with expiry. Host and join screens built on the
-skirmish shell: game list, player list, sides, colors, ready state, chat, and map and
-options broadcast from the host. Join negotiates the player list and seed, then
-stage 4 bootstraps and stage 3 carries the match over the LAN endpoints. The
-main-menu Network route replaces `bounce_network_to_main_menu` here, taking the role
-of gamemd's IPX game list and lobby (state 0x10 onward from `0x0052DD75`). Session
-mode is `Lan`.
-
-Done when: two machines on one LAN host, see, join and play a full match from the
-app with no CnCNet client, tunnel, internet access or configuration file.
-
-Evidence: side-by-side play on two machines, plus a two-process discovery test on one
-host.
-
-### Stage 8: built-in tunnel client
-
-Scope: `net::tunnel` fetches the master list, parses the twelve-field lines, pings
-tunnels with the 50-byte probe and sends game traffic with the 8-byte v3 header. Peer
-addresses in the stage 3 peer table become tunnel ids. The stage 7 lobby gains a
-direct-IP join for internet play without a lobby server.
-
-Done when: two VERA20k instances play through a public or self-hosted tunnel with no
-CnCNet client running.
-
-Before using public tunnels under a new game id, ask the CnCNet team. The tunnel
-server is open source and self-hosting is the fallback.
-
-### Stage 9: in-app internet lobby
-
-Scope: a CnCNet IRC lobby speaking the client's dialect under a VERA20k game
-identifier, so VERA20k games never appear joinable to gamemd players. It reuses the
-stage 7 lobby screens with the game list fed from IRC instead of broadcast.
-
-Done when: a full internet match is set up and played without any external program.
-
-## Validation per stage
-
-- Determinism: stage 0 checksum test runs in every later stage's suite.
-- Transport and discovery: headless two-process tests in `src/net/`, never against retail assets in the lib suite.
-- LAN: side-by-side play on two machines before stage 7 merges.
-- Gameplay: side-by-side play against retail for anything the lockstep semantics change.
-- Each PR states which evidence level each claim reached, per the project contract.
-
-## Sources
-
-- Client: <https://github.com/CnCNet/xna-cncnet-client> (`GameLobbyBase.cs`, `CnCNetGameLobby.cs`, `CnCNetTunnel.cs`)
-- Tunnel server: <https://github.com/CnCNet/cncnet-server> (`CnCNet/Net/Tunnel/TunnelV3.cs`)
-- YR spawner: <https://github.com/CnCNet/yrpp-spawner>
-- Master list: <http://cncnet.org/master-list>
-- v3 tunnel design notes: <https://opencollective.com/xna-cncnet-client-v3-tunnels>
+The `lan-live-coop-host` and `lan-live-coop-guest` targets use the same setup.
+The host uses the Soviet co-op campaign through Choose Map; both players take
+B6 Observe at native frame 150, BC6 opens on both after the lost mission, both
+press Continue, and the retried mission must run 90 frames over the same LAN
+admission. The manifest's `lan.cooperative` records the BC6 result and the
+retried startup. `lan-live-coop-saved-host` replaces the host's Soviet row with Use Saved
+Campaign; seed its settings folder with a `coopsave.ini` section for the pair
+(`LiveHostLiveGuest`), and both players load the saved stage's map.
+`lan-live-coop-final-host` and `lan-live-coop-final-guest` start from a section whose
+`CurrentMap` is the campaign's last stage: at native frame 150 both processes flag every
+human House to win, BC6 offers only Quit, both press it and the campaign-end dialog
+`0xBC7` opens. The host stays on it; the guest presses Continue back to the lobby.

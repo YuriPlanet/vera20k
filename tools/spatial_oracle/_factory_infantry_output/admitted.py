@@ -8,11 +8,8 @@ from pathlib import Path
 import argparse, ast, copy, hashlib, importlib.util, json, struct
 
 HERE = Path(__file__).resolve().parent
-EXPECTED_FACTORY = '8b8cbe0550e2fd78d7383fd3dc78fd7e9e2e49d8936419bfb39ecd482d2e5d4f'
-from .runtime import caller_sha, load_module
-EXPECTED_FACTORY = caller_sha('factory.py')
+from .runtime import load_module
 
-def sha(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 def load(name, filename):
     return load_module(name, HERE/filename)
 
@@ -38,7 +35,7 @@ def measured(f, p):
 
 
 def derive_setup(m, admitted):
-    fn=next(n for n in ast.parse(Path(m.__file__).read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='generate')
+    fn=next(n for n in ast.parse(Path(m.__file__).read_text(encoding='utf-8')).body if isinstance(n,ast.FunctionDef) and n.name=='generate')
     # A supplied current VM is shared with the queue. The original native
     # observer, checked execution owner and constructor corridors are reused.
     for i,node in enumerate(fn.body):
@@ -70,7 +67,6 @@ def derive_setup(m, admitted):
     fn=Hooks().visit(fn);fn.name='setup_shared_producer'
     ns=dict(vars(m));ns.update(current_fixture=admitted['f'],current_producer=admitted['p'])
     module=ast.fix_missing_locations(ast.Module(body=[fn],type_ignores=[]))
-    admitted['setup_ast_sha256']=hashlib.sha256(ast.dump(module,include_attributes=False).encode()).hexdigest()
     exec(compile(module,str(HERE/'<derived-producer-setup>'),'exec'),ns)
     return ns['setup_shared_producer']
 
@@ -78,7 +74,6 @@ def derive_setup(m, admitted):
 def generate():
     factory=load('immutable_factory_observer','factory.py')
     producer=load('immutable_producer_observer','producer.py')
-    if sha(factory.__file__)!=EXPECTED_FACTORY:raise ValueError('factory observer identity changed')
     inputs=factory.death.joined_inputs(factory.ASSETS,damage_fires=True)
     joined={}
     def setup(f,inputs,p):
@@ -90,7 +85,7 @@ def generate():
         return dict(whole_native=True,abstract_flags=f.read32(p+0x14),admission_ref='admission')
     def joined_snapshot(f,p,old):
         return old | {'admitted_authorities':measured(f,p)}
-    fn=next(n for n in ast.parse(Path(factory.__file__).read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='generate')
+    fn=next(n for n in ast.parse(Path(factory.__file__).read_text(encoding='utf-8')).body if isinstance(n,ast.FunctionDef) and n.name=='generate')
     # Semantic caller setup selection replaces fragile original line numbers. No native
     # owners, whole-native bodies or queue/movement decisions are replaced.
     body=[]
@@ -118,12 +113,11 @@ def generate():
             if isinstance(node.func,ast.Name) and node.func.id=='range' and len(node.args)==2 and all(isinstance(a,ast.Constant) for a in node.args) and [a.value for a in node.args]==[0,400]:node.args[1].value=1600
             return self.generic_visit(node)
     fn=State().visit(fn);fn.name='joined_admitted_queue';ns=dict(vars(factory));ns.update(setup_producer=setup,joined_snapshot=joined_snapshot)
-    module=ast.fix_missing_locations(ast.Module(body=[fn],type_ignores=[]));ast_sha=hashlib.sha256(ast.dump(module,include_attributes=False).encode()).hexdigest()
+    module=ast.fix_missing_locations(ast.Module(body=[fn],type_ignores=[]))
     exec(compile(module,str(HERE/'<derived-queue-caller>'),'exec'),ns)
     receipt=ns['joined_admitted_queue']('queue','physical_clear',inputs)
     joined.pop('f');joined.pop('p')
-    return dict(schema_version=1,kind='native-admitted-producer-human-queue-join',native_sha256=receipt['native_sha256'],driver_sha256=sha(__file__),
-        immutable_drivers={Path(m.__file__).name:sha(m.__file__) for m in (factory,producer)},derived_queue_ast_sha256=ast_sha,joined=joined,queue=receipt,
+    return dict(schema_version=1,kind='native-admitted-producer-human-queue-join',joined=joined,queue=receipt,
         corrections=['Legacy producer fixture/House prior writes and duplicate Mark are removed from the caller adapter.',
                      'Only known linked construction-ready fields are supplied and listed. Whole native constructor/Unlimbo/House roster/radio/type-counter state is preserved.',
                      'Earlier ActiveGame0 inference is rejected; runtime before/after is1. Native B0F720 expiry membership is retained.'],

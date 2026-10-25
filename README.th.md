@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="ภาพหน้าปก VERA20K" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.ru.md" lang="ru">Русский</a> · <strong>ไทย</strong> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
+  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ru.md" lang="ru">Русский</a> · <strong>ไทย</strong> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="การทดสอบไลบรารีบน macOS ครั้งล่าสุด (สั่งรันด้วยตนเอง)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="การทดสอบไลบรารีบน macOS" height="23" align="middle"></a>
@@ -36,8 +36,40 @@ VERA20K สร้างโดยเกมเมอร์ เพื่อเก�
 - **แคมเปญ:** เริ่มภารกิจได้แล้ว แต่การรองรับยังไม่สมบูรณ์
 - **AI:** บางส่วนของ AI ต้นฉบับสามารถสร้างฐานและโจมตีตามสคริปต์ได้แล้ว
 - **งานที่กำลังดำเนินการ:** ความแม่นยำของพฤติกรรมในเกม ภาพ และประสิทธิภาพ
-- **โหมดผู้เล่นหลายคน:** ยังไม่สามารถเล่นผ่านเครือข่ายได้
-- **ขนาดการต่อสู้:** ยังไม่มีการสาธิตการต่อสู้ที่มีผู้เล่น 30 คนและยูนิต 20,000 ตัว
+- **โหมดผู้เล่นหลายคน:** รุ่นที่สร้างจากซอร์สโค้ดปัจจุบันรองรับการเล่นผ่าน LAN และออนไลน์บน macOS และ Linux
+- **ขนาดการต่อสู้:** แมตช์ออนไลน์สองแมตช์ติดต่อกันผ่านการตรวจสอบการทำงาน โดยแต่ละแมตช์มีโปรเซสไคลเอนต์อิสระ 30 โปรเซสและยูนิตเคลื่อนที่ที่ทำงานอยู่มากกว่า 20,000 ตัว
+  ไคลเอนต์ Linux ใช้เครื่องเสมือนร่วมกัน ผลนี้ยังไม่ยืนยันประสิทธิภาพที่ลื่นไหลแบบเรียลไทม์
+
+## ดาวน์โหลดและเล่น
+
+ดาวน์โหลดตัวติดตั้งสำหรับ Windows, macOS หรือ Linux
+ได้จาก[หน้ารุ่นที่เผยแพร่](https://github.com/YuriPlanet/vera20k/releases) ตัวติดตั้งจะค้นหา
+Yuri's Revenge ของคุณจาก [Steam](https://store.steampowered.com/app/2229850/)
+หรือ[แอป EA](https://www.ea.com/games/command-and-conquer/command-and-conquer-the-ultimate-collection)
+แล้วติดตั้ง VERA20K ไว้ในโฟลเดอร์ใหม่ ม็อดและเนื้อหาใหม่จะอยู่ในโฟลเดอร์นั้นด้วย
+ไฟล์ของเกมจึงไม่ถูกแก้ไขเลย
+
+หากต้องการเริ่มการต่อสู้ภายในเครื่องหรือแคมเปญของ YR แบบผู้เล่นคนเดียวผ่านไคลเอนต์ CnCNet
+โปรดดู[การตั้งค่าไคลเอนต์แบบออฟไลน์](integrations/cncnet/README.md)
+
+## การตั้งค่า
+
+ใช้ **Options** สำหรับเสียงและการควบคุม และ **Vera Options** สำหรับฟีเจอร์เฉพาะของ VERA
+ค่ากำหนดของผู้เล่น แป้นพิมพ์ลัด และตัวเลือกในล็อบบี้จะบันทึกไว้ใน `VERA.INI`:
+
+- **ตัวติดตั้งบน Windows:** ในโฟลเดอร์เดียวกับ `vera20k.exe`
+- **macOS:** `~/Library/Application Support/VERA20k/VERA.INI`
+- **Linux:** `~/.local/share/VERA20k/VERA.INI` หรือโฟลเดอร์ข้อมูล XDG ของคุณ
+
+ใช้ `config.toml` กำหนดโฟลเดอร์เกม และเลือกโฟลเดอร์อื่นสำหรับเก็บการตั้งค่าได้
+
+หากไม่มีไฟล์ `VERA.INI` VERA จะสร้างไฟล์นี้และนำเข้าค่ากำหนดเดิมเพียงครั้งเดียว
+หากไม่มีการตั้งค่าเดิม ไฟล์จะเริ่มว่าง และ VERA จะใช้ค่าเริ่มต้นที่มีในตัวจนกว่าจะบันทึกการตั้งค่า
+ไฟล์ `RA2MD.INI` และ `KeyboardMD.ini` ต้นฉบับจะถูกอ่านเพื่อนำเข้าเท่านั้น และจะไม่ถูกเขียนทับ
+
+`VERARULES.INI` ในโฟลเดอร์เดียวกันเก็บการเปลี่ยนแปลงกฎการเล่นที่เลือกใช้ได้
+ไฟล์เริ่มต้นมีตัวอย่างที่ใส่เครื่องหมายคอมเมนต์ไว้ และยังคงใช้กฎจากภารกิจหรือแผนที่เป็นหลัก
+ดูวิธีแก้ไขและกำหนดค่าทับกฎเหล่านี้ได้ที่[กฎส่วนตัว](docs/personal-rules.md)
 
 ## สถาปัตยกรรม
 
@@ -54,18 +86,11 @@ VERA20K สร้างโดยเกมเมอร์ เพื่อเก�
 
 ![แอปพลิเคชันส่งคำสั่งไปยังการจำลองและรับสถานะของโลกกลับมา แล้วส่งข้อมูลการวาดไปยังการเรนเดอร์](docs/images/architecture.th.png)
 
-## ความต้องการของระบบ
-
-- **เกม:** Red Alert 2: Yuri's Revenge เวอร์ชัน 1.001
-- **ระบบปฏิบัติการ:** Windows 10 ขึ้นไป, Linux (glibc 2.35 ขึ้นไป เช่น Ubuntu 22.04 หรือ Steam Deck)
-  หรือ macOS 11 ขึ้นไปบน Apple Silicon
-- **กราฟิก:** Vulkan, DirectX 12 หรือ Metal
-
 ## บิลด์และรัน
 
 สิ่งที่ต้องมี:
 
-- **Rust และ Git:** [Rust](https://rustup.rs/) 1.88 หรือใหม่กว่า ที่ติดตั้งผ่าน rustup และ [Git](https://git-scm.com/)
+- **Rust และ Git:** [Rust](https://rustup.rs/) 1.97 หรือใหม่กว่า ที่ติดตั้งผ่าน rustup และ [Git](https://git-scm.com/)
 - **เครื่องมือบิลด์:** บน Windows ใช้ C++ build tools ของ Visual Studio ซึ่งตัวติดตั้ง Rust จะเสนอให้ติดตั้ง
   บน macOS รัน `xcode-select --install` บน Debian และ Ubuntu รัน `sudo apt install build-essential libasound2-dev pkg-config`
 
@@ -89,13 +114,22 @@ cargo run --release --bin vera20k
 
 ## การปรับแต่ง
 
-ฟีเจอร์เสริม (เช่น ฟีเจอร์จาก Ares) ควรตั้งค่าได้ผ่านไฟล์ INI
-และมีตัวเลือกเปิดหรือปิดในไคลเอนต์ตามความเหมาะสม
+โดยค่าเริ่มต้น VERA20K จะเล่นได้เหมือนเกมต้นฉบับ ฟีเจอร์ใหม่ทุกอย่าง รวมถึงส่วนขยายจากม็อดอย่าง Ares
+ต้องปิดไว้จนกว่าจะเปิดด้วยวิธีใดวิธีหนึ่งต่อไปนี้:
+
+- **ตัวเลือกของผู้เล่นใน VERA** อยู่ใน **Options → Vera Options** และบันทึกในส่วน `[VERA]` ของ `VERA.INI`
+- **ตัวเลือกตอนบิลด์** เช่น `--features ares` สำหรับ[ส่วนขยาย Ares](docs/ares.md)ที่รองรับ
+- **ตัวเลือกในล็อบบี้ของเกม** ซึ่งเลือกได้ในแต่ละแมตช์
+- **คีย์ INI** ที่ม็อดหรือแผนที่กำหนด
+
+การตั้งค่าเสียง กราฟิก และการควบคุมจะบันทึกไว้ใน `VERA.INI` กฎการเล่นมาจากการตั้งค่าล็อบบี้
+ม็อด หรือแผนที่
 
 ## ร่วมพัฒนา
 
 ยินดีรับความช่วยเหลือ คุณจะเขียนโค้ด รีแฟกเตอร์เอนจิน ทดสอบเกม เสนอไอเดีย หรือเล่นเทียบกับเกมต้นฉบับ
 แล้วบอกเราว่าตรงไหนรู้สึกผิดไปก็ได้ เปิด PR มาได้เลย ที่เหลือเราจัดการเอง
+
 การพูดคุยอยู่ใน [Discord](https://discord.gg/kmjRUn5m5F) และในกลุ่ม QQ (1097193563)
 
 ## สนับสนุนโครงการ

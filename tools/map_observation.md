@@ -577,7 +577,7 @@ clock. Frame observations are post-commit state: the step 1/frame 1 row contains
 the result of executing native frame 0. A literal load also refreshes the
 context's loaded frame/tick while `completed_steps` remains monotonic.
 
-Limits are 1..16 distinct ASCII sound IDs (128 bytes each), 1..16 submissions,
+Limits are 1..16 distinct ASCII sound IDs (128 bytes each), 1..32 submissions,
 1..262144 samples per submission, 64 action/format rows and 128 resolved sample
 names per submission. After the requested exact steps, the existing frame/audio
 service continues without simulation ticks for at most the requested 1..10000 ms
@@ -1072,7 +1072,7 @@ The v4 `render.presentation_clock` records actual consumed presentation times:
 
 For a positive budget N, exactly N game draws occur at completed steps 1 through
 N. A zero-step observation has one draw at step 0, with all three times zero.
-Every row must contain the exact radar tick, tooltip poll and adjusted message
+Every row must contain the exact radar tick, tooltip poll and wall-clock message
 management times consumed by that draw; each must equal its completed step × 22.
 The budget is bounded at 100000 steps. Unknown fields/policies, missing or extra
 rows, reordered/repeated steps, wrong integer types and any time discrepancy fail
@@ -1091,6 +1091,11 @@ their consumed tooltip clock. Load-segment captures retain the u64 field bound
 without assuming presentation state resets with the simulation clock. The
 projection shares the100000-draw budget and does not add simulation observation
 samples.
+
+Comparison requires matching clock policies and consumed draw times. Tooltip
+projections are observed output: changes at any draw are reported as `MISMATCH`
+under `presentation_clock.draws[index].tooltip`, even when the final frame is
+unchanged. Malformed transcripts or different clock schedules remain `INVALID`.
 
 The required v4 `render.neutral_input` has exactly
 `{"static_default_cursor":true,"camera_input_idle":true}`. Rust verifies these
@@ -1204,6 +1209,16 @@ The existing local-key gesture policy carries that projection even without a key
 A moving tracker hit follows its object's virtual+4C navigation coordinate before
 the radar's signed clamp, Cell ground center and immediate camera update.
 
+[`map_observation.radar-orders.example.json`](map_observation.radar-orders.example.json)
+builds a Soviet radar and conscript on stock XMP03T4 through ordinary production.
+It clicks the minimap before selection, selects the conscript, clicks a different
+minimap position, then holds Z for two more clicks and releases it. Inspect the
+gesture receipts for the camera-only first click, the selected unit's Move command
+with an unchanged camera, and two PlanningRecord commands followed by the release
+commit. The final planning path should retain two nodes with editing disabled.
+These are Rust production-input observations; they do not establish whole-run
+native equivalence.
+
 ## Literal keyboard gestures
 
 A v2 profile can send a literal key press and release through the same in-game
@@ -1220,8 +1235,11 @@ Keys are one ASCII letter or digit, or `Escape`. They are not command names.
 An optional unique `modifiers` list contains literal `Ctrl`, `Shift`, `Alt`,
 and/or `Super` edges, for example `{"kind":"key","key":"P","modifiers":["Shift"]}`.
 The shared modifier owner presses them before the key and releases them in
-reverse order before rendering. The loaded `KEYBOARDMD.INI` bindings and registered
-startup defaults resolve them in production. Each keyboard receipt reports the
+reverse order before rendering. The production keyboard owner loads `[Hotkey]`
+from `VERA.INI` in the configured settings directory, or the retail `KEYBOARDMD.INI`
+archive when that section is absent, and installs its startup defaults. Check the
+recorded `keyboard_bindings` before reusing literal-key profiles with personal settings.
+Each keyboard receipt reports the
 production `encoded_key`, resolved registered `binding_command` (or `null`),
 and observed held-key press/release state. The capture never dispatches a
 semantic hotkey command directly. An input, including `Escape`, that opens a
@@ -1500,13 +1518,13 @@ parts; the resident and last-build sprite counts stay at 2,400 throughout these
 captures. These measurements exclude other caches and driver allocations.
 
 The [building comparison](voxel_oracle/building_barrel.md) executes original
-loader and draw instructions; the [recoil comparison](voxel_oracle/recoil.md)
-executes readers, firing gates and complete update histories. These bounded
-component comparisons and production captures do not establish native pixel
-parity. Native cache-pool lifetime, custom barrel overrides, upgrade-provided
-turrets and EMP cannon missions remain separate mechanisms. The retained
-three-pixel drawing anchor and measured subpixel float rounding remain visual
-residuals.
+loader and draw instructions and the stock guns' rasters; the
+[recoil comparison](voxel_oracle/recoil.md) executes readers, firing gates and
+complete update histories. These bounded component comparisons and production
+captures do not establish native pixel parity. Native cache-pool lifetime, custom
+barrel overrides, upgrade-provided turrets and EMP cannon missions remain separate
+mechanisms. Measured subpixel float rounding of a translated gun remains a visual
+residual.
 
 ## V3 rocket pitch observation
 
@@ -2009,9 +2027,9 @@ lifetime, audio playback and raster parity are also unclaimed.
 uses the same stock Russia/Battle/AnyTown launch and first five ordinary deployment
 and production commands as the Attack profile. It issues no combat order and
 advances 7200 steps so the free War Miner can fill, dock, deposit and harvest again.
-The profile requests no terrain rows to stay within the existing retained-sample
-budget. Its numeric command handles belong to that exact launch and must be
-rechecked when launch inputs change.
+The v3 profile names its command types (SMCV, NAPOWR, NAREFN), observes only
+HARV and NAREFN actors and requests no terrain rows, to stay within the
+retained-sample budget. It seals a static cursor at (720, 556), off every object.
 
 Child/run v6 adds actor `miner` and `radio` projections and frame `houses` rows.
 It preserves the existing optional `unit` deployment projection alongside them.
@@ -2032,18 +2050,19 @@ The map observer and transactional publisher use the same encoder for the
 refinery observation exceed that limit. Readers also accept historical indented
 receipts.
 
-Use the existing runner with that profile:
+Build and select the normal `fast` binary for this profile:
 
 ```sh
+python -m tools.cargo_run -- build -p vera20k --profile fast --bin vera20k
 env -u RA2_DIR python -m tools.map_observation \
-  --build-label refinery-docking-reviewed-20261002 \
+  --build-profile fast \
   --profile /absolute/checkout/tools/map_observation.refinery-docking.example.json \
   --contract /absolute/checkout/src/app/diagnostics/tactical_capture/contract.v2.json \
   --cwd /absolute/checkout \
   --output /absolute/evidence/refinery-docking
 ```
 
-The release observation can show cargo draining alongside the actual House payout,
+The observation can show cargo draining alongside the actual House payout,
 contact release and resumed harvesting. It is production integration evidence;
 native scheduler, movement, audio and pixels require separate comparisons. Native
 coverage is recorded in [`spatial_oracle/refinery_dock.md`](spatial_oracle/refinery_dock.md).
@@ -2262,8 +2281,10 @@ placement admission. Recording an enqueued command does not imply the House
 could build it, had sufficient credits, had a ready object, or accepted the cell.
 
 Rows must be nondecreasing by `issue_after_step`, retaining input order for ties,
-and occur before the final step. An issue at step N calls the ordinary
-`try_schedule_command` producer at simulation tick N, before advancing frame N+1.
+and occur before the final completed step. At completed step N, the ordinary
+`try_schedule_command` producer stamps the command with the simulation's current
+tick before the next step. Completed steps stay monotonic across quickload; the
+simulation tick follows the restored clock.
 The producer owns encoding and queuing; the diagnostic adds no input-delay offset.
 Move carries an already resolved semantic destination, as synchronized/replay
 orders do; it does not claim to reproduce the preceding cell-click resolver.
@@ -2283,6 +2304,17 @@ coordinate is explicit; observation does not invent one or initialize gameplay.
 Foot fields are null for structures. Terrain rows read only allocated real cells,
 report current tile/subtile, presentation tile, level/slope and bridge fields, and
 report unallocated cells explicitly without stamping the shared Dummy.
+Terrain member rows also retain nullable signed `native_id`, independently of
+their stable `id`. Older receipts may omit it; omission stays unobserved rather
+than implying zero or a missing native identity. Reading it allocates no ID.
+New member rows also report signed `health` and `max_health` from that same
+Terrain owner. Older receipts may omit both; observation does not apply damage.
+`terrain_instances` reports all retained Terrain instances anchored at the requested
+cell, in stable ID order, with those same fields plus `lifecycle`, `cell_member`,
+nullable `display_layer` and `in_logic_vector`. A live, invisible object can be absent
+from Cell content while remaining in Display. The observer reads these independent
+owners without inferring membership from health or the current type footprint.
+Older receipts may omit the array; omission leaves instance presence unobserved.
 
 V5 actor rows add `building`, null for Foot objects. Structures read their sole
 body state, queued body request, construction control, complete serialized
@@ -2295,6 +2327,13 @@ and complete retained runtime/timer. A stale occupied slot retains its ID with
 `animation: null`; it is never silently omitted or replaced. These rows allow
 construction completion and the following operational visit's allocation,
 replacement and cleanup to be inspected through the normal match path.
+
+Current animation runtime receipts include `temporal_paused` (Anim +11A),
+separate from `paused` (Anim +19E), for both building slots and effect animations.
+This additive v8 projection is optional when reading older sealed receipts:
+omission stays unobserved and is never converted to `false`. When present, the
+field must be a boolean, is retained unchanged and participates in comparison.
+Other unknown runtime fields remain invalid.
 
 The camera calls the existing presentation centering/clamp owner once at L0.
 `render.camera` records its requested cell and actual final top-left/zoom. The

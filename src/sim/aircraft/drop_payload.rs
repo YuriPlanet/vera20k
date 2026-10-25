@@ -459,7 +459,7 @@ fn paradrop(
             placement: PlacementEvidence::MarkSucceeded,
             logic_eligible: true,
         },
-        UninitContext::new(Some(rules), registry)
+        UninitContext::new(rules, registry)
             .with_effects(effects)
             .with_unlimbo_facing(Some(PARADROP_UNLIMBO_FACING)),
     );
@@ -488,8 +488,7 @@ fn land_tail(
         observe(Observed::PlayAt([location.x, location.y, location.z]));
     }
     sim.sound_events.emit(SimSoundEvent::ChuteSound {
-        rx: plane_entity.position.rx(),
-        ry: plane_entity.position.ry(),
+        world: ground_pose::object_location(plane_entity, sim.resolved_terrain.as_ref()).into(),
     });
     #[cfg(any(test, feature = "test-support"))]
     observe(Observed::CellAt([landing.x, landing.y, landing.z]));
@@ -502,7 +501,7 @@ fn land_tail(
     if let Some((team, _)) = sim.team_script_vm.team_for_member(plane) {
         #[cfg(any(test, feature = "test-support"))]
         observe(Observed::RemoveMember(passenger));
-        sim.team_remove_member(team, passenger, false, Some(rules), effects);
+        sim.team_remove_member(team, passenger, false, rules, effects);
     }
     let frame = sim.session.binary_frame() as i32;
     if let Some(plane_entity) = sim.substrate.entities.get_mut(plane) {
@@ -641,7 +640,10 @@ mod tests {
         sim.sound_events
             .iter()
             .filter_map(|event| match event {
-                SimSoundEvent::ChuteSound { rx, ry } => Some((*rx, *ry)),
+                SimSoundEvent::ChuteSound { world } => {
+                    let (rx, ry, ..) = world.to_cell_sub_z();
+                    Some((rx, ry))
+                }
                 _ => None,
             })
             .collect()
@@ -1146,13 +1148,19 @@ mod tests {
             .position
             .put_world_xy([50 * 256 + 128, 24 * 256 + 128]);
         drop_payload(&mut sim, plane, &rules, None, effects);
+        // ChuteSound keeps the plane's height, which raises the cue up the
+        // screen in CalcVolumeAndPan (`0x006D21DE..0x006D21F7`).
+        assert!(sim.sound_events.iter().any(|event| matches!(
+            event,
+            SimSoundEvent::ChuteSound { world } if world.z == 1500
+        )));
         let rider = sim.substrate.entities.get(passenger).unwrap();
         assert_eq!((rider.position.rx(), rider.position.ry()), (51, 24));
         assert!(rider.on_bridge());
 
         let max_fall_rate = rules.general.parachute_max_fall_rate;
         let mut frames = 0;
-        while !sim.advance_fall(passenger, max_fall_rate, Some(&rules), None, effects) {
+        while !sim.advance_fall(passenger, max_fall_rate, &rules, None, effects) {
             frames += 1;
             assert!(frames < 10_000, "the fall ends");
         }
@@ -1169,7 +1177,7 @@ mod tests {
     }
 
     /// A drop: the passenger at a free spot of the landing cell, ChuteSound at
-    /// the plane's cell (PlayAt at its Location, `0x00415E21`), five passes
+    /// the plane's Location (PlayAt, `0x00415E21`), five passes
     /// back and the rearm timer restarted with no time (`0x00415E88..
     /// 0x00415EAA`).
     #[test]

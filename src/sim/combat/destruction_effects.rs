@@ -18,9 +18,11 @@
 //!
 //! DestructionEffects steps ported here: 1 (`0x004415F9`, the eight damage
 //! fire anims are UnInit), 5 (`0x00441702`, a computer house's
-//! `RevealToAll=` building releases the sight it showed the current house), 7
+//! `RevealToAll=` building releases the sight it showed the current house), 6
+//! (`0x00441779`, the copied-coordinate BuildingDieSound request), 7
 //! (`0x0044177E`, the centre scorch/crater mark), 8 (`0x004418EC`, one
-//! `Explosion=` anim per foundation cell), 12 (`0x00441C43`, the death fuse
+//! `Explosion=` anim per foundation cell), 9 (`0x00441A31`, delayed FIRE3
+//! beside explosive overlays), 12 (`0x00441C43`, the death fuse
 //! that decides whether the building outlives its killing blow), 13
 //! (`0x00441CAC`, one `DestroyAnim=` anim at the origin cell's corner) and the
 //! NoSurvivor write before SpawnSurvivors (`0x00441F0B`).
@@ -52,21 +54,18 @@
 //! - The `DeathFrames=` completion (`0x00736381`), dead on stock, is not
 //!   wired.
 //! - DestroyAnim's palette (TechnoType `+0xDF0`/`+0xDD0` -> anim
-//!   `+0xD4`/`+0xDC`) is presentation and not carried.
+//!   `+0xD4`/`+0xDC`, `0x00441D2F..0x00441D61`) is carried as the anim's
+//!   extra-building-scheme remap (`AnimRemap::ExtraBuildingScheme`).
 //! - Steps with no stock trigger or no VERA state: 2 (radar-spy bits `+0x210`),
-//!   3 and 4 (CloakGenerator, LaserFencePost), 9 (FIRE3 on each cardinal
-//!   neighbour of an `Explodes=` building whose cell holds an overlay with
-//!   `Explodes=yes`, `0x00441A90..0x00441AC2`; no stock overlay has it), 10
+//!   3 and 4 (CloakGenerator, LaserFencePost), 10
 //!   (stored-ore spill; YR never fills building storage), 11 (ShakeScreen, a
-//!   bare `RET`), 14 (`DestroyParticleSystems=` smoke; no stock user). Step 6
-//!   (BuildingDieSound) plays from the Techno death sounds.
+//!   bare `RET`), 14 (`DestroyParticleSystems=` smoke; no stock user).
 //! - Ordinary ground weapon-fire ammo debits remain separate. The shared Ammo
 //!   owner retains constructor and chrono reinforcement writes, which the
 //!   `Death_Explosion` last-entry override reads. No stock `Explodes=` vehicle
 //!   has finite `Ammo=`.
 
 use crate::map::entities::EntityCategory;
-use crate::rules::foundation::foundation_dimensions;
 use crate::rules::object_type::Ability;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::LandType;
@@ -75,7 +74,7 @@ use crate::sim::components::AnimClassSpawnDescriptor;
 use crate::sim::intern::InternedId;
 use crate::sim::movement::ground_pose::position_world_coord;
 use crate::sim::rng::SimRng;
-use crate::sim::world::Simulation;
+use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
 use super::{ExplosionEffect, SmudgeSpawnRequest};
 
@@ -111,9 +110,9 @@ impl DeathAnimSpawn {
     }
 }
 
-/// An infantry death arm's writes on its anim after the constructor
-/// (`InfantryClass::ReceiveDamage @ 0x00517FA0`). Each takes the killing
-/// source's owner (`+0x21C`), else the receiver's house argument.
+/// Death producers' writes on their anim after the constructor. Infantry
+/// ReceiveDamage517FA0 takes the killing source's owner, else the receiver's
+/// house argument; Building DestructionEffects441D37 uses its own remap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeathAnimFollowUp {
     /// InfDeath 8 (`0x0051887B..0x005188A9`): SetOwnerHouse
@@ -124,16 +123,15 @@ pub enum DeathAnimFollowUp {
     /// scheme's `+0x30C` from the array `0x00B054D4`); then, house or not,
     /// the anim's MarkCellOccupancy (vt+0xF0 = `0x00426270`).
     Mutate(Option<InternedId>),
-    /// BuildingClass::DestructionEffects' DestroyAnim of a custom-palette
-    /// type (`0x00441D2F..0x00441D61`): GetRemapColour's scheme from the
-    /// extra building palette as the remap (`+0xD4`); the palette name it
-    /// copies to `+0xDC` is the scenario's one.
+    /// BuildingClass::DestructionEffects' frozen GetRemapColour result
+    /// (`0x00441D37..0x00441D41`). Original441D2F requires a custom group;
+    /// Ares441D25 ->441D37 assigns the result for ordinary types as well.
     ///
     /// RESIDUAL: AnimClass::Save (`0x004253B0`) finds no global index for
     /// this scheme, so Load (`0x00425280`) regenerates the palette by name and
     /// takes its scheme 0; a restored VERA anim keeps the owner's. Retail's
     /// only such anim, CANY04DM, has no 16..31 pixels and draws at full light.
-    ExtraBuildingRemap(InternedId),
+    Remap(crate::sim::anim_class::AnimRemap),
 }
 
 impl Simulation {
@@ -249,10 +247,8 @@ impl Simulation {
                 }
                 Self::anim_mark_cell_occupancy(&mut self.substrate, &self.resolved_terrain, anim);
             }
-            Some(DeathAnimFollowUp::ExtraBuildingRemap(house)) => {
-                self.substrate
-                    .anims
-                    .set_anim_extra_building_remap(anim, house);
+            Some(DeathAnimFollowUp::Remap(remap)) => {
+                self.substrate.anims.set_anim_remap(anim, remap);
             }
         }
         Some(anim)
@@ -331,8 +327,8 @@ impl Simulation {
     /// LandType water (`+0xEC == 2`), and not being warped (`+0x271`, set by
     /// the Chronosphere at `0x0065F1F4` and the Teleport locomotor at
     /// `0x00719579`/`0x007198DA`). Such a unit sinks and never reaches
-    /// `Death_Explosion`; `world::sinking` owns its retained lifetime. VERA has no
-    /// Chronosphere unit warp, so a teleport in flight stands in for the byte.
+    /// `Death_Explosion`; `world::sinking` owns its retained lifetime. The shared
+    /// warp-in accessor reads both the Teleport and ChronoWarp state owners.
     pub(crate) fn unit_sinks_on_death(&self, rules: &RuleSet, unit_id: u64) -> bool {
         let Some(entity) = self.substrate.entities.get(unit_id) else {
             return false;
@@ -349,7 +345,7 @@ impl Simulation {
                     .cell(entity.position.rx(), entity.position.ry())
                     .is_some_and(|cell| cell.land_type == LandType::Water.as_index())
             })
-            && entity.teleport_state().is_none()
+            && !entity.is_warping_in()
     }
 
     /// `UnitClass::Death_Explosion @ 0x00738680`: one `Explosion=` anim and
@@ -453,9 +449,10 @@ impl Simulation {
         ignore_defenses: bool,
         anims: &mut Vec<ExplosionEffect>,
         mut commit_smudge: impl FnMut(&mut Simulation, SmudgeSpawnRequest),
+        effects: FrameEffects<'_>,
     ) {
         // 1. `0x004415F9..0x00441617`.
-        self.clear_building_damage_fire_slots(building_id, Some(rules));
+        self.clear_building_damage_fire_slots(building_id, rules);
         let Some(entity) = self.substrate.entities.get(building_id) else {
             return;
         };
@@ -478,8 +475,32 @@ impl Simulation {
         // 5. `0x00441702..0x0044172F`: a computer house's `RevealToAll=`
         // building releases its sight for the current house
         // (`ReReveal(0, 0, 1, PlayerPtr)`).
-        if object.reveal_to_all && !self.house_is_human_player(owner) {
-            self.rereveal_sight_to_current_house(building_id, rules);
+        if object.reveal_to_all
+            && (self.session.game_mode().is_network() || !self.house_is_human_player(owner))
+        {
+            //441718 excludes only this represented player's own building.
+            self.rereveal_sight_to_current_house(building_id, rules, true);
+        }
+
+        // BuildingClass::DestructionEffects44173F..441779: after nested
+        // Techno/contact deaths, before the centre mark. An empty per-type
+        // DieSound selects the global, through750E20's copied-coordinate
+        // pool (flags0), at Location+9C rather than the foundation centre.
+        if super::world_receiver::callbacks_enabled(self)
+            && super::world_receiver::sound_enabled(self)
+            && object.die_sounds.is_empty()
+            && let Some(sound_id) = rules
+                .general
+                .building_die_sound
+                .as_deref()
+                .filter(|name| !name.is_empty())
+        {
+            self.sound_events.emit(SimSoundEvent::VocAtCoord {
+                sound_id: sound_id.to_owned(),
+                coordinate: location,
+                flags: 0,
+            });
+            effects.flush_sound(self, rules);
         }
 
         // 7. `0x0044177E..0x004418E7`.
@@ -518,6 +539,40 @@ impl Simulation {
                         delay,
                     ),
                 );
+            }
+        }
+
+        // 9. BuildingDestructionEffects441A31..441B24, original gamemd.exe.
+        // The literal direction table818CB8 visits N,E,S,W. Coord49F550
+        // adds initialized49F3A0 lepton deltas to the building's Location;
+        // GetCell uses that coordinate, while Anim retains its exact XYZ.
+        if object.explodes {
+            for direction in [0, 2, 4, 6] {
+                let (dx, dy) = crate::util::direction_tables::LEPTON_DELTAS[direction];
+                let coord = AnimWorldCoord {
+                    x: location.x.wrapping_add(dx),
+                    y: location.y.wrapping_add(dy),
+                    z: location.z,
+                };
+                let explosive = self.resolved_terrain.as_ref().is_some_and(|terrain| {
+                    let cell = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain)
+                        .lookup_world(coord.x, coord.y);
+                    self.cell_overlay(cell)
+                        .overlay_id
+                        .and_then(|id| rules.overlay_registry().flags(id))
+                        .is_some_and(|flags| flags.explodes)
+                });
+                if !explosive {
+                    continue;
+                }
+                let delay = self.scenario_rng.next_range_u32_inclusive(1, 3) as u16 + 3;
+                //427CB0 is find-only: orphan ART does not create a Type.
+                //RESIDUAL: an unregistered literal produces index-1 at441AF3
+                //and unchecked array[-1] at441B07/13. Safe Rust skips that
+                //undefined access; it cannot invent a NULL-type constructor.
+                if rules.anim_type_names.contains("FIRE3") {
+                    self.emit_death_anim(rules, anims, "FIRE3", DeathAnimSpawn::at(coord, delay));
+                }
             }
         }
 
@@ -563,9 +618,21 @@ impl Simulation {
                 },
                 0,
             );
-            let follow_up = object
-                .custom_palette
-                .then_some(DeathAnimFollowUp::ExtraBuildingRemap(owner));
+            // Ares441D25 ->441D37 removes the DF0 gate, not the assignment.
+            // GetRemapColour705D70 selects the actual loaded group, else the
+            // house's ordinary scheme. TerrainPalette belongs to body DrawSHP
+            // and does not alter this result. Freeze the resource identity now.
+            let remap = if let Some(name) = rules.loaded_custom_palette_name(object) {
+                Some(crate::sim::anim_class::AnimRemap::ExtraBuildingScheme {
+                    house: owner,
+                    palette: self.interner.intern(name),
+                })
+            } else if crate::rules::ARES_ENABLED {
+                Some(crate::sim::anim_class::AnimRemap::House(owner))
+            } else {
+                None
+            };
+            let follow_up = remap.map(DeathAnimFollowUp::Remap);
             self.emit_death_anim(rules, anims, anim, DeathAnimSpawn { follow_up, ..spawn });
         }
         // `0x00441EFC..0x00441F0B`: after the Health 0 write (`0x00441F00`),
@@ -591,14 +658,14 @@ pub(super) fn building_center_smudge_request(
     rx: u16,
     ry: u16,
     building_z: i32,
-    foundation: &str,
+    foundation: &crate::rules::foundation::Foundation,
 ) -> SmudgeSpawnRequest {
-    let (foundation_w, foundation_h) = foundation_dimensions(foundation);
+    let (foundation_w, foundation_h) = foundation.dimensions();
     SmudgeSpawnRequest::BuildingCenter {
         rx,
         ry,
         building_z,
-        foundation_w: foundation_w as u8,
-        foundation_h: foundation_h as u8,
+        foundation_w,
+        foundation_h,
     }
 }

@@ -90,6 +90,52 @@ impl FpsOverlay {
             return;
         }
         let text = simulation_readout_text(frame.timer.frame_ms_mean(), frame.simulation);
+        self.encode_text(
+            gpu,
+            batch,
+            encoder,
+            destination,
+            &mut frame,
+            &text,
+            8.0,
+            "window_fps",
+        );
+    }
+
+    /// Persistent replay/recovery facts share the final-window font/camera.
+    /// This call neither samples nor changes the FPS counter's visibility.
+    pub(crate) fn encode_status(
+        &self,
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Texture,
+        text: &str,
+    ) {
+        let mut frame = self.frame.lock().expect("window status overlay frame lock");
+        self.encode_text(
+            gpu,
+            batch,
+            encoder,
+            destination,
+            &mut frame,
+            &text.to_ascii_uppercase(),
+            if self.visible { 30.0 } else { 8.0 },
+            "window_status",
+        );
+    }
+
+    fn encode_text(
+        &self,
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Texture,
+        frame: &mut OverlayFrame,
+        text: &str,
+        y: f32,
+        key: &'static str,
+    ) {
         let size = [destination.width(), destination.height()];
         if frame.size != size {
             frame.depth = gpu.create_depth_texture();
@@ -108,24 +154,34 @@ impl FpsOverlay {
         gpu.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
         let mut instances = Vec::with_capacity(text.len() * 5);
-        for (dx, dy, tint) in [
-            (-1.0, 0.0, [0.0; 3]),
-            (1.0, 0.0, [0.0; 3]),
-            (0.0, -1.0, [0.0; 3]),
-            (0.0, 1.0, [0.0; 3]),
-            (0.0, 0.0, [1.0, 1.0, 0.25]),
-        ] {
-            instances.extend(self.font.build_text(
-                &text,
-                8.0 + dx,
-                8.0 + dy,
-                2.0,
-                0.0,
-                tint,
-                [0.0; 2],
-            ));
+        let layout = self.font.wrap_layout(
+            text,
+            if key == "window_fps" {
+                u32::MAX
+            } else {
+                size[0].saturating_sub(16) / 2
+            },
+        );
+        for (line_index, line) in layout.lines.iter().enumerate() {
+            for (dx, dy, tint) in [
+                (-1.0, 0.0, [0.0; 3]),
+                (1.0, 0.0, [0.0; 3]),
+                (0.0, -1.0, [0.0; 3]),
+                (0.0, 1.0, [0.0; 3]),
+                (0.0, 0.0, [1.0, 1.0, 0.25]),
+            ] {
+                instances.extend(self.font.build_text(
+                    &text[line.start_byte..line.end_byte],
+                    8.0 + dx,
+                    y + line_index as f32 * 20.0 + dy,
+                    2.0,
+                    0.0,
+                    tint,
+                    [0.0; 2],
+                ));
+            }
         }
-        frame.pool.upload(gpu, "window_fps", &instances);
+        frame.pool.upload(gpu, key, &instances);
         if !frame.logged_first_frame {
             log::info!(
                 "FPS overlay: final window surface {}x{}, {} glyph quads",
@@ -157,8 +213,9 @@ impl FpsOverlay {
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
-        if let Some((buffer, count)) = frame.pool.get("window_fps") {
+        if let Some((buffer, count)) = frame.pool.get(key) {
             batch.draw_passthrough_range_bound(
                 &mut pass,
                 self.font.atlas(),

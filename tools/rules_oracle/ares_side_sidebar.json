@@ -1,0 +1,961 @@
+{
+  "archive_requests": {
+    "boundary": "Original controller/formatting/retirement/early-return; destructor, heap, file availability and archive constructor are returning sinks. No MIX byte parser/list registration or actual resource payload.",
+    "rows": [
+      {
+        "events": [
+          {
+            "service": "old_archive_destructor",
+            "slot": "00884E68"
+          },
+          {
+            "service": "old_archive_destructor",
+            "slot": "00884E74"
+          },
+          {
+            "service": "old_archive_destructor",
+            "slot": "00884E70"
+          },
+          {
+            "service": "old_archive_destructor",
+            "slot": "00884E78"
+          },
+          {
+            "name": "SIDEC03MD.MIX",
+            "present": true,
+            "service": "supplied_file_availability"
+          },
+          {
+            "name": "SIDEC03MD.MIX",
+            "service": "supplied_archive_constructor"
+          },
+          {
+            "name": "SIDEC03.MIX",
+            "present": true,
+            "service": "supplied_file_availability"
+          },
+          {
+            "name": "SIDEC03.MIX",
+            "service": "supplied_archive_constructor"
+          },
+          {
+            "name": "SIDENC03.MIX",
+            "present": true,
+            "service": "supplied_file_availability"
+          },
+          {
+            "name": "SIDENC03.MIX",
+            "service": "supplied_archive_constructor"
+          }
+        ],
+        "input": {
+          "available_archives": [
+            "SIDEC03.MIX",
+            "SIDEC03MD.MIX",
+            "SIDENC03.MIX"
+          ],
+          "mix_file_index": 3
+        },
+        "reaches_ui_reload": true,
+        "returned_al_on_failure": null
+      },
+      {
+        "events": [
+          {
+            "service": "old_archive_destructor",
+            "slot": "00884E68"
+          },
+          {
+            "service": "old_archive_destructor",
+            "slot": "00884E74"
+          },
+          {
+            "service": "old_archive_destructor",
+            "slot": "00884E70"
+          },
+          {
+            "service": "old_archive_destructor",
+            "slot": "00884E78"
+          },
+          {
+            "name": "SIDEC04MD.MIX",
+            "present": false,
+            "service": "supplied_file_availability"
+          },
+          {
+            "name": "SIDEC04.MIX",
+            "present": true,
+            "service": "supplied_file_availability"
+          },
+          {
+            "name": "SIDEC04.MIX",
+            "service": "supplied_archive_constructor"
+          },
+          {
+            "name": "SIDENC04.MIX",
+            "present": false,
+            "service": "supplied_file_availability"
+          }
+        ],
+        "input": {
+          "available_archives": [
+            "SIDEC04.MIX"
+          ],
+          "mix_file_index": 4
+        },
+        "reaches_ui_reload": true,
+        "returned_al_on_failure": null
+      },
+      {
+        "events": [
+          {
+            "service": "old_archive_destructor",
+            "slot": "00884E68"
+          },
+          {
+            "service": "old_archive_destructor",
+            "slot": "00884E74"
+          },
+          {
+            "service": "old_archive_destructor",
+            "slot": "00884E70"
+          },
+          {
+            "service": "old_archive_destructor",
+            "slot": "00884E78"
+          },
+          {
+            "name": "SIDEC03MD.MIX",
+            "present": true,
+            "service": "supplied_file_availability"
+          },
+          {
+            "name": "SIDEC03MD.MIX",
+            "service": "supplied_archive_constructor"
+          },
+          {
+            "name": "SIDEC03.MIX",
+            "present": false,
+            "service": "supplied_file_availability"
+          }
+        ],
+        "input": {
+          "available_archives": [
+            "SIDEC03MD.MIX"
+          ],
+          "mix_file_index": 3
+        },
+        "reaches_ui_reload": false,
+        "returned_al_on_failure": 0
+      }
+    ]
+  },
+  "cache_retirement": {
+    "after_cached": {
+      "OBSERVER.PAL": false,
+      "SIDEBAR.PAL": false,
+      "SyntheticKeep.SHP": true,
+      "UIBKGD.PAL": false,
+      "YRII.PAL": false
+    },
+    "before_cached": {
+      "OBSERVER.PAL": true,
+      "SIDEBAR.PAL": true,
+      "SyntheticKeep.SHP": true,
+      "UIBKGD.PAL": true,
+      "YRII.PAL": true
+    },
+    "boundary": "Existing nonzero cache-node values with native-computed CRCs; UI payload/surface globals zero. Actual selective key retirement, no payload free/destructor or subsequent rendering.",
+    "invalidation_call_names": [
+      "YRII.PAL",
+      "OBSERVER.PAL",
+      "SIDEBAR.PAL",
+      "SIDEBAR.PAL",
+      "UIBKGD.PAL"
+    ]
+  },
+  "constructor": {
+    "boundary": "Literal constructor prefix only; later unrelated member construction excluded.",
+    "end_exclusive": "1002DA89",
+    "entry": "1002D9F0",
+    "initial_fill_byte": 204,
+    "state": {
+      "mix_file_index": 0,
+      "phase": 0,
+      "yuri_file_names": false
+    }
+  },
+  "fallback": {
+    "archive_sentinels_unchanged": [
+      true,
+      true,
+      true,
+      true
+    ],
+    "boundary": "This executable disk-selector leaf and fallback execute; log is a sink; stop after epilogue before RET. The result is binary-specific.",
+    "events": [
+      "original_disk_selector",
+      "suppressed_DebugLog"
+    ],
+    "returned_al": 0,
+    "selector_bytes": "b802000000c3"
+  },
+  "filename_sets": {
+    "boundary": "Actual file-backed filename pointer slots used at72FA23/72FA6A and72F379/72F3A0; no resource payload or rendered pixels.",
+    "common_palettes": [
+      "SIDEBAR.PAL",
+      "OBSERVER.PAL",
+      "YRII.PAL"
+    ],
+    "plain": {
+      "background_palette": "UIBKGD.PAL",
+      "backgrounds": [
+        "BKGDLG.SHP",
+        "BKGDMD.SHP",
+        "BKGDSM.SHP"
+      ],
+      "radar": "RADAR.SHP",
+      "radar_palette": "SIDEBAR.PAL"
+    },
+    "yuri": {
+      "background_palette": "UIBKGDY.PAL",
+      "backgrounds": [
+        "BKGDLGY.SHP",
+        "BKGDMDY.SHP",
+        "BKGDSMY.SHP"
+      ],
+      "radar": "RADARY.SHP",
+      "radar_palette": "RADARYURI.PAL"
+    }
+  },
+  "initial": {
+    "executable_sections_unchanged": true,
+    "fixture_side_order": [
+      "FourthSynthetic",
+      "ThirdSide",
+      "Nod",
+      "GDI"
+    ],
+    "rows": [
+      {
+        "array_index": 0,
+        "name": "FourthSynthetic",
+        "state": {
+          "mix_file_index": 1,
+          "phase": 0,
+          "yuri_file_names": false
+        }
+      },
+      {
+        "array_index": 1,
+        "name": "ThirdSide",
+        "state": {
+          "mix_file_index": 2,
+          "phase": 0,
+          "yuri_file_names": true
+        }
+      },
+      {
+        "array_index": 2,
+        "name": "Nod",
+        "state": {
+          "mix_file_index": 2,
+          "phase": 0,
+          "yuri_file_names": false
+        }
+      },
+      {
+        "array_index": 3,
+        "name": "GDI",
+        "state": {
+          "mix_file_index": 1,
+          "phase": 0,
+          "yuri_file_names": false
+        }
+      }
+    ]
+  },
+  "installed_hook_records": [
+    {
+      "length": 6,
+      "name": "RulesData_LoadBeforeTypeData",
+      "site": "00679A15"
+    },
+    {
+      "length": 7,
+      "name": "SideClass_CTOR",
+      "site": "006A4609"
+    },
+    {
+      "length": 5,
+      "name": "SideClass_SaveLoad_Prefix",
+      "site": "006A48A0"
+    },
+    {
+      "length": 6,
+      "name": "SideClass_SaveLoad_Prefix",
+      "site": "006A4780"
+    },
+    {
+      "length": 6,
+      "name": "SideClass_Load_Suffix",
+      "site": "006A488B"
+    },
+    {
+      "length": 5,
+      "name": "SideClass_Save_Suffix",
+      "site": "006A48FC"
+    },
+    {
+      "length": 5,
+      "name": "SideClass_LoadAllFromINI",
+      "site": "00679A10"
+    },
+    {
+      "length": 5,
+      "name": "Sides_MixFileIndex",
+      "site": "00534FB1"
+    },
+    {
+      "length": 7,
+      "name": "Sides_MixFileYuriFiles1",
+      "site": "0072FA1A"
+    },
+    {
+      "length": 7,
+      "name": "Sides_MixFileYuriFiles2",
+      "site": "0072F370"
+    },
+    {
+      "length": 5,
+      "name": "Sides_MixFileYuriFiles3",
+      "site": "0072FBC0"
+    }
+  ],
+  "phase_dispatch": [
+    {
+      "after": {
+        "mix_file_index": 1,
+        "phase": 2,
+        "yuri_file_names": false
+      },
+      "events": [
+        {
+          "phase_at_entry": 1,
+          "service": "recorded_complete_reader_boundary"
+        }
+      ],
+      "initial_phase": 0
+    },
+    {
+      "after": {
+        "mix_file_index": 0,
+        "phase": 2,
+        "yuri_file_names": false
+      },
+      "events": [
+        {
+          "phase_at_entry": 1,
+          "service": "recorded_complete_reader_boundary"
+        }
+      ],
+      "initial_phase": 1
+    },
+    {
+      "after": {
+        "mix_file_index": 0,
+        "phase": 2,
+        "yuri_file_names": false
+      },
+      "events": [
+        {
+          "phase_at_entry": 2,
+          "service": "recorded_complete_reader_boundary"
+        }
+      ],
+      "initial_phase": 2
+    },
+    {
+      "after": {
+        "mix_file_index": 0,
+        "phase": -1,
+        "yuri_file_names": false
+      },
+      "events": [],
+      "initial_phase": -1
+    },
+    {
+      "after": {
+        "mix_file_index": 0,
+        "phase": 3,
+        "yuri_file_names": false
+      },
+      "events": [],
+      "initial_phase": 3
+    }
+  ],
+  "read_all": {
+    "boundary": "Real existing-Side loop and phase dispatcher; whole field reader is a recorded sink. No section-presence guard or physical INI byte ingestion.",
+    "events": [
+      {
+        "received_original_ini": true,
+        "side": "SyntheticA"
+      },
+      {
+        "received_original_ini": true,
+        "side": "SyntheticB"
+      }
+    ],
+    "initial_extension_phase": 2,
+    "initial_registered_side_ids": [
+      "SyntheticA",
+      null,
+      "SyntheticB"
+    ]
+  },
+  "retained": {
+    "boundary": "Supplied phase2; continuous selected ReadINI prefix executes; unrelated reader tail and final phase store excluded.",
+    "fixture_side_order": [
+      "GDI",
+      "Nod",
+      "ThirdSide",
+      "FourthSynthetic"
+    ],
+    "initial": {
+      "mix_file_index": 1,
+      "phase": 2,
+      "yuri_file_names": false
+    },
+    "rows": [
+      {
+        "after": {
+          "mix_file_index": 1,
+          "phase": 2,
+          "yuri_file_names": false
+        },
+        "before": {
+          "mix_file_index": 1,
+          "phase": 2,
+          "yuri_file_names": false
+        },
+        "diagnostic_events": [],
+        "name": "omitted_defaults",
+        "selected_reads": [
+          {
+            "capacity": 2048,
+            "key": "Sidebar.MixFileIndex",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": ""
+          },
+          {
+            "capacity": 2048,
+            "key": "Sidebar.YuriFileNames",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": ""
+          }
+        ],
+        "stop_before": "1002E57B",
+        "supplied_ascii_reads": {}
+      },
+      {
+        "after": {
+          "mix_file_index": 4,
+          "phase": 2,
+          "yuri_file_names": true
+        },
+        "before": {
+          "mix_file_index": 1,
+          "phase": 2,
+          "yuri_file_names": false
+        },
+        "diagnostic_events": [],
+        "name": "explicit_extra",
+        "selected_reads": [
+          {
+            "capacity": 2048,
+            "key": "Sidebar.MixFileIndex",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": "4"
+          },
+          {
+            "capacity": 2048,
+            "key": "Sidebar.YuriFileNames",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": "yes"
+          }
+        ],
+        "stop_before": "1002E57B",
+        "supplied_ascii_reads": {
+          "Sidebar.MixFileIndex": "4",
+          "Sidebar.YuriFileNames": "yes"
+        }
+      },
+      {
+        "after": {
+          "mix_file_index": 4,
+          "phase": 2,
+          "yuri_file_names": true
+        },
+        "before": {
+          "mix_file_index": 4,
+          "phase": 2,
+          "yuri_file_names": true
+        },
+        "diagnostic_events": [],
+        "name": "later_omitted_retains",
+        "selected_reads": [
+          {
+            "capacity": 2048,
+            "key": "Sidebar.MixFileIndex",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": ""
+          },
+          {
+            "capacity": 2048,
+            "key": "Sidebar.YuriFileNames",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": ""
+          }
+        ],
+        "stop_before": "1002E57B",
+        "supplied_ascii_reads": {}
+      },
+      {
+        "after": {
+          "mix_file_index": -1,
+          "phase": 2,
+          "yuri_file_names": true
+        },
+        "before": {
+          "mix_file_index": 4,
+          "phase": 2,
+          "yuri_file_names": true
+        },
+        "diagnostic_events": [],
+        "name": "negative_retained",
+        "selected_reads": [
+          {
+            "capacity": 2048,
+            "key": "Sidebar.MixFileIndex",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": "-1"
+          },
+          {
+            "capacity": 2048,
+            "key": "Sidebar.YuriFileNames",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": "yes"
+          }
+        ],
+        "stop_before": "1002E57B",
+        "supplied_ascii_reads": {
+          "Sidebar.MixFileIndex": "-1",
+          "Sidebar.YuriFileNames": "yes"
+        }
+      },
+      {
+        "after": {
+          "mix_file_index": 0,
+          "phase": 2,
+          "yuri_file_names": false
+        },
+        "before": {
+          "mix_file_index": -1,
+          "phase": 2,
+          "yuri_file_names": true
+        },
+        "diagnostic_events": [],
+        "name": "zero_false",
+        "selected_reads": [
+          {
+            "capacity": 2048,
+            "key": "Sidebar.MixFileIndex",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": "0"
+          },
+          {
+            "capacity": 2048,
+            "key": "Sidebar.YuriFileNames",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": "no"
+          }
+        ],
+        "stop_before": "1002E57B",
+        "supplied_ascii_reads": {
+          "Sidebar.MixFileIndex": "0",
+          "Sidebar.YuriFileNames": "no"
+        }
+      },
+      {
+        "after": {
+          "mix_file_index": 5,
+          "phase": 2,
+          "yuri_file_names": false
+        },
+        "before": {
+          "mix_file_index": 0,
+          "phase": 2,
+          "yuri_file_names": false
+        },
+        "diagnostic_events": [],
+        "name": "partial_override",
+        "selected_reads": [
+          {
+            "capacity": 2048,
+            "key": "Sidebar.MixFileIndex",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": "5"
+          },
+          {
+            "capacity": 2048,
+            "key": "Sidebar.YuriFileNames",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": ""
+          }
+        ],
+        "stop_before": "1002E57B",
+        "supplied_ascii_reads": {
+          "Sidebar.MixFileIndex": "5"
+        }
+      },
+      {
+        "after": {
+          "mix_file_index": 5,
+          "phase": 2,
+          "yuri_file_names": false
+        },
+        "before": {
+          "mix_file_index": 5,
+          "phase": 2,
+          "yuri_file_names": false
+        },
+        "diagnostic_events": [],
+        "name": "empty_retains",
+        "selected_reads": [
+          {
+            "capacity": 2048,
+            "key": "Sidebar.MixFileIndex",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": ""
+          },
+          {
+            "capacity": 2048,
+            "key": "Sidebar.YuriFileNames",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": ""
+          }
+        ],
+        "stop_before": "1002E57B",
+        "supplied_ascii_reads": {
+          "Sidebar.MixFileIndex": "",
+          "Sidebar.YuriFileNames": ""
+        }
+      },
+      {
+        "after": {
+          "mix_file_index": 5,
+          "phase": 2,
+          "yuri_file_names": false
+        },
+        "before": {
+          "mix_file_index": 5,
+          "phase": 2,
+          "yuri_file_names": false
+        },
+        "diagnostic_events": [
+          {
+            "key": "Sidebar.MixFileIndex",
+            "section": "FourthSynthetic",
+            "service": "suppressed_DebugINIParseFailed",
+            "token": "garbage"
+          },
+          {
+            "key": "Sidebar.YuriFileNames",
+            "section": "FourthSynthetic",
+            "service": "suppressed_DebugINIParseFailed",
+            "token": "?"
+          }
+        ],
+        "name": "invalid_retains",
+        "selected_reads": [
+          {
+            "capacity": 2048,
+            "key": "Sidebar.MixFileIndex",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": "garbage"
+          },
+          {
+            "key": "Sidebar.MixFileIndex",
+            "section": "FourthSynthetic",
+            "service": "suppressed_DebugINIParseFailed",
+            "token": "garbage"
+          },
+          {
+            "capacity": 2048,
+            "key": "Sidebar.YuriFileNames",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": "?"
+          },
+          {
+            "key": "Sidebar.YuriFileNames",
+            "section": "FourthSynthetic",
+            "service": "suppressed_DebugINIParseFailed",
+            "token": "?"
+          }
+        ],
+        "stop_before": "1002E57B",
+        "supplied_ascii_reads": {
+          "Sidebar.MixFileIndex": "garbage",
+          "Sidebar.YuriFileNames": "?"
+        }
+      },
+      {
+        "after": {
+          "mix_file_index": 10,
+          "phase": 2,
+          "yuri_file_names": false
+        },
+        "before": {
+          "mix_file_index": 5,
+          "phase": 2,
+          "yuri_file_names": false
+        },
+        "diagnostic_events": [],
+        "name": "dollar_decimal",
+        "selected_reads": [
+          {
+            "capacity": 2048,
+            "key": "Sidebar.MixFileIndex",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": "$10"
+          },
+          {
+            "capacity": 2048,
+            "key": "Sidebar.YuriFileNames",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": ""
+          }
+        ],
+        "stop_before": "1002E57B",
+        "supplied_ascii_reads": {
+          "Sidebar.MixFileIndex": "$10"
+        }
+      },
+      {
+        "after": {
+          "mix_file_index": 16,
+          "phase": 2,
+          "yuri_file_names": false
+        },
+        "before": {
+          "mix_file_index": 10,
+          "phase": 2,
+          "yuri_file_names": false
+        },
+        "diagnostic_events": [],
+        "name": "suffix_hex",
+        "selected_reads": [
+          {
+            "capacity": 2048,
+            "key": "Sidebar.MixFileIndex",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": "10h"
+          },
+          {
+            "capacity": 2048,
+            "key": "Sidebar.YuriFileNames",
+            "section": "FourthSynthetic",
+            "service": "supplied_ReadString",
+            "value": ""
+          }
+        ],
+        "stop_before": "1002E57B",
+        "supplied_ascii_reads": {
+          "Sidebar.MixFileIndex": "10h"
+        }
+      }
+    ],
+    "selected_side_index": 3
+  },
+  "schema_version": 1,
+  "selector": {
+    "boundary": "Explicit existing typed fields; actual MIX/SHP/palette branch hooks and original numeric filename formatting. No House rebind, mount or rendering.",
+    "rows": [
+      {
+        "input": {
+          "actual_side": 2,
+          "mix_file_index": 3,
+          "yuri_file_names": true
+        },
+        "selection": {
+          "adjusted_index_bits": "00000002",
+          "filename_branches": [
+            "0072FA23",
+            "0072F379",
+            "0072FBCE"
+          ],
+          "md_mix_name": "SIDEC03MD.MIX",
+          "mix_hook_return": "00535003",
+          "mix_name": "SIDEC03.MIX",
+          "preserved_side_index": 2,
+          "scenario_side_after": 2
+        }
+      },
+      {
+        "input": {
+          "actual_side": 3,
+          "mix_file_index": 4,
+          "yuri_file_names": true
+        },
+        "selection": {
+          "adjusted_index_bits": "00000003",
+          "filename_branches": [
+            "0072FA23",
+            "0072F379",
+            "0072FBCE"
+          ],
+          "md_mix_name": "SIDEC04MD.MIX",
+          "mix_hook_return": "00535003",
+          "mix_name": "SIDEC04.MIX",
+          "preserved_side_index": 3,
+          "scenario_side_after": 3
+        }
+      },
+      {
+        "input": {
+          "actual_side": 2,
+          "mix_file_index": 3,
+          "yuri_file_names": false
+        },
+        "selection": {
+          "adjusted_index_bits": "00000002",
+          "filename_branches": [
+            "0072FA6A",
+            "0072F3A0",
+            "0072FBF5"
+          ],
+          "md_mix_name": "SIDEC03MD.MIX",
+          "mix_hook_return": "00535003",
+          "mix_name": "SIDEC03.MIX",
+          "preserved_side_index": 2,
+          "scenario_side_after": 2
+        }
+      },
+      {
+        "input": {
+          "actual_side": 3,
+          "mix_file_index": 1,
+          "yuri_file_names": true
+        },
+        "selection": {
+          "adjusted_index_bits": "00000000",
+          "filename_branches": [
+            "0072FA23",
+            "0072F379",
+            "0072FBCE"
+          ],
+          "md_mix_name": "SIDEC01MD.MIX",
+          "mix_hook_return": "00535003",
+          "mix_name": "SIDEC01.MIX",
+          "preserved_side_index": 3,
+          "scenario_side_after": 3
+        }
+      },
+      {
+        "input": {
+          "actual_side": 0,
+          "mix_file_index": 4,
+          "yuri_file_names": true
+        },
+        "selection": {
+          "adjusted_index_bits": "00000003",
+          "filename_branches": [
+            "0072FA23",
+            "0072F379",
+            "0072FBCE"
+          ],
+          "md_mix_name": "SIDEC04MD.MIX",
+          "mix_hook_return": "00535003",
+          "mix_name": "SIDEC04.MIX",
+          "preserved_side_index": 0,
+          "scenario_side_after": 0
+        }
+      },
+      {
+        "input": {
+          "actual_side": 3,
+          "mix_file_index": 0,
+          "yuri_file_names": false
+        },
+        "selection": {
+          "adjusted_index_bits": "FFFFFFFF",
+          "filename_branches": [
+            "0072FA6A",
+            "0072F3A0",
+            "0072FBF5"
+          ],
+          "mix_hook_return": "00534FC6",
+          "preserved_side_index": 3,
+          "scenario_side_after": 3
+        }
+      },
+      {
+        "input": {
+          "actual_side": 3,
+          "mix_file_index": -1,
+          "yuri_file_names": false
+        },
+        "selection": {
+          "adjusted_index_bits": "FFFFFFFE",
+          "filename_branches": [
+            "0072FA6A",
+            "0072F3A0",
+            "0072FBF5"
+          ],
+          "mix_hook_return": "00534FC6",
+          "preserved_side_index": 3,
+          "scenario_side_after": 3
+        }
+      },
+      {
+        "input": {
+          "actual_side": 3,
+          "mix_file_index": -2147483648,
+          "yuri_file_names": false
+        },
+        "selection": {
+          "adjusted_index_bits": "7FFFFFFF",
+          "filename_branches": [
+            "0072FA6A",
+            "0072F3A0",
+            "0072FBF5"
+          ],
+          "md_mix_name": "SIDEC-2147483648MD.MIX",
+          "mix_hook_return": "00535003",
+          "mix_name": "SIDEC-2147483648.MIX",
+          "preserved_side_index": 3,
+          "scenario_side_after": 3
+        }
+      }
+    ]
+  }
+}

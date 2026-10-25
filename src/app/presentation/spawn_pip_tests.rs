@@ -136,7 +136,7 @@ fn stock_carrier_pips_follow_construction_sortie_recall_reload_and_selection() {
         let result = sim
             .advance_app_frame(
                 &[],
-                Some(rules),
+                rules,
                 None,
                 33,
                 crate::sim::world::TickLane::Ordinary,
@@ -301,8 +301,11 @@ fn stock_carrier_spawner_fire_reveals_to_its_human_victim() {
 
     for frame in 0..30 {
         let commands = if frame == 0 {
+            // The local human House sends the computer Carrier's order:
+            // the DoList skips computer Houses' events (0x0064C4FB..0x0064C50D),
+            // and MegaMission never compares sender and actor (0x004C71F6..0x004C721F).
             vec![CommandEnvelope::new(
-                owner,
+                current,
                 scene.sim().session().tick(),
                 Command::Attack {
                     attacker_id: carrier,

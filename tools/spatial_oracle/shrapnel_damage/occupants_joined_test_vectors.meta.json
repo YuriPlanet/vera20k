@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -24,9 +23,7 @@
   },
   "source_files": {
     "occupants_joined.json.gz": "b3f72c9d9f6b6f47bd937c47609489f89b72aec8bed9a9c9400435c42ac8a3b3",
-    "occupants_joined_promotion.json": "b6469e803fd0f7bf9b7f659e2c9583fe6199084fe9def63e1e50860747013056",
-    "occupants_test_vectors.py": "dba865474bcfc3fe0d89585357e1bcacbf5c457bebdd832214958cb55507553a"
+    "occupants_joined_promotion.json": "b6469e803fd0f7bf9b7f659e2c9583fe6199084fe9def63e1e50860747013056"
   },
-  "projection_source_sha256": "1b5e51b661295eb0cd00882919cf43843c8a7d99e849be1d02eda174101d0ec2",
-  "payload_sha256": "605125c4accc4c59386b34d0ed75908824819d6a18036ed9e77304a7b08e553c"
+  "payload_sha256": "dc858b888b08d57b5b11764f3cee2e8ddcd949649b3d01ddd2796b47908e66f2"
 }

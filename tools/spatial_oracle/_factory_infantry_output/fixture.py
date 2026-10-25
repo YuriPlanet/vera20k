@@ -81,8 +81,7 @@ def unit_ready_consumer(controls, source_receipts, *, lean=False, projection=Non
         for name, data in controls.items():
             require(data['success'] is True and data['original_code_unchanged'] is True and
                     not data['requests'] and not data['advances'], 'Consumer control failed: ' + name)
-            row = dict(native_sha256=data['native_sha256'],
-                full_original_receipt_sha256=rt.canonical_sha(data),
+            row = dict(full_original_receipt_sha256=rt.canonical_sha(data),
                 steps=[step(s) for s in data.get('steps', [])],
                 final=state(data['final']), bounds=data['bounds'])
             prior = data['borrowed_prior']
@@ -155,7 +154,7 @@ def unit_ready_consumer(controls, source_receipts, *, lean=False, projection=Non
     result = {k: result[k] for k in ('schema', 'kind', 'source_receipts', 'comparison_limit')}
     result['controls'] = {}
     for name, row in selected.items():
-        out = {k: row[k] for k in ('native_sha256', 'full_original_receipt_sha256', 'bounds')}
+        out = {k: row[k] for k in ('full_original_receipt_sha256', 'bounds')}
         out['registered_prior'] = dict(physical=row['registered_prior']['physical'],
             clock_steps=[narrow_step(s) for s in row['registered_prior']['clock_steps']],
             notification_suffix=[narrow_step(s) for s in row['registered_prior']['notification_suffix']])
@@ -244,7 +243,7 @@ def generate(original, private, source_receipts):
         selected.append(dict(frame=frame, state=project(state), original_calls=project(relevant_calls),
                              private_observations=project(private_calls), requests=project(row['requests'])))
     return dict(schema_version=1, kind='Native-derived ordinary no-rally producer/queue/movement milestones',
-        native_sha256=original['native_sha256'], source_receipts=source_receipts,
+        source_receipts=source_receipts,
         binary_and_source_scope='Original active-retail executable; P5 Rust baseline committed 2909; no latest integrated source assertion',
         rng_representation='SHA256 keys reference complete unmodified 0x3F4 native buffers; prefix words are raw readback, not inferred seed/index semantics',
         rng_states=rng,
@@ -364,7 +363,7 @@ def initialized_projection(control, data):
     for frame in milestones:
         row = frames[frame]
         selected.append(dict(frame=frame, state=project({k: v for k, v in row.items() if k not in ('events', 'requests')}), original_calls=project(row['events']), requests=project(row['requests']), private_observations=project([x for x in private['events'] if x['frame'] == frame and x['kind'] in ('InfantryScatter', 'FootIdle', 'InfantryIdle', 'InfantryCtor', 'FootCtor', 'PlanningCreate', 'PlanningSetter', 'NativeBoundary')]), walk_completion_gates=project([x for x in data['walk_completion_gate_observations'] if x['frame'] == frame])))
-    result = dict(schema=1, control=control, native_sha256=data['native_sha256'], complete_normalized_primary_sha256=rt.canonical_sha(rt.normalize(primary)), complete_normalized_private_sha256=rt.canonical_sha(rt.normalize(private)), executed_registered_startup=project(data['original_registered_walk_startup']), original_startup_calls=project(data['startup_calls']), original_startup_writes=data['startup_writes'], selected_loop_global_reads=data['selected_loop_global_reads'], selected_loop_global_writes=data['selected_loop_global_writes'], original_global_consumer_instructions=data['original_global_consumer_instructions'], producer_opening=project(joined['opening']), producer_admission=project(joined['admitted_queue']['joined']), original_queue_admission=project(queue['steps'][:-1]), native_environment=dict(runtime=queue['runtime'], runtime_mode=queue['runtime_mode'], map_diamond_prior=queue['map_diamond_prior'], physical_clear_map=project(queue['physical_clear_map']), selected_inputs=queue['selected_inputs']), original_rally_setup=project(primary['setup']), actual_house_place_notifications=data['actual_house_place_notification_coordinates'], live_virtual_identities=private['live_virtual_identities'], measured_frames=dict(completion=complete, place=place, first_live_scatter=scatter, radio_release=release, first_live_infantry=sorted(first_live.values()), archive_handoff=handoff, navigation_null=null_destinations, guard_commit=guard_commits, final=queue['final']['frame']), milestones=selected, final_public=project(queue['final']), final_private=project(private['primary_boundary']), full_request_order=project(queue['requests']), full_raw_advance_order=project(queue['advances']), original_executed_spans=private['original_executed_spans'], rng_states=rng, bounds=data['bounds'])
+    result = dict(schema=1, control=control, complete_normalized_primary_sha256=rt.canonical_sha(rt.normalize(primary)), complete_normalized_private_sha256=rt.canonical_sha(rt.normalize(private)), executed_registered_startup=project(data['original_registered_walk_startup']), original_startup_calls=project(data['startup_calls']), original_startup_writes=data['startup_writes'], selected_loop_global_reads=data['selected_loop_global_reads'], selected_loop_global_writes=data['selected_loop_global_writes'], original_global_consumer_instructions=data['original_global_consumer_instructions'], producer_opening=project(joined['opening']), producer_admission=project(joined['admitted_queue']['joined']), original_queue_admission=project(queue['steps'][:-1]), native_environment=dict(runtime=queue['runtime'], runtime_mode=queue['runtime_mode'], map_diamond_prior=queue['map_diamond_prior'], physical_clear_map=project(queue['physical_clear_map']), selected_inputs=queue['selected_inputs']), original_rally_setup=project(primary['setup']), actual_house_place_notifications=data['actual_house_place_notification_coordinates'], live_virtual_identities=private['live_virtual_identities'], measured_frames=dict(completion=complete, place=place, first_live_scatter=scatter, radio_release=release, first_live_infantry=sorted(first_live.values()), archive_handoff=handoff, navigation_null=null_destinations, guard_commit=guard_commits, final=queue['final']['frame']), milestones=selected, final_public=project(queue['final']), final_private=project(private['primary_boundary']), full_request_order=project(queue['requests']), full_raw_advance_order=project(queue['advances']), original_executed_spans=private['original_executed_spans'], rng_states=rng, bounds=data['bounds'])
     for digest, row in data['gate_complete_rng_states'].items():
         raw = bytes.fromhex(row['bytes'])
         require(len(raw) == 1012 and hashlib.sha256(raw).hexdigest() == digest, 'Gate RNG bytes differ')
@@ -444,13 +443,13 @@ def local_fixture(no_rally, rally, source_receipts):
     exit_pointer = placed['state']['delivered_infantry'][0]['nav']
     selected = next((x for x in request['after']['perimeter'] if x['pointer'] == exit_pointer))
     from tools.spatial_oracle._factory_infantry_output import exit as exit_caller
-    click = [x for x in ast.walk(ast.parse(Path(exit_caller.__file__).read_text())) if isinstance(x, ast.Call) and isinstance(x.func, ast.Attribute) and (x.func.attr == 'pack') and (len(x.args) == 3) and isinstance(x.args[0], ast.Constant) and (x.args[0].value == '<2h')]
+    click = [x for x in ast.walk(ast.parse(Path(exit_caller.__file__).read_text(encoding='utf-8'))) if isinstance(x, ast.Call) and isinstance(x.func, ast.Attribute) and (x.func.attr == 'pack') and (len(x.args) == 3) and isinstance(x.args[0], ast.Constant) and (x.args[0].value == '<2h')]
     require(len(click) == 1, 'Authored rally input expression changed')
     requested = [ast.literal_eval(x) for x in click[0].args[1:]]
     rally_destination = with_rally['products'][0]['rally_walk_destination']
     require([x // 256 for x in rally_destination[:2]] == requested, 'Original rally destination differs from clear authored input')
-    with_rally.update(request=dict(cell=requested, entry=request['pc'], input_owner='tools/spatial_oracle/_factory_infantry_output/exit.py', input_owner_sha256=hashlib.sha256(Path(exit_caller.__file__).read_bytes()).hexdigest()), exit_cell=[selected['x'], selected['y']], limits=['Both terminal Guard/Nav/Archive/private Walk/contact states are measured from original registered-startup execution.', 'Native local frames identify source rows; absolute canonical frame/RNG parity is excluded.'])
-    return dict(schema_version=2, kind='Initialized native local human barracks Infantry output', native_sha256=no_rally['native_sha256'], source_receipts=source_receipts, producer_prior=dict(location=producer['location'], health=producer['health'], cash=ready['house']['credits'], power=ready['admitted_authorities']['house']['power'], drain=ready['admitted_authorities']['house']['drain']), products=ordinary['products'], final_wallet={k: no_rally['final_public']['house'][k] for k in ('credits', 'spent')}, rally=with_rally, limits=['Local snapshots/transmit order are mechanically selected from original initialized controls, not computed by VERA.', 'Selected Foot EMPTY and whole Walk CRT execute; inherited FPCW/options/House/map/prior-actor inputs and omitted full startup remain explicit.', 'Canonical advance_tick visits more phases/actors than the restricted native caller; absolute frames, no-rally Scatter destination and all-stream RNG parity are excluded.', 'HouseTechLevel10 and the already-ready producer are structural Rust test priors, not a whole House/startup/construction equivalence proof.', 'EVA registry is empty in the original joined fixture; stock UnitReady voice queue/cleanup is not established by this local fixture.'])
+    with_rally.update(request=dict(cell=requested, entry=request['pc'], input_owner='tools/spatial_oracle/_factory_infantry_output/exit.py'), exit_cell=[selected['x'], selected['y']], limits=['Both terminal Guard/Nav/Archive/private Walk/contact states are measured from original registered-startup execution.', 'Native local frames identify source rows; absolute canonical frame/RNG parity is excluded.'])
+    return dict(schema_version=2, kind='Initialized native local human barracks Infantry output', source_receipts=source_receipts, producer_prior=dict(location=producer['location'], health=producer['health'], cash=ready['house']['credits'], power=ready['admitted_authorities']['house']['power'], drain=ready['admitted_authorities']['house']['drain']), products=ordinary['products'], final_wallet={k: no_rally['final_public']['house'][k] for k in ('credits', 'spent')}, rally=with_rally, limits=['Local snapshots/transmit order are mechanically selected from original initialized controls, not computed by VERA.', 'Selected Foot EMPTY and whole Walk CRT execute; inherited FPCW/options/House/map/prior-actor inputs and omitted full startup remain explicit.', 'Canonical advance_tick visits more phases/actors than the restricted native caller; absolute frames, no-rally Scatter destination and all-stream RNG parity are excluded.', 'HouseTechLevel10 and the already-ready producer are structural Rust test priors, not a whole House/startup/construction equivalence proof.', 'EVA registry is empty in the original joined fixture; stock UnitReady voice queue/cleanup is not established by this local fixture.'])
 
 
 def infantry_unlimbo_gate(receipt, source_hash):
@@ -487,7 +486,7 @@ def infantry_unlimbo_gate(receipt, source_hash):
                 after_words=list(struct.unpack('<3i', bytes.fromhex(row['rng_after'][name])[:12])),
             ) for name in row['rng_before']},
         ))
-    return dict(schema_version=1, native_sha256=receipt['native_sha256'],
+    return dict(schema_version=1,
                 source_receipt_sha256=source_hash, gate_reader=receipt['gate_reader'],
                 bounds=receipt['bounds'] + [
                     'Negative linear alias -123264 exceeds the current Rust ground_pose XY storage range, whose documented lower limit is -32768. It is native-only range evidence.',
@@ -505,4 +504,4 @@ def publication_phase_local_fixture(receipts, source_receipts, parent_manifest_s
         strip = next((s for s in row['boundaries'] if s['label'] == 'actual_strip268_publication'))
         click = next((s for s in row['boundaries'] if s['label'] == 'authored_clear_cell_actual_building_click'))
         cases[name] = dict(frame=strip['before']['frame'], rally_request=click['cell'], incoming_factory=strip['before']['factory'], incoming_producer=strip['before']['producer'], what_action=click['what_action']['result'], original_clicked_action_result=click['click']['result'], executed_event_types=[bytes.fromhex(c['event_bytes'])[0] for c in row['original_calls'] if c['kind'] == 'event_execute'], placed=dict(pointer=placed['pointer'], id=placed['id'], position=placed['location'], mission=placed['mission'], queued=placed['queued'], archive=placed['archive'], archive_is_set=bool(placed['archive']), nav=placed['nav'], nav_is_set=bool(placed['nav']), producer_archive=placed['producer_archive'], producer_archive_is_set=bool(placed['producer_archive']), tether=bool(placed['tether']), contacts=placed['contacts'], walk_moving=bool(placed['walk']['moving']), walk_destination=placed['walk']['destination'], walk_paid_head=placed['walk']['paid_head']), after=row['control_state']['final'], click_rng_requests=click['requests'], click_raw_advances=click['raw_advances'])
-    return dict(schema_version=1, native_sha256=next(iter(receipts.values()))['native_sha256'], source_receipts=source_receipts, inherited_parent_manifest_sha256=parent_manifest_sha256, cases=cases)
+    return dict(schema_version=1, source_receipts=source_receipts, inherited_parent_manifest_sha256=parent_manifest_sha256, cases=cases)

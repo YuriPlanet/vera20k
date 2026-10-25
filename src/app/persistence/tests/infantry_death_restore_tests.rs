@@ -51,7 +51,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
     let output = saved
         .advance_app_frame(
             &[CommandEnvelope::new(owner, 1, Command::ExitMatch)],
-            Some(&rules),
+            &rules,
             Some(&registry),
             67,
             TickLane::Ordinary,
@@ -102,6 +102,9 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
         1
     );
     *saved.scenario_rng_mut_for_test() = crate::sim::rng::SimRng::new(0);
+    // Whole-state comparison must share both native load-time resets. This
+    // fixture has no future plans; even empty constructor tokens are unsaved.
+    saved.reset_planning_after_player_load_for_test();
     let bytes = snapshot_bytes(&saved, &rules);
     let mut restored = PreparedLoad::prepare_candidate(
         &bytes,
@@ -119,7 +122,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
     let next = restored
         .advance_app_frame(
             &[],
-            Some(&rules),
+            &rules,
             Some(&registry),
             67,
             TickLane::Ordinary,
@@ -190,6 +193,7 @@ fn infantry_prepared_load_preserves_death_sequence_progress_and_cleanup_visit() 
         // Native in-scenario load restarts Scenario RNG at zero. Compare the
         // death's continuation from that same cursor rather than hide reset.
         *saved.scenario_rng_mut_for_test() = crate::sim::rng::SimRng::new(0);
+        saved.reset_planning_after_player_load_for_test();
         let bytes = snapshot_bytes(&saved, &rules);
         let registry = OverlayTypeRegistry::empty();
         let mut restored = PreparedLoad::prepare_candidate(

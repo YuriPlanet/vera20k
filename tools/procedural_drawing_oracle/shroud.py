@@ -1126,7 +1126,7 @@ def generate_building_brackets():
     controls = [dict(name='clear'), dict(name='mixed_a', alpha='mixed'),
                 dict(name='occluding_z', occluding_rect=[40, 40, 120, 120], occluding_z=32700),
                 dict(name='native_ground_body_z', native_z_runs=ground.pop('native_z_runs'))]
-    return dict(schema_version=1, native_sha256=native.image_sha256(), palette=palette_evidence,
+    return dict(schema_version=1, palette=palette_evidence,
                 geometry=geometry, ground_occlusion=ground,
                 raster_controls=[building_bracket_pixels(geometry, case) for case in controls])
 
@@ -3039,7 +3039,7 @@ def generate_unit_health(*, building=False, rank=False, passenger=False, ammo=Fa
         assert tail_defaults['organic']==tail_type()['organic']==False
     else:
         assert tail_defaults == tail_type()
-    result = dict(schema_version=1, native_sha256=native.image_sha256(), physical_inputs=physical,
+    result = dict(schema_version=1, physical_inputs=physical,
                   readers=dict(constructor=constructor, layers=layers, result=fields(),
                                ordinary_tail_constructor=tail_defaults),
                   palette=palette_result, raster_controls=rows, original_code_unchanged=True)
@@ -3629,7 +3629,7 @@ def generate_primary_factory_status(*, power=False):
     physical=scene['sources']+factory_sources+[
         dict(name='ARTMD.INI',archive='ra2md.mix/localmd.mix',sha256=sha(m.assets['ARTMD.INI'])),
         dict(name='GAME.FNT',archive='ra2.mix/local.mix',sha256=sha(font_raw))]
-    result=dict(schema_version=1,native_sha256=native.image_sha256(),
+    result=dict(schema_version=1,
         producer_priors=producer_priors,physical_inputs=physical,
         raw_file_inputs=dict(theater=scene['terrain']['theater']['name'],absent=absent_probes,
             boundary='Explicit physical temperate-name absences and GG/temperate-buildup byte winners; original filename probes/fallback execute in the existing TMP RawFile transport. Native archive search is not executed.'),
@@ -4436,7 +4436,7 @@ def generate_radial_indicator():
         circular_planes=dict(scroll_bytes=0,row_width=160,height=160),
         projection_factor_f64_bits='3FC25E5374344960',session_mode=1,placement_preview=False,
         selected_ray=dict(z=[-500,-500],write_z=False,channels=[True,True,True]))
-    return dict(schema_version=1,native_sha256=native.image_sha256(),size=list(draw.size),
+    return dict(schema_version=1,size=list(draw.size),
         transport=transport,
         reader_inputs=readers,cubic_lut=lut,tangent=tangent,
         scenes=scene_rows,ray_controls=rays)
@@ -4689,7 +4689,7 @@ def generate_superweapon_range_controls():
         raise native.OracleError('Native radial helper numeric controls changed')
     fallback = _superweapon_loop_control(
         'retail_lm_zero_single_ring', 0x3FB33333, 0)['pulse_draws'][0]
-    return dict(native_sha256=native.image_sha256(), fpcw='0E3F',
+    return dict(fpcw='0E3F',
                 loop_controls=loop_controls,
                 pulse_controls=dict(house_rgb=[33, 67, 101],
                     lm_below_one=fallback,
@@ -5120,7 +5120,7 @@ def generate_infantry_berserk_body():
             projection_inclusive_padding=[360,180],zero_camera_point=zero_point,
             zero_camera_raw_return=zero_return,zero_camera_returned_al=zero_return&255,
             camera_frame='Original Tactical+B0/B4 projected-world top-left; no VERA row bias')
-        return dict(schema_version=1, native_sha256=native.image_sha256(),shared=shared,
+        return dict(schema_version=1, shared=shared,
             rows=rows,viewport_rows=viewport_rows)
     finally:
         u.hook_del(hook)

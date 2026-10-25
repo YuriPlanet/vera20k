@@ -262,6 +262,7 @@ pub(crate) fn join_enabled(
     channel: Option<&WolChannel>,
     games: &[WolChannel],
     observer: bool,
+    clan_id: i32,
 ) -> bool {
     if selected.is_empty() {
         return false;
@@ -280,7 +281,7 @@ pub(crate) fn join_enabled(
                     observer,
                     AdmissionContext {
                         quick_match: false,
-                        clan_id: 0,
+                        clan_id,
                         local_hash: None,
                     },
                 )
@@ -794,12 +795,19 @@ mod tests {
         let mut full = game("Full's_game");
         full.users = 6;
         let games = [open.clone(), full.clone()];
-        assert!(join_enabled("B", Some(4), None, &games, false));
-        assert!(join_enabled("B", Some(5), Some(&open), &games, false));
-        assert!(!join_enabled("B", Some(5), Some(&full), &games, false));
-        assert!(!join_enabled("B", Some(5), Some(&game("x")), &games, false));
-        assert!(!join_enabled("", Some(4), None, &games, false));
-        assert!(!join_enabled("B", Some(3), None, &games, false));
+        assert!(join_enabled("B", Some(4), None, &games, false, 0));
+        assert!(join_enabled("B", Some(5), Some(&open), &games, false, 0));
+        assert!(!join_enabled("B", Some(5), Some(&full), &games, false, 0));
+        assert!(!join_enabled(
+            "B",
+            Some(5),
+            Some(&game("x")),
+            &games,
+            false,
+            0
+        ));
+        assert!(!join_enabled("", Some(4), None, &games, false, 0));
+        assert!(!join_enabled("B", Some(3), None, &games, false, 0));
         assert!(page_enabled("B", Some(3)) && page_enabled("B", Some(-1)));
         assert!(!page_enabled("B", Some(2)) && !page_enabled("B", None));
     }

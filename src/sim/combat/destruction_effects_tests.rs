@@ -219,12 +219,17 @@ fn a_destroyed_building_explodes_per_foundation_cell_then_plays_its_destroy_anim
         let mut replay = sim.scenario_rng.clone();
         let mut marks = Vec::new();
         let mut recorded = Vec::new();
-        sim.building_destruction_effects(&rules, plant, false, &mut recorded, |_, request| {
-            marks.push(request)
-        });
+        sim.building_destruction_effects(
+            &rules,
+            plant,
+            false,
+            &mut recorded,
+            |_, request| marks.push(request),
+            FrameEffects::empty(),
+        );
 
         let mut expected = Vec::new();
-        for (rx, ry) in crate::sim::crew_survival::foundation_cells(10, 20, "2x2") {
+        for (rx, ry) in crate::sim::crew_survival::foundation_cells(10, 20, &"2x2".into()) {
             let (x, y) = super::super::inviso_scatter::random_direction_coord(
                 &mut replay,
                 i32::from(rx) * 256 + 0x80,
@@ -275,14 +280,28 @@ fn a_single_destroy_anim_still_draws_and_no_lists_draw_nothing() {
 
     let mut replay = sim.scenario_rng.clone();
     let mut recorded = Vec::new();
-    sim.building_destruction_effects(&rules, hall, false, &mut recorded, |_, _| {});
+    sim.building_destruction_effects(
+        &rules,
+        hall,
+        false,
+        &mut recorded,
+        |_, _| {},
+        FrameEffects::empty(),
+    );
     let _pick = replay.next_u32();
     assert_eq!(sim.scenario_rng.state(), replay.state());
     assert_eq!(anims(&sim).len(), 1);
 
     let before = sim.scenario_rng.state();
     let mut recorded = Vec::new();
-    sim.building_destruction_effects(&rules, shed, false, &mut recorded, |_, _| {});
+    sim.building_destruction_effects(
+        &rules,
+        shed,
+        false,
+        &mut recorded,
+        |_, _| {},
+        FrameEffects::empty(),
+    );
     assert!(recorded.is_empty());
     assert_eq!(sim.scenario_rng.state(), before);
     assert_eq!(anims(&sim).len(), 1);
@@ -407,6 +426,137 @@ fn kill_with(
     );
 }
 
+/// A 20x20 open map whose cell (12, 12) stands two levels up, on Water or
+/// Clear.
+fn water_cell_sim(rules: &RuleSet, water: bool) -> Simulation {
+    use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
+    use crate::rules::terrain_rules::SpeedCostProfile;
+
+    let open = SpeedCostProfile {
+        foot: Some(100),
+        track: Some(100),
+        wheel: Some(100),
+        float: Some(100),
+        amphibious: Some(100),
+        float_beach: Some(100),
+        hover: Some(100),
+    };
+    let mut sim = sim(9);
+    let cells = (0..20_u16)
+        .flat_map(|y| (0..20_u16).map(move |x| (x, y)))
+        .map(|(x, y)| {
+            let mut cell = test_flat_cell(x, y);
+            cell.speed_costs = open;
+            cell.base_speed_costs = open;
+            if (x, y) == (12, 12) {
+                cell.level = 2;
+                cell.land_type = if water {
+                    LandType::Water.as_index()
+                } else {
+                    LandType::Clear.as_index()
+                };
+                cell.base_land_type = cell.land_type;
+            }
+            cell
+        })
+        .collect();
+    sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(20, 20, cells));
+    sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
+        base: 20,
+        off_fc: -128,
+        off_100: -128,
+        off_104: 256,
+        off_108: 256,
+    }));
+    sim.set_playfield_size_height_for_test(Some(20));
+    assert!(sim.rebuild_dynamic_navigation(rules));
+    sim
+}
+
+/// Puts `id` `height` leptons above cell (12, 12)'s two ground levels and,
+/// for a bomb, lands it from a DropAsBomb fall (the +8F byte persists).
+fn drop_at_height(sim: &mut Simulation, id: u64, bomb: bool, height: i32) {
+    let entity = sim.substrate.entities.get_mut(id).unwrap();
+    // Two ground levels exercise a raw world Z rather than a floor-Z
+    // substitute. Native GetHeight still sees the given height.
+    entity.position.set_exact_z_leptons_for_test(Some(
+        2 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS + height,
+    ));
+    if bomb {
+        entity.begin_bomb_fall();
+        entity.finish_fall();
+        assert!(entity.was_dropped_as_bomb(), "landing retains +8F");
+    }
+}
+
+/// Rust regression through the production damage receiver. Instruction
+/// evidence: Techno702232..70227B (retail gamemd) jumps to 0x702672 for a
+/// low dropped bomb over water, past KillPassengers (0x702603..0x702667) and
+/// Fire_Death_Weapon (0x70266D) as well as the debris. An `Explodes=` unit
+/// that falls off a bridge into water sets off no death weapon; high or dry,
+/// it still does. Its passenger dies either way: skipped by KillPassengers,
+/// it meets the unit tail's escape, which kills every passenger of a dropped
+/// bomb (+0x8F, `0x007380AF` -> RecordKill and UnInit at `0x00738188`).
+#[test]
+fn a_low_dropped_bomb_over_water_fires_no_death_weapon() {
+    let text = RULES
+        .replace("1=ENGINEER\n", "1=ENGINEER\n2=BYSTANDER\n")
+        .replace(
+            "[APOC]\nStrength=100\nExplodes=yes\n",
+            "[APOC]\nStrength=100\nExplodes=yes\nDeathWeapon=BOOMW\nPassengers=1\n",
+        )
+        + "\n[BYSTANDER]\nStrength=125\nSpeed=4\n\
+           Locomotor={4A582744-9839-11D1-B709-00A024DDAFD1}\n\
+           [BOOMW]\nDamage=50\nWarhead=BOOMWH\n\
+           [BOOMWH]\nCellSpread=2\nPercentAtMax=100%\n\
+           Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n";
+    let rules = rules_from(&text);
+    for (bomb, height, water, fires) in [
+        (true, 0, true, false),
+        (true, 10, true, false),
+        (true, 11, true, true),
+        (false, 0, true, true),
+        (true, 0, false, true),
+    ] {
+        let case = format!("bomb={bomb} height={height} water={water}");
+        let mut sim = water_cell_sim(&rules, water);
+        let apoc = spawn(&mut sim, &rules, "APOC", 12, 12);
+        let bystander = spawn(&mut sim, &rules, "BYSTANDER", 13, 12);
+        let rider = spawn(&mut sim, &rules, "E1", 11, 12);
+        assert!(crate::sim::passenger::board_passenger(
+            &mut sim,
+            &rules,
+            rider,
+            apoc,
+            crate::sim::passenger::BoardingArm::InfantryTransport,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        ));
+        drop_at_height(&mut sim, apoc, bomb, height);
+
+        kill(&mut sim, &rules, apoc);
+
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(bystander)
+                .unwrap()
+                .health
+                .current()
+                < 125,
+            fires,
+            "death weapon: {case}"
+        );
+        assert!(
+            sim.substrate
+                .entities
+                .get(rider)
+                .is_none_or(|rider| !rider.lifecycle.object_alive()),
+            "passenger: {case}"
+        );
+    }
+}
+
 /// Rust regression through the production damage receiver. Instruction
 /// evidence: Techno702232, Unit737E78 and Infantry5181B5 (retail gamemd).
 /// Both water branches retain Location Z and construct Wake before the
@@ -414,9 +564,6 @@ fn kill_with(
 /// Techno's debris; high bombs and ordinary water deaths still consume it.
 #[test]
 fn low_dropped_bombs_use_class_water_splashes_without_debris() {
-    use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_flat_cell};
-    use crate::rules::terrain_rules::SpeedCostProfile;
-
     let text = RULES
         .replace("[General]\n", "[General]\nWake=EXPA\n")
         .replace("1=ENGINEER\n", "1=ENGINEER\n2=ROCKET\n")
@@ -428,15 +575,6 @@ fn low_dropped_bombs_use_class_water_splashes_without_debris() {
            [ROCKET]\nStrength=100\nJumpJet=yes\nCrashable=yes\nSpeed=4\n\
            Locomotor={92612C46-F71F-11d1-AC9F-006008055BB5}\n";
     let rules = rules_from(&text);
-    let open = SpeedCostProfile {
-        foot: Some(100),
-        track: Some(100),
-        wheel: Some(100),
-        float: Some(100),
-        amphibious: Some(100),
-        float_beach: Some(100),
-        hover: Some(100),
-    };
     for (kind, bomb, height, water, splash) in [
         ("PLAIN", true, 10, true, Some(("EXPB", 5))),
         ("PLAIN", true, 0, true, Some(("EXPB", 5))),
@@ -449,48 +587,10 @@ fn low_dropped_bombs_use_class_water_splashes_without_debris() {
         ("ROCKET", true, 10, true, Some(("EXPC", 3))),
         ("SHIP", true, 0, true, None),
     ] {
-        let mut sim = sim(9);
-        let cells = (0..20_u16)
-            .flat_map(|y| (0..20_u16).map(move |x| (x, y)))
-            .map(|(x, y)| {
-                let mut cell = test_flat_cell(x, y);
-                cell.speed_costs = open;
-                cell.base_speed_costs = open;
-                if (x, y) == (12, 12) {
-                    cell.level = 2;
-                    cell.land_type = if water {
-                        LandType::Water.as_index()
-                    } else {
-                        LandType::Clear.as_index()
-                    };
-                    cell.base_land_type = cell.land_type;
-                }
-                cell
-            })
-            .collect();
-        sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(20, 20, cells));
-        sim.set_playfield_bounds_for_test(Some(crate::sim::cell_rect::PlayfieldBounds {
-            base: 20,
-            off_fc: -128,
-            off_100: -128,
-            off_104: 256,
-            off_108: 256,
-        }));
-        sim.set_playfield_size_height_for_test(Some(20));
-        assert!(sim.rebuild_dynamic_navigation(&rules));
+        let mut sim = water_cell_sim(&rules, water);
         let id = spawn(&mut sim, &rules, kind, 12, 12);
-        let entity = sim.substrate.entities.get_mut(id).unwrap();
-        // Two ground levels exercise a raw world Z rather than a floor-Z
-        // substitute. Native GetHeight still sees the table's 0/10/11.
-        entity.position.set_exact_z_leptons_for_test(Some(
-            2 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS + height,
-        ));
-        if bomb {
-            entity.begin_bomb_fall();
-            entity.finish_fall();
-            assert!(entity.was_dropped_as_bomb(), "landing retains +8F");
-        }
-        let raw = position_world_coord(&entity.position);
+        drop_at_height(&mut sim, id, bomb, height);
+        let raw = position_world_coord(&sim.substrate.entities.get(id).unwrap().position);
         let before = sim.scenario_rng.state();
         kill(&mut sim, &rules, id);
         let played = anims(&sim);
@@ -677,12 +777,16 @@ fn gsi_08_11_killing_hits_play_the_types_death_anims() {
 
 /// `0x00441D2F..0x00441D61`: a custom-palette type (`+0xDF0`) gives its
 /// DestroyAnim GetRemapColour's scheme from that palette for its owner; the
-/// same anim from an ordinary type keeps no remap.
+/// same anim from an ordinary type gains a house remap only with Ares.
 #[test]
 fn a_custom_palette_building_gives_its_destroy_anim_the_palette_scheme() {
+    use crate::assets::asset_manager::{AssetManager, test_support::TestDirectory};
     use crate::sim::anim_class::AnimRemap;
-    let rules = rules();
-    assert_eq!(rules.extra_building_palette(), Some("lib"));
+    let mut rules = rules();
+    let palette_root = TestDirectory::new("destroy-anim-palette");
+    std::fs::write(palette_root.path().join("LIBTEM.PAL"), [0u8; 768]).unwrap();
+    let assets = AssetManager::from_loose_root_for_test(palette_root.path());
+    rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
     let remaps = |kind: &str| {
         let mut sim = sim(5);
         let building = spawn(&mut sim, &rules, kind, 10, 20);
@@ -699,18 +803,27 @@ fn a_custom_palette_building_gives_its_destroy_anim_the_palette_scheme() {
                 )
             })
             .collect();
-        (remaps, owner)
+        (remaps, owner, sim.interner.get("lib"))
     };
-    let (statue, owner) = remaps("STATUE");
+    let (statue, owner, palette) = remaps("STATUE");
     assert_eq!(
         statue,
         [(
             "DESTA".to_string(),
-            Some(AnimRemap::ExtraBuildingScheme(owner))
+            Some(AnimRemap::ExtraBuildingScheme {
+                house: owner,
+                palette: palette.unwrap()
+            })
         )]
     );
-    let (hall, _) = remaps("HALL");
-    assert_eq!(hall, [("DESTA".to_string(), None)]);
+    let (hall, owner, _) = remaps("HALL");
+    assert_eq!(
+        hall,
+        [(
+            "DESTA".to_string(),
+            crate::rules::ARES_ENABLED.then_some(AnimRemap::House(owner))
+        )]
+    );
 }
 
 /// Through the production receiver: DestructionEffects draws each foundation
@@ -731,7 +844,7 @@ fn a_killed_building_draws_its_death_anims_before_its_survivors() {
         let mut replay = sim.scenario_rng.clone();
         kill(&mut sim, &rules, depot);
 
-        let cells = crate::sim::crew_survival::foundation_cells(10, 20, "2x2");
+        let cells = crate::sim::crew_survival::foundation_cells(10, 20, &"2x2".into());
         let mut expected = Vec::new();
         for &(rx, ry) in &cells {
             let (x, y) = super::super::inviso_scatter::random_direction_coord(
@@ -1026,7 +1139,7 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
 /// 1x1, 2x1 and 1x2 types (no 2x2 fits: (74, 117) is not Morphable), and at
 /// (81, 123) among the preferred 2x2 types; the mark's type, cells and
 /// SmudgeData are compared. An art-less `gtpowexp` pick constructs an End=0
-/// anim as native does. At the fixture's plant an MCV then
+/// anim as native does. An independently placed MCV then
 /// plays one of its own `Explosion=` anims and throws `MetallicDebris=`
 /// chunks, all with `0x600`/0. Ignored: needs the retail install (`RA2_DIR`
 /// or `config.toml`).
@@ -1088,34 +1201,62 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
             })
         };
         let ore = map_cell(cell_x, cell_y).unwrap()["overlay"].is_i64();
-        let (plant, mcv) = if !ore {
-            let plant = sim
-                .spawn_object("GAPOWR", "Americans", cell_x, cell_y, 0, rules)
-                .expect("a power plant on the clean cells");
-            (plant, None)
+        // The native corpus fixes this location and the footprint's terrain.
+        // Keep the independent MCV smoke check from choosing the plant's site.
+        for (x, y) in (cell_y..cell_y + 2).flat_map(|y| (cell_x..cell_x + 2).map(move |x| (x, y))) {
+            assert!(
+                sim.cell_objects(
+                    (x, y),
+                    crate::sim::movement::locomotor::MovementLayer::Ground
+                )
+                .next()
+                .is_none(),
+                "the native prior has no object in the plant's footprint"
+            );
+        }
+        // Every native row supplies an already-placed Building and Location,
+        // including the clean cells; no row executes construction admission.
+        // Use the shared preplaced A8E7AC scope (Cell47C632 and Object Reveal)
+        // for that prior without changing terrain or clearing its overlays.
+        let plant = sim
+            .with_object_placement_scope(|sim| {
+                sim.spawn_object_with_overlay_registry(
+                    "GAPOWR",
+                    "Americans",
+                    cell_x,
+                    cell_y,
+                    0,
+                    rules,
+                    &resources.overlay_registry,
+                )
+            })
+            .unwrap_or_else(|| {
+                panic!("preplaced native corpus power plant at ({cell_x}, {cell_y})")
+            });
+        let mcv = if ore {
+            Some(
+                (40..100_u16)
+                    .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
+                    .find_map(|(x, y)| {
+                        let grid = sim.path_grid()?;
+                        let terrain = sim.resolved_terrain.as_ref()?;
+                        let level = terrain.cell(x.checked_sub(3)?, y)?.level;
+                        let (x0, y0) = (x.checked_sub(4)?, y.checked_sub(1)?);
+                        let open = (x0..=x + 1).all(|cx| {
+                            (y0..=y + 2).all(|cy| {
+                                terrain.cell(cx, cy).is_some_and(|cell| cell.level == level)
+                                    && grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable)
+                            })
+                        });
+                        if !open {
+                            return None;
+                        }
+                        sim.spawn_object("AMCV", "Americans", x, y, 0, rules)
+                    })
+                    .expect("an independent clear MCV cell"),
+            )
         } else {
-            let (plant, mcv) = (40..100_u16)
-                .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
-                .find_map(|(x, y)| {
-                    let grid = sim.path_grid()?;
-                    let terrain = sim.resolved_terrain.as_ref()?;
-                    let level = terrain.cell(x.checked_sub(3)?, y)?.level;
-                    let (x0, y0) = (x.checked_sub(4)?, y.checked_sub(1)?);
-                    let open = (x0..=x + 1).all(|cx| {
-                        (y0..=y + 2).all(|cy| {
-                            terrain.cell(cx, cy).is_some_and(|cell| cell.level == level)
-                                && grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable)
-                        })
-                    });
-                    if !open {
-                        return None;
-                    }
-                    let mcv = sim.spawn_object("AMCV", "Americans", x, y, 0, rules)?;
-                    let plant = sim.spawn_object("GAPOWR", "Americans", x - 3, y, 0, rules)?;
-                    Some((plant, mcv))
-                })
-                .expect("an MCV cell with room for a power plant");
-            (plant, Some(mcv))
+            None
         };
         sim.resolve_type_handles(rules);
 
@@ -1137,10 +1278,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
             [gapowr.max_debris, gapowr.min_debris],
             [&input["max_debris"], &input["min_debris"]].map(|v| v.as_i64().unwrap() as i32)
         );
-        assert_eq!(
-            crate::rules::foundation::foundation_dimensions(&gapowr.foundation),
-            (2, 2)
-        );
+        assert_eq!(gapowr.foundation.dimensions(), (2, 2));
         let flagged = |burn: bool, crater: bool, w: u8, h: u8| {
             (burn || crater).then_some((burn, crater, w, h))
         };
@@ -1443,6 +1581,109 @@ fn kill_retail(sim: &mut Simulation, rules: &RuleSet, id: u64, ignore_defenses: 
     );
 }
 
+/// Techno7021FB submits nested victims' cues before Building441779 submits
+/// its copied-coordinate request, which also precedes the centre smudge.
+#[test]
+fn stock_oil_derrick_submits_nested_death_sound_before_building_crumble() {
+    use crate::sim::world::{FrameEffects, SimSoundEvent, SoundBoundary};
+    use std::cell::{Cell, RefCell};
+
+    #[derive(Default)]
+    struct Heard {
+        delivered: Cell<usize>,
+        cues: RefCell<Vec<SimSoundEvent>>,
+    }
+    impl SoundBoundary for Heard {
+        fn consume(&self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+            for event in &events[self.delivered.get()..] {
+                let name = match event {
+                    SimSoundEvent::VocAt { sound_id, .. }
+                    | SimSoundEvent::VocAtCoord { sound_id, .. } => sound_id,
+                    SimSoundEvent::EntityDied { die_sound_id, .. } => die_sound_id,
+                    _ => continue,
+                };
+                if matches!(name.as_str(), "ConscriptDie" | "BuildingGenericDie") {
+                    self.cues.borrow_mut().push(event.clone());
+                }
+            }
+            self.delivered.set(events.len());
+        }
+        fn delivered(&self) -> usize {
+            self.delivered.get()
+        }
+    }
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("DryHeat.MAP")
+    else {
+        return;
+    };
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+    let mut rules = retail.rules;
+    let mut roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
+    roots.extend(
+        rules
+            .general
+            .damage_fire_types
+            .iter()
+            .map(|anim| anim.name.clone()),
+    );
+    rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
+    rules.bind_effect_assets(&assets, "TEM", "TEMPERATE");
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let neutral = sim.intern("Neutral");
+    sim.houses
+        .register(HouseState::new(neutral, 0, None, false, 0, 10));
+    let oil = sim
+        .spawn_object("CAOILD", "Neutral", 14, 12, 0, &rules)
+        .unwrap();
+    let victim = sim
+        .spawn_object("E2", "Russians", 16, 12, 0, &rules)
+        .unwrap();
+    let location = crate::sim::movement::ground_pose::object_location(
+        sim.entities().get(oil).unwrap(),
+        sim.resolved_terrain.as_ref(),
+    );
+    let hit = EntityDamageEvent::direct_receiver(
+        oil,
+        100_000,
+        0,
+        RAD_NO_ATTACKER,
+        None,
+        sim.intern("Super"),
+        ReceiverCallFlags {
+            ignore_defenses: false,
+            arg6: false,
+        },
+    );
+    sim.take_sound_events_for_test();
+    let heard = Heard::default();
+    sim.commit_direct_damage_receiver(&rules, None, hit, FrameEffects::for_sound(&heard));
+    let inline = heard.cues.borrow().len();
+    // The ordinary app suffix must neither supply a missing cue nor duplicate one.
+    heard.consume(&sim, &rules, sim.sound_events());
+    assert!(
+        sim.entities()
+            .get(victim)
+            .is_none_or(|entity| entity.health.current() <= 0),
+        "the stock OilExplosion kills the nearby full-health Conscript"
+    );
+    let cues = heard.cues.borrow();
+    assert!(
+        matches!(cues.as_slice(), [
+        SimSoundEvent::VocAt { sound_id: child, .. },
+        SimSoundEvent::VocAtCoord { sound_id: parent, coordinate, flags: 0 },
+    ] if child == "ConscriptDie" && parent == "BuildingGenericDie"
+        && *coordinate == location),
+        "unexpected death cue order/API: {cues:?}"
+    );
+    assert_eq!(
+        inline, 2,
+        "both native calls submit before their receiver returns"
+    );
+}
+
 fn infantry_ids(sim: &Simulation) -> Vec<u64> {
     sim.substrate
         .entities
@@ -1575,4 +1816,222 @@ fn a_power_plant_killed_while_selling_outlives_the_blow_until_its_update() {
     assert!(outlives(&sim, plant));
     tick(&mut sim, &rules, &grid);
     assert!(retired(&sim, plant));
+}
+
+/// A retained request with no loaded group keeps the original null remap;
+/// Ares441D25->441D37 instead assigns the ordinary house conversion.
+#[test]
+fn palette_binding_missing_file_keeps_destroy_anim_unremapped() {
+    use crate::assets::asset_manager::{AssetManager, test_support::TestDirectory};
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+    let art = IniFile::from_str(ART);
+    let mut layers = RulesLayerStack::new(IniFile::from_str(RULES));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[STATUE]\nImage=EMPTY\n"),
+    );
+    let processed = layers.process_with_fixed_art(&art).unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let mut registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
+    registry.bind_anim_frame_count_for_test("DESTA", 10);
+    rules.install_art_data(registry);
+    let root = TestDirectory::new("destroy-anim-missing-palette");
+    let assets = AssetManager::from_loose_root_for_test(root.path());
+    rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
+    assert_eq!(
+        rules.object("STATUE").unwrap().custom_palette_name(),
+        Some("lib")
+    );
+    let mut sim = sim(5);
+    let building = spawn(&mut sim, &rules, "STATUE", 10, 20);
+    kill(&mut sim, &rules, building);
+    let remaps: Vec<_> = sim
+        .substrate
+        .anims
+        .iter()
+        .map(|(_, anim)| (sim.interner.resolve(anim.type_id()), anim.remap()))
+        .collect();
+    let owner = sim.interner.get("Americans").unwrap();
+    assert_eq!(
+        remaps,
+        [(
+            "DESTA",
+            crate::rules::ARES_ENABLED.then_some(crate::sim::anim_class::AnimRemap::House(owner))
+        )]
+    );
+}
+
+/// Legal original one-successful-group case: A's failed request is retained
+/// through an empty later ART read, while B's valid group must still bind.
+/// A must neither shadow B's body/MAKE palette nor inherit B's DestroyAnim
+/// scheme (717820 null-store,626F47..626F62 loaded-group count,441D25).
+#[test]
+fn palette_binding_failed_request_does_not_shadow_or_inherit_loaded_group() {
+    use crate::assets::asset_manager::{AssetManager, test_support::TestDirectory};
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+    use crate::sim::anim_class::AnimRemap;
+    let root_rules = RULES.replace(
+        "[HALL]\nStrength=100\nDestroyAnim=DESTA",
+        "[HALL]\nStrength=100\nDestroyAnim=DESTA\nImage=MISS",
+    );
+    let art = IniFile::from_str(&format!("{ART}\n[MISS]\nPalette=missing\n[EMPTY]\n"));
+    let mut layers = RulesLayerStack::new(IniFile::from_str(&root_rules));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[HALL]\nImage=EMPTY\n"),
+    );
+    let processed = layers.process_with_fixed_art(&art).unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let mut registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
+    registry.bind_anim_frame_count_for_test("DESTA", 10);
+    rules.install_art_data(registry);
+    let root = TestDirectory::new("retained-missing-plus-valid-palette");
+    std::fs::write(root.path().join("LIBTEM.PAL"), [0u8; 768]).unwrap();
+    let assets = AssetManager::from_loose_root_for_test(root.path());
+    assert_eq!(rules.object("HALL").unwrap().image, "EMPTY");
+    assert_eq!(
+        rules.object("HALL").unwrap().custom_palette_name(),
+        Some("missing")
+    );
+    assert_eq!(
+        rules.object("STATUE").unwrap().custom_palette_name(),
+        Some("lib")
+    );
+    // The public body/MAKE resolver skips A's missing file and names B's
+    // actual group, instead of a first-request marker shared by every type.
+    let (name, _palette) = rules
+        .load_extra_building_palette(&assets, "tem", None)
+        .unwrap();
+    assert_eq!(name, "lib");
+    rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
+    for (kind, loaded) in [("HALL", false), ("STATUE", true)] {
+        assert_eq!(
+            rules
+                .loaded_custom_palette_name(rules.object(kind).unwrap())
+                .is_some(),
+            loaded
+        );
+        let mut sim = sim(5);
+        let owner = sim.interner.intern("Americans");
+        let building = spawn(&mut sim, &rules, kind, 10, 20);
+        kill(&mut sim, &rules, building);
+        let remaps: Vec<_> = sim
+            .substrate
+            .anims
+            .iter()
+            .map(|(_, anim)| (sim.interner.resolve(anim.type_id()), anim.remap()))
+            .collect();
+        assert_eq!(
+            remaps,
+            [(
+                "DESTA",
+                if loaded {
+                    Some(AnimRemap::ExtraBuildingScheme {
+                        house: owner,
+                        palette: sim.interner.get("lib").unwrap(),
+                    })
+                } else {
+                    crate::rules::ARES_ENABLED.then_some(AnimRemap::House(owner))
+                }
+            )],
+            "{kind}"
+        );
+    }
+}
+
+/// Ares441D25->441D37 assigns GetRemapColour for every DestroyAnim. Two
+/// successful groups must remain distinct after their donor buildings leave
+/// the world, including a TerrainPalette donor whose body uses the ISO palette.
+#[test]
+fn destroy_anim_retains_each_loaded_palette_and_house_fallback_after_save() {
+    use crate::assets::asset_manager::{AssetManager, test_support::TestDirectory};
+    use crate::rules::art_data::ArtRegistry;
+    use crate::sim::anim_class::AnimRemap;
+    let mut ini = IniFile::from_str(RULES);
+    ini.merge(&IniFile::from_str(
+        "[BuildingTypes]\n5=NORMAL\n[HALL]\nImage=FIRST\n\
+         [SHED]\nImage=MISSING\nDestroyAnim=DESTA\n\
+         [NORMAL]\nStrength=100\nDestroyAnim=DESTA\n",
+    ));
+    let art = IniFile::from_str(&format!(
+        "{ART}\n[FIRST]\nPalette=first\nTerrainPalette=yes\nFoundation=1x1\n\
+         [MISSING]\nPalette=absent\nFoundation=1x1\n[NORMAL]\nFoundation=1x1\n"
+    ));
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    let mut registry = ArtRegistry::from_ini(&art);
+    registry.bind_anim_frame_count_for_test("DESTA", 10);
+    rules.install_art_data(registry);
+    let root = TestDirectory::new("destroy-anim-per-type-palettes");
+    std::fs::write(root.path().join("FIRSTTEM.PAL"), [1u8; 768]).unwrap();
+    let assets = AssetManager::from_loose_root_for_test(root.path());
+    rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
+    let one_group_hash = rules.simulation_config_hash();
+    std::fs::write(root.path().join("LIBTEM.PAL"), [2u8; 768]).unwrap();
+    let assets = AssetManager::from_loose_root_for_test(root.path());
+    rules.bind_effect_assets(&assets, "tem", "TEMPERATE");
+    assert_eq!(
+        one_group_hash != rules.simulation_config_hash(),
+        crate::rules::ARES_ENABLED
+    );
+    assert!(rules.art().get("FIRST").unwrap().terrain_palette);
+
+    let mut sim = sim(5);
+    let owner = sim.interner.get("Americans").unwrap();
+    // The shared interner preserves first spelling; palette lookup is still
+    // case-insensitive after this identity is frozen and later rendered.
+    let first = sim.interner.intern("FIRST");
+    let lib = sim.interner.intern("lib");
+    let fallback = crate::rules::ARES_ENABLED.then_some(AnimRemap::House(owner));
+    let expected = [
+        Some(AnimRemap::ExtraBuildingScheme {
+            house: owner,
+            palette: first,
+        }),
+        if crate::rules::ARES_ENABLED {
+            Some(AnimRemap::ExtraBuildingScheme {
+                house: owner,
+                palette: lib,
+            })
+        } else {
+            None
+        },
+        fallback,
+        fallback,
+    ];
+    for (index, kind) in ["HALL", "STATUE", "SHED", "NORMAL"].into_iter().enumerate() {
+        let building = spawn(&mut sim, &rules, kind, 10 + index as u16 * 3, 20);
+        kill(&mut sim, &rules, building);
+        sim.flush_pending_delete();
+        assert!(
+            sim.entities().get(building).is_none(),
+            "donor {kind} retired"
+        );
+    }
+    let remaps: Vec<_> = sim.anims().map(|(_, anim)| anim.remap()).collect();
+    assert_eq!(remaps, expected);
+    let bytes = crate::util::save_codec::serialize(&sim).unwrap();
+    let restored: Simulation = crate::util::save_codec::deserialize(&bytes).unwrap();
+    assert_eq!(
+        restored
+            .anims()
+            .map(|(_, anim)| anim.remap())
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(restored.interner.resolve(first), "FIRST");
+    assert_eq!(restored.interner.resolve(lib), "lib");
+    let id = *sim.anims().next().unwrap().0;
+    let before = sim.state_hash();
+    sim.substrate.anims.set_anim_remap(
+        id,
+        AnimRemap::ExtraBuildingScheme {
+            house: owner,
+            palette: lib,
+        },
+    );
+    assert_ne!(
+        sim.state_hash(),
+        before,
+        "the frozen palette enters simulation hashing"
+    );
 }

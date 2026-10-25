@@ -23231,7 +23231,6 @@
       ]
     }
   ],
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "retail": {
     "art_sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31",
     "excluded_duplicate_art_sections": {},

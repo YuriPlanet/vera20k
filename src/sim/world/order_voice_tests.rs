@@ -665,7 +665,7 @@ fn attack_voice_selects_for_the_committed_target_without_retargeting_the_actor()
     sim.assign_target_represented(
         actor,
         Some(TargetKind::Entity(2)),
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::empty(),
     )

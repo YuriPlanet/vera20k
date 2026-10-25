@@ -20,7 +20,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::components::DriveCoord;
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::game_entity::GameEntity;
-use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::bump_crush;
 use crate::sim::movement::infantry_entry::InfantryEntryArgs;
@@ -259,14 +259,14 @@ fn passenger_can_enter(
         .is_ok_and(|code| code == 0)
 }
 
-fn queue_guard(sim: &mut Simulation, id: u64) {
+fn queue_guard(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         id,
         MissionId::from_known(MissionType::Guard),
         0,
         now,
-        &EntityReadyInputProvider,
+        &LiveReadyInputProvider { rules },
     );
 }
 
@@ -416,7 +416,7 @@ fn eject_head_passenger(
                     &sim.substrate.raw_cell_occupation,
                     &sim.substrate.occupancy,
                     &sim.substrate.entities,
-                    Some(rules),
+                    rules,
                     &sim.interner,
                     &mut sim.scenario_rng,
                     DriveCoord::cell(exit.0, exit.1, 0),
@@ -511,23 +511,18 @@ fn eject_head_passenger(
                         .is_some_and(|passenger| passenger.owner() != transport.owner())
             };
             if leaves_other_houses_open_transport
-                && let Err(cause) = sim.assign_target_represented(
-                    pax_id,
-                    None,
-                    Some(rules),
-                    overlay_registry,
-                    effects,
-                )
+                && let Err(cause) =
+                    sim.assign_target_represented(pax_id, None, rules, overlay_registry, effects)
             {
                 log::warn!("Unload target {pax_id}: {cause}");
             }
             // Unit73DBDB queues the passenger's Move directly, before
             // class destination73DC06; it does not execute a player event.
-            sim.queue_order_mission(pax_id, MissionType::Move);
+            sim.queue_order_mission(pax_id, MissionType::Move, rules);
             if let Err(cause) = sim.assign_destination_represented(
                 pax_id,
                 Some(crate::sim::components::NavTargetRef::cell(dest.0, dest.1)),
-                Some(rules),
+                rules,
                 overlay_registry,
                 effects,
             ) {
@@ -540,13 +535,20 @@ fn eject_head_passenger(
                 sim.team_add_member(team, pax_id, false, rules, overlay_registry, effects);
             }
 
+            // `0x0073DC35..0x0073DC67` (PlayAtCoord `0x00750E20`): at the
+            // transport's Location, after the passenger's Unlimbo.
             if let Some(sound) = leave_sound {
+                let world = crate::sim::movement::ground_pose::object_location(
+                    sim.substrate
+                        .entities
+                        .get(transport_id)
+                        .expect("transport resolved before the head pop"),
+                    sim.resolved_terrain.as_ref(),
+                )
+                .into();
                 let sound_id = sim.interner.intern(&sound);
-                sim.sound_events.emit(SimSoundEvent::LeaveTransport {
-                    sound_id,
-                    rx: base.0,
-                    ry: base.1,
-                });
+                sim.sound_events
+                    .emit(SimSoundEvent::LeaveTransport { sound_id, world });
             }
             Ok(())
         },
@@ -594,7 +596,7 @@ pub(crate) fn building_mission_unload_absorber(
                 // integer reader at 0x5276D0 and stores it at +0xEE8
                 // (0x004610B3..0x004610C7). The unload tail tests this field
                 // `> 0` before dirtying House+0x5778 (0x0044DC55..0x0044DC75).
-                object.extra_power > 0,
+                object.extra_power.output() > 0,
                 height,
             ))
         })
@@ -687,7 +689,7 @@ pub(crate) fn building_mission_unload_absorber(
                 &sim.substrate.raw_cell_occupation,
                 &sim.substrate.occupancy,
                 &sim.substrate.entities,
-                Some(rules),
+                rules,
                 &sim.interner,
                 &mut sim.scenario_rng,
                 DriveCoord::cell(adjacent.0, adjacent.1, 0),
@@ -750,14 +752,14 @@ pub(crate) fn building_mission_unload_absorber(
                 passenger_id,
             );
 
-            sim.queue_order_mission(passenger_id, MissionType::Move);
+            sim.queue_order_mission(passenger_id, MissionType::Move, rules);
             if let Err(cause) = sim.assign_destination_represented(
                 passenger_id,
                 Some(crate::sim::components::NavTargetRef::cell(
                     destination.0,
                     destination.1,
                 )),
-                Some(rules),
+                rules,
                 overlay_registry,
                 effects,
             ) {
@@ -814,10 +816,9 @@ pub(crate) fn unit_mission_unload(
                 // the transport's own (hover) type, which is what makes a
                 // hover transport leave the water before it unloads.
                 // Zone -1, MovementZone Normal, seeded at the transport's own
-                // cell (`0x0073D772..0x0073D7B0`). Residual: when nothing
-                // passes, native still sets the destination to the null cell
-                // (`0x0073D7B5..0x0073D7D1`); VERA sets none and waits. That
-                // needs no Wheel ground within 32 rings of the transport.
+                // cell (`0x0073D772..0x0073D7B0`). A failed search still
+                // returns packed CellStruct::Empty (0,0), which the caller
+                // looks up and passes to Set_Destination73D7B5..73D7D1.
                 let seed = (
                     i32::from(entity.position.rx()),
                     i32::from(entity.position.ry()),
@@ -828,21 +829,26 @@ pub(crate) fn unit_mission_unload(
                     movement_zone: MovementZone::Normal,
                     bridge_aware_zone: false,
                 };
-                if let Some(cell) = sim.nearby_passable_cell(
-                    seed,
-                    NearbyArgs::plain(wheel_land, NearbyFootprint::SINGLE),
+                let cell = sim
+                    .nearby_passable_cell(
+                        seed,
+                        NearbyArgs::plain(wheel_land, NearbyFootprint::SINGLE),
+                    )
+                    .unwrap_or((0, 0));
+                if let Some(terrain) = sim.resolved_terrain.as_ref() {
+                    // This fresh lookup precedes the Unit setter. Retain its
+                    // identity even if a later setter lookup restamps Dummy.
+                    terrain.native_cell_identity((cell.0 as i16, cell.1 as i16));
+                }
+                // Set_Destination only: keep Unload and state 0 while moving.
+                if let Err(cause) = sim.assign_destination_represented(
+                    id,
+                    Some(crate::sim::components::NavTargetRef::cell(cell.0, cell.1)),
+                    rules,
+                    overlay_registry,
+                    effects,
                 ) {
-                    // `Set_Destination` only — the committed selector stays
-                    // Unload and state 0 re-runs once the drive has ended.
-                    if let Err(cause) = sim.assign_destination_represented(
-                        id,
-                        Some(crate::sim::components::NavTargetRef::cell(cell.0, cell.1)),
-                        Some(rules),
-                        overlay_registry,
-                        effects,
-                    ) {
-                        log::warn!("Unload destination {id}: {cause}");
-                    }
+                    log::warn!("Unload destination {id}: {cause}");
                 }
                 return WAIT_MOVING_FRAMES;
             }
@@ -871,7 +877,7 @@ pub(crate) fn unit_mission_unload(
             }
             // Nothing to unload or nowhere to unload: `Queue_Mission(Guard)`
             // (`0x0073D887`) and the epilogue.
-            queue_guard(sim, id);
+            queue_guard(sim, id, rules);
             unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
         }
         STATE_TURNING => {
@@ -899,7 +905,7 @@ pub(crate) fn unit_mission_unload(
         }
         STATE_DONE => {
             // `Queue_Mission(Guard)` then `+0xB8 = 1` (`0x0073DCC1`..`0x0073DCC7`).
-            queue_guard(sim, id);
+            queue_guard(sim, id, rules);
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.mission.set_movement_bypass_latch();
             }
@@ -1126,7 +1132,7 @@ fn eject_from_aircraft(
         |sim, pax_id| {
             // `0x0041552E`: with the head popped, the aircraft leaves its Cell
             // (`MapClass::Pick_Up`), taking its list entry and raw bit along.
-            sim.foot_pick_up(aircraft_id, Some(rules), overlay_registry);
+            sim.foot_pick_up(aircraft_id, rules, overlay_registry);
             picked_up = true;
             let location = match sim.substrate.entities.get(aircraft_id) {
                 Some(aircraft) => aircraft.position,
@@ -1164,7 +1170,7 @@ fn eject_from_aircraft(
                 pax_id,
                 location,
                 PlacementEvidence::EvaluateMark,
-                Some(rules),
+                rules,
                 overlay_registry,
             ) else {
                 return Err(DepartureFailure::Placement);
@@ -1188,12 +1194,12 @@ fn eject_from_aircraft(
             // (`0x00415BF9..0x00415C21`).
             // Aircraft415C05 queues Move directly before destination415C21,
             // followed by its radio callbacks. No Event Archive clear.
-            sim.queue_order_mission(pax_id, MissionType::Move);
+            sim.queue_order_mission(pax_id, MissionType::Move, rules);
             if let Some(dest) = scan_cell
                 && let Err(cause) = sim.assign_destination_represented(
                     pax_id,
                     Some(crate::sim::components::NavTargetRef::cell(dest.0, dest.1)),
-                    Some(rules),
+                    rules,
                     overlay_registry,
                     effects,
                 )
@@ -1207,7 +1213,13 @@ fn eject_from_aircraft(
     .is_ok();
     // `0x00415565`: and goes back once the ejector returns.
     if picked_up {
-        sim.foot_place_down(aircraft_id, Some(rules), overlay_registry, &mut |_, _| {});
+        sim.foot_place_down(
+            aircraft_id,
+            rules,
+            overlay_registry,
+            &mut |_, _| {},
+            effects,
+        );
     }
     ejected
 }

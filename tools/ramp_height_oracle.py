@@ -22,7 +22,7 @@ from unicorn.x86_const import (
 )
 
 from tools.native_oracle import (
-    NATIVE_FPCW, NATIVE_SHA256, OracleError, load_image, run_checked,
+    NATIVE_FPCW, OracleError, load_image, run_checked,
     finish_vectors, provenance,
 )
 
@@ -158,7 +158,6 @@ def result() -> dict:
     fixture = NativeFixture()
     return {
         "schema": 1,
-        "native_sha256": NATIVE_SHA256,
         "unicorn_version": unicorn_version,
         "native_fpcw": NATIVE_FPCW,
         "region_sha256": fixture.region_hashes,

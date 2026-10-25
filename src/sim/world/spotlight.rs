@@ -289,11 +289,11 @@ impl Simulation {
         Ok(())
     }
 
-    pub(super) fn construct_spotlight(&mut self, parent_id: u64, rules: Option<&RuleSet>) {
+    pub(super) fn construct_spotlight(&mut self, parent_id: u64, rules: &RuleSet) {
         let Some(parent) = self.substrate.entities.get(parent_id).filter(|e| {
             e.category() == EntityCategory::Structure
-                && rules
-                    .and_then(|r| self.object_type(e.type_ref(), r))
+                && self
+                    .object_type(e.type_ref(), rules)
                     .map_or(e.building_light.spotlight_capable(), |o| o.has_spotlight)
                 && e.building_light.light().is_none()
         }) else {
@@ -301,7 +301,7 @@ impl Simulation {
         };
         let p = raw(parent);
         let facing = parent.body_facing_current(self.session.binary_frame());
-        let params = rules.map_or_else(SpotlightRules::default, |r| r.general.spotlight);
+        let params = rules.general.spotlight;
         let coord = initial_endpoint(p, facing, params.location_radius);
         // ObjectUnlimbo5F4F34 queries the coordinate before entry1AC. This
         // class inherits4264C0 (always0) and GetType4369E0 (null), so it

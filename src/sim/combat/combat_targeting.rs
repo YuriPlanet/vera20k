@@ -57,9 +57,9 @@ use crate::util::native_x87::{
 #[derive(Clone)]
 pub(crate) struct GarrisonSnapshot {
     /// `+0x69C`, the firing occupant's index: the shot's muzzle port.
-    pub fire_index: u8,
+    pub fire_index: i32,
     /// The occupant count (`+0x694`), GetROF's divisor.
-    pub occupant_count: u8,
+    pub occupant_count: i32,
 }
 
 /// Snapshot of an attacker's state for target scanning.

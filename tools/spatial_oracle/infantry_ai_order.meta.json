@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -4032,5 +4031,5 @@
     }
   ],
   "replay_command": "python -m tools.spatial_oracle.infantry_ai_order",
-  "payload_sha256": "916f06c9577dce19a125b62f54fb6013e3c0641c2bf3a295c47b6d6211243ce9"
+  "payload_sha256": "949f025aba920edc71de357a397e62b79970fdc40f2e8e82c044b4b0ea0421dc"
 }

@@ -233,10 +233,10 @@ pub(crate) fn produce_cash_on_grand_opening(
 /// else `Spend_Money(-amount)` (`0x0043FDAA..0x0043FDD1`).
 ///
 /// The two warp gates ahead of the block (`IsWarpingOut` `+0x270` at
-/// `0x0043FD0C`, `IsBeingWarped` `+0x271` at `0x0043FD1E`) jump past it; VERA
-/// has no chrono-warp bytes on a building, so the block always runs.
-/// Residual trigger: a captured derrick inside a Chronosphere warp — the
-/// native timer dies on the skipped frame, VERA's keeps paying.
+/// `0x0043FD0C`, `IsBeingWarped` `+0x271` at `0x0043FD1E`) jump past it. In
+/// VERA the object turn's temporal prologue (`temporal_ai_prologue`) returns
+/// for a warped building before this step, so a timer whose expiry frame
+/// falls inside the warp dies as natively.
 pub(crate) fn produce_cash_step(sim: &mut Simulation, stable_id: u64, rules: &RuleSet) {
     let Some(entity) = sim.substrate.entities.get(stable_id) else {
         return;
@@ -381,7 +381,7 @@ pub(crate) fn attach_drain_anim(sim: &mut Simulation, drainer_id: u64, rules: &R
 
 /// The `+0x1D4` DrainAnim un-init (vt+0xF8) that opens every native break
 /// of a drain link, for `drainer_id`.
-fn remove_drain_anim(sim: &mut Simulation, drainer_id: u64, rules: Option<&RuleSet>) {
+fn remove_drain_anim(sim: &mut Simulation, drainer_id: u64, rules: &RuleSet) {
     if let Some(anim) = sim
         .substrate
         .entities
@@ -396,7 +396,7 @@ fn remove_drain_anim(sim: &mut Simulation, drainer_id: u64, rules: Option<&RuleS
 /// the `DrainAnim`, clear the victim's `DrainingMe`, flag its house's power
 /// recalc, clear the drainer's `DrainTarget`. Also the inline copy in
 /// `TechnoClass::AI_Update @ 0x006FA1DF..0x006FA21E`.
-pub(crate) fn stop_drain(sim: &mut Simulation, drainer_id: u64, rules: Option<&RuleSet>) {
+pub(crate) fn stop_drain(sim: &mut Simulation, drainer_id: u64, rules: &RuleSet) {
     remove_drain_anim(sim, drainer_id, rules);
     let Some(victim_id) = sim
         .substrate
@@ -425,11 +425,7 @@ pub(crate) fn stop_drain(sim: &mut Simulation, drainer_id: u64, rules: Option<&R
 /// its Destroy's Detach_All broadcast (`0x005F5280`, the receiver's
 /// `detach_all`), in the same ReceiveDamage and before any draw
 /// the death arm makes, so a falling wreck no longer drains or shows its ray.
-pub(crate) fn clear_drain_links_on_expiry(
-    sim: &mut Simulation,
-    expired_id: u64,
-    rules: Option<&RuleSet>,
-) {
+pub(crate) fn clear_drain_links_on_expiry(sim: &mut Simulation, expired_id: u64, rules: &RuleSet) {
     let Some((drain_target, draining_me)) = sim
         .substrate
         .entities
@@ -542,7 +538,7 @@ pub(crate) fn drain_common_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
             sim.interner.resolve(owner),
         )
     {
-        stop_drain(sim, stable_id, Some(rules));
+        stop_drain(sim, stable_id, rules);
     }
 }
 
@@ -553,7 +549,7 @@ pub(crate) fn drain_common_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
 ///    unit's own cell and stop the drain when it is no longer the target.
 /// 2. `0x007361E9..0x00736204`: a `DrainAnim` (`+0x1D4`) left with no
 ///    `DrainTarget` is removed through Stop_Drain.
-pub(crate) fn drain_unit_ai_step(sim: &mut Simulation, stable_id: u64, rules: Option<&RuleSet>) {
+pub(crate) fn drain_unit_ai_step(sim: &mut Simulation, stable_id: u64, rules: &RuleSet) {
     let Some((target, anim, rx, ry)) = sim.substrate.entities.get(stable_id).map(|entity| {
         (
             entity.drain.target,
@@ -772,7 +768,7 @@ mod tests {
             "still on the ground list"
         );
         sim.session.set_binary_frame_for_test(2);
-        drain_unit_ai_step(&mut sim, disc, Some(&rules));
+        drain_unit_ai_step(&mut sim, disc, &rules);
         assert_eq!(
             sim.entities().get(disc).unwrap().drain.target(),
             Some(refinery)
@@ -782,14 +778,14 @@ mod tests {
             crate::sim::world::UninitContext::with_rules(&rules)
         ));
         sim.session.set_binary_frame_for_test(17);
-        drain_unit_ai_step(&mut sim, disc, Some(&rules));
+        drain_unit_ai_step(&mut sim, disc, &rules);
         assert_eq!(
             sim.entities().get(disc).unwrap().drain.target(),
             Some(refinery),
             "not a recheck frame"
         );
         sim.session.set_binary_frame_for_test(18);
-        drain_unit_ai_step(&mut sim, disc, Some(&rules));
+        drain_unit_ai_step(&mut sim, disc, &rules);
         assert_eq!(sim.entities().get(disc).unwrap().drain.target(), None);
         assert_eq!(
             sim.entities().get(refinery).unwrap().drain.draining_me(),
@@ -1206,6 +1202,128 @@ mod tests {
         );
     }
 
+    #[test]
+    fn retail_disc_attack_binds_and_loops_the_attached_drain_ray() {
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+        let mut rules = battle.rules;
+        // Use the loader's closure instead of this module's manually bound ART.
+        let roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&rules);
+        rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
+        let name = rules.combat_damage.drain_animation_type.as_deref().unwrap();
+        assert_eq!(name, "DISKRAY");
+        let physical_frames = crate::assets::shp_file::ShpFile::frame_count_from_bytes(
+            assets.get_ref("DISKRAY.SHP").unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            rules
+                .art()
+                .anim_runtime_config(name)
+                .unwrap()
+                .raw_shp_frame_count,
+            Some(i32::from(physical_frames)),
+            "physical DISKRAY.SHP must bind before the drain shot"
+        );
+
+        let mut sim = Simulation::with_seed(0x70FD70);
+        let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+        let yuri = house(&mut sim, "YuriCountry", true, 500);
+        house(&mut sim, "Americans", true, 5_000);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        sim.resolve_rule_animation_lists(&rules);
+        base(&mut sim, &rules, "YuriCountry", 4, 4);
+        let plant = sim
+            .spawn_object("GAPOWR", "Americans", 20, 20, 0, &rules)
+            .unwrap();
+        let disk = sim
+            .spawn_object("DISK", "YuriCountry", 21, 23, 0, &rules)
+            .unwrap();
+        // Start over the target's marked cell; approach timing is unrelated to
+        // the loader regression. The ordinary Attack still creates the link.
+        move_disc(&mut sim, disk, 21, 21);
+        sim.fog_mut_for_test().mark_visible_for_owner(yuri, 20, 20);
+        let order = cmd(
+            &sim,
+            "YuriCountry",
+            1,
+            Command::Attack {
+                attacker_id: disk,
+                target_id: plant,
+            },
+        );
+        let result = sim.advance_tick(&[order], Some(&rules), Some(&grid), None, 67);
+        assert_eq!(result.executed_commands, 1);
+        for _ in 0..120 {
+            run_ticks(&mut sim, &rules, 1);
+            if sim.entities().get(disk).unwrap().drain.target() == Some(plant) {
+                break;
+            }
+        }
+        assert_eq!(
+            sim.entities().get(disk).unwrap().drain.target(),
+            Some(plant)
+        );
+        let ray = assert_drain_anim(&sim, disk);
+        let anim = sim.anim(ray).unwrap();
+        assert_eq!(anim.draw_flags(), 0x600);
+        assert_eq!(
+            anim.world_coord(),
+            crate::sim::anim_class::AnimWorldCoord { x: 0, y: 0, z: 0 }
+        );
+        assert_eq!(sim.anim_absolute_coord(ray), sim.anim_owner_coords(disk));
+        assert!(sim.display_layers().layer_of(ray).is_some());
+        let mut frames = std::collections::BTreeSet::new();
+        for _ in 0..120 {
+            run_ticks(&mut sim, &rules, 1);
+            let anim = sim.anim(ray).expect("the same attached ray keeps looping");
+            frames.insert(anim.runtime().current_frame);
+            assert_eq!(sim.anim_absolute_coord(ray), sim.anim_owner_coords(disk));
+        }
+        // AnimClass::AI4246FC..42470A treats ART LoopEnd as exclusive.
+        assert_eq!(frames, (0..4).collect());
+        move_disc(&mut sim, disk, 16, 16);
+        run_ticks(&mut sim, &rules, 16);
+        assert_eq!(sim.entities().get(disk).unwrap().drain.target(), None);
+        assert!(
+            anim_uninited(&sim, ray),
+            "leaving the building removes the ray"
+        );
+    }
+
+    /// The drain re-check (`0x007361A9..0x00736204`) precedes
+    /// `TemporalClass::Update` (`0x00736204`), so a disc being erased still
+    /// drops a ray left with no link.
+    #[test]
+    fn a_warped_disc_still_drops_a_ray_with_no_link() {
+        let rules = rules();
+        let mut sim = Simulation::with_seed(0x0073_61A9);
+        let _yuri = house(&mut sim, "YuriCountry", false, 500);
+        let _americans = house(&mut sim, "Americans", true, 500);
+        base(&mut sim, &rules, "YuriCountry", 40, 40);
+        base(&mut sim, &rules, "Americans", 4, 4);
+        let disk = sim
+            .spawn_object("DISK", "YuriCountry", 30, 30, 0, &rules)
+            .expect("disc spawns");
+        attach_drain_anim(&mut sim, disk, &rules);
+        let stray = assert_drain_anim(&sim, disk);
+        sim.substrate
+            .entities
+            .get_mut(disk)
+            .unwrap()
+            .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(
+                disk,
+            ));
+        run_ticks(&mut sim, &rules, 1);
+        let disc = sim.entities().get(disk).unwrap();
+        assert!(disc.is_warped_out(), "the fixture keeps the disc warped");
+        assert_eq!(disc.drain.anim, None);
+        assert!(anim_uninited(&sim, stray));
+    }
+
     /// `UnitClass::AI @ 0x007361B3`: every 16th frame the disc re-checks the
     /// building under it and releases the link once it has moved off;
     /// `0x0070FD70` refuses to link a disc that is not over the target.
@@ -1267,7 +1385,7 @@ mod tests {
         attach_drain_anim(&mut sim, disk, &rules);
         let stray = assert_drain_anim(&sim, disk);
         sim.session.set_binary_frame_for_test(5);
-        drain_unit_ai_step(&mut sim, disk, Some(&rules));
+        drain_unit_ai_step(&mut sim, disk, &rules);
         assert_eq!(sim.entities().get(disk).unwrap().drain.anim, None);
         assert!(anim_uninited(&sim, stray));
 

@@ -30,7 +30,7 @@ use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits, distance_3d
 
 /// Which `Techno` double a multiplier crate raises.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Multiplier {
+pub(crate) enum Multiplier {
     /// `Techno+0x158`, the Armor arm `0x00482E53..0x00482E79`.
     Armor,
     /// `Techno+0x160`, the Firepower arm `0x00483222..0x00483248`.
@@ -38,8 +38,9 @@ pub(super) enum Multiplier {
 }
 
 /// The object's crate multipliers, `Techno+0x158` (armor) and `Techno+0x160`
-/// (firepower). The constructor seeds both doubles to 1.0; the Armor and
-/// Firepower arms ([`apply_multiplier_crate`]) are their only writers, and an
+/// (firepower). Under Ares, firepower retains the Ext+80 permanent baseline
+/// separately from derived Techno+160. The constructor seeds both baselines
+/// to 1.0; the Armor and Firepower arms ([`apply_multiplier_crate`]) are their only writers, and an
 /// arm skips a multiplier that is not exactly 1.0, so each changes at most
 /// once per object. The receiver's damage build reads the armor multiplier;
 /// `FireAt`'s damage build folds in the firepower one
@@ -50,6 +51,10 @@ pub(crate) struct CrateMultipliers {
     armor: NativeF64Bits,
     #[serde(default = "one")]
     firepower: NativeF64Bits,
+    /// Ares derived Techno+160; None retains the permanent Ext+80 baseline.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    attached_firepower: Option<NativeF64Bits>,
 }
 
 fn one() -> NativeF64Bits {
@@ -62,6 +67,8 @@ impl Default for CrateMultipliers {
         Self {
             armor: NativeF64Bits::ONE,
             firepower: NativeF64Bits::ONE,
+            #[cfg(feature = "ares")]
+            attached_firepower: None,
         }
     }
 }
@@ -72,9 +79,23 @@ impl CrateMultipliers {
         self.armor
     }
 
-    /// `Techno+0x160`.
+    /// Effective Techno+160, read by both FireAt and EstimateDamage.
     pub(crate) const fn firepower(self) -> NativeF64Bits {
+        #[cfg(feature = "ares")]
+        if let Some(value) = self.attached_firepower {
+            return value;
+        }
         self.firepower
+    }
+
+    /// Permanent firepower crate baseline (Ares Ext+80), never an AE product.
+    pub(crate) const fn crate_firepower(self) -> NativeF64Bits {
+        self.firepower
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_attached_firepower(&mut self, value: NativeF64Bits) {
+        self.attached_firepower = (value != self.firepower).then_some(value);
     }
 
     /// Install a fixture's armor multiplier.
@@ -87,6 +108,10 @@ impl CrateMultipliers {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_firepower_multiplier_for_test(&mut self, value: NativeF64Bits) {
         self.firepower = value;
+        #[cfg(feature = "ares")]
+        {
+            self.attached_firepower = None;
+        }
     }
 }
 
@@ -119,13 +144,17 @@ fn ground_members_in_radius(
 /// multiply, `0x00482E6D..0x00482E79`). Returns the owners of the changed
 /// objects, in native visit order; the arm announces when one of them is the
 /// local player (`vt+0x3C` then `0x0050B6F0`, `0x00482E7F..0x00482E8D`).
-pub(super) fn apply_multiplier_crate(
+pub(crate) fn apply_multiplier_crate(
     substrate: &mut ObjectSubstrate,
+    rules: &RuleSet,
+    interner: &StringInterner,
     center: DriveCoord,
     radius: i32,
     magnitude: NativeF64Bits,
     which: Multiplier,
 ) -> Vec<InternedId> {
+    #[cfg(not(feature = "ares"))]
+    let _ = (rules, interner);
     let mut changed_owners = Vec::new();
     for id in ground_members_in_radius(substrate, center, radius) {
         let Some(entity) = substrate.entities.get_mut(id) else {
@@ -140,6 +169,13 @@ pub(super) fn apply_multiplier_crate(
         }
         *slot =
             X87::store_f64_masked_chop(X87::mul(X87::load_f64(magnitude), X87::load_f64(*slot)));
+        // Installed Firepower2@1005F997 writes Ext+80, then1005F99D
+        //aggregates before the recipient callback/next actor. Armor remains
+        //neutral-only in the attachment admission gate.
+        #[cfg(feature = "ares")]
+        if matches!(which, Multiplier::Firepower) {
+            entity.recompute_ares_attached_stats(rules, interner);
+        }
         let owner = entity.owner();
         if !changed_owners.contains(&owner) {
             changed_owners.push(owner);
@@ -211,34 +247,36 @@ pub(super) fn apply_veteran_crate(
     }
 }
 
-/// The HealBase arm's building loop `0x00482C18..0x00482C9C`: every building
-/// of the actor's house receives `Health - Type.Strength` (zero or negative)
-/// through `ReceiveDamage(&amount, 0, C4Warhead=, NULL, 1, 1, NULL)`, in
-/// `BuildingClass::Array` order (construction order here).
+/// The HealBase arm's live Logic loop `0x00482C18..0x00482C9C`: each
+/// same-house Techno receives `Health - Type.Strength` through
+/// `ReceiveDamage(&amount, 0, C4Warhead=, NULL, 1, 1, NULL)`. Each receiver
+/// finishes before the next live slot, collector owner, type and health read.
 pub(super) fn apply_heal_base_crate(
     sim: &mut Simulation,
     rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    owner: InternedId,
+    collector: u64,
     frame_effects: FrameEffects<'_>,
 ) {
-    let buildings: Vec<(u64, i32)> = sim
-        .substrate
-        .entities
-        .iter_sorted()
-        .filter(|(_, entity)| {
-            entity.category() == EntityCategory::Structure && entity.owner() == owner
-        })
-        .filter_map(|(id, entity)| {
-            let strength = sim.object_type(entity.type_ref(), rules)?.strength;
-            Some((id, entity.health.current().wrapping_sub(strength)))
-        })
-        .collect();
     let warhead = sim.interner.intern(&rules.bridge_warheads.c4_name);
-    for (id, amount) in buildings {
-        if !sim.substrate.entities.contains(id) {
+    let mut index = 0;
+    while let Some(&id) = sim.logic_order().get(index) {
+        index += 1;
+        // Non-Techno Logic members have their own stores. The native loop
+        // tests the collector's Techno bit, not the recipient's category.
+        let Some(entity) = sim.substrate.entities.get(id) else {
+            continue;
+        };
+        let Some(collector) = sim.substrate.entities.get(collector) else {
+            break;
+        };
+        if entity.owner() != collector.owner() {
             continue;
         }
+        let Some(object_type) = sim.object_type(entity.type_ref(), rules) else {
+            continue;
+        };
+        let amount = entity.health.current().wrapping_sub(object_type.strength);
         sim.commit_direct_damage_receiver(
             rules,
             registry,
@@ -485,6 +523,6 @@ pub(super) fn place_unit_crate(
             return UnitCrateOutcome::Placed;
         }
     }
-    sim.discard_constructed_limbo(id, Some(rules), frame_effects);
+    sim.discard_constructed_limbo(id, rules, frame_effects);
     UnitCrateOutcome::FellBackToMoney
 }

@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -50,6 +49,6 @@
     "mapgen_range": "0x00598030",
     "scenario_range": "0x0065C7E0"
   },
-  "payload_sha256": "afe2c2bd69c126644bef2e48185a31884d3013bf3e186ae71d7a4808eea3a66a",
+  "payload_sha256": "d0467012cb3892212c1936128bc207478246d4ca636d06f51e560a948b4bf996",
   "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
 }

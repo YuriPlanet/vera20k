@@ -24,6 +24,26 @@ execute through the existing `Emu` owner. Each row records the complete before
 and after `0x3F4` bytes of Scenario, main and map-generator RNG, the ranged
 arguments/results/callers and the raw advance instruction observations.
 
+The additive `authored_startup` rows use the same assignment owner after
+executing the authored Full_Init admission gate at `0x00687BC8`. ESI is zero
+(from `0x0068773D`), GameMode is 0 or 3, and the saved incoming input byte at
+`[ESP+0x13]` is zero. Execution stops at the actual reached address: blocked
+`0x00687BF1`, or admitted `0x00687BD8` before the Official reader. All three
+complete RNG buffers must remain unchanged across the gate. An admitted row
+then invokes original `0x0068C050` through the same fixture owner; a blocked
+row leaves its supplied null fallback alone. The outer before/after buffers
+cover both the gate and the eligible assignment. No successful Post_Map_Init
+return, preceding startup, or intervening Post_Map work is supplied or claimed.
+
+These four controls use the stock SOV05/SOV07 shape: one lab, lists of four
+infantry, three units and one building, with an explicit DESO or GTGCAN override.
+Mode 0 skips assignment and consumes no RNG; mode 3 admits one `[0,7]` request.
+The explicit reward wins in both modes, so the campaign mismatch concerns the
+extra RNG request and fallback write, not the visible reward. Generated `.SED`
+startup has a separate Post_Map_Init caller (`0x00684990`) and is outside this
+authored gate control. These shapes do not claim a whole campaign load or its
+arriving RNG state; production readers and campaign capture validate that path.
+
 The native algorithm first requires a positive choice count, at least one lab,
 and no more labs than choices. Failure leaves the prior instance fallback
 unchanged. Otherwise it draws a position in the shrinking temporary list,

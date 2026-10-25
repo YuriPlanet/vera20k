@@ -424,8 +424,7 @@ def generate():
              dict(name='bridge_below_threshold', bridge=True, z=145),
              dict(name='bridge_threshold_equal', bridge=True, z=147),
              dict(name='above_deck', bridge=True, z=416)]
-    return dict(native_sha256=native.image_sha256(),
-        type_constructor=reader.smoke_constructor, wind_constructor=reader.wind_constructor,
+    return dict(type_constructor=reader.smoke_constructor, wind_constructor=reader.wind_constructor,
         physical_layers=reader.smoke_layers,
         constructors=[constructor(case) for case in constructors],
         particle_ticks=[particle_tick(case) for case in ticks],

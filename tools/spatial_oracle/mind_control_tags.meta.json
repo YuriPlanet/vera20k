@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Eleven original4690B0 entry-prefix controls through live object Tag6/44 dispatch, predicate and actions before CaptureUnit471D40. Null-target and same-owner controls execute genuine capture refusal and stop before469AA4; other admitted-looking rows stop before CaptureUnit entry. No successful capture, completed Detonate, firing/flight, sound, full owner-change or physical campaign replay claim.",
+  "assumptions": [
+    "Each row is a fresh tag_lifecycle.execute VM: original Tag/Trigger/Object construction and ObjectReplaceTag run with synthetic resolved definitions, spare native registry vectors, game mode1, frame123, Scenario seed31 and inherited false live-start flags. One linked event6/action28 and event44/action28 graph distinguishes actual predicate/actions; controls use original54 self-disable and12 self-removal. These are not altered stock map definitions.",
+    "Bullet, source and target Techno extensions, types and Houses are supplied minimal state with original Unit vtables. The target base Object and attachment are actual constructor products. Unit/House/Bullet constructors, map admission, type readers and complete world listeners are excluded. Explicit zero shake bounds and absent Weapon skip unrelated Detonate prefix branches naturally.",
+    "Original CaptureManager constructor4717D0 runs to471835 before its global append, producing owner/capacity/vector defaults. Original466270 initializes the empty Cell read by both callbacks. All executable image sections and relevant original vtables remain unchanged.",
+    "The original caller checks live target+90 and Tag+34, calls6 then44 with the original source pointers, and reloads Bullet+B0/+10C and manager before capture. Callback order/returns, actual actions, pending/enabled state, zero-cell/force arguments and live reload state are retained. The pre-callback target-human byte is observed at CaptureUnit boundary. No cached sound-owner claim is made because successful capture/sound is outside this execution.",
+    "Single-use Tag disposal is excluded: it broadcasts into TechnoPointerExpired, which needs constructor-owned distributed-fire vector+470 and full listener lifecycle absent in this sparse fixture. No vtable/gameplay return was substituted to bypass that prerequisite. Complete owner-changing callbacks and destroyed-source behavior likewise remain outside these controls; Action14 ChangeHouse uses TechnoTargetSweep, not Bullet PointerExpired.",
+    "The compact corpus translates observed pointer identities to labels and records full1012-byte Scenario RNG equality plus actual draw count rather than the RNG words. Inherited fixture terminal RNG continuation is outside the measured boundary and omitted. Every row requires the declared original dispatch/predicate/rejection PCs and fails on a native fault or unexpected stop."
+  ],
+  "substitutions": [
+    "Reuse tag_lifecycle validated Windows IsBadReadPtr transport and bounded poisoned operator-new/free storage. No gameplay function, branch, vtable slot, callback or native return is replaced.",
+    "The final HOST Tag-dispatch request is adapted into a call at original4690B0. Nested native Tag/capture calls execute directly; its legacy host return slot is omitted because Detonate has not returned. Sparse supplied actor state is declared above, not produced by a native launch."
+  ],
+  "entry_points": {
+    "detonate": "0x004690B0",
+    "mind_control": "0x0046920B",
+    "tag_event6": "0x0046929D",
+    "tag_event44": "0x004692B8",
+    "tag_dispatch": "0x006E53A0",
+    "trigger_predicate": "0x007264C0",
+    "event_predicate": "0x0071E940",
+    "spring": "0x007265C0",
+    "action": "0x006DD8B0",
+    "capture": "0x00471D40",
+    "can_capture": "0x00471C90",
+    "common_end": "0x00469AA4",
+    "manager_constructor": "0x004717D0",
+    "manager_registration_boundary": "0x00471835",
+    "empty_cell_initializer": "0x00466270"
+  },
+  "replay_command": "python -m tools.spatial_oracle.mind_control_tags",
+  "payload_sha256": "00dfa753934566ae3f3f9585f04d2221fb55ab045412337ea76bd7accca76784"
+}

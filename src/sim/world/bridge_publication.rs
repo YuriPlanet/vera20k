@@ -243,7 +243,7 @@ impl BridgePublicationHost for LivePublication<'_> {
         match self.real_coord(cell) {
             Some((x, y)) => {
                 if let Some(grid) = self.sim.overlay_grid.as_mut() {
-                    grid.clear_literal_bridge_identity(x, y);
+                    grid.clear_literal_overlay_identity(x, y);
                 }
             }
             None => self

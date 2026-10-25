@@ -70,7 +70,7 @@ fn step(sim: &mut Simulation, rules: &RuleSet) -> crate::sim::world::SimFrameOut
     let commands = sim.take_due_commands();
     sim.advance_app_frame(
         &commands,
-        Some(rules),
+        rules,
         None,
         33,
         crate::sim::world::TickLane::Ordinary,
@@ -91,7 +91,7 @@ fn click(
     let orders = engineer_capture_orders(sim, rules, &mut selected, hover).unwrap();
     assert_eq!(orders.len(), 1);
     let record = if planning {
-        sim.encode_planning_order_record(owner, &orders[0])
+        sim.encode_planning_order_record(owner, &orders[0], None)
     } else {
         sim.encode_megamission_record(owner, &orders[0])
     }
@@ -240,7 +240,7 @@ fn hospital_can_load_preserves_native_ammo_admission() {
                 hover.stable_id,
                 RadioMessage::CanEnter,
                 RadioPayload::default(),
-                Some(&rules),
+                &rules,
                 Default::default()
             ),
             if ammo == 0 {
@@ -353,7 +353,7 @@ fn infantry_repair_tick_clamps_nonpositive_steps_to_one() {
                 actor,
                 RadioMessage::RepairTick,
                 RadioPayload::default(),
-                Some(&rules),
+                &rules,
                 Default::default(),
             ),
             RadioResponse::Roger

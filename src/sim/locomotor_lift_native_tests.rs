@@ -234,21 +234,17 @@ fn magnetron_aircraft_hit_and_release_match_original_composition() {
             scene.sim.set_object_height(
                 scene.victim,
                 height as i32,
-                Some(&rules),
+                &rules,
                 None,
                 FrameEffects::default(),
             );
             scene.assert_state(&row["before_release"], &format!("{name} release input"));
-            scene.sim.release_locomotor(
-                scene.firer,
-                false,
-                Some(&rules),
-                None,
-                FrameEffects::default(),
-            );
+            scene
+                .sim
+                .release_locomotor(scene.firer, false, &rules, None, FrameEffects::default());
             scene.assert_state(&row["after_release"], &format!("{name} release"));
             if height == 0 {
-                assert!(!scene.sim.try_end_piggyback(scene.victim, Some(&rules)));
+                assert!(!scene.sim.try_end_piggyback(scene.victim, &rules));
                 scene.assert_state(&row["after_restore_gate"], &format!("{name} moving gate"));
                 let runtime = scene
                     .sim
@@ -266,7 +262,7 @@ fn magnetron_aircraft_hit_and_release_match_original_composition() {
                     &row["before_supplied_settled_restore"],
                     &format!("{name} settled input"),
                 );
-                assert!(scene.sim.try_end_piggyback(scene.victim, Some(&rules)));
+                assert!(scene.sim.try_end_piggyback(scene.victim, &rules));
                 scene.assert_state(
                     &row["after_supplied_settled_restore"],
                     &format!("{name} settled gate"),

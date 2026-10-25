@@ -55,7 +55,7 @@ pub(crate) fn press(
     }
     input.targeting_mode = Some(TargetingMode::SuperWeapon(view.display_name.clone()));
     input.building_placement_preview = None;
-    gadgets.disable_selection_modes(false);
+    gadgets.disable_cursor_modes();
     SuperWeaponClick::Target
 }
 

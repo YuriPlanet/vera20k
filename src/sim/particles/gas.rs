@@ -317,20 +317,24 @@ fn apply_damage(
                         context.effects(),
                     );
                 }
-                CellObjectMember::Terrain(id) => sim.commit_direct_terrain_damage_receiver(
-                    rules,
-                    context.registry(),
-                    TerrainDamageEvent {
-                        stable_id: id,
-                        rx: cell.0,
-                        ry: cell.1,
-                        damage: pt.damage,
-                        distance_leptons: distance,
-                        warhead_ref: warhead,
-                        near_center_ic_isolation_eligible: false,
-                    },
-                    context.effects(),
-                ),
+                CellObjectMember::Terrain(id) => {
+                    sim.commit_direct_terrain_damage_receiver(
+                        rules,
+                        context.registry(),
+                        TerrainDamageEvent {
+                            damage_writeback: None,
+                            stable_id: id,
+                            rx: cell.0,
+                            ry: cell.1,
+                            damage: pt.damage,
+                            distance_leptons: distance,
+                            warhead_ref: warhead,
+                            near_center_ic_isolation_eligible: false,
+                        },
+                        true,
+                        context.effects(),
+                    );
+                }
             }
         }
         current = next;

@@ -43,9 +43,10 @@ pub use crate::sim::building_construction::BuildingUp;
 /// and snapshot restore rejects an ID that two registries claim), so the ID
 /// alone says which store holds the object and what kind it is.
 ///
-/// A Cell compares by its coordinates, not as the native Dummy cell pointer
-/// (`0x00ABDC50`) that stands for any cell the map lacks: see the residuals
-/// in `sim::aircraft::leave_map` and `Per_Cell_Process` (`movement::per_cell`).
+/// Derived coordinate equality compares cells by coordinates. Consumers that
+/// require native allocation identity (including Aircraft AI's dummy clear)
+/// use `TargetKind::cell_identity` after conversion; see the remaining
+/// `Per_Cell_Process` residual in `movement::per_cell`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum NavTargetRef {
     /// A `CellClass*`, by its cell.
@@ -62,6 +63,23 @@ impl NavTargetRef {
 
     pub fn object(id: u64) -> Self {
         Self::Object { id }
+    }
+
+    /// Compare retained Abstract pointers without querying or restamping Map.
+    /// Distinct missing-coordinate tokens name the one CellClass Dummy;
+    /// packed fixed-stride aliases also name the same allocated Cell.
+    pub(crate) fn same_pointer(
+        self,
+        other: Self,
+        terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    ) -> bool {
+        match (self, other, terrain) {
+            (Self::Cell { rx: ax, ry: ay }, Self::Cell { rx: bx, ry: by }, Some(terrain)) => {
+                terrain.native_fixed_cell_index(ax as i16, ay as i16)
+                    == terrain.native_fixed_cell_index(bx as i16, by as i16)
+            }
+            _ => self == other,
+        }
     }
 
     /// The object this names; a Cell names none.
@@ -532,14 +550,22 @@ pub struct FootSpeedState {
     /// ported by `Default`); after that only `FootClass::SetSpeedFraction @
     /// 0x004D3710` writes it: [`Self::set_speed_fraction`] for a fixed-point
     /// request and [`Self::set_speed_fraction_native_bits`] for a native double.
-    applied_fraction: SimFixed,
+    applied_fraction: crate::util::native_x87::NativeF64Bits,
     /// Foot+580, initialized to exactly 1.0 at4D3292/4D329B. Retain the
     /// native bits: pickup refuses even the immediate neighbors of 1.0.
     /// Every speed query reads it (GetCurrentSpeed multiplies it in). Its only
     /// native writer is the Speed crate (`accept_speed_crate`), reached from
     /// `CellClass::PickupCrate` (`crates::pickup`) when a Foot commits to a
-    /// crate cell; saved and hashed (v181).
+    /// crate cell; saved and hashed (v181). With Ares this is the permanent
+    /// Ext+90 baseline; the separately owned derived Foot+580 is below.
     crate_multiplier: crate::util::native_x87::NativeF64Bits,
+    /// Ares100460A0's derived Foot+580, distinct from its permanent
+    /// TechnoExt+90 crate baseline above. None denotes an unchanged baseline.
+    /// The attachment owner updates it synchronously after native mutations;
+    /// snapshot restore validates it against that owner's ordered vector.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    attached_speed: Option<crate::util::native_x87::NativeF64Bits>,
     /// Foot+6B5, constructor0 at4D3444. Drive's straight/CrusherAll
     /// pre-entry arm4B1A2F sets it; Unit's admitted overlay tail73B067
     /// clears it. Both the Track speed prefix and RockingUpdate read it.
@@ -550,8 +576,10 @@ pub struct FootSpeedState {
 impl Default for FootSpeedState {
     fn default() -> Self {
         Self {
-            applied_fraction: crate::util::fixed_math::SIM_ZERO,
+            applied_fraction: crate::util::native_x87::NativeF64Bits::POSITIVE_ZERO,
             crate_multiplier: crate::util::native_x87::NativeF64Bits::ONE,
+            #[cfg(feature = "ares")]
+            attached_speed: None,
             crush_slowdown: false,
         }
     }
@@ -583,19 +611,70 @@ impl FootSpeedState {
         self.crate_multiplier
     }
 
-    /// Foot `+0x578`, the applied speed fraction.
+    /// Live Foot+580. Crate eligibility continues to read the permanent
+    /// baseline; GetCurrentSpeed reads this derived value under Ares.
+    pub fn effective_multiplier(&self) -> crate::util::native_x87::NativeF64Bits {
+        #[cfg(feature = "ares")]
+        if let Some(multiplier) = self.attached_speed {
+            return multiplier;
+        }
+        self.crate_multiplier
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_attached_speed(
+        &mut self,
+        multiplier: crate::util::native_x87::NativeF64Bits,
+    ) {
+        self.attached_speed = (multiplier != self.crate_multiplier).then_some(multiplier);
+    }
+
+    /// Fixed projection for diagnostics and fixed-input fixture adapters.
+    /// Runtime predicates and GetCurrentSpeed read the native owner below.
     pub fn applied_fraction(&self) -> SimFixed {
+        let stored = self.applied_fraction.bits();
+        if stored == crate::util::native_x87::NativeF64Bits::ONE.bits() {
+            crate::util::fixed_math::SIM_ONE
+        } else {
+            // The setter admits only nonnegative finite values below one.
+            let exponent = ((stored >> 52) & 0x7ff) as i32;
+            let mantissa = stored & ((1 << 52) - 1);
+            let significand = if exponent == 0 {
+                mantissa
+            } else {
+                mantissa | (1 << 52)
+            };
+            let shift = 1075 - i64::from(exponent.max(1)) - 16;
+            SimFixed::from_bits(if shift >= 64 {
+                0
+            } else {
+                (significand >> shift) as i32
+            })
+        }
+    }
+
+    /// The complete stored Foot+578 double, including subnormal fractions.
+    pub fn native_applied_fraction(&self) -> crate::util::native_x87::NativeF64Bits {
         self.applied_fraction
+    }
+
+    pub(crate) fn speed_fraction_is_positive(&self) -> bool {
+        let bits = self.applied_fraction.bits();
+        // Ordered FCOM > 0, including raw values restored without the setter.
+        // Negative values and NaNs are outside this unsigned positive range.
+        bits > 0 && bits <= 0x7ff0_0000_0000_0000
     }
 
     /// `FootClass::SetSpeedFraction @ 0x004D3710` for a fixed-point request:
     /// at least 1 stores 1, at most 0 stores 0, and anything between is
     /// stored as given ([`Self::stored_speed_fraction`]).
     pub(crate) fn set_speed_fraction(&mut self, fraction: SimFixed) {
-        self.applied_fraction = fraction.clamp(
+        let fraction = fraction.clamp(
             crate::util::fixed_math::SIM_ZERO,
             crate::util::fixed_math::SIM_ONE,
         );
+        // Every I16F16 value is exactly representable as binary64.
+        self.set_speed_fraction_native_bits(fraction.to_num::<f64>().to_bits());
     }
 
     /// The double `FootClass::SetSpeedFraction @ 0x004D3710` stores at Foot
@@ -621,58 +700,25 @@ impl FootSpeedState {
         }
     }
 
-    /// `FootClass::SetSpeedFraction @ 0x004D3710` for a locomotor that computes
-    /// its fraction as a native double (the Jumpjet's `Process`): the double
-    /// [`Self::stored_speed_fraction`] keeps.
-    ///
-    /// The stored double becomes `SimFixed` by truncation, from its bits, so
-    /// the fraction's readers compare against the truncated thresholds
-    /// ([`Self::above_tenth`], [`Self::above_eight_tenths`]). A double within
-    /// 2^-16 above a threshold would read as not above it. The Jumpjet's speed
-    /// is always a whole number k (it steps by the constructor's 2.0 up and
-    /// 3.0 down: stock spells `JumpJetAccel=`, which the case-sensitive reader
-    /// never sees, and clamps to its integer cap C and 0), so k/C above 0.1 is
-    /// at least 0.1 + 1/(10C), outside that window for any C up to 6553, and
-    /// above 0.8 for any C up to 13107; k/C exactly 0.1 or 0.8 divides with
-    /// truncation to just below it, as native reads it.
+    /// Foot4D3710 stores an admitted interior double unchanged. The same
+    /// owner serves Jumpjet and the complete Drive/Ship numeric prefix.
     pub fn set_speed_fraction_native_bits(&mut self, bits: u64) {
-        use crate::util::native_x87::NativeF64Bits;
-        let stored = Self::stored_speed_fraction(NativeF64Bits::from_bits(bits)).bits();
-        self.applied_fraction = if stored == NativeF64Bits::ONE.bits() {
-            crate::util::fixed_math::SIM_ONE
-        } else {
-            // 0 <= value < 1: floor(value * 2^16) from the significand.
-            let exponent = ((stored >> 52) & 0x7ff) as i32;
-            let mantissa = stored & ((1 << 52) - 1);
-            let significand = if exponent == 0 {
-                mantissa
-            } else {
-                mantissa | (1 << 52)
-            };
-            let shift = 1075 - i64::from(exponent.max(1)) - 16;
-            SimFixed::from_bits(if shift >= 64 {
-                0
-            } else {
-                (significand >> shift) as i32
-            })
-        };
+        self.applied_fraction =
+            Self::stored_speed_fraction(crate::util::native_x87::NativeF64Bits::from_bits(bits));
     }
 
-    /// Foot `+0x578` above 0.1 (`0x007E3860`): the Infantry fire error's
-    /// moving gate (`0x0051C9B8`) and the sequencer's default arm
-    /// (`0x00520D45`). 0.1 lies between `SimFixed` raw 6553 and 6554; the
-    /// truncated threshold keeps a fraction that truncated to 6553 below it.
-    /// Original boundary witnesses: `tools/spatial_oracle/infantry_fire_speed.json`.
+    /// Strict comparison with binary64 0.1 at7E3860, used by Infantry fire
+    /// error and animation. Exclude negative and unordered raw saved values.
     pub(crate) fn above_tenth(&self) -> bool {
-        self.applied_fraction > SimFixed::ONE / SimFixed::from_num(10)
+        let bits = self.applied_fraction.bits();
+        bits > 0x3fb9_9999_9999_999a && bits <= 0x7ff0_0000_0000_0000
     }
 
-    /// Foot `+0x578` above 0.8 (`0x007EB5C8`): the Jumpjet infantryman's Fly
-    /// over Hover (`0x0052123C`). floor(0.8 * 2^16) = 52428.
+    /// Strict comparison with binary64 0.8 at7EB5C8 (Jumpjet Fly/Hover).
     pub(crate) fn above_eight_tenths(&self) -> bool {
-        self.applied_fraction > SimFixed::from_bits(52_428)
+        let bits = self.applied_fraction.bits();
+        bits > 0x3fe9_9999_9999_999a && bits <= 0x7ff0_0000_0000_0000
     }
-
     /// Cell48303A..483072: an already-modified Foot never stacks this effect.
     /// Class/radius eligibility belongs to the pickup effect caller.
     pub fn accept_speed_crate(
@@ -843,6 +889,26 @@ mod tests {
             let requested = bits(&case["input"], "requested_bits", "requested");
             let stored = bits(&case["output"], "applied_bits", "applied");
             let requested_double = NativeF64Bits::from_bits(requested);
+            // Native raw comparison controls bypass the setter's clamp.
+            let raw = FootSpeedState {
+                applied_fraction: requested_double,
+                ..FootSpeedState::default()
+            };
+            assert_eq!(
+                raw.speed_fraction_is_positive(),
+                f64::from_bits(requested) > 0.0,
+                "raw positive: {case}"
+            );
+            assert_eq!(
+                raw.above_tenth(),
+                f64::from_bits(requested) > 0.1,
+                "raw tenth: {case}"
+            );
+            assert_eq!(
+                raw.above_eight_tenths(),
+                f64::from_bits(requested) > 0.8,
+                "raw eight tenths: {case}"
+            );
             assert_eq!(
                 FootSpeedState::stored_speed_fraction(requested_double).bits(),
                 stored,
@@ -850,6 +916,16 @@ mod tests {
             );
             let mut speed = FootSpeedState::default();
             speed.set_speed_fraction_native_bits(requested);
+            assert_eq!(speed.native_applied_fraction().bits(), stored, "{case}");
+            assert_eq!(
+                speed.speed_fraction_is_positive(),
+                f64::from_bits(stored) > 0.0
+            );
+            assert_eq!(speed.above_tenth(), f64::from_bits(stored) > 0.1);
+            assert_eq!(speed.above_eight_tenths(), f64::from_bits(stored) > 0.8);
+            let encoded = crate::util::save_codec::serialize(&speed).unwrap();
+            let restored: FootSpeedState = crate::util::save_codec::deserialize(&encoded).unwrap();
+            assert_eq!(restored.native_applied_fraction().bits(), stored);
             // The stored double lies in [0, 1], so scaling by 2^16 is exact.
             let truncated = SimFixed::from_bits((f64::from_bits(stored) * 65536.0) as i32);
             assert_eq!(speed.applied_fraction(), truncated, "{case}");

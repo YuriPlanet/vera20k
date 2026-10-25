@@ -74,7 +74,6 @@ def metadata():
         'No read or radar update is observed during the synchronous selected lethal receiver/cleanup. Original removal ends with objectalive0, limbo1, no cell/Logic/Display membership and deferred deletion. This is not a global claim that the timer has no surviving-object consumer.',
         'Original source excerpts expose the radar reader, ordinary AI/tube callers, conditional Limbo removal and a separate TriggerAction global-Unit caller. Conditional armed radar removal and trigger scheduling are instruction evidence only; fixture placement did not execute native radar registration.',
     ],substitutions=['Inherited occupants.md sinks only; no timer read, write or radar-update callback is replaced.'],entry_points={'area_low_admitted':0x48A25A,'radar_update':0x70D990})|dict(
-        runner_source_sha256=packet_io.digest(Path(__file__).read_bytes()),
         upstream=shared.metadata(),
         inherited_corpus_sha256=packet_io.digest(shared.OUTPUT.read_bytes()))
 

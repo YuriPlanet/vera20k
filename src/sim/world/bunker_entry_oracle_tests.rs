@@ -631,7 +631,7 @@ impl NativeScene {
                         self.bunker,
                         crate::sim::radio::RadioMessage::CanDock,
                         crate::sim::radio::RadioPayload::default(),
-                        Some(&self.rules),
+                        &self.rules,
                         effects,
                     )
                     .code() as i32,
@@ -656,19 +656,14 @@ impl NativeScene {
             }
             "cancel_destination" => {
                 self.sim
-                    .set_unit_null_destination(self.unit, Some(&self.rules), None, effects);
+                    .set_unit_null_destination(self.unit, &self.rules, None, effects);
             }
             "idle_event_calls" => {
-                crate::sim::radio::broadcast_break(
-                    &mut self.sim,
-                    self.unit,
-                    Some(&self.rules),
-                    effects,
-                );
+                crate::sim::radio::broadcast_break(&mut self.sim, self.unit, &self.rules, effects);
                 self.sim
-                    .set_unit_null_destination(self.unit, Some(&self.rules), None, effects);
+                    .set_unit_null_destination(self.unit, &self.rules, None, effects);
                 self.sim
-                    .assign_target_represented(self.unit, None, Some(&self.rules), None, effects)
+                    .assign_target_represented(self.unit, None, &self.rules, None, effects)
                     .unwrap();
             }
             "update_bunker" => crate::sim::docking::bunker_install::update_bunker(

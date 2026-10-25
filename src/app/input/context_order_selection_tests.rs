@@ -69,6 +69,7 @@ fn prepared_factory_rallies_and_mobile_orders_keep_native_selection_order() {
             ry: 10,
             producer_ids: vec![20],
         }),
+        wrap(Command::SellBuilding { entity_id: 20 }),
         wrap(Command::Move {
             entity_id: 10,
             target_rx: 7,
@@ -81,11 +82,15 @@ fn prepared_factory_rallies_and_mobile_orders_keep_native_selection_order() {
             .iter()
             .map(|envelope| command_actor_id(&envelope.payload))
             .collect::<Vec<_>>(),
-        vec![Some(30), Some(10), Some(20)]
+        vec![Some(30), Some(10), Some(20), Some(20)]
     );
     assert!(matches!(
         &queued[2].payload,
         Command::SetRally { rx: 9, ry: 10, .. }
+    ));
+    assert!(matches!(
+        &queued[3].payload,
+        Command::SellBuilding { entity_id: 20 }
     ));
 }
 

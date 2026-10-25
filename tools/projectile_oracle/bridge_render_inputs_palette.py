@@ -5,7 +5,7 @@ import importlib.util,json,struct,hashlib,argparse
 from pathlib import Path
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import *
-from tools.native_oracle import run_checked,image_sha256
+from tools.native_oracle import run_checked
 from tools.spatial_oracle.building_body_rules import SP,dwords
 from tools.projectile_oracle import bridge_render_inputs as module
 
@@ -19,8 +19,9 @@ class PaletteReader(module.BulletReader):
    self.ret(self.alloc(self.read32(u.reg_read(UC_X86_REG_ESP)+4)));return
   super().hook(u,p,n,d)
 
-def initialize(m, *, ordinary=False, early_temperat=False):
+def initialize(m, *, ordinary=False, early_temperat=False, native_format_masks=False):
  u=m.u;surface=m.alloc(0x40);vtable=m.alloc(0x100)
+ original_text=bytes(u.mem_read(0x401000,0x3E0000)) if native_format_masks else None
  u.mem_write(surface,dwords(vtable));u.mem_write(surface+0x10,dwords(2))
  u.mem_write(vtable+0x70,dwords(0x411630));u.mem_write(0x887308,dwords(surface))
  u.mem_write(0x89ecf8,dwords(0x7eb6d4,m.alloc(4096),1024,1,0,10))
@@ -29,7 +30,22 @@ def initialize(m, *, ordinary=False, early_temperat=False):
  u.mem_write(0x88a080,dwords(0x7eb6d4,m.alloc(4096),1024,1,0,10))
  for addr,value in((0x8a0dd0,11),(0x8a0dd4,3),(0x8a0dd8,0),(0x8a0ddc,3),(0x8a0de0,5),(0x8a0de4,2)):
   u.mem_write(addr,dwords(value))
- u.mem_write(0x8a0de8,struct.pack('<2H',0x7bef,0xf7de))
+ if native_format_masks:
+  # Opt-in RGB565 startup before any Convert constructor. Existing callers
+  # retain their historical supplied mask bytes; do not patch live blitters.
+  for register,value in ((UC_X86_REG_EDX,3),(UC_X86_REG_EAX,0),(UC_X86_REG_ESI,2)):
+   u.reg_write(register,value)
+  run_checked(u,0x4BAA73,0x4BAB06,count=200,
+   required_addresses=(0x4BAAC1,0x4BAAFF))
+  half,quarter=struct.unpack('<2H',u.mem_read(0x8A0DE8,4))
+  m.format_mask_startup=dict(begin='004BAA73',end='004BAB06',
+   required_reached=['004BAAC1','004BAAFF'],
+   supplied_registers=dict(edx=3,eax=0,esi=2),
+   format_globals=dict(red_shift=11,red_right=3,blue_shift=0,blue_right=3,
+                       green_shift=5,green_right=2),
+   half=half,quarter=quarter)
+ else:
+  u.mem_write(0x8a0de8,struct.pack('<2H',0x7bef,0xf7de))
  u.reg_write(UC_X86_REG_ESP,SP);u.reg_write(UC_X86_REG_EBX,0)
  if early_temperat:
   # Placement87F6C4 needs Init_Game's actual destination palette before its
@@ -53,6 +69,9 @@ def initialize(m, *, ordinary=False, early_temperat=False):
   run_checked(u,0x52BE0F,0x52BE48,count=100000000,timeout_us=120000000,
    required_addresses=(0x52BE36,0x48E740,0x4BBB00,0x48EBF0,0x52BE3B))
   assert u.reg_read(UC_X86_REG_ESP)==SP
+ if native_format_masks:
+  assert original_text==bytes(u.mem_read(0x401000,0x3E0000))
+  m.format_mask_startup['original_text_unchanged']=True
  return m
 
 def initialize_mouse(m):
@@ -117,7 +136,7 @@ def generate():
    table_sha256=hashlib.sha256(bytes(u.mem_read(table,count*512))).hexdigest(),
    body_plain_vtable=hex(m.read32(m.read32(p+0x88))),body_rle_vtable=hex(m.read32(m.read32(p+0x8c))),
    convert_fields=[hex(m.read32(p+i)) for i in range(0,0x170,4)]))
- return dict(native_sha256=image_sha256(),loads=m.asset_loaded,rows=rows)
+ return dict(loads=m.asset_loaded,rows=rows)
 
 if __name__=='__main__':
  a=argparse.ArgumentParser();a.add_argument('--check',type=Path);args=a.parse_args();result=generate()

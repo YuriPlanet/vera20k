@@ -483,6 +483,25 @@ mod tests {
         assert_eq!(layout.buttons[5].rect, RectPx::new(1166, 803, 234, 63));
     }
 
+    /// At 1.28x (1366x768) each scaled panel row rounds like the button
+    /// authored on it. Stepping the rounded 53-px tile put row 8 six pixels
+    /// above Exit, so slide frames and tiles jumped against the buttons.
+    #[test]
+    fn scaled_panel_rows_land_on_their_buttons() {
+        let base = compute_layout(800, 600);
+        let layout = compute_responsive_layout(1366, 768);
+        let panel = layout.right_panel;
+        for (authored, button) in base.buttons.iter().zip(&layout.buttons) {
+            let row = (authored.rect.y - base.right_panel.tile.y) / 42;
+            assert_eq!(panel.row_cell(row, 156, 42), button.rect, "row {row}");
+        }
+        for row in 0..panel.tile_count {
+            let rect = panel.tile_row(row);
+            assert_eq!(rect.y + rect.h, panel.tile_row(row + 1).y, "row {row}");
+        }
+        assert_eq!(panel.tile_row(panel.tile_count).y, panel.bottom.y);
+    }
+
     #[test]
     fn responsive_layout_keeps_large_movie_when_shrunk_to_640x480() {
         // The stretched shell always plays the large loop; the retail 640

@@ -350,26 +350,62 @@ impl ResolvedTerrainGrid {
             final_cells.iter().map(|c| ((c.rx, c.ry), c)).collect();
 
         let snow_theater = map.header.theater.eq_ignore_ascii_case("SNOW");
-        let terrain_objects: HashMap<(u16, u16), u8> = projection
-            .is_eager()
-            .then_some(map.terrain_objects.iter())
-            .into_iter()
-            .flatten()
-            .map(|obj| {
-                let occupation = terrain_object_types
+        let mut terrain_objects = HashMap::new();
+        if projection.is_eager() {
+            for obj in &map.terrain_objects {
+                let Some(kind) = terrain_object_types
                     .and_then(|types| types.get(&obj.name.to_ascii_uppercase()))
-                    .map(|terrain_type| {
-                        if snow_theater {
-                            terrain_type.snow_occupation_bits
-                        } else {
-                            terrain_type.temperate_occupation_bits
-                        }
-                    })
-                    .unwrap_or(7)
-                    & 0x07;
-                ((obj.rx, obj.ry), occupation)
-            })
-            .collect();
+                else {
+                    continue;
+                };
+                // Native TerrainCtor71BC34 skips the zero sentinel. Fresh
+                // unique constructors prepend at each allocated recipient;
+                // this derived cache needs only the latest head's mask.
+                if (obj.rx, obj.ry) == (0, 0) {
+                    continue;
+                }
+                let offsets = match kind.occupied_cell_offsets() {
+                    Ok(offsets) => offsets,
+                    Err(error) => {
+                        // The infallible compatibility cache is not instance
+                        // admission. The actual constructor/saved loader
+                        // reports this unsupported unterminated native list.
+                        log::warn!("Cannot project map Terrain: {error}");
+                        continue;
+                    }
+                };
+                // Get_Cell_Packed41BEA0 truncates retained centered signed
+                // XY, independently of the map's original coordinate words.
+                let x = crate::util::lepton::lepton_to_cell_packed(
+                    crate::util::lepton::absolute_lepton_axis(
+                        obj.rx,
+                        crate::util::lepton::CELL_CENTER_LEPTON,
+                    ),
+                );
+                let y = crate::util::lepton::lepton_to_cell_packed(
+                    crate::util::lepton::absolute_lepton_axis(
+                        obj.ry,
+                        crate::util::lepton::CELL_CENTER_LEPTON,
+                    ),
+                );
+                for (dx, dy) in offsets {
+                    let Some(cell) = crate::map::cell_index::canonical_cell_coord(
+                        i32::from(x.wrapping_add(dx)),
+                        i32::from(y.wrapping_add(dy)),
+                    ) else {
+                        continue;
+                    };
+                    if cell.0 >= width || cell.1 >= height {
+                        continue;
+                    }
+                    let index = usize::from(cell.1) * usize::from(width) + usize::from(cell.0);
+                    if native_allocated.as_ref().is_some_and(|mask| !mask[index]) {
+                        continue;
+                    }
+                    terrain_objects.insert(cell, kind.raw_occupation_bits(snow_theater));
+                }
+            }
+        }
 
         let mut overlays_by_cell: HashMap<(u16, u16), Vec<&OverlayEntry>> = HashMap::new();
         for overlay in projection
@@ -500,7 +536,7 @@ impl ResolvedTerrainGrid {
                 );
                 let terrain_object_occupation = terrain_objects.get(&(rx, ry)).copied();
                 let terrain_object_blocks =
-                    terrain_object_occupation.is_some_and(|occupation| occupation != 0);
+                    terrain_object_occupation.is_some_and(|occupation| occupation & 0x07 != 0);
                 let overlay_effects = classify_overlay_effects(
                     overlays_by_cell.get(&(rx, ry)),
                     overlay_registry,
@@ -1618,13 +1654,10 @@ pub(super) fn materialize_map_load_cells(
 ) -> Vec<MapCell> {
     let n = map.header.width;
     let m = map.header.height;
-    let Some(max_coord) = n.checked_add(m) else {
-        return Vec::new();
-    };
     // The native owner is a fixed 512x512 CellClass lookup. Retail maps fit
     // this boundary; reject malformed dimensions instead of iterating an
     // unbounded signed-bit-pattern value from the INI.
-    if n == 0 || m == 0 || max_coord > 512 {
+    if !map.header.fits_cell_grid() {
         return Vec::new();
     }
 

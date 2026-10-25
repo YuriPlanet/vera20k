@@ -181,12 +181,137 @@ function updateHeader(snapshot) {
     document.getElementById("entities").textContent = String(snapshot.entities_total);
     document.getElementById("mapsize").textContent =
         `${snapshot.map_width}x${snapshot.map_height}`;
+    const session = snapshot.session;
+    const meta = document.getElementById("session-meta");
+    if (meta)
+        meta.hidden = session === null;
+    const reading = document.getElementById("session");
+    if (reading && session) {
+        const text = sessionReading(session);
+        reading.textContent = text;
+        // The reading is the first thing to clip on a narrow header; the title
+        // keeps the full map name and mode reachable.
+        reading.title = text;
+    }
+    const build = document.getElementById("build");
+    if (build)
+        build.textContent = session ? session.build_stamp : "";
+}
+/** Which match a stream belongs to: `skirmish · speed 6 · DeepFrze.map`. The
+ *  map name goes last because it is the one field long enough to clip. */
+function sessionReading(session) {
+    return [
+        session.game_mode,
+        `${t("hdr.speed")} ${session.game_speed}`,
+        session.map_name,
+    ].join(" · ");
+}
+const ALERT_IDS = [
+    "alert-paused",
+    "alert-outcome",
+    "alert-p99",
+    "alert-path",
+    "alert-errors",
+];
+/** A chip's dash means the engine published no reading for it — a demo stream
+ *  carries no debug block, an uncapped speed no budget, serial pathfinding no
+ *  batch pass. It is deliberately not a zero. */
+const NO_READING = "—";
+function outcomeChip(session) {
+    const key = session.local_outcome === "Victory" ? "hdr.victory" : "hdr.defeat";
+    return session.local_owner ? `${session.local_owner} · ${t(key)}` : t(key);
+}
+/** Whether the chips currently stand in for a stream that stopped. */
+let alertsStale = true;
+/** A stopped stream carries no current reading, so each chip shows the same dash
+ *  the panels use for "no reading" — never the last match's state. The pause chip
+ *  reading "running" beside a stopped link pill is the case this rules out. */
+function markAlertsStale() {
+    if (alertsStale)
+        return;
+    alertsStale = true;
+    const tip = t("alert.stale");
+    for (const id of ALERT_IDS) {
+        const badge = document.getElementById(id);
+        if (!badge)
+            continue;
+        badge.textContent = NO_READING;
+        badge.className = "badge";
+        badge.title = tip;
+    }
+}
+/** The header's standing status chips, so a stalled or erroring match is
+ *  visible from any view and the row never changes width to say so. Every
+ *  criterion is a reading the engine already publishes — its tick budget line,
+ *  the batch pass's own left-out count, an error-level record — so a chip
+ *  states a fact rather than a threshold this panel invented. */
+function updateAlerts(snapshot) {
+    const paused = snapshot.debug?.overlays.paused ?? null;
+    const session = snapshot.session;
+    const timing = snapshot.timing;
+    const batch = snapshot.path_batch;
+    const chips = {
+        "alert-paused": paused
+            ? { text: t("hdr.paused"), cls: "badge pause warn" }
+            : { text: paused === null ? NO_READING : t("alert.running"), cls: "badge" },
+        "alert-outcome": session?.local_outcome
+            ? {
+                text: outcomeChip(session),
+                cls: `badge ${session.local_outcome === "Victory" ? "good" : "bad"}`,
+            }
+            : { text: session ? t("alert.undecided") : NO_READING, cls: "badge" },
+        "alert-p99": {
+            text: timing
+                ? t("alert.p99", {
+                    p99: fmt(timing.p99_ms),
+                    budget: timing.budget_ms === null ? NO_READING : fmt(timing.budget_ms),
+                })
+                : `p99 ${NO_READING}`,
+            cls: timing && timing.budget_ms !== null && timing.p99_ms > timing.budget_ms
+                ? "badge bad"
+                : "badge",
+            tip: t("alert.p99Tip"),
+        },
+        "alert-path": {
+            text: t("alert.path", { n: batch ? thousands(batch.left_out) : NO_READING }),
+            // A pass that dropped more registrations than it searched is the case
+            // where the queue is growing, not merely capped.
+            cls: !batch || batch.left_out === 0
+                ? "badge"
+                : batch.left_out > batch.searched
+                    ? "badge bad"
+                    : "badge warn",
+            tip: t("alert.pathTip"),
+        },
+        "alert-errors": {
+            text: t("alert.errors", { n: thousands(logErrors) }),
+            cls: logErrors > 0 ? "badge bad" : "badge",
+            tip: t("alert.errorsGo"),
+        },
+    };
+    for (const id of ALERT_IDS) {
+        const badge = document.getElementById(id);
+        const chip = chips[id];
+        if (!badge || !chip)
+            continue;
+        badge.textContent = chip.text;
+        badge.className = chip.cls;
+        badge.title = chip.tip ?? chip.text;
+    }
+    alertsStale = false;
 }
 function updateCost(snapshot) {
     const timing = snapshot.timing;
     document.getElementById("last").textContent = timing ? fmt(timing.tick_ms) : "-";
     document.getElementById("p50").textContent = timing ? fmt(timing.p50_ms) : "-";
-    document.getElementById("p99").textContent = timing ? fmt(timing.p99_ms) : "-";
+    const p99Cell = document.getElementById("p99");
+    p99Cell.textContent = timing ? fmt(timing.p99_ms) : "-";
+    // The same budget line the chart draws: the tail of the window is over the
+    // pacer's interval, so a hundredth of the ticks are already missing it.
+    p99Cell.className =
+        timing && timing.budget_ms !== null && timing.p99_ms > timing.budget_ms
+            ? "value bad"
+            : "value";
     const budgetCell = document.getElementById("budget");
     if (timing && timing.budget_utilization !== null) {
         budgetCell.textContent = `${Math.round(timing.budget_utilization * 100)}`;
@@ -2076,6 +2201,16 @@ function setupViews() {
         logLevel = Number(event.target.value) || 3;
         rebuildLogView();
     });
+    // The header's error badge hands over to the log view's own switcher and
+    // filter rather than restating either.
+    document.getElementById("alert-errors")?.addEventListener("click", () => {
+        document.getElementById("view-logs")?.click();
+        const level = document.getElementById("log-level");
+        if (!level)
+            return;
+        level.value = "1";
+        level.dispatchEvent(new Event("change"));
+    });
     const logSearch = document.getElementById("log-search");
     if (logSearch) {
         logSearch.placeholder = t("log.search");
@@ -2144,6 +2279,9 @@ let logFollow = true;
 let logLevel = 3;
 let logQuery = "";
 let logDropped = 0;
+/** Error-level records received since the log view was cleared: the header
+ *  badge counts what the engine reported, not what is still on screen. */
+let logErrors = 0;
 let logSearchTimer = null;
 function logVisible(line) {
     if (line.level > logLevel)
@@ -2230,6 +2368,7 @@ function acceptLogs(batch) {
     }
     if (batch.lines.length === 0)
         return;
+    logErrors += batch.lines.filter((line) => line.level === 1).length;
     logLines.push(...batch.lines);
     if (logLines.length > LOG_LIMIT) {
         logLines.splice(0, logLines.length - LOG_LIMIT);
@@ -2250,6 +2389,7 @@ function toggleLogPause() {
 function clearLogs() {
     logLines = [];
     logDropped = 0;
+    logErrors = 0;
     const marker = document.getElementById("log-dropped");
     if (marker)
         marker.textContent = "";
@@ -2823,6 +2963,11 @@ function connect() {
         if (!Array.isArray(snapshot.houses) || !Array.isArray(snapshot.spots))
             return;
         reconnectAttempts = 0;
+        // A replaced world restarts the authoritative tick — the same boundary the
+        // server resets its live window at — so the log buffers and the error chip
+        // start over rather than carrying the previous match's count.
+        if (lastSnapshot && snapshot.tick < lastSnapshot.tick)
+            clearLogs();
         lastSnapshot = snapshot;
         updateDebugTools(snapshot, true);
         snapTicks += 1;
@@ -2851,6 +2996,7 @@ function connect() {
                 chartSamples.shift();
         }
         updateHeader(snapshot);
+        updateAlerts(snapshot);
         updateCost(snapshot);
         updateProcess(snapshot.process);
         updateTerrain(snapshot.debug);
@@ -2911,6 +3057,10 @@ const statusTimer = window.setInterval(() => {
     snapHz = snapTicks;
     snapTicks = 0;
     renderStatus();
+    // A second without a snapshot is the same evidence the pill uses: the stream
+    // is not carrying this match any more, so nothing the chips say is current.
+    if (!statusOpen || snapHz === 0)
+        markAlertsStale();
 }, 1000);
 sessionToken = consumeSessionToken();
 connect();

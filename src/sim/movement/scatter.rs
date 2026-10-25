@@ -110,22 +110,22 @@ pub(super) struct ScatterTechno {
 impl ScatterTechno {
     pub(super) fn from_entity(
         entity: &GameEntity,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         houses: &crate::sim::houses::Houses,
         interner: &StringInterner,
     ) -> Self {
         use crate::sim::combat::veterancy::has_weapon_ability;
         Self {
-            has_scatter_ability: rules
-                .and_then(|rules| interner.object_type(entity.type_ref(), rules))
-                .is_some_and(|object| {
+            has_scatter_ability: interner.object_type(entity.type_ref(), rules).is_some_and(
+                |object| {
                     has_weapon_ability(
                         entity.veterancy.rank_kind(),
                         object,
                         crate::rules::object_type::Ability::Scatter,
                     )
-                }),
-            // A rulesless/component fixture may omit its House. Runtime houses
+                },
+            ),
+            // A component fixture may omit its House. Runtime houses
             // own CurrentIQ; zero is their constructor default, not a human/AI
             // inference. The value is already saved/restored by HouseState.
             house_iq: houses
@@ -144,22 +144,12 @@ pub(super) struct ScatterEligibility {
     pub(super) iq_scatter: i32,
 }
 
-impl Default for ScatterEligibility {
-    /// The RulesClass constructor values, used when no ruleset is loaded.
-    fn default() -> Self {
-        Self {
-            player_scatter: false,
-            iq_scatter: 3,
-        }
-    }
-}
-
 impl ScatterEligibility {
-    pub(super) fn from_rules(rules: Option<&RuleSet>) -> Self {
-        rules.map_or_else(Self::default, |rules| Self {
+    pub(super) fn from_rules(rules: &RuleSet) -> Self {
+        Self {
             player_scatter: rules.general.player_scatter,
             iq_scatter: rules.general.iq_scatter,
-        })
+        }
     }
 }
 
@@ -190,7 +180,7 @@ pub(super) fn scatter_dispatch_allowed(
 pub(super) fn scatter_objects_admitted(
     occupants: &[u64],
     no_kidding: bool,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     entities: &EntityStore,
     houses: &crate::sim::houses::Houses,
     interner: &StringInterner,
@@ -599,7 +589,7 @@ impl Simulation {
         let admitted = scatter_objects_admitted(
             &occupants,
             flags.no_kidding,
-            Some(rules),
+            rules,
             &self.substrate.entities,
             &self.houses,
             &self.interner,

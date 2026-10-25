@@ -24,9 +24,8 @@ pub(crate) struct ScenarioPostMapInput<'a> {
     pub(crate) overlay_registry: &'a OverlayTypeRegistry,
     pub(crate) house_roster: &'a HouseRoster,
     pub(crate) skirmish_session: Option<&'a crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
-    /// Ordinary NewCampaign only: HomeCell selects the opening waypoint after
-    /// Evade's entry reset. Continuation/save AltHome belongs to its later route.
-    pub(crate) campaign_new_game_map: Option<&'a crate::map::map_file::MapFile>,
+    /// Every fresh campaign installation, including continuation and retry.
+    pub(crate) campaign_map: Option<&'a crate::map::map_file::MapFile>,
 }
 
 /// Presentation/logging facts returned after authoritative initialization.
@@ -71,17 +70,11 @@ impl Simulation {
             {
                 skirmish_order[0] = Some(ScenarioPostMapStep::StartupCrates);
             }
-            let normal_lighting = self
-                .session
-                .lighting()
-                .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
-                .into();
-            let placement = crate::sim::crates::place_scenario_start_crates_with_lighting(
+            let placement = crate::sim::crates::place_scenario_start_crates(
                 self,
                 input.rules,
                 input.overlay_registry,
                 player_count,
-                normal_lighting,
             );
             // Startup OverlayClass::Mark completes synchronously before native
             // proceeds to AI credits; the placement refreshed the bridge
@@ -117,21 +110,25 @@ impl Simulation {
             None
         };
 
-        // Post_Map_Init686AFE calls68C050 after launch alliances, before
-        // Full_Init's particle/OreTwinkle tail. Restore never reruns this pass.
-        Self::assign_secret_lab_production(
-            &mut self.interner,
-            &mut self.scenario_rng,
-            &mut self.substrate,
-            input.rules,
-        );
+        // Post_Map_Init686AFE calls68C050 after launch alliances. Authored
+        // Full_Init687BC8..687BF1 skips that pass in GameMode0 (campaign).
+        // Generated/.SED maps have a separate684990 call, but the admitted
+        // generated family is noncampaign. Restore never reruns this owner.
+        if self.session.game_mode_nonzero() {
+            Self::assign_secret_lab_production(
+                &mut self.interner,
+                &mut self.scenario_rng,
+                &mut self.substrate,
+                input.rules,
+            );
+        }
 
         // ReadScenario684ACE → FillInData684F02..684F7F, before restamp
         // and the particle/OreTwinkle tail. Every nonnull House participates;
         // restore never enters this fresh-only owner or repeats its credits.
         if input.fill_silos {
             for owner in self.houses.order().to_vec() {
-                let income = crate::sim::house_state::income_ppm_for_owner(
+                let income = crate::sim::house_state::income_mult_for_owner(
                     &self.houses,
                     &self.interner,
                     input.rules,
@@ -156,6 +153,13 @@ impl Simulation {
                     .fill_silos_fresh_empty_store(value, capacity, income);
             }
         }
+
+        // Fill_In_Data684F81..684F89: Map4ADCD0(1,0) visits mobile sources
+        // before the later first-House full pass. This does not consume +24B.
+        self.initialize_scenario_sight(crate::sim::world::UninitContext::new(
+            input.rules,
+            Some(input.overlay_registry),
+        ));
 
         // Original684C30 performs586BF0 after the zone rebuilds and before its
         // particle/twinkle tail. This command is fresh-load-only: restore writes
@@ -185,23 +189,37 @@ impl Simulation {
             input.map_height,
         );
 
-        // Original684C30's opening-view choice consumes the already-parsed
-        // Scenario HomeCell/waypoint table. NewCampaign52DF05→4C6140 clears
-        // Evade, so this route uses HomeCell rather than AltHomeCell. Both
-        // indexes reset to699 in SetDefaults683610 before the Basic read.
-        let opening_view_cell = input.campaign_new_game_map.and_then(|map| {
+        // gamemd Fill_In_Data684C9A..684D43 reads Evade+0 (8A38E0), the
+        // incoming global0 captured by CampaignCarryOver::Save4C6180.
+        // NewCampaign52DF05->Clear4C6140 clears it. A continuation/retry
+        // uses that retained record before Restore4C6210 writes the new
+        // Scenario's globals; its current live global0 is not the selector.
+        // Basic Read68A601..68A656 reads both indexes with current defaults;
+        // fresh SetDefaults683622/683628 initializes both to699.
+        let opening_view_cell = input.campaign_map.and_then(|map| {
             assert!(
                 input.skirmish_session.is_none() && !self.session.game_mode_nonzero(),
                 "campaign opening view requires the campaign family"
             );
-            u32::try_from(map.basic.home_cell.unwrap_or(699))
-                .ok()
-                .map(|index| {
-                    map.waypoints
-                        .get(&index)
-                        .map_or((0, 0), |waypoint| (waypoint.rx, waypoint.ry))
-                })
+            let incoming = self
+                .session
+                .campaign_restart_carry_over()
+                .expect("campaign record");
+            let waypoint = if incoming.globals()[0] {
+                map.basic.alt_home_cell
+            } else {
+                map.basic.home_cell
+            };
+            u32::try_from(waypoint.unwrap_or(699)).ok().map(|index| {
+                map.waypoints
+                    .get(&index)
+                    .map_or((0, 0), |waypoint| (waypoint.rx, waypoint.ry))
+            })
         });
+
+        // ReadScenario684B45..684B53, after 684C30 and before the initial
+        // Techno capture: the WOL clan alliances.
+        self.apply_squad_alliances(input.rules, Some(input.overlay_registry));
 
         // ReadScenario684ACE completes684C30 before684C05..684C1B captures
         // each House's initial Technos. Saved-world restore never enters this
@@ -355,7 +373,152 @@ mod tests {
             overlay_registry: overlays,
             house_roster,
             skirmish_session: None,
-            campaign_new_game_map: None,
+            campaign_map: None,
+        }
+    }
+
+    #[test]
+    fn campaign_post_map_skips_random_secret_lab_assignment_on_retail_missions() {
+        use crate::map::map_file::MapFile;
+        use crate::rules::process_owner::NativeScenarioRulesPrefix;
+        use crate::rules::retail_ini_fixture;
+        use crate::sim::house_state::HouseState;
+        use crate::sim::rng::trace_draws;
+        use crate::sim::scenario_session::ScenarioGameMode;
+
+        let Some((_, assets)) = retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        for (filename, reward) in [("SOV05UMD.MAP", "DESO"), ("SOV07TMD.MAP", "GTGCAN")] {
+            let map = MapFile::from_bytes(assets.get_ref(filename).expect("retail campaign map"))
+                .expect("retail campaign map parses");
+            let prefix_name = filename.replace(".MAP", ".INI");
+            let prefix = assets.resolve_ref(&prefix_name).map(|_| {
+                crate::rules::retail_sources::select_ini(&assets, &prefix_name)
+                    .expect("present campaign prefix parses")
+                    .ini
+            });
+            let mut process = retail_ini_fixture::retail_rules_owner(&assets);
+            let (rules, processed, art, _) = process
+                .load_scenario(
+                    NativeScenarioRulesPrefix::Campaign(prefix.as_ref()),
+                    &map.ini,
+                )
+                .expect("production campaign rules reader")
+                .into_parts();
+            let overlays = OverlayTypeRegistry::from_ini(&processed, Some(&art));
+            let lab_type = rules.object("CASLAB").expect("stock Secret Lab");
+            assert!(lab_type.secret_lab().enabled());
+            assert_eq!(
+                lab_type
+                    .secret_lab()
+                    .production_override()
+                    .map(|(_, name)| name),
+                Some(reward),
+                "{filename}: native map override remains authoritative"
+            );
+            assert_eq!(
+                rules
+                    .general
+                    .secret_lab_choices()
+                    .iter()
+                    .map(Vec::len)
+                    .sum::<usize>(),
+                8
+            );
+            let labs: Vec<_> = map
+                .entities
+                .iter()
+                .filter(|entity| entity.type_id == "CASLAB")
+                .collect();
+            assert_eq!(labs.len(), 1, "{filename}: placed stock Secret Lab");
+            let mut sim = Simulation::with_seed(1);
+            sim.install_session_mode(ScenarioGameMode::Campaign);
+            sim.intern_rule_type_ids(&rules);
+            sim.resolve_type_handles(&rules);
+            let owner = sim.interner.intern(&labs[0].owner);
+            sim.houses
+                .register(HouseState::new(owner, 0, None, false, 0, 10));
+            // Only this registered building is needed to exercise the actual
+            // post-map dispatcher. Terrain, combat and prior mission play are
+            // outside this bounded startup regression.
+            let lab = sim
+                .spawn_object("CASLAB", &labs[0].owner, 10, 10, 0, &rules)
+                .unwrap();
+            let before = sim.rng_state();
+            let roster = HouseRoster::default();
+            let (_, draws) = trace_draws(|| {
+                sim.finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster))
+            });
+            assert!(
+                draws.is_empty(),
+                "{filename}: campaign skips Post_Map_Init's random reward pass"
+            );
+            assert_eq!(sim.rng_state(), before, "{filename}: all three RNG streams");
+            assert_eq!(
+                sim.substrate
+                    .entities
+                    .get(lab)
+                    .unwrap()
+                    .secret_lab_fallback(),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn campaign_opening_view_uses_the_saved_incoming_global_zero() {
+        let Some(bytes) = crate::rules::retail_ini_fixture::retail_archive_bytes("SOV07TMD.MAP")
+        else {
+            return;
+        };
+        let map = crate::map::map_file::MapFile::from_bytes(&bytes).unwrap();
+        assert_eq!(
+            (map.basic.home_cell, map.basic.alt_home_cell),
+            (Some(17), Some(699))
+        );
+        let (rules, overlays) = post_map_rules_and_overlays();
+        let roster = HouseRoster::default();
+        // FillInData684C9A reads Evade+0, captured from the previous mission
+        // by4C6180. It does not read the new Scenario's live global0.
+        for (incoming, current, expected) in [(true, false, (107, 109)), (false, true, (149, 148))]
+        {
+            let mut previous = Simulation::new();
+            Simulation::set_trigger_variable(
+                &previous.session,
+                &mut previous.scenario_rng,
+                &mut previous.trigger_runtime,
+                true,
+                0,
+                incoming,
+            );
+            let record = previous.save_campaign_carry_over();
+            let mut sim = Simulation::from_descriptor(&Default::default());
+            sim.session
+                .initialize_campaign_startup(1, 7, None, 1, record)
+                .unwrap();
+            Simulation::set_trigger_variable(
+                &sim.session,
+                &mut sim.scenario_rng,
+                &mut sim.trigger_runtime,
+                true,
+                0,
+                current,
+            );
+            let saved = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);
+            let mut loaded = crate::sim::snapshot::GameSnapshot::load(&saved)
+                .unwrap()
+                .sim;
+            let before = loaded.rng_state();
+            let mut input = generic_post_map_input(&rules, &overlays, &roster);
+            input.campaign_map = Some(&map);
+            let output = loaded.finalize_scenario_post_map(input);
+            assert_eq!(
+                output.opening_view_cell,
+                Some(expected),
+                "incoming={incoming}, current={current}"
+            );
+            assert_eq!(loaded.rng_state(), before);
         }
     }
 
@@ -391,10 +554,18 @@ mod tests {
             // not alter the selected HomeCell in this shared post-load owner.
             map.basic.alt_home_cell = Some(-1);
             let mut sim = Simulation::from_descriptor(&Default::default());
-            sim.session.initialize_campaign_startup(1, 1, None).unwrap();
+            sim.session
+                .initialize_campaign_startup(
+                    1,
+                    1,
+                    None,
+                    0,
+                    crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+                )
+                .unwrap();
             let before = sim.rng_state();
             let mut input = generic_post_map_input(&rules, &overlays, &roster);
-            input.campaign_new_game_map = Some(&map);
+            input.campaign_map = Some(&map);
             let output = sim.finalize_scenario_post_map(input);
             assert_eq!(
                 output.opening_view_cell,
@@ -439,11 +610,19 @@ mod tests {
         let (rules, overlays) = post_map_rules_and_overlays();
         let roster = crate::map::houses::parse_house_roster(&ini, &[], Some(&rules));
         let mut sim = Simulation::new();
-        sim.session.initialize_campaign_startup(1, 1, None).unwrap();
+        sim.session
+            .initialize_campaign_startup(
+                1,
+                1,
+                None,
+                0,
+                crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+            )
+            .unwrap();
         crate::sim::scenario_bootstrap::initialize_map_roster_houses(
             &mut sim,
             &roster,
-            Some(&rules),
+            &rules,
             Some(&ini),
         );
         assert!(crate::map::houses::is_allied_with(

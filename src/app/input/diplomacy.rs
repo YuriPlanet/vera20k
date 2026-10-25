@@ -82,7 +82,7 @@ pub(crate) fn open(state: &mut AppState, request: DiplomacyRequest) {
 
 /// The per-match switches the rows read besides the houses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct DiplomacyRules {
+pub(crate) struct DiplomacyRules<'a> {
     /// `Rules+0x14B5` AlliesAllowed, layered through the mode INI.
     pub allies_allowed: bool,
     /// `[0xA8B244] == 2`: WOL Quick Co-op.
@@ -92,12 +92,12 @@ pub(crate) struct DiplomacyRules {
     /// GameMode is not 0: `IsControlledByHuman` reads only `+0x1EC`.
     pub game_mode_nonzero: bool,
     /// The chat mask `0xA8D108`, by House array index.
-    pub listeners: [bool; 8],
+    pub listeners: &'a [bool],
 }
 
 /// The rows and the headers they decide.
 pub(crate) struct ResolvedRows {
-    pub rows: [Option<DiplomacyRow>; DIPLOMACY_ROWS],
+    pub rows: Vec<Option<DiplomacyRow>>,
     /// 0x597: some row showed an Allies box at init.
     pub allies_header: bool,
     /// 0x425: some row is human-controlled.
@@ -123,7 +123,7 @@ pub(crate) fn resolve_rows(
     country_name: impl Fn(InternedId) -> Option<String>,
 ) -> ResolvedRows {
     let empty = ResolvedRows {
-        rows: Default::default(),
+        rows: Vec::new(),
         allies_header: false,
         chat_header: false,
     };
@@ -153,85 +153,93 @@ pub(crate) fn resolve_rows(
     let allies_shown = switches.allies_allowed && observer != Some(local) && !switches.quick_coop;
     let mut allies_header = false;
     let mut chat_header = false;
-    let rows = std::array::from_fn(|row| {
-        let house = *order.get(house_for_row(row))?;
-        let state = sim.houses().get(&house)?;
-        // Init hides rows 1..=7 whose House type lacks Multiplay; 0x00658330
-        // blanks row 0's texts for such a type.
-        if !multiplay(house) {
-            return None;
-        }
-        let human = state.is_controlled_by_human(switches.game_mode_nonzero);
-        let allies = (row > 0 && allies_shown).then(|| {
-            allies_header = true;
-            DiplomacyAlliesBox {
-                checked: allied(local, house),
-                partner: allied(house, local),
-                enabled: !switches.local_inactive && human,
+    // VERA extends the native eight rows using the same House-order swap.
+    let mut rows: Vec<_> = (0..order.len().max(DIPLOMACY_ROWS))
+        .map(|row| {
+            let house = *order.get(house_for_row(row))?;
+            let state = sim.houses().get(&house)?;
+            // Init hides rows 1..=7 whose House type lacks Multiplay; 0x00658330
+            // blanks row 0's texts for such a type.
+            if !multiplay(house) {
+                return None;
             }
-        });
-        if row > 0 && human {
-            chat_header = true;
-        }
-        // Only LAN/WOL human rows show the box, and 0x00658525 hides it once
-        // the House sent EXIT (House+0x248). 0x00657F8E..0x00657FCC checks
-        // it from the mask byte of the row's House, or always once the
-        // local player is out.
-        let chat = (row > 0 && human && !state.left_game()).then(|| DiplomacyChatBox {
-            checked: switches.local_inactive
-                || switches
-                    .listeners
-                    .get(house_for_row(row))
-                    .copied()
-                    .unwrap_or(false),
-            enabled: !switches.local_inactive,
-        });
-        // UpdateDiplomacyDialog skips a non-player MultiplayPassive House, so
-        // its row keeps the init texts: empty, with the init box state.
-        if house != local && state.multiplay_passive() {
-            return Some(DiplomacyRow {
-                insignia: None,
-                name: String::new(),
-                rgb: [0; 3],
-                kills: None,
-                allies,
-                chat,
+            let human = state.is_controlled_by_human(switches.game_mode_nonzero);
+            let allies = (row > 0 && allies_shown).then(|| {
+                allies_header = true;
+                DiplomacyAlliesBox {
+                    checked: allied(local, house),
+                    partner: allied(house, local),
+                    enabled: !switches.local_inactive && human,
+                }
             });
-        }
-        let is_observer = observer == Some(house);
-        // 0x00658393..0x006583CF: "LightGrey" for the observer, "Grey" once
-        // defeated, else the House's own scheme.
-        let named = |name| sources.named_scheme_rgb(name).unwrap_or([0xFF; 3]);
-        let rgb = if is_observer {
-            named("LightGrey")
-        } else if state.is_defeated() {
-            named("Grey")
-        } else {
-            sources.text_rgb(sim, house)
-        };
-        let insignia = if is_observer {
-            crate::app::frontend::skirmish_shell_render::flag_pcx_for_side_item_data(-3)
-        } else {
-            state
-                .country()
-                .and_then(|country| rules.country_index(sim.interner().resolve(country)))
-                .and_then(|index| {
-                    crate::app::frontend::skirmish_shell_render::flag_pcx_for_side_item_data(
-                        i32::from(index.0),
-                    )
-                })
-        };
-        Some(DiplomacyRow {
-            insignia,
-            name: sources.ui_name(sim, house, state.country(), &country_name),
-            rgb,
-            // Σ of the two per-victim kill tables (+0x53E4, +0x5438), `%d`.
-            kills: Some(state.stats().kills() as i32),
-            // 0x00658330 hides a defeated House's box; nothing re-shows it.
-            allies: allies.filter(|_| !state.is_defeated()),
-            chat,
+            if row > 0 && human {
+                chat_header = true;
+            }
+            // Only LAN/WOL human rows show the box, and 0x00658525 hides it once
+            // the House sent EXIT (House+0x248). 0x00657F8E..0x00657FCC checks
+            // it from the mask byte of the row's House, or always once the
+            // local player is out.
+            let chat = (row > 0 && human && !state.left_game()).then(|| DiplomacyChatBox {
+                checked: switches.local_inactive
+                    || switches
+                        .listeners
+                        .get(house_for_row(row))
+                        .copied()
+                        .unwrap_or(false),
+                enabled: !switches.local_inactive,
+            });
+            // UpdateDiplomacyDialog skips a non-player MultiplayPassive House, so
+            // its row keeps the init texts: empty, with the init box state.
+            if house != local && state.multiplay_passive() {
+                return Some(DiplomacyRow {
+                    insignia: None,
+                    name: String::new(),
+                    rgb: [0; 3],
+                    kills: None,
+                    allies,
+                    chat,
+                });
+            }
+            let is_observer = observer == Some(house);
+            // 0x00658393..0x006583CF: "LightGrey" for the observer, "Grey" once
+            // defeated, else the House's own scheme.
+            let named = |name| sources.named_scheme_rgb(name).unwrap_or([0xFF; 3]);
+            let rgb = if is_observer {
+                named("LightGrey")
+            } else if state.is_defeated() {
+                named("Grey")
+            } else {
+                sources.text_rgb(sim, house)
+            };
+            let insignia = if is_observer {
+                crate::app::frontend::skirmish_shell_render::flag_pcx_for_side_item_data(-3)
+            } else {
+                state
+                    .country()
+                    .and_then(|country| rules.country_index(sim.interner().resolve(country)))
+                    .and_then(|index| {
+                        crate::app::frontend::skirmish_shell_render::flag_pcx_for_side_item_data(
+                            i32::from(index.0),
+                        )
+                    })
+            };
+            Some(DiplomacyRow {
+                insignia,
+                name: sources.ui_name(sim, house, state.country(), &country_name),
+                rgb,
+                // Σ of the two per-victim kill tables (+0x53E4, +0x5438), `%d`.
+                kills: Some(state.stats().kills() as i32),
+                // 0x00658330 hides a defeated House's box; nothing re-shows it.
+                allies: allies.filter(|_| !state.is_defeated()),
+                chat,
+            })
         })
-    });
+        .collect();
+    // Neutral/Special often follow the playable Houses. They must not add a
+    // blank page to the retail eight-row dialog.
+    while rows.len() > DIPLOMACY_ROWS && rows.last().is_some_and(Option::is_none) {
+        rows.pop();
+    }
     ResolvedRows {
         rows,
         allies_header,
@@ -254,16 +262,20 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
         return view;
     };
     let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
+    let listeners: Vec<_> = (0..sim.houses().order().len())
+        .map(|index| state.match_state.match_presentation.chat.listens(index))
+        .collect();
     let switches = DiplomacyRules {
         allies_allowed: rules.general.allies_allowed,
         quick_coop: mode == SessionMode::Wol
-            && state.frontend.wol.as_ref().and_then(|visit| visit.mode())
-                == Some(crate::ui::wol_shell::WolMode::QuickCoop),
+            && state
+                .match_state
+                .session
+                .network_wol_start()
+                .is_some_and(|terms| terms.quick_coop),
         local_inactive: sim.local_player_defeated(),
         game_mode_nonzero: mode.is_nonzero(),
-        listeners: std::array::from_fn(|index| {
-            state.match_state.match_presentation.chat.listens(index)
-        }),
+        listeners: &listeners,
     };
     let resolved = resolve_rows(
         sim,
@@ -272,7 +284,13 @@ pub(crate) fn view(state: &AppState) -> DiplomacyView {
         &HouseUiSources::from_state(state, &computer),
         |country| crate::app::presentation::house_ui::country_display_name(state, sim, country),
     );
-    view.rows = resolved.rows;
+    let paging = state.match_state.match_presentation.diplomacy.page;
+    let range = paging.range(resolved.rows.len(), DIPLOMACY_ROWS);
+    view.first_row = range.start;
+    view.page_index = paging.index(resolved.rows.len(), DIPLOMACY_ROWS);
+    view.page_count = crate::ui::shell::paging::RowPage::count(resolved.rows.len(), DIPLOMACY_ROWS);
+    view.rows =
+        std::array::from_fn(|slot| resolved.rows.get(range.start + slot).cloned().flatten());
     view.allies_header = resolved.allies_header;
     view.chat_header = resolved.chat_header;
     if mode.is_network() {
@@ -318,7 +336,12 @@ fn control_under_pointer(state: &AppState) -> Option<DiplomacyControl> {
 }
 
 fn return_under(control: Option<DiplomacyControl>) -> Option<DiplomacyButton> {
-    (control == Some(DiplomacyControl::Return)).then_some(DiplomacyButton::Return)
+    match control {
+        Some(DiplomacyControl::Return) => Some(DiplomacyButton::Return),
+        Some(DiplomacyControl::PreviousPage) => Some(DiplomacyButton::PreviousPage),
+        Some(DiplomacyControl::NextPage) => Some(DiplomacyButton::NextPage),
+        _ => None,
+    }
 }
 
 pub(crate) fn cursor_moved(state: &mut AppState) {
@@ -343,8 +366,9 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
             .button
             .press(target);
         if target.is_some() {
-            // Common type2 button 0x0061374B..0x00613771: click at button-down.
-            App::play_skirmish_shell_generic_click_sound(state);
+            // Owner-draw button-down: GUIMainButtonSound (Rules+0x188,
+            // 0x0061374B..0x00613771).
+            App::play_main_menu_button_sound(state);
         }
         match over {
             Some(DiplomacyControl::Chat(row)) => toggle_chat_box(state, row),
@@ -352,16 +376,29 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
             Some(DiplomacyControl::Taunts) => toggle_taunts_box(state),
             _ => {}
         }
-    } else if state
-        .match_state
-        .match_presentation
-        .diplomacy
-        .button
-        .release(target)
-        == Some(DiplomacyButton::Return)
-    {
-        // 0x006581AD: Return ends the modal; State_Machine leaves state 8.
-        App::enter_in_game_menu_state(state, InGameMenuState::Closed);
+    } else {
+        match state
+            .match_state
+            .match_presentation
+            .diplomacy
+            .button
+            .release(target)
+        {
+            Some(DiplomacyButton::Return) => {
+                // 0x006581AD: Return ends the modal; State_Machine leaves state 8.
+                App::enter_in_game_menu_state(state, InGameMenuState::Closed);
+            }
+            Some(button @ (DiplomacyButton::PreviousPage | DiplomacyButton::NextPage)) => {
+                let count = view(state).page_count * DIPLOMACY_ROWS;
+                state.match_state.match_presentation.diplomacy.page.change(
+                    button == DiplomacyButton::NextPage,
+                    count,
+                    DIPLOMACY_ROWS,
+                );
+                state.platform.window.request_redraw();
+            }
+            None => {}
+        }
     }
 }
 
@@ -372,11 +409,9 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
 /// so VERA, which draws the box from the mask, keeps no box state. A hidden
 /// or disabled box takes no click.
 fn press_allies_box(state: &mut AppState, row: usize) {
-    let Some(allies) = view(state)
-        .rows
-        .get(row)
-        .and_then(|row| row.as_ref()?.allies)
-    else {
+    let view = view(state);
+    let logical_row = view.first_row + row;
+    let Some(allies) = view.rows.get(row).and_then(|row| row.as_ref()?.allies) else {
         return;
     };
     if !allies.enabled {
@@ -387,7 +422,7 @@ fn press_allies_box(state: &mut AppState, row: usize) {
         let player = sim.houses().index_of(sim.session().current_house()?)?;
         sim.houses()
             .order()
-            .get(house_for_row(row, player))
+            .get(house_for_row(logical_row, player))
             .copied()
     }) else {
         return;
@@ -402,8 +437,9 @@ fn press_allies_box(state: &mut AppState, row: usize) {
 /// `Ally 0x00731840`: queue EVENT_ALLY toward `house` for the player's
 /// House. Gates (`0x00731840..0x00731877`): a nonzero GameMode, the
 /// Scenario's FixedAlliance bit (`0x400`) clear, AlliesAllowed and
-/// AllyChangeAllowed. FixedAlliance has no VERA field: no skirmish or LAN
-/// writer sets it (`SpecialClass::Init 0x006B8AE0` clears it).
+/// AllyChangeAllowed. FixedAlliance is set only by a WOL clan game's
+/// Apply_Squad_Alliances (`0x0069B170`); `SpecialClass::Init 0x006B8AE0`
+/// clears it.
 /// RESIDUAL: a full OutList (128 records, `[0xA802C8]`) drops the event
 /// natively; VERA's queue has no such cap.
 pub(crate) fn ally(state: &mut AppState, house: InternedId) {
@@ -416,6 +452,7 @@ pub(crate) fn ally(state: &mut AppState, house: InternedId) {
     let rules = &runtime.resources.rules;
     let sim = &mut runtime.simulation;
     if !sim.session().game_mode_nonzero()
+        || sim.session().fixed_alliance()
         || !rules.general.allies_allowed
         || !rules.general.ally_change_allowed
     {
@@ -468,7 +505,9 @@ pub(crate) fn toggle_alliance_hotkey(state: &mut AppState) {
 /// (`0x0061670E..0x0061678B`); 0x73 writes it to the mask byte of the row's
 /// House (`0x0065827A..0x006582C3`). A hidden or disabled box takes no click.
 fn toggle_chat_box(state: &mut AppState, row: usize) {
-    let Some(chat) = view(state).rows.get(row).and_then(|row| row.as_ref()?.chat) else {
+    let view = view(state);
+    let logical_row = view.first_row + row;
+    let Some(chat) = view.rows.get(row).and_then(|row| row.as_ref()?.chat) else {
         return;
     };
     if !chat.enabled {
@@ -478,7 +517,7 @@ fn toggle_chat_box(state: &mut AppState, row: usize) {
         let sim = &runtime.simulation;
         let player = sim.houses().index_of(sim.session().current_house()?)?;
         // The writer maps the slot the same way (0x006582B5..0x006582BF).
-        Some(house_for_row(row, player))
+        Some(house_for_row(logical_row, player))
     }) else {
         return;
     };

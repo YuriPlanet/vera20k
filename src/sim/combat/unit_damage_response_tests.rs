@@ -325,6 +325,7 @@ fn damaged_computer_miner_heads_for_its_refinery() {
         entity.health.set_for_test(health);
         entity.miner.as_mut().unwrap().set_cargo_for_test(vec![
             CargoBale {
+                tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(0),
                 resource_type: ResourceType::Ore,
                 value: 25,
             };
@@ -394,6 +395,7 @@ fn damaged_miner_retreat_consumes_original_signed_storage_fill() {
                 .set_for_test(rules.object("HARV").unwrap().strength / 2);
             entity.miner.as_mut().unwrap().set_cargo_for_test(vec![
                 CargoBale {
+                    tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(0),
                     resource_type: ResourceType::Ore,
                     value: 25
                 };

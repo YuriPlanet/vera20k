@@ -14,7 +14,7 @@ from unicorn.x86_const import (
     UC_X86_REG_EDI, UC_X86_REG_EDX, UC_X86_REG_EIP, UC_X86_REG_ESI,
     UC_X86_REG_ESP, UC_X86_REG_FPCW,
 )
-from tools.native_oracle import NATIVE_SHA256, NATIVE_FPCW, run_checked, finish_vectors, provenance
+from tools.native_oracle import NATIVE_FPCW, run_checked, finish_vectors, provenance
 from tools.spatial_oracle.building_body_rules import SP, dwords
 from tools.projectile_oracle.bridge_render_inputs import BulletReader, assets_root, lexical
 from tools.projectile_oracle.bridge_render_inputs_selection import initialize_weapon
@@ -100,7 +100,7 @@ def generate():
         case=dict(name=f'flight_tick_{tick}',xyz=xyz,velocity=velocity,level=6,flags=flags,
                   mapped_cell=[xyz[0]//256,xyz[1]//256],camera=[-600,100])
         rows.append(dict(tick=tick,velocity_bits=frame['bits'],**render(case,shot['native_type'],raw)))
-    return dict(native_sha256=NATIVE_SHA256,launch=shot,motion=flight,rows=rows,
+    return dict(launch=shot,motion=flight,rows=rows,
                 shp_sha256=hashlib.sha256(raw).hexdigest())
 
 

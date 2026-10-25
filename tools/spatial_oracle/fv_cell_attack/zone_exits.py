@@ -1,6 +1,6 @@
 """Original Map583820 bridge exit controls through the shared FV continuation."""
 from pathlib import Path
-import struct,json,hashlib
+import struct,json
 from . import pursuit
 from tools.spatial_oracle.building_body_rules import dwords
 from tools.native_oracle import finish_vectors,provenance
@@ -42,7 +42,5 @@ def generate():
  q.close();return dict(controls=out)
 def metadata():
  result=provenance(scope=__doc__,assumptions=['FV shared full native setup and constructors; supplied Cell flags, bridge-set indices, land, level and hierarchy IDs are focused synthetic inputs.'],substitutions=['Only supplied input state; no native return or instruction substitution.'],entry_points={'bridge_exit':0x583820})
- result['harness_sha256']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
- result['pursuit_owner_sha256']=hashlib.sha256(Path(pursuit.__file__).read_bytes()).hexdigest()
  return result
 if __name__=='__main__':finish_vectors(generate,HERE/'zone_exits.json',provenance=metadata)

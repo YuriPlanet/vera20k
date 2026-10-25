@@ -48,10 +48,10 @@ pub(crate) const CAMPAIGN_REPLAY_TITLE_KEY: &str = "TXT_TO_REPLAY";
 pub(crate) const CAMPAIGN_REPLAY_YES_KEY: &str = "TXT_YES";
 pub(crate) const CAMPAIGN_REPLAY_NO_KEY: &str = "TXT_NO";
 
-/// The resolved strings of one two-button shell message box
-/// (ShellMessageBox__Run `0x005D3490`, template `0x120`): its body, the
-/// OK-slot button (`0x5AE`, result 0) and the Cancel-slot button (control 2,
-/// result 1). Read from CSF once at open, not every frame.
+/// The resolved strings of a shell message box (ShellMessageBox__Run
+/// `0x005D3490`): body, OK-slot button (`0x5AE`, result0) and optional
+/// Cancel-slot caption (control2, result1). An empty Cancel selects CE
+/// instead of120. Read from CSF once at open, not every frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ShellMessageBoxLabels {
     pub title: String,
@@ -60,6 +60,21 @@ pub(crate) struct ShellMessageBoxLabels {
 }
 
 impl ShellMessageBoxLabels {
+    /// gamemd ShellMessageBox__Run @0x005D3490 chooses CE/120 from
+    /// populated captions, including an empty CSF value in an optional slot.
+    pub fn kind(&self) -> crate::ui::shell::modal::ModalKind {
+        crate::ui::shell::modal::message_box_kind(Some(&self.cancel), None)
+    }
+
+    /// FUN_005ADD10 @0x005ADDA6..5ADDCF: only TXT_OK is supplied.
+    pub fn map_select_failure(csf: &CsfLookup<'_>) -> Self {
+        Self {
+            title: csf("MSG:UnableMapSelect", "Unable to initiate Map Selection!"),
+            confirm: csf("TXT_OK", "OK"),
+            cancel: String::new(),
+        }
+    }
+
     /// Main-menu Exit Game (state 6).
     pub fn exit_confirm(csf: &CsfLookup<'_>) -> Self {
         Self {
@@ -98,5 +113,11 @@ mod tests {
         assert_eq!(replay.title, CAMPAIGN_REPLAY_TITLE_KEY);
         assert_eq!(replay.confirm, CAMPAIGN_REPLAY_YES_KEY);
         assert_eq!(replay.cancel, CAMPAIGN_REPLAY_NO_KEY);
+        assert_eq!(replay.kind(), crate::ui::shell::modal::ModalKind::Confirm);
+        let failed = ShellMessageBoxLabels::map_select_failure(&lookup);
+        assert_eq!(failed.title, "MSG:UnableMapSelect");
+        assert_eq!(failed.confirm, "TXT_OK");
+        assert!(failed.cancel.is_empty());
+        assert_eq!(failed.kind(), crate::ui::shell::modal::ModalKind::BodyOk);
     }
 }

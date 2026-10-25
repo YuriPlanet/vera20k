@@ -3,6 +3,7 @@ use crate::rules::retail_ini_fixture::retail_battle_rules_for_map;
 use crate::sim::movement::track_process::TrackFamily;
 use crate::sim::world::FrameEffects;
 use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+use crate::util::native_x87::NativeF64Bits;
 
 #[test]
 fn drive_stop_retains_speed_until_an_eligible_process_rest_tail() {
@@ -39,7 +40,7 @@ fn drive_stop_retains_speed_until_an_eligible_process_rest_tail() {
             .is_empty()
     );
     let rng = rng_streams(&sim);
-    sim.locomotor_stop_moving(id, Some(&rules), None, FrameEffects::default())
+    sim.locomotor_stop_moving(id, &rules, None, FrameEffects::default())
         .unwrap();
     assert_eq!(
         sim.substrate
@@ -66,10 +67,8 @@ fn drive_stop_retains_speed_until_an_eligible_process_rest_tail() {
     assert_eq!(rng_streams(&sim), rng);
 }
 
-fn fixed_bits(value: &serde_json::Value) -> SimFixed {
-    SimFixed::from_num(f64::from_bits(
-        u64::from_str_radix(value.as_str().unwrap(), 16).unwrap(),
-    ))
+fn native_bits(value: &serde_json::Value) -> NativeF64Bits {
+    NativeF64Bits::from_bits(u64::from_str_radix(value.as_str().unwrap(), 16).unwrap())
 }
 
 fn coordinate(value: &serde_json::Value) -> crate::sim::components::DriveCoord {
@@ -83,8 +82,7 @@ fn coordinate(value: &serde_json::Value) -> crate::sim::components::DriveCoord {
 fn scene_rules() -> crate::rules::ruleset::RuleSet {
     crate::rules::ruleset::RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
         "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=300\nSpeed=6\nROT=5\n\
-         SpeedType=Track\nTurret=no\nAccelerates=yes\nAccelerationFactor=0.03\n\
-         DeaccelerationFactor=0.002\nSlowdownDistance=500\n\
+        SpeedType=Track\nTurret=no\nAccelerates=yes\nSlowdownDistance=500\n\
          Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
     ))
     .unwrap()
@@ -109,7 +107,10 @@ fn scene(rules: &crate::rules::ruleset::RuleSet) -> (crate::sim::world::Simulati
         .locomotor
         .as_mut()
         .unwrap()
-        .store_track_target_fraction(TrackFamily::Drive, SimFixed::lit("0.9"));
+        .store_track_target_fraction_native(
+            TrackFamily::Drive,
+            NativeF64Bits::from_bits(0x3fec_cccc_cccc_cccd),
+        );
     (sim, id)
 }
 
@@ -123,15 +124,17 @@ fn drive_rest_admission_matches_original_whole_process_controls() {
         let input = &row["input"];
         let (mut sim, id) = scene(&rules);
         let entity = sim.substrate.entities.get_mut(id).unwrap();
-        let initial = fixed_bits(&row["before"]["speed_bits"]);
-        if initial < SIM_ZERO {
+        let initial = native_bits(&row["before"]["speed_bits"]);
+        if initial.bits() >> 63 != 0 {
             // An explicit raw native boundary control, outside the ordinary
             // setter's clamped domain. Seed through the saved component reader.
             let mut raw = serde_json::to_value(&entity.foot_speed).unwrap();
             raw["applied_fraction"] = serde_json::to_value(initial).unwrap();
             entity.foot_speed = serde_json::from_value(raw).unwrap();
         } else {
-            entity.foot_speed.set_speed_fraction(initial);
+            entity
+                .foot_speed
+                .set_speed_fraction_native_bits(initial.bits());
         }
         entity.mission.set_current_for_test(
             MissionId::from_raw(input["mission"].as_i64().unwrap_or(2) as i32),
@@ -164,8 +167,8 @@ fn drive_rest_admission_matches_original_whole_process_controls() {
             .unwrap();
         let entity = sim.substrate.entities.get(id).unwrap();
         assert_eq!(
-            entity.foot_speed.applied_fraction(),
-            fixed_bits(&row["after"]["speed_bits"]),
+            entity.foot_speed.native_applied_fraction(),
+            native_bits(&row["after"]["speed_bits"]),
             "{input}"
         );
         let actual = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
@@ -192,7 +195,7 @@ fn drive_stop_rest_and_immediate_reorder_match_native_departure_frames() {
             Some(crate::sim::components::DriveCoord::cell(11, 10, 0)),
         );
         let rng = rng_streams(&sim);
-        sim.locomotor_stop_moving(id, Some(&rules), None, FrameEffects::default())
+        sim.locomotor_stop_moving(id, &rules, None, FrameEffects::default())
             .unwrap();
         if row["rest"] == true {
             sim.process_ground_locomotor_stats_for_test(id, Some(&rules), None)
@@ -201,7 +204,7 @@ fn drive_stop_rest_and_immediate_reorder_match_native_departure_frames() {
         sim.assign_destination_represented(
             id,
             Some(NavTargetRef::cell(11, 10)),
-            Some(&rules),
+            &rules,
             None,
             FrameEffects::default(),
         )
@@ -220,19 +223,17 @@ fn drive_stop_rest_and_immediate_reorder_match_native_departure_frames() {
             let entity = sim.substrate.entities.get(id).unwrap();
             let actual = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
             let expected = coordinate(&state["coords"]);
-            // Existing SimFixed speed ramp deliberately quantizes native
-            // deceleration; one crossed integer budget can move two raw points.
-            assert!(
-                (actual.x - expected.x).abs() <= 2
-                    && actual.y == expected.y
-                    && actual.z == expected.z,
+            assert_eq!(
+                actual, expected,
                 "rest={} frame={} actual={actual:?} native={expected:?}",
+                row["rest"], state["frame"]
+            );
+            assert_eq!(
+                entity.foot_speed.native_applied_fraction(),
+                native_bits(&state["speed_bits"]),
+                "rest={} frame={}",
                 row["rest"],
                 state["frame"]
-            );
-            assert!(
-                (entity.foot_speed.applied_fraction() - fixed_bits(&state["speed_bits"])).abs()
-                    <= SimFixed::lit("0.001")
             );
         }
         assert_eq!(rng_streams(&sim), rng);
@@ -265,7 +266,7 @@ fn native_stop_and_null_destination_histories_preserve_frame_order() {
             .store_track_destination(TrackFamily::Drive, Some(DriveCoord::cell(11, 10, 0)));
         let rng = rng_streams(&sim);
         if row["input"]["stop"] == "locomotor" {
-            sim.locomotor_stop_moving(id, Some(&rules), None, FrameEffects::default())
+            sim.locomotor_stop_moving(id, &rules, None, FrameEffects::default())
                 .unwrap();
         } else {
             sim.substrate
@@ -274,15 +275,9 @@ fn native_stop_and_null_destination_histories_preserve_frame_order() {
                 .unwrap()
                 .navigation
                 .set_nav_com_for_test(Some(NavTargetRef::cell(11, 10)));
-            sim.assign_destination_represented(
-                id,
-                None,
-                Some(&rules),
-                None,
-                FrameEffects::default(),
-            )
-            .unwrap();
-            sim.complete_pending_order(id, Some(&rules), None, FrameEffects::default());
+            sim.assign_destination_represented(id, None, &rules, None, FrameEffects::default())
+                .unwrap();
+            sim.complete_pending_order(id, &rules, None, FrameEffects::default());
         }
         for state in row["states"].as_array().unwrap().iter().skip(1) {
             match state["stage"].as_str().unwrap() {
@@ -295,7 +290,7 @@ fn native_stop_and_null_destination_histories_preserve_frame_order() {
                     sim.assign_destination_represented(
                         id,
                         Some(NavTargetRef::cell(11, 10)),
-                        Some(&rules),
+                        &rules,
                         None,
                         FrameEffects::default(),
                     )
@@ -318,8 +313,8 @@ fn native_stop_and_null_destination_histories_preserve_frame_order() {
                     .get(id)
                     .unwrap()
                     .foot_speed
-                    .applied_fraction(),
-                fixed_bits(&state["speed_bits"]),
+                    .native_applied_fraction(),
+                native_bits(&state["speed_bits"]),
                 "{} {}",
                 row["input"],
                 state["stage"]
@@ -341,7 +336,7 @@ fn a_callback_destination_is_published_before_the_drive_rest_decision() {
         .navigation
         .set_nav_com_for_test(Some(NavTargetRef::cell(11, 10)));
     entity.navigation.owe_destination_setter();
-    sim.drive_process_rest_tail(id, Some(&rules), None, FrameEffects::default());
+    sim.drive_process_rest_tail(id, &rules, None, FrameEffects::default());
     let entity = sim.substrate.entities.get(id).unwrap();
     assert!(
         entity
@@ -373,7 +368,7 @@ fn drive_stop_rest_and_departure_survive_production_snapshot_restore() {
         // Native load resets Scenario from Seed0; compare that documented cursor.
         original.scenario_rng = crate::sim::rng::SimRng::new(0);
         original
-            .locomotor_stop_moving(id, Some(&rules), None, FrameEffects::default())
+            .locomotor_stop_moving(id, &rules, None, FrameEffects::default())
             .unwrap();
         let bytes = GameSnapshot::save(&original, 0, 0, "drive-rest", 0);
         let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
@@ -397,7 +392,7 @@ fn drive_stop_rest_and_departure_survive_production_snapshot_restore() {
             sim.assign_destination_represented(
                 id,
                 Some(NavTargetRef::cell(11, 10)),
-                Some(&rules),
+                &rules,
                 None,
                 FrameEffects::default(),
             )

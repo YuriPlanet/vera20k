@@ -293,7 +293,10 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             .entity()
             .and_then(|entity| entity.locomotor.as_ref())
             .and_then(|locomotor| locomotor.fly_runtime())
-            .map_or(crate::util::fixed_math::SIM_ZERO, |fly| fly.current_speed());
+            .map_or(
+                crate::util::native_x87::NativeF64Bits::POSITIVE_ZERO,
+                |fly| fly.current_speed(),
+            );
         crate::sim::movement::air_movement::current_fly_speed(
             crate::util::fixed_math::ra2_speed_to_leptons_per_frame(self.strike.obj.speed),
             fraction,
@@ -414,7 +417,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             .general
             .attacking_aircraft_sight_range
             .clamp(0, i32::from(u16::MAX)) as u16;
-        let config = world.sight_reveal_config(Some(strike.rules));
+        let config = world.sight_reveal_config(strike.rules);
         let heights = world.sight_height_grid(&config);
         let _ = world.reveal_area(
             &[owner],
@@ -427,7 +430,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             Some(&heights),
             final_pass,
             &config,
-            crate::sim::world::UninitContext::new(Some(strike.rules), strike.overlay_registry)
+            crate::sim::world::UninitContext::new(strike.rules, strike.overlay_registry)
                 .with_effects(strike.run.effects()),
             crate::sim::vision::MapRevealProjection::Transient,
             world.session.current_house(),
@@ -443,7 +446,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
         let strike = &mut *self.strike;
         strike.world.uninit_with_context(
             strike.id,
-            crate::sim::world::UninitContext::new(Some(strike.rules), strike.overlay_registry)
+            crate::sim::world::UninitContext::new(strike.rules, strike.overlay_registry)
                 .with_effects(strike.run.effects()),
         );
     }

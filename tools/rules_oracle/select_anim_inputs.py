@@ -7,7 +7,7 @@ blocks, in their relative Process order; physical loader/full Process omitted.
 import struct
 from pathlib import Path
 from unicorn.x86_const import UC_X86_REG_ESI, UC_X86_REG_EDI, UC_X86_REG_ESP, UC_X86_REG_ECX
-from tools.native_oracle import NATIVE_SHA256, finish_vectors, provenance, run_checked
+from tools.native_oracle import finish_vectors, provenance, run_checked
 from tools.rules_oracle.weapon_speed_order import fresh
 from tools.rules_oracle.guided_controls import normalized_cache
 from tools.spatial_oracle.building_body_rules import RULES, SP, dwords
@@ -94,7 +94,7 @@ def generate():
         run_checked(m.u, 0x66C184, 0x66C287)
         rows.append(dict(name=name, authored_sections=authored, cached_sections=cache,
                          before=before, warhead_body_admitted=admitted, after=state(m, rules, wh)))
-    return dict(native_sha256=NATIVE_SHA256, constructor=constructor, rows=rows)
+    return dict(constructor=constructor, rows=rows)
 
 
 def metadata():

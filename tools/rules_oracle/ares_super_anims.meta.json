@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Four bounded installed-Ares SuperAnim and availability histories.",
+  "assumptions": [
+    "Retained Super/Country/House registries and INI ReadString values are declared fixture inputs; native constructors, lookup, readers, count writer and timer/clear bodies execute.",
+    "Three first-query histories and one availability/count history are separate executions. Their observation payload is retained without synthesizing values.",
+    "No whole Activate payload, upgrade-provided Super enumeration, arbitrary stock-redirected success accounting or GPU/Anim rendering parity is established."
+  ],
+  "substitutions": [
+    "Existing EmpProbe heap/CRT/TLS and Syringe transport; original code bytes remain guarded.",
+    "PlayAnim records native slot/name/variant calls at the existing recording seam; it does not create or draw an Anim."
+  ],
+  "entry_points": {
+    "opening": "0x10034A60",
+    "update": "0x10034AF0",
+    "query": "0x1000D610",
+    "availability": "0x100329E0",
+    "launch_writer": "0x100226D0"
+  },
+  "ares_sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83",
+  "payload_sha256": "a71b0dce903cc18fd63435fa3bd0b7105323f099bd8235c6616b9635e0a135b3"
+}

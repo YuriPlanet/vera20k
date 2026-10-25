@@ -67,31 +67,33 @@ pub(super) struct DockExit {
 }
 
 /// The placement of the Infantry and generic arms: the producer's
-/// GetDockCellForObject (vt+0x4D4, `0x0044EFB0`) for `mover`, offered the
-/// zero Cell, then [`dock_exit_coordinate_and_facing`] for that Cell. The
+/// GetDockCellForObject (vt+0x4D4, `0x0044EFB0`) for `mover` and `offered`,
+/// then [`dock_exit_coordinate_and_facing`] for the selected Cell. The
 /// Infantry arm's call (`0x004449AF`) offers the empty Cell (`0x0089C818`,
 /// zeroed by `0x0043B0E0`); the generic arm's (`0x0044464D`) offers
-/// ExitObject's own Cell argument, which its callers pass zero (Factory_AI
-/// `0x00450155`, Place_Production `0x004FB563`, the Cloning Vat loop
-/// `0x00444A3E`). `None` is the empty dock Cell, on which both arms answer 0
+/// ExitObject's own Cell argument: zero from Factory_AI `0x00450155`,
+/// Place_Production `0x004FB563` and Cloning Vat `0x00444A3E`, but the
+/// requested origin from reinforcement `0x0065DAB6`.
+/// `None` is the empty dock Cell, on which both arms answer 0
 /// (`0x00445696`).
 pub(super) fn dock_exit(
     sim: &Simulation,
     rules: &RuleSet,
     producer_id: u64,
     mover: u64,
+    offered: (i16, i16),
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> Option<DockExit> {
     let cell = crate::sim::docking::building_dock::building_dock_cell(
         sim,
         producer_id,
         mover,
-        (0, 0),
+        offered,
         rules,
         overlay_registry,
     )?;
     let producer = sim.substrate.entities.get(producer_id)?;
-    let producer_type = sim.object_type(producer.type_ref(), rules)?;
+    let producer_type = sim.entity_object_type(producer, rules)?;
     let (coordinate, facing) =
         dock_exit_coordinate_and_facing(producer, producer_type, (cell.0 as i16, cell.1 as i16));
     Some(DockExit {
@@ -126,8 +128,7 @@ fn dock_exit_coordinate_and_facing(
         [centre(dock.0), centre(dock.1)],
     );
     let facing = crate::util::direction_tables::quantize::round_facing16_to_8(word);
-    let (width, height) =
-        crate::rules::foundation::foundation_dimensions(producer.type_facts.foundation());
+    let (width, height) = producer.type_facts.foundation().dimensions();
     let inward = |cell: i16, base: i16, size: u16| {
         if i32::from(cell) >= i32::from(base) + i32::from(size) {
             cell.wrapping_sub(1)
@@ -174,7 +175,7 @@ pub fn mark_war_factory_spawn_contact(
             produced_id,
             message,
             crate::sim::radio::RadioPayload::default(),
-            Some(rules),
+            rules,
             effects,
         );
     }
@@ -192,7 +193,7 @@ impl Simulation {
         self.substrate.entities.get(id).is_some_and(|building| {
             building.category() == crate::map::entities::EntityCategory::Structure
                 && self
-                    .object_type(building.type_ref(), rules)
+                    .entity_object_type(building, rules)
                     .is_some_and(|object| object.weapons_factory)
         })
     }

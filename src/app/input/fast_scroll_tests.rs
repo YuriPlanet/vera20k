@@ -46,7 +46,12 @@ fn mouse_for(case: &DragCase) -> TacticalMouseState {
 }
 
 fn check_poll(mouse: &mut TacticalMouseState, case: &DragCase) {
-    let poll = mouse.poll_right_drag(case.cursor.into(), case.drag_metrics.into(), case.band_box);
+    let poll = mouse.poll_right_drag(
+        case.cursor.into(),
+        case.drag_metrics.into(),
+        case.band_box,
+        1.0,
+    );
     let motion = if poll == RightDragPoll::Pan {
         right_drag_pan_step(
             mouse.right_anchor,
@@ -245,7 +250,7 @@ fn a_drag_between_offline_polls_remains_a_cancel_click() {
             row["expected"]["input_calls"].as_u64().unwrap() as usize
         );
         if decision.scroll_input {
-            mouse.poll_right_drag((500.0, 300.0), (4, 4), false);
+            mouse.poll_right_drag((500.0, 300.0), (4, 4), false, 1.0);
         }
         // Moving far and releasing during the throttle wait cannot cross a
         // latch which only the native admitted poll is allowed to write.
@@ -354,7 +359,12 @@ fn pending_requests_commit_once_and_absolute_views_discard_them() {
                 "drag" => {
                     let cursor: [f32; 2] = serde_json::from_value(step["cursor"].clone()).unwrap();
                     assert_eq!(
-                        mouse.poll_right_drag(cursor.into(), sequence.drag_metrics.into(), false),
+                        mouse.poll_right_drag(
+                            cursor.into(),
+                            sequence.drag_metrics.into(),
+                            false,
+                            1.0
+                        ),
                         RightDragPoll::Pan
                     );
                     let delta = right_drag_pan_step(
@@ -469,6 +479,7 @@ fn cinematic_focus_matches_native_frame_gates_projection_cleanup_and_restored_st
                         0,
                         "native camera lifecycle",
                         0,
+                        &[],
                         &[],
                         None,
                         Some(&saved_view),

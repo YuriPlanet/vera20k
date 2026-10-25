@@ -23,6 +23,71 @@ fn coord(value: &Value) -> ProjectileCoord {
 }
 
 #[test]
+fn concealment_keeps_bolt_phase_lifetime_and_main_draws() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/procedural_drawing_oracle/electric_bolt.json",
+    ))
+    .unwrap();
+    let row = corpus["draw_cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "lifetime_same_frame")
+        .unwrap();
+    let source = &row["births"][0]["bolt"];
+    let birth = ElectricBoltBirth {
+        frame: 0,
+        from: coord(&source["source"]),
+        to: coord(&source["target"]),
+        z_adjust: int(&source["z_adjust"]),
+        phase: int(&source["phase"]),
+        alternate_color: source["alternate"].as_bool().unwrap(),
+        owner: None,
+    };
+    let mut camera = point(&row["input"]["camera"]);
+    camera[1] += 15;
+    let viewport = SurfaceLineViewport {
+        camera,
+        clip: [0, 0, 160, 120],
+        z_origin_y: 0,
+        zoom: 1.0,
+    };
+    let palette = ElectricBoltPalette {
+        ordinary: 0xffff,
+        alternate: 0x001f,
+        center: 0xffff,
+    };
+    let mut shown = ElectricBolts::default();
+    let mut hidden = ElectricBolts::default();
+    shown.create(birth);
+    hidden.create(birth);
+    let shown_main = MainRng::new(1);
+    let hidden_main = MainRng::new(1);
+    let before = shown_main.native_state_hex();
+    assert!(
+        !shown
+            .composite(viewport, Some(palette), &mut shown_main.draws(), |_| true)
+            .is_empty()
+    );
+    assert!(
+        hidden
+            .composite(viewport, Some(palette), &mut hidden_main.draws(), |_| false)
+            .is_empty()
+    );
+    assert_ne!(
+        shown_main.native_state_hex(),
+        before,
+        "the accepted geometry consumes Main"
+    );
+    assert_eq!(hidden.live[0].phase, shown.live[0].phase);
+    assert_eq!(hidden.live[0].decay, shown.live[0].decay);
+    assert_eq!(
+        hidden_main.native_state_hex(),
+        shown_main.native_state_hex()
+    );
+}
+
+#[test]
 fn native_tactical_visits_own_lifetime_reverse_order_and_clear() {
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/procedural_drawing_oracle/electric_bolt.json",
@@ -81,7 +146,7 @@ fn native_tactical_visits_own_lifetime_reverse_order_and_clear() {
                 bolts.clear_on_load();
                 assert!(bolts.lines.is_empty(), "{at} retained geometry cleared");
             } else {
-                let lines = bolts.composite(viewport, Some(palette), &mut main.draws());
+                let lines = bolts.composite(viewport, Some(palette), &mut main.draws(), |_| true);
                 let expected = visit["segments"]
                     .as_array()
                     .unwrap()
@@ -208,8 +273,12 @@ fn accepted_bolt_composites_preserve_the_next_actual_bullet_identity() {
             .take(composite_count)
         {
             assert!(!visit["segments"].as_array().unwrap().is_empty());
-            let lines =
-                bolts.composite(viewport, Some(palette), &mut sim.presentation_main_draws());
+            let lines = bolts.composite(
+                viewport,
+                Some(palette),
+                &mut sim.presentation_main_draws(),
+                |_| true,
+            );
             assert!(!lines.is_empty(), "accepted composite must consume Main");
             let native_delta = (int(&visit["native_id_after"]) as u32)
                 .wrapping_sub(int(&visit["native_id_before"]) as u32);

@@ -5,7 +5,7 @@ FootStop, GetCell and live Facing sampler execute original retail bytes. Fresh
 and TrackProcess bodies are supplied fixture returns at their call boundaries;
 they are not part of this oracle's native claim. No original code is patched.
 
-Reproduce with VERA20K_GAMEMD_EXE pointing to the pinned retail image:
+Reproduce with VERA20K_GAMEMD_EXE pointing to the retail image:
     python -m tools.spatial_oracle.track_outer_continuation --check
 """
 from itertools import product

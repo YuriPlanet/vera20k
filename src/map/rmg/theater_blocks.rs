@@ -26,6 +26,27 @@ pub struct TheaterTileBlocks {
 }
 
 impl TheaterTileBlocks {
+    /// Hash the resolved geometry that the generator actually queries. TMP
+    /// pixels and HashMap iteration order cannot affect network agreement.
+    pub fn multiplayer_digest(&self) -> String {
+        let mut bytes = b"VERA20k RMG tile blocks v1\0".to_vec();
+        let mut blocks = self.blocks.iter().collect::<Vec<_>>();
+        blocks.sort_unstable_by_key(|(tile, _)| **tile);
+        for (tile, block) in blocks {
+            bytes.extend_from_slice(&tile.to_le_bytes());
+            bytes.extend_from_slice(&block.width.to_le_bytes());
+            bytes.extend_from_slice(&block.height.to_le_bytes());
+            bytes.extend_from_slice(&(block.subtiles.len() as u64).to_le_bytes());
+            for cell in &block.subtiles {
+                bytes.push(u8::from(cell.is_some()));
+                if let Some(cell) = cell {
+                    bytes.extend_from_slice(&[cell.height, cell.terrain, cell.slope]);
+                }
+            }
+        }
+        crate::util::sha256::sha256_hex(&bytes)
+    }
+
     /// Build the block table for every tile the theater's `lookup` defines.
     ///
     /// `load` fetches a TMP file's bytes by filename; the app layer wraps the
@@ -134,6 +155,31 @@ mod tests {
             push_cell(&mut data, height, terrain, ramp);
         }
         data
+    }
+
+    #[test]
+    fn multiplayer_digest_follows_geometry_and_ignores_tmp_pixels() {
+        let lookup = parse_tileset_ini(
+            b"[General]\n[TileSet0000]\nFileName=clear\nTilesInSet=2\n",
+            "tem",
+        )
+        .unwrap();
+        let bytes = tmp_row(&[(1, 2, 3)]);
+        let first = TheaterTileBlocks::build(&lookup, |_| Some(bytes.clone())).multiplayer_digest();
+        let mut pixels_changed = bytes.clone();
+        *pixels_changed.last_mut().unwrap() ^= 1;
+        let same = TheaterTileBlocks::build(&lookup, |_| Some(pixels_changed.clone()))
+            .multiplayer_digest();
+        assert_eq!(first, same, "presentation pixels do not change generation");
+        assert_eq!(
+            first,
+            TheaterTileBlocks::build(&lookup, |_| Some(bytes.clone())).multiplayer_digest()
+        );
+        let other = tmp_row(&[(1, 2, 4)]);
+        assert_ne!(
+            first,
+            TheaterTileBlocks::build(&lookup, |_| Some(other.clone())).multiplayer_digest()
+        );
     }
 
     #[test]

@@ -277,6 +277,19 @@ impl MaskedX87Chop53 {
         }
     }
 
+    /// Signed32 FISTP/CVTT conversion used by Ares CRT100772B0. Unlike
+    /// Math7C5F00's qword-then-low32 route, invalid/out-of-i32 stores INT_MIN.
+    /// EMP duration corpus executes the installed conversion, including overflow.
+    pub fn fistp_i32_masked(value: MaskedX87Value) -> i32 {
+        match value.0 {
+            Value::Finite(value) => X87Chop53::ftol_i64(value)
+                .ok()
+                .and_then(|value| i32::try_from(value).ok())
+                .unwrap_or(i32::MIN),
+            Value::Infinity { .. } | Value::NaN { .. } => i32::MIN,
+        }
+    }
+
     /// FSTP binary64 with masked exceptions and chop. Finite overflow saturates
     /// to signed maximum finite; nonfinite values retain their quiet payload.
     /// Native70CF69 is one production spill consumer.

@@ -5,10 +5,13 @@
 pub mod anim;
 mod current_cell;
 mod events;
+#[cfg(test)]
+pub(crate) use events::saved_radar_fixture;
+pub(crate) use events::{ClientRadarEvents, SavedRadarEventsError};
 pub(super) mod geometry;
 mod helpers;
 mod interaction;
-pub(crate) use interaction::NativeRadarCameraTarget;
+pub(crate) use interaction::{NativeRadarCameraTarget, NativeRadarInputTarget};
 pub mod minimap;
 pub(super) mod projection;
 pub(super) mod surface;

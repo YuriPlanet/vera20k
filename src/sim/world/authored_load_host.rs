@@ -242,21 +242,12 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
         )?;
         let ground = OverlayCellAnimGround::read(terrain, &request);
         let native_unique_id = self.next_native_id()?;
-        // Residual: the load-time CellClass+0x10A the tint copies is read
-        // from the Normal profile; its initialization order against
-        // ReadMapOverlayPacks is unverified. Retail OverlayTypes declare no
-        // CellAnim.
-        let lighting = self
-            .sim
-            .session
-            .lighting()
-            .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
-            .into();
+        // The common constructor publishes the original cell's light read
+        // into the same ordered initialization timeline as later buildings.
         self.sim.construct_overlay_cell_anim(
             self.rules,
             request,
             ground,
-            lighting,
             AnimConstructorInput::AssignedIdentity(native_unique_id),
         )?;
         Ok(())
@@ -276,7 +267,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
 
     fn drain_deferred(&mut self) -> Result<(), Self::Error> {
         self.sim.process_pending_delete_with(
-            Some(self.rules),
+            self.rules,
             None,
             crate::sim::world::FrameEffects::default(),
             0,
@@ -300,10 +291,10 @@ mod tests {
     fn load_rules() -> RuleSet {
         let art_ini = IniFile::from_str(
             "[LATE]\nLayer=ground\nShadow=no\nRate=900\nStartSound=TileStart\n\
-             [MISSING]\nImage=ABSENT\n",
+             [MALFORMED]\nImage=BROKEN\n",
         );
         let processed =
-            RulesLayerStack::new(IniFile::from_str("[Animations]\n0=LATE\n1=MISSING\n"))
+            RulesLayerStack::new(IniFile::from_str("[Animations]\n0=LATE\n1=MALFORMED\n"))
                 .process_with_fixed_art(&art_ini)
                 .expect("process canonical ART read admission");
         let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
@@ -317,6 +308,9 @@ mod tests {
         // The bounds binder consumes this SHP header; no pixel decode is
         // involved in this synthetic constructor/ownership regression.
         root.write("LATE.SHP", &[0, 0, 1, 0, 1, 0, 2, 0]);
+        // Missing images are valid native null images. A malformed signed
+        // frame count still exercises the strict pre-constructor failure.
+        root.write("BROKEN.SHP", &[0, 0, 1, 0, 1, 0, 255, 255]);
         let assets = AssetManager::from_loose_root_for_test(root.path());
         let request = TerrainTileAnimation {
             rx: 1,
@@ -357,7 +351,7 @@ mod tests {
         assert_eq!(anim.z_adjust(), -7);
         assert!(anim.terrain_attached() && anim.use_cell_drawer() && anim.start_sound_active());
         assert_eq!(
-            sim.anim_display_layer(id, Some(&rules)),
+            sim.anim_display_layer(id, &rules),
             Some(DisplayLayer::GROUND)
         );
         assert_eq!(sim.substrate.display.members(DisplayLayer::GROUND), &[id]);
@@ -399,16 +393,16 @@ mod tests {
         assert_eq!(restored.rng_state(), sim.rng_state());
         assert_eq!(restored.state_hash(), sim.state_hash());
         assert_eq!(
-            restored.anim_display_layer(id, Some(&rules)),
+            restored.anim_display_layer(id, &rules),
             Some(DisplayLayer::GROUND)
         );
 
         let before_failure = sim.state_hash();
-        let mut missing = request.clone();
-        missing.anim_name = "MISSING".into();
+        let mut malformed = request.clone();
+        malformed.anim_name = "MALFORMED".into();
         assert!(
             SimulationAuthoredLoadHost::new(&mut sim, &mut rules, &assets, "TEM", "TEMPERATE")
-                .construct_terrain_attached_anim(&missing)
+                .construct_terrain_attached_anim(&malformed)
                 .is_err()
         );
         assert_eq!(

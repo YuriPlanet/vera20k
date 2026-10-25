@@ -2,15 +2,14 @@
 //!
 //! Native `RadarClass` owns this beside its generated radar surfaces: one
 //! array per client process, which the callers modelled so far reach only for
-//! the local player. It is therefore presentation state, never snapshot or
-//! world-hash authority. All 17 native event types share this one array
-//! (`CreateRadarEvent @ 0x0065FA70`), the one `TickRadarEvent @ 0x0065FE00`
+//! the local player. It is presentation state outside the world hash, but
+//! the live records survive saved-game loads. All 17 native event types share
+//! this one array (`CreateRadarEvent @ 0x0065FA70`), the one `TickRadarEvent @ 0x0065FE00`
 //! lifecycle and the one eight-cell review ring. The simulation only publishes
 //! `RadarEventRequest`s; admission, and the EVA lines native gates on its
 //! return value, happen here. Whether a caller tests the local player first is
-//! that caller's own rule: the Chronosphere's type-13 pair has none, and none
-//! was found before the type-12 and trigger-action call sites, which are not
-//! ported yet.
+//! that caller's own rule: the Chronosphere's type-13 pair and trigger Action55
+//! have none.
 //! Type 5 is produced render-side by the radar object tracker
 //! (`TechnoClass::IdleAnimDispatch 0x0070DAD7`).
 
@@ -18,6 +17,7 @@ use std::time::{Duration, Instant};
 
 use crate::rules::radar_event_config::RadarEventConfig;
 use crate::sim::radar::RadarEventType;
+use crate::sim::snapshot::saved_local_view::{SavedRadarEvent, SavedRadarEvents};
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering};
 
 use super::geometry::native_event_initial_radius;
@@ -303,7 +303,7 @@ fn native_decelerated_rotation_speed(current: f32, base: NativeF32Bits) -> f32 {
 /// The live event array plus the independent eight-cell review ring from
 /// `InitRadarEvent @ 0x0065FB80`. The live array is intentionally uncapped.
 #[derive(Debug)]
-pub(super) struct ClientRadarEvents {
+pub(crate) struct ClientRadarEvents {
     events: Vec<ClientRadarEvent>,
     cycle_cells: [Option<(u16, u16)>; CYCLE_RING_LEN],
     newest_ring_index: Option<usize>,
@@ -328,8 +328,88 @@ impl Default for ClientRadarEvents {
 }
 
 impl ClientRadarEvents {
-    pub fn reset_for_load_or_view(&mut self) {
+    pub fn reset_for_view_change(&mut self) {
         *self = Self::default();
+    }
+
+    /// RadarInit655B20 rebuilds the object tracker without deleting live
+    /// RadarEvents. A baseline scan must not manufacture new sightings.
+    pub fn restart_tracker_baseline(&mut self) {
+        self.suppress_until_baseline = true;
+    }
+
+    /// Save6607D0 copies the live array in insertion order. Keep animation
+    /// and dedup state, including events which have stopped drawing.
+    pub fn saved(&self) -> SavedRadarEvents {
+        SavedRadarEvents {
+            last_advanced_frame: self.last_advanced_frame,
+            events: self
+                .events
+                .iter()
+                .map(|event| SavedRadarEvent {
+                    event_type: event.event_type,
+                    cell: event.source.cell,
+                    radar_pixel: event.source.radar_pixel,
+                    created_frame: event.created_frame,
+                    radius: event.radius.to_bits(),
+                    rotation: event.rotation.to_bits(),
+                    rotation_speed: event.rotation_speed.to_bits(),
+                    fade: event.fade.to_bits(),
+                    fade_speed: event.fade_speed.to_bits(),
+                    expanding: event.expanding,
+                    needs_draw: event.needs_draw,
+                    phase_started_frame: event.phase_started_frame,
+                })
+                .collect(),
+        }
+    }
+
+    /// Load660840 replaces the outgoing array without calling CreateRadarEvent
+    /// or advancing it. PostLoad660C50 clears only the review ring. Validate
+    /// before publication so a rejected save leaves the outgoing owner intact.
+    pub(crate) fn from_saved(saved: SavedRadarEvents) -> Result<Self, SavedRadarEventsError> {
+        let events = saved
+            .events
+            .into_iter()
+            .enumerate()
+            .map(|(index, event)| {
+                let [radius, rotation, rotation_speed, fade, fade_speed] = [
+                    event.radius,
+                    event.rotation,
+                    event.rotation_speed,
+                    event.fade,
+                    event.fade_speed,
+                ]
+                .map(f32::from_bits);
+                if ![radius, rotation, rotation_speed, fade, fade_speed]
+                    .into_iter()
+                    .all(f32::is_finite)
+                {
+                    return Err(SavedRadarEventsError::NonFiniteAnimation { index });
+                }
+                Ok(ClientRadarEvent {
+                    event_type: event.event_type,
+                    source: RadarEventSource {
+                        cell: event.cell,
+                        radar_pixel: event.radar_pixel,
+                    },
+                    created_frame: event.created_frame,
+                    radius,
+                    rotation,
+                    rotation_speed,
+                    fade,
+                    fade_speed,
+                    expanding: event.expanding,
+                    needs_draw: event.needs_draw,
+                    phase_started_frame: event.phase_started_frame,
+                })
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Self {
+            events,
+            last_advanced_frame: saved.last_advanced_frame,
+            ..Self::default()
+        })
     }
 
     pub fn finish_baseline(&mut self) {
@@ -338,7 +418,7 @@ impl ClientRadarEvents {
 
     /// The tracker's type-5 feed. The first object scan after a load or view
     /// change is a baseline, not a sighting, so it creates nothing.
-    pub fn create_enemy_sensed(
+    pub(super) fn create_enemy_sensed(
         &mut self,
         source: RadarEventSource,
         current_frame: u64,
@@ -364,7 +444,7 @@ impl ClientRadarEvents {
     /// dedupes until cleanup removes it. Only accepted events enter the
     /// eight-cell review ring (`0x0065FC6E..0x0065FC99`). Native callers gate
     /// their EVA line on this return value.
-    pub fn create(
+    pub(super) fn create(
         &mut self,
         event_type: RadarEventType,
         source: RadarEventSource,
@@ -449,6 +529,16 @@ impl ClientRadarEvents {
     /// creation frame. Missed presentation frames are caught up in native
     /// frame order; an event never ticks before its own creation frame.
     pub fn advance_to_frame(&mut self, current_frame: u64, config: &RadarEventConfig) {
+        // Native 65FDD0 visits each live event once per radar AI call. A
+        // synchronous Action55 admission can follow the already-rendered
+        // frame, including after Load660840. Its catch-up must not rewind
+        // this marker and replay that frame on the next draw.
+        if self
+            .last_advanced_frame
+            .is_some_and(|frame| current_frame <= frame)
+        {
+            return;
+        }
         let first = self
             .last_advanced_frame
             .map_or(current_frame, |frame| frame.wrapping_add(1));
@@ -530,6 +620,37 @@ impl ClientRadarEvents {
     fn len(&self) -> usize {
         self.events.len()
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum SavedRadarEventsError {
+    #[error("saved radar event {index} has a non-finite animation scalar")]
+    NonFiniteAnimation { index: usize },
+    #[error("save has no retained radar event array")]
+    Missing,
+}
+
+/// A live two-alert regression fixture built through the normal admission
+/// and animation owners. Native storage semantics come from Save6607D0 /
+/// Load660840; these Rust values are not native animation goldens.
+#[cfg(test)]
+pub(crate) fn saved_radar_fixture() -> SavedRadarEvents {
+    let mut events = ClientRadarEvents::default();
+    let config = RadarEventConfig::default();
+    for (kind, cell, frame) in [
+        (RadarEventType::BaseUnderAttack, (31, 45), 90),
+        (RadarEventType::EnemyObjectSensed, (63, 18), 92),
+    ] {
+        assert!(events.admit(
+            crate::sim::radar::RadarEventRequest::new(kind, cell.0, cell.1),
+            frame,
+            Some(((74, 35), (140, 108))),
+            &config,
+        ));
+        events.advance_to_frame(frame, &config);
+    }
+    events.advance_to_frame(100, &config);
+    events.saved()
 }
 
 fn blend_color(dim: [u8; 4], bright: [u8; 4], fade: f32) -> [u8; 4] {

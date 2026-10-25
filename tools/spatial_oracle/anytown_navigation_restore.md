@@ -32,13 +32,14 @@ It then executes full original `581F50`; no Rust graph or plane is supplied.
 
 The [compressed result](anytown_navigation_restore.json.gz) preserves every native
 value. Its canonical payload SHA256 is
-`062a367873176005b65afb2b0bddb1feb9a8c4bb48f6684c63092e9d07fea9db`; the
+`faa1162b2f9bc0937282ec968ee84bb44a8df7c553c4dec38cbd1a9389f421da`; the
 [promotion receipt](anytown_navigation_restore.promotion.json) identifies the
 original uncompressed packet. All 27,225 exported cell IDs and 331 padding IDs per
 level, ordered records/edges, base planes/rows, physical cells, full RNG states,
 admission samples, frame and wrapper call order are retained. Source planes,
 cells, admissions, all RNG streams and frame remain unchanged by reconstruction.
-[Metadata](anytown_navigation_restore.meta.json) pins imported source identities.
+[Metadata](anytown_navigation_restore.meta.json) records the entry points,
+assumptions and retained seams.
 
 Replay from the repository root after supplying the local retail assets described
 in [Anytown inputs](anytown_damage/README.md):

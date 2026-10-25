@@ -1,5 +1,4 @@
-//! Render-only overlay asset-name helpers: SHP filename candidates and the
-//! debug/render overlay-name resolution over a rules `OverlayTypeRegistry`.
+//! Render-only debug overlay-name resolution over a rules `OverlayTypeRegistry`.
 //! Split out of the overlay type registry (F04); presentation-only — no sim or map
 //! consumer may depend on the env-var debug remaps here.
 
@@ -8,21 +7,6 @@ use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 use crate::rules::overlay_types::OverlayTypeRegistry;
-
-/// Generate candidate SHP filenames for an overlay name.
-///
-/// Returns a list of filenames to try in order, using the theater extension first
-/// (e.g., for temperate: `.tem`), then the generic `.shp` extension.
-/// Both lowercase and original case are tried.
-pub fn overlay_shp_candidates(name: &str, theater_ext: &str) -> Vec<String> {
-    let lower: String = name.to_lowercase();
-    vec![
-        format!("{}.{}", lower, theater_ext),
-        format!("{}.shp", lower),
-        format!("{}.{}", name, theater_ext),
-        format!("{}.shp", name),
-    ]
-}
 
 /// Optional debug remap for problematic resource overlays.
 ///
@@ -127,14 +111,5 @@ mod tests {
             assert_eq!(Some(name.as_str()), reg.name(overlay_id));
         }
         assert!(!names.contains_key(&0xF0), "unregistered index");
-    }
-
-    #[test]
-    fn test_shp_candidates() {
-        let names: Vec<String> = overlay_shp_candidates("GEM01", "tem");
-        assert_eq!(names[0], "gem01.tem");
-        assert_eq!(names[1], "gem01.shp");
-        assert_eq!(names[2], "GEM01.tem");
-        assert_eq!(names[3], "GEM01.shp");
     }
 }

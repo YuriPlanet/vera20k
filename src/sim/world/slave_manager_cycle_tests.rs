@@ -495,7 +495,7 @@ fn deploy_and_undeploy_hand_the_slave_manager_over() {
         .finish_pack_up_for_test();
     sim.visit_building_down(
         yarefn,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     );
@@ -661,10 +661,7 @@ fn retail_rules_feed_the_slave_refinery_relocation() {
     let refinery = rules.object("YAREFN").expect("YAREFN");
     assert_eq!(refinery.undeploys_into.as_deref(), Some("SMIN"));
     assert_eq!(refinery.deploy_sound.as_deref(), Some("SlaveMinerUndeploy"));
-    assert_eq!(
-        crate::rules::foundation::foundation_dimensions(&refinery.foundation),
-        (2, 2)
-    );
+    assert_eq!(refinery.foundation.dimensions(), (2, 2));
     let miner = rules.object("SMIN").expect("SMIN");
     assert_eq!(miner.deploys_into.as_deref(), Some("YAREFN"));
 }
@@ -734,7 +731,7 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
         .finish_pack_up_for_test();
     sim.visit_building_down(
         refinery,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     );

@@ -11,7 +11,7 @@ use winit::dpi::PhysicalSize;
 use winit::event::{MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
-use winit::window::{Fullscreen, Window, WindowAttributes, WindowId};
+use winit::window::{Window, WindowAttributes, WindowId};
 
 use crate::app::match_runtime::sim_tick;
 use crate::app::presentation::render;
@@ -31,17 +31,23 @@ use crate::ui::sidebar::{SidebarChromeLayoutSpec, SidebarTab};
 use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedMode};
 use crate::util::config::GameConfig;
 
+pub mod app_bundle;
 pub(crate) mod audio_runtime;
 pub(crate) mod campaign_defeat;
 pub(crate) mod campaign_victory;
 pub(crate) mod chinese_ui;
 pub(crate) mod chrono_screen;
 mod cncnet;
+mod cooperative_round;
 #[cfg(feature = "debug-tools")]
 pub(crate) mod debug_tools;
 pub(crate) mod diagnostics;
+/// Which screen the game opens on: the Display list's own translation between
+/// VERA's profile value and the window system's monitors.
+pub(crate) mod display_target;
 mod frame;
 pub mod frontend;
+mod game_data_check;
 mod handler;
 mod in_game;
 mod initialize;
@@ -65,6 +71,7 @@ mod ios_sidebar_art;
 mod ios_touch;
 #[cfg(any(target_os = "ios", target_os = "android"))]
 mod ios_unit_tags;
+pub(crate) mod lan_service;
 pub(crate) mod loading;
 pub(crate) mod match_audio;
 pub mod match_bootstrap;
@@ -73,6 +80,8 @@ pub(crate) mod match_runtime;
 pub(crate) mod movie_playback;
 pub(crate) mod movie_subtitles;
 pub(crate) mod persistence;
+/// The build description's native version metadata (`Phobos.version.h`).
+pub(crate) mod phobos_version;
 pub(crate) mod presentation;
 pub(crate) mod process_assets;
 #[cfg(feature = "telemetry-dashboard")]
@@ -110,11 +119,25 @@ mod window_icon;
 /// Main window title. The single-instance gate finds a running copy's window by
 /// this exact title, so `main` hands the same constant to
 /// `util::single_instance::acquire`.
-pub const WINDOW_TITLE: &str = if crate::rules::ARES_ENABLED {
-    "VERA20K [Ares]"
-} else {
-    "VERA20K"
+pub const WINDOW_TITLE: &str = match (
+    crate::rules::ARES_ENABLED,
+    crate::rules::PHOBOS_ENABLED,
+    crate::rules::NPATCH_ENABLED,
+) {
+    (true, true, true) => "VERA20K [Ares+Phobos+NPatch]",
+    (true, true, false) => "VERA20K [Ares+Phobos]",
+    (true, false, true) => "VERA20K [Ares+NPatch]",
+    (true, false, false) => "VERA20K [Ares]",
+    (false, true, true) => "VERA20K [Phobos+NPatch]",
+    (false, true, false) => "VERA20K [Phobos]",
+    (false, false, true) => "VERA20K [NPatch]",
+    (false, false, false) => "VERA20K",
 };
+
+/// Identity stamp shared by the status screen and the telemetry capture. Not a
+/// retail build string, and not the tactical view's version description —
+/// that one is Phobos's own text ([`phobos_version`]).
+pub(crate) const BUILD_STAMP: &str = concat!("VERA20K ", env!("CARGO_PKG_VERSION"));
 
 pub(crate) use shell_random_map::RandomMapGenerationRetention;
 pub(crate) use state::{AppState, PlatformState, reset_scenario_exit_runtime};
@@ -128,15 +151,25 @@ pub struct App {
     shell_capture: Option<crate::app::diagnostics::shell_capture::ShellCaptureSession>,
     tactical_capture:
         Option<crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession>,
+    /// Render admission for hidden captures; service events may wake earlier.
+    capture_render_not_before: Option<Instant>,
     /// Retained until `resumed()` so the profile's pre-window Video read can
     /// use the command-line screen fields as its current-value defaults.
     startup_options: crate::app::frontend::startup_options::RetailStartupOptions,
     spawn_request: Option<crate::app::frontend::cncnet_spawn::SpawnRequest>,
+    replay_request: Option<crate::app::frontend::launch::ReplayLaunchRequest>,
     startup_failure: Option<String>,
     #[cfg(any(target_os = "ios", target_os = "android"))]
     ios_touch: ios_touch::IosTouchPointer,
     #[cfg(any(target_os = "ios", target_os = "android"))]
     ios_suspended: bool,
+    /// Make sure config.toml names a game folder before the window opens
+    /// ([`app_bundle`]).
+    ask_for_game_folder: bool,
+    /// Set while `window_event` re-dispatches the mouse events a touch meant
+    /// (`input::touch`). A synthetic `CursorMoved` must not pass for the OS
+    /// pointer, which is what clears the touch-parked cursor.
+    dispatching_touch: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -180,13 +213,17 @@ impl App {
             state: None,
             shell_capture: None,
             tactical_capture: None,
+            capture_render_not_before: None,
             startup_options,
             spawn_request: None,
+            replay_request: None,
             startup_failure: None,
             #[cfg(any(target_os = "ios", target_os = "android"))]
             ios_touch: Default::default(),
             #[cfg(any(target_os = "ios", target_os = "android"))]
             ios_suspended: false,
+            ask_for_game_folder: false,
+            dispatching_touch: false,
         }
     }
 
@@ -199,13 +236,17 @@ impl App {
                 crate::app::diagnostics::shell_capture::ShellCaptureSession::new(request),
             ),
             tactical_capture: None,
+            capture_render_not_before: None,
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
             spawn_request: None,
+            replay_request: None,
             startup_failure: None,
             #[cfg(any(target_os = "ios", target_os = "android"))]
             ios_touch: Default::default(),
             #[cfg(any(target_os = "ios", target_os = "android"))]
             ios_suspended: false,
+            ask_for_game_folder: false,
+            dispatching_touch: false,
         }
     }
 
@@ -220,14 +261,31 @@ impl App {
                     request,
                 ),
             ),
+            capture_render_not_before: None,
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
             spawn_request: None,
+            replay_request: None,
             startup_failure: None,
             #[cfg(any(target_os = "ios", target_os = "android"))]
             ios_touch: Default::default(),
             #[cfg(any(target_os = "ios", target_os = "android"))]
             ios_suspended: false,
+            ask_for_game_folder: false,
+            dispatching_touch: false,
         }
+    }
+
+    /// Before the window opens, ask for the Yuri's Revenge folder until
+    /// config.toml names one: a launch from the macOS app bundle or the Linux
+    /// AppImage.
+    pub fn ask_for_game_folder_first(&mut self) {
+        self.ask_for_game_folder = true;
+    }
+
+    pub fn new_replay(request: crate::app::frontend::launch::ReplayLaunchRequest) -> Self {
+        let mut app = Self::default();
+        app.replay_request = Some(request);
+        app
     }
 
     pub fn finish_capture(&mut self) -> Result<()> {

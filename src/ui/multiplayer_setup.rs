@@ -16,6 +16,10 @@ use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, Menu
 use crate::ui::shell::trackbar::{TrackbarHold, TrackbarRange};
 use crate::ui::skirmish_shell::{SkirmishStatics, SkirmishValidationModalState};
 
+pub(crate) const VISIBLE_SETUP_ROWS: usize = 8;
+// VERA-only roster navigation; original dialog/control IDs retain their role.
+pub(crate) const PREVIOUS_ROWS: u16 = 0x7F00;
+pub(crate) const NEXT_ROWS: u16 = 0x7F01;
 pub(crate) const START: u16 = 0x588;
 pub(crate) const ACCEPT: u16 = 0x59F;
 pub(crate) const BACK: u16 = 2;
@@ -236,6 +240,8 @@ pub(crate) struct SetupChoice {
 #[derive(Debug, Clone)]
 pub(crate) struct SetupCombo {
     pub(crate) id: u16,
+    /// Session row displayed by this resource control, independent of its page.
+    pub(crate) row: u8,
     pub(crate) enabled: bool,
     pub(crate) visible: bool,
     pub(crate) selected: Option<usize>,
@@ -314,9 +320,15 @@ pub(crate) struct SetupRowIcon {
 }
 #[derive(Debug, Clone)]
 pub(crate) struct SetupView {
+    pub(crate) first_row: usize,
+    pub(crate) row_count: usize,
     pub(crate) dialog: SetupDialog,
     pub(crate) host: bool,
     pub(crate) locked: bool,
+    /// C2's Short Game is held on in a tournament or clan room.
+    pub(crate) short_game_locked: bool,
+    /// The team header `0x794`; hidden in a clan room.
+    pub(crate) team_header: bool,
     pub(crate) accept_enabled: bool,
     pub(crate) start_requested: bool,
     pub(crate) combos: Vec<SetupCombo>,
@@ -352,7 +364,10 @@ impl SetupView {
             BACK | CHAT | CHAT_LOG => true,
             START | CHOOSE_MAP => self.host,
             PAGE => self.dialog.wol(),
+            PREVIOUS_ROWS => self.first_row > 0,
+            NEXT_ROWS => self.first_row + VISIBLE_SETUP_ROWS < self.row_count,
             ACCEPT => !self.host && self.accept_enabled,
+            0x54E if self.short_game_locked => false,
             id if CHECKBOXES.contains(&id) => self.host,
             id => {
                 self.combo(id)
@@ -387,10 +402,14 @@ pub(crate) enum SetupAction {
     /// C2/C9 0x3ED sends the chat edit's text as an action message.
     Emote,
     Page,
+    RosterPage {
+        forward: bool,
+    },
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct MultiplayerSetupState {
+    first_visible_row: usize,
     pub(crate) chat: LanChatState,
     pub(crate) notice: Option<SkirmishValidationModalState>,
     pub(crate) buttons: ShellButtonInteraction<u16>,
@@ -405,6 +424,7 @@ pub(crate) struct MultiplayerSetupState {
 impl Default for MultiplayerSetupState {
     fn default() -> Self {
         Self {
+            first_visible_row: 0,
             chat: {
                 let mut chat = LanChatState::default();
                 chat.edit.focused = true;
@@ -423,6 +443,24 @@ impl Default for MultiplayerSetupState {
     }
 }
 impl MultiplayerSetupState {
+    pub(crate) fn first_row(&self, row_count: usize) -> usize {
+        let last = row_count.saturating_sub(1) / VISIBLE_SETUP_ROWS * VISIBLE_SETUP_ROWS;
+        self.first_visible_row.min(last)
+    }
+    pub(crate) fn show_row(&mut self, row: usize) {
+        self.first_visible_row = row / VISIBLE_SETUP_ROWS * VISIBLE_SETUP_ROWS;
+    }
+    pub(crate) fn page_rows(&mut self, row_count: usize, forward: bool) {
+        let current = self.first_row(row_count);
+        self.first_visible_row = if forward {
+            current.saturating_add(VISIBLE_SETUP_ROWS)
+        } else {
+            current.saturating_sub(VISIBLE_SETUP_ROWS)
+        };
+        self.first_visible_row = self.first_row(row_count);
+        self.popup.close();
+        self.cancel_pointer();
+    }
     pub(crate) fn accept_highlight(&mut self, enabled: bool, now: Instant) -> bool {
         if !enabled {
             self.accept_flash_started = None;
@@ -473,6 +511,8 @@ impl MultiplayerSetupState {
 pub(crate) struct MultiplayerSetupLayout {
     pub(crate) page: MenuPageLayout,
     pub(crate) combos: [[RectPx; 5]; 8],
+    pub(crate) roster_navigation: [RectPx; 2],
+    pub(crate) roster_page_label: RectPx,
     pub(crate) flags: [RectPx; 8],
     pub(crate) acceptance: [RectPx; 8],
     /// C2/C9 ping statics and emote button; `None` on BC/BD.
@@ -582,6 +622,8 @@ impl MultiplayerSetupLayout {
         Self {
             page,
             combos,
+            roster_navigation: [rect(74, 230, 90, 18), rect(521, 230, 90, 18)],
+            roster_page_label: rect(174, 230, 337, 18),
             flags: std::array::from_fn(|row| rect(240, 36 + row as i32 * 26, 49, 21)),
             acceptance: std::array::from_fn(|row| {
                 if dialog.wol() {
@@ -636,6 +678,28 @@ impl MultiplayerSetupLayout {
             )),
         }
     }
+    /// Make room for navigation only on an extended roster. Resource placement
+    /// of all ordinary <=8-player dialogs remains unchanged.
+    pub(crate) fn arrange_extended_rows(&mut self) {
+        let scale = self.page.scale;
+        for row in 0..VISIBLE_SETUP_ROWS {
+            let shift = row as i32 * 2;
+            let move_up = |rect| {
+                scale.derive_rect(rect, |mut rect| {
+                    rect.y -= shift;
+                    rect
+                })
+            };
+            for rect in &mut self.combos[row] {
+                *rect = move_up(*rect);
+            }
+            self.flags[row] = move_up(self.flags[row]);
+            self.acceptance[row] = move_up(self.acceptance[row]);
+            if let Some(icons) = &mut self.ping_icons {
+                icons[row] = move_up(icons[row]);
+            }
+        }
+    }
     pub(crate) fn control_rect(&self, id: u16) -> Option<RectPx> {
         if let Some((column, row)) = SetupColumn::decode(id) {
             return Some(self.combos[row][column as usize]);
@@ -656,6 +720,8 @@ impl MultiplayerSetupLayout {
             return Some(icons[usize::from(id - PING_ICONS)]);
         }
         match id {
+            PREVIOUS_ROWS => Some(self.roster_navigation[0]),
+            NEXT_ROWS => Some(self.roster_navigation[1]),
             CHAT => Some(self.chat),
             CHAT_LOG => Some(self.chat_log),
             EMOTE => self.emote,
@@ -676,6 +742,8 @@ impl MultiplayerSetupLayout {
             )
             .chain(CHECKBOXES)
             .chain([CHAT, CHAT_LOG])
+            .chain((view.row_count > VISIBLE_SETUP_ROWS).then_some(PREVIOUS_ROWS))
+            .chain((view.row_count > VISIBLE_SETUP_ROWS).then_some(NEXT_ROWS))
             .chain(self.emote.map(|_| EMOTE))
             .chain(self.page.buttons.iter().map(|button| button.id))
             .find(|id| {
@@ -740,6 +808,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn roster_paging_reaches_last_player_and_clears_stale_popup() {
+        let mut ui = MultiplayerSetupState::default();
+        ui.show_row(29);
+        ui.popup.open(SetupColumn::Country.control(5), Some(0));
+        assert_eq!(ui.first_row(30), 24);
+        ui.page_rows(30, false);
+        assert_eq!(ui.first_row(30), 16);
+        assert!(ui.popup.control.is_none());
+        ui.page_rows(30, true);
+        ui.page_rows(30, true);
+        assert_eq!(ui.first_row(30), 24);
+        assert_eq!(ui.first_row(8), 0, "small maps return to the first page");
+        let mut layout = MultiplayerSetupLayout::new(
+            SetupDialog {
+                host: true,
+                flavor: SetupFlavor::Lan,
+            },
+            800,
+            600,
+            false,
+        );
+        layout.arrange_extended_rows();
+        assert!(layout.combos[7][0].y + layout.combos[7][0].h <= layout.roster_navigation[0].y);
+    }
+
+    #[test]
     fn accept_prompt_flash_starts_off_stops_and_restarts_at_its_own_phase() {
         let mut ui = MultiplayerSetupState::default();
         let now = Instant::now();
@@ -757,6 +851,10 @@ mod tests {
         ))
         .unwrap();
         for case in corpus["setup_layouts"].as_array().unwrap() {
+            // BC6 shares the fixture; ui::coop_score_shell owns its layout.
+            if case["dialog"] == 0xBC6 {
+                continue;
+            }
             let dialog = SetupDialog {
                 host: case["dialog"] == 0xBC,
                 flavor: SetupFlavor::Lan,
@@ -802,6 +900,9 @@ mod tests {
         ))
         .unwrap();
         for case in corpus["setup_help"].as_array().unwrap() {
+            if case["dialog"] == 0xBC6 {
+                continue;
+            }
             assert_eq!(
                 tooltip_key(
                     SetupDialog {

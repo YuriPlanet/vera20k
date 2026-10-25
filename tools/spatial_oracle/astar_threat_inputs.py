@@ -5,7 +5,7 @@ original readers; supplied lexical caches are not full native Scenario loading.
 """
 from pathlib import Path
 import struct
-from tools.native_oracle import NATIVE_SHA256, SCRATCH, call, provenance, configured_gamemd, image_bytes, file_span
+from tools.native_oracle import SCRATCH, call, provenance, configured_gamemd, image_bytes, file_span
 from tools.sidebar_oracle.stock import mix, mix_hash
 from tools.spatial_oracle.astar_mtnk_inputs import RecordedInputs, sha
 from tools.spatial_oracle.anytown_damage import navigation_inputs, next_family_native
@@ -113,7 +113,7 @@ def generate():
             getter.append(dict(coefficient_bits=f'{bits:016x}',team_flag=flag,returned_bits=f"{result['st0_bits']:016x}"))
     rng_after=[bytes(u.mem_read(p,1012)).hex() for p in rngs]
     assert rng_before==rng_after and text_before==sha(bytes(u.mem_read(0x401000,0x3E0000)))
-    return dict(schema_version=1,native_sha256=NATIVE_SHA256,scope=__doc__,type_readers=readers,team_constructor_default=ctor,team_readers=team_readers,retail_aimd=dict(source='ra2md.mix/localmd.mix/AIMD.INI',outer_sha256=sha(archive),inner_sha256=sha(local),sha256=sha(raw),teams=retail),getter=getter,spatial=spatial_controls(),rng_before=rng_before,rng_after=rng_after,code_unchanged=True)
+    return dict(schema_version=1,scope=__doc__,type_readers=readers,team_constructor_default=ctor,team_readers=team_readers,retail_aimd=dict(source='ra2md.mix/localmd.mix/AIMD.INI',outer_sha256=sha(archive),inner_sha256=sha(local),sha256=sha(raw),teams=retail),getter=getter,spatial=spatial_controls(),rng_before=rng_before,rng_after=rng_after,code_unchanged=True)
 
 
 def metadata():

@@ -23,9 +23,13 @@ use crate::ui::main_menu_dialogs::options::OptionsPage;
 use crate::ui::main_menu_shell::MainMenuMovieBase;
 use crate::ui::shell::static_reveal::Kind1PaintWindow;
 
+pub(crate) mod fault_files;
+pub(crate) mod loading_host_loss;
+pub(crate) mod loading_runtime;
 mod movies;
 mod score;
 mod skirmish;
+pub(crate) mod startup_host_loss;
 pub(crate) use skirmish::PresentedShell;
 
 pub(crate) const CAPTURE_FLAG: &str = "--shell-capture";
@@ -57,6 +61,10 @@ const CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART_SHOWN: &str = "campaign-all1-abort-
 const CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART: &str = "campaign-all1-abort-restart";
 const CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_PROMPT: &str = "campaign-all1-defeat-replay-prompt";
 const CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_YES: &str = "campaign-all1-defeat-replay-yes";
+const CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_NO: &str = "campaign-all1-defeat-replay-no";
+const CHECKPOINT_CAMPAIGN_ALL1_SAVED_VICTORY: &str = "campaign-all1-saved-victory";
+const CHECKPOINT_CAMPAIGN_ALL1_SAVED_RESTART: &str = "campaign-all1-saved-restart";
+const CHECKPOINT_CAMPAIGN_ALL1_MENU_REPLAY: &str = "campaign-all1-menu-replay";
 const CHECKPOINT_CAMPAIGN_ALL1_RESTATE: &str = "campaign-all1-restate";
 const CHECKPOINT_CAMPAIGN_SOV1_OPENING_LOCKED: &str = "campaign-sov1-opening-locked";
 const CHECKPOINT_CAMPAIGN_SOV1_OPENING_PAN: &str = "campaign-sov1-opening-pan";
@@ -67,11 +75,12 @@ const CHECKPOINT_CAMPAIGN_SOV1_OPENING_RESTORE_UNLOCKED: &str =
     "campaign-sov1-opening-restore-unlocked";
 const CHECKPOINT_CAMPAIGN_ALL1_OPENING_LOAD_UNLOCKED: &str = "campaign-all1-opening-load-unlocked";
 const CHECKPOINT_CAMPAIGN_ALL1_OPENING_TICK_PREFIX: &str = "campaign-all1-opening-tick-";
+const CHECKPOINT_CAMPAIGN_SOV1_OPENING_TICK_PREFIX: &str = "campaign-sov1-opening-tick-";
 const CHECKPOINT_CAMPAIGN_BACK_RETURN: &str = "campaign-back-return";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY: &str = "load-saved-game-0xb7-steady";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX: &str = "load-saved-game-0xb7-entry-tick-";
 const CHECKPOINT_OPTIONS_0XD5_STEADY: &str = "options-0xd5-steady";
-/// VERA20K Options pressed on the settled `0xD5`: VERA's page settled.
+/// Vera Options pressed on the settled `0xD5`: VERA's page settled.
 const CHECKPOINT_OPTIONS_VERA_STEADY: &str = "options-vera-steady";
 const NETWORK_OPTIONS_CHECKPOINTS: [(&str, movies::NetworkOptionsTarget); 7] = [
     (
@@ -105,6 +114,7 @@ const NETWORK_OPTIONS_CHECKPOINTS: [(&str, movies::NetworkOptionsTarget); 7] = [
 ];
 const CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE: &str = "main-menu-0xe2-network-bounce";
 const CHECKPOINT_WOL_0X10E_STEADY: &str = "wol-0x10e-steady";
+const CHECKPOINT_WOL_ONLINE_WELCOME_STEADY: &str = "wol-online-welcome-steady";
 const CHECKPOINT_WOL_0X10E_ENTRY_PREFIX: &str = "wol-0x10e-entry-tick-";
 const CHECKPOINT_WOL_0X10E_HOVER_QUICK_MATCH: &str = "wol-0x10e-hover-quick-match";
 const CHECKPOINT_WOL_0X10E_API_MISSING: &str = "wol-0x10e-api-missing";
@@ -235,6 +245,8 @@ pub enum ShellCaptureCheckpoint {
     /// The same route's first rendered InGame frame, with simulation frozen
     /// at tick zero. Authored opening triggers (#1308) are not certified.
     CampaignFirstLive(crate::ui::campaign_shell::CampaignSide),
+    CampaignInitialSaved(crate::ui::campaign_shell::CampaignSide),
+    CampaignExplicitFirstLive(&'static str),
     /// First installed campaign, then physical Escape/B5 Abort/B6 Leave and
     /// ordinary queued EXIT/audio teardown, read back on the settled main menu.
     CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide),
@@ -255,7 +267,7 @@ pub enum ShellCaptureCheckpoint {
     LoadSavedGame0xB7Entry(u32),
     /// Main Menu -> Options: `0xD5` settled.
     Options0xD5Steady,
-    /// Then VERA20K Options: VERA's page settled.
+    /// Then Vera Options: VERA's page settled.
     OptionsVeraSteady,
     /// Ordinary D5 -> D7 with explicit service/settings inputs.
     NetworkOptions(movies::NetworkOptionsTarget),
@@ -266,6 +278,8 @@ pub enum ShellCaptureCheckpoint {
     MainMenu0xE2NetworkBounce,
     /// Main Menu -> Internet: `0x10E` settled.
     Wol0x10ESteady,
+    /// The actual online welcome, without entering login or reading credentials.
+    WolOnlineWelcomeSteady,
     /// Its entry slide held at one tick (`wol-0x10e-entry-tick-<N>`).
     Wol0x10EEntry(u32),
     /// Settled with the pointer on Quick Match.
@@ -392,6 +406,54 @@ impl ShellCaptureCheckpoint {
                 tick,
             )));
         }
+        if let Some(tick) = value.strip_prefix(CHECKPOINT_CAMPAIGN_SOV1_OPENING_TICK_PREFIX) {
+            let tick: u64 = tick
+                .parse()
+                .context("campaign encounter tick is not an integer")?;
+            ensure!(
+                (1..=10000).contains(&tick),
+                "campaign encounter tick must be 1..=10000"
+            );
+            return Ok(Self::CampaignOpening(movies::OpeningTarget::SovietTick(
+                tick,
+            )));
+        }
+        if let Some(tick) = value.strip_prefix("campaign-sov1-navy-tick-") {
+            let tick: u64 = tick
+                .parse()
+                .context("campaign encounter tick is not an integer")?;
+            ensure!(
+                (1100..=10000).contains(&tick),
+                "campaign encounter tick must be 1100..=10000"
+            );
+            return Ok(Self::CampaignOpening(movies::OpeningTarget::SovietNavy(
+                tick,
+            )));
+        }
+        if let Some(tick) = value.strip_prefix("campaign-sov07-groups-tick-") {
+            let tick: u64 = tick
+                .parse()
+                .context("campaign group tick is not an integer")?;
+            ensure!(
+                (301..=10000).contains(&tick),
+                "campaign group tick must be 301..=10000"
+            );
+            return Ok(Self::CampaignOpening(movies::OpeningTarget::SovietGroups(
+                tick,
+            )));
+        }
+        if let Some(tick) = value.strip_prefix("campaign-sov02-fortresses-tick-") {
+            let tick: u64 = tick
+                .parse()
+                .context("campaign fortress tick is not an integer")?;
+            ensure!(
+                (301..=10000).contains(&tick),
+                "campaign fortress tick must be 301..=10000"
+            );
+            return Ok(Self::CampaignOpening(
+                movies::OpeningTarget::SovietFortresses(tick),
+            ));
+        }
         if let Some(frame) = value.strip_prefix(CHECKPOINT_CREDITS_ROLL_FRAME_PREFIX) {
             let frame: u64 = frame
                 .parse()
@@ -485,7 +547,7 @@ impl ShellCaptureCheckpoint {
                 EXPECTED_HEIGHT as i32,
             )
             .tile_count as u32;
-            let last = kind.column(rows).total_ticks() - 1;
+            let last = kind.column(rows, None).total_ticks() - 1;
             ensure!(tick <= last, "{value}: the slide shows ticks 0..={last}");
             return Ok(checkpoint(tick));
         }
@@ -546,6 +608,36 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE => Ok(Self::CampaignFirstLive(
                 crate::ui::campaign_shell::CampaignSide::Soviet,
             )),
+            "campaign-sov02-objective-expiry" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::ObjectiveExpiry,
+            )),
+            "campaign-all1-defeat-replay-enter" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::DefeatReturnedEnter,
+            )),
+            "campaign-all1-defeat-replay-numpad-enter" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::DefeatReturnedNumpadEnter,
+            )),
+            "campaign-all1-defeat-replay-escape" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::DefeatReturnedEscape,
+            )),
+            "campaign-all1-defeat-replay-repeated-enter" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::DefeatReturnedRepeatedEnter,
+            )),
+            "campaign-sov05-first-live-frame" => {
+                Ok(Self::CampaignExplicitFirstLive("SOV05UMD.MAP"))
+            }
+            "campaign-sov07-first-live-frame" => {
+                Ok(Self::CampaignExplicitFirstLive("SOV07TMD.MAP"))
+            }
+            "campaign-all02-first-live-frame" => {
+                Ok(Self::CampaignExplicitFirstLive("ALL02UMD.MAP"))
+            }
+            "campaign-all1-initial-save" => Ok(Self::CampaignInitialSaved(
+                crate::ui::campaign_shell::CampaignSide::Allied,
+            )),
+            "campaign-sov1-initial-save" => Ok(Self::CampaignInitialSaved(
+                crate::ui::campaign_shell::CampaignSide::Soviet,
+            )),
             CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN => Ok(Self::CampaignAbortReturn(
                 crate::ui::campaign_shell::CampaignSide::Allied,
             )),
@@ -561,9 +653,36 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_PROMPT => {
                 Ok(Self::CampaignRestart(movies::RestartTarget::DefeatPrompt))
             }
+            CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_NO => {
+                Ok(Self::CampaignRestart(movies::RestartTarget::DefeatReturned))
+            }
             CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_YES => {
                 Ok(Self::CampaignRestart(movies::RestartTarget::DefeatReplayed))
             }
+            CHECKPOINT_CAMPAIGN_ALL1_SAVED_VICTORY => {
+                Ok(Self::CampaignRestart(movies::RestartTarget::SavedVictory))
+            }
+            "campaign-sov6-alternate-home-victory" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::AlternateHomeVictory,
+            )),
+            "campaign-sov1-inherited-timer-victory" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::InheritedTimerVictory,
+            )),
+            "campaign-mapselect-failure-prompt" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::MapSelectFailurePrompt,
+            )),
+            "campaign-mapselect-failure-replayed" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::MapSelectFailureReplayed,
+            )),
+            "campaign-mapselect-failure-escape" => Ok(Self::CampaignRestart(
+                movies::RestartTarget::MapSelectFailureEscape,
+            )),
+            CHECKPOINT_CAMPAIGN_ALL1_SAVED_RESTART => Ok(Self::CampaignRestart(
+                movies::RestartTarget::SavedAbortRestarted,
+            )),
+            CHECKPOINT_CAMPAIGN_ALL1_MENU_REPLAY => Ok(Self::CampaignRestart(
+                movies::RestartTarget::MenuDefeatReplayed,
+            )),
             CHECKPOINT_CAMPAIGN_ALL1_RESTATE => {
                 Ok(Self::CampaignRestart(movies::RestartTarget::Restate))
             }
@@ -582,6 +701,21 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_SOV1_OPENING_UNLOCKED => {
                 Ok(Self::CampaignOpening(movies::OpeningTarget::Unlocked))
             }
+            "campaign-sov1-opening-realtime-unlocked" => Ok(Self::CampaignOpening(
+                movies::OpeningTarget::RealtimeUnlocked,
+            )),
+            "campaign-sov1-opening-timer-running" => {
+                Ok(Self::CampaignOpening(movies::OpeningTarget::TimerRunning))
+            }
+            "campaign-sov1-opening-timer-expired" => {
+                Ok(Self::CampaignOpening(movies::OpeningTarget::TimerExpired))
+            }
+            "campaign-sov2-radar-alert" => {
+                Ok(Self::CampaignOpening(movies::OpeningTarget::RadarAlert))
+            }
+            "campaign-sov2-radar-restored" => {
+                Ok(Self::CampaignOpening(movies::OpeningTarget::RadarRestored))
+            }
             CHECKPOINT_CAMPAIGN_SOV1_OPENING_RESTORE_UNLOCKED => Ok(Self::CampaignOpening(
                 movies::OpeningTarget::RestoreUnlocked,
             )),
@@ -594,6 +728,7 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_OPTIONS_VERA_STEADY => Ok(Self::OptionsVeraSteady),
             CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE => Ok(Self::MainMenu0xE2NetworkBounce),
             CHECKPOINT_WOL_0X10E_STEADY => Ok(Self::Wol0x10ESteady),
+            CHECKPOINT_WOL_ONLINE_WELCOME_STEADY => Ok(Self::WolOnlineWelcomeSteady),
             CHECKPOINT_WOL_0X10E_HOVER_QUICK_MATCH => Ok(Self::Wol0x10EHoverQuickMatch),
             CHECKPOINT_WOL_0X10E_API_MISSING => Ok(Self::Wol0x10EApiMissing),
             CHECKPOINT_WOL_0X10E_BACK => Ok(Self::Wol0x10EBack),
@@ -656,6 +791,15 @@ impl ShellCaptureCheckpoint {
             Self::CampaignFirstLive(crate::ui::campaign_shell::CampaignSide::Soviet) => {
                 CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE
             }
+            Self::CampaignExplicitFirstLive("SOV05UMD.MAP") => "campaign-sov05-first-live-frame",
+            Self::CampaignExplicitFirstLive("ALL02UMD.MAP") => "campaign-all02-first-live-frame",
+            Self::CampaignExplicitFirstLive(_) => "campaign-sov07-first-live-frame",
+            Self::CampaignInitialSaved(crate::ui::campaign_shell::CampaignSide::Allied) => {
+                "campaign-all1-initial-save"
+            }
+            Self::CampaignInitialSaved(crate::ui::campaign_shell::CampaignSide::Soviet) => {
+                "campaign-sov1-initial-save"
+            }
             Self::CampaignAbortReturn(crate::ui::campaign_shell::CampaignSide::Allied) => {
                 CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN
             }
@@ -668,11 +812,53 @@ impl ShellCaptureCheckpoint {
             Self::CampaignRestart(movies::RestartTarget::AbortRestarted) => {
                 CHECKPOINT_CAMPAIGN_ALL1_ABORT_RESTART
             }
+            Self::CampaignRestart(movies::RestartTarget::ObjectiveExpiry) => {
+                "campaign-sov02-objective-expiry"
+            }
             Self::CampaignRestart(movies::RestartTarget::DefeatPrompt) => {
                 CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_PROMPT
             }
+            Self::CampaignRestart(movies::RestartTarget::DefeatReturned) => {
+                CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_NO
+            }
+            Self::CampaignRestart(movies::RestartTarget::DefeatReturnedEnter) => {
+                "campaign-all1-defeat-replay-enter"
+            }
+            Self::CampaignRestart(movies::RestartTarget::DefeatReturnedNumpadEnter) => {
+                "campaign-all1-defeat-replay-numpad-enter"
+            }
+            Self::CampaignRestart(movies::RestartTarget::DefeatReturnedEscape) => {
+                "campaign-all1-defeat-replay-escape"
+            }
+            Self::CampaignRestart(movies::RestartTarget::DefeatReturnedRepeatedEnter) => {
+                "campaign-all1-defeat-replay-repeated-enter"
+            }
             Self::CampaignRestart(movies::RestartTarget::DefeatReplayed) => {
                 CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_YES
+            }
+            Self::CampaignRestart(movies::RestartTarget::SavedVictory) => {
+                CHECKPOINT_CAMPAIGN_ALL1_SAVED_VICTORY
+            }
+            Self::CampaignRestart(movies::RestartTarget::AlternateHomeVictory) => {
+                "campaign-sov6-alternate-home-victory"
+            }
+            Self::CampaignRestart(movies::RestartTarget::InheritedTimerVictory) => {
+                "campaign-sov1-inherited-timer-victory"
+            }
+            Self::CampaignRestart(movies::RestartTarget::MapSelectFailurePrompt) => {
+                "campaign-mapselect-failure-prompt"
+            }
+            Self::CampaignRestart(movies::RestartTarget::MapSelectFailureReplayed) => {
+                "campaign-mapselect-failure-replayed"
+            }
+            Self::CampaignRestart(movies::RestartTarget::MapSelectFailureEscape) => {
+                "campaign-mapselect-failure-escape"
+            }
+            Self::CampaignRestart(movies::RestartTarget::SavedAbortRestarted) => {
+                CHECKPOINT_CAMPAIGN_ALL1_SAVED_RESTART
+            }
+            Self::CampaignRestart(movies::RestartTarget::MenuDefeatReplayed) => {
+                CHECKPOINT_CAMPAIGN_ALL1_MENU_REPLAY
             }
             Self::CampaignRestart(movies::RestartTarget::Restate) => {
                 CHECKPOINT_CAMPAIGN_ALL1_RESTATE
@@ -692,6 +878,9 @@ impl ShellCaptureCheckpoint {
             Self::CampaignOpening(movies::OpeningTarget::Unlocked) => {
                 CHECKPOINT_CAMPAIGN_SOV1_OPENING_UNLOCKED
             }
+            Self::CampaignOpening(movies::OpeningTarget::RealtimeUnlocked) => {
+                "campaign-sov1-opening-realtime-unlocked"
+            }
             Self::CampaignOpening(movies::OpeningTarget::RestoreUnlocked) => {
                 CHECKPOINT_CAMPAIGN_SOV1_OPENING_RESTORE_UNLOCKED
             }
@@ -700,6 +889,28 @@ impl ShellCaptureCheckpoint {
             }
             Self::CampaignOpening(movies::OpeningTarget::AlliedTick(_)) => {
                 "campaign-all1-opening-tick"
+            }
+            Self::CampaignOpening(movies::OpeningTarget::SovietTick(_)) => {
+                "campaign-sov1-opening-tick"
+            }
+            Self::CampaignOpening(movies::OpeningTarget::SovietNavy(_)) => {
+                "campaign-sov1-navy-tick"
+            }
+            Self::CampaignOpening(movies::OpeningTarget::SovietGroups(_)) => {
+                "campaign-sov07-groups-tick"
+            }
+            Self::CampaignOpening(movies::OpeningTarget::SovietFortresses(_)) => {
+                "campaign-sov02-fortresses-tick"
+            }
+            Self::CampaignOpening(movies::OpeningTarget::TimerRunning) => {
+                "campaign-sov1-opening-timer-running"
+            }
+            Self::CampaignOpening(movies::OpeningTarget::TimerExpired) => {
+                "campaign-sov1-opening-timer-expired"
+            }
+            Self::CampaignOpening(movies::OpeningTarget::RadarAlert) => "campaign-sov2-radar-alert",
+            Self::CampaignOpening(movies::OpeningTarget::RadarRestored) => {
+                "campaign-sov2-radar-restored"
             }
             Self::CampaignBackReturn => CHECKPOINT_CAMPAIGN_BACK_RETURN,
             Self::LoadSavedGame0xB7Steady => CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY,
@@ -729,6 +940,7 @@ impl ShellCaptureCheckpoint {
             }
             Self::MainMenu0xE2NetworkBounce => CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE,
             Self::Wol0x10ESteady => CHECKPOINT_WOL_0X10E_STEADY,
+            Self::WolOnlineWelcomeSteady => CHECKPOINT_WOL_ONLINE_WELCOME_STEADY,
             Self::Wol0x10EEntry(_) => "wol-0x10e-entry",
             Self::Wol0x10EHoverQuickMatch => CHECKPOINT_WOL_0X10E_HOVER_QUICK_MATCH,
             Self::Wol0x10EApiMissing => CHECKPOINT_WOL_0X10E_API_MISSING,
@@ -821,9 +1033,29 @@ impl ShellCaptureCheckpoint {
                 side,
                 target: movies::CampaignStartTarget::FirstLive,
             },
+            Self::CampaignInitialSaved(side) => movies::MoviesTarget::CampaignStart {
+                side,
+                target: movies::CampaignStartTarget::InitialSaved,
+            },
+            Self::CampaignExplicitFirstLive(scenario) => movies::MoviesTarget::CampaignStart {
+                side: if scenario.starts_with("ALL") {
+                    crate::ui::campaign_shell::CampaignSide::Allied
+                } else {
+                    crate::ui::campaign_shell::CampaignSide::Soviet
+                },
+                target: movies::CampaignStartTarget::ExplicitFirstLive(scenario),
+            },
             Self::CampaignAbortReturn(side) => movies::MoviesTarget::CampaignStart {
                 side,
                 target: movies::CampaignStartTarget::AbortReturn,
+            },
+            Self::CampaignRestart(
+                target @ (movies::RestartTarget::ObjectiveExpiry
+                | movies::RestartTarget::AlternateHomeVictory
+                | movies::RestartTarget::InheritedTimerVictory),
+            ) => movies::MoviesTarget::CampaignStart {
+                side: crate::ui::campaign_shell::CampaignSide::Soviet,
+                target: movies::CampaignStartTarget::Restart(target),
             },
             Self::CampaignRestart(target) => movies::MoviesTarget::CampaignStart {
                 side: crate::ui::campaign_shell::CampaignSide::Allied,
@@ -842,26 +1074,37 @@ impl ShellCaptureCheckpoint {
             },
             Self::MainMenu0xE2NetworkBounce => movies::MoviesTarget::NetworkBounce,
             Self::Wol0x10ESteady => movies::MoviesTarget::WolWelcome {
+                provider: crate::app::shell_wol::WolProvider::Unavailable,
+                entry_tick: None,
+                hover: None,
+                press: movies::WolPress::None,
+            },
+            Self::WolOnlineWelcomeSteady => movies::MoviesTarget::WolWelcome {
+                provider: crate::app::shell_wol::WolProvider::Online,
                 entry_tick: None,
                 hover: None,
                 press: movies::WolPress::None,
             },
             Self::Wol0x10EEntry(tick) => movies::MoviesTarget::WolWelcome {
+                provider: crate::app::shell_wol::WolProvider::Unavailable,
                 entry_tick: Some(tick),
                 hover: None,
                 press: movies::WolPress::None,
             },
             Self::Wol0x10EHoverQuickMatch => movies::MoviesTarget::WolWelcome {
+                provider: crate::app::shell_wol::WolProvider::Unavailable,
                 entry_tick: None,
                 hover: Some(WOL_QUICK_MATCH_POINT),
                 press: movies::WolPress::None,
             },
             Self::Wol0x10EApiMissing => movies::MoviesTarget::WolWelcome {
+                provider: crate::app::shell_wol::WolProvider::Unavailable,
                 entry_tick: None,
                 hover: None,
                 press: movies::WolPress::MyInformation,
             },
             Self::Wol0x10EBack => movies::MoviesTarget::WolWelcome {
+                provider: crate::app::shell_wol::WolProvider::Unavailable,
                 entry_tick: None,
                 hover: None,
                 press: movies::WolPress::MainMenu,
@@ -912,9 +1155,149 @@ pub struct ShellCaptureRequest {
     cursor_x: u32,
     cursor_y: u32,
     output_dir: PathBuf,
+    /// Diagnostic wall-time override; production session timers keep their owners.
+    timeout: Option<Duration>,
+    live_lan: Option<LiveLanConfig>,
+    live_online: Option<LiveOnlineConfig>,
+}
+
+/// Nonsecret username and match inputs for an ordinary online UI run.
+#[derive(Debug, Clone)]
+pub(crate) struct LiveOnlineConfig {
+    pub account: String,
+    pub host: String,
+    pub map: Option<String>,
+    /// Real human/service sources; AI rows never become relay participants.
+    pub players: usize,
+    pub ai: Option<crate::skirmish_launch::AiDifficulty>,
+    pub mode_id: Option<i32>,
+    /// Authored waypoint index, independent of arrival-order source/raw row.
+    pub start: Option<u8>,
+    pub frames: u32,
+    pub simple_input: bool,
+    pub mass_input: bool,
+    /// Public coordinator nonce; only diagnostic Observe input waits for ACK.
+    pub network_checkpoint: Option<String>,
+    /// Public nonce for the later exit/HTTPS-retry/reentry acceptance only.
+    pub exit_checkpoint: Option<String>,
+    /// External owned kill during first loading, followed by a normal two-player rematch.
+    pub loading_host_loss: Option<String>,
+    /// External owned kill after ordinary100, before the original host installs live gameplay.
+    pub startup_host_loss: Option<String>,
+    pub loading_output: Option<PathBuf>,
+    pub loading_cancel: Option<LoadingCancelConfig>,
+    pub observe_loading: bool,
+    pub profile_check: bool,
+    pub exit_prefix_output: Option<PathBuf>,
+    /// Nonsecret real-command/checksum prefix, written before external faults.
+    pub failure_prefix_output: Option<PathBuf>,
+}
+
+/// Diagnostic intent only; cancellation still runs the real service owner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LoadingCancelKind {
+    Https,
+    Departure,
+}
+impl LoadingCancelKind {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Https => "https",
+            Self::Departure => "departure",
+        }
+    }
+}
+#[derive(Debug, Clone)]
+pub(crate) struct LoadingCancelConfig {
+    pub checkpoint_id: String,
+    pub kind: LoadingCancelKind,
+    pub output: PathBuf,
+}
+
+/// The victim is terminated externally by the owned-process runner. This
+/// chooses only the capture checkpoint; the LAN service retains its real lease.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LanSetupCrash {
+    Host,
+    Guest,
+    MapHost,
+}
+
+impl LanSetupCrash {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Host => "host",
+            Self::Guest => "guest",
+            Self::MapHost => "map-host",
+        }
+    }
+
+    pub(crate) fn host(self) -> bool {
+        matches!(self, Self::Host | Self::MapHost)
+    }
+}
+
+/// Only socket routing differs between these diagnostic modes. Production
+/// broadcast delegates all defaults to the ordinary LAN service owner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LiveLanTransport {
+    ProductionBroadcast,
+    Explicit {
+        bind: std::net::SocketAddrV4,
+        peer: std::net::SocketAddrV4,
+    },
+}
+
+impl LiveLanTransport {
+    pub(crate) fn explicit_endpoints(
+        self,
+    ) -> Option<(std::net::SocketAddrV4, std::net::SocketAddrV4)> {
+        match self {
+            Self::ProductionBroadcast => None,
+            Self::Explicit { bind, peer } => Some((bind, peer)),
+        }
+    }
+}
+
+/// Physical LAN capture inputs do not replace gameplay/session identity and
+/// are unavailable to captures that inject their service transcript.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LiveLanConfig {
+    pub transport: LiveLanTransport,
+    /// Host-only logical catalog name; RandMap.Sed drives the normal generator.
+    pub map: Option<String>,
+    /// Optional real pre-GO process-loss checkpoint. It never changes a timer.
+    pub setup_crash: Option<LanSetupCrash>,
+    pub profile_check: bool,
+    /// Written before an external LAN proxy/process fault; contains no secrets.
+    pub failure_prefix_output: Option<PathBuf>,
 }
 
 impl ShellCaptureRequest {
+    /// Only explicit native WOL diagnostics retain the original UI surface.
+    pub(crate) fn legacy_wol_ui(&self) -> bool {
+        match self.checkpoint.movies_target() {
+            Some(movies::MoviesTarget::Wol(target)) => !matches!(
+                target,
+                movies::WolTarget::ModernLobby | movies::WolTarget::ModernUsername
+            ),
+            Some(movies::MoviesTarget::WolWelcome {
+                provider: crate::app::shell_wol::WolProvider::Unavailable,
+                ..
+            }) => true,
+            _ => false,
+        }
+    }
+
+    /// Select only the diagnostic visit; never change the saved profile.
+    pub(crate) fn wol_welcome_provider(&self) -> Option<crate::app::shell_wol::WolProvider> {
+        match self.checkpoint.movies_target() {
+            Some(movies::MoviesTarget::WolWelcome { provider, .. }) => Some(provider),
+            Some(movies::MoviesTarget::Wol(target)) => Some(target.welcome_provider()),
+            _ => None,
+        }
+    }
+
     pub fn checkpoint(&self) -> ShellCaptureCheckpoint {
         self.checkpoint
     }
@@ -954,6 +1337,13 @@ impl ShellCaptureRequest {
     }
 }
 
+fn public_coordinator_nonce(value: &str) -> bool {
+    value.len() == 32
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 /// Parse the normal/capture launch boundary without changing ordinary no-arg
 /// startup. Capture mode is deliberately strict so a misspelled automation
 /// command cannot open an interactive window.
@@ -978,6 +1368,30 @@ where
     let mut cursor_x = None;
     let mut cursor_y = None;
     let mut output_dir = None;
+    let mut timeout = None;
+    let mut lan_production_broadcast = false;
+    let mut lan_bind = None;
+    let mut lan_peer = None;
+    let mut lan_map = None;
+    let mut lan_setup_crash = None;
+    let mut online_account = None;
+    let mut online_host = None;
+    let mut online_map = None;
+    let mut online_players = None;
+    let mut online_ai = None;
+    let mut online_mode_id = None;
+    let mut online_start = None;
+    let mut online_frames = None;
+    let mut online_simple = false;
+    let mut online_mass = false;
+    let mut online_network_checkpoint = None;
+    let mut online_exit_checkpoint = None;
+    let mut online_loading_host_loss = None;
+    let mut online_startup_host_loss = None;
+    let mut online_loading_cancel = None;
+    let mut online_loading_cancel_checkpoint = None;
+    let mut observe_loading = false;
+    let mut profile_check = false;
 
     while let Some(flag) = args.next() {
         let flag = flag
@@ -1016,6 +1430,164 @@ where
                     .ok_or_else(|| anyhow::anyhow!("missing value after --output"))?;
                 set_once(&mut output_dir, PathBuf::from(value), "--output")?;
             }
+            "--shell-capture-timeout-seconds" => {
+                let seconds = parse_u32(
+                    next_utf8(&mut args, "value after --shell-capture-timeout-seconds")?,
+                    "--shell-capture-timeout-seconds",
+                )?;
+                ensure!(
+                    seconds > 0,
+                    "--shell-capture-timeout-seconds must be greater than zero"
+                );
+                set_once(
+                    &mut timeout,
+                    Duration::from_secs(u64::from(seconds)),
+                    "--shell-capture-timeout-seconds",
+                )?;
+            }
+            "--lan-production-broadcast" => {
+                ensure!(
+                    !lan_production_broadcast,
+                    "duplicate --lan-production-broadcast"
+                );
+                lan_production_broadcast = true;
+            }
+            "--lan-bind" => set_once(
+                &mut lan_bind,
+                next_utf8(&mut args, "value after --lan-bind")?
+                    .parse::<std::net::SocketAddrV4>()
+                    .context("--lan-bind requires an IPv4 address and port")?,
+                "--lan-bind",
+            )?,
+            "--lan-peer" => set_once(
+                &mut lan_peer,
+                next_utf8(&mut args, "value after --lan-peer")?
+                    .parse::<std::net::SocketAddrV4>()
+                    .context("--lan-peer requires an IPv4 address and port")?,
+                "--lan-peer",
+            )?,
+            "--lan-map" => set_once(
+                &mut lan_map,
+                next_utf8(&mut args, "value after --lan-map")?,
+                "--lan-map",
+            )?,
+            "--lan-setup-crash" => {
+                let victim = match next_utf8(&mut args, "value after --lan-setup-crash")?.as_str() {
+                    "host" => LanSetupCrash::Host,
+                    "guest" => LanSetupCrash::Guest,
+                    "map-host" => LanSetupCrash::MapHost,
+                    _ => bail!("--lan-setup-crash requires host, guest or map-host"),
+                };
+                set_once(&mut lan_setup_crash, victim, "--lan-setup-crash")?;
+            }
+            "--online-account" => set_once(
+                &mut online_account,
+                next_utf8(&mut args, "value after --online-account")?,
+                "--online-account",
+            )?,
+            "--online-host" => set_once(
+                &mut online_host,
+                next_utf8(&mut args, "value after --online-host")?,
+                "--online-host",
+            )?,
+            "--online-map" => set_once(
+                &mut online_map,
+                next_utf8(&mut args, "value after --online-map")?,
+                "--online-map",
+            )?,
+            "--online-players" => set_once(
+                &mut online_players,
+                parse_u32(
+                    next_utf8(&mut args, "value after --online-players")?,
+                    "--online-players",
+                )?,
+                "--online-players",
+            )?,
+            "--online-ai" => {
+                use crate::skirmish_launch::AiDifficulty;
+                let difficulty = match next_utf8(&mut args, "value after --online-ai")?.as_str() {
+                    "easy" => AiDifficulty::Easy,
+                    "normal" => AiDifficulty::Normal,
+                    "hard" => AiDifficulty::Hard,
+                    _ => bail!("--online-ai requires easy, normal or hard"),
+                };
+                set_once(&mut online_ai, difficulty, "--online-ai")?;
+            }
+            "--online-mode-id" => set_once(
+                &mut online_mode_id,
+                i32::try_from(parse_u32(
+                    next_utf8(&mut args, "value after --online-mode-id")?,
+                    "--online-mode-id",
+                )?)
+                .context("--online-mode-id must fit a nonnegative i32")?,
+                "--online-mode-id",
+            )?,
+            "--online-start" => set_once(
+                &mut online_start,
+                parse_u32(
+                    next_utf8(&mut args, "value after --online-start")?,
+                    "--online-start",
+                )?,
+                "--online-start",
+            )?,
+            "--online-frames" => set_once(
+                &mut online_frames,
+                parse_u32(
+                    next_utf8(&mut args, "value after --online-frames")?,
+                    "--online-frames",
+                )?,
+                "--online-frames",
+            )?,
+            "--online-mass-input" => {
+                ensure!(!online_mass, "duplicate --online-mass-input");
+                online_mass = true;
+            }
+            "--online-network-checkpoint" => set_once(
+                &mut online_network_checkpoint,
+                next_utf8(&mut args, "value after --online-network-checkpoint")?,
+                "--online-network-checkpoint",
+            )?,
+            "--online-loading-host-loss" => set_once(
+                &mut online_loading_host_loss,
+                next_utf8(&mut args, "value after --online-loading-host-loss")?,
+                "--online-loading-host-loss",
+            )?,
+            "--online-startup-host-loss" => set_once(
+                &mut online_startup_host_loss,
+                next_utf8(&mut args, "value after --online-startup-host-loss")?,
+                "--online-startup-host-loss",
+            )?,
+            "--online-loading-cancel" => {
+                let kind =
+                    match next_utf8(&mut args, "value after --online-loading-cancel")?.as_str() {
+                        "https" => LoadingCancelKind::Https,
+                        "departure" => LoadingCancelKind::Departure,
+                        _ => bail!("--online-loading-cancel requires https or departure"),
+                    };
+                set_once(&mut online_loading_cancel, kind, "--online-loading-cancel")?;
+            }
+            "--online-loading-cancel-checkpoint" => set_once(
+                &mut online_loading_cancel_checkpoint,
+                next_utf8(&mut args, "value after --online-loading-cancel-checkpoint")?,
+                "--online-loading-cancel-checkpoint",
+            )?,
+            "--online-observe-loading" => {
+                ensure!(!observe_loading, "duplicate --online-observe-loading");
+                observe_loading = true;
+            }
+            "--network-profile-check" => {
+                ensure!(!profile_check, "duplicate --network-profile-check");
+                profile_check = true;
+            }
+            "--online-exit-checkpoint" => set_once(
+                &mut online_exit_checkpoint,
+                next_utf8(&mut args, "value after --online-exit-checkpoint")?,
+                "--online-exit-checkpoint",
+            )?,
+            "--online-simple-input" => {
+                ensure!(!online_simple, "duplicate --online-simple-input");
+                online_simple = true;
+            }
             _ => bail!("unknown shell-capture option {flag:?}"),
         }
     }
@@ -1038,6 +1610,388 @@ where
         checkpoint.as_str()
     );
     validate_new_output_dir(&output_dir)?;
+    let online = matches!(checkpoint, ShellCaptureCheckpoint::Lan(target) if target.online());
+    let online_failure =
+        matches!(checkpoint, ShellCaptureCheckpoint::Lan(target) if target.online_failure());
+    let live = matches!(checkpoint, ShellCaptureCheckpoint::Lan(target) if target.live() && !target.online());
+    if lan_production_broadcast {
+        ensure!(
+            matches!(
+                checkpoint,
+                ShellCaptureCheckpoint::Lan(
+                    movies::LanTarget::LiveHost | movies::LanTarget::LiveGuest
+                )
+            ),
+            "--lan-production-broadcast requires a normal LAN live host or guest checkpoint"
+        );
+        ensure!(
+            lan_bind.is_none() && lan_peer.is_none() && lan_setup_crash.is_none(),
+            "--lan-production-broadcast cannot override sockets or combine with a fault checkpoint"
+        );
+    }
+    if profile_check {
+        ensure!(
+            matches!(
+                checkpoint,
+                ShellCaptureCheckpoint::Lan(
+                    movies::LanTarget::OnlineHost | movies::LanTarget::LiveHost
+                )
+            ) && lan_setup_crash.is_none()
+                && online_loading_host_loss.is_none()
+                && online_startup_host_loss.is_none()
+                && online_network_checkpoint.is_none()
+                && online_exit_checkpoint.is_none()
+                && online_loading_cancel.is_none(),
+            "profile check requires a normal host checkpoint without another fault"
+        );
+        ensure!(
+            if online {
+                online_map.as_deref()
+            } else {
+                lan_map.as_deref()
+            }
+            .is_some_and(|file| !crate::map::rmg::is_seed_selection(file)),
+            "profile check requires an authored30-capable catalog map"
+        );
+    }
+    let live_online = if online {
+        let account = online_account.context("online capture requires --online-account")?;
+        ensure!(
+            !matches!(checkpoint, ShellCaptureCheckpoint::Lan(target) if target.online_guest())
+                || online_host.is_some(),
+            "online guest capture requires --online-host"
+        );
+        let host = online_host.unwrap_or_else(|| account.clone());
+        for name in [&account, &host] {
+            ensure!(
+                !name.is_empty()
+                    && name.len() <= 24
+                    && name
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte)),
+                "online account names must contain 1-24 letters, digits, underscores or hyphens"
+            );
+        }
+        ensure!(
+            online_start.is_none_or(
+                |start| start < crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as u32
+            ),
+            "online start index must be between0 and29"
+        );
+        let players = online_players.unwrap_or(2) as usize;
+        ensure!(
+            (1..=crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT).contains(&players)
+                && (players >= 2 || online_ai.is_some()),
+            "online players must be between2 and30, or one host with explicit --online-ai"
+        );
+        ensure!(
+            !online_failure
+                || (players == 2
+                    && !online_mass
+                    && online_frames.is_none_or(|frames| frames == 300)),
+            "online failure capture requires two players, simple input and exactly300 prefix frames"
+        );
+        let frames = online_frames.unwrap_or(if online_failure {
+            300
+        } else if online_ai.is_some() {
+            600
+        } else if online_mass {
+            1200
+        } else if online_simple {
+            300
+        } else {
+            7200
+        });
+        ensure!(
+            (300..=1_000_000).contains(&frames),
+            "online frame observation must cover300 to1000000 frames"
+        );
+        if online_ai.is_some() || online_mode_id.is_some() {
+            ensure!(
+                matches!(
+                    checkpoint,
+                    ShellCaptureCheckpoint::Lan(movies::LanTarget::OnlineHost)
+                ) && account == host
+                    && players == 1
+                    && online_ai.is_some()
+                    && frames >= 600
+                    && !online_mass
+                    && !profile_check
+                    && online_network_checkpoint.is_none()
+                    && online_exit_checkpoint.is_none()
+                    && online_loading_host_loss.is_none()
+                    && online_startup_host_loss.is_none()
+                    && online_loading_cancel.is_none()
+                    && online_loading_cancel_checkpoint.is_none(),
+                "AI/mode capture requires one online host, explicit AI, at least600 frames and no separate fault/profile/mass case"
+            );
+        }
+        ensure!(
+            online_network_checkpoint.as_ref().is_none_or(|nonce| {
+                !online_failure
+                    && players == 2
+                    && online_simple
+                    && !online_mass
+                    && frames >= 600
+                    && public_coordinator_nonce(nonce)
+            }),
+            "network checkpoint requires a normal simple online pair, at least600 frames and a32-digit lowercase hex nonce"
+        );
+        ensure!(
+            online_exit_checkpoint.as_ref().is_none_or(|nonce| {
+                !online_failure
+                    && online_network_checkpoint.is_none()
+                    && players == 2
+                    && online_simple
+                    && !online_mass
+                    && public_coordinator_nonce(nonce)
+            }),
+            "exit checkpoint requires a normal simple online pair and a32-digit lowercase hex nonce; other external faults are separate runs"
+        );
+        ensure!(
+            online_loading_host_loss.as_ref().is_none_or(|nonce| {
+                !online_failure
+                    && online_network_checkpoint.is_none()
+                    && online_exit_checkpoint.is_none()
+                    && online_startup_host_loss.is_none()
+                    && online_map.is_none()
+                    && online_start.is_none()
+                    && players == 3
+                    && online_simple
+                    && !online_mass
+                    && frames >= 1024
+                    && public_coordinator_nonce(nonce)
+            }),
+            "loading host loss requires a normal simple three-player online match, at least1024 frames and a32-digit lowercase hex nonce; map/start overrides and other faults are separate runs"
+        );
+        ensure!(
+            online_startup_host_loss.as_ref().is_none_or(|nonce| {
+                !online_failure
+                    && online_loading_host_loss.is_none()
+                    && online_network_checkpoint.is_none()
+                    && online_exit_checkpoint.is_none()
+                    && online_map.is_none()
+                    && online_start.is_none()
+                    && players == 3
+                    && online_simple
+                    && !online_mass
+                    && public_coordinator_nonce(nonce)
+            }),
+            "startup host loss requires a normal simple three-player online match and a32-digit lowercase hex nonce; loading/map/start and other faults are separate runs"
+        );
+        ensure!(
+            players <= 2 || online_simple || online_mass,
+            "more than two players requires --online-simple-input or --online-mass-input"
+        );
+        ensure!(
+            !online_map
+                .as_deref()
+                .is_some_and(|file| file.eq_ignore_ascii_case("RandMap.Sed"))
+                || players <= 8,
+            "random maps support two to eight players"
+        );
+        ensure!(
+            online_loading_cancel.is_some() == online_loading_cancel_checkpoint.is_some(),
+            "loading cancellation requires both kind and checkpoint nonce"
+        );
+        if let Some(nonce) = online_loading_cancel_checkpoint.as_deref() {
+            ensure!(
+                public_coordinator_nonce(nonce)
+                    && players == 2
+                    && online_simple
+                    && !online_mass
+                    && !online_failure
+                    && online_loading_host_loss.is_none()
+                    && online_startup_host_loss.is_none()
+                    && online_network_checkpoint.is_none()
+                    && online_exit_checkpoint.is_none()
+                    && online_map.is_none()
+                    && online_start.is_none()
+                    && !profile_check,
+                "loading cancellation requires a normal simple online pair and32 lowercase hex nonce without another fault/map/start"
+            );
+            for kind in ["ready", "control", "returned"] {
+                ensure!(
+                    !loading_runtime::sidecar(&output_dir, kind).try_exists()?,
+                    "loading cancellation output already exists"
+                );
+            }
+        }
+        if online_loading_host_loss.is_some() {
+            for kind in ["ready", "complete", "killed", "prefix", "removed"] {
+                ensure!(
+                    !loading_host_loss::sidecar(&output_dir, kind).try_exists()?,
+                    "loading fault output already exists"
+                );
+            }
+        }
+        if online_startup_host_loss.is_some() {
+            for kind in ["ready", "install", "prefix", "killed", "failure", "ack"] {
+                ensure!(
+                    !startup_host_loss::sidecar(&output_dir, kind).try_exists()?,
+                    "startup fault output already exists"
+                );
+            }
+        }
+        Some(LiveOnlineConfig {
+            account,
+            host,
+            map: online_map,
+            players,
+            ai: online_ai,
+            mode_id: online_mode_id,
+            start: online_start.map(|start| start as u8),
+            frames,
+            simple_input: online_simple || online_mass || online_failure || online_ai.is_some(),
+            mass_input: online_mass,
+            failure_prefix_output: if online_failure || online_network_checkpoint.is_some() {
+                let mut path = output_dir.as_os_str().to_owned();
+                path.push(".prefix.json");
+                let path = PathBuf::from(path);
+                ensure!(!path.exists(), "failure prefix output already exists");
+                Some(path)
+            } else {
+                None
+            },
+            network_checkpoint: online_network_checkpoint,
+            exit_prefix_output: if online_exit_checkpoint.is_some() {
+                let mut path = output_dir.as_os_str().to_owned();
+                path.push(".exit.json");
+                let path = PathBuf::from(path);
+                ensure!(!path.exists(), "exit checkpoint output already exists");
+                Some(path)
+            } else {
+                None
+            },
+            loading_cancel: online_loading_cancel.map(|kind| LoadingCancelConfig {
+                checkpoint_id: online_loading_cancel_checkpoint
+                    .expect("validated loading cancel nonce"),
+                kind,
+                output: output_dir.clone(),
+            }),
+            observe_loading,
+            profile_check,
+            exit_checkpoint: online_exit_checkpoint,
+            loading_output: online_loading_host_loss
+                .as_ref()
+                .or(online_startup_host_loss.as_ref())
+                .map(|_| output_dir.clone()),
+            loading_host_loss: online_loading_host_loss,
+            startup_host_loss: online_startup_host_loss,
+        })
+    } else {
+        ensure!(
+            online_account.is_none()
+                && online_host.is_none()
+                && online_map.is_none()
+                && online_players.is_none()
+                && online_ai.is_none()
+                && online_mode_id.is_none()
+                && online_start.is_none()
+                && online_frames.is_none()
+                && !online_simple
+                && !online_mass
+                && online_network_checkpoint.is_none()
+                && online_exit_checkpoint.is_none()
+                && online_loading_host_loss.is_none()
+                && online_startup_host_loss.is_none()
+                && online_loading_cancel.is_none()
+                && online_loading_cancel_checkpoint.is_none()
+                && !observe_loading,
+            "online options require an online live checkpoint"
+        );
+        None
+    };
+    let live_lan = if live {
+        let transport = if lan_production_broadcast {
+            LiveLanTransport::ProductionBroadcast
+        } else {
+            let bind = lan_bind.context("live LAN capture requires --lan-bind")?;
+            let peer = lan_peer.context("live LAN capture requires --lan-peer")?;
+            ensure!(
+                (1..=u16::MAX - 2).contains(&bind.port()),
+                "--lan-bind needs a nonzero port with room for alternate port+2"
+            );
+            ensure!(
+                !bind.ip().is_broadcast() && !bind.ip().is_multicast(),
+                "--lan-bind is not a unicast bind address"
+            );
+            ensure!(
+                peer.port() != 0
+                    && !peer.ip().is_unspecified()
+                    && !peer.ip().is_broadcast()
+                    && !peer.ip().is_multicast(),
+                "--lan-peer needs a unicast IPv4 endpoint"
+            );
+            ensure!(
+                peer != bind && !(peer.ip() == bind.ip() && peer.port() == bind.port() + 2),
+                "LAN peer overlaps a local socket"
+            );
+            LiveLanTransport::Explicit { bind, peer }
+        };
+        if let Some(file) = lan_map.as_deref() {
+            ensure!(
+                matches!(
+                    checkpoint,
+                    ShellCaptureCheckpoint::Lan(movies::LanTarget::LiveHost)
+                ),
+                "--lan-map requires the normal full-round LAN host checkpoint"
+            );
+            crate::map::source::validate_network_map_name(file)?;
+        }
+        ensure!(
+            lan_setup_crash.is_none()
+                || matches!(
+                    checkpoint,
+                    ShellCaptureCheckpoint::Lan(
+                        movies::LanTarget::LiveHost | movies::LanTarget::LiveGuest
+                    )
+                ),
+            "--lan-setup-crash requires a normal LAN live host or guest checkpoint"
+        );
+        ensure!(
+            match lan_setup_crash {
+                Some(LanSetupCrash::MapHost) => match checkpoint {
+                    ShellCaptureCheckpoint::Lan(movies::LanTarget::LiveHost) => lan_map
+                        .as_deref()
+                        .is_some_and(|map| !crate::map::rmg::is_seed_selection(map)),
+                    ShellCaptureCheckpoint::Lan(movies::LanTarget::LiveGuest) => lan_map.is_none(),
+                    _ => false,
+                },
+                Some(_) => lan_map.is_none(),
+                None => true,
+            },
+            "map-host requires an authored host map; resident host/guest crash uses the resident map"
+        );
+        let failure_prefix_output = if lan_setup_crash.is_some()
+            || matches!(checkpoint, ShellCaptureCheckpoint::Lan(target) if target.desync_failure())
+        {
+            let mut path = output_dir.as_os_str().to_owned();
+            path.push(".prefix.json");
+            let path = PathBuf::from(path);
+            ensure!(!path.exists(), "failure prefix output already exists");
+            Some(path)
+        } else {
+            None
+        };
+        Some(LiveLanConfig {
+            transport,
+            map: lan_map,
+            setup_crash: lan_setup_crash,
+            profile_check,
+            failure_prefix_output,
+        })
+    } else {
+        ensure!(
+            !lan_production_broadcast
+                && lan_bind.is_none()
+                && lan_peer.is_none()
+                && lan_map.is_none()
+                && lan_setup_crash.is_none(),
+            "LAN socket options require a live LAN checkpoint"
+        );
+        None
+    };
 
     Ok(AppLaunchMode::ShellCapture(ShellCaptureRequest {
         checkpoint,
@@ -1046,6 +2000,9 @@ where
         cursor_x,
         cursor_y,
         output_dir,
+        timeout,
+        live_lan,
+        live_online,
     }))
 }
 
@@ -1292,6 +2249,7 @@ pub(crate) struct ShellCaptureSession {
     entry_sequence: Option<EntrySequenceState>,
     skirmish: Option<skirmish::SkirmishCapture>,
     movies: Option<movies::MoviesCapture>,
+    wol_welcome_provider_selected: bool,
     score: Option<score::ScoreCapture>,
     campaign_score: Option<score::CampaignScoreCapture>,
     outcome: Option<std::result::Result<(), String>>,
@@ -1379,10 +2337,14 @@ impl ShellCaptureSession {
             ),
             _ => None,
         };
-        let movies = request
-            .checkpoint
-            .movies_target()
-            .map(|target| movies::MoviesCapture::new(target, request.output_dir()));
+        let movies = request.checkpoint.movies_target().map(|target| {
+            movies::MoviesCapture::new(
+                target,
+                request.output_dir(),
+                request.live_lan.clone(),
+                request.live_online.clone(),
+            )
+        });
         let score = match request.checkpoint {
             ShellCaptureCheckpoint::Score0x108Steady => Some(score::ScoreTarget::Steady),
             ShellCaptureCheckpoint::Score0x108Entry(tick) => Some(score::ScoreTarget::Entry(tick)),
@@ -1415,6 +2377,7 @@ impl ShellCaptureSession {
             entry_sequence,
             skirmish,
             movies,
+            wol_welcome_provider_selected: false,
             score,
             campaign_score,
             outcome: None,
@@ -1460,6 +2423,9 @@ impl ShellCaptureSession {
     }
 
     fn timeout(&self) -> Duration {
+        if let Some(timeout) = self.request.timeout {
+            return timeout;
+        }
         if let Some(capture) = &self.skirmish {
             capture.timeout()
         } else if let Some(capture) = &self.movies {
@@ -1469,6 +2435,32 @@ impl ShellCaptureSession {
         } else {
             CAPTURE_TIMEOUT
         }
+    }
+
+    fn max_capture_frames(&self) -> u32 {
+        if self.request.live_lan.is_none() && self.request.live_online.is_none() {
+            // Campaign movies/menu frames precede the requested simulation tick.
+            // Keep that presentation overhead separate from the bounded play run.
+            return match self.request.checkpoint {
+                ShellCaptureCheckpoint::CampaignOpening(
+                    movies::OpeningTarget::SovietTick(tick)
+                    | movies::OpeningTarget::SovietNavy(tick)
+                    | movies::OpeningTarget::SovietFortresses(tick),
+                ) => MAX_CAPTURE_FRAMES + tick as u32,
+                _ => MAX_CAPTURE_FRAMES,
+            };
+        }
+        // Live matches keep production pacing and wait on real peers. Their
+        // multi-round wall-time budget, not a still-frame limit, bounds the
+        // nominal 8 ms capture loop. Retain the still-frame allowance for UI
+        // and event-driven wakes; the wall deadline remains independently enforced.
+        let frames = self
+            .timeout()
+            .as_nanos()
+            .div_ceil(CAPTURE_FRAME_INTERVAL.as_nanos());
+        u32::try_from(frames)
+            .unwrap_or(u32::MAX)
+            .saturating_add(MAX_CAPTURE_FRAMES)
     }
 
     fn steady_ready(&self, state: &AppState) -> Result<bool> {
@@ -1492,6 +2484,33 @@ impl ShellCaptureSession {
         state: &mut AppState,
         rendered: PresentedShell,
     ) -> Result<()> {
+        if let Some(visit) = state.frontend.wol.as_mut() {
+            let mut changed = visit.set_legacy_ui(self.request.legacy_wol_ui());
+            let mut provider_selected = false;
+            if !self.wol_welcome_provider_selected
+                && matches!(visit.page, crate::app::shell_wol::WolPage::Welcome)
+                && let Some(provider) = self.request.wol_welcome_provider()
+            {
+                visit.set_provider(provider);
+                self.wol_welcome_provider_selected = true;
+                provider_selected = true;
+                changed = true;
+            }
+            if changed {
+                if provider_selected && self.request.legacy_wol_ui() {
+                    // Normal Online entry skips native persona I/O. Only
+                    // after the explicit native diagnostic selection may
+                    // its existing owner prefill and reopen the welcome.
+                    crate::app::shell_wol::persona::enter_wol_main(state);
+                    crate::app::App::reopen_wol_welcome(state);
+                }
+                // The ordinary reducer rearms the selected page's entry before
+                // any controlled driver reads its controls. Native fixtures
+                // are confined to the capture's separately marked profile.
+                crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
+                return Ok(());
+            }
+        }
         if let Some(capture) = &mut self.skirmish {
             capture.after_present(state, rendered, self.frames_seen)?;
         }
@@ -1516,9 +2535,10 @@ impl ShellCaptureSession {
             .started_at
             .context("shell capture was not initialized")?;
         self.frames_seen = self.frames_seen.saturating_add(1);
+        let max_frames = self.max_capture_frames();
         ensure!(
-            self.frames_seen <= MAX_CAPTURE_FRAMES,
-            "shell capture exceeded {MAX_CAPTURE_FRAMES} frames"
+            self.frames_seen <= max_frames,
+            "shell capture exceeded {max_frames} frames"
         );
         ensure!(
             started_at.elapsed() <= self.timeout(),
@@ -1589,9 +2609,9 @@ impl ShellCaptureSession {
             .started_at
             .context("shell capture was not initialized")?;
         ensure!(
-            started_at.elapsed() <= CAPTURE_TIMEOUT,
+            started_at.elapsed() <= self.timeout(),
             "shell capture timed out after {} seconds",
-            CAPTURE_TIMEOUT.as_secs()
+            self.timeout().as_secs()
         );
 
         let snapshot = MainMenuCaptureSnapshot::from_state(state);
@@ -1896,7 +2916,8 @@ impl ShellCaptureSession {
                     }),
                 "entry-sequence retained readback identity changed"
             );
-            let remaining = CAPTURE_TIMEOUT
+            let remaining = self
+                .timeout()
                 .checked_sub(started_at.elapsed())
                 .context("entry sequence timeout expired during deferred readback")?;
             ensure!(
@@ -2048,6 +3069,29 @@ fn entry_sequence_manifest(
         },
         frames,
     }
+}
+
+/// One read-only startup projection for normal gameplay and the real loader.
+/// Source membership remains the frozen launch; House IDs come only from the
+/// constructed world supplied by its owner, never a previous resident runtime.
+pub(crate) fn network_startup_receipt(
+    state: &AppState,
+    launch: &crate::skirmish_launch::SkirmishLaunchSession,
+    sim: Option<&crate::sim::world::Simulation>,
+) -> Result<serde_json::Value> {
+    Ok(serde_json::json!({
+        "match_id":crate::app::shell_wol::online_match_id(state),
+        "seed":state.match_state.session.network_start_seed(),
+        "map":launch.selected_map_file,
+        "max_ahead":state.match_state.session.network_max_ahead_frames(),
+        "local_source":launch.local_player_index,
+        "sources":launch.humans.iter().enumerate().map(|(source,human)|serde_json::json!({
+            "source":source,"name":human.name,"raw_row":human.raw_slot_index,"slot":human.slot,
+            "house":sim.and_then(|sim|crate::app::match_runtime::network_match::source_house(
+                &state.match_state.session,sim,source)),
+            "endpoint":state.match_state.session.network_endpoint(source).map(|address|address.to_string())
+        })).collect::<Vec<_>>()
+    }))
 }
 
 fn write_new_file(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -2209,6 +3253,603 @@ mod tests {
     }
 
     #[test]
+    fn live_lan_capture_requires_two_explicit_unicast_endpoints() {
+        let output = new_output_path("live-lan");
+        let mut values = valid_args(&output);
+        values[1] = "lan-live-host".into();
+        assert!(parse_launch_args(values.clone()).is_err());
+        values.extend(args(&[
+            "--lan-bind",
+            "127.0.0.1:31000",
+            "--lan-peer",
+            "127.0.0.1:31010",
+        ]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture");
+        };
+        assert_eq!(
+            request.live_lan,
+            Some(LiveLanConfig {
+                transport: LiveLanTransport::Explicit {
+                    bind: "127.0.0.1:31000".parse().unwrap(),
+                    peer: "127.0.0.1:31010".parse().unwrap(),
+                },
+                map: None,
+                setup_crash: None,
+                profile_check: false,
+                failure_prefix_output: None,
+            })
+        );
+        values[1] = "lan-live-guest".into();
+        assert!(parse_launch_args(values.clone()).is_ok());
+        values[1] = "lan-battle-host".into();
+        assert!(parse_launch_args(values.clone()).is_ok());
+        values[1] = "lan-battle-guest".into();
+        assert!(parse_launch_args(values.clone()).is_ok());
+        values[1] = "lan-0xbb-steady".into();
+        assert!(parse_launch_args(values).is_err());
+    }
+
+    #[test]
+    fn production_lan_broadcast_needs_no_socket_overrides() {
+        let output = new_output_path("lan-production-broadcast");
+        let mut values = valid_args(&output);
+        values[1] = "lan-live-host".into();
+        values.extend(args(&[
+            "--lan-production-broadcast",
+            "--lan-map",
+            "host-only.map",
+        ]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture");
+        };
+        let config = request.live_lan.unwrap();
+        assert_eq!(config.transport, LiveLanTransport::ProductionBroadcast);
+        assert_eq!(config.map.as_deref(), Some("host-only.map"));
+        values.truncate(values.len() - 2);
+        values[1] = "lan-live-guest".into();
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values).unwrap() else {
+            panic!("capture");
+        };
+        assert_eq!(
+            request.live_lan.unwrap().transport,
+            LiveLanTransport::ProductionBroadcast
+        );
+    }
+
+    #[test]
+    fn production_lan_broadcast_rejects_socket_or_fault_overrides() {
+        let output = new_output_path("lan-production-conflict");
+        let mut values = valid_args(&output);
+        values[1] = "lan-live-host".into();
+        values.push("--lan-production-broadcast".into());
+        for extra in [
+            args(&["--lan-bind", "127.0.0.1:31000"]),
+            args(&["--lan-peer", "127.0.0.1:31010"]),
+            args(&["--lan-setup-crash", "guest"]),
+        ] {
+            let mut invalid = values.clone();
+            invalid.extend(extra);
+            assert!(
+                parse_launch_args(invalid)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("cannot override sockets or combine with a fault")
+            );
+        }
+        values.push("--lan-production-broadcast".into());
+        assert!(
+            parse_launch_args(values)
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate --lan-production-broadcast")
+        );
+    }
+
+    #[test]
+    fn production_lan_broadcast_requires_normal_full_round_targets() {
+        let output = new_output_path("lan-production-target");
+        for target in [
+            "lan-battle-host",
+            "lan-live-timeout-host",
+            "lan-live-desync-guest",
+            "online-live-host",
+            "lan-0xbb-steady",
+        ] {
+            let mut values = valid_args(&output);
+            values[1] = target.into();
+            values.push("--lan-production-broadcast".into());
+            assert!(
+                parse_launch_args(values)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("requires a normal LAN live host or guest"),
+                "{target}"
+            );
+        }
+    }
+
+    #[test]
+    fn live_lan_host_map_uses_a_logical_name_for_custom_and_generated_rounds() {
+        let output = new_output_path("live-lan-map");
+        let mut values = valid_args(&output);
+        values[1] = "lan-live-host".into();
+        values.extend(args(&[
+            "--lan-bind",
+            "127.0.0.1:31000",
+            "--lan-peer",
+            "127.0.0.1:31010",
+            "--lan-map",
+            "host-only.map",
+        ]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture");
+        };
+        assert_eq!(
+            request.live_lan.unwrap().map.as_deref(),
+            Some("host-only.map")
+        );
+        *values.last_mut().unwrap() = "RandMap.Sed".into();
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values).unwrap() else {
+            panic!("capture");
+        };
+        assert_eq!(
+            request.live_lan.unwrap().map.as_deref(),
+            Some("RandMap.Sed")
+        );
+    }
+
+    #[test]
+    fn live_lan_map_rejects_guest_targets_and_remote_host_paths() {
+        let output = new_output_path("live-lan-map-invalid");
+        let mut values = valid_args(&output);
+        values[1] = "lan-live-host".into();
+        values.extend(args(&[
+            "--lan-bind",
+            "127.0.0.1:31000",
+            "--lan-peer",
+            "127.0.0.1:31010",
+            "--lan-map",
+            "../outside.map",
+        ]));
+        assert!(parse_launch_args(values.clone()).is_err());
+        *values.last_mut().unwrap() = "host-only.map".into();
+        values[1] = "lan-live-guest".into();
+        assert!(parse_launch_args(values.clone()).is_err());
+        values[1] = "lan-battle-host".into();
+        assert!(parse_launch_args(values).is_err());
+    }
+
+    #[test]
+    fn lan_desync_pair_writes_real_prefixes_without_online_credentials() {
+        let output = new_output_path("lan-desync-prefix");
+        let mut values = valid_args(&output);
+        values[1] = "lan-live-desync-host".into();
+        values.extend(args(&[
+            "--lan-bind",
+            "127.0.0.1:31000",
+            "--lan-peer",
+            "127.0.0.1:31050",
+        ]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture");
+        };
+        assert_eq!(
+            request.live_lan.unwrap().failure_prefix_output.unwrap(),
+            PathBuf::from(format!("{}.prefix.json", output.display()))
+        );
+        values[1] = "lan-live-desync-guest".into();
+        assert!(parse_launch_args(values).is_ok());
+    }
+
+    #[test]
+    fn editable_lan_crash_checkpoint_requires_a_real_pair_and_owned_prefix() {
+        let output = new_output_path("lan-setup-crash");
+        let mut values = valid_args(&output);
+        values[1] = "lan-live-host".into();
+        values.extend(args(&[
+            "--lan-bind",
+            "127.0.0.1:31000",
+            "--lan-peer",
+            "127.0.0.1:31010",
+            "--lan-setup-crash",
+            "guest",
+        ]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture")
+        };
+        let lan = request.live_lan.unwrap();
+        assert_eq!(lan.setup_crash, Some(LanSetupCrash::Guest));
+        assert_eq!(
+            lan.failure_prefix_output,
+            Some(PathBuf::from(format!("{}.prefix.json", output.display())))
+        );
+        values[1] = "lan-live-guest".into();
+        *values.last_mut().unwrap() = "host".into();
+        assert!(parse_launch_args(values.clone()).is_ok());
+        values[1] = "lan-battle-guest".into();
+        assert!(parse_launch_args(values.clone()).is_err());
+        values[1] = "lan-live-guest".into();
+        *values.last_mut().unwrap() = "timeout".into();
+        assert!(parse_launch_args(values).is_err());
+    }
+
+    #[test]
+    fn interrupted_map_host_checkpoint_requires_authored_host_selection() {
+        let output = new_output_path("lan-map-crash");
+        let mut values = valid_args(&output);
+        values[1] = "lan-live-host".into();
+        values.extend(args(&[
+            "--lan-bind",
+            "127.0.0.1:31000",
+            "--lan-peer",
+            "127.0.0.1:31010",
+            "--lan-setup-crash",
+            "map-host",
+        ]));
+        assert!(parse_launch_args(values.clone()).is_err());
+        values[1] = "lan-live-guest".into();
+        assert!(parse_launch_args(values.clone()).is_ok());
+        values[1] = "lan-live-host".into();
+        values.extend(args(&["--lan-map", "transfer.yrm"]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture");
+        };
+        assert_eq!(
+            request.live_lan.unwrap().setup_crash,
+            Some(LanSetupCrash::MapHost)
+        );
+        *values.last_mut().unwrap() = "RandMap.Sed".into();
+        assert!(parse_launch_args(values).is_err());
+    }
+
+    #[test]
+    fn live_lan_capture_rejects_overlapping_and_invalid_socket_parameters() {
+        let output = new_output_path("live-lan-invalid");
+        for (bind, peer) in [
+            ("127.0.0.1:65534", "127.0.0.1:31010"),
+            ("127.0.0.1:31000", "127.0.0.1:31002"),
+            ("127.0.0.1:31000", "0.0.0.0:31010"),
+        ] {
+            let mut values = valid_args(&output);
+            values[1] = "lan-live-host".into();
+            values.extend(args(&["--lan-bind", bind, "--lan-peer", peer]));
+            assert!(parse_launch_args(values).is_err(), "{bind}/{peer}");
+        }
+    }
+
+    #[test]
+    fn online_guest_capture_requires_a_username_and_an_explicit_host() {
+        let output = new_output_path("online-guest");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-guest".into();
+        assert!(parse_launch_args(values.clone()).is_err());
+        values.extend(args(&["--online-account", "Peer"]));
+        assert!(parse_launch_args(values.clone()).is_err());
+        values.extend(args(&["--online-host", "Host"]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values).unwrap() else {
+            panic!("capture")
+        };
+        let config = request.live_online.unwrap();
+        assert_eq!(config.account, "Peer");
+        assert_eq!(config.host, "Host");
+        assert_eq!(config.players, 2);
+    }
+
+    #[test]
+    fn online_capture_rejects_password_and_registration_options() {
+        let output = new_output_path("online-username-only");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-host".into();
+        values.extend(args(&["--online-account", "Host"]));
+        assert!(parse_launch_args(values.clone()).is_ok());
+        values.push("--online-password-stdin".into());
+        assert!(parse_launch_args(values.clone()).is_err());
+        *values.last_mut().unwrap() = "--online-create-account".into();
+        assert!(parse_launch_args(values).is_err());
+    }
+
+    #[test]
+    fn online_ai_host_capture_keeps_one_human_and_the_requested_retail_mode() {
+        let output = new_output_path("online-ai-host");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-host".into();
+        values.extend(args(&[
+            "--online-account",
+            "Host",
+            "--online-players",
+            "1",
+            "--online-ai",
+            "hard",
+            "--online-mode-id",
+            "1",
+        ]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values).unwrap() else {
+            panic!("capture")
+        };
+        let config = request.live_online.unwrap();
+        assert_eq!(config.players, 1);
+        assert_eq!(config.ai, Some(crate::skirmish_launch::AiDifficulty::Hard));
+        assert_eq!(config.mode_id, Some(1));
+        assert_eq!(config.frames, 600);
+        assert!(config.simple_input && !config.mass_input);
+    }
+
+    #[test]
+    fn online_ai_capture_requires_a_singleton_host_and_actual_play() {
+        let output = new_output_path("online-ai-admission");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-host".into();
+        values.extend(args(&["--online-account", "Host", "--online-players", "1"]));
+        assert!(parse_launch_args(values.clone()).is_err());
+        values.extend(args(&["--online-ai", "normal"]));
+        assert!(parse_launch_args(values.clone()).is_ok());
+        let mut short = values.clone();
+        short.extend(args(&["--online-frames", "300"]));
+        assert!(parse_launch_args(short).is_err());
+        values[1] = "online-live-guest".into();
+        values.extend(args(&["--online-host", "Host"]));
+        assert!(parse_launch_args(values).is_err());
+    }
+
+    #[test]
+    fn online_ai_options_reject_unknown_difficulties_and_nononline_routes() {
+        let output = new_output_path("online-ai-invalid");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-host".into();
+        values.extend(args(&[
+            "--online-account",
+            "Host",
+            "--online-players",
+            "1",
+            "--online-ai",
+            "unknown",
+        ]));
+        assert!(parse_launch_args(values.clone()).is_err());
+        *values.last_mut().unwrap() = "easy".into();
+        assert!(parse_launch_args(values.clone()).is_ok());
+        values[1] = "main-menu-0xe2-steady".into();
+        assert!(parse_launch_args(values).is_err());
+    }
+
+    #[test]
+    fn online_failure_targets_require_a_pair_and_write_a_separate_real_prefix() {
+        for target in [
+            "online-live-timeout-host",
+            "online-live-quit-host",
+            "online-live-failure-guest",
+        ] {
+            let output = new_output_path("online-failure");
+            let mut values = valid_args(&output);
+            values[1] = target.into();
+            values.extend(args(&["--online-account", "Peer", "--online-host", "Host"]));
+            let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+            else {
+                panic!("capture")
+            };
+            let config = request.live_online.unwrap();
+            assert_eq!(
+                (
+                    config.players,
+                    config.frames,
+                    config.simple_input,
+                    config.mass_input
+                ),
+                (2, 300, true, false)
+            );
+            let mut prefix = output.as_os_str().to_owned();
+            prefix.push(".prefix.json");
+            assert_eq!(config.failure_prefix_output, Some(PathBuf::from(prefix)));
+            values.extend(args(&["--online-players", "3"]));
+            assert!(parse_launch_args(values).is_err());
+        }
+        let output = new_output_path("online-failure-host-required");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-failure-guest".into();
+        values.extend(args(&["--online-account", "Peer"]));
+        assert!(parse_launch_args(values).is_err());
+    }
+
+    #[test]
+    fn network_checkpoint_requires_a_normal_pair_and_a_bounded_public_nonce() {
+        let output = new_output_path("online-network-checkpoint");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-host".into();
+        values.extend(args(&[
+            "--online-account",
+            "Host",
+            "--online-simple-input",
+            "--online-frames",
+            "600",
+            "--online-network-checkpoint",
+            "0123456789abcdef0123456789abcdef",
+        ]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture");
+        };
+        assert_eq!(
+            request.live_online.unwrap().network_checkpoint.as_deref(),
+            Some("0123456789abcdef0123456789abcdef")
+        );
+        let frames = values.iter().position(|value| value == "600").unwrap();
+        values[frames] = "300".into();
+        assert!(parse_launch_args(values.clone()).is_err());
+        values[frames] = "600".into();
+        values[1] = "online-live-timeout-host".into();
+        assert!(parse_launch_args(values).is_err());
+    }
+
+    #[test]
+    fn loading_cancellation_and_progress_are_explicit_normal_online_inputs() {
+        let output = new_output_path("online-loading-cancel");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-host".into();
+        values.extend(args(&[
+            "--online-account",
+            "CaptureHost",
+            "--online-simple-input",
+            "--online-loading-cancel",
+            "https",
+            "--online-loading-cancel-checkpoint",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "--online-observe-loading",
+        ]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture")
+        };
+        let config = request.live_online.unwrap();
+        assert!(config.observe_loading);
+        assert_eq!(
+            config.loading_cancel.unwrap().kind,
+            LoadingCancelKind::Https
+        );
+        values.extend(args(&["--online-players", "3"]));
+        assert!(parse_launch_args(values).is_err());
+        let mut wrong = valid_args(&output);
+        wrong[1] = "online-live-host".into();
+        wrong.extend(args(&[
+            "--online-account",
+            "CaptureHost",
+            "--online-simple-input",
+            "--online-loading-cancel",
+            "departure",
+        ]));
+        assert!(parse_launch_args(wrong).is_err());
+    }
+
+    #[test]
+    fn loading_host_loss_requires_the_normal_three_player_input_route() {
+        let output = new_output_path("online-loading-host-loss");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-guest".into();
+        values.extend(args(&[
+            "--online-account",
+            "Guest",
+            "--online-host",
+            "Host",
+            "--online-simple-input",
+            "--online-players",
+            "3",
+            "--online-frames",
+            "1024",
+            "--online-loading-host-loss",
+            "0123456789abcdef0123456789abcdef",
+        ]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture");
+        };
+        let config = request.live_online.unwrap();
+        assert_eq!(config.players, 3);
+        assert_eq!(config.loading_output, Some(output));
+        assert_eq!(
+            config.loading_host_loss.as_deref(),
+            Some("0123456789abcdef0123456789abcdef")
+        );
+        let count = values.iter().position(|value| value == "3").unwrap();
+        values[count] = "2".into();
+        assert!(parse_launch_args(values.clone()).is_err());
+        values[count] = "3".into();
+        values.extend(args(&["--online-map", "custom.map"]));
+        assert!(parse_launch_args(values).is_err());
+    }
+
+    #[test]
+    fn exit_reentry_checkpoint_uses_a_separate_public_nonce_and_normal_pair() {
+        let output = new_output_path("online-exit-checkpoint");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-guest".into();
+        values.extend(args(&[
+            "--online-account",
+            "Guest",
+            "--online-host",
+            "Host",
+            "--online-simple-input",
+            "--online-exit-checkpoint",
+            "0123456789abcdef0123456789abcdef",
+        ]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture");
+        };
+        let config = request.live_online.unwrap();
+        assert!(config.failure_prefix_output.is_none());
+        assert!(
+            config
+                .exit_prefix_output
+                .unwrap()
+                .to_string_lossy()
+                .ends_with(".exit.json")
+        );
+        assert_eq!(
+            config.exit_checkpoint.as_deref(),
+            Some("0123456789abcdef0123456789abcdef")
+        );
+        *values.last_mut().unwrap() = "short".into();
+        assert!(parse_launch_args(values.clone()).is_err());
+        *values.last_mut().unwrap() = "0123456789abcdef0123456789abcdef".into();
+        values[1] = "online-live-timeout-host".into();
+        assert!(parse_launch_args(values).is_err());
+    }
+
+    #[test]
+    fn scale_capture_uses_explicit_player_and_observation_limits() {
+        let output = new_output_path("online-scale");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-host".into();
+        values.extend(args(&[
+            "--online-account",
+            "Host",
+            "--online-players",
+            "30",
+            "--online-frames",
+            "900",
+            "--online-mass-input",
+            "--online-map",
+            "scale.map",
+            "--online-start",
+            "29",
+        ]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture")
+        };
+        let config = request.live_online.unwrap();
+        assert_eq!((config.players, config.frames), (30, 900));
+        assert!(config.simple_input && config.mass_input);
+        assert_eq!(config.map.as_deref(), Some("scale.map"));
+        assert_eq!(config.start, Some(29));
+        let mut invalid_start = values.clone();
+        let start = invalid_start
+            .iter()
+            .position(|value| value == "--online-start")
+            .unwrap();
+        invalid_start[start + 1] = "30".into();
+        assert!(parse_launch_args(invalid_start).is_err());
+        let mut generated = values.clone();
+        let map = generated
+            .iter()
+            .position(|value| value == "scale.map")
+            .unwrap();
+        generated[map] = "RandMap.Sed".into();
+        assert!(
+            parse_launch_args(generated).is_err(),
+            "generated maps retain their eight-start limit"
+        );
+        let frames = values.iter().position(|value| value == "900").unwrap();
+        values[frames] = "100".into();
+        assert!(parse_launch_args(values).is_err());
+    }
+
+    #[test]
     fn strict_capture_args_accept_main_menu_entry_sequence() {
         let output = new_output_path("entry-sequence");
         let mut values = valid_args(&output);
@@ -2329,14 +3970,46 @@ mod tests {
 
     #[test]
     fn wol_checkpoints_round_trip() {
+        let AppLaunchMode::ShellCapture(mut request) =
+            parse_launch_args(valid_args(&new_output_path("legacy-wol"))).unwrap()
+        else {
+            panic!("capture");
+        };
         for name in [
             CHECKPOINT_WOL_0X10E_STEADY,
             CHECKPOINT_WOL_0X10E_HOVER_QUICK_MATCH,
             CHECKPOINT_WOL_0X10E_API_MISSING,
             CHECKPOINT_WOL_0X10E_BACK,
+            "wol-0x10e-entry-tick-0",
         ] {
             let checkpoint = ShellCaptureCheckpoint::parse(name).expect("WOL checkpoint");
-            assert_eq!(checkpoint.as_str(), name);
+            request.checkpoint = checkpoint;
+            assert!(request.legacy_wol_ui());
+            assert_eq!(
+                request.wol_welcome_provider(),
+                Some(crate::app::shell_wol::WolProvider::Unavailable)
+            );
+            if !name.contains("entry-tick") {
+                assert_eq!(checkpoint.as_str(), name);
+            }
+        }
+        for (name, provider) in [
+            (
+                "wol-0x113-login-accepted",
+                crate::app::shell_wol::WolProvider::Controlled,
+            ),
+            (
+                "wol-0x10e-profile",
+                crate::app::shell_wol::WolProvider::Controlled,
+            ),
+            (
+                "wol-test-service-lobby",
+                crate::app::shell_wol::WolProvider::TestService,
+            ),
+        ] {
+            request.checkpoint = ShellCaptureCheckpoint::parse(name).unwrap();
+            assert!(request.legacy_wol_ui());
+            assert_eq!(request.wol_welcome_provider(), Some(provider));
         }
         assert_eq!(
             ShellCaptureCheckpoint::parse("wol-0x10e-entry-tick-17").expect("last tick"),
@@ -2346,9 +4019,90 @@ mod tests {
     }
 
     #[test]
+    fn online_welcome_capture_requires_no_login_inputs() {
+        let output = new_output_path("online-welcome");
+        let mut values = valid_args(&output);
+        values[1] = CHECKPOINT_WOL_ONLINE_WELCOME_STEADY.into();
+        let AppLaunchMode::ShellCapture(mut request) = parse_launch_args(values).expect("parse")
+        else {
+            panic!("capture");
+        };
+        assert_eq!(
+            request.checkpoint().as_str(),
+            CHECKPOINT_WOL_ONLINE_WELCOME_STEADY
+        );
+        assert!(request.live_online.is_none());
+        assert!(!request.legacy_wol_ui());
+        assert_eq!(
+            request.wol_welcome_provider(),
+            Some(crate::app::shell_wol::WolProvider::Online)
+        );
+        assert_eq!(
+            request.checkpoint().movies_target(),
+            Some(movies::MoviesTarget::WolWelcome {
+                provider: crate::app::shell_wol::WolProvider::Online,
+                entry_tick: None,
+                hover: None,
+                press: movies::WolPress::None,
+            })
+        );
+        request.checkpoint = ShellCaptureCheckpoint::Lan(movies::LanTarget::OnlineHost);
+        assert!(!request.legacy_wol_ui());
+        assert_eq!(request.wol_welcome_provider(), None);
+        request.checkpoint = ShellCaptureCheckpoint::parse("wol-modern-lobby").unwrap();
+        assert!(!request.legacy_wol_ui());
+        assert!(request.live_online.is_none());
+        assert_eq!(
+            request.wol_welcome_provider(),
+            Some(crate::app::shell_wol::WolProvider::TestService)
+        );
+        request.checkpoint = ShellCaptureCheckpoint::parse("wol-modern-username").unwrap();
+        assert!(!request.legacy_wol_ui());
+        assert_eq!(
+            request.wol_welcome_provider(),
+            Some(crate::app::shell_wol::WolProvider::Online)
+        );
+    }
+
+    #[test]
     fn campaign_start_checkpoints_select_only_the_normal_route_targets() {
         use crate::ui::campaign_shell::CampaignSide::{Allied, Soviet};
         for (name, target) in [
+            (
+                "campaign-all1-initial-save",
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::InitialSaved,
+                },
+            ),
+            (
+                "campaign-sov1-initial-save",
+                movies::MoviesTarget::CampaignStart {
+                    side: Soviet,
+                    target: movies::CampaignStartTarget::InitialSaved,
+                },
+            ),
+            (
+                "campaign-all02-first-live-frame",
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::ExplicitFirstLive("ALL02UMD.MAP"),
+                },
+            ),
+            (
+                "campaign-sov05-first-live-frame",
+                movies::MoviesTarget::CampaignStart {
+                    side: Soviet,
+                    target: movies::CampaignStartTarget::ExplicitFirstLive("SOV05UMD.MAP"),
+                },
+            ),
+            (
+                "campaign-sov07-first-live-frame",
+                movies::MoviesTarget::CampaignStart {
+                    side: Soviet,
+                    target: movies::CampaignStartTarget::ExplicitFirstLive("SOV07TMD.MAP"),
+                },
+            ),
             (
                 CHECKPOINT_CAMPAIGN_ALL1_LOADING_FIRST,
                 movies::MoviesTarget::CampaignStart {
@@ -2375,6 +4129,24 @@ mod tests {
                 movies::MoviesTarget::CampaignStart {
                     side: Soviet,
                     target: movies::CampaignStartTarget::FirstLive,
+                },
+            ),
+            (
+                "campaign-sov02-objective-expiry",
+                movies::MoviesTarget::CampaignStart {
+                    side: Soviet,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::ObjectiveExpiry,
+                    ),
+                },
+            ),
+            (
+                "campaign-sov6-alternate-home-victory",
+                movies::MoviesTarget::CampaignStart {
+                    side: Soviet,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::AlternateHomeVictory,
+                    ),
                 },
             ),
             (
@@ -2417,11 +4189,56 @@ mod tests {
                 },
             ),
             (
+                CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_NO,
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::DefeatReturned,
+                    ),
+                },
+            ),
+            (
                 CHECKPOINT_CAMPAIGN_ALL1_DEFEAT_REPLAY_YES,
                 movies::MoviesTarget::CampaignStart {
                     side: Allied,
                     target: movies::CampaignStartTarget::Restart(
                         movies::RestartTarget::DefeatReplayed,
+                    ),
+                },
+            ),
+            (
+                "campaign-all1-defeat-replay-enter",
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::DefeatReturnedEnter,
+                    ),
+                },
+            ),
+            (
+                "campaign-all1-defeat-replay-numpad-enter",
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::DefeatReturnedNumpadEnter,
+                    ),
+                },
+            ),
+            (
+                "campaign-all1-defeat-replay-escape",
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::DefeatReturnedEscape,
+                    ),
+                },
+            ),
+            (
+                "campaign-all1-defeat-replay-repeated-enter",
+                movies::MoviesTarget::CampaignStart {
+                    side: Allied,
+                    target: movies::CampaignStartTarget::Restart(
+                        movies::RestartTarget::DefeatReturnedRepeatedEnter,
                     ),
                 },
             ),
@@ -2465,6 +4282,26 @@ mod tests {
             (
                 CHECKPOINT_CAMPAIGN_SOV1_OPENING_UNLOCKED,
                 movies::OpeningTarget::Unlocked,
+                Soviet,
+            ),
+            (
+                "campaign-sov1-opening-timer-running",
+                movies::OpeningTarget::TimerRunning,
+                Soviet,
+            ),
+            (
+                "campaign-sov1-opening-timer-expired",
+                movies::OpeningTarget::TimerExpired,
+                Soviet,
+            ),
+            (
+                "campaign-sov2-radar-alert",
+                movies::OpeningTarget::RadarAlert,
+                Soviet,
+            ),
+            (
+                "campaign-sov2-radar-restored",
+                movies::OpeningTarget::RadarRestored,
                 Soviet,
             ),
             (
@@ -2519,6 +4356,49 @@ mod tests {
     }
 
     #[test]
+    fn soviet_encounter_captures_select_the_real_campaign_and_bound_play_inputs() {
+        use crate::ui::campaign_shell::CampaignSide;
+        for (name, target) in [
+            (
+                "campaign-sov1-opening-tick-1500",
+                movies::OpeningTarget::SovietTick(1500),
+            ),
+            (
+                "campaign-sov1-navy-tick-6500",
+                movies::OpeningTarget::SovietNavy(6500),
+            ),
+            (
+                "campaign-sov07-groups-tick-8000",
+                movies::OpeningTarget::SovietGroups(8000),
+            ),
+            (
+                "campaign-sov02-fortresses-tick-8000",
+                movies::OpeningTarget::SovietFortresses(8000),
+            ),
+        ] {
+            assert_eq!(
+                ShellCaptureCheckpoint::parse(name).unwrap().movies_target(),
+                Some(movies::MoviesTarget::CampaignStart {
+                    side: CampaignSide::Soviet,
+                    target: movies::CampaignStartTarget::Opening(target),
+                })
+            );
+        }
+        for invalid in [
+            "campaign-sov1-opening-tick-0",
+            "campaign-sov1-navy-tick-1099",
+            "campaign-sov1-navy-tick-10001",
+            "campaign-sov1-navy-tick-not-a-tick",
+            "campaign-sov07-groups-tick-300",
+            "campaign-sov07-groups-tick-10001",
+            "campaign-sov02-fortresses-tick-300",
+            "campaign-sov02-fortresses-tick-10001",
+        ] {
+            assert!(ShellCaptureCheckpoint::parse(invalid).is_err());
+        }
+    }
+
+    #[test]
     fn network_bounce_checkpoint_round_trips() {
         let checkpoint = ShellCaptureCheckpoint::parse(CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE)
             .expect("network bounce checkpoint");
@@ -2540,7 +4420,7 @@ mod tests {
         )
         .tile_count as u32;
         assert_eq!(
-            ShellSlideKind::MainMenu.column(rows).total_ticks(),
+            ShellSlideKind::MainMenu.column(rows, None).total_ticks(),
             u32::from(ENTRY_SEQUENCE_FRAMES)
         );
     }
@@ -2561,6 +4441,92 @@ mod tests {
         assert_eq!(session.timeout(), Duration::from_secs(60));
         assert!(!session.is_entry_sequence());
         assert!(session.skirmish.is_some());
+    }
+
+    #[test]
+    fn capture_timeout_requires_one_positive_capture_only_value() {
+        let output = new_output_path("timeout-args");
+        let mut zero = valid_args(&output);
+        zero.extend(args(&["--shell-capture-timeout-seconds", "0"]));
+        assert!(
+            parse_launch_args(zero)
+                .unwrap_err()
+                .to_string()
+                .contains("must be greater than zero")
+        );
+
+        let mut duplicate = valid_args(&output);
+        duplicate.extend(args(&[
+            "--shell-capture-timeout-seconds",
+            "3500",
+            "--shell-capture-timeout-seconds",
+            "3600",
+        ]));
+        assert!(
+            parse_launch_args(duplicate)
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate shell-capture option --shell-capture-timeout-seconds")
+        );
+        assert!(parse_launch_args(args(&["--shell-capture-timeout-seconds", "3500"])).is_err());
+    }
+
+    #[test]
+    fn live_network_frame_budget_covers_two_rounds_and_keeps_stills_bounded() {
+        let output = new_output_path("live-frame-budget");
+        let values = valid_args(&output);
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture");
+        };
+        assert_eq!(
+            ShellCaptureSession::new(request).max_capture_frames(),
+            10_000
+        );
+
+        let mut online = values.clone();
+        online[1] = "online-live-host".into();
+        online.extend(args(&["--online-account", "Host"]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(online.clone()).unwrap()
+        else {
+            panic!("capture");
+        };
+        let two_rounds = 2 * request.live_online.as_ref().unwrap().frames;
+        let session = ShellCaptureSession::new(request);
+        assert_eq!(two_rounds, 14_400);
+        assert!(session.max_capture_frames() > two_rounds + 10_000);
+        assert_eq!(session.max_capture_frames(), 310_000);
+        assert_eq!(session.timeout(), Duration::from_secs(2400));
+
+        let mut lan = values;
+        lan[1] = "lan-live-host".into();
+        lan.extend(args(&[
+            "--lan-bind",
+            "127.0.0.1:31000",
+            "--lan-peer",
+            "127.0.0.1:31010",
+        ]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(lan).unwrap() else {
+            panic!("capture");
+        };
+        assert_eq!(
+            ShellCaptureSession::new(request).max_capture_frames(),
+            310_000
+        );
+
+        online.extend(args(&["--shell-capture-timeout-seconds", "3500"]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(online).unwrap() else {
+            panic!("capture");
+        };
+        let mut session = ShellCaptureSession::new(request);
+        assert_eq!(session.timeout(), Duration::from_secs(3500));
+        assert_eq!(session.max_capture_frames(), 447_500);
+        session.started_at = Some(Instant::now());
+        let remaining = session
+            .readback_timeout()
+            .expect("override reaches readback");
+        assert!(remaining > Duration::from_secs(2400));
+        assert!(remaining <= Duration::from_secs(3500));
     }
 
     #[test]

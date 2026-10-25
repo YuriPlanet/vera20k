@@ -11,7 +11,7 @@ from collections import deque
 from unicorn import UC_HOOK_CODE,UC_HOOK_MEM_WRITE
 from unicorn.x86_const import *
 from capstone import Cs,CS_ARCH_X86,CS_MODE_32
-from tools.native_oracle import NATIVE_SHA256,RET_MAGIC,run_checked,provenance
+from tools.native_oracle import RET_MAGIC,run_checked,provenance
 from tools.projectile_oracle.bridge_render_inputs import BulletReader,lexical
 from tools.projectile_oracle.guided_step import i32,xyz,vec
 from tools.native_slope import slope_matrices
@@ -236,7 +236,7 @@ def execute():
  assert failure is None,failure
  text_hash=sha(bytes(u.mem_read(0x401000,0x3E0000)));assert text_hash==resident.code_hash
  assert not pending,pending
- return dict(native_sha256=NATIVE_SHA256,text_section_sha256=text_hash,inputs=info,world=world,slot=slot,shots=shots,events=events,stop=hex(u.reg_read(UC_X86_REG_EIP)),frames=frames,area=area,resident_trace=resident.trace,repair=repair,rng_initial=rng_initial,rng_final={k:sr.rng_state(u,p) for k,p in resident.rngs.items()},failure=failure,fire_error=fire_error,rearm=[i32(u,src+0x2EC),i32(u,src+0x2F4)],source_after=dict(position=xyz(u,src+0x9C),health=i32(u,src+0x6C),alive=u.mem_read(src+0x90,1)[0],still_targets_cell=m.read32(src+0x2B4)==target))
+ return dict(text_section_sha256=text_hash,inputs=info,world=world,slot=slot,shots=shots,events=events,stop=hex(u.reg_read(UC_X86_REG_EIP)),frames=frames,area=area,resident_trace=resident.trace,repair=repair,rng_initial=rng_initial,rng_final={k:sr.rng_state(u,p) for k,p in resident.rngs.items()},failure=failure,fire_error=fire_error,rearm=[i32(u,src+0x2EC),i32(u,src+0x2F4)],source_after=dict(position=xyz(u,src+0x9C),health=i32(u,src+0x6C),alive=u.mem_read(src+0x90,1)[0],still_targets_cell=m.read32(src+0x2B4)==target))
 
 def authored_fence_case(seed,*,forced_cells=None,concrete_cells=None):
  assert forced_cells is None or concrete_cells is None
@@ -568,11 +568,11 @@ def authored_fence_generate():
  wall=[e for c in cases for s in c['steps'] for e in s['events'] if e['kind']=='wall_damage']
  assert any(e['before']==e['after'] for e in wall),'no native rejected wall control'
  assert any(e['after']['overlay']==-1 and e['before']['overlay']!=-1 for e in wall),'no native wall removal'
- return dict(native_sha256=NATIVE_SHA256,cases=cases)
+ return dict(cases=cases)
 
 
 def fence_driveover_generate():
- return dict(native_sha256=NATIVE_SHA256,cases=[authored_fence_case(0,forced_cells=((43,82),(44,82)))])
+ return dict(cases=[authored_fence_case(0,forced_cells=((43,82),(44,82)))])
 
 
 def concrete_wall_generate():
@@ -603,7 +603,7 @@ def concrete_wall_generate():
  chain=[e for e in wall if e['argument']==200 and e['caller']=='00480EB4']
  assert chain,'no original stage2 inline200 fan-out'
  assert any(e['before']!=e['after'] for e in chain),'no accepted inline200 child'
- return dict(native_sha256=NATIVE_SHA256,cases=cases)
+ return dict(cases=cases)
 
 
 def concrete_wall_metadata():

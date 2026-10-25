@@ -122,11 +122,14 @@ pub(crate) fn launch(
     }
     let general = &rules.general;
     super::spawn_cell_anim(sim, rules, &general.ion_blast_anim, target_rx, target_ry);
+    // The cue (`0x006CD8D3`) and MutateExplosion both use the deck
+    // coordinate `0x006CD7F2..0x006CD84C` built.
+    let deck = super::deck_coords(sim, (target_rx, target_ry));
+    let [x, y, z] = deck;
     sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
-        rx: target_rx,
-        ry: target_ry,
+        world: crate::sim::anim_class::AnimWorldCoord { x, y, z },
     });
     sim.sound_events.emit(SimSoundEvent::RadarEvent {
         radar: RadarEventRequest::new(RadarEventType::ImpactSilent, target_rx, target_ry),
@@ -136,7 +139,7 @@ pub(crate) fn launch(
         let Some(warhead) = rules.warhead(&general.mutate_explosion_warhead) else {
             return true;
         };
-        let [x, y, z] = super::deck_coords(sim, (target_rx, target_ry));
+        let [x, y, z] = deck;
         let origin = (
             RAD_NO_ATTACKER,
             Some(owner),

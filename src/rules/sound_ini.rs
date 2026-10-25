@@ -29,11 +29,15 @@
 //! are NOT separators.
 //!
 //! ## Dependency rules
-//! - Part of rules/ — depends on rules/ini_parser. No sim/render dependencies.
+//! - Part of rules/ — depends on rules/ini_parser and the assets audio index
+//!   (`Sounds=` admission). No sim/render dependencies.
 
 use std::collections::HashMap;
 
+use crate::assets::audio_bag::AudioIndex;
 use crate::rules::ini_parser::{IniFile, IniSection};
+#[cfg(feature = "ares")]
+use crate::rules::ini_value::truncate_native_bytes;
 use crate::rules::ini_value::{crt_atoi, strtok};
 
 /// `Control=` flag words. gamemd-derived: the `(char*, u32)` table at
@@ -196,6 +200,13 @@ pub struct SoundEntry {
     /// [`MAX_SAMPLES`]. `Attack=` counts the first N as attack samples and
     /// `Decay=` the last M as decay samples; the rest is the body.
     pub sounds: Vec<String>,
+    /// `+0x0C`: every name `VocClass::AddSample @ 0x004064A0` looked up was
+    /// found. `FindOrCreate @ 0x004063B0` sets it (`0x00406427`); a name
+    /// `FindSampleIndex @ 0x004015C0` misses clears it (`0x00406510`), and
+    /// nothing sets it again, so one unresolvable name silences the whole
+    /// entry (`AllocateFromPool @ 0x004051B6` refuses it). Only a registry read
+    /// against the audio index can clear it; every retail name resolves.
+    pub samples_resolved: bool,
     /// Playback volume in percent, `0..=100`. VERA-internal, gamemd
     /// equivalent UNCHECKED: native keeps no percentage — `ReadINI` converts
     /// straight to [`Self::volume_linear`] and throws the percentage away.
@@ -283,6 +294,7 @@ impl SoundEntry {
         Self {
             id: name.to_string(),
             sounds: Vec::new(),
+            samples_resolved: true,
             // `+0x18` interp seeded to `0x4000` (`0x0040641F`/`0x00406458`).
             volume: 100,
             volume_linear: VOLUME_SCALE,
@@ -341,7 +353,17 @@ impl SoundRegistry {
     ///
     /// Init_Game52C763/52C796 supplies SOUNDMD.INI alone. Source selection
     /// and process lifetime belong to `audio_sources::AudioDefinitions`.
+    ///
+    /// Without an audio index every `Sounds=` name is kept lexically; see
+    /// [`Self::from_ini_admitting`].
     pub fn from_ini(ini: &IniFile) -> Self {
+        Self::from_ini_admitting(ini, None)
+    }
+
+    /// [`Self::from_ini`] with `Sounds=` names admitted against the audio
+    /// index, as `AddSample @ 0x004064A0` does: startup builds the index
+    /// (`52BBC7 -> 406CE8`) before Init_Game reads SOUNDMD (`52C796`).
+    pub fn from_ini_admitting(ini: &IniFile, index: Option<&AudioIndex>) -> Self {
         let mut entries: HashMap<String, SoundEntry> = HashMap::new();
         let mut native_order = Vec::new();
         let defaults = SoundDefaults::read(ini.section("Defaults"));
@@ -376,14 +398,10 @@ impl SoundRegistry {
             if previous.is_none() {
                 native_order.push(key.clone());
             }
-            let name: &str = previous.as_ref().map_or(value, |entry| entry.id.as_str());
-            let mut entry: SoundEntry = read_entry(ini, name, &defaults);
-            if let Some(previous) = previous {
-                let mut sounds: Vec<String> = previous.sounds;
-                sounds.extend(entry.sounds);
-                sounds.truncate(MAX_SAMPLES);
-                entry.sounds = sounds;
-            }
+            let name = previous
+                .as_ref()
+                .map_or_else(|| value.to_string(), |entry| entry.id.clone());
+            let entry: SoundEntry = read_entry(ini, &name, &defaults, index, previous);
             entries.insert(key, entry);
         }
 
@@ -403,7 +421,7 @@ impl SoundRegistry {
     /// Literal action+90 consumers index the Voc array registered by7512CA..
     ///75133D. Duplicate IDs keep their first slot; a negative/missing slot is
     ///the existing safe invalid-reference boundary, without creating a sound.
-    pub(crate) fn entry_by_index(&self, index: i32) -> Option<&SoundEntry> {
+    pub fn entry_by_index(&self, index: i32) -> Option<&SoundEntry> {
         let key = self.native_order.get(usize::try_from(index).ok()?)?;
         self.entries.get(key)
     }
@@ -460,29 +478,39 @@ impl SoundRegistry {
 /// files spell all 820/500 `[SoundList]` values exactly as their section
 /// headers, so the two agree on retail data; a mod that spelled one differently
 /// would register the id with [`SoundEntry::unread`]'s silent state here.
-fn read_entry(ini: &IniFile, name: &str, defaults: &SoundDefaults) -> SoundEntry {
+///
+/// `previous` is the object a twice-listed id already built: `ReadINI` runs on
+/// it again, so its samples carry over and `AddSample` appends to them.
+fn read_entry(
+    ini: &IniFile,
+    name: &str,
+    defaults: &SoundDefaults,
+    index: Option<&AudioIndex>,
+    previous: Option<SoundEntry>,
+) -> SoundEntry {
     let Some(section) = ini.section(name) else {
-        return SoundEntry::unread(name);
+        return previous.unwrap_or_else(|| SoundEntry::unread(name));
     };
 
-    // `VocClass::AddSample @ 0x004064A0` skips every leading `$`/`#` and stops
-    // accepting at 32 samples. An absent or token-less `Sounds=` is registered,
-    // not skipped: `ReadINI` reads it with the empty-string default at
-    // `0x0075049D` and simply adds nothing, so the id must still resolve here
+    // `VocClass::AddSample @ 0x004064A0` runs once per token ([`add_sample`]).
+    // An absent or token-less `Sounds=` is registered, not skipped: `ReadINI`
+    // reads it with the empty-string default at `0x0075049D` and simply adds
+    // nothing (`0x007504BE` skips the loop), so the id must still resolve here
     // rather than fall through to the audio-bag path. Eight stock sections take
     // that path — `Dummy`, `CampfireLoop`, `PropagandaTruck`, `DolphinFear`,
     // `OspreyCollision`, `SquidFear`, `SubFear`, `RobotTankPowerDown` — and
     // `Dummy.wav` is a real 1180-byte file in `audiomd.mix`, so registering the
     // silent entry is what keeps `[AudioVisual] Construction=`/`GateUp=`/
     // `GateDown=` from playing a buffer gamemd never starts.
-    let sounds: Vec<String> = strtok(
+    let (mut sounds, mut samples_resolved) = previous.map_or((Vec::new(), true), |entry| {
+        (entry.sounds, entry.samples_resolved)
+    });
+    for token in strtok(
         section.read_name("Sounds", TEXT_CAPACITY).unwrap_or(""),
         TOKEN_DELIMITERS,
-    )
-    .map(|s| s.trim_start_matches(['$', '#']).to_string())
-    .filter(|s| !s.is_empty())
-    .take(MAX_SAMPLES)
-    .collect();
+    ) {
+        add_sample(&mut sounds, &mut samples_resolved, token, index);
+    }
 
     let volume_raw = section.read_double("Volume", f64::from(defaults.volume));
     let volume_linear = volume_linear(volume_raw);
@@ -512,6 +540,7 @@ fn read_entry(ini: &IniFile, name: &str, defaults: &SoundDefaults) -> SoundEntry
     SoundEntry {
         id: name.to_string(),
         sounds,
+        samples_resolved,
         volume,
         volume_linear,
         priority,
@@ -526,6 +555,41 @@ fn read_entry(ini: &IniFile, name: &str, defaults: &SoundDefaults) -> SoundEntry
         vshift,
         attack,
         decay,
+    }
+}
+
+/// `VocClass::AddSample @ 0x004064A0` for one `Sounds=` token.
+///
+/// A full slot table refuses the token before any lookup (`0x004064A6`,
+/// `+0x134 == 0x20`); otherwise every leading `$`/`#` is skipped
+/// (`0x004064C7..0x004064D2`) and the rest is looked up through
+/// `FindSampleIndex @ 0x004015C0` (`0x004064D6`). A hit takes the next slot; a
+/// miss — a sigil-only token included — stores nothing and clears `+0x0C`
+/// (`0x00406502..0x00406510`). `ReadINI` ignores the result and keeps adding
+/// (`0x007504C0..0x007504DA`).
+///
+/// With no index (`0x87E294` null, or VERA's lexical registry) native adds no
+/// slot at all; VERA keeps the name for its standalone-file playback fallback.
+/// Installed Ares replaces this function (`VocClassData_AddSample`
+/// `0x1005AFA0`, hook record in `tools/rules_oracle/ares_audio_bags.json`): a
+/// missed name goes to its loose-sample loader (`0x1005AFF4..0x1005AFFA`) and
+/// `+0x0C` is never cleared, so the Ares build keeps every name too.
+fn add_sample(
+    sounds: &mut Vec<String>,
+    samples_resolved: &mut bool,
+    token: &str,
+    index: Option<&AudioIndex>,
+) {
+    if sounds.len() == MAX_SAMPLES {
+        return;
+    }
+    let name = token.trim_start_matches(['$', '#']);
+    #[cfg(feature = "ares")]
+    let index = index.filter(|_| false);
+    match index {
+        Some(index) if index.find_sample_index(name).is_none() => *samples_resolved = false,
+        _ if !name.is_empty() => sounds.push(name.to_string()),
+        _ => {}
     }
 }
 
@@ -758,12 +822,15 @@ pub enum EvaSide {
     Yuri,
 }
 
+/// Native stock voice indices; Ares extra tags start immediately after these.
+const EVA_STOCK_TAGS: [&str; 3] = ["Allied", "Russian", "Yuri"];
+
 impl EvaSide {
-    /// `SetSide(-1)` stores 0 (`0x007534E0`); every other value is stored as
-    /// is and only 0/1 select a named column at play time.
-    pub fn from_side_index(side: i32) -> Self {
-        match side {
-            -1 | 0 => Self::Allied,
+    /// GetFilename753380 and PlayNextQueued7528E8 project the already-bound
+    /// voice index. SetSide's -1 normalization belongs to VoxQueue, not here.
+    pub fn from_voice_index(voice: i32) -> Self {
+        match voice {
+            0 => Self::Allied,
             1 => Self::Russian,
             _ => Self::Yuri,
         }
@@ -782,6 +849,9 @@ pub struct EvaEntry {
     pub russian: Option<String>,
     /// `Yuri=` column (`+0x2C`).
     pub yuri: Option<String>,
+    /// Ares100639C0's nine-byte slots, in the owning registry's EVATypes order.
+    #[cfg(feature = "ares")]
+    extra_columns: Vec<Option<String>>,
     /// `Type=` (`+0x4C`), default STANDARD.
     pub eva_type: EvaType,
     /// `Priority=` (`+0x48`), default NORMAL.
@@ -800,6 +870,8 @@ impl EvaEntry {
             allied: None,
             russian: None,
             yuri: None,
+            #[cfg(feature = "ares")]
+            extra_columns: Vec::new(),
             eva_type: EvaType::Standard,
             priority: EvaPriority::Normal,
             volume: 1.0,
@@ -842,6 +914,42 @@ impl EvaEntry {
             EvaSide::Yuri => self.yuri.as_deref(),
         }
     }
+
+    /// GetFilename753380, replaced by Ares10063920 when enabled. Ares keeps
+    /// signed invalid indices empty rather than selecting the stock Yuri column.
+    /// Executed controls: tools/spatial_oracle/ares_eva.{json,md}.
+    pub fn column_by_voice(&self, voice: i32) -> Option<&str> {
+        #[cfg(feature = "ares")]
+        {
+            match voice {
+                0 => self.allied.as_deref(),
+                1 => self.russian.as_deref(),
+                2 => self.yuri.as_deref(),
+                _ => self
+                    .extra_columns
+                    .get(usize::try_from(voice.checked_sub(3)?).ok()?)?
+                    .as_deref(),
+            }
+        }
+        #[cfg(not(feature = "ares"))]
+        self.column(EvaSide::from_voice_index(voice))
+    }
+
+    /// Ares100639C0 runs after the stock entry reader: ReadString(capacity16,
+    /// default empty), then bounded copy into char[9]. Each read replaces every
+    /// slot, including a missing/empty key. This is fixed EVAMD data, not a rules
+    /// layer. Native executions: ares_eva.json extra_columns[_reread].
+    #[cfg(feature = "ares")]
+    fn read_extra_columns(&mut self, section: Option<&IniSection>, tags: &[String]) {
+        self.extra_columns = tags
+            .iter()
+            .map(|tag| {
+                section
+                    .and_then(|section| section.read_name(tag, 16))
+                    .map(|value| truncate_native_bytes(value, 8).to_string())
+            })
+            .collect();
+    }
 }
 
 /// The `VoxClass` entry array (`0xB1D4A4`, count `0xB1D4B0`), built by
@@ -860,6 +968,10 @@ pub struct EvaRegistry {
     /// Derived lookup only; built with the entry vector and never mutated
     /// independently. ASCII uppercase implements the original stricmp scan.
     names: HashMap<String, usize>,
+    /// Ares10063660 owns first spelling/order of additional voice tags. Entry
+    /// extra-column slots derive from this same order; neither mutates after init.
+    #[cfg(feature = "ares")]
+    extra_tags: Vec<String>,
 }
 
 impl EvaRegistry {
@@ -867,10 +979,31 @@ impl EvaRegistry {
     pub fn from_ini(ini: &IniFile) -> Self {
         let mut entries = Vec::new();
         let mut names = HashMap::new();
+        // Ares10063660 registers EVATypes before DialogList. ReadString's
+        // capacity200 includes NUL; stock tags and later case variants are
+        // skipped. Evidence: tools/spatial_oracle/ares_eva.{json,md}.
+        #[cfg(feature = "ares")]
+        let extra_tags = {
+            let mut tags: Vec<String> = Vec::new();
+            if let Some(list) = ini.section("EVATypes") {
+                for name in list.keys().filter_map(|key| list.read_name(key, 200)) {
+                    if EVA_STOCK_TAGS
+                        .iter()
+                        .any(|stock| stock.eq_ignore_ascii_case(name))
+                        || tags.iter().any(|tag| tag.eq_ignore_ascii_case(name))
+                    {
+                        continue;
+                    }
+                    tags.push(name.to_string());
+                }
+            }
+            tags
+        };
         if let Some(list) = ini.section("DialogList") {
-            // Each entry name through `ReadString` into `char[200]` (`0x0075304D`).
+            // Stock ReadString char[200] (75304D); Ares10063660 uses char[40].
+            let capacity = if crate::rules::ARES_ENABLED { 40 } else { 200 };
             for key in list.keys() {
-                let Some(name) = list.read_name(key, 0xC8) else {
+                let Some(name) = list.read_name(key, capacity) else {
                     continue;
                 };
                 let id = name.to_ascii_uppercase();
@@ -878,14 +1011,53 @@ impl EvaRegistry {
                     continue;
                 }
                 names.insert(id, entries.len());
-                entries.push(EvaEntry::from_section(name, ini.section(name)));
+                let entry = EvaEntry::from_section(name, ini.section(name));
+                #[cfg(feature = "ares")]
+                let entry = {
+                    let mut entry = entry;
+                    entry.read_extra_columns(ini.section(name), &extra_tags);
+                    entry
+                };
+                entries.push(entry);
             }
         }
         log::info!(
             "EvaRegistry: loaded {} EVA event definitions",
             entries.len()
         );
-        Self { entries, names }
+        Self {
+            entries,
+            names,
+            #[cfg(feature = "ares")]
+            extra_tags,
+        }
+    }
+
+    /// Ares1002EC00 resolves stock names to 0/1/2, then registered EVATypes
+    /// to ordinal+3, with case-insensitive comparison and no whitespace trim.
+    /// `none` handling belongs to the retained Side field reader, after lookup.
+    /// Source/executions: tools/spatial_oracle/ares_eva.{json,md}.
+    pub fn voice_index_for_tag(&self, tag: &str) -> Option<i32> {
+        if let Some(index) = EVA_STOCK_TAGS
+            .iter()
+            .position(|stock| stock.eq_ignore_ascii_case(tag))
+        {
+            return Some(index as i32);
+        }
+        #[cfg(feature = "ares")]
+        {
+            self.extra_tags
+                .iter()
+                .position(|name| name.eq_ignore_ascii_case(tag))
+                .map(|index| {
+                    i32::try_from(index)
+                        .expect("EVA voice registry exceeds native i32 count")
+                        .checked_add(3)
+                        .expect("EVA voice registry exceeds native i32 count")
+                })
+        }
+        #[cfg(not(feature = "ares"))]
+        None
     }
 
     /// `VoxClass::PlayEVA`'s `stricmp` scan: the entry for an event name.
@@ -978,6 +1150,10 @@ fn parse_sound_priority(raw: &str) -> u8 {
         .find(|(name, _)| name.eq_ignore_ascii_case(token))
         .map_or(SOUND_PRIORITY_DEFAULT, |&(_, value)| value)
 }
+
+#[cfg(test)]
+#[path = "sound_ini_ares_eva_tests.rs"]
+mod ares_eva_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1553,16 +1729,15 @@ mod tests {
         assert_eq!(compared, 15);
     }
 
-    /// `VoxClass::SetSide @ 0x007534E0` stores the side as is (`-1` → 0);
     /// `PlayNextQueued 0x007528E8..0x007528FE` selects Allied for 0, Russian
     /// for 1 and the Yuri column for every other value.
     #[test]
     fn eva_side_column_follows_the_native_side_index_select() {
-        assert_eq!(EvaSide::from_side_index(-1), EvaSide::Allied);
-        assert_eq!(EvaSide::from_side_index(0), EvaSide::Allied);
-        assert_eq!(EvaSide::from_side_index(1), EvaSide::Russian);
-        assert_eq!(EvaSide::from_side_index(2), EvaSide::Yuri);
-        assert_eq!(EvaSide::from_side_index(7), EvaSide::Yuri);
+        assert_eq!(EvaSide::from_voice_index(-1), EvaSide::Yuri);
+        assert_eq!(EvaSide::from_voice_index(0), EvaSide::Allied);
+        assert_eq!(EvaSide::from_voice_index(1), EvaSide::Russian);
+        assert_eq!(EvaSide::from_voice_index(2), EvaSide::Yuri);
+        assert_eq!(EvaSide::from_voice_index(7), EvaSide::Yuri);
     }
 
     #[test]

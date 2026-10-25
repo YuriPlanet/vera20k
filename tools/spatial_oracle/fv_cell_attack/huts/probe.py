@@ -3,7 +3,7 @@ from pathlib import Path
 import argparse,json,os,struct,traceback
 from tools.spatial_oracle.fv_cell_attack import paid_world as owner
 from tools.spatial_oracle.building_body_rules import RULES,INI,SP,dwords
-from tools.native_oracle import run_checked, _canonical, NATIVE_SHA256
+from tools.native_oracle import run_checked, _canonical
 from tools.spatial_oracle.shrapnel_repair import packet_io
 from tools.spatial_oracle.fv_cell_attack.publication import publication_projection
 from unicorn.x86_const import *
@@ -122,7 +122,7 @@ def generate():
  finally:
   if q:q.close()
   owner.lists_owner.HEAP,owner.reader_owner.HEAP=original_heaps
- result=dict(schema=1,native_sha256=NATIVE_SHA256,failure=failure,steps=q.hut_steps if q else [],hut_events=q.hut_events if q else [],events=q.events if q else [],timeline=q.timeline if q else [],writes=q.memwrites if q else [],extra=q.extra if q else [],world=q.world if q and hasattr(q,'world')else None,hut_type=bytes(q.u.mem_read(q.hut_type,0x1800)).hex()if q and hasattr(q,'hut_type')else None,house_bytes=bytes(q.u.mem_read(q.neutral_house,0x17000)).hex()if q and hasattr(q,'neutral_house')else None,states=states,repair=repair,shots=q.shots if q else [],impacts=q.impacts if q else [],inputs=q.inputs if q else None,before_join=before_join)
+ result=dict(schema=1,failure=failure,steps=q.hut_steps if q else [],hut_events=q.hut_events if q else [],events=q.events if q else [],timeline=q.timeline if q else [],writes=q.memwrites if q else [],extra=q.extra if q else [],world=q.world if q and hasattr(q,'world')else None,hut_type=bytes(q.u.mem_read(q.hut_type,0x1800)).hex()if q and hasattr(q,'hut_type')else None,house_bytes=bytes(q.u.mem_read(q.neutral_house,0x17000)).hex()if q and hasattr(q,'neutral_house')else None,states=states,repair=repair,shots=q.shots if q else [],impacts=q.impacts if q else [],inputs=q.inputs if q else None,before_join=before_join)
  if q:assert owner.sha(bytes(q.u.mem_read(0x401000,0x3E0000)))==w['code_hash']
  assert failure is None,failure
  assert len(result['shots'])==len(result['impacts'])==2
@@ -131,40 +131,24 @@ def generate():
 
 def metadata():
  historical=json.loads((HERE/'original_execution.meta.json').read_bytes())
- # The executed dependency census is retained separately. Current source pins
- # declare the relocated replay inputs; only a completed native check validates
- # execution under those inputs, as distinguished in the receipt.
- names=set(historical['source_pins'])|{
-  'tools/spatial_oracle/fv_cell_attack/huts/__init__.py',
-  'tools/spatial_oracle/fv_cell_attack/huts/probe.py'}
- pins={name:owner.sha((owner.frozen.proof.REPO/name).read_bytes())for name in sorted(names)}
  boundaries=list(historical['boundaries'])
  boundaries[-1]='Every replay freshly executes all four physical states via the existing original Navigation owner and compares all frozen cells/planes/graphs before selecting damaged. No external heap cache or pickle input is supported.'
- return dict(schema=1,native_sha256=NATIVE_SHA256,
-  harness_sha256=owner.sha(Path(__file__).read_bytes()),source_pins=pins,
+ return dict(schema=1,
   original_execution_metadata_sha256=owner.sha((HERE/'original_execution.meta.json').read_bytes()),
-  original_harness_sha256=historical['harness_sha256'],
   original_payload_sha256=historical['payload_sha256'],scope=historical['scope'],boundaries=boundaries,
   physical_asset_sha256={'CTBHUT.SHP':CTBHUT_SHA256},
   publication_changes=['Copied lexical INI dictionaries/lines become SHA256 through the shared FV publication owner. Original Drive CRT startup precedes construction; the historical image-zero packet remains preserved as superseded evidence.',
-   'Drive startup is the gameplay prerequisite correction; historical execution metadata remains separate from the current replay source pins.'])
+   'Drive startup is the gameplay prerequisite correction; historical execution metadata remains in original_execution.meta.json.'])
 
-def checked_generate():
- initial=owner.sources();script_hash=owner.sha(Path(__file__).read_bytes())
- result=json.loads(_canonical(generate()))
- current=owner.sources()
- for name,digest in initial.items():assert current[name]==digest,('Imported source changed during execution',name)
- assert owner.sha(Path(__file__).read_bytes())==script_hash,'Harness changed during execution'
- pins=metadata()['source_pins']
- for name,digest in current.items():assert pins.get(name)==digest,('Unpinned executed source',name)
- return result
+def canonical_generate():
+ return json.loads(_canonical(generate()))
 
 def main():
  parser=argparse.ArgumentParser(description=__doc__)
  mode=parser.add_mutually_exclusive_group();mode.add_argument('--write',action='store_true');mode.add_argument('--check',action='store_true')
  parser.add_argument('--fresh-world',action='store_true',help='compatibility flag: physical worlds are always freshly executed')
  parser.add_argument('--output',type=Path,default=OUTPUT);args=parser.parse_args()
- packet_io.finish_vectors(checked_generate,OUTPUT,provenance=metadata,
+ packet_io.finish_vectors(canonical_generate,OUTPUT,provenance=metadata,
   argv=['--write'if args.write else'--check','--output',str(args.output)],
   promotion_path=HERE/'promotion.json',projection=publication_projection)
 

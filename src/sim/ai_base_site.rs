@@ -442,7 +442,7 @@ impl SiteWorld for SimSiteWorld<'_> {
 
 /// `BuildingTypeClass::Width @ 0x0045EC90` and `Height(0) @ 0x0045ECA0`.
 pub(crate) fn foundation_size(ty: &ObjectType) -> (i32, i32) {
-    let (width, height) = crate::rules::foundation::foundation_dimensions(&ty.foundation);
+    let (width, height) = ty.foundation.dimensions();
     (i32::from(width), i32::from(height))
 }
 

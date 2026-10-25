@@ -177,6 +177,9 @@ impl CameoKey {
 pub(crate) struct CameoStrips {
     strips: [Vec<Cameo>; 4],
     scroll_rows: [usize; 4],
+    /// StripClass PendingScroll: rows the scroll arrows queued, negative up.
+    /// Presentation only, and not saved: a load starts with none queued.
+    pending_scroll: [i32; 4],
     /// Strip entry +88 survives key refresh and Mouse save/no-init. Entries
     /// removed by Recalculate discard their deadline with their identity.
     flash_deadlines: HashMap<CameoId, i32>,
@@ -455,6 +458,67 @@ impl CameoStrips {
 
     pub(crate) fn set_scroll_row(&mut self, tab: SidebarTab, row: usize) {
         self.scroll_rows[tab.tab_index()] = row;
+    }
+
+    /// Sidebar Action `0x006A7780`, R-DN (`0xC9`) / R-UP (`0xC8`) branch:
+    /// queue one page (the visible row count) while rows remain below
+    /// TopRow, or TopRow is above 0. False is the ScoldSound branch, which
+    /// queues nothing. The observer branch (page 1) has no VERA strip.
+    pub(crate) fn queue_page_scroll(
+        &mut self,
+        tab: SidebarTab,
+        down: bool,
+        visible_rows: usize,
+    ) -> bool {
+        let index = tab.tab_index();
+        let top = self.scroll_rows[index];
+        let page = visible_rows as i32;
+        if down && (top + visible_rows) * 2 < self.strips[index].len() {
+            self.pending_scroll[index] += page;
+        } else if !down && top != 0 {
+            self.pending_scroll[index] -= page;
+        } else {
+            return false;
+        }
+        true
+    }
+
+    /// `StripClass::AI @ 0x006A8B30` scroll head (`..0x006A8C84`), run on
+    /// all four strips once per Sidebar Action. Each visit moves one queued
+    /// row: the step `0x32` (`0x006A5287`) equals the 50-pixel row stride,
+    /// so the partial offset begins and ends inside the same visit and Draw
+    /// never shows it. A strip that fits on screen, or has no row left in
+    /// the queued direction, drops its queue.
+    pub(crate) fn step_pending_scroll(&mut self, visible_rows: usize) {
+        for ((strip, top), pending) in self
+            .strips
+            .iter()
+            .zip(&mut self.scroll_rows)
+            .zip(&mut self.pending_scroll)
+        {
+            if *pending == 0 {
+                continue;
+            }
+            if visible_rows * 2 >= strip.len() {
+                *pending = 0;
+            } else if *pending < 0 {
+                if *top == 0 {
+                    *pending = 0;
+                } else {
+                    *pending += 1;
+                    *top -= 1;
+                }
+            } else if (*top + visible_rows) * 2 < strip.len() {
+                *pending -= 1;
+                *top += 1;
+            } else {
+                *pending = 0;
+            }
+        }
+    }
+
+    pub(crate) fn has_pending_scroll(&self) -> bool {
+        self.pending_scroll.iter().any(|rows| *rows != 0)
     }
 
     pub(crate) fn saved_identities(&self) -> [Vec<CameoId>; 4] {

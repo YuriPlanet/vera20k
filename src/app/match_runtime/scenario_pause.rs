@@ -34,22 +34,54 @@ const fn bucket(wall_ms: u64) -> i32 {
     ((wall_ms as u32) >> 4) as i32
 }
 
+/// Main_Tick55D7C2..55D877 checks Scenario62C only in offline modes0/5.
+/// Share its admission with message Manage55DDA5; a radar flag alone misses
+/// timed Action110 and other consumers of the same Scenario pause owner.
+/// Source: original gamemd.exe instructions.
+pub(crate) fn blocks_main_tick(mode: super::session::SessionMode, paused: bool) -> bool {
+    paused
+        && matches!(
+            mode,
+            super::session::SessionMode::Campaign | super::session::SessionMode::Skirmish
+        )
+}
+
 pub(crate) fn enter(state: &mut AppState, duration: i32, outermost: bool, wall_ms: u64) {
-    state
-        .match_state
-        .match_presentation
-        .scenario_pause
-        .rearm(duration, wall_ms);
+    let mode = state.match_state.session_mode();
+    enter_with_owners(
+        &mut state.match_state.match_presentation.scenario_pause,
+        &mut state.match_state.scenario_elapsed_clock,
+        mode,
+        state.audio.sfx_player.as_mut(),
+        duration,
+        outermost,
+        wall_ms,
+    );
+}
+
+/// ScenarioPause684060's physical effects also run at an in-frame Action110
+/// boundary, before a following outcome cue can reach Vox. The same clocks
+/// and SFX owner serve both callers. Source: original gamemd.exe instructions.
+pub(crate) fn enter_with_owners(
+    clock: &mut ScenarioPauseClock,
+    elapsed: &mut super::frame_pacer::ScenarioElapsedClock,
+    mode: super::session::SessionMode,
+    sfx: Option<&mut crate::audio::sfx::SfxPlayer>,
+    duration: i32,
+    outermost: bool,
+    wall_ms: u64,
+) {
+    clock.rearm(duration, wall_ms);
     if !outermost {
         return;
     }
     if matches!(
-        state.match_state.session_mode(),
+        mode,
         super::session::SessionMode::Campaign | super::session::SessionMode::Skirmish
     ) {
-        state.match_state.scenario_elapsed_clock.pause(wall_ms);
+        elapsed.pause(wall_ms);
     }
-    if let Some(sfx) = state.audio.sfx_player.as_mut() {
+    if let Some(sfx) = sfx {
         sfx.set_paused(true, wall_ms);
     }
 }
@@ -58,10 +90,26 @@ pub(crate) fn resume(state: &mut AppState, wall_ms: u64) {
     let paused = state
         .match_state
         .presentation_paused(&state.frontend.screen);
+    resume_with_owners(
+        &mut state.match_state.scenario_elapsed_clock,
+        state.audio.sfx_player.as_mut(),
+        paused,
+        wall_ms,
+    );
+}
+
+/// ScenarioResume684180 releases this hold through the existing elapsed and
+/// SFX owners; another local pause remains effective at either caller.
+pub(crate) fn resume_with_owners(
+    elapsed: &mut super::frame_pacer::ScenarioElapsedClock,
+    sfx: Option<&mut crate::audio::sfx::SfxPlayer>,
+    paused: bool,
+    wall_ms: u64,
+) {
     if !paused {
-        state.match_state.scenario_elapsed_clock.resume(wall_ms);
+        elapsed.resume(wall_ms);
     }
-    if let Some(sfx) = state.audio.sfx_player.as_mut() {
+    if let Some(sfx) = sfx {
         sfx.set_paused(paused, wall_ms);
     }
 }

@@ -327,14 +327,14 @@ fn supplied_world(
     }
     assert!(sim.foot_mark_put(
         id,
-        Some(rules),
+        rules,
         Some(registry),
         crate::sim::world::FrameEffects::default()
     ));
     if state["marked"] == 0 {
         assert!(sim.foot_mark_remove(
             id,
-            Some(rules),
+            rules,
             Some(registry),
             crate::sim::world::FrameEffects::default()
         ));
@@ -745,7 +745,7 @@ fn execute_step(
         "unit_stop" => {
             let _ = sim.set_unit_null_destination(
                 actor,
-                Some(rules),
+                rules,
                 Some(registry),
                 crate::sim::world::FrameEffects::default(),
             );
@@ -763,7 +763,7 @@ fn execute_step(
                 y: signed(&args[2]),
                 z: signed(&args[3]),
             };
-            sim.jumpjet_move_to(actor, request, Some(rules)).unwrap();
+            sim.jumpjet_move_to(actor, request, rules).unwrap();
         }
         "retained_handler_inputs" => {
             let inputs = &step["supplied_inputs"];
@@ -804,7 +804,7 @@ fn execute_step(
                     sim,
                     frame,
                     trig,
-                    rules: Some(rules),
+                    rules,
                     registry: Some(registry),
                     stable_id: actor,
                     touched_down: false,
@@ -826,7 +826,7 @@ fn execute_step(
         process if process.starts_with("process_") => {
             sim.tick_jumpjet_cruise_one(
                 actor,
-                Some(rules),
+                rules,
                 Some(registry),
                 crate::sim::world::FrameEffects::default(),
             )
@@ -900,7 +900,7 @@ fn stock_shad_state1_scatter_publishes_before_following_translate() {
             assert!(
                 sim.tick_jumpjet_cruise_one(
                     id,
-                    Some(&retail.rules),
+                    &retail.rules,
                     Some(&registry),
                     crate::sim::world::FrameEffects::default()
                 )

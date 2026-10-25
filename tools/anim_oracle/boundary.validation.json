@@ -1,12 +1,10 @@
 {
   "schema": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "original_golden_sha256": "39ff0eea4eddefaa8ff72f81f1d9c79f3df2e7eb061bd6ca2d2d2f0a43e618cd",
-  "migrated_golden_sha256": "2ae82b08538babb1210a7286d0d8a0d68e8557a4d3af77fd052377a503c67edc",
-  "native_payload_canonical_sha256_before_and_after": "9a07a42d4caf7af188811162f098229aa79991696656234fbf1e7fb49a808901",
+  "migrated_golden_sha256": "3e8fa41184cb743b40135b47840bef4dc4c413978b3bbeb2675b2307654eb219",
+  "native_payload_canonical_sha256_before_and_after": "e9ebd7e558e4e3de4fc5e4d928b426d6559af9f9b90d6061e3a70dc154c0e0b3",
   "native_payload_fields_unchanged": true,
   "only_removed_field": "script_sha256",
-  "removed_field_preserved_in": "boundary.meta.json:historical_identity",
   "rows": 13312,
   "counts": {
     "bounce": 3520,
@@ -15,7 +13,6 @@
     "continue": 3640
   },
   "region_sha256": "84df62d1eba0f8dbeb76b3d7d4c633431db49024782d1aec981b9e447044c5a1",
-  "pre_migration_source_sha256": "772d6b62ad42455323e6456cb15beffd10e3d1d034a81efd9c9ef8f7a137dfca",
   "generation_command": "python -m tools.anim_oracle.boundary --write --output <candidate.json>",
   "checked_at_utc": "2026-09-27T23:26:50.734983+00:00",
   "native_checks": {

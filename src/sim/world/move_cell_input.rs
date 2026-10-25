@@ -301,6 +301,134 @@ impl Simulation {
         })
     }
 
+    /// Building What_Action_OnObject's factory rungs
+    /// (`BuildingClass::What_Action_OnObject @ 0x00447210`,
+    /// `0x0044744E..0x0044750B`) for a building whose Techno answer over the
+    /// object `target` was Move, the force-move key held. An Infantry or Unit
+    /// factory (Type+0xEB8) answers NoMove when
+    /// [`Self::building_in_same_zone_as_coords`] refuses the centre, at height
+    /// 0, of the Cell of `target`'s GetCoords (vt+0x48), or when that Cell
+    /// has no structural high bridge (`+0x140 & 0x100`) and its zone type
+    /// (`+0x4C`, RecalcZoneType) is not ground. Any other building keeps
+    /// Move. The `AircraftType` arm (`0x0044749B`) is never reached: vt+0xA0
+    /// (`0x0044F5C0`) refuses an airfield first, which answers Select.
+    pub fn building_object_move_action(
+        &self,
+        id: u64,
+        target: u64,
+        rules: &RuleSet,
+    ) -> Result<MoveAction, String> {
+        use crate::rules::object_type::FactoryType;
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("What_Action receiver disappeared")?;
+        let object = self
+            .interner
+            .object_type(entity.type_ref(), rules)
+            .ok_or("What_Action receiver lacks its type")?;
+        if !matches!(
+            object.factory_type(),
+            Some(FactoryType::InfantryType | FactoryType::UnitType)
+        ) {
+            return Ok(MoveAction::Move);
+        }
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or("What_Action needs map cells")?;
+        let cells = NativeCellQuery::isolated(terrain);
+        let coords = ground_pose::target_get_coords(TargetKind::Entity(target), self, Some(&cells))
+            .ok_or("What_Action target disappeared")?;
+        // `CDQ; AND EDX,0xFF; ADD; SAR 8` (`0x0044745D..0x00447479`), kept
+        // as the signed words the rungs read.
+        let cell = (
+            crate::util::lepton::lepton_to_cell_packed(coords.x),
+            crate::util::lepton::lepton_to_cell_packed(coords.y),
+        );
+        let centre = DriveCoord {
+            x: i32::from(cell.0) * 256 + 0x80,
+            y: i32::from(cell.1) * 256 + 0x80,
+            z: 0,
+        };
+        let mut action = MoveAction::Move;
+        if !self.building_in_same_zone_as_coords(&cells, id, centre, rules)? {
+            action = MoveAction::NoMove;
+        }
+        let looked = cells.lookup(cell);
+        if cells.flags(looked) & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL == 0
+            && terrain.native_cell_zone_type(looked)
+                != crate::map::resolved_terrain::zone_class::GROUND
+        {
+            return Ok(MoveAction::NoMove);
+        }
+        Ok(action)
+    }
+
+    /// `TechnoClass::IsInSameZoneAsCoords @ 0x00707F60` (vt+0x2CC), the body
+    /// a Building keeps; the Foot classes override the slot. Can_Reach_Zone
+    /// (`0x0056D100`, [`ZoneGrid::can_reach_native`], which answers true for
+    /// MovementZone -1) from the Cell of the building's vt+0x4C coordinate
+    /// with no requester (`0x00447E90`), on its ShouldBeOnBridge layer
+    /// (vt+0xBC, `0x005F6A70`), with its type's MovementZone (`+0x5B4`), to
+    /// `coord`'s Cell with that Cell's structural bridge flag
+    /// (`+0x140 & 0x100`), and vt+0x320's 0 as the fringe argument. A
+    /// NullCoord `coord` answers true natively (`0x00707F7F..0x00707FA7`);
+    /// the one caller passes a Cell centre, which never is.
+    fn building_in_same_zone_as_coords(
+        &self,
+        cells: &NativeCellQuery<'_>,
+        id: u64,
+        coord: DriveCoord,
+        rules: &RuleSet,
+    ) -> Result<bool, String> {
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("IsInSameZoneAsCoords receiver disappeared")?;
+        let object = self
+            .interner
+            .object_type(entity.type_ref(), rules)
+            .ok_or("IsInSameZoneAsCoords receiver lacks its type")?;
+        let cell = crate::util::lepton::lepton_to_cell_packed;
+        let destination = (cell(coord.x), cell(coord.y));
+        let navigation =
+            self.navigation_target_coordinate(NavTargetRef::Object { id }, None, rules)?;
+        let source = (cell(navigation.x), cell(navigation.y));
+        let destination_bridge = cells.flags(cells.lookup(destination))
+            & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
+            != 0;
+        let source_bridge = ground_pose::navigation_should_be_on_bridge(
+            cells,
+            navigation,
+            ground_pose::object_location(entity, self.resolved_terrain.as_ref()),
+            entity.on_bridge(),
+            false,
+        )?;
+        let (Some(zones), Some(bounds), Some(height)) = (
+            self.zone_grid.as_ref(),
+            self.playfield_bounds,
+            self.playfield_size_height(),
+        ) else {
+            return Err("IsInSameZoneAsCoords needs native zone topology".into());
+        };
+        zones
+            .can_reach_native(
+                cells,
+                ZoneQueryCell::Copied(source),
+                ZoneQueryCell::Copied(destination),
+                object.movement_zone,
+                source_bridge,
+                destination_bridge,
+                false,
+                bounds,
+                (bounds.base, height),
+            )
+            .ok_or_else(|| "IsInSameZoneAsCoords lacks native zone topology".into())
+    }
+
     /// The Cell a left click's receivers are asked about: the selection's
     /// click loop clamps the clicked Cell to the playfield
     /// (`Clamp_To_Playfield @ 0x00586E50`, `0x004AE77E`) before any receiver's
@@ -564,22 +692,17 @@ impl Simulation {
     /// where the aircraft's Can_Enter_Cell refuses the Cell, which it never
     /// does in a session game ([`Self::aircraft_can_enter_cell`]).
     ///
-    /// RESIDUALS:
-    /// - AirportBound GuardArea (`0x00417CE9..0x00417CFE`): Ctrl+Alt over an
-    ///   object answers 0x1A, which an `AirportBound=` type (`+0xE0D`, retail
-    ///   ORCA and BEAG) turns into 0 and so into this Cell query, whose own
-    ///   Ctrl+Alt rung may answer GuardArea on the Cell. VERA's GuardArea
-    ///   admission refuses an aircraft over an object and falls back to
-    ///   Move. Trigger: Ctrl+Alt over an object with a Harrier or Black
-    ///   Eagle selected. Effect: it moves to the object's Cell instead of
-    ///   area-guarding it. Frequency: rare.
-    /// - The Cell query's attack rung (`0x007008A6..`): over a destroyable
-    ///   cliff or a `LegalTarget=` overlay native answers Attack, which the
-    ///   Immune rung then tests on the object and the click sends to Foot
-    ///   `0x004D74E0` as an attack on the object. [`Self::cell_move_action`]
-    ///   does not model that rung, so VERA answers Move. Trigger: an aircraft
-    ///   over an object it may not attack standing on such a Cell. Frequency:
-    ///   rare.
+    /// The Aircraft wrapper's AirportBound rung (`0x00417CE9..0x00417CFE`)
+    /// turns a base 0x1A into 0 for an `AirportBound=` type, but no base over
+    /// an object is 0x1A for an aircraft: Techno's only 0x1A
+    /// (`0x007001DD`) refuses an Aircraft actor (RTTI 2,
+    /// `0x007001B4..0x007001BA`) and answers Move under Alt
+    /// (`0x007001E9..0x00700217`), and Foot's wrapper (`0x004DDED0`) makes
+    /// none. Ctrl+Alt over an object moves a Harrier, natively as here.
+    ///
+    /// The Cell query's unforced Attack rung (`0x007008A6..`) answers before
+    /// these Move rungs; the input layer asks it first
+    /// (`context_order::aircraft_cell_attack_under_object`).
     pub fn foot_object_class_action(
         &self,
         viewer: InternedId,
@@ -661,13 +784,10 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) -> MoveAction {
-        let Some(target_entity) = self.substrate.entities.get(target) else {
-            return action;
-        };
         let action = if action == MoveAction::None {
-            let coords =
-                ground_pose::object_get_coords(target_entity, self.resolved_terrain.as_ref());
-            let cell = ((coords.x / 256) as u16, (coords.y / 256) as u16);
+            let Some(cell) = self.object_coords_cell(target) else {
+                return action;
+            };
             let query = CellActionQuery {
                 mouse_over: false,
                 shift: false,
@@ -682,6 +802,22 @@ impl Simulation {
         } else {
             action
         }
+    }
+
+    /// The Cell under the object `target`'s GetCoords (vt+0x48), a Techno or
+    /// a Terrain object, each axis `>> 8` toward zero (`CDQ; AND EDX,0xFF;
+    /// SAR 8`): the Cell an Aircraft's What_Action over the object asks its
+    /// own Cell action on (`0x00417D80..0x00417DB7`), the Cell a building's
+    /// factory rungs judge (`0x0044745D..0x00447479`), and its rally Cell
+    /// over the object (`0x004436A4..0x004436C9`).
+    pub fn object_coords_cell(&self, target: u64) -> Option<(u16, u16)> {
+        let cells = self
+            .resolved_terrain
+            .as_ref()
+            .map(NativeCellQuery::canonical);
+        let coords =
+            ground_pose::target_get_coords(TargetKind::Entity(target), self, cells.as_ref())?;
+        Some(((coords.x / 256) as u16, (coords.y / 256) as u16))
     }
 
     /// The destination a Foot's Move or NoMove click over an object orders:
@@ -750,11 +886,6 @@ impl Simulation {
         if refused || entity.berserk.is_active() {
             return Ok(None);
         }
-        let target_entity = self
-            .substrate
-            .entities
-            .get(target)
-            .ok_or("Move click target disappeared")?;
         let map = self.click_map()?;
         let terrain = map.cells.terrain();
         let open = |cell| {
@@ -762,7 +893,10 @@ impl Simulation {
                 &self.fog, terrain, viewer, cell,
             ))
         };
-        let coords = ground_pose::object_get_coords(target_entity, Some(terrain));
+        // The object's vt+0x48: a Techno's, or a Terrain object's under Ctrl.
+        let coords =
+            ground_pose::target_get_coords(TargetKind::Entity(target), self, Some(&map.cells))
+                .ok_or("Move click target disappeared")?;
         if action == MoveAction::NoMove
             && crate::sim::vision::coordinate_is_shrouded(&map.cells, coords, &open)?
             && !object.move_to_shroud

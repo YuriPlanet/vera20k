@@ -30,7 +30,7 @@ enum StartupPhase {
     /// the campaign index a won mission starts its next map with (`0x00685C47`).
     CampaignInstalled(Box<PreparedCampaignStartup>),
     /// A validated saved world replaced the outgoing one.
-    Restored,
+    Restored(Option<Box<PreparedCampaignStartup>>),
 }
 
 impl MatchStartup {
@@ -47,8 +47,8 @@ impl MatchStartup {
     /// snapshot validation. A restored timeline is admitted without claiming
     /// the outgoing world's fresh-start receipt. Rejected preparation never
     /// reaches this transition, so it preserves the current admission.
-    pub(crate) fn acknowledge_saved_load(&mut self) {
-        self.phase = StartupPhase::Restored;
+    pub(crate) fn acknowledge_saved_load(&mut self, campaign: Option<PreparedCampaignStartup>) {
+        self.phase = StartupPhase::Restored(campaign.map(Box::new));
     }
 
     /// Publish the startup and its receipt together, only after the existing L0
@@ -100,6 +100,14 @@ impl MatchStartup {
             || session.seed() != u64::from(startup.seed.value)
             || !session.map_name().eq_ignore_ascii_case(startup.scenario())
             || session.campaign_mission_counter() != Some(startup.mission_counter())
+            || session.campaign_index() != i32::try_from(startup.campaign_index()).ok()
+            || session.campaign_restart_carry_over()
+                != Some(
+                    startup
+                        .carry_over()
+                        .copied()
+                        .unwrap_or(crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED),
+                )
             || session
                 .campaign_house_difficulties()
                 .is_none_or(|(player, computer)| {
@@ -116,18 +124,20 @@ impl MatchStartup {
     }
 
     pub(crate) fn campaign_installed(&self) -> bool {
-        self.installed_campaign().is_some()
+        matches!(self.phase, StartupPhase::CampaignInstalled(_))
     }
 
     pub(crate) fn installed_campaign(&self) -> Option<&PreparedCampaignStartup> {
         match &self.phase {
-            StartupPhase::CampaignInstalled(startup) => Some(startup),
+            StartupPhase::CampaignInstalled(startup) | StartupPhase::Restored(Some(startup)) => {
+                Some(startup)
+            }
             _ => None,
         }
     }
 
     pub(crate) fn restored(&self) -> bool {
-        matches!(self.phase, StartupPhase::Restored)
+        matches!(self.phase, StartupPhase::Restored(_))
     }
 
     pub(crate) fn accepted(&self) -> Option<(&PreparedMatchStartup, &RustL0Receipt)> {

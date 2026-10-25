@@ -5,7 +5,8 @@
 //!   Each byte is an overlay type ID (0xFF = no overlay).
 //! - `[OverlayDataPack]`: same format. Each byte is a frame/value for the overlay
 //!   (e.g., ore density 0-11, wall connection frame).
-//! - `[Terrain]`: INI key-value pairs. Key = `ry * 1000 + rx`, value = object name
+//! - `[Terrain]`: key = `ry * radix + rx` (128 before format4, otherwise1000),
+//!   value = object name
 //!   (e.g., "INTREE01", "CACTUS01").
 //!
 //! ## Dependency rules
@@ -215,9 +216,11 @@ pub fn parse_overlay_packs(ini: &IniFile) -> ParsedOverlayPacks {
 
 /// Parse terrain objects from the [Terrain] INI section.
 ///
-/// Keys are encoded positions: `ry * 1000 + rx` (decimal string).
+/// Keys are decimal encoded positions. Terrain Read_Map_Section @0x0071CA70
+/// selects radix128 for signed NewINIFormat<4, otherwise1000 (71CAE3..71CB44).
+/// The caller supplies ReadBasic's retained format, whose native default is0.
 /// Values are object names like "INTREE01", "CACTUS01", "ROCK01".
-pub fn parse_terrain_objects(ini: &IniFile) -> Vec<TerrainObject> {
+pub fn parse_terrain_objects(ini: &IniFile, signed_new_ini_format: i32) -> Vec<TerrainObject> {
     let section = match ini.section("Terrain") {
         Some(s) => s,
         None => {
@@ -227,21 +230,23 @@ pub fn parse_terrain_objects(ini: &IniFile) -> Vec<TerrainObject> {
     };
 
     let mut objects: Vec<TerrainObject> = Vec::new();
+    let radix = if signed_new_ini_format < 4 { 128 } else { 1000 };
 
     // `TerrainClass__Read_Map_Section @ 0x0071CA70`: the cell is `atoi` of the
-    // entry name, the type a 0x80-byte ReadString. Rust skips a negative cell.
+    // entry name, the type a 0x80-byte ReadString. IDIV/remainder are signed;
+    // the resulting CellStruct retains only each word (71CAEF..71CB44).
     for key in section.keys() {
-        let Ok(pos) = u32::try_from(crate::rules::ini_value::crt_atoi(key)) else {
-            continue;
-        };
-
         let Some(name) = section.read_name(key, 0x80) else {
             continue;
         };
-        let name = name.to_uppercase();
+        // FindOrAllocate71E2D8 compares case-insensitively, but a new type's
+        // AbstractTypeCtor41088D retains the input spelling. The selected
+        // family member, not this reader, supplies the instance's identity.
+        let name = name.to_string();
+        let pos = crate::rules::ini_value::crt_atoi(key);
 
-        let ry: u16 = (pos / 1000) as u16;
-        let rx: u16 = (pos % 1000) as u16;
+        let ry: u16 = (pos / radix) as u16;
+        let rx: u16 = (pos % radix) as u16;
 
         objects.push(TerrainObject { rx, ry, name });
     }
@@ -270,7 +275,10 @@ fn decode_pack_section(ini: &IniFile, section_name: &str) -> Option<Vec<u8>> {
         }
     };
 
-    match lcw::decompress_chunks(&compressed) {
+    // ReadMapOverlayPacks 0x005FD2E0 consumes one byte per fixed-grid cell.
+    // Reject excess decoded data before allocating it; short packs retain the
+    // existing failed-read semantics in OverlayIdentityPack/OverlayDataPack.
+    match lcw::decompress_chunks(&compressed, OVERLAY_TOTAL_CELLS) {
         Ok(data) => {
             log::info!(
                 "{}: {} compressed → {} decompressed bytes",
@@ -384,6 +392,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn overlay_pack_limits_cumulative_output_and_keeps_short_pack_reads() {
+        // Four 65535-byte RLE chunks plus five more bytes exceed 512x512.
+        let packed = "BQD///7///+ABQD///7///+ABQD///7///+ABQD///7///+ABQAFAP4FAP+A";
+        let ini = IniFile::from_str(&format!(
+            "[OverlayPack]\n1={packed}\n[OverlayDataPack]\n1={packed}\n"
+        ));
+        let rejected = parse_overlay_packs(&ini);
+        assert!(!rejected.identity.has_positive_length());
+        assert!(!rejected.data.has_positive_length());
+
+        let short = parse_overlay_packs(&IniFile::from_str("[OverlayPack]\n1=BQD///7///+A\n"));
+        assert_eq!(short.identity.decoded_len(), 65535);
+        assert_eq!(short.identity.read_byte(0, 0), Some(NO_OVERLAY));
+        assert_eq!(short.identity.read_byte(511, 127), None);
+    }
+
+    #[test]
     fn raw_identity_pack_distinguishes_sentinel_from_failed_short_read() {
         let mut bytes = vec![NO_OVERLAY; OVERLAY_GRID_SIZE + 1];
         bytes[OVERLAY_GRID_SIZE] = 7;
@@ -432,7 +457,7 @@ mod tests {
 72015=ROCK01
 ";
         let ini: IniFile = IniFile::from_str(text);
-        let objects: Vec<TerrainObject> = parse_terrain_objects(&ini);
+        let objects: Vec<TerrainObject> = parse_terrain_objects(&ini, 4);
         assert_eq!(objects.len(), 3);
 
         // Key 35042 → ry=35, rx=42

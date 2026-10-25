@@ -264,9 +264,7 @@ impl Simulation {
                 && let Some(building) = self.substrate.entities.get(target_id)
                 && building.category() == EntityCategory::Structure
             {
-                let (width, height) = crate::rules::foundation::foundation_dimensions(
-                    building.type_facts.foundation(),
-                );
+                let (width, height) = building.type_facts.foundation().dimensions();
                 distance = distance
                     .wrapping_sub((i32::from(width) + i32::from(height)) * 64)
                     .max(0);
@@ -350,7 +348,7 @@ impl Simulation {
                             z: first.z,
                         },
                     ));
-                    effects.flush_sound(self, Some(rules));
+                    effects.flush_sound(self, rules);
                 }
                 self.disk_lasers.shots.get_mut(&id).unwrap().countdown = -1;
             } else {
@@ -365,7 +363,7 @@ impl Simulation {
                             z: first.z,
                         },
                     ));
-                    effects.flush_sound(self, Some(rules));
+                    effects.flush_sound(self, rules);
                 }
                 let duration = 8 - shot.step;
                 construct(
@@ -401,7 +399,7 @@ impl Simulation {
     /// Negative countdown never dereferences stale post-Detach pointers.
     pub(crate) fn validate_disk_lasers_after_restore(
         &self,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
     ) -> Result<(), (u64, &'static str)> {
         if self.disk_lasers.shots.is_empty() {
             return Ok(());
@@ -418,7 +416,7 @@ impl Simulation {
                 let Some(name) = self.interner.try_resolve(weapon) else {
                     return Err((id, "missing weapon identity"));
                 };
-                if rules.is_some_and(|rules| rules.weapon(name).is_none()) {
+                if rules.weapon(name).is_none() {
                     return Err((id, "missing retained weapon"));
                 }
             }

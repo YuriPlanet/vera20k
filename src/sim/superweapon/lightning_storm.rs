@@ -218,11 +218,13 @@ pub(super) fn launch(
         (rx as i16, ry as i16),
         Some(owner),
     );
+    // This case plays no positional cue: the target cell's centre, with no
+    // Map lookup (a lookup off the map would stamp the shared Dummy).
+    let world = crate::sim::components::DriveCoord::cell(rx, ry, 0).into();
     sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
-        rx,
-        ry,
+        world,
     });
     true
 }
@@ -288,7 +290,12 @@ pub(crate) fn start(
     storm.duration = duration;
     storm.start_frame = frame as i32;
     storm.active = true;
-    let local_player_defeated = sim.local_player_defeated();
+    // Start539FE0's Session+300 protects the one local tactical projection.
+    // LAN/WOL retains every House's radar, so one defeated local viewer cannot
+    // suppress other Houses' retained outages. Their own Defeated test below
+    // remains authoritative. Source: original gamemd.exe539FD3..53A002.
+    let local_player_defeated =
+        !sim.session.game_mode().is_network() && sim.local_player_defeated();
     // HouseClass::Array, in creation order.
     for index in 0..sim.houses.order().len() {
         let house = sim.houses.order()[index];
@@ -313,10 +320,22 @@ pub(crate) fn start(
             .house_mut(house)
             .start_radar_outage(frame, duration);
     }
-    if let Some(player) = sim.session.current_house()
-        && sim.houses.contains_key(&player)
-    {
-        sim.power_states.house_mut(player).recheck_radar();
+    let radar_viewers = if sim.session.game_mode().is_network() {
+        sim.houses
+            .order()
+            .iter()
+            .copied()
+            .filter(|owner| sim.houses.get(owner).is_some_and(|house| house.is_human()))
+            .collect::<Vec<_>>()
+    } else {
+        sim.session
+            .current_house()
+            .filter(|owner| sim.houses.contains_key(owner))
+            .into_iter()
+            .collect()
+    };
+    for viewer in radar_viewers {
+        sim.power_states.house_mut(viewer).recheck_radar();
     }
     sim.update_lighting();
     if rules.general.lightning_print_text {

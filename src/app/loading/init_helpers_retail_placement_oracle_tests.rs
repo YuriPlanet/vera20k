@@ -12,7 +12,6 @@ use crate::map::entities::EntityCategory;
 use crate::map::map_file::{self, MapFile};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::theater;
-use crate::rules::foundation::foundation_dimensions;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::movement::locomotor::MovementLayer;
@@ -278,9 +277,9 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
 
     let conyard = rules.object(CONYARD).expect("stock GACNST");
     let gapowr = rules.object(POWER_PLANT).expect("stock GAPOWR");
-    assert_eq!(foundation_dimensions(&conyard.foundation), (4, 4));
+    assert_eq!(conyard.foundation.dimensions(), (4, 4));
     assert!(conyard.base_normal);
-    assert_eq!(foundation_dimensions(&gapowr.foundation), (2, 2));
+    assert_eq!(gapowr.foundation.dimensions(), (2, 2));
     assert_eq!(gapowr.adjacent, 2);
     assert_eq!(gapowr.strength, 750);
     assert_eq!(gapowr.power, 200);
@@ -334,7 +333,7 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
         .expect("spawned provider retained");
     assert!(provider.lifecycle.cell_marked());
     assert!(provider.in_logic_vector.is_member());
-    assert_eq!(provider.type_facts.foundation(), "4x4");
+    assert_eq!(provider.type_facts.foundation().name(), "4x4");
 
     // This placement oracle starts after the yard's construction lifecycle.
     let provider = sim.entities_mut_for_test().get_mut(provider_id).unwrap();
@@ -368,7 +367,7 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
             .test_arm_ready(owner_id, category)
     );
     // The Strip's publish accounts the completion once.
-    crate::sim::production::publish_production_changes(&mut sim, &rules);
+    crate::sim::production::publish_production_changes_for_tests(&mut sim, &rules, owner_id);
     let completed = sim
         .production()
         .factories()
@@ -505,7 +504,7 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
         })
         .expect("accepted command spawned stock GAPOWR");
     assert_eq!(placed.category(), EntityCategory::Structure);
-    assert_eq!(placed.type_facts.foundation(), "2x2");
+    assert_eq!(placed.type_facts.foundation().name(), "2x2");
     assert_eq!(placed.health.current(), 750);
     assert_eq!(rules.object("GAPOWR").unwrap().strength, 750);
     assert!(placed.lifecycle.cell_marked());

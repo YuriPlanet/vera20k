@@ -12,7 +12,8 @@
 //!
 //! 1. Radius. `TechnoClass::Threat_Range @ 0x00707E60` (vtable `+0x31C`) turns
 //!    the mission's mask into a lepton radius — that part lives in
-//!    [`super::threat_range`]. A zero radius means "no cutoff of the scan's
+//!    [`super::threat_range`]; a healer on Guard takes 0x200 instead
+//!    (`0x006F9024..0x006F903E`). A zero radius means "no cutoff of the scan's
 //!    own". The walk then uses the current weapon's range for a
 //!    non-Gattling turreted type, GuardRange for an underwater, organic,
 //!    self-healing type, or the wider of weapon slots 0/1 otherwise. It adds
@@ -582,8 +583,8 @@ fn is_early_return_ring(ring: i32, radius: i32) -> bool {
 
 /// Walk bound in cells, `iStack_34` in `Greatest_Threat`.
 ///
-/// A non-zero `Threat_Range` result is itself the bound, truncated to cells
-/// toward zero (`0x006F9042..0x006F904D`). A zero
+/// A non-zero radius (`Threat_Range`'s, or a Guard healer's 0x200) is itself
+/// the bound, truncated to cells toward zero (`0x006F9042..0x006F904D`). A zero
 /// one — plain Guard on a type with no `GuardRange=` — selects a range:
 /// `GetWeaponRange(CurrentWeaponNumber)` for a non-Gattling type with
 /// `TurretCount > 0` (`0x006F9068..0x006F908E`), else `GuardRange` for an
@@ -725,8 +726,6 @@ struct ScanContext<'a> {
     /// VERA-only: the draws so far, so side-by-side scoring can tell which
     /// candidate drew ([`flat_scores`]).
     scenario_draws: std::cell::Cell<u32>,
-    /// VERA-only: [`ThreatScanOutcome`]'s `met_idle_disguise`.
-    met_idle_disguise: std::cell::Cell<bool>,
 }
 
 impl ScanContext<'_> {
@@ -981,10 +980,7 @@ impl ScanContext<'_> {
         capture
             || (self.attacker_obj.occupier
                 && self.fire_world.is_some_and(|world| {
-                    let (Some(scanner), Some(cargo)) = (
-                        self.entities.get(self.attacker.stable_id),
-                        candidate.passenger_role.cargo(),
-                    ) else {
+                    let Some(scanner) = self.entities.get(self.attacker.stable_id) else {
                         return false;
                     };
                     crate::sim::passenger::can_dock_occupier_garrison(
@@ -992,7 +988,7 @@ impl ScanContext<'_> {
                         candidate,
                         self.attacker_obj,
                         candidate_obj,
-                        cargo,
+                        candidate.passenger_role.occupants(),
                         self.rules,
                         world,
                     )
@@ -1115,9 +1111,6 @@ pub(crate) struct ThreatScanOutcome {
     /// The Scenario stream after the scan's draws, `None` when it drew
     /// nothing ([`ScanContext::computer_detects_disguise`]).
     scenario_rng: Option<SimRng>,
-    /// The scan refused a disguised candidate only because it was not
-    /// blinking: a blink starting later would have it roll.
-    met_idle_disguise: bool,
 }
 
 impl ThreatScanOutcome {
@@ -1128,16 +1121,6 @@ impl ThreatScanOutcome {
     /// The Scenario stream the scan left, for the caller to commit.
     pub(crate) fn take_scenario_rng(&mut self) -> Option<SimRng> {
         self.scenario_rng.take()
-    }
-
-    /// The scan drew from the Scenario stream.
-    pub(crate) const fn drew_scenario_rng(&self) -> bool {
-        self.scenario_rng.is_some()
-    }
-
-    /// See [`Self::met_idle_disguise`]'s field.
-    pub(crate) const fn met_idle_disguise(&self) -> bool {
-        self.met_idle_disguise
     }
 
     pub(crate) const fn target(&self) -> Option<u64> {
@@ -1267,7 +1250,6 @@ pub(crate) fn greatest_threat(
                 foot_wrapper_entered: false,
                 collected: None,
                 scenario_rng: None,
-                met_idle_disguise: false,
             };
         }
     };
@@ -1276,7 +1258,6 @@ pub(crate) fn greatest_threat(
         foot_wrapper_entered,
         collected,
         scenario_rng: ctx.scenario_rng.take(),
-        met_idle_disguise: ctx.met_idle_disguise.get(),
     };
     // Base GreatestThreat6F8F80..6F8FA5 clears these two lists, retaining
     // history. Class returns before the base must preserve the prior lists.
@@ -1303,7 +1284,14 @@ pub(crate) fn greatest_threat(
     } else {
         [0, 0]
     };
-    let range = scan_range(attacker_obj, mask, weapon_ranges);
+    // `0x006F9024..0x006F903E`: a healer on mission Guard (`+0xAC == 5`).
+    let range = scan_range(
+        attacker_obj,
+        mask,
+        weapon_ranges,
+        healer,
+        scanner.mission.current().known(),
+    );
     let flags = threat_mask::flags_for(mask);
 
     // `TEST AL,0x3 ; JZ 0x006F9B6E @ 0x006F8FE0`: a mask without bit 0 or 1
@@ -1390,7 +1378,6 @@ pub(crate) fn greatest_threat(
         },
         scenario_rng: Default::default(),
         scenario_draws: Default::default(),
-        met_idle_disguise: Default::default(),
     };
 
     if flat {
@@ -1778,9 +1765,9 @@ fn flat_scores(
             let draws = ctx.scenario_draws.get();
             let (score, stamped) = dummy.detached_stamps(|| flat_score(ctx, walk, candidate));
             let drew = ctx.scenario_draws.get() != draws;
-            (score, stamped, drew, ctx.met_idle_disguise.replace(false))
+            (score, stamped, drew)
         });
-        if scored.iter().all(|&(_, stamped, _, _)| !stamped) {
+        if scored.iter().all(|&(_, stamped, _)| !stamped) {
             #[cfg(any(test, feature = "test-support"))]
             FLAT_WALKS_SIDE_BY_SIDE.set(FLAT_WALKS_SIDE_BY_SIDE.get() + 1);
             // Whether a candidate draws does not depend on the stream: the
@@ -1789,10 +1776,7 @@ fn flat_scores(
             return scored
                 .into_iter()
                 .zip(candidates)
-                .map(|((score, _, drew, met_idle_disguise), candidate)| {
-                    if met_idle_disguise {
-                        ctx.met_idle_disguise.set(true);
-                    }
+                .map(|((score, _, drew), candidate)| {
                     if drew {
                         flat_score(ctx, walk, candidate)
                     } else {
@@ -1923,7 +1907,8 @@ fn scan_cell_for_target(
 fn walk_cell_list(ctx: &ScanContext<'_>, rx: u16, ry: u16, layer: MovementLayer) -> Option<u64> {
     let terrain = ctx
         .fire_world
-        .and_then(|world| world.terrain_objects.cell_index().get(&(rx, ry)).copied());
+        .into_iter()
+        .flat_map(|world| world.terrain_objects.members_at((rx, ry)));
     let mut held = None;
     for member in ctx.cells.cell_objects(rx, ry, layer, terrain) {
         let CellObjectMember::Entity(id) = member else {
@@ -2365,13 +2350,6 @@ fn evaluate_candidate(
     ) {
         crate::sim::cloak_disguise::DisguiseGateOutcome::Accept => {}
         crate::sim::cloak_disguise::DisguiseGateOutcome::Reject => {
-            if candidate_disguised_to_attacker
-                && !ctx.attacker_obj.detect_disguise
-                && blink == 0
-                && !ctx.standing.human
-            {
-                ctx.met_idle_disguise.set(true);
-            }
             return None;
         }
         crate::sim::cloak_disguise::DisguiseGateOutcome::AiDetectionRoll => {
@@ -2559,10 +2537,7 @@ fn evaluate_candidate(
             needs_engineer: candidate_obj.needs_engineer,
             factory: candidate_obj.has_factory(),
             can_be_occupied: candidate_obj.can_be_occupied,
-            occupants: candidate
-                .passenger_role
-                .cargo()
-                .map_or(0, |cargo| cargo.count() as i32),
+            occupants: candidate.passenger_role.occupants().count(),
             armed: is_armed(candidate, candidate_obj),
         },
     )?;
@@ -3133,3 +3108,7 @@ mod disguise_tests;
 #[cfg(test)]
 #[path = "greatest_threat_unarmed_tests.rs"]
 mod unarmed_tests;
+
+#[cfg(test)]
+#[path = "greatest_threat_healer_guard_tests.rs"]
+mod healer_guard_tests;

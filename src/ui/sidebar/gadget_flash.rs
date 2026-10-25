@@ -102,42 +102,32 @@ impl GadgetFlash {
     }
 }
 
-/// Pick a SHP frame index for a 5-frame gadget given its three state bits.
+/// `ShapeButtonClass::Draw @ 0x0069DEB0` frame choice (vtable slot +0x6C).
 ///
-/// Mirrors the SBGadgetClass::Draw conditional at gamemd's `0x0069DEB0`.
-/// Output indices map to the 5-frame SHP convention used by `tab0N.shp`,
-/// `repair.shp`, and `sell.shp`:
-///   0 = idle, 1 = mode-active, 2 = disabled, 3 = pressed-idle, 4 = pressed-active.
-///
-/// Inputs:
-/// - `disabled`: the gadget's disabled gate.
-/// - `mode_active`: the persistent "this mode is on" / "this tab is selected" bit.
-///   For tabs this is the active-tab bit; for Repair/Sell this is the
-///   mode-on toggle.
-/// - `state`: the transient "drawn as pressed" bit (set by mouse-down OR by
-///   the flash AI's tick toggle).
-///
-/// The function assumes the gadget is pressable (the not-pressable / hover-static
-/// branch from the binary is unused for any of our 5-frame gadgets).
-pub fn frame_select(disabled: bool, mode_active: bool, state: u8) -> u8 {
+/// Disabled (+0x1E) draws frame 2. A button that reflects its toggle state
+/// (+0x40) draws its on-state (+0x2D) as frame 0/1, or 3/4 while its flash
+/// bit (+0x34) is lit; holding the mouse on it changes nothing.
+/// `SidebarClass::Init @ 0x006A5310` sets +0x40 for the four tabs, Repair and
+/// Sell (`0x006A539B`, `0x006A5405`, `0x006A546A`). Every other button draws
+/// its pressed state (+0x2C) as frame 0/1: the scroll pair (Init leaves +0x40
+/// clear) and Diplomacy/Options (`RadarClass @ 0x00653010`).
+/// Original-executed controls: `tools/sidebar_oracle/command_bar/mapping-frame-native.json`.
+pub fn shape_button_frame(
+    disabled: bool,
+    reflects_state: bool,
+    pressed: bool,
+    on: bool,
+    flashing: bool,
+) -> u8 {
     if disabled {
-        return 2;
-    }
-    if state != 0 {
-        if mode_active { 4 } else { 3 }
-    } else if mode_active {
-        1
+        2
+    } else if !reflects_state {
+        u8::from(pressed)
+    } else if flashing {
+        3 + u8::from(on)
     } else {
-        0
+        u8::from(on)
     }
-}
-
-/// Pick a SHP frame index for the 3-frame strip-scroll art (`r-up.shp` /
-/// `r-dn.shp`). The scroll buttons do NOT use the 5-frame tab convention —
-/// their art has exactly 3 frames: 0 = idle, 1 = pressed, 2 = disabled.
-/// The view applies the native `6A6610` capacity-disabled state first.
-pub fn scroll_frame_select(pressed: bool) -> u8 {
-    u8::from(pressed)
 }
 
 /// Persistent flash + mode state for the in-game sidebar gadgets.
@@ -158,12 +148,17 @@ pub struct SidebarGadgetState {
     pub tab_disabled: [bool; 4],
 
     /// Mirrors Display +0x11B0 (set by 4AC8C0). Toggled by clicking the Repair button.
-    /// Mutually exclusive with `sell_mode_on` and `AppState.targeting_mode`.
+    /// Mutually exclusive with `sell_mode_on`; pending placement refuses changes.
     pub repair_mode_on: bool,
 
     /// Mirrors Display +0x11B1 (set by 4AC660). Toggled by clicking the Sell button.
-    /// Mutually exclusive with `repair_mode_on` and `AppState.targeting_mode`.
+    /// Mutually exclusive with `repair_mode_on`; pending placement refuses changes.
     pub sell_mode_on: bool,
+
+    /// Mirrors Display +0x11B4, beacon placement mode, which only
+    /// SetPlaceBeaconMode 4AC960 sets (`app::input::beacon`). Repair and Sell
+    /// changes clear it (4AC916, 4AC6BB).
+    pub place_beacon_mode_on: bool,
 
     /// Per-button disabled bits. v1: always false.
     pub repair_disabled: bool,
@@ -173,12 +168,11 @@ pub struct SidebarGadgetState {
     /// sim-tick delta (catch-up safe).
     pub last_sim_tick: u64,
 
-    /// Transient pressed-look bits (study G22): true while the gadget driver
-    /// holds the button pressed-inside; popped on drag-off, restored on
-    /// drag-back. Published by `app::input::gadget_input` after every gadget tick.
-    pub tab_pressed: [bool; 4],
-    pub repair_pressed: bool,
-    pub sell_pressed: bool,
+    /// Transient pressed bits (+0x2C) of the buttons whose frame shows them:
+    /// true while the gadget driver holds the button pressed-inside; popped on
+    /// drag-off, restored on drag-back. Published by `app::input::gadget_input`
+    /// after every gadget tick. Tabs, Repair and Sell draw their on-state
+    /// instead (see [`shape_button_frame`]), so they publish none.
     pub scroll_down_pressed: bool,
     pub scroll_up_pressed: bool,
     pub top_pressed: [bool; 2],
@@ -188,7 +182,40 @@ pub struct SidebarGadgetState {
     pub command_thumb_pressed: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum SelectionMode {
+    Repair,
+    Sell,
+}
+
 impl SidebarGadgetState {
+    /// Display SetRepairMode4AC8C0 / SetSellMode4AC660 (-1). A pending
+    /// placement TYPE refuses the entire transition. Both toggles clear the
+    /// competing mode and the beacon byte (4AC916 / 4AC6BB), and entry needs
+    /// House+2F0 (owned-building tracking).
+    /// Return whether UnselectAll48DC90 must run. The independent Super
+    /// pointer and PlanMgrAC4CF4 are not these Display mode bytes.
+    /// Source: original gamemd.exe instructions.
+    pub(crate) fn toggle_selection_mode(
+        &mut self,
+        mode: SelectionMode,
+        placement_armed: bool,
+        owned_buildings: i32,
+    ) -> bool {
+        if placement_armed {
+            return false;
+        }
+        self.place_beacon_mode_on = false;
+        let enabled = owned_buildings > 0
+            && !match mode {
+                SelectionMode::Repair => self.repair_mode_on,
+                SelectionMode::Sell => self.sell_mode_on,
+            };
+        self.repair_mode_on = enabled && matches!(mode, SelectionMode::Repair);
+        self.sell_mode_on = enabled && matches!(mode, SelectionMode::Sell);
+        enabled
+    }
+
     /// Advance existing pulses through missed ticks, then perform the current
     /// frame's poll followed by FlashAI, as Sidebar Action6A77CD/6A7A8C does.
     /// A newly ready item starts at this frame, rather than consuming ticks
@@ -216,13 +243,29 @@ impl SidebarGadgetState {
     }
 
     /// Display4AC8C0(0)/4AC660(0): a pending building placement refuses mode
-    /// changes. Power/planning have no active owner yet; a bare superweapon
-    /// target is independent and is not canceled by these calls.
+    /// changes. Only the Repair/Sell bytes clear here; the Beacon byte has
+    /// its own owner (app::input::beacon, 4AC960). Power (4AC820) and the
+    /// Waypoint byte (+0x11B3, 4AC700) are never armed in YR, and the
+    /// PlanMgr planning mode and the bare Super pointer are separate owners
+    /// these Display setters do not cancel.
     pub(crate) fn disable_selection_modes(&mut self, placement_armed: bool) {
         if !placement_armed {
             self.repair_mode_on = false;
             self.sell_mode_on = false;
         }
+    }
+
+    /// SetRepairMode(0) and SetSellMode(0), then the direct Power, Planning
+    /// and Beacon byte clears (+0x11B2..+0x11B4) that Begin_Building_Placement
+    /// (4FB883..4FB8A2), SelectClass::Action (6AAF6D..6AAF8B) and the input
+    /// locks (6DEDB2..6DEDD0, 6E268A..6E26A6) share. Only the first two are
+    /// refused while a placement is pending. SetTogglePowerMode (4AC87B) and
+    /// SetWaypointMode (4AC756) also clear the beacon byte, and
+    /// SetPlaceBeaconMode clears +0x11B2/+0x11B3; VERA has no owner for the
+    /// Power or Planning-waypoint modes, so neither path exists here.
+    pub(crate) fn disable_cursor_modes(&mut self) {
+        self.disable_selection_modes(false);
+        self.place_beacon_mode_on = false;
     }
 
     pub fn new() -> Self {
@@ -237,61 +280,100 @@ impl SidebarGadgetState {
     }
 
     /// Frame index for a tab gadget. Caller passes whether this tab is the
-    /// currently-active tab (the externally driven latch-ON mirror,
-    /// study §2.5 / G22 Kind 2).
+    /// currently-active tab, the on-state Sidebar Action `0x006A7780` latches
+    /// with ToggleClass TurnOn/TurnOff when it switches tabs.
     pub(crate) fn tab_frame(&self, tab_index: usize, is_active_tab: bool) -> u8 {
-        if self.tab_disabled[tab_index] {
-            return 2;
-        }
-        self.tab_frame_enabled(tab_index, is_active_tab)
+        shape_button_frame(
+            self.tab_disabled[tab_index],
+            true,
+            false,
+            is_active_tab,
+            self.tab_flashes[tab_index].state != 0,
+        )
     }
 
-    pub(crate) fn tab_frame_enabled(&self, tab_index: usize, is_active_tab: bool) -> u8 {
-        let flash = &self.tab_flashes[tab_index];
-        // Pressed-look = flash pulse OR live press-hold (study G22).
-        let state = if self.tab_pressed[tab_index] {
-            1
-        } else {
-            flash.state
-        };
-        frame_select(false, is_active_tab, state)
-    }
-
-    /// Frame index for the Repair button. Repair has no flash AI — the state
-    /// bit is the live press-hold; "stays pressed" comes from `mode_active`.
+    /// Frame index for the Repair button. Only the tabs ever flash
+    /// (StartFlashing `0x0069DFC0` callers `0x006A76F0` and StripAI).
     pub fn repair_frame(&self) -> u8 {
-        frame_select(
+        shape_button_frame(
             self.repair_disabled,
+            true,
+            false,
             self.repair_mode_on,
-            u8::from(self.repair_pressed),
+            false,
         )
     }
 
     /// Frame index for the Sell button. Same logic as `repair_frame`.
     pub fn sell_frame(&self) -> u8 {
-        frame_select(
-            self.sell_disabled,
-            self.sell_mode_on,
-            u8::from(self.sell_pressed),
-        )
+        shape_button_frame(self.sell_disabled, true, false, self.sell_mode_on, false)
     }
 
-    /// Frame index for the strip scroll-down (+page) button. No mode bit, no
-    /// flash — pressed-look only, using the 3-frame R-DN convention.
-    pub fn scroll_down_frame(&self) -> u8 {
-        scroll_frame_select(self.scroll_down_pressed)
+    /// Frame index for the strip scroll-down (+page) button; `disabled` is the
+    /// native `6A6610` capacity state.
+    pub fn scroll_down_frame(&self, disabled: bool) -> u8 {
+        shape_button_frame(disabled, false, self.scroll_down_pressed, false, false)
     }
 
-    /// Frame index for the strip scroll-up (−page) button (3-frame R-UP
-    /// convention).
-    pub fn scroll_up_frame(&self) -> u8 {
-        scroll_frame_select(self.scroll_up_pressed)
+    /// Frame index for the strip scroll-up (−page) button.
+    pub fn scroll_up_frame(&self, disabled: bool) -> u8 {
+        shape_button_frame(disabled, false, self.scroll_up_pressed, false, false)
+    }
+
+    /// Frame index for Diplomacy (0) or Options (1).
+    pub fn top_button_frame(&self, index: usize) -> u8 {
+        shape_button_frame(false, false, self.top_pressed[index], false, false)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selection_modes_refuse_placement_and_require_owned_buildings_before_clearing_selection() {
+        let mut state = SidebarGadgetState::new();
+        state.repair_mode_on = true;
+        assert!(!state.toggle_selection_mode(SelectionMode::Sell, true, 1));
+        assert!(state.repair_mode_on && !state.sell_mode_on);
+        assert!(!state.toggle_selection_mode(SelectionMode::Repair, true, 1));
+        assert!(
+            state.repair_mode_on,
+            "pending type also refuses switching a mode off"
+        );
+        assert!(!state.toggle_selection_mode(SelectionMode::Sell, false, 0));
+        assert!(!state.repair_mode_on && !state.sell_mode_on);
+        assert!(state.toggle_selection_mode(SelectionMode::Repair, false, 1));
+        assert!(state.repair_mode_on && !state.sell_mode_on);
+        assert!(state.toggle_selection_mode(SelectionMode::Sell, false, 1));
+        assert!(!state.repair_mode_on && state.sell_mode_on);
+        assert!(!state.toggle_selection_mode(SelectionMode::Sell, false, 1));
+        assert!(!state.repair_mode_on && !state.sell_mode_on);
+    }
+
+    /// The team-key prologue (Recall731205, CenterCamera7313DE, AddTeam7314FD)
+    /// calls this owner for SetRepairMode(0) 0x4AC8C0 / SetSellMode(0)
+    /// 0x4AC660: a pending building placement refuses both, and the beacon
+    /// byte (+0x11B4) stays with its own owner (app::input::beacon, 4AC960).
+    #[test]
+    fn disable_selection_modes_refuses_placement_and_leaves_the_beacon_byte() {
+        let mut state = SidebarGadgetState::new();
+        state.repair_mode_on = true;
+        state.sell_mode_on = true;
+        state.place_beacon_mode_on = true;
+        state.disable_selection_modes(true);
+        assert!(
+            state.repair_mode_on && state.sell_mode_on,
+            "a pending placement refuses 4AC8C0(0)/4AC660(0)"
+        );
+        assert!(
+            state.place_beacon_mode_on,
+            "the beacon byte belongs to 4AC960's owner, not this one"
+        );
+        state.disable_selection_modes(false);
+        assert!(!state.repair_mode_on && !state.sell_mode_on);
+        assert!(state.place_beacon_mode_on);
+    }
 
     #[test]
     fn start_from_idle_initialises_all_fields() {
@@ -350,8 +432,8 @@ mod tests {
         // Flash mid-pulse on tab 3 (Vehicle).
         s.tab_flashes[3].state = 1;
         s.tab_flashes[3].period = 10;
-        assert_eq!(s.tab_frame(3, false), 3, "inactive + pressed-look");
-        assert_eq!(s.tab_frame(3, true), 4, "active + pressed-look");
+        assert_eq!(s.tab_frame(3, false), 3, "inactive + flash");
+        assert_eq!(s.tab_frame(3, true), 4, "active + flash");
         // Disabled overrides everything.
         s.tab_disabled[3] = true;
         assert_eq!(s.tab_frame(3, true), 2);
@@ -367,43 +449,28 @@ mod tests {
     }
 
     #[test]
-    fn frame_select_table() {
-        // (disabled, mode_active, state) → expected frame
-        let cases: &[(bool, bool, u8, u8)] = &[
-            (false, false, 0, 0), // idle
-            (false, true, 0, 1),  // mode-active
-            (true, false, 0, 2),  // disabled (mode and state ignored)
-            (true, true, 0, 2),
-            (true, false, 1, 2),
-            (true, true, 1, 2),
-            (false, false, 1, 3), // pressed-idle
-            (false, true, 1, 4),  // pressed-active
-        ];
-        for &(disabled, mode_active, state, expected) in cases {
-            let got = frame_select(disabled, mode_active, state);
+    fn shape_button_frame_matches_original_draw() {
+        let native =
+            crate::test_fixture::json("tools/sidebar_oracle/command_bar/mapping-frame-native.json");
+        let cases = native["frame_selector_cases"].as_array().unwrap();
+        assert_eq!(cases.len(), 32);
+        for case in cases {
+            let bit = |i: usize| case["flags_1e_2c_2d_34_40"][i] != 0;
             assert_eq!(
-                got, expected,
-                "frame_select(disabled={disabled}, mode_active={mode_active}, state={state}) expected {expected}, got {got}"
+                u64::from(shape_button_frame(bit(0), bit(4), bit(1), bit(2), bit(3))),
+                case["frame"].as_u64().unwrap(),
+                "{case}"
             );
         }
     }
 
     #[test]
-    fn scroll_buttons_use_three_frame_convention() {
-        // R-UP.SHP / R-DN.SHP have exactly 3 frames: 0 = idle, 1 = pressed,
-        // 2 = disabled — NOT the 5-frame tab convention (pressed at 3).
-        assert_eq!(scroll_frame_select(false), 0, "idle selects frame 0");
-        assert_eq!(scroll_frame_select(true), 1, "pressed selects frame 1");
+    fn scroll_buttons_show_their_press() {
         let mut s = SidebarGadgetState::new();
-        assert_eq!(s.scroll_down_frame(), 0);
-        assert_eq!(s.scroll_up_frame(), 0);
         s.scroll_down_pressed = true;
-        assert_eq!(s.scroll_down_frame(), 1, "pressed-look is frame 1");
-        assert_eq!(s.scroll_up_frame(), 0, "the pair is independent");
-        s.scroll_down_pressed = false;
-        s.scroll_up_pressed = true;
-        assert_eq!(s.scroll_down_frame(), 0);
-        assert_eq!(s.scroll_up_frame(), 1);
+        assert_eq!(s.scroll_down_frame(false), 1);
+        assert_eq!(s.scroll_up_frame(false), 0, "the pair is independent");
+        assert_eq!(s.scroll_down_frame(true), 2, "disabled wins");
     }
 }
 #[test]

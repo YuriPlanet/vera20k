@@ -3,10 +3,7 @@
 //! Native blocks, widths and supplied Image boundary: refinery_dock.{py,md,json}.
 //! This tests selected data and its installed projection. Original cadence/RNG
 //! and the supplied movement/world boundaries belong to the continuation replay.
-
-use crate::rules::foundation::foundation_id;
 use crate::rules::mission_data::MissionType;
-use crate::rules::ruleset::INCOME_PPM_SCALE;
 use serde_json::Value;
 
 fn int(value: &Value) -> i32 {
@@ -23,6 +20,211 @@ fn bytes<const N: usize>(value: &Value) -> [u8; N] {
 
 fn double(value: &Value) -> f64 {
     f64::from_le_bytes(bytes(value))
+}
+
+/// Stock XMP17T6 overlay identities, reduced by the production harvest owner
+/// and carried to NAREFN's production Unload owner. The flat scene and pad/
+/// stage placement are explicit test boundaries, not a full map playthrough.
+#[test]
+fn retail_riparius_and_vinifera_pay_on_separate_unload_gates() {
+    use crate::rules::tiberium_type::TiberiumTypeId;
+    use crate::sim::mission::{MissionId, MissionType};
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP17T6.MAP")
+    else {
+        return;
+    };
+    let map = crate::map::map_file::MapFile::from_bytes(
+        &crate::rules::retail_ini_fixture::retail_archive_bytes("XMP17T6.MAP").unwrap(),
+    )
+    .unwrap();
+    let rules = retail.rules;
+    let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &retail.processed_rules,
+        Some(&retail.fixed_art),
+    );
+    let bounds = crate::map::playfield::PlayfieldBounds::from_normalized_local_size(
+        map.header.width as i32,
+        map.header.local_left as i32,
+        map.header.local_top as i32,
+        map.header.local_width as i32,
+        map.header.local_height as i32,
+    );
+    // Harvest in reverse slot order: unloading selects native slot order,
+    // independently of the order in which the bales entered the hold.
+    let sources: Vec<_> = [TiberiumTypeId(2), TiberiumTypeId(0)]
+        .into_iter()
+        .map(|kind| {
+            let ty = rules.tiberium_types.get(kind).unwrap();
+            assert_eq!(ty.value, 25);
+            let source = map
+                .overlays
+                .iter()
+                .find(|entry| {
+                    bounds.contains_geometry_packed(i32::from(entry.rx), i32::from(entry.ry))
+                        && overlays
+                            .tiberium_type_for_overlay(&rules.tiberium_types, entry.overlay_id)
+                            == Some(kind)
+                })
+                .expect("stock map contains this native type inside LocalSize");
+            source.overlay_id
+        })
+        .collect();
+    let mut sim =
+        super::refinery_dock_oracle_tests::world_with(&rules, &retail.processed_rules, |_| {});
+    let owner = sim.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner,
+            0,
+            Some(owner),
+            true,
+            0,
+            10,
+        ));
+    let refinery = sim
+        .spawn_object("NAREFN", "Americans", 6, 9, 0, &rules)
+        .unwrap();
+    let miner = sim
+        .spawn_object("HARV", "Americans", 15, 15, 0, &rules)
+        .unwrap();
+    for overlay in sources {
+        // Five ordinary whole-density harvests; keep a level on the cell so
+        // this regression isolates cargo identity from ore exhaustion queues.
+        sim.overlay_grid
+            .as_mut()
+            .unwrap()
+            .place_overlay(15, 15, overlay, 5);
+        sim.overlay_grid.as_mut().unwrap().recalculate_runtime_cell(
+            sim.resolved_terrain.as_mut().unwrap(),
+            &overlays,
+            (15, 15),
+        );
+        for _ in 0..5 {
+            assert!(crate::sim::miner::miner_system::harvest_ore_tick_for_test(
+                &mut sim,
+                &rules,
+                Some(&overlays),
+                miner,
+            ));
+        }
+    }
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(miner)
+            .unwrap()
+            .miner
+            .as_ref()
+            .unwrap()
+            .cargo()
+            .len(),
+        10
+    );
+    let source_cargo = sim
+        .substrate
+        .entities
+        .get(miner)
+        .unwrap()
+        .miner
+        .as_ref()
+        .unwrap()
+        .cargo()
+        .to_vec();
+    let saved = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "mixed native cargo", 0);
+    let mut restored = crate::sim::snapshot::GameSnapshot::load(&saved)
+        .unwrap()
+        .sim;
+    // Deserialization alone intentionally leaves cell-list indexes empty.
+    // Run the existing production restoration owners before gameplay resumes.
+    restored.retain_process_state_for_load(super::SnapshotProcessState::Live(&sim));
+    restored.restore_after_snapshot_load().unwrap();
+    restored.rebuild_caches_after_load(
+        sim.resolved_terrain.as_ref().unwrap().clone(),
+        crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
+        &rules,
+    );
+    restored
+        .restore_map_authority_after_snapshot_load(&rules, &overlays, None)
+        .unwrap();
+    sim = restored;
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(miner)
+            .unwrap()
+            .miner
+            .as_ref()
+            .unwrap()
+            .cargo(),
+        source_cargo,
+        "mixed hold survives save/load"
+    );
+    sim.resolve_type_handles(&rules);
+    let now = sim.session.binary_frame();
+    sim.substrate
+        .mission_assign_exact(miner, MissionId::from_known(MissionType::Unload), now)
+        .unwrap();
+    let entity = sim.substrate.entities.get_mut(miner).unwrap();
+    entity.position.set_rx_for_test(9);
+    entity.position.set_ry_for_test(10);
+    entity.body_facing = crate::sim::movement::FacingClass::new(0x4000, 5);
+    entity.radio_contacts.set_slot(0, refinery);
+    entity.mission.set_handler_state(3);
+    entity
+        .miner
+        .as_mut()
+        .unwrap()
+        .set_unload_active_for_test(true);
+    sim.substrate
+        .entities
+        .get_mut(refinery)
+        .unwrap()
+        .radio_contacts
+        .set_slot(0, miner);
+    for (credits, remaining, score) in [(125, 5, 25), (250, 0, 50)] {
+        sim.substrate
+            .entities
+            .get_mut(miner)
+            .unwrap()
+            .install_native_stage_fixture(crate::sim::stage::StageClass::from_native_fixture(
+                i32::from(rules.general.harvester_dump_frames),
+                0,
+                crate::sim::timer::CdTimer::from_raw(-1, 0),
+                1,
+                1,
+            ));
+        crate::sim::miner::mission_unload(&mut sim, &rules, miner, super::FrameEffects::default());
+        assert_eq!(
+            sim.houses[&owner].economy().credits(),
+            credits,
+            "one native type per gate"
+        );
+        assert_eq!(sim.houses[&owner].economy().score(), score);
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(miner)
+                .unwrap()
+                .miner
+                .as_ref()
+                .unwrap()
+                .cargo()
+                .len(),
+            remaining
+        );
+        assert!(
+            sim.substrate
+                .entities
+                .get(miner)
+                .unwrap()
+                .miner
+                .as_ref()
+                .unwrap()
+                .cargo()
+                .iter()
+                .all(|bale| bale.tiberium_type == TiberiumTypeId(2))
+        );
+    }
 }
 
 /// The rules owner preconverts the native positive minute field into a frame
@@ -114,8 +316,8 @@ fn retail_docking_inputs_match_original_readers_and_installed_art() {
         "native dump gate -> immutable frame threshold"
     );
 
-    // ReadDouble66FC6B narrows through FSTP float. Check both the native stored
-    // width and the immutable ppm representation, without another INI parser.
+    // ReadDouble66FC70 narrows through FSTP66FC75. Check both the native stored
+    // width and the immutable raw field, without another INI parser.
     let purifier = f32::from_le_bytes(bytes(&stock["purifier_bonus_bits"]));
     let constructor_purifier =
         f32::from_le_bytes(bytes(&input["constructor"]["purifier_bonus_bits"]));
@@ -126,9 +328,9 @@ fn retail_docking_inputs_match_original_readers_and_installed_art() {
         purifier.to_bits()
     );
     assert_eq!(
-        general.purifier_bonus_ppm as f64 / INCOME_PPM_SCALE as f64,
-        f64::from(purifier),
-        "stock native float -> ppm representation"
+        general.purifier_bonus.bits(),
+        purifier.to_bits(),
+        "stock native float retained unchanged"
     );
 
     for (name, native) in stock["buildings"].as_object().unwrap() {
@@ -159,7 +361,7 @@ fn retail_docking_inputs_match_original_readers_and_installed_art() {
             "{name}: NumberOfDocks"
         );
         assert_eq!(
-            i32::from(foundation_id(&object.foundation)),
+            i32::from(object.foundation.selector()),
             int(&native["foundation"]),
             "{name}: processed Building Foundation"
         );

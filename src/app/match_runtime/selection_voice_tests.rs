@@ -142,13 +142,12 @@ fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() 
             origin_y: 0.0,
             zoom: 1.0,
         },
-        eva_side: crate::rules::sound_ini::EvaSide::Yuri,
     };
     let mut sim = simulation("YAREFN", EntityCategory::Structure, "Local", false);
     let mut events = SoundEventQueue::new();
     crate::sim::production::sell_stage_zero(
         &mut sim,
-        Some(&retail.rules),
+        &retail.rules,
         1,
         crate::sim::world::FrameEffects::empty(),
     );
@@ -173,7 +172,7 @@ fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() 
     );
     assert!(player.pending_unit_voice_owners().contains(&1));
     sim.process_pending_delete_with(
-        Some(&retail.rules),
+        &retail.rules,
         None,
         crate::sim::world::FrameEffects::empty(),
         1,

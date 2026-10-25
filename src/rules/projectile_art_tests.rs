@@ -47,13 +47,13 @@ fn projectile_color_matches_original_shared_reader_and_section_admission() {
         let processed = layers.process_with_fixed_art(&IniFile::empty()).unwrap();
         // Constructor-only absent sections need not project a gameplay type;
         // query and project the real registry's retained owner in all cases.
-        let (_, state) = processed
+        let (_, state, image) = processed
             .projectile_art_states()
-            .find(|(name, _)| *name == "Control")
+            .find(|(name, _, _)| *name == "Control")
             .unwrap();
         let mut projectile =
             ProjectileType::from_ini_section("Control", &IniSection::new("Control".into()), None);
-        state.apply_to(&mut projectile);
+        state.apply_to(image, &mut projectile);
         assert_eq!(
             i64::from(projectile.color_scheme()),
             row["after"].as_i64().unwrap(),
@@ -143,7 +143,7 @@ fn projectile_voxel_load_retains_attempt_identity_independently_of_shp_and_invis
         assert!(kind.inviso, "{body}");
         assert_eq!(kind.voxel_image_load(), expected, "{body}");
         assert_eq!(
-            kind.image_load.as_ref().map(|load| load.image.as_str()),
+            kind.image_loads.first().map(|load| load.image.as_str()),
             expected_shp,
             "base non-Voxel SHP load precedes Bullet Inviso: {body}"
         );
@@ -184,7 +184,7 @@ fn compare(actual: &ProjectileType, expected: &Value, context: &str) {
         expected["trailer"].as_str(),
         "{context} Trailer"
     );
-    let image_load = actual.image_load.as_ref().map(|load| {
+    let image_load = actual.image_loads.first().map(|load| {
         serde_json::json!({
             "image": load.image, "theater": load.theater, "new_theater": load.new_theater,
         })
@@ -209,14 +209,17 @@ fn retained_projectile_art_matches_original_full_readers_across_layers_and_owner
         let mut registry = NativeRulesRegistryState::default();
         let empty = crate::rules::ini_parser::IniSection::new(identity.to_owned());
         let mut unread = ProjectileType::from_ini_section(identity, &empty, None);
-        ProjectileArtState::new(identity).apply_to(&mut unread);
+        ProjectileArtState::new().apply_to(
+            &crate::rules::object_image::ObjectImageState::new(identity),
+            &mut unread,
+        );
         compare(
             &unread,
             &case["constructor"],
             &format!("{identity} constructor"),
         );
         assert!(
-            unread.image_load.is_none(),
+            unread.image_loads.is_empty(),
             "constructor Image text cannot load an asset"
         );
         let mut stack: Option<RulesLayerStack> = None;

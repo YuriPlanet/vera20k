@@ -404,7 +404,6 @@ def blackout_setter_controls():
 
 def generate():
     packet=dict(schema_version=1,kind='bounded-original-house-power-consumers',
-                native_sha256=hashlib.sha256(IMAGE).hexdigest(),
                 limits=[
                     'Composition of existing native fixture owners; no Rust-derived gameplay answers. The preserved44 research controls are extended with first-warped and first-Selling radar-provider order controls and four whole50BC90 replacement-setter controls.',
                     'Supplied admitted Strength750/Power200/HP374 plant, drain100 consumer, zero-power Radar provider, House/country and Cost600 pending Unit state. Constructors, Unlimbo, arbitrary damage and full Building/common AI excluded. Factory starts live/suspended0;4C9EA0 returnsfalse and retains initial start100/duration0. Native FactoryAI produces the joined frame195 prior; this is not Begin_Production startup coverage.',

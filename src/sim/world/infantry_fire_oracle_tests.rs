@@ -14,7 +14,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::Health;
 use crate::sim::combat::fire_error_world::FireSubject;
 use crate::sim::game_entity::GameEntity;
-use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::state::MissionTestFixture;
 use crate::sim::mission::{MissionDispatchTimer, MissionId};
 use crate::sim::movement::ground_pose::position_world_coord;
@@ -326,7 +326,7 @@ fn command_attack(fixture: &mut SuppliedFootFixture, case: &Value, rules: &RuleS
         .assign_target_represented(
             fixture.actor,
             target,
-            Some(rules),
+            rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -339,7 +339,7 @@ fn command_attack(fixture: &mut SuppliedFootFixture, case: &Value, rules: &RuleS
             MissionId::from_raw(signed(&queue[0])),
             signed(&queue[1]),
             fixture.sim.session.binary_frame(),
-            &EntityReadyInputProvider,
+            &LiveReadyInputProvider { rules },
         )
         .unwrap();
     assert_source(
@@ -369,7 +369,7 @@ fn recorded_fire_error(fixture: &SuppliedFootFixture, case: &Value, rules: &Rule
 }
 
 fn source_ai_visit(sim: &mut Simulation, actor: u64, rules: &RuleSet) {
-    sim.advance_live_object_turn(actor, Some(rules), ObjectAiCtx::default())
+    sim.advance_live_object_turn(actor, rules, ObjectAiCtx::default())
         .unwrap();
 }
 
@@ -944,7 +944,7 @@ fn original_single_listener_expiry_clears_pending_shot_and_shortens_passive_time
                     false,
                     Some(owner),
                     PointerExpiryControl::Uninit,
-                    Some(&rules),
+                    &rules,
                     None,
                     crate::sim::world::FrameEffects::default(),
                 );
@@ -1081,7 +1081,7 @@ fn original_whole_ai_shot_dynamic_logic_damage_and_deferred_lifetimes_match_nati
                 .session
                 .set_binary_frame_for_test(fixture.sim.session.binary_frame() + 1);
             fixture.sim.process_pending_delete_with(
-                Some(&rules),
+                &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
                 1,

@@ -25,7 +25,7 @@ pub(super) fn finish_idle(entity: &mut GameEntity) {
     }) {
         return;
     }
-    if entity.foot_speed.applied_fraction() > SIM_ZERO {
+    if entity.foot_speed.speed_fraction_is_positive() {
         entity.foot_speed.set_speed_fraction(SIM_ZERO);
     }
     entity.navigation.path_runtime_mut().clear_scold_latch();
@@ -48,9 +48,9 @@ pub(super) fn advance(
         .and_then(|loco| loco.step_head())
         .expect("paid Walk requires its admitted head");
     entity.foot_speed.set_speed_fraction(SIM_ONE); // owner +578 / Foot4D3710
-    let speed = super::foot_speed::owner_current_speed_from_fraction(
+    let speed = super::foot_speed::owner_current_speed_from_native_fraction(
         adjusted_speed,
-        entity.foot_speed.applied_fraction(),
+        entity.foot_speed.native_applied_fraction(),
     );
     let speed = prone_crawls.map_or(speed, |crawls| {
         crate::sim::infantry::apply_prone_speed(SimFixed::from_num(speed), crawls).to_num::<i32>()

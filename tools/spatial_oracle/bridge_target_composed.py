@@ -8,7 +8,7 @@ import hashlib, json, struct
 from pathlib import Path
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import *
-from tools.native_oracle import NATIVE_SHA256, RET_MAGIC, run_checked, finish_vectors, provenance
+from tools.native_oracle import RET_MAGIC, run_checked, finish_vectors, provenance
 from tools.projectile_oracle.ifv_fire_coord import prepare
 from tools.projectile_oracle.bridge_render_inputs import assets_root, lexical
 from tools.spatial_oracle.building_body_rules import RULES, SP, dwords
@@ -308,7 +308,7 @@ def generate():
  cases.append(history('timer_not_due',[dict(timer=[173,0,28])]))
  cases.append(history('health_zero_after_real_probe',[dict(health=0)]))
  cases.append(history('missing_cell_health_zero_probe_side_effect',[dict(health=0,target_xyz=[10496,10496,624])],direct=True))
- return dict(native_sha256=NATIVE_SHA256,cases=cases)
+ return dict(cases=cases)
 
 def metadata():
  return provenance(scope=__doc__,entry_points={'passive_ai_block':BEGIN,'stop_after_passive_publication':END,

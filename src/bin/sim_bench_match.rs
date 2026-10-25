@@ -32,7 +32,6 @@ use std::collections::BTreeSet;
 
 use vera20k_core::headless_scenario::{HeadlessScenario, battle_session};
 use vera20k_core::map::entities::EntityCategory;
-use vera20k_core::rules::foundation::foundation_dimensions;
 use vera20k_core::rules::ruleset::RuleSet;
 use vera20k_core::sim::ai_buildable::{CountryBuildMasks, candidate_allowed};
 use vera20k_core::sim::combat::TargetKind;
@@ -420,7 +419,7 @@ fn place_building(
         .resources
         .rules
         .object(type_id)
-        .map(|object| foundation_dimensions(&object.foundation))?;
+        .map(|object| object.foundation.dimensions())?;
     let (width, height) = (i32::from(width), i32::from(height));
     for &(dx, dy) in offsets {
         let x = i32::from(anchor.0) + dx - width / 2;

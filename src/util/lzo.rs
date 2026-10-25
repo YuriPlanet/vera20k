@@ -203,8 +203,9 @@ pub fn lzo1x_decompress(src: &[u8], dst: &mut [u8]) -> Result<usize, LzoError> {
 /// Decompress IsoMapPack5 chunk-framed LZO data.
 ///
 /// Chunk format: repeating `[u16 src_len][u16 dst_len][compressed_bytes]`.
-/// Stops when all input bytes are consumed.
-pub fn decompress_chunks(data: &[u8]) -> Result<Vec<u8>, LzoError> {
+/// Stops when all input bytes are consumed. The caller supplies the maximum
+/// total decoded size; every advertised chunk is checked before allocation.
+pub fn decompress_chunks(data: &[u8], maximum_output: usize) -> Result<Vec<u8>, LzoError> {
     let mut output: Vec<u8> = Vec::new();
     let mut pos: usize = 0;
 
@@ -220,10 +221,17 @@ pub fn decompress_chunks(data: &[u8]) -> Result<Vec<u8>, LzoError> {
             return Err(LzoError::InputTruncated);
         }
 
-        let mut chunk_out: Vec<u8> = vec![0u8; dst_len];
-        let written: usize = lzo1x_decompress(&data[pos..pos + src_len], &mut chunk_out)?;
-        chunk_out.truncate(written);
-        output.extend_from_slice(&chunk_out);
+        let start = output.len();
+        let end = start
+            .checked_add(dst_len)
+            .filter(|&end| end <= maximum_output)
+            .ok_or(LzoError::OutputOverflow)?;
+        output
+            .try_reserve_exact(dst_len)
+            .map_err(|_| LzoError::OutputOverflow)?;
+        output.resize(end, 0);
+        let written = lzo1x_decompress(&data[pos..pos + src_len], &mut output[start..end])?;
+        output.truncate(start + written);
         pos += src_len;
     }
 
@@ -375,7 +383,11 @@ mod tests {
         ] {
             let data: Vec<u8> = (0..len).map(|i| (i * 7 + i / 3) as u8).collect();
             let chunks = compress_chunks(&data, 0x2000);
-            assert_eq!(decompress_chunks(&chunks).expect("decodes"), data, "{len}");
+            assert_eq!(
+                decompress_chunks(&chunks, data.len()).expect("decodes"),
+                data,
+                "{len}"
+            );
             // Every block but the last is a full 0x2000 bytes.
             let uncompressed = u16::from_le_bytes([chunks[2], chunks[3]]) as usize;
             assert_eq!(uncompressed, len.min(0x2000));
@@ -394,7 +406,7 @@ mod tests {
         chunks.extend_from_slice(&dst_len.to_le_bytes());
         chunks.extend_from_slice(&lzo_data);
 
-        let result: Vec<u8> = decompress_chunks(&chunks).expect("Should decompress chunks");
+        let result: Vec<u8> = decompress_chunks(&chunks, 3).expect("Should decompress chunks");
         assert_eq!(result, b"ABC");
     }
 }

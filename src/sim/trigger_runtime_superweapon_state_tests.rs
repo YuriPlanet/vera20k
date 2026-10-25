@@ -148,7 +148,7 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
         crate::sim::scenario_bootstrap::initialize_map_roster_houses(
             &mut sim,
             &roster,
-            Some(&rules),
+            &rules,
             Some(&map.ini),
         );
         sim.session.install_waypoints(&map.waypoints);
@@ -174,6 +174,13 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
         let silo = sim
             .spawn_object("NAMISL", "YuriCountry", 48, 89, 0, &rules)
             .unwrap();
+        // The control writes its silo into memory without Added_To_Game, so
+        // its House holds no drain, and it grants with low power off (Grant
+        // 0x006CB560's third argument). Spawning counted the silo's drain at
+        // once (0x00502B48..0x00502B52); clear it to match.
+        let power = sim.power_states.house_mut(owner);
+        power.set_total_drain_for_test(0);
+        power.set_is_low_power_for_test(false);
         let tag_type = sim.trigger_runtime.definitions.tag_type(tag_name).unwrap();
         let tag = sim.shared_trigger_tag(tag_type);
         let live = sim.trigger_runtime.tag(tag).unwrap().triggers[0];
@@ -259,10 +266,10 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
                             typ,
                             Some(live),
                             TagEventInput::default(),
-                            Some(&rules),
+                            &rules,
                         ),
                         &mut Vec::new(),
-                        Some(&rules),
+                        &rules,
                         None,
                         FrameEffects::default(),
                     );
@@ -368,7 +375,7 @@ fn dispatch_matches_original_signed_override_waypoint_and_incoming_house_gates()
                 &action,
                 context,
                 &mut effects,
-                Some(&rules),
+                &rules,
                 None,
                 FrameEffects::default(),
             )

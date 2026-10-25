@@ -270,7 +270,7 @@ fn replay_crew_row(row: &Value) {
     let before = sim.substrate.entities.keys_sorted();
     production::sell_stage_one(
         sim,
-        Some(rules),
+        rules,
         Some(super::harvest_field_oracle_tests::registry()),
         refinery,
         crate::sim::world::FrameEffects::default(),
@@ -518,10 +518,6 @@ fn sales_through_the_frame_visit_on_the_original_frames() {
     assert_eq!(compared, 8);
 }
 
-/// `ai_sale` rows VERA cannot express: an AttachedTag (`+0x34`; VERA has no
-/// per-object tags).
-const AI_SALE_SKIPPED: &[&str] = &["s_tagged"];
-
 /// The computer's low-credit sale (`production::update_repair_and_power`,
 /// whose sale arm runs before its repair step) against the `ai_sale` rows,
 /// for one building of a computer house: the Scenario RNG cursors before and
@@ -544,9 +540,6 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
     for row in corpus()["ai_sale"].as_array().unwrap() {
         let input = &row["input"];
         let name = input["name"].as_str().unwrap();
-        if AI_SALE_SKIPPED.contains(&name) {
-            continue;
-        }
         let int = |key: &str| input[key].as_i64().unwrap() as i32;
         let flag = |key: &str| if input[key] == true { "yes" } else { "no" };
         let mut text = format!(
@@ -631,6 +624,29 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
         let selling_before = building.mission.effective().known() == Some(MissionType::Selling);
         sim.substrate.entities.insert(building);
         sim.add_entity_occupancy(1);
+        if input["tag"] == true {
+            // The native row supplies nonnull Object+34. Construct its
+            // attachment through the existing map/Tag owner, including a
+            // disabled Trigger:4507D7 tests only the raw pointer presence.
+            let map = crate::map::map_file::MapFile::from_bytes(
+                b"[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+                  [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
+                  [Basic]\nNewINIFormat=4\n\
+                  [Triggers]\nSALE_KEEP=AI,<none>,keep,1,1,1,1,0\n\
+                  [Tags]\nSALE_KEEP_TAG=2,keep,SALE_KEEP\n\
+                  [Events]\nSALE_KEEP=1,0,0,0\n\
+                  [Actions]\nSALE_KEEP=1,0,0,0,0,0,0,0,A\n",
+            )
+            .unwrap();
+            sim.initialize_trigger_definitions(
+                &map,
+                &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
+                None,
+                None,
+            );
+            sim.attach_object_trigger_tag(1, Some("SALE_KEEP_TAG"));
+            assert!(sim.object_has_trigger_tag(1), "{name}: actual attachment");
+        }
         sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap_or(1));
         let cursors = |sim: &crate::sim::world::Simulation| {
             let view = sim.scenario_rng.logical_view();
@@ -669,5 +685,5 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
         );
         compared += 1;
     }
-    assert_eq!(compared, 25);
+    assert_eq!(compared, 26);
 }

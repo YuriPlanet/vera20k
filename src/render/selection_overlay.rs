@@ -52,6 +52,11 @@ pub struct SelectionOverlay {
     /// Full PIPS: health, rank, raw garrison Pip values and self-heal.
     /// Native LoadPipAssets 5F76B0 binds AC147C; both use Convert 87F6C4.
     pips: Option<CenteredShapeStrip>,
+    /// One optional custom SHP per `[DigitalDisplayTypes]` catalog entry, in
+    /// catalog order. `None` for an entry without `Shape=` or a missing file;
+    /// Phobos then draws that display with the game font.
+    #[cfg(feature = "phobos")]
+    digital_shapes: Vec<Option<CenteredShapeStrip>>,
 }
 
 /// Every frame of one SHP packed side by side at its stored size, each with
@@ -62,6 +67,11 @@ pub struct CenteredShapeStrip {
     texture: BatchTexture,
     atlas_w: f32,
     atlas_h: f32,
+    /// `SHPStruct::Width` — the authored canvas, used by Phobos's digital
+    /// display `Shape.PercentageFrame` and its align math.
+    shape_w: u32,
+    /// `SHPStruct::Height`.
+    shape_h: u32,
     frames: Vec<CenteredShapeFrame>,
 }
 
@@ -69,12 +79,20 @@ struct CenteredShapeFrame {
     x: u32,
     w: u32,
     h: u32,
+    /// Centered draw: stored origin minus the integer canvas half.
     offset: (i32, i32),
+    /// `BlitterFlags::None` draw: the stored frame origin is the offset.
+    raw_offset: (i32, i32),
 }
 
 impl CenteredShapeStrip {
     pub fn texture(&self) -> &BatchTexture {
         &self.texture
+    }
+
+    /// Number of frames the source SHP carries.
+    pub fn frame_count(&self) -> usize {
+        self.frames.len()
     }
 
     /// `frame` drawn centered on `point`; `None` for a frame the file lacks
@@ -92,12 +110,49 @@ impl CenteredShapeStrip {
             ..Default::default()
         })
     }
+
+    /// `frame` drawn without `BlitterFlags::Centered`, the way
+    /// `ShapeTextPrinter::PrintShape` places each digital-display glyph:
+    /// the stored frame origin is added to the point, with no canvas-half
+    /// subtraction.
+    pub fn raw_instance(
+        &self,
+        frame: usize,
+        point: (f32, f32),
+        depth: f32,
+    ) -> Option<SpriteInstance> {
+        let f = self.frames.get(frame).filter(|f| f.w > 0 && f.h > 0)?;
+        Some(SpriteInstance {
+            position: [
+                point.0 + f.raw_offset.0 as f32,
+                point.1 + f.raw_offset.1 as f32,
+            ],
+            size: [f.w as f32, f.h as f32],
+            uv_origin: [f.x as f32 / self.atlas_w, 0.0],
+            uv_size: [f.w as f32 / self.atlas_w, f.h as f32 / self.atlas_h],
+            depth,
+            tint: [1.0, 1.0, 1.0],
+            alpha: 1.0,
+            ..Default::default()
+        })
+    }
+
+    /// `SHPStruct::Width`.
+    pub fn width(&self) -> u32 {
+        self.shape_w
+    }
+
+    /// `SHPStruct::Height`.
+    pub fn height(&self) -> u32 {
+        self.shape_h
+    }
     /// Cell47EC90 active ordinary draw -> CC_Draw_Shape4AED70. Its native
     /// flags20600 pick the plain53-row Convert's RLE row4960A0: opaque stores
     /// without A/Z interaction. Source: placement_render native execution.
     pub(crate) fn building_placement_instance(
         &self,
         cell: BuildingPlacementCell,
+        alpha: f32,
     ) -> Option<SpriteInstance> {
         let frame = if cell.valid {
             0
@@ -110,6 +165,7 @@ impl CenteredShapeStrip {
         let (x, y) = terrain::iso_to_screen(cell.coord.0, cell.coord.1, cell.level as u8);
         let mut instance = self.instance(frame, (x + 30.0, y - 1.0), 0.0)?;
         instance.palette_light = crate::render::palette_light::PaletteLight::plain(53, 1000);
+        instance.alpha = alpha;
         Some(instance)
     }
 
@@ -126,6 +182,25 @@ impl CenteredShapeStrip {
     ) -> Option<Self> {
         let shp = ShpFile::from_bytes(&assets.get(shp_name)?).ok()?;
         let palette = Palette::from_bytes(&assets.get(pal_name)?).ok()?;
+        let strip = Self::from_shp_on_device(device, queue, batch, &shp, &palette)?;
+        log::info!(
+            "{shp_name} strip in {pal_name}: {}x{}, {} frames",
+            strip.atlas_w,
+            strip.atlas_h,
+            strip.frames.len()
+        );
+        Some(strip)
+    }
+
+    /// [`Self::from_assets_on_device`] for a parsed SHP and an already
+    /// built palette, such as a House's ColorScheme Convert.
+    pub(crate) fn from_shp_on_device(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        shp: &ShpFile,
+        palette: &Palette,
+    ) -> Option<Self> {
         let atlas_w: u32 = shp
             .frames
             .iter()
@@ -148,7 +223,7 @@ impl CenteredShapeStrip {
         let mut x = 0;
         for (frame_index, frame) in shp.frames.iter().enumerate() {
             let (w, h) = (u32::from(frame.frame_width), u32::from(frame.frame_height));
-            let frame_rgba = shp.frame_to_rgba(frame_index, &palette).ok()?;
+            let frame_rgba = shp.frame_to_rgba(frame_index, palette).ok()?;
             let row = w as usize;
             for py in 0..h {
                 let src = (py * w) as usize;
@@ -165,13 +240,10 @@ impl CenteredShapeStrip {
                     i32::from(frame.frame_x) - i32::from(shp.width / 2),
                     i32::from(frame.frame_y) - i32::from(shp.height / 2),
                 ),
+                raw_offset: (i32::from(frame.frame_x), i32::from(frame.frame_y)),
             });
             x += w;
         }
-        log::info!(
-            "{shp_name} strip in {pal_name}: {atlas_w}x{atlas_h}, {} frames",
-            frames.len()
-        );
         Some(Self {
             texture: batch.create_texture_on_device(
                 device,
@@ -183,6 +255,8 @@ impl CenteredShapeStrip {
             ),
             atlas_w: atlas_w as f32,
             atlas_h: atlas_h as f32,
+            shape_w: u32::from(shp.width),
+            shape_h: u32::from(shp.height),
             frames,
         })
     }
@@ -192,20 +266,19 @@ impl CenteredShapeStrip {
     pub fn build_building_preview(
         &self,
         preview: &BuildingPlacementPreview,
+        alpha: f32,
     ) -> Vec<SpriteInstance> {
         let mut instances = Vec::with_capacity(preview.cells.len());
-        // Tactical6D5030 walks rectangular foundation bounds with X outer,
-        // Y inner, independently of the row-major admission/sentinel list.
-        // Reordering by color changes stores where sloped cells overlap.
-        for dx in 0..preview.width {
-            for dy in 0..preview.height {
-                let index = usize::from(dy) * usize::from(preview.width) + usize::from(dx);
-                let Some(cell) = preview.cells.get(index) else {
-                    continue;
-                };
-                if let Some(instance) = self.building_placement_instance(*cell) {
-                    instances.push(instance);
-                }
+        //6D5030 / Ares100155C0 walks actual-list bounds X outer/Y inner;
+        //The ordinary preview contains its bit2 active cells, possibly sparse
+        //or outside declared X/Y. Pending-bit4 drawing is a separate residual.
+        //Preserve draw order independently of stock row-major vs Custom
+        //X-first gameplay list order; never regroup by admitted color.
+        let mut active: Vec<_> = preview.cells.iter().collect();
+        active.sort_by_key(|cell| (cell.coord.0 as i16, cell.coord.1 as i16));
+        for cell in active {
+            if let Some(instance) = self.building_placement_instance(*cell, alpha) {
+                instances.push(instance);
             }
         }
         // Preserve existing wall auto-fill admission and order; pending marks
@@ -214,7 +287,7 @@ impl CenteredShapeStrip {
             preview
                 .wall_autofill_cells
                 .iter()
-                .filter_map(|cell| self.building_placement_instance(*cell)),
+                .filter_map(|cell| self.building_placement_instance(*cell, alpha)),
         );
         instances
     }
@@ -369,7 +442,53 @@ impl SelectionOverlay {
             talk_bubble,
             repair_wrench,
             pips,
+            #[cfg(feature = "phobos")]
+            digital_shapes: Vec::new(),
         }
+    }
+
+    /// Load each `[DigitalDisplayTypes]` entry's `Shape=`/`Palette=` once per
+    /// match, matching `DigitalDisplayTypeClass`'s retained `SHPStruct*`.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn load_digital_display_shapes(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        assets: &AssetManager,
+        types: &[crate::rules::digital_display::DigitalDisplayType],
+    ) {
+        self.digital_shapes = types
+            .iter()
+            .map(|entry| {
+                let shape = entry.shape.as_deref()?;
+                let strip = CenteredShapeStrip::from_assets_on_device(
+                    device,
+                    queue,
+                    batch,
+                    assets,
+                    shape,
+                    entry.palette_name(),
+                );
+                if strip.is_none() {
+                    log::warn!(
+                        "Phobos DigitalDisplay {}: cannot load {shape} / {}; using text",
+                        entry.name,
+                        entry.palette_name()
+                    );
+                }
+                strip
+            })
+            .collect();
+    }
+
+    /// One catalog entry's custom SHP, when loaded.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn digital_shape(
+        &self,
+        index: usize,
+    ) -> Option<&CenteredShapeStrip> {
+        self.digital_shapes.get(index)?.as_ref()
     }
 
     /// The Crazy Ivan bomb clock art (BOMBCURS.SHP), when the assets have it.

@@ -4,11 +4,9 @@ Sidecars pin no hashes of repository sources (AGENTS.md): such pins go stale on
 edits that leave native output unchanged. `native_oracle.finish_vectors` still
 hashes the sources a producer declares before and after generating, and refuses
 to compare or publish a run whose sources changed while it ran. It records the
-command that ran the producer (`replay_command`), which is not evidence.
-Sidecars written before the pins were removed, on other branches, may still carry
-`source_normalized_lf_sha256`; checks ignore it and `--write` drops it. Sidecars
-written before gamemd's hash checks were removed carry `native_sha256`, handled
-the same way: any gamemd.exe build is accepted.
+command that ran the producer (`replay_command`) and the Unicorn and zlib
+versions that ran it, which are not evidence: another environment reproduces
+the same native output.
 """
 
 from __future__ import annotations
@@ -22,8 +20,9 @@ import sys
 
 REPO = Path(__file__).resolve().parents[1]
 REPLAY_FIELD = 'replay_command'
-LEGACY_SOURCE_FIELD = 'source_normalized_lf_sha256'
-LEGACY_NATIVE_FIELD = 'native_sha256'
+ENVIRONMENT_FIELDS = frozenset(('unicorn_binding', 'unicorn_core'))
+# A raw archive's compressed bytes depend on the zlib build; its content does not.
+ARCHIVE_ENVIRONMENT_FIELDS = frozenset(('sha256', 'bytes'))
 MODE_FLAGS = frozenset(('--check', '--write'))
 # finish_vectors' staging target. A replay regenerates the corpus where it lives.
 OUTPUT_FLAG = '--output'
@@ -47,9 +46,17 @@ def source_identity(source_paths) -> dict:
 
 def evidence(metadata: dict) -> dict:
     """The metadata a replay must reproduce exactly: all but the replay command
-    and the legacy source and gamemd pins."""
-    return {key: value for key, value in metadata.items()
-            if key not in (REPLAY_FIELD, LEGACY_SOURCE_FIELD, LEGACY_NATIVE_FIELD)}
+    and the environment that ran it."""
+    kept = {key: value for key, value in metadata.items()
+            if key != REPLAY_FIELD and key not in ENVIRONMENT_FIELDS}
+    archive = kept.get('raw_archive')
+    if isinstance(archive, dict):
+        archive = {key: value for key, value in archive.items() if key not in ARCHIVE_ENVIRONMENT_FIELDS}
+        if isinstance(archive.get('compression'), dict):
+            archive['compression'] = {key: value for key, value in archive['compression'].items()
+                                      if key != 'zlib_runtime'}
+        kept['raw_archive'] = archive
+    return kept
 
 
 def _repo_relative(argument: str) -> str:

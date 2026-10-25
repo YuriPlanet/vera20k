@@ -681,21 +681,45 @@ impl OverlayMarkHost for PlaceTiberiumMarkHost<'_, '_> {
 /// both resolve the source's live resource type (fallback0), draw one starting
 /// direction and scan the native direction order for an empty admitted cell.
 /// Original execution: tools/spatial_oracle/tibtre.json and growth/spread corpus.
+///
+/// `spawner` carries Phobos' `TerrainTypeTemp::pCurrentExt` context: only the
+/// ore spawner's own forced calls set it, and only then do the two hooks below
+/// fire. Every other caller passes `None` and keeps the stock scan.
 pub(crate) fn spread_tiberium(
     ctx: &mut PlaceTiberiumContext<'_>,
     source: (u16, u16),
     forced: bool,
+    spawner: Option<SpawnerSpread>,
 ) -> Option<TiberiumPlacement> {
-    let source_type = if forced {
-        tiberium_cell_view(
+    let source_type = match (spawner, forced) {
+        // 0x483811 stores the fallback resource index only when the source cell
+        // resolves to no TiberiumClass at all: `0x004837F5` keeps the resolved
+        // index and jumps straight to the scan otherwise. Phobos'
+        // `CellClass_SpreadTiberium_TiberiumType @ 0x483811` hook replaces that
+        // `mov [esp+0x20],0` store, so `SpawnsTiberium.Type=` reaches only a
+        // source cell that itself holds no ore.
+        (Some(spawner), true) => {
+            let resolved = tiberium_cell_view(
+                ctx.overlay_grid,
+                ctx.overlay_registry,
+                ctx.tiberium_types,
+                source,
+            )
+            .map(|view| view.tiberium_type);
+            let source_type = match resolved {
+                Some(source_type) => source_type,
+                None => TiberiumTypeId(u8::try_from(spawner.tiberium_type).ok()?),
+            };
+            return spawner_cell_spread(ctx, source, source_type, spawner);
+        }
+        (None, true) => tiberium_cell_view(
             ctx.overlay_grid,
             ctx.overlay_registry,
             ctx.tiberium_types,
             source,
         )
-        .map_or(TiberiumTypeId(0), |view| view.tiberium_type)
-    } else {
-        can_spread_tiberium(
+        .map_or(TiberiumTypeId(0), |view| view.tiberium_type),
+        (None, false) => can_spread_tiberium(
             ctx.overlay_grid,
             ctx.overlay_registry,
             ctx.tiberium_types,
@@ -708,7 +732,11 @@ pub(crate) fn spread_tiberium(
             source.0,
             source.1,
             ctx.spread_enabled,
-        )?
+        )?,
+        // The ore spawner is the only caller that sets the hook context, and it
+        // always forces. A spawner on the growth scheduler's force0 call would
+        // be a second owner of that context, so this arm stays unrepresentable.
+        (Some(_), false) => return None,
     };
     let start = ctx.rng.next_range_u32(8) as usize;
     let admission = ctx.new_cell_admission?;
@@ -733,9 +761,165 @@ pub(crate) fn spread_tiberium(
     None
 }
 
+/// Phobos `TerrainTypeExt`'s live `SpawnsTiberium.*` context for one forced
+/// spread: the fields `CellClass_SpreadTiberium_CellSpread @ 0x48381D` reads.
+/// Only a Phobos build ever builds one; the stock scan keeps `None`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SpawnerSpread {
+    /// `SpawnsTiberium.Type=`: the `[Tiberiums]` index used as the fallback.
+    pub tiberium_type: i32,
+    /// `SpawnsTiberium.Range=`: the CellSpread radius the scan searches.
+    pub range: i32,
+    /// `SpawnsTiberium.GrowthStage=`: the density range, drawn per admitted
+    /// cell and clamped to the resource's own frame count.
+    pub growth_stage: crate::rules::ini_value::PartialIntPair,
+}
+
+/// `CellClass_SpreadTiberium_CellSpread @ 0x48381D`: Phobos replaces the six
+/// bytes that load `TiberiumClass::Array`, the `Random__RandomRanged
+/// @ 0x0065C7E0(0,7)` at `0x00483839` and the whole eight-direction loop, then
+/// returns the function's own epilogue at `0x004838CA` or `0x004838B0`. The
+/// replacement draws one start index over the CellSpread ring list, takes the
+/// first cell `CanTiberiumGerminate @ 0x004838E0` admits, and calls
+/// `IncreaseTiberium @ 0x00487190` with the drawn growth stage as its amount.
+/// Like the stock scan it returns that first placement result and never retries
+/// another neighbour.
+fn spawner_cell_spread(
+    ctx: &mut PlaceTiberiumContext<'_>,
+    source: (u16, u16),
+    type_id: TiberiumTypeId,
+    spawner: SpawnerSpread,
+) -> Option<TiberiumPlacement> {
+    // `pTib->NumFrames` is the registry's own density count; an index outside
+    // `[Tiberiums]` dereferences null natively and germinates nothing here.
+    let max_stage = i32::from(ctx.tiberium_types.get(type_id)?.max_density).saturating_sub(1);
+    let offsets = adjacent_cells_in_range(spawner.range);
+    let size = offsets.len();
+    let start = ctx.rng.next_range_i32_inclusive(0, size as i32 - 1) as usize;
+    let admission = ctx.new_cell_admission?;
+    for step in 0..size {
+        let (dx, dy) = offsets[(step + start) % size];
+        let requested = (
+            (source.0 as i16).wrapping_add(dx) as u16,
+            (source.1 as i16).wrapping_add(dy) as u16,
+        );
+        let Some(target) = admit_new_tiberium_target(
+            ctx.overlay_grid,
+            ctx.source_object_cells,
+            admission,
+            requested,
+        ) else {
+            continue;
+        };
+        // `TerrainTypeExt::GetTiberiumGrowthStage` draws only once an admitted
+        // cell is found, so a fully blocked spawner consumes no stage draw.
+        let stage = if spawner.growth_stage.is_single() {
+            spawner.growth_stage.low
+        } else {
+            ctx.rng
+                .next_range_i32_inclusive(spawner.growth_stage.low, spawner.growth_stage.high)
+        }
+        .clamp(0, max_stage);
+        let placed = place_tiberium(ctx, target, type_id, stage as u8);
+        if placed.is_some() && stage >= max_stage {
+            // A cell the spawner matured at once joins that resource's own
+            // spread queue, which `AddToSpreadQueue @ 0x00722AF0` admits and
+            // dedupes exactly as the growth scheduler's reseed does.
+            ctx.ore_growth_state.add_native_spread_queue_cell(
+                type_id,
+                ctx.overlay_grid,
+                ctx.overlay_registry,
+                ctx.tiberium_types,
+                ctx.resolved_terrain,
+                ctx.source_object_cells,
+                ctx.live_objects,
+                target.0,
+                target.1,
+                ctx.binary_frame,
+                ctx.spread_enabled,
+                ctx.rng,
+            );
+        }
+        return placed;
+    }
+    None
+}
+
+/// Phobos `GeneralUtils::AdjacentCellsInRange`, which walks YRpp's
+/// `CellSpreadEnumerator` (`Helpers/Enumerators.h`) from the center outward.
+/// Its set is gamemd's own CellSpread disk, but the order is that table with
+/// ring 1's `(-1,-1)` and `(1,-1)` swapped — the one difference the enumerator's
+/// header states — so the spawner's search order is deliberately not
+/// [`crate::sim::combat::cell_spread`]'s splash order. The center `(0,0)` is the
+/// first entry, which makes the spawner's own cell its first candidate.
+///
+/// Phobos GeneralUtils takes an unsigned range; the pinned YRpp enumerator
+/// clamps it to Max in its initializer. Negative authored values therefore
+/// reach the same bounded maximum (Phobos b90ab4bc, YRpp d9795546).
+fn adjacent_cells_in_range(range: i32) -> Vec<(i16, i16)> {
+    /// `CellSpreadEnumerator::Max`.
+    const MAX_SPREAD: u32 = 0x100;
+    let spread = (range as u32).min(MAX_SPREAD);
+    // The constructor's `reset(0)`: the center, with both line flags set.
+    let mut curspread: u32 = 0;
+    let mut current = (0i16, 0i16);
+    let mut has_two = true;
+    let mut had_two = true;
+    let mut cells = Vec::with_capacity(spread as usize * 4 + 1);
+    loop {
+        // `operator bool`: `curspread <= spread`.
+        if curspread > spread {
+            return cells;
+        }
+        cells.push(current);
+        // `reset(curspread + 1)` at the center or the ring's top-right cell.
+        if current == (0, 0) || (current.0 == 1 && current.1 == curspread as i16) {
+            curspread += 1;
+            current = (-1, -(curspread as i16));
+            has_two = true;
+            had_two = true;
+            continue;
+        }
+        if has_two {
+            current.0 += 1;
+            has_two = current.0 == 0;
+            continue;
+        }
+        if current.0 < 0 {
+            current.0 = -current.0;
+            has_two = had_two;
+            continue;
+        }
+        current.1 += 1;
+        let change_sign = current.1 > 0;
+        if change_sign {
+            current.1 = -current.1;
+        }
+        current.0 = (curspread as i16 + current.1)
+            .wrapping_mul(-2)
+            .wrapping_sub(1);
+        let diff = current.0 - current.1;
+        has_two = diff >= 0;
+        had_two = has_two;
+        if diff == -1 {
+            current.0 += 1;
+        } else if diff < 0 {
+            current.0 = current
+                .1
+                .wrapping_neg()
+                .wrapping_div(2)
+                .wrapping_sub(curspread as i16);
+        }
+        if change_sign {
+            current.1 = -current.1;
+        }
+    }
+}
+
 /// Result of one `Reduce_Tiberium` call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReduceTiberiumOutcome {
+    pub tiberium_type: Option<TiberiumTypeId>,
     pub removed_amount: u16,
     pub resource_type: Option<ResourceType>,
     pub fully_removed: bool,
@@ -745,6 +929,7 @@ impl ReduceTiberiumOutcome {
     fn none() -> Self {
         Self {
             removed_amount: 0,
+            tiberium_type: None,
             resource_type: None,
             fully_removed: false,
         }
@@ -820,6 +1005,7 @@ pub fn reduce_tiberium(
         }
         return ReduceTiberiumOutcome {
             removed_amount: amount as u16,
+            tiberium_type: Some(view.tiberium_type),
             resource_type: Some(view.resource_type),
             fully_removed: false,
         };
@@ -871,6 +1057,7 @@ pub fn reduce_tiberium(
 
     ReduceTiberiumOutcome {
         removed_amount: u16::from(current),
+        tiberium_type: Some(view.tiberium_type),
         resource_type: Some(view.resource_type),
         fully_removed: true,
     }
@@ -1016,6 +1203,126 @@ SpreadPercentage=.06
             allows_tiberium: true,
             ..crate::map::resolved_terrain::test_loader_clear_cell(rx, ry)
         })
+    }
+
+    /// Phobos' two `CellClass::SpreadTiberium @ 0x00483780` hooks on one forced
+    /// spawner call: `CellClass_SpreadTiberium_TiberiumType @ 0x00483811`
+    /// replaces the stock Riparius fallback with `SpawnsTiberium.Type=`, and
+    /// `CellClass_SpreadTiberium_CellSpread @ 0x0048381D` searches the
+    /// CellSpread disk for `SpawnsTiberium.Range=` and germinates the drawn
+    /// `SpawnsTiberium.GrowthStage=` as the placement amount.
+    #[test]
+    fn spawner_hooks_replace_the_fallback_type_scan_and_stage() {
+        let (overlay_registry, tiberium_types) = native_tiberium_fixture();
+        let mut overlay = OverlayGrid::new(16, 16);
+        // Every stock neighbour already holds ore, so the eight-direction scan
+        // can only refuse: a placement proves the wider CellSpread search.
+        for (dx, dy) in ADJACENT_OFFSETS {
+            let cell = overlay.cell_mut_for_test((8 + dx as i32) as u16, (8 + dy as i32) as u16);
+            cell.overlay_id = Some(105);
+            cell.overlay_data = 3;
+        }
+        let mut growth = OreGrowthState::new(16, 16);
+        growth.reset_native_tiberium_classes(tiberium_types.len(), 40);
+        let mut rng = SimRng::new(0x51);
+        let source_cells = BTreeSet::from([(8, 8)]);
+        let terrain = test_support::flat_terrain(16, 16);
+        let no_objects = test_support::NoLiveObjects::new();
+        let admission = NewTiberiumAdmission::runtime(&terrain, no_objects.context());
+        let mut ctx = PlaceTiberiumContext {
+            overlay_grid: &mut overlay,
+            ore_growth_state: &mut growth,
+            overlay_registry: &overlay_registry,
+            tiberium_types: &tiberium_types,
+            resolved_terrain: Some(&terrain),
+            source_object_cells: &source_cells,
+            new_cell_admission: Some(admission),
+            live_objects: Some(admission.live_objects().object_view()),
+            rng: &mut rng,
+            binary_frame: 40,
+            growth_enabled: true,
+            spread_enabled: true,
+            dirty_cells: None,
+        };
+        let placed = spread_tiberium(
+            &mut ctx,
+            (8, 8),
+            true,
+            Some(SpawnerSpread {
+                tiberium_type: 1,
+                range: 2,
+                growth_stage: crate::rules::ini_value::PartialIntPair::single(7),
+            }),
+        )
+        .expect("a range-2 spawner reaches the ring its stock scan never walks");
+        let cell = placed.cell();
+        let (dx, dy) = ((cell.0 as i32 - 8).abs(), (cell.1 as i32 - 8).abs());
+        assert_eq!(
+            dx.max(dy) + dx.min(dy) / 2,
+            2,
+            "the admitted cell sits in the second CellSpread ring: {cell:?}"
+        );
+        let view = tiberium_cell_view(ctx.overlay_grid, &overlay_registry, &tiberium_types, cell)
+            .expect("the germinated cell resolves to a resource");
+        assert_eq!(view.tiberium_type, TiberiumTypeId(1), "SpawnsTiberium.Type");
+        assert_eq!(view.overlay_data, 7, "SpawnsTiberium.GrowthStage");
+        // Native48380C/48380F bypass the fallback when the source has ore.
+        // An invalid, unused SpawnsTiberium.Type must not stop that spread.
+        let source_overlay = overlay_registry
+            .flat_tiberium_variant_ids(tiberium_types.get(TiberiumTypeId(1)).unwrap())
+            .unwrap()[0];
+        ctx.overlay_grid.place_overlay(8, 8, source_overlay, 11);
+        assert!(
+            spread_tiberium(
+                &mut ctx,
+                (8, 8),
+                true,
+                Some(SpawnerSpread {
+                    tiberium_type: -1,
+                    range: 2,
+                    growth_stage: crate::rules::ini_value::PartialIntPair::single(7),
+                }),
+            )
+            .is_some()
+        );
+    }
+
+    #[test]
+    fn negative_spawner_range_uses_the_unsigned_enumerator_limit() {
+        assert_eq!(adjacent_cells_in_range(-1), adjacent_cells_in_range(0x100));
+    }
+
+    /// Phobos `GeneralUtils::AdjacentCellsInRange` covers gamemd's own
+    /// CellSpread disk, but in `CellSpreadEnumerator`'s order: the center
+    /// first, then ring 1 with the startup table's offsets 2 and 4 swapped —
+    /// the difference that enumerator's own header states.
+    #[test]
+    fn adjacent_cells_in_range_keeps_the_enumerators_ring_one_order() {
+        assert_eq!(adjacent_cells_in_range(0), vec![(0, 0)]);
+        assert_eq!(
+            adjacent_cells_in_range(1),
+            vec![
+                (0, 0),
+                (-1, -1),
+                (0, -1),
+                (1, -1),
+                (-1, 0),
+                (1, 0),
+                (-1, 1),
+                (0, 1),
+                (1, 1),
+            ]
+        );
+
+        use std::collections::BTreeSet;
+        let cells = adjacent_cells_in_range(2);
+        let splash = crate::sim::combat::cell_spread::splash_cells(2.0);
+        assert_eq!(cells.len(), splash.len(), "the second ring holds 12 cells");
+        assert_eq!(
+            cells.iter().copied().collect::<BTreeSet<_>>(),
+            splash.iter().copied().collect::<BTreeSet<_>>(),
+            "a range-2 spawner covers the same disk as a CellSpread=2 warhead"
+        );
     }
 
     #[test]
@@ -1531,7 +1838,7 @@ SpreadPercentage=.06
             &mut sim.dirty_cells,
             (0, 0),
             4,
-            Some(&rules),
+            &rules,
             Some(&overlay_registry),
         );
         assert!(outcome.fully_removed);
@@ -1566,7 +1873,7 @@ SpreadPercentage=.06
         let deferred = sim
             .advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 None,
                 67,
                 TickLane::Ordinary,
@@ -1590,7 +1897,7 @@ SpreadPercentage=.06
         let first = sim
             .advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 Some(&overlay_registry),
                 67,
                 TickLane::Ordinary,
@@ -1610,7 +1917,7 @@ SpreadPercentage=.06
         let second = sim
             .advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 Some(&overlay_registry),
                 67,
                 TickLane::Ordinary,

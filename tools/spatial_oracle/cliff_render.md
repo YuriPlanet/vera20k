@@ -8,8 +8,8 @@ python -m tools.spatial_oracle.bridge_shadow_render --cliff --check
 
 Set `VERA20K_GAMEMD_EXE` or `RA2_DIR` as described in
 [`tools/native_oracle.md`](../native_oracle.md). `--write` deliberately replaces
-the payload and sidecar. The sidecar pins the executable, Unicorn version and
-command; it does not pin repository source hashes. The client consumer is
+the payload and sidecar. The sidecar records the replay command; it pins neither
+the executable nor repository sources. The client consumer is
 `app::presentation::render::draw_passes::tmp_clear_gpu_tests::retail_cliff_extra_matches_original_cell_raster`.
 
 This mode extends the existing `bridge_shadow_render`/`tmp_clear_render` VM,

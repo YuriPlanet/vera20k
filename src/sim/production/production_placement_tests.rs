@@ -1,13 +1,11 @@
 //! Building placement tests — verifies foundation overlap detection, placement validity,
 //! and per-owner placement pool management for the production system.
 
-use crate::rules::foundation::foundation_dimensions;
-
 use super::{
     BuildingPlacementError, ProductionCategory, ProductionPlacement, credits_for_owner,
     cycle_active_producer_for_owner_category, place_production_with_overlays,
     placement_preview_for_owner_with_overlays, producer_candidates_for_owner_category,
-    publish_production_changes, ready_building_entity_for_owner, ready_buildings_for_owner,
+    ready_building_entity_for_owner, ready_buildings_for_owner,
 };
 use crate::map::entities::EntityCategory;
 use crate::map::overlay_mark::OverlayMarkOutcome;
@@ -32,7 +30,7 @@ use crate::sim::world::Simulation;
 // Re-use test helpers from the main production_tests module.
 use super::tests::{
     arm_build_via, build_catalog_rules, factory_rules, placement_radius_rules, sell_rules,
-    spawn_structure,
+    spawn_structure, stamp_type_foundation,
 };
 
 fn stock_refinery_completion_rules() -> RuleSet {
@@ -193,7 +191,7 @@ fn block_building_foundation(
         .object(type_id)
         .expect("building rules should exist")
         .foundation;
-    let (width, height) = foundation_dimensions(foundation);
+    let (width, height) = foundation.dimensions();
     for y in ry..ry + height {
         for x in rx..rx + width {
             path_grid.set_blocked(x, y, true);
@@ -577,6 +575,165 @@ fn ready_building(sim: &mut Simulation, rules: &RuleSet, owner: &str, type_id: &
     super::complete_held_building_for_test(sim, rules, owner_id, type_id);
 }
 
+/// CanCapture471D1E reads current +AC, not Get_Mission's queued fallback.
+/// EvaluateCandidate6F7CE8 can therefore admit a just-placed Pillbox before
+/// Construction commences; Fire_At_Target5209DE rechecks after FireUp=6.
+#[test]
+fn a_prime_acquires_a_placed_pillbox_before_construction_commences() {
+    use crate::sim::mission::MissionId;
+
+    let Some((mut sim, mut rules, registry, yuri)) = stock_yuri_cloning_world() else {
+        return;
+    };
+    let (_, mut assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+    crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+    rules.bind_building_buildup_assets(&assets, "TEMPERATE");
+    assert_eq!(rules.buildup_control("GAPILL"), [0, 8, 6]);
+    assert!(!rules.object("GAPILL").unwrap().immune_to_psionics);
+    assert_eq!(rules.object("YURIPR").unwrap().fire_up_frame, 6);
+    sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_retail_clear_grid(
+        64, 64,
+    ));
+    assert!(sim.rebuild_dynamic_navigation(&rules));
+    let american = sim.interner.intern("Americans");
+    let mut house =
+        crate::sim::house_state::HouseState::new(american, 1, Some(american), true, 10_000, 10);
+    house.project_country_mults(&rules, &sim.interner);
+    sim.houses.register(house);
+    for (kind, owner, x, y) in [
+        ("GACNST", "Americans", 14, 14),
+        ("GAPILE", "Americans", 14, 20),
+        ("GAPOWR", "Americans", 14, 24),
+        ("YACNST", "YuriCountry", 35, 35),
+    ] {
+        sim.spawn_object_at_height_with_overlay_registry(
+            kind, owner, x, y, 0, 0, &rules, &registry,
+        )
+        .unwrap();
+    }
+    let prime = sim
+        .spawn_object_at_height_with_overlay_registry(
+            "YURIPR",
+            "YuriCountry",
+            24,
+            14,
+            0xC0,
+            0,
+            &rules,
+            &registry,
+        )
+        .unwrap();
+    // Supply a completed, unpublished factory object; its constructor and
+    // subsequent PLACE/Unlimbo/mission/action work use production owners.
+    ready_building(&mut sim, &rules, "Americans", "GAPILL");
+    let pillbox = super::lifecycle_tests::held_id(&sim, american, ProductionCategory::Defense);
+    let aligned = (0..120).any(|_| {
+        let now = sim.session.binary_frame();
+        let timer = sim.entities().get(prime).unwrap().passive_scan.timer();
+        // Observe a natural scan leaving room for FireUp6 before the
+        // sixteenth-frame illegal-target clear (Techno6FA472..6FA4CB).
+        if !timer.due(now) && timer.due(now.wrapping_add(1)) && (now + 1) % 16 <= 9 {
+            return true;
+        }
+        sim.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
+        false
+    });
+    assert!(aligned, "observe the normal scan timer without changing it");
+    assert!(
+        sim.entities()
+            .get(prime)
+            .unwrap()
+            .attack_target
+            .target()
+            .is_none()
+    );
+    let gapill = sim.interner.get("GAPILL").unwrap();
+    let place = place_event(american, gapill, (18, 14), sim.session.tick() + 1);
+    assert_eq!(
+        sim.advance_tick(&[place], Some(&rules), None, Some(&registry), 67)
+            .executed_commands,
+        1
+    );
+    let placed = sim.entities().get(pillbox).unwrap();
+    assert_eq!(placed.mission.current(), MissionId::NONE);
+    assert_eq!(
+        placed.mission.queued().known(),
+        Some(MissionType::Construction)
+    );
+    sim.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
+    let actor = sim.entities().get(prime).unwrap();
+    assert_eq!(
+        actor.attack_target.target(),
+        Some(TargetKind::Entity(pillbox))
+    );
+    assert_eq!(
+        actor.infantry_sprite_pose().unwrap().0,
+        4,
+        "native FireUp action"
+    );
+    assert!(actor.passive_scan.acquired());
+    assert_eq!(actor.mission_leaf.foot_firing_sequence_latch(), 1);
+
+    let mut reset = false;
+    let mut cleaned = false;
+    for _ in 0..16 {
+        sim.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
+        let target = sim.entities().get(pillbox).unwrap();
+        assert_eq!(
+            target.owner(),
+            american,
+            "FireUp must not capture Construction"
+        );
+        let actor = sim.entities().get(prime).unwrap();
+        if !reset && actor.mission_leaf.foot_firing_sequence_latch() == 0 {
+            assert_eq!(
+                target.mission.current().known(),
+                Some(MissionType::Construction)
+            );
+            assert_eq!(actor.infantry_sprite_pose().unwrap().0, 0);
+            assert_eq!(
+                actor.attack_target.target(),
+                Some(TargetKind::Entity(pillbox))
+            );
+            reset = true;
+        }
+        if reset && actor.attack_target.target().is_none() {
+            assert_eq!((sim.session.binary_frame() - 1) % 16, 0);
+            assert!(!actor.passive_scan.timer().due(sim.session.binary_frame()));
+            cleaned = true;
+            break;
+        }
+    }
+    assert!(reset, "the delayed fire query resets the firing action");
+    assert!(cleaned, "the periodic check drops the now-illegal target");
+    assert!(
+        (0..120).any(|_| {
+            sim.advance_tick(&[], Some(&rules), None, Some(&registry), 67);
+            sim.entities().get(pillbox).unwrap().owner() == yuri
+        }),
+        "normal scanning and firing can capture after construction finishes"
+    );
+    assert_eq!(
+        sim.entities()
+            .get(pillbox)
+            .unwrap()
+            .mind_control
+            .controller(),
+        Some(prime)
+    );
+    assert_eq!(
+        sim.entities()
+            .get(prime)
+            .unwrap()
+            .capture_manager
+            .as_ref()
+            .unwrap()
+            .count(),
+        1
+    );
+    assert_eq!(sim.entities().get(prime).unwrap().owner(), yuri);
+}
+
 /// Place `owner`'s ready `type_id` at `cell` through Place_Production.
 fn place_building(
     sim: &mut Simulation,
@@ -681,7 +838,7 @@ fn a_completed_building_waits_in_its_factory_for_placement() {
             .test_arm_ready(americans, ProductionCategory::Building)
     );
 
-    publish_production_changes(&mut sim, &rules);
+    super::publish_production_changes_for_tests(&mut sim, &rules, americans);
     let held = sim
         .production
         .factories()
@@ -699,7 +856,7 @@ fn a_completed_building_waits_in_its_factory_for_placement() {
     let held_id = held.object.unwrap().entity_id.unwrap();
     let rng = sim.scenario_rng.logical_state();
     for _ in 0..3 {
-        publish_production_changes(&mut sim, &rules);
+        super::publish_production_changes_for_tests(&mut sim, &rules, americans);
     }
     // Record_Last_Built waits for the placement (`0x004FB4B7`).
     assert_eq!(sim.houses[&americans].stats().built(), built_before);
@@ -1025,10 +1182,11 @@ fn placed_gapowr_completion(human: bool) -> (u32, Option<u32>) {
     rules.set_buildup_control_for_test("GAPOWR", [0, 26, 2]);
     let grid = PathGrid::new(64, 64);
     let americans = sim.interner.intern("Americans");
-    sim.houses
-        .register(crate::sim::house_state::HouseState::new(
-            americans, 0, None, human, 10_000, 10,
-        ));
+    let mut house = crate::sim::house_state::HouseState::new(americans, 0, None, human, 10_000, 10);
+    // Both rows exercise a player PLACE. Keep the independent IsHuman
+    // input while admitting the command through native PlayerControl.
+    house.set_player_control_for_test(true);
+    sim.houses.register(house);
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
     let gapowr = sim.interner.intern("GAPOWR");
     sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
@@ -1131,6 +1289,8 @@ fn a_human_placement_draws_its_buildup_until_it_opens() {
 #[test]
 fn stock_gapowr_placement_restores_power_and_radar_during_buildup() {
     let mut sim = placement_sim();
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
     let rules = stock_power_contract_rules();
     let grid = PathGrid::new(64, 64);
 
@@ -2002,10 +2162,11 @@ fn gsi_04_07_command_places_authoritative_owned_wall_without_entity() {
     let category =
         super::production_tech::production_category_for_object(rules.object("GAWALL").unwrap());
     let held = super::lifecycle_tests::held_id(&sim, owner, category);
-    // A second wall waits behind the finished one, as when VERA queued it while the
-    // first was still building (gamemd never queues a building: see enqueue_by_type's
-    // building-path residual). A PRODUCE sent now would take the finished head's
-    // same-type branch instead (0x004FA5A8..0x004FA5C4), so the fixture appends it.
+    // A second wall waits behind the finished one. No PRODUCE queues a building
+    // (enqueue_by_type: StartProduction never appends a BuildingType), and one
+    // sent now would take the finished head's same-type branch instead
+    // (0x004FA5A8..0x004FA5C4), so the fixture appends it to reach Place's
+    // queued-copy removal.
     let cost = rules.object("GAWALL").unwrap().cost.max(0);
     assert!(
         !sim.production
@@ -2507,15 +2668,15 @@ fn gsi_04_07_wall_placement_publishes_connectivity_neighbor_auto_destruction() {
         sim.zone_grid.is_some(),
         "neighbor removal must publish zones"
     );
-    assert!(
+    assert_eq!(
         sim.substrate
             .entities
             .get(1)
             .expect("construction yard listener")
             .attack_target
-            .target()
-            .is_none(),
-        "cleanup removal must broadcast CellClass pointer expiry before returning"
+            .target(),
+        Some(TargetKind::Cell(13, 10)),
+        "Cell7258D0 does not broadcast to Techno listeners during placement cleanup"
     );
     let expected_dirty = vec![(12, 9), (13, 10), (12, 11), (11, 10), (12, 10)];
     // Object base Mark publishes the anchor before wall connectivity's
@@ -2554,6 +2715,15 @@ fn gsi_04_07_placement_command_places_only_its_own_houses_production() {
     sim.overlay_grid = Some(OverlayGrid::new(64, 64));
     ready_building(&mut sim, &rules, "Russians", "GAWALL");
     let event_owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            event_owner,
+            0,
+            None,
+            true,
+            0,
+            10,
+        ));
     let wall_type = sim.interner.get("GAWALL").expect("wall type");
 
     let tick = sim.advance_tick(
@@ -2739,6 +2909,21 @@ fn place_ready_building_requires_base_normal_provider_within_adjacent_range() {
 
     let mut sim = placement_sim();
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
+    // Display4A8FC5 queries the actually marked Building in each ring cell.
+    // The raw helper starts with a 1x1 footprint; install fixed ART before
+    // remarking the provider, as construction does before Building Mark.
+    sim.remove_entity_occupancy(1);
+    stamp_type_foundation(&mut sim, &rules, 1);
+    assert!(sim.mark_entity_put(1, crate::sim::world::UninitContext::with_rules(&rules)));
+    assert_eq!(
+        sim.occupancy().first_building_on_layer(
+            11,
+            10,
+            crate::sim::movement::locomotor::MovementLayer::Ground
+        ),
+        Some(1),
+        "the ART footprint's east cell must actually contain the provider"
+    );
     ready_building(&mut sim, &rules, "Americans", "GAPOWR");
 
     let placed = place_building(&mut sim, &rules, "Americans", "GAPOWR", (12, 10), None);
@@ -2746,9 +2931,12 @@ fn place_ready_building_requires_base_normal_provider_within_adjacent_range() {
 
     let mut far_sim = placement_sim();
     spawn_structure(&mut far_sim, &rules, 1, "Americans", "GACNST", 10, 10);
+    far_sim.remove_entity_occupancy(1);
+    stamp_type_foundation(&mut far_sim, &rules, 1);
+    assert!(far_sim.mark_entity_put(1, crate::sim::world::UninitContext::with_rules(&rules)));
     ready_building(&mut far_sim, &rules, "Americans", "GAPOWR");
-    // GACNST has Adjacent=6 (default), foundation 2x2 at (10,10).
-    // Expanded zone: max_x = 10+2-1+7 = 18, so (20,10) is out of range.
+    // GAPOWR has Adjacent=0: its expanded ring at (20,10) cannot reach
+    // the yard's marked 2x2 footprint at (10,10).
     let placed = place_building(&mut far_sim, &rules, "Americans", "GAPOWR", (20, 10), None);
     assert!(!placed);
 }
@@ -2762,6 +2950,14 @@ fn base_normal_false_structures_do_not_extend_build_area() {
     // PLACE needs this house's yard; keep it far from the gap generator, so
     // only GAGAP could cover (12,10).
     spawn_structure(&mut sim, &rules, 2, "Americans", "GACNST", 50, 50);
+    for provider in [1, 2] {
+        sim.remove_entity_occupancy(provider);
+        stamp_type_foundation(&mut sim, &rules, provider);
+        assert!(sim.mark_entity_put(
+            provider,
+            crate::sim::world::UninitContext::with_rules(&rules)
+        ));
+    }
     ready_building(&mut sim, &rules, "Americans", "GAPOWR");
 
     let preview = preview_at(&sim, &rules, "Americans", "GAPOWR", (12, 10), None);
@@ -2789,6 +2985,14 @@ fn build_off_ally_lends_an_eligible_allied_provider_only_while_enabled() {
         // the nearby ally. Keep the own yard outside this placement's build area.
         spawn_structure(&mut sim, &rules, 2, "Americans", "GACNST", 50, 50);
         mark_allied(&mut sim, "Americans", "Alliance");
+        for provider in [1, 2] {
+            sim.remove_entity_occupancy(provider);
+            stamp_type_foundation(&mut sim, &rules, provider);
+            assert!(sim.mark_entity_put(
+                provider,
+                crate::sim::world::UninitContext::with_rules(&rules)
+            ));
+        }
         ready_building(&mut sim, &rules, "Americans", "GAPOWR");
 
         let placed = place_building(&mut sim, &rules, "Americans", "GAPOWR", (12, 10), None);
@@ -2818,6 +3022,14 @@ fn build_off_ally_asks_the_providers_house_about_the_placer() {
             .entry(asker.to_ascii_uppercase())
             .or_default()
             .insert(other.to_ascii_uppercase());
+        for provider in [1, 2] {
+            sim.remove_entity_occupancy(provider);
+            stamp_type_foundation(&mut sim, &rules, provider);
+            assert!(sim.mark_entity_put(
+                provider,
+                crate::sim::world::UninitContext::with_rules(&rules)
+            ));
+        }
         ready_building(&mut sim, &rules, "Americans", "GAPOWR");
 
         let placed = place_building(&mut sim, &rules, "Americans", "GAPOWR", (12, 10), None);
@@ -3414,7 +3626,7 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
 
 #[test]
 fn sell_player_built_garrisoned_building_demolishes_and_ejects_alive() {
-    use crate::sim::passenger::{PassengerCargo, PassengerRole};
+    use crate::sim::passenger::PassengerRole;
     let mut sim = placement_sim();
     let rules = sell_rules();
     super::house_for_test(&mut sim, "Americans")
@@ -3450,18 +3662,13 @@ fn sell_player_built_garrisoned_building_demolishes_and_ejects_alive() {
     );
     let amer_id = sim.interner.intern("Americans");
     let e1_id = sim.interner.intern("E1");
-    if let Some(t) = sim.substrate.entities.get_mut(30) {
-        t.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 1.0));
-    }
     let mut pax = crate::sim::game_entity::GameEntity::test_default(31, "E1", "Americans", 39, 40);
     pax.set_owner_for_test(amer_id);
     pax.set_type_ref_for_test(e1_id);
     pax.passenger_role = PassengerRole::inside_for_test(30, false);
     sim.substrate.entities.insert(pax);
-    if let Some(t) = sim.substrate.entities.get_mut(30)
-        && let Some(c) = t.passenger_role.cargo_mut()
-    {
-        c.board_forced_chain(&[(31, 1.0)]);
+    if let Some(t) = sim.substrate.entities.get_mut(30) {
+        t.passenger_role.occupants_mut().add(31);
     }
     // Accepted Building AddOccupant52298D refreshes after the append.
     sim.refresh_spatial_threat(30, &rules, None);

@@ -98,9 +98,9 @@ fn counted_action94_uses_ground_then_real_frame_damage_and_cleanup() {
         None,
         None,
     );
-    sim.classify_map_triggers(None);
+    sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     sim.session.publish_started();
-    sim.advance_triggers(Some(&rules), None, FrameEffects::default());
+    sim.advance_triggers(&rules, None, FrameEffects::default());
     assert!(sim.trigger_local_is_set_for_test(0));
     assert_eq!(
         sim.ion_blasts().collect::<Vec<_>>(),

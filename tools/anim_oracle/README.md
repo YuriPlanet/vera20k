@@ -35,13 +35,12 @@ the latter are not asserted to arise in retail. Entry registers and per-case
 writes retain the original fixture. One machine is reused in the original case
 order. No constructor, timer, complete AI host, ART loader or whole-animation
 parity is claimed; subsequent RNG, detach and lifecycle effects are outside these
-boundaries. The preserved disassembly/region digest covers `0042468C..004247B7`,
-while the verified whole-image digest also binds the later branch paths.
+boundaries. The preserved disassembly/region digest covers `0042468C..004247B7`;
+the later branch paths execute from the loaded image without a recorded digest.
 
 `boundary.meta.json` owns current provenance. The old payload's `script_sha256`
-already differed from the checked-in producer before this cleanup. That stale
-field was removed from the payload and both historical identities were retained
-in the sidecar. Checked native execution reproduces **every other payload field**,
+already differed from the checked-in producer before this cleanup, and that stale
+field was removed from the payload. Checked native execution reproduces **every other payload field**,
 including all rows, bounds, decisions, stores, disassembly and region hash. This
 is not a claim that the entire JSON file is byte-identical. The
 [validation record](boundary.validation.json) records the migration hashes and

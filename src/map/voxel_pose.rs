@@ -1,4 +1,4 @@
-//! GPU-independent original Drive/Ship body pose and shared tilt support.
+//! GPU-independent original locomotor body pose and shared tilt support.
 //! Rendering and TechnoGetFLH6F3B9B consume the same raw native matrix.
 //! Its translation is whole native voxels; no render TurretOffset /8 scale
 //! or camera projection belongs in this owner.
@@ -28,6 +28,31 @@ pub fn voxel_body_facing(step: u8) -> Mat4 {
     let (sin, cos) = crate::util::native_trig::native_sin_cos_by_step(i32::from(step) - 8)
         .expect("five-bit voxel facing fits native trig table");
     affine::rotate_z(Mat4::IDENTITY, sin, cos)
+}
+
+/// Fly Draw_Matrix4CF610, before camera projection: Secondary yaw, then
+/// normal-flight type pitch about Y and signed bank about X (4CF71E..4CF804).
+/// GetFLH6F3B9B passes a null cache key but still consumes these rotations.
+pub fn normal_fly_locomotor_matrix(step: u8, pitch: f32, roll: f32) -> Mat4 {
+    let mut frame = voxel_body_facing(step);
+    if pitch != 0.0 {
+        let (sin, cos) = voxel_table_rotation(pitch);
+        frame = affine::rotate_y(frame, sin, cos);
+    }
+    if roll != 0.0 {
+        let (sin, cos) = voxel_table_rotation(roll);
+        frame = affine::rotate_x(frame, sin, cos);
+    }
+    frame
+}
+
+/// Fly4CF6A0..4CF71E crashing matrix: yaw, sideways X, then forwards Y.
+/// The caller samples height and adds the gated type pitch to forwards.
+pub fn crash_fly_locomotor_matrix(step: u8, [sideways, forwards]: [f32; 2]) -> Mat4 {
+    let (sin, cos) = voxel_table_rotation(sideways);
+    let frame = affine::rotate_x(voxel_body_facing(step), sin, cos);
+    let (sin, cos) = voxel_table_rotation(forwards);
+    affine::rotate_y(frame, sin, cos)
 }
 
 /// Drive4B0033..4B0117 / Jumpjet54DD48..54DE53 / Ship69F790..69F827 support offsets,
@@ -121,6 +146,9 @@ pub fn voxel_table_rotation(angle: f32) -> (f32, f32) {
 /// **((lift * slope) * facing) * shifted_rotation**, with a float store at
 /// every product. The cached ordinary arm remains the existing slope/facing
 /// owner. Offsets are shared with Jumpjet54DCC0, not another support model.
+/// Hover513F40's rocking arm makes only **(lift * facing) * shifted_rotation**
+/// (`0x00514262`, `0x00514270`); at slope 0 the identity product here is exact
+/// (table entry 0 is the identity), so this owner draws that arm too.
 pub fn ground_locomotor_matrix(
     slope_type: u8,
     slope_blend: Option<VxlSlopeBlend>,

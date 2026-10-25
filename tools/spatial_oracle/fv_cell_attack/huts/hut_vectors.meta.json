@@ -1,9 +1,7 @@
 {
   "schema": 1,
-  "source_sha256": "06f17bfaa1578fdabf203df32b2a493a495166a8d0fc3d88ba5ecf1211d1fe63",
-  "source_meta_sha256": "7a845dacf6033ec00e0acecd6204085fb18e89942282b5454105f2e707b5ed21",
-  "projection_sha256": "ced3855ac3a234182baa8b8e1a140fbe4c3ed74556f6a087d7adde1703e1889b",
-  "shared_projection_sha256": "de9e2f6a41731c30d9b97d458c164db4386e93df18d9ed86a1339c79bf1bacc9",
+  "source_sha256": "977eed2e733b6a94712401b93bf6c890628905b52df4cb03042074fbbe895ac5",
+  "source_meta_sha256": "c2fc8158bb650ab03ac959dbc0f1e25c9f8ab5ee4c3f3461c43b56f5b3b7f2ee",
   "scope": "Literal native CABHUT composition projection; no gameplay algorithm.",
-  "payload_sha256": "2d4acc608a1a9862d049b2b2a2e5ec3f34b32b744ae3bcba001ae5d411f2c55e"
+  "payload_sha256": "06a79818edd26504497b8688391ab4921231567ebb404a173331c7914d460e9b"
 }

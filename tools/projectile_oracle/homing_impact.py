@@ -6,10 +6,9 @@ the original executable bytes. This does not certify the upstream homing
 trajectory, target-coordinate producers, or downstream warhead implementation.
 """
 
-import hashlib
 import itertools
 from pathlib import Path
-from tools.native_oracle import image_bytes, finish_vectors, provenance
+from tools.native_oracle import finish_vectors, provenance
 from .collision_fixture import homing_admission, homing_handoff, homing_source_mode
 
 
@@ -24,7 +23,7 @@ def generate():
     source_modes = [homing_source_mode(present, jumpjet, mode)
                     for present, jumpjet, mode in itertools.product(
                         (False, True), (False, True), (0, 1, 2))]
-    return dict(binary_sha256=hashlib.sha256(image_bytes()).hexdigest(),
+    return dict(
         coverage="admission 0x466DB1..0x466E6B; common impact clamp 0x467BF0..0x467C0C; mode1 final snap 0x467CA9..0x467E53 (near-object flag zero)",
         admissions=admissions, handoffs=handoffs, source_modes=source_modes)
 

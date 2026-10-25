@@ -49,7 +49,6 @@ pub(crate) fn render_connection_shell(
         .page()
         .expect("open 0xEA")
         .clone();
-    let nodes = crate::app::match_runtime::network_match::nodes(&state.match_state.session);
     let screen = RectPx::new(0, 0, width, height);
     let atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
         .expect("active 0xEA art");
@@ -69,10 +68,12 @@ pub(crate) fn render_connection_shell(
         .expect("active 0xEA controls");
     let mut controls = Vec::new();
     // 0x00609FC7..0x00609FE2 / 0x0060A330: the row buttons are type3, MNBTTN.
-    let rows = page.rows.len();
-    let buttons: Vec<_> = (0..rows)
-        .map(|row| shell_paint::ModalButton {
-            rect: layout.players[row],
+    let visible = page.visible_range();
+    let buttons: Vec<_> = visible
+        .clone()
+        .enumerate()
+        .map(|(slot, row)| shell_paint::ModalButton {
+            rect: layout.players[slot],
             pressed: page.buttons.is_pressed(ConnectionButton::Player(row)),
             enabled: true,
         })
@@ -90,16 +91,16 @@ pub(crate) fn render_connection_shell(
         },
     ));
     // 0x0064A7B0 draws one bar per live node, row 0 (local) with no lag.
-    for (row, source) in nodes.iter().enumerate().take(rows) {
-        let lag = if row == 0 {
-            0
-        } else {
-            state.match_state.network_wait.bar_lag(*source)
+    for (slot, row) in visible.clone().enumerate() {
+        let Some(source) = page.row_source(row) else {
+            continue;
         };
-        // The record's millisecond age ×60/1000; a silent peer's age is the
-        // wait's own, so its bar turns red, not blue.
-        let age = (u64::from(lag) * 16 * 60 / 1000) as u32;
-        let bar = bar_paint(layout.bars[row], lag, age);
+        let (lag, age) = if row == 0 {
+            (0, 0)
+        } else {
+            state.match_state.network_wait.bar_timing(source)
+        };
+        let bar = bar_paint(layout.bars[slot], lag, age);
         push_rect_outline(
             &mut controls,
             chrome,
@@ -114,6 +115,22 @@ pub(crate) fn render_connection_shell(
             rgb(bar.fill_rgb),
             SHELL_CONTROL_DEPTH - 0.00001,
         );
+    }
+    if page.page_count() > 1 {
+        for (slot, button) in [ConnectionButton::PreviousPage, ConnectionButton::NextPage]
+            .into_iter()
+            .enumerate()
+        {
+            let frame = button_frame(PauseMenuButtonState {
+                pressed: page.buttons.is_pressed(button),
+                ..Default::default()
+            });
+            if let Some(entry) =
+                atlas.in_game_shell.buttons[frame].or(atlas.in_game_shell.buttons[0])
+            {
+                in_game_shell::push_art(&mut art, entry, layout.paging[slot], screen);
+            }
+        }
     }
     let geometry = ShellListGeometry::new(
         layout.list,
@@ -150,14 +167,39 @@ pub(crate) fn render_connection_shell(
         button_text_rect(layout.quit, pressed),
         ShellAlign::H_CENTER | ShellAlign::V_CENTER,
     );
-    for (row, name) in page.rows.iter().enumerate() {
+    for (slot, row) in visible.clone().enumerate() {
         text(
-            name,
+            &page.rows[row].name,
             button_text_rect(
-                layout.players[row],
+                layout.players[slot],
                 page.buttons.is_pressed(ConnectionButton::Player(row)),
             ),
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+        );
+    }
+    if page.page_count() > 1 {
+        for (slot, button, label) in [
+            (0, ConnectionButton::PreviousPage, "Previous"),
+            (1, ConnectionButton::NextPage, "Next"),
+        ] {
+            text(
+                label,
+                button_text_rect(layout.paging[slot], page.buttons.is_pressed(button)),
+                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            );
+        }
+        let first = layout.paging[0];
+        text(
+            &format!(
+                "Page {}/{}",
+                page.page.index(
+                    page.rows.len(),
+                    crate::ui::shell::connection::CONNECTION_ROWS
+                ) + 1,
+                page.page_count()
+            ),
+            RectPx::new(first.x, first.y - 24, first.w, 20),
+            ShellAlign::H_CENTER,
         );
     }
     let countdown = page

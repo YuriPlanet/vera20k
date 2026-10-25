@@ -14,7 +14,8 @@ result costs most, common paths before rare ones:
 2. Determinism, state authority and lifecycle: a copy, wrapper or competing owner,
    tick order, timers, persistence.
 3. Native claims without the evidence AGENTS.md requires.
-4. Tests that miss the behavior or only mirror the implementation.
+4. Tests that miss the behavior or only mirror the implementation, and test or fixture
+   bloat beyond AGENTS.md's limits: sweeps, unread fields, oversized corpora.
 5. Refactoring opportunities worth their risk.
 
 Stop when more checking is unlikely to change a finding, and list what you did not
@@ -59,10 +60,9 @@ Naming claims worth challenging helps; the packet does not bound inquiry.
 The critic did not build the change and has access to original sources and Ghidra.
 Challenge omitted scope, design, production reachability and tests, including any copy,
 wrapper or competing owner the change keeps or adds. Trace suspected defects to
-consumers; distinguish evidence from speculation and architectural preference. Flag
-claims that AGENTS.md requires to be executed (numeric kernels, RNG draws, arithmetic
-traps, reported mismatches) but that lack executable evidence. Name useful refactoring
-opportunities with their impact and risks.
+consumers; distinguish evidence from speculation and architectural preference. Read
+the cited instructions yourself; do not ask for native execution beyond what AGENTS.md
+allows. Name useful refactoring opportunities with their impact and risks.
 
 Read in few, large pieces: a whole function or file per call, and several searches per
 command (`rg -n 'a|b|c'`, or chained commands). Each call costs about ten seconds

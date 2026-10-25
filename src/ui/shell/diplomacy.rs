@@ -16,7 +16,7 @@ use super::button::{CheckboxFace, ShellButtonInteraction};
 use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
 
-/// Rows the dialog has: the local player's row 0 and seven others.
+/// Physical row slots. VERA pages the same slots when more Houses are shown.
 pub const DIPLOMACY_ROWS: usize = 8;
 
 /// Template rects, in dialog units, of each row's controls (0x8391FC,
@@ -112,11 +112,13 @@ const TAUNTS_DLU: RectPx = RectPx::new(69, 232, 227, 15);
 const MODE_NAME_DLU: RectPx = RectPx::new(69, 247, 263, 10);
 const MAP_NAME_DLU: RectPx = RectPx::new(69, 262, 263, 10);
 
-/// The dialog's only owner-draw push button.
+/// The dialog's Return button and VERA paging buttons.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiplomacyButton {
     /// 0x423: the proc kills its timer and ends the modal (0x006581AD).
     Return,
+    PreviousPage,
+    NextPage,
 }
 
 /// Pointer state while 0x73 is open: Return's capture and the child whose
@@ -125,12 +127,15 @@ pub enum DiplomacyButton {
 pub struct DiplomacyInteraction {
     pub button: ShellButtonInteraction<DiplomacyButton>,
     pub hovered: Option<DiplomacyControl>,
+    pub page: super::paging::RowPage,
 }
 
 /// A child the pointer can rest on, for the status-line help.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiplomacyControl {
     Return,
+    PreviousPage,
+    NextPage,
     Header(DiplomacyHeader),
     Insignia(usize),
     Name(usize),
@@ -155,7 +160,12 @@ impl DiplomacyControl {
             Self::Allies(_) => Some("STT:DiplomacyCBoxAllies"),
             Self::Chat(_) => Some("STT:DiplomacyCBoxListeners"),
             Self::Taunts => Some("STT:TauntsOn"),
-            Self::Header(_) | Self::Insignia(_) | Self::ModeName | Self::MapName => None,
+            Self::Header(_)
+            | Self::Insignia(_)
+            | Self::ModeName
+            | Self::MapName
+            | Self::PreviousPage
+            | Self::NextPage => None,
         }
     }
 
@@ -163,6 +173,8 @@ impl DiplomacyControl {
     pub fn id(self) -> u16 {
         match self {
             Self::Return => 0x423,
+            Self::PreviousPage => 0xF201,
+            Self::NextPage => 0xF202,
             Self::Header(DiplomacyHeader::Player) => 0x421,
             Self::Header(DiplomacyHeader::Allies) => 0x597,
             Self::Header(DiplomacyHeader::Chat) => 0x425,
@@ -170,6 +182,8 @@ impl DiplomacyControl {
             Self::Insignia(row) => 0x6DA + row as u16,
             Self::Name(row) => NAME_IDS[row],
             Self::Kills(row) => KILLS_IDS[row],
+            Self::Allies(0) => 0xF203,
+            Self::Chat(0) => 0xF204,
             Self::Allies(row) => ALLIES_IDS[row - 1],
             Self::Chat(row) => CHAT_IDS[row - 1],
             Self::Taunts => 0x730,
@@ -184,12 +198,13 @@ impl DiplomacyControl {
 pub struct DiplomacyLayout {
     pub title: RectPx,
     pub return_button: RectPx,
+    pub paging: [RectPx; 2],
     pub status_line: RectPx,
     pub headers: [RectPx; 4],
     pub insignia: [RectPx; DIPLOMACY_ROWS],
     pub names: [RectPx; DIPLOMACY_ROWS],
     pub kills: [RectPx; DIPLOMACY_ROWS],
-    /// Index 0 is unused: row 0 has no box.
+    /// Slot 0 has no box on the first page; later pages show a peer there.
     pub allies: [RectPx; DIPLOMACY_ROWS],
     pub chat: [RectPx; DIPLOMACY_ROWS],
     pub taunts: RectPx,
@@ -213,7 +228,8 @@ pub fn diplomacy_layout(
     let boxes = |table: &[RectPx; DIPLOMACY_ROWS - 1]| {
         std::array::from_fn(|row| {
             if row == 0 {
-                RectPx::new(0, 0, 0, 0)
+                let first = table[0];
+                ordinary(RectPx::new(first.x, first.y - 20, first.w, 10))
             } else {
                 ordinary(table[row - 1])
             }
@@ -222,6 +238,7 @@ pub fn diplomacy_layout(
     DiplomacyLayout {
         title: in_game_shell::right_panel_title_rect(width),
         return_button: shell.lower_button_rect(width, button_size),
+        paging: super::paging::button_rects(shell.lower_button_rect(width, button_size)),
         status_line: in_game_shell::status_line_rect(height),
         headers: DiplomacyHeader::ALL.map(|header| ordinary(header.dlu())),
         insignia: INSIGNIA_DLU.map(ordinary),
@@ -239,6 +256,8 @@ impl DiplomacyLayout {
     pub fn control_rect(&self, control: DiplomacyControl) -> RectPx {
         match control {
             DiplomacyControl::Return => self.return_button,
+            DiplomacyControl::PreviousPage => self.paging[0],
+            DiplomacyControl::NextPage => self.paging[1],
             DiplomacyControl::Header(header) => self.headers[header as usize],
             DiplomacyControl::Insignia(row) => self.insignia[row],
             DiplomacyControl::Name(row) => self.names[row],
@@ -296,6 +315,10 @@ pub struct DiplomacyChatBox {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DiplomacyView {
     pub rows: [Option<DiplomacyRow>; DIPLOMACY_ROWS],
+    /// VERA extension: the physical rows window the full House-order projection.
+    pub first_row: usize,
+    pub page_index: usize,
+    pub page_count: usize,
     /// 0x597, hidden when no row showed an Allies box at init.
     pub allies_header: bool,
     /// 0x425, hidden when no row is human-controlled.
@@ -340,6 +363,12 @@ impl DiplomacyView {
                 DiplomacyHeader::Player | DiplomacyHeader::Kills => true,
             });
         std::iter::once(DiplomacyControl::Return)
+            .chain(
+                (self.page_count > 1)
+                    .then_some([DiplomacyControl::PreviousPage, DiplomacyControl::NextPage])
+                    .into_iter()
+                    .flatten(),
+            )
             .chain(row_controls)
             .chain(headers.map(DiplomacyControl::Header))
             .chain([DiplomacyControl::ModeName, DiplomacyControl::MapName])

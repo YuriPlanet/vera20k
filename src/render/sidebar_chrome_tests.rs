@@ -80,7 +80,7 @@ fn side_route_prefers_md_then_base_then_neutral() {
     assert_eq!(resolved.bytes, b"neutral");
 }
 
-fn resolved_shp(route: SidebarSideRoute<'_>, name: &str) -> (&'static str, ShpFile) {
+fn resolved_shp<'a>(route: SidebarSideRoute<'a>, name: &str) -> (&'a str, ShpFile) {
     let resolved = route.resolve_generic_shp(name).expect(name);
     let shp = ShpFile::from_bytes(resolved.bytes).expect(name);
     (resolved.archive_name, shp)
@@ -288,10 +288,12 @@ fn original_n1_tables_drive_sidebar_palette_and_skip_alpha() {
 #[test]
 #[ignore = "requires the configured stock retail RA2/YR install"]
 fn retail_modal_backgrounds_use_ui_palette_for_every_theme_and_size() {
-    let assets = AssetManager::new(&retail_ra2_dir(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
-    for (theme, archive_name, names, palette_name, old_palette_name) in [
+    #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
+    let mut assets = AssetManager::new(&retail_ra2_dir(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    for (theme, mix_index, archive_name, names, palette_name, old_palette_name) in [
         (
             SidebarTheme::Allied,
+            1,
             "sidec01.mix",
             ("BKGDLG.SHP", "BKGDMD.SHP", "BKGDSM.SHP"),
             "UIBKGD.PAL",
@@ -299,6 +301,7 @@ fn retail_modal_backgrounds_use_ui_palette_for_every_theme_and_size() {
         ),
         (
             SidebarTheme::Soviet,
+            2,
             "sidec02.mix",
             ("BKGDLG.SHP", "BKGDMD.SHP", "BKGDSM.SHP"),
             "UIBKGD.PAL",
@@ -306,19 +309,38 @@ fn retail_modal_backgrounds_use_ui_palette_for_every_theme_and_size() {
         ),
         (
             SidebarTheme::Yuri,
+            2,
             "sidec02md.mix",
             ("BKGDLGY.SHP", "BKGDMDY.SHP", "BKGDSMY.SHP"),
             "UIBKGDY.PAL",
             "RADARYURI.PAL",
         ),
     ] {
+        // An Ares build resolves sidebar palettes through the Side MIX group
+        // that scenario start registers (534FA0); install it as play does.
+        #[cfg(feature = "ares")]
+        assert!(assets.activate_sidebar_archives(mix_index).unwrap());
+        #[cfg(not(feature = "ares"))]
+        let _ = mix_index;
         let archive = assets.archive(archive_name).unwrap();
-        let (entries, identity) =
-            super::in_game_shell::load_backgrounds(&assets, archive, archive_name, theme, names)
-                .unwrap();
+        let (entries, identity) = super::in_game_shell::load_backgrounds(
+            &assets,
+            archive,
+            archive_name,
+            names,
+            super::SidebarArtNames::for_yuri(theme == SidebarTheme::Yuri).background_palette,
+        )
+        .unwrap();
         assert_eq!(identity.logical_name, palette_name);
-        assert_eq!(identity.source_archive.as_deref(), Some(archive_name));
-        let raw_palette = archive.get_by_name(palette_name).unwrap();
+        #[cfg(feature = "ares")]
+        let (raw_palette, palette_source) = {
+            let resolved = assets.resolve_ref(palette_name).unwrap();
+            (resolved.bytes, resolved.source_archive)
+        };
+        #[cfg(not(feature = "ares"))]
+        let (raw_palette, palette_source) =
+            (archive.get_by_name(palette_name).unwrap(), archive_name);
+        assert_eq!(identity.source_archive.as_deref(), Some(palette_source));
         let old_palette =
             super::decode_sidebar_palette(archive.get_by_name(old_palette_name).unwrap()).unwrap();
         for (name, entry) in [names.0, names.1, names.2].into_iter().zip(entries) {

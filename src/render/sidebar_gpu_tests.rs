@@ -29,7 +29,7 @@ fn extent(s: [u32; 2]) -> wgpu::Extent3d {
 }
 impl Gpu {
     fn new() -> Self {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
             .expect("explicit sidebar GPU test requires adapter");
         eprintln!("Sidebar GPU adapter: {:?}", adapter.get_info());
@@ -109,7 +109,7 @@ impl Gpu {
                 primitive: Default::default(),
                 depth_stencil: None,
                 multisample: Default::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
         let (neutral_a, neutral_a_uniform) =
@@ -194,6 +194,7 @@ impl Gpu {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &camera_group, &[]);

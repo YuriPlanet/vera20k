@@ -153,38 +153,8 @@ word, ordered calls/writes, vector backing, exact constructed Event111 and full
 Main/Scenario/Mapgen buffers. Repeated nonclass snapshots and full actor/Walk/Cell
 raw copies are omitted from the JSON projection; every raw byte remains in the
 pinned full compressed receipts, including the baseline map. `manifest.json`
-binds those receipts and exact as-run sources. The full initialized defaults
-justify the five-profile helper registration; other shared-helper branches are
-outside that comparison. The existing UnlimboGate separately replayed all18
-original controls and matched complete normalized observations before its
-`infantry-command-gate-compatible`18-file profile was registered. Its first
-candidate import-census refusal is retained alongside the successful second
-receipt under `_factory_infantry_output/compatibility/`. Historical publication
-caller identity has a separate compatibility check. Existing `saved.py` binds
-historical receipts to their sealed initialized caller/AST/driver/helper map,
-and current receipts to current verified owners. It validates the old complete
-normalized digest before locally removing only three independently checked
-host paths: caller-adaptation owner SHA, top helper claim and embedded helper
-claim. Global normalization and all native gameplay fields remain unchanged.
-Two current public r11 controls completed the original native comparison but
-failed the final wrapper census on four helpers already owned by Gate. The
-public caller now reuses the existing verified Gate census, and both fresh
-public r12 interleavings pass complete comparisons and the existing Rust
-selector. Both successful receipts are pinned by the existing publication
-metadata, and the public saved check compares them afresh. Raw failed wrappers
-and their as-run sources remain separately indexed under this owner.
-
-Main2135df0e3 extracted `walk_move_admission.prepare_fixture` for its shared
-rally caller. The48 preparation statements, query observer/native-call suffix
-and `live_cell_input` body remain AST-equal. Original29 admission controls and
-legacy7setter/3head checks passed on the merged source. A fresh strict Shift
-replay also matched every selected field and the complete raw r13 history and
-bootstrap. `compatibility/main-2135df0e3-prepare-fixture.json` binds these actual
-checks; `as-run-main-2135df0e3` retains the changed source. The old21 histories,
-old sources and old manifest/metadata are preserved, with the latter pinned
-under `compatibility/sealed-gi21-pre-main-2135df0e3-*`. The59-file factory and
-18-file Gate profiles stayed byte-exact and were not rebound. This establishes
-compatibility within the existing authored controls and bounds.
+binds those receipts. It pins no repository source, so an edit to a shared
+helper or caller fails no check whose native output is unchanged.
 
 Original4C6860 leaves byte+0x0D untouched between mission+0x0C and TargetClass
 starting+0x0E. Selected MegaMission4C7225..74CA does not read+0x0D. This explains
@@ -241,10 +211,7 @@ The selected startup input runs original registered Drive14 through7CBED3
 before this MTNK's7353C0 constructor. Original math/libm/FPCW, global accesses,
 cdecl SP+4, code guards, inherited prior Drive bytes and all three RNG streams
 are observed. The separately inherited prior Drive already exists and remains
-excluded from a claim about the first process-wide Drive startup. Both default
-no_rally/rally controls and both complete publication interleavings match the
-old native payloads before the named provider profile is admitted; prior source
-maps and candidate comparisons remain retained.
+excluded from a claim about the first process-wide Drive startup.
 
 Whole Unit7404B0/738910, Foot4DE1D0, actual111-byte Event construction/local
 dispatch and Unit741970 execute. Literal Shift10 alone reaches ordinary
@@ -309,12 +276,8 @@ PYTHONDONTWRITEBYTECODE=1 python -m tools.spatial_oracle.factory_infantry_output
 All15 planned Unit command histories and the additional actual playfield
 resolver contrast are accepted after original execution. The existing corpus
 contains those16 alongside the unchanged GI21; seven setter/three head and
-29 admission payloads remain unchanged. Full raw runs and their as-run source
-closures stay in this owner's manifest; the final observer's closure has79
-files. The two full current public publication
-wrappers and complete default no-rally/rally payload comparisons retain their
-historical source/data maps in the shared factory metadata. Saved checks do
-not replace a fresh selected whole-history replay.
+29 admission payloads remain unchanged. Full raw runs stay in this owner's
+manifest. Saved checks do not replace a fresh selected whole-history replay.
 
 Free-MTNK component controls do not certify whole startup, display input, map
 loading, factory/depot contacts, other locomotor families, networking or save/load.

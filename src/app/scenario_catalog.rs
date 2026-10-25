@@ -13,7 +13,7 @@ use crate::app::loading::init::MapMenuEntry;
 use crate::app::match_runtime::session::NetworkMapMetadata;
 use crate::assets::asset_manager::AssetManager;
 use crate::map::skirmish_scenarios::SkirmishScenarioRecord;
-use crate::map::source::{LoadedMapSource, load_map_ini_by_name_or_path_with_assets};
+use crate::map::source::LoadedMapSource;
 use crate::rules::ini_parser::IniFile;
 use std::path::Path;
 
@@ -79,7 +79,7 @@ impl ScenarioCatalog {
             .ok_or_else(|| {
                 anyhow::anyhow!("selected network map has no local catalog record: {file}")
             })?;
-        let loaded = load_map_ini_by_name_or_path_with_assets(root, &record.file_name, assets)?;
+        let loaded = crate::map::source::load_network_map_ini(root, &record.file_name, assets)?;
         let digest = if record
             .file_name
             .eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED)
@@ -98,6 +98,16 @@ impl ScenarioCatalog {
             official: record.official,
             byte_length: physical_map_length(&loaded.source),
             digest,
+            effective_digest: crate::map::source::effective_network_map_digest(
+                &loaded.ini,
+                crate::map::rmg::is_seed_selection(file),
+            ),
+            source_sha256: loaded
+                .source
+                .physical_identity()
+                .expect("physical source")
+                .1
+                .to_owned(),
         })
     }
 
@@ -120,7 +130,7 @@ impl ScenarioCatalog {
             .filter(|record| record.file_name.eq_ignore_ascii_case(file))
         {
             let Ok(loaded) =
-                load_map_ini_by_name_or_path_with_assets(root, &record.file_name, assets)
+                crate::map::source::load_network_map_ini(root, &record.file_name, assets)
             else {
                 continue;
             };
@@ -130,12 +140,82 @@ impl ScenarioCatalog {
             if !metadata.digest.is_empty() && metadata.digest != network_map_digest(&loaded.ini) {
                 continue;
             }
+            if !metadata.source_sha256.is_empty()
+                && loaded
+                    .source
+                    .physical_identity()
+                    .is_none_or(|(_, digest)| digest != metadata.source_sha256)
+            {
+                continue;
+            }
+            if !metadata.effective_digest.is_empty()
+                && metadata.effective_digest
+                    != crate::map::source::effective_network_map_digest(&loaded.ini, false)
+            {
+                continue;
+            }
             return Some(VerifiedNetworkMap {
                 record,
                 source: loaded.source,
             });
         }
         None
+    }
+
+    /// A transferred map has no synthetic chooser record. Its consumed bytes,
+    /// native metadata and explicit start capacity must match the accepted map.
+    pub(crate) fn verify_transferred_network_map(
+        loaded: &crate::map::source::LoadedMapIni,
+        metadata: &NetworkMapMetadata,
+        seed: bool,
+    ) -> bool {
+        if crate::map::source::validate_network_map_content(&loaded.ini, seed).is_err() {
+            return false;
+        }
+        let (digest, capacity) = if seed {
+            let mut options = crate::map::rmg::RmgOptions::default();
+            options.apply_sed(&loaded.ini);
+            // RmgOptions::native_digest owns the option-block fold5E84D0;
+            // compare consumed values before generation normalization. The
+            // separate effective-map digest already normalizes its input.
+            let digest = options.native_digest();
+            options.normalize();
+            (digest, options.num_players)
+        } else {
+            (
+                network_map_digest(&loaded.ini),
+                crate::map::waypoints::skirmish_player_capacity(&loaded.ini),
+            )
+        };
+        loaded
+            .source
+            .physical_identity()
+            .is_some_and(|(length, digest)| {
+                length == usize::try_from(metadata.byte_length).unwrap_or(0)
+                    && crate::map::source::valid_source_sha256(digest)
+                    && digest == metadata.source_sha256
+            })
+            && (metadata.digest.is_empty() || metadata.digest == digest)
+            && capacity == metadata.player_capacity
+            && metadata.effective_digest
+                == crate::map::source::effective_network_map_digest(&loaded.ini, seed)
+    }
+
+    pub(crate) fn verify_network_map_input(
+        &self,
+        file: &str,
+        metadata: &NetworkMapMetadata,
+        root: &Path,
+        assets: &AssetManager,
+    ) -> Option<crate::map::source::LoadedMapIni> {
+        crate::map::source::validate_network_map_name(file).ok()?;
+        let loaded = crate::map::source::load_network_map_ini(root, file, assets).ok()?;
+        Self::verify_transferred_network_map(
+            &loaded,
+            metadata,
+            crate::map::rmg::is_seed_selection(file),
+        )
+        .then_some(loaded)
     }
 
     /// Mutable access to the records. The guard re-projects the shell map
@@ -186,10 +266,12 @@ mod tests {
     #[test]
     fn the_random_map_record_publishes_the_generator_option_digest() {
         let root = TestDirectory::new("network-random-map-metadata");
-        let options = crate::map::rmg::RmgOptions {
+        let mut options = crate::map::rmg::RmgOptions {
             seed: 4321,
+            num_players: 4,
             ..crate::map::rmg::RmgOptions::default()
         };
+        options.normalize();
         let bytes = options.to_sed_bytes();
         root.write("RandMap.Sed", &bytes);
         let assets = AssetManager::from_loose_root_for_test(root.path());
@@ -205,6 +287,60 @@ mod tests {
         assert_eq!(metadata.digest, options.native_digest());
         assert_eq!(metadata.byte_length, bytes.len() as i32);
         assert!(metadata.official);
+        assert!(
+            catalog
+                .verify_network_map_input("RandMap.Sed", &metadata, root.path(), &assets)
+                .is_some()
+        );
+        assert!(
+            catalog
+                .verify_network_map_input(
+                    root.path().join("RandMap.Sed").to_str().unwrap(),
+                    &metadata,
+                    root.path(),
+                    &assets,
+                )
+                .is_none(),
+            "a remote logical name must not select a host absolute path"
+        );
+        // External SED bytes may precede the generator's normalization.
+        // Preserve the exact option-block digest while agreeing separately on
+        // the normalized effective input, as normal UI generation also does.
+        let mut raw = options.clone();
+        raw.tiberium = 0;
+        let bytes = raw.to_sed_bytes();
+        root.write("RandMap.Sed", &bytes);
+        let metadata = catalog
+            .network_map_metadata("RandMap.Sed", root.path(), &assets)
+            .unwrap();
+        assert_ne!(metadata.digest, options.native_digest());
+        assert_eq!(metadata.digest, raw.native_digest());
+        assert_eq!(
+            metadata.effective_digest,
+            crate::map::source::effective_network_map_digest(
+                &IniFile::from_bytes(&bytes).unwrap(),
+                true
+            )
+        );
+        assert!(
+            catalog
+                .verify_network_map_input("RandMap.Sed", &metadata, root.path(), &assets)
+                .is_some()
+        );
+        let mut wrong = metadata.clone();
+        wrong.digest = options.native_digest();
+        assert!(
+            catalog
+                .verify_network_map_input("RandMap.Sed", &wrong, root.path(), &assets)
+                .is_none()
+        );
+        wrong = metadata;
+        wrong.effective_digest = "0".repeat(64);
+        assert!(
+            catalog
+                .verify_network_map_input("RandMap.Sed", &wrong, root.path(), &assets)
+                .is_none()
+        );
     }
 
     #[test]

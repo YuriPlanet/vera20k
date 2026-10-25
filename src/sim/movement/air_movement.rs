@@ -9,20 +9,23 @@
 
 use crate::map::entities::EntityCategory;
 use crate::sim::components::DriveCoord;
+#[cfg(test)]
 use crate::util::fixed_math::SimFixed;
+use crate::util::native_x87::{NativeF64Bits, X87Chop53 as X};
 
 /// Fly interface+84 /4CFE20 reads TYPE Speed, not Foot's adjusted speed.
-/// The retained fraction follows the existing SimFixed policy. Its dyadic
-/// product with the bounded type integer is exact in i64; truncate toward zero
-/// once, before trig. Do not truncate a per-second displacement or multiply
-/// two I16F16 values that can overflow at high authored speed/fraction.
-pub(crate) fn current_fly_speed(type_speed: i32, fraction: SimFixed) -> i32 {
-    (i64::from(type_speed) * i64::from(fraction.to_bits()) / 65536) as i32
+/// FILD signed type speed, FMUL retained binary64, then ftol's low EAX.
+/// Motion pays this old current before the late target writer and ramp.
+pub(crate) fn current_fly_speed(type_speed: i32, fraction: NativeF64Bits) -> i32 {
+    X::ftol_i32_low_masked(X::mul(
+        X::load_i32(type_speed),
+        X::load_f64(fraction).expect("constructor-owned Fly speed is finite"),
+    ))
 }
 
 /// The 0.05 current speed of Process's creep (`0x004CE2D1`) and of
 /// Horizontal_Step's landing test (`0x007E8AE8`).
-pub(crate) const MIN_CREEP_SPEED: SimFixed = SimFixed::lit("0.05");
+pub(crate) const MIN_CREEP_SPEED: NativeF64Bits = NativeF64Bits::from_bits(0x3fa9_9999_9999_999a);
 
 /// `TechnoTypeClass` constructor `SlowdownDistance` (`0x00710BB2`), for a
 /// mover without a resolved type.
@@ -187,6 +190,19 @@ pub fn current_fly_height(
     queried_flight_height(entity, cells.as_ref())
 }
 
+/// Aircraft IFlyControl41B6A0 through its shared live cargo/radio owner.
+/// Read-only locomotor and presentation callers must use the same landing base.
+pub fn aircraft_landing_base(
+    entity: &crate::sim::game_entity::GameEntity,
+    entities: &crate::sim::entity_store::EntityStore,
+    rules_context: Option<(
+        &crate::rules::ruleset::RuleSet,
+        &crate::sim::intern::StringInterner,
+    )>,
+) -> i32 {
+    crate::sim::aircraft::landing_base::landing_base(entity, entities, rules_context)
+}
+
 /// [`current_fly_height`] through the caller's cell query. A draw passes its
 /// isolated query, so a miss stamps its own dummy, not the simulation's.
 pub fn queried_flight_height(
@@ -207,8 +223,9 @@ pub fn queried_flight_height(
 }
 
 /// Object5F5F40: retained Location less the live ground and optional deck.
-/// Both Techno and Terrain queries use the same ground/height boundary.
-pub(crate) fn object_height_in_query(
+/// Techno, Terrain and the Anim draw (DrawIt42310A) queries use the same
+/// ground/height boundary; a draw passes its isolated query.
+pub fn object_height_in_query(
     coord: DriveCoord,
     on_bridge: bool,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
@@ -405,7 +422,7 @@ pub(crate) mod tests {
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::locomotor::{AirMovePhase, LocomotorState};
-    use crate::util::fixed_math::{SIM_HALF, SIM_ONE, SIM_ZERO};
+    use crate::util::fixed_math::SIM_ONE;
 
     /// Fly `+0x34`: the Fly holds a move request. MoveTo sets it; only a
     /// landing at its destination (`0x004CEF5F`) and Stop clear it.
@@ -423,6 +440,7 @@ pub(crate) mod tests {
         let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
         entity.locomotor = Some(make_fly_loco());
         sim.substrate.entities.insert(entity);
+        sim.interner = crate::sim::intern::test_interner();
 
         let ok = crate::sim::world::Simulation::move_air_coordinate(
             &mut sim.interner,
@@ -433,7 +451,7 @@ pub(crate) mod tests {
             1,
             crate::sim::movement::target_cell_coord(20, 15, None),
             None,
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
         );
         assert!(ok);
 
@@ -482,7 +500,7 @@ pub(crate) mod tests {
         sim.assign_destination_represented(
             id,
             Some(crate::sim::components::NavTargetRef::cell(20, 15)),
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -527,6 +545,7 @@ pub(crate) mod tests {
         let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
         entity.locomotor = Some(make_fly_loco());
         sim.substrate.entities.insert(entity);
+        sim.interner = crate::sim::intern::test_interner();
 
         let ok = crate::sim::world::Simulation::move_air_coordinate(
             &mut sim.interner,
@@ -537,7 +556,7 @@ pub(crate) mod tests {
             1,
             crate::sim::movement::target_cell_coord(10, 10, None),
             None,
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
         );
         assert!(ok);
         // Native MoveTo accepts a nonnull destination even at the owner cell.
@@ -557,21 +576,16 @@ pub(crate) mod tests {
     fn test_fly_speed_ramp() {
         let mut fly = crate::sim::movement::fly_height::FlyRuntime::default();
         fly.set_target_speed_for_test(SIM_ONE);
-        // After 5 ramps: should be ~0.5 (fixed-point 0.1 is approximate).
-        for _ in 0..5 {
+        // Original grounded MoveTo -> Process pays these fractions through
+        // ApparentSpeed. The tenth PC53/chop addition is still below one.
+        for native_paid in [3, 7, 10, 13, 17, 20, 24, 27, 31, 34] {
             fly.ramp_speed();
+            assert_eq!(current_fly_speed(35, fly.current_speed()), native_paid);
         }
-        let half_diff = (fly.current_speed() - SIM_HALF).abs();
-        assert!(
-            half_diff < SimFixed::lit("0.001"),
-            "Expected ~0.5, got {:?}",
-            fly.current_speed()
-        );
-        // After 5 more: should reach exactly 1.0 (clamped by min(target)).
-        for _ in 0..5 {
-            fly.ramp_speed();
-        }
-        assert_eq!(fly.current_speed(), SIM_ONE);
+        assert_ne!(fly.current_speed(), NativeF64Bits::ONE);
+        fly.ramp_speed();
+        assert_eq!(fly.current_speed(), NativeF64Bits::ONE);
+        assert_eq!(current_fly_speed(35, fly.current_speed()), 35);
     }
 
     #[test]
@@ -581,13 +595,13 @@ pub(crate) mod tests {
         for _ in 0..10 {
             fly.ramp_speed();
         }
-        assert_eq!(fly.current_speed(), SIM_ZERO);
+        assert_eq!(fly.current_speed(), NativeF64Bits::POSITIVE_ZERO);
     }
 
     /// Every row of `tools/spatial_oracle/fly_target_speed`, the original
     /// Process target-speed writer, through [`FlyRuntime::write_target_speed`]: the
-    /// gate, `0x004D0180`, HunterSeeker and the slowdown law. Target and
-    /// current speed land within one Q16 quantum of the native binary64.
+    /// gate, `0x004D0180`, HunterSeeker and the slowdown law. The declared Q16
+    /// priors convert losslessly; both resulting binary64 stores match exactly.
     #[test]
     fn native_target_speed_rows() {
         let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
@@ -637,16 +651,17 @@ pub(crate) mod tests {
             };
             loco.fly_runtime_mut().unwrap().write_target_speed(&facts);
             let fly = loco.fly_runtime().unwrap();
-            for (actual, native) in [
-                (fly.target_speed(), &row["target_speed"]),
-                (fly.current_speed(), &row["current"]),
+            for (actual, key) in [
+                (fly.target_speed(), "target_speed_bits"),
+                (fly.current_speed(), "current_bits"),
             ] {
-                let native = native.as_f64().unwrap() * 65536.0;
-                assert!(
-                    (f64::from(actual.to_bits()) - native).abs() < 1.0,
-                    "{}: {} vs native {native}",
+                let native = u64::from_str_radix(row[key].as_str().unwrap(), 16).unwrap();
+                assert_eq!(
+                    actual.bits(),
+                    native,
+                    "{} {key}: {:016x} vs native {native:016x}",
                     input["name"],
-                    actual.to_bits()
+                    actual.bits()
                 );
             }
         }

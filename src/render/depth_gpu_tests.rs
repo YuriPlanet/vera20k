@@ -108,9 +108,9 @@ struct Gpu {
 
 impl Gpu {
     fn new() -> Self {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
-            ..Default::default()
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
         let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             compatible_surface: None,
@@ -241,21 +241,21 @@ impl Gpu {
                     primitive: Default::default(),
                     depth_stencil: Some(wgpu::DepthStencilState {
                         format: wgpu::TextureFormat::Depth32Float,
-                        depth_write_enabled: layer.shader.writes_depth(),
+                        depth_write_enabled: Some(layer.shader.writes_depth()),
                         // TMP leaf 0x547CF0 admits equality. Ordinary SHP leaves
                         // 0x494B60/0x497FD0 and building leaves 0x4958D0/0x4990E0
                         // use strict less-than. This exercises those contracts,
                         // not production BatchRenderer's pipeline selection.
-                        depth_compare: if matches!(layer.shader, Shader::Terrain) {
+                        depth_compare: Some(if matches!(layer.shader, Shader::Terrain) {
                             wgpu::CompareFunction::LessEqual
                         } else {
                             wgpu::CompareFunction::Less
-                        },
+                        }),
                         stencil: Default::default(),
                         bias: Default::default(),
                     }),
                     multisample: Default::default(),
-                    multiview: None,
+                    multiview_mask: None,
                     cache: None,
                 });
             let camera_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -426,6 +426,7 @@ impl Gpu {
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &camera_group, &[]);
@@ -1061,6 +1062,51 @@ fn terrain_and_building_depth_hide_only_behind_pixels_and_preserve_holes() {
         GREEN,
         "equal sprite depth must fail after equal terrain depth passes"
     );
+}
+
+#[test]
+#[ignore = "requires a wgpu adapter; run explicitly"]
+fn shaped_sprites_use_original_gradient_seed() {
+    let native = crate::test_fixture::json("tools/spatial_oracle/ore_shape_clip.json");
+    let gpu = Gpu::new();
+    for gradient in 0..=2 {
+        let row = native["shape_seeds"]
+            .as_array()
+            .expect("original seed controls")
+            .iter()
+            .find(|row| {
+                row["gradient"].as_u64() == Some(gradient)
+                    && row["screen_top"].as_i64() == Some(0)
+                    && row["height"].as_u64() == Some(u64::from(SIDE))
+                    && row["z_adjust"].as_i64() == Some(-1)
+            })
+            .expect("original 8-row shape seed");
+        let seed = row["seed"].as_i64().expect("native seed") as i32;
+        let mut shape = Layer::solid(Shader::SpriteWrite, BLUE, -1.0);
+        shape.instance.z_gradient = gradient as u32 | Z_GRADIENT_ZSHAPE_FLAG;
+        shape.z_bytes.fill(128);
+        for y in 0..SIDE {
+            shape.z_bytes[(y * SIDE + 1) as usize] = 129;
+            shape.z_bytes[(y * SIDE + 6) as usize] = 127;
+        }
+        let pixels = gpu.render(&[
+            Layer::solid(
+                Shader::Terrain,
+                RED,
+                (seed - super::native_z::DEFAULT_Z) as f32,
+            ),
+            shape,
+        ]);
+        for y in 0..SIDE {
+            for x in 0..SIDE {
+                assert_eq!(
+                    pixels[(y * SIDE + x) as usize],
+                    if x == 1 { BLUE } else { RED },
+                    "native gradient{gradient} seed{seed}, shape admission at ({x},{y})"
+                );
+            }
+        }
+    }
 }
 
 #[test]

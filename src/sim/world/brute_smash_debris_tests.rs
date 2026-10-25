@@ -152,7 +152,7 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
         let output = sim
             .advance_app_frame(
                 &commands,
-                Some(&rules),
+                &rules,
                 None,
                 33,
                 TickLane::Ordinary,
@@ -324,7 +324,7 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
                 let commands = sim.take_due_commands();
                 sim.advance_app_frame(
                     &commands,
-                    Some(&rules),
+                    &rules,
                     None,
                     33,
                     TickLane::Ordinary,
@@ -336,7 +336,7 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
                     loaded
                         .advance_app_frame(
                             &commands,
-                            Some(&rules),
+                            &rules,
                             None,
                             33,
                             TickLane::Ordinary,

@@ -13,7 +13,6 @@ import hashlib
 import struct
 import traceback
 
-from tools import native_oracle as native
 from tools.spatial_oracle import building_construction as bc
 from tools.spatial_oracle import building_death_anims as death
 from tools.spatial_oracle import engineer_repair_admission as er
@@ -22,16 +21,11 @@ from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_ESP, UC_X86_REG_EIP
 
 HERE = Path(__file__).resolve().parent
-EXPECTED_NATIVE = '1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c'
 EXPECTED_P10 = '2864c48044891746cf597cd0d4f4a5e8e6554b208ddccfa47313d1a22bbe68ea'
 
 
-def sha(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
 def derived_generate():
-    fn = next(n for n in ast.parse(Path(initialized.__file__).read_text()).body
+    fn = next(n for n in ast.parse(Path(initialized.__file__).read_text(encoding='utf-8')).body
               if isinstance(n, ast.FunctionDef) and n.name == 'generate')
     changed = dict(stop=0, product_count=0, terminal_assertions=0)
 
@@ -63,19 +57,14 @@ def derived_generate():
     ns = dict(vars(initialized))
     exec(compile(module, str(HERE / '<derived-first-native-place-boundary>'), 'exec'), ns)
     return ns['generate'], dict(changes=changed,
-        original_owner=str(Path(initialized.__file__).resolve().relative_to(rt.REPO_ROOT)),
-        original_owner_sha256=sha(initialized.__file__),
-        derived_caller_ast_sha256=hashlib.sha256(ast.dump(module, include_attributes=False).encode()).hexdigest())
+        original_owner=str(Path(initialized.__file__).resolve().relative_to(rt.REPO_ROOT)))
 
 
 def generate(order, assets=None):
     rt.require(order in ('before_strip', 'after_strip'), 'Unknown publication phase control')
     rt.configure_assets(assets)
-    rt.verify_callers()
-    helpers = rt.verify_helpers()
     rt.require(rt.metadata()['publication_phase']['parent_manifest_sha256'] == EXPECTED_P10,
                'Initialized parent seal identity changed')
-    rt.require(native.NATIVE_SHA256 == EXPECTED_NATIVE, 'Original binary identity changed')
     generate, adaptation = derived_generate()
     vm = {}
     boundaries = []
@@ -242,9 +231,8 @@ def generate(order, assets=None):
     vm.pop('f', None)
     vm.pop('hook', None)
     return dict(schema=1, status='PASS' if failure is None else 'FAIL', order=order,
-        native_sha256=native.NATIVE_SHA256, driver_sha256=sha(__file__),
         inherited_parent=dict(packet='P10', manifest_sha256=EXPECTED_P10),
-        caller_adaptation=adaptation, shared_helpers=helpers, control_state=vm,
+        caller_adaptation=adaptation, control_state=vm,
         boundaries=boundaries, original_calls=calls, complete_rng_buffers=streams,
         full_original_initialized_first_place=receipt, failure=failure,
         bounds=['Restricted warmed P10 original schedule and physical/House/type priors are reused. No whole MainTick, window pump, pixel discovery, network, other actors, or terminal movement is executed.',

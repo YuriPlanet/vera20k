@@ -60,7 +60,7 @@ fn install_destination_cells(sim: &mut Simulation, rules: &RuleSet) {
     // Reveal preceded map installation in relocating_owner. Finish the same
     // Techno threat/Foot neighbor producers as the existing object-turn fixture.
     sim.spatial_threat_after_unlimbo(1, rules, None);
-    sim.foot_neighbors_after_unlimbo(1, Some(rules));
+    sim.foot_neighbors_after_unlimbo(1, rules);
 }
 
 /// An infantryman on Teleport with a warp armed from cell 5,5.
@@ -128,7 +128,7 @@ fn relocation_constructs_departure_and_arrival_warp_anims_in_the_mover_turn() {
     let mut sim = relocating_legionnaire((8, 9));
     let warp_out = sim.intern("WARPOUT");
 
-    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
         .unwrap();
 
     let anims: Vec<_> = sim
@@ -196,7 +196,7 @@ fn teleport_without_relocation_keeps_incoming_bullet_target() {
         sim.projectiles.spawn(99, shot);
         let expected = sim.projectiles.get(99).unwrap().clone();
 
-        sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
+        sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
             .unwrap();
 
         assert_eq!(sim.projectiles.get(99), Some(&expected));
@@ -271,7 +271,7 @@ fn teleport_target_loss_and_pointer_expiry_match_native_controls() {
                 if expire {
                     sim.detach_all_pointer_expired(1, &rules, None, FrameEffects::default());
                 } else {
-                    sim.lose_projectile_targets(1, Some(&rules));
+                    sim.lose_projectile_targets(1, &rules);
                 }
             };
             if input["scope"].as_bool().unwrap() {
@@ -352,7 +352,7 @@ fn retail_cmin_teleport_preserves_departure_cell_through_guidance_and_snapshot()
     admit_fired_bullet(&mut sim, &rules, weapon, bullet_id, bullet);
     let original = sim.projectiles.get(bullet_id).unwrap().clone();
 
-    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
         .unwrap();
 
     let mut expected = original;
@@ -443,8 +443,8 @@ fn teleport_object_turn_moves_retained_foot_neighbor_counts() {
             .cached_spatial_threat()
             .is_some()
     );
-    sim.foot_neighbors_after_unlimbo(1, Some(&rules));
-    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
+    sim.foot_neighbors_after_unlimbo(1, &rules);
+    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
         .unwrap();
     let plane = sim
         .overlay_grid
@@ -488,7 +488,7 @@ fn warp_moves_a_units_occupation_through_the_mark_pair() {
     let mut sim = relocating_chrono_unit((8, 9));
     assert_ne!(raw_bits(&sim, (5, 5)) & 0x20, 0);
 
-    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
         .unwrap();
 
     assert_eq!(raw_bits(&sim, (5, 5)) & 0x20, 0);
@@ -510,7 +510,7 @@ fn warp_moves_an_infantrymans_list_entry_and_leaves_his_raw_bit() {
     assert_ne!(origin_bits, 0);
     assert_eq!(raw_bits(&sim, (8, 9)), 0);
 
-    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
         .unwrap();
 
     assert_eq!(raw_bits(&sim, (5, 5)), origin_bits, "the origin keeps it");
@@ -549,7 +549,7 @@ fn the_warp_restores_its_attackers_suspended_missions() {
     });
     sim.substrate.entities.insert(attacker);
 
-    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
         .unwrap();
 
     let attacker = sim.substrate.entities.get(2).unwrap();
@@ -581,7 +581,7 @@ fn a_restored_destination_warps_at_the_teleport_process_entry() {
         .navigation
         .set_pending_destination_setter_for_test(true);
 
-    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
         .unwrap();
 
     let mover = sim.substrate.entities.get(1).unwrap();
@@ -646,7 +646,7 @@ fn restoration_callbacks_forward_overlay_inputs_before_any_destination_write() {
     for missing in [None, Some(&unregistered)] {
         let result = sim.mission_restore_represented(
             1,
-            Some(&rules),
+            &rules,
             missing,
             crate::sim::world::FrameEffects::default(),
         );
@@ -667,7 +667,7 @@ fn restoration_callbacks_forward_overlay_inputs_before_any_destination_write() {
 
     let result = sim.mission_restore_represented(
         1,
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default(),
     );
@@ -702,7 +702,7 @@ fn an_armed_warp_waits_while_a_drive_piggyback_is_active() {
         .unwrap();
     assert!(locomotor.begin_piggyback(LocomotorKind::Drive, 0));
 
-    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
         .unwrap();
     let mover = sim.substrate.entities.get_mut(1).unwrap();
     assert_eq!((mover.position.rx(), mover.position.ry()), (5, 5));
@@ -715,7 +715,7 @@ fn an_armed_warp_waits_while_a_drive_piggyback_is_active() {
     if locomotor.active_kind() == LocomotorKind::Drive {
         assert!(locomotor.end_piggyback().is_some());
     }
-    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
+    sim.advance_live_object_turn(1, &rules, techno_ai::ObjectAiCtx::default())
         .unwrap();
     let mover = sim.substrate.entities.get(1).unwrap();
     assert_eq!((mover.position.rx(), mover.position.ry()), (8, 9));

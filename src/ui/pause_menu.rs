@@ -66,6 +66,9 @@ pub enum InGameMenuState {
     Closed,
     /// The in-game menu. (gamemd: 1)
     Menu,
+    /// The WOL tournament Surrender box, ShellMessageBox `0x120` over the
+    /// battlefield. (gamemd: 2)
+    Surrender,
     /// The abort-mission confirmation. (gamemd: 3)
     AbortConfirm,
     /// Game Controls / Options — a child of [`InGameMenuState::Menu`]. (gamemd: 5)
@@ -98,7 +101,7 @@ impl InGameMenuState {
     /// its copy flag while `g_WSDialogCount` is nonzero), and the popup
     /// window sits over it.
     pub fn draws_over_battlefield(self) -> bool {
-        matches!(self, Self::Page)
+        matches!(self, Self::Page | Self::Surrender)
     }
 
     /// Where Escape goes from here.
@@ -131,6 +134,9 @@ impl InGameMenuState {
             | Self::MissionBriefing
             | Self::Page => self,
             Self::Keyboard => Self::Options,
+            // ShellMessageBox's callback 0x005D36A0 answers IDCANCEL with
+            // result 1: no surrender, state 0.
+            Self::Surrender => Self::Closed,
         }
     }
 }

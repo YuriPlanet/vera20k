@@ -91,8 +91,9 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
             .button
             .press(target);
         if target.is_some() {
-            // The common type-2 owner-draw button clicks at button-down.
-            App::play_skirmish_shell_generic_click_sound(state);
+            // The common type-2 owner-draw button plays GUIMainButtonSound
+            // at button-down (0x0061376B).
+            App::play_main_menu_button_sound(state);
         }
     } else if state
         .match_state

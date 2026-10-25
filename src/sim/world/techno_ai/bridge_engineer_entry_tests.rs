@@ -119,7 +119,7 @@ fn capture_probe(
             engineer_id: engineer,
             target_building_id: hut
         },
-        Some(&resources.rules),
+        &resources.rules,
         Some(&resources.overlay_registry),
         crate::sim::world::FrameEffects::default(),
     ));

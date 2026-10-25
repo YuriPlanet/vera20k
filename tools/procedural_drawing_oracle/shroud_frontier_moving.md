@@ -13,7 +13,7 @@ It does not supply poses, paths, sight, Cell counters or expected pixels.
 python -m tools.procedural_drawing_oracle.shroud_frontier --moving --check
 ```
 
-The sidecar pins the executable and replay command. `--write` deliberately
+The sidecar records the replay command. `--write` deliberately
 regenerates the reference. The existing stationary command remains
 `python -m tools.procedural_drawing_oracle.shroud --frontier --check`.
 

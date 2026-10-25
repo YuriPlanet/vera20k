@@ -1,6 +1,5 @@
 {
   "schema": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "conversion": "Original native outputs and scalar input fields are retained byte-for-byte after canonical JSON normalization. Uses shared publication projection; no copied INI dictionaries, full MAP/TMP/INI file bodies are present in this payload.",
   "frozen_receipt": {
     "path": "anytown-navigation-native/receipt.json",
@@ -11,8 +10,6 @@
       "original_path": "anytown-navigation-native/anytown_navigation.json.gz",
       "original_file_sha256": "a2197179f0818a7b2c231c8956601b2269df164db04e05d856b99db380a15d35",
       "original_metadata_sha256": "76624ba2c43963a3db1d045ed99596de1b78d893f99740b2d566390e29e88791",
-      "original_runner_sha256": "b5fde9c5c298ab0f1d86d3184252f7cda160db4bff2266bd1570b94241d0eca6",
-      "original_inputs_sha256": "0f52a1920bfe85a780773e24ab561b4c4160d0b8ecae21beb37019c4ad9a8706",
       "original_payload_sha256": "584e7fbd46e04bfff30b58d3c0c463df80fbcca8263aa15a3868de327842d14e",
       "published_payload_sha256": "584e7fbd46e04bfff30b58d3c0c463df80fbcca8263aa15a3868de327842d14e"
     }

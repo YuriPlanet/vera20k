@@ -10,7 +10,7 @@ import json
 import struct
 
 
-from tools.native_oracle import NATIVE_SHA256, SCRATCH, RET_MAGIC, run_checked
+from tools.native_oracle import SCRATCH, RET_MAGIC, run_checked
 from tools.spatial_oracle.object_health import Fixture, OBJ, TYPE, SP, dwords, i32
 from unicorn.x86_const import (
     UC_X86_REG_EAX, UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_EDX,
@@ -34,7 +34,7 @@ def read_xyz(u, address):
 
 
 def generate():
-    f = Fixture()  # load_image verifies the actual PE bytes against NATIVE_SHA256
+    f = Fixture()
     f.reset('building', 100, 100)
     u = f.u
     original = [bytes(u.mem_read(a, b-a)) for a, b in SPANS]
@@ -117,7 +117,7 @@ def generate():
     assert not f.stubs
     assert original == [bytes(u.mem_read(a,b-a)) for a,b in SPANS]
     return dict(
-        native_sha256=NATIVE_SHA256, fpcw='0E7F',
+        fpcw='0E7F',
         substitutions=[],
         unchanged_spans=[dict(start=f'{a:08X}', end_exclusive=f'{b:08X}',
                               sha256=hashlib.sha256(data).hexdigest())

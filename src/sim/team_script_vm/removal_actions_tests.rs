@@ -123,7 +123,7 @@ fn script37_caches_native_next_and_uses_ordered_limbo_uninit_before_drain() {
             ).count(), 1, "FootLimbo detaches its sound once; UnInit's repeated Limbo does not");
         }
         assert_eq!(sim.houses[&owner].stats().units_lost(), 0);
-        sim.process_pending_delete_with(Some(&rules), None, Default::default(), 1, true);
+        sim.process_pending_delete_with(&rules, None, Default::default(), 1, true);
         assert!(
             members
                 .iter()

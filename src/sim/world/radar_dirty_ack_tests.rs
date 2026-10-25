@@ -77,7 +77,10 @@ fn radar_dirty_ack_survives_action40_and_load_rebuild_needs_no_stale_batch() {
     let mut sim = Simulation::new();
     sim.install_playfield_from_map_header(&header);
     sim.dirty_cells.mark_radar([(20, 20)]);
-    assert!(sim.change_visible_map_area([4, 40, 54, 12], None));
+    assert!(sim.change_visible_map_area(
+        [4, 40, 54, 12],
+        crate::rules::ruleset::RuleSet::empty_for_test()
+    ));
     assert_eq!(sim.playfield_revision, 1);
     assert_eq!(sim.dirty_cells.radar(), vec![(20, 20)]);
     assert!(sim.dirty_cells.acknowledge_radar(1));

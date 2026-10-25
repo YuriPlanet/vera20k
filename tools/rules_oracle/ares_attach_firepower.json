@@ -1,0 +1,830 @@
+{
+  "schema_version": 1,
+  "controls": [
+    {
+      "name": "live_aggregate_fire_estimate_refresh_crate_expiry",
+      "descriptors": [
+        {
+          "name": "FACTOR_A",
+          "duration": 4,
+          "raw_firepower": "0.2",
+          "firepower_bits_le": "999999999999c93f",
+          "discard": true,
+          "cumulative": false,
+          "animation": 0
+        }
+      ],
+      "steps": [
+        {
+          "action": "prepared",
+          "base_bits_le": "000000000000f03f",
+          "derived_bits_le": "000000000000f03f",
+          "effects": {
+            "remaining": [],
+            "animations": [],
+            "owner_matches_source": [],
+            "iterations": [],
+            "hidden": false,
+            "ctor_count": 0,
+            "uninit_count": 0
+          },
+          "combat": {
+            "fire_damage": 126,
+            "estimated_damage": 126,
+            "fire_stages": [
+              "firepower_fold"
+            ]
+          },
+          "native_live_factor_reads": [
+            {
+              "action": "prepared",
+              "instruction": "006FE343",
+              "bits_le": "000000000000f03f"
+            },
+            {
+              "action": "prepared",
+              "instruction": "006FDBD3",
+              "bits_le": "000000000000f03f"
+            }
+          ],
+          "aggregate_calls": [],
+          "native_stores": []
+        },
+        {
+          "action": "first_hit",
+          "base_bits_le": "000000000000f03f",
+          "derived_bits_le": "999999999999c93f",
+          "effects": {
+            "remaining": [
+              4
+            ],
+            "animations": [
+              false
+            ],
+            "owner_matches_source": [
+              true
+            ],
+            "iterations": [
+              null
+            ],
+            "hidden": false,
+            "ctor_count": 0,
+            "uninit_count": 0
+          },
+          "combat": {
+            "fire_damage": 25,
+            "estimated_damage": 25,
+            "fire_stages": [
+              "firepower_fold"
+            ]
+          },
+          "native_live_factor_reads": [
+            {
+              "action": "first_hit",
+              "instruction": "006FE343",
+              "bits_le": "999999999999c93f"
+            },
+            {
+              "action": "first_hit",
+              "instruction": "006FDBD3",
+              "bits_le": "999999999999c93f"
+            }
+          ],
+          "aggregate_calls": [
+            {
+              "action": "first_hit",
+              "entry_count": 1
+            }
+          ],
+          "native_stores": [
+            {
+              "action": "first_hit",
+              "instruction": "10046180",
+              "destination": "aggregate_binary64_intermediate",
+              "bits_le": "999999999999c93f"
+            },
+            {
+              "action": "first_hit",
+              "instruction": "10046124",
+              "destination": "actor160",
+              "bits_le": "999999999999c93f"
+            }
+          ]
+        },
+        {
+          "action": "tick_1",
+          "base_bits_le": "000000000000f03f",
+          "derived_bits_le": "999999999999c93f",
+          "effects": {
+            "remaining": [
+              3
+            ],
+            "animations": [
+              false
+            ],
+            "owner_matches_source": [
+              true
+            ],
+            "iterations": [
+              null
+            ],
+            "hidden": false,
+            "ctor_count": 0,
+            "uninit_count": 0
+          },
+          "combat": {
+            "fire_damage": 25,
+            "estimated_damage": 25,
+            "fire_stages": [
+              "firepower_fold"
+            ]
+          },
+          "native_live_factor_reads": [
+            {
+              "action": "tick_1",
+              "instruction": "006FE343",
+              "bits_le": "999999999999c93f"
+            },
+            {
+              "action": "tick_1",
+              "instruction": "006FDBD3",
+              "bits_le": "999999999999c93f"
+            }
+          ],
+          "aggregate_calls": [],
+          "native_stores": []
+        },
+        {
+          "action": "noncumulative_refresh",
+          "base_bits_le": "000000000000f03f",
+          "derived_bits_le": "999999999999c93f",
+          "effects": {
+            "remaining": [
+              4
+            ],
+            "animations": [
+              false
+            ],
+            "owner_matches_source": [
+              true
+            ],
+            "iterations": [
+              null
+            ],
+            "hidden": false,
+            "ctor_count": 0,
+            "uninit_count": 0
+          },
+          "combat": {
+            "fire_damage": 25,
+            "estimated_damage": 25,
+            "fire_stages": [
+              "firepower_fold"
+            ]
+          },
+          "native_live_factor_reads": [
+            {
+              "action": "noncumulative_refresh",
+              "instruction": "006FE343",
+              "bits_le": "999999999999c93f"
+            },
+            {
+              "action": "noncumulative_refresh",
+              "instruction": "006FDBD3",
+              "bits_le": "999999999999c93f"
+            }
+          ],
+          "aggregate_calls": [],
+          "native_stores": []
+        },
+        {
+          "action": "crate_during_effect",
+          "base_bits_le": "333333333333f33f",
+          "derived_bits_le": "b71e85eb51b8ce3f",
+          "effects": {
+            "remaining": [
+              4
+            ],
+            "animations": [
+              false
+            ],
+            "owner_matches_source": [
+              true
+            ],
+            "iterations": [
+              null
+            ],
+            "hidden": false,
+            "ctor_count": 0,
+            "uninit_count": 0
+          },
+          "combat": {
+            "fire_damage": 30,
+            "estimated_damage": 30,
+            "fire_stages": [
+              "firepower_fold"
+            ]
+          },
+          "native_live_factor_reads": [
+            {
+              "action": "crate_during_effect",
+              "instruction": "006FE343",
+              "bits_le": "b71e85eb51b8ce3f"
+            },
+            {
+              "action": "crate_during_effect",
+              "instruction": "006FDBD3",
+              "bits_le": "b71e85eb51b8ce3f"
+            }
+          ],
+          "crate": {
+            "picker": "00481D52",
+            "recipient": "00483258"
+          },
+          "aggregate_calls": [
+            {
+              "action": "crate_during_effect",
+              "entry_count": 1
+            }
+          ],
+          "native_stores": [
+            {
+              "action": "crate_during_effect",
+              "instruction": "1005F997",
+              "destination": "permanentExt80",
+              "bits_le": "333333333333f33f"
+            },
+            {
+              "action": "crate_during_effect",
+              "instruction": "10046180",
+              "destination": "aggregate_binary64_intermediate",
+              "bits_le": "b71e85eb51b8ce3f"
+            },
+            {
+              "action": "crate_during_effect",
+              "instruction": "10046124",
+              "destination": "actor160",
+              "bits_le": "b71e85eb51b8ce3f"
+            }
+          ]
+        },
+        {
+          "action": "duplicate_crate_rejected",
+          "base_bits_le": "333333333333f33f",
+          "derived_bits_le": "b71e85eb51b8ce3f",
+          "effects": {
+            "remaining": [
+              4
+            ],
+            "animations": [
+              false
+            ],
+            "owner_matches_source": [
+              true
+            ],
+            "iterations": [
+              null
+            ],
+            "hidden": false,
+            "ctor_count": 0,
+            "uninit_count": 0
+          },
+          "combat": {
+            "fire_damage": 30,
+            "estimated_damage": 30,
+            "fire_stages": [
+              "firepower_fold"
+            ]
+          },
+          "native_live_factor_reads": [
+            {
+              "action": "duplicate_crate_rejected",
+              "instruction": "006FE343",
+              "bits_le": "b71e85eb51b8ce3f"
+            },
+            {
+              "action": "duplicate_crate_rejected",
+              "instruction": "006FDBD3",
+              "bits_le": "b71e85eb51b8ce3f"
+            }
+          ],
+          "crate": {
+            "picker": "00481C86",
+            "recipient": "00483261"
+          },
+          "aggregate_calls": [],
+          "native_stores": []
+        },
+        {
+          "action": "four_visits_expire",
+          "base_bits_le": "333333333333f33f",
+          "derived_bits_le": "333333333333f33f",
+          "effects": {
+            "remaining": [],
+            "animations": [],
+            "owner_matches_source": [],
+            "iterations": [],
+            "hidden": false,
+            "ctor_count": 0,
+            "uninit_count": 0
+          },
+          "combat": {
+            "fire_damage": 151,
+            "estimated_damage": 151,
+            "fire_stages": [
+              "firepower_fold"
+            ]
+          },
+          "native_live_factor_reads": [
+            {
+              "action": "four_visits_expire",
+              "instruction": "006FE343",
+              "bits_le": "333333333333f33f"
+            },
+            {
+              "action": "four_visits_expire",
+              "instruction": "006FDBD3",
+              "bits_le": "333333333333f33f"
+            }
+          ],
+          "aggregate_calls": [
+            {
+              "action": "four_visits_expire",
+              "entry_count": 0
+            }
+          ],
+          "native_stores": [
+            {
+              "action": "four_visits_expire",
+              "instruction": "10046124",
+              "destination": "actor160",
+              "bits_le": "333333333333f33f"
+            }
+          ]
+        },
+        {
+          "action": "negative_damage_bypasses_factor",
+          "base_bits_le": "333333333333f33f",
+          "derived_bits_le": "333333333333f33f",
+          "effects": {
+            "remaining": [],
+            "animations": [],
+            "owner_matches_source": [],
+            "iterations": [],
+            "hidden": false,
+            "ctor_count": 0,
+            "uninit_count": 0
+          },
+          "combat": {
+            "fire_damage": -7,
+            "estimated_damage": -7,
+            "fire_stages": []
+          },
+          "native_live_factor_reads": [],
+          "aggregate_calls": [],
+          "native_stores": []
+        }
+      ],
+      "three_rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "three_rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "code_unchanged": true,
+      "house_firepower_bits_le": "000000000000f43f",
+      "rank_bits_le": "00000000",
+      "veteran_combat_bits_le": "000000000000f83f"
+    },
+    {
+      "name": "crate_baseline_ordered_spills_rank_and_discard",
+      "descriptors": [
+        {
+          "name": "FACTOR_A",
+          "duration": 4,
+          "raw_firepower": "0.2",
+          "firepower_bits_le": "999999999999c93f",
+          "discard": false,
+          "cumulative": false,
+          "animation": 0
+        },
+        {
+          "name": "FACTOR_B",
+          "duration": 2,
+          "raw_firepower": "1.1",
+          "firepower_bits_le": "999999999999f13f",
+          "discard": true,
+          "cumulative": true,
+          "animation": 0
+        }
+      ],
+      "steps": [
+        {
+          "action": "crate_before_effect",
+          "base_bits_le": "333333333333f33f",
+          "derived_bits_le": "333333333333f33f",
+          "effects": {
+            "remaining": [],
+            "animations": [],
+            "owner_matches_source": [],
+            "iterations": [],
+            "hidden": false,
+            "ctor_count": 0,
+            "uninit_count": 0
+          },
+          "combat": {
+            "fire_damage": 226,
+            "estimated_damage": 226,
+            "fire_stages": [
+              "firepower_fold",
+              "rank_firepower"
+            ]
+          },
+          "native_live_factor_reads": [
+            {
+              "action": "crate_before_effect",
+              "instruction": "006FE343",
+              "bits_le": "333333333333f33f"
+            },
+            {
+              "action": "crate_before_effect",
+              "instruction": "006FDBD3",
+              "bits_le": "333333333333f33f"
+            }
+          ],
+          "crate": {
+            "picker": "00481D52",
+            "recipient": "00483258"
+          },
+          "aggregate_calls": [
+            {
+              "action": "crate_before_effect",
+              "entry_count": 0
+            }
+          ],
+          "native_stores": [
+            {
+              "action": "crate_before_effect",
+              "instruction": "1005F997",
+              "destination": "permanentExt80",
+              "bits_le": "333333333333f33f"
+            },
+            {
+              "action": "crate_before_effect",
+              "instruction": "10046124",
+              "destination": "actor160",
+              "bits_le": "333333333333f33f"
+            }
+          ]
+        },
+        {
+          "action": "first_factor",
+          "base_bits_le": "333333333333f33f",
+          "derived_bits_le": "b71e85eb51b8ce3f",
+          "effects": {
+            "remaining": [
+              4
+            ],
+            "animations": [
+              false
+            ],
+            "owner_matches_source": [
+              true
+            ],
+            "iterations": [
+              null
+            ],
+            "hidden": false,
+            "ctor_count": 0,
+            "uninit_count": 0
+          },
+          "combat": {
+            "fire_damage": 45,
+            "estimated_damage": 45,
+            "fire_stages": [
+              "firepower_fold",
+              "rank_firepower"
+            ]
+          },
+          "native_live_factor_reads": [
+            {
+              "action": "first_factor",
+              "instruction": "006FE343",
+              "bits_le": "b71e85eb51b8ce3f"
+            },
+            {
+              "action": "first_factor",
+              "instruction": "006FDBD3",
+              "bits_le": "b71e85eb51b8ce3f"
+            }
+          ],
+          "aggregate_calls": [
+            {
+              "action": "first_factor",
+              "entry_count": 1
+            }
+          ],
+          "native_stores": [
+            {
+              "action": "first_factor",
+              "instruction": "10046180",
+              "destination": "aggregate_binary64_intermediate",
+              "bits_le": "b71e85eb51b8ce3f"
+            },
+            {
+              "action": "first_factor",
+              "instruction": "10046124",
+              "destination": "actor160",
+              "bits_le": "b71e85eb51b8ce3f"
+            }
+          ]
+        },
+        {
+          "action": "ordered_second_factor",
+          "base_bits_le": "333333333333f33f",
+          "derived_bits_le": "4a37894160e5d03f",
+          "effects": {
+            "remaining": [
+              4,
+              2
+            ],
+            "animations": [
+              false,
+              false
+            ],
+            "owner_matches_source": [
+              true,
+              true
+            ],
+            "iterations": [
+              null,
+              null
+            ],
+            "hidden": false,
+            "ctor_count": 0,
+            "uninit_count": 0
+          },
+          "combat": {
+            "fire_damage": 49,
+            "estimated_damage": 49,
+            "fire_stages": [
+              "firepower_fold",
+              "rank_firepower"
+            ]
+          },
+          "native_live_factor_reads": [
+            {
+              "action": "ordered_second_factor",
+              "instruction": "006FE343",
+              "bits_le": "4a37894160e5d03f"
+            },
+            {
+              "action": "ordered_second_factor",
+              "instruction": "006FDBD3",
+              "bits_le": "4a37894160e5d03f"
+            }
+          ],
+          "aggregate_calls": [
+            {
+              "action": "ordered_second_factor",
+              "entry_count": 2
+            }
+          ],
+          "native_stores": [
+            {
+              "action": "ordered_second_factor",
+              "instruction": "10046180",
+              "destination": "aggregate_binary64_intermediate",
+              "bits_le": "b71e85eb51b8ce3f"
+            },
+            {
+              "action": "ordered_second_factor",
+              "instruction": "10046180",
+              "destination": "aggregate_binary64_intermediate",
+              "bits_le": "4a37894160e5d03f"
+            },
+            {
+              "action": "ordered_second_factor",
+              "instruction": "10046124",
+              "destination": "actor160",
+              "bits_le": "4a37894160e5d03f"
+            }
+          ]
+        },
+        {
+          "action": "cumulative_third_entry",
+          "base_bits_le": "333333333333f33f",
+          "derived_bits_le": "9d89b0e1e995d23f",
+          "effects": {
+            "remaining": [
+              4,
+              2,
+              2
+            ],
+            "animations": [
+              false,
+              false,
+              false
+            ],
+            "owner_matches_source": [
+              true,
+              true,
+              true
+            ],
+            "iterations": [
+              null,
+              null,
+              null
+            ],
+            "hidden": false,
+            "ctor_count": 0,
+            "uninit_count": 0
+          },
+          "combat": {
+            "fire_damage": 54,
+            "estimated_damage": 54,
+            "fire_stages": [
+              "firepower_fold",
+              "rank_firepower"
+            ]
+          },
+          "native_live_factor_reads": [
+            {
+              "action": "cumulative_third_entry",
+              "instruction": "006FE343",
+              "bits_le": "9d89b0e1e995d23f"
+            },
+            {
+              "action": "cumulative_third_entry",
+              "instruction": "006FDBD3",
+              "bits_le": "9d89b0e1e995d23f"
+            }
+          ],
+          "aggregate_calls": [
+            {
+              "action": "cumulative_third_entry",
+              "entry_count": 3
+            }
+          ],
+          "native_stores": [
+            {
+              "action": "cumulative_third_entry",
+              "instruction": "10046180",
+              "destination": "aggregate_binary64_intermediate",
+              "bits_le": "b71e85eb51b8ce3f"
+            },
+            {
+              "action": "cumulative_third_entry",
+              "instruction": "10046180",
+              "destination": "aggregate_binary64_intermediate",
+              "bits_le": "4a37894160e5d03f"
+            },
+            {
+              "action": "cumulative_third_entry",
+              "instruction": "10046180",
+              "destination": "aggregate_binary64_intermediate",
+              "bits_le": "9d89b0e1e995d23f"
+            },
+            {
+              "action": "cumulative_third_entry",
+              "instruction": "10046124",
+              "destination": "actor160",
+              "bits_le": "9d89b0e1e995d23f"
+            }
+          ]
+        },
+        {
+          "action": "discard_removes_second_and_third",
+          "base_bits_le": "333333333333f33f",
+          "derived_bits_le": "b71e85eb51b8ce3f",
+          "effects": {
+            "remaining": [
+              4
+            ],
+            "animations": [
+              false
+            ],
+            "owner_matches_source": [
+              true
+            ],
+            "iterations": [
+              null
+            ],
+            "hidden": true,
+            "ctor_count": 0,
+            "uninit_count": 0
+          },
+          "combat": {
+            "fire_damage": 45,
+            "estimated_damage": 45,
+            "fire_stages": [
+              "firepower_fold",
+              "rank_firepower"
+            ]
+          },
+          "native_live_factor_reads": [
+            {
+              "action": "discard_removes_second_and_third",
+              "instruction": "006FE343",
+              "bits_le": "b71e85eb51b8ce3f"
+            },
+            {
+              "action": "discard_removes_second_and_third",
+              "instruction": "006FDBD3",
+              "bits_le": "b71e85eb51b8ce3f"
+            }
+          ],
+          "crate": {
+            "remove_returned_al": 1
+          },
+          "aggregate_calls": [
+            {
+              "action": "discard_removes_second_and_third",
+              "entry_count": 1
+            }
+          ],
+          "native_stores": [
+            {
+              "action": "discard_removes_second_and_third",
+              "instruction": "10046180",
+              "destination": "aggregate_binary64_intermediate",
+              "bits_le": "b71e85eb51b8ce3f"
+            },
+            {
+              "action": "discard_removes_second_and_third",
+              "instruction": "10046124",
+              "destination": "actor160",
+              "bits_le": "b71e85eb51b8ce3f"
+            }
+          ]
+        },
+        {
+          "action": "four_visits_expire_first",
+          "base_bits_le": "333333333333f33f",
+          "derived_bits_le": "333333333333f33f",
+          "effects": {
+            "remaining": [],
+            "animations": [],
+            "owner_matches_source": [],
+            "iterations": [],
+            "hidden": false,
+            "ctor_count": 0,
+            "uninit_count": 0
+          },
+          "combat": {
+            "fire_damage": 226,
+            "estimated_damage": 226,
+            "fire_stages": [
+              "firepower_fold",
+              "rank_firepower"
+            ]
+          },
+          "native_live_factor_reads": [
+            {
+              "action": "four_visits_expire_first",
+              "instruction": "006FE343",
+              "bits_le": "333333333333f33f"
+            },
+            {
+              "action": "four_visits_expire_first",
+              "instruction": "006FDBD3",
+              "bits_le": "333333333333f33f"
+            }
+          ],
+          "aggregate_calls": [
+            {
+              "action": "four_visits_expire_first",
+              "entry_count": 0
+            }
+          ],
+          "native_stores": [
+            {
+              "action": "four_visits_expire_first",
+              "instruction": "10046124",
+              "destination": "actor160",
+              "bits_le": "333333333333f33f"
+            }
+          ]
+        }
+      ],
+      "three_rng_before": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "three_rng_after": [
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+        "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+      ],
+      "code_unchanged": true,
+      "house_firepower_bits_le": "000000000000f43f",
+      "rank_bits_le": "0000803f",
+      "veteran_combat_bits_le": "000000000000f83f"
+    }
+  ]
+}

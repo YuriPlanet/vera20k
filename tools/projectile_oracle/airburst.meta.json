@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original stock Airburst fan/Construct/Fire; fixed-nine positive, allocation failure and off-map AI retirement controls. No child damage parity.",
+  "assumptions": [
+    "Synthetic empty flat cell table; runtime Map+F4/F8 usable diamond remains0. Off-map history enters native AI467A35/568350 rejection, mode2, UnInit and deferred drain; no child AreaDamage is reached.",
+    "Synthetic quiet parent/child warheads and source pointer/house palette supplied. No source Unit lifecycle/type is supplied or claimed. Native direction initializer49F2F0 executes.",
+    "Child weapon Damage37 Speed73 Brighttrue, parent multiplier768. No Ares, mod names, assets or data. Initial two histories recorded in one batch; third off-map retirement history appended in a separate new VM because the prior process had closed. Old two payloads retained unchanged."
+  ],
+  "substitutions": [
+    "Existing Windows COM activation to original registered Bullet factory; one declared activation failure.",
+    "Existing Bullet world-admission guards/display and OS Interlocked/IsBadReadPtr transports. Actual Construct, Fire, coordinate fixup, Logic append, RNG, UnInit and drain execute."
+  ],
+  "entry_points": {
+    "parent_detonate": "0x004690B0",
+    "fan": "0x00469EBA",
+    "construct": "0x004664C0",
+    "fire": "0x00468670",
+    "directions": "0x0049F2F0",
+    "child_ai": "0x004666E0",
+    "usable_map_check": "0x00568350",
+    "uninit": "0x005F65F0",
+    "drain": "0x00725C70"
+  },
+  "replay_command": "python -m tools.projectile_oracle.airburst",
+  "payload_sha256": "a844d1810d31d5500aff10c21294c6c68503c78065b05226c87d999c69575d78"
+}

@@ -125,6 +125,7 @@ pub(super) trait ObjectHealthHost {
     fn object(&self) -> Option<&GameEntity>;
     fn object_mut(&mut self) -> Option<&mut GameEntity>;
     fn current_strength(&self) -> Option<i32>;
+    fn write_damage(&mut self, _damage: i32) {}
     fn invoke(&mut self, callback: HealthCallback);
 }
 
@@ -149,6 +150,7 @@ pub(super) fn commit(
     }
     if building_no_c4 {
         *packet = (*packet).max(1);
+        host.write_damage(*packet);
     }
     if *packet == 0 {
         return DamageState::Unaffected;
@@ -170,6 +172,7 @@ pub(super) fn commit(
         return DamageState::Unaffected;
     }
     *packet = (*packet).min(previous);
+    host.write_damage(*packet);
     let post = previous.wrapping_sub(*packet);
     let mut result = DamageState::Damaged;
     let yellow = strength >> 1;

@@ -683,7 +683,7 @@ fn the_genetic_mutator_target_matches_native() {
             if extra["bridge"].as_bool().unwrap_or(false) {
                 assert!(sim.foot_mark_remove(
                     id,
-                    Some(&rules),
+                    &rules,
                     None,
                     crate::sim::world::FrameEffects::default()
                 ));
@@ -694,7 +694,7 @@ fn the_genetic_mutator_target_matches_native() {
                     .set_on_bridge(true);
                 assert!(sim.foot_mark_put(
                     id,
-                    Some(&rules),
+                    &rules,
                     None,
                     crate::sim::world::FrameEffects::default()
                 ));
@@ -899,12 +899,12 @@ fn retail_walk_reads_each_object() {
     sim.set_object_height(
         flying,
         600,
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     );
     assert_ne!(
-        sim.entity_display_layer(flying, Some(&rules)),
+        sim.entity_display_layer(flying, &rules),
         Some(crate::sim::world::display_layers::DisplayLayer::GROUND)
     );
     let own = spawn(&mut sim, "NAPOWR", "Americans", (20, 10), 0);
@@ -1090,8 +1090,8 @@ fn retail_computer_house_nukes_the_enemy_construction_yard() {
     assert!(!instance.is_ready);
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
-        crate::sim::world::SimSoundEvent::SuperWeaponLaunched { owner, rx: 42, ry: 42, .. }
-            if *owner == americans
+        crate::sim::world::SimSoundEvent::SuperWeaponLaunched { owner, world, .. }
+            if *owner == americans && world.to_cell_sub_z().0 == 42 && world.to_cell_sub_z().1 == 42
     )));
 }
 
@@ -1235,7 +1235,7 @@ fn the_psychic_dominator_target_matches_native() {
             if fact("bridge") {
                 assert!(sim.foot_mark_remove(
                     id,
-                    Some(&rules),
+                    &rules,
                     None,
                     crate::sim::world::FrameEffects::default()
                 ));
@@ -1246,7 +1246,7 @@ fn the_psychic_dominator_target_matches_native() {
                     .set_on_bridge(true);
                 assert!(sim.foot_mark_put(
                     id,
-                    Some(&rules),
+                    &rules,
                     None,
                     crate::sim::world::FrameEffects::default()
                 ));

@@ -11,6 +11,7 @@ import io
 import json
 from pathlib import Path
 
+from tools import oracle_sources
 from tools.native_oracle import OracleError, _canonical, first_difference
 
 HERE = Path(__file__).resolve().parent
@@ -75,6 +76,7 @@ def finish_vectors(data, default_path: Path, *, provenance, argv=None,
         return
     if difference := first_difference(read_result(target), json.loads(raw)):
         raise OracleError(f'Reference mismatch in {target.name}: {difference}')
-    if difference := first_difference(json.loads(sidecar.read_bytes()), metadata):
+    if difference := first_difference(oracle_sources.evidence(json.loads(sidecar.read_bytes())),
+                                       oracle_sources.evidence(metadata)):
         raise OracleError(f'Provenance mismatch in {sidecar.name}: {difference}')
     print(f'PASS {target.name}: native outputs match; no files written')

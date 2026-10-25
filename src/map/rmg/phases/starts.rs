@@ -49,7 +49,7 @@ const CLEARING_POP_CAP: i32 = 400;
 #[derive(Debug, Clone, Copy)]
 pub struct StartsArgs {
     pub map_type: i32,
-    /// The generated-start quota global; standard setup writes 4.
+    /// Global MapSeed NumPlayers (ABE028), read by CreateStartingPoints594DF0.
     pub start_quota: i32,
     /// `.SED NumPlayers` — bound of the per-start clearing floods only.
     pub num_players: i32,

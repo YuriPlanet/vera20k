@@ -107,6 +107,10 @@ pub struct MapEntity {
     /// Second independent recruitment-admission byte (`Techno+0x422`), stored
     /// at trailing field 13 and likewise constructor-default true.
     pub recruitable_b: bool,
+    /// gamemd.exe Read_INI: Unit7434CA/Aircraft41B33D column9,
+    /// Infantry51FD89 column10. Optional CRT atoi, no clamp; absent retains
+    /// Techno constructor6F2D0F -1. Structures have no Group column.
+    pub group: i32,
     /// Authored `[Structures]` upgrade type names for native slots 0..2.
     /// Slots beyond the line's declared upgrade count and unresolved `None`/
     /// `-1` entries remain empty. Non-structure categories always hold three
@@ -268,6 +272,7 @@ fn parse_infantry_section(section: &IniSection, entities: &mut Vec<MapEntity>) {
             mission: parse_mission_field(&fields),
             recruitable_a: recruitment_flag(fields.get(12).copied()),
             recruitable_b: recruitment_flag(fields.get(13).copied()),
+            group: fields.get(10).map_or(-1, |value| crt_atoi(value)),
             structure_upgrades: [None, None, None],
             structure_ai_sellable: false,
             structure_ai_repairable: false,
@@ -382,6 +387,11 @@ fn parse_common_fields(fields: &[&str], category: EntityCategory, key: &str) -> 
         mission,
         recruitable_a,
         recruitable_b,
+        group: if category == EntityCategory::Structure {
+            -1
+        } else {
+            fields.get(9).map_or(-1, |value| crt_atoi(value))
+        },
         structure_upgrades: [None, None, None],
         structure_ai_sellable: false,
         structure_ai_repairable: false,

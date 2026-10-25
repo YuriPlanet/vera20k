@@ -2,7 +2,6 @@
 //! CanBuild owner ([`super::can_build`]), and factory matching.
 
 use crate::map::entities::EntityCategory;
-use crate::rules::foundation::foundation_dimensions;
 use crate::rules::object_type::{BuildCategory, FactoryType, ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::entity_store::EntityStore;
@@ -80,7 +79,7 @@ fn append_construction_options(
     {
         return;
     }
-    let Some(factory) = sim.object_type(building.type_ref(), rules) else {
+    let Some(factory) = sim.entity_object_type(building, rules) else {
         return;
     };
     let ids = match factory.factory_type() {
@@ -378,19 +377,15 @@ pub fn producer_candidates_for_owner_category(
 pub fn building_base_foundation_cells(
     origin_rx: u16,
     origin_ry: u16,
-    foundation: &str,
+    foundation: &crate::rules::foundation::Foundation,
 ) -> Vec<(u16, u16)> {
     use std::collections::BTreeSet;
-    let (w, h) = foundation_dimensions(foundation);
     let mut cells: BTreeSet<(u16, u16)> = BTreeSet::new();
-
-    for dx in 0..w {
-        for dy in 0..h {
-            let rx = origin_rx as i32 + dx as i32;
-            let ry = origin_ry as i32 + dy as i32;
-            if rx >= 0 && rx <= u16::MAX as i32 && ry >= 0 && ry <= u16::MAX as i32 {
-                cells.insert((rx as u16, ry as u16));
-            }
+    for (dx, dy) in foundation.cell_offsets() {
+        let rx = origin_rx as i32 + i32::from(dx);
+        let ry = origin_ry as i32 + i32::from(dy);
+        if rx >= 0 && rx <= u16::MAX as i32 && ry >= 0 && ry <= u16::MAX as i32 {
+            cells.insert((rx as u16, ry as u16));
         }
     }
 
@@ -437,7 +432,7 @@ mod footprint_tests {
     #[test]
     fn movement_blocking_with_bib_drops_east_edge_rectangle() {
         // Plain 4x3 with bib → east column (x = 13) drops.
-        let footprint = building_base_foundation_cells(10, 20, "4x3");
+        let footprint = building_base_foundation_cells(10, 20, &"4x3".into());
         let blocking = building_movement_blocking_cells(&footprint, true);
         // 12 base cells - 3 east-edge column (13, 20), (13, 21), (13, 22) = 9.
         assert_eq!(blocking.len(), 9);
@@ -450,7 +445,7 @@ mod footprint_tests {
 
     #[test]
     fn static_movement_blocking_keeps_number_rows_out_of_the_grid() {
-        let footprint = building_base_foundation_cells(10, 20, "4x3");
+        let footprint = building_base_foundation_cells(10, 20, &"4x3".into());
         let blocking = building_movement_blocking_cells(&footprint, false);
         assert_eq!(blocking.len(), 12);
         assert!(blocking.contains(&(12, 21)));

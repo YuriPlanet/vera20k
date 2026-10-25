@@ -1,5 +1,4 @@
 {
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "rows": [
     {
       "after_anim": {
@@ -6521,7 +6520,6 @@
         "warhead": "HE"
       },
       "name": "rejected",
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "raw_rng_words": [
         {
           "frame": 17,
@@ -13284,7 +13282,6 @@
         "warhead": "HE"
       },
       "name": "damaged",
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "raw_rng_words": [
         {
           "frame": 17,
@@ -23851,7 +23848,6 @@
         "warhead": "HE"
       },
       "name": "collapsed",
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "raw_rng_words": [
         {
           "frame": 17,

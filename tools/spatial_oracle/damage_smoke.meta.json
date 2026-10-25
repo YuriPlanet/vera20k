@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -39,5 +38,5 @@
     "techno_expired": "0x007077C0"
   },
   "replay_command": "python -m tools.spatial_oracle.damage_smoke",
-  "payload_sha256": "ae6cb8adabc8ce32114094828861dc7a1815bcf9150c6d60d7f782978c8ab11a"
+  "payload_sha256": "dbbe510cd40fa65e59c368c3c874e3d1e3cd63795405b232f4bb373c892429f5"
 }

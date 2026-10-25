@@ -223,6 +223,7 @@ pub(crate) fn trim_line_end(text: &[u16]) -> &[u16] {
 }
 
 /// Chat-log colors of the C2 echo lines (BGR-ordered native values).
+/// `SAY_COLOR` is `[0x7EEF44]`, also the LAN lobbies' and BC6's echo.
 pub(crate) const SAY_COLOR: u32 = 0x40FFFF;
 pub(crate) const PRIVATE_COLOR: u32 = 0xFF8080;
 pub(crate) const EMOTE_COLOR: u32 = 0x3050FF;

@@ -14,7 +14,7 @@ from capstone import Cs,CS_ARCH_X86,CS_MODE_32
 HERE=Path(__file__).resolve().parent
 from . import mtnk_attack as base
 from .mission_publication import finish_vectors
-from tools.native_oracle import NATIVE_SHA256,RET_MAGIC,run_checked,finish_vectors as finish_unpublished_vectors,provenance,initialize_empty_windows_seh
+from tools.native_oracle import RET_MAGIC,run_checked,finish_vectors as finish_unpublished_vectors,provenance,initialize_empty_windows_seh
 from tools.spatial_oracle.building_body_rules import SP,RULES,dwords
 from tools.rules_oracle.bridge_anim_inputs import Reader
 
@@ -268,7 +268,7 @@ def generate(continuation=None):
  except Exception as exc:
   cs=Cs(CS_ARCH_X86,CS_MODE_32);failure=dict(error=str(exc),trace=[f'{a:08x}: '+ '; '.join(f'{i.mnemonic} {i.op_str}' for i in cs.disasm(bytes(q.u.mem_read(a,15)),a,count=1)) for a in q.trace])
  text_hash=hashlib.sha256(bytes(q.u.mem_read(0x401000,0x3E0000))).hexdigest();assert text_hash==q.resident.code_hash
- result=dict(native_sha256=NATIVE_SHA256,text_sha256=text_hash,continuation=continuation,inputs=q.inputs,world=q.world,events=q.events,state=q.state() if q.src else None,after_ctor=getattr(q,'after_ctor',None),before_continuation=getattr(q,'before_continuation',None),before_command=getattr(q,'before_command',None),after_command=getattr(q,'after_command',None),after_unit_ai=getattr(q,'after_unit_ai',None),placement_result=getattr(q,'placement_result',None),placement_al=(q.placement_result&255) if hasattr(q,'placement_result') else None,failure=failure,shots=q.shots,frames=q.frames,impacts=q.impacts,collapse_frame=getattr(q,'collapse_frame',None),rng_after_command=getattr(q,'rng_after_command',None),rng_final={k:base.sr.rng_state(q.u,p) for k,p in q.resident.rngs.items()},resident_trace=q.resident.trace,span_after_logic=getattr(q,'span_after_logic',None),command_bytes=getattr(q,'command_bytes',None))
+ result=dict(text_sha256=text_hash,continuation=continuation,inputs=q.inputs,world=q.world,events=q.events,state=q.state() if q.src else None,after_ctor=getattr(q,'after_ctor',None),before_continuation=getattr(q,'before_continuation',None),before_command=getattr(q,'before_command',None),after_command=getattr(q,'after_command',None),after_unit_ai=getattr(q,'after_unit_ai',None),placement_result=getattr(q,'placement_result',None),placement_al=(q.placement_result&255) if hasattr(q,'placement_result') else None,failure=failure,shots=q.shots,frames=q.frames,impacts=q.impacts,collapse_frame=getattr(q,'collapse_frame',None),rng_after_command=getattr(q,'rng_after_command',None),rng_final={k:base.sr.rng_state(q.u,p) for k,p in q.resident.rngs.items()},resident_trace=q.resident.trace,span_after_logic=getattr(q,'span_after_logic',None),command_bytes=getattr(q,'command_bytes',None))
  if failure is not None:(HERE/'mission.failure.latest.json').write_text(json.dumps(result,indent=2)+'\n')
  assert failure is None,failure
  assert not q.pending,q.pending

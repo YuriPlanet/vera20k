@@ -41,14 +41,14 @@
 
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::SpeedType;
-use crate::util::fixed_math::{SIM_HALF, SIM_ONE, SimFixed};
+use crate::util::native_x87::{MaskedX87Chop53 as X, MaskedX87Ordering, NativeF64Bits};
 
 // --- Constants from the original engine ---
 
 /// Original engine clamps terrain speed multipliers above 1.0 to exactly 1.0.
 /// This is the *only* clamp the land-row read performs — the compare is `<= 1.0
 /// keep, else 1.0`, so a 0% row is passed through untouched.
-const TERRAIN_SPEED_MAX: SimFixed = SIM_ONE;
+const TERRAIN_SPEED_MAX: NativeF64Bits = NativeF64Bits::ONE;
 
 /// Substituted for the terrain × slope product when that product is *exactly*
 /// zero. The original engine tests the combined value against 0.0 and, on
@@ -61,7 +61,7 @@ const TERRAIN_SPEED_MAX: SimFixed = SIM_ONE;
 /// (uphill / downhill / level) join at that reload, so the test never sees the
 /// pre-slope row. The 0.5 is an immediate in the substitution branch, not a
 /// table constant. Verified against the live binary 2026-08-04.
-const ZERO_COMBINED_SUBSTITUTE: SimFixed = SIM_HALF;
+const ZERO_COMBINED_SUBSTITUTE: NativeF64Bits = NativeF64Bits::HALF;
 
 /// Speed penalty applied to a mover whose health ratio is at or below
 /// `[AudioVisual] ConditionYellow` (vanilla `50%`).
@@ -69,7 +69,7 @@ const ZERO_COMBINED_SUBSTITUTE: SimFixed = SIM_HALF;
 /// The original engine multiplies the already-computed per-cell speed fraction
 /// by this constant, after the terrain × slope product, in Drive and Ship
 /// `Process_Movement` and nowhere else.
-const DAMAGED_MOVER_SPEED_FACTOR: SimFixed = SimFixed::lit("0.75");
+const DAMAGED_MOVER_SPEED_FACTOR: NativeF64Bits = NativeF64Bits::from_bits(0x3fe8_0000_0000_0000);
 
 /// Drive4B3DD4..3DEE / Ship6A3423..343D test AH,0x41: Less, Equal or
 /// Unordered all apply the penalty. The shared x87 owner preserves signed
@@ -95,23 +95,23 @@ pub fn is_at_or_below_condition_yellow(
 #[derive(Debug, Clone)]
 pub struct TerrainSpeedConfig {
     /// Tracked vehicle moving uphill (`TrackedUphill=`, Rules +0x768).
-    pub tracked_uphill: SimFixed,
+    pub tracked_uphill: NativeF64Bits,
     /// Tracked vehicle moving downhill (`TrackedDownhill=`, Rules +0x770).
-    pub tracked_downhill: SimFixed,
+    pub tracked_downhill: NativeF64Bits,
     /// Non-tracked (wheeled and other) vehicle moving uphill (`WheeledUphill=`, Rules +0x778).
-    pub wheeled_uphill: SimFixed,
+    pub wheeled_uphill: NativeF64Bits,
     /// Non-tracked vehicle moving downhill (`WheeledDownhill=`, Rules +0x780).
-    pub wheeled_downhill: SimFixed,
+    pub wheeled_downhill: NativeF64Bits,
 }
 
 impl Default for TerrainSpeedConfig {
     /// The RulesClass constructor's 1.0 for all four (0x6660BE..0x6660ED).
     fn default() -> Self {
         Self {
-            tracked_uphill: SIM_ONE,
-            tracked_downhill: SIM_ONE,
-            wheeled_uphill: SIM_ONE,
-            wheeled_downhill: SIM_ONE,
+            tracked_uphill: NativeF64Bits::ONE,
+            tracked_downhill: NativeF64Bits::ONE,
+            wheeled_uphill: NativeF64Bits::ONE,
+            wheeled_downhill: NativeF64Bits::ONE,
         }
     }
 }
@@ -119,10 +119,10 @@ impl Default for TerrainSpeedConfig {
 impl TerrainSpeedConfig {
     /// Build config from the four parsed `[General]` slope coefficients.
     pub fn from_general(
-        tracked_uphill: SimFixed,
-        tracked_downhill: SimFixed,
-        wheeled_uphill: SimFixed,
-        wheeled_downhill: SimFixed,
+        tracked_uphill: NativeF64Bits,
+        tracked_downhill: NativeF64Bits,
+        wheeled_uphill: NativeF64Bits,
+        wheeled_downhill: NativeF64Bits,
     ) -> Self {
         Self {
             tracked_uphill,
@@ -142,14 +142,14 @@ pub(crate) fn fresh_track_speed_fraction(
     speed_type: SpeedType,
     mover_world: (i32, i32),
     next_cell: (u16, u16),
-    road_row: Option<SimFixed>,
+    road_row: Option<NativeF64Bits>,
     terrain: &ResolvedTerrainGrid,
     config: &TerrainSpeedConfig,
     below_condition_yellow: bool,
-) -> SimFixed {
+) -> NativeF64Bits {
     let terrain_factor = road_row.map_or_else(
         || terrain_speed_factor(speed_type, next_cell, terrain),
-        |row| row.min(TERRAIN_SPEED_MAX),
+        |row| cap_terrain_speed(row),
     );
     // 0x004B3CDA..0x004B3CEC: Map[next cell], its GetCoords 0x00480A30 centre.
     let centre = crate::sim::cell_kernel::cell_center(
@@ -174,21 +174,32 @@ pub(crate) fn fresh_track_speed_fraction(
 /// `terrain_factor` has already had its `> 1.0 → 1.0` cap applied and may be
 /// exactly zero.
 fn combine_speed_stages(
-    terrain_factor: SimFixed,
-    slope_factor: SimFixed,
+    terrain_factor: NativeF64Bits,
+    slope_factor: NativeF64Bits,
     below_condition_yellow: bool,
-) -> SimFixed {
+) -> NativeF64Bits {
     // Stage 3: exact-zero substitution on the *combined* value. Ordering
     // matters — a 0% land row multiplied by the 1.2 downhill coefficient is
     // still exactly 0, so the substitution yields 0.5 here where a pre-slope
     // floor would have yielded 0.6.
-    let mut combined = terrain_factor * slope_factor;
-    if combined == SimFixed::from_num(0) {
+    let mut combined = X::store_f64_masked_chop(X::mul(
+        X::load_f64(terrain_factor),
+        X::load_f64(slope_factor),
+    ));
+    // Drive4B3DB4..3DBF tests C3 alone: the masked
+    // unordered result also takes the substitution arm.
+    if matches!(
+        X::compare(X::load_f64(combined), X::load_i32(0)),
+        MaskedX87Ordering::Equal | MaskedX87Ordering::Unordered
+    ) {
         combined = ZERO_COMBINED_SUBSTITUTE;
     }
     // Stage 4: damaged mover. No clamp follows it in the original engine.
     if below_condition_yellow {
-        combined * DAMAGED_MOVER_SPEED_FACTOR
+        X::store_f64_masked_chop(X::mul(
+            X::load_f64(combined),
+            X::load_f64(DAMAGED_MOVER_SPEED_FACTOR),
+        ))
     } else {
         combined
     }
@@ -221,12 +232,14 @@ fn terrain_speed_factor(
     speed_type: SpeedType,
     next_cell: (u16, u16),
     terrain: &ResolvedTerrainGrid,
-) -> SimFixed {
+) -> NativeF64Bits {
     let Some(cell) = terrain.cell(next_cell.0, next_cell.1) else {
-        return SIM_ONE;
+        return NativeF64Bits::ONE;
     };
-    let multiplier = cell.speed_costs.speed_multiplier_for(speed_type);
-    if multiplier > TERRAIN_SPEED_MAX {
+    let multiplier = cell.speed_costs.native_speed_multiplier_for(speed_type);
+    if X::compare(X::load_f64(multiplier), X::load_f64(TERRAIN_SPEED_MAX))
+        == MaskedX87Ordering::Greater
+    {
         TERRAIN_SPEED_MAX
     } else {
         multiplier
@@ -252,7 +265,7 @@ fn slope_factor_for(
     cur_height: i32,
     next_height: i32,
     config: &TerrainSpeedConfig,
-) -> SimFixed {
+) -> NativeF64Bits {
     let tracked = speed_type == SpeedType::Track;
     if next_height > cur_height {
         // Uphill.
@@ -269,10 +282,18 @@ fn slope_factor_for(
             config.wheeled_downhill
         }
     } else {
-        SIM_ONE
+        NativeF64Bits::ONE
     }
 }
 
+fn cap_terrain_speed(value: NativeF64Bits) -> NativeF64Bits {
+    if X::compare(X::load_f64(value), X::load_f64(TERRAIN_SPEED_MAX)) == MaskedX87Ordering::Greater
+    {
+        TERRAIN_SPEED_MAX
+    } else {
+        value
+    }
+}
 #[cfg(test)]
 mod tests {
     #[test]
@@ -322,7 +343,7 @@ mod tests {
                 );
                 assert_eq!(
                     actual,
-                    SimFixed::from_num(crate::sim::health_ratio_fixture::decode(bits)),
+                    native(crate::sim::health_ratio_fixture::decode(bits)),
                     "{row:?}, {kind:?}"
                 );
             }
@@ -331,6 +352,11 @@ mod tests {
     use super::*;
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::rules::terrain_rules::SpeedCostProfile;
+    use crate::util::fixed_math::{SIM_ONE, SimFixed};
+
+    fn native(value: f64) -> NativeF64Bits {
+        NativeF64Bits::from_bits(value.to_bits())
+    }
 
     /// A8 D1, over a real grid and through the production entry point.
     ///
@@ -376,8 +402,8 @@ mod tests {
         let terrain = ResolvedTerrainGrid::from_cells(SIZE, SIZE, cells);
         // Stock rulesmd.ini [General]: TrackedDownhill=1.2.
         let config = TerrainSpeedConfig {
-            tracked_downhill: SimFixed::lit("1.2"),
-            wheeled_downhill: SimFixed::lit("1.2"),
+            tracked_downhill: native(1.2_f32 as f64),
+            wheeled_downhill: native(1.2_f32 as f64),
             ..TerrainSpeedConfig::default()
         };
 
@@ -413,13 +439,13 @@ mod tests {
         );
 
         assert!(
-            leaving > flat_to_flat,
+            leaving.bits() > flat_to_flat.bits(),
             "leaving the ramp must earn the downhill coefficient the flat step \
              does not: ramp {leaving:?} vs flat {flat_to_flat:?}"
         );
         assert_eq!(
             flat_to_flat,
-            SimFixed::from_num(0.5),
+            native(0.5),
             "flat to flat is the land row alone"
         );
     }
@@ -483,22 +509,27 @@ mod tests {
     /// pre-slope floor produced.
     #[test]
     fn gsi_06_13_zero_land_row_substitution_runs_after_slope() {
-        let zero = SimFixed::from_num(0);
-        let downhill = SimFixed::lit("1.2");
+        let zero = NativeF64Bits::POSITIVE_ZERO;
+        let downhill = native(1.2);
         assert_eq!(
             combine_speed_stages(zero, downhill, false),
-            SimFixed::lit("0.5"),
+            NativeF64Bits::HALF,
         );
         assert_eq!(
-            combine_speed_stages(zero, SIM_ONE, false),
-            SimFixed::lit("0.5")
+            combine_speed_stages(zero, NativeF64Bits::ONE, false),
+            NativeF64Bits::HALF
         );
-        // A non-zero row is untouched by the substitution. Compare against the
-        // same fixed-point product the implementation performs — `lit("0.6")`
-        // differs by 1 ULP because 0.6 is not exactly representable.
-        let half = SimFixed::lit("0.5");
-        assert_eq!(combine_speed_stages(half, downhill, false), half * downhill);
-        assert!(combine_speed_stages(half, downhill, false) > half);
+        assert_eq!(
+            combine_speed_stages(
+                NativeF64Bits::ONE,
+                NativeF64Bits::from_bits(0x7ff8_0000_0000_0001),
+                false,
+            ),
+            NativeF64Bits::HALF,
+        );
+        let half = NativeF64Bits::HALF;
+        assert_eq!(combine_speed_stages(half, downhill, false), native(0.6));
+        assert!(combine_speed_stages(half, downhill, false).bits() > half.bits());
     }
 
     /// GSI-06.13 gap 8 — the damaged-mover factor is the *last* operation and
@@ -509,16 +540,19 @@ mod tests {
     #[test]
     fn gsi_06_13_damaged_factor_is_last_and_uncapped() {
         assert_eq!(
-            combine_speed_stages(SIM_ONE, SimFixed::lit("1.2"), true),
-            SimFixed::lit("0.9"),
+            combine_speed_stages(NativeF64Bits::ONE, native(1.2), true).bits(),
+            0x3fec_cccc_cccc_cccc,
         );
         // The zero substitution feeds the damaged multiply: 0.5 * 0.75.
         assert_eq!(
-            combine_speed_stages(SimFixed::from_num(0), SimFixed::lit("1.2"), true),
-            SimFixed::lit("0.375"),
+            combine_speed_stages(NativeF64Bits::POSITIVE_ZERO, native(1.2), true),
+            native(0.375),
         );
         // Undamaged downhill on a full-speed row exceeds 1.0 — no upper clamp.
-        assert!(combine_speed_stages(SIM_ONE, SimFixed::lit("1.2"), false) > SIM_ONE);
+        assert!(
+            combine_speed_stages(NativeF64Bits::ONE, native(1.2), false).bits()
+                > NativeF64Bits::ONE.bits()
+        );
     }
 
     /// `[General]` ReadDouble over the constructor's 1.0: a present value, a
@@ -536,15 +570,19 @@ mod tests {
             general.wheeled_uphill,
             general.wheeled_downhill,
         );
-        assert_eq!(config.tracked_uphill, SIM_ONE);
-        assert_eq!(config.tracked_downhill, SimFixed::from_num(1.2f32 as f64));
+        assert_eq!(config.tracked_uphill, NativeF64Bits::ONE);
+        assert_eq!(config.tracked_downhill, native(1.2f32 as f64));
         assert_eq!(
             config.wheeled_uphill,
-            SimFixed::from_num(80.0f32 as f64 * 0.01)
+            NativeF64Bits::from_bits(0x3fe9_9999_9999_9999)
         );
-        assert_eq!(config.wheeled_downhill, SimFixed::from_num(1.3f32 as f64));
+        assert_eq!(config.wheeled_downhill, native(1.3f32 as f64));
         for st in [SpeedType::Track, SpeedType::Wheel] {
-            assert_eq!(slope_factor_for(st, 2, 2, &config), SIM_ONE, "flat {st:?}");
+            assert_eq!(
+                slope_factor_for(st, 2, 2, &config),
+                NativeF64Bits::ONE,
+                "flat {st:?}"
+            );
         }
         assert_eq!(
             slope_factor_for(SpeedType::Track, 1, 0, &config),
@@ -560,27 +598,27 @@ mod tests {
     fn slope_selects_tracked_vs_wheeled_pair() {
         // Distinct values per pair to prove the SpeedType arm is honoured.
         let config = TerrainSpeedConfig {
-            tracked_uphill: SimFixed::lit("0.5"),
-            tracked_downhill: SimFixed::lit("1.5"),
-            wheeled_uphill: SimFixed::lit("0.7"),
-            wheeled_downhill: SimFixed::lit("1.1"),
+            tracked_uphill: native(0.5),
+            tracked_downhill: native(1.5),
+            wheeled_uphill: native(0.7),
+            wheeled_downhill: native(1.1),
         };
         assert_eq!(
             slope_factor_for(SpeedType::Track, 0, 1, &config),
-            SimFixed::lit("0.5")
+            native(0.5)
         );
         assert_eq!(
             slope_factor_for(SpeedType::Track, 1, 0, &config),
-            SimFixed::lit("1.5")
+            native(1.5)
         );
         // Foot and Wheel both take the wheeled (non-Track) pair.
         assert_eq!(
             slope_factor_for(SpeedType::Wheel, 0, 1, &config),
-            SimFixed::lit("0.7")
+            native(0.7)
         );
         assert_eq!(
             slope_factor_for(SpeedType::Foot, 1, 0, &config),
-            SimFixed::lit("1.1")
+            native(1.1)
         );
     }
 }

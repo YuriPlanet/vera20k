@@ -5,7 +5,6 @@ import argparse, ast, copy, hashlib, importlib.util, json, struct, traceback
 HERE=Path(__file__).resolve().parent
 BASE=HERE/'construction.py'
 from .runtime import load_module
-def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 def load(name, p):
     return load_module(name, p)
 
@@ -91,7 +90,7 @@ def generate(control):
         def visit_Assign(self,n):
             if ast.unparse(n).startswith('fn = State().visit(fn)'):return [n,*ast.parse('fn = FactoryControl().visit(fn)').body]
             return self.generic_visit(n)
-    fn=next(n for n in ast.parse(BASE.read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='generate')
+    fn=next(n for n in ast.parse(BASE.read_text(encoding='utf-8')).body if isinstance(n,ast.FunctionDef) and n.name=='generate')
     class Variant(ast.NodeTransformer):
         def visit_FunctionDef(self,n):
             if n.name=='open_producer':
@@ -110,7 +109,6 @@ def generate(control):
             return n
     fn=Variant().visit(fn);fn.name='variant';module=ast.fix_missing_locations(ast.Module(body=[fn],type_ignores=[]))
     ns=dict(vars(base));ns.update(configure=configure,FactoryControl=FactoryControl,AddControlQueue=AddControlQueue,should_stop=should_stop)
-    ast_sha=hashlib.sha256(ast.dump(module,include_attributes=False).encode()).hexdigest()
     exec(compile(module,str(HERE/'<derived-exit-control-caller>'),'exec'),ns)
     fault=None;receipt=None;cleanup=[]
     try:
@@ -125,7 +123,7 @@ def generate(control):
         f.u.hook_del(vm['hook'])
     except Exception as e:fault=dict(type=type(e).__name__,message=str(e),traceback=traceback.format_exc())
     vm.pop('f',None);vm.pop('p',None);vm.pop('hook',None)
-    return dict(schema_version=1,kind='native-blocked-exit-or-rally-joined-prerequisite',control=control,driver_sha256=sha(__file__),construction_driver_sha256=sha(BASE),derived_caller_ast_sha256=ast_sha,parent_manifest_sha256=base.EXPECTED_MANIFEST,native_sha256=native_module.native.NATIVE_SHA256,joined=receipt,control_state=vm,obstacles=obstacles,setup=setup,calls=calls,fault=fault,
+    return dict(schema_version=1,kind='native-blocked-exit-or-rally-joined-prerequisite',control=control,parent_manifest_sha256=base.EXPECTED_MANIFEST,joined=receipt,control_state=vm,obstacles=obstacles,setup=setup,calls=calls,fault=fault,
         bounds=['All original native constructors, placement, factory charges/completion, local event delivery, radio and delivered InfantryAI retain the frozen shared owners.',
                 'Obstacles are whole native stock GAPOWR ctor/Unlimbo with original House admission/power; no raw occupation, cell-admission, fallback choice or output result is supplied. Their later building/construction AI is excluded.',
                 'Rally control calls whole native443860 on authored clear20,20 with speech=false, including original nearby-passable search and event0x1E; it is dispatched by the unchanged local loop before subsequent PLACE output.',

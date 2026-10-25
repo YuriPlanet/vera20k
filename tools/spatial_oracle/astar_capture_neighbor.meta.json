@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -27,5 +26,5 @@
     "admitted_before_create_node": "0x0042A01E",
     "blocked_goal_tail": "0x0042A3DE"
   },
-  "payload_sha256": "39ebf0319018e2eb936ad71a95ee0b2eb7453621dc0e92434ebfdd94e217ae9a"
+  "payload_sha256": "23e2fd8727579b39cb6053705156b959c70386d9cca83a52bf6936e5d2dc8bca"
 }

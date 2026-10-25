@@ -6519,8 +6519,8 @@
     "native_size"
   ],
   "frozen_rebuild_file": "anytown_navigation_restore.json.gz",
-  "frozen_rebuild_payload_sha256": "062a367873176005b65afb2b0bddb1feb9a8c4bb48f6684c63092e9d07fea9db",
-  "frozen_rebuild_sha256": "9a5adacdd5af7dcd9e8697b5768382181ac7eb446ef38a006804eeb326cfa5b5",
+  "frozen_rebuild_payload_sha256": "faa1162b2f9bc0937282ec968ee84bb44a8df7c553c4dec38cbd1a9389f421da",
+  "frozen_rebuild_sha256": "8e2d0d02e0d5bd2632742622d420e917a75188a9056bedef08ecb6069fb8bea0",
   "native_size": [
     80,
     85

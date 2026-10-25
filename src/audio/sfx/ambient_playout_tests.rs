@@ -129,7 +129,8 @@ fn clip() -> DecodedAudio {
         samples: vec![0.25; 8],
         sample_rate: 22_050,
         channels: 2,
-        native_frame_bytes: 2,
+        native_channels: 1,
+        native_sample_bytes: 2,
     }
 }
 
@@ -234,6 +235,10 @@ impl PlaybackService for CorpusService<'_> {
     }
 
     fn stop_playout(&mut self, _: EventId) {}
+
+    fn channel_volume(&self, _: EventId) -> i32 {
+        0
+    }
 }
 
 fn native_state(arbiter: &SoundArbiter, event: EventId) -> u64 {
@@ -262,6 +267,7 @@ fn start_passes_and_playouts_match_the_original_sequence() {
                     delay_ms: (0, 0),
                     entry_volume_linear: VOLUME_SCALE,
                     samples_ok: true,
+                    samples_resolved: true,
                 },
                 volume_linear: VOLUME_SCALE,
                 pan: VOLUME_SCALE / 2,

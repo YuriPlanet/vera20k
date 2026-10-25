@@ -264,6 +264,55 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
     assert_eq!(economy.score(), 35);
 }
 
+/// Action36 can transfer a limbo Techno while its original House retains
+/// the Factory (6E0B60/7014A0). Resource-aware load must preserve both owners.
+#[test]
+fn factory_restore_admits_a_transferred_held_techno() {
+    let (mut saved, rules, owner, parent) = factory_fixture("E1", ProductionCategory::Infantry);
+    let target = saved.intern("OtherHouse");
+    saved
+        .houses_mut_for_test()
+        .register(crate::sim::house_state::HouseState::new(
+            target,
+            1,
+            Some(owner),
+            false,
+            0,
+            10,
+        ));
+    saved.change_owner(parent, target);
+    let prepared = prepare_saved(&saved, rules, "factory-transferred-head")
+        .expect("valid transferred head survives the resource-aware admission path");
+    let restored = &prepared.simulation;
+    assert_eq!(restored.entities().get(parent).unwrap().owner(), target);
+    assert!(
+        restored
+            .entities()
+            .get(parent)
+            .unwrap()
+            .lifecycle
+            .in_limbo()
+    );
+    assert_eq!(
+        restored
+            .production()
+            .factories()
+            .view(owner, ProductionCategory::Infantry)
+            .unwrap()
+            .object
+            .unwrap()
+            .entity_id,
+        Some(parent)
+    );
+    assert!(
+        restored
+            .production()
+            .factories()
+            .view(target, ProductionCategory::Infantry)
+            .is_none()
+    );
+}
+
 #[test]
 fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
     for (label, type_name, category) in [
@@ -465,8 +514,8 @@ fn factory_restore_rejects_inconsistent_roots() {
         "key-category",
         "no-identity",
         "unknown-active-type",
+        "unknown-held-owner",
         "wrong-type",
-        "wrong-owner",
         "concrete-category",
         "manager-owned-root",
         "child-root-alias",
@@ -589,12 +638,14 @@ fn factory_restore_rejects_inconsistent_roots() {
                     .unwrap()
                     .type_id = missing
             }
+            "unknown-held-owner" => saved
+                .entities_mut_for_test()
+                .change_owner(parent, InternedId::from_index(u32::MAX)),
             "wrong-type" => saved
                 .entities_mut_for_test()
                 .get_mut(parent)
                 .unwrap()
                 .set_type_ref_for_test(other),
-            "wrong-owner" => saved.entities_mut_for_test().change_owner(parent, foreign),
             "concrete-category" => {
                 saved
                     .entities_mut_for_test()

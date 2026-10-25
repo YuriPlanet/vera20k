@@ -168,6 +168,7 @@ fn save(sim: &Simulation, rules: &RuleSet, order: Option<&SavedSidebarOrder>) ->
         "retained sidebar",
         1,
         &[(7, -12)],
+        &[],
         order,
         None,
         None,

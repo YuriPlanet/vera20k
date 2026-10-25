@@ -25,11 +25,10 @@ impl Simulation {
         &mut self,
         id: u64,
         requested: RevealPosition,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Option<RevealOutcome> {
-        let rules = rules?;
         let entity = self.substrate.entities.get(id)?;
         if entity.category() != EntityCategory::Structure
             || !self.object_type(entity.type_ref(), rules)?.wall
@@ -163,13 +162,8 @@ impl Simulation {
             tiberium_types: Some(&rules.tiberium_types),
             crate_images: MarkCrateImages::resolve(&rules.crate_rules, registry),
         };
-        let lighting = self
-            .session
-            .lighting()
-            .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
-            .into();
         let outcome = match mark_overlay(
-            &mut SimulationMarkHost::new(self, Some(rules), registry, lighting),
+            &mut SimulationMarkHost::new(self, rules, registry),
             &request,
         ) {
             Ok(outcome) => outcome,
@@ -208,10 +202,10 @@ impl Simulation {
             self,
             id,
             crate::sim::radio::RadioMessage::Break,
-            Some(rules),
+            rules,
             effects,
         );
-        let context = UninitContext::new(Some(rules), Some(registry)).with_effects(effects);
+        let context = UninitContext::new(rules, Some(registry)).with_effects(effects);
         //44082D/440856 reread type/owner for the final0/final1 pair. No live
         //source, cached radius or567DA0 border belongs to this early arm.
         for final_pass in [false, true] {
@@ -226,7 +220,7 @@ impl Simulation {
                 .unwrap()
                 .sight
                 .clamp(0, i32::from(u16::MAX)) as u16;
-            let config = self.sight_reveal_config(Some(rules));
+            let config = self.sight_reveal_config(rules);
             let heights = self.sight_height_grid(&config);
             let viewers = self.reveal_viewers.direct(
                 &self.fog,

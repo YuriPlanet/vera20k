@@ -33,9 +33,14 @@ fn retail_cold_and_post_reset_animation_ordinals_match_original_registries() {
     };
     let rows = corpus();
     let rules = crate::rules::retail_ini_fixture::retail_unlayered_rules().expect("retail rules");
-    let cold =
-        process_native_rules_cold_start(NativeRulesRegistryState::default(), &retail, &art, None)
-            .unwrap();
+    let cold = process_native_rules_cold_start(
+        NativeRulesRegistryState::default(),
+        &retail,
+        &art,
+        None,
+        &crate::rules::sound_ini::EvaRegistry::default(),
+    )
+    .unwrap();
     for row in rows.iter().filter(|row| row["case_kind"] == "anim_catalog") {
         let expected = row["catalog"]["names"].as_array().unwrap();
         let actual: Vec<&str> = if row["catalog"]["phase"] == "cold" {
@@ -265,7 +270,7 @@ fn retail_trigger_anim_and_retained_no_effects_next_match_original_until_cleanup
         assert_state(&sim, id, &row["initial"], label);
         assert_sound_calls(&sim, &row["constructor_calls"], label);
         assert_eq!(
-            sim.anim_display_layer(id, Some(&rules)),
+            sim.anim_display_layer(id, &rules),
             Some(crate::sim::world::display_layers::DisplayLayer::TOP)
         );
         sim.sound_events.clear_for_test();

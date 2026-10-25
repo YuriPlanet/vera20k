@@ -147,6 +147,7 @@ pub(crate) fn encode_shell_pass(
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
+        multiview_mask: None,
     });
     for (draw, buffer) in draws.iter().zip(&buffers) {
         if let Some((buffer, count)) = buffer.as_ref() {
@@ -199,6 +200,7 @@ pub(crate) fn encode_shell_pass(
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
+        multiview_mask: None,
     });
     if let (Some((texture, _)), Some((buffer, count))) = (cursor, cursor_buffer.as_ref()) {
         batch.draw_with_buffer_passthrough(&mut pass, texture, buffer, *count);

@@ -10,12 +10,13 @@ use super::*;
 use crate::assets::asset_manager::AssetManager;
 use crate::map::tile_variant_selector::TileVariantSelector;
 
-/// The immutable materialized template owned by SimResources. Mutable saved
-/// Cell replacements remain in the simulation's existing dynamic-cell owner.
+/// Baseline TMP/base metadata plus effective Land captured from live Cells for
+/// user files. Replacements remain in the simulation's dynamic-cell owner.
 /// All fields are private so deserialized values cross the map validator before
 /// they become a grid. Asset bytes, caches and the process dummy are not saved.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SavedTerrainTemplate {
+    land_role: SavedLandRole,
     width: u16,
     height: u16,
     cells: Vec<ResolvedTerrainCell>,
@@ -27,8 +28,45 @@ pub struct SavedTerrainTemplate {
     tile_animations: Vec<TerrainTileAnimation>,
 }
 
+/// A baseline-only fixture cannot certify the live Cell+EC value. This wire
+/// field also changes strict save-layout admission for older baseline saves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+enum SavedLandRole {
+    Baseline,
+    LiveEffective,
+}
+
+/// Transient user-file restoration input, extracted from the existing saved
+/// Cell bodies. It is never another serialized simulation plane.
+pub struct SavedCellLandValues {
+    width: u16,
+    height: u16,
+    cells: Vec<Option<u8>>,
+}
+
+impl SavedCellLandValues {
+    pub(crate) fn allocated_cells(&self) -> impl Iterator<Item = (u16, u16)> + '_ {
+        self.cells
+            .iter()
+            .enumerate()
+            .filter(|(_, cell)| cell.is_some())
+            .map(|(index, _)| {
+                (
+                    (index % usize::from(self.width)) as u16,
+                    (index / usize::from(self.width)) as u16,
+                )
+            })
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SavedTerrainError {
+    #[error("saved terrain has no captured live Cell Land values")]
+    BaselineOnlyLand,
+    #[error("live Cell Land dimensions or allocation differ from the saved terrain")]
+    LiveLandShape,
+    #[error("saved terrain cell {index} has invalid LandType {land}")]
+    Land { index: usize, land: u8 },
     #[error("saved terrain dimensions {width}x{height} exceed the native cell table")]
     Dimensions { width: u16, height: u16 },
     #[error("saved terrain {plane} storage has {found} entries, expected {expected}")]
@@ -52,6 +90,90 @@ pub enum SavedTerrainError {
 }
 
 impl SavedTerrainTemplate {
+    /// Capture at the actual write boundary, including an initial campaign
+    /// save whose immutable resources were prepared before the frame ran.
+    pub fn capture_live_cell_land(
+        &mut self,
+        live: &ResolvedTerrainGrid,
+    ) -> Result<(), SavedTerrainError> {
+        self.validate()?;
+        if (self.width, self.height) != (live.width, live.height)
+            || self.cells.len() != live.cells.len()
+            || live
+                .native_allocated
+                .as_ref()
+                .is_some_and(|mask| mask.len() != live.cells.len())
+            || (0..self.cells.len()).any(|index| {
+                self.native_allocated
+                    .as_ref()
+                    .is_none_or(|mask| mask[index])
+                    != live
+                        .native_allocated
+                        .as_ref()
+                        .is_none_or(|mask| mask[index])
+            })
+        {
+            return Err(SavedTerrainError::LiveLandShape);
+        }
+        for (index, cell) in live.cells.iter().enumerate() {
+            if self
+                .native_allocated
+                .as_ref()
+                .is_none_or(|mask| mask[index])
+                && LandType::from_index(cell.land_type).is_none()
+            {
+                return Err(SavedTerrainError::Land {
+                    index,
+                    land: cell.land_type,
+                });
+            }
+        }
+        for (index, (cell, live)) in self.cells.iter_mut().zip(&live.cells).enumerate() {
+            if self
+                .native_allocated
+                .as_ref()
+                .is_none_or(|mask| mask[index])
+            {
+                cell.land_type = live.land_type;
+            }
+        }
+        self.land_role = SavedLandRole::LiveEffective;
+        Ok(())
+    }
+
+    /// Cell Save483C10 retains effective Land in its raw body. In particular,
+    /// removal4A1AA0 can leave Water on an overlay-free Rough tile. Neither the
+    /// current overlay identity nor the pristine TMP can recover that value.
+    pub fn user_load_land_values(&self) -> Result<SavedCellLandValues, SavedTerrainError> {
+        self.validate()?;
+        if self.land_role != SavedLandRole::LiveEffective {
+            return Err(SavedTerrainError::BaselineOnlyLand);
+        }
+        let mut cells = Vec::with_capacity(self.cells.len());
+        for (index, cell) in self.cells.iter().enumerate() {
+            if self
+                .native_allocated
+                .as_ref()
+                .is_some_and(|mask| !mask[index])
+            {
+                cells.push(None);
+                continue;
+            }
+            if LandType::from_index(cell.land_type).is_none() {
+                return Err(SavedTerrainError::Land {
+                    index,
+                    land: cell.land_type,
+                });
+            }
+            cells.push(Some(cell.land_type));
+        }
+        Ok(SavedCellLandValues {
+            width: self.width,
+            height: self.height,
+            cells,
+        })
+    }
+
     pub fn dimensions(&self) -> (u16, u16) {
         (self.width, self.height)
     }
@@ -176,6 +298,7 @@ impl SavedTerrainTemplate {
 impl ResolvedTerrainGrid {
     pub fn capture_saved_template(&self) -> Result<SavedTerrainTemplate, SavedTerrainError> {
         let saved = SavedTerrainTemplate {
+            land_role: SavedLandRole::Baseline,
             width: self.width,
             height: self.height,
             cells: self.cells.clone(),
@@ -188,6 +311,61 @@ impl ResolvedTerrainGrid {
         };
         saved.validate()?;
         Ok(saved)
+    }
+
+    /// Test convenience for capturing baseline metadata plus actual Cell+EC.
+    /// Production captures Land later, at the actual save-write boundary.
+    /// Native Cell Save483C10 / Load4839F0 preserve these across literal crate
+    /// erasure; a later genuine Recalc must still see the pristine base Land.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn capture_user_saved_template(
+        &self,
+        live: &ResolvedTerrainGrid,
+    ) -> Result<SavedTerrainTemplate, SavedTerrainError> {
+        let mut saved = self.capture_saved_template()?;
+        saved.capture_live_cell_land(live)?;
+        Ok(saved)
+    }
+
+    /// Final Cell value publication for user file loads, after ordinary cache
+    /// reconstruction. CellLoad483A12 clears+4C, and483BE0 erases crate fields
+    /// without Recalc. Map+68's saved classes/IDs/rows remain a separate owner.
+    pub(crate) fn restore_user_loaded_land(
+        &mut self,
+        saved: &SavedCellLandValues,
+    ) -> Result<(), SavedTerrainError> {
+        if (self.width, self.height) != (saved.width, saved.height)
+            || self.cells.len() != saved.cells.len()
+            || saved.cells.iter().enumerate().any(|(index, cell)| {
+                cell.is_some()
+                    != self
+                        .native_allocated
+                        .as_ref()
+                        .is_none_or(|mask| mask[index])
+            })
+        {
+            return Err(SavedTerrainError::LiveLandShape);
+        }
+        for (index, saved) in saved.cells.iter().enumerate() {
+            let Some(land) = saved else { continue };
+            // Cell CheckCellPassability48357D/4835D5 reads retained Land and
+            // indexes the shared89EA40 table, never a saved per-cell speed row.
+            let speed_costs = self.land_speed_costs(i32::from(*land));
+            let cell = &mut self.cells[index];
+            cell.land_type = *land;
+            cell.speed_costs = speed_costs;
+            // This is VERA's derived walk projection, not a native Recalc.
+            // Surviving overlay/terrain presence was restored by their owners.
+            let land_blocked = matches!(
+                LandType::from_index(*land),
+                Some(LandType::Water | LandType::Rock | LandType::Wall)
+            );
+            cell.ground_walk_blocked = (cell.canonical_ramp.is_none() && land_blocked)
+                || cell.terrain_object_blocks
+                || cell.overlay_blocks;
+            cell.zone_type = zone_class::GROUND;
+        }
+        Ok(())
     }
 
     /// Derived asset/catalog binding shared by fresh construction and saved

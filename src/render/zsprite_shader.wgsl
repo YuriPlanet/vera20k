@@ -3,7 +3,7 @@
 // Same vertex mapping as batch_shader.wgsl. The fragment stage recomputes the
 // native 16-bit Z of its row from the blit rect's screen top, the gradient
 // entry and the class Z term (`native_z.rs` is the Rust twin of this math),
-// subtracts the BUILDNGZ z-shape byte when the instance carries one, and maps
+// subtracts the optional z-shape byte when the instance carries one, and maps
 // the integer Z onto the normalised depth axis: one native Z unit is one world
 // pixel row. Two pipelines share it: depth compare Less without write (every
 // object except buildings: leaves 0x00494b60 / 0x00497fd0) and Less with
@@ -24,7 +24,8 @@ struct Camera {
 
 // The source page bindings are supplied by sprite_source.wgsl.
 
-// BUILDNGZ.SHA frame 0, remapped by -0x41 and stored biased by +128 (R8Unorm).
+// BUILDNGZ's remapped R8 canvas, or four raw overlay files in RGBA channels.
+// Both store signed bytes biased by128. Overlay instances carry their stride.
 @group(2) @binding(0) var t_zshape: texture_2d<f32>;
 
 struct Instance {
@@ -124,7 +125,20 @@ fn native_candidate(input: VertexOutput) -> i32 {
     var rect_bottom: i32 = rect_top + max(i32(round(input.rect_top_height.y)), 1);
     let extended_shape: bool = (input.z_gradient & 0x100u) != 0u;
     var shape_delta: i32 = 0;
-    if ((input.z_gradient & 0x300u) != 0u) {
+    if ((input.z_gradient & 0x800u) != 0u) {
+        let stride = i32(input.z_gradient >> 16u);
+        let delta = vec2i(floor(input.world_pos)) - vec2i(input.zshape_origin);
+        let index = delta.y * stride + delta.x;
+        let dims = vec2i(textureDimensions(t_zshape));
+        // Native raw surface addressing can cross row boundaries and even
+        // the file allocation. VERA uses signed zero beyond file bytes;
+        // per-channel padding and this guard make that boundary explicit.
+        if (index >= 0 && index < dims.x * dims.y) {
+            let values = textureLoad(t_zshape, vec2i(index % dims.x, index / dims.x), 0);
+            let channel = (input.z_gradient >> 12u) & 3u;
+            shape_delta = i32(values[channel] * 255.0 + 0.5) - 128;
+        }
+    } else if ((input.z_gradient & 0x300u) != 0u) {
         let origin: vec2i = vec2i(input.zshape_origin);
         let canvas: vec2i = vec2i(floor(input.world_pos)) - origin;
         let dims: vec2i = vec2i(textureDimensions(t_zshape));
@@ -147,9 +161,14 @@ fn native_candidate(input: VertexOutput) -> i32 {
     let entry: u32 = input.z_gradient & 0xFFu;
     var z: i32 = native_row_z(entry, screen_top, height, i32(round(input.z_adjust)), row);
     if (extended_shape) {
-        // Extended_SHP_blitter @ 0x437C39..0x437C72 uses the raw bottom
-        // seed. 0x437E67 advances the shape without the ordinary row gradient.
-        z = ((32768 - height - screen_top + 1) & 0xFFFF) + i32(round(input.z_adjust)) - shape_delta;
+        // 437BAB keeps top-gradient quantisation;437C39 bypasses it only
+        // for the bottom gradient. Shape rows do not step the seeded Z.
+        if (entry == 2u) {
+            z = ((32768 - height - screen_top + 1) & 0xFFFF) + i32(round(input.z_adjust));
+        } else {
+            z = native_row_z(entry, screen_top, height, i32(round(input.z_adjust)), 0);
+        }
+        z = z - shape_delta;
     }
 
     return z;

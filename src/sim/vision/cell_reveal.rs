@@ -17,11 +17,15 @@ use std::hash::{Hash, Hasher};
 #[path = "cell_reveal_tests.rs"]
 pub(crate) mod tests;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct MapCellEdgeCache {
     initialized: bool, // Cell140 bit2
     fog_open: bool,    // Cell140 bit1
     frames: [i8; 2],   // Cell120/121
+    #[serde(default)]
+    pending_fog: bool, // Cell140 bit40, independent of pending shroud bit20
+    #[serde(default)]
+    objects_fogged: bool, // Cell140 bit400000
 }
 impl Default for MapCellEdgeCache {
     fn default() -> Self {
@@ -29,6 +33,8 @@ impl Default for MapCellEdgeCache {
             initialized: false,
             fog_open: false,
             frames: [-2, -2],
+            pending_fog: false,
+            objects_fogged: false,
         }
     }
 }
@@ -39,6 +45,7 @@ impl MapCellEdgeCache {
             initialized,
             fog_open,
             frames: [first, second],
+            ..
         } = *self;
         [
             u8::from(initialized),
@@ -46,6 +53,19 @@ impl MapCellEdgeCache {
             first as u8,
             second as u8,
         ]
+    }
+}
+
+impl Hash for MapCellEdgeCache {
+    fn hash<H: Hasher>(&self, hasher: &mut H) {
+        self.initialized.hash(hasher);
+        self.fog_open.hash(hasher);
+        self.frames.hash(hasher);
+        if self.pending_fog || self.objects_fogged {
+            b"native-fog-cell-flags-v1".hash(hasher);
+            self.pending_fog.hash(hasher);
+            self.objects_fogged.hash(hasher);
+        }
     }
 }
 
@@ -77,6 +97,8 @@ pub(crate) enum MapRevealProjection {
     UncachedConditional,
     /// Map5673A0 final0: Cell4876F0, without MapCell cache initialization.
     Fire,
+    /// Map5673A0/5678E0 skipReveal: clear pending fog without mapping.
+    FogProtect,
 }
 
 /// Synchronous MapCell receiver arguments. The coordinate is read after both
@@ -84,6 +106,7 @@ pub(crate) enum MapRevealProjection {
 pub(crate) struct MapCellNotification {
     pub(crate) cell: (u16, u16),
     pub(crate) fresh: bool,
+    pub(crate) clean_fog: bool,
 }
 
 /// The cells the two passes of `Map578100` can change
@@ -399,6 +422,11 @@ impl OwnerVisibility {
         //4A9CA9 is distinct from each6D8713 center lookup below.
         let key = self.visibility_cell(cell, native_cells);
         let before = self.edge_inputs(key);
+        // Map5673A0/5678E0 clear bit40 before their skipReveal branch.
+        self.map_cell_parts_mut(key).2.pending_fog = false;
+        if projection == MapRevealProjection::FogProtect {
+            return None;
+        }
         if projection == MapRevealProjection::Fire {
             // Cell4876F0 ORs12C with18 and conditionally140 with20.
             // It neither initializes cache140 bits1/2 nor writes120/121.
@@ -419,16 +447,18 @@ impl OwnerVisibility {
         if final_pass {
             state.leave();
         } else {
-            state.reveal();
+            state
+                .reveal(*ground & (GROUND_VISIBLE | GROUND_OPEN) == (GROUND_VISIBLE | GROUND_OPEN));
         }
         if projection != MapRevealProjection::Source {
             state.project_reveal(matches!(key, VisibilityCell::Real(_)));
         }
         let open = state.open();
-        if open {
+        // Cell487690 leaves12C untouched. Cell487630 only ORs18 when its
+        // resulting counter is nonpositive; the separate sight projection
+        // must neither clear retained ground bits nor add them early.
+        if !final_pass && state.counter() <= 0 {
             *ground |= GROUND_VISIBLE | GROUND_OPEN;
-        } else {
-            *ground &= !(GROUND_VISIBLE | GROUND_OPEN);
         }
         if let VisibilityCell::Real(index) = key {
             if projection != MapRevealProjection::Source {
@@ -450,7 +480,11 @@ impl OwnerVisibility {
             }
             _ => cell,
         };
-        Some(MapCellNotification { cell, fresh })
+        Some(MapCellNotification {
+            cell,
+            fresh,
+            clean_fog: !old.initialized,
+        })
     }
 
     /// [`Self::reveal_map_cell`] with `projection` [`MapRevealProjection::Source`]
@@ -531,6 +565,17 @@ impl OwnerVisibility {
             hasher,
             MapCellEdgeCache::hash_record,
         );
+        if self
+            .map_cell_edge_cache
+            .iter()
+            .any(|c| c.pending_fog || c.objects_fogged)
+        {
+            b"native-fog-cell-flags-v1".hash(hasher);
+            for cache in &self.map_cell_edge_cache {
+                cache.pending_fog.hash(hasher);
+                cache.objects_fogged.hash(hasher);
+            }
+        }
         if self.dummy_visibility != DummyVisibility::default() {
             b"native-dummy-visibility-v1".hash(hasher);
             self.dummy_visibility.hash(hasher);
@@ -653,6 +698,186 @@ impl FogState {
         }
     }
 
+    /// The Map5673A0/5678E0 per-cell prelude clears pending fog even when
+    /// subsequent full-knowledge or skipReveal gates reject the cell.
+    pub(crate) fn clear_pending_fog(
+        &mut self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) {
+        if let Some(vis) = self.by_owner.get_mut(&viewer) {
+            let key = vis.visibility_cell(cell, native_cells);
+            vis.map_cell_parts_mut(key).2.pending_fog = false;
+        }
+    }
+
+    /// SkipReveal's4A9DD0 route is admitted only for explored terrain whose
+    /// fog bits1/2 are not both set. It leaves all sight counters untouched.
+    pub(crate) fn admits_fog_reveal(
+        &mut self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) -> bool {
+        self.by_owner.get_mut(&viewer).is_some_and(|vis| {
+            let (ground, cache) = vis.map_cell_parts(vis.visibility_cell(cell, native_cells));
+            !(cache.fog_open && cache.initialized) && ground & GROUND_VISIBLE != 0
+        })
+    }
+
+    /// RevealFogCell4A9DD0 prelude, then its own fog edge cache. The world
+    /// visits neighbors before delivering the returned notification/cleanup.
+    pub(crate) fn begin_fog_reveal(
+        &mut self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) -> Option<MapCellNotification> {
+        let vis = self
+            .by_owner
+            .get_or_insert_with(viewer, || OwnerVisibility::new(self.width, self.height));
+        let key = vis.visibility_cell(cell, native_cells);
+        let cache = vis.map_cell_parts_mut(key).2;
+        let old = *cache;
+        cache.initialized = true;
+        cache.pending_fog = false;
+        let frame = vis.map_cell_edge_frame(cell, true, native_cells);
+        let cache = vis.map_cell_parts_mut(key).2;
+        cache.frames[1] = frame;
+        if frame == -1 {
+            cache.fog_open = true;
+        }
+        (!old.initialized || frame != old.frames[1]).then_some(MapCellNotification {
+            cell,
+            fresh: !old.initialized,
+            clean_fog: !old.initialized,
+        })
+    }
+
+    pub(crate) fn fog_cell_initialized(
+        &self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) -> bool {
+        self.by_owner.get(&viewer).is_some_and(|vis| {
+            vis.map_cell_parts(vis.visibility_cell(cell, native_cells))
+                .1
+                .initialized
+        })
+    }
+
+    /// First RegrowFog4ACBC0 pass: mark initialized but not fully open cells.
+    pub(crate) fn mark_pending_fog(
+        &mut self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) {
+        let vis = self
+            .by_owner
+            .get_or_insert_with(viewer, || OwnerVisibility::new(self.width, self.height));
+        let key = vis.visibility_cell(cell, native_cells);
+        let cache = vis.map_cell_parts_mut(key).2;
+        if cache.initialized && !cache.fog_open {
+            cache.pending_fog = true;
+        }
+    }
+
+    /// Second RegrowFog pass clears bit40 before calling RegrowFogAtCell.
+    pub(crate) fn take_pending_fog(
+        &mut self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) -> bool {
+        let Some(vis) = self.by_owner.get_mut(&viewer) else {
+            return false;
+        };
+        let key = vis.visibility_cell(cell, native_cells);
+        std::mem::take(&mut vis.map_cell_parts_mut(key).2.pending_fog)
+    }
+
+    /// RegrowFogAtCell4ACC50 clears bits1/2 and the fog edge, retaining the
+    /// terrain, counters and object-fog flag. Returns the old bits1/2 test.
+    pub(crate) fn begin_fog_regrowth_cell(
+        &mut self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) -> bool {
+        let vis = self
+            .by_owner
+            .get_or_insert_with(viewer, || OwnerVisibility::new(self.width, self.height));
+        let key = vis.visibility_cell(cell, native_cells);
+        let cache = vis.map_cell_parts_mut(key).2;
+        let was_known = cache.initialized || cache.fog_open;
+        cache.initialized = false;
+        cache.fog_open = false;
+        cache.frames[1] = -2;
+        was_known
+    }
+
+    /// Neighbor rung4ACCF0..4ACD67. Returns whether to recurse, preserving
+    /// the cached-pointer lookup before Tactical6D8700's own neighbor lookups.
+    pub(crate) fn refresh_regrown_fog_neighbor(
+        &mut self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) -> bool {
+        let vis = self
+            .by_owner
+            .get_or_insert_with(viewer, || OwnerVisibility::new(self.width, self.height));
+        let key = vis.visibility_cell(cell, native_cells);
+        let own_cell = match (key, native_cells) {
+            (VisibilityCell::Dummy, Some(cells)) => {
+                let (x, y) = cells.coord(NativeCellIdentity::Dummy);
+                (x as u16, y as u16)
+            }
+            _ => cell,
+        };
+        let frame = vis.map_cell_edge_frame(own_cell, true, native_cells);
+        let cache = vis.map_cell_parts_mut(key).2;
+        if frame == -2 && cache.frames[1] != -2 {
+            return true;
+        }
+        if (cache.fog_open || frame != cache.frames[1]) && frame >= 0 && cache.frames[1] >= -1 {
+            cache.frames[1] = frame;
+            cache.fog_open = false;
+            cache.initialized = true;
+        }
+        false
+    }
+
+    pub(crate) fn is_cell_object_fogged(
+        &self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) -> bool {
+        self.by_owner.get(&viewer).is_some_and(|vis| {
+            vis.map_cell_parts(vis.visibility_cell(cell, native_cells))
+                .1
+                .objects_fogged
+        })
+    }
+
+    pub(crate) fn set_cell_object_fogged(
+        &mut self,
+        viewer: InternedId,
+        cell: (u16, u16),
+        native_cells: Option<&NativeCellQuery<'_>>,
+        value: bool,
+    ) {
+        let vis = self
+            .by_owner
+            .get_or_insert_with(viewer, || OwnerVisibility::new(self.width, self.height));
+        let key = vis.visibility_cell(cell, native_cells);
+        vis.map_cell_parts_mut(key).2.objects_fogged = value;
+    }
+
     /// Original Map567F70's cell receiver: only counter==0 is concealed.
     /// Negative sustained sight and positive shroud/gap counters survive;
     /// pending20, cache bits/frames and gap count are untouched.
@@ -705,7 +930,11 @@ impl FogState {
             vis.tracked.cleared.push(index as u32);
             vis.publish_knowledge(index);
         }
-        notify.then_some(MapCellNotification { cell, fresh: true })
+        notify.then_some(MapCellNotification {
+            cell,
+            fresh: true,
+            clean_fog: false,
+        })
     }
 
     /// Second578100 pass. Recompute every allocated Cell's ground channel
@@ -727,7 +956,11 @@ impl FogState {
             return None;
         }
         cache.frames[0] = frame;
-        (frame == -2).then_some(MapCellNotification { cell, fresh: true })
+        (frame == -2).then_some(MapCellNotification {
+            cell,
+            fresh: true,
+            clean_fog: false,
+        })
     }
 
     /// Map5673A0 at567856..567870, selected S24=false/S32=true:
@@ -782,10 +1015,8 @@ impl FogState {
     /// Original leaf/frontier execution: tools/spatial_oracle/
     /// trigger_forced_map.{json,meta.json}, Steam gamemd. Its active caller
     /// is Execute16 at6DE3A8 through Map653810.
-    /// The unrepresented Cell140 bit40 is cleared natively; no represented
-    /// counter/pending20 substitutes for that bit. First initialization's
-    /// FogOfWar486BF0 cleanup remains the existing fogged-object residual;
-    /// the selected ALL01 Scenario has that flag clear.
+    /// The separate pending-fog bit40 clears before mapping. First fog
+    /// initialization requests CleanFog486BF0 after notification.
     pub(crate) fn reveal_forced_map_cell(
         &mut self,
         viewer: InternedId,
@@ -801,6 +1032,7 @@ impl FogState {
         let fresh = !(old.initialized && ground & GROUND_VISIBLE != 0);
         let (state, ground, cache) = vis.map_cell_parts_mut(key);
         cache.initialized = true;
+        cache.pending_fog = false;
         *ground |= GROUND_VISIBLE;
         state.open_mapped();
         if let VisibilityCell::Real(index) = key {
@@ -824,7 +1056,11 @@ impl FogState {
             }
             _ => cell,
         };
-        Some(MapCellNotification { cell, fresh })
+        Some(MapCellNotification {
+            cell,
+            fresh,
+            clean_fog: !old.initialized,
+        })
     }
 
     /// Map receiver state: MapCell4A9CA0..4A9DC9's final0/1 leaves, or
@@ -833,7 +1069,7 @@ impl FogState {
     /// new-knowledge argument, independently of cache-change admission.
     /// Executed cell/cache/channel/Dummy controls:
     /// tools/spatial_oracle/trigger_action_values.{py,json,meta.json}.
-    /// FogOfWar486BF0's fogged-object tail is outside the stock-clear path.
+    /// First initialization also requests the world owner's CleanFog486BF0.
     pub(crate) fn reveal_map_cell(
         &mut self,
         viewer: InternedId,
@@ -871,7 +1107,7 @@ impl FogState {
 
     /// [`OwnerVisibility::map_cell_edge_frame`] on `viewer`'s plane; -2
     /// without one.
-    pub(crate) fn map_cell_edge_frame(
+    pub fn map_cell_edge_frame(
         &self,
         viewer: InternedId,
         cell: (u16, u16),
@@ -899,21 +1135,11 @@ impl FogState {
     ///   returns.
     ///
     /// No shroud counter, `Cell+0x140` bit or fog frame (`+0x121`) is
-    /// written. [`ShroudKnowledge::open`] stands for both ground bits, while
-    /// `MapClass::IsShrouded @ 0x00586360` reads `0x08` alone, so the explored
-    /// cell opens there too. A cell left with `0x08` but not `0x10` (one beside
-    /// an unallocated cell) then reads as open to `0x00487630`, which clears
-    /// its pending conceal where native sets `0x10` instead.
-    ///
-    /// RESIDUAL (#1117): the two bits are read from `ground_flags`, which the
-    /// gap, fire and some whole-map writers (`0x006FB170`, `0x006FB470`,
-    /// `0x004876F0`, `0x00577D90`, `0x00577AB0`) leave as they
-    /// were. A cell a hostile gap re-hid still reads explored: its reveal is
-    /// not fresh and, with its frame unchanged, sends no CellChangeNotify, and
-    /// as a neighbor it is skipped when its stale `0x10` is set. A cell those
-    /// writers opened through `open` alone reads unexplored and notifies again.
-    /// Effect: on a later whole-map reveal (a local defeat) those cells'
-    /// discovery, radar marks and stored edge frames differ from native.
+    /// written. [`ShroudKnowledge::open`] projects explored ground, as does
+    /// `MapClass::IsShrouded @ 0x00586360`, which reads `0x08` alone. A cell
+    /// beside an unallocated cell can retain `0x08` without `0x10`; the next
+    /// `CellClass::Reveal @ 0x00487630` tests those prior raw bits and completes
+    /// `0x18` while retaining pending concealment for the later sweep.
     ///
     /// Returns CellChangeNotify's arguments when the explored bit or the frame
     /// changed (`0x004AA264..0x004AA27C`).
@@ -957,20 +1183,24 @@ impl FogState {
             }
             _ => cell,
         };
-        Some(MapCellNotification { cell, fresh })
+        Some(MapCellNotification {
+            cell,
+            fresh,
+            clean_fog: false,
+        })
     }
 
     /// Shared neighbor-channel responsibility in4A9890 and4AA050. It
     /// preserves native delta order and updates adjacent frames only when
     /// this neighbor becomes fully open; counters and notification remain
     /// with the calling entry. Tactical redraw is presentation-owned.
-    fn propagate_map_cell_edge(
+    pub(crate) fn propagate_map_cell_edge(
         &mut self,
         viewer: InternedId,
         neighbor: (u16, u16),
         fog_channel: bool,
         native_cells: Option<&NativeCellQuery<'_>>,
-    ) {
+    ) -> bool {
         let key = self.by_owner[&viewer].visibility_cell(neighbor, native_cells);
         let (ground, cache) = self.by_owner[&viewer].map_cell_parts(key);
         if if fog_channel {
@@ -978,9 +1208,12 @@ impl FogState {
         } else {
             ground & GROUND_OPEN != 0
         } {
-            return;
+            return false;
         }
         let frame = self.map_cell_edge_frame(viewer, neighbor, fog_channel, native_cells);
+        if fog_channel && !cache.initialized && frame != -2 {
+            return true;
+        }
         let vis = self.by_owner.get_mut(&viewer).unwrap();
         let before = vis.edge_inputs(key);
         let (_, ground, cache) = vis.map_cell_parts_mut(key);
@@ -1004,6 +1237,7 @@ impl FogState {
             cache.frames[channel] = frame;
             vis.note_edge_inputs(key, before);
         }
+        false
     }
 
     pub(super) fn is_dummy_ground_unshrouded(&self, viewer: InternedId) -> bool {

@@ -45,13 +45,16 @@
 //! - The try-later branch also copies an uninitialised stack word into the
 //!   timer's middle field (`+0x554`, `0x004501F1`), which no reader uses.
 //! - Mobile products leave through [`exit_produced_object`], the same
-//!   `Exit_Object` arms a human's placement takes. Its residuals: the
-//!   refinery arm and the Infantry arm's Cloning Vat copies.
+//!   `Exit_Object` arms a human's placement takes, including the Infantry
+//!   arm's Cloning Vat copies. Its residual: the refinery arm's Unit exit.
 
+use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectCategory;
+use crate::rules::object_type::ObjectType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::ai_base_building::{self, BuildingExit};
+use crate::sim::ai_unit_choice::UnitChoiceKind;
 use crate::sim::intern::InternedId;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::FrameEffects;
@@ -94,7 +97,7 @@ pub(crate) fn factory_ai(
         .substrate
         .entities
         .get(building)
-        .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+        .and_then(|entity| sim.entity_object_type(entity, rules))
         .map(|ty| ty.factory_rtti())
         .filter(|&factory| factory != 0)
     else {
@@ -137,11 +140,24 @@ fn exit_finished_object(
     let Some(product) = object.entity_id else {
         return;
     };
-    let Some(product_type) = sim.object_type(object.type_id, rules) else {
+    let Some(product_type) = sim
+        .substrate
+        .entities
+        .get(product)
+        .and_then(|entity| sim.entity_object_type(entity, rules))
+    else {
         return;
     };
     let is_building = product_type.category == ObjectCategory::Building;
-    let exit = exit_produced_object(sim, rules, building, product, overlay_registry, effects);
+    let exit = exit_produced_object(
+        sim,
+        rules,
+        building,
+        product,
+        (0, 0),
+        overlay_registry,
+        effects,
+    );
     if !is_building && exit == BuildingExit::Placed {
         sim.note_mission_spawned_entities();
     }
@@ -175,7 +191,10 @@ fn exit_finished_object(
             // `0x004501FF..0x00450220`: the object's owner stops choosing
             // naval buildings.
             let naval_building = sim
-                .object_type(object.type_id, rules)
+                .substrate
+                .entities
+                .get(product)
+                .and_then(|entity| sim.entity_object_type(entity, rules))
                 .is_some_and(|ty| ty.category == ObjectCategory::Building && ty.naval);
             if naval_building && let Some(house) = sim.houses.get_mut(&owner) {
                 house.ai_production_mut().forbid_naval();
@@ -232,15 +251,44 @@ fn start_factory(
     if crate::sim::credit_income::available_money(&sim.houses, owner) <= 10 {
         return;
     }
-    let Some(object) = ai_base_building::suggest_new_object(sim, rules, owner, factory_rtti) else {
-        return;
-    };
+    // The producing building's `Naval=` decides which vehicle choice
+    // `Suggest_New_Object` reads (NPSE `0xC2F130`), so resolve it first.
     let factory_naval = sim
         .substrate
         .entities
         .get(building)
-        .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+        .and_then(|entity| sim.entity_object_type(entity, rules))
         .is_some_and(|ty| ty.naval);
+    let Some(object) =
+        ai_base_building::suggest_new_object(sim, rules, owner, factory_rtti, factory_naval)
+    else {
+        return;
+    };
+    // Both NP generations gate at the fetched type before naval admission:
+    // #359 C335A0 reads AIBuildLimit; legacy ext173 C2D15A/C2CF67 uses
+    // BuildLimit when EnableAIBuildLimitation is set. Both constraints apply
+    // when a ruleset explicitly combines the compatibility keys.
+    if crate::rules::NPATCH_ENABLED
+        && (ai_build_limit_blocks(sim, rules, owner, object, object.aibuild_limit)
+            || rules.general.enable_ai_build_limitation
+                && ai_build_limit_blocks(sim, rules, owner, object, object.build_limit))
+    {
+        clear_aibuild_limit_choice(sim, owner, object);
+        return;
+    }
+    // NPSE 2.0 Factory_AI C2F07C..C2F11F reserves the fetched type's
+    // class before naval admission, allocation and construction. The House
+    // owner retains failed-start/expired reservations until a native release.
+    #[cfg(feature = "npatch")]
+    if rules.general.disable_parallel_ai_queues
+        && !sim.houses.get_mut(&owner).is_some_and(|house| {
+            house
+                .ai_production_mut()
+                .reserve_parallel(object.category, object.naval)
+        })
+    {
+        return;
+    }
     if object.category == ObjectCategory::Vehicle && object.naval != factory_naval {
         return;
     }
@@ -285,6 +333,60 @@ fn placement_wait_over(sim: &Simulation, building: u64) -> bool {
         .is_some_and(|entity| entity.ai_placement_timer.expired(frame))
 }
 
+/// NP `BuildingClass::Factory_AI` count comparison: NPSE #359
+/// C335A0..C33726 for AIBuildLimit, NPExt ext173 C2CF67..C2D129 for the
+/// global switch's BuildLimit. Positive limits compare tracking directly;
+/// Add_Tracking4FF700 already includes limbo factory objects. Non-positive
+/// limits compare both produced and tracked counts after wrapping NEG, with
+/// signed JLE; zero therefore blocks. Reuse the same history/count owners,
+/// without the stock CheckBuildLimit50B370 factory/pad adjustments.
+fn ai_build_limit_blocks(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    object: &ObjectType,
+    limit: i32,
+) -> bool {
+    let owned = sim
+        .interner
+        .get(&object.id)
+        .zip(sim.houses.get(&owner))
+        .map_or(0, |(type_id, house)| {
+            house
+                .tracking()
+                .owned_count(EntityCategory::from(object.category), type_id)
+        });
+    if limit > 0 {
+        return owned >= limit;
+    }
+    let produced = rules
+        .type_array_index(object.category, &object.id)
+        .zip(sim.houses.get(&owner))
+        .map_or(0, |(index, house)| {
+            house.produced_count(object.category, index)
+        });
+    produced.wrapping_neg() <= limit || owned.wrapping_neg() <= limit
+}
+
+/// The at-limit arm: the native hook writes `-1` into the category's
+/// production choice slot before the start skips — `+0x564C` building
+/// (`0xC3371C`), `+0x5654` infantry (`0xC3360C`), `+0x5658` aircraft, and for
+/// a unit `+0x5650` or the naval queue's `+0x16130` by `UnitType+0xCCE`
+/// (`0xC33570..0xC33592`, NPSE 2.0; legacy ext173 C2D039 uses +160F8).
+/// A capped building is cleared too, and
+/// its plan node stays unsatisfied, so `choose_building` returns the same
+/// type: that is the manual's warning (`AI克隆生产`) that a building at its
+/// limit leaves the computer unable to build anything, not a recovery.
+fn clear_aibuild_limit_choice(sim: &mut Simulation, owner: InternedId, object: &ObjectType) {
+    let Some(house) = sim.houses.get_mut(&owner) else {
+        return;
+    };
+    match UnitChoiceKind::of(object.category, object.naval) {
+        Some(kind) => house.ai_unit_choices_mut().clear(kind),
+        None => house.ai_production_mut().clear_building_choice(),
+    }
+}
+
 /// `BuildingClass+0x550..+0x558`, the wait before the building's computer
 /// factory tries its finished object again. The constructor starts it with no
 /// duration (`0x0043B7A7`, `0x0043B7AD`); a placement that must wait restarts
@@ -316,11 +418,10 @@ impl AiPlacementTimer {
 /// `BuildingClass::Detach_All(1) @ 0x0044EBF0`'s factory arm
 /// (`0x0044EC01..0x0044EC21`) and `BuildingClass::ChangeOwner`'s
 /// (`0x004486DF..0x00448701`): the building's factory is abandoned, its
-/// object refunded and destroyed, and deleted. Without rules (fixtures) the
-/// object is destroyed unrefunded.
+/// object refunded and destroyed, and deleted.
 pub(crate) fn detach_all(
     sim: &mut Simulation,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     building: u64,
     effects: FrameEffects<'_>,
 ) {
@@ -328,33 +429,13 @@ pub(crate) fn detach_all(
         return;
     };
     let owner = factory.owner();
-    match rules {
-        Some(rules) => abandon_production(
-            sim,
-            rules,
-            FactoryHolder::Building(building),
-            owner,
-            effects,
-        ),
-        None => {
-            let holder = FactoryHolder::Building(building);
-            let object = sim
-                .production
-                .factories()
-                .pending_abandonment(holder)
-                .and_then(|abandoned| abandoned.entity_id);
-            sim.production
-                .factories_mut()
-                .reset_for_abandon(holder, sim.session.binary_frame());
-            sim.with_object_placement_scope(|sim| {
-                if let Some(object) = object {
-                    let _ = sim.discard_constructed_limbo(object, rules, effects);
-                }
-                sim.production.factories_mut().finish_abandon(holder);
-            });
-            sim.production.factories_mut().remove_factory(holder);
-        }
-    }
+    abandon_production(
+        sim,
+        rules,
+        FactoryHolder::Building(building),
+        owner,
+        effects,
+    );
 }
 
 #[cfg(test)]

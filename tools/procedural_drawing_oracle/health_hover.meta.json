@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -32,5 +31,5 @@
     "disguise_house": "0x0041BE70"
   },
   "replay_command": "python -m tools.procedural_drawing_oracle.shroud --health-hover",
-  "payload_sha256": "7269694579e4634f4718dcfa4cdb35696f871ecd140f9ebcbc07f1530c0b8337"
+  "payload_sha256": "f845a49fb6bb64293c0ddccc5fbcbb1edc5fdd9bd4178a16aa52b9ce1b016d96"
 }

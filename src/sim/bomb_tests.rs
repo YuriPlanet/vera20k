@@ -162,26 +162,16 @@ fn place(sim: &mut Simulation, rules: &RuleSet, id: u64, (x, y): (i32, i32)) {
             false
         ));
     }
-    assert!(sim.foot_mark_remove(
-        id,
-        Some(rules),
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
+    assert!(sim.foot_mark_remove(id, rules, None, crate::sim::world::FrameEffects::default()));
     let coord = crate::sim::components::DriveCoord { x, y, z: 0 };
     crate::sim::movement::ground_pose::foot_set_location(
         &mut sim.substrate.entities,
         id,
         coord,
-        Some(rules),
+        rules,
         &sim.interner,
     );
-    assert!(sim.foot_mark_put(
-        id,
-        Some(rules),
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
+    assert!(sim.foot_mark_put(id, rules, None, crate::sim::world::FrameEffects::default()));
     if infantry {
         assert!(crate::sim::world::Simulation::object_raw_receiver_at(
             &mut sim.substrate,
@@ -221,10 +211,16 @@ fn bomb(sim: &Simulation, id: u64) -> Option<Bomb> {
         .and_then(|entity| entity.bomb)
 }
 
+/// The human Americans send every order, a computer House's unit's too:
+/// the DoList skips computer Houses' events (0x0064C4FB..0x0064C50D), and
+/// MegaMission never compares sender and actor (0x004C71F6..0x004C721F).
 fn attack(sim: &mut Simulation, attacker: u64, target: u64) {
-    let owner = entity(sim, attacker).owner();
+    let sender = sim
+        .interner
+        .get("Americans")
+        .expect("the fixture's human House");
     sim.queue_command(CommandEnvelope::new(
-        owner,
+        sender,
         sim.session.tick() + 1,
         Command::Attack {
             attacker_id: attacker,

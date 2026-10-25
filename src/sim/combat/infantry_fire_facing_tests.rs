@@ -54,14 +54,15 @@ fn infantry_fire_start_heading_matches_original_code_vectors() {
         "tools/spatial_oracle/infantry_fire_start.json",
     ))
     .unwrap();
-    assert_eq!(rows.len(), 59);
+    assert_eq!(rows.len(), 69);
     let rules = infantry_fire_frame_rules();
     let mut compared = 0;
     // Compare the shared heading writer for standing, prone and deployed starts.
     // Secondary-action admission and the supplied native legality results are
     // outside this comparison; the corpus retains them as explicit witnesses.
     for row in rows.iter().filter(|r| {
-        r["fire_error"] == 0
+        r["airstrike_control"].is_null()
+            && r["fire_error"] == 0
             && r["pending"] == 0
             && r["has_target"] == true
             && r["weapon_slot"] == 0
@@ -109,6 +110,57 @@ fn infantry_fire_start_heading_matches_original_code_vectors() {
         compared += 1;
     }
     assert_eq!(compared, 31);
+}
+
+#[test]
+fn airstrike_primary_fire_keeps_the_existing_secondary_action() {
+    let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/infantry_fire_start.json",
+    ))
+    .unwrap();
+    let rules = infantry_fire_frame_rules();
+    let mut compared = 0;
+    for row in rows.iter().filter(|row| {
+        row["airstrike_link"] == true
+            && row["weapon_slot"] == 0
+            && matches!(row["current_doing"].as_i64(), Some(40 | 41))
+    }) {
+        let mut store = pair();
+        let firer = store.get_mut(1).unwrap();
+        firer.airstrike.set_test_link(Some(1));
+        firer
+            .mission_leaf
+            .set_infantry_doing_verified(row["current_doing"].as_i64().unwrap() as i32)
+            .unwrap();
+        firer
+            .attack_target
+            .set_for_test(Some(TargetKind::Entity(2)));
+        set_infantry_stage(&mut store, 1, row["initial_stage"].as_i64().unwrap() as i32);
+        let result = visit(&mut store, &rules, 100);
+        let firer = store.get(1).unwrap();
+        assert_eq!(
+            i64::from(firer.mission_leaf.as_infantry().unwrap().doing()),
+            row["action"].as_i64().unwrap(),
+            "{}",
+            row["name"]
+        );
+        assert_eq!(
+            i64::from(firer.native_stage().value()),
+            row["stage_after"].as_i64().unwrap(),
+            "{}",
+            row["name"]
+        );
+        assert!(
+            !row["calls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|call| call == "do_action")
+        );
+        assert!(result.consequences.fire_events().is_empty());
+        compared += 1;
+    }
+    assert_eq!(compared, 2);
 }
 
 #[test]
@@ -247,6 +299,27 @@ fn rocketeer_pair() -> (EntityStore, RuleSet) {
     store.insert(firer);
     store.insert(make_infantry_entity(2, "E2", 8, 5, 125));
     (store, rules)
+}
+
+#[test]
+fn jumpjet_fire_precedes_airstrike_retained_action() {
+    use crate::sim::movement::infantry_action::DO_FIRE_FLY;
+    let (mut store, rules) = rocketeer_pair();
+    let firer = store.get_mut(1).unwrap();
+    firer.airstrike.set_test_link(Some(1));
+    firer.mission_leaf.set_infantry_doing_verified(40).unwrap();
+    firer
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(2)));
+    set_infantry_stage(&mut store, 1, 5);
+    let result = visit(&mut store, &rules, 100);
+    let firer = store.get(1).unwrap();
+    assert_eq!(
+        firer.mission_leaf.as_infantry().unwrap().doing(),
+        DO_FIRE_FLY
+    );
+    assert_eq!(firer.native_stage().value(), 0);
+    assert!(result.consequences.fire_events().is_empty());
 }
 
 /// A Rocketeer's FireFly refused at its fire frame (here by I4, the speed
@@ -421,7 +494,7 @@ fn production_zero_delay_shot_and_restore_use_new_heading() {
             matrix: facing,
         },
         0,
-        None,
+        crate::util::flh_transform::FlhBasis::Locomotor(None),
     )
     .expect("bounded FLH");
     assert_eq!(event.fire_coord.x, source_x + delta.0);
@@ -467,7 +540,9 @@ fn cell_and_building_fire_headings_match_original_coordinate_getters() {
             } else {
                 let mut target = make_structure_entity(2, "TARGET", 8, 5, 125, 125);
                 // Construction stamps the type's `Foundation=2x3`.
-                target.type_facts.set_foundation_for_test("2x3".to_string());
+                target
+                    .type_facts
+                    .set_foundation_for_test("2x3".to_string().into());
                 store.insert(target);
                 TargetKind::Entity(2)
             }));
@@ -548,7 +623,7 @@ fn production_attack_during_paid_walk_step_case(boosted: bool) {
         assert!(sim.apply_command_with_overlays(
             "Americans",
             &command,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         ));

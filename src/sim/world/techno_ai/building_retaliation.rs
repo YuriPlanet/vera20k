@@ -6,10 +6,13 @@
 //!
 //! - unless the type is `Insignificant=` (`+0x232`) or 1x1 with
 //!   `UndeploysInto=` (vt+0x80, `0x00465D40`), the owner's
-//!   `HouseClass::NotifyUnderAttack` (`0x004F93E0`);
-//! - `+0x53C` takes the source house's index (`0x00442980`). A CRC fold and a
-//!   `!= -1` test (`0x0070304D`, `0x007033C3`) are its only readers, and a
-//!   house index never meets that test, so VERA keeps no copy;
+//!   `HouseClass::NotifyUnderAttack` (`0x004F93E0`): its radar/EVA ping,
+//!   then its event-6 raise on the owner's House Tags
+//!   ([`Simulation::notify_house_under_attack`]), both synchronous here,
+//!   before the source is read again;
+//! - `+0x53C` takes the source house's index (`0x00442980..0x0044298B`),
+//!   before the retaliation gates. RecordKill tests it against -1 to suppress
+//!   a sale's building-loss accounting (`0x0070304D`, `0x007033C3`);
 //! - nothing more when the raw mission (`+0xAC`) is Selling, the owner is
 //!   allied with the source (`0x004F9A90`), weapon 0 cannot aim
 //!   ([`building_weapon0_aims`]), or TarCom is in range of the weapon
@@ -38,13 +41,6 @@
 //!   draws once; VERA offers the launcher to SetTarget and draws nothing.
 //!   Frequency: common in AI games. Later owner: the missile-source chain,
 //!   which also owns kill credit, ShouldRetaliate and experience.
-//! - `NotifyUnderAttack` springs TEvent 6 ("attacked by any house") on the
-//!   house's tags (`0x004F95D4..0x004F95FD`, `0x006E53A0`). VERA evaluates
-//!   event6 but lacks this House-tag ingress. Trigger: a house-attached tag
-//!   with an admitted attacked event. Effect: this producer does not spring
-//!   it. Active retail skirmish reachability is unproved; a plain event6 is
-//!   object-classified, so House attachment needs a compound/linked event.
-//!   Later owner: the House-tag trigger chain.
 //! - The killing blow of a Selling or `Explodes=` building, which keeps
 //!   IsAlive and runs the block natively: the residual at the call in
 //!   `combat::world_receiver::commit_entities`.
@@ -69,11 +65,12 @@ use crate::sim::combat::combat_weapon::is_ally_by_object;
 use crate::sim::combat::damage::DamageState;
 use crate::sim::combat::{TargetKind, UnderAttackEvent, resolve_target_coords};
 use crate::sim::mission::MissionType;
-use crate::sim::world::Simulation;
+use crate::sim::world::{FrameEffects, Simulation};
 
 impl Simulation {
     /// The block for building `id`, alive after a hit whose ReceiveDamage
-    /// `result` is not PostMortem. Returns the NotifyUnderAttack ping.
+    /// `result` is not PostMortem. Returns the already submitted
+    /// NotifyUnderAttack ping for component observations.
     ///
     /// `source` is the source object; one no longer in the store is NULL, as
     /// native detaches a destroyed object (a bullet's source is cleared when
@@ -85,6 +82,7 @@ impl Simulation {
         result: DamageState,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
     ) -> Option<UnderAttackEvent> {
         // No source (`0x00442942`) or a result of 0 (`0x0044294A`).
         let source = source.filter(|&source| self.substrate.entities.contains(source))?;
@@ -92,7 +90,6 @@ impl Simulation {
             return None;
         }
         let building = self.substrate.entities.get(id)?;
-        let source_entity = self.substrate.entities.get(source)?;
         let obj = self.object_type(building.type_ref(), rules)?;
         // The radar cell is the building's GetCoords (vt+0x48, `0x00447AC0`,
         // the foundation centre; `0x004F94AE`, `0x004F950E`, `0x004F956A`).
@@ -103,12 +100,33 @@ impl Simulation {
             owner: building.owner(),
             victim_type: building.type_ref(),
         });
+        // NotifyUnderAttack (`0x0044297B`) ends with its House Tag raise
+        // before `0x00442980` asks the source for its House.
+        if let Some(ping) = ping {
+            self.notify_house_under_attack(ping, rules, overlay_registry, effects);
+        }
+        let Some(source_entity) = self.substrate.entities.get(source) else {
+            return ping;
+        };
+        let source_owner = source_entity.owner();
+        let source_category = source_entity.category();
+        //442980..44298B runs for every nonzero receiver result, including
+        // Dead while IsAlive remains set. Insignificant and undeploy only
+        // gate the earlier ping, not this retained House-index write.
+        if let Some(index) = self.houses.index_of(source_owner)
+            && let Some(building) = self.substrate.entities.get_mut(id)
+        {
+            building.record_building_damage_house_index(index as i32);
+        }
+        let Some(building) = self.substrate.entities.get(id) else {
+            return ping;
+        };
         if building.mission.current().known() == Some(MissionType::Selling)
             || is_ally_by_object(
                 Some(self.house_alliances.as_map()),
                 &self.interner,
                 building.owner(),
-                source_entity.owner(),
+                source_owner,
             )
             || !building_weapon0_aims(self, rules, id)
             || building.attack_target.target().is_some_and(|attack| {
@@ -119,7 +137,7 @@ impl Simulation {
             return ping;
         }
         let human = self.owner_is_human(building.owner());
-        if source_entity.category() == EntityCategory::Aircraft
+        if source_category == EntityCategory::Aircraft
             || (human && !rules.general.player_return_fire)
         {
             let frame = self.session.binary_frame();
@@ -134,7 +152,7 @@ impl Simulation {
             let _ = self.assign_target_represented(
                 id,
                 Some(TargetKind::Entity(source)),
-                Some(rules),
+                rules,
                 overlay_registry,
                 crate::sim::world::FrameEffects::default(),
             );

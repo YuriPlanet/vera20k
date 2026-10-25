@@ -25,6 +25,9 @@ const LOW_BRIDGE_COLOR: [u8; 3] = [31, 32, 33];
 const LOW_BRIDGE_CD_COLOR: [u8; 3] = [41, 42, 43];
 const OVERLAY_COLOR: [u8; 3] = [11, 12, 13];
 const BASE_COLOR: [u8; 3] = [10, 20, 30];
+// Full original47C060/5FED00 returns black from the shipped six-frame
+// LOBRDG27/28 and LOBRDB27/28 headers; black remains an overlay source.
+const BRIDGE_END_COLOR: [u8; 3] = [0, 0, 0];
 const SAVED_COLLAPSED_TMP_RAW: [u8; 3] = [200, 100, 50];
 const SAVED_COLLAPSED_TMP_COLOR: [u8; 3] = [100, 50, 25];
 
@@ -140,12 +143,18 @@ fn presentation_overlay(cell: (u16, u16), overlay_id: u8, frame: u8) -> MinimapO
 }
 
 fn colors() -> HashMap<(u8, u8), [u8; 3]> {
-    HashMap::from([
+    let mut colors = HashMap::from([
         ((24, 0), BRIDGE_COLOR),
         ((0x4A, 1), LOW_BRIDGE_COLOR),
         ((0xCD, 1), LOW_BRIDGE_CD_COLOR),
         ((10, 4), OVERLAY_COLOR),
-    ])
+    ]);
+    for id in [100, 101, 231, 232] {
+        for frame in 0..6 {
+            colors.insert((id, frame), BRIDGE_END_COLOR);
+        }
+    }
+    colors
 }
 
 fn projection(
@@ -303,7 +312,7 @@ fn gsi_04_01_structural_high_bridge_wins_in_full_and_incremental_paths() {
     assert_eq!(raw_pair(&full, cell), [BRIDGE_COLOR; 2]);
 
     let mut incremental = projection(&grid, &stale_destroyed, &[], expanded_bounds(), &colors);
-    assert_eq!(raw_pair(&incremental, cell), [BASE_COLOR; 2]);
+    assert_eq!(raw_pair(&incremental, cell), [BRIDGE_END_COLOR; 2]);
     apply_incremental(&mut incremental, &current_high, cell, &colors);
     assert_eq!(raw_pair(&incremental, cell), [BRIDGE_COLOR; 2]);
 }
@@ -420,7 +429,11 @@ fn gsi_04_01_high_collapse_uses_cellclass_overlay_then_repairs_in_full_and_incre
     let repaired_full = projection(&grid, &repaired, &[], expanded_bounds(), &colors);
     assert_eq!(raw_pair(&repaired_full, cell), [BRIDGE_COLOR; 2]);
 
-    for destroyed_overlay in [0xE7, 0xE8, u8::MAX] {
+    for (destroyed_overlay, expected) in [
+        (0xE7, BRIDGE_END_COLOR),
+        (0xE8, BRIDGE_END_COLOR),
+        (u8::MAX, BASE_COLOR),
+    ] {
         let mut collapsed = resolved.clone();
         // Keep the same native collapse input as the snapshot case below:
         // the structural flag is cleared independently of overlay identity.
@@ -428,18 +441,19 @@ fn gsi_04_01_high_collapse_uses_cellclass_overlay_then_repairs_in_full_and_incre
         let destroyed = live_runtime(collapsed, high_bridge_overlay(cell, destroyed_overlay));
         // This is the same full projection used for load/action-40 rebuilds.
         let full = projection(&grid, &destroyed, &[], expanded_bounds(), &colors);
-        assert_eq!(raw_pair(&full, cell), [BASE_COLOR; 2]);
-        assert!(
+        assert_eq!(raw_pair(&full, cell), [expected; 2]);
+        assert_eq!(
             full.overlay_pixels
                 .iter()
-                .all(|pixel| (pixel.rx, pixel.ry) != cell),
-            "collapsed overlay {destroyed_overlay:#04X} draws no overlay pixel",
+                .any(|pixel| (pixel.rx, pixel.ry) == cell),
+            destroyed_overlay != u8::MAX,
+            "terminal overlays remain sources; only absence restores TMP",
         );
 
         let mut incremental = projection(&grid, &repaired, &[], expanded_bounds(), &colors);
         assert_eq!(raw_pair(&incremental, cell), [BRIDGE_COLOR; 2]);
         apply_incremental(&mut incremental, &destroyed, cell, &colors);
-        assert_eq!(raw_pair(&incremental, cell), [BASE_COLOR; 2]);
+        assert_eq!(raw_pair(&incremental, cell), [expected; 2]);
         apply_incremental(&mut incremental, &repaired, cell, &colors);
         assert_eq!(raw_pair(&incremental, cell), [BRIDGE_COLOR; 2]);
     }
@@ -464,7 +478,11 @@ fn gsi_04_01_snapshot_high_collapse_uses_cellclass_overlay_after_structural_flag
         [BRIDGE_COLOR; 2],
     );
 
-    for saved_overlay in [0xE7, 0xE8, u8::MAX] {
+    for (saved_overlay, expected) in [
+        (0xE7, BRIDGE_END_COLOR),
+        (0xE8, BRIDGE_END_COLOR),
+        (u8::MAX, SAVED_COLLAPSED_TMP_COLOR),
+    ] {
         let restored =
             snapshot_restored_collapsed_high_runtime(&terrain_template, cell, saved_overlay);
         let restored_cell = restored
@@ -490,35 +508,76 @@ fn gsi_04_01_snapshot_high_collapse_uses_cellclass_overlay_after_structural_flag
         let full = projection(&grid, &restored, &[], expanded_bounds(), &colors);
         assert_eq!(
             raw_pair(&full, cell),
-            [SAVED_COLLAPSED_TMP_COLOR; 2],
-            "saved CellClass overlay {saved_overlay:#04X} must fall through to saved TMP",
+            [expected; 2],
+            "saved CellClass overlay {saved_overlay:#04X} selects its current source",
         );
 
         let mut incremental = projection(&grid, &repaired, &[], expanded_bounds(), &colors);
         apply_incremental(&mut incremental, &restored, cell, &colors);
         assert_eq!(
             raw_pair(&incremental, cell),
-            [SAVED_COLLAPSED_TMP_COLOR; 2],
+            [expected; 2],
             "incremental source must share the snapshot-restored high-family authority",
         );
     }
 }
 
 #[test]
-fn gsi_04_01_destroyed_low_overlay_falls_through_in_full_and_incremental_paths() {
+fn gsi_04_01_bridge_end_overlays_retain_black_in_full_and_incremental_paths() {
     let (grid, resolved) = fixture(None);
     let cell = central_cell(&grid, expanded_bounds());
     let colors = colors();
     let intact_low = runtime_with_overlay(resolved.clone(), cell, Some((0x4A, 0)));
-    let destroyed_low = runtime_with_overlay(resolved, cell, Some((100, 1)));
+    for id in [100, 101, 231, 232] {
+        let destroyed = runtime_with_overlay(resolved.clone(), cell, Some((id, 1)));
+        let full = projection(&grid, &destroyed, &[], expanded_bounds(), &colors);
+        assert_eq!(raw_pair(&full, cell), [BRIDGE_END_COLOR; 2], "{id}");
 
-    let full = projection(&grid, &destroyed_low, &[], expanded_bounds(), &colors);
-    assert_eq!(raw_pair(&full, cell), [BASE_COLOR; 2]);
+        let mut incremental = projection(&grid, &intact_low, &[], expanded_bounds(), &colors);
+        assert_eq!(raw_pair(&incremental, cell), [LOW_BRIDGE_COLOR; 2]);
+        apply_incremental(&mut incremental, &destroyed, cell, &colors);
+        assert_eq!(raw_pair(&incremental, cell), [BRIDGE_END_COLOR; 2], "{id}");
+    }
+}
 
-    let mut incremental = projection(&grid, &intact_low, &[], expanded_bounds(), &colors);
-    assert_eq!(raw_pair(&incremental, cell), [LOW_BRIDGE_COLOR; 2]);
-    apply_incremental(&mut incremental, &destroyed_low, cell, &colors);
-    assert_eq!(raw_pair(&incremental, cell), [BASE_COLOR; 2]);
+#[test]
+fn retail_bridge_end_headers_reach_full_and_dirty_radar_sources() {
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    crate::map::theater::load_theater(&mut assets, "TEMPERATE")
+        .expect("physical temperate theater");
+    let registry = retail.rules.overlay_registry().clone();
+    let names = std::collections::BTreeMap::from([(
+        100,
+        registry.name(100).expect("stock bridge end").to_string(),
+    )]);
+    let colors = crate::render::overlay_atlas::compute_overlay_radar_colors(
+        &assets,
+        &registry,
+        crate::render::overlay_atlas::OverlayRadarColorSource::Cell,
+        &names,
+        "tem",
+        "TEMPERATE",
+        retail.rules.art(),
+    );
+    let (grid, resolved) = fixture(None);
+    let cell = central_cell(&grid, expanded_bounds());
+    assert_eq!(colors.get(&(100, 1)), Some(&BRIDGE_END_COLOR));
+    let mut runtime = runtime_with_overlay(resolved.clone(), cell, Some((100, 1)));
+    runtime.resources.overlay_registry = registry;
+    let full = projection(&grid, &runtime, &[], expanded_bounds(), &colors);
+    assert_eq!(raw_pair(&full, cell), [BRIDGE_END_COLOR; 2]);
+
+    let absent = runtime_with_overlay(resolved, cell, None);
+    let mut dirty = projection(&grid, &absent, &[], expanded_bounds(), &colors);
+    assert_eq!(raw_pair(&dirty, cell), [BASE_COLOR; 2]);
+    apply_incremental(&mut dirty, &runtime, cell, &colors);
+    assert_eq!(raw_pair(&dirty, cell), [BRIDGE_END_COLOR; 2]);
 }
 
 #[test]
@@ -545,7 +604,7 @@ fn gsi_04_01_load_intact_bridge_discards_abandoned_destroyed_pixels() {
             ),
             cell,
         ),
-        [BASE_COLOR; 2],
+        [BRIDGE_END_COLOR; 2],
         "abandoned destroyed timeline used its current fallen bridge state",
     );
     assert_eq!(
@@ -596,13 +655,13 @@ fn gsi_04_01_load_destroyed_bridge_discards_abandoned_repair_pixels() {
         expanded_bounds(),
         &colors,
     );
-    assert_eq!(raw_pair(&restored_projection, cell), [BASE_COLOR; 2]);
+    assert_eq!(raw_pair(&restored_projection, cell), [BRIDGE_END_COLOR; 2]);
     assert!(
         restored_projection
             .overlay_pixels
             .iter()
-            .all(|pixel| (pixel.rx, pixel.ry) != cell),
-        "static bridge facts and abandoned repaired overlay cannot revive the saved collapse",
+            .any(|pixel| (pixel.rx, pixel.ry) == cell && pixel.color == [0, 0, 0, 255]),
+        "the saved terminal overlay retains black over abandoned repaired pixels",
     );
 }
 

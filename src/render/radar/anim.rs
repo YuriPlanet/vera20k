@@ -225,6 +225,21 @@ impl RadarPresentation {
     pub(in crate::render) fn phase(&self) -> RadarAnimPhase {
         self.animation.phase
     }
+    /// Native states 2..5: the housing is opening or closing.
+    fn housing_moving(&self) -> bool {
+        !matches!(
+            self.animation.phase,
+            RadarAnimPhase::Offline | RadarAnimPhase::Online
+        )
+    }
+    /// One `653100` draw: whether to upload, and whether the housing
+    /// finished opening or closing in it, where native ends the radar's
+    /// sound loop (`0x00653267` at frame 0, `0x0065328C` at frame 32).
+    fn draw(&mut self, wall_ms: u64) -> (bool, bool) {
+        let moving = self.housing_moving();
+        let upload = self.advance_draw(wall_ms);
+        (upload, moving && !self.housing_moving())
+    }
     fn admit_movie(&mut self) -> bool {
         if self.movie.is_some() {
             return false;
@@ -370,10 +385,13 @@ impl RadarAnimState {
         self.presentation.set_has_radar(has_radar)
     }
     /// Native 653100 samples wall time once per draw, independent of game speed.
-    pub fn tick(&mut self, gpu: &GpuContext, wall_ms: u64) {
-        if self.presentation.advance_draw(wall_ms) {
+    /// Returns whether the housing finished opening or closing in this draw.
+    pub fn tick(&mut self, gpu: &GpuContext, wall_ms: u64) -> bool {
+        let (upload, settled) = self.presentation.draw(wall_ms);
+        if upload {
             self.upload_frame(gpu);
         }
+        settled
     }
     pub fn retain_online_content(
         &mut self,
@@ -466,6 +484,10 @@ impl RadarAnimState {
 }
 
 #[cfg(test)]
+#[path = "availability_tests.rs"]
+mod availability_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use serde::Deserialize;
@@ -524,6 +546,28 @@ mod tests {
         radar.finish_movie(false);
         assert!(!radar.movie_pause_latch);
         assert_eq!(radar.animation.phase, RadarAnimPhase::Closing);
+    }
+    /// `653100` ends the radar's sound loop only on the draw that finishes
+    /// the housing: MovieOpening reaching 32 (`0x0065328C`) and Closing
+    /// reaching 0 (`0x00653267`), each once; a draw that is not due reports
+    /// nothing.
+    #[test]
+    fn the_housing_settles_once_on_its_final_frame() {
+        for (phase, frame) in [
+            (RadarAnimPhase::MovieOpening, 31),
+            (RadarAnimPhase::Closing, 1),
+        ] {
+            let mut radar = RadarPresentation::new(housing(), 2, 1).unwrap();
+            radar.animation = RadarAnimation {
+                phase,
+                frame,
+                last_bucket: 100,
+                duration: 4,
+            };
+            assert!(!radar.draw(1_663).1, "not due");
+            assert!(radar.draw(1_664).1, "{phase:?} settles");
+            assert!(!radar.draw(1_728).1, "settled housing stays");
+        }
     }
     /// Native656DF0 suppresses equal availability before direction admission;
     ///656BE0 preserves the housing timer during both reversal arms.

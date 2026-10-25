@@ -60,12 +60,10 @@ use super::track_process::TrackFamily;
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::MovementZone;
 use crate::rules::mission_data::MissionType;
-use crate::rules::object_type::Ability;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_kernel::native_xyz_distance;
 use crate::sim::combat::TargetKind;
-use crate::sim::combat::veterancy::has_weapon_ability;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::locomotor::MovementLayer;
@@ -163,12 +161,7 @@ impl Simulation {
                 .expect("same Process_Movement owner");
             clear_track_head(actor);
             if mission == Some(MissionType::Move) {
-                return Ok(self.unit_enter_idle_mode(
-                    id,
-                    Some(call.rules),
-                    false,
-                    call.frame_effects,
-                ));
+                return Ok(self.unit_enter_idle_mode(id, call.rules, false, call.frame_effects));
             }
             return Ok(false);
         }
@@ -239,10 +232,12 @@ impl Simulation {
         // recursion's (the retries at 0x4B397F, 0x4B4480 and the 0x4B4541
         // tail, the second stage's re-entries at 0x4B41B3 and 0x4B420B),
         // unless it is the Foot's first request in a frame the batch answered.
+        // A request for the Foot's own cell never waits.
         if Self::defer_path_search(
             &mut self.path_batch,
             &self.resolved_terrain,
             &self.overlay_grid,
+            &self.substrate.entities,
             id,
             super::path_batch::WaitingRequest::NoQueue,
         ) {
@@ -251,7 +246,7 @@ impl Simulation {
         let request = self.track_path_request(call, destination, 0)?;
         match self.run_track_path_request(
             &request,
-            Some(call.rules),
+            call.rules,
             call.registry,
             call.frame_effects,
         )? {
@@ -350,9 +345,9 @@ impl Simulation {
             return Ok(false);
         }
         //4B345B..4B34D1: Mark0, Unit+1AC(cell, dir, height, 0, 1), Mark1.
-        self.foot_mark_remove(id, Some(rules), call.registry, call.frame_effects);
+        self.foot_mark_remove(id, rules, call.registry, call.frame_effects);
         let code = self.track_can_enter(call, cell, direction, height)?;
-        self.foot_mark_put(id, Some(rules), call.registry, call.frame_effects);
+        self.foot_mark_put(id, rules, call.registry, call.frame_effects);
         let object = self.track_object(id, rules)?;
         let overlay = self.track_overlay(cell);
         //4B34D7..4B351D: the train and crusher coercions.
@@ -507,11 +502,13 @@ impl Simulation {
         let destination = super::path_batch::code2_ladder_destination(actor)
             .ok_or("Drive/Ship code-2 ladder without a track locomotor")?;
         // A batched re-path waits for the next frame's batch as if the timer
-        // still ran (`path_batch`, a proposed deviation).
+        // still ran (`path_batch`, a proposed deviation), unless it heads for
+        // the Foot's own cell.
         if Self::defer_path_search(
             &mut self.path_batch,
             &self.resolved_terrain,
             &self.overlay_grid,
+            &self.substrate.entities,
             id,
             super::path_batch::WaitingRequest::Code2Ladder { urgency },
         ) {
@@ -541,7 +538,7 @@ impl Simulation {
             return Ok(false);
         }
         //4B3A3E..4B3A56: SetDestination(NULL, 1).
-        self.set_unit_null_destination(id, Some(rules), None, call.frame_effects);
+        self.set_unit_null_destination(id, rules, None, call.frame_effects);
         Ok(false)
     }
 
@@ -598,7 +595,7 @@ impl Simulation {
                     }
                     //4B3F58..4B3F6E: an unreachable live destination clears.
                     if !self.foot_path_zone_precheck(id, self.live_track_destination(id), rules)? {
-                        self.set_unit_null_destination(id, Some(rules), None, call.frame_effects);
+                        self.set_unit_null_destination(id, rules, None, call.frame_effects);
                     }
                 }
                 second = self
@@ -682,7 +679,7 @@ impl Simulation {
         let picked = self.pickup_crate_at(
             id,
             coord_cell(candidate),
-            Some(call.rules),
+            call.rules,
             call.registry,
             call.frame_effects,
         );
@@ -863,13 +860,8 @@ impl Simulation {
             loco.store_track_head(call.family, Some(candidate));
         }
         //4B46DF..4B46FA: the crate question on the head, then limbo.
-        let picked = self.pickup_crate_at(
-            id,
-            reference,
-            Some(call.rules),
-            call.registry,
-            call.frame_effects,
-        );
+        let picked =
+            self.pickup_crate_at(id, reference, call.rules, call.registry, call.frame_effects);
         let actor = self
             .substrate
             .entities
@@ -1159,8 +1151,8 @@ impl Simulation {
             return Ok(());
         };
         //Type+D28, or HasWeaponAbility(0x11) by rank (0x70D0D0).
-        let crusher = object.crusher
-            || has_weapon_ability(actor.veterancy.rank_kind(), object, Ability::Crusher);
+        let crusher =
+            crate::sim::combat::veterancy::is_crusher(actor.veterancy.rank_kind(), object);
         let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
         let native = cells.lookup(cell);
         let deck = cells.flags(native) & 0x100 != 0 && {
@@ -1459,6 +1451,9 @@ mod tests {
         );
         let tree = sim.terrain_objects.cell_index()[&(11, 10)];
         assert!(!sim.substrate.entities.contains(tree));
+        // ObjectClass::Unlimbo5F4FEF..5F5045 admits only spawners to
+        // Logic; an ordinary TREE01 remains indexed and displayed without it.
+        assert!(!sim.terrain_objects.objects()[&tree].in_logic_vector());
         let cell = sim
             .resolved_terrain
             .as_ref()
@@ -1563,7 +1558,7 @@ mod tests {
                     .iter()
                     .filter(|event| matches!(
                         event, crate::sim::world::LifecycleTestEvent::TerrainExpiryBoundary {
-                            stable_id, indexed: true, in_logic: true, live: true, ..
+                            stable_id, indexed: true, in_logic: false, live: true, ..
                         } if *stable_id == tree
                     ))
                     .count(),

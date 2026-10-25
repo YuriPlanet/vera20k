@@ -391,7 +391,26 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // control on #2183's merge without that hash gave the previous value, with
 // every tripwire above green. Control removed.
 // Previous: 0x427A_48D7_ED16_244B.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x2B34_7F8A_A70F_EA3F;
+// #2543 removed the entity hash's determines_waypoint_edge input with the
+// frozen type fact it read; every object here hashed it as false. Hash
+// composition only: a temporary control restoring that false gave the
+// previous value, with every tripwire above green. Control removed.
+// Previous: 0x2B34_7F8A_A70F_EA3F.
+// 2026-10-24 shared ammo/reload: entity hashing now includes count
+// presence, signed unlimited ammo and the raw constructor reload clock.
+// Against raw c753af366, all 201 recorded non-hash observations, RNG
+// draws/caller sequences and the other 12 final hash domains matched
+// after the new zero clock; backtrace line shifts mapped to unchanged
+// source. This remains a Rust regression pin, not a native game golden.
+// Previous: 0x8BD4_EE67_3F59_0830.
+// Hash composition includes constructor planning registration and the shared ammo reload clock.
+// The native-speed migration (60da53f9c) replaces fixed fraction hashes with
+// binary64 and reaches the far cell at frame147 instead of146. Compared with
+// e59f6914f, the final facing timer moves166->167 and track residual7->6;
+// route, per-frame replay equality and all three absolute RNG pins still hold.
+// Residual: the fog/alliance digest also differs; final visibility planes match.
+// Previous Rust state pin: 0x4FC5_48E8_B854_D13D.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x8934_6F95_0887_B80C;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
@@ -576,6 +595,7 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
         mission: None,
         recruitable_a: true,
         recruitable_b: true,
+        group: -1,
         structure_upgrades: [None, None, None],
         structure_ai_sellable: false,
         structure_ai_repairable: false,

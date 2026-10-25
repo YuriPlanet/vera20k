@@ -94,6 +94,20 @@ impl DoorClass {
         self.phase = phase;
     }
 
+    /// Drawing progress `0x004A52F0`: the share of the transition done,
+    /// `(total - remaining) / total` from the live timer and the total its
+    /// Open or Close armed (a Reverse keeps the total), or 1.0 for a stable
+    /// door or a zero total. Presentation only.
+    pub(crate) fn draw_progress(self, frame: u32) -> f64 {
+        if !matches!(self.phase, DoorPhase::Opening | DoorPhase::Closing) || self.total_ticks == 0 {
+            return 1.0;
+        }
+        let done = self
+            .total_ticks
+            .wrapping_sub(self.timer.remaining(frame as i32));
+        f64::from(done) / f64::from(self.total_ticks)
+    }
+
     ///4A5150 followed by4A5360. Finish changes only the active byte;
     /// duration, total and anchor survive stable state and snapshot restore.
     pub(crate) fn advance(&mut self, frame: u32) {

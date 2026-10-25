@@ -172,7 +172,8 @@ impl Filter {
 
     /// The level of the longest directive prefix of `target`; `Off` when none match.
     fn level_for(&self, target: &str) -> LevelFilter {
-        self.directives
+        let level = self
+            .directives
             .iter()
             .rev()
             .find(|(prefix, _)| {
@@ -180,7 +181,17 @@ impl Filter {
                     .as_deref()
                     .is_none_or(|prefix| target.starts_with(prefix))
             })
-            .map_or(LevelFilter::Off, |&(_, level)| level)
+            .map_or(LevelFilter::Off, |&(_, level)| level);
+        // ureq TRACE includes unredacted HTTP wire data. This logger owns
+        // every destination (including telemetry); RUST_LOG must never expose
+        // account passwords, bearer tokens or relay grants. Keep diagnostic
+        // errors without accepting dependency wire/debug logs.
+        // https://docs.rs/ureq/3.5.0/ureq/#unversioned
+        if matches!(target.split("::").next(), Some("ureq" | "ureq_proto")) {
+            level.min(LevelFilter::Info)
+        } else {
+            level
+        }
     }
 
     fn max_level(&self) -> LevelFilter {
@@ -341,6 +352,15 @@ mod tests {
         );
         assert_eq!(Filter::parse("").level_for("any"), LevelFilter::Error);
         assert_eq!(Filter::parse("off").max_level(), LevelFilter::Off);
+    }
+
+    #[test]
+    fn http_wire_logging_cannot_expose_credentials_even_with_explicit_trace() {
+        let filter = Filter::parse("trace,ureq=trace,ureq_proto::client=trace");
+        assert_eq!(filter.level_for("ureq::request"), LevelFilter::Info);
+        assert_eq!(filter.level_for("ureq_proto::client"), LevelFilter::Info);
+        assert_eq!(filter.level_for("vera20k::app"), LevelFilter::Trace);
+        assert_eq!(Filter::parse("off").level_for("ureq"), LevelFilter::Off);
     }
 
     #[test]

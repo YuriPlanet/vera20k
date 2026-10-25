@@ -88,7 +88,7 @@ pub(crate) fn is_active(state: &AppState, target: ScrollTarget) -> bool {
 }
 
 fn specs(state: &AppState) -> Vec<ScrollSpec> {
-    if state.platform.focus_freeze_active() || shell_transition::blocks_shell_input(state) {
+    if state.focus_freeze_active() || shell_transition::blocks_shell_input(state) {
         return Vec::new();
     }
     if state.frontend.shell_message_box.is_some() {

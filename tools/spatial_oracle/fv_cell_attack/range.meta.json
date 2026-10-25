@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -29,30 +28,7 @@
     "unit_approach": "0x007414E0",
     "approach_range_return": "0x004D570E"
   },
-  "harness_sha256": "07a7deabfa090a457db13f4b322dcbd51471ba3a7b17be4c32848bf48267bb9e",
-  "sources": {
-    "tools/spatial_oracle/fv_cell_attack/range.py": "07a7deabfa090a457db13f4b322dcbd51471ba3a7b17be4c32848bf48267bb9e",
-    "tools/spatial_oracle/__init__.py": "d2b8761741eec0f99f145b6b84c9efbe5e91a8d08b59b83ef67bef54c75f0415",
-    "tools/spatial_oracle/fv_cell_attack/__init__.py": "70b0110690abfba1eb3104d00c3902189eb6db726d56b3f768d52235a1eca7c7",
-    "tools/native_oracle.py": "79dac1057d97e706f106a26145f00fa220d92c172b5173876c60fed22c17530c",
-    "tools/spatial_oracle/building_body_rules.py": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
-    "tools/rules_oracle/bridge_anim_lists.py": "2a7a96ea1e24f1129161e8fe5608c0ab69ac584ee6ad78fa91c43bd3ad072045",
-    "tools/spatial_oracle/map_queries.py": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305",
-    "tools/projectile_oracle/flat_art.py": "2f663fbb2b8c88925dd8aa46e8be9216d580ec033bac3e08a138bcd0b272b7c6",
-    "tools/rules_oracle/bridge_anim_inputs.py": "f7f2941e11bbede50ffab19554a789e4e3e42f4969b04ad4e9697973e659d316",
-    "tools/projectile_oracle/bridge_render_inputs.py": "4bfc6d80d7cd0d75f3db0123bb646011b6706f9195a8c1137e0f397941bff9e4",
-    "tools/projectile_oracle/guided_step.py": "66862363b6ada9a83f71645f8d2f1684984bde8cd35cb52091607d40427e528e",
-    "tools/projectile_oracle/ifv_fire_coord.py": "b4a869ace6b42a8283aa4519898ad568b4defa8ea7b773bb36373c713c5021d2",
-    "tools/spatial_oracle/bridge_target_composed.py": "fb3c713e877cfaa88c5003e7624056b91343354d4034eb6bc83ee4d477f3d453",
-    "tools/rmg_oracle/gen_rng_vectors.py": "bac5dde765d07d3f522b7281a21a8527869f5d4da59eb385e7f9fed7493775a2",
-    "tools/spatial_oracle/mapgen_range.py": "df39b5ab3a2450c98dfa749a67826d5cb87f9d73086dc2511ff3261906724eef",
-    "tools/spatial_oracle/anytown_damage/__init__.py": "5cca8aa87d9e3c1c8ff349b7a2c105a2bdfbce58bb13acae9fbda5645ef8c66a",
-    "tools/spatial_oracle/anytown_damage/inputs.py": "c3e1732837e85deb628f04862aaab8cf72dc3e8ba2804ce55db5dc46f2a68f25",
-    "tools/spatial_oracle/shrapnel_repair/__init__.py": "181c307c7f2f1767bee7fc8812eb72698df94241d26c669526254bf13084e003",
-    "tools/spatial_oracle/shrapnel_repair/packet_io.py": "80d7a5dd328c47c9fe453d0048c5ae116feef741220537f1d1dc4e587387b865",
-    "tools/spatial_oracle/fv_cell_attack/publication.py": "a246e250433db002ac154032cc830c75949d52d65ac81f4b03bf6e9e50022cc6"
-  },
   "native_input_packet_sha256": "a2197179f0818a7b2c231c8956601b2269df164db04e05d856b99db380a15d35",
-  "payload_sha256": "c2fb5e2f11272b701724380b5cd72ad7cde6f849141758470f9696bb02b097ea",
+  "payload_sha256": "2d416e7b00a81033be411b9f98e751758c00c0b23f14daec28251c432033e413",
   "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
 }

@@ -49,6 +49,7 @@ fn fly_and_jumpjet_planned_move_legs_progress_through_native_arrival() {
                         target_rx,
                         target_ry: 15,
                     },
+                    None,
                 )
                 .unwrap();
             let envelope = sim
@@ -147,6 +148,7 @@ fn insert(sim: &mut Simulation, id: u64, name: &str, category: EntityCategory, p
         .set_sub_y_for_test(SimFixed::from_num(point[1] % 256));
     entity.position.set_exact_z_leptons_for_test(Some(point[2]));
     entity.lifecycle.set_object_alive_for_test(true);
+    entity.lifecycle.set_cell_marked_for_test(true);
     entity.lifecycle.set_in_limbo_for_test(false);
     sim.substrate.entities.insert(entity);
     sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(id + 1));
@@ -156,7 +158,7 @@ fn insert(sim: &mut Simulation, id: u64, name: &str, category: EntityCategory, p
 /// LocalSize, the owner aircraft (no team, no planning path), a Unit
 /// blocker in the Foot vector, and reserving aircraft parked off the
 /// playfield.
-fn fixture(input: &Value) -> (Simulation, RuleSet) {
+pub(crate) fn fixture(input: &Value) -> (Simulation, RuleSet) {
     let ini = format!(
         "[AircraftTypes]\n0=TEST\n[VehicleTypes]\n0=BLOCKER\n\
          [TEST]\nStrength=100\nSpeed=8\nLandable=yes\nSpawned={}\n\
@@ -187,7 +189,6 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         ),
     );
     super::super::lifecycle_tests::install_common_raw_terrain(&mut sim, 128, 128, 0, None);
-
     let owner_cell = input.get("owner_cell").map_or((60, 64), cell_of);
     insert(
         &mut sim,
@@ -249,6 +250,14 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
             insert(&mut sim, id, "BLOCKER", EntityCategory::Unit, center(cell));
             id
         };
+        // The native packet supplies ground-list membership separately from
+        // the marked byte. Admit its explicit Mark(DOWN) publication here.
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .lifecycle
+            .set_cell_marked_for_test(false);
         sim.add_entity_occupancy(id);
     }
     for (n, cell) in input["reserved"]
@@ -597,7 +606,9 @@ fn queue(sim: &mut Simulation, mission: MissionType) {
         MissionId::from_known(mission),
         0,
         0,
-        &crate::sim::mission::authority::EntityReadyInputProvider,
+        &crate::sim::mission::authority::LiveReadyInputProvider {
+            rules: crate::rules::ruleset::RuleSet::empty_for_test(),
+        },
     )
     .unwrap();
 }

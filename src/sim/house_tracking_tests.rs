@@ -128,7 +128,7 @@ fn factory_counts_match_original_raw_class_dispatch() {
                     _ => panic!("unreviewed original counter offset {offset:x}"),
                 });
                 assert_eq!(
-                    TrackingFacts::of(EntityCategory::Structure, Some(ty), Some(&rules)).factory,
+                    TrackingFacts::of(EntityCategory::Structure, Some(ty), &rules).factory,
                     expected,
                     "{} {row} Naval={naval}",
                     table["name"],
@@ -248,6 +248,64 @@ fn native_tracking_corpus() {
         compared += 1;
     }
     assert_eq!(compared, 34);
+}
+
+/// Original active-count bodies, including signed wrap and DontScore.
+/// Actual ChangeOwner composition is covered by the crew lifecycle test.
+#[test]
+fn nominal_active_counts_match_executed_native_histories() {
+    use crate::rules::ruleset::HouseCostFactors;
+    use crate::util::native_x87::NativeF32Bits;
+    let corpus = crate::test_fixture::json("tools/spatial_oracle/nominal_building_survivor.json");
+    let factors = HouseCostFactors {
+        country: [NativeF32Bits::ONE; 5],
+        factory_plant: [NativeF32Bits::ONE; 5],
+    };
+    let mut compared = 0;
+    for row in corpus["count_histories"].as_array().unwrap() {
+        if row["input"]["name"].as_str().unwrap().contains("capture") {
+            continue;
+        }
+        let (mut sim, rules, owner) = one_house();
+        let kind = if row["input"]["dont_score"] == true {
+            "GID"
+        } else {
+            "GI"
+        };
+        let id = sim
+            .spawn_object_limbo_at_height(kind, "Americans", 10, 10, 0, 0, &rules)
+            .unwrap();
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        if row["input"]["nominal"] == true {
+            entity.mark_nominal_survivor();
+        }
+        let entity = entity.clone();
+        let tracking = sim.houses.get_mut(&owner).unwrap().tracking_mut();
+        tracking.set_active_for_test(
+            EntityCategory::Infantry,
+            entity.type_ref(),
+            row["initial"]["houses"]["old"]["slot"].as_i64().unwrap() as i32,
+        );
+        for step in row["steps"].as_array().unwrap() {
+            match step["operation"].as_str().unwrap() {
+                "add" => tracking.added_to_game(&entity, &factors),
+                "remove" => tracking.removed_from_game(&entity, &factors),
+                operation => panic!("unexpected counter operation {operation}"),
+            }
+            assert_eq!(
+                i64::from(tracking.active_count(EntityCategory::Infantry, entity.type_ref())),
+                step["after"]["houses"]["old"]["slot"].as_i64().unwrap(),
+                "{} {step}",
+                row["input"]["name"]
+            );
+            assert_eq!(
+                i64::from(tracking.active_for_test().1),
+                step["after"]["houses"]["old"]["total"].as_i64().unwrap()
+            );
+        }
+        compared += 1;
+    }
+    assert_eq!(compared, 6);
 }
 
 fn one_house() -> (Simulation, RuleSet, InternedId) {
@@ -390,12 +448,12 @@ fn discarding_a_constructed_object_releases_its_tracking() {
 
     assert!(sim.discard_constructed_limbo(
         building,
-        Some(&rules),
+        &rules,
         crate::sim::world::FrameEffects::default()
     ));
     assert!(sim.discard_constructed_limbo(
         unit,
-        Some(&rules),
+        &rules,
         crate::sim::world::FrameEffects::default()
     ));
     let tracking = sim.houses[&house].tracking();

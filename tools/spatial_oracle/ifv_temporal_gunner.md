@@ -23,8 +23,8 @@ VERA20K_IFV_MAP=/path/to/ordinary-temporal-gunner.map \
 `--write` explicitly generates the small consumed `ifv_temporal_gunner.json`
 and `ifv_temporal_gunner.meta.json`. The payload retains physical bytes/hashes,
 selected lexical strings, original read defaults and retained results. The
-sidecar pins the executable, environment, entry points, assumptions, transport
-and replay command; it contains no repository source hashes. The runner guards
+sidecar records the entry points, assumptions, transport and replay command;
+it contains no executable or repository source hashes. The runner guards
 loaded Python sources during generation. Imports and `--help` do not execute
 the native image. The normal IFV mode's independent `--check` protects its
 retained output.

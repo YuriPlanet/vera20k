@@ -48091,7 +48091,7 @@
       },
       "prior_packet": {
         "path": "tools/projectile_oracle/ordinary_collision_vectors.json",
-        "sha256": "d63b965ddeb1a12adb7fa200273273e2a2f0adeb48d0294ff9544dba467948c3"
+        "sha256": "b641421d9ff59b89d8be2f9287a3cd06d6344e675a5319c83a3565372afd3ad9"
       },
       "rocking_angles": [
         0,
@@ -48220,7 +48220,7 @@
     "prerequisite_packet": {
       "fields": "type_inputs, type_readers.turret_offset, type_readers.warhead_ap, aim_cases",
       "path": "tools/procedural_drawing_oracle/action_lines_attack_prerequisites.json",
-      "sha256": "4584867d33dbe588dcc956e4ea7255a7f905222b15754153a5520c44ba78e8e9"
+      "sha256": "888bacf4fa4cfb18da6c8bb4ce54fd46807c7501aac83ebcf8a29045b9ca9493"
     },
     "production_camera": [
       -2100,

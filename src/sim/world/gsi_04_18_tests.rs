@@ -65,6 +65,11 @@ fn insert_structure(
     );
     entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.set_cell_marked_for_test(false);
+    // These aggregate/map controls supply already-discovered providers.
+    // Controlled campaign Houses require this retained +41B (508FCE).
+    entity
+        .discovery
+        .set_discovered_by_current_house_for_test(true);
     sim.set_next_stable_object_id_for_test(sim.next_stable_object_id().max(stable_id + 1));
     sim.substrate.entities.insert(entity);
     sim.add_entity_occupancy(stable_id);
@@ -352,7 +357,7 @@ fn shroud_current_sight_world_collector_and_native_frame_restore() {
     insert_sight_unit(&mut sim, 2, owner, 12, 12);
     reveal_inserted_sight(&mut sim, 1);
     reveal_inserted_sight(&mut sim, 2);
-    sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
+    sim.refresh_fog(&vision::VisionConfig::default(), &rules);
     sim.reconcile_active_vision_structures(&rules);
     assert!(sim.fog.is_cell_visible(owner, 12, 12));
     assert!(!sim.fog.is_cell_gap_covered(owner, 12, 12));
@@ -400,7 +405,7 @@ fn shroud_current_sight_new_generator_identity_consumes_pending() {
     insert_sight_unit(&mut sim, 2, owner, 12, 12);
     reveal_inserted_sight(&mut sim, 1);
     reveal_inserted_sight(&mut sim, 2);
-    sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
+    sim.refresh_fog(&vision::VisionConfig::default(), &rules);
     sim.release_object_sight_with_context(2, UninitContext::default());
     sim.substrate
         .entities
@@ -408,7 +413,7 @@ fn shroud_current_sight_new_generator_identity_consumes_pending() {
         .unwrap()
         .lifecycle
         .set_in_limbo_for_test(true);
-    sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
+    sim.refresh_fog(&vision::VisionConfig::default(), &rules);
     sim.reconcile_active_vision_structures(&rules);
     assert!(
         sim.fog.is_cell_revealed(owner, 12, 12),
@@ -629,7 +634,7 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
         None,
         UninitContext::default(),
     );
-    sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
+    sim.refresh_fog(&vision::VisionConfig::default(), &rules);
     insert_structure(&mut sim, 1, gapper, "GAGAP", 12);
     sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
     sim.reconcile_active_vision_structures(&rules);
@@ -642,7 +647,7 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
         .unwrap()
         .lifecycle
         .set_in_limbo_for_test(true);
-    sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
+    sim.refresh_fog(&vision::VisionConfig::default(), &rules);
     insert_structure(&mut sim, 3, gapper, "GAGAP", 12);
     sim.visit_building_operational(3, &rules, None, crate::sim::world::FrameEffects::default());
     sim.reconcile_active_vision_structures(&rules);
@@ -662,7 +667,7 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
         None,
         UninitContext::default(),
     );
-    sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
+    sim.refresh_fog(&vision::VisionConfig::default(), &rules);
     {
         let clocks = &mut sim
             .substrate
@@ -694,11 +699,27 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
     );
     sim.session.set_binary_frame_for_test(119);
     sim.set_logic_order_for_test(vec![2]);
-    sim.advance_live_object_pass(None, None, crate::sim::world::FrameEffects::default())
-        .expect("fixture frame must complete");
+    sim.advance_live_object_pass(
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        None,
+        crate::sim::world::FrameEffects::default(),
+    )
+    .expect("fixture frame must complete");
     let clocks = &sim.substrate.entities.get(2).unwrap().sight_refresh_timers;
     assert_eq!(clocks.timer(a), CdTimer::started(119, 15));
     assert_eq!(clocks.timer(b), CdTimer::started(119, 15));
+    assert_eq!(
+        clocks.last_height(a),
+        208,
+        "only the due viewer sampled height"
+    );
+    assert_eq!(
+        clocks.last_height(b),
+        0,
+        "the other viewer retains constructor264"
+    );
+    assert_eq!(clocks.last_height(c), 0);
+    assert_eq!(clocks.last_height(reverse), 0);
     assert!(
         !clocks.has_timer_for_test(c),
         "nonallied viewer never borrows another viewer's countdown"
@@ -741,7 +762,11 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
     *runtime = runtime.clone().with_phase_for_test(
         crate::sim::movement::jumpjet_movement::jumpjet_flight::STATE_TRANSLATE,
     );
-    sim.refresh_high_flying_sight_before_process(2, None);
+    sim.refresh_high_flying_sight_before_process(
+        2,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        crate::sim::world::FrameEffects::default(),
+    );
     assert_eq!(
         sim.substrate
             .entities
@@ -751,6 +776,12 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
             .timer(c),
         CdTimer::started(119, 15)
     );
+    let clocks = &sim.substrate.entities.get(2).unwrap().sight_refresh_timers;
+    // Process advanced the physical height after a's earlier sight visit.
+    // The newly allied client samples that current height, not a's history.
+    assert_eq!(clocks.last_height(c), 213);
+    assert_eq!(clocks.last_height(a), 208);
+    assert_eq!(clocks.last_height(b), 0);
     assert!(sim.fog.is_cell_revealed(c, 12, 12));
 }
 
@@ -772,7 +803,11 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
     sim.substrate.entities.get_mut(2).unwrap().locomotor = Some(loco);
     Simulation::set_object_height_unmarked(&mut sim.substrate, &sim.resolved_terrain, 2, 207);
     sim.session.set_binary_frame_for_test(119);
-    sim.refresh_high_flying_sight_before_process(2, None);
+    sim.refresh_high_flying_sight_before_process(
+        2,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        crate::sim::world::FrameEffects::default(),
+    );
     assert_eq!(
         sim.substrate
             .entities
@@ -797,7 +832,11 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
             .set_current_speed_for_test(SimFixed::from_num(0));
     }
     Simulation::set_object_height_unmarked(&mut sim.substrate, &sim.resolved_terrain, 2, 208);
-    sim.refresh_high_flying_sight_before_process(2, None);
+    sim.refresh_high_flying_sight_before_process(
+        2,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        crate::sim::world::FrameEffects::default(),
+    );
     assert_eq!(
         sim.substrate
             .entities
@@ -820,7 +859,11 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
         .set_current_speed_for_test(SimFixed::from_num(-1));
     // Membership is false: the admitted FootAI event calls leaves which reject,
     // then still reloads15. Native moving compares !=0, so negative speed admits.
-    sim.refresh_high_flying_sight_before_process(2, None);
+    sim.refresh_high_flying_sight_before_process(
+        2,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        crate::sim::world::FrameEffects::default(),
+    );
     assert_eq!(
         sim.substrate
             .entities
@@ -838,7 +881,11 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
         .lifecycle
         .set_in_limbo_for_test(true);
     sim.session.set_binary_frame_for_test(134);
-    sim.refresh_high_flying_sight_before_process(2, None);
+    sim.refresh_high_flying_sight_before_process(
+        2,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        crate::sim::world::FrameEffects::default(),
+    );
     assert_eq!(
         sim.substrate
             .entities
@@ -855,7 +902,11 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
         entity.set_in_playfield(true);
         entity.sight.stamp_type_sight(-1);
     }
-    sim.refresh_high_flying_sight_before_process(2, None);
+    sim.refresh_high_flying_sight_before_process(
+        2,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
+        crate::sim::world::FrameEffects::default(),
+    );
     assert_eq!(
         sim.substrate
             .entities
@@ -881,9 +932,18 @@ fn shroud_current_sight_spy_sat_event_preserves_registration_order_and_restore()
     .unwrap();
     for gap_first in [false, true] {
         let (mut sim, rules, owner) = fixture();
+        sim.session.set_current_house_for_test(Some(owner));
         let gapper = sim.interner.intern("Soviet");
         let (source, first_gap) = if gap_first { (2, 1) } else { (1, 2) };
         insert_sight_unit(&mut sim, source, owner, 12, 12);
+        // The supplied reveal/release history represents the native current
+        // player's discovered source (4ADCD0's50B6F0/+41B Human arm).
+        sim.substrate
+            .entities
+            .get_mut(source)
+            .unwrap()
+            .discovery
+            .set_discovered_by_current_house_for_test(true);
         sim.update_object_sight_in_view(
             source,
             0,
@@ -892,7 +952,7 @@ fn shroud_current_sight_spy_sat_event_preserves_registration_order_and_restore()
             None,
             UninitContext::default(),
         );
-        sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
+        sim.refresh_fog(&vision::VisionConfig::default(), &rules);
         insert_structure(&mut sim, first_gap, gapper, "GAGAP", 12);
         sim.visit_building_operational(
             first_gap,
@@ -910,7 +970,7 @@ fn shroud_current_sight_spy_sat_event_preserves_registration_order_and_restore()
             .unwrap()
             .lifecycle
             .set_in_limbo_for_test(true);
-        sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
+        sim.refresh_fog(&vision::VisionConfig::default(), &rules);
         insert_structure(&mut sim, 3, gapper, "GAGAP", 12);
         sim.visit_building_operational(3, &rules, None, crate::sim::world::FrameEffects::default());
         sim.reconcile_active_vision_structures(&rules);
@@ -930,7 +990,7 @@ fn shroud_current_sight_spy_sat_event_preserves_registration_order_and_restore()
             None,
             UninitContext::default(),
         );
-        sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
+        sim.refresh_fog(&vision::VisionConfig::default(), &rules);
         // Actual House transition invokes the map bracket before577A changes.
         // This uplink's own sight is outside the observed cell.
         insert_structure(&mut sim, 4, owner, "GASPYSAT", 2);
@@ -1025,7 +1085,7 @@ fn shroud_current_sight_spy_sat_replays_allied_buildings_but_not_mobile_admissio
             insert_sight_unit(&mut sim, 1, ally, 12, 12);
         }
         reveal_inserted_sight(&mut sim, 1);
-        sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
+        sim.refresh_fog(&vision::VisionConfig::default(), &rules);
         let admission = sim.fog.sight_admissions_for_test()[&(1, viewer)].clone();
         insert_structure(&mut sim, 2, hostile, "GAGAP", 12);
         sim.visit_building_operational(2, &rules, None, crate::sim::world::FrameEffects::default());
@@ -1039,7 +1099,7 @@ fn shroud_current_sight_spy_sat_replays_allied_buildings_but_not_mobile_admissio
         assert_eq!(sim.fog.is_cell_revealed(viewer, 12, 12), building);
         assert_eq!(sim.fog.sight_admissions_for_test()[&(1, viewer)], admission);
         for _ in 0..2 {
-            sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
+            sim.refresh_fog(&vision::VisionConfig::default(), &rules);
             sim.reconcile_active_vision_structures(&rules);
             assert_eq!(
                 sim.fog.is_cell_revealed(viewer, 12, 12),
@@ -1050,7 +1110,7 @@ fn shroud_current_sight_spy_sat_replays_allied_buildings_but_not_mobile_admissio
         }
         let bytes = save_codec::serialize(&sim.fog).unwrap();
         sim.fog = save_codec::deserialize(&bytes).unwrap();
-        sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
+        sim.refresh_fog(&vision::VisionConfig::default(), &rules);
         sim.reconcile_active_vision_structures(&rules);
         assert_eq!(sim.fog.is_cell_revealed(viewer, 12, 12), building);
         assert_eq!(sim.fog.sight_admissions_for_test()[&(1, viewer)], admission);
@@ -1064,6 +1124,7 @@ fn shroud_current_sight_spy_sat_replays_allied_buildings_but_not_mobile_admissio
 #[test]
 fn reset_shroud_replays_own_sight_and_allied_buildings() {
     let (mut sim, rules, viewer) = fixture();
+    sim.session.set_current_house_for_test(Some(viewer));
     let ally = sim.interner.intern("Alliance");
     sim.house_alliances_mut_for_test()
         .entry("ALLIANCE".into())
@@ -1074,10 +1135,16 @@ fn reset_shroud_replays_own_sight_and_allied_buildings() {
         .or_default()
         .insert("ALLIANCE".into());
     insert_sight_unit(&mut sim, 1, viewer, 4, 4);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .discovery
+        .set_discovered_by_current_house_for_test(true);
     insert_structure(&mut sim, 2, ally, "GSI418SIGHT", 18);
     reveal_inserted_sight(&mut sim, 1);
     reveal_inserted_sight(&mut sim, 2);
-    sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
+    sim.refresh_fog(&vision::VisionConfig::default(), &rules);
     assert!(sim.fog.is_cell_visible(viewer, 18, 12));
     sim.reveal_map_for_owner(viewer, &rules);
     assert!(sim.houses[&viewer].map_is_clear());

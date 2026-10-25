@@ -1,7 +1,9 @@
-//! Render glue for campaign victory dialog `0x103`.
+//! Render glue for campaign victory dialog `0x103` and the LAN Cooperative
+//! campaign end `0xBC7`.
 //!
-//! Native `GameExit::Victory` opens `0x103` through `0x6C8E80`; this renderer
-//! consumes that dialog's retail controls and texts from
+//! Native `GameExit::Victory` opens `0x103` through `0x6C8E80`, and
+//! Cooperative `+0xA4` opens `0xBC7` through `0x00471420`; this renderer
+//! consumes the open dialog's retail controls and texts from
 //! `ui::campaign_score_shell`. It deliberately does not borrow the Skirmish
 //! score table (`0x108`) or its side-art owner.
 
@@ -20,15 +22,13 @@ use crate::render::shell_paint::{
 };
 use crate::render::shell_text::ShellAlign;
 use crate::render::shell_text_reveal::PathAReveal;
-use crate::ui::campaign_score_shell::{
-    CAMPAIGN_SCORE_PAGE, CONTINUE_BUTTON, CampaignScoreControlSpec, SCORE_ART_REGION_STATIC,
-};
+use crate::ui::campaign_score_shell::{CampaignScoreDialog, SCORE_ART_REGION_STATIC};
 
 const SHELL_TEXT: [u8; 3] = [255, 255, 0];
 const HIGHLIGHT: [u8; 3] = [255, 255, 255];
 
-/// Paint campaign dialog `0x103`. It needs the shared shell chrome, but no
-/// Skirmish score art: the retail 0x103 template has its own static controls.
+/// Paint campaign dialog `0x103` or `0xBC7`. It needs the shared shell chrome,
+/// but no Skirmish score art: each template has its own static controls.
 pub(crate) fn render_campaign_score_page(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
@@ -46,9 +46,15 @@ pub(crate) fn render_campaign_score_page(
     // `0x006071E0` owns both slides; `SetSlideChildSuppressProc` hides the
     // dialog's statics (including the SCRA kind-4 static) until SHOW completes,
     // and the teardown repaint covers them while the column slides out.
+    let dialog = state
+        .frontend
+        .campaign_score_page
+        .as_ref()
+        .expect("checked before render")
+        .dialog;
     let exit_wave = crate::app::frontend::shell_transition::shell_exit_wave(
         state,
-        crate::app::frontend::shell_transition::ShellSlideKind::CampaignScore,
+        crate::app::frontend::shell_transition::ShellSlideKind::campaign_score(dialog),
     )
     .cloned();
     let leaving = exit_wave.is_some();
@@ -91,13 +97,18 @@ pub(crate) fn render_campaign_score_page(
         };
         (page.layout(width, height, fills_window), frame)
     };
+    // `0xBC7`'s monitor `0x71C` runs the shared kind-4 timer.
+    let monitor_frame = (children && dialog == CampaignScoreDialog::CampaignEnd)
+        .then(|| crate::app::frontend::menu_page_render::paint_shell_monitor(state))
+        .flatten();
+    let continue_id = dialog.continue_button();
     let controller = &state.frontend.shell_controller;
-    let active = controller.top_id() == Some(CAMPAIGN_SCORE_PAGE.dialog);
+    let active = controller.top_id() == Some(dialog.id());
     let hovered = children
         .then(|| active.then(|| controller.hovered()).flatten())
         .flatten();
     let status = hovered
-        .and_then(CampaignScoreControlSpec::for_id)
+        .and_then(|id| dialog.control(id))
         .and_then(|control| control.tooltip_key)
         .map(|key| resolve_csf(state, key).into_owned())
         .unwrap_or_default();
@@ -121,23 +132,27 @@ pub(crate) fn render_campaign_score_page(
             labels.push(PaintLabel {
                 text: static_text.text().to_owned().into(),
                 rect,
-                // The low two bits of Win32 STATIC style select left/center/right;
-                // only SS_CENTER (1) is used by this dialog. The title keeps its
-                // native centered style, while the data prose remains left aligned.
-                align: if CampaignScoreControlSpec::for_id(static_text.id)
-                    .is_some_and(|control| control.native_style & 0x3 == 0x1)
-                {
-                    ShellAlign::H_CENTER
-                } else {
-                    ShellAlign::NONE
-                },
-                rgb: SHELL_TEXT_RGB_ENABLED,
+                align: static_align(dialog, static_text.id),
+                rgb: static_text.rgb.map_or(SHELL_TEXT_RGB_ENABLED, rgb_f32),
                 path_a_reveal: Some(PathAReveal {
                     count: window.count,
                     range: window.range,
-                    base_rgb: SHELL_TEXT,
+                    base_rgb: static_text.rgb.unwrap_or(SHELL_TEXT),
                     highlight_rgb: HIGHLIGHT,
                 }),
+            });
+        }
+        // `0xBC7`'s score cells paint whole in their row colour.
+        for cell in campaign_page.cells() {
+            let Some(rect) = layout.control_rect(cell.id) else {
+                continue;
+            };
+            labels.push(PaintLabel {
+                text: cell.text.clone().into(),
+                rect,
+                align: static_align(dialog, cell.id),
+                rgb: rgb_f32(cell.rgb),
+                path_a_reveal: None,
             });
         }
     }
@@ -163,6 +178,9 @@ pub(crate) fn render_campaign_score_page(
         Some(layout.lower_strip),
         layout.screen.w,
     ));
+    chrome_sprites.extend(monitor_frame.and_then(|frame| {
+        shell_paint::paint_warning_monitor(chrome, layout.warning_monitor, frame, layout.scale)
+    }));
 
     if let Some(wave) = wave.as_ref() {
         // The slide engine paints the whole right-panel column; the steady
@@ -178,7 +196,7 @@ pub(crate) fn render_campaign_score_page(
     } else {
         vec![PaintButton {
             rect: layout.continue_button,
-            pressed: pressed == Some(CONTINUE_BUTTON),
+            pressed: pressed == Some(continue_id),
             hovered: false,
             enabled: true,
         }]
@@ -195,7 +213,7 @@ pub(crate) fn render_campaign_score_page(
             text: resolve_csf(state, "GUI:Continue").into_owned().into(),
             rect: owner_draw_button_label_rect(
                 layout.continue_button,
-                pressed == Some(CONTINUE_BUTTON),
+                pressed == Some(continue_id),
             ),
             align: ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0),
             rgb: SHELL_TEXT_RGB_ENABLED,
@@ -208,9 +226,12 @@ pub(crate) fn render_campaign_score_page(
     if let Some(art) = state.frontend.campaign_score_art.as_ref() {
         let background = layout.background;
         let mut background_sprites = Vec::with_capacity(1);
-        // `0x006C8E80` calls `0x0072E9F0`, which draws SCRBK at
-        // `[0x00B0FC1C]` with its native 472x448 or 632x568 size. At
-        // 1024x768 the origin is the centred (112, 84), never (0, 0).
+        // Paint mode 1's `Background_Overlay` (`0x0072E730` from
+        // `WM_PAINT_Handler 0x00621E90`) draws SCRBK, `0x0060CF00`'s
+        // background shape for both dialogs, at `[0x00B0FC1C]` with its
+        // native 472x448 or 632x568 size (`0x103` also draws it once
+        // before it runs, `0x0072E9F0`). At 1024x768 the origin is the
+        // centred (112, 84), never (0, 0).
         shell_paint::push_entry_sized(
             &mut background_sprites,
             art.background,
@@ -280,4 +301,17 @@ pub(crate) fn render_campaign_score_page(
         },
     );
     Ok(true)
+}
+
+/// The low two bits of Win32 STATIC style select left, centre or right.
+fn static_align(dialog: CampaignScoreDialog, id: u16) -> ShellAlign {
+    match dialog.control(id).map(|control| control.native_style & 0x3) {
+        Some(1) => ShellAlign::H_CENTER,
+        Some(2) => ShellAlign::H_RIGHT,
+        _ => ShellAlign::NONE,
+    }
+}
+
+fn rgb_f32(rgb: [u8; 3]) -> [f32; 3] {
+    rgb.map(|channel| f32::from(channel) / 255.0)
 }

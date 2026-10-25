@@ -41,13 +41,120 @@ pub const ALLY_OPCODE: u8 = 0x03;
 pub const CHEER_OPCODE: u8 = 0x2d;
 /// Native `EventClass` opcode for a MegaMission order envelope.
 pub const MEGAMISSION_OPCODE: u8 = 0x04;
+/// Per-House capacity of Execute_DoList's secondary MegaMission ring.
+pub const MEGAMISSION_STAGE_CAPACITY: usize = 0x100;
+
+/// Stage one already-admitted MegaMission for the current House.
+///
+/// Native `Execute_DoList 0x0064C380`, `0x0064C739..0x0064C7B1`, copies
+/// only the first 256 opcode-4 events into its secondary ring. Overflow is
+/// consumed by the caller without execution (`0x0064CAA8`); it is not deferred
+/// to another frame. Each House drains its stage before the next House starts
+/// (`0x0064CBF4..0x0064CC3D`). This admission owner serves both the production
+/// semantic dispatcher and the synchronized byte queue. Local OutList admission
+/// is a separate boundary. Source: original gamemd.exe instructions.
+pub(crate) fn stage_megamission<T: Clone>(
+    stage: &mut Vec<T>,
+    command: &T,
+    capacity: usize,
+) -> bool {
+    if stage.len() >= capacity {
+        return false;
+    }
+    stage.push(command.clone());
+    true
+}
+
 /// Native selected-object Scatter event.
 pub const SCATTER_OPCODE: u8 = 0x07;
+/// IDLE6, issued by StopCommand730EA0 through ClickedEvent6FFE00.
+pub const IDLE_OPCODE: u8 = 0x06;
+/// Selected-object DEPLOY, issued by the D key through ClickedEvent6FFE00.
+pub const DEPLOY_OPCODE: u8 = 0x09;
+/// Building443860/44363C: retain an object or prepared Cell as ArchiveTarget.
+pub const ARCHIVE_OPCODE: u8 = 0x1e;
+/// Display BandBox_LeftUp4AC0E7: toggle the clicked building's repair.
+pub const REPAIR_OPCODE: u8 = 0x15;
+pub const PLACE_OPCODE: u8 = 0x0b;
+pub const PRODUCE_OPCODE: u8 = 0x0e;
+pub const SUSPEND_OPCODE: u8 = 0x0f;
+pub const ABANDON_OPCODE: u8 = 0x10;
+pub const ABANDON_ALL_OPCODE: u8 = 0x2e;
 /// Native `EventClass` opcode 0x0D, the GAMESPEED event. `EventClass::Execute`
 /// type 13 (`0x004C794B`) writes the payload dword at Event+7 into the
 /// GameSpeed setting `0x00A8EB60`, then posts `TXT_PLAYER_CHANGED_SPEED` when
 /// the sender is not the local player. Offline Options uses `SetGameSpeed`.
 pub const GAME_SPEED_OPCODE: u8 = 0x0d;
+pub const OPTIONS_OPCODE: u8 = 0x0c;
+pub const LATENCY_FUDGE_OPCODE: u8 = 0x24;
+/// ProcessNetwork647E7B / EventClass4C800C: synchronized network timing.
+pub const TIMING_OPCODE: u8 = 0x20;
+/// ProcessNetwork647767 / EventClass4C80B1: a source's mean frame cost.
+pub const PROCESS_TIME_OPCODE: u8 = 0x21;
+
+/// The five-byte EVENT_TIMING payload. A zero send rate cannot be produced by
+/// ProcessNetwork and would divide by zero in native; reject it on decode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TimingRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub frames_per_second: u16,
+    pub max_ahead: u16,
+    pub frame_send_rate: std::num::NonZeroU8,
+}
+
+impl TimingRecord {
+    pub fn encode(self) -> Result<CommandRecord, CommandRecordError> {
+        let mut payload = [0; 5];
+        payload[..2].copy_from_slice(&self.frames_per_second.to_le_bytes());
+        payload[2..4].copy_from_slice(&self.max_ahead.to_le_bytes());
+        payload[4] = self.frame_send_rate.get();
+        CommandRecord::encode(
+            TIMING_OPCODE,
+            i32::from(self.house_id),
+            self.frame,
+            &payload,
+        )
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        (record.opcode() == TIMING_OPCODE).then_some(())?;
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            frames_per_second: u16::from_le_bytes(record.payload()[..2].try_into().ok()?),
+            max_ahead: u16::from_le_bytes(record.payload()[2..4].try_into().ok()?),
+            frame_send_rate: std::num::NonZeroU8::new(record.payload()[4])?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProcessTimeRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub milliseconds: u16,
+}
+
+impl ProcessTimeRecord {
+    pub fn encode(self) -> Result<CommandRecord, CommandRecordError> {
+        CommandRecord::encode(
+            PROCESS_TIME_OPCODE,
+            i32::from(self.house_id),
+            self.frame,
+            &self.milliseconds.to_le_bytes(),
+        )
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        (record.opcode() == PROCESS_TIME_OPCODE).then_some(())?;
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            milliseconds: u16::from_le_bytes(record.payload()[..2].try_into().ok()?),
+        })
+    }
+}
 
 /// Payload of the native GAMESPEED event (opcode `0x0D`, type 13 at
 /// `0x004C794B`): the setting dword at Event+7; the sender rides the header.
@@ -372,6 +479,250 @@ impl CommandRecord {
     pub fn clear_processed(&mut self) {
         self.bytes[COMMAND_RECORD_FLAGS_OFFSET] &= !COMMAND_RECORD_PROCESSED_FLAG;
     }
+
+    /// EventClass constructor4C65E0, shared by IDLE6, SCATTER7, DEPLOY9 and
+    /// Display REPAIR15. Target6E6AB0 supplies the identifier and kind0x34;
+    /// the constructor writes only the header and this five-byte token.
+    /// Source: original gamemd.exe instructions4C6608..4C663D.
+    fn write_object_target(&mut self, opcode: u8, house_id: i8, frame: i32, entity_id: i32) {
+        self.set_issue_header(opcode, i32::from(house_id), frame);
+        if house_id < 0 {
+            return;
+        }
+        let (value, kind) = MegaMissionTarget::Object { id: entity_id }
+            .token()
+            .expect("an Abstract token has no Cell conversion");
+        self.payload_mut()[..4].copy_from_slice(&value.to_le_bytes());
+        self.payload_mut()[4] = kind;
+    }
+
+    /// Target6E6F20 resolves only the object-token kind0x34. Decoding the
+    /// identifier here leaves object liveness to the execution boundary.
+    fn object_target_id(&self) -> Option<i32> {
+        let value = i32::from_le_bytes(self.payload()[..4].try_into().ok()?);
+        match MegaMissionTarget::from_token(value, self.payload()[4])? {
+            MegaMissionTarget::Object { id } => Some(id),
+            _ => None,
+        }
+    }
+}
+
+/// TargetClass events share constructor4C65E0's five-byte object token.
+/// SELL is Event16 (4C6F12), Primary is Event11 (4C718C). Bunker eject is
+/// an explicit VERA event for the existing release owner, not a native opcode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObjectAction {
+    Sell,
+    Primary,
+    EjectBunker,
+}
+
+pub const VERA_EJECT_BUNKER_OPCODE: u8 = 0x31;
+pub const VERA_PAID_SUPER_OPCODE: u8 = 0x30;
+pub const VERA_CYCLE_PRODUCER_OPCODE: u8 = 0x32;
+pub const VERA_PAID_SUPER_PAYLOAD_LEN: u8 = 21;
+
+impl ObjectAction {
+    pub const fn opcode(self) -> u8 {
+        match self {
+            Self::Sell => 0x16,
+            Self::Primary => 0x11,
+            Self::EjectBunker => VERA_EJECT_BUNKER_OPCODE,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObjectActionRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub entity_id: i32,
+    pub action: ObjectAction,
+}
+
+impl ObjectActionRecord {
+    pub fn write_into(self, record: &mut CommandRecord) {
+        record.write_object_target(
+            self.action.opcode(),
+            self.house_id,
+            self.frame,
+            self.entity_id,
+        );
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        let action = match record.opcode() {
+            0x16 => ObjectAction::Sell,
+            0x11 => ObjectAction::Primary,
+            VERA_EJECT_BUNKER_OPCODE => ObjectAction::EjectBunker,
+            _ => return None,
+        };
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: record.object_target_id()?,
+            action,
+        })
+    }
+}
+
+/// SPECIAL_PLACE constructor4C6B60 stores the SuperWeaponTypes index at+7,
+/// then CellStruct at+B/+D. Execute4C78D6 passes both to House::Fire_SW4FAE50.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpecialPlaceRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub type_index: i32,
+    pub cell: (i16, i16),
+}
+impl SpecialPlaceRecord {
+    pub const OPCODE: u8 = 0x12;
+    pub fn encode(self) -> Result<CommandRecord, CommandRecordError> {
+        let mut payload = [0; 8];
+        payload[..4].copy_from_slice(&self.type_index.to_le_bytes());
+        payload[4..6].copy_from_slice(&self.cell.0.to_le_bytes());
+        payload[6..8].copy_from_slice(&self.cell.1.to_le_bytes());
+        CommandRecord::encode(Self::OPCODE, i32::from(self.house_id), self.frame, &payload)
+    }
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        (record.opcode() == Self::OPCODE).then(|| Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            type_index: i32::from_le_bytes(record.payload()[..4].try_into().unwrap()),
+            cell: (
+                i16::from_le_bytes(record.payload()[4..6].try_into().unwrap()),
+                i16::from_le_bytes(record.payload()[6..8].try_into().unwrap()),
+            ),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaidSuperAction {
+    Begin,
+    Complete,
+    Cancel,
+}
+
+/// VERA paid-power ticket transport. Rule-array indices are portable across
+/// clients whose interners differ; the one-use sequence remains a full u64.
+/// Layout: action:u8, source:i32, destination:i32, sequence:u64, cell:i16x2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PaidSuperRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub action: PaidSuperAction,
+    pub source: i32,
+    pub destination: i32,
+    pub sequence: u64,
+    pub cell: (i16, i16),
+}
+impl PaidSuperRecord {
+    fn canonical(self) -> bool {
+        self.house_id >= 0
+            && self.source >= 0
+            && self.destination >= 0
+            && self.source != self.destination
+            && self.sequence != 0
+            && if self.action == PaidSuperAction::Cancel {
+                self.cell == (0, 0)
+            } else {
+                (0..512).contains(&self.cell.0) && (0..512).contains(&self.cell.1)
+            }
+    }
+    pub fn encode(self) -> Option<CommandRecord> {
+        if !self.canonical() {
+            return None;
+        }
+        let mut payload = [0; VERA_PAID_SUPER_PAYLOAD_LEN as usize];
+        payload[0] = match self.action {
+            PaidSuperAction::Begin => 0,
+            PaidSuperAction::Complete => 1,
+            PaidSuperAction::Cancel => 2,
+        };
+        payload[1..5].copy_from_slice(&self.source.to_le_bytes());
+        payload[5..9].copy_from_slice(&self.destination.to_le_bytes());
+        payload[9..17].copy_from_slice(&self.sequence.to_le_bytes());
+        payload[17..19].copy_from_slice(&self.cell.0.to_le_bytes());
+        payload[19..21].copy_from_slice(&self.cell.1.to_le_bytes());
+        CommandRecord::encode(
+            VERA_PAID_SUPER_OPCODE,
+            i32::from(self.house_id),
+            self.frame,
+            &payload,
+        )
+        .ok()
+    }
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != VERA_PAID_SUPER_OPCODE {
+            return None;
+        }
+        let payload = record.payload();
+        let value = Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            action: match payload[0] {
+                0 => PaidSuperAction::Begin,
+                1 => PaidSuperAction::Complete,
+                2 => PaidSuperAction::Cancel,
+                _ => return None,
+            },
+            source: i32::from_le_bytes(payload[1..5].try_into().ok()?),
+            destination: i32::from_le_bytes(payload[5..9].try_into().ok()?),
+            sequence: u64::from_le_bytes(payload[9..17].try_into().ok()?),
+            cell: (
+                i16::from_le_bytes(payload[17..19].try_into().ok()?),
+                i16::from_le_bytes(payload[19..21].try_into().ok()?),
+            ),
+        };
+        value.canonical().then_some(value)
+    }
+}
+
+/// VERA sidebar cycling resolves the next primary at execution, preserving
+/// the order of multiple queued cycles through the existing production owner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CycleProducerRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub category: ProductionCategory,
+}
+impl CycleProducerRecord {
+    pub fn encode(self) -> Result<CommandRecord, CommandRecordError> {
+        let category = match self.category {
+            ProductionCategory::Building => 0,
+            ProductionCategory::Defense => 1,
+            ProductionCategory::Infantry => 2,
+            ProductionCategory::Vehicle => 3,
+            ProductionCategory::Aircraft => 4,
+            ProductionCategory::Ship => 5,
+        };
+        CommandRecord::encode(
+            VERA_CYCLE_PRODUCER_OPCODE,
+            i32::from(self.house_id),
+            self.frame,
+            &[category],
+        )
+    }
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != VERA_CYCLE_PRODUCER_OPCODE {
+            return None;
+        }
+        let category = match record.payload()[0] {
+            0 => ProductionCategory::Building,
+            1 => ProductionCategory::Defense,
+            2 => ProductionCategory::Infantry,
+            3 => ProductionCategory::Vehicle,
+            4 => ProductionCategory::Aircraft,
+            5 => ProductionCategory::Ship,
+            _ => return None,
+        };
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            category,
+        })
+    }
 }
 
 /// Typed view of native opcode `0x17`'s fixed record fields.
@@ -447,33 +798,260 @@ pub struct ScatterRecord {
 
 impl ScatterRecord {
     pub fn write_into(self, record: &mut CommandRecord) {
-        record.set_issue_header(SCATTER_OPCODE, i32::from(self.house_id), self.frame);
-        if self.house_id < 0 {
-            return;
-        }
-        let (value, kind) = MegaMissionTarget::Object { id: self.entity_id }
-            .token()
-            .expect("an Abstract token has no Cell conversion");
-        record.payload_mut()[..4].copy_from_slice(&value.to_le_bytes());
-        record.payload_mut()[4] = kind;
+        record.write_object_target(SCATTER_OPCODE, self.house_id, self.frame, self.entity_id);
     }
 
     pub fn decode(record: &CommandRecord) -> Option<Self> {
         if record.opcode() != SCATTER_OPCODE {
             return None;
         }
-        let value = i32::from_le_bytes(record.payload()[..4].try_into().ok()?);
-        let MegaMissionTarget::Object { id } =
-            MegaMissionTarget::from_token(value, record.payload()[4])?
-        else {
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: record.object_target_id()?,
+        })
+    }
+}
+
+/// IDLE6 carries the same object token as SCATTER7. StopCommand730EE7
+/// selects opcode6; EventClass's jump table4C8128 reaches Stop4C74CB.
+/// Source: original gamemd.exe instructions, including6FFE0F..6FFE34.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StopRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub entity_id: i32,
+}
+
+impl StopRecord {
+    pub fn write_into(self, record: &mut CommandRecord) {
+        record.write_object_target(IDLE_OPCODE, self.house_id, self.frame, self.entity_id);
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != IDLE_OPCODE {
             return None;
+        }
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: record.object_target_id()?,
+        })
+    }
+}
+
+/// Event09's object token. The D key730D15 calls ClickedEvent6FFE00;
+/// self-click action4 instead sends a MegaMission Unload through4D75ED.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeployRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub entity_id: i32,
+}
+
+impl DeployRecord {
+    pub fn write_into(self, record: &mut CommandRecord) {
+        record.write_object_target(DEPLOY_OPCODE, self.house_id, self.frame, self.entity_id);
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        (record.opcode() == DEPLOY_OPCODE).then_some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: record.object_target_id()?,
+        })
+    }
+}
+
+/// REPAIR15 uses the shared object-token constructor4C65E0. The current
+/// player's House is captured by Display4AC0EE, independently of its target.
+/// Source: original gamemd.exe instructions4AC0D3..4AC198.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RepairRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub entity_id: i32,
+}
+
+impl RepairRecord {
+    pub fn write_into(self, record: &mut CommandRecord) {
+        record.write_object_target(REPAIR_OPCODE, self.house_id, self.frame, self.entity_id);
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        (record.opcode() == REPAIR_OPCODE).then_some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: record.object_target_id()?,
+        })
+    }
+}
+
+/// EventClass constructor4C6780 writes two five-byte TargetClass tokens
+/// at+7/+C. Building4439C5 supplies the actor's House, independently of
+/// the network sender's later header rewrite. Source: original gamemd.exe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ArchiveRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub entity_id: i32,
+    pub target: MegaMissionTarget,
+}
+
+impl ArchiveRecord {
+    pub fn write_into(self, record: &mut CommandRecord) -> Result<(), MegaMissionCellTokenError> {
+        //4C67AC..4C67D4 shares the header/source writes with4C65E0;
+        // only the second token is additional. Flags and tail stay untouched.
+        record.write_object_target(ARCHIVE_OPCODE, self.house_id, self.frame, self.entity_id);
+        if self.house_id >= 0 {
+            let (value, kind) = self.target.token()?;
+            record.payload_mut()[5..9].copy_from_slice(&value.to_le_bytes());
+            record.payload_mut()[9] = kind;
+        }
+        Ok(())
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != ARCHIVE_OPCODE {
+            return None;
+        }
+        let value = i32::from_le_bytes(record.payload()[5..9].try_into().ok()?);
+        // Target6E6E20's unrecognized/NULL kind returns NULL (6E6F0F),
+        // which ARCHIVE stores. Object existence is resolved only at dispatch.
+        let target = match record.payload()[9] {
+            CELL_TARGET_KIND | ABSTRACT_OBJECT_TARGET_KIND => {
+                MegaMissionTarget::from_token(value, record.payload()[9])?
+            }
+            _ => MegaMissionTarget::Null,
         };
         Some(Self {
             house_id: record.house_id(),
             frame: record.frame_stamp(),
-            entity_id: id,
+            entity_id: record.object_target_id()?,
+            target,
         })
     }
+}
+
+/// The four events sharing EventClass constructor4C6970 and three DWORDs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProductionEvent {
+    Produce,
+    Suspend,
+    Abandon,
+    AbandonAll,
+}
+
+impl ProductionEvent {
+    pub const fn opcode(self) -> u8 {
+        match self {
+            Self::Produce => PRODUCE_OPCODE,
+            Self::Suspend => SUSPEND_OPCODE,
+            Self::Abandon => ABANDON_OPCODE,
+            Self::AbandonAll => ABANDON_ALL_OPCODE,
+        }
+    }
+
+    fn from_opcode(opcode: u8) -> Option<Self> {
+        match opcode {
+            PRODUCE_OPCODE => Some(Self::Produce),
+            SUSPEND_OPCODE => Some(Self::Suspend),
+            ABANDON_OPCODE => Some(Self::Abandon),
+            ABANDON_ALL_OPCODE => Some(Self::AbandonAll),
+            _ => None,
+        }
+    }
+}
+
+/// Byte-preserving view of EventClass4C6970: RTTI+7, type-array index+B,
+/// Naval DWORD+F. Execute4C711B..4C718A alone normalizes Naval to a bool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProductionRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub event: ProductionEvent,
+    pub rtti: i32,
+    pub type_index: i32,
+    pub naval: u32,
+}
+
+impl ProductionRecord {
+    pub fn write_into(self, record: &mut CommandRecord) {
+        record.set_issue_header(self.event.opcode(), i32::from(self.house_id), self.frame);
+        if self.house_id >= 0 {
+            write_production_fields(record, self.rtti, self.type_index, self.naval);
+        }
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        let event = ProductionEvent::from_opcode(record.opcode())?;
+        let (rtti, type_index, naval) = read_production_fields(record);
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            event,
+            rtti,
+            type_index,
+            naval,
+        })
+    }
+}
+
+/// Active PLACE constructor4C6AE0 appends signed Cell words+13/+15 to
+/// the same production selector. Manual building placement4ABB55 supplies
+/// object RTTI6; automatic mobile placement6A8EE8 supplies RTTI1/2/15 and -1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlaceRecord {
+    pub house_id: i8,
+    pub frame: i32,
+    pub rtti: i32,
+    pub type_index: i32,
+    pub naval: u32,
+    pub x: i16,
+    pub y: i16,
+}
+
+impl PlaceRecord {
+    pub fn write_into(self, record: &mut CommandRecord) {
+        record.set_issue_header(PLACE_OPCODE, i32::from(self.house_id), self.frame);
+        if self.house_id >= 0 {
+            write_production_fields(record, self.rtti, self.type_index, self.naval);
+            record.payload_mut()[12..14].copy_from_slice(&self.x.to_le_bytes());
+            record.payload_mut()[14..16].copy_from_slice(&self.y.to_le_bytes());
+        }
+    }
+
+    pub fn decode(record: &CommandRecord) -> Option<Self> {
+        if record.opcode() != PLACE_OPCODE {
+            return None;
+        }
+        let (rtti, type_index, naval) = read_production_fields(record);
+        Some(Self {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            rtti,
+            type_index,
+            naval,
+            x: i16::from_le_bytes(record.payload()[12..14].try_into().ok()?),
+            y: i16::from_le_bytes(record.payload()[14..16].try_into().ok()?),
+        })
+    }
+}
+
+fn write_production_fields(record: &mut CommandRecord, rtti: i32, index: i32, naval: u32) {
+    let payload = record.payload_mut();
+    payload[..4].copy_from_slice(&rtti.to_le_bytes());
+    payload[4..8].copy_from_slice(&index.to_le_bytes());
+    payload[8..12].copy_from_slice(&naval.to_le_bytes());
+}
+
+fn read_production_fields(record: &CommandRecord) -> (i32, i32, u32) {
+    let payload = record.payload();
+    (
+        i32::from_le_bytes(payload[..4].try_into().expect("RTTI DWORD")),
+        i32::from_le_bytes(payload[4..8].try_into().expect("type index DWORD")),
+        u32::from_le_bytes(payload[8..12].try_into().expect("Naval DWORD")),
+    )
 }
 
 /// The represented ordinary orders of native MegaMission opcode `0x04`.
@@ -531,7 +1109,7 @@ impl MegaMissionTarget {
         match kind {
             NULL_TARGET_KIND if value == 0 => Some(Self::Null),
             CELL_TARGET_KIND => {
-                let (x, y) = decode_megamission_cell_token(value)?;
+                let (x, y) = decode_megamission_cell_token(value);
                 Some(Self::Cell { x, y })
             }
             ABSTRACT_OBJECT_TARGET_KIND => Some(Self::Object { id: value }),
@@ -552,6 +1130,7 @@ pub struct MegaMissionRecord {
     pub frame: i32,
     pub source_id: i32,
     pub order: MegaMissionOrder,
+    pub auxiliary: MegaMissionTarget,
 }
 
 impl MegaMissionRecord {
@@ -597,6 +1176,10 @@ impl MegaMissionRecord {
         };
         let (target_value, target_kind) = target.token()?;
         let (destination_value, destination_kind) = destination.token()?;
+        let (auxiliary_value, auxiliary_kind) = match self.auxiliary {
+            MegaMissionTarget::Null => (self.source_id, NULL_TARGET_KIND),
+            auxiliary => auxiliary.token()?,
+        };
         let payload = &mut record.payload_mut()[..MEGAMISSION_OWNED_PAYLOAD_LEN];
         payload[MEGAMISSION_SOURCE_VALUE_OFFSET..MEGAMISSION_SOURCE_KIND_OFFSET]
             .copy_from_slice(&self.source_id.to_le_bytes());
@@ -609,8 +1192,8 @@ impl MegaMissionRecord {
             .copy_from_slice(&destination_value.to_le_bytes());
         payload[MEGAMISSION_DESTINATION_KIND_OFFSET] = destination_kind;
         payload[MEGAMISSION_AUXILIARY_VALUE_OFFSET..MEGAMISSION_AUXILIARY_KIND_OFFSET]
-            .copy_from_slice(&self.source_id.to_le_bytes());
-        payload[MEGAMISSION_AUXILIARY_KIND_OFFSET] = NULL_TARGET_KIND;
+            .copy_from_slice(&auxiliary_value.to_le_bytes());
+        payload[MEGAMISSION_AUXILIARY_KIND_OFFSET] = auxiliary_kind;
         payload[MEGAMISSION_PLANNING_OFFSET] = 0;
         Ok(())
     }
@@ -639,7 +1222,6 @@ impl MegaMissionRecord {
                 .ok()?,
         );
         if payload[MEGAMISSION_SOURCE_KIND_OFFSET] != ABSTRACT_OBJECT_TARGET_KIND
-            || payload[MEGAMISSION_AUXILIARY_KIND_OFFSET] != NULL_TARGET_KIND
             || payload[MEGAMISSION_PLANNING_OFFSET] != 0
         {
             return None;
@@ -650,6 +1232,17 @@ impl MegaMissionRecord {
             destination,
             payload[MEGAMISSION_DESTINATION_KIND_OFFSET],
         )?;
+        // EventClass::Execute 0x004C74A2..0x004C74BA resolves this token
+        // separately, after the class destination setter. A NULL kind ignores
+        // its DWORD (Connect63684F retains the template source there).
+        let auxiliary = if payload[MEGAMISSION_AUXILIARY_KIND_OFFSET] == NULL_TARGET_KIND {
+            MegaMissionTarget::Null
+        } else {
+            MegaMissionTarget::from_token(
+                i32::from_le_bytes(payload[17..21].try_into().ok()?),
+                payload[MEGAMISSION_AUXILIARY_KIND_OFFSET],
+            )?
+        };
         let order = match (action, target, destination) {
             (1, target, MegaMissionTarget::Null) => MegaMissionOrder::Attack { target },
             (29, target, destination) => MegaMissionOrder::AttackMove {
@@ -668,11 +1261,15 @@ impl MegaMissionRecord {
             (AREA_GUARD_ACTION, post, MegaMissionTarget::Null) => {
                 MegaMissionOrder::AreaGuard { post }
             }
-            (mission @ (7..=10 | 16 | 17 | 25), target, destination) => MegaMissionOrder::Mission {
-                mission: crate::sim::mission::MissionType::from_id(mission)?,
-                target,
-                destination,
-            },
+            // Event4C71F6 also accepts Repair20, preserving it through
+            // Foot4DF0E0 before the destination setter at Event4C74BA.
+            (mission @ (7..=10 | 16 | 17 | 20 | 25), target, destination) => {
+                MegaMissionOrder::Mission {
+                    mission: crate::sim::mission::MissionType::from_id(mission)?,
+                    target,
+                    destination,
+                }
+            }
             _ => return None,
         };
         Some(Self {
@@ -680,26 +1277,29 @@ impl MegaMissionRecord {
             frame: record.frame_stamp(),
             source_id,
             order,
+            auxiliary,
         })
     }
 }
 
 fn encode_megamission_cell_token(x: i16, y: i16) -> Result<i32, MegaMissionCellTokenError> {
     let token = i32::from(x) + i32::from(y) * CELL_TOKEN_ROW_STRIDE;
-    if decode_megamission_cell_token(token) == Some((x, y)) {
+    if decode_megamission_cell_token(token) == (x, y) {
         Ok(token)
     } else {
         Err(MegaMissionCellTokenError { x, y })
     }
 }
 
-fn decode_megamission_cell_token(token: i32) -> Option<(i16, i16)> {
-    // Native signed division truncates toward zero, as Rust's integer `/` and
-    // `%` do. Re-encoding is checked by the writer because mixed-sign or
-    // |x|>=1000 coordinates do not have a unique target-token representation.
-    let y = i16::try_from(token / CELL_TOKEN_ROW_STRIDE).ok()?;
-    let x = i16::try_from(token % CELL_TOKEN_ROW_STRIDE).ok()?;
-    (i32::from(x) + i32::from(y) * CELL_TOKEN_ROW_STRIDE == token).then_some((x, y))
+fn decode_megamission_cell_token(token: i32) -> (i16, i16) {
+    // TargetClass::As_Abstract6E6E20,6E6ED4..6E6F05: signed / and %1000,
+    // then WORD stores, including a quotient outside i16. The typed writer's
+    // exact-roundtrip check is separate from this native getter projection.
+    // Source: original gamemd.exe instructions. Raw queue bytes stay intact.
+    (
+        (token % CELL_TOKEN_ROW_STRIDE) as i16,
+        (token / CELL_TOKEN_ROW_STRIDE) as i16,
+    )
 }
 
 impl AsRef<[u8]> for CommandRecord {
@@ -747,7 +1347,9 @@ pub enum Command {
     /// Attack-move: the MEGAMISSION event with mission 29 that ClickedMission
     /// (`0x006FFBE0`) promotes a Move or Attack click to. Its tokens are the
     /// click's: an attack click's object as `target` (`0x004D76B1..0x004D76C1`),
-    /// a Move click's Cell or object as `destination` (`0x004D7C76`).
+    /// an Attack on a Cell's Cell as `target` with no destination (Foot
+    /// ClickedAction_Cell `0x004D80E9..0x004D80FF`), and a Move click's Cell or
+    /// object as `destination` (`0x004D7C76`).
     /// `Assign_Target_Command` stores them as MegaTarget and MegaDestination.
     AttackMove {
         entity_id: u64,
@@ -766,7 +1368,8 @@ pub enum Command {
     /// Undeploy a structure back into its mobile unit (e.g. ConYard → MCV).
     /// Reads UndeploysInto from rules.ini to determine the spawned unit type.
     UndeployBuilding { entity_id: u64 },
-    /// Archive a rally cell on each selected factory the command owner owns.
+    /// Accepted ARCHIVE cell events for the selected factories. Input checks
+    /// ownership before issue; dispatch retains the actor through capture.
     SetRally {
         rx: u16,
         ry: u16,
@@ -928,12 +1531,101 @@ pub enum Command {
     /// `EventClass::Execute` branches `0x004C6CF0`/`0x004C6D4D` -> GoOnline
     /// `0x00452260` / GoOffline `0x00452360`). The direction rides `on`.
     /// Native admits only a live (`+0x90`), non-limbo (`+0x81`) object whose
-    /// owner's `+0x16C0` byte is clear; that House byte is not ported.
+    /// TYPE's `+0x16C0` byte is clear: the branch reads `[target+0x520]+0x16C0`
+    /// (`+0x520` is `BuildingClass::pType`, so the byte is the
+    /// `BuildingTypeClass+0x16C0` `FirestormWall=` flag, `ObjectType.firestorm_wall`).
     /// Appended to preserve existing serialized variant indices.
     SetBuildingOnLine { entity_id: u64, on: bool },
+    /// ARCHIVE (native opcode 0x1E) naming an object: a non-factory
+    /// building's Move click over an object (`BuildingClass::ClickedAction
+    /// @ 0x00443410`, `0x0044363C..0x00443688`) archives that object.
+    /// `EventClass::Execute` (`0x004C6DAA..0x004C6DDE`) runs
+    /// `Set_ArchiveTarget @ 0x0070C610` on a live (`+0x90`) Techno; a
+    /// target gone by then resolves to null and clears the archive.
+    /// Appended to preserve existing serialized variant indices.
+    ArchiveObject { entity_id: u64, target_id: u64 },
+    /// OPTIONS0C: only the current sender opens GameState1 at due dispatch;
+    /// remote and replay copies are consumed without opening a menu.
+    OpenOptions,
+    /// LATENCYFUDGE24 writes its signed payload unchanged. The network session
+    /// remains the owner; dispatch publishes the write at the frame boundary.
+    SetLatencyFudge { value: i32 },
+    /// Transport-only carrier for a native event. Queue admission
+    /// unwraps it into its native storage before gameplay dispatch. The
+    /// enclosing CommandEnvelope's owner and execute_tick are diagnostic
+    /// metadata only; the record header owns House, frame and processed state.
+    SynchronizedRecord { record: CommandRecord },
+    /// Local TeamAssign731060; TeamClear7310D0 is the same eligible clear
+    /// with no selected IDs. Appended to preserve existing variant indices.
+    /// Native hotkey535CC0/Tab6D07FE write directly, without an EventClass
+    /// record or RNG; retain through local frame ingress for saves/replay.
+    AssignControlGroup { group: i32, entity_ids: Vec<u64> },
 }
 
 impl Command {
+    pub(crate) fn uses_frame_ingress(&self) -> bool {
+        matches!(
+            self,
+            Self::Select { .. } | Self::SetGameSpeed { .. } | Self::AssignControlGroup { .. }
+        )
+    }
+
+    /// Classify local issue, not already-admitted replay/network input. The
+    /// semantic paid source/destination commands consume a slot. The normal
+    /// UI serializes all three paid actions, including cancellation, before
+    /// this boundary; each serialized carrier consumes an event slot.
+    pub(crate) fn consumes_native_outlist_slot(&self) -> bool {
+        match self {
+            Self::Select { .. }
+            | Self::AssignControlGroup { .. }
+            | Self::SetGameSpeed { .. }
+            | Self::MoveFlash { .. }
+            | Self::CancelPaidSuperWeapon { .. } => false,
+            Self::PlanningRecord { .. }
+            | Self::Move { .. }
+            | Self::MoveToObject { .. }
+            | Self::Stop { .. }
+            | Self::Attack { .. }
+            | Self::AttackMove { .. }
+            | Self::Guard { .. }
+            | Self::DeployMcv { .. }
+            | Self::UndeployBuilding { .. }
+            | Self::SetRally { .. }
+            | Self::QueueProduction { .. }
+            | Self::SuspendProduction { .. }
+            | Self::PlaceReadyBuilding { .. }
+            | Self::CancelProductionByType { .. }
+            | Self::SellBuilding { .. }
+            | Self::ToggleRepair { .. }
+            | Self::EjectBunker { .. }
+            | Self::UnloadPassengers { .. }
+            | Self::CaptureBuilding { .. }
+            | Self::PlantC4 { .. }
+            | Self::LaunchSuperWeapon { .. }
+            | Self::ToggleInfantryDeploy { .. }
+            | Self::ForceAttackCell { .. }
+            | Self::SellWallAtCell { .. }
+            | Self::ExitMatch
+            | Self::PlaceProducedMobile { .. }
+            | Self::Scatter { .. }
+            | Self::TogglePrimaryFactory { .. }
+            | Self::CycleProducerFocus { .. }
+            | Self::Cheer
+            | Self::MegaMission { .. }
+            | Self::Destruct
+            | Self::RemovePlayer { .. }
+            | Self::Ally { .. }
+            | Self::CompletePaidSuperWeapon { .. }
+            | Self::BeginPaidSuperWeapon { .. }
+            | Self::LiveGameSpeed { .. }
+            | Self::SetBuildingOnLine { .. }
+            | Self::ArchiveObject { .. }
+            | Self::OpenOptions
+            | Self::SetLatencyFudge { .. }
+            | Self::SynchronizedRecord { .. } => true,
+        }
+    }
+
     /// The MEGAMISSION `FootClass::ClickedAction` sends with no Target and
     /// `destination` as its Destination: Enter or Eaten on a clicked object
     /// (`0x004D74E0`; a depot, refinery, bunker, transport or Grinder) and
@@ -973,12 +1665,20 @@ impl Command {
     }
 }
 
-/// Command with deterministic execution metadata.
+/// Command with deterministic execution metadata. For SynchronizedRecord,
+/// owner and execute_tick are inert transport metadata; native queue admission
+/// must unwrap the record before interpreting its authoritative header.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommandEnvelope {
     pub owner: InternedId,
     pub execute_tick: u64,
     pub payload: Command,
+}
+
+impl crate::sim::command_queue::LocalCommandEvent for CommandEnvelope {
+    fn consumes_native_outlist_slot(&self) -> bool {
+        self.payload.consumes_native_outlist_slot()
+    }
 }
 
 impl CommandEnvelope {
@@ -989,15 +1689,32 @@ impl CommandEnvelope {
             payload,
         }
     }
+
+    /// Carry native bytes through a diagnostic/replay interface. The outer
+    /// owner is an inert placeholder, not an interned House. Admission must
+    /// unwrap SynchronizedRecord before all owner or execution-tick checks;
+    /// only the record header controls native execution.
+    pub fn synchronized(record: CommandRecord, diagnostic_issue_tick: u64) -> Self {
+        Self {
+            owner: InternedId::from_index(0),
+            execute_tick: diagnostic_issue_tick,
+            payload: Command::SynchronizedRecord { record },
+        }
+    }
 }
+
+#[cfg(test)]
+#[path = "command_battle_opening_tests.rs"]
+mod battle_opening_tests;
 
 #[cfg(test)]
 mod tests {
     use super::{
-        ABSTRACT_OBJECT_TARGET_KIND, COMMAND_RECORD_LEN, COMMAND_RECORD_PAYLOAD_LEN, CommandRecord,
-        CommandRecordError, EXIT_OPCODE, ExitRecord, MOVE_ACTION, MegaMissionCellTokenError,
-        MegaMissionOrder, MegaMissionRecord, MegaMissionTarget, NULL_TARGET_KIND,
-        SELL_WALL_AT_CELL_OPCODE, SellWallAtCellRecord,
+        ABSTRACT_OBJECT_TARGET_KIND, ArchiveRecord, COMMAND_RECORD_LEN, COMMAND_RECORD_PAYLOAD_LEN,
+        CommandRecord, CommandRecordError, EXIT_OPCODE, ExitRecord, IDLE_OPCODE, MOVE_ACTION,
+        MegaMissionCellTokenError, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget,
+        NULL_TARGET_KIND, REPAIR_OPCODE, RepairRecord, SCATTER_OPCODE, SELL_WALL_AT_CELL_OPCODE,
+        ScatterRecord, SellWallAtCellRecord, StopRecord,
     };
 
     fn native_record(value: &serde_json::Value) -> CommandRecord {
@@ -1009,6 +1726,226 @@ mod tests {
             .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
             .collect();
         CommandRecord::decode_exact(&bytes).unwrap()
+    }
+
+    #[test]
+    fn archive_constructor_matches_the_existing_native_rally_record() {
+        let native = crate::test_fixture::json("tools/procedural_drawing_oracle/rally_input.json");
+        let row = native["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["input"]["name"] == "ordinary_clear")
+            .unwrap();
+        let event = &row["constructed_events"][0];
+        let cell = &row["nearby"][0]["result"];
+        let typed = ArchiveRecord {
+            house_id: event["house"].as_i64().unwrap() as i8,
+            frame: row["binary_frame"].as_i64().unwrap() as i32,
+            entity_id: event["source_id"].as_i64().unwrap() as i32,
+            target: MegaMissionTarget::Cell {
+                x: cell[0].as_i64().unwrap() as i16,
+                y: cell[1].as_i64().unwrap() as i16,
+            },
+        };
+        let mut record =
+            CommandRecord::encode(0, 0, 0, &[0xa5; COMMAND_RECORD_PAYLOAD_LEN]).unwrap();
+        typed.write_into(&mut record).unwrap();
+        let hex = row["queue"]["event_header_and_targets_hex"]
+            .as_str()
+            .unwrap();
+        let expected: Vec<_> = (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect();
+        assert_eq!(&record.as_bytes()[..expected.len()], expected);
+        assert!(record.payload()[10..].iter().all(|byte| *byte == 0xa5));
+        assert_eq!(ArchiveRecord::decode(&record), Some(typed));
+        let before = record.clone();
+        ArchiveRecord {
+            house_id: -1,
+            ..typed
+        }
+        .write_into(&mut record)
+        .unwrap();
+        assert_eq!(record.opcode(), 0);
+        assert_eq!(record.house_id(), -1);
+        assert_eq!(record.payload(), before.payload());
+    }
+
+    #[test]
+    fn idle_scatter_and_repair_constructor_preserve_flags_and_unwritten_payload() {
+        // Original4C65E0 writes header plus one five-byte token. Negative
+        // issuers instead write the null header, leaving the payload intact.
+        for opcode in [IDLE_OPCODE, SCATTER_OPCODE, REPAIR_OPCODE] {
+            for house_id in [-1, 3] {
+                for entity_id in [-17, 0x0102_0304] {
+                    let mut actual =
+                        CommandRecord::decode_exact(&[0xa5; COMMAND_RECORD_LEN]).unwrap();
+                    let frame = i32::MIN + 19;
+                    if opcode == IDLE_OPCODE {
+                        StopRecord {
+                            house_id,
+                            frame,
+                            entity_id,
+                        }
+                        .write_into(&mut actual);
+                    } else if opcode == SCATTER_OPCODE {
+                        ScatterRecord {
+                            house_id,
+                            frame,
+                            entity_id,
+                        }
+                        .write_into(&mut actual);
+                    } else {
+                        RepairRecord {
+                            house_id,
+                            frame,
+                            entity_id,
+                        }
+                        .write_into(&mut actual);
+                    }
+                    assert_eq!(actual.opcode(), if house_id < 0 { 0 } else { opcode });
+                    assert_eq!(actual.house_id(), house_id);
+                    assert_eq!(actual.frame_stamp(), frame);
+                    assert_eq!(actual.flags(), 0xa5);
+                    if house_id < 0 {
+                        assert_eq!(actual.payload(), &[0xa5; COMMAND_RECORD_PAYLOAD_LEN]);
+                    } else {
+                        assert_eq!(&actual.payload()[..4], &entity_id.to_le_bytes());
+                        assert_eq!(actual.payload()[4], 0x34);
+                        assert!(actual.payload()[5..].iter().all(|&byte| byte == 0xa5));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn idle_decode_keeps_signed_identifier_and_requires_object_token() {
+        let typed = StopRecord {
+            house_id: 2,
+            frame: -19,
+            entity_id: i32::MIN,
+        };
+        let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).unwrap();
+        typed.write_into(&mut record);
+        assert_eq!(StopRecord::decode(&record), Some(typed));
+        assert!(ScatterRecord::decode(&record).is_none());
+        for kind in [0, 0x0b, 0x33] {
+            let mut invalid = record.clone();
+            invalid.payload_mut()[4] = kind;
+            assert!(StopRecord::decode(&invalid).is_none());
+        }
+        record.set_issue_header(SCATTER_OPCODE, 2, -19);
+        assert!(StopRecord::decode(&record).is_none());
+        assert_eq!(ScatterRecord::decode(&record).unwrap().entity_id, i32::MIN);
+        record.set_issue_header(REPAIR_OPCODE, 2, -19);
+        assert_eq!(RepairRecord::decode(&record).unwrap().entity_id, i32::MIN);
+    }
+
+    #[test]
+    fn vera_action_records_reject_noncanonical_fields_before_execution() {
+        use super::{ObjectAction, ObjectActionRecord, PaidSuperAction, PaidSuperRecord};
+        let paid = PaidSuperRecord {
+            house_id: 29,
+            frame: 77,
+            action: PaidSuperAction::Begin,
+            source: 3,
+            destination: 4,
+            sequence: u64::MAX,
+            cell: (511, 0),
+        };
+        let record = paid.encode().unwrap();
+        assert_eq!(PaidSuperRecord::decode(&record), Some(paid));
+        assert!(
+            PaidSuperRecord {
+                sequence: 0,
+                ..paid
+            }
+            .encode()
+            .is_none()
+        );
+        assert!(
+            PaidSuperRecord {
+                destination: 3,
+                ..paid
+            }
+            .encode()
+            .is_none()
+        );
+        assert!(PaidSuperRecord { source: -1, ..paid }.encode().is_none());
+        assert!(
+            PaidSuperRecord {
+                cell: (512, 0),
+                ..paid
+            }
+            .encode()
+            .is_none()
+        );
+        assert!(
+            PaidSuperRecord {
+                action: PaidSuperAction::Cancel,
+                ..paid
+            }
+            .encode()
+            .is_none()
+        );
+        let mut malformed = record.clone();
+        malformed.payload_mut()[0] = 3;
+        assert!(PaidSuperRecord::decode(&malformed).is_none());
+        let cancel = PaidSuperRecord {
+            action: PaidSuperAction::Cancel,
+            cell: (0, 0),
+            ..paid
+        }
+        .encode()
+        .unwrap();
+        assert_eq!(PaidSuperRecord::decode(&cancel).unwrap().sequence, u64::MAX);
+        let action = ObjectActionRecord {
+            house_id: 29,
+            frame: 77,
+            entity_id: 42,
+            action: ObjectAction::EjectBunker,
+        };
+        let mut record = CommandRecord::encode(0, 0, 0, &[]).unwrap();
+        action.write_into(&mut record);
+        assert_eq!(ObjectActionRecord::decode(&record), Some(action));
+        record.payload_mut()[4] = 0x0b;
+        assert!(ObjectActionRecord::decode(&record).is_none());
+        let mut cycle = super::CycleProducerRecord {
+            house_id: 29,
+            frame: 77,
+            category: super::ProductionCategory::Ship,
+        }
+        .encode()
+        .unwrap();
+        assert_eq!(
+            super::CycleProducerRecord::decode(&cycle).unwrap().category,
+            super::ProductionCategory::Ship
+        );
+        cycle.payload_mut()[0] = 6;
+        assert!(super::CycleProducerRecord::decode(&cycle).is_none());
+    }
+
+    #[test]
+    fn synchronized_carrier_roundtrip_preserves_opaque_native_bytes() {
+        use super::{Command, CommandEnvelope};
+        let record = CommandRecord::decode_exact(&[0xa5; COMMAND_RECORD_LEN]).unwrap();
+        let carrier = CommandEnvelope::synchronized(record.clone(), u64::MAX);
+        assert!(carrier.payload.consumes_native_outlist_slot());
+        assert!(!carrier.payload.uses_frame_ingress());
+        let bytes = crate::util::save_codec::serialize(&carrier).unwrap();
+        let restored: CommandEnvelope = crate::util::save_codec::deserialize(&bytes).unwrap();
+        assert_eq!(restored, carrier);
+        assert_eq!(
+            restored.owner,
+            crate::sim::intern::InternedId::from_index(0)
+        );
+        assert_eq!(restored.execute_tick, u64::MAX);
+        assert!(
+            matches!(restored.payload, Command::SynchronizedRecord { record: restored_record } if restored_record == record)
+        );
     }
 
     #[test]
@@ -1089,10 +2026,27 @@ mod tests {
             let args: [u32; 10] = serde_json::from_value(row["args"].clone()).unwrap();
             let order = match name {
                 "move" | "guard" => {
-                    // These supplied raw Cell values cannot be represented by
-                    // the codec's signed coordinates. Do not compare an
-                    // invented typed substitute with their constructor bytes.
-                    assert_eq!(MegaMissionRecord::decode(&native), None, "{name}");
+                    // Getter6E6E20 projects every raw Cell to WORD coordinates.
+                    // That lossy execution view cannot reconstruct these raw
+                    // constructor bytes; preserve the original record instead.
+                    if name == "guard" {
+                        assert!(
+                            matches!(
+                                MegaMissionRecord::decode(&native),
+                                Some(MegaMissionRecord {
+                                    order: MegaMissionOrder::AreaGuard {
+                                        post: MegaMissionTarget::Cell { .. }
+                                    },
+                                    ..
+                                })
+                            ),
+                            "{name}"
+                        );
+                    } else {
+                        // This supplied Move has TargetCell/DestinationNULL,
+                        // unlike the ordinary Move execution view represented here.
+                        assert_eq!(MegaMissionRecord::decode(&native), None, "{name}");
+                    }
                     excluded += 1;
                     continue;
                 }
@@ -1129,6 +2083,7 @@ mod tests {
                 _ => panic!("uncovered native constructor row {name}"),
             };
             let typed = MegaMissionRecord {
+                auxiliary: MegaMissionTarget::Null,
                 house_id: i8::try_from(i32::from_le_bytes(args[0].to_le_bytes())).unwrap(),
                 frame: i32::try_from(row["frame"].as_i64().unwrap()).unwrap(),
                 source_id: i32::from_le_bytes(args[1].to_le_bytes()),
@@ -1158,6 +2113,7 @@ mod tests {
         for (x, y) in [(999, i16::MAX), (-999, i16::MIN), (-999, 0), (0, 0)] {
             let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).unwrap();
             let typed = MegaMissionRecord {
+                auxiliary: MegaMissionTarget::Null,
                 house_id: 0,
                 frame: 1,
                 source_id: 7,
@@ -1173,6 +2129,7 @@ mod tests {
         let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).unwrap();
         assert_eq!(
             MegaMissionRecord {
+                auxiliary: MegaMissionTarget::Null,
                 house_id: 0,
                 frame: 1,
                 source_id: 7,
@@ -1190,6 +2147,7 @@ mod tests {
     fn gsi_16_01_megamission_move_rejects_wrong_tokens_action_and_planning() {
         let mut valid = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).unwrap();
         MegaMissionRecord {
+            auxiliary: MegaMissionTarget::Null,
             house_id: 0,
             frame: 1,
             source_id: 7,
@@ -1219,6 +2177,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn megamission_preserves_the_clicked_cell_separately_from_the_destination() {
+        let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).unwrap();
+        let typed = MegaMissionRecord {
+            house_id: 0,
+            frame: 1,
+            source_id: 7,
+            order: MegaMissionOrder::Move {
+                target_x: 11,
+                target_y: 20,
+            },
+            auxiliary: MegaMissionTarget::Cell { x: 10, y: 20 },
+        };
+        typed.write_into(&mut record).unwrap();
+        // EventClass constructor 0x004C68A3/0x004C68B4 stores the two
+        // independent Cell tokens; only the destination is spread later.
+        assert_ne!(&record.payload()[12..17], &record.payload()[17..22]);
+        assert_eq!(MegaMissionRecord::decode(&record), Some(typed));
+    }
+
     /// The object receiver `0x004D74E0` sends Move with the object as its
     /// destination token (`0x004D7C76`), which the constructor writes in the
     /// slot a Move cell takes. A Move with no destination stays outside the
@@ -1227,6 +2205,7 @@ mod tests {
     fn megamission_move_to_object_carries_an_abstract_destination_token() {
         let mut record = CommandRecord::decode_exact(&[0xcc; COMMAND_RECORD_LEN]).unwrap();
         let typed = MegaMissionRecord {
+            auxiliary: MegaMissionTarget::Null,
             house_id: 1,
             frame: 9,
             source_id: 7,
@@ -1244,6 +2223,25 @@ mod tests {
         record.payload_mut()[12..16].copy_from_slice(&0_i32.to_le_bytes());
         record.payload_mut()[16] = NULL_TARGET_KIND;
         assert_eq!(MegaMissionRecord::decode(&record), None);
+    }
+
+    #[test]
+    fn megamission_repair_preserves_its_destination() {
+        let mut record = CommandRecord::decode_exact(&[0xcc; COMMAND_RECORD_LEN]).unwrap();
+        let typed = MegaMissionRecord {
+            auxiliary: MegaMissionTarget::Null,
+            house_id: 1,
+            frame: 9,
+            source_id: 7,
+            order: MegaMissionOrder::Mission {
+                mission: crate::sim::mission::MissionType::Repair,
+                target: MegaMissionTarget::Null,
+                destination: MegaMissionTarget::Object { id: 23 },
+            },
+        };
+        typed.write_into(&mut record).unwrap();
+        assert_eq!(record.payload()[5], 20);
+        assert_eq!(MegaMissionRecord::decode(&record), Some(typed));
     }
 
     #[test]

@@ -80,7 +80,7 @@ fn fire(
             target_rx: cell.0,
             target_ry: cell.1,
         },
-        Some(rules),
+        rules,
         None,
         FrameEffects::default(),
     )
@@ -139,8 +139,9 @@ fn ares_generic_warhead_command_applies_area_damage_and_consumes_charge_once() {
     assert!(!instance.is_ready);
     assert_eq!(instance.charge_duration, 900);
     assert!(sim.sound_events.iter().any(|event| matches!(event,
-        SimSoundEvent::SuperWeaponLaunched { owner: house, sw_type: kind, rx: 15, ry: 15 }
-        if *house == owner && *kind == sw_type)));
+        SimSoundEvent::SuperWeaponLaunched { owner: house, sw_type: kind, world }
+        if *house == owner && *kind == sw_type
+            && world.to_cell_sub_z().0 == 15 && world.to_cell_sub_z().1 == 15)));
     assert!(!fire(&mut sim, &rules, owner, sw_type, (15, 15)));
     assert_eq!(sim.entities().get(target).unwrap().health.current(), 125);
 }
@@ -379,4 +380,135 @@ fn ares_generic_warhead_one_time_consumption_survives_snapshot() {
     assert!(!restored.super_weapons[&owner][&sw_type].is_active);
     assert!(!restored.super_weapons[&owner][&sw_type].is_ready);
     assert!(!fire(&mut restored, &rules, owner, sw_type, (15, 15)));
+}
+
+/// Fourth native history pins count/frame writes and limit admission. This
+/// scene joins the real command/area-damage owner to persistent launch history,
+/// grant invalidation, and the unavailable building-Anim fallback.
+#[test]
+fn successful_ares_launch_history_limits_commands_survives_save_and_keeps_fallback_body() {
+    let (mut sim, mut rules, owner, typ, target) = fixture("[Strike]\nSW.Shots=2\n", "Russians");
+    let native = crate::test_fixture::json("tools/rules_oracle/ares_super_anims.json");
+    let rows = native["availability_history"].as_array().unwrap();
+    sim.session.set_binary_frame_for_test(9000);
+    assert!(fire(&mut sim, &rules, owner, typ, (15, 15)));
+    let first = &sim.super_weapons[&owner][&typ];
+    assert_eq!(
+        first.ares_launch_count as i64,
+        rows[7]["counter"]["count"].as_i64().unwrap()
+    );
+    assert_eq!(
+        first.ares_last_launch_frame.unwrap() as i64,
+        rows[7]["counter"]["last_frame"].as_i64().unwrap()
+    );
+    assert_eq!(sim.entities().get(target).unwrap().health.current(), 125);
+    assert!(
+        !fire(&mut sim, &rules, owner, typ, (15, 15)),
+        "not ready does not count"
+    );
+    assert_eq!(sim.super_weapons[&owner][&typ].ares_launch_count, 1);
+    let bytes = crate::sim::snapshot::GameSnapshot::save(
+        &sim,
+        0,
+        rules.simulation_config_hash(),
+        "ares-super-history",
+        0,
+    );
+    let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .sim;
+    crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
+    restored.restore_after_snapshot_load().unwrap();
+    assert_eq!(
+        crate::util::save_codec::serialize(&restored.super_weapons).unwrap(),
+        crate::util::save_codec::serialize(&sim.super_weapons).unwrap()
+    );
+    let hash = restored.state_hash();
+    restored
+        .super_weapons
+        .map_mut_for_test()
+        .get_mut(&owner)
+        .unwrap()
+        .get_mut(&typ)
+        .unwrap()
+        .ares_launch_count = 0;
+    assert_ne!(restored.state_hash(), hash);
+    restored
+        .super_weapons
+        .map_mut_for_test()
+        .get_mut(&owner)
+        .unwrap()
+        .get_mut(&typ)
+        .unwrap()
+        .ares_launch_count = 1;
+    restored.session.set_binary_frame_for_test(9001);
+    restored
+        .super_weapons
+        .map_mut_for_test()
+        .get_mut(&owner)
+        .unwrap()
+        .get_mut(&typ)
+        .unwrap()
+        .is_ready = true;
+    restored.houses.get_mut(&owner).unwrap().take_tech_recheck();
+    assert!(fire(&mut restored, &rules, owner, typ, (15, 15)));
+    let second = &restored.super_weapons[&owner][&typ];
+    assert_eq!(
+        second.ares_launch_count as i64,
+        rows[8]["counter"]["count"].as_i64().unwrap()
+    );
+    assert_eq!(
+        second.ares_last_launch_frame.unwrap() as i64,
+        rows[8]["counter"]["last_frame"].as_i64().unwrap()
+    );
+    assert!(restored.houses[&owner].tech_recheck_pending());
+    assert!(!crate::sim::superweapon::super_weapon_available(
+        &restored, &rules, owner, "Strike"
+    ));
+    let hp = restored.entities().get(target).unwrap().health.current();
+    assert!(!fire(&mut restored, &rules, owner, typ, (15, 15)));
+    assert_eq!(
+        restored.entities().get(target).unwrap().health.current(),
+        hp
+    );
+    // Original scene has no attached Art body. Bind a synthetic registered
+    // slot14 to check unavailable-Super fallback through the real slot owner.
+    let art = IniFile::from_str(
+        "[LAUNCHER]\nFoundation=1x1\nSuperAnim=RESTING\n[TARGET]\nFoundation=1x1\n[RESTING]\nEnd=1\n",
+    );
+    let mut ini = crate::sim::arena_fixture::clear_ground_ini(RULES);
+    ini.merge(&IniFile::from_str(
+        "[Strike]\nSW.Shots=2\n[Animations]\n0=RESTING\n",
+    ));
+    rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    // Fixed-ART parsing registers the type; real AnimClass allocation also
+    // needs asset bounds. A one-frame fixture is enough to observe the slot.
+    rules.bind_anim_frame_count_for_test("RESTING", 1);
+    restored.intern_rule_type_ids(&rules);
+    let building = restored.houses[&owner].base_projection().buildings()[0];
+    restored.open_super_weapon_anims(building, false, false, &rules);
+    let id = restored
+        .entities()
+        .get(building)
+        .unwrap()
+        .building_art
+        .anim_slots()[14]
+        .unwrap();
+    assert_eq!(
+        restored
+            .interner
+            .resolve(restored.anim(id).unwrap().type_id()),
+        "RESTING"
+    );
+    restored.update_super_weapon_anims(building, &rules);
+    assert_eq!(
+        restored
+            .entities()
+            .get(building)
+            .unwrap()
+            .building_art
+            .anim_slots()[14],
+        Some(id)
+    );
 }

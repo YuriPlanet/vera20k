@@ -4654,7 +4654,7 @@ def unit_light():
         for key, value in startup.items():
             assert row.pop(key) == value
     return dict(startup=startup, rows=rows, retail=dict(
-        native_input_binary=physical['native_sha256'], physical=physical['physical'],
+        physical=physical['physical'],
         cases=retail))
 
 

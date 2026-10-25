@@ -422,17 +422,11 @@ impl BridgeRecalcCatalog {
         clear_tile: u16,
         selector: &mut TileVariantSelectionContext<'_, '_>,
     ) -> Result<u8, BridgeRecalcCatalogError> {
-        let fallback = cell.final_tile_index == 0xffff
-            || cell.final_tile_index >= self.permissions.len() as i32;
-        let tile = if fallback {
-            clear_tile
-        } else {
-            u16::try_from(cell.final_tile_index).map_err(|_| {
-                BridgeRecalcCatalogError::Uncached {
-                    tile: cell.final_tile_index,
-                }
-            })?
-        };
+        // ProcessTileVariantsAndCullUnusedTMPs546DA0, branch546DF1..546E7C,
+        // selects ClearTile for native FFFF (CellCtor47BC11). RMG emission
+        // retains that semantic no-tile value as Rust -1; share presentation's
+        // resolution without rewriting saved cells or skipping the selector.
+        let (tile, fallback) = self.presentation_tile(cell, clear_tile);
         let pristine = self.file(tile, 0)?;
         let count = self.files[&tile].len() as u8;
         if !fallback && count <= 1 {

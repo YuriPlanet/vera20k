@@ -73,6 +73,7 @@ fn chrono_beam_color_retains_cold_reads_through_handoff_and_type_reset() {
         &root,
         &IniFile::empty(),
         Some(&language),
+        &crate::rules::sound_ini::EvaRegistry::default(),
     )
     .unwrap();
     let mut state = cold.into_registry_state_discarding_events();
@@ -109,6 +110,7 @@ fn chrono_beam_color_changes_configuration_identity_after_its_source_is_absent()
             &IniFile::from_str(&format!("[AudioVisual]\nChronoBeamColor={color}\n")),
             &IniFile::empty(),
             None,
+            &crate::rules::sound_ini::EvaRegistry::default(),
         )
         .unwrap();
         let processed = RulesLayerStack::new(IniFile::empty())

@@ -15,6 +15,9 @@ use crate::util::native_x87::MaskedX87Ordering::Greater;
 #[path = "building_art_admission.rs"]
 mod admission;
 #[cfg(test)]
+#[path = "building_art_depot_tests.rs"]
+mod depot_tests;
+#[cfg(test)]
 #[path = "building_art_expiry_tests.rs"]
 mod expiry_tests;
 #[cfg(test)]
@@ -327,6 +330,10 @@ impl Simulation {
                 trace.push((id, captured));
             }
         });
+        // Ares445F80 entry hook100100B0 ->100449D0 precedes the vanilla
+        // ActuallyPlaced early return, including repeated and capture calls.
+        #[cfg(feature = "ares")]
+        self.grant_factory_plans(id, rules);
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -348,14 +355,12 @@ impl Simulation {
             object.strength,
             rules.general.condition_yellow,
         );
-        let garrisoned = entity
-            .passenger_role
-            .cargo()
-            .is_some_and(|cargo| !cargo.passengers().is_empty());
+        let garrisoned = !entity.passenger_role.occupants().is_empty();
         // 0x00446382..0x004463B4: the built type's InfantryGainSelfHeal and
-        // UnitsGainSelfHeal join the owner's house on every reached opening
-        // (a capture counts), with the +0x6E4 test done by the entry guard
-        // above rather than per arm.
+        // UnitsGainSelfHeal join the owner's house. Natively a capture of a
+        // placed building skips this add (0x00445FD0) and ChangeOwner's tail
+        // makes it (0x00449201..0x00449223); VERA makes it here for both
+        // (`Simulation::remove_old_owner_self_heal` records the residual).
         self.grant_house_self_heal(id, rules);
         crate::sim::credit_income::produce_cash_on_grand_opening(
             &self.interner,
@@ -406,19 +411,29 @@ impl Simulation {
         // (Location `+0x9C` / 256) on a capture too. The fog border redraw
         // around it (`0x00567DA0`, radius + 3) is presentation: the shroud
         // renderer rebuilds from the vision owner.
-        if object.reveal_to_all && !self.house_is_human_player(owner) {
-            if !captured {
-                self.reveal_sight_to_current_house(id, rules);
+        if object.reveal_to_all {
+            if !captured
+                && (self.session.game_mode().is_network() || !self.house_is_human_player(owner))
+            {
+                self.reveal_sight_to_current_house(
+                    id,
+                    crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+                    None,
+                );
             }
-            self.sound_events
-                .emit(crate::sim::world::SimSoundEvent::RadarEvent {
-                    radar: crate::sim::radar::RadarEventRequest::new(
-                        crate::sim::radar::RadarEventType::ConstructionComplete,
-                        cell.0,
-                        cell.1,
-                    ),
-                });
+            if !self.house_is_human_player(owner) {
+                self.sound_events
+                    .emit(crate::sim::world::SimSoundEvent::RadarEvent {
+                        radar: crate::sim::radar::RadarEventRequest::new(
+                            crate::sim::radar::RadarEventType::ConstructionComplete,
+                            cell.0,
+                            cell.1,
+                        ),
+                    });
+            }
         }
+        //44699A..446A5B: default naval rally, before placement/power publication.
+        self.initialize_naval_rally_point(id, rules);
         //446A61 sets the same House tech-recheck consumed at its late update.
         if let Some(house) = self.houses.get_mut(&owner) {
             house.request_tech_recheck();
@@ -559,10 +574,7 @@ impl Simulation {
                 object.strength,
                 rules.general.condition_yellow,
             );
-            let garrisoned = entity
-                .passenger_role
-                .cargo()
-                .is_some_and(|cargo| !cargo.is_empty());
+            let garrisoned = !entity.passenger_role.occupants().is_empty();
             self.set_building_anim_slot(id, slot as u8, damaged, garrisoned, 0, rules);
         }
     }
@@ -670,6 +682,9 @@ impl Simulation {
         }
         self.substrate.entities.get_mut(id)?.building_art.anim_slots[usize::from(slot)] =
             Some(new_id);
+        // Building4519A8..4519B2 copies its FoggedOut byte to a new slot
+        // animation. Replacing the live art cannot make it visible through fog.
+        self.fog.inherit_object_fog(id, new_id);
         //451A36 calls4555D0 only when retained StuffEnabled6EA is true.
         //Construction/placement and operational history cannot substitute for it.
         let object = rules.object(
@@ -721,14 +736,8 @@ impl Simulation {
     /// Grinding's Special10 restores Active3 before the general slot callback.
     /// The reverse index skips listeners whose slot array cannot name this Anim.
     /// Evidence: tools/spatial_oracle/building_slot_replacement.expiry.{json,md}.
-    pub(crate) fn building_anim_pointer_expired(&mut self, expired: u64, rules: Option<&RuleSet>) {
+    pub(crate) fn building_anim_pointer_expired(&mut self, expired: u64, rules: &RuleSet) {
         let Some((owner, slot)) = self.anim(expired).and_then(|anim| anim.building_slot()) else {
-            return;
-        };
-        let Some(rules) = rules else {
-            // Rules-less teardown is the defensive destructor route; ordinary
-            // Anim AI and service destruction always carry the live RuleSet.
-            self.substrate.clear_building_anim_reference(expired);
             return;
         };
         let Some(entity) = self.substrate.entities.get(owner) else {
@@ -786,10 +795,7 @@ impl Simulation {
                 == crate::sim::mission::MissionId::from_known(
                     crate::sim::mission::MissionType::Repair,
                 );
-        let garrisoned = entity
-            .passenger_role
-            .cargo()
-            .is_some_and(|cargo| !cargo.passengers().is_empty());
+        let garrisoned = !entity.passenger_role.occupants().is_empty();
         let delayed_fire = self.building_anim_delayed_fire(owner, rules);
         self.substrate.clear_building_anim_reference(expired);
         let next = match slot {
@@ -957,6 +963,55 @@ pub fn body_frame(
     frame
 }
 
+/// Building DrawBody's gate branch (`0x0043D546..0x0043D68F`): a building
+/// on Mission Open (Get_Mission, vt+0x184) whose door (`+0x350`) is opening,
+/// closing or open draws this frame instead of GetCurrentFrame's. The frame
+/// is `ftol(progress * GateStages)` of the door's drawing progress
+/// (`0x004A52F0`, [`crate::sim::door::DoorClass::draw_progress`]), counted
+/// back from GateStages while closing, `GateStages - 1` once open, clamped
+/// to `0..GateStages`, plus `GateStages + 1` at ConditionYellow health or
+/// below (`0x005F5C60` against Rules `+0x1700`). The branch then returns, so
+/// no bib is drawn. None outside it.
+///
+/// RESIDUAL: the branch lights the body without the type's `ExtraLight=`
+/// (its vt+0x1D0 call adds no `+0x1548`); VERA keeps the ordinary body
+/// light. Retail's only gate, GAGATE_A, sets no ExtraLight.
+pub fn gate_open_body_frame(
+    entity: &GameEntity,
+    gate_stages: i32,
+    strength: i32,
+    yellow: f64,
+    frame: u32,
+) -> Option<i32> {
+    use crate::sim::door::DoorPhase;
+    if entity.mission.effective().known() != Some(crate::sim::mission::MissionType::Open) {
+        return None;
+    }
+    let phase = entity.door_phase();
+    let mut stage = match phase {
+        DoorPhase::ClosedStable => return None,
+        DoorPhase::OpenStable => gate_stages.wrapping_sub(1),
+        DoorPhase::Opening | DoorPhase::Closing => {
+            let done = (entity.door_draw_progress(frame) * f64::from(gate_stages)) as i32;
+            if phase == DoorPhase::Closing {
+                gate_stages.wrapping_sub(done)
+            } else {
+                done
+            }
+        }
+    };
+    if stage >= gate_stages {
+        stage = gate_stages.wrapping_sub(1);
+    }
+    stage = stage.max(0);
+    let damaged = requested_damage_state(entity.health, strength, yellow);
+    Some(if damaged {
+        stage.wrapping_add(gate_stages.wrapping_add(1))
+    } else {
+        stage
+    })
+}
+
 /// The image `BuildingClass::GetImage @ 0x004513D0` hands DrawBody.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuildingImage {
@@ -982,6 +1037,47 @@ pub fn building_image(entity: &GameEntity, has_buildup: bool) -> BuildingImage {
     } else {
         BuildingImage::Null
     }
+}
+
+/// Current `BuildingClass::GetCurrentFrame @ 0x0043EF90`, shared by live
+/// DrawBody and the immutable FoggedObject constructor (`0x004D10DC`).
+/// Image selection and DrawBody's opening-gate override are separate callers.
+pub fn current_body_frame(
+    entity: &GameEntity,
+    object: &ObjectType,
+    rules: &RuleSet,
+    tech_level: i32,
+) -> i32 {
+    let art = rules
+        .art()
+        .resolve_metadata_entry(&object.id, &object.image);
+    let control = entity.building_construction_control();
+    body_frame(
+        BodyFrameInput {
+            state: entity.building_body_state().unwrap_or(1),
+            base_frame: entity.construction_stage_value(),
+            laser_frame: object.laser_fence.then_some(0),
+            firestorm_frame: object.firestorm_wall.then_some(0),
+            gate_stages: object
+                .gate
+                .then_some(art.map_or(9, |entry| entry.building_gate_stages)),
+            occupants: object
+                .can_be_occupied
+                .then_some(entity.passenger_role.occupants().count()),
+            tech_level,
+            selling: entity.building_down(),
+            buildup: [control[0], control[1]],
+            ordinary: art.map_or([[0, 1]; 4], |entry| {
+                entry
+                    .building_body_ranges
+                    .map(|[start, count, _]| [start, count])
+            }),
+        },
+        entity.health,
+        object.strength,
+        rules.general.condition_yellow,
+        rules.general.condition_red,
+    )
 }
 
 /// Equality key for health-only receiver continuation442B37. Represented
@@ -1010,12 +1106,9 @@ pub(crate) fn receiver_body_frame(
             gate_stages: object
                 .gate
                 .then_some(art.map_or(9, |art| art.building_gate_stages)),
-            occupants: object.can_be_occupied.then_some(
-                entity
-                    .passenger_role
-                    .cargo()
-                    .map_or(0, |cargo| cargo.passengers().len() as i32),
-            ),
+            occupants: object
+                .can_be_occupied
+                .then_some(entity.passenger_role.occupants().count()),
             tech_level,
             selling: false,
             buildup: [0, 1],

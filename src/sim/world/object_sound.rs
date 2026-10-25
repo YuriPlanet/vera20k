@@ -52,7 +52,7 @@
 //! RESIDUALS:
 //! - A waypoint index the action reader rejects (native `-1`) reads the slot
 //!   before the waypoint array; VERA plays nothing.
-//! - Anim, Bullet, Wave and Terrain types do not bind AmbientSound
+//! - Anim, Bullet and Wave types do not bind AmbientSound
 //!   (dormant: no retail one sets it).
 
 use super::{FrameEffects, SimSoundEvent, Simulation};
@@ -89,15 +89,10 @@ pub(crate) const fn object_sound_object(owner: u64) -> Option<u64> {
 
 impl Simulation {
     /// `ObjectClass::AI`'s sound block for one visit of a Techno or Terrain.
-    pub(crate) fn object_ai_sounds(
-        &mut self,
-        id: u64,
-        rules: Option<&RuleSet>,
-        effects: FrameEffects<'_>,
-    ) {
+    pub(crate) fn object_ai_sounds(&mut self, id: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
         // `+0x1F4` and `+0x64` are read before `Location`, so an object
         // with neither costs no coordinate.
-        let ambient = rules.and_then(|rules| self.object_ambient_sound(id, rules));
+        let ambient = self.object_ambient_sound(id, rules);
         if ambient.is_none() && !self.object_custom_sounds.contains_key(&id) {
             return;
         }
@@ -129,7 +124,7 @@ impl Simulation {
     pub(crate) fn trigger_play_sound_at_random_waypoint(
         &mut self,
         sound: Option<&str>,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) -> bool {
         let mut candidates = Vec::new();
@@ -188,7 +183,7 @@ impl Simulation {
         &mut self,
         sound: Option<&str>,
         waypoint: Option<u32>,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) -> bool {
         let Some([x, y, z]) =
@@ -222,7 +217,7 @@ impl Simulation {
     pub(crate) fn trigger_stop_sound_at_waypoint(
         &mut self,
         waypoint: Option<u32>,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) -> bool {
         let Some([x, y, z]) =
@@ -247,10 +242,10 @@ impl Simulation {
         true
     }
 
-    /// `ObjectClass::Limbo`'s handle teardown for a Techno
+    /// `ObjectClass::Limbo`'s handle teardown for a Techno or Terrain
     /// (`0x005F4D81`, `0x005F4D89`).
-    pub(crate) fn object_sound_conceal(&mut self, id: u64, rules: Option<&RuleSet>) {
-        if rules.is_some_and(|rules| self.object_ambient_sound(id, rules).is_some())
+    pub(crate) fn object_sound_conceal(&mut self, id: u64, rules: &RuleSet) {
+        if self.object_ambient_sound(id, rules).is_some()
             && let Some(world) = self.object_sound_location(id)
         {
             self.sound_events.emit(SimSoundEvent::AnimationStopped {
@@ -331,10 +326,18 @@ impl Simulation {
     }
 
     fn object_ambient_sound<'r>(&self, id: u64, rules: &'r RuleSet) -> Option<&'r str> {
-        let entity = self.substrate.entities.get(id)?;
-        self.object_type(entity.type_ref(), rules)?
-            .ambient_sound
-            .as_deref()
+        if let Some(entity) = self.substrate.entities.get(id) {
+            return self
+                .object_type(entity.type_ref(), rules)?
+                .ambient_sound
+                .as_deref();
+        }
+        // TerrainAI71C738 calls the same ObjectAI5F3E70; its vt+88
+        // returns TerrainType+1F4, not a same-named Techno type.
+        let terrain = self.terrain_objects.get(id)?;
+        rules
+            .terrain_object_type_case_insensitive(self.interner.resolve(terrain.type_ref()))?
+            .ambient_sound()
     }
 }
 

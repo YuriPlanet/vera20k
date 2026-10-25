@@ -364,7 +364,6 @@
         },
         "warhead": "HE"
       },
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "supplied": {
         "between_frame_flag_changes": [],
         "binary_frame": 0,
@@ -1804,7 +1803,6 @@
         },
         "warhead": "HE"
       },
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "supplied": {
         "between_frame_flag_changes": [],
         "binary_frame": 0,
@@ -3242,7 +3240,6 @@
         },
         "warhead": "HE"
       },
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "supplied": {
         "between_frame_flag_changes": [],
         "binary_frame": 0,
@@ -4765,7 +4762,6 @@
         },
         "warhead": "HE"
       },
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "supplied": {
         "between_frame_flag_changes": [
           {
@@ -6022,7 +6018,6 @@
         },
         "warhead": "HE"
       },
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "supplied": {
         "between_frame_flag_changes": [
           {
@@ -6069,6 +6064,5 @@
       }
     }
   ],
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "scope": "Physical FV selected empty-Gunner slot and original contiguous FireAt6FE4F2 through native factory/launch, then full Bullet AI and impact resolution to AreaDamage489280 entry; supplied source lifecycle/FLH/placement/Display admission/map cells and flag changes. No AreaDamage effects, native bridge collapse/repair driver or retirement execution."
 }

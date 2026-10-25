@@ -17,7 +17,7 @@ from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDX,
                                UC_X86_REG_EIP, UC_X86_REG_ESP, UC_X86_REG_ESI,
                                UC_X86_REG_EDI, UC_X86_REG_EBP, UC_X86_REG_EBX)
-from tools.native_oracle import (NATIVE_SHA256, RET_MAGIC, finish_vectors,
+from tools.native_oracle import (RET_MAGIC, finish_vectors,
                                  provenance, run_checked)
 from tools.projectile_oracle.bridge_render_inputs import lexical
 from tools.projectile_oracle.guided_step import i32
@@ -599,7 +599,7 @@ def cases():
 def generate():
     inputs = reader_receipts()
     rows = [AttackReturn(case, inputs).run() for case in cases()]
-    return dict(schema_version=1, native_sha256=NATIVE_SHA256, reader_receipts=inputs,
+    return dict(schema_version=1, reader_receipts=inputs,
                 row_count=len(rows), rows=rows)
 
 
@@ -669,7 +669,7 @@ def generate_area_guard():
                       ore=[], storage=[0, 0, 0, 0],
                       steps=[dict(op='dispatch'), dict(op='deadline'), dict(op='dispatch')]))
     rows = [AttackReturn(dict(case, area_guard_comparison=True), inputs).run() for case in cases]
-    return dict(schema_version=1, native_sha256=NATIVE_SHA256, reader_receipts=inputs,
+    return dict(schema_version=1, reader_receipts=inputs,
                 row_count=len(rows), rows=rows)
 
 

@@ -38,7 +38,7 @@ fn sim_with(rules: &RuleSet, houses: &[(&str, &str, bool)]) -> (Simulation, Vec<
             let country_id = sim.interner.intern(country);
             let mut house = HouseState::new(id, side, Some(country_id), human, 0, 10);
             house.set_multiplay_passive_for_test(
-                crate::sim::house_state::resolve_multiplay_passive(Some(rules), Some(country)),
+                crate::sim::house_state::resolve_multiplay_passive(rules, Some(country)),
             );
             sim.houses.register(house);
             id
@@ -253,7 +253,7 @@ fn ally_writes_reach_the_remembered_reveal_viewers() {
     assert_eq!(viewers(&mut sim), (alone.clone(), alone.clone()));
     sim.make_ally(ids[1], ids[2], &rules, None, FrameEffects::default(), false);
     assert_eq!(viewers(&mut sim), (with_ally.clone(), with_ally));
-    sim.make_enemy(ids[1], ids[2], &rules, false);
+    sim.make_enemy(ids[1], ids[2], &rules, None, FrameEffects::default(), false);
     assert_eq!(viewers(&mut sim), (alone.clone(), alone));
     sim.reveal_viewers.end();
 }
@@ -281,14 +281,14 @@ fn make_enemy_angers_before_it_breaks_both_sides() {
         &rules,
     );
     let (first, second) = (ids[1], ids[2]);
-    sim.make_enemy(first, second, &rules, false);
+    sim.make_enemy(first, second, &rules, None, FrameEffects::default(), false);
     assert_eq!(allies(&sim, "Computer1"), set(&[]));
     assert_eq!(allies(&sim, "Computer2"), set(&[]));
     assert_eq!(sim.houses[&first].grudge_scores().get(&second), Some(&1));
     assert_eq!(sim.houses[&first].enemy_house(), None);
     assert!(sim.houses[&second].grudge_scores().is_empty());
 
-    sim.make_enemy(first, second, &rules, false);
+    sim.make_enemy(first, second, &rules, None, FrameEffects::default(), false);
     assert_eq!(sim.houses[&first].grudge_scores().get(&second), Some(&2));
     assert_eq!(sim.houses[&first].enemy_house(), Some(second));
 }
@@ -335,7 +335,9 @@ fn initial_scope_allies_keep_targets_and_can_ally_without_a_remaining_enemy() {
             .target(),
         Some(TargetKind::Entity(second))
     );
-    sim.with_object_placement_scope(|sim| sim.make_enemy(ids[0], ids[1], &rules, false));
+    sim.with_object_placement_scope(|sim| {
+        sim.make_enemy(ids[0], ids[1], &rules, None, FrameEffects::default(), false)
+    });
     assert!(allies(&sim, "Computer1").is_empty());
     assert!(allies(&sim, "Computer2").is_empty());
 }
@@ -440,4 +442,57 @@ fn only_a_human_sender_prints_the_alliance_line() {
         })
         .collect();
     assert_eq!(lines, [(ids[0], true, None)]);
+}
+
+#[test]
+fn squad_alliances_ally_each_clan_list_and_fix_the_alliances() {
+    // Apply_Squad_Alliances 0x0069B170: GameMode 4, both lists nonempty;
+    // each entry gathers the human Houses whose +0x15FF4 matches it under
+    // _stricmp, every pair in a list allies, and FixedAlliance is set.
+    let rules = rules();
+    let (mut sim, ids) = sim_with(
+        &rules,
+        &[
+            ("A", "Americans", true),
+            ("B", "Russians", true),
+            ("C", "Americans", true),
+            ("D", "Russians", true),
+            ("E", "Americans", false),
+        ],
+    );
+    for (id, name) in ids.iter().zip(["Ann", "Bob", "Cid", "Dee", "Ann"]) {
+        sim.houses
+            .get_mut(id)
+            .unwrap()
+            .initialize_scenario_name(name);
+    }
+    sim.session.install_wol_start(
+        2,
+        [
+            vec!["ann".into(), "CID".into()],
+            vec!["Bob".into(), "Dee".into()],
+        ],
+    );
+    // Outside GameMode 4 nothing happens.
+    sim.apply_squad_alliances(&rules, None);
+    assert!(allies(&sim, "A").is_empty() && !sim.session.fixed_alliance());
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Wol);
+    sim.apply_squad_alliances(&rules, None);
+    assert_eq!(allies(&sim, "A"), set(&["C"]));
+    assert_eq!(allies(&sim, "C"), set(&["A"]));
+    assert_eq!(allies(&sim, "B"), set(&["D"]));
+    // The computer named like a list entry is not human.
+    assert!(allies(&sim, "E").is_empty());
+    assert!(sim.session.fixed_alliance() && sim.session.wol_tournament_game());
+
+    // One empty list: the flag is cleared and nobody allies.
+    let (mut sim, _) = sim_with(&rules, &[("A", "Americans", true)]);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Wol);
+    sim.session.set_fixed_alliance(true);
+    sim.session
+        .install_wol_start(2, [vec!["Ann".into()], Vec::new()]);
+    sim.apply_squad_alliances(&rules, None);
+    assert!(!sim.session.fixed_alliance());
 }

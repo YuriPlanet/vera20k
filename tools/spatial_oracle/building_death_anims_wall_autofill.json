@@ -5014,7 +5014,6 @@
       "result": 0
     }
   ],
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "native_theater_inputs": {
     "boundary": "Original theater General/default stores and ordinal projection; imported native role globals. Only the declared ClearTile0 head is constructed in the joined map; no full theater/TMP world load.",
     "mapping": {

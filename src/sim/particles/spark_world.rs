@@ -14,7 +14,6 @@ use super::spark::{
 use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::voxel_slope::slope_matrix;
-use crate::rules::foundation::foundation_dimensions;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::{CellRef, get_cellclass_fallback_leptons};
 use crate::sim::movement::locomotor::MovementLayer;
@@ -328,7 +327,7 @@ impl<'a> SparkCollisionWorld<'a> {
             .as_deref()
             .and_then(|target| self.rules.object(target))
             .is_some()
-            && foundation_dimensions(&object.foundation) == (1, 1);
+            && object.foundation.dimensions() == (1, 1);
         Ok(Some(!undeploys_from_one_by_one))
     }
 }

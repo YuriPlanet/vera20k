@@ -273,6 +273,7 @@ impl<'a> FireSubject<'a> {
             warped_out: firer.is_warped_out(),
             warping_in: firer.is_warping_in(),
             robot_offline: firer.deactivated.is_offline(),
+            emp_remaining: firer.emp_remaining(),
             on_bridge: firer.on_bridge(),
             z: self.terrain().map_or(0, |terrain| {
                 crate::sim::movement::ground_pose::object_world_z_leptons(firer, Some(terrain))
@@ -857,7 +858,7 @@ impl FireQuery for WorldQuery<'_, '_> {
     fn locomotor_moving(&mut self) -> bool {
         crate::sim::movement::motion_query::is_moving_now(
             self.subject.firer,
-            Some(self.subject.speed_rules()),
+            self.subject.speed_rules(),
             self.subject.frame(),
         )
     }
@@ -866,7 +867,7 @@ impl FireQuery for WorldQuery<'_, '_> {
         self.target.entity.is_some_and(|target| {
             crate::sim::movement::motion_query::is_moving_now(
                 target,
-                Some(self.subject.speed_rules()),
+                self.subject.speed_rules(),
                 self.subject.frame(),
             )
         })
@@ -901,11 +902,7 @@ impl FireQuery for WorldQuery<'_, '_> {
     /// Building vt+0x408 (`0x004581F0`), the occupant count that
     /// `BuildingClass::GetFireError` (`0x00447F10`) reads.
     fn occupants(&mut self) -> i32 {
-        self.subject
-            .firer
-            .passenger_role
-            .cargo()
-            .map_or(0, |cargo| cargo.count() as i32)
+        self.subject.firer.passenger_role.occupants().count()
     }
 
     fn operational(&mut self) -> bool {

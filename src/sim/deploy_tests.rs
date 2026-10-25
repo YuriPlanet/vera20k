@@ -14,6 +14,9 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseAiActivationLatches;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
+#[path = "ground_transport_deploy_tests.rs"]
+mod ground_transport_deploy_tests;
+
 const SPLIT_AI_ACTIVATION: HouseAiActivationLatches = HouseAiActivationLatches {
     production: true,
     autocreate_allowed: false,
@@ -226,6 +229,11 @@ fn deploy_then_undeploy_returns_the_mcv_to_its_original_cell() {
     let mcv = sim
         .spawn_object("AMCV", "Americans", start.0, start.1, 128, &rules)
         .expect("spawn MCV");
+    sim.substrate
+        .entities
+        .get_mut(mcv)
+        .unwrap()
+        .assign_object_group(3);
     assert!(
         sim.deploy_mcv(
             mcv,
@@ -248,6 +256,8 @@ fn deploy_then_undeploy_returns_the_mcv_to_its_original_cell() {
         .map(|e| e.stable_id())
         .expect("ConYard should exist after deploy");
 
+    assert_eq!(sim.entities().get(yard).unwrap().object_group(), 3);
+
     assert!(
         sim.apply_command(
             "Americans",
@@ -267,7 +277,10 @@ fn deploy_then_undeploy_returns_the_mcv_to_its_original_cell() {
         .entities
         .values()
         .find(|e| e.type_ref() == amcv_id)
-        .map(|e| (e.position.rx(), e.position.ry()))
+        .map(|e| {
+            assert_eq!(e.object_group(), 3);
+            (e.position.rx(), e.position.ry())
+        })
         .expect("MCV should exist again after undeploy");
     assert_eq!(
         landed, start,
@@ -1407,12 +1420,12 @@ fn walk_stop_and_pending_callback_match_original_deployment_rows() {
         let (mut sim, rules, id) = native_deploy_fixture(row);
         let untouched = (sim.main_rng.logical_state(), sim.mapgen_rng.logical_state());
         if row["input"]["kind"] == "stop" {
-            sim.walk_stop_moving(id, Some(&rules), crate::sim::world::FrameEffects::default())
+            sim.walk_stop_moving(id, &rules, crate::sim::world::FrameEffects::default())
                 .unwrap();
         } else {
             sim.infantry_pending_deploy_stop_callback(
                 id,
-                Some(&rules),
+                &rules,
                 crate::sim::world::FrameEffects::default(),
             )
             .unwrap();

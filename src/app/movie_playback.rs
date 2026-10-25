@@ -63,7 +63,10 @@ pub(crate) struct MoviePlayback {
     soundtrack: Option<Soundtrack>,
     last_step: Instant,
     ended: bool,
-    /// Paused while the application is inactive (`BinkPause(1)`).
+    /// The VoiceVolume last given to the soundtrack.
+    voice_volume: f32,
+    /// `BinkPause(1)`: the window is inactive, or (radar clips) an in-game
+    /// modal is open.
     paused: bool,
     /// Diagnostic shell capture only: playback is pinned at one frame.
     capture_hold: bool,
@@ -86,6 +89,7 @@ impl MoviePlayback {
             soundtrack,
             last_step: Instant::now(),
             ended: false,
+            voice_volume,
             paused: false,
             capture_hold: false,
         }
@@ -107,6 +111,22 @@ impl MoviePlayback {
             }
         }
         self.last_step = Instant::now();
+    }
+
+    /// `0x00432E40` re-reads VoiceVolume `[0x00A8EB9C]` every frame and calls
+    /// BinkSetVolume when it changed (`0x00432E40..0x00432E7A`). BINKW32's
+    /// DirectSound volume (`0x1002B250` → `0x1002AD40`) clamps to 32767 and
+    /// picks `trunc(vol * 127 / 32767)` from a `2000·log10(k/127)` millibel
+    /// table (`0x1003E820`), so linear gain is the right curve. RESIDUAL: native
+    /// steps in 1/127s, at most 0.5 dB quieter (at 0.1); inaudible.
+    pub(crate) fn set_voice_volume(&mut self, volume: f32) {
+        if volume == self.voice_volume {
+            return;
+        }
+        self.voice_volume = volume;
+        if let Some(soundtrack) = self.soundtrack.as_ref() {
+            soundtrack.stream.set_volume(volume);
+        }
     }
 
     /// Advance by wall time. Returns `true` once the last frame has played.

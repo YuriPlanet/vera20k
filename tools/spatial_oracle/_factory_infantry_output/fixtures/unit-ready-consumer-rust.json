@@ -5,32 +5,27 @@
     "cadence": {
       "path": "unit-ready-unpaused-attempt-2.native.json",
       "bytes": 2128840,
-      "sha256": "616e302efb835d4d0b6ff57c5597cb8b1a977c95727540ffb1383d69662c2b5f",
-      "historical_source_compatible_with_current_helpers": false
+      "sha256": "616e302efb835d4d0b6ff57c5597cb8b1a977c95727540ffb1383d69662c2b5f"
     },
     "device": {
       "path": "unit-ready-device-completion-attempt-2.native.json",
       "bytes": 3408229,
-      "sha256": "fffe98bb99d86f84f7333263fd9de897af54fb85e344faa3595f851750147804",
-      "historical_source_compatible_with_current_helpers": false
+      "sha256": "fffe98bb99d86f84f7333263fd9de897af54fb85e344faa3595f851750147804"
     },
     "buffer": {
       "path": "unit-ready-buffer-completion-attempt-1.native.json",
       "bytes": 4279185,
-      "sha256": "d2ad2a6b4f1f4477fed199b89d50b15881edc38d6f6e43a2b6247e0476c66a55",
-      "historical_source_compatible_with_current_helpers": false
+      "sha256": "d2ad2a6b4f1f4477fed199b89d50b15881edc38d6f6e43a2b6247e0476c66a55"
     },
     "radar": {
       "path": "unit-ready-radar-expiry-attempt-1.native.json",
       "bytes": 19287659,
-      "sha256": "948b8727cd2f440a4a1b93ee086eb8d0e3ac1fbc8895c04cd2e4c3afa2b98dee",
-      "historical_source_compatible_with_current_helpers": false
+      "sha256": "948b8727cd2f440a4a1b93ee086eb8d0e3ac1fbc8895c04cd2e4c3afa2b98dee"
     }
   },
   "comparison_limit": "OS frequency/counter/status/cursors and single-threaded Sleep/locks are supplied inputs. MIX traversal, real device concurrency/audible output and radar screen geometry are excluded. No whole-object completion claim.",
   "controls": {
     "cadence": {
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "full_original_receipt_sha256": "416dbf662a58907eb5df3d90d40e8b71b7be14c26e91f75ccc0541ce4a11db2e",
       "bounds": [
         "Original whole positive-clock reader/initialized-radar/House notification suffix prior is borrowed before its cleanup and output writer. Parent/accepted packets remain unchanged.",
@@ -1043,7 +1038,6 @@
       ]
     },
     "device": {
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "full_original_receipt_sha256": "ccff4d8930e0134505aae1a81479825d6408c991a105f8b8208f9e591b8951c0",
       "bounds": [
         "Existing real registered/positive-clock/initialized-radar UnitReady caller prior and actual winning ceva062.WAV stream/parser/decoder/native buffer Play at1034ms are reused without changing accepted packets or original code.",
@@ -1846,7 +1840,6 @@
       ]
     },
     "buffer": {
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "full_original_receipt_sha256": "76137951f44f39391335aac53858196f2739012f61a8b761e93460156980341e",
       "bounds": [
         "Actual native stock ceva062.WAV parser/decoder/channel/ringbuffer outputs and real UnitReady registered queue are reused from the existing original owners. Selected input is ceva062.WAV9354bytes, not a supplied PCM payload.",
@@ -3642,7 +3635,6 @@
       }
     },
     "radar": {
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "full_original_receipt_sha256": "93ac3bdbe58d34b2cd8b722b0ee235cc09ec401a160856efa8a0c4696ea86459",
       "bounds": [
         "Original65F9B0 vector CRT, physical General scalar reads, kind6 insertion/dedup and registered UnitReady queue prior are reused. No accepted packet is modified.",

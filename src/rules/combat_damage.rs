@@ -25,6 +25,9 @@ use crate::rules::ini_parser::IniSection;
 /// must supply their own fallback in that case.
 #[derive(Debug, Clone)]
 pub struct CombatDamageDefaults {
+    /// RulesCtor665675=100; ReadCombatDamage66BBDE..66BBF5 reads signed
+    /// AmmoCrateDamage with its current default, without clamping.
+    pub ammo_crate_damage: i32,
     /// Signed post-Verses cap used by ApplyWarheadDamage. The executable's
     /// constructor default is 1000; stock rulesmd.ini overrides it to 10000.
     pub max_damage: i32,
@@ -58,6 +61,9 @@ pub struct CombatDamageDefaults {
     /// neither an explicit death weapon nor a live current-weapon fallback,
     /// as the ordered Rules processor resolved it.
     pub death_weapon: Option<String>,
+    /// Rules+F88, constructor666B22 null; ReadCombatDamage66C2D4..66C2FE
+    /// retains the ordered Warhead factory result for ordinary AnimAI424630.
+    flame_damage2: Option<String>,
     /// `DrainAnimationType=` (`RulesClass+0x31C`): the AnimType a drain link
     /// attaches to its drainer (`TechnoClass::Install_Drain_Link @
     /// 0x0070FD70`). Read right after `DeathWeapon=`; the constructor leaves
@@ -110,11 +116,20 @@ pub struct CombatDamageDefaults {
 }
 
 impl CombatDamageDefaults {
+    pub(crate) fn bind_flame_damage2(&mut self, name: Option<String>) {
+        self.flame_damage2 = name;
+    }
+
+    pub(crate) fn flame_damage2(&self) -> Option<&str> {
+        self.flame_damage2.as_deref()
+    }
+
     /// Parse the scalars from a `[CombatDamage]` `IniSection`. The Type
     /// references keep the constructor's nulls: only the ordered Process
     /// owner reads them.
     pub fn from_ini_section(section: &IniSection) -> Self {
         Self {
+            ammo_crate_damage: section.read_int("AmmoCrateDamage", 100),
             max_damage: section.read_int("MaxDamage", 1000),
             collapse_chance: section.read_int("CollapseChance", 100),
             ballistic_scatter: section.read_range("BallisticScatter", 0x100),
@@ -122,6 +137,7 @@ impl CombatDamageDefaults {
             incoming: section.read_speed("Incoming", 0),
             open_topped_warp_distance: section.read_int("OpenToppedWarpDistance", 5),
             death_weapon: None,
+            flame_damage2: None,
             drain_animation_type: None,
             falling_damage_multiplier: section.read_float("FallingDamageMultiplier", 1.0),
             current_strength_damage: section.read_bool("CurrentStrengthDamage", true),
@@ -146,6 +162,7 @@ impl CombatDamageDefaults {
 impl Default for CombatDamageDefaults {
     fn default() -> Self {
         Self {
+            ammo_crate_damage: 100,
             max_damage: 1000,
             collapse_chance: 100,
             ballistic_scatter: 0x100,
@@ -153,6 +170,7 @@ impl Default for CombatDamageDefaults {
             incoming: 0,
             open_topped_warp_distance: 5,
             death_weapon: None,
+            flame_damage2: None,
             drain_animation_type: None,
             falling_damage_multiplier: 1.0,
             current_strength_damage: true,

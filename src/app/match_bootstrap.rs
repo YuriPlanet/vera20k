@@ -24,6 +24,9 @@ pub enum MatchSeedSource {
     NonWindowsDevelopmentFallback,
     /// Seed supplied by the admitted host start, never sampled by a guest.
     AgreedNetworkHost,
+    /// Retained Scenario seed; reconstructing saved campaign admission does
+    /// not sample a fresh seed. Restart/next mission do so at their own entry.
+    SavedScenario,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -84,10 +87,20 @@ pub struct PreparedMatchStartup {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PreparedNetworkStartup {
     launch: SkirmishLaunchSession,
+    /// Physical local bytes, independent of the logical map name folded into
+    /// shared scenario state. Cache paths differ legitimately across machines.
+    local_map_source: Option<crate::map::source::LoadedMapSource>,
+    local_map_effective_digest: Option<String>,
+    local_random_map_preview: Option<crate::map::source::LoadedMapSource>,
     pub(crate) seed: MatchSeed,
     mode: crate::app::match_runtime::session::SessionMode,
     host: bool,
     max_ahead_frames: i32,
+    native_id_prefix: Option<u32>,
+    wol_start: crate::app::match_runtime::session::WolStartTerms,
+    /// A co-op continuation's carry-over record (`0x004C6210` after
+    /// Start_Scenario); a first start restores none.
+    carry_over: Option<CampaignCarryOver>,
 }
 
 impl PreparedNetworkStartup {
@@ -97,9 +110,15 @@ impl PreparedNetworkStartup {
         mode: crate::app::match_runtime::session::SessionMode,
         host: bool,
         max_ahead_frames: i32,
+        wol_start: crate::app::match_runtime::session::WolStartTerms,
     ) -> Self {
+        let native_id_prefix =
+            crate::sim::native_identity::modern_online_native_id_prefix(mode, launch.humans.len());
         Self {
             launch,
+            local_map_source: None,
+            local_map_effective_digest: None,
+            local_random_map_preview: None,
             seed: MatchSeed {
                 value: seed,
                 source: MatchSeedSource::AgreedNetworkHost,
@@ -108,11 +127,56 @@ impl PreparedNetworkStartup {
             mode,
             host,
             max_ahead_frames,
+            native_id_prefix,
+            wol_start,
+            carry_over: None,
         }
+    }
+
+    pub(crate) fn with_carry_over(mut self, record: CampaignCarryOver) -> Self {
+        self.carry_over = Some(record);
+        self
+    }
+
+    pub(crate) fn with_local_map_source(
+        mut self,
+        source: Option<crate::map::source::LoadedMapSource>,
+        effective_digest: Option<String>,
+    ) -> Self {
+        self.local_map_source = source;
+        self.local_map_effective_digest = effective_digest;
+        self
+    }
+
+    pub(crate) fn with_random_map_preview(
+        mut self,
+        source: Option<crate::map::source::LoadedMapSource>,
+    ) -> Self {
+        self.local_random_map_preview = source;
+        self
+    }
+    pub(crate) fn random_map_preview(&self) -> Option<&crate::map::source::LoadedMapSource> {
+        self.local_random_map_preview.as_ref()
+    }
+    pub(crate) fn effective_map_digest(&self) -> Option<&str> {
+        self.local_map_effective_digest.as_deref()
+    }
+    pub(crate) fn local_map_source(&self) -> Option<&crate::map::source::LoadedMapSource> {
+        self.local_map_source.as_ref()
+    }
+
+    pub(crate) fn carry_over(&self) -> Option<&CampaignCarryOver> {
+        self.carry_over.as_ref()
     }
 
     pub(crate) fn max_ahead_frames(&self) -> i32 {
         self.max_ahead_frames
+    }
+    pub(crate) fn native_id_prefix(&self) -> Option<u32> {
+        self.native_id_prefix
+    }
+    pub(crate) fn wol_start(&self) -> &crate::app::match_runtime::session::WolStartTerms {
+        &self.wol_start
     }
     pub fn launch_session(&self) -> &SkirmishLaunchSession {
         &self.launch
@@ -146,8 +210,16 @@ impl CampaignLaunchOptions {
 /// Keep the supplied physical spelling for case-sensitive loose-file lookup.
 fn prepare_campaign_scenario(
     scenario: &str,
+    campaign: &crate::rules::campaigns::CampaignDefinition,
     launch_options: Option<&CampaignLaunchOptions>,
 ) -> (String, Option<String>) {
+    // Start_Scenario683AC8..683AF8: a null/empty requested name falls back
+    // to the retained campaign entry, including after failed MapSelect.
+    let scenario = if scenario.is_empty() {
+        campaign.scenario()
+    } else {
+        scenario
+    };
     let logical_name = scenario.to_ascii_uppercase();
     let source = launch_options
         .and_then(|options| options.loose_scenario_file(scenario))
@@ -188,6 +260,55 @@ pub struct PreparedCampaignStartup {
 }
 
 impl PreparedCampaignStartup {
+    /// Rebuild only the app's continuation inputs after an admitted saved
+    /// world. Native ScenarioLoad689470 retains index+34CC, name+125C and
+    /// counter+1254; ContentLoad67E804 restores the incoming carry-over.
+    /// The re-read process catalog supplies the same indexed Campaign entry.
+    pub(crate) fn from_saved_scenario(
+        campaigns: &crate::rules::campaigns::CampaignRegistry,
+        simulation: &Simulation,
+        source: &crate::map::source::LoadedMapSource,
+    ) -> Option<Self> {
+        let session = simulation.session();
+        if session.game_mode_nonzero() {
+            return None;
+        }
+        let campaign_index = usize::try_from(session.campaign_index()?).ok()?;
+        let campaign = campaigns.get(campaign_index)?.clone();
+        Some(Self {
+            campaign_index,
+            campaign,
+            scenario: session.map_name().to_owned(),
+            scenario_file: match source {
+                crate::map::source::LoadedMapSource::Loose { path, .. } => {
+                    Some(path.to_string_lossy().into_owned())
+                }
+                _ => None,
+            },
+            mission_counter: session.campaign_mission_counter()?,
+            difficulty: session.campaign_house_difficulties()?.0 as i32,
+            // Reuse the saved session's existing options authority. A loose
+            // external campaign also needs its source directory on continuation.
+            launch_options: Some(CampaignLaunchOptions {
+                game_speed: session.game_options().game_speed,
+                build_off_ally: session.game_options().build_off_ally,
+                scenario_directory: match source {
+                    crate::map::source::LoadedMapSource::Loose { path, .. } => {
+                        path.parent().map(std::path::Path::to_path_buf)
+                    }
+                    _ => None,
+                },
+            }),
+            carry_over: session.campaign_restart_carry_over(),
+            play_action_movie: false,
+            seed: MatchSeed {
+                value: session.seed() as u32,
+                source: MatchSeedSource::SavedScenario,
+                seed_authority_certifying: false,
+            },
+        })
+    }
+
     pub fn campaign_index(&self) -> usize {
         self.campaign_index
     }
@@ -283,7 +404,7 @@ impl PreparedCampaignStartup {
         clock: &mut impl MatchSeedClock,
     ) -> Self {
         let (scenario, scenario_file) =
-            prepare_campaign_scenario(&scenario, self.launch_options.as_ref());
+            prepare_campaign_scenario(&scenario, &self.campaign, self.launch_options.as_ref());
         Self {
             campaign_index: self.campaign_index,
             campaign: self.campaign.clone(),
@@ -314,9 +435,33 @@ pub fn prepare_campaign_startup(
     clock: &mut impl MatchSeedClock,
 ) -> Option<PreparedCampaignStartup> {
     let campaign_index = campaigns.find_index(name)?;
+    prepare_campaign_startup_at_index(
+        campaigns,
+        campaign_index,
+        difficulty,
+        scenario,
+        launch_options,
+        clock,
+    )
+}
+
+/// Retain the caller's catalog identity independently of an explicit filename.
+/// Original683AC8..683AFE uses the record's Scenario only for a null/empty
+/// filename;683B0A stores the supplied index. See campaign_start_prefix.json.
+/// Named shell starts and external starts share this constructor and consume
+/// the seed only after checked catalog admission succeeds.
+pub(crate) fn prepare_campaign_startup_at_index(
+    campaigns: &crate::rules::campaigns::CampaignRegistry,
+    campaign_index: usize,
+    difficulty: i32,
+    scenario: Option<&str>,
+    launch_options: Option<CampaignLaunchOptions>,
+    clock: &mut impl MatchSeedClock,
+) -> Option<PreparedCampaignStartup> {
     let campaign = campaigns.get(campaign_index)?.clone();
     let (scenario, scenario_file) = prepare_campaign_scenario(
-        scenario.unwrap_or_else(|| campaign.scenario()),
+        scenario.unwrap_or_default(),
+        &campaign,
         launch_options.as_ref(),
     );
     Some(PreparedCampaignStartup {
@@ -338,6 +483,14 @@ pub fn prepare_campaign_startup(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LoadingStartup {
     Network(std::sync::Arc<PreparedNetworkStartup>),
+    /// Exact immutable recorded launch. The diagnostics owner retains and
+    /// validates its log; this variant never installs a live network service.
+    Replay {
+        session: SkirmishLaunchSession,
+        seed: MatchSeed,
+        game_mode: crate::sim::scenario_session::ScenarioGameMode,
+        native_id_prefix: u32,
+    },
     Campaign(PreparedCampaignStartup),
     Accepted(PreparedMatchStartup),
     UnverifiedLegacy {
@@ -350,6 +503,27 @@ pub enum LoadingStartup {
 }
 
 impl LoadingStartup {
+    pub(crate) fn native_id_prefix(&self) -> Option<u32> {
+        match self {
+            Self::Network(startup) => startup.native_id_prefix(),
+            Self::Replay {
+                native_id_prefix, ..
+            } => Some(*native_id_prefix),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn physical_map_file(&self) -> &str {
+        if let Self::Network(startup) = self
+            && let Some(crate::map::source::LoadedMapSource::Loose { path, .. }) =
+                startup.local_map_source()
+            && let Some(path) = path.to_str()
+        {
+            return path;
+        }
+        self.selected_map_file()
+    }
+
     pub fn selected_map_file(&self) -> &str {
         match self {
             Self::Network(startup) => startup
@@ -359,6 +533,10 @@ impl LoadingStartup {
                 .expect("accepted network map"),
             Self::Campaign(startup) => startup.selected_map_file(),
             Self::Accepted(startup) => startup.session.selected_map_file(),
+            Self::Replay { session, .. } => session
+                .selected_map_file
+                .as_deref()
+                .expect("validated replay map"),
             Self::UnverifiedLegacy { session, .. } => {
                 session.selected_map_file.as_deref().unwrap_or("auto")
             }
@@ -371,6 +549,7 @@ impl LoadingStartup {
             Self::Network(startup) => Some(startup.launch_session()),
             Self::Campaign(_) => None,
             Self::Accepted(startup) => Some(startup.session.launch_session()),
+            Self::Replay { session, .. } => Some(session),
             Self::UnverifiedLegacy { session, .. } => Some(session),
             Self::Generic { .. } => None,
         }
@@ -381,6 +560,7 @@ impl LoadingStartup {
             Self::Accepted(startup) => Some(startup),
             Self::Network(_)
             | Self::Campaign(_)
+            | Self::Replay { .. }
             | Self::UnverifiedLegacy { .. }
             | Self::Generic { .. } => None,
         }
@@ -393,14 +573,15 @@ impl LoadingStartup {
         }
     }
 
-    /// The `GameMode` the shell wrote before this launch: 0 for a campaign
-    /// (`0x0052E175`), 5 for every Battle launch (`0x0052E10F`). A generic map
-    /// load has no campaign either, matching the simulation's own
+    /// The `GameMode` admitted before construction: campaign 0 (`0x0052E175`),
+    /// offline Battle 5 (`0x0052E10F`), or the exact network/recorded mode.
+    /// A generic map load has no campaign, matching the simulation's own
     /// `game_mode_nonzero = campaign.is_none()` classification.
     pub(crate) fn session_mode(&self) -> crate::app::match_runtime::session::SessionMode {
         use crate::app::match_runtime::session::SessionMode;
         match self {
             Self::Network(startup) => startup.mode(),
+            Self::Replay { game_mode, .. } => *game_mode,
             Self::Campaign(_) => SessionMode::Campaign,
             Self::Accepted(_) | Self::UnverifiedLegacy { .. } | Self::Generic { .. } => {
                 SessionMode::Skirmish
@@ -414,6 +595,7 @@ impl LoadingStartup {
             Self::Network(startup) => startup.seed.value,
             Self::Campaign(startup) => startup.seed.value,
             Self::Accepted(startup) => startup.seed.value,
+            Self::Replay { seed, .. } => seed.value,
             Self::UnverifiedLegacy { seed, .. } => seed.value,
             Self::Generic { .. } => unverified_fallback(),
         }
@@ -786,6 +968,75 @@ mod tests {
     }
 
     #[test]
+    fn saved_campaign_keeps_later_map_identity_for_restart_and_victory() {
+        use crate::sim::scenario_session::ScenarioDescriptor;
+        use crate::sim::snapshot::GameSnapshot;
+
+        let mut campaigns = crate::rules::campaigns::CampaignRegistry::default();
+        campaigns.apply_ini(
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[Battles]\n0=ALL1\n1=SOV1\n[ALL1]\nCD=2\nScenario=ALL01UMD.MAP\n[SOV1]\nCD=2\nScenario=SOV01UMD.MAP\n",
+            ),
+            &crate::rules::movies::MovieRegistry::default(),
+        );
+        let mut sim = Simulation::from_descriptor(&ScenarioDescriptor {
+            map_name: "SOV03UMD.MAP".into(),
+            seed: 71,
+            ..Default::default()
+        });
+        sim.session_mut_for_test()
+            .initialize_campaign_for_test(1, 3, CampaignCarryOver::CLEARED);
+        let bytes = GameSnapshot::save(&sim, 0, 0, "SOV03UMD.MAP", 0);
+        let restored = GameSnapshot::load(&bytes).unwrap().sim;
+        let source = crate::map::source::LoadedMapSource::Mix {
+            logical_name: "SOV03UMD.MAP".into(),
+            source_archive: "mapsmd03.mix".into(),
+            entry_id: 0,
+            payload_len: 0,
+            source_sha256: String::new(),
+        };
+        let saved = PreparedCampaignStartup::from_saved_scenario(&campaigns, &restored, &source)
+            .expect("a later map keeps its saved catalog index");
+        assert_eq!(saved.campaign_index(), 1);
+        assert_eq!(saved.campaign().id(), "SOV1");
+        assert_eq!(saved.scenario(), "SOV03UMD.MAP");
+        assert_eq!(saved.mission_counter(), 3);
+        let mut admission = crate::app::match_runtime::startup::MatchStartup::default();
+        admission.acknowledge_saved_load(Some(saved));
+        assert!(admission.restored());
+        assert!(admission.admits_exact_step());
+        assert!(admission.receipt().is_none());
+        assert!(
+            !admission.campaign_installed(),
+            "no fresh-load receipt is fabricated"
+        );
+        let saved = admission.installed_campaign().unwrap();
+        let mut clock = CountingClock {
+            value: 88,
+            reads: 0,
+        };
+        let retry = saved.restart(2, 1, &mut clock);
+        assert_eq!(retry.campaign_index(), 1);
+        assert_eq!(retry.scenario(), "SOV03UMD.MAP");
+        assert_eq!(retry.mission_counter(), 3);
+        assert_eq!(retry.carry_over(), Some(&CampaignCarryOver::CLEARED));
+        assert!(!retry.plays_action_movie());
+        let next = saved.next_mission(
+            "SOV04UMD.MAP".into(),
+            4,
+            2,
+            1,
+            restored.save_campaign_carry_over(),
+            &mut clock,
+        );
+        assert_eq!(next.campaign_index(), 1);
+        assert_eq!(next.scenario(), "SOV04UMD.MAP");
+        assert_eq!(next.mission_counter(), 4);
+        assert!(next.plays_action_movie());
+        assert_eq!(clock.reads, 2, "only the two fresh starts sample a seed");
+    }
+
+    #[test]
     fn cncnet_campaign_enters_a_selected_mission_and_keeps_continuation_identity() {
         let ini = crate::rules::ini_parser::IniFile::from_str(
             "[Battles]\n0=ALL1\n[ALL1]\nCD=2\nScenario=ALL01UMD.MAP\n",
@@ -834,6 +1085,17 @@ mod tests {
         assert_eq!(next.game_options().unwrap().game_speed, 4);
         assert!(!next.game_options().unwrap().build_off_ally);
         assert!(startup.plays_action_movie() && next.plays_action_movie());
+        // SkipMapSelect clears FileName on an unmatched destination. Native
+        // Start_Scenario683AC8..683AF8 then chooses the retained campaign entry.
+        let mut sim = crate::sim::world::Simulation::new();
+        sim.set_campaign_map_stage(17);
+        let record = sim.save_campaign_carry_over();
+        let fallback = next.next_mission(String::new(), 3, 2, 4, record, &mut clock);
+        assert_eq!(fallback.scenario(), "ALL01UMD.MAP");
+        assert_eq!(fallback.campaign_index(), startup.campaign_index());
+        assert_eq!(fallback.mission_counter(), 3);
+        assert_eq!(fallback.carry_over(), Some(&record));
+        assert_eq!(fallback.carry_over().unwrap().map_stage(), 17);
     }
 
     /// Restart and the defeat retry re-enter Start_Scenario with the same

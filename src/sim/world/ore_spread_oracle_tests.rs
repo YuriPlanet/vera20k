@@ -143,7 +143,7 @@ fn app_frames_match_original_ore_driver_histories_and_rng_continuation() {
             let (output, draws) = crate::sim::rng::trace_draws(|| {
                 sim.advance_app_frame(
                     &[],
-                    Some(&rules),
+                    &rules,
                     Some(&registry),
                     67,
                     TickLane::Ordinary,
@@ -208,7 +208,7 @@ fn app_ore_constructor_terminal_cleanup_matches_original_deferred_drain() {
         let (output, draws) = crate::sim::rng::trace_draws(|| {
             sim.advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 Some(&registry),
                 67,
                 TickLane::Ordinary,

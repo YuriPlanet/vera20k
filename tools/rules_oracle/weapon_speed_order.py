@@ -9,7 +9,7 @@ Original Process is void; its incidental EAX is deliberately not a success flag.
 from pathlib import Path
 import struct
 from unicorn import UC_HOOK_CODE
-from tools.native_oracle import NATIVE_SHA256,finish_vectors,provenance
+from tools.native_oracle import finish_vectors,provenance
 from tools.projectile_oracle.bridge_render_inputs import BulletReader
 from tools.spatial_oracle.building_body_rules import RULES,dwords
 
@@ -57,7 +57,7 @@ def chronology(cold_gravity=None):
  return dict(constructor=ctor,cold_audio_visual=cold,rows=rows)
 
 def generate():
- return dict(native_sha256=NATIVE_SHA256,sequences=[chronology(),chronology(6)])
+ return dict(sequences=[chronology(),chronology(6)])
 
 def metadata():
  return provenance(scope='Retained Weapon Speed and prior-pass Rules Gravity through complete original RulesClass Process',assumptions=[
@@ -228,13 +228,15 @@ def _retail_history_class():
    out=self.alloc(capacity)
    length=self.invoke(0x528A10,ini,(self.cstring(section),self.cstring(key),self.cstring(default),out,capacity))
    return self.string(out),length
-  def load_physical_ini(self,name,*,address=None):
+  def load_physical_ini(self,name,*,address=None,digest=0,comments=0,require=True):
+   # ReadCCFile4741F0(file,digest,comments); require=False keeps a refused or
+   # Digest-mismatch (2) load. Its full EAX is still live after the return.
    self.phase='physical:'+name
    ini=address if address is not None else self.alloc(0x58);file=self.alloc(0x6C)
    self.invoke(0x535B30,ini);self.invoke(0x4739F0,file,(self.cstring(name),))
-   result=self.invoke(0x4741F0,ini,(file,0,0))
-   if result&255!=1:raise ValueError(('Original physical INI load refused',name,result))
-   return ini,dict(file=name,returned=result&255,section_count=self.read32(ini+0x2C),check_digest=0)
+   result=self.invoke(0x4741F0,ini,(file,digest,comments))
+   if require and result&255!=1:raise ValueError(('Original physical INI load refused',name,result))
+   return ini,dict(file=name,returned=result&255,section_count=self.read32(ini+0x2C),check_digest=digest)
   def optional_absence(self,name):
    self.phase='optional_guard:'+name;file=self.alloc(0x6C)
    self.invoke(0x4739F0,file,(self.cstring(name),))

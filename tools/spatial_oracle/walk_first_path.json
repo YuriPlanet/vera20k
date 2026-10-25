@@ -3,9 +3,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -10514,7 +10514,6 @@
       },
       "name": "plain_A_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -21513,9 +21512,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -31946,7 +31945,6 @@
       },
       "name": "shift_A_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -42157,9 +42155,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -52612,7 +52610,6 @@
       },
       "name": "other12_A_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -63299,9 +63296,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -75100,7 +75097,6 @@
       },
       "name": "paid_head_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -88152,9 +88148,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -101299,7 +101295,6 @@
       },
       "name": "paid_head_Stop_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -114525,9 +114520,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -122143,7 +122138,6 @@
       },
       "name": "human_Doing27_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -123739,9 +123733,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -131340,7 +131334,6 @@
       },
       "name": "human_Doing27_shift_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -132708,9 +132701,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -137691,7 +137684,6 @@
       },
       "name": "human_Doing27_class_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -140187,9 +140179,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -145277,7 +145269,6 @@
       },
       "name": "findpath_existing_idle_MTNK",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "ambient": {
@@ -149906,9 +149897,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -153738,7 +153729,6 @@
       },
       "name": "findpath_existing_GAPILE",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "ambient": {
@@ -157512,9 +157502,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -168023,7 +168013,6 @@
       },
       "name": "plain_A_A",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -179022,9 +179011,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -189533,7 +189522,6 @@
       },
       "name": "plain_A_later_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -200536,9 +200524,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -212288,7 +212276,6 @@
       },
       "name": "attack_same_A",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -223274,9 +223261,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -233791,7 +233778,6 @@
       },
       "name": "current_cell_raw20_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -244616,9 +244602,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -252470,7 +252456,6 @@
       },
       "name": "archive_A_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -258227,9 +258212,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -266083,7 +266068,6 @@
       },
       "name": "prone_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -271892,9 +271876,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -278225,7 +278209,6 @@
       },
       "name": "mode5_current_mismatch_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "bounds": "Explicit original-field component priors; no native query, event, class or gameplay answer is supplied.",
@@ -278861,9 +278844,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -287846,7 +287829,6 @@
       },
       "name": "mode5_current_nonhuman_Doing27_input_class_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "bounds": "Explicit original-field component priors; no native query, event, class or gameplay answer is supplied.",
@@ -291600,9 +291582,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -303515,7 +303497,6 @@
       },
       "name": "prone_A_A",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -314711,9 +314692,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -322633,7 +322614,6 @@
       },
       "name": "nonDeployer_Doing27_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "bounds": "Explicit original-field component priors; no native query, event, class or gameplay answer is supplied.",
@@ -328691,9 +328671,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz"
@@ -335024,7 +335004,6 @@
       },
       "name": "berserk_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "bounds": "Explicit original-field component priors; no native query, event, class or gameplay answer is supplied.",
@@ -335654,9 +335633,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz",
@@ -348310,7 +348289,6 @@
       },
       "name": "unit_plain_A_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -360521,9 +360499,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz",
@@ -373099,7 +373077,6 @@
       },
       "name": "unit_shift_A_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -384418,9 +384395,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz",
@@ -392895,7 +392872,6 @@
       },
       "name": "unit_deployed_delayed_A",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -399049,9 +399025,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz",
@@ -436817,7 +436793,6 @@
       },
       "name": "unit_paid_head_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -459039,9 +459014,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz",
@@ -499600,7 +499575,6 @@
       },
       "name": "unit_paid_head_Stop_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -524260,9 +524234,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz",
@@ -532673,7 +532647,6 @@
       },
       "name": "unit_deployed_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "bounds": "Literal original-field component prior on stock MTNK; no deployment cycle, query, event, class, path or RNG answer supplied. The delayed control retains the actual emitted Move before changing6E0 and pumping it.",
@@ -535207,9 +535180,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz",
@@ -547845,7 +547818,6 @@
       },
       "name": "unit_shift_outside_playfield_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -562818,9 +562790,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz",
@@ -600586,7 +600558,6 @@
       },
       "name": "unit_paid_head_same_A",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -622444,9 +622415,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz",
@@ -635124,7 +635095,6 @@
       },
       "name": "unit_plain_A_A",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -647088,9 +647058,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz",
@@ -659690,7 +659660,6 @@
       },
       "name": "unit_shift_A_A",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -670710,9 +670679,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz",
@@ -683390,7 +683359,6 @@
       },
       "name": "unit_plain_A_later_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -695657,9 +695625,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz",
@@ -708259,7 +708227,6 @@
       },
       "name": "unit_shift_A_later_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "args": [
@@ -719582,9 +719549,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz",
@@ -727796,7 +727763,6 @@
       },
       "name": "unit_owner_mismatch_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "bounds": "Literal original-field component prior on stock MTNK; no deployment cycle, query, event, class, path or RNG answer supplied. The delayed control retains the actual emitted Move before changing6E0 and pumping it.",
@@ -728478,9 +728444,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz",
@@ -736692,7 +736658,6 @@
       },
       "name": "unit_berserk_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "bounds": "Literal original-field component prior on stock MTNK; no deployment cycle, query, event, class, path or RNG answer supplied. The delayed control retains the actual emitted Move before changing6E0 and pumping it.",
@@ -737374,9 +737339,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz",
@@ -745721,7 +745686,6 @@
       },
       "name": "unit_deploying_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "bounds": "Literal original-field component prior on stock MTNK; no deployment cycle, query, event, class, path or RNG answer supplied. The delayed control retains the actual emitted Move before changing6E0 and pumping it.",
@@ -747603,9 +747567,9 @@
     {
       "bootstrap": {
         "complete_primary_native_equal": true,
-        "complete_primary_native_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
+        "complete_primary_native_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
         "complete_private_native_equal": true,
-        "complete_private_native_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073",
+        "complete_private_native_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a",
         "control": "no_rally",
         "final_frame": 522,
         "original_projection": "fixtures/initialized-no_rally.json.gz",
@@ -755950,7 +755914,6 @@
       },
       "name": "unit_undeploying_B",
       "native_code_unchanged": true,
-      "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
       "ordered_calls": [
         {
           "bounds": "Literal original-field component prior on stock MTNK; no deployment cycle, query, event, class, path or RNG answer supplied. The delayed control retains the actual emitted Move before changing6E0 and pumping it.",

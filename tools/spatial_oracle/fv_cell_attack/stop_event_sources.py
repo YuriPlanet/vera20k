@@ -3,7 +3,7 @@ from pathlib import Path
 import hashlib,struct
 import capstone
 from capstone import Cs,CS_ARCH_X86,CS_MODE_32
-from tools.native_oracle import NATIVE_SHA256,image_bytes,file_span,finish_vectors,provenance
+from tools.native_oracle import image_bytes,file_span,finish_vectors,provenance
 HERE=Path(__file__).resolve().parent
 SPANS=(
     ('stop_command',0x730EA0,0x730F21),
@@ -27,14 +27,14 @@ def generate():
     vt=0x7F5C70;slots={f'0x{off:x}':f'0x{struct.unpack("<I",file_span(image,vt+off,4)[1])[0]:08x}' for off in (0x374,0x280,0x480,0x3C8,0x1E8,0x1EC)}
     branch=struct.unpack('<I',file_span(image,0x4C8114+(6-1)*4,4)[1])[0]
     assert branch==0x4C74CB
-    return dict(schema=1,native_sha256=NATIVE_SHA256,bodies=bodies,unit_vtable=f'0x{vt:08x}',unit_slots=slots,
+    return dict(schema=1,bodies=bodies,unit_vtable=f'0x{vt:08x}',unit_slots=slots,
                 event6_switch=dict(table='0x004c8114',index=5,destination=f'0x{branch:08x}'))
 
 def metadata():
     result=provenance(scope=__doc__,entry_points={name:start for name,start,_ in SPANS},
         assumptions=['All bytes come from verified active-retail file-backed PE spans. The Event body is disassembled from its actual entry, then only entry and reached Event6 instructions are selected. Unit vtable slots and Event switch entries are original bytes.'],
         substitutions=['Static original byte/disassembly evidence only; does not claim caller runtime admission or outcomes. Conditional paid Stop execution separately supplies those results.'])
-    result.update(capstone_version=capstone.__version__,harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
+    result.update(capstone_version=capstone.__version__)
     return result
 
 if __name__=='__main__':

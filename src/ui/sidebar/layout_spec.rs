@@ -52,7 +52,15 @@ impl SidebarChromeLayoutSpec {
     }
 
     pub const fn for_theme(theme: SidebarTheme) -> Self {
-        let allied = matches!(theme, SidebarTheme::Allied);
+        Self::for_theme_and_positions(theme, matches!(theme, SidebarTheme::Allied))
+    }
+
+    /// Phobos `[SOMESIDE] Sidebar.GDIPositions=`: the artwork theme and the
+    /// hardcoded button coords are independent. `theme` still selects the
+    /// SIDEBAR MIX and chrome heights; `gdi_positions` selects the GDI
+    /// (allied) position table.
+    pub const fn for_theme_and_positions(theme: SidebarTheme, gdi_positions: bool) -> Self {
+        let allied = gdi_positions;
         Self {
             theme,
             touch_controls: false,
@@ -88,5 +96,34 @@ impl SidebarChromeLayoutSpec {
 impl Default for SidebarChromeLayoutSpec {
     fn default() -> Self {
         Self::stock()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gdi_positions_are_independent_of_the_art_theme() {
+        let allied = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Allied);
+        let soviet = SidebarChromeLayoutSpec::for_theme(SidebarTheme::Soviet);
+        assert_eq!(allied.tab_x, 26.0);
+        assert_eq!(soviet.tab_x, 20.0);
+
+        let soviet_gdi =
+            SidebarChromeLayoutSpec::for_theme_and_positions(SidebarTheme::Soviet, true);
+        assert_eq!(soviet_gdi.theme, SidebarTheme::Soviet);
+        assert_eq!(soviet_gdi.tab_x, 26.0);
+        assert_eq!(soviet_gdi.tab_pitch, 29.0);
+        assert_eq!(soviet_gdi.cameo_gap_x, 3.0);
+        assert_eq!(soviet_gdi.power_bar_x, 5.0);
+
+        let allied_nod =
+            SidebarChromeLayoutSpec::for_theme_and_positions(SidebarTheme::Allied, false);
+        assert_eq!(allied_nod.theme, SidebarTheme::Allied);
+        assert_eq!(allied_nod.tab_x, 20.0);
+        assert_eq!(allied_nod.tab_pitch, 32.0);
+        assert_eq!(allied_nod.cameo_gap_x, 4.0);
+        assert_eq!(allied_nod.power_bar_x, 0.0);
     }
 }

@@ -83,16 +83,12 @@ impl Simulation {
         }
     }
 
-    fn foot_neighbor_high_flight(
-        &self,
-        id: u64,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
-    ) -> bool {
+    fn foot_neighbor_high_flight(&self, id: u64, rules: &crate::rules::ruleset::RuleSet) -> bool {
         self.substrate.entities.get(id).is_some_and(|entity| {
             crate::sim::movement::air_movement::is_high_flying(
                 entity,
                 self.resolved_terrain.as_ref(),
-                rules.map(|rules| (rules, &self.interner)),
+                Some((rules, &self.interner)),
             )
         })
     }
@@ -103,7 +99,7 @@ impl Simulation {
     pub(crate) fn foot_neighbors_after_unlimbo(
         &mut self,
         id: u64,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
     ) -> bool {
         let Some(cell) = Self::foot_neighbor_position(&self.substrate, id) else {
             return false;
@@ -181,7 +177,7 @@ impl Simulation {
     pub(crate) fn foot_neighbors_after_owner_change(
         &mut self,
         id: u64,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
     ) {
         if let Some(cell) = Self::foot_neighbor_position(&self.substrate, id)
             && !self.foot_neighbor_high_flight(id, rules)
@@ -337,7 +333,12 @@ mod tests {
             });
             match input["operation"].as_str().unwrap() {
                 "unlimbo" => {
-                    sim.foot_neighbors_after_unlimbo(1, rules.as_ref());
+                    sim.foot_neighbors_after_unlimbo(
+                        1,
+                        rules
+                            .as_ref()
+                            .unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
+                    );
                 }
                 "per_cell" => Simulation::foot_neighbors_at_per_cell(
                     &mut sim.substrate,
@@ -351,7 +352,12 @@ mod tests {
                     &mut sim.overlay_grid,
                     1,
                 ),
-                "owner_change" => sim.foot_neighbors_after_owner_change(1, rules.as_ref()),
+                "owner_change" => sim.foot_neighbors_after_owner_change(
+                    1,
+                    rules
+                        .as_ref()
+                        .unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
+                ),
                 _ => unreachable!(),
             }
             let cell = sim

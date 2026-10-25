@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -20,7 +19,5 @@
     "cost": "0x0042D170",
     "precheck": "0x0042C290"
   },
-  "harness_sha256": "4639d4de9bd46931f54c3ae1a0463489654e0b41ba3bfa5a84573da5f670fa0a",
-  "pursuit_owner_sha256": "32e44b3a032c9dca51ca37f826143d0b021272b202e26564e7de0dc51c13dfed",
-  "payload_sha256": "fe548e1c0e7b1bcb09752826352175c337b52f74a2748e2831545f67018af753"
+  "payload_sha256": "c37fab8449443a19f7411d65ca3b8c5a49ae9ea9af9fff3b288ab29e741589f2"
 }

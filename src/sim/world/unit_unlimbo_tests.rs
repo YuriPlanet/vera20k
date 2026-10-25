@@ -452,7 +452,7 @@ fn compare_factory_radio_call(
                 None,
                 RadioMessage::RequestClearance,
                 RadioPayload::default(),
-                Some(rules),
+                rules,
                 crate::sim::world::FrameEffects::default(),
             )
         } else {
@@ -464,7 +464,7 @@ fn compare_factory_radio_call(
                 sim,
                 ids.0,
                 RadioMessage::RequestClearance,
-                Some(rules),
+                rules,
                 crate::sim::world::FrameEffects::default(),
             )
         };
@@ -634,7 +634,7 @@ fn retail_authored_unit_high_matches_original_pose_scope_and_lists() {
             let count = sim.with_object_placement_scope(|sim| {
                 let count = sim.spawn_from_map_with_resolved_and_overlay_registry(
                     &entities,
-                    Some(&rules),
+                    &rules,
                     Some(&terrain),
                     Some(&registry),
                 );
@@ -1214,6 +1214,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
                 &rules,
                 producer_id,
                 id,
+                (0, 0),
                 Some(&registry),
                 crate::sim::world::FrameEffects::default(),
             );
@@ -1322,6 +1323,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
             &rules,
             owner,
             ProductionCategory::Vehicle,
+            production::ProductionCancellation::Category(ProductionCategory::Vehicle),
             crate::sim::world::FrameEffects::default(),
         );
         assert!(
@@ -1446,7 +1448,7 @@ fn retail_factory_exit_radio_matches_original_reciprocal_cleanup() {
                 unit,
                 RadioMessage::Hello,
                 RadioPayload::default(),
-                Some(&rules),
+                &rules,
                 crate::sim::world::FrameEffects::default(),
             )
             .code(),
@@ -1460,7 +1462,7 @@ fn retail_factory_exit_radio_matches_original_reciprocal_cleanup() {
                 unit,
                 RadioMessage::Tether,
                 RadioPayload::default(),
-                Some(&rules),
+                &rules,
                 crate::sim::world::FrameEffects::default(),
             )
             .code(),

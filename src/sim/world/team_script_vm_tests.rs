@@ -120,15 +120,18 @@ fn a_recruiting_team_survives_save_load() {
     );
 
     let bytes = GameSnapshot::save_validated(&original, 0, 0, "team_vm_test", 0);
-    let mut restored = GameSnapshot::load(&bytes).expect("snapshot").sim;
+    let mut restored = GameSnapshot::load_validated(&bytes, 0, 0, original.session.map_name())
+        .expect("snapshot")
+        .sim;
     restored
         .restore_after_snapshot_load()
         .expect("references resolve");
     // A save carries no map: the load re-installs the scenario's cells.
     crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
-    // Retail's save reader reinitializes the Scenario RNG; align the control
-    // run to that load contract before comparing the continuation.
+    // Retail load reinitializes Scenario RNG and discards active planning
+    // (ClearScene6370B0 / TechnoLoad70BF79); align the control before comparing.
     original.scenario_rng = crate::sim::rng::SimRng::new(0);
+    original.reset_planning_after_player_load();
     assert_eq!(original.state_hash(), restored.state_hash());
 
     for _ in 0..40 {

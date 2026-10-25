@@ -4,9 +4,9 @@ The class7 verdict and post-hop current height (where specified) are supplied.
 No full path/actor/rules or map-loading reachability claim for raw-byte controls.
 """
 from pathlib import Path
-import hashlib,json,struct
+import json,struct
 from unicorn.x86_const import *
-from tools.native_oracle import NATIVE_SHA256,RET_MAGIC,run_checked,provenance,finish_vectors
+from tools.native_oracle import RET_MAGIC,run_checked,provenance,finish_vectors
 from tools.spatial_oracle.tube_hierarchy import initialized_process_fixture
 from tools.spatial_oracle.map_queries import dwords,packed
 from tools.spatial_oracle.guarded_arena import Arena
@@ -42,7 +42,7 @@ def generate():
         rows.append(dict(name=f'raw{start}_{goal}_bridge{int(start_bridge)}{int(goal_bridge)}',source_level_raw=start,goal_level_raw=goal,source_on_bridge=start_bridge,source_flags=256 if start_bridge else 0,goal_flags=256 if goal_bridge else 0))
     rows.append(dict(name='initial4_current10_goal10',source_level_raw=4,goal_level_raw=10,source_on_bridge=False,source_flags=0,goal_flags=0,current_height_after_hops_supplied=10))
     rows.append(dict(name='initial10_current14_goal10',source_level_raw=10,goal_level_raw=10,source_on_bridge=False,source_flags=0,goal_flags=0,current_height_after_hops_supplied=14))
-    result=dict(schema_version=1,native_sha256=NATIVE_SHA256,scope=__doc__,cases=[execute(row)for row in rows],harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
+    result=dict(schema_version=1,scope=__doc__,cases=[execute(row)for row in rows])
     return result
 
 def metadata():

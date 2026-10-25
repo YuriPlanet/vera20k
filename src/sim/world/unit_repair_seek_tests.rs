@@ -56,6 +56,252 @@ fn seek(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     sim.unit_ai_seek_repair(id, rules, None, FrameEffects::default());
 }
 
+/// Unit743270 accepts Repair; Unit740EF0 establishes contact and queues Enter
+/// without inventing a destination. A destination-bearing Repair event then
+/// uses the existing Enter/depot service chain, even for a human-owned tank.
+#[test]
+fn map_repair_waits_without_nav_and_a_directed_event_completes_service() {
+    let Some((mut sim, rules, grid)) = scene() else {
+        return;
+    };
+    // The generic seek arena starts both houses with no money. Depot service
+    // charges its existing economy owner; supply ordinary skirmish funds.
+    let owner = sim.interner.get("Americans").unwrap();
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .economy_mut()
+        .set_credits_for_test(10_000);
+    spawn(&mut sim, &rules, "GAPOWR", "Americans", 34, 30);
+    // Keep the rival house alive so the ordinary skirmish victory path does
+    // not stop the binary-frame clock before the service timers finish.
+    spawn(&mut sim, &rules, "NAPOWR", "Russians", 40, 40);
+    let depot = spawn(&mut sim, &rules, "GADEPT", "Americans", 24, 20);
+    let placements =
+        crate::map::entities::parse_map_entities(&crate::rules::ini_parser::IniFile::from_str(
+            "[Units]\n0=Americans,MTNK,128,14,20,0,Repair,None,0,-1,0,-1,1,1\n",
+        ));
+    assert_eq!(placements[0].mission, Some(MissionType::Repair));
+    assert_eq!(sim.spawn_from_map(&placements, Some(&rules)), 1);
+    let tank = sim
+        .substrate
+        .entities
+        .values()
+        .find(|entity| sim.interner.resolve(entity.type_ref()) == "MTNK")
+        .unwrap()
+        .stable_id();
+    let initial_health = sim.substrate.entities.get(tank).unwrap().health.current();
+    let mut entered = false;
+    for _ in 0..64 {
+        let commands = sim.take_due_commands();
+        assert!(
+            sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33)
+                .frame_committed
+        );
+        let unit = sim.substrate.entities.get(tank).unwrap();
+        entered |= unit.mission.current().known() == Some(MissionType::Enter);
+    }
+    let unit = sim.substrate.entities.get(tank).unwrap();
+    assert!(entered);
+    assert_eq!(unit.radio_contacts.slot(0), Some(depot));
+    assert_eq!(unit.navigation.nav_com(), None);
+    assert_eq!((unit.position.rx(), unit.position.ry()), (14, 20));
+    assert_eq!(unit.health.current(), initial_health);
+    let spent_before = sim.houses[&owner].economy().spent_credits();
+    // The native MEGAMISSION envelope can supply both Repair and a depot
+    // destination. Unlike the map's mission column, it also runs vt+480.
+    let directed = crate::sim::command::Command::clicked_mission(
+        tank,
+        MissionType::Repair,
+        TargetKind::Entity(depot),
+    );
+    let record = sim.encode_megamission_record(owner, &directed).unwrap();
+    let directed = sim
+        .decode_native_command_record(&record, sim.session.tick())
+        .expect("native Repair event decodes with its depot destination");
+    assert!(
+        sim.advance_tick(&[directed], Some(&rules), Some(&grid), None, 33)
+            .frame_committed
+    );
+    entered = sim
+        .substrate
+        .entities
+        .get(tank)
+        .unwrap()
+        .mission
+        .current()
+        .known()
+        == Some(MissionType::Enter);
+    for _ in 0..3000 {
+        let commands = sim.take_due_commands();
+        assert!(
+            sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33)
+                .frame_committed
+        );
+        let unit = sim.substrate.entities.get(tank).unwrap();
+        entered |= unit.mission.current().known() == Some(MissionType::Enter);
+        if unit.health.current() == rules.object("MTNK").unwrap().strength
+            && unit.radio_contacts.slot(0).is_none()
+        {
+            assert!(entered, "Repair must hand off to Enter before service");
+            assert!(unit.health.current() > initial_health);
+            assert!(sim.houses[&owner].economy().spent_credits() > spent_before);
+            assert!(
+                !sim.substrate
+                    .entities
+                    .get(depot)
+                    .unwrap()
+                    .radio_contacts
+                    .iter_live()
+                    .any(|id| id == tank)
+            );
+            return;
+        }
+    }
+    let unit = sim.substrate.entities.get(tank).unwrap();
+    panic!(
+        "Repair did not finish: health={}, mission={:?}, queued={:?}, contact={:?}, cell=({}, {}), nav={:?}, depot_mission={:?}, depot_status={}",
+        unit.health.current(),
+        unit.mission.current(),
+        unit.mission.queued(),
+        unit.radio_contacts.slot(0),
+        unit.position.rx(),
+        unit.position.ry(),
+        unit.navigation.nav_com(),
+        sim.substrate.entities.get(depot).unwrap().mission.current(),
+        sim.substrate
+            .entities
+            .get(depot)
+            .unwrap()
+            .mission
+            .handler_state()
+    );
+}
+
+#[test]
+fn repair_mission_hello_queues_enter_without_commencing_or_setting_destination() {
+    let Some((mut sim, rules, _)) = scene() else {
+        return;
+    };
+    let depot = spawn(&mut sim, &rules, "GADEPT", "Americans", 24, 20);
+    let tank = damaged_tank(
+        &mut sim,
+        &rules,
+        "MTNK",
+        "Americans",
+        (14, 20),
+        MissionType::Repair,
+    );
+    let before_rng = sim.scenario_rng.logical_state();
+    assert_eq!(
+        sim.unit_mission_repair(tank, &rules, FrameEffects::default()),
+        1
+    );
+    let unit = sim.substrate.entities.get(tank).unwrap();
+    assert_eq!(unit.mission.current().known(), Some(MissionType::Repair));
+    assert_eq!(unit.mission.queued().known(), Some(MissionType::Enter));
+    assert_eq!(unit.radio_contacts.slot(0), Some(depot));
+    assert_eq!(unit.navigation.nav_com(), None);
+    assert_eq!(sim.scenario_rng.logical_state(), before_rng);
+}
+
+#[test]
+fn repair_mission_without_a_bay_waits_at_its_unjittered_rate() {
+    let Some((mut sim, rules, _)) = scene() else {
+        return;
+    };
+    let tank = damaged_tank(
+        &mut sim,
+        &rules,
+        "MTNK",
+        "Americans",
+        (14, 20),
+        MissionType::Repair,
+    );
+    let before_rng = sim.scenario_rng.logical_state();
+    assert_eq!(
+        sim.unit_mission_repair(tank, &rules, FrameEffects::default()),
+        rules.mission_control.rate_frames(MissionType::Repair)
+    );
+    let unit = sim.substrate.entities.get(tank).unwrap();
+    assert_eq!(unit.mission.current().known(), Some(MissionType::Repair));
+    assert_eq!(unit.mission.queued(), MissionId::NONE);
+    assert_eq!(unit.radio_contacts.slot(0), None);
+    assert_eq!(sim.scenario_rng.logical_state(), before_rng);
+}
+
+#[test]
+fn repair_mission_keeps_waiting_for_an_occupied_retail_depot() {
+    let Some((mut sim, rules, _)) = scene() else {
+        return;
+    };
+    let depot = spawn(&mut sim, &rules, "GADEPT", "Americans", 24, 20);
+    let waiting = damaged_tank(
+        &mut sim,
+        &rules,
+        "MTNK",
+        "Americans",
+        (14, 20),
+        MissionType::Repair,
+    );
+    let occupant = damaged_tank(
+        &mut sim,
+        &rules,
+        "MTNK",
+        "Americans",
+        (16, 20),
+        MissionType::Enter,
+    );
+    sim.substrate
+        .entities
+        .get_mut(depot)
+        .unwrap()
+        .radio_contacts
+        .set_slot(0, occupant);
+    sim.substrate
+        .entities
+        .get_mut(occupant)
+        .unwrap()
+        .radio_contacts
+        .set_slot(0, depot);
+    let before_rng = sim.scenario_rng.logical_state();
+    let delay = sim.unit_mission_repair(waiting, &rules, FrameEffects::default());
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(waiting)
+            .unwrap()
+            .mission
+            .current()
+            .known(),
+        Some(MissionType::Repair)
+    );
+    assert_eq!(
+        delay,
+        rules.mission_control.rate_frames(MissionType::Repair)
+    );
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(waiting)
+            .unwrap()
+            .mission
+            .queued()
+            .known(),
+        None
+    );
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(depot)
+            .unwrap()
+            .radio_contacts
+            .slot(0),
+        Some(occupant)
+    );
+    assert_eq!(sim.scenario_rng.logical_state(), before_rng);
+}
+
 fn queued(sim: &Simulation, id: u64) -> MissionId {
     sim.substrate.entities.get(id).unwrap().mission.queued()
 }
@@ -92,7 +338,7 @@ fn a_damaged_computer_tank_on_guard_heads_for_its_depot() {
     let _ = sim.assign_target_represented(
         tank,
         Some(TargetKind::Cell(30, 30)),
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     );
@@ -293,7 +539,7 @@ fn a_refusing_naval_yard_nearer_than_the_depot_is_the_pick() {
             yard,
             RadioMessage::CanEnter,
             RadioPayload::default(),
-            Some(&rules),
+            &rules,
             FrameEffects::default(),
         ),
         RadioResponse::Negatory

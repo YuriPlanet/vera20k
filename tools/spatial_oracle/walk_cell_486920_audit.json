@@ -479,8 +479,6 @@
     ],
     "type_name": "ENGINEER"
   },
-  "harness_sha256": "a83d73741b5a70826749cfefa05b3b6d4bc0a95f7a8f8801bd14f286577b1de4",
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "overlay_registry": {
     "physical_sections": {
       "OverlayTypes": {

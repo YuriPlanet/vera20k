@@ -445,6 +445,29 @@ pub(crate) fn missile_launch_velocity(scale: NativeF64Bits) -> ProjectileVelocit
     ])
 }
 
+/// Airburst469FA0..46A0D5 (center repeats46A172..28A): signed Speed/10,
+/// one Scenario RandomRanged(0,32), then the original sine/cosine table.
+/// Tiny horizontal components are retained: the literal pitch is near3π/2,
+/// not exactly a vertical vector. Native execution: projectile_oracle/airburst.
+pub(crate) fn airburst_launch_velocity(speed: i32, rng: &mut SimRng) -> ProjectileVelocity {
+    const PITCH: NativeF64Bits = NativeF64Bits::from_bits(0x4012_d989_1049_ee22);
+    const TURN: NativeF64Bits = NativeF64Bits::from_bits(0xbf19_222d_989f_5e57);
+    let draw = rng.next_range_i32_inclusive(0, 32) as u8;
+    let angle = i32::from((u16::from(draw) << 8) as i16) - 0x3fff;
+    let heading = round(X::mul(X::load_i32(angle), d(TURN)));
+    let trig = TrigTable::embedded();
+    let sine = round(trig.sin_from_table(heading));
+    let cosine = round(trig.cos_from_table(heading));
+    let speed = X::load_i32(speed / 10);
+    // 469FEC computes sin first, but 46A07D..46A092 copy the later cos
+    // product to Fire's vector X (+88), and the saved sin product to Y (+90).
+    ProjectileVelocity::from_native([
+        store(X::mul(X::mul(trig.cos_from_table(d(PITCH)), cosine), speed)),
+        store(X::mul(X::mul(trig.cos_from_table(d(PITCH)), sine), speed)),
+        store(X::mul(trig.sin_from_table(d(PITCH)), speed)),
+    ])
+}
+
 /// `BulletClass::SpawnShrapnel`'s child launch velocity. Both branches turn
 /// the zeroed velocity's seed (100, 0, 0) toward the target, divide out its
 /// existing pitch and apply the fixed pitch `0x3FE921648732995C`. A child

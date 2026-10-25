@@ -49,5 +49,5 @@ Also check a Yuri AI team using script action 61 and deploy an installed tank
 back out. Record interactive results separately from automated tests.
 
 Removing the former approach marker and duplicate installation candidate changes
-the serialized bunker layout. The snapshot version is advanced so older saves
-are rejected before their positional payload is decoded.
+the serialized bunker layout, and with it the save layout id, so older saves are
+rejected before their positional payload is decoded.

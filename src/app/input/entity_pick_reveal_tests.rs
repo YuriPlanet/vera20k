@@ -129,7 +129,7 @@ fn native_click_shroud_controls_match_cursor_and_both_object_pickers() {
                 row["name"]
             );
             assert_eq!(
-                hover_target_at_point(&sim, sx, sy, "Player", false, None,)
+                hover_target_at_point(&sim, sx, sy, "Player", false)
                     .filter(|hover| {
                         matches!(
                             hover.kind,
@@ -149,9 +149,6 @@ fn native_click_shroud_controls_match_cursor_and_both_object_pickers() {
                     Some("Player"),
                     sx,
                     sy,
-                    30.0,
-                    None,
-                    None,
                     Some(sim.interner()),
                     Some(terrain),
                 ),
@@ -168,9 +165,7 @@ fn native_click_shroud_controls_match_cursor_and_both_object_pickers() {
                     Some("Player"),
                     sx,
                     sy,
-                    30.0,
                     additive,
-                    None,
                     None,
                     Some(sim.interner()),
                     false,
@@ -239,7 +234,7 @@ fn sov01_trigger_revealed_hill_bunkers_can_be_targeted_without_tank_sight() {
         let point = crate::sim::movement::ground_pose::position_world_coord(&target.position);
         let shrouded = crate::sim::vision::point_is_shrouded(sim.fog(), &cells, viewer, point);
         let (sx, sy) = crate::render::locomotor_visual::ground_screen_position(&target.position);
-        let hover = hover_target_at_point(&*sim, sx, sy, &viewer_name, false, Some(rules));
+        let hover = hover_target_at_point(&*sim, sx, sy, &viewer_name, false);
         println!(
             "target={} cell=({}, {}) z={} raw_mapped={} native_shrouded={shrouded} hover={hover:?}",
             target.stable_id(),

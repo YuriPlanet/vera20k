@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -57,5 +56,5 @@
     "action_line_timer": "0x0070D150"
   },
   "replay_command": "python -m tools.spatial_oracle.building_construction --manual-primary",
-  "payload_sha256": "7b753ecdfff66af7bfdc905dcedd803ac0ef36c5201de05303851c78446456f4"
+  "payload_sha256": "75d07527fe95abc128907a323d480fa8789f063067ec5dcff21f032b10e3b621"
 }

@@ -13,7 +13,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[AircraftTypes]\n0=ORCA\n[ORCA]\nStrength=150\nSpeed=8\nAmmo=2\nROT=5\n\
          Primary=Gun\n{}Fighter={}\nLocomotor={{4A582746-9839-11d1-B709-00A024DDAFD1}}\n{}\
-         [Gun]\nDamage=10\nROF=20\nRange=20\nBurst={}\nOmniFire={}\nProjectile=Shell\nWarhead=WH\n{}\
+         [Gun]\nDamage=10\nROF=20\nRange=20\nBurst={}\nOmniFire={}\nProjectile=Shell\nWarhead=WH\n{}{}\
          [EliteGun]\nDamage=10\nROF=37\nRange=20\nBurst={}\nProjectile=Shell\nWarhead=WH\n\
          [Shell]\nROT={}\nInviso={}\nAG=yes\nAA=yes\n\
          [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n{}{}",
@@ -29,6 +29,11 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         input["speed"]
             .as_i64()
             .map_or(String::new(), |speed| format!("Speed={speed}\n")),
+        if input["suicide"].as_bool().unwrap_or(false) {
+            "Suicide=yes\n"
+        } else {
+            ""
+        },
         input["elite_burst"].as_i64().unwrap_or(3),
         input["rot"].as_i64().unwrap_or(3),
         input["inviso"].as_bool().unwrap_or(true),
@@ -136,10 +141,10 @@ fn shared_fireat_refuses_positive_health_limbo_objects_before_emission() {
         ("terrain", true, false, true),
     ] {
         let (mut sim, rules) = fixture(&serde_json::json!({
-            "extra_ini": format!("[TerrainTypes]\n0=TREE01\n[TREE01]\nStrength=100\n\
+            "suicide": suicide,
+            "extra_ini": "[TerrainTypes]\n0=TREE01\n[TREE01]\nStrength=100\n\
                 [VehicleTypes]\n0=TARGET\n[TARGET]\nStrength=100\n\
-                [BuildingTypes]\n0=TARGETBUILD\n[TARGETBUILD]\nStrength=100\n\
-                [Gun]\nSuicide={}\n", if suicide { "yes" } else { "no" })
+                [BuildingTypes]\n0=TARGETBUILD\n[TARGETBUILD]\nStrength=100\n"
         }));
         match kind {
             "unit" | "building" => {

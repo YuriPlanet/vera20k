@@ -7,7 +7,7 @@ use crate::app::frontend::shell_transition::{ColumnDraw, PanelArt};
 use crate::render::batch::SpriteInstance;
 use crate::render::skirmish_shell_chrome::{SkirmishShellChromeAtlas, SkirmishShellChromeEntry};
 use crate::ui::shell::geom::ShellScale;
-use crate::ui::shell::slide::{column_draw_origin, panel_art_origin};
+use crate::ui::shell::slide::panel_art_origin;
 use crate::ui::skirmish_shell::{RectPx, SkirmishShellLayout, SkirmishShellState};
 
 use super::draw_order::{LowerStripRole, ShellDialogChromeProfile, lower_strip_role};
@@ -655,12 +655,8 @@ pub(super) fn right_panel_overlay_rect(
     row: i32,
     entry: SkirmishShellChromeEntry,
 ) -> RectPx {
-    let (scale_x, scale_y) = layout.right_panel.stretch();
-    let w = (entry.pixel_size[0] * scale_x).round() as i32;
-    let h = (entry.pixel_size[1] * scale_y).round().max(1.0) as i32;
-    let panel = layout.right_panel;
-    let x = panel.tile.x + panel.tile.w - w;
-    RectPx::new(x, panel.tile.y + row * h, w, h)
+    let [w, h] = entry.pixel_size.map(|side| side.round() as i32);
+    layout.right_panel.row_cell(row, w, h)
 }
 
 pub(super) fn sdmpbtn_rect(
@@ -688,12 +684,7 @@ pub(super) fn push_right_panel_base_instances(
             push_entry(
                 out,
                 tile,
-                RectPx::new(
-                    layout.right_panel.tile.x,
-                    layout.right_panel.tile.y + row * layout.right_panel.tile.h,
-                    layout.right_panel.tile.w,
-                    layout.right_panel.tile.h,
-                ),
+                layout.right_panel.tile_row(row),
                 RIGHT_PANEL_TILE_DEPTH,
             );
         }
@@ -806,19 +797,15 @@ pub(super) fn push_slide_column(
     draws: &[ColumnDraw],
     depth: f32,
 ) {
-    let panel = layout.right_panel;
-    let (scale_x, scale_y) = panel.stretch();
     for (index, draw) in draws.iter().enumerate() {
         let Some(entry) = right_panel_button_sdbtnanm_frame(atlas, draw.frame) else {
             continue;
         };
-        let w = (entry.pixel_size[0] * scale_x).round() as i32;
-        let h = (entry.pixel_size[1] * scale_y).round().max(1.0) as i32;
-        let (x, y) = column_draw_origin(panel, draw.row, w);
+        let [w, h] = entry.pixel_size.map(|side| side.round() as i32);
         push_entry(
             out,
             entry,
-            RectPx::new(x, y, w, h),
+            layout.right_panel.row_cell(draw.row as i32, w, h),
             depth - index as f32 * 1e-7,
         );
     }

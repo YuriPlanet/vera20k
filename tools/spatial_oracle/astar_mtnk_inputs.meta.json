@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -32,10 +31,5 @@
     "unlimbo_copy_stop": "0x004D72FA",
     "type_getter": "0x006F3270"
   },
-  "source_sha256": {
-    "tools/spatial_oracle/astar_mtnk_inputs.py": "7e90659dd54d6a9b9fad99a64634b5173d163fe1053066b4d52d833979f83c18",
-    "tools/spatial_oracle/anytown_damage/navigation_inputs.py": "a4971d093ed40dac72da16f52a5ddd33a27d9899cc7607c8ec4d01ebd7f5bd5f",
-    "tools/spatial_oracle/anytown_damage/next_family_native.py": "b5545ca21bc1b678335dfe74f0eda02b3af4f013d37a965529243c0d170b8881"
-  },
-  "payload_sha256": "fae7c06b5f4b5bca0b3b7e7d63c4e6f2276387fa44e3a2c6218bd93fa81fe313"
+  "payload_sha256": "c84b7d475446e3df7c1abb1ecf1cc8efab8e6cc5d23d8dcab6793b09707242ca"
 }

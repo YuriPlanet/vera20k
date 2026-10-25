@@ -1,0 +1,548 @@
+{
+  "availability_history": [
+    {
+      "selected": {
+        "candidates": [
+          0
+        ],
+        "selected": 0
+      },
+      "stage": "constructor-default-available"
+    },
+    {
+      "mask": 1073741824,
+      "opening": {
+        "candidates": [
+          0,
+          4294967295
+        ],
+        "events": [
+          {
+            "action": "play",
+            "damaged": false,
+            "garrisoned": false,
+            "name": "SLOT14V0",
+            "slot": 14,
+            "z_adjust": 0
+          }
+        ],
+        "hook_result": null,
+        "left": 899,
+        "resume": "00446580",
+        "slots": {
+          "14": false,
+          "15": false,
+          "16": false,
+          "17": false
+        }
+      },
+      "selected": {
+        "candidates": [
+          0,
+          4294967295
+        ],
+        "selected": null
+      },
+      "stage": "required-random-rejects-country0"
+    },
+    {
+      "selected": {
+        "candidates": [
+          0
+        ],
+        "selected": 0
+      },
+      "stage": "same-required-mask-country30-allowed"
+    },
+    {
+      "mask": 1073741824,
+      "opening": {
+        "candidates": [
+          0,
+          4294967295
+        ],
+        "events": [
+          {
+            "action": "play",
+            "damaged": false,
+            "garrisoned": false,
+            "name": "SLOT14V0",
+            "slot": 14,
+            "z_adjust": 0
+          }
+        ],
+        "hook_result": null,
+        "left": 899,
+        "resume": "00446580",
+        "slots": {
+          "14": false,
+          "15": false,
+          "16": false,
+          "17": false
+        }
+      },
+      "selected": {
+        "candidates": [
+          0,
+          4294967295
+        ],
+        "selected": null
+      },
+      "stage": "forbidden-random-rejects-country30"
+    },
+    {
+      "mask": 0,
+      "selected": {
+        "candidates": [
+          0
+        ],
+        "selected": 0
+      },
+      "stage": "forbidden-none-clears"
+    },
+    {
+      "opening": {
+        "candidates": [
+          0,
+          4294967295
+        ],
+        "events": [
+          {
+            "action": "play",
+            "damaged": false,
+            "garrisoned": false,
+            "name": "SLOT14V0",
+            "slot": 14,
+            "z_adjust": 0
+          }
+        ],
+        "hook_result": null,
+        "left": 899,
+        "resume": "00446580",
+        "slots": {
+          "14": false,
+          "15": false,
+          "16": false,
+          "17": false
+        }
+      },
+      "selected": {
+        "candidates": [
+          0,
+          4294967295
+        ],
+        "selected": null
+      },
+      "stage": "AI-no-rejects-AI"
+    },
+    {
+      "counter": {
+        "count": 0,
+        "last_frame": 9000
+      },
+      "reader_value": 2,
+      "selected": {
+        "candidates": [
+          0
+        ],
+        "selected": 0
+      },
+      "stage": "shot-limit2-initial"
+    },
+    {
+      "counter": {
+        "count": 1,
+        "last_frame": 9000
+      },
+      "selected": {
+        "candidates": [
+          0
+        ],
+        "selected": 0
+      },
+      "stage": "accepted-launch-writer-once"
+    },
+    {
+      "counter": {
+        "count": 2,
+        "last_frame": 9001
+      },
+      "opening": {
+        "candidates": [
+          0,
+          4294967295
+        ],
+        "events": [
+          {
+            "action": "play",
+            "damaged": false,
+            "garrisoned": false,
+            "name": "SLOT14V0",
+            "slot": 14,
+            "z_adjust": 0
+          }
+        ],
+        "hook_result": null,
+        "left": 899,
+        "resume": "00446580",
+        "slots": {
+          "14": false,
+          "15": false,
+          "16": false,
+          "17": false
+        }
+      },
+      "selected": {
+        "candidates": [
+          0,
+          4294967295
+        ],
+        "selected": null
+      },
+      "stage": "accepted-launch-writer-twice-reaches-limit",
+      "update": {
+        "candidates": [
+          0,
+          4294967295
+        ],
+        "events": [],
+        "left": 14,
+        "occupied": [
+          14
+        ],
+        "resume": "00451145",
+        "slots": {
+          "14": true,
+          "15": false,
+          "16": false,
+          "17": false
+        }
+      }
+    }
+  ],
+  "binary_identity": {
+    "ares_sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83"
+  },
+  "code_guard": true,
+  "defaults": [
+    {
+      "defaults": {
+        "1E4": 16777473,
+        "1E8": 1793,
+        "25C": 4294967295,
+        "260": 0,
+        "264": 0,
+        "268": 0,
+        "270": 0,
+        "274": 0,
+        "280": 4294967295
+      },
+      "index": 0
+    },
+    {
+      "defaults": {
+        "1E4": 16777473,
+        "1E8": 1793,
+        "25C": 4294967295,
+        "260": 0,
+        "264": 0,
+        "268": 0,
+        "270": 0,
+        "274": 0,
+        "280": 4294967295
+      },
+      "index": 1
+    },
+    {
+      "defaults": {
+        "1E4": 16777473,
+        "1E8": 1793,
+        "25C": 4294967295,
+        "260": 0,
+        "264": 0,
+        "268": 0,
+        "270": 0,
+        "274": 0,
+        "280": 4294967295
+      },
+      "index": 2
+    }
+  ],
+  "histories": [
+    {
+      "input": {
+        "per_type_array_indices": [
+          0,
+          1,
+          2
+        ],
+        "primary": 0,
+        "secondary": -1,
+        "type_kind": 2
+      },
+      "name": "array-index-not-dispatch-kind",
+      "opening_charging": {
+        "candidates": [
+          0
+        ],
+        "events": [
+          {
+            "action": "play",
+            "damaged": false,
+            "garrisoned": false,
+            "name": "SLOT14V0",
+            "slot": 14,
+            "z_adjust": 0
+          }
+        ],
+        "hook_result": 0,
+        "left": 899,
+        "resume": "0044643E",
+        "slots": {
+          "14": false,
+          "15": false,
+          "16": false,
+          "17": false
+        }
+      },
+      "opening_ready": {
+        "candidates": [
+          0
+        ],
+        "events": [
+          {
+            "action": "play",
+            "damaged": false,
+            "garrisoned": false,
+            "name": "SLOT16V0",
+            "slot": 16,
+            "z_adjust": 0
+          }
+        ],
+        "hook_result": 0,
+        "left": 14,
+        "resume": "0044643E",
+        "slots": {
+          "14": false,
+          "15": false,
+          "16": false,
+          "17": false
+        }
+      },
+      "selection": {
+        "candidates": [
+          0
+        ],
+        "selected": 0
+      },
+      "update_far": {
+        "candidates": [
+          0
+        ],
+        "events": [
+          {
+            "action": "delete",
+            "anim": "2002F260"
+          },
+          {
+            "action": "play",
+            "damaged": false,
+            "garrisoned": false,
+            "name": "SLOT17V0",
+            "slot": 17,
+            "z_adjust": 0
+          }
+        ],
+        "left": 1800,
+        "occupied": [
+          16
+        ],
+        "resume": "00451030",
+        "slots": {
+          "14": false,
+          "15": false,
+          "16": false,
+          "17": false
+        }
+      },
+      "update_near": {
+        "candidates": [
+          0
+        ],
+        "events": [
+          {
+            "action": "delete",
+            "anim": "2002EFF0"
+          },
+          {
+            "action": "play",
+            "damaged": false,
+            "garrisoned": false,
+            "name": "SLOT15V0",
+            "slot": 15,
+            "z_adjust": 0
+          }
+        ],
+        "left": 899,
+        "occupied": [
+          14
+        ],
+        "resume": "00451030",
+        "slots": {
+          "14": false,
+          "15": false,
+          "16": false,
+          "17": false
+        }
+      }
+    },
+    {
+      "extra_after_secondary_reader_no": {
+        "candidates": [
+          0,
+          1,
+          2
+        ],
+        "selected": 2
+      },
+      "extra_open": {
+        "candidates": [
+          0,
+          1,
+          2
+        ],
+        "events": [
+          {
+            "action": "play",
+            "damaged": false,
+            "garrisoned": false,
+            "name": "SLOT14V0",
+            "slot": 14,
+            "z_adjust": 0
+          }
+        ],
+        "hook_result": 2,
+        "left": 899,
+        "resume": "0044643E",
+        "slots": {
+          "14": false,
+          "15": false,
+          "16": false,
+          "17": false
+        }
+      },
+      "input": {
+        "native_aux_count": 0,
+        "primary": 0,
+        "secondary": 1
+      },
+      "name": "unavailable-primary-secondary-then-extra",
+      "primary_recovers_first_in_order": {
+        "candidates": [
+          0
+        ],
+        "selected": 0
+      },
+      "secondary": {
+        "candidates": [
+          0,
+          1
+        ],
+        "selected": 1
+      },
+      "secondary_open": {
+        "candidates": [
+          0,
+          1
+        ],
+        "events": [
+          {
+            "action": "play",
+            "damaged": false,
+            "garrisoned": false,
+            "name": "SLOT14V0",
+            "slot": 14,
+            "z_adjust": 0
+          }
+        ],
+        "hook_result": 1,
+        "left": 899,
+        "resume": "0044643E",
+        "slots": {
+          "14": false,
+          "15": false,
+          "16": false,
+          "17": false
+        }
+      }
+    },
+    {
+      "input": {
+        "extra": [
+          2
+        ],
+        "extra_allow_player": false,
+        "native_aux_count": 0,
+        "primary": 0,
+        "secondary": 1,
+        "secondary_allow_player": false
+      },
+      "name": "all-unavailable-primary-fallback",
+      "opening": {
+        "candidates": [
+          0,
+          1,
+          2
+        ],
+        "events": [
+          {
+            "action": "play",
+            "damaged": false,
+            "garrisoned": false,
+            "name": "SLOT14V0",
+            "slot": 14,
+            "z_adjust": 0
+          }
+        ],
+        "hook_result": null,
+        "left": 899,
+        "resume": "00446580",
+        "slots": {
+          "14": false,
+          "15": false,
+          "16": false,
+          "17": false
+        }
+      },
+      "selection": {
+        "candidates": [
+          0,
+          1,
+          2
+        ],
+        "selected": null
+      },
+      "update_occupied14": {
+        "candidates": [
+          0,
+          1,
+          2
+        ],
+        "events": [],
+        "left": 14,
+        "occupied": [
+          14
+        ],
+        "resume": "00451145",
+        "slots": {
+          "14": true,
+          "15": false,
+          "16": false,
+          "17": false
+        }
+      }
+    }
+  ],
+  "schema": 1,
+  "three_rng_unchanged": true
+}

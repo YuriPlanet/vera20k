@@ -10,6 +10,8 @@ this corpus. No gameplay callable is replaced by a supplied success result.
 import hashlib
 import argparse
 import os
+import json
+import tempfile
 import struct
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,7 +25,7 @@ from unicorn.x86_const import (
 
 from tools.native_inspect import selected_ranges
 from tools.native_oracle import (
-    RET_MAGIC, finish_vectors, image_bytes, image_sha256, provenance, run_checked,
+    RET_MAGIC, finish_vectors, image_bytes, provenance, run_checked,
 )
 from tools.projectile_oracle.bridge_render_inputs import BulletReader, lexical
 from tools.rules_oracle.bridge_child_sound import Sound, sections
@@ -242,8 +244,8 @@ class CampaignReader(BulletReader):
         return values
 
 
-def install_csf(m, names):
-    physical, source_hash = stock_csf()
+def install_csf(m, names, *, entries=None):
+    physical, source_hash = stock_csf() if entries is None else (entries, None)
     names = sorted(names)
     records, values, extras = m.alloc(len(names) * 0x28), m.alloc(len(names) * 4), m.alloc(len(names) * 4)
     for i, name in enumerate(names):
@@ -280,6 +282,86 @@ def metadata_history():
         lookups.append(dict(request=name, index=index))
     m.check_code()
     return dict(physical_battlemd_sha256=hashlib.sha256(raw).hexdigest(), csf=csf, entries=entries, lookups=lookups)
+
+
+def generate_start_prefix():
+    """Execute StartScenario's filename/index/CD prefix, not scenario loading.
+
+    The existing cached-INI owner constructs both campaign definitions and movie
+    names through the original readers. Only diagnostic4068E0 is a cdecl sink;
+    its return is not used. Original683B65 selects media-1 and4790B0 executes
+    that initial operation. Each run stops BEFORE the selected campaign's media
+    operation, so neither file admission nor a StartScenario success is supplied
+    or claimed. No out-of-range campaign pointer is dereferenced here.
+    """
+    values = {
+        "Battles": {"0": "FIRST", "1": "SECOND"},
+        "FIRST": {"CD": "2", "Scenario": "first.map", "FinalMovie": "END0",
+                  "DebugOnly": "yes", "Description": "First"},
+        "SECOND": {"CD": "1", "Scenario": "second.map", "FinalMovie": "END1",
+                   "DebugOnly": "yes", "Description": "Second"},
+    }
+    cases = (("explicit_unlisted_index0", "other.map", 0),
+             ("explicit_other_record_index0", "second.map", 0),
+             ("explicit_unlisted_index1", "other.map", 1),
+             ("null_uses_index0", None, 0),
+             ("empty_uses_index0", "", 0),
+             ("null_uses_index1", None, 1))
+    rows = []
+    with tempfile.TemporaryDirectory(prefix="campaign-start-prefix-") as root:
+        for name, filename, index in cases:
+            m = CampaignReader(root=Path(root))
+            u = m.u
+            m.invoke(0x6832C0, m.scenario)
+            m.ordered_ini({"Movies": {"0": "END0", "1": "END1"}})
+            m.invoke(0x674550, 0, (INI,))
+            m.ordered_ini(values)
+            m.invoke(0x46CE10, INI, context={"case": name, "phase": "campaign_list"})
+            array, count = m.read32(0xA83CFC), m.read32(0xA83D08)
+            entries = [campaign_state(m, m.read32(array + i * 4)) for i in range(count)]
+            u.mem_write(0xA8B238, dwords(0))  # campaign Session mode
+            u.mem_write(0xA8ED5D, b"\0")  # no special scenario-name override
+            m.seed_streams(31)
+            rng_before = m.rng_state()
+            construction_clock_reads = list(m.clock_reads)
+            m.clock_reads.clear()
+            logs, media = [], []
+
+            def observe(_u, pc, _size, _data):
+                if pc == 0x4068E0:
+                    sp = u.reg_read(UC_X86_REG_ESP)
+                    logs.append(dict(caller=f"{m.read32(sp):08x}",
+                                     format=m.string(m.read32(sp + 4))))
+                    return_from_sink(u, 0, 0)
+                elif pc == 0x4790B0:
+                    media.append(dict(caller=f"{m.read32(u.reg_read(UC_X86_REG_ESP)):08x}",
+                                      cd=struct.unpack("<i", dwords(u.reg_read(UC_X86_REG_ECX)))[0]))
+
+            hook = u.hook_add(UC_HOOK_CODE, observe)
+            try:
+                u.mem_write(SP, dwords(RET_MAGIC, index))
+                u.reg_write(UC_X86_REG_ESP, SP)
+                u.reg_write(UC_X86_REG_ECX, 0 if filename is None else m.cstring(filename))
+                u.reg_write(UC_X86_REG_EDX, 1)
+                run_checked(u, 0x683AB0, 0x683BC9, count=2_000_000,
+                            required_addresses=(0x683B0A, 0x683B5D, 0x683B86),
+                            context={"case": name, "filename": filename, "campaign_index": index})
+                observed_index = struct.unpack("<i", u.mem_read(m.scenario + 0x34CC, 4))[0]
+                rows.append(dict(name=name, filename=filename, campaign_index=index,
+                    catalog=entries, logical_scenario=m.string(m.scenario + 0x125C),
+                    stored_campaign_index=observed_index,
+                    selected_media_cd=struct.unpack("<i", dwords(u.reg_read(UC_X86_REG_ECX)))[0],
+                    selected_record=campaign_state(m, m.read32(array + observed_index * 4)),
+                    initial_media_calls=media, diagnostic_calls=logs,
+                    rng_before=rng_before, rng_after=m.rng_state(),
+                    construction_clock_reads=construction_clock_reads, clock_reads=list(m.clock_reads),
+                    stop_before="00683BC9", executable_sections_unchanged=True))
+                assert m.rng_state() == rng_before
+                assert not m.clock_reads
+                m.check_code()
+            finally:
+                u.hook_del(hook)
+    return dict(schema_version=1, sections=values, rows=rows)
 
 
 def metadata_controls():
@@ -751,16 +833,30 @@ def basic_start_cases():
 
 def special_controls():
     rows = []
-    for name, values in (("absent", {}), ("wrong_case", {"specialflags": {"TiberiumGrows": "yes"}}),
-                         ("keys_wrong_case", {"SpecialFlags": {"tiberiumgrows": "yes"}}),
-                         ("grows", {"SpecialFlags": {"TiberiumGrows": "yes"}}),
-                         ("spread_no", {"SpecialFlags": {"TiberiumSpreads": "no"}}),
-                         ("malformed", {"SpecialFlags": {"TiberiumGrows": "junk", "TiberiumSpreads": "junk"}})):
+    for name, values, prior in (
+        ("absent", {}, None),
+        ("wrong_case", {"specialflags": {"TiberiumGrows": "yes"}}, None),
+        ("keys_wrong_case", {"SpecialFlags": {"tiberiumgrows": "yes"}}, None),
+        ("grows", {"SpecialFlags": {"TiberiumGrows": "yes"}}, None),
+        ("spread_no", {"SpecialFlags": {"TiberiumSpreads": "no"}}, None),
+        ("malformed", {"SpecialFlags": {"TiberiumGrows": "junk", "TiberiumSpreads": "junk"}}, None),
+        # Separate DestroyableBridges bit15 from unrelated bit3; the cold
+        # constructor sets both and cannot distinguish an incorrect projection.
+        ("bridges_absent_bit3", {}, 0x0008),
+        ("bridges_absent_bit15", {}, 0x8000),
+        ("bridges_no", {"SpecialFlags": {"DestroyableBridges": "no"}}, 0x8008),
+        ("bridges_yes", {"SpecialFlags": {"DestroyableBridges": "yes"}}, 0x0008),
+    ):
         m = CampaignReader()
         m.invoke(0x6832C0, m.scenario)
+        if prior is not None:
+            m.u.mem_write(m.scenario, dwords(prior))
         before = m.read32(m.scenario)
+        rng_before = m.rng_state()
         m.ordered_ini(values)
         m.invoke(0x6B8CA0, m.scenario, (INI,))
+        if m.rng_state() != rng_before:
+            raise AssertionError(f"SpecialFlags reader changed RNG state: {name}")
         rows.append(dict(name=name, sections=values, before=before, after=m.read32(m.scenario), reads=list(m.reads)))
         m.check_code()
     return rows
@@ -781,6 +877,54 @@ def reset_control():
     return row
 
 
+def local_variable_controls():
+    """Whole ReadLocal689B20, retaining the previous values between reads."""
+    histories = (
+        ("retained_slots", [1, 7, 99], (
+            {},
+            {"VariableNames": {"1": "Clear,0", "2": "Set,1", "7": "Renamed"}},
+            {"VariableNames": {"7": "Clear,0"}},
+        )),
+        ("aliased_slot", [], (
+            {"VariableNames": {"0": "First,1", "junk": "LastName"}},
+            {"VariableNames": {"junk": "Clear,0", "0": "AnotherName"}},
+        )),
+        ("case_and_tokens", [3, 4], (
+            {"variablenames": {"3": "WrongCase,0"}},
+            {"VariableNames": {"3": "Keep,", "4": "Clear,garbage", "5": "Set,-2"}},
+        )),
+    )
+    rows = []
+    for name, initial_set, passes in histories:
+        m = CampaignReader()
+        m.invoke(0x6832C0, m.scenario)
+        for index in range(100):
+            m.u.mem_write(m.scenario + 0x248A + index * 41, b"Prior\0")
+            m.u.mem_write(m.scenario + 0x24B2 + index * 41, bytes([index in initial_set]))
+        history = []
+        for values in passes:
+            m.ordered_ini(values)
+            before = m.rng_state()
+            m.invoke(0x689B20, m.scenario, (INI,))
+            names, set_slots = {}, []
+            for index in range(100):
+                record = bytes(m.u.mem_read(m.scenario + 0x248A + index * 41, 41))
+                label = record[:40].split(b"\0", 1)[0].decode("latin1")
+                if label:
+                    names[str(index)] = label
+                if record[40]:
+                    set_slots.append(index)
+            if m.rng_state() != before:
+                raise AssertionError(f"ReadLocal changed RNG state: {name}")
+            m.check_code()
+            ordered = [dict(name=name, entries=list(entries.items()))
+                       for name, entries in values.items()]
+            history.append(dict(sections=values, ordered_sections=ordered,
+                                names=names, set_slots=set_slots))
+        rows.append(dict(name=name, initial_set=initial_set, passes=history))
+    return rows
+
+
 def edge_controls():
     m = CampaignReader()
     rows = []
@@ -795,8 +939,8 @@ def edge_controls():
     return rows
 
 
-def allies_reader_controls():
-    m = CampaignReader()
+def allies_reader_controls(machine=None):
+    m = machine if machine is not None else CampaignReader()
     names = ["A", "B", "C"]
     array = m.read32(0xA8022C)
     for i, name in enumerate(names):
@@ -818,6 +962,155 @@ def allies_reader_controls():
     rows.append(dict(sections=values, default=4, result=output))
     m.check_code()
     return dict(registry=names, delimiter_hex="2c00", rows=rows)
+
+
+def ares_allies_hook_outputs(ares):
+    """Execute the two enrolled handlers; return their register-frame writes.
+
+    Probe owns the Ares image mapping. CampaignReader uses its established
+    stock stack address, which overlaps the DLL address range, so these are
+    deliberately separate VMs. Only observed hook-frame outputs are transported
+    into the original reader VM; no Syringe loader/trampoline is executed.
+    """
+    from tools import native_oracle as native
+    from tools.rules_oracle.ares_prerequisites import Probe
+    m = Probe.__new__(Probe)
+    m.input_bytes = ares, image_bytes()
+    Probe.__init__(m)
+    frame, pending = m.alloc(0x30), m.alloc(8)
+    m.write(frame + 0x14, pending)  # Register frame's saved ESP.
+    m.write(pending, 0x20018000)  # Declared old local buffer; never dereferenced.
+    m.write(pending + 4, 0x80)
+    m.write(frame + 0x20, 0x20018000)  # Saved ECX before first strtok.
+    read_return = m.call(0x1005BED0, frame)
+    buffer, capacity = m.read(pending), m.read(pending + 4)
+    strtok_return = m.call(0x1005BEF0, frame)
+    strtok_buffer = m.read(frame + 0x20)
+    assert read_return == strtok_return == 0 and buffer == strtok_buffer
+    for rva, offset, length, _virtual, flags in native._sections(
+            ares, image_base=0x10000000, image_size=0xE0000):
+        if flags & 0x20000000:
+            assert bytes(m.u.mem_read(0x10000000 + rva, length)) == ares[offset:offset + length]
+    return dict(read_handler=0x1005BED0, strtok_handler=0x1005BEF0,
+                read_handler_return=read_return, strtok_handler_return=strtok_return,
+                buffer=buffer, capacity=capacity, strtok_buffer=strtok_buffer)
+
+
+def generate_ares_allies(ares):
+    """Native reader controls with explicit, observed Ares hook-frame transport."""
+    from tools.native_oracle import OracleError
+    from tools.rules_oracle.ares_prerequisites import ARES_SHA256
+    output = ares_allies_hook_outputs(ares)
+    read_events, lookup_events = [], []
+    enabled = False
+    pending_read = None
+    with tempfile.TemporaryDirectory(prefix="vera20k-allies-native-") as root:
+        m = CampaignReader(Path(root))
+        # The original fixture's unused stack range already contains this
+        # runtime buffer address. No DLL code is copied over that VM's stack.
+        assert any(begin <= output["buffer"] and
+                   output["buffer"] + output["capacity"] <= end + 1
+                   for begin, end, _permission in m.u.mem_regions())
+        m.u.mem_write(output["buffer"], bytes(output["capacity"]))
+
+        def transport(u, pc, _size, _data):
+            nonlocal pending_read
+            if pc in (0x65C6D0, 0x65C780, 0x65C7E0, 0x661C10, 0x7258D0):
+                raise OracleError(f"Unexpected RNG/detach in Allies reader: {pc:08X}")
+            if enabled and pc == 0x47527C:
+                # Transfer only the already-executed handler's pending
+                # ReadString stack words. Native47527C onward still executes.
+                sp = u.reg_read(UC_X86_REG_ESP)
+                u.mem_write(sp, dwords(output["buffer"], output["capacity"]))
+            elif enabled and pc == 0x475297:
+                u.reg_write(UC_X86_REG_ECX, output["strtok_buffer"])
+            elif pc == 0x528A10:
+                sp = u.reg_read(UC_X86_REG_ESP)
+                if m.read32(sp) == 0x47528F:
+                    event = dict(feature="ares" if enabled else "stock",
+                                 capacity=m.read32(sp + 20))
+                    read_events.append(event)
+                    pending_read = event, m.read32(sp + 16)
+            elif pc == 0x47528F and pending_read is not None:
+                event, buffer = pending_read
+                count = u.reg_read(UC_X86_REG_EAX)
+                event.update(returned_count=count,
+                             copied=bytes(u.mem_read(buffer, count)).decode("latin1"))
+                pending_read = None
+            elif pc == 0x50C170:
+                #4752AB MOV ECX,EAX passes strtok's token directly to
+                #50C170; its return index feeds the original masked shift.
+                ptr = u.reg_read(UC_X86_REG_ECX)
+                raw = bytearray()
+                for at in range(output["capacity"]):
+                    value = u.mem_read(ptr + at, 1)[0]
+                    if value == 0:
+                        break
+                    raw.append(value)
+                else:
+                    raise OracleError("Unterminated original FromName token")
+                if not raw:
+                    raise OracleError("Original strtok must not pass an empty FromName token")
+                lookup_events.append(raw.decode("latin1"))
+
+        hook = m.u.hook_add(UC_HOOK_CODE, transport)
+        before = m.rng_state()
+        stock = allies_reader_controls(m)
+        reference = json.loads((HERE / "campaign_start_houses.json").read_text(encoding="utf8"))
+        assert stock == reference["allies_reader_controls"], "original27 controls changed"
+        enabled = True
+        controls = allies_reader_controls(m)
+        extended = []
+        # Realistic long-name roster, not a mod map or extracted resource.
+        long_names = [f"Group{i:02d}LongName" for i in range(19)]
+        for name, names, value in [
+            ("nineteen_long_names", long_names, ",".join(long_names)),
+            ("extended_last_byte_included", ["A", "B", "C"], "X" * 2045 + ",B"),
+            ("extended_last_byte_cut", ["A", "B", "C"], "X" * 2046 + ",B"),
+        ]:
+            array = m.read32(0xA8022C)
+            for index, house_name in enumerate(names):
+                house = m.alloc(0x16020)
+                m.u.mem_write(house + 0x15FF4, house_name.encode("ascii") + b"\0")
+                m.u.mem_write(array + 4 * index, dwords(house))
+            m.u.mem_write(0xA80238, dwords(len(names)))
+            row = dict(name=name, registry=names, value=value, observations={})
+            for active in (False, True):
+                enabled = active
+                m.ordered_ini({"Control": {"Allies": value}})
+                read_begin, lookup_begin = len(read_events), len(lookup_events)
+                result = m.invoke(0x475260, INI,
+                                  (m.cstring("Control"), m.cstring("Allies"), 0))
+                row["observations"]["ares" if active else "stock"] = dict(
+                    result=result, reads=read_events[read_begin:],
+                    looked_up=lookup_events[lookup_begin:])
+            extended.append(row)
+        assert m.rng_state() == before
+        m.check_code()
+        m.u.hook_del(hook)
+    return dict(schema_version=1, ares_sha256=ARES_SHA256,
+                hook_frame_transport=output, allies_reader_controls=controls,
+                inherited_stock_controls=dict(count=len(stock["rows"]),
+                    source="campaign_start_houses.json:allies_reader_controls"),
+                extended_controls=extended, rng_unchanged=True,
+                boundary="Ares handlers execute separately; observed stack/ECX outputs are transported into unchanged original475260. Syringe loader/trampoline and full DLL startup are not executed.")
+
+
+def ares_allies_metadata():
+    return provenance(
+        scope="Original475260 Allies reader with separately executed enrolled Ares buffer handlers and explicit hook-frame transport.",
+        entry_points=dict(read_houses_list=0x475260, read_string=0x528A10,
+                          house_from_name=0x50C170, read_buffer_handler=0x1005BED0,
+                          strtok_buffer_handler=0x1005BEF0),
+        assumptions=[
+            "Synthetic exact-name House registry and cached lexical INI entries use the existing CampaignReader owner. No game assets or mod maps are inputs.",
+            "The two identified Ares handlers execute in existing Probe VM. Observed pending-stack pointer/capacity and saved-ECX outputs are explicitly transported at original47527C/475297 in a separate CampaignReader VM. This is not Syringe loader, patch/trampoline or complete Ares startup execution.",
+            "Original ReadString, comma-only strtok, FromName and32bit bitmask body execute unchanged. Stock27 controls are executed and compared to the prior native corpus; Ares27 counterparts and19-name/2047-byte boundaries are newly observed.",
+            "Original executable and mapped Ares executable sections remain unchanged; no RNG stream may change, and observed RNG/detach entries are rejected."
+        ], substitutions=[
+            "Inherited BulletReader cached INI/allocation/CRT TLS transport and fixture runtime empty buffer; declared House names/storage and registry order supplied.",
+            "Ares hook register-frame/stack storage supplied only as ABI transport; observed handler outputs are copied into the native reader VM, with original continuation instructions executing there. No parser, lookup, mask result or gameplay return is supplied."
+        ])
 
 
 def color_controls():
@@ -1241,7 +1534,7 @@ def house_controls():
 
 
 def generate_houses():
-    return dict(schema_version=1, native_sha256=image_sha256(),
+    return dict(schema_version=1,
                 stock_rows=[house_case(name, option) for name in ("all01umd.map", "sov01umd.map") for option in range(3)],
                 controls=house_controls(), edge_controls=edge_controls(),
                 allies_reader_controls=allies_reader_controls(), color_controls=color_controls(),
@@ -1412,7 +1705,7 @@ def generate_scenario_names():
             reader_rows.append(row)
             end()
         assert not m.asset_loaded
-        return dict(schema_version=1, native_sha256=image_sha256(), houses=house_rows,
+        return dict(schema_version=1, houses=house_rows,
             building_type=building_type, lookup_rows=lookup_rows, building_reader_rows=reader_rows,
             execution_checks=dict(complete_rng_bytes_per_stream=STRUCT_LEN,
                 all_three_rng_buffers_unchanged=True, original_executable_bytes_unchanged=True,
@@ -1421,6 +1714,166 @@ def generate_scenario_names():
     finally:
         u.hook_del(code_hook)
         u.hook_del(write_hook)
+
+
+def generate_mission_titles():
+    """Original mission title readers and initial-save argument admission.
+
+    The file-exists return is an explicit boundary input. Present-file rows
+    execute the two original name blocks around the unrelated Briefing block;
+    absent-file rows execute its real bypass. Save rows stop at original
+    Save_Game_To_File entry, before any IO or supplied return.
+    """
+    from tools.sidebar_oracle.stock import local_file
+
+    source, mission_raw = local_file("MISSIONMD.INI")
+    filenames = ("ALL01UMD.MAP", "ALL02UMD.MAP", "SOV01UMD.MAP")
+    physical_sections, _ = lexical(mission_raw, set(filenames))
+    physical_csf, _ = stock_csf()
+    labels = {physical_sections[name]["UIName"].upper() for name in filenames}
+    labels |= {name + "SAV" for name in labels}
+    csf = {name: physical_csf[name] for name in sorted(labels)}
+    csf.update({
+        "NAME:FIXTURE": "Localized name", "NAME:FIXTURESAV": "Localized save name",
+        "NAME:ONLY": "Name without a Sav entry",
+        "NAME:UPPER": "Upper fallback name", "NAME:UPPERSAV": "MISSING:Custom save",
+        "NAME:LOWER": "Lower literal name", "NAME:LOWERSAV": "missing:Literal save",
+        "NAME:SHORT": "Short prefix name", "NAME:SHORTSAV": "MISSING",
+        "NAME:LONG": "A" * 43 + "\U0001F600" + "Z" * 20,
+        "NAME:LONGSAV": "B" * 43 + "\U0001F600" + "Z" * 20,
+    })
+    m = CampaignReader(Path("/nonexistent-scenario-native-no-files"))
+    install_csf(m, csf, entries=csf)
+    m.seed_streams(31)
+    before = m.rng_state()
+
+    def encoded(value):
+        raw = value.encode("utf-16-le")
+        return list(struct.unpack("<" + "H" * (len(raw) // 2), raw))
+
+    def wide(pointer):
+        units = []
+        while value := struct.unpack("<H", m.u.mem_read(pointer + len(units) * 2, 2))[0]:
+            units.append(value)
+            assert len(units) < 512
+        return units
+
+    def retain_check():
+        assert m.rng_state() == before
+        m.check_code()
+
+    prior_name = encoded("Prior name")
+    prior_save = encoded("Prior saved title")
+    cases = [("stock_" + name[:5].lower(), name, True,
+              {name: physical_sections[name]}) for name in filenames]
+    cases += [(name, "TEST.MAP", present, values) for name, present, values in (
+        ("missing_file", False, {}),
+        ("absent_section", True, {}),
+        ("empty_section", True, {"TEST.MAP": {}}),
+        ("legacy_name", True, {"TEST.MAP": {"Name": "41,42,43"}}),
+        ("empty_ui_name", True, {"TEST.MAP": {"Name": "41,42,43", "UIName": ""}}),
+        ("legacy_blank", True, {"TEST.MAP": {"Name": " \t "}}),
+        ("legacy_hex_tokens", True, {"TEST.MAP": {"Name": "41,,0042,0x43,+44,45junk"}}),
+        ("legacy_nul", True, {"TEST.MAP": {"Name": "41,0,42"}}),
+        ("legacy_45_units", True, {"TEST.MAP": {"Name": ",".join(["41"] * 45)}}),
+        ("legacy_46_units", True, {"TEST.MAP": {"Name": ",".join(["41"] * 46)}}),
+        ("ui_override", True, {"TEST.MAP": {"Name": "41", "UIName": "Name:Fixture"}}),
+        ("missing_sav", True, {"TEST.MAP": {"UIName": "Name:Only"}}),
+        ("missing_both_labels", True, {"TEST.MAP": {"UIName": "Name:DoesNotExist"}}),
+        ("uppercase_missing_prefix", True, {"TEST.MAP": {"UIName": "Name:Upper"}}),
+        ("lowercase_missing_prefix", True, {"TEST.MAP": {"UIName": "Name:Lower"}}),
+        ("short_missing_prefix", True, {"TEST.MAP": {"UIName": "Name:Short"}}),
+        ("utf16_cutoff", True, {"TEST.MAP": {"UIName": "Name:Long"}}),
+        ("key_cutoff", True, {"TEST.MAP": {"UIName": "X" * 48}}),
+        ("wrong_key_case", True, {"TEST.MAP": {"uiname": "Name:Fixture"}}),
+        ("wrong_section_case", True, {"test.map": {"UIName": "Name:Fixture"}}),
+    )]
+    name_rows = []
+    for name, filename, present, values in cases:
+        m.u.mem_write(m.scenario + 0x1360, bytes(0xF0))
+        m.u.mem_write(m.scenario + 0x1360, struct.pack("<" + "H" * len(prior_name), *prior_name))
+        m.u.mem_write(m.scenario + 0x13DA, struct.pack("<" + "H" * len(prior_save), *prior_save))
+        m.u.mem_write(m.scenario + 0x13BA, b"Prior key\0")
+        m.u.mem_write(m.scenario + 0x125C, filename.encode("ascii") + b"\0")
+        m.ordered_ini(values)
+        m.u.mem_write(SP + 0x1C, bytes(m.u.mem_read(INI, 0x40)))
+        m.u.reg_write(UC_X86_REG_EBX, 0)
+        # Starts at the return boundary of Exists473C50, not at a fabricated
+        # file/INI loader return. The actual TEST and conditional jump execute.
+        m.u.reg_write(UC_X86_REG_EAX, int(present))
+        m.region(0x686D64, (0x686D6C, 0x6873AB), context={"case": name})
+        file_gate_stop = m.u.reg_read(UC_X86_REG_EIP)
+        if present:
+            assert file_gate_stop == 0x686D6C
+            m.region(0x686D7F, 0x686DEC, context={"case": name, "part": "legacy_name"})
+            m.region(0x686EAB, 0x687000, context={"case": name, "part": "localized_names"})
+        else:
+            assert file_gate_stop == 0x6873AB
+        retain_check()
+        row = dict(name=name, filename=filename, mission_file_exists=present, sections=values,
+            prior_name_utf16=prior_name, prior_save_title_utf16=prior_save,
+            prior_ui_name="Prior key", file_gate_stop=f"{file_gate_stop:08X}",
+            name_utf16=wide(m.scenario + 0x1360),
+            save_title_utf16=wide(m.scenario + 0x13DA), ui_name=m.string(m.scenario + 0x13BA))
+        name_rows.append(row)
+
+    save_rows = []
+    stock = {row["filename"]: row for row in name_rows[:3]}
+    save_cases = [("mode_latch_" + str(mode) + "_" + str(latch), "ALL01UMD.MAP", mode, latch,
+                   stock["ALL01UMD.MAP"]["save_title_utf16"])
+                  for mode, latch in ((0, 0), (0, 1), (5, 0), (5, 1))]
+    save_cases += [("stock_" + name[:5].lower(), name, 0, 0, stock[name]["save_title_utf16"])
+                   for name in filenames[1:]]
+    save_cases += [(name, filename, 0, 0, stock["ALL01UMD.MAP"]["save_title_utf16"])
+                   for name, filename in (
+                       ("no_extension", "ALL01UMD"),
+                       ("windows_path", "C:\\MISSIONS\\ALL01UMD.MAP"),
+                       ("slash_path", "maps/ALL01UMD.MAP"),
+                       ("directory_dot_only", "mods.v1/ALL01UMD"),
+                       ("multiple_dots", "ALL01UMD.custom.map"))]
+    for name, filename, mode, latch, title in save_cases:
+        m.u.mem_write(m.scenario + 0x125C, filename.encode("ascii") + b"\0")
+        m.u.mem_write(m.scenario + 0x13DA, struct.pack("<" + "H" * (len(title) + 1), *title, 0))
+        m.u.mem_write(0xA8B238, dwords(mode))
+        m.u.mem_write(0xABCE08, bytes([latch]))
+        m.u.reg_write(UC_X86_REG_EDI, 0)
+        m.region(0x55DBCD, (0x67CEF0, 0x55DC99), context={"case": name})
+        reached = m.u.reg_read(UC_X86_REG_EIP)
+        row = dict(name=name, logical_filename=filename, game_mode=mode, incoming_latch=latch,
+            save_title_utf16=title, reached_pc=f"{reached:08X}",
+            outgoing_latch=m.u.mem_read(0xABCE08, 1)[0])
+        if reached == 0x67CEF0:
+            row.update(filename=m.string(m.u.reg_read(UC_X86_REG_ECX)),
+                description_utf16=wide(m.u.reg_read(UC_X86_REG_EDX)),
+                stack_arg=m.read32(m.u.reg_read(UC_X86_REG_ESP) + 4))
+        retain_check()
+        save_rows.append(row)
+    return dict(schema_version=1, mission_source=source, csf_entries=csf,
+        name_rows=name_rows, initial_save_rows=save_rows,
+        rng_before=before, rng_after=m.rng_state(),
+        execution_checks=dict(all_three_rng_buffers_unchanged_after_every_row=True,
+            original_executable_bytes_unchanged=True, save_io_executed=False))
+
+
+def mission_titles_metadata():
+    return provenance(
+        scope="Original Scenario mission Name/UIName/Sav reads and MainTick initial-save admission/arguments; no save IO or complete frame.",
+        entry_points=dict(file_exists_return_gate=0x686D64, absent_file_boundary=0x6873AB,
+            legacy_name_begin=0x686D7F, legacy_name_end=0x686DEC,
+            localized_names_begin=0x686EAB, localized_names_end=0x687000,
+            comma_hex_utf16=0x528F00, read_string=0x528A10, csf_lookup=0x734E60,
+            initial_save_begin=0x55DBCD, save_io_boundary=0x67CEF0, logic_boundary=0x55DC99),
+        assumptions=[
+            "Selected exact-case physical MISSIONMD sections come from the existing local_file archive selector. Lexical extraction and the existing ordered INI cache supply bytes; no native archive/file parser is executed. Stock rows retain complete selected sections, but the unrelated Briefing block between the two name blocks is excluded.",
+            "The file_exists_return gate supplies AL0/1 as an explicit prior at the return of Exists473C50. The original TEST/JZ executes; absent-file rows reach6873AB without either name block. This does not claim file lookup or successful loading.",
+            "Scenario prior Name, Sav and UIName are supplied declared inputs. Name/Sav output and expected fallback/truncation come solely from original instructions. UTF16 arrays preserve embedded NUL visibility and lone surrogate output without a host string conversion.",
+            "CSF records use the existing table transport with selected physical Name/Sav values plus declared synthetic prefix/length controls. Original734E60 executes successful and missing-label lookup and formatting. No localized name result is supplied.",
+            "Initial-save rows enter with MainTick EDI0 and explicit GameMode/latch/Scenario filename/title. They stop at original67CEF0 entry or55DC99 bypass; no save result, disk IO, complete MainTick, pause/modal loop or autosave persistence is claimed.",
+            "All three complete0x3F4 RNG buffers are compared after every row and retained once before/after the run. Every executable section remains unchanged. These slices contain no timer or detach calls; full startup/save effects are excluded.",
+            "The directory-dot control observes literal strrchr over the full supplied name; it is not a claim that stock mission names contain paths. Windows64-WCHAR save-filename conversion and longer path failure behavior remain outside the boundary."],
+        substitutions=[
+            "Existing CampaignReader/BulletReader VM, ordered INI cache, bounded allocator/inert delete and original CRT TLS/atomic transport. No alternate VM or gameplay return is introduced.",
+            "File-exists AL return, decoded physical INI/CSF bytes, synthetic CSF strings, prior buffers and mode/latch are explicit boundary inputs. Save_Game_To_File is observed before executing its entry instruction, never replaced with success."])
 
 
 def scenario_names_metadata():
@@ -1445,11 +1898,12 @@ def scenario_names_metadata():
 
 
 def generate():
-    return dict(schema_version=1, native_sha256=image_sha256(), metadata=metadata_history(),
+    return dict(schema_version=1, metadata=metadata_history(),
                 metadata_controls=metadata_controls(), movies=movie_catalog(),
                 loading_geometry=loading_geometry(), mission_loading=mission_loading(),
                 progress_rows=progress_rows(), basic_start=basic_start_cases(),
                 special_controls=special_controls(), reset_control=reset_control(),
+                local_variable_controls=local_variable_controls(),
                 rng_cases=[rng_case(override=override, tick_count=tick) for override, tick in
                            ((0, 0), (0, 1), (0, 31), (1, 99), (0x12345678, 99))] +
                           [rng_case(override=99, tick_count=23, **flag) for flag in
@@ -1545,6 +1999,27 @@ def metadata(*, houses=False):
     return result
 
 
+def start_prefix_metadata():
+    result = provenance(
+        scope="Original683AB0 filename/index/CD prefix; stops before selected CD operation683BC9, not complete map load.",
+        entry_points={"scenario_ctor": 0x6832C0, "campaign_list": 0x46CE10,
+                      "campaign_read": 0x46CCD0, "movie_catalog": 0x674550,
+                      "start_scenario": 0x683AB0, "uppercase": 0x7DCFC4,
+                      "initial_media": 0x4790B0, "selected_cd_boundary": 0x683BC9},
+        assumptions=[
+            "Synthetic source-order INI cache constructs two Campaign records and Movies through original constructors/readers. No MO resources or predetermined accepted filename/index/CD results are supplied.",
+            "Campaign Session0 and special-name override off are supplied priors. Six cases use valid catalog indexes0/1; null/empty and explicit unlisted/other-record names are independent arguments.",
+            "Required native index write683B0A, uppercase call683B5D and selected CD lookup683B86 execute. Original683B65 supplies literal-1 to original4790B0 before the selected-CD boundary.",
+            "Main/Scenario/MapGen streams are native-seeded31 before each prefix, and complete storage remains unchanged; the existing Windows clock transport is not called by the prefix (constructor clock0 calls are recorded separately). Later timer cadence, entropy sampling and live simulation are excluded.",
+            "All executable PE sections remain byte-identical. FinalMovie is retained record state only: final movie playback, full StartScenario return, file/archive admission, mission/world loading and installed legacy MO spawner equivalence are not established.",
+            "Invalid indexes and an empty catalog are not executed; native unchecked pointer boundaries do not establish a safe fallback. VERA keeps a checked failure before reading the startup seed."],
+        substitutions=[
+            "Existing CampaignReader/BulletReader VM, INI cache projection, bounded allocation, original CRT TLS/atomic transport; synthetic DebugOnly descriptions avoid physical CSF lookup.",
+            "Diagnostic4068E0 is a cdecl sink returning0 through existing return_from_sink; the native caller ignores that return. No media, map admission or gameplay result is supplied."])
+
+    return result
+
+
 def source_paths():
     paths = {"producer": Path(__file__), "native_runner": HERE.parent / "native_oracle.py",
         "native_inspect": HERE.parent / "native_inspect.py",
@@ -1568,10 +2043,24 @@ if __name__ == "__main__":
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--houses", action="store_true")
     selection.add_argument("--scenario-names", action="store_true")
+    selection.add_argument("--mission-titles", action="store_true")
+    selection.add_argument("--start-prefix", action="store_true")
+    selection.add_argument("--ares-allies", action="store_true")
+    parser.add_argument("--ares-dll", type=Path, default=os.environ.get("VERA20K_ARES_DLL"))
     args, remaining = parser.parse_known_args()
-    generator = generate_scenario_names if args.scenario_names else generate_houses if args.houses else generate
-    filename = "campaign_house_names.json" if args.scenario_names else "campaign_start_houses.json" if args.houses else "campaign_start.json"
-    evidence = scenario_names_metadata if args.scenario_names else lambda: metadata(houses=args.houses)
-    finish_vectors(generator, HERE / filename,
-                   provenance=evidence, argv=remaining,
-                   source_paths=source_paths())
+    if args.ares_allies:
+        from tools.rules_oracle.ares_prerequisites import ARES_SHA256, identified_bytes
+        if args.ares_dll is None:
+            parser.error("Set VERA20K_ARES_DLL or supply --ares-dll")
+        ares = identified_bytes(args.ares_dll, ARES_SHA256)
+        paths = source_paths()
+        paths["ares_vm_owner"] = HERE.parent / "rules_oracle/ares_prerequisites.py"
+        finish_vectors(lambda: generate_ares_allies(ares), HERE / "ares_allies_reader.json",
+                       provenance=ares_allies_metadata, argv=remaining, source_paths=paths)
+    else:
+        generator = generate_mission_titles if args.mission_titles else generate_start_prefix if args.start_prefix else generate_scenario_names if args.scenario_names else generate_houses if args.houses else generate
+        filename = "campaign_mission_titles.json" if args.mission_titles else "campaign_start_prefix.json" if args.start_prefix else "campaign_house_names.json" if args.scenario_names else "campaign_start_houses.json" if args.houses else "campaign_start.json"
+        evidence = mission_titles_metadata if args.mission_titles else start_prefix_metadata if args.start_prefix else scenario_names_metadata if args.scenario_names else lambda: metadata(houses=args.houses)
+        finish_vectors(generator, HERE / filename,
+                       provenance=evidence, argv=remaining,
+                       source_paths=source_paths())

@@ -115,6 +115,9 @@ fn raw_ini_walks_have_pinned_production_callers() {
             "raw_entries",
             &[
                 ("rules/ini_parser.rs", 1), // the definition
+                // Copy Hotkey entries into the separate writable profile.
+                ("app/persistence/keyboard.rs", 1),
+                ("app/persistence/profile_file.rs", 1),
                 // `ini-get --reader raw` and the presence report.
                 ("asset_tools/verb_ini.rs", 1),
                 // `[Colors]` entries copied into the processed registry.
@@ -125,7 +128,7 @@ fn raw_ini_walks_have_pinned_production_callers() {
             "registry_ids",
             &[
                 ("rules/ini_parser.rs", 1), // the definition
-                ("rules/overlay_types.rs", 2),
+                ("rules/overlay_types.rs", 1),
                 // Includes parse_registry copying already resolved stored IDs.
                 ("rules/ruleset.rs", 3),
                 ("rules/smudge_type.rs", 1),
@@ -1223,6 +1226,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         ),
         ("net/lockstep.rs", "payload_mut", PAYLOAD),
         (
+            "net/udp.rs",
+            "deref_mut",
+            "UdpWriteGuard construction is private to LanUdpTransport::write; its only callers \
+             project the existing LanConnections and GlobalChannel owners, whose fields are private",
+        ),
+        (
             "rules/art_data.rs",
             "get_mut",
             "art rules installed at load: the registry fills SHP frame sizes into its own \
@@ -1262,6 +1271,18 @@ fn mutable_handouts_and_setters_are_owner_operations() {
     // lives in the cited native caller, which the Rust caller ports.
     const PINNED_SETTERS: &[(&str, &str, &str)] = &[
         (
+            "net/global.rs",
+            "set_timing",
+            "Set_Timing (0x00540C60) forwards its timing to the global channel's +0x28..+0x30 \
+             through vt+0x38 (0x00540D10) only when its bool argument is set",
+        ),
+        (
+            "net/reliable.rs",
+            "set_timing",
+            "Set_Timing (0x00540C60) stores the manager's +0x58..+0x60 and copies them into \
+             every private connection's +0x28..+0x30 (0x00540CBE..0x00540CE1)",
+        ),
+        (
             "rules/object_type.rs",
             "set_voxel_shadow_index",
             "runs only inside RuleSet's load",
@@ -1270,6 +1291,21 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "rules/object_type.rs",
             "set_secret_lab",
             "runs only inside RuleSet's load",
+        ),
+        (
+            "rules/superweapon_type.rs",
+            "set_tech_level",
+            "runs only inside RuleSet's load: Phobos SW.TechLevel",
+        ),
+        (
+            "rules/superweapon_type.rs",
+            "set_aux_technos",
+            "runs only inside RuleSet's load: Phobos SW.AuxTechnos",
+        ),
+        (
+            "rules/superweapon_type.rs",
+            "set_neg_technos",
+            "runs only inside RuleSet's load: Phobos SW.NegTechnos",
         ),
         (
             "sim/ai_base_building.rs",
@@ -1364,6 +1400,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "Horizontal_Step's height target (0x004CF3F6, 0x004CF4B6, 0x004CF4CF)",
         ),
         (
+            "sim/movement/navcom.rs",
+            "set_nav_com_aux",
+            "FootClass::Set_NavComAux (0x004D94A0) stores Foot+0x5A0; EventClass::Execute \
+             calls it after Set_Destination (0x004C74BA)",
+        ),
+        (
             "sim/movement/teleport_movement.rs",
             "set_pending_state",
             "Techno+280, published by the reinforcement (0x0065F29F)",
@@ -1398,6 +1440,30 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "sim/rocking/mod.rs",
             "set_vel_forwards_native",
             "Techno+334, replaced by Drive (0x004B19F7)",
+        ),
+        (
+            "sim/scenario_session.rs",
+            "set_fixed_alliance",
+            "Scenario flag 0x400: Apply_Squad_Alliances clears it in GameMode 4 (0x0069B19B) \
+             and sets it after the squad alliances (0x0069B4E2)",
+        ),
+        (
+            "sim/scenario_session.rs",
+            "set_campaign_map_stage",
+            "Scenario+35A0: MapSelect writes the chosen stage (0x005AE1FA/0x005AE0B8); \
+             carry-over restores that word separately from the incoming restart record",
+        ),
+        (
+            "sim/snapshot/scenario_resources.rs",
+            "set_elapsed_buckets",
+            "ScenarioSave stops +0x614 into the +0x61C accumulator (0x00689360..0x0068936F) \
+             before its stream write (0x00689378); the save boundary stores that value",
+        ),
+        (
+            "sim/snapshot/saved_local_view.rs",
+            "set_credits_counter",
+            "MouseClass::Save (0x005BE6D0, store 0x005BE715) captures CreditsClass+4; \
+             this snapshot field records the presentation owner's displayed counter",
         ),
         (
             "sim/stage.rs",

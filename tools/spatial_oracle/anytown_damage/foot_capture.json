@@ -199,7 +199,6 @@
       "sha256": "7a390de363f79743dd54897a49302869a795f839f3387ff03e8c0b70a519e17e"
     }
   ],
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "native_text_unchanged": true,
   "native_vtables_unchanged": true,
   "schema": 1

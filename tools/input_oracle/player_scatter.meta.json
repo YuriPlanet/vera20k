@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -27,5 +26,5 @@
   },
   "command": "python -m tools.input_oracle.area_guard --scatter --check",
   "replay_command": "python -m tools.input_oracle.area_guard --scatter",
-  "payload_sha256": "2f4e62013b83b07fe0e7136351caee704f67abd7e8b0a04e5a39a6e819ed1a5a"
+  "payload_sha256": "bf49821da2992b6cebd131968fa7c49f7c44e3ae4db64f8d901f53d3c1cfa190"
 }

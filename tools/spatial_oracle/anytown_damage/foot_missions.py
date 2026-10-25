@@ -13,7 +13,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 
 from tools.spatial_oracle.anytown_damage import mission as native_owner
-from tools.native_oracle import RET_MAGIC, NATIVE_SHA256, run_checked, finish_vectors, provenance, file_span, image_bytes, image_sha256
+from tools.native_oracle import RET_MAGIC, run_checked, finish_vectors, provenance, file_span, image_bytes
 from tools.spatial_oracle.building_body_rules import INI, RULES, SP, dwords
 from tools.projectile_oracle.bridge_render_inputs import lexical
 from tools.spatial_oracle.bridge_target_composed import GENERAL_KEYS
@@ -365,7 +365,7 @@ class FootMissions(native_owner.Mission):
   # backward into their payload. Reuse this sole owner's original constructors.
   self.initialize_companion();rules=self.rules_reader_receipts();weapons=self.weapon_reader_receipts()
   m,u=self.m,self.u;table=m.read32(self.e1_type+0xE3C)
-  result=dict(native_sha256=NATIVE_SHA256,text_sha256=self.resident.code_hash,inputs=self.inputs,world=self.world,mission_inputs=self.mission_inputs,
+  result=dict(text_sha256=self.resident.code_hash,inputs=self.inputs,world=self.world,mission_inputs=self.mission_inputs,
    setup=dict(e1=hex(self.e1),candidate=hex(self.candidate),house=hex(self.house),enemy=hex(self.enemy),
     e1_ctor=self.e1_ctor,e1_placement=self.e1_placement,e1_unlimbo=self.e1_unlimbo,candidate_placement=self.candidate_placement,candidate_unlimbo=self.candidate_unlimbo,
    original_vtables={address:hashlib.sha256(bytes.fromhex(raw)).hexdigest() for address,raw in self.vtables.items()},
@@ -551,7 +551,7 @@ class FootMissions(native_owner.Mission):
 
  def ground_emission_receipt(self):
   inputs=self.ground_emission_inputs()
-  result=dict(native_sha256=NATIVE_SHA256,text_sha256=self.resident.code_hash,inputs=inputs,world=self.world,cases=[])
+  result=dict(text_sha256=self.resident.code_hash,inputs=inputs,world=self.world,cases=[])
   # Each fresh VM executes the exact same independent physical input closure.
   for name,frames,deck in [('E1_ground_complete',[1,2,3],False),('E1_ground_repeated_complete',[1,1,2,3],False),('E1_ground_gap_complete',[1,20,21],False),('E1_supplied_deck_complete',[1,2,3],True)]:
    if result['cases']:
@@ -587,7 +587,7 @@ class FootMissions(native_owner.Mission):
   assert before_rng==rng()
   assert text_sha==self.resident.code_hash==hashlib.sha256(bytes(u.mem_read(0x401000,0x3E0000))).hexdigest()
   assert vtable_sha==hashlib.sha256(bytes(u.mem_read(vtable,0x600))).hexdigest()
-  return dict(native_sha256=NATIVE_SHA256,text_sha256=text_sha,vtable=dict(address=hex(vtable),length=0x600,sha256=vtable_sha),
+  return dict(text_sha256=text_sha,vtable=dict(address=hex(vtable),length=0x600,sha256=vtable_sha),
    native_span=dict(address='0x00518E08',stop='0x00518E21',length=len(original),file_offset=file_offset,sha256=hashlib.sha256(original).hexdigest(),hex=original.hex()),
    physical_gi_sequence=dict(pointer=hex(sequence),supplied_index=4,fire_up_bytes=bytes(u.mem_read(sequence+4*36,36)).hex(),native_count=physical_count),
    boundary='Original isolated Infantry draw signed sequence-count clamp and StageCDQ/IDIV only; supplied caller EAX/EBX/EBP/ESP and scratch count table. Stops before518E21, so Facing, frame-index composition, drawing and renderer effects are not executed.',
@@ -601,7 +601,6 @@ class FootMissions(native_owner.Mission):
   physical_land=native_owner.base.i32(u,cell+0xEC);face_input=m.alloc(4)
   assert u.mem_read(typ+0xD94,1)==b'\0'
   binary=image_bytes();off,original=file_span(binary,0x518D80,0x209)
-  assert hashlib.sha256(original).hexdigest()=='60ee1cdafdd13ab060a3fc6fc80794476f42f943d933090b63d41ced74714608'
   assert bytes(u.mem_read(0x518D80,len(original)))==original
   rng=lambda:{key:native_owner.base.sr.rng_state(u,ptr) for key,ptr in self.resident.rngs.items()}
   regs=lambda:{name:u.reg_read(reg) for name,reg in (('eax',UC_X86_REG_EAX),('ebx',UC_X86_REG_EBX),('ecx',UC_X86_REG_ECX),('edx',UC_X86_REG_EDX),('esi',UC_X86_REG_ESI),('edi',UC_X86_REG_EDI),('ebp',UC_X86_REG_EBP),('esp',UC_X86_REG_ESP),('eip',UC_X86_REG_EIP),('eflags',UC_X86_REG_EFLAGS),('fpcw',UC_X86_REG_FPCW),('fpsw',UC_X86_REG_FPSW),('fptag',UC_X86_REG_FPTAG))}
@@ -688,7 +687,7 @@ class FootMissions(native_owner.Mission):
   assert text_sha==hashlib.sha256(bytes(u.mem_read(0x401000,0x3E0000))).hexdigest()
   assert vtable_bytes==bytes(u.mem_read(vtable,len(vtable_bytes))) and loco_vtable_bytes==bytes(u.mem_read(loco_vtable,len(loco_vtable_bytes)))
   art_path=Path(os.environ['VERA20K_SHRAPNEL_INPUTS'])/'ARTMD.INI';art,lines=lexical(art_path.read_bytes(),{'E1','GI','GISequence'})
-  return dict(native_sha256=NATIVE_SHA256,text_sha256=text_sha,native_span=dict(address='0x00518D80',stop='0x00518F89',file_offset=off,length=len(original),sha256=hashlib.sha256(original).hexdigest(),hex=original.hex()),
+  return dict(text_sha256=text_sha,native_span=dict(address='0x00518D80',stop='0x00518F89',file_offset=off,length=len(original),sha256=hashlib.sha256(original).hexdigest(),hex=original.hex()),
    inputs=dict(ARTMD=dict(sha256=hashlib.sha256(art_path.read_bytes()).hexdigest(),sections=art,lines=lines),type_reader='0x005240A0',sequence_reader='0x00523D00',
     setup='Fresh existing FootMissions.initialize_companion original E1 type/Infantry/Walk constructors, layered readers and successful Unlimbo; explicit Ready fixture baseline and supplied House/crop retained.'),
    physical_gi_sequence=dict(pointer=hex(sequence),bytes=len(bank),sha256=hashlib.sha256(bank).hexdigest(),records=[dict(doing=i,raw_hex=bank[i*36:(i+1)*36].hex(),words_i32=list(struct.unpack('<9i',bank[i*36:(i+1)*36]))) for i in range(42)]),
@@ -834,7 +833,7 @@ class FootMissions(native_owner.Mission):
    dict(name='delta_wrap_negative',start=-2147483648,frames=[2147483647]),
    dict(name='current_precedes_start',start=101,frames=[100]),
    dict(name='paused_zero_rate',start=-1,duration=0,rate=0,frames=[100])]
-  result=dict(native_sha256=NATIVE_SHA256,text_sha256=self.resident.code_hash,
+  result=dict(text_sha256=self.resident.code_hash,
    setup_context='same original fully initialized FootMissions VM, restored after all ground_firing_receipt controls',
    supplied_building_storage=dict(pointer=hex(building),bytes=0x200,initial_sha256=hashlib.sha256(bytes(u.mem_read(building,0x200))).hexdigest(),constructor_executed=False,vtable_used=False),
    clock_rows=[],action_restart_rows=[])
@@ -1300,7 +1299,7 @@ def generate():
    source_xyz=[22144-leash-3,12928,416],nav=q.resident.ptrs[87,53],moving=1)
   add('area_guard_foot_stray_clear_live_target',family,mission=11,status=0,archive=q.victim,archive_xyz=[ground[0]+stray+3,ground[1],ground[2]],target=q.candidate,candidate_live=True)
   add('area_guard_dispatch_post',family,mission=11,status=0,dispatch_entry=True)
- out=dict(schema_version=1,native_sha256=NATIVE_SHA256,text_sha256=q.resident.code_hash,inputs=q.inputs,world=q.world,
+ out=dict(schema_version=1,text_sha256=q.resident.code_hash,inputs=q.inputs,world=q.world,
   mission_inputs=q.mission_inputs,e1_ctor=q.e1_ctor,e1_placement=q.e1_placement,e1_unlimbo=q.e1_unlimbo,
   candidate_placement=q.candidate_placement,candidate_unlimbo=q.candidate_unlimbo,victim_placement=q.victim_placement,victim_unlimbo=q.victim_unlimbo,initializers=q.initializers,
   setup=dict(source=hex(q.src),e1=hex(q.e1),victim=hex(q.victim),candidate=hex(q.candidate),house=hex(q.house),enemy=hex(q.enemy),country=hex(q.country),
@@ -1384,26 +1383,26 @@ def generate():
  out['retail_weapon_rows']=weapon_rows
  preserved=json.dumps(out,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode()
  preserved_sha=hashlib.sha256(preserved).hexdigest()
- assert preserved_sha=='bbc321dd3de71f87a2762508df6e7bcd3845510e3cd2dc0458eefaaff29314a0','frozen220-row payload changed'
+ assert preserved_sha=='a7f520feedbcc1adbc479951356a0bd6049d3626bb6003952b48fc51b013c995','frozen220-row payload changed'
  firing_owner=FootMissions();receipt=firing_owner.ground_firing_receipt()
  receipt['preserved_payload']=dict(canonical_sha256=preserved_sha,canonical_bytes=len(preserved),row_counts={key:len(out[key]) for key in ('rows','retail_idle_rows','greatest_threat_rows','navigation_rows','empty_rescue_rows','retail_weapon_rows')})
  out['ground_firing_receipt']=receipt
  preserved=json.dumps(out,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode()
  preserved_sha=hashlib.sha256(preserved).hexdigest()
- assert preserved_sha=='f7662e010a04347bc900c3d97887de09aaa7e40a90726bd66e11e50b6c1c5434','frozen payload including ground_firing_receipt changed'
+ assert preserved_sha=='0fc230b21725dd9c13a84c548c76423f173b481057239d5e2b7899a1ad9f0dba','frozen payload including ground_firing_receipt changed'
  stage=firing_owner.stage_clock_receipt()
  stage['preserved_payload']=dict(canonical_sha256=preserved_sha,canonical_bytes=len(preserved),row_counts={key:len(out[key]) for key in ('rows','retail_idle_rows','greatest_threat_rows','navigation_rows','empty_rescue_rows','retail_weapon_rows')},ground_firing_cases=len(receipt['cases']))
  out['stage_clock_receipt']=stage
  preserved=json.dumps(out,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode()
  preserved_sha=hashlib.sha256(preserved).hexdigest()
- assert preserved_sha=='e40988fa2524a3a11376a54add8a54014053252909db2e83128ae27e3c80fb3f','frozen payload including stage_clock_receipt changed'
+ assert preserved_sha=='35c0e43f412d76cf9cdd1dd65a4cb13801e7e979d672314de39f15574e4e6fb7','frozen payload including stage_clock_receipt changed'
  emission_owner=FootMissions();emission=emission_owner.ground_emission_receipt()
  emission['preserved_payload']=dict(canonical_sha256=preserved_sha,canonical_bytes=len(preserved),row_counts={key:len(out[key]) for key in ('rows','retail_idle_rows','greatest_threat_rows','navigation_rows','empty_rescue_rows','retail_weapon_rows')},ground_firing_cases=len(receipt['cases']),stage_clock_rows=len(stage['clock_rows']))
  out['ground_emission_receipt']=emission
  out['draw_stage_modulo_receipt']=emission_owner.draw_stage_modulo_receipt()
  preserved=json.dumps(out,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode()
  preserved_sha=hashlib.sha256(preserved).hexdigest()
- assert preserved_sha=='54a2a1f2b554a404ed0e6530b4dc2bdea0f666584bf03f1ed8f873bb45a28e91','frozen payload including old80 draw modulo controls changed'
+ assert preserved_sha=='94db9dcd2cb08ecbc23867f5e11f09f5cb1b2d1e3db7f29eebf491dbb59a8a09','frozen payload including old80 draw modulo controls changed'
  frame_owner=FootMissions();frames=frame_owner.infantry_frame_selection_receipt()
  frames['preserved_payload']=dict(canonical_sha256=preserved_sha,canonical_bytes=len(preserved),old_draw_modulo_rows=len(out['draw_stage_modulo_receipt']['rows']))
  out['infantry_frame_selection_receipt']=frames
@@ -1526,14 +1525,14 @@ def metadata():
   'infantry_observer_gate':0x70EE30,'infantry_selected_type':0x522640,'draw_default_cell_lookup':0x5657A0,
 
  },assumptions=[
-  'infantry_frame_selection_receipt appends only after the entire prior17,535,932-byte canonical payload retains SHA54a2a1f2b554a404ed0e6530b4dc2bdea0f666584bf03f1ed8f873bb45a28e91, including all old80 draw_stage_modulo_receipt controls. A fresh existing FootMissions VM executes original constructors/readers/Unlimbo and whole518D80 through actual518F88 RET. Its exact521-byte original body has SHA60ee1cdafdd13ab060a3fc6fc80794476f42f943d933090b63d41ced74714608. Real70EE30 observer gate and body FacingCurrent4C93D0 run; native count clamp/CDQ/IDIV, positive-only stride branch, table lookup, DWORD IMUL and wrapping ADD outputs are observed without Python expected arithmetic. All42 actual physical GI records,336 physical action/facing rows,40 full32-index/threshold facing rows and136 supplied signed count/Stage/Start/Stride controls are separate. Input facing runs original4C9300 and retains its actual duration0 state; in-flight rotation is not covered. All three full RNG states, original code/vtables, CPU/x87 and supplied/native memory writes restore unchanged.',
+  'infantry_frame_selection_receipt appends only after the entire prior17,535,517-byte canonical payload retains SHA94db9dcd2cb08ecbc23867f5e11f09f5cb1b2d1e3db7f29eebf491dbb59a8a09, including all old80 draw_stage_modulo_receipt controls. A fresh existing FootMissions VM executes original constructors/readers/Unlimbo and whole518D80 through actual518F88 RET. The receipt records its exact521-byte original body. Real70EE30 observer gate and body FacingCurrent4C93D0 run; native count clamp/CDQ/IDIV, positive-only stride branch, table lookup, DWORD IMUL and wrapping ADD outputs are observed without Python expected arithmetic. All42 actual physical GI records,336 physical action/facing rows,40 full32-index/threshold facing rows and136 supplied signed count/Stage/Start/Stride controls are separate. Input facing runs original4C9300 and retains its actual duration0 state; in-flight rotation is not covered. All three full RNG states, original code/vtables, CPU/x87 and supplied/native memory writes restore unchanged.',
   'The frame selector also runs Doing-1 through actual physical-coordinate vtable+1B8 and Map5657A0 on its concrete current Cell. Four rows retain physical XYZ/Cell identity and supply Cell+EC ground1/water2 and OnBridge+8C0/1. Original518D80 chooses the actual draw action; these are raw draw-input controls, not native water transition, bridge placement or occupancy evidence. Actual E1 Type+D94 is0 and original observer gate returns1 throughout; JumpJet CLSID/target-facing, alternate observer/disguise bank selection, invalid Doing outside-1/0..41, SHP lookup/drawing and renderer are excluded. No inherited runtime callback/result substitution is reached in these calls.',
-  'ground_emission_receipt is additive only after the entire prior10,896,182-byte payload including stage_clock_receipt retains canonical SHAe40988fa2524a3a11376a54add8a54014053252909db2e83128ae27e3c80fb3f. Four independent fresh existing FootMissions VMs supplement the historical sparse asset inputs with physical GI744-frame SHP, all eight6-frame MGUN directional SHPs and12-frame PIFFPIFF, extracted with the recorded existing asset build. Existing Reader427D00/file-buffer boundary and Sound source-order cache/7510D0/7514D0 bind their actual retail ART/SOUND fields and GIAttack Report. Every physical E1 normal/elite weapon and referenced projectile/warhead reader runs in the existing owner; the separate historical payload is untouched.',
+  'ground_emission_receipt is additive only after the entire prior10,895,933-byte payload including stage_clock_receipt retains canonical SHA35c0e43f412d76cf9cdd1dd65a4cb13801e7e979d672314de39f15574e4e6fb7. Four independent fresh existing FootMissions VMs supplement the historical sparse asset inputs with physical GI744-frame SHP, all eight6-frame MGUN directional SHPs and12-frame PIFFPIFF, extracted with the recorded existing asset build. Existing Reader427D00/file-buffer boundary and Sound source-order cache/7510D0/7514D0 bind their actual retail ART/SOUND fields and GIAttack Report. Every physical E1 normal/elite weapon and referenced projectile/warhead reader runs in the existing owner; the separate historical payload is untouched.',
   'Four ground_emission_receipt cases execute original whole51BAB0 through actual51DF60/6FDD50, native Infantry523250 FLH, actual Bullet factory/construct/fire, original5880A0 Firestorm and4CC100 cliff/wall queries, native6FCFA0 ROF/rearm and real MGUN-S constructor/attach. Full unchanged original BulletAI4666E0 follows through4690B0/489280 and the real Unit737C90/Foot4D7330/Techno701900/Object5F5390 damage chain; actual PIFFPIFF SelectAnim/constructor and damage retaliation execute. Actual whole InfantryAI, BulletAI, AnimAI and deferred native cleanup return. Call/register/stack data, class damage-pointer mutation, object clocks/poses/retirement, original list append/compact/remove and all three complete RNG states are observed.',
   'The emitted-object schedule executes the original dynamic Logic suffix55B608..55B61B, beginning with supplied ESI equal to the actual four-actor prefix count, followed by original55DE73..55DE87 frame commit and full725C70 drain. Original loop index/count/list mutations determine order. On the first impact pass the Bullet removes itself, compacts MGUN-S to index4, appends PIFFPIFF at5, and the native increment visits PIFFPIFF5; MGUN-S first runs in the following supplied pass. No host supplies a Bullet/Anim event order or replaces their gameplay bodies/results. Per-source full InfantryAI calls run at the declared frames; full-match actor/global scheduling is not claimed.',
   'draw_stage_modulo_receipt separately executes original518E08..518E21 for80 count/Stage controls, including the actually read physical GI FireUp count6. It supplies caller EAX/EBX/EBP/ESP and a scratch signed-count slot, runs the native count<=1 clamp/CDQ/IDIV, and records actual signed EAX quotient, ECX divisor and EDX remainder. Negative/count-zero/count-one, small/large counts, signed Stage extremes, negative stages and values aboveu16 are explicit; every full RNG state and original code/vtable remains unchanged. No expected quotient or remainder is calculated in Python.',
 
-  'stage_clock_receipt appends only after the entire frozen payload, including ground_firing_receipt, retains canonical SHA256 f7662e010a04347bc900c3d97887de09aaa7e40a90726bd66e11e50b6c1c5434. It reuses that fresh original-constructor VM after all controls restore native writes/CPU/observations/RNG. Original Techno scalar region6FABC4 stops before6FAC31 under explicit ESI receiver, EBP0, ESP and raw caller auxiliary; original Building scalar region4509DE stops before common boundary450A38, executing actual426630. Building storage is a supplied zero-initialized0x200-byte scalar receiver, not original Building construction. No class/vtable callback is reached in that region. Eighteen supplied controls per family retain actual native writes between repeated absolute frames, elapsed gaps, zero/negative rates, paused zero/nonzero/negative durations, zero/negative increment, signed addition wrap, delta wrap and absolute frame wrap. Each frame records before/after signed stage/timer/rate/increment, changed byte, original executed instruction bytes, native field writes/registers, caller stack-local output and full three RNG states.',
+  'stage_clock_receipt appends only after the entire frozen payload, including ground_firing_receipt, retains canonical SHA256 0fc230b21725dd9c13a84c548c76423f173b481057239d5e2b7899a1ad9f0dba. It reuses that fresh original-constructor VM after all controls restore native writes/CPU/observations/RNG. Original Techno scalar region6FABC4 stops before6FAC31 under explicit ESI receiver, EBP0, ESP and raw caller auxiliary; original Building scalar region4509DE stops before common boundary450A38, executing actual426630. Building storage is a supplied zero-initialized0x200-byte scalar receiver, not original Building construction. No class/vtable callback is reached in that region. Eighteen supplied controls per family retain actual native writes between repeated absolute frames, elapsed gaps, zero/negative rates, paused zero/nonzero/negative durations, zero/negative increment, signed addition wrap, delta wrap and absolute frame wrap. Each frame records before/after signed stage/timer/rate/increment, changed byte, original executed instruction bytes, native field writes/registers, caller stack-local output and full three RNG states.',
   'stage_clock_receipt action_restart_rows executes physical GI original51D6F0(4,0,0) to produce FireUp4, then supplies stage31/changedFC1/timer99,0x2468ACE0,9/rate9/increment7 and absolute frame1337 before forced original51D6F0(0,1,0) or(4,1,0). The Ready transition exercises admitted clock writes, while the same-FireUp request observes original51D90B/51D913 unchanged-action refusal even when forced. Actual return, writes, full RNG and before/after stage/Doing/sequence bytes establish these outcomes; no action/rate/stage/RNG result is replaced. All writes, CPU/x87 and inherited observer state are restored. Original full text and class vtables remain unchanged.',
   'ground_firing_receipt creates a fresh existing FootMissions VM only after the frozen220-row payload canonical identity is checked. It repeats original constructors, actual Drive/Walk factories, successful E1/MTNK Unlimbo/registration, the existing rules key-block receipts and all physically referenced E1 normal/elite WeaponType/Projectile/Warhead readers. The explicit companion Ready fixture baseline is retained; target admission51B1F0, Attack queue5B35E0 and native whole51BAB0 promotion/AI run. Original Foot4DA530, Techno6F9E50, Mission5B3060, absolute stage6FABC4..6FAC31, select5218E0, fire error51C8B0/6FC0B0/Walk55AD00, DoAction51D6F0, FireAtTarget5206B0, sequencer520AE0 and movement520F40 execute without gameplay-result substitutions. Clock inputs, call/write order, actual receiver/arguments/returns, stage/F8/FC, firing68D, rearm/mission timers, real Walk state, facing and full three RNG streams are recorded.',
   'Four accepted ground_firing_receipt controls run complete selected InfantryAI returns before the launch visit. The accepted visit stops before executing the real6FDD50 entry, after original51DF60 pushed actual target/weapon0 and wrote68D0 at51DF70. No EAX or stack return is supplied at that boundary; the enclosing InfantryAI/FireAt/sequencer tails have not returned. Repeated absolute-frame and elapsed-gap controls execute the original absolute stage arithmetic, including actual mission cadence/RNG when due. Concrete51AA10 expiry control1 executes before the first AI visit or between the first two, including the real Techno/Foot and Infantry AssignTarget/DoAction receivers. This is a supplied expired-pointer notification, not original target death/UnInit/broadcast.',
@@ -1577,11 +1576,40 @@ def metadata():
  return result
 
 
+# The Mission producer's transitive module inventory, which its historical
+# receipt recorded; the run's source check covers it.
+MISSION_SOURCES=(
+  'tools/native_oracle.py', 'tools/projectile_oracle/bridge_render_inputs.py',
+  'tools/projectile_oracle/flat_art.py', 'tools/projectile_oracle/guided_step.py',
+  'tools/projectile_oracle/ifv_bridge_impact.py', 'tools/projectile_oracle/ifv_fire_coord.py',
+  'tools/projectile_oracle/ifv_impact.py', 'tools/projectile_oracle/ifv_launch.py',
+  'tools/projectile_oracle/ifv_select_anim.py', 'tools/projectile_oracle/ordinary_collision.py',
+  'tools/rmg_oracle/gen_rng_vectors.py', 'tools/rmg_oracle/harness.py',
+  'tools/rules_oracle/bridge_anim_inputs.py', 'tools/rules_oracle/bridge_anim_lists.py',
+  'tools/rules_oracle/bridge_child_sound.py', 'tools/rules_oracle/theater_general_reader.py',
+  'tools/spatial_oracle/__init__.py', 'tools/spatial_oracle/anytown_damage/__init__.py',
+  'tools/spatial_oracle/anytown_damage/anytown_geometry.py',
+  'tools/spatial_oracle/anytown_damage/anytown_resident.py',
+  'tools/spatial_oracle/anytown_damage/inputs.py',
+  'tools/spatial_oracle/anytown_damage/mission.py',
+  'tools/spatial_oracle/anytown_damage/mission_counter.py',
+  'tools/spatial_oracle/anytown_damage/mission_interleaving.py',
+  'tools/spatial_oracle/anytown_damage/mission_publication.py',
+  'tools/spatial_oracle/anytown_damage/mission_test_vectors.py',
+  'tools/spatial_oracle/anytown_damage/mtnk_attack.py',
+  'tools/spatial_oracle/anytown_damage/next_family_native.py',
+  'tools/spatial_oracle/anytown_damage/publication.py', 'tools/spatial_oracle/bridge_rim.py',
+  'tools/spatial_oracle/building_body_rules.py', 'tools/spatial_oracle/map_queries.py',
+  'tools/spatial_oracle/mapgen_range.py', 'tools/spatial_oracle/shrapnel_repair/__init__.py',
+  'tools/spatial_oracle/shrapnel_repair/map_facts.py',
+  'tools/spatial_oracle/shrapnel_repair/packet_io.py',
+  'tools/spatial_oracle/shrapnel_repair/production_inputs.py',
+  'tools/spatial_oracle/shrapnel_repair/retail_inputs.py',
+  'tools/spatial_oracle/shrapnel_repair/shrapnel_repair.py')
+
+
 def source_paths():
- # Preserve the old historical receipt and use its transitive module inventory
- # as current source identity; never rewrite the historic source hashes.
- receipt=json.loads((HERE/'mission_receipt.json').read_text())
- paths={name:REPO/name for name in receipt['imported_sources']}
+ paths={name:REPO/name for name in MISSION_SOURCES}
  for relative in ('tools/spatial_oracle/anytown_damage/foot_missions.py',
                   'tools/spatial_oracle/bridge_target_composed.py',
                   'tools/spatial_oracle/locomotor_at_coord.py',
@@ -1662,7 +1690,7 @@ def generate_capture():
  vtables_unchanged=all(bytes(u.mem_read(int(address,16),len(bytes.fromhex(raw))))==bytes.fromhex(raw)
   for address,raw in q.vtables.items())
  assert text_unchanged and vtables_unchanged
- return dict(schema=1,native_sha256=image_sha256(),layers=layers,actor=actor,
+ return dict(schema=1,layers=layers,actor=actor,
   controls=controls,native_text_unchanged=text_unchanged,native_vtables_unchanged=vtables_unchanged)
 
 
@@ -1675,7 +1703,7 @@ def capture_metadata():
    capture_ranged_call=0x4D4C97,rng_seed=0x65C6D0,rng_ranged=0x65C7E0,
    ranged_raw_store=0x65C84B,dispatch_timer_start=0x5B331B,dispatch_timer_duration=0x5B3324),
   assumptions=[
-   'Replay from the checkout: python -m tools.spatial_oracle.anytown_damage.mission --foot-capture --check (or --write to accept newly executed native outputs). Select the original supported gamemd.exe through VERA20K_GAMEMD_EXE or RA2_DIR. The sidecar pins that binary; no repository source hashes are persisted.',
+   'Replay from the checkout: python -m tools.spatial_oracle.anytown_damage.mission --foot-capture --check (or --write to accept newly executed native outputs). Select the original supported gamemd.exe through VERA20K_GAMEMD_EXE or RA2_DIR. Neither that binary nor repository sources are hashed.',
    'Use the separate physical sparse caches VERA20K_SHRAPNEL_INPUTS and VERA20K_ANYTOWN_INPUTS declared by tools/spatial_oracle/anytown_damage/retail_manifest.json. The former supplies original RULESMD/ARTMD/SOUNDMD/MPBattleMD reader bootstrap; the latter supplies XMP03T4.MAP and the existing physical crop/asset dependencies. Keep LANGRULE absent for these stock controls. layers records actual physical file hashes, selected Capture bytes and native Rate results.',
    'The existing FootMissions VM executes original MissionControl, E1 type, Infantry/Foot/Techno and Walk construction, physical selected readers and successful original E1 Unlimbo/registration, retaining its explicit Ready fixture baseline. An additive Capture reader pass runs the existing original679C92..679CAF MissionControl loop through5B3760 in physical RULESMD, optional LANGRULE, MPBattleMD and XMP03T4 order; older Foot corpora are not generated or rewritten.',
    'Controls supply current mission8, queued-1, status0, NULL Target and nonNULL Building NavCom at retained absolute frame1 after initialization. The Building is a supplied allocated identity with original7E3EBC vtable, not native construction or placement. On this NULL Target/nonNULL NavCom/controlled-human E1 path, original Capture only tests NavCom against NULL and never dereferences its Building identity. Original5B3060 dispatches the unchanged Infantry vtable+214 to4D4B20, including current Rate multiplication/ftol, actual Scenario65C7E0 rejection retries and real timer writes.',

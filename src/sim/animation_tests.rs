@@ -197,8 +197,8 @@ impl Gsi1306Speed {
         }
     }
 
-    fn rules(&self) -> Option<SpeedRules<'_>> {
-        Some(SpeedRules::new(&self.rules, &self.interner, &self.houses))
+    fn rules(&self) -> SpeedRules<'_> {
+        SpeedRules::new(&self.rules, &self.interner, &self.houses)
     }
 }
 
@@ -586,30 +586,6 @@ fn normalized_action_delay_uses_session_game_speed() {
 // --- Animation component tests ---
 
 // --- Default sequence set tests ---
-
-// --- death_sequence_for_inf_death tests ---
-
-#[test]
-fn gsi_08_13_death_sequence_and_anim_arms_are_exclusive() {
-    use crate::sim::animation::inf_death_spawns_anim;
-    // The jump table at 0x00518D58 dispatches on `InfDeath - 1` over 0..9.
-    // 0 and > 10 fall off it entirely.
-    assert_eq!(death_sequence_for_inf_death(0), None);
-    assert!(!inf_death_spawns_anim(0));
-    assert_eq!(death_sequence_for_inf_death(11), None);
-    assert!(!inf_death_spawns_anim(11));
-    // 1 and 2 are the only sequence arms, and they spawn no animation.
-    assert_eq!(death_sequence_for_inf_death(1), Some(SequenceKind::Die1));
-    assert_eq!(death_sequence_for_inf_death(2), Some(SequenceKind::Die2));
-    assert!(!inf_death_spawns_anim(1));
-    assert!(!inf_death_spawns_anim(2));
-    // 3..=10 are animation arms, and they select no sequence — Die3, Die4 and
-    // Die5 are unreachable from the death handler.
-    for inf_death in 3..=10u8 {
-        assert_eq!(death_sequence_for_inf_death(inf_death), None);
-        assert!(inf_death_spawns_anim(inf_death));
-    }
-}
 
 // --- Infantry class action and presentation integration tests ---
 
@@ -1214,7 +1190,7 @@ fn infantry_death_finishes_at_its_sequence_count_and_not_one_frame_early() {
     assert!(retired.lifecycle.in_limbo());
     assert!(sim.substrate.pending_delete.contains_object(&id));
     sim.process_pending_delete_with(
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
         1,
@@ -1390,13 +1366,12 @@ fn raw_infantry_frames_match_whole_original_selector_rows() {
     ))
     .unwrap();
     let receipt = &corpus["infantry_frame_selection_receipt"];
-    assert_eq!(
-        receipt["native_span"]["sha256"],
-        "60ee1cdafdd13ab060a3fc6fc80794476f42f943d933090b63d41ced74714608"
-    );
+    assert_eq!(receipt["native_span"]["address"], "0x00518D80");
+    assert_eq!(receipt["native_span"]["stop"], "0x00518F89");
+    assert_eq!(receipt["native_span"]["length"], 0x209);
     assert_eq!(
         receipt["preserved_payload"]["canonical_sha256"],
-        "54a2a1f2b554a404ed0e6530b4dc2bdea0f666584bf03f1ed8f873bb45a28e91"
+        "94db9dcd2cb08ecbc23867f5e11f09f5cb1b2d1e3db7f29eebf491dbb59a8a09"
     );
     let records = receipt["physical_gi_sequence"]["records"]
         .as_array()

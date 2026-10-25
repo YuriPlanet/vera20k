@@ -1,0 +1,11 @@
+[package]
+name = "vera20k-relay"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+vera20k-relay-protocol = { path = "../relay-protocol" }
+
+[lints]
+workspace = true

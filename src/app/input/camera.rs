@@ -116,31 +116,50 @@ pub(crate) fn restore_tactical_view(
     let Some(saved) = saved else {
         return;
     };
-    state.match_state.input.zoom_level = saved.zoom;
-    state.match_state.input.zoom_target = saved.zoom;
-    let (width, height) = tactical_viewport_size(state);
-    let top_left = tactical_camera_top_left(
-        (
-            saved.view_center_world_pixels[0],
-            saved.view_center_world_pixels[1],
-        ),
-        width as f32,
-        height as f32,
-        saved.zoom,
+    let viewport = tactical_viewport_size(state);
+    restore_camera_input(
+        &mut state.match_state.input,
+        &saved,
+        viewport,
+        state.persistence.options_profile.mouse_wheel_zoom,
     );
     let point = clamp_camera_point_for_state(
         state,
-        top_left,
+        (
+            state.match_state.input.camera_x,
+            state.match_state.input.camera_y,
+        ),
         state.render_width() as f32,
         state.render_height() as f32,
     );
     state.match_state.input.camera_x = point.0;
     state.match_state.input.camera_y = point.1;
-    state
-        .match_state
-        .input
-        .pending_camera_scroll
-        .restore_saved_view(&saved);
+}
+
+/// Restore the local camera transaction before the map-specific clamp. The
+/// player's wheel preference can replace saved zoom, but never the saved
+/// center or cinematic focus. Options' whole-frame Zoom is independent.
+fn restore_camera_input(
+    input: &mut crate::app::input::state::MatchInputState,
+    saved: &crate::sim::snapshot::SavedTacticalView,
+    viewport: (u32, u32),
+    mouse_wheel_zoom: bool,
+) {
+    let zoom = if mouse_wheel_zoom { saved.zoom } else { 1.0 };
+    input.zoom_level = zoom;
+    input.zoom_target = zoom;
+    let point = tactical_camera_top_left(
+        (
+            saved.view_center_world_pixels[0],
+            saved.view_center_world_pixels[1],
+        ),
+        viewport.0 as f32,
+        viewport.1 as f32,
+        zoom,
+    );
+    input.camera_x = point.0;
+    input.camera_y = point.1;
+    input.pending_camera_scroll.restore_saved_view(saved);
 }
 
 impl PendingCameraScroll {
@@ -571,6 +590,7 @@ pub(crate) fn camera_input_idle(state: &AppState) -> bool {
         && !input.tactical_mouse.right_held
         && !input.tactical_mouse.right_pan_engaged
         && input.edge_scroll.coasting_direction().is_none()
+        && !touch_owns_pointer(input)
         && edge_scroll_intent(
             (input.cursor_x, input.cursor_y),
             state.render_width() as i32,
@@ -830,6 +850,21 @@ fn right_drag_threshold_crossed(
         || delta_y.abs() > drag_metric_y.saturating_mul(2) as f32
 }
 
+/// Reconstruct physical mouse pixels from the zoomed frame's coordinates for
+/// the right-drag threshold. Resolution zoom is VERA's: gamemd draws one
+/// screen pixel per game pixel, so measuring the threshold in physical pixels
+/// keeps the hand travel the same at every zoom. Pan distances stay in frame
+/// pixels, so the map scrolls at gamemd's speed for the same view. Rounding the
+/// inverse zoom avoids f32 division noise changing the strict threshold at,
+/// e.g., 150%. Unscaled inputs retain their existing subpixel behavior.
+fn window_mouse_pixels(source_distance: f32, resolution_scale: f32) -> f32 {
+    if resolution_scale == 1.0 {
+        source_distance
+    } else {
+        (source_distance * resolution_scale).round()
+    }
+}
+
 /// The stock rate multiplies the displacement by 1/4: a 100 px drag moves
 /// the camera 25 px per admitted game frame.
 const RIGHT_DRAG_RATE_BIAS: u32 = 1;
@@ -1023,13 +1058,14 @@ impl TacticalMouseState {
         cursor: (f32, f32),
         drag_metrics: (i32, i32),
         band_box: bool,
+        resolution_scale: f32,
     ) -> RightDragPoll {
         if !self.right_drag_owns_frame() {
             return RightDragPoll::Idle;
         }
         self.right_threshold_crossed |= right_drag_threshold_crossed(
-            cursor.0 - self.right_anchor.0,
-            cursor.1 - self.right_anchor.1,
+            window_mouse_pixels(cursor.0 - self.right_anchor.0, resolution_scale),
+            window_mouse_pixels(cursor.1 - self.right_anchor.1, resolution_scale),
             drag_metrics.0,
             drag_metrics.1,
         );
@@ -1125,6 +1161,7 @@ fn right_drag_axis_distance(displacement: i32, scroll_rate: u32) -> i32 {
 /// Poll the right-drag owner and return a request in world pixels. Committing
 /// and clamping the request belongs to the later Tactical__AI/pre-follow seam.
 fn poll_right_drag_pan(state: &mut AppState) -> (f32, f32) {
+    let resolution_scale = state.tactical_zoom().map_or(1.0, |zoom| zoom.scale());
     let cursor = (
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
@@ -1133,6 +1170,7 @@ fn poll_right_drag_pan(state: &mut AppState) -> (f32, f32) {
         cursor,
         system_drag_metrics_px(),
         state.match_state.input.selection_state.is_band_box_active(),
+        resolution_scale,
     ) {
         RightDragPoll::Idle => return (0.0, 0.0),
         RightDragPoll::CancelBandBox => {
@@ -1186,11 +1224,12 @@ fn keyboard_scroll_distance(state: &AppState) -> f32 {
 /// Main_Tick's keyboard requests run after logic (0x55DD42..0x55DD96), and
 /// remain pending until the next Tactical__AI commit with that frame's mouse.
 pub(crate) fn queue_keyboard_scroll(state: &mut AppState) {
-    if state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .is_some_and(|runtime| runtime.simulation.session().input_locked())
+    if !state.match_state.match_diagnostics.is_replay_playback()
+        && state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .is_some_and(|runtime| runtime.simulation.session().input_locked())
     {
         return;
     }
@@ -1245,11 +1284,12 @@ pub(crate) fn poll_mouse_scroll(state: &mut AppState) -> (f32, f32) {
     if cfg!(any(target_os = "ios", target_os = "android")) {
         return (0.0, 0.0);
     }
-    if state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .is_some_and(|runtime| runtime.simulation.session().input_locked())
+    if !state.match_state.match_diagnostics.is_replay_playback()
+        && state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .is_some_and(|runtime| runtime.simulation.session().input_locked())
     {
         return (0.0, 0.0);
     }
@@ -1261,7 +1301,9 @@ pub(crate) fn poll_mouse_scroll(state: &mut AppState) -> (f32, f32) {
     // the capture, so the map is frozen for the whole of a band-box or
     // right-drag gesture. The minimap-drag inhibit is VERA-internal: gamemd's
     // minimap re-centres only on press, while this flag owns the gesture here.
-    if !state.match_state.input.tactical_mouse.captured && !state.match_state.input.minimap_dragging
+    if !state.match_state.input.tactical_mouse.captured
+        && !state.match_state.input.minimap_dragging
+        && !touch_owns_pointer(&state.match_state.input)
     {
         let now = state.match_state.input.edge_scroll.radar_timer();
         let scroll_rate = state
@@ -1396,7 +1438,7 @@ pub(crate) fn advance_camera_ai(state: &mut AppState, mouse: (f32, f32), frame: 
     state.match_state.input.camera_y = point.1;
 }
 
-/// TAction48 uses FocusOn6D2420 and its literal velocity; TAction112 uses
+/// Team Script34 and TAction48 use FocusOn6D2420 with their literal velocity; TAction112 uses
 /// SetViewToCoordInstant6D6070. Coordinates are resolved by simulation before
 /// its hash, including the canonical CellClass Dummy query effects.
 pub(crate) fn apply_trigger_camera(state: &mut AppState, coord: [i32; 3], velocity: Option<i32>) {
@@ -1466,6 +1508,123 @@ pub(crate) fn apply_zoom(state: &mut AppState, delta_lines: f32) {
         state.match_state.input.cursor_y,
     ];
     state.match_state.input.zoom_target = new_target;
+}
+
+/// Optional view-distance tiers. The window size never changes; the camera's
+/// world-per-pixel scale does, so the battlefield covers the tier's logical
+/// resolution at a 1280x800 reference frame while the frame stays the window's.
+///
+/// Wheel up selects the next smaller view distance (zoom in); wheel down
+/// selects the next larger one. Cycling clamps at both ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum ViewDistanceTier {
+    Small,
+    #[default]
+    Default,
+    Large,
+    Huge,
+}
+
+impl ViewDistanceTier {
+    pub(crate) const ALL: [Self; 4] = [Self::Small, Self::Default, Self::Large, Self::Huge];
+
+    /// Multiplier of the 1280x800 reference viewport.
+    pub(crate) const fn scale(self) -> f32 {
+        match self {
+            Self::Small => 0.8,
+            Self::Default => 1.0,
+            Self::Large => 1.25,
+            Self::Huge => 1.5,
+        }
+    }
+
+    /// Camera zoom that makes the viewport span `scale` times the window.
+    pub(crate) const fn zoom(self) -> f32 {
+        1.0 / self.scale()
+    }
+
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Self::Small => "Small view",
+            Self::Default => "Default view",
+            Self::Large => "Large view",
+            Self::Huge => "Huge view",
+        }
+    }
+
+    /// The tier whose zoom is closest to `zoom`; a save or a mid-animation
+    /// value keeps the cycle anchored to a known step.
+    fn nearest(zoom: f32) -> Self {
+        Self::ALL
+            .into_iter()
+            .min_by(|a, b| (a.zoom() - zoom).abs().total_cmp(&(b.zoom() - zoom).abs()))
+            .unwrap_or(Self::Default)
+    }
+
+    /// One step toward a larger view distance, clamped at `Huge`.
+    fn larger(self) -> Self {
+        match self {
+            Self::Small => Self::Default,
+            Self::Default => Self::Large,
+            Self::Large => Self::Huge,
+            Self::Huge => Self::Huge,
+        }
+    }
+
+    /// One step toward a smaller view distance, clamped at `Small`.
+    fn smaller(self) -> Self {
+        match self {
+            Self::Small => Self::Small,
+            Self::Default => Self::Small,
+            Self::Large => Self::Default,
+            Self::Huge => Self::Large,
+        }
+    }
+}
+
+/// Apply one mouse-wheel notch's view-distance step, anchored on the
+/// tactical viewport's centre so the battlefield grows or shrinks around it.
+/// A wheel-up notch (`lines > 0`) selects the smaller view distance.
+pub(crate) fn cycle_view_distance(state: &mut AppState, lines: f32) {
+    if !lines.is_finite() || lines == 0.0 {
+        return;
+    }
+    let current = ViewDistanceTier::nearest(state.match_state.input.zoom_target);
+    let next = if lines > 0.0 {
+        current.smaller()
+    } else {
+        current.larger()
+    };
+    if next == current {
+        return;
+    }
+
+    set_view_distance(state, next);
+}
+
+/// Restore the stock tactical scale when the player turns wheel zoom off.
+pub(crate) fn reset_view_distance(state: &mut AppState) {
+    set_view_distance(state, ViewDistanceTier::Default);
+}
+
+fn set_view_distance(state: &mut AppState, tier: ViewDistanceTier) {
+    let (width, height) = tactical_viewport_size(state);
+    let anchor = [width as f32 / 2.0, height as f32 / 2.0];
+    let zoom = state.match_state.input.zoom_level;
+    state.match_state.input.zoom_anchor_world = [
+        anchor[0] / zoom + state.match_state.input.camera_x,
+        anchor[1] / zoom + state.match_state.input.camera_y,
+    ];
+    state.match_state.input.zoom_anchor_screen = anchor;
+    state.match_state.input.zoom_target = tier.zoom();
+}
+
+/// Whether the cursor is over the battlefield rather than the sidebar column
+/// or the bottom command strip, in the frame pixels the cursor uses.
+pub(crate) fn cursor_over_battlefield(state: &AppState) -> bool {
+    let (width, height) = tactical_viewport_size(state);
+    let (x, y) = state.cursor_position();
+    x >= 0.0 && y >= 0.0 && x < width as f32 && y < height as f32
 }
 
 /// Animate zoom_level toward zoom_target each frame, adjusting the camera so
@@ -1756,8 +1915,9 @@ pub(crate) fn toggle_follow_target(state: &mut AppState) {
 /// The pair is cleared from two lifecycle points — `ObjectClass__Detach_All`
 /// 0x005F5306 and `ObjectClass__Deselect` 0x005F4513 — so the camera is handed
 /// back when the followed object dies, leaves the selection, or runs
-/// Detach_All in this Logic visit while it lives on (a cloaking submarine,
-/// [`LifecycleOutput::FollowReleased`] in `outputs`).
+/// Detach_All in this Logic visit while it lives on (a cloaking submarine)
+/// or a logic Select's Unselect_All deselects it before a later Select
+/// selects it again ([`LifecycleOutput::FollowReleased`] in `outputs`).
 ///
 /// [`LifecycleOutput::FollowReleased`]: crate::sim::world::LifecycleOutput::FollowReleased
 pub(crate) fn update_follow_camera(
@@ -2094,9 +2254,25 @@ fn blocked_mask_to_scroll_dir(mask: u8) -> Option<ScrollDir> {
     })
 }
 
+/// Whether a touch, not the OS pointer, owns the cursor this frame.
+///
+/// gamemd's edge scroll assumes a mouse that leaves the band when the hand
+/// does. A touch device has none: the mapper parks a synthetic cursor at the
+/// last contact, so the band would stay engaged with nothing to carry it away,
+/// and a touch pan holds no button, so it cannot hold the tactical capture that
+/// freezes the band for native's right-drag pan.
+pub(crate) fn touch_owns_pointer(input: &crate::app::input::state::MatchInputState) -> bool {
+    input.cursor_from_touch || input.touch_mapper.pan_active()
+}
+
 /// Active edge intent plus whether the tactical clamp removes all requested
 /// components. Cursor feedback and motion both use this exact probe.
 pub(crate) fn edge_scroll_cursor_state(state: &AppState) -> Option<(ScrollDir, bool)> {
+    // The band is inhibited for motion (`poll_mouse_scroll`), so it must not
+    // light its arrow either.
+    if touch_owns_pointer(&state.match_state.input) {
+        return None;
+    }
     let sw = state.render_width() as f32;
     let sh = state.render_height() as f32;
     let direction = edge_scroll_intent(
@@ -2116,6 +2292,31 @@ pub(crate) fn edge_scroll_cursor_state(state: &AppState) -> Option<(ScrollDir, b
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// VERA's resolution zoom: the right-drag threshold (twice the system drag
+    /// metric) is measured in physical pixels at every zoom.
+    #[test]
+    fn right_drag_threshold_is_physical_pixels_at_every_resolution_zoom() {
+        for scale in [1.0, 1.5, 2.0, 3.0] {
+            // Deliberately include an anchor whose inverse is inexact at 150%.
+            let anchor = (211.0 / scale, 200.0 / scale);
+            let mut mouse = TacticalMouseState {
+                right_held: true,
+                ..Default::default()
+            };
+            mouse.begin_right_drag(anchor);
+            assert_eq!(
+                mouse.poll_right_drag((219.0 / scale, 200.0 / scale), (4, 4), false, scale),
+                RightDragPoll::Idle,
+                "exactly eight physical pixels at {scale}x"
+            );
+            assert_eq!(
+                mouse.poll_right_drag((220.0 / scale, 200.0 / scale), (4, 4), false, scale),
+                RightDragPoll::Pan,
+                "nine physical pixels at {scale}x"
+            );
+        }
+    }
 
     #[test]
     fn tactical_tooltip_gate_reads_focus_rate_independently_of_pending_scroll() {
@@ -2769,6 +2970,39 @@ mod fast_scroll_tests;
 #[cfg(test)]
 #[path = "camera_bounds_tests.rs"]
 mod camera_bounds_tests;
+
+#[cfg(test)]
+#[test]
+fn view_distance_tiers_match_the_1280_reference_and_clamp_at_the_ends() {
+    let expected = [
+        (0.8, 1024, 640),
+        (1.0, 1280, 800),
+        (1.25, 1600, 1000),
+        (1.5, 1920, 1200),
+    ];
+    for (tier, (scale, width, height)) in ViewDistanceTier::ALL.into_iter().zip(expected) {
+        assert_eq!(tier.scale(), scale, "{}", tier.name());
+        assert_eq!((1280.0 * tier.scale()) as u32, width, "{}", tier.name());
+        assert_eq!((800.0 * tier.scale()) as u32, height, "{}", tier.name());
+        assert!(
+            (tier.zoom() - 1.0 / tier.scale()).abs() < f32::EPSILON,
+            "{}",
+            tier.name()
+        );
+    }
+    assert_eq!(ViewDistanceTier::Small.smaller(), ViewDistanceTier::Small);
+    assert_eq!(ViewDistanceTier::Small.larger(), ViewDistanceTier::Default);
+    assert_eq!(ViewDistanceTier::Default.larger(), ViewDistanceTier::Large);
+    assert_eq!(ViewDistanceTier::Default.smaller(), ViewDistanceTier::Small);
+    assert_eq!(ViewDistanceTier::Large.larger(), ViewDistanceTier::Huge);
+    assert_eq!(ViewDistanceTier::Large.smaller(), ViewDistanceTier::Default);
+    assert_eq!(ViewDistanceTier::Huge.larger(), ViewDistanceTier::Huge);
+    assert_eq!(ViewDistanceTier::Huge.smaller(), ViewDistanceTier::Large);
+    // The cycle reads the tier nearest a saved or mid-animation zoom.
+    assert_eq!(ViewDistanceTier::nearest(0.79), ViewDistanceTier::Large);
+    assert_eq!(ViewDistanceTier::nearest(1.0), ViewDistanceTier::Default);
+    assert_eq!(ViewDistanceTier::nearest(1.2), ViewDistanceTier::Small);
+}
 
 /// Half a tile on **both** axes from the tile corner — the Y half is the one
 /// that used to be missing, which put every camera move 15 px north of the

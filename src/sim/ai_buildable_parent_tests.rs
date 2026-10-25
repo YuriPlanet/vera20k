@@ -2,6 +2,81 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 
+/// ReadOwners4750D0 and FirstBuildable505230 distinguish a present zero
+/// mask from the constructor's -1. Later empty reads retain that mask.
+#[test]
+fn comma_only_required_houses_survives_process_save_and_changes_ai_choice_identity() {
+    use crate::rules::native_processing::{
+        NativeRulesRegistryState, ProcessedRulesLayers, RulesLayerStack,
+    };
+
+    let advance = |state: NativeRulesRegistryState, text: &str| {
+        RulesLayerStack::new(IniFile::from_str(text))
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), state)
+            .unwrap()
+    };
+    let take_state = |processed: ProcessedRulesLayers| {
+        processed
+            .into_ini_and_native_type_construction_trace()
+            .1
+            .into_registry_state_discarding_events()
+    };
+    let selected = |rules: &RuleSet| {
+        first_buildable_from_array(rules, &["TARGET".into()], "C1", 0, true).is_some()
+    };
+    let seed = |required: &str| {
+        advance(
+            NativeRulesRegistryState::default(),
+            &format!(
+                "[Countries]\n0=C0\n1=C1\n[C1]\nParentCountry=C1\n[BuildingTypes]\n0=TARGET\n\
+             [TARGET]\nStrength=100\nOwner=C1\nAIBasePlanningSide=0\nRequiredHouses={required}\n"
+            ),
+        )
+    };
+    assert!(selected(
+        &RuleSet::from_processed_rules(&seed("C1")).unwrap()
+    ));
+    let zero = advance(
+        take_state(seed(",,,")),
+        "[TARGET]\nStrength=100\nRequiredHouses=\n",
+    );
+    let bytes = serde_json::to_vec(&zero).unwrap();
+    let restored: ProcessedRulesLayers = serde_json::from_slice(&bytes).unwrap();
+    let zero_rules = RuleSet::from_processed_rules(&restored).unwrap();
+    assert!(
+        !selected(&zero_rules),
+        "a blank later pass and save retain the zero mask"
+    );
+    assert!(!selected(&zero_rules.clone()));
+
+    let allowed = advance(
+        take_state(seed("C1")),
+        "[TARGET]\nStrength=100\nRequiredHouses=\n",
+    );
+    let allowed_rules = RuleSet::from_processed_rules(&allowed).unwrap();
+    assert!(selected(&allowed_rules));
+    assert_eq!(
+        zero_rules.source_ini_hash(),
+        allowed_rules.source_ini_hash()
+    );
+    assert_ne!(
+        zero_rules.simulation_config_hash(),
+        allowed_rules.simulation_config_hash()
+    );
+
+    let absent = advance(take_state(restored), "[TARGET]\nStrength=100\n");
+    assert!(!selected(&RuleSet::from_processed_rules(&absent).unwrap()));
+    let replaced = advance(take_state(absent), "[TARGET]\nRequiredHouses=C1\n");
+    assert!(selected(&RuleSet::from_processed_rules(&replaced).unwrap()));
+    let reset = take_state(replaced).destructive_reset();
+    let reset = advance(
+        reset,
+        "[Countries]\n0=C0\n1=C1\n[C1]\nParentCountry=C1\n[BuildingTypes]\n0=TARGET\n\
+         [TARGET]\nStrength=100\nOwner=C1\nAIBasePlanningSide=0\n",
+    );
+    assert!(selected(&RuleSet::from_processed_rules(&reset).unwrap()));
+}
+
 fn mask_names(mask: i64) -> String {
     if mask == -1 {
         return String::new();

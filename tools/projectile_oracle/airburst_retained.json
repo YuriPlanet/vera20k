@@ -1,0 +1,68 @@
+{
+  "rows": [
+    {
+      "airburst": true,
+      "sections": {
+        "SHOT": {
+          "Airburst": "yes"
+        }
+      }
+    },
+    {
+      "airburst": true,
+      "sections": {
+        "SHOT": {
+          "Airburst": "invalid"
+        }
+      }
+    },
+    {
+      "airburst": true,
+      "sections": {
+        "SHOT": {
+          "Name": "missing key"
+        }
+      }
+    },
+    {
+      "airburst": true,
+      "sections": {
+        "OTHER": {
+          "Name": "missing section"
+        }
+      }
+    },
+    {
+      "airburst": false,
+      "sections": {
+        "SHOT": {
+          "Airburst": "no"
+        }
+      }
+    },
+    {
+      "airburst": false,
+      "sections": {
+        "SHOT": {
+          "Airburst": "invalid"
+        }
+      }
+    },
+    {
+      "airburst": true,
+      "sections": {
+        "SHOT": {
+          "Airburst": "yes"
+        }
+      }
+    },
+    {
+      "airburst": true,
+      "sections": {
+        "SHOT": {
+          "Airburst": ""
+        }
+      }
+    }
+  ]
+}

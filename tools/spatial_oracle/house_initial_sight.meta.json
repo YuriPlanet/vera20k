@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "House constructor +24B store and first-local-Update sight visitor; two visits per control",
+  "assumptions": [
+    "Original 4F57A7 constructor store executes alone; other House fields and preceding Update state are supplied.",
+    "Original 4F9338..4F935F executes before its epilogue, including complete Map4ADCD0 and source70AF50/70B1D0 callees.",
+    "Shared shroud_current_sight fixture supplies one Sight0 aircraft, prior camera radius6/position40,40, current position41,40 and original House source gates.",
+    "One additional Sight6/unlatched control supplies LeptonsPerSightIncrease2000, zero elevation/veterancy and executes the real sight-radius calculation.",
+    "Current-player and pending=false controls override the explicit supplied prior; repeat visits retain the first visit's state.",
+    "Two startup controls first execute Map4ADCD0(1,0) with supplied Aircraft/Building RTTI; that earlier pass skips the Building and retains House24B.",
+    "Initial controls supply Aircraft RTTI2 (41C180) or Building RTTI6; complete constructors do not run. Original executable sections and Main/Scenario RNG buffers are checked unchanged.",
+    "No complete native scenario startup, actual cell discovery, renderer output or whole-match parity is claimed."
+  ],
+  "substitutions": [
+    "Source virtual RTTI/type lookup returns supplied fixture identities.",
+    "Map5678E0 and border567DA0 record arguments and return without traversing cells.",
+    "Inherited Emu allocation/CRT hooks are installed; this bounded path does not enter them."
+  ],
+  "entry_points": {
+    "constructor_store": "0x004F57A7",
+    "update_tail": "0x004F9338",
+    "map_visitor": "0x004ADCD0",
+    "source_update": "0x0070AF50"
+  },
+  "replay_command": "python -m tools.spatial_oracle.house_initial_sight",
+  "payload_sha256": "923098a6f05b61de9b3984f4e0c9a570ae7b433999e6637a8ef0828c40c2a60e"
+}

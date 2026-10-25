@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original455-byte LAN discovery/join/setup packet construction blocks, full5DBB60 options formatting,7B82E0/7B83E0 packed UTF-16 and pre/post-GO retry timing; stops at transport/timing call boundaries",
+  "assumptions": [
+    "Validation/timer gates are upstream slice inputs. Stack startsA5; each construction executes original full455-byte zeroing and field stores. Stops at Send_Global_Message entry before any queue or I/O effect.",
+    "Local narrow nameHost-E9, wide gameGame-00FF and22-byte serial are supplied. Session resolved country-3/color6 and presence country2/color6 are explicit fields. Selector sentinels are0 so original69B700/69B720 and696F10/696F20 return the resolved values.",
+    "Join compatibility inputs AC026C=11223344,AC0274=55667788,AC0270=99AABBCC are declared hash controls, not computed retail file hashes. Native74FDA0/74FDB0 and777B50 run unchanged. Observer input123h tests the actual low-byte store.",
+    "Source vector points to a supplied node. Native5DAC00 computes its wide game-name hash; participant field53=4/observer row7 and observed node flag-1 are controlled. Acceptance bypasses allocation/validation and starts with assigned row3 and node pointer, but executes original field getters/stores.",
+    "Denial5 executes the no-active-roster producer. Departure/keepalive slices use declared source-vector entries only to reach the firstsend; this does not establish validation, retries, or membership lifecycle.",
+    "Kick control executes the complete5DB600 producer with a supplied destination node. Its455-byte payload has type8 at0 and reason4 at2F; original zeroing leaves all other byteszero. The send stops at5410F0 before admission.",
+    "Game query selected node at [A8DA60+AC0260*4] contains A/U0100/B and executes original7350C0 narrowing and C-string copy; low-byte NUL terminates the copied name. Separate complete5DAC00 controls cover empty/mixed-case/high-unit/surrogate-pair/embeddedNUL names in the startup C locale; no hash result is supplied.",
+    "Setup controls execute original full455-byte zero/copy stores for roster16 (all seven original sentinel names and one supplied human), options17 K1, GO0B MaxAhead27, Ready13 and LAN start-prompt28. Original5E8DC0 formats all eight wide comma-terminated roster slots.",
+    "Player choices execute complete5E3850 LAN branch with host name and R-2,6,-2,-2 text. Original color/hash stores hit global receive bufferA8D7F7/A8D7FB, not the outgoing local packet, whose final8 bytes stayzero. Only DebugLog4068E0 is a sink.",
+    "Full5DBB60 reads declared globals, human nodes and eight AI rows. Original getters,7B82E0 packed description and CRT sprintf execute. Two controls exercise signed fields, resolved selections, AIcountry-3 normalization and wide/narrow name differences. Only DebugLog4068E0 is a sink.",
+    "GO branch controls execute5DD5E5..63E and5DD950..97F. Queue counts, wall-clock reads and541820 return are explicit boundary inputs; Network_ServiceLoop consumes one pending entry. Host1200 gate is inverted: fresh timer skips service; expired timer services. Guest waits only while queue>0 and541820 succeeds.",
+    "Start timing controls execute5DD541,5DD819,5DD8A0 and5DD9AC to the540C60 call boundary. ResponseTime5424C0 returns each declared observation in order; DebugLog4068E0 is a sink. Host pre supplies EDI=2 from5DD493. Original arithmetic, signed/unsigned branch decisions and conditional re-reads produce retry/timeout arguments; inputs include threshold equality, changed second reads, add/shift wrap and high-bit signed values.",
+    "Guest post5DD9EF..9FD additionally sets the primary global channel through540D10 to retry60/maxFFFFFFFF/timeout600. These controls stop at the preceding540C60 call; the existing lan_global controls execute the later primary-global override. The alternateCDEF setter is540D80.",
+    "Complete7B82E0/7B83E0 and4335E0/433770 execute for short,7-unit,high-bit,surrogate and embeddedNUL controls. Decode controls also cover missing marker bits and truncated nonterminated wide content; native final-unit clearing is retained."
+  ],
+  "substitutions": [
+    "Existing shell_relayout.Machine allocator and fail-closed imports; declared ResponseTime/queue/time/service observations and DebugLog sinks for GO controls. No packet bytes, hash output, version getter, arithmetic or field-store instruction is substituted."
+  ],
+  "entry_points": {
+    "discovery": "0x005DFB6A",
+    "query": "0x005DFC47",
+    "presence": "0x005DFD34",
+    "advertisement": "0x005DFE94",
+    "participant": "0x005DFF6E",
+    "join": "0x005DF6F5",
+    "acceptance": "0x005E1A8F",
+    "denial": "0x005E157B",
+    "kick": "0x005DB600",
+    "departure": "0x005E09CD",
+    "keepalive": "0x005DB91D",
+    "output": "0x005410F0",
+    "game_name_hash": "0x005DAC00",
+    "roster": "0x005DEAC7",
+    "options": "0x005E3765",
+    "go": "0x005DD57B",
+    "ready": "0x005DD916",
+    "start_prompt": "0x005E3630",
+    "options_format": "0x005DBB60",
+    "player_choices": "0x005E3850",
+    "go_host_drain": "0x005DD5E5",
+    "go_guest_drain": "0x005DD950",
+    "host_pre_timing": "0x005DD541",
+    "host_post_timing": "0x005DD819",
+    "guest_pre_timing": "0x005DD8A0",
+    "guest_post_timing": "0x005DD9AC",
+    "response_time": "0x005424C0",
+    "set_timing": "0x00540C60",
+    "pack_wide": "0x007B82E0",
+    "unpack_wide": "0x007B83E0"
+  },
+  "replay_command": "python -m tools.storage_oracle.lan_lobby --messages",
+  "payload_sha256": "73bf51cc610946eb3f0b6938980b07dde5f9749cd1ede52e904d7f1ad0ad2e74"
+}

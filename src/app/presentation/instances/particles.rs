@@ -323,9 +323,7 @@ pub(super) fn build_particle_instance(
     let Some(atlas) = input.atlas else {
         return;
     };
-    let Some(image) = kind.image.as_deref() else {
-        return;
-    };
+    let image = kind.image.as_str();
     let native_frame = match kind.behaves_like {
         // ParticleGetDrawFrame62D830: MOVSX from state+12E. The atlas
         // accepts nonnegative frames only; stock Smoke is0..19.
@@ -350,7 +348,7 @@ pub(super) fn build_particle_instance(
         return;
     };
     let key = ShpSpriteKey {
-        palette_context: ShpPaletteContext::GlobalAnim,
+        palette_context: ShpPaletteContext::Particle,
         type_id: image.to_owned(),
         facing: 0,
         frame,

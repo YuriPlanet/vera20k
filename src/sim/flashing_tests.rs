@@ -115,8 +115,10 @@ fn an_order_flashes_its_object_only_for_the_ordering_objects_allies() {
     sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33);
     assert_eq!(flash(&sim, tank), 6);
 
-    // The Russians' order is executed too, but the current player is not
-    // allied with its actor.
+    // An order for the Russian conscript is executed too, but the current
+    // player is not allied with its actor. The human Americans send it:
+    // the DoList skips computer Houses' events (0x0064C4FB..0x0064C50D), and
+    // MegaMission never compares sender and actor (0x004C71F6..0x004C721F).
     order(
         &mut sim,
         &rules,
@@ -125,7 +127,7 @@ fn an_order_flashes_its_object_only_for_the_ordering_objects_allies() {
             attacker_id: conscript,
             target_id: own_tank,
         },
-        "Russians",
+        "Americans",
     );
     assert_eq!(flash(&sim, own_tank), 0);
 }
@@ -248,12 +250,14 @@ fn the_order_flash_asks_the_current_players_one_way_alliance() {
 
     sim.house_alliances_mut_for_test()
         .insert("BRITISH".into(), ["AMERICANS".to_string()].into());
-    order(&mut sim, &rules, &grid, attack.clone(), "British");
+    // The human Americans send the British order, as in the test above; the
+    // flash asks only the player's alliance with the actor's House.
+    order(&mut sim, &rules, &grid, attack.clone(), "Americans");
     assert_eq!(flash(&sim, tank), 0);
 
     sim.house_alliances_mut_for_test()
         .insert("AMERICANS".into(), ["BRITISH".to_string()].into());
-    order(&mut sim, &rules, &grid, attack, "British");
+    order(&mut sim, &rules, &grid, attack, "Americans");
     assert_eq!(flash(&sim, tank), 7);
 }
 

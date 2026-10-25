@@ -23,7 +23,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use crate::rules::sound_ini::{EvaPriority, EvaType};
+use crate::rules::sound_ini::{EvaPriority, EvaRegistry, EvaType};
 
 /// `VoxClass::PlayNextQueued @ 0x00752760`: `0x0075296D MOV [0xB1D4D0],0x1F4`
 /// — the gap installed after a line starts successfully; the next line may
@@ -38,10 +38,6 @@ pub struct VoxNode {
     /// Entry identity: the `[DialogList]` name, upper-cased for the
     /// `stricmp` match `VoxClass::PlayEVA` performs.
     pub event: String,
-    /// The side column already resolved for this session (native resolves it
-    /// at play time from `0xB1D4C8`; the side is fixed per session by
-    /// `VoxClass::SetSide`, so resolving at queue time is equivalent).
-    pub sample: String,
     pub eva_type: EvaType,
     pub priority: EvaPriority,
     /// `DAT_00B1D4C0 % 100` at insertion; bookkeeping only.
@@ -65,7 +61,6 @@ pub struct QueueEffect {
 #[derive(Debug, Clone, Copy)]
 pub struct VoxRequest<'a> {
     pub event: &'a str,
-    pub sample: &'a str,
     pub eva_type: EvaType,
     pub priority: EvaPriority,
 }
@@ -73,9 +68,11 @@ pub struct VoxRequest<'a> {
 /// `VoxClass` queue state.
 #[derive(Debug, Default)]
 pub struct VoxQueue {
+    /// Process B1D4C8, initially0 in the PE zero-fill region. SetSide7534E0
+    /// binds it independently of saved Scenario+34B8. ResetAll preserves it.
+    selected_voice: i32,
     /// Native Dialog entry+50:0 playing,1 admitted,2 done. Entries begin2;
-    /// Failed physical output retains1 rather than fabricating completion;
-    /// native failed-device entry-state execution remains a stated boundary.
+    /// dequeue7528E1 writes2 before PlayFile, and success75298E alone writes0.
     entry_states: BTreeMap<String, u8>,
     interrupt_list: VecDeque<VoxNode>,
     critical_list: VecDeque<VoxNode>,
@@ -94,6 +91,43 @@ pub struct VoxQueue {
 impl VoxQueue {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// SetSide7534E0 / installed Ares1002FB00 bind the process cache.
+    /// Native stock and Ares histories: spatial_oracle/eva_selection.json
+    /// and ares_eva.json. Missing Side retains the Ares cache; negative
+    /// Scenario.Side clears it. Reading EVA.Tag never calls this binding.
+    pub fn set_side(&mut self, side: i32, rules: &crate::rules::ruleset::RuleSet) {
+        #[cfg(feature = "ares")]
+        {
+            if side < 0 {
+                self.selected_voice = -1;
+            } else if let Some(voice) = rules.side_eva_voice_index(side) {
+                self.selected_voice = voice;
+            }
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            let _ = rules;
+            self.selected_voice = if side == -1 { 0 } else { side };
+        }
+    }
+
+    pub const fn selected_voice(&self) -> i32 {
+        self.selected_voice
+    }
+
+    /// GetFilename753380 / PlayNextQueued7528E8 share the event's column
+    /// lookup. Resolve at dequeue, after any intervening SetSide, against
+    /// the one immutable process catalog. Queue nodes retain no filename.
+    pub(super) fn sample_for<'a>(
+        &self,
+        node: &VoxNode,
+        registry: &'a EvaRegistry,
+    ) -> Option<&'a str> {
+        registry
+            .entry(&node.event)?
+            .column_by_voice(self.selected_voice)
     }
 
     /// `VoxClass::QueueVoice @ 0x00752480`.
@@ -156,7 +190,6 @@ impl VoxQueue {
             self.entry_states.insert(event.clone(), 1);
             effect.inserted = self.insert_into_queue(VoxNode {
                 event,
-                sample: request.sample.to_string(),
                 eva_type,
                 priority,
                 seq: self.seq_counter % 100,
@@ -277,25 +310,29 @@ impl VoxQueue {
         if let Some(current) = self.current.take() {
             self.entry_states.insert(current.event, 2);
         }
-        if let Some(node) = self.interrupt_list.pop_front() {
-            if let Some(pending) = self.pending.take() {
-                self.entry_states.insert(pending.event, 2);
-            }
-            return Some(node);
+        let node = if let Some(node) = self.interrupt_list.pop_front() {
+            //752824 frees the superseded pending node without writing its
+            //event's +50. Node ownership and event state are independent.
+            self.pending = None;
+            Some(node)
+        } else if let Some(node) = self.critical_list.pop_front() {
+            //752855 has the same raw-free-only effect.
+            self.pending = None;
+            Some(node)
+        } else {
+            self.pending.take().or_else(|| {
+                self.priority_lists
+                    .iter_mut()
+                    .rev()
+                    .find_map(|list| list.pop_front())
+            })
+        };
+        if let Some(node) = &node {
+            //All selected lists join7528A7;7528E1 marks the entry done
+            //before filename lookup. A failed PlayFile leaves this value.
+            self.entry_states.insert(node.event.clone(), 2);
         }
-        if let Some(node) = self.critical_list.pop_front() {
-            if let Some(pending) = self.pending.take() {
-                self.entry_states.insert(pending.event, 2);
-            }
-            return Some(node);
-        }
-        if let Some(node) = self.pending.take() {
-            return Some(node);
-        }
-        self.priority_lists
-            .iter_mut()
-            .rev()
-            .find_map(|list| list.pop_front())
+        node
     }
 
     /// `0x0075296D..0x0075298E`: after `StreamPlayer::PlayFile` succeeded —
@@ -431,6 +468,12 @@ impl VoxQueue {
 #[path = "vox_opening_tests.rs"]
 mod opening_tests;
 
+// Original SetSide/GetFilename hooks are replaced in an Ares build. Its
+// own executed selection controls are covered by ares_eva tests.
+#[cfg(all(test, not(feature = "ares")))]
+#[path = "eva_selection_tests.rs"]
+mod selection_tests;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -438,7 +481,6 @@ mod tests {
     fn req(event: &'static str, eva_type: EvaType, priority: EvaPriority) -> VoxRequest<'static> {
         VoxRequest {
             event,
-            sample: event,
             eva_type,
             priority,
         }
@@ -525,8 +567,8 @@ mod tests {
         q.queue_voice(unit_lost(), None, None);
         let _failed_play_file = q.take_next(1, false).unwrap();
         assert!(
-            !q.entry_done("EVA_UnitLost"),
-            "absence of a node is not entry state2"
+            q.entry_done("EVA_UnitLost"),
+            "dequeue7528E1 precedes a failed physical start"
         );
     }
     fn you_have_lost() -> VoxRequest<'static> {
@@ -811,3 +853,7 @@ mod tests {
         assert!(q.queue_voice(unit_lost(), None, None).inserted);
     }
 }
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "ares_eva_tests.rs"]
+mod ares_eva_tests;

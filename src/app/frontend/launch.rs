@@ -24,17 +24,137 @@ use crate::app::diagnostics::tactical_capture::session::MapCaptureProfile;
 
 const TACTICAL_CAPTURE_FLAG: &str = "--tactical-capture";
 
+/// Standalone replay verification runs before window, audio, profile or online
+/// service startup. Retail bytes are opened read-only by the existing loader.
+pub fn try_replay_verify<I>(args: I) -> Option<Result<i32>>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut args = args.into_iter();
+    if args.next().as_deref() != Some(OsStr::new("--replay-verify")) {
+        return None;
+    }
+    Some((|| {
+        let path = PathBuf::from(args.next().context("--replay-verify needs a replay file")?);
+        ensure!(
+            args.next().as_deref() == Some(OsStr::new("--ra2-dir")),
+            "usage: vera20k --replay-verify <replay.json> --ra2-dir <retail-directory>"
+        );
+        let retail_dir = PathBuf::from(args.next().context("--ra2-dir needs a retail directory")?);
+        ensure!(
+            args.next().is_none(),
+            "unexpected replay verification argument"
+        );
+        let replay = crate::sim::replay::ReplayLog::load(&path)?;
+        let receipt = crate::sim::replay::ReplayRunner::verify(&retail_dir, &replay)?;
+        println!("{}", serde_json::to_string(&receipt)?);
+        Ok(0)
+    })())
+}
+
+/// The installer runs this before normal application startup. Keep its argument
+/// boundary here with the other launch modes: game-folder values must bypass
+/// native substring switches, and Unicode paths must remain OS strings.
+pub fn try_game_data_check<I>(args: I) -> Option<Result<i32>>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut args = args.into_iter();
+    if args.next().as_deref() != Some(OsStr::new("--check-game-data")) {
+        return None;
+    }
+    Some((|| {
+        let game_dir = PathBuf::from(
+            args.next()
+                .context("missing game folder after --check-game-data")?,
+        );
+        let output_dir = PathBuf::from(args.next().context("missing game-data report directory")?);
+        ensure!(
+            args.next().is_none(),
+            "--check-game-data takes a game folder and report directory"
+        );
+        crate::app::game_data_check::check_and_write_report(&game_dir, &output_dir)
+    })())
+}
+
 #[derive(Debug)]
 pub enum AppLaunchMode {
     /// Ordinary launch, carrying whatever the retail switch table decided.
     Interactive(RetailStartupOptions),
     /// CnCNet's offline launch contract; configuration is read before creating a window.
     Spawn(RetailStartupOptions),
+    /// Watch a strictly reconstructed recording through the normal renderer.
+    Replay(ReplayLaunchRequest),
     /// A help switch: print usage and terminate before any window is created,
     /// exactly as native's switch parser makes `WinMain` bail.
     Usage,
     ShellCapture(ShellCaptureRequest),
     TacticalCapture(TacticalCaptureRequest),
+}
+
+#[derive(Debug)]
+pub struct ReplayLaunchRequest {
+    pub(crate) replay: std::sync::Arc<crate::sim::replay::ReplayLog>,
+    pub(crate) retail_dir: PathBuf,
+    pub(crate) capture_output: Option<PathBuf>,
+    pub(crate) replay_sha256: String,
+}
+
+fn parse_replay_args(args: Vec<OsString>) -> Result<AppLaunchMode> {
+    let mut args = args.into_iter();
+    ensure!(
+        args.next().as_deref() == Some(OsStr::new("--replay")),
+        "--replay must be first"
+    );
+    let path = PathBuf::from(args.next().context("--replay needs a replay file")?);
+    ensure!(
+        args.next().as_deref() == Some(OsStr::new("--ra2-dir")),
+        "usage: vera20k --replay <replay.json> --ra2-dir <retail-directory> [--replay-capture <new.png>]"
+    );
+    let retail_dir = PathBuf::from(args.next().context("--ra2-dir needs a retail directory")?)
+        .canonicalize()
+        .context("replay retail directory")?;
+    ensure!(retail_dir.is_dir(), "replay retail path is not a directory");
+    let capture_output = match args.next() {
+        None => None,
+        Some(flag) => {
+            ensure!(
+                flag == OsStr::new("--replay-capture"),
+                "unexpected replay argument"
+            );
+            let output = PathBuf::from(
+                args.next()
+                    .context("--replay-capture needs a new PNG path")?,
+            );
+            ensure!(
+                output.is_absolute() && output.extension() == Some(OsStr::new("png")),
+                "replay capture needs an absolute .png path"
+            );
+            let parent = output
+                .parent()
+                .context("replay capture parent")?
+                .canonicalize()?;
+            ensure!(
+                !parent.ancestors().any(|dir| dir.join(".git").exists()),
+                "replay capture output must be outside a source checkout"
+            );
+            let output = parent.join(output.file_name().context("replay capture filename")?);
+            ensure!(
+                !output.exists() && !output.with_extension("json").exists(),
+                "replay capture output already exists"
+            );
+            Some(output)
+        }
+    };
+    ensure!(args.next().is_none(), "unexpected replay argument");
+    let (replay, replay_sha256) = crate::sim::replay::ReplayLog::load_bound(&path)?;
+    replay.standalone_startup()?;
+    Ok(AppLaunchMode::Replay(ReplayLaunchRequest {
+        replay: std::sync::Arc::new(replay),
+        retail_dir,
+        capture_output,
+        replay_sha256,
+    }))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,6 +283,12 @@ where
     I: IntoIterator<Item = OsString>,
 {
     let args: Vec<OsString> = args.into_iter().collect();
+    if args
+        .iter()
+        .any(|arg| arg == OsStr::new("--replay") || arg == OsStr::new("--replay-capture"))
+    {
+        return parse_replay_args(args);
+    }
     // Native's table scans every argument, which is safe there because native
     // has no option that takes a following value. VERA's capture modes do, and
     // the `-CD` search is a substring match, so an output path such as
@@ -317,6 +443,64 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+    #[test]
+    fn standalone_replay_dispatch_is_strict_and_does_not_enter_interactive_startup() {
+        assert!(try_replay_verify([OsString::from("-WIN")]).is_none());
+        assert!(
+            try_replay_verify([OsString::from("--replay-verify")])
+                .unwrap()
+                .is_err()
+        );
+        let bad = ["--replay-verify", "record.json", "--password", "unused"];
+        assert!(
+            try_replay_verify(bad.into_iter().map(OsString::from))
+                .unwrap()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn rendered_replay_routes_exact_values_and_requires_standalone_startup_and_new_output() {
+        let root = test_directory("replay-cd-values");
+        let path = root.join("record-cd.json");
+        let log = crate::sim::replay::ReplayLog::new(crate::sim::replay::ReplayHeader {
+            version: 2,
+            tick_hz: 45,
+            seed: 7,
+            map_name: "XMP03T4.MAP".into(),
+            rules_hash: 0,
+            pixel_conversion_bounds: Default::default(),
+        });
+        std::fs::write(&path, serde_json::to_vec(&log).unwrap()).unwrap();
+        let mut args = vec![
+            OsString::from("--replay"),
+            path.into_os_string(),
+            OsString::from("--ra2-dir"),
+            root.clone().into_os_string(),
+        ];
+        assert!(
+            parse_launch_args(args.clone())
+                .unwrap_err()
+                .to_string()
+                .contains("no standalone startup")
+        );
+        let output = root.join("capture.png");
+        std::fs::write(&output, b"preserve").unwrap();
+        args.extend([
+            OsString::from("--replay-capture"),
+            output.clone().into_os_string(),
+        ]);
+        assert!(
+            parse_launch_args(args)
+                .unwrap_err()
+                .to_string()
+                .contains("already exists")
+        );
+        assert_eq!(std::fs::read(output).unwrap(), b"preserve");
+        assert!(parse_launch_args([OsString::from("--replay-capture")]).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     fn test_directory(label: &str) -> PathBuf {
         let sequence = TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);

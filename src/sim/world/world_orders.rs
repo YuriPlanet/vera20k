@@ -181,6 +181,15 @@ impl Simulation {
     /// aircraft's What_Action answers 0 (`0x00417CC0` -> `0x006FFEC9`, cell
     /// `0x00417F80`). Producer-side, like `unit_repair_action`: an event sent
     /// before the object went berserk still executes.
+    ///
+    /// An object being warped out (vt+0x1D4) is not refused here: neither
+    /// the selection loop (`0x004AE829..0x004AE844`), Unit `0x00738890`,
+    /// Foot `0x004D74E0`, ClickedMission (`0x006FFBE0`) nor the MEGAMISSION
+    /// arm of Event::Execute (`0x004C71F6..0x004C74BA`) reads it. Its own
+    /// What_Action decides what it sends (Techno's warp arm, `0x006FFF03`,
+    /// though Unit's healer arm `0x0073FD7C` still answers Repair). The event
+    /// queues the mission and sets the target, which the next frozen AI frame
+    /// drops (`Simulation::temporal_ai_prologue`); the queued mission waits.
     pub fn click_order_receivers(&self, selection: &[u64]) -> Vec<u64> {
         selection
             .iter()
@@ -347,6 +356,11 @@ impl Simulation {
     ///   both ([`Self::engineer_building_action`]); its other building rows
     ///   have their own owners.
     /// - The passenger rows: [`Self::passenger_click_action`].
+    /// - An Aircraft's depot row (`0x00417DF6..0x00417E78`) runs for a human
+    ///   player's (House `0x0050B6F0`) base action Select over a `UnitRepair=`
+    ///   building (`+0x16A9`) and answers NoEnter; Aircraft ClickedAction
+    ///   (`0x00417BD0`) orders nothing for it. Its other rows have their own
+    ///   owners.
     ///
     /// Foot ClickedAction (`0x004D74E0`) turns Enter into mission Enter and
     /// Grind into mission Eaten, each with the object as Destination, for a
@@ -356,8 +370,21 @@ impl Simulation {
     /// arm and the rung (`0x007401C1..0x0074027A`) are not represented. With
     /// the base action still Select they answer Move for such a building
     /// whose CAN_LOAD admits the Unit when it is not in radio contact. They
-    /// matter only where the building arm's own gates refused (an unallied or
-    /// warped-out building, a computer's Unit), whose CAN_LOAD refuses too.
+    /// matter only where the building arm's own gates refused. An unallied
+    /// building or a computer's Unit fails CAN_LOAD's own alliance test
+    /// (`0x0043C2D0` case 0xF). A warped-out building is offline
+    /// (`TemporalGoOffline` `0x004521C0` clears +0x660), and CAN_LOAD answers
+    /// 10 for an offline building before its Bunker and UnitRepair arms; only
+    /// trigger action 62 (`0x006DE02E`, no warp test) puts it back online
+    /// mid-warp, and no stock map uses actions 60..62 (production-reader
+    /// census). DORMANT.
+    ///
+    /// RESIDUAL: the depot row first scans the Aircraft type's `Dock=` list
+    /// (`+0x3E8`) for the building's type; one listed asks for a free radio
+    /// contact (`0x0065ADF0`), an empty building `+0x118` and CAN_LOAD (0xF)
+    /// and answers Enter on ROGER. Retail lists only GAAIRC and AMRADR, which
+    /// are not `UnitRepair=`, so every retail aircraft answers NoEnter here,
+    /// as this row does for a listed type too.
     pub fn entry_click_action(
         &self,
         actor_id: u64,
@@ -398,6 +425,14 @@ impl Simulation {
                         EntryClickAction::NoEnter
                     }
                 })
+            }
+            EntityCategory::Aircraft => {
+                let target_obj = self.object_type(target.type_ref(), rules)?;
+                (select
+                    && self.house_is_human_player(actor.owner())
+                    && target.category() == EntityCategory::Structure
+                    && target_obj.unit_repair)
+                    .then_some(EntryClickAction::NoEnter)
             }
             _ => None,
         }
@@ -561,14 +596,24 @@ impl Simulation {
     }
 
     pub fn house_is_human_player(&self, owner: InternedId) -> bool {
+        Self::is_human_player(&self.session, &self.houses, owner)
+    }
+
+    /// `HouseClass::IsHumanPlayer @ 0x0050B6F0` over the two fields it reads,
+    /// for callers that hold the object store mutably.
+    pub(crate) fn is_human_player(
+        session: &crate::sim::scenario_session::ScenarioSession,
+        houses: &crate::sim::houses::Houses,
+        owner: InternedId,
+    ) -> bool {
         // House50B6F0: nonzero session mode compares exactly to LocalPlayer;
         // mode zero uses the two native human/control flags.
-        if self.session.game_mode_nonzero() {
+        if session.game_mode_nonzero() {
             //50B716 loads A83D4C, the persisted native current-house input.
             //Presentation viewer binding cannot change this receiver's result.
-            self.session.current_house() == Some(owner)
+            session.current_house() == Some(owner)
         } else {
-            self.houses
+            houses
                 .get(&owner)
                 .is_some_and(|h| h.is_controlled_by_human(false))
         }
@@ -589,6 +634,53 @@ impl Simulation {
         }
     }
 
+    /// gamemd.exe TeamAssign731060/TeamClear7310D0: owner admission precedes
+    /// both stores. Selected eligible objects take the requested raw group;
+    /// other eligible objects in that group return to -1. No life/limbo gate.
+    /// Shared by the committed command and its pending input projection.
+    pub(super) fn assigned_control_group(
+        &self,
+        entity: &crate::sim::game_entity::GameEntity,
+        current: i32,
+        group: i32,
+        selected: &std::collections::HashSet<u64>,
+    ) -> i32 {
+        if !(0..10).contains(&group) || !self.house_is_control_group_eligible(entity.owner()) {
+            current
+        } else if selected.contains(&entity.stable_id()) {
+            group
+        } else if current == group {
+            -1
+        } else {
+            current
+        }
+    }
+
+    pub(super) fn assign_control_group(&mut self, group: i32, selected: &[u64]) -> bool {
+        if !(0..10).contains(&group) {
+            return false;
+        }
+        let selected = selected.iter().copied().collect();
+        let changes: Vec<_> = self
+            .substrate
+            .entities
+            .iter_sorted()
+            .filter_map(|(id, entity)| {
+                let next =
+                    self.assigned_control_group(entity, entity.object_group(), group, &selected);
+                (next != entity.object_group()).then_some((id, next))
+            })
+            .collect();
+        for (id, group) in changes {
+            self.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .assign_object_group(group);
+        }
+        true
+    }
+
     /// Virtual+A0: Building44F5C0 or Unit/Infantry/Aircraft Techno700C40.
     /// This is producer-side control admission; Event/lifecycle admission is separate.
     /// House50B6F0, bunker link, Spawned, paralysis, warp, slave ownership and
@@ -597,8 +689,8 @@ impl Simulation {
     /// Ordinary Infantry +504 EMP starts zero in the native constructor.
     /// EMPulseApply4C575E admits RTTI1/2, not Infantry15. The deactivated
     /// latch +1C8 (700CBC) has its owner in `sim::powered_unit`.
-    /// Unit+6D8 death-frame and EMP lifecycle producers remain separate
-    /// residuals; ordinary live Unit controls use their constructor -1/0.
+    /// Unit+6D8 death-frame remains separate. The shared+504 predicate uses
+    /// the entity EMP owner; only Ares currently supplies ordinary hits.
     /// Arbitrary authored native raw-save bytes are outside this producer.
     /// See engineer_bridge_cursor_caller.md for executed gate controls/bounds.
     pub fn techno_player_controllable(&self, id: u64, rules: &RuleSet) -> bool {
@@ -611,7 +703,8 @@ impl Simulation {
         if actor.category() == EntityCategory::Structure {
             // Steam gamemd: Building44F5C0, complete original control
             // vectors in procedural_drawing_oracle/factory_destination.py --control.
-            // EMP+504 still has no runtime producer; this is its ctor-zero subset.
+            // Buildings are outside the current Ares ground-victim producer;
+            // their EMP-specific control arm remains the constructor-zero subset.
             // HasRallyPoint455DA0 bypasses the ConYard and House50B730 tests.
             if object.has_rally_line() {
                 return true;
@@ -637,6 +730,7 @@ impl Simulation {
             || actor.is_warping_in()
             || actor.slave.owner().is_some()
             || actor.deactivated.is_offline()
+            || actor.emp_remaining() > 0
         {
             return false;
         }
@@ -654,13 +748,14 @@ impl Simulation {
     /// `TechnoClass::IsActive @ 0x007010D0` (vt+0x9C, no override): not
     /// deactivated (`+0x1C8`), owned by the player's house (`0x0050B6F0`),
     /// its current weapon (vt+0x3F4) typed and not vt+0x37C. `is_armed`
-    /// stands in for the weapon test; vt+0x37C (a Unit's death frames or
-    /// EMP) has no VERA producer, as in [`Self::techno_player_controllable`].
+    /// stands in for the weapon test; shared EMP+504 comes from its private
+    /// entity owner. Unit death frames retain their existing ctor subset.
     pub fn techno_is_active(&self, id: u64, rules: &RuleSet) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
         !actor.deactivated.is_offline()
+            && actor.emp_remaining() <= 0
             && self.house_is_human_player(actor.owner())
             && self
                 .object_type(actor.type_ref(), rules)
@@ -839,7 +934,7 @@ impl Simulation {
         &mut self,
         owner: InternedId,
         cell: (u16, u16),
-        building_cell: (u16, u16),
+        hut_location: crate::sim::anim_class::AnimWorldCoord,
     ) {
         let radar = self.house_is_human_player(owner).then(|| {
             crate::sim::radar::RadarEventRequest::new(
@@ -849,8 +944,7 @@ impl Simulation {
             )
         });
         self.sound_events.emit(SimSoundEvent::BridgeRepaired {
-            rx: building_cell.0,
-            ry: building_cell.1,
+            world: hut_location,
             radar,
         });
     }
@@ -1072,7 +1166,7 @@ impl Simulation {
         //519B3E..519B53 raises the BUILDING attachment with this Infantry
         //as actor, before the Engineer type gate. Synchronous actions may
         //change either object; reload the Infantry after returning.
-        let context = super::UninitContext::new(Some(rules), registry).with_effects(frame_effects);
+        let context = super::UninitContext::new(rules, registry).with_effects(frame_effects);
         self.dispatch_object_tag_event(building_id, 1, Some(engineer_id), None, context);
         let Some(engineer) = self.substrate.entities.get(engineer_id) else {
             return Ok(BuildingEntryResult::default());
@@ -1155,7 +1249,7 @@ impl Simulation {
                 self.dispatch_object_tag_event(engineer_id, 48, Some(engineer_id), None, context);
                 self.uninit_with_context(
                     engineer_id,
-                    super::UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+                    super::UninitContext::new(rules, registry).with_effects(frame_effects),
                 );
                 return Ok(BuildingEntryResult {
                     bridge_state_changed: receipt.bridge_state_changed,
@@ -1196,8 +1290,24 @@ impl Simulation {
                 }
                 self.trigger_runtime
                     .transfer_engineer_tag_to_building(engineer_id, building_id);
-                self.announce_engineer_capture(building_id, owner, rules);
-                self.change_owner_with_rules(building_id, owner, rules, registry, frame_effects);
+                //519F71 loads the entrant's live owner after the second
+                //Entered callback and Tag transfer. Action36 can change it
+                //again without restarting this admitted PerCell continuation.
+                if let Some(capture_owner) = self
+                    .substrate
+                    .entities
+                    .get(engineer_id)
+                    .map(|engineer| engineer.owner())
+                {
+                    self.announce_engineer_capture(building_id, capture_owner, rules);
+                    self.change_owner_with_rules(
+                        building_id,
+                        capture_owner,
+                        rules,
+                        registry,
+                        frame_effects,
+                    );
+                }
                 if let Some(building) = self.substrate.entities.get_mut(building_id) {
                     // Techno+0x338 (`0x00519F94`).
                     building
@@ -1212,17 +1322,22 @@ impl Simulation {
             self.dispatch_object_tag_event(engineer_id, 48, Some(engineer_id), None, context);
             self.uninit_with_context(
                 engineer_id,
-                super::UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+                super::UninitContext::new(rules, registry).with_effects(frame_effects),
             );
             return Ok(BuildingEntryResult {
                 bridge_state_changed: changed,
                 return_before_foot: true,
             });
         }
-        let building_cell = (building.position.rx(), building.position.ry());
-        //519BB6 supplies the ENGINEER cell;519C02 supplies building XYZ.
+        //519BB6 supplies the ENGINEER cell;519BCE..519C02 the hut building's
+        //Location (Look_up_building_in_cell47C520 at519B20), before the repair.
         //519B90/50B6F0 gates insertion itself, including radar dedup state.
-        self.announce_bridge_repair(owner, cell, building_cell);
+        let hut_location = crate::sim::movement::ground_pose::object_location(
+            building,
+            self.resolved_terrain.as_ref(),
+        )
+        .into();
+        self.announce_bridge_repair(owner, cell, hut_location);
         let mut changed = crate::sim::world::bridge_orchestrator::repair_from_engineer(
             self,
             rules,
@@ -1246,7 +1361,7 @@ impl Simulation {
         self.dispatch_object_tag_event(engineer_id, 48, Some(engineer_id), None, context);
         self.uninit_with_context(
             engineer_id,
-            super::UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+            super::UninitContext::new(rules, registry).with_effects(frame_effects),
         );
         Ok(BuildingEntryResult {
             bridge_state_changed: changed,
@@ -1294,11 +1409,11 @@ impl Simulation {
                 48,
                 Some(infantry_id),
                 None,
-                super::UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+                super::UninitContext::new(rules, registry).with_effects(frame_effects),
             );
             self.uninit_with_context(
                 infantry_id,
-                super::UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+                super::UninitContext::new(rules, registry).with_effects(frame_effects),
             );
             return Ok(entered);
         }
@@ -1319,7 +1434,7 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), super::FrameAdvanceError> {
-        self.assign_null_destination(infantry_id, Some(rules), registry, frame_effects);
+        self.assign_null_destination(infantry_id, rules, registry, frame_effects);
         self.scatter_from_building(infantry_id, building_id, rules, registry, frame_effects)
     }
 
@@ -1461,9 +1576,10 @@ mod repair_notification_tests {
                 .unwrap()
                 .sim
         };
+        let hut = crate::sim::components::DriveCoord::cell(8, 8, 0).into();
         let mut restored = restore();
         assert_eq!(restored.session.current_house(), Some(owner));
-        restored.announce_bridge_repair(owner, (7, 8), (8, 8));
+        restored.announce_bridge_repair(owner, (7, 8), hut);
         assert!(
             matches!(
                 restored.sound_events.last(),
@@ -1483,7 +1599,7 @@ mod repair_notification_tests {
         other_current
             .session
             .set_current_house_for_test(Some(other));
-        other_current.announce_bridge_repair(owner, (7, 8), (8, 8));
+        other_current.announce_bridge_repair(owner, (7, 8), hut);
         assert!(
             matches!(
                 other_current.sound_events.last(),
@@ -1510,7 +1626,8 @@ mod repair_notification_tests {
             .get_mut(&player)
             .unwrap()
             .set_player_control_for_test(true);
-        sim.announce_bridge_repair(ai, (7, 8), (8, 8));
+        let hut = crate::sim::components::DriveCoord::cell(8, 8, 0).into();
+        sim.announce_bridge_repair(ai, (7, 8), hut);
         assert!(
             matches!(
                 sim.sound_events.last(),
@@ -1518,7 +1635,7 @@ mod repair_notification_tests {
             ),
             "an AI repair never reaches CreateRadarEvent, so it cannot dedupe the human's"
         );
-        sim.announce_bridge_repair(player, (7, 8), (8, 8));
+        sim.announce_bridge_repair(player, (7, 8), hut);
         assert!(matches!(
             sim.sound_events.last(),
             Some(SimSoundEvent::BridgeRepaired { radar: Some(_), .. })

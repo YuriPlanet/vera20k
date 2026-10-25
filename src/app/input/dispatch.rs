@@ -17,12 +17,12 @@ use winit::keyboard::KeyCode;
 
 use crate::app::AppState;
 use crate::app::input::commands::{
-    cancel_build_by_type, cycle_active_producer, cycle_local_owner, place_ready_building_at_cursor,
+    cancel_build_by_type, cycle_active_producer, cycle_local_owner, place_ready_building_at_cell,
     place_starter_base_for_local_owner, preferred_local_owner, preferred_local_owner_name,
     queue_build_by_type, queue_house_cheer, schedule_command, spawn_test_units_for_local_owner,
     suspend_build,
 };
-use crate::app::input::context_order::try_queue_context_order_at_screen_point;
+use crate::app::input::context_order::{ContextOrderTarget, try_queue_context_order};
 use crate::app::input::entity_pick::{
     SelectionMutation, compute_box_selection_snapshot_with_playfield,
     compute_click_selection_snapshot_with_playfield,
@@ -47,8 +47,9 @@ mod area_guard_tests;
 #[path = "player_scatter_tests.rs"]
 mod player_scatter_tests;
 
-/// Click radius for single-click selection (pixels in world space).
-pub(crate) const CLICK_SELECT_RADIUS: f32 = 30.0;
+#[cfg(test)]
+#[path = "mcv_group_tests.rs"]
+mod mcv_group_tests;
 
 /// Handle mouse button press/release for selection and move commands.
 ///
@@ -66,6 +67,10 @@ pub(crate) fn handle_mouse_input(
     button: MouseButton,
     btn_state: ElementState,
 ) {
+    if crate::app::match_runtime::network_failure::pending(state) {
+        crate::app::match_runtime::network_failure::mouse(state, button, btn_state.is_pressed());
+        return;
+    }
     handle_mouse_input_inner(state, button, btn_state);
     super::commands::reconcile_paid_super_weapon_cursor(state);
 }
@@ -126,6 +131,12 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
             == crate::ui::pause_menu::InGameMenuState::AbortConfirm
         {
             crate::app::input::abort::mouse(state, button, pressed);
+            return;
+        }
+        if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::Surrender
+        {
+            crate::app::input::surrender::mouse(state, button, pressed);
             return;
         }
         if state.match_state.match_presentation.in_game_menu
@@ -198,6 +209,11 @@ enum ClickActionRoute<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SelectionVoicePolicy {
     FirstAdded,
+    /// The team walks clear the latch after the first Select they *call*,
+    /// whatever it returns (Recall `0x00731344`/`0x00731369`, AddTeam
+    /// `0x0073156C`/`0x00731572`, CenterCamera `0x00731481`/`0x00731487`),
+    /// so a refused first member leaves the walk silent.
+    FirstAttempted,
     EveryAdded,
     Suppressed,
 }
@@ -210,6 +226,7 @@ enum SelectionActionLinePolicy {
 
 const ORDINARY_SELECTION_VOICE_POLICY: SelectionVoicePolicy = SelectionVoicePolicy::FirstAdded;
 const TYPE_SELECT_TAP_VOICE_POLICY: SelectionVoicePolicy = SelectionVoicePolicy::EveryAdded;
+const TEAM_SELECTION_VOICE_POLICY: SelectionVoicePolicy = SelectionVoicePolicy::FirstAttempted;
 const HELD_TYPE_SELECT_VOICE_POLICY: SelectionVoicePolicy = SelectionVoicePolicy::Suppressed;
 const ORDINARY_SELECTION_ACTION_LINE_POLICY: SelectionActionLinePolicy =
     SelectionActionLinePolicy::Start;
@@ -270,8 +287,11 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                         .match_presentation
                         .sidebar_gadget_state
                         .sell_mode_on
+                    // The held-drag 4AC380 never starts a band in beacon
+                    // mode (4AC3A3).
+                    || crate::app::input::beacon::mode_active(state)
                 {
-                    return; // suppress selection drag while a targeting / repair / sell mode is active
+                    return; // suppress selection drag while a targeting / repair / sell / beacon mode is active
                 }
                 state.match_state.input.selection_state.begin_drag(
                     state.match_state.input.cursor_x,
@@ -286,309 +306,7 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
                 if !state.match_state.input.tactical_mouse.end_left_press() {
                     return;
                 }
-                // Repair / Sell cursor modes consume the click — toggle repair or
-                // sell the own building under the cursor. The mode stays active
-                // (sticky) so the player can act on several buildings in a row.
-                if crate::app::input::commands::try_repair_sell_mode_click(state) {
-                    return;
-                }
-                if let Some(section) = state.armed_super_weapon_type().map(str::to_owned) {
-                    crate::app::input::commands::launch_super_weapon_at_cursor(state, &section);
-                    return;
-                }
-                if let Some(type_id) = state.armed_building_type().map(str::to_owned) {
-                    place_ready_building_at_cursor(state, &type_id);
-                    return;
-                }
-                if crate::app::input::planning_mode::connect_at_cursor(state) {
-                    return;
-                }
-                // Only an active band box owns a clamped tactical endpoint.
-                // A pending press is still an ordinary click at the actual
-                // release point, including after sticky capture routing.
-                let release_point = if state.match_state.input.selection_state.is_band_box_active()
-                {
-                    let (tactical_width, tactical_height) =
-                        crate::app::input::camera::tactical_viewport_size(state);
-                    clamp_tactical_drag_endpoint(
-                        state.match_state.input.cursor_x,
-                        state.match_state.input.cursor_y,
-                        tactical_width,
-                        tactical_height,
-                    )
-                } else {
-                    (
-                        state.match_state.input.cursor_x,
-                        state.match_state.input.cursor_y,
-                    )
-                };
-                let mut action: SelectAction = state
-                    .match_state
-                    .input
-                    .selection_state
-                    .end_drag(release_point.0, release_point.1);
-                let band_release = matches!(action, SelectAction::BoxSelect(..));
-                if band_release {
-                    // BandBox_LeftUp4ABCF0 -> StartTimer70D150 precedes the
-                    // empty-catch bail and click fallthrough. The old
-                    // selection therefore flashes even when the box is empty.
-                    // Evidence: tools/procedural_drawing_oracle/action_lines.
-                    apply_selection_action_line_policy(
-                        state,
-                        ORDINARY_SELECTION_ACTION_LINE_POLICY,
-                    );
-                }
-                // BandBox_LeftUp 0x004AB9B0 does not early-return when nothing
-                // was armed: with the band flag clear it falls straight through
-                // to the action dispatch. So a release whose press never armed
-                // a drag -- because the shared capture byte was already held, or
-                // because a cursor mode swallowed the press -- is still an
-                // ordinary click at its own release point, not a no-op.
-                if matches!(action, SelectAction::None) {
-                    action = SelectAction::Click(release_point.0, release_point.1);
-                }
-                let shift = is_shift_held(state);
-                // A band box that caught no drawn object leaves the selection
-                // exactly as it was, and the release is handled as an ordinary
-                // click at the release point — the native release only clears
-                // when something was inside the rectangle.
-                //
-                // The whole empty/clear/fall-through block sits inside the
-                // native "shift is not held" arm, and the fall-through flag is
-                // the only thing that lets control reach the click/action path.
-                // So a shift drag that catches nothing does nothing at all: it
-                // must not walk the army to the release point.
-                let mut band_preflight_order = None;
-                if let SelectAction::BoxSelect(min_x, min_y, max_x, max_y) = action
-                    && !shift
-                {
-                    let order =
-                        crate::app::presentation::instances::tactical_band_preflight_entity_encounter_order(state);
-                    if band_caught_drawn_object(state, &order, min_x, min_y, max_x, max_y) {
-                        band_preflight_order = Some(order);
-                    } else {
-                        action = SelectAction::Click(release_point.0, release_point.1);
-                    }
-                }
-                // TypeSelect modifies only actions that already resolved as
-                // selection/toggle. Ground move, attack, and every other
-                // context action keep their ordinary priority while T is held.
-                let type_select_held = state.match_state.input.type_select.held();
-                if matches!(
-                    route_click_action_before_type_select(action, |sx, sy| {
-                        // A resolved context dispatch consumes the click
-                        // even when its receiver admits no command.
-                        try_queue_context_order_at_screen_point(state, sx, sy, true).then_some(())
-                    },),
-                    ClickActionRoute::ContextOrder(())
-                ) {
-                    return;
-                }
-                let mut queued_selection: Option<SelectionMutation> = None;
-                let mut held_type_select_batch = false;
-                if let Some(sim) = state
-                    .match_state
-                    .sim_runtime
-                    .as_ref()
-                    .map(|rt| &rt.simulation)
-                {
-                    let screen_order =
-                        crate::app::presentation::instances::tactical_screen_entity_encounter_order(
-                            state,
-                        );
-                    let current_selection = selected_stable_ids_in_order(
-                        state
-                            .match_state
-                            .sim_runtime
-                            .as_ref()
-                            .map(|rt| &rt.simulation),
-                        state.rules(),
-                        &state.match_state.input.selection_order,
-                        state.match_state.input.selection_order_pending,
-                    );
-                    let map_order = map_entity_creation_order(sim.entities());
-                    let held_type_select = type_select_held;
-                    let scope_order = if state.match_state.input.type_select.across_map {
-                        map_order.as_slice()
-                    } else {
-                        screen_order.as_slice()
-                    };
-                    match action {
-                        SelectAction::Click(sx, sy) => {
-                            // Native TacticalPick6DA380 reads the retained
-                            // Display registrations after the projected click
-                            // gate. ScreenSelection's raw-anchor filter belongs
-                            // to band/type scope, not this pointer pick.
-                            let click_order = crate::app::presentation::instances::
-                                tactical_entity_encounter_order(sim);
-                            let world_x: f32 = sx / state.match_state.input.zoom_level
-                                + state.match_state.input.camera_x;
-                            let world_y: f32 = sy / state.match_state.input.zoom_level
-                                + state.match_state.input.camera_y;
-                            let fog_ref = if state.match_state.sandbox_full_visibility {
-                                None
-                            } else {
-                                Some(sim.fog())
-                            };
-                            if held_type_select {
-                                let picked = pick_entity_at_point(
-                                    crate::app::input::entity_pick::presented(state, sim),
-                                    &click_order,
-                                    fog_ref,
-                                    preferred_local_owner_name(state).as_deref(),
-                                    world_x,
-                                    world_y,
-                                    CLICK_SELECT_RADIUS,
-                                    state.rules(),
-                                    Some(sim.houses()),
-                                    Some(sim.interner()),
-                                    sim.resolved_terrain(),
-                                );
-                                queued_selection = if let Some(clicked_id) = picked {
-                                    Some(compute_type_select_click_mutation_with_playfield(
-                                        sim.entities(),
-                                        scope_order,
-                                        &current_selection,
-                                        clicked_id,
-                                        shift,
-                                        preferred_local_owner_name(state).as_deref(),
-                                        state.rules(),
-                                        Some(sim.interner()),
-                                        sim.playfield_bounds().is_some(),
-                                    ))
-                                } else {
-                                    compute_click_selection_snapshot_with_playfield(
-                                        crate::app::input::entity_pick::presented(state, sim),
-                                        &click_order,
-                                        &current_selection,
-                                        fog_ref,
-                                        preferred_local_owner_name(state).as_deref(),
-                                        world_x,
-                                        world_y,
-                                        CLICK_SELECT_RADIUS,
-                                        shift,
-                                        state.rules(),
-                                        Some(sim.houses()),
-                                        Some(sim.interner()),
-                                        sim.playfield_bounds().is_some(),
-                                        sim.resolved_terrain(),
-                                    )
-                                };
-                                held_type_select_batch = true;
-                            } else {
-                                queued_selection = compute_click_selection_snapshot_with_playfield(
-                                    crate::app::input::entity_pick::presented(state, sim),
-                                    &click_order,
-                                    &current_selection,
-                                    fog_ref,
-                                    preferred_local_owner_name(state).as_deref(),
-                                    world_x,
-                                    world_y,
-                                    CLICK_SELECT_RADIUS,
-                                    shift,
-                                    state.rules(),
-                                    Some(sim.houses()),
-                                    Some(sim.interner()),
-                                    sim.playfield_bounds().is_some(),
-                                    sim.resolved_terrain(),
-                                );
-                            }
-                        }
-                        SelectAction::BoxSelect(min_x, min_y, max_x, max_y) => {
-                            let fog_ref = if state.match_state.sandbox_full_visibility {
-                                None
-                            } else {
-                                Some((sim.fog(), sim.house_alliances()))
-                            };
-                            let z = state.match_state.input.zoom_level;
-                            let (min_x, min_y, max_x, max_y) = (
-                                min_x / z + state.match_state.input.camera_x,
-                                min_y / z + state.match_state.input.camera_y,
-                                max_x / z + state.match_state.input.camera_x,
-                                max_y / z + state.match_state.input.camera_y,
-                            );
-                            if held_type_select {
-                                queued_selection =
-                                    Some(compute_type_select_box_mutation_with_playfield(
-                                        crate::app::input::entity_pick::presented(state, sim),
-                                        &screen_order,
-                                        scope_order,
-                                        &current_selection,
-                                        fog_ref.map(|(fog, _)| fog),
-                                        preferred_local_owner_name(state).as_deref(),
-                                        min_x,
-                                        min_y,
-                                        max_x,
-                                        max_y,
-                                        shift,
-                                        state.rules(),
-                                        Some(sim.interner()),
-                                        sim.playfield_bounds().is_some(),
-                                    ));
-                                held_type_select_batch = true;
-                            } else {
-                                let preflight_order = band_preflight_order
-                                    .as_deref()
-                                    .unwrap_or(screen_order.as_slice());
-                                queued_selection = compute_box_selection_snapshot_with_playfield(
-                                    crate::app::input::entity_pick::presented(state, sim),
-                                    preflight_order,
-                                    &screen_order,
-                                    &current_selection,
-                                    fog_ref,
-                                    preferred_local_owner_name(state).as_deref(),
-                                    min_x,
-                                    min_y,
-                                    max_x,
-                                    max_y,
-                                    shift,
-                                    state.rules(),
-                                    Some(sim.houses()),
-                                    Some(sim.interner()),
-                                    sim.playfield_bounds().is_some(),
-                                );
-                            }
-                        }
-                        SelectAction::None => {}
-                    }
-                }
-                if let Some(mutation) = queued_selection {
-                    if held_type_select_batch {
-                        if mutation.select.is_empty() {
-                            apply_selection_mutation(
-                                state,
-                                mutation,
-                                false,
-                                ORDINARY_SELECTION_VOICE_POLICY,
-                            );
-                        } else {
-                            let prior = state.match_state.input.selection_voice_enabled;
-                            state.match_state.input.selection_voice_enabled = false;
-                            apply_selection_mutation(
-                                state,
-                                mutation,
-                                false,
-                                HELD_TYPE_SELECT_VOICE_POLICY,
-                            );
-                            state.match_state.input.selection_voice_enabled = prior;
-                        }
-                    } else {
-                        apply_selection_mutation(
-                            state,
-                            mutation,
-                            true,
-                            ORDINARY_SELECTION_VOICE_POLICY,
-                        );
-                    }
-                    // Click-select4ABE83 starts separately. A band release
-                    // already started before its empty-catch decision above.
-                    if !band_release {
-                        apply_selection_action_line_policy(
-                            state,
-                            ORDINARY_SELECTION_ACTION_LINE_POLICY,
-                        );
-                    }
-                }
+                band_box_left_up(state, LeftUp::Tactical);
             }
         }
         MouseButton::Right => {
@@ -620,52 +338,419 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
     }
 }
 
+/// What reaches `DisplayClass::BandBox_LeftUp @ 0x004AB9B0`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum LeftUp {
+    /// A tactical left release that held the capture, at the cursor. The
+    /// release resolves its own pick and action (`0x00693271..0x0069328B`).
+    Tactical,
+    /// The radar's release (`0x00653D58`): `GetObjectAtRadarPixel`'s pick
+    /// and whether the action the radar kept is a superweapon's
+    /// ([`crate::app::input::radar`]).
+    Radar {
+        target: crate::render::radar::NativeRadarInputTarget,
+        super_weapon: bool,
+    },
+}
+
+/// `DisplayClass::BandBox_LeftUp @ 0x004AB9B0`. `0x00731CF0` ends the
+/// attack-move mode (`0x00B0FE58`) before each of its returns
+/// (`0x004ABC67`, `0x004ABC85`, `0x004AC294`), whatever the release did.
+pub(crate) fn band_box_left_up(state: &mut AppState, click: LeftUp) {
+    left_up_branches(state, click);
+    state.match_state.input.queued_order_mode = OrderMode::Move;
+}
+
+fn left_up_branches(state: &mut AppState, click: LeftUp) {
+    // A pending placement takes the clicked Cell, whatever the action
+    // (`0x004ABA16..0x004ABC67`).
+    if let Some(type_id) = state.armed_building_type().map(str::to_owned) {
+        let cell = match click {
+            LeftUp::Tactical => crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
+                state,
+                state.match_state.input.cursor_x,
+                state.match_state.input.cursor_y,
+            ),
+            LeftUp::Radar { target, .. } => target.cell,
+        };
+        place_ready_building_at_cell(state, &type_id, cell);
+        return;
+    }
+    let LeftUp::Radar {
+        target,
+        super_weapon,
+    } = click
+    else {
+        tactical_left_up(state);
+        return;
+    };
+    // The selection's dispatch, each object asking its own What_Action
+    // (`Selection__DispatchMultiUnitOrder @ 0x004AE750`, at `0x004ABF94`), a
+    // superweapon action included; for one SPECIAL_PLACE follows
+    // (`0x004AC20C`). The radar never hands over a Select action, so a click
+    // the dispatch leaves to selection selects nothing.
+    //
+    // RESIDUAL: BandBox_LeftUp drops a picked object whose VisualCharacter
+    // is Hidden (`0x004AB9DF..0x004AB9EF`); the radar's pick is not tested.
+    // Trigger: a radar dot of an object hidden from the player. Effect: the
+    // order may target it. Frequency: rare.
+    // RESIDUAL: the dispatch hands Cell actions other than 1, 2 and 0x33
+    // the second Cell (-1,-1) (`0x004AE8FC`), which ClickedMission reads
+    // only into a Planning Mode record (`0x006FFC30`); VERA has no second
+    // Cell. Trigger: a kept superweapon, or a Cell Harvest, Guard or Attack,
+    // in Planning Mode. Effect: that record's third target. Frequency: rare.
+    try_queue_context_order(state, ContextOrderTarget::Radar(target), true);
+    if super_weapon && let Some(section) = state.armed_super_weapon_type().map(str::to_owned) {
+        crate::app::input::commands::launch_super_weapon_at_cell(state, &section, target.cell);
+    }
+}
+
+/// The tactical release past the placement branch: the superweapon's
+/// SPECIAL_PLACE, a planning node's connection, the band box and the click.
+fn tactical_left_up(state: &mut AppState) {
+    // DetermineAction answers the armed superweapon's action only with
+    // nothing selected (`0x00692610..0x00692673`); with a selection it is the
+    // best object's What_Action, which the click below dispatches. With
+    // nothing selected the dispatch has no receiver, so SPECIAL_PLACE alone
+    // remains.
+    let selection_empty = selected_stable_ids_in_order(
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation),
+        state.rules(),
+        &state.match_state.input.selection_order,
+        state.match_state.input.selection_order_pending,
+    )
+    .is_empty();
+    match state.match_state.input.tactical_pointer_mode(
+        &state.match_state.match_presentation.sidebar_gadget_state,
+        selection_empty,
+    ) {
+        super::state::TacticalPointerMode::SuperWeapon(section) => {
+            let section = section.to_owned();
+            crate::app::input::commands::launch_super_weapon_at_cursor(state, &section);
+            return;
+        }
+        super::state::TacticalPointerMode::RepairSell => {
+            crate::app::input::commands::try_repair_sell_mode_click(state);
+            return;
+        }
+        super::state::TacticalPointerMode::Ordinary => {}
+    }
+    if crate::app::input::planning_mode::connect_at_cursor(state) {
+        return;
+    }
+    // Past PlanMgr's release (0x00693225), DetermineAction answers 0x3C in
+    // beacon mode with nothing selected (0x006929AF); the release places
+    // the beacon (0x004AC033).
+    if selection_empty && crate::app::input::beacon::mode_active(state) {
+        let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
+            state,
+            state.match_state.input.cursor_x,
+            state.match_state.input.cursor_y,
+        );
+        crate::app::input::beacon::place_at_cell(state, cell);
+        return;
+    }
+    // Only an active band box owns a clamped tactical endpoint.
+    // A pending press is still an ordinary click at the actual
+    // release point, including after sticky capture routing.
+    let release_point = if state.match_state.input.selection_state.is_band_box_active() {
+        let (tactical_width, tactical_height) =
+            crate::app::input::camera::tactical_viewport_size(state);
+        clamp_tactical_drag_endpoint(
+            state.match_state.input.cursor_x,
+            state.match_state.input.cursor_y,
+            tactical_width,
+            tactical_height,
+        )
+    } else {
+        (
+            state.match_state.input.cursor_x,
+            state.match_state.input.cursor_y,
+        )
+    };
+    let mut action: SelectAction = state
+        .match_state
+        .input
+        .selection_state
+        .end_drag(release_point.0, release_point.1);
+    let band_release = matches!(action, SelectAction::BoxSelect(..));
+    if band_release {
+        // BandBox_LeftUp4ABCF0 -> StartTimer70D150 precedes the
+        // empty-catch bail and click fallthrough. The old
+        // selection therefore flashes even when the box is empty.
+        // Evidence: tools/procedural_drawing_oracle/action_lines.
+        apply_selection_action_line_policy(state, ORDINARY_SELECTION_ACTION_LINE_POLICY);
+    }
+    // BandBox_LeftUp 0x004AB9B0 does not early-return when nothing
+    // was armed: with the band flag clear it falls straight through
+    // to the action dispatch. So a release whose press never armed
+    // a drag -- because the shared capture byte was already held, or
+    // because a cursor mode swallowed the press -- is still an
+    // ordinary click at its own release point, not a no-op.
+    if matches!(action, SelectAction::None) {
+        action = SelectAction::Click(release_point.0, release_point.1);
+    }
+    let shift = is_shift_held(state);
+    // A band box that caught no drawn object leaves the selection
+    // exactly as it was, and the release is handled as an ordinary
+    // click at the release point — the native release only clears
+    // when something was inside the rectangle.
+    //
+    // The whole empty/clear/fall-through block sits inside the
+    // native "shift is not held" arm, and the fall-through flag is
+    // the only thing that lets control reach the click/action path.
+    // So a shift drag that catches nothing does nothing at all: it
+    // must not walk the army to the release point.
+    let mut band_preflight_order = None;
+    if let SelectAction::BoxSelect(min_x, min_y, max_x, max_y) = action
+        && !shift
+    {
+        let order =
+            crate::app::presentation::instances::tactical_band_preflight_entity_encounter_order(
+                state,
+            );
+        if band_caught_drawn_object(state, &order, min_x, min_y, max_x, max_y) {
+            band_preflight_order = Some(order);
+        } else {
+            action = SelectAction::Click(release_point.0, release_point.1);
+        }
+    }
+    // A click over a beacon with nothing selected answers 0x3D
+    // (0x006927C5); the release selects the beacon (0x004ABE88).
+    if let SelectAction::Click(sx, sy) = action
+        && selection_empty
+    {
+        let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(state, sx, sy);
+        if crate::app::input::beacon::beacon_at_cell(state, cell) {
+            crate::app::input::beacon::select_at_cell(state, cell);
+            return;
+        }
+    }
+    // TypeSelect modifies only actions that already resolved as
+    // selection/toggle. Ground move, attack, and every other
+    // context action keep their ordinary priority while T is held.
+    let type_select_held = state.match_state.input.type_select.held();
+    if matches!(
+        route_click_action_before_type_select(action, |sx, sy| {
+            // A resolved context dispatch consumes the click
+            // even when its receiver admits no command.
+            try_queue_context_order(state, ContextOrderTarget::ScreenPoint(sx, sy), true)
+                .then_some(())
+        },),
+        ClickActionRoute::ContextOrder(())
+    ) {
+        return;
+    }
+    let mut queued_selection: Option<SelectionMutation> = None;
+    let mut held_type_select_batch = false;
+    if let Some(sim) = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|rt| &rt.simulation)
+    {
+        let screen_order =
+            crate::app::presentation::instances::tactical_screen_entity_encounter_order(state);
+        let current_selection = selected_stable_ids_in_order(
+            state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .map(|rt| &rt.simulation),
+            state.rules(),
+            &state.match_state.input.selection_order,
+            state.match_state.input.selection_order_pending,
+        );
+        let map_order = map_entity_creation_order(sim.entities());
+        let held_type_select = type_select_held;
+        let scope_order = if state.match_state.input.type_select.across_map {
+            map_order.as_slice()
+        } else {
+            screen_order.as_slice()
+        };
+        match action {
+            SelectAction::Click(sx, sy) => {
+                // Native TacticalPick6DA380 reads the retained
+                // Display registrations after the projected click
+                // gate. ScreenSelection's raw-anchor filter belongs
+                // to band/type scope, not this pointer pick.
+                let click_order =
+                    crate::app::presentation::instances::tactical_entity_encounter_order(sim);
+                let world_x: f32 =
+                    sx / state.match_state.input.zoom_level + state.match_state.input.camera_x;
+                let world_y: f32 =
+                    sy / state.match_state.input.zoom_level + state.match_state.input.camera_y;
+                let fog_ref = if state.match_state.sandbox_full_visibility {
+                    None
+                } else {
+                    Some(sim.fog())
+                };
+                if held_type_select {
+                    let picked = pick_entity_at_point(
+                        crate::app::input::entity_pick::presented(state, sim),
+                        &click_order,
+                        fog_ref,
+                        preferred_local_owner_name(state).as_deref(),
+                        world_x,
+                        world_y,
+                        Some(sim.interner()),
+                        sim.resolved_terrain(),
+                    );
+                    queued_selection = if let Some(clicked_id) = picked {
+                        Some(compute_type_select_click_mutation_with_playfield(
+                            sim.entities(),
+                            scope_order,
+                            &current_selection,
+                            clicked_id,
+                            shift,
+                            preferred_local_owner_name(state).as_deref(),
+                            state.rules(),
+                            Some(sim.interner()),
+                            sim.playfield_bounds().is_some(),
+                        ))
+                    } else {
+                        compute_click_selection_snapshot_with_playfield(
+                            crate::app::input::entity_pick::presented(state, sim),
+                            &click_order,
+                            &current_selection,
+                            fog_ref,
+                            preferred_local_owner_name(state).as_deref(),
+                            world_x,
+                            world_y,
+                            shift,
+                            state.rules(),
+                            Some(sim.interner()),
+                            sim.playfield_bounds().is_some(),
+                            sim.resolved_terrain(),
+                        )
+                    };
+                    held_type_select_batch = true;
+                } else {
+                    queued_selection = compute_click_selection_snapshot_with_playfield(
+                        crate::app::input::entity_pick::presented(state, sim),
+                        &click_order,
+                        &current_selection,
+                        fog_ref,
+                        preferred_local_owner_name(state).as_deref(),
+                        world_x,
+                        world_y,
+                        shift,
+                        state.rules(),
+                        Some(sim.interner()),
+                        sim.playfield_bounds().is_some(),
+                        sim.resolved_terrain(),
+                    );
+                }
+            }
+            SelectAction::BoxSelect(min_x, min_y, max_x, max_y) => {
+                let fog_ref = if state.match_state.sandbox_full_visibility {
+                    None
+                } else {
+                    Some((sim.fog(), sim.house_alliances()))
+                };
+                let z = state.match_state.input.zoom_level;
+                let (min_x, min_y, max_x, max_y) = (
+                    min_x / z + state.match_state.input.camera_x,
+                    min_y / z + state.match_state.input.camera_y,
+                    max_x / z + state.match_state.input.camera_x,
+                    max_y / z + state.match_state.input.camera_y,
+                );
+                if held_type_select {
+                    queued_selection = Some(compute_type_select_box_mutation_with_playfield(
+                        crate::app::input::entity_pick::presented(state, sim),
+                        &screen_order,
+                        scope_order,
+                        &current_selection,
+                        fog_ref.map(|(fog, _)| fog),
+                        preferred_local_owner_name(state).as_deref(),
+                        min_x,
+                        min_y,
+                        max_x,
+                        max_y,
+                        shift,
+                        state.rules(),
+                        Some(sim.interner()),
+                        sim.playfield_bounds().is_some(),
+                    ));
+                    held_type_select_batch = true;
+                } else {
+                    let preflight_order = band_preflight_order
+                        .as_deref()
+                        .unwrap_or(screen_order.as_slice());
+                    queued_selection = compute_box_selection_snapshot_with_playfield(
+                        crate::app::input::entity_pick::presented(state, sim),
+                        preflight_order,
+                        &screen_order,
+                        &current_selection,
+                        fog_ref,
+                        preferred_local_owner_name(state).as_deref(),
+                        min_x,
+                        min_y,
+                        max_x,
+                        max_y,
+                        shift,
+                        state.rules(),
+                        Some(sim.houses()),
+                        Some(sim.interner()),
+                        sim.playfield_bounds().is_some(),
+                    );
+                }
+            }
+            SelectAction::None => {}
+        }
+    }
+    if let Some(mutation) = queued_selection {
+        if held_type_select_batch {
+            if mutation.select.is_empty() {
+                apply_selection_mutation(state, mutation, false, ORDINARY_SELECTION_VOICE_POLICY);
+            } else {
+                let prior = state.match_state.input.selection_voice_enabled;
+                state.match_state.input.selection_voice_enabled = false;
+                apply_selection_mutation(state, mutation, false, HELD_TYPE_SELECT_VOICE_POLICY);
+                state.match_state.input.selection_voice_enabled = prior;
+            }
+        } else {
+            apply_selection_mutation(state, mutation, true, ORDINARY_SELECTION_VOICE_POLICY);
+        }
+        // Click-select4ABE83 starts separately. A band release
+        // already started before its empty-catch decision above.
+        if !band_release {
+            apply_selection_action_line_policy(state, ORDINARY_SELECTION_ACTION_LINE_POLICY);
+        }
+    }
+}
+
 /// The right-release cancel ladder: cancel exactly one armed cursor mode, and
 /// clear the selection only when nothing was armed.
 ///
-/// gamemd walks seven mode flags in a fixed order and returns after the first
-/// one it cancels; VERA models the two it has (a targeting/placement cursor and
-/// the repair/sell cursor). The final rung — clear the selection — is retail
-/// behaviour, not a VERA deviation.
+/// Display4AAD30's represented cursor rungs belong to MatchInputState.
+/// This existing selection owner handles its final UnselectAll48DC90 rung.
 pub(crate) fn right_click_cancel_ladder(state: &mut AppState) {
-    if state.match_state.input.cancel_building_placement() {
-        return;
-    }
     if state
         .match_state
         .input
-        .targeting_mode
-        .as_ref()
-        .and_then(crate::app::types::TargetingMode::as_super_weapon)
-        .is_some()
+        .cancel_pointer_mode(&mut state.match_state.match_presentation.sidebar_gadget_state)
     {
-        state.match_state.input.targeting_mode = None;
-        state.match_state.input.building_placement_preview = None;
         return;
     }
-    if state
-        .match_state
-        .match_presentation
-        .sidebar_gadget_state
-        .repair_mode_on
-        || state
-            .match_state
-            .match_presentation
-            .sidebar_gadget_state
-            .sell_mode_on
-    {
-        state
-            .match_state
-            .match_presentation
-            .sidebar_gadget_state
-            .repair_mode_on = false;
-        state
-            .match_state
-            .match_presentation
-            .sidebar_gadget_state
-            .sell_mode_on = false;
+    // RightUp4AAE47: beacon mode is the last rung before Unselect_All.
+    if crate::app::input::beacon::mode_active(state) {
+        crate::app::input::beacon::set_place_beacon_mode(
+            state,
+            crate::app::input::beacon::BeaconModeRequest::Off,
+        );
         return;
     }
+    unselect_all(state);
+}
+
+/// `Unselect_All_With_Mode_Reset 0x0048DC90`: the selection's clear, whose
+/// mutation also clears beacon selection.
+pub(crate) fn unselect_all(state: &mut AppState) {
     queue_selection_snapshot_command(state, Vec::new(), false);
 }
 
@@ -707,29 +792,18 @@ fn band_caught_drawn_object(
 }
 
 /// Minimap mouse body (routed here when the minimap ClickRegion consumes the
-/// edge). gamemd (decompile 0x006539D0) centers the tactical view on press
-/// edges (left OR right) and IGNORES held motion — there is no continuous
-/// camera-follow (the held branch is dropped in `handle_cursor_moved_in_game`).
+/// edge): `RadarClass::Action @ 0x006539D0` ([`crate::app::input::radar`]).
+/// It ignores held motion — there is no continuous camera-follow (the held
+/// branch is dropped in `handle_cursor_moved_in_game`) — and a right release
+/// only releases the gadget's sticky capture.
 pub(crate) fn minimap_mouse(state: &mut AppState, button: MouseButton, btn_state: ElementState) {
     if crate::app::input::campaign_input::is_locked(state) {
         return;
     }
-    match button {
-        MouseButton::Left => {
-            if btn_state.is_pressed() {
-                crate::app::presentation::sidebar_render::try_begin_minimap_drag(state);
-            } else if state.match_state.input.minimap_dragging {
-                state.match_state.input.minimap_dragging = false;
-            }
-        }
-        MouseButton::Right
-            // A right-press centers the view on the clicked cell (no command);
-            // right-release just releases the gadget's sticky capture.
-            if btn_state.is_pressed()
-                && crate::app::presentation::sidebar_render::is_cursor_over_minimap(state)
-            => {
-                crate::app::presentation::sidebar_render::update_camera_from_minimap_cursor(state);
-            }
+    match (button, btn_state.is_pressed()) {
+        (MouseButton::Left, true) => crate::app::input::radar::left_press(state),
+        (MouseButton::Left, false) => crate::app::input::radar::left_release(state),
+        (MouseButton::Right, true) => crate::app::input::radar::right_press(state),
         _ => {}
     }
 }
@@ -752,6 +826,10 @@ fn clamp_tactical_drag_endpoint(
 }
 
 pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
+    if crate::app::match_runtime::network_failure::pending(state) {
+        crate::app::match_runtime::network_failure::cursor_moved(state);
+        return;
+    }
     if state.frontend.keyboard_dialog.is_some() {
         crate::app::input::keyboard::cursor_moved(state);
         return;
@@ -774,6 +852,12 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
             == crate::ui::pause_menu::InGameMenuState::AbortConfirm
         {
             crate::app::input::abort::cursor_moved(state);
+            return;
+        }
+        if state.match_state.match_presentation.in_game_menu
+            == crate::ui::pause_menu::InGameMenuState::Surrender
+        {
+            crate::app::input::surrender::cursor_moved(state);
             return;
         }
         if state.match_state.match_presentation.in_game_menu
@@ -1011,7 +1095,13 @@ fn sidebar_cameo_press(
     // The linked Factory's state also decides whether Shift may repeat: a held
     // or finished build takes the resume/placement arm, not a fresh PRODUCE.
     let own_for_repeat = linked_factory.map(|(status, _)| status);
-    let click = sidebar_eva::cameo_click(
+    #[cfg(feature = "phobos")]
+    let building_production_queue = state
+        .rules()
+        .is_some_and(|rules| rules.general.building_production_queue);
+    #[cfg(not(feature = "phobos"))]
+    let building_production_queue = false;
+    let click = sidebar_eva::cameo_click_with_queue(
         &queue,
         category,
         type_iid,
@@ -1025,6 +1115,7 @@ fn sidebar_cameo_press(
         }),
         press,
         at_build_limit,
+        building_production_queue,
     );
     if click.clear_building_placement {
         state.match_state.input.cancel_building_placement();
@@ -1070,15 +1161,16 @@ fn sidebar_cameo_press(
             // repeats only while the Options page's Shift-Click Batch Queue
             // (`[VERA] ShiftQueue=`) is ticked, `[VERA] ShiftQueueCount=` times.
             let profile = &state.persistence.options_profile;
-            let repeat = sidebar_eva::shift_queue_repeat(
+            let repeat = sidebar_eva::shift_queue_repeat_with_queue(
                 category,
                 own_for_repeat,
                 shift && profile.shift_queue,
                 profile.shift_queue_count,
+                building_production_queue,
             );
             queue_build_by_type(state, type_id, repeat);
         }
-        Some(sidebar_eva::CameoOrder::Suspend) => suspend_build(state, category),
+        Some(sidebar_eva::CameoOrder::Suspend) => suspend_build(state, type_id),
         Some(sidebar_eva::CameoOrder::Abandon { all }) => {
             cancel_build_by_type(state, type_id, all);
         }
@@ -1095,7 +1187,6 @@ fn sidebar_cameo_press(
                 // an older cameo can still refer to a rearmed Factory.
                 let (held_type, held) = linked_factory?.1?;
                 Some((
-                    owner,
                     owner_id,
                     held,
                     sim.interner().resolve(held_type).to_string(),
@@ -1103,8 +1194,7 @@ fn sidebar_cameo_press(
                     crate::sim::production::object_find_factory(sim, rules, held, false, false),
                 ))
             });
-            let Some((owner, owner_id, held, held_type, is_building, builder)) = ready_target
-            else {
+            let Some((owner_id, held, held_type, is_building, builder)) = ready_target else {
                 return;
             };
             let Some(_builder) = builder else {
@@ -1117,7 +1207,23 @@ fn sidebar_cameo_press(
                 // cameo's kind/Naval slot and index -1, without HasChanged.
                 // The existing receiver resolves the current complete head.
                 // Source: tools/sidebar_oracle/factory_sale_sidebar.md.
-                schedule_command(state, &owner, Command::PlaceProducedMobile { category });
+                let issued = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+                    let sim = &runtime.simulation;
+                    let rules = &runtime.resources.rules;
+                    let mut selection = crate::sim::production::ProductionSelection::for_type(
+                        rules,
+                        rules.object(type_id)?,
+                    )?;
+                    selection.type_index = -1;
+                    //6AB3D9 reads the clicked type's Naval; EBP retains its
+                    //type RTTI.6AB3F4 instead takes the House from the product.
+                    let product_owner = sim.entities().get(held)?.owner();
+                    let record = sim.encode_place_record(product_owner, selection, (0, 0))?;
+                    Some((sim.interner().resolve(product_owner).to_owned(), record))
+                });
+                if let Some((owner, record)) = issued {
+                    schedule_command(state, &owner, Command::SynchronizedRecord { record });
+                }
                 return;
             }
             // ManualPlace4FB852 refuses while any building placement is pending.
@@ -1132,7 +1238,7 @@ fn sidebar_cameo_press(
                 // no additions, so its effects do not depend on cursor mode.
                 queue_selection_snapshot_command(state, Vec::new(), false);
                 let gadgets = &mut state.match_state.match_presentation.sidebar_gadget_state;
-                gadgets.disable_selection_modes(false);
+                gadgets.disable_cursor_modes();
             }
         }
     }
@@ -1242,22 +1348,30 @@ fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
         SidebarAction::SpawnTestUnits => {
             spawn_test_units_for_local_owner(state);
         }
-        SidebarAction::ToggleRepairMode => {
-            let g = &mut state.match_state.match_presentation.sidebar_gadget_state;
-            g.repair_mode_on = !g.repair_mode_on;
-            if g.repair_mode_on {
-                g.sell_mode_on = false;
-                state.match_state.input.targeting_mode = None;
-                state.match_state.input.building_placement_preview = None;
-            }
-        }
-        SidebarAction::ToggleSellMode => {
-            let g = &mut state.match_state.match_presentation.sidebar_gadget_state;
-            g.sell_mode_on = !g.sell_mode_on;
-            if g.sell_mode_on {
-                g.repair_mode_on = false;
-                state.match_state.input.targeting_mode = None;
-                state.match_state.input.building_placement_preview = None;
+        SidebarAction::ToggleRepairMode | SidebarAction::ToggleSellMode => {
+            use crate::ui::sidebar::gadget_flash::SelectionMode;
+            let mode = if matches!(action, SidebarAction::ToggleRepairMode) {
+                SelectionMode::Repair
+            } else {
+                SelectionMode::Sell
+            };
+            let owned_buildings = state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .and_then(|runtime| {
+                    let sim = &runtime.simulation;
+                    sim.houses().get(&sim.session().current_house()?)
+                })
+                .map_or(0, |house| house.tracking().buildings());
+            let placement_armed = state.armed_building_type().is_some();
+            if state
+                .match_state
+                .match_presentation
+                .sidebar_gadget_state
+                .toggle_selection_mode(mode, placement_armed, owned_buildings)
+            {
+                queue_selection_snapshot_command(state, Vec::new(), false);
             }
         }
         SidebarAction::Deploy => {
@@ -1577,6 +1691,9 @@ pub(crate) fn handle_hotkey_pressed(
     resolution: HotkeyResolution,
     physical_code: winit::keyboard::KeyCode,
 ) {
+    if crate::app::match_runtime::network_failure::pending(state) {
+        return;
+    }
     handle_hotkey_pressed_inner(state, resolution, physical_code);
     super::commands::reconcile_paid_super_weapon_cursor(state);
 }
@@ -1701,7 +1818,7 @@ fn place_ready_building_for_tab(state: &mut AppState, tab: SidebarTab) {
         // ManualPlace4FB881 calls UnselectAll48DC90 only on entry.
         queue_selection_snapshot_command(state, Vec::new(), false);
         let gadgets = &mut state.match_state.match_presentation.sidebar_gadget_state;
-        gadgets.disable_selection_modes(false);
+        gadgets.disable_cursor_modes();
     }
 }
 
@@ -1777,7 +1894,12 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::CenterView => crate::app::input::camera::center_view_on_selection(state),
         HotkeyCommand::Follow => crate::app::input::camera::toggle_follow_target(state),
         HotkeyCommand::PlanningMode => crate::app::input::planning_mode::toggle(state),
-        HotkeyCommand::Delete => crate::app::input::planning_mode::delete_at_cursor(state),
+        // DeleteCommand731A10: a planning node, else the selected beacon.
+        HotkeyCommand::Delete => {
+            if !crate::app::input::planning_mode::delete_at_cursor(state) {
+                crate::app::input::beacon::delete_selected(state);
+            }
+        }
         HotkeyCommand::ScatterObject => queue_scatter_for_selected(state),
         HotkeyCommand::AllToCheer => queue_house_cheer(state),
         HotkeyCommand::VeterancyNav => selection_navigation::execute_category_navigation(
@@ -1795,14 +1917,11 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
             crate::app::match_runtime::frame_pacer::wall_clock_ms(),
         ),
         HotkeyCommand::PageUser => crate::app::input::page_user::execute(state),
-        // UNCHECKED residual, still a no-op. `PlaceBeacon` should place the
-        // beacon and play `[AudioVisual] PlaceBeaconSound` (`Rules+0x1CC`,
-        // stock `BeaconPlaced`). Its native command handler was not read,
-        // so no mapping is asserted and nothing is wired. Trigger: pressing
-        // the bound key. Player effect: the key does nothing. Frequency:
-        // rare — a multiplayer social command. Downstream risk: beacons are
-        // network messages.
-        HotkeyCommand::PlaceBeacon => {}
+        HotkeyCommand::PlaceBeacon => crate::app::input::beacon::execute_command(state),
+        #[cfg(feature = "verax")]
+        HotkeyCommand::AutoLoad => crate::app::input::autoload::hotkey_pressed(state),
+        #[cfg(not(feature = "verax"))]
+        HotkeyCommand::AutoLoad => {}
     }
 }
 
@@ -1817,12 +1936,7 @@ pub(crate) fn dispatch_command_bar(state: &mut AppState, command: usize, right: 
         0..=2 => {
             let group = command + 1;
             if right {
-                let sim = state
-                    .match_state
-                    .sim_runtime
-                    .as_ref()
-                    .map(|runtime| &runtime.simulation);
-                clear_control_group(&mut state.match_state.input.control_groups, group, sim);
+                queue_control_group_assignment(state, group, Vec::new());
                 return;
             }
             HotkeyCommand::TeamSelect(group)
@@ -1837,7 +1951,12 @@ pub(crate) fn dispatch_command_bar(state: &mut AppState, command: usize, right: 
             return;
         }
         6 => HotkeyCommand::GuardObject,
-        7 => HotkeyCommand::PlaceBeacon,
+        // TabClass::Action6D0742 calls Enter_Beacon_Placement_Mode731A30
+        // directly, without the key's GameMode gate.
+        7 => {
+            crate::app::input::beacon::enter_placement_mode(state);
+            return;
+        }
         8 => HotkeyCommand::StopObject,
         9 => {
             crate::app::input::planning_mode::toggle(state);
@@ -1852,8 +1971,11 @@ pub(crate) fn dispatch_command_bar(state: &mut AppState, command: usize, right: 
 // Native 653952 -> GameState1 -> 48C9BA/4F10E0 opens the pause menu.
 // The button and ordinary Options hotkey share this modal entry.
 fn open_pause_menu(state: &mut AppState) {
-    crate::app::App::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Menu);
-    log::info!("Game paused");
+    if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+        // Queue_Options647040 does not open the dialog. Its accepted local
+        // OPTIONS event requests GameState1 at the due EventClass tail.
+        let _ = runtime.simulation.queue_options_request();
+    }
 }
 
 fn handle_options_hotkey(state: &mut AppState) {
@@ -2098,21 +2220,73 @@ pub(crate) fn selected_stable_ids_in_order(
     if selection_order_pending {
         ordered
     } else {
-        admit_missing_selected_ids(ordered, sim, rules)
+        admit_missing_selected_ids(ordered, sim, rules, &[])
+    }
+}
+
+/// The frame's Selects the game made itself
+/// ([`crate::sim::world::LifecycleOutput::ObjectSelected`]), in call order.
+fn logic_selects(outputs: &[crate::sim::world::LifecycleOutput]) -> Vec<u64> {
+    outputs
+        .iter()
+        .filter_map(|output| match output {
+            crate::sim::world::LifecycleOutput::ObjectSelected { stable_id } => Some(*stable_id),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Insert the frame's logic Selects (`logic_selects`, in call order) into the
+/// ledger with ObjectClass::Select's front/back rule. Only an unselected
+/// object's Select succeeds, so an entry already in a committed ledger left
+/// the vector at its Deselect (`0x005F44A0` removes it from `0x00A8ECB8`) and
+/// re-enters at its last Select. A pending ledger is input's newest order,
+/// which the simulation has not yet committed; its entries keep their place.
+fn admit_logic_selects(
+    ordered: &mut VecDeque<u64>,
+    members: &mut HashSet<u64>,
+    sim: &crate::sim::world::Simulation,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    logic_selects: &[u64],
+    committed: bool,
+) {
+    if logic_selects.is_empty() {
+        return;
+    }
+    if committed {
+        let reselected: HashSet<_> = logic_selects.iter().copied().collect();
+        ordered.retain(|id| !reselected.contains(id));
+        members.retain(|id| !reselected.contains(id));
+    }
+    for (index, &id) in logic_selects.iter().enumerate() {
+        let last = !logic_selects[index + 1..].contains(&id);
+        if last
+            && sim
+                .entities()
+                .get(id)
+                .is_some_and(|entity| entity.selection.is_selected())
+            && members.insert(id)
+        {
+            insert_selected_id(ordered, id, sim, rules);
+        }
     }
 }
 
 /// Selection membership is a transient index, never an iteration authority.
-/// The ledger keeps prior order; lifecycle transfers still enter in entity-store
-/// order, with the same native front/back insertion as input selection. A deque
-/// avoids shifting the whole list for each missing armed object.
+/// The ledger keeps prior order; the frame's logic Selects enter in call
+/// order ([`admit_logic_selects`]); other lifecycle transfers (the raw Select
+/// writers) still enter in entity-store order, with the same native
+/// front/back insertion as input selection. A deque avoids shifting the whole
+/// list for each missing armed object.
 fn admit_missing_selected_ids(
     ordered: Vec<u64>,
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
+    logic_selects: &[u64],
 ) -> Vec<u64> {
     let mut members: HashSet<_> = ordered.iter().copied().collect();
     let mut ordered = VecDeque::from(ordered);
+    admit_logic_selects(&mut ordered, &mut members, sim, rules, logic_selects, true);
     for entity in sim.entities().values() {
         if entity.selection.is_selected() && members.insert(entity.stable_id()) {
             insert_selected_id(&mut ordered, entity.stable_id(), sim, rules);
@@ -2135,8 +2309,12 @@ fn selection_membership_committed(sim: &crate::sim::world::Simulation, ordered: 
 }
 
 /// Synchronize the app ledger after the due selection commands and lifecycle
-/// removals have committed for this frame.
-pub(crate) fn reconcile_selection_order_after_sim(state: &mut AppState) {
+/// removals have committed for this frame. `outputs` are the frame's
+/// lifecycle facts, whose logic Selects enter in call order.
+pub(crate) fn reconcile_selection_order_after_sim(
+    state: &mut AppState,
+    outputs: &[crate::sim::world::LifecycleOutput],
+) {
     let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
         state.match_state.input.selection_order.clear();
         state.match_state.input.selection_order_pending = false;
@@ -2148,6 +2326,7 @@ pub(crate) fn reconcile_selection_order_after_sim(state: &mut AppState) {
         &mut state.match_state.input,
         &runtime.simulation,
         Some(&runtime.resources.rules),
+        &logic_selects(outputs),
     );
 }
 
@@ -2157,6 +2336,7 @@ fn reconcile_selection_order_for_sim(
     input: &mut crate::app::input::state::MatchInputState,
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
+    logic_selects: &[u64],
 ) {
     // Navigation733160 consumes actual pointer expiry through LifecycleOutput,
     // independently of this membership ledger. Alive/Health/Deselect alone
@@ -2166,6 +2346,7 @@ fn reconcile_selection_order_for_sim(
         rules,
         &input.selection_order,
         input.selection_order_pending,
+        logic_selects,
     );
     input.selection_order = order;
     input.selection_order_pending = pending;
@@ -2174,25 +2355,42 @@ fn reconcile_selection_order_for_sim(
 /// Shared reconciliation decision for the live input ledger and a saved
 /// local-view record. The simulation's command queue remains authoritative;
 /// observing a save boundary neither drains nor applies queued commands.
+/// `logic_selects` are the just-finished frame's logic Selects; a save
+/// boundary, between frames, has none.
 pub(crate) fn selection_order_for_world(
     sim: &crate::sim::world::Simulation,
     rules: Option<&crate::rules::ruleset::RuleSet>,
     order: &[u64],
     pending: bool,
+    logic_selects: &[u64],
 ) -> (Vec<u64>, bool) {
     if pending && sim.has_pending_selection_commands() {
-        return (
-            order
-                .iter()
-                .copied()
-                .filter(|id| {
-                    sim.entities()
-                        .get(*id)
-                        .is_some_and(|entity| entity.lifecycle.object_alive())
-                })
-                .collect(),
-            true,
-        );
+        let mut ordered: VecDeque<u64> = order
+            .iter()
+            .copied()
+            .filter(|id| {
+                sim.entities()
+                    .get(*id)
+                    .is_some_and(|entity| entity.lifecycle.object_alive())
+            })
+            .collect();
+        // Native Selects all write the one vector at once, so a logic Select
+        // joins the provisional ledger too.
+        //
+        // RESIDUAL: native commits an input Select at input time, before any
+        // later logic Select; here the queued snapshot commits after it.
+        // Trigger: a logic Select (crew, escaping passenger, released
+        // parasite or their planning partners) while a selection snapshot
+        // is queued. Effect: this ledger holds that object beside the
+        // input's members, even across owners, and the logic Select's
+        // Unselect_All tests and drains the older committed selection; then
+        // the snapshot deselects the object, which native keeps (alone,
+        // across owners). Frequency: only within a selection input's command
+        // latency. Downstream risk: the selection, its Follow and the next
+        // orders' recipients.
+        let mut members = ordered.iter().copied().collect();
+        admit_logic_selects(&mut ordered, &mut members, sim, rules, logic_selects, false);
+        return (ordered.into(), true);
     }
     // MainTick55D8AB/55D8B4 commits local Select before Logic55DC9E.
     // A consumed snapshot may have been refused or then deselected by
@@ -2208,7 +2406,7 @@ pub(crate) fn selection_order_for_world(
                 .is_some_and(|entity| entity.selection.is_selected())
         })
         .collect();
-    let reconciled = admit_missing_selected_ids(reconciled, sim, rules);
+    let reconciled = admit_missing_selected_ids(reconciled, sim, rules, logic_selects);
     debug_assert!(selection_membership_committed(sim, &reconciled));
     (reconciled, false)
 }
@@ -2240,8 +2438,10 @@ fn apply_selection_mutation(
         ordered,
         successful_adds,
         first_select_adds,
+        first_attempt_added,
         follow_target,
         native_selection_mode_reset,
+        unselected_all,
     } = resolve_selection_mutation(
         sim,
         state.rules(),
@@ -2252,6 +2452,14 @@ fn apply_selection_mutation(
         &mutation,
     );
     state.match_state.input.follow_target = follow_target;
+    if unselected_all {
+        // Unselect_All's tail, BeaconManager ClearSelection (0x0048DCB8).
+        state
+            .match_state
+            .match_presentation
+            .beacons
+            .clear_selection();
+    }
 
     if reset_type_select_scope {
         state.match_state.input.type_select.reset_scope();
@@ -2267,6 +2475,7 @@ fn apply_selection_mutation(
         state.match_state.input.selection_voice_enabled,
         &successful_adds,
         first_select_adds,
+        first_attempt_added,
     ) {
         emit_selection_voice(state, *id);
     }
@@ -2293,8 +2502,14 @@ struct SelectionMutationEffects {
     /// The adds made by the first successful Select call, its planning
     /// expansion included.
     first_select_adds: usize,
+    /// Whether the first Select call made (an object not already selected)
+    /// succeeded; true when none was made.
+    first_attempt_added: bool,
     follow_target: Option<u64>,
     native_selection_mode_reset: bool,
+    /// Unselect_All ran: the mutation's clear, or a Select draining another
+    /// selection (0x005F45F8).
+    unselected_all: bool,
 }
 
 fn resolve_selection_mutation(
@@ -2327,9 +2542,44 @@ fn resolve_selection_mutation(
     let mut members: HashSet<_> = ordered.iter().copied().collect();
     let mut successful_adds = Vec::new();
     let mut first_select_adds = 0;
-    let mut select = |id: u64, ordered: &mut VecDeque<u64>, adds: &mut Vec<u64>| {
-        if placement_armed || members.contains(&id) || !sim.can_select_object(id, rules) {
+    let mut first_attempt_added = None;
+    let mut unselected_all = mutation.clear;
+    // Every input Select is vt+0x14C, TechnoClass::Select (0x006FBFA0 in
+    // each Techno vtable; click 0x004ABDBA/0x004ABE72, band 0x004AC2F1,
+    // team 0x00731344/0x0073156C, the type, combatant, category and
+    // next-object walks): its gate (`techno_select_admits`), then
+    // ObjectClass::Select (0x005F4520, called only from 0x006FBFC7): the
+    // admission against the newest ledger and placement and, into a
+    // non-empty selection, Unselect_All (0x0048DC90 at 0x005F45F8,
+    // `select_unselects_all`) against the ledger's first entry, whose
+    // Deselects (0x005F44A0) release Follow, before the insert. So the
+    // player's object drains another house's selection, and the reverse.
+    // VERA-only residual: the trainer's Reveal Map lets the picker reach an
+    // enemy the current house has not discovered, and this gate refuses it
+    // (gamemd has no presentation-only reveal). Debug builds only.
+    let mut select = |id: u64,
+                      ordered: &mut VecDeque<u64>,
+                      members: &mut HashSet<u64>,
+                      adds: &mut Vec<u64>,
+                      follow_target: &mut Option<u64>| {
+        if placement_armed
+            || members.contains(&id)
+            || !sim.techno_select_admits(id)
+            || !rules.is_some_and(|rules| sim.can_select_object(id, rules))
+        {
             return false;
+        }
+        if ordered
+            .front()
+            .is_some_and(|&first| sim.select_unselects_all(first, id))
+        {
+            unselected_all = true;
+            for removed in ordered.drain(..) {
+                members.remove(&removed);
+                if *follow_target == Some(removed) {
+                    *follow_target = None;
+                }
+            }
         }
         members.insert(id);
         adds.push(id);
@@ -2337,22 +2587,36 @@ fn resolve_selection_mutation(
         true
     };
     for &id in &mutation.select {
-        if !select(id, &mut ordered, &mut successful_adds) {
+        let attempted = !members.contains(&id);
+        let added = select(
+            id,
+            &mut ordered,
+            &mut members,
+            &mut successful_adds,
+            &mut follow_target,
+        );
+        if attempted && first_attempt_added.is_none() {
+            first_attempt_added = Some(added);
+        }
+        if !added {
             continue;
         }
         native_selection_mode_reset = true;
-        // TechnoClass::Select ends with 0x00637840 (0x006FC020): in planning
-        // mode it Selects (vt+0x14C) each unselected member of the object's
-        // tail node; its AC4CF6 guard keeps those Selects from expanding.
-        // They run before the band-box callback clears the voice latch
-        // (0x004AC2FB), so they speak with their Select. Residual: members
-        // pass only `can_select_object`, not 6FBFA0's +0x41B/IsHumanPlayer
-        // gate or 5F4520's cross-owner Unselect_All (0x005F45AF..0x005F45F8);
-        // that differs only for another human player's plan.
-        if planning_active {
-            for member in sim.planning_tail_members(id) {
-                select(member, &mut ordered, &mut successful_adds);
-            }
+        // TechnoClass::Select ends with 0x00637840 (0x006FC020), whose one
+        // port names the tail-node partners to Select (vt+0x14C) here; these
+        // nested Selects do not expand again (AC4CF6). They run before the
+        // band-box callback clears the voice latch (0x004AC2FB), so they
+        // speak with their Select. A connect (0x0063AD50) can put another
+        // house's object on the player's node; its Select drains the ledger
+        // like any other.
+        for member in sim.planning_select_partners(id, planning_active) {
+            select(
+                member,
+                &mut ordered,
+                &mut members,
+                &mut successful_adds,
+                &mut follow_target,
+            );
         }
         if first_select_adds == 0 {
             first_select_adds = successful_adds.len();
@@ -2362,8 +2626,10 @@ fn resolve_selection_mutation(
         ordered: ordered.into(),
         successful_adds,
         first_select_adds,
+        first_attempt_added: first_attempt_added.unwrap_or(true),
         follow_target,
         native_selection_mode_reset,
+        unselected_all,
     }
 }
 
@@ -2401,12 +2667,14 @@ fn selection_voice_recipients(
     voice_enabled: bool,
     successful_adds: &[u64],
     first_select_adds: usize,
+    first_attempt_added: bool,
 ) -> &[u64] {
     if !voice_enabled || policy == SelectionVoicePolicy::Suppressed {
         return &[];
     }
     match policy {
-        SelectionVoicePolicy::FirstAdded => {
+        SelectionVoicePolicy::FirstAttempted if !first_attempt_added => &[],
+        SelectionVoicePolicy::FirstAdded | SelectionVoicePolicy::FirstAttempted => {
             &successful_adds[..successful_adds.len().min(first_select_adds)]
         }
         SelectionVoicePolicy::EveryAdded => successful_adds,
@@ -2483,6 +2751,46 @@ mod item83_selection_order_tests {
         assert!(selected_stable_ids_in_order(None, Some(&rules), &[10], false).is_empty());
     }
 
+    /// The game's own Selects (TechnoClass::Select vt+0x14C from Logic, e.g.
+    /// a reselected escapee and its planning-node partners) reach the vector
+    /// in call order through ObjectClass::Select's front/back rule
+    /// (`0x005F468C`/`0x005F470E`), not in entity-store order. A ledger entry
+    /// whose byte was cleared and set again left the vector at its Deselect
+    /// (`0x005F44A0`) and re-enters at its last Select.
+    #[test]
+    fn logic_selects_enter_the_ledger_in_call_order() {
+        use super::selection_order_for_world;
+        use crate::sim::command::{Command, CommandEnvelope};
+        let (mut sim, rules) = mixed_selection_fixture();
+        let read = |sim: &Simulation, prior: &[u64], pending, selects: &[u64]| {
+            selection_order_for_world(sim, Some(&rules), prior, pending, selects)
+        };
+        // Store order would give [30, 10, 20, 50].
+        assert_eq!(read(&sim, &[20], false, &[50, 30, 10]).0, [10, 30, 20, 50]);
+        // The last of repeated Selects places the object; an object whose
+        // Select was undone (40) stays out.
+        assert_eq!(
+            read(&sim, &[20, 50], false, &[10, 30, 40, 10]).0,
+            [10, 30, 20, 50]
+        );
+        assert_eq!(
+            read(&sim, &[10, 20, 30, 50], false, &[20]).0,
+            [10, 30, 50, 20]
+        );
+        // A queued input Select keeps its provisional place; a logic Select
+        // joins the provisional ledger.
+        let owner = sim.intern("Americans");
+        sim.queue_command(CommandEnvelope::new(
+            owner,
+            2,
+            Command::Select {
+                entity_ids: vec![20],
+                additive: false,
+            },
+        ));
+        assert_eq!(read(&sim, &[20], true, &[30, 20]), (vec![30, 20], true));
+    }
+
     #[test]
     fn selection_pending_clears_only_when_committed_membership_matches() {
         let (sim, _) = mixed_selection_fixture();
@@ -2532,7 +2840,7 @@ mod item83_selection_order_tests {
         }
         let candidate_order = [2, 1];
         let mut emitted = |policy| {
-            selection_voice_recipients(policy, true, &candidate_order, 1)
+            selection_voice_recipients(policy, true, &candidate_order, 1, true)
                 .iter()
                 .filter_map(|id| {
                     crate::app::match_runtime::sound_dispatch::selection_voice_event(
@@ -2601,13 +2909,20 @@ mod item83_selection_order_tests {
     fn a_planning_select_adds_the_tail_node_members_who_speak_with_it() {
         use super::{SelectionMutation, SelectionVoicePolicy, resolve_selection_mutation};
         use crate::sim::command::Command;
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[VehicleTypes]\n0=TESTUNIT\n[TESTUNIT]\n",
+            ))
+            .expect("selection fixture rules");
         let mut sim = Simulation::new();
         let local = sim.intern("Local");
         let kind = sim.intern("TESTUNIT");
         sim.houses_mut_for_test()
             .register(crate::sim::house_state::HouseState::new(
-                local, 0, None, false, 0, 10,
+                local, 0, None, true, 0, 10,
             ));
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
         for id in [42, 43, 44] {
             let mut entity = GameEntity::new_at_frame_zero_for_test(
                 id,
@@ -2636,16 +2951,18 @@ mod item83_selection_order_tests {
                         target_rx: 5,
                         target_ry: 7,
                     },
+                    None,
                 )
                 .unwrap();
             let command = sim.decode_native_command_record(&record, 0).unwrap();
-            assert!(sim.apply_command("Local", &command.payload, None));
+            assert!(sim.apply_command("Local", &command.payload, Some(&rules)));
         }
-        assert_eq!(sim.planning_tail_members(42), vec![42, 43]);
+        assert_eq!(sim.planning_select_partners(42, true), vec![42, 43]);
+        assert!(sim.planning_select_partners(42, false).is_empty());
         let resolve = |current: Vec<u64>, select: Vec<u64>, planning| {
             resolve_selection_mutation(
                 &sim,
-                None,
+                Some(&rules),
                 current,
                 None,
                 false,
@@ -2666,6 +2983,7 @@ mod item83_selection_order_tests {
                 true,
                 &effects.successful_adds,
                 effects.first_select_adds,
+                effects.first_attempt_added,
             ),
             [42, 43]
         );
@@ -2689,6 +3007,244 @@ mod item83_selection_order_tests {
         );
         assert!(effects.successful_adds.is_empty());
     }
+
+    /// The current human house `Local` with units 42, 43 and 44 and a
+    /// computer house `Enemy` with units 50 and 51, out of Limbo; the
+    /// `discovered` enemy units have `+0x41B` set.
+    fn two_house_fixture(discovered: &[u64]) -> (Simulation, RuleSet) {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=TESTUNIT\n[TESTUNIT]\n",
+        ))
+        .expect("selection fixture rules");
+        let mut sim = Simulation::new();
+        let local = sim.intern("Local");
+        let enemy = sim.intern("Enemy");
+        let kind = sim.intern("TESTUNIT");
+        for (house, index, human) in [(local, 0, true), (enemy, 1, false)] {
+            sim.houses_mut_for_test()
+                .register(crate::sim::house_state::HouseState::new(
+                    house, index, None, human, 0, 10,
+                ));
+        }
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
+        for (id, owner) in [
+            (42, local),
+            (43, local),
+            (44, local),
+            (50, enemy),
+            (51, enemy),
+        ] {
+            let mut entity = GameEntity::new_at_frame_zero_for_test(
+                id,
+                1,
+                1,
+                0,
+                0,
+                owner,
+                Health::new(100),
+                kind,
+                EntityCategory::Unit,
+                0,
+                5,
+                false,
+            );
+            entity.lifecycle.set_in_limbo_for_test(false);
+            entity
+                .discovery
+                .set_discovered_by_current_house_for_test(discovered.contains(&id));
+            sim.entities_mut_for_test().insert(entity);
+        }
+        (sim, rules)
+    }
+
+    /// Put each actor on the player's node at (5, 7) in turn: the player's
+    /// by a planned move, another house's by a connect (`0x0063AD50`).
+    fn plan_to_shared_node(sim: &mut Simulation, rules: &RuleSet, actors: &[u64]) {
+        use crate::sim::command::Command;
+        let local = sim.intern("Local");
+        for &actor in actors {
+            let record = if sim.house_is_human_player(sim.entities().get(actor).unwrap().owner()) {
+                sim.encode_planning_order_record(
+                    local,
+                    &Command::Move {
+                        entity_id: actor,
+                        target_rx: 5,
+                        target_ry: 7,
+                    },
+                    None,
+                )
+            } else {
+                sim.encode_plan_connect_record(local, actor, (5, 7))
+            }
+            .unwrap();
+            let command = sim.decode_native_command_record(&record, 0).unwrap();
+            assert!(sim.apply_command("Local", &command.payload, Some(rules)));
+        }
+    }
+
+    /// A connect (`0x0063AD50`) can put another house's object on the
+    /// player's node. Each partner Select passes TechnoClass::Select's gate
+    /// (`0x006FBFA3..0x006FBFC3`: discovered `+0x41B` or the human player's)
+    /// and ObjectClass::Select's Unselect_All against the first selected
+    /// object (`0x005F45AF..0x005F45F8`), through the simulation's owners.
+    #[test]
+    fn a_planning_partner_of_another_house_passes_the_select_gate_and_unselects_all() {
+        use super::{SelectionMutation, resolve_selection_mutation};
+        for discovered in [true, false] {
+            let (mut sim, rules) = two_house_fixture(if discovered { &[50] } else { &[] });
+            plan_to_shared_node(&mut sim, &rules, &[42, 50, 43, 51]);
+            assert_eq!(sim.planning_select_partners(42, true), [42, 50, 43, 51]);
+            let effects = resolve_selection_mutation(
+                &sim,
+                Some(&rules),
+                vec![],
+                Some(42),
+                false,
+                true,
+                &SelectionMutation {
+                    clear: true,
+                    select: vec![42],
+                    ..Default::default()
+                },
+            );
+            if discovered {
+                // 50 drains 42 (Follow with it); 43 drains 50; 51 is refused.
+                assert_eq!(effects.ordered, [43]);
+                assert_eq!(effects.successful_adds, [42, 50, 43]);
+                assert_eq!(effects.follow_target, None);
+            } else {
+                assert_eq!(effects.ordered, [42, 43]);
+                assert_eq!(effects.successful_adds, [42, 43]);
+            }
+        }
+    }
+
+    /// Recall (`0x007311C0`) clears, then Selects each member through
+    /// vt+0x14C (`0x00731344`). When the first member's tail node ends on
+    /// another house's discovered object, that partner is left alone in the
+    /// selection, and the next member's own Select drains it
+    /// (`0x005F45AF..0x005F45F8`).
+    #[test]
+    fn a_later_member_select_drains_another_houses_planning_partner() {
+        use super::{SelectionMutation, resolve_selection_mutation};
+        let (mut sim, rules) = two_house_fixture(&[50]);
+        plan_to_shared_node(&mut sim, &rules, &[42, 50]);
+        assert_eq!(sim.planning_select_partners(42, true), [42, 50]);
+        let effects = resolve_selection_mutation(
+            &sim,
+            Some(&rules),
+            vec![],
+            None,
+            false,
+            true,
+            &SelectionMutation {
+                clear: true,
+                select: vec![42, 44],
+                ..Default::default()
+            },
+        );
+        assert_eq!(effects.ordered, [44]);
+        assert_eq!(effects.successful_adds, [42, 50, 44]);
+    }
+
+    /// The band callback (`0x004AC2B0`) Selects only the player's objects
+    /// (vt+0x14C at `0x004AC2F1`), and a Shift drag skips the clear. A
+    /// selected enemy is current-objects `[0]`, so the first Select runs
+    /// Unselect_All (`0x005F45F8`), whose Deselect also releases Follow.
+    #[test]
+    fn a_shift_band_over_own_units_drains_a_selected_enemy() {
+        use super::{SelectionMutation, resolve_selection_mutation};
+        let (sim, rules) = two_house_fixture(&[50]);
+        let order: Vec<u64> = sim
+            .entities()
+            .values()
+            .map(|entity| entity.stable_id())
+            .collect();
+        let mutation = crate::app::input::entity_pick::compute_box_selection_snapshot(
+            sim.entities(),
+            &order,
+            &order,
+            &[50],
+            None,
+            Some("Local"),
+            -1.0e6,
+            -1.0e6,
+            1.0e6,
+            1.0e6,
+            true,
+            Some(&rules),
+            None,
+            Some(sim.interner()),
+        )
+        .expect("the band caught objects");
+        assert_eq!(
+            mutation,
+            SelectionMutation {
+                select: vec![42, 43, 44],
+                ..Default::default()
+            }
+        );
+        let effects = resolve_selection_mutation(
+            &sim,
+            Some(&rules),
+            vec![50],
+            Some(50),
+            false,
+            false,
+            &mutation,
+        );
+        assert_eq!(effects.ordered, [42, 43, 44]);
+        assert_eq!(effects.successful_adds, [42, 43, 44]);
+        assert_eq!(effects.follow_target, None);
+    }
+
+    /// A Shift click while the player's units are selected is the toggle
+    /// arm's Select (`0x004ABDBA`), which clears nothing itself. For an enemy
+    /// its ObjectClass::Select drains the units (`0x005F45AF..0x005F45F8`);
+    /// TechnoClass::Select's gate (`0x006FBFA3..0x006FBFC3`) refuses an
+    /// undiscovered one first, which leaves them selected.
+    #[test]
+    fn a_shift_click_on_an_enemy_selects_it_through_select() {
+        use super::{SelectionMutation, resolve_selection_mutation};
+        let (sim, rules) = two_house_fixture(&[50]);
+        for (enemy, ordered) in [(50, vec![50]), (51, vec![42, 43])] {
+            let (x, y) = crate::render::locomotor_visual::screen_position(
+                sim.entities().get(enemy).unwrap(),
+            );
+            let mutation = crate::app::input::entity_pick::compute_click_selection_snapshot(
+                sim.entities(),
+                &[enemy],
+                &[42, 43],
+                None,
+                Some("Local"),
+                x,
+                y,
+                true,
+                Some(&rules),
+                Some(sim.interner()),
+            )
+            .expect("the click picked the enemy");
+            assert_eq!(
+                mutation,
+                SelectionMutation {
+                    select: vec![enemy],
+                    ..Default::default()
+                }
+            );
+            let effects = resolve_selection_mutation(
+                &sim,
+                Some(&rules),
+                vec![42, 43],
+                Some(42),
+                false,
+                false,
+                &mutation,
+            );
+            assert_eq!(effects.ordered, ordered, "enemy {enemy}");
+            assert_eq!(effects.follow_target, (enemy == 51).then_some(42));
+        }
+    }
 }
 
 fn queue_selection_snapshot_command(state: &mut AppState, selected_ids: Vec<u64>, additive: bool) {
@@ -2704,44 +3260,112 @@ fn queue_selection_snapshot_command(state: &mut AppState, selected_ids: Vec<u64>
     );
 }
 
-/// `StopCommandClass::Execute @ 0x00730EA0` issues Stop to each selected
-/// object it may control (vt+0xA0) or that is active (vt+0x9C,
-/// `0x00730ECD..0x00730EE3`), so an offline Robot Tank a click selected stays
-/// put.
-///
-/// Planning refusal at730EF5 ->6FFE00 ->639FD0 ends this walk before
-/// scheduling ordinary Stop. The closing Rules+720 sound is a residual.
+/// One team walk's Selects (Recall, AddTeam, CenterCamera), with their
+/// latch rule.
+fn queue_team_selection(state: &mut AppState, selection: TeamSelection) {
+    apply_selection_mutation(
+        state,
+        SelectionMutation {
+            clear: selection.clear,
+            select: selection.select,
+            ..Default::default()
+        },
+        true,
+        TEAM_SELECTION_VOICE_POLICY,
+    );
+}
+
+/// `Selection__IssueStopCommand @ 0x00730EA0`, reached from the Stop key
+/// (`0x00536B80`) and the command bar. Planning refusal at730EF5 ->6FFE00
+/// ->639FD0 ends the walk with ScoldSound and no StopSound; it is only
+/// reached for a qualifying object.
 fn queue_stop_for_selected(state: &mut AppState) {
     let sim = state
         .match_state
         .sim_runtime
         .as_ref()
         .map(|rt| &rt.simulation);
-    let mut selected_ids = selected_stable_ids_in_order(
+    let selected_ids = selected_stable_ids_in_order(
         sim,
         state.rules(),
         &state.match_state.input.selection_order,
         state.match_state.input.selection_order_pending,
     );
-    if let (Some(sim), Some(rules)) = (sim, state.rules()) {
-        selected_ids.retain(|&id| {
-            sim.techno_player_controllable(id, rules) || sim.techno_is_active(id, rules)
-        });
-    }
-    if selected_ids.is_empty() {
-        return;
-    }
-    if state.match_state.input.planning.active() {
+    let qualifies = match (sim, state.rules()) {
+        (Some(sim), Some(rules)) => selected_ids
+            .iter()
+            .any(|&id| stop_qualifies(sim, rules, id)),
+        _ => false,
+    };
+    if qualifies && state.match_state.input.planning.active() {
         crate::app::input::planning_mode::refuse(
             state,
             crate::app::input::planning_mode::PlanningRefusal::Stop,
         );
         return;
     }
-    let owner: String = preferred_local_owner(state).unwrap_or_else(|| "Americans".to_string());
-    for entity_id in selected_ids {
-        schedule_command(state, &owner, Command::Stop { entity_id });
+    if !super::commands::selection_input_has_capacity(state, selected_ids.len()) {
+        return;
     }
+    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+        return;
+    };
+    for sound in queue_stop_orders(
+        &mut runtime.simulation,
+        &runtime.resources.rules,
+        &selected_ids,
+    ) {
+        state.match_state.match_audio.sound_events.push(sound);
+    }
+}
+
+/// Whether the Stop walk issues to this object: one it may control (vt+0xA0)
+/// or that is active (vt+0x9C, `0x00730ECD..0x00730EE3`), so an offline
+/// Robot Tank a click selected stays put.
+fn stop_qualifies(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    id: u64,
+) -> bool {
+    sim.techno_player_controllable(id, rules) || sim.techno_is_active(id, rules)
+}
+
+/// The Stop walk, then its cue `PlayGlobal(Rules+720, 0x2000, 1.0)`
+/// (`0x00730F00..0x00730F17`). An empty selection plays nothing
+/// (`0x00730EAB`); the walk's result starts true, so a selection where
+/// nothing qualified still plays it. Events are sent as the player's house
+/// (`ClickedEvent 0x006FFE00`), as Guard and Scatter do.
+fn queue_stop_orders(
+    sim: &mut crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    selected: &[u64],
+) -> Vec<crate::audio::events::GameSoundEvent> {
+    if selected.is_empty() {
+        return Vec::new();
+    }
+    let Some(owner) = sim.session().current_house() else {
+        return Vec::new();
+    };
+    let owner = sim.interner().resolve(owner).to_owned();
+    for &entity_id in selected {
+        if !stop_qualifies(sim, rules, entity_id) {
+            continue;
+        }
+        let payload = Command::Stop { entity_id };
+        if crate::app::input::commands::schedule_command_in_sim(sim, &owner, payload).is_none() {
+            // A refused Rust schedule fails closed, as Guard's does.
+            return Vec::new();
+        }
+    }
+    rules
+        .general
+        .stop_sound
+        .as_ref()
+        .map_or_else(Vec::new, |sound_id| {
+            vec![crate::audio::events::GameSoundEvent::UiSound {
+                sound_id: sound_id.clone(),
+            }]
+        })
 }
 
 /// GuardObject536D00 and command-bar slot6 both execute730D60 immediately.
@@ -2765,6 +3389,9 @@ fn queue_guard_for_selected(state: &mut AppState) {
         &state.match_state.input.selection_order,
         state.match_state.input.selection_order_pending,
     );
+    if !super::commands::selection_input_has_capacity(state, selected.len()) {
+        return;
+    }
     let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
         return;
     };
@@ -2813,6 +3440,9 @@ fn queue_scatter_for_selected(state: &mut AppState) {
                 crate::app::input::planning_mode::PlanningRefusal::Scatter,
             );
         }
+        return;
+    }
+    if !super::commands::selection_input_has_capacity(state, selected.len()) {
         return;
     }
     let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
@@ -2925,6 +3555,9 @@ fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
         &state.match_state.input.selection_order,
         state.match_state.input.selection_order_pending,
     );
+    if !super::commands::selection_input_has_capacity(state, selected_ids.len()) {
+        return;
+    }
     let Some(sim) = state
         .match_state
         .sim_runtime
@@ -2951,6 +3584,21 @@ fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
         return;
     }
     for cmd in commands {
+        //730D15 calls ClickedEvent6FFE00 with Event9. Self-click uses the
+        //separate MegaMission Unload producer, even for the same AMCV.
+        let cmd = if let Command::DeployMcv { entity_id }
+        | Command::ToggleInfantryDeploy { entity_id } = cmd
+        {
+            let Some(record) = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+                let sim = &runtime.simulation;
+                sim.encode_deploy_record(sim.interner().get(&owner)?, entity_id)
+            }) else {
+                continue;
+            };
+            Command::SynchronizedRecord { record }
+        } else {
+            cmd
+        };
         schedule_command(state, &owner, cmd);
     }
 }
@@ -2981,10 +3629,7 @@ fn deploy_key_commands(
     let first = selection.first().and_then(|&id| sim.entities().get(id));
     if let Some(building) = first.filter(|entity| {
         entity.category() == EntityCategory::Structure
-            && entity
-                .passenger_role
-                .cargo()
-                .is_some_and(|cargo| !cargo.is_empty())
+            && entity.passenger_role.occupants().count() > 0
     }) {
         return deploy_key_command(sim, rules, building.stable_id(), local_owner)
             .into_iter()
@@ -3044,11 +3689,12 @@ fn deployer_is_deployed(
     }
 }
 
-/// The deploy key's per-object order for an object it admits: each
-/// class's Unload mission (vt+0x374(9), `0x00730D15`). The command's
-/// historical `DeployMcv` wire name also carries a SimpleDeployer toggle
-/// and a tank bunker's occupant's deploy out. The walk admits a bunkered unit
-/// only through IsActive (vt+0x9C): vt+0xA0 refuses a bunker link, and a box
+/// The deploy key's per-object event for an object it admits: DEPLOY event
+/// opcode9 (vt+0x374(9), `0x00730D15`), whose receiver queues Mission Unload16.
+/// The historical `DeployMcv` wire name also carries a SimpleDeployer toggle,
+/// a transport's empty or loaded order and a tank bunker's deploy out.
+/// The walk admits a bunkered unit only through IsActive (vt+0x9C):
+/// vt+0xA0 refuses a bunker link, and a box
 /// never selects one, but a click does.
 fn deploy_key_command(
     sim: &crate::sim::world::Simulation,
@@ -3069,8 +3715,14 @@ fn deploy_key_command(
         EntityCategory::Unit if entity.bunker.link().installed_in().is_some() => {
             Some(Command::DeployMcv { entity_id })
         }
+        // Unit D emits Event9 without a cargo-count test (`0x00730D15` →
+        // `0x006FFE00`); self-click keeps its separate loaded-only admission.
+        // Native controls: tools/spatial_oracle/ground_transport_deploy.json.
+        EntityCategory::Unit if obj.is_some_and(|object| object.passengers > 0) => {
+            Some(Command::DeployMcv { entity_id })
+        }
         _ => {
-            // A loaded transport (including aircraft) keeps the unload action.
+            // Aircraft and other deployers retain their existing routing.
             super::transport_orders::unload_command(entity, obj, local_owner).or_else(|| {
                 let object = obj?;
                 (super::context_order::is_simple_deploy_unit(entity, object)
@@ -3155,111 +3807,125 @@ fn control_group_action_for_input(
     last_press: Option<(usize, std::time::Duration)>,
     sim: Option<&crate::sim::world::Simulation>,
 ) -> Option<GroupPressAction> {
-    let eligible_selected = live_group_members(sim, selected);
-    control_group_press_action(modifiers, slot, group, &eligible_selected, last_press)
+    // Recall's double-tap test (`0x0073123B..0x0073129D`) walks only
+    // non-limbo objects of eligible owners, as the team walks do.
+    control_group_press_action(
+        modifiers,
+        slot,
+        &team_walk_members(sim, group),
+        &team_walk_members(sim, selected),
+        last_press,
+    )
 }
 
-/// Assign `ids` to `slot`, evicting them from every other slot.
-///
-/// Membership is a single group index stored on the object, so a unit belongs
-/// to at most one group and re-grouping it silently drops it from the old one.
-/// VERA keeps ten id lists, so the eviction is explicit here.
-fn assign_control_group(groups: &mut [Vec<u64>], slot: usize, ids: Vec<u64>) {
-    for (index, group) in groups.iter_mut().enumerate() {
-        if index != slot {
-            group.retain(|id| !ids.contains(id));
-        }
-    }
-    groups[slot] = ids;
-}
-
-/// TeamClear7310D0, reached by the command bar at6D0990. Eligibility is
-/// tested before touching+214, so ineligible live members retain their slot.
-/// Missing objects have no native field and are pruned from the host index.
-fn clear_control_group(
-    groups: &mut [Vec<u64>],
+/// CreateTeamCommand535CC0 passes its one-based parameter to TeamAssign731060;
+/// TeamClear7310D0 (command bar6D0990) performs its clear without setting any
+/// selected fields. The simulation owns both effects on Techno+214. Registered
+/// digit0 is parameter10, hence raw group9; digits1..9 map to raw0..8.
+fn schedule_control_group_assignment(
+    sim: &mut crate::sim::world::Simulation,
+    owner: &str,
     slot: usize,
-    sim: Option<&crate::sim::world::Simulation>,
-) {
-    let Some(members) = groups.get_mut(slot) else {
-        return;
-    };
-    let Some(sim) = sim else {
-        // With no world every retained ID is absent, as on world cleanup.
-        members.clear();
-        return;
-    };
-    let eligible: HashSet<_> = live_group_members(Some(sim), members).into_iter().collect();
-    members.retain(|id| sim.entities().get(*id).is_some() && !eligible.contains(id));
-}
-
-/// Apply TeamAssign's clear-then-set effects to the Rust group index.
-/// TeamAssign731060 skips both effects for an ineligible owner, so those live
-/// members keep their slot latent until their owner becomes eligible again.
-fn reassign_control_group(
-    groups: &mut [Vec<u64>],
-    slot: usize,
-    selected: &[u64],
-    sim: &crate::sim::world::Simulation,
-) {
-    //73109E..7310BF performs the same eligible clear before setting the
-    //selected field. Reuse its owner instead of copying the eligibility gate.
-    clear_control_group(groups, slot, Some(sim));
-    let eligible_selected = live_group_members(Some(sim), selected);
-    let mut target_members = groups[slot].clone();
-    target_members.extend(eligible_selected);
-    assign_control_group(groups, slot, target_members);
-}
-
-/// Keep the current legal selection intact when Shift+digit adds eligible
-/// control-group members. Ordinary click selection may include enemy objects.
-fn append_group_members_to_selection(mut selected: Vec<u64>, group: &[u64]) -> Vec<u64> {
-    selected.extend_from_slice(group);
-    selected
-}
-
-/// Centre of a set of world points in leptons, with the single worst outlier
-/// dropped once there are more than two of them — the engine's centre-on-
-/// selection maths, which is a trimmed mean rather than a plain centroid so one
-/// straggler cannot drag the view off the main body.
-///
-/// Ties on "farthest" keep the first candidate (comparison is strictly greater);
-/// the original's tie-break is UNVERIFIED.
-fn trimmed_centroid_leptons(points: &[(i64, i64)]) -> Option<(i64, i64)> {
-    if points.is_empty() {
+    entity_ids: Vec<u64>,
+) -> Option<u64> {
+    if slot >= 10 {
         return None;
     }
-    let count = points.len() as i64;
-    let sum = points
-        .iter()
-        .fold((0i64, 0i64), |acc, p| (acc.0 + p.0, acc.1 + p.1));
-    let mean = (sum.0 / count, sum.1 / count);
-    if points.len() <= 2 {
-        return Some(mean);
-    }
-    let mut farthest = points[0];
-    let mut farthest_dist = i64::MIN;
-    for p in points {
-        let (dx, dy) = (p.0 - mean.0, p.1 - mean.1);
-        let dist = dx * dx + dy * dy;
-        if dist > farthest_dist {
-            farthest_dist = dist;
-            farthest = *p;
-        }
-    }
-    Some((
-        (sum.0 - farthest.0) / (count - 1),
-        (sum.1 - farthest.1) / (count - 1),
-    ))
+    crate::app::input::commands::schedule_command_in_sim(
+        sim,
+        owner,
+        Command::AssignControlGroup {
+            group: ((slot + 9) % 10) as i32,
+            entity_ids,
+        },
+    )
 }
 
-/// Leptons per cell.
-const LEPTONS_PER_CELL: i64 = crate::util::lepton::LEPTONS_PER_CELL_I32 as i64;
+fn queue_control_group_assignment(state: &mut AppState, slot: usize, entity_ids: Vec<u64>) {
+    let Some(owner) = preferred_local_owner_name(state) else {
+        return;
+    };
+    let Some(runtime) = state.match_state.sim_runtime.as_mut() else {
+        return;
+    };
+    let _ = schedule_control_group_assignment(&mut runtime.simulation, &owner, slot, entity_ids);
+}
 
-/// Existing eligible members in retained membership order. Assignment, clear
-/// and recall share this entity-level filter; the House owner decides the
+/// CenterCamera's Unselect_All gate (`0x007313E3..0x00731419`): a non-empty
+/// selection whose first object is not a Foot (AbstractFlags bit 4,
+/// `0x007313F8..0x00731404`) of this team (`+0x214`, `0x0073140B`). A team
+/// building first in the selection deselects everything.
+fn center_team_deselects(
+    sim: Option<&crate::sim::world::Simulation>,
+    selected: &[u64],
+    group: &[u64],
+) -> bool {
+    selected.first().is_some_and(|first| {
+        let foot = sim
+            .and_then(|sim| sim.entities().get(*first))
+            .is_some_and(|entity| entity.category() != EntityCategory::Structure);
+        !(foot && group.contains(first))
+    })
+}
+
+/// A team key's change to the selection.
+#[derive(Debug, PartialEq, Eq)]
+struct TeamSelection {
+    clear: bool,
+    select: Vec<u64>,
+}
+
+/// What CenterCamera `0x007313A0`, AddTeam `0x007314C0` or Recall
+/// `0x007311C0` does to the selection. `None` when the key clears nothing
+/// and finds no unselected member to Select, so nothing is queued.
+fn team_selection(
+    sim: Option<&crate::sim::world::Simulation>,
+    action: GroupPressAction,
+    group: &[u64],
+    selected: &[u64],
+) -> Option<TeamSelection> {
+    let select = team_walk_members(sim, group);
+    let clear = match action {
+        GroupPressAction::Recall => {
+            return Some(TeamSelection {
+                clear: true,
+                select,
+            });
+        }
+        GroupPressAction::Center => center_team_deselects(sim, selected, group),
+        GroupPressAction::AddToSelection => false,
+        GroupPressAction::Assign => return None,
+    };
+    (clear || select.iter().any(|id| !selected.contains(id)))
+        .then_some(TeamSelection { clear, select })
+}
+
+/// The members a team walk Selects, in its order. Recall `0x007311C0`,
+/// AddTeam `0x007314C0` and CenterCamera `0x007313A0` walk the Techno array
+/// from index 0 (construction order, which ascending stable ids keep; see
+/// `Simulation`'s threat rebuild) and skip limbo (`+0x81`) before calling
+/// Select; members already selected (`+0x83`) are skipped by the ledger.
+/// Each Select runs the ledger's gate and Unselect_All, so a lone selected
+/// enemy is drained by the first member.
+fn team_walk_members(sim: Option<&crate::sim::world::Simulation>, group: &[u64]) -> Vec<u64> {
+    let Some(sim) = sim else {
+        return Vec::new();
+    };
+    let mut members: Vec<u64> = live_group_members(Some(sim), group)
+        .into_iter()
+        .filter(|id| {
+            sim.entities()
+                .get(*id)
+                .is_some_and(|entity| !entity.in_limbo())
+        })
+        .collect();
+    members.sort_unstable();
+    members
+}
+
+/// Existing eligible members in retained membership order. The House owner decides the
 /// mode-zero PlayerControl/nonzero current-House predicate. Limbo policy is
-/// left to the selection consumer, rather than added to assignment or clear.
+/// left to the selection consumer; assignment and clear use the simulation owner.
 fn live_group_members(sim: Option<&crate::sim::world::Simulation>, group: &[u64]) -> Vec<u64> {
     let Some(sim) = sim else {
         return Vec::new();
@@ -3275,43 +3941,12 @@ fn live_group_members(sim: Option<&crate::sim::world::Simulation>, group: &[u64]
         .collect()
 }
 
-/// Put the camera on a group's trimmed centroid. Emits no command — the centre
-/// arm must stay out of the lockstep stream.
-fn center_camera_on_group(state: &mut AppState, group: &[u64]) {
-    let points: Vec<(i64, i64)> = {
-        let Some(sim) = state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation)
-        else {
-            return;
-        };
-        group
-            .iter()
-            .filter_map(|id| sim.entities().get(*id))
-            .map(|e| {
-                (
-                    e.position.rx() as i64 * LEPTONS_PER_CELL + e.position.sub_x().to_num::<i64>(),
-                    e.position.ry() as i64 * LEPTONS_PER_CELL + e.position.sub_y().to_num::<i64>(),
-                )
-            })
-            .collect()
-    };
-    let Some((cx, cy)) = trimmed_centroid_leptons(&points) else {
-        return;
-    };
-    let rx = (cx / LEPTONS_PER_CELL).clamp(0, u16::MAX as i64) as u16;
-    let ry = (cy / LEPTONS_PER_CELL).clamp(0, u16::MAX as i64) as u16;
-    crate::app::input::camera::center_camera_on_cell(state, rx, ry);
-}
-
 fn handle_control_group_command(
     state: &mut AppState,
     group_idx: usize,
     action_override: Option<GroupPressAction>,
 ) {
-    if group_idx >= state.match_state.input.control_groups.len() {
+    if group_idx >= 10 {
         return;
     }
     let sim = state
@@ -3319,17 +3954,15 @@ fn handle_control_group_command(
         .sim_runtime
         .as_ref()
         .map(|rt| &rt.simulation);
-    let group = state.match_state.input.control_groups[group_idx].clone();
+    let group = sim
+        .map(|sim| sim.projected_control_groups()[group_idx].clone())
+        .unwrap_or_default();
     let selected = selected_stable_ids_in_order(
         sim,
         state.rules(),
         &state.match_state.input.selection_order,
         state.match_state.input.selection_order_pending,
     );
-    // Only live members count towards "the selection is exactly the group" —
-    // membership is derived by scanning live objects, so a dead unit has
-    // already left its group.
-    let live_group = live_group_members(sim, &group);
     let last_press = state
         .match_state
         .input
@@ -3339,7 +3972,7 @@ fn handle_control_group_command(
         control_group_action_for_input(
             KeyModifiers::default(),
             group_idx,
-            &live_group,
+            &group,
             &selected,
             last_press,
             sim,
@@ -3347,40 +3980,59 @@ fn handle_control_group_command(
         .expect("a bare team-select binding always resolves")
     });
 
+    if action != GroupPressAction::Assign {
+        // Recall731205, CenterCamera7313DE and AddTeam7314FD each START by
+        // turning off every armed map mode on DisplayClass 0x87F7E8:
+        // SetTogglePowerMode(0) 0x4AC820 (unreachable in YR), SetWaypointMode
+        // (0,0) 0x4AC700 — its +0x11B3 byte is never armed in YR, the only
+        // write of 1 (0x004AC7A7) only ever runs with 0, see cursor.rs —
+        // SetRepairMode(0) 0x4AC8C0 and SetSellMode(0) 0x4AC660, then
+        // SetPlaceBeaconMode(0) 0x4AC960. The repair/sell and beacon owners
+        // refuse these under a pending placement themselves. The PlanMgr
+        // planning mode is a separate owner these Display setters do not
+        // cancel. TeamAssign 731060 is not evidenced to clear any mode, so
+        // Assign keeps every armed mode as it is.
+        state
+            .match_state
+            .match_presentation
+            .sidebar_gadget_state
+            .disable_selection_modes(state.armed_building_type().is_some());
+        crate::app::input::beacon::set_place_beacon_mode(
+            state,
+            crate::app::input::beacon::BeaconModeRequest::Off,
+        );
+    }
+    let sim = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|rt| &rt.simulation);
     match action {
         GroupPressAction::Assign => {
-            let Some(sim) = sim else {
-                return;
-            };
-            reassign_control_group(
-                &mut state.match_state.input.control_groups,
-                group_idx,
-                &selected,
-                sim,
-            );
+            queue_control_group_assignment(state, group_idx, selected);
         }
         GroupPressAction::Center => {
-            // Alt+digit selects the group as well as centring; a bare
-            // double-tap centres on a selection that already is the group, so
-            // the same centring call covers both.
-            if action_override == Some(GroupPressAction::Center) && !live_group.is_empty() {
-                queue_selection_snapshot_command(state, live_group.clone(), false);
+            // Alt+digit and Recall's double tap both run CenterCamera, which
+            // centres on the resulting selection (`MapClass::CenterMap
+            // 0x004AE290` at `0x0073149E`), extra kept units included.
+            if let Some(selection) = team_selection(sim, action, &group, &selected) {
+                queue_team_selection(state, selection);
             }
-            center_camera_on_group(state, &live_group);
+            crate::app::input::camera::center_view_on_selection(state);
         }
         GroupPressAction::AddToSelection => {
-            if live_group.is_empty() {
-                return;
+            if let Some(selection) = team_selection(sim, action, &group, &selected) {
+                queue_team_selection(state, selection);
             }
-            let final_ids = append_group_members_to_selection(selected, &live_group);
-            queue_selection_snapshot_command(state, final_ids, true);
         }
         GroupPressAction::Recall => {
             // A recall on an empty group still clears the selection: the
             // deselect-all runs before the select loop, unconditionally.
             state.match_state.input.last_control_group_press =
                 Some((group_idx, std::time::Instant::now()));
-            queue_selection_snapshot_command(state, live_group, false);
+            if let Some(selection) = team_selection(sim, action, &group, &selected) {
+                queue_team_selection(state, selection);
+            }
             apply_selection_action_line_policy(state, ORDINARY_SELECTION_ACTION_LINE_POLICY);
         }
     }
@@ -3473,7 +4125,7 @@ mod deploy_key_tests {
     }
 
     #[test]
-    fn simple_deployer_key_preserves_infantry_and_loaded_transport_actions() {
+    fn simple_deployer_key_preserves_infantry_and_transport_routes() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[VehicleTypes]\n0=HELI\n1=TRANSPORT\n2=PLAIN\n3=FIRER\n\
              [AircraftTypes]\n0=AIRCRAFT\n[InfantryTypes]\n0=GI\n\
@@ -3508,8 +4160,8 @@ mod deploy_key_tests {
         );
         assert_eq!(
             deploy_key_command(&sim, Some(&rules), transport, sim.session().current_house()),
-            Some(Command::UnloadPassengers {
-                transport_id: transport
+            Some(Command::DeployMcv {
+                entity_id: transport
             })
         );
         assert_eq!(
@@ -3549,6 +4201,81 @@ mod deploy_key_tests {
         );
     }
 
+    #[test]
+    fn ground_transport_deploy_key_matches_native_producer_and_keeps_self_click_separate() {
+        use crate::app::input::context_order::{self_answers_no_deploy, self_click_command};
+        use crate::app::input::entity_pick::HoverTargetKindWithId;
+        use crate::app::types::HoverTargetKind;
+
+        let native = crate::test_fixture::json("tools/spatial_oracle/ground_transport_deploy.json");
+        let capacity = native["fixture"]["passengers"]
+            .as_u64()
+            .expect("native transport capacity") as u32;
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=TRANSPORT\n[TRANSPORT]\nStrength=200\nPassengers={capacity}\n"
+        )))
+        .expect("transport D input rules");
+        let producers = native["deploy_key"].as_array().expect("native D producers");
+        assert_eq!(producers.len(), 2, "empty and loaded native D controls");
+        for row in producers {
+            let count = row["cargo"].as_u64().expect("native cargo count") as usize;
+            let mut sim = player_sim();
+            let transport = sim
+                .spawn_object_limbo_at_height("TRANSPORT", "Americans", 10, 10, 0, 0, &rules)
+                .expect("transport input fixture builds");
+            let mut cargo = PassengerCargo::new(capacity, 0.0);
+            let head: Vec<_> = (0..count).map(|index| (999 + index as u64, 1.0)).collect();
+            cargo.board_forced_chain(&head);
+            sim.entities_mut_for_test()
+                .get_mut(transport)
+                .unwrap()
+                .passenger_role = PassengerRole::transport(cargo);
+            let owner = sim
+                .session()
+                .current_house()
+                .expect("local transport owner");
+            // Opcode9 is the native event, not a Mission number. Both native
+            // cargo rows send it; the shared receiver owns Mission Unload16.
+            let event = match row["event_opcode"].as_u64().expect("native event opcode") {
+                9 => Command::DeployMcv {
+                    entity_id: transport,
+                },
+                opcode => panic!("unexpected native transport D event {opcode}"),
+            };
+            assert_eq!(
+                deploy_key_commands(&sim, Some(&rules), &[transport], Some(owner)),
+                [event],
+                "native cargo count {count} still sends the D event"
+            );
+            let hover = HoverTargetKindWithId {
+                kind: HoverTargetKind::FriendlyUnit,
+                stable_id: transport,
+            };
+            let clicked =
+                self_click_command(&sim, &rules, None, owner, &[transport], Some(&hover), false);
+            if count == 0 {
+                assert_eq!(clicked, None, "empty self-click does not send the D event");
+                assert!(self_answers_no_deploy(
+                    &sim,
+                    &rules,
+                    None,
+                    owner,
+                    &[transport],
+                    &hover,
+                    false
+                ));
+            } else {
+                assert_eq!(
+                    clicked,
+                    Some(Command::UnloadPassengers {
+                        transport_id: transport
+                    }),
+                    "loaded self-click retains its separate mission command"
+                );
+            }
+        }
+    }
+
     /// A unit in a tank bunker passes CanDeploySlashUnload and deploys out of
     /// it, a loaded transport too: its Unload's bunker arm (`0x0073D63B`)
     /// precedes the transport arm. Outside a bunker a plain tank is refused.
@@ -3582,8 +4309,8 @@ mod deploy_key_tests {
         assert!(deploy_key_commands(&sim, Some(&rules), &[tank], owner).is_empty());
         assert_eq!(
             deploy_key_command(&sim, Some(&rules), transport, owner),
-            Some(Command::UnloadPassengers {
-                transport_id: transport
+            Some(Command::DeployMcv {
+                entity_id: transport
             })
         );
         for id in [tank, transport] {
@@ -3625,7 +4352,9 @@ mod deploy_key_tests {
     }
 
     #[test]
-    fn the_deploy_key_issues_unload_for_a_loaded_bio_reactor() {
+    // Selection730AF0/730B28 reads Occupants, not the absorber's Cargo.
+    // Building CanDeploySlashUnload465D30 refuses the ordinary D walk.
+    fn the_deploy_key_does_nothing_for_a_loaded_bio_reactor() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
             "[BuildingTypes]\n0=YAPOWR\n[YAPOWR]\nStrength=1000\n\
              InfantryAbsorb=yes\nPassengers=5\n",
@@ -3642,16 +4371,14 @@ mod deploy_key_tests {
             .unwrap()
             .passenger_role = PassengerRole::transport(cargo);
 
-        assert_eq!(
+        assert!(
             deploy_key_commands(
                 &sim,
                 Some(&rules),
                 &[reactor],
                 sim.session().current_house()
-            ),
-            [Command::UnloadPassengers {
-                transport_id: reactor
-            }]
+            )
+            .is_empty()
         );
     }
 
@@ -3784,9 +4511,10 @@ mod deploy_key_tests {
 #[cfg(test)]
 mod control_group_tests {
     use super::{
-        GroupPressAction, KeyModifiers, append_group_members_to_selection, assign_control_group,
-        clear_control_group, control_group_action_for_input, control_group_press_action,
-        live_group_members, reassign_control_group, trimmed_centroid_leptons,
+        GroupPressAction, KeyModifiers, TEAM_SELECTION_VOICE_POLICY, TeamSelection,
+        control_group_action_for_input, control_group_press_action, live_group_members,
+        schedule_control_group_assignment, selection_voice_recipients, team_selection,
+        team_walk_members,
     };
     use std::time::Duration;
 
@@ -3799,6 +4527,157 @@ mod control_group_tests {
         ctrl: false,
         alt: false,
     };
+
+    /// Exercise the ordinary app producer and the authoritative command
+    /// receiver without advancing unrelated gameplay for input controls.
+    fn apply_group_assignment(
+        sim: &mut crate::sim::world::Simulation,
+        slot: usize,
+        selected: &[u64],
+    ) {
+        let owner = sim
+            .session()
+            .current_house()
+            .expect("fixture current House");
+        let owner_name = sim.interner().resolve(owner).to_owned();
+        schedule_control_group_assignment(sim, &owner_name, slot, selected.to_vec()).unwrap();
+        let commands = sim.take_due_commands();
+        assert_eq!(commands.len(), 1);
+        assert!(sim.apply_command(&owner_name, &commands[0].payload, None));
+    }
+
+    #[test]
+    fn retail_bunker_docking_forgets_control_group_through_release_and_saved_view() {
+        use crate::app::input::state::{MatchInputState, PreparedSavedLocalView};
+        use crate::sim::command::{Command, CommandEnvelope};
+        use crate::sim::docking::bunker_link::BunkerLink;
+        use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
+
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let mut rules = retail.rules;
+        let (_, mut assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+        crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+        let walls = ["NATBNK_A", "NATBNK_B", "NATBNK_A2", "NATBNK_B2"].map(str::to_owned);
+        assert_eq!(
+            rules.bind_anim_class_assets(&walls, &assets, "TEM", "TEMPERATE"),
+            0
+        );
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x459315);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        sim.set_input_delay_ticks(0);
+        let bunker = sim
+            .spawn_object("NATBNK", "Americans", 10, 10, 0, &rules)
+            .unwrap();
+        let tank = sim
+            .spawn_object("MTNK", "Americans", 14, 10, 0, &rules)
+            .unwrap();
+        let reserve = sim
+            .spawn_object("MTNK", "Americans", 18, 14, 0, &rules)
+            .unwrap();
+        let owner = sim.interner().get("Americans").unwrap();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        let mut input = MatchInputState::new(Default::default());
+        apply_group_assignment(&mut sim, 0, &[tank, bunker]);
+        apply_group_assignment(&mut sim, 9, &[reserve]);
+        assert_eq!(sim.projected_control_groups()[0], [bunker, tank]);
+        sim.queue_command(CommandEnvelope::new(
+            owner,
+            sim.session().tick() + 1,
+            Command::clicked_mission(
+                tank,
+                crate::sim::mission::MissionType::Enter,
+                crate::sim::combat::TargetKind::Entity(bunker),
+            ),
+        ));
+        let mut runtime = crate::sim::runtime::SimRuntime {
+            simulation: sim,
+            resources: crate::sim::runtime::SimResources::new(rules),
+        };
+        for _ in 0..600 {
+            let commands = runtime.simulation.take_due_commands();
+            let frame = runtime
+                .advance_frame(
+                    &commands,
+                    33,
+                    crate::sim::world::TickLane::Ordinary,
+                    Default::default(),
+                )
+                .unwrap();
+            let sim = &runtime.simulation;
+            for output in &frame.lifecycle_outputs {
+                input.apply_lifecycle_output(output, Some(owner));
+            }
+            if sim.entities().get(tank).unwrap().bunker.link() == BunkerLink::Installed(bunker) {
+                break;
+            }
+            assert_eq!(
+                sim.projected_control_groups()[0],
+                [bunker, tank],
+                "approaching retains the group"
+            );
+        }
+        let sim = &runtime.simulation;
+        let rules = &runtime.resources.rules;
+        assert_eq!(
+            sim.entities().get(tank).unwrap().bunker.link(),
+            BunkerLink::Installed(bunker)
+        );
+        // UpdateBunker458E50/459315 clears +214 at installation, before
+        // deselection. A recall-time filter would wrongly revive it on exit.
+        assert_eq!(sim.entities().get(tank).unwrap().object_group(), -1);
+        assert_eq!(sim.projected_control_groups()[0], [bunker]);
+        assert_eq!(sim.projected_control_groups()[9], [reserve]);
+        let saved = input
+            .capture_saved_local_view(&sim, &rules, &SidebarGadgetState::new())
+            .unwrap();
+        let saved = crate::util::save_codec::deserialize(
+            &crate::util::save_codec::serialize(&saved).unwrap(),
+        )
+        .unwrap();
+        let mut restored = MatchInputState::new(Default::default());
+        PreparedSavedLocalView::new(saved, &sim, &rules)
+            .unwrap()
+            .commit_into(&mut restored, &mut SidebarGadgetState::new());
+        let next_tick = runtime.simulation.session().tick() + 1;
+        runtime.simulation.queue_command(CommandEnvelope::new(
+            owner,
+            next_tick,
+            Command::EjectBunker { bunker_id: bunker },
+        ));
+        for _ in 0..120 {
+            let commands = runtime.simulation.take_due_commands();
+            let frame = runtime
+                .advance_frame(
+                    &commands,
+                    33,
+                    crate::sim::world::TickLane::Ordinary,
+                    Default::default(),
+                )
+                .unwrap();
+            let sim = &runtime.simulation;
+            for output in &frame.lifecycle_outputs {
+                restored.apply_lifecycle_output(output, Some(owner));
+            }
+            if sim.entities().get(tank).unwrap().bunker.link() == BunkerLink::None {
+                break;
+            }
+        }
+        let sim = &runtime.simulation;
+        assert_eq!(
+            sim.entities().get(tank).unwrap().bunker.link(),
+            BunkerLink::None
+        );
+        assert_eq!(
+            team_walk_members(Some(&sim), &sim.projected_control_groups()[0]),
+            [bunker]
+        );
+        assert_eq!(sim.entities().get(tank).unwrap().object_group(), -1);
+        assert_eq!(sim.projected_control_groups()[9], [reserve]);
+    }
 
     #[test]
     fn ctrl_assigns_shift_adds_alt_centers_bare_recalls() {
@@ -3891,20 +4770,26 @@ mod control_group_tests {
         let enemy = house(&mut sim, "Enemy", false, false);
         group_entity(&mut sim, 10, local);
         group_entity(&mut sim, 11, enemy);
-        let group = live_group_members(Some(&sim), &[10]);
+        // Member 12 stays in limbo (inside a transport).
+        group_entity(&mut sim, 12, local);
+        for id in [10, 11] {
+            let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+            entity.lifecycle.set_in_limbo_for_test(false);
+        }
         let raw_selected = [10, 11];
 
         assert_eq!(
             control_group_action_for_input(
                 BARE,
                 1,
-                &group,
+                &[10, 12],
                 &raw_selected,
                 Some((1, Duration::from_millis(10))),
                 Some(&sim),
             ),
             Some(GroupPressAction::Center),
-            "an ineligible enemy selected by ordinary click is ignored by native exact-group comparison"
+            "the double tap (0x0073123B..0x0073129D) skips the selected ineligible \
+             enemy and the team member in limbo"
         );
     }
 
@@ -3955,10 +4840,20 @@ mod control_group_tests {
     /// Membership is one group index per object, so assigning evicts.
     #[test]
     fn assignment_evicts_the_units_from_their_previous_group() {
-        let mut groups = vec![vec![1u64, 2, 3], vec![4u64], Vec::new()];
-        assign_control_group(&mut groups, 1, vec![2, 4]);
-        assert_eq!(groups[0], vec![1, 3]);
-        assert_eq!(groups[1], vec![2, 4]);
+        let mut sim = crate::sim::world::Simulation::new();
+        let local = house(&mut sim, "Local", false, true);
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
+        for id in 1..=4 {
+            group_entity(&mut sim, id, local);
+            sim.entities_mut_for_test()
+                .get_mut(id)
+                .unwrap()
+                .set_object_group_for_test(if id == 4 { 0 } else { 9 });
+        }
+        apply_group_assignment(&mut sim, 1, &[2, 4]);
+        assert_eq!(sim.projected_control_groups()[0], [1, 3]);
+        assert_eq!(sim.projected_control_groups()[1], [2, 4]);
     }
 
     fn house(
@@ -3979,7 +4874,16 @@ mod control_group_tests {
         stable_id: u64,
         owner: crate::sim::intern::InternedId,
     ) {
-        let type_ref = sim.intern("MTNK");
+        typed_group_entity(sim, stable_id, owner, "MTNK");
+    }
+
+    fn typed_group_entity(
+        sim: &mut crate::sim::world::Simulation,
+        stable_id: u64,
+        owner: crate::sim::intern::InternedId,
+        type_name: &str,
+    ) {
+        let type_ref = sim.intern(type_name);
         let entity = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
             stable_id,
             10,
@@ -4006,6 +4910,8 @@ mod control_group_tests {
         let ai = house(&mut sim, "AI", false, false);
         let human_only = house(&mut sim, "HumanOnly", true, false);
         let missing_house = sim.intern("MissingHouse");
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
         for (stable_id, owner) in [
             (1, local),
             (2, local),
@@ -4026,39 +4932,45 @@ mod control_group_tests {
             "TeamAssign's mode-zero PlayerControl gate excludes a human-flag-only house"
         );
 
-        let mut groups = vec![Vec::new(); 10];
-        groups[1] = vec![1, 2];
-        groups[3] = vec![5];
+        for (id, group) in [(1, 0), (2, 0), (5, 2), (7, 1)] {
+            sim.entities_mut_for_test()
+                .get_mut(id)
+                .unwrap()
+                .set_object_group_for_test(group);
+        }
         sim.change_owner(2, ai);
 
-        reassign_control_group(&mut groups, 1, &[3, 4, 5, 6], &sim);
+        apply_group_assignment(&mut sim, 1, &[3, 4, 5, 6]);
         assert_eq!(
-            groups[1],
+            sim.projected_control_groups()[1],
             vec![2, 3],
             "eligible old membership clears, the transferred AI member stays latent, and only the local selection is added"
         );
         assert_eq!(
-            groups[3],
+            sim.projected_control_groups()[3],
             vec![5],
             "an ineligible selected member remains in its prior group"
         );
         assert_eq!(
-            live_group_members(Some(&sim), &groups[1]),
+            live_group_members(Some(&sim), &sim.projected_control_groups()[1]),
             vec![3],
             "recall filters the latent member while its owner is an AI house"
         );
 
-        groups[2] = vec![1, 7];
-        reassign_control_group(&mut groups, 2, &[], &sim);
+        sim.entities_mut_for_test()
+            .get_mut(1)
+            .unwrap()
+            .set_object_group_for_test(1);
+        apply_group_assignment(&mut sim, 2, &[]);
         assert_eq!(
-            groups[2],
+            sim.projected_control_groups()[2],
             vec![7],
             "an empty assignment clears eligible old members but leaves an ineligible member's native slot intact"
         );
 
         sim.change_owner(2, local);
         assert_eq!(
-            live_group_members(Some(&sim), &groups[1]),
+            live_group_members(Some(&sim), &sim.projected_control_groups()[1]),
             vec![2, 3],
             "the native group slot becomes usable again when its member returns to an eligible owner"
         );
@@ -4079,35 +4991,39 @@ mod control_group_tests {
             group_entity(&mut sim, 1, local);
             group_entity(&mut sim, 2, ai);
             group_entity(&mut sim, 3, human_only);
+            group_entity(&mut sim, 4, local);
             sim.session_mut_for_test().set_game_mode(
                 crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(multiplayer),
             );
             sim.session_mut_for_test()
                 .set_current_house_for_test(Some(local));
-            let mut groups = vec![Vec::new(); 10];
-            groups[1] = vec![1, 2, 3, 99];
-            groups[2] = vec![4];
-            let before = sim.state_hash();
+            for id in 1..=4 {
+                sim.entities_mut_for_test()
+                    .get_mut(id)
+                    .unwrap()
+                    .set_object_group_for_test(if id == 4 { 1 } else { 0 });
+            }
+            let rng_before = sim.rng_state();
 
             // This is the actual command-bar mutation endpoint, retaining
             // the production digit1 -> Rust slot1 mapping.
-            clear_control_group(&mut groups, 1, Some(&sim));
+            apply_group_assignment(&mut sim, 1, &[]);
             assert_eq!(
-                groups[1],
+                sim.projected_control_groups()[1],
                 [2, 3],
-                "native7310FD/731105 skips ineligible owners in mode{multiplayer}; absent99 has no field"
+                "native7310FD/731105 skips ineligible owners in mode{multiplayer}"
             );
-            assert_eq!(groups[2], [4], "clearing1 cannot alter another slot");
             assert_eq!(
-                sim.state_hash(),
-                before,
-                "group clear writes no gameplay state or timers"
+                sim.projected_control_groups()[2],
+                [4],
+                "clearing1 cannot alter another slot"
             );
-            assert!(live_group_members(Some(&sim), &groups[1]).is_empty());
+            assert_eq!(sim.rng_state(), rng_before, "group clear draws no RNG");
+            assert!(live_group_members(Some(&sim), &sim.projected_control_groups()[1]).is_empty());
 
             sim.change_owner(2, local);
             assert_eq!(
-                live_group_members(Some(&sim), &groups[1]),
+                live_group_members(Some(&sim), &sim.projected_control_groups()[1]),
                 [2],
                 "the original membership is usable after the owner becomes eligible again"
             );
@@ -4135,7 +5051,6 @@ mod control_group_tests {
             sim.session_mut_for_test()
                 .set_current_house_for_test(Some(owners[0]));
             let actors = input["actors"].as_array().unwrap();
-            let mut groups = vec![Vec::new(); 10];
             let mut selected = Vec::new();
             for (index, actor) in actors.iter().enumerate() {
                 let id = index as u64 + 1;
@@ -4154,48 +5069,37 @@ mod control_group_tests {
                 if is_selected {
                     selected.push(id);
                 }
-                let field = actor["group_slot"].as_i64().unwrap();
-                if (0..10).contains(&field) {
-                    // Native field0..9 maps to displayed/Rust digits1..9,0.
-                    groups[(field as usize + 1) % 10].push(id);
-                }
+                sim.entities_mut_for_test()
+                    .get_mut(id)
+                    .unwrap()
+                    .set_object_group_for_test(actor["group_slot"].as_i64().unwrap() as i32);
             }
-            let fields = |groups: &[Vec<u64>]| {
+            let fields = |sim: &crate::sim::world::Simulation| {
                 (1..=actors.len() as u64)
-                    .map(|id| {
-                        let memberships: Vec<_> = groups
-                            .iter()
-                            .enumerate()
-                            .filter_map(|(slot, group)| group.contains(&id).then_some(slot))
-                            .collect();
-                        assert!(memberships.len() <= 1, "one native+214 field per object");
-                        memberships
-                            .first()
-                            .map_or(-1, |&slot| ((slot + 9) % 10) as i32)
-                    })
+                    .map(|id| sim.entities().get(id).unwrap().object_group())
                     .collect::<Vec<_>>()
             };
             for step in row["steps"].as_array().unwrap() {
-                assert_eq!(serde_json::json!(fields(&groups)), step["before"], "{row}");
+                assert_eq!(serde_json::json!(fields(&sim)), step["before"], "{row}");
                 let command = &step["command"];
                 let parameter = command["group"].as_u64().unwrap() as usize;
                 assert!((1..=10).contains(&parameter));
                 let slot = parameter % 10;
-                let before = sim.state_hash();
+                let rng_before = sim.rng_state();
                 match command["operation"].as_str().unwrap() {
-                    "assign" => reassign_control_group(&mut groups, slot, &selected, &sim),
-                    "clear" => clear_control_group(&mut groups, slot, Some(&sim)),
+                    "assign" => apply_group_assignment(&mut sim, slot, &selected),
+                    "clear" => apply_group_assignment(&mut sim, slot, &[]),
                     other => panic!("unsupported original assignment operation {other}"),
                 }
                 assert_eq!(
-                    serde_json::json!(fields(&groups)),
+                    serde_json::json!(fields(&sim)),
                     step["after"],
                     "{row}: {step}"
                 );
                 assert_eq!(
-                    sim.state_hash(),
-                    before,
-                    "input membership cannot write gameplay timers"
+                    sim.rng_state(),
+                    rng_before,
+                    "native assignment draws no RNG"
                 );
                 assert_eq!(step["timers_unchanged"], true);
             }
@@ -4204,22 +5108,146 @@ mod control_group_tests {
     }
 
     #[test]
-    fn shift_group_add_preserves_a_legitimately_selected_enemy() {
+    fn shift_group_add_drains_a_selected_enemy() {
         use crate::sim::world::Simulation;
 
+        let rules = crate::rules::ruleset::RuleSet::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str("[VehicleTypes]\n0=MTNK\n[MTNK]\n"),
+        )
+        .expect("group fixture rules");
         let mut sim = Simulation::new();
         let local = house(&mut sim, "Local", false, true);
         let enemy = house(&mut sim, "Enemy", false, false);
         group_entity(&mut sim, 10, local);
         group_entity(&mut sim, 11, enemy);
+        for id in [10, 11] {
+            let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+            entity.lifecycle.set_in_limbo_for_test(false);
+        }
 
         let live_group = live_group_members(Some(&sim), &[10, 11]);
         assert_eq!(live_group, [10], "only eligible group members are recalled");
-        assert_eq!(
-            append_group_members_to_selection(vec![11], &live_group),
-            [11, 10],
-            "Shift+digit keeps the ordinary click-selected enemy and adds the eligible group"
+        // AddTeam (0x007314C0) clears nothing and Selects each eligible
+        // member (vt+0x14C at 0x0073156C); the click-selected enemy is
+        // current-objects [0], so that Select's Unselect_All
+        // (0x005F45AF..0x005F45F8) drains it.
+        let calls = team_walk_members(Some(&sim), &[10, 11]);
+        assert_eq!(calls, [10]);
+        let effects = super::resolve_selection_mutation(
+            &sim,
+            Some(&rules),
+            vec![11],
+            None,
+            false,
+            false,
+            &super::SelectionMutation {
+                select: calls,
+                ..Default::default()
+            },
         );
+        assert_eq!(effects.ordered, [10]);
+        assert_eq!(effects.successful_adds, [10]);
+    }
+
+    /// Recall `0x007311C0` walks the Techno array, so the oldest member
+    /// speaks (latch clear at `0x00731369`) whatever order the team was
+    /// assigned in, and Select still prepends the armed one (`0x005F468C`).
+    #[test]
+    fn team_recall_speaks_the_oldest_member_in_techno_array_order() {
+        use crate::sim::world::Simulation;
+
+        let rules = crate::rules::ruleset::RuleSet::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[VehicleTypes]\n0=MTNK\n1=TRUK\n2=HIDE\n[MTNK]\nPrimary=Gun\n[Gun]\nDamage=10\n[TRUK]\n[HIDE]\nSelectable=no\n",
+            ),
+        )
+        .expect("team fixture rules");
+        let mut sim = Simulation::new();
+        let local = house(&mut sim, "Local", false, true);
+        typed_group_entity(&mut sim, 10, local, "TRUK");
+        typed_group_entity(&mut sim, 11, local, "MTNK");
+        typed_group_entity(&mut sim, 9, local, "HIDE");
+        for id in [9, 10, 11] {
+            let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+            entity.lifecycle.set_in_limbo_for_test(false);
+        }
+        let recall = |group: &[u64]| {
+            let plan = team_selection(Some(&sim), GroupPressAction::Recall, group, &[])
+                .expect("Recall always clears");
+            let effects = super::resolve_selection_mutation(
+                &sim,
+                Some(&rules),
+                vec![],
+                None,
+                false,
+                false,
+                &super::SelectionMutation {
+                    clear: plan.clear,
+                    select: plan.select,
+                    ..Default::default()
+                },
+            );
+            let voices = selection_voice_recipients(
+                TEAM_SELECTION_VOICE_POLICY,
+                true,
+                &effects.successful_adds,
+                effects.first_select_adds,
+                effects.first_attempt_added,
+            )
+            .to_vec();
+            (effects.ordered, voices)
+        };
+        // Assigned newest-armed first, as a prepended selection stores it.
+        assert_eq!(recall(&[11, 10]), (vec![11, 10], vec![10]));
+        // A refused first Select (Selectable=no) still clears the latch.
+        assert_eq!(recall(&[11, 10, 9]), (vec![11, 10], vec![]));
+    }
+
+    /// CenterCamera `0x007313A0` keeps an already-selected team led by one of
+    /// its Foot members and Selects nothing, so Alt+digit queues nothing and
+    /// stays silent; an outsider or a team building first in the selection
+    /// (not a Foot, `0x007313F8..0x00731404`) clears it first.
+    #[test]
+    fn center_camera_keeps_a_selected_team_unless_an_outsider_or_building_leads() {
+        use crate::sim::world::Simulation;
+
+        let mut sim = Simulation::new();
+        let local = house(&mut sim, "Local", false, true);
+        for id in [10, 11, 77] {
+            group_entity(&mut sim, id, local);
+        }
+        let power = sim.intern("GAPOWR");
+        sim.entities_mut_for_test().insert(
+            crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
+                5,
+                12,
+                12,
+                0,
+                0,
+                local,
+                crate::sim::combat::Health::new(100),
+                power,
+                crate::map::entities::EntityCategory::Structure,
+                0,
+                5,
+                false,
+            ),
+        );
+        for id in [5, 10, 11, 77] {
+            let entity = sim.entities_mut_for_test().get_mut(id).unwrap();
+            entity.lifecycle.set_in_limbo_for_test(false);
+        }
+        let group = [10, 5, 11];
+        let center = |selected: &[u64]| {
+            team_selection(Some(&sim), GroupPressAction::Center, &group, selected)
+        };
+        assert_eq!(center(&[10, 5, 11, 77]), None);
+        let reselect = Some(TeamSelection {
+            clear: true,
+            select: vec![5, 10, 11],
+        });
+        assert_eq!(center(&[77, 10]), reselect);
+        assert_eq!(center(&[5, 10, 11]), reselect);
     }
 
     #[test]
@@ -4252,7 +5280,9 @@ mod control_group_tests {
         use crate::sim::world::Simulation;
 
         let mut sim = Simulation::new();
-        let owner = sim.intern("Americans");
+        let owner = house(&mut sim, "Americans", false, true);
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
         let building_type = sim.intern("YAPOWR");
         let mut building = GameEntity::new_at_frame_zero_for_test(
             27,
@@ -4287,8 +5317,9 @@ mod control_group_tests {
         let crate::app::input::hotkeys::HotkeyCommand::TeamCreate(slot) = create_one_slot else {
             panic!("TeamCreate_1 must remain the existing group assignment command");
         };
-        let mut groups = vec![Vec::new(); 10];
-        assign_control_group(&mut groups, slot, vec![27]);
+        schedule_control_group_assignment(&mut sim, "Americans", slot, vec![27]).unwrap();
+        assert_eq!(sim.entities().get(27).unwrap().object_group(), -1);
+        let groups = sim.projected_control_groups();
 
         assert_eq!(
             crate::app::presentation::ui_overlays::control_group_status_labels(
@@ -4351,7 +5382,7 @@ mod control_group_tests {
             }
         };
         let mut groups = vec![Vec::new(); 10];
-        assign_control_group(&mut groups, registered_slot("TeamCreate_1"), vec![27]);
+        groups[registered_slot("TeamCreate_1")] = vec![27];
 
         let font = crate::render::bit_font::tests::make_test_font(
             &[(b'0' as u16, 6), (b'1' as u16, 5)],
@@ -4416,7 +5447,8 @@ mod control_group_tests {
             "Aircraft badge follows the shared exact-Z screen-position lift"
         );
 
-        assign_control_group(&mut groups, registered_slot("TeamCreate_10"), vec![27]);
+        groups[1].clear();
+        groups[registered_slot("TeamCreate_10")] = vec![27];
         assert_eq!(
             crate::app::presentation::ui_overlays::control_group_status_labels(
                 &sim,
@@ -4436,7 +5468,7 @@ mod control_group_tests {
             .selection
             .set_selected_for_test(false);
         assert!(render(&sim, &groups, None).is_empty());
-        assign_control_group(&mut groups, registered_slot("TeamCreate_10"), Vec::new());
+        groups[registered_slot("TeamCreate_10")].clear();
         sim.entities_mut_for_test()
             .get_mut(27)
             .expect("retained ORCA")
@@ -4488,7 +5520,7 @@ mod control_group_tests {
         );
         building
             .type_facts
-            .set_foundation_for_test("2x2".to_owned());
+            .set_foundation_for_test("2x2".to_owned().into());
         building.selection.set_selected_for_test(true);
         sim.entities_mut_for_test().insert(building);
         assert!(matches!(
@@ -4508,7 +5540,7 @@ mod control_group_tests {
             }
         };
         let mut groups = vec![Vec::new(); 10];
-        assign_control_group(&mut groups, registered_slot("TeamCreate_1"), vec![27]);
+        groups[registered_slot("TeamCreate_1")] = vec![27];
 
         fn labels(
             sim: &Simulation,
@@ -4564,21 +5596,22 @@ mod control_group_tests {
             .expect("retained building")
             .selection
             .set_selected_for_test(true);
-        assign_control_group(&mut groups, registered_slot("TeamCreate_10"), vec![27]);
+        groups[1].clear();
+        groups[registered_slot("TeamCreate_10")] = vec![27];
         assert_eq!(
             labels(&sim, &groups, current_house, None, true),
             vec![(27, '0')]
         );
-        assign_control_group(&mut groups, 0, Vec::new());
+        groups[0].clear();
         assert!(labels(&sim, &groups, current_house, None, true).is_empty());
 
-        assign_control_group(&mut groups, 1, vec![27]);
+        groups[1] = vec![27];
         sim.entities_mut_for_test().remove(27);
         assert!(labels(&sim, &groups, current_house, None, true).is_empty());
     }
 
     #[test]
-    fn assignment_reassignment_and_ungrouping_drive_status_group_projection() {
+    fn status_group_projection_follows_group_changes_and_removal() {
         use crate::map::entities::EntityCategory;
         use crate::sim::combat::Health;
         use crate::sim::game_entity::GameEntity;
@@ -4660,9 +5693,9 @@ mod control_group_tests {
             );
         }
 
-        // MatchInputState holds ten control-group slots. Keep this test on the
-        // public command/projection path rather than reaching through the
-        // private input-state owner for its storage constant.
+        // These transient render fixtures contain the same ten registered-digit
+        // slots as Simulation::projected_control_groups. Assignment behavior
+        // is exercised through the simulation command owner above.
         let mut groups = vec![Vec::new(); 10];
         let projected_with_visibility =
             |groups: &[Vec<u64>], hovered_unit_id, ignore_visibility| {
@@ -4740,7 +5773,7 @@ mod control_group_tests {
 
         let create_one_slot = registered_create_slot("TeamCreate_1");
         assert_eq!(create_one_slot, 1);
-        assign_control_group(&mut groups, create_one_slot, vec![17, 18, 19]);
+        groups[create_one_slot] = vec![17, 18, 19];
         assert_eq!(projected(&groups, None), vec![(17, '1')]);
         let group_one = group_overlay(&groups, None);
         assert_eq!(group_one.len(), 1);
@@ -4769,7 +5802,8 @@ mod control_group_tests {
             "the pip-only allied gate excludes a revealed non-allied unit"
         );
 
-        assign_control_group(&mut groups, 2, vec![17, 18, 19]);
+        groups[1].clear();
+        groups[2] = vec![17, 18, 19];
         assert_eq!(projected(&groups, None), vec![(17, '2')]);
         let group_two = group_overlay(&groups, None);
         assert_eq!(group_two.len(), 1);
@@ -4780,7 +5814,8 @@ mod control_group_tests {
 
         let create_zero_slot = registered_create_slot("TeamCreate_10");
         assert_eq!(create_zero_slot, 0);
-        assign_control_group(&mut groups, create_zero_slot, vec![17]);
+        groups[2] = vec![18, 19];
+        groups[create_zero_slot] = vec![17];
         assert_eq!(projected(&groups, None), vec![(17, '0')]);
         let group_zero = group_overlay(&groups, None);
         assert_eq!(group_zero.len(), 1);
@@ -4789,12 +5824,12 @@ mod control_group_tests {
         assert_eq!(group_zero.rectangles.len(), 5);
         assert_eq!(group_zero.rectangles[0].tint, [0.0; 3]);
 
-        assign_control_group(&mut groups, 0, Vec::new());
+        groups[0].clear();
         assert!(projected(&groups, None).is_empty());
         let no_group_overlay = group_overlay(&groups, None);
         assert!(no_group_overlay.is_empty());
 
-        assign_control_group(&mut groups, 0, vec![17]);
+        groups[0] = vec![17];
         sim.entities_mut_for_test().remove(17);
         assert!(
             crate::app::presentation::ui_overlays::control_group_status_labels(
@@ -4891,7 +5926,7 @@ mod control_group_tests {
             crate::sim::world::RevealOutcome::Revealed { .. }
         ));
         let mut groups = vec![Vec::new(); 10];
-        assign_control_group(&mut groups, 1, vec![80]);
+        groups[1] = vec![80];
         assert!(
             crate::app::presentation::instances::tactical_entity_encounter_order(&sim)
                 .contains(&80),
@@ -5087,7 +6122,7 @@ mod control_group_tests {
             if let Some(foundation) = case["foundation"].as_str() {
                 entity
                     .type_facts
-                    .set_foundation_for_test(foundation.to_owned());
+                    .set_foundation_for_test(foundation.to_owned().into());
             }
             entity.selection.set_selected_for_test(true);
             sim.entities_mut_for_test().insert(entity);
@@ -5096,7 +6131,7 @@ mod control_group_tests {
                 crate::sim::world::RevealOutcome::Revealed { .. }
             ));
             let mut groups = vec![Vec::new(); 10];
-            assign_control_group(&mut groups, digit_index, vec![1]);
+            groups[digit_index] = vec![1];
             assert_eq!(
                 crate::app::presentation::ui_overlays::control_group_status_labels(
                     &sim,
@@ -5280,34 +6315,76 @@ mod control_group_tests {
 
     #[test]
     fn assigning_an_empty_selection_empties_the_slot() {
-        let mut groups = vec![vec![1u64, 2], Vec::new()];
-        assign_control_group(&mut groups, 0, Vec::new());
-        assert!(groups[0].is_empty());
+        let mut sim = crate::sim::world::Simulation::new();
+        let local = house(&mut sim, "Local", false, true);
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
+        for id in [1, 2] {
+            group_entity(&mut sim, id, local);
+            sim.entities_mut_for_test()
+                .get_mut(id)
+                .unwrap()
+                .set_object_group_for_test(9);
+        }
+        apply_group_assignment(&mut sim, 0, &[]);
+        assert!(sim.projected_control_groups()[0].is_empty());
     }
+}
 
-    /// One and two points are a plain mean; the outlier trim only kicks in
-    /// above two.
+#[cfg(test)]
+mod stop_command_tests {
+    use crate::audio::events::GameSoundEvent;
+    use crate::sim::command::Command;
+
+    /// `Selection__IssueStopCommand @ 0x00730EA0` stops an own unit and then
+    /// plays the retail StopSound (read at `0x0066ADE3`). An enemy alone
+    /// does not qualify but still gets the cue; an empty selection gets
+    /// nothing (`0x00730EAB`).
     #[test]
-    fn centroid_of_one_or_two_points_is_the_plain_mean() {
-        assert_eq!(trimmed_centroid_leptons(&[(100, 200)]), Some((100, 200)));
-        assert_eq!(
-            trimmed_centroid_leptons(&[(0, 0), (100, 200)]),
-            Some((50, 100))
+    fn stop_issues_to_qualifying_units_then_plays_its_retail_cue() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = &retail.rules;
+        let stop_sound = rules.general.stop_sound.clone();
+        assert!(
+            stop_sound
+                .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case("CommandBar"))
         );
-    }
+        let mut sim = crate::sim::world::Simulation::new();
+        for (index, (name, human)) in [("Americans", true), ("Russians", false)]
+            .into_iter()
+            .enumerate()
+        {
+            let id = sim.intern(name);
+            let mut house =
+                crate::sim::house_state::HouseState::new(id, index as u8, None, human, 0, 10);
+            house.set_player_control_for_test(human);
+            sim.houses_mut_for_test().register(house);
+        }
+        let owner = sim.interner().get("Americans").unwrap();
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        let own = sim
+            .spawn_object("MTNK", "Americans", 10, 10, 0, rules)
+            .unwrap();
+        let enemy = sim
+            .spawn_object("HTNK", "Russians", 12, 10, 0, rules)
+            .unwrap();
+        let cue = |sounds: &[GameSoundEvent]| matches!(sounds, [GameSoundEvent::UiSound { sound_id }] if Some(sound_id) == stop_sound.as_ref());
 
-    /// With more than two points the single farthest one is dropped, so a lone
-    /// straggler cannot drag the view off the main body.
-    #[test]
-    fn centroid_of_three_or_more_drops_the_farthest_point() {
-        let points = [(0i64, 0i64), (10, 0), (20, 0), (3000, 0)];
-        // Plain mean would be 757; dropping (3000,0) leaves 30/3 = 10.
-        assert_eq!(trimmed_centroid_leptons(&points), Some((10, 0)));
-    }
+        assert!(cue(&super::queue_stop_orders(&mut sim, rules, &[own])));
+        let stops: Vec<_> = sim
+            .pending_command_snapshot()
+            .into_iter()
+            .map(|envelope| envelope.payload)
+            .collect();
+        assert!(matches!(stops.as_slice(), [Command::Stop { entity_id }] if *entity_id == own));
 
-    #[test]
-    fn centroid_of_nothing_is_nothing() {
-        assert_eq!(trimmed_centroid_leptons(&[]), None);
+        assert!(cue(&super::queue_stop_orders(&mut sim, rules, &[enemy])));
+        assert_eq!(sim.pending_command_snapshot().len(), 1);
+        assert!(super::queue_stop_orders(&mut sim, rules, &[]).is_empty());
     }
 }
 
@@ -5389,3 +6466,7 @@ mod context_click_route_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "building_occupant_deploy_tests.rs"]
+mod building_occupant_deploy_tests;

@@ -92,6 +92,9 @@ pub(crate) fn recalc_base_plan(
                 rules,
             )
         })
+        // NPSE AI_RecalcBuildOptions5056C1 -> C2C331 repeats the
+        // eligible append, before seed selection505714 and prerequisites.
+        .flat_map(|candidate| std::iter::repeat_n(candidate, planning_repeats(candidate)))
         .collect();
     let mut selected = vec![false; eligible.len()];
     let mut priority: Vec<&ObjectType> = Vec::new();
@@ -239,6 +242,20 @@ pub(crate) fn recalc_base_plan(
     }
 
     plan.rebuild(final_values);
+}
+
+/// The NPSE per-type `[BuildingTypes] AIPlanningCount=` count of collection
+/// nodes the candidate contributes, `1` for the stock single node. The
+/// extension constructor zeroes the field (`0xC3039B`) and the reader stores
+/// the `ReadInt` result through `al` (`0xC2E223..0xC2E237`). The loop's
+/// byte CMP/JL (`0xC2C35A..0xC2C361`) is signed, so 0 and high-bit counts
+/// keep one entry. Source: author-linked NPSE 2.0 #359 release.
+fn planning_repeats(candidate: &ObjectType) -> usize {
+    if crate::rules::NPATCH_ENABLED {
+        (candidate.ai_planning_count as i8).max(1) as usize
+    } else {
+        1
+    }
 }
 
 fn recalc_candidate_allowed(
@@ -425,6 +442,92 @@ mod tests {
             .iter()
             .map(|node| node.type_or_control)
             .collect()
+    }
+
+    #[test]
+    fn ai_planning_count_respects_the_build_capability() {
+        let rules = basic_rules(
+            "7=TEST\n\
+             [TEST]\n\
+             Owner=Americans,Russians,YuriCountry\n\
+             AIBuildThis=yes\nTechLevel=1\nFoundation=1x1\nAIPlanningCount=3\n",
+            "",
+        );
+        let expected = if crate::rules::NPATCH_ENABLED { 3 } else { 1 };
+        assert_eq!(
+            rules.object("TEST").unwrap().ai_planning_count,
+            if crate::rules::NPATCH_ENABLED { 3 } else { 0 },
+        );
+        let (plan, _) =
+            generated_values(&rules, "Americans", 0, HouseDifficulty::Normal, 0xC057_0F01);
+        let values = values(&plan);
+        let test_index = rules.object("TEST").unwrap().base_plan_type_index;
+        let first = values
+            .iter()
+            .position(|value| *value == test_index)
+            .expect("the counted type is planned");
+        assert_eq!(
+            values.iter().filter(|value| **value == test_index).count(),
+            expected,
+            "only an NPatch build honors the requested copies"
+        );
+        assert!(
+            values[first..first + expected]
+                .iter()
+                .all(|value| *value == test_index),
+            "the repeats are consecutive at the type's own position"
+        );
+        let con_index = rules.object("CON").unwrap().base_plan_type_index;
+        assert_eq!(
+            values.iter().filter(|value| **value == con_index).count(),
+            1,
+            "a type without the key keeps the stock single node"
+        );
+    }
+
+    /// NPSE C2C331..C2C367 repeats the eligible vector before the
+    /// construction-yard seed marks its first entry selected (505714).
+    #[test]
+    fn ai_planning_count_keeps_counted_seed_candidates() {
+        let mut rules = basic_rules(
+            "7=COUNTED\n",
+            "[COUNTED]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nAIPlanningCount=2\n",
+        );
+        assert_eq!(
+            rules.object("COUNTED").unwrap().ai_planning_count,
+            if crate::rules::NPATCH_ENABLED { 2 } else { 0 }
+        );
+        // Exercise the existing BuildConst selector with this reader-created
+        // type, without relying on a duplicate physical [CON] INI section.
+        rules.build_const_types = vec!["COUNTED".to_owned()];
+        let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Normal, 17);
+        let index = rules.object("COUNTED").unwrap().base_plan_type_index;
+        assert_eq!(
+            values(&plan)
+                .iter()
+                .filter(|value| **value == index)
+                .count(),
+            if crate::rules::NPATCH_ENABLED { 2 } else { 1 }
+        );
+    }
+
+    /// ReadInt stores AL at C2E237, but the loop's byte CMP/JL at
+    /// C2C35A..C2C361 is signed: a high-bit count does not repeat.
+    #[test]
+    fn ai_planning_count_uses_the_native_signed_byte_boundary() {
+        let rules = basic_rules(
+            "7=TEST\n",
+            "[TEST]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\nAIPlanningCount=128\n",
+        );
+        let (plan, _) = generated_values(&rules, "Americans", 0, HouseDifficulty::Normal, 17);
+        let index = rules.object("TEST").unwrap().base_plan_type_index;
+        assert_eq!(
+            values(&plan)
+                .iter()
+                .filter(|value| **value == index)
+                .count(),
+            1
+        );
     }
 
     #[test]

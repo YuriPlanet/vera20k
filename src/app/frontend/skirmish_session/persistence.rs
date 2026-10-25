@@ -1,8 +1,9 @@
-//! Raw `[Skirmish]` snapshot codec for `RA2MD.INI`.
+//! Retained setup profiles and their snapshot codecs for `VERA.INI`.
 //!
-//! The app owns when the snapshot is loaded and saved. This module only models
-//! the native key order, defaults, slot triples, and a preservation-safe batched
-//! byte update. It deliberately has no UI or `AppState` dependency.
+//! The app owns when a profile is loaded and saved. Native Slot01..07 triples
+//! retain their key order, defaults and preservation-safe batched byte update.
+//! Extended network rows remain in this same snapshot for the process lifetime;
+//! they introduce no disk keys. This module has no UI or `AppState` dependency.
 
 use crate::rules::error::RulesError;
 use crate::rules::ini_parser::{IniFile, IniSection};
@@ -26,6 +27,7 @@ impl SetupProfile {
 }
 
 pub const SKIRMISH_PERSISTED_SLOT_COUNT: usize = 7;
+const RETAINED_SETUP_SLOT_COUNT: usize = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT - 1;
 
 const RANDOM_COMBO_ITEM_DATA: i32 = -2;
 const SLOT01_DEFAULT_TYPE: i32 = 6;
@@ -88,7 +90,10 @@ pub struct MultiplayerSetupSnapshot {
     pub build_off_ally: bool,
     pub mcv_repacks: bool,
     pub crates_appear: bool,
-    pub slots: [SkirmishPersistedSlot; SKIRMISH_PERSISTED_SLOT_COUNT],
+    /// FUN_005ED400/005ED5A0 snapshot/restore rows1..7 (loop bounds at
+    /// 005ED542/005EDC99; source: original gamemd.exe). VERA extends that
+    /// same process profile through row29; only the native prefix reaches INI.
+    pub slots: [SkirmishPersistedSlot; RETAINED_SETUP_SLOT_COUNT],
 }
 
 impl MultiplayerSetupSnapshot {
@@ -141,7 +146,12 @@ impl MultiplayerSetupSnapshot {
             "CratesAppear".to_string(),
             yes_no(self.crates_appear).to_string(),
         ));
-        for (index, slot) in self.slots.iter().enumerate() {
+        for (index, slot) in self
+            .slots
+            .iter()
+            .take(SKIRMISH_PERSISTED_SLOT_COUNT)
+            .enumerate()
+        {
             updates.push((
                 format!("Slot{:02}", index + 1),
                 format!("{},{},{}", slot.row_type, slot.country, slot.colour),
@@ -150,7 +160,7 @@ impl MultiplayerSetupSnapshot {
         updates
     }
 
-    /// Apply this snapshot to raw `RA2MD.INI` bytes without rewriting any
+    /// Apply this snapshot to raw `VERA.INI` bytes without rewriting any
     /// unrelated byte. All seventeen keys are composed into one output buffer.
     pub fn update_ini_bytes(&self, content: &[u8]) -> Vec<u8> {
         let updates = self.ini_updates();
@@ -162,7 +172,7 @@ impl MultiplayerSetupSnapshot {
     }
 }
 
-/// Read a raw `RA2MD.INI` buffer using native Skirmish key order and defaults.
+/// Read a raw `VERA.INI` buffer using native Skirmish key order and defaults.
 pub fn read_setup_snapshot(
     content: &[u8],
     defaults: SkirmishGlobalDefaults,
@@ -184,7 +194,12 @@ pub fn read_setup_snapshot(
     snapshot.mcv_repacks = section.read_bool("MCVRepacks", snapshot.mcv_repacks);
     snapshot.crates_appear = section.read_bool("CratesAppear", snapshot.crates_appear);
 
-    for (slot_index, slot) in snapshot.slots.iter_mut().enumerate() {
+    for (slot_index, slot) in snapshot
+        .slots
+        .iter_mut()
+        .take(SKIRMISH_PERSISTED_SLOT_COUNT)
+        .enumerate()
+    {
         read_native_slot_triple(section, &format!("Slot{:02}", slot_index + 1), slot);
     }
     Ok(snapshot)

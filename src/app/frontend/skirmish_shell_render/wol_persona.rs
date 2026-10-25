@@ -11,8 +11,7 @@ use crate::app::AppState;
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::wol_persona::{
-    AUTO_LOGIN_TEXT_KEY, DO_NOT_ASK_KEY, LOCALE_LABEL_KEY, WolAutoLoginQuery, WolLocalePage,
-    WolPersonaLayout,
+    DO_NOT_ASK_KEY, LOCALE_LABEL_KEY, WolAutoLoginQuery, WolLocalePage, WolPersonaLayout,
 };
 
 fn label(state: &AppState, key: &str) -> String {
@@ -42,10 +41,12 @@ fn text(
     )
 }
 
-/// `0x112`: the centred question (`SS_CENTER|SS_CENTERIMAGE`) and Don't Ask.
+/// `0x112` and `0x122`: the centred question (`SS_CENTER|SS_CENTERIMAGE`)
+/// and Don't Ask.
 pub(crate) fn paint_wol_auto_login_children(
     state: &AppState,
     query: &WolAutoLoginQuery,
+    question: &str,
     layout: &WolPersonaLayout,
 ) -> WolOptionsPaint {
     let mut paint = WolOptionsPaint::default();
@@ -55,7 +56,7 @@ pub(crate) fn paint_wol_auto_login_children(
     let scale = layout.page.scale;
     paint.texts.push(text(
         state,
-        &label(state, AUTO_LOGIN_TEXT_KEY),
+        question,
         layout.text,
         ShellAlign::H_CENTER | ShellAlign::V_CENTER,
         scale,

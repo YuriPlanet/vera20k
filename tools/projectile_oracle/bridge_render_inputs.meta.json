@@ -1,12 +1,8 @@
 {
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "scope": "Ordinary MTNK105mmCannon physical type/image/palette prerequisite readers; see bridge_render_inputs.md for supplied boundaries",
   "files": {
-    "bridge_render_inputs.py": "4bfc6d80d7cd0d75f3db0123bb646011b6706f9195a8c1137e0f397941bff9e4",
-    "bridge_render_inputs.json": "1ef2ba1cde3d9529faf10e8ce0f8d66b5735c3a06918ad518a26bf09a51b2a72",
-    "bridge_render_inputs_selection.py": "6b41e97912cfd17a625f1ce1303bbe72fc2a7480f4a31ef03355f886a7c94205",
-    "bridge_render_inputs_palette.py": "498e9211ea32cae3efc0257f5a4d5b0aaf348e7aa6632b366ffa56dccc8255a2",
-    "bridge_render_inputs_palette.json": "eecc691851d89167b4abbaaf7a90b51f36c7d8d74fab6883000bd9b55a21b936"
+    "bridge_render_inputs.json": "0f5415c6f6b89a519c72d48b0e20fcaf04dc67ef80e430a2843c45a42187cd03",
+    "bridge_render_inputs_palette.json": "64692d8c99f826a518112643c6f33f1276f5067cf9b38e783ee6f24b4fa986b8"
   },
   "validation": {
     "native_reader_check": "PASS",

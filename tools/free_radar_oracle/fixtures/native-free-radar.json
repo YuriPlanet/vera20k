@@ -1,5 +1,4 @@
 {
-  "executable_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "probe_sha256": "91719e993fb729c41615fb35cda0c338ef60979e6a6bc781c94ee475d0918dea",
   "scope": "Original cached CCINI bool lookup and Scenario store, reset store, local House availability decision with empty building vector; nonlocal full-body early return. No stubs. Not a full INI file load, provider scan or sidebar animation execution.",
   "scenario_offset": "0x34a4",

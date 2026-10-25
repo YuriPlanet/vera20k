@@ -845,7 +845,7 @@ fn apply_event(fixture: &mut Fixture, action: &str, building: u64) {
                 .assign_target_represented(
                     building,
                     None,
-                    Some(&fixture.rules),
+                    &fixture.rules,
                     None,
                     crate::sim::world::FrameEffects::default(),
                 )
@@ -922,7 +922,7 @@ fn prism_cadence_matches_the_original() {
                 dispatch(
                     &mut fixture.sim,
                     id,
-                    Some(&fixture.rules),
+                    &fixture.rules,
                     ObjectAiCtx::default(),
                     &mut false,
                 );

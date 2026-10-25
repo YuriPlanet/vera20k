@@ -75,7 +75,10 @@ fn fixture_frame_with_sight(
     *world.house_alliances_mut_for_test() = alliances.clone();
     world.resolved_terrain = terrain.cloned();
     world.path_grid = path_grid.cloned().map(std::sync::Arc::new);
-    let context = crate::sim::world::UninitContext::new(rules, None);
+    let context = crate::sim::world::UninitContext::new(
+        rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
+        None,
+    );
     for &event in sight {
         match event {
             FixtureSight::Limbo(id) => world.release_object_sight_with_context(id, context),
@@ -85,7 +88,10 @@ fn fixture_frame_with_sight(
             }
         }
     }
-    world.refresh_sight_sources(config, rules);
+    world.refresh_sight_sources(
+        config,
+        rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
+    );
     *fog = std::mem::take(&mut world.fog);
 }
 
@@ -547,6 +553,7 @@ fn test_gap_generator_preserves_admitted_enemy_sight() {
     // inside a hostile gap. Merely knowing the cell would not protect it.
     assert!(fog.is_cell_visible(intern::test_intern("Soviet"), 13, 10));
     assert!(!fog.is_cell_gap_covered(intern::test_intern("Soviet"), 13, 10));
+    assert!(fog.is_ground_unshrouded(intern::test_intern("Soviet"), 13, 10));
 }
 
 #[test]
@@ -960,6 +967,7 @@ fn a_gap_event_asks_the_generators_house_about_the_viewer() {
             viewer,
             source,
             true,
+            false,
             &interner,
             &std::collections::BTreeSet::new(),
         );
@@ -969,11 +977,9 @@ fn a_gap_event_asks_the_generators_house_about_the_viewer() {
     assert!(!covered("Americans", "Soviet"));
 }
 
-/// Materializing a viewer's retained deposits asks from each generator's house
-/// as the event did: only the generator's alliance with the viewer projects
-/// the friendly gap fog.
+/// The gap event asks from the generator's house, as6FB3DA does.
 #[test]
-fn materialized_gap_fog_asks_the_generators_house_about_the_viewer() {
+fn gap_fog_asks_the_generators_house_about_the_viewer() {
     let viewer = intern::test_intern("Soviet");
     let gapper = intern::test_intern("Americans");
     let interner = ti();
@@ -995,16 +1001,85 @@ fn materialized_gap_fog_asks_the_generators_house_about_the_viewer() {
             asker.to_ascii_uppercase(),
             [other.to_ascii_uppercase()].into(),
         )]);
-        materialize_gap_generator_sources(
+        publish_gap_generator_event(
             &mut fog,
             &alliances,
-            &BTreeMap::from([(viewer, vec![source])]),
+            viewer,
+            source,
+            true,
+            false,
             &interner,
+            &Default::default(),
         );
         fog.is_cell_gap_fog(viewer, 30, 35)
     };
     assert!(fogged("Americans", "Soviet"));
     assert!(!fogged("Soviet", "Americans"));
+}
+
+/// The hostile-admission gate also reads the viewer's defeat:
+/// `0x006FB2E3..0x006FB2F1` reads PlayerPtr+0x1F5 (`MPlayer_Defeated`) and
+/// jumps to `0x006FB3C1`, the friendly Cell+0x13C leaf. A defeated viewer
+/// takes the allied treatment under the same hostile source that shrouds a
+/// live viewer; a defeated allied viewer keeps the pre-gate projection.
+#[test]
+fn defeated_viewer_takes_the_allied_fog_projection_instead_of_shroud() {
+    let viewer = intern::test_intern("Soviet");
+    let gapper = intern::test_intern("Americans");
+    let interner = ti();
+    let source = GapGeneratorSource {
+        stable_id: 1,
+        owner: gapper,
+        rx: 30,
+        ry: 30,
+        radius: 10,
+    };
+    let projection = |allied: bool, defeated: bool| {
+        let mut fog = FogState {
+            width: 64,
+            height: 64,
+            ..Default::default()
+        };
+        fog.mark_visible_for_owner(viewer, 30, 35);
+        let alliances = if allied {
+            HouseAllianceMap::from([(
+                "AMERICANS".to_ascii_uppercase(),
+                ["SOVIET".to_ascii_uppercase()].into(),
+            )])
+        } else {
+            HouseAllianceMap::new()
+        };
+        let defeated_viewers = if defeated {
+            std::collections::BTreeSet::from([viewer])
+        } else {
+            Default::default()
+        };
+        apply_gap_generator_sources_with_spy_sat(
+            &mut fog,
+            &alliances,
+            &[source],
+            &interner,
+            &std::collections::BTreeSet::new(),
+            &defeated_viewers,
+        );
+        fog
+    };
+
+    // Defeated hostile viewer: the 0x006FB3C1 friendly projection; the view
+    // itself stays open.
+    let defeated = projection(false, true);
+    assert!(defeated.is_cell_gap_fog(viewer, 30, 35));
+    assert!(!defeated.is_cell_gap_covered(viewer, 30, 35));
+    assert!(defeated.is_cell_visible(viewer, 30, 35));
+    // Control: the same hostile source covers a live viewer.
+    let alive = projection(false, false);
+    assert!(!alive.is_cell_gap_fog(viewer, 30, 35));
+    assert!(alive.is_cell_gap_covered(viewer, 30, 35));
+    assert!(!alive.is_cell_visible(viewer, 30, 35));
+    // A defeated allied viewer stays exactly on today's allied projection.
+    let allied = projection(true, true);
+    assert!(allied.is_cell_gap_fog(viewer, 30, 35));
+    assert!(!allied.is_cell_gap_covered(viewer, 30, 35));
 }
 
 /// With height-LOS enabled but perfectly flat terrain, reveal must be identical to
@@ -1461,6 +1536,7 @@ fn shroud_current_sight_matches_original_native_sequences() {
                         &sources,
                         &interner,
                         &map_clear,
+                        &std::collections::BTreeSet::new(),
                     );
                 }
                 frame if frame.starts_with("frame") => {
@@ -1926,17 +2002,20 @@ fn source_release_and_zero_sight_gate_preserve_original_cached_metadata() {
     let context = crate::sim::world::UninitContext::default();
     world.update_object_sight_in_view(1, 0, None, &config, None, context);
     let assert_cache = |world: &crate::sim::world::Simulation, expected: &serde_json::Value| {
-        let cache = &world.fog.sight_admissions[&(1, owner)];
+        let source = world
+            .fog
+            .source_sight(1, owner)
+            .expect("native source cache is retained per viewer");
         assert_eq!(
-            u64::from(cache.latched),
+            u64::from(source.latched),
             expected["latch"].as_u64().unwrap()
         );
         assert_eq!(
-            i64::from(cache.radius),
+            i64::from(source.radius),
             expected["radius"].as_i64().unwrap()
         );
         assert_eq!(
-            cache.origin,
+            source.origin,
             (
                 crate::util::lepton::lepton_to_cell(expected["xyz"][0].as_i64().unwrap() as i32)
                     as u16,
@@ -1944,6 +2023,11 @@ fn source_release_and_zero_sight_gate_preserve_original_cached_metadata() {
                     as u16,
                 expected["xyz"][2].as_i64().unwrap() as i32,
             ),
+        );
+        assert_eq!(
+            world.fog.sight_is_latched(1, owner),
+            expected["latch"].as_u64().unwrap() != 0,
+            "the accepted viewer contribution has its own active bit"
         );
         let location = crate::sim::movement::ground_pose::object_location(
             world.entities().get(1).unwrap(),
@@ -1955,9 +2039,29 @@ fn source_release_and_zero_sight_gate_preserve_original_cached_metadata() {
         );
     };
     assert_cache(&world, &native["nested"][0]["before"]);
+    let cache_hash = |fog: &FogState| {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        fog.hash_sight_admissions(&mut hasher);
+        std::hash::Hasher::finish(&hasher)
+    };
+    let mut cleared_client = world.fog.clone();
+    assert!(cleared_client.clear_source_sight_latch(1, owner).is_some());
+    assert_ne!(
+        cache_hash(&world.fog),
+        cache_hash(&cleared_client),
+        "the client native latch participates in the deterministic fog hash"
+    );
     world.release_object_sight_with_context(1, context);
     assert_cache(&world, &native["nested"][0]["after"]);
-    assert!(world.fog.sight_admissions[&(1, owner)].cells.is_empty());
+    assert!(
+        world
+            .fog
+            .sight_admission(1, owner)
+            .unwrap()
+            .cells
+            .is_empty()
+    );
+    assert_eq!(world.fog.source_sight_viewers(1), vec![owner]);
     world
         .substrate
         .entities
@@ -1967,4 +2071,12 @@ fn source_release_and_zero_sight_gate_preserve_original_cached_metadata() {
         .stamp_type_sight(0);
     world.update_object_sight_in_view(1, 0, None, &config, None, context);
     assert_cache(&world, &native["after_sight0_gate"]);
+    let restored: FogState =
+        save_codec::deserialize(&save_codec::serialize(&world.fog).unwrap()).unwrap();
+    assert_eq!(
+        restored.source_sight(1, owner),
+        world.fog.source_sight(1, owner),
+        "native client cache metadata survives the snapshot round trip"
+    );
+    assert_eq!(cache_hash(&restored), cache_hash(&world.fog));
 }

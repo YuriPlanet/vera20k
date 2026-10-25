@@ -68,6 +68,28 @@ impl DirectDrawPixelFormat {
             ((u32::from(word) >> self.blue_shift) << self.blue_loss) as u8,
         ]
     }
+
+    /// Original packed-color mixer `FUN_004bf650` @ `0x004BF650`, called by
+    /// RMG GenerateTerrainPreview641140. Its exact-amount dispatcher returns
+    /// `second` at 0, masked halves at 50, and `first` otherwise; both 25 and
+    /// 75 clear two low bits per channel of `first` without using `second`.
+    /// Masks follow original DirectDraw startup `0x004BAA73..0x004BAB06`.
+    pub(crate) fn mix_packed_rgb16(self, first: u16, second: u16, amount: u32) -> u16 {
+        let component_mask = |top: u16| {
+            ((top >> self.red_loss) << self.red_shift)
+                | ((top >> self.green_loss) << self.green_shift)
+                | ((top >> self.blue_loss) << self.blue_shift)
+        };
+        match amount {
+            0 => second,
+            25 | 75 => ((first >> 2) & component_mask(0x3f)) << 2,
+            50 => {
+                let mask = component_mask(0x7f);
+                ((first >> 1) & mask) + ((second >> 1) & mask)
+            }
+            _ => first,
+        }
+    }
 }
 
 /// Expansion codebooks observed in the enrolled native presentation chain.
@@ -214,6 +236,31 @@ mod tests {
                     row["amount"].as_u64().unwrap() as u32
                 ),
                 rgb("rgb"),
+                "{row}"
+            );
+        }
+    }
+
+    #[test]
+    fn packed_color_mixer_matches_original_executed_controls() {
+        let controls: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/packed_color_mix.json",
+        ))
+        .unwrap();
+        for row in controls.as_array().unwrap() {
+            let format = match row["format"].as_str().unwrap() {
+                "rgb565" => RGB565,
+                "rgb555" => RGB555,
+                format => panic!("unexpected native control format {format}"),
+            };
+            let word = |field: &str| row[field].as_u64().unwrap() as u16;
+            assert_eq!(
+                format.mix_packed_rgb16(
+                    word("first"),
+                    word("second"),
+                    row["amount"].as_u64().unwrap() as u32,
+                ),
+                word("output"),
                 "{row}"
             );
         }

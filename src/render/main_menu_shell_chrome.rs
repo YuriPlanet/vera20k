@@ -56,6 +56,11 @@ pub struct MainMenuShellChromeAtlas {
     /// atlas). `None` where the SHP lacks that frame.
     pub button_wave_frames: [Option<MainMenuShellChromeEntry>; SDBTNANM_WAVE_FRAMES],
     pub right_panel_top_sdtp: Option<MainMenuShellChromeEntry>,
+    /// SDTP frames 0 and 1 and SDWRNTMP frames 0..=5 (SHELL palette): the
+    /// top panel of a `+0xD5` dialog (WOL's custom lobby `0x113`), which
+    /// the parent paint covers with SDTP frame 1 (`0x0072E8C0`) and the
+    /// slide engine draws with its warning display.
+    pub top_panel: TopPanelArt,
     pub right_panel_tile_sdbtnbkgd: Option<MainMenuShellChromeEntry>,
     pub right_panel_bottom_sdbtm: Option<MainMenuShellChromeEntry>,
     pub lower_side_640_lwscrns: Option<MainMenuShellChromeEntry>,
@@ -123,6 +128,13 @@ struct RenderedChromeEntry {
     rgba: Vec<u8>,
 }
 
+/// The `+0xD5` top panel's shapes, indexed by frame; `None` where missing.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TopPanelArt {
+    pub sdtp: [Option<MainMenuShellChromeEntry>; 2],
+    pub warning: [Option<MainMenuShellChromeEntry>; 6],
+}
+
 pub fn build_main_menu_shell_chrome_atlas(
     gpu: &GpuContext,
     batch: &BatchRenderer,
@@ -136,6 +148,8 @@ pub fn build_main_menu_shell_chrome_atlas(
     let shell2_palette = load_named_palette(assets, "SHELL2.PAL");
     if let Some(pal) = shell_palette.as_ref() {
         push_optional_shp(&mut rendered, assets, "SDTP.SHP", pal, 0);
+        rendered.extend(render_shp_frames(assets, "SDTP.SHP", pal, "top"));
+        rendered.extend(render_shp_frames(assets, "SDWRNTMP.SHP", pal, "warning"));
         push_optional_shp(&mut rendered, assets, "SDBTM.SHP", pal, 0);
         push_optional_shp(&mut rendered, assets, "LWSCRNS.SHP", pal, 0);
         push_optional_shp(&mut rendered, assets, "LWSCRNL.SHP", pal, 0);
@@ -208,6 +222,16 @@ pub fn build_main_menu_shell_chrome_atlas(
             by_label.get(&format!("sdbtnanm.shp:wave#{frame}")).copied()
         }),
         right_panel_top_sdtp: by_label.get("sdtp.shp").copied(),
+        top_panel: TopPanelArt {
+            sdtp: std::array::from_fn(|frame| {
+                by_label.get(&format!("sdtp.shp:top#{frame}")).copied()
+            }),
+            warning: std::array::from_fn(|frame| {
+                by_label
+                    .get(&format!("sdwrntmp.shp:warning#{frame}"))
+                    .copied()
+            }),
+        },
         right_panel_tile_sdbtnbkgd: by_label.get("sdbtnbkgd.shp").copied(),
         right_panel_bottom_sdbtm: by_label.get("sdbtm.shp").copied(),
         lower_side_640_lwscrns: by_label.get("lwscrns.shp").copied(),
@@ -244,12 +268,41 @@ pub fn build_main_menu_shell_chrome_atlas(
 
 /// Decode mandatory buttons before GPU upload, retaining the asset and parser error.
 fn load_main_menu_button_frames(assets: &AssetManager) -> Result<Vec<RenderedChromeEntry>> {
+    let palette = read_main_menu_button_palette(assets)?;
+    let shp = read_main_menu_button_shape(assets)?;
+    render_main_menu_button_frames(&shp, &palette)
+}
+
+/// The installer reports both missing sources together. Keep palette fallback,
+/// shape validation and frame decoding shared with the actual menu loader.
+pub(crate) fn inspect_main_menu_button_art(assets: &AssetManager) -> Vec<String> {
+    let palette = read_main_menu_button_palette(assets);
+    let shp = read_main_menu_button_shape(assets);
+    match (palette, shp) {
+        (Ok(palette), Ok(shp)) => render_main_menu_button_frames(&shp, &palette)
+            .err()
+            .map(|error| format!("{error:#}"))
+            .into_iter()
+            .collect(),
+        (palette, shp) => palette
+            .err()
+            .into_iter()
+            .chain(shp.err())
+            .map(|error| format!("{error:#}"))
+            .collect(),
+    }
+}
+
+fn read_main_menu_button_palette(assets: &AssetManager) -> Result<Palette> {
     // Preserve the existing SHELL2 fallback when the dedicated palette is unavailable.
-    let palette = read_named_palette(assets, "SDBTNANM.PAL").or_else(|primary| {
+    read_named_palette(assets, "SDBTNANM.PAL").or_else(|primary| {
         read_named_palette(assets, "SHELL2.PAL").with_context(|| {
             format!("Game-menu button palette failed: {primary:#}; fallback also failed")
         })
-    })?;
+    })
+}
+
+fn read_main_menu_button_shape(assets: &AssetManager) -> Result<ShpFile> {
     let load = assets
         .load_file_from_mix("SDBTNANM.SHP")
         .context("Required game-menu artwork SDBTNANM.SHP is missing or unreadable")?;
@@ -259,12 +312,19 @@ fn load_main_menu_button_frames(assets: &AssetManager) -> Result<Vec<RenderedChr
         "SDBTNANM.SHP has {} frames; game-menu buttons require frames 2, 3 and 4",
         shp.frames.len()
     );
+    Ok(shp)
+}
+
+fn render_main_menu_button_frames(
+    shp: &ShpFile,
+    palette: &Palette,
+) -> Result<Vec<RenderedChromeEntry>> {
     (0..shp.frames.len().min(SDBTNANM_WAVE_FRAMES))
         .map(|frame| {
             shp_frame_entry(
-                &shp,
+                shp,
                 "SDBTNANM.SHP",
-                &palette,
+                palette,
                 frame,
                 Some(&format!("wave#{frame}")),
             )

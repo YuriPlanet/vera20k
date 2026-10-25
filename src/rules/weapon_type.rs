@@ -58,9 +58,13 @@ pub struct WeaponType {
     pub projectile: Option<String>,
     /// Warhead type ID (`+0xAC`, references a [WarheadName] section).
     pub warhead: Option<String>,
-    /// `Report=` firing sounds (references [SoundName] sections in
-    /// soundmd.ini). Played each time this weapon fires.
+    /// `Report=` firing sounds read by `WeaponTypeClass::ReadINI @ 0x00772080`
+    /// through `ReadSoundList @ 0x00525430`, resolved against the fixed registry.
     pub report: Vec<String>,
+    /// `DownReport=` read through `ReadSoundList @ 0x00525430` by
+    /// `WeaponTypeClass::ReadINI @ 0x00772080`; the constructor starts with an
+    /// empty list (`WeaponTypeClass::Constructor @ 0x00771C70`).
+    pub down_report: Vec<String>,
     /// Number of rapid shots per attack cycle (default 1).
     /// After the full burst, the ROF cooldown begins.
     pub burst: i32,
@@ -68,6 +72,14 @@ pub struct WeaponType {
     /// firer to a human victim (FireAt `0x006FF66C`). Retail turns it off on
     /// the sniper, Virus, disguise and Mirage weapons.
     pub reveal_on_fire: bool,
+    /// `TerrainFire=` (`+0x138`, default no): the weapon may fire at a
+    /// Terrain object unforced (`TechnoClass` vt+0x398, `0x0070EF00`).
+    /// Retail authors it only on the unused `TankMakeupKit`.
+    pub terrain_fire: bool,
+    /// `DisguiseFireOnly=` (`+0x13B`, constructor default false at
+    /// `WeaponTypeClass::Constructor @ 0x00771C70`); `ReadBool` is called by
+    /// `WeaponTypeClass::ReadINI @ 0x00772080` at `0x007721F9`.
+    pub disguise_fire_only: bool,
     /// Infantry WhatAction51EA80: Attack becomes action64 (C4 cursor).
     pub sabotage_cursor: bool,
     /// Infantry WhatAction51EAD2: eligible buildings show action71 (air strike).
@@ -88,10 +100,17 @@ pub struct WeaponType {
     pub laser_duration: i32,
     /// Radiation level emitted on impact (+0x158).
     pub rad_level: i32,
+    /// Phobos `RadType=`: the `[RadiationTypes]` entry this weapon's
+    /// radiation field uses (`WeaponTypeExt::RadType`, default the
+    /// `Radiation` type). Only read in Phobos builds; `None` binds the
+    /// default type.
+    pub rad_type: Option<String>,
 
     // ── String/reference fields ──────────────────────────────────────
     // The Type references are the stored IDs the ordered Rules processor's
     // factories answered (`native_processing`); `RuleSet` publishes them.
+    /// Animation for the native `AssaultAnim=` pointer at +0x114.
+    pub assault_anim: Option<String>,
     /// Animation played by occupants when firing from a building.
     pub occupant_anim: Option<String>,
     /// Animation played by units firing from an open-topped transport.
@@ -116,6 +135,10 @@ pub struct WeaponType {
     pub use_spark_particles: bool,
     /// Fires in all directions regardless of facing (+0x12b).
     pub omni_fire: bool,
+    /// `DistributedWeaponFire=` (`+0x12C`, constructor default false at
+    /// `WeaponTypeClass::Constructor @ 0x00771C70`); `ReadBool` is called by
+    /// `WeaponTypeClass::ReadINI @ 0x00772080` at `0x0077271D`.
+    pub distributed_weapon_fire: bool,
     /// Weapon is a railgun (special projectile visual) (+0x12d).
     pub is_railgun: bool,
     /// Projectile follows a lobbed arc trajectory (+0x12e).
@@ -210,6 +233,12 @@ impl WeaponType {
     /// (`0x007729F0`), and `RuleSet` builds each weapon with its retained
     /// values.
     pub fn from_ini_section(id: &str, section: &IniSection) -> Self {
+        // Phobos `WeaponTypeExt::RadType` read; absent (and every build
+        // without the capability) binds the default radiation type.
+        #[cfg(feature = "phobos")]
+        let rad_type = section.read_name("RadType", 0x80).map(str::to_owned);
+        #[cfg(not(feature = "phobos"))]
+        let rad_type = None;
         Self {
             id: id.to_string(),
             damage: 0,
@@ -221,12 +250,16 @@ impl WeaponType {
             projectile: None,
             warhead: None,
             report: sound_list(section, "Report"),
+            down_report: Vec::new(),
             burst: section.read_int("Burst", 1),
             // Constructor 1 (`0x00771DBB`); ReadINI passes it as the default
             // (`0x00772182..0x00772196`).
             reveal_on_fire: section.read_bool("RevealOnFire", true),
-            // Constructor771DC8/771DCE zero +139/+13A; ReadINI7721BD..7721E4
-            // passes the retained bytes to the native boolean reader5295F0.
+            // Constructor771DC2/771DC8/771DCE zero +138/+139/+13A;
+            // ReadINI7721A3..7721E4 passes the retained bytes to the native
+            // boolean reader5295F0.
+            terrain_fire: section.read_bool("TerrainFire", false),
+            disguise_fire_only: section.read_bool("DisguiseFireOnly", false),
             sabotage_cursor: section.read_bool("SabotageCursor", false),
             mig_attack_cursor: section.read_bool("MigAttackCursor", false),
 
@@ -242,10 +275,11 @@ impl WeaponType {
             // so narrowing after the projected pass history is equivalent.
             laser_duration: i32::from(section.read_int("LaserDuration", 10) as i8),
             rad_level: section.read_int("RadLevel", 0),
+            rad_type,
 
-            // The constructor's nulls and empty list (`0x00771C70`); only the
-            // ordered Process owner reads `OccupantAnim=`, `OpenToppedAnim=`,
-            // `AttachedParticleSystem=` and `Anim=`.
+            // The constructor's nulls and empty list (`0x00771C70`); the
+            // ordered Process owner reads the Animation references.
+            assault_anim: None,
             occupant_anim: None,
             open_topped_anim: None,
             attached_particle_system: None,
@@ -262,6 +296,7 @@ impl WeaponType {
             use_fire_particles: section.read_bool("UseFireParticles", false),
             use_spark_particles: section.read_bool("UseSparkParticles", false),
             omni_fire: section.read_bool("OmniFire", false),
+            distributed_weapon_fire: section.read_bool("DistributedWeaponFire", false),
             is_railgun: section.read_bool("IsRailgun", false),
             lobber: section.read_bool("Lobber", false),
             bright: section.read_bool("Bright", false),
@@ -302,8 +337,8 @@ impl WeaponType {
     }
 }
 
-/// `Report=`/`DownReport=` through ReadSoundList (`0x00772394`,
-/// `0x0077241A`); absent leaves the constructor's empty list.
+/// `Report=` through ReadSoundList (`0x00772394`); production binding resolves
+/// both report lists through the fixed SOUNDMD registry.
 fn sound_list(section: &IniSection, key: &str) -> Vec<String> {
     section
         .read_sound_list(key)
@@ -549,9 +584,189 @@ mod tests {
         assert!(!weapon.is_sonic);
         assert!(!weapon.is_laser);
         assert!(!weapon.is_electric_bolt);
+        assert!(!weapon.distributed_weapon_fire);
+        assert!(!weapon.disguise_fire_only);
         assert!(weapon.anim.is_empty());
         assert_eq!(weapon.laser_inner_color, [0, 0, 0]);
         assert!(weapon.decloak_to_fire, "native omitted-key default is yes");
+    }
+
+    #[test]
+    fn retail_battle_retains_native_weapon_reference_fields() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let akm = retail.rules.weapon("AKM").unwrap();
+        assert_eq!(akm.assault_anim.as_deref(), Some("UCBLOOD"));
+        assert!(akm.down_report.is_empty(), "constructor list is empty");
+
+        let electric_bolt = retail.rules.weapon("CRElectricBolt").unwrap();
+        assert_eq!(electric_bolt.assault_anim.as_deref(), Some("UCELEC"));
+        assert!(
+            electric_bolt.down_report.is_empty(),
+            "stock has no DownReport"
+        );
+    }
+
+    #[test]
+    fn assault_anim_keeps_current_on_empty_and_uses_the_native_factory() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[VehicleTypes]\n0=KEEP_MISSING\n1=KEEP_EMPTY\n2=CLEAR\n3=CREATE\n\
+             [KEEP_MISSING]\nPrimary=KeepMissing\n[KEEP_EMPTY]\nPrimary=KeepEmpty\n\
+             [CLEAR]\nPrimary=Clear\n[CREATE]\nPrimary=Create\n\
+             [KeepMissing]\nDamage=1\nAssaultAnim=UCFLASH\n\
+             [KeepEmpty]\nDamage=1\nAssaultAnim=UCFLASH\n\
+             [Clear]\nDamage=1\nAssaultAnim=UCFLASH\n\
+             [Create]\nDamage=1\nAssaultAnim=UCFLASH\n",
+        ));
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str(
+                "[KEEP_MISSING]\nSecondary=KeepMissing\n\
+                 [KeepMissing]\nDamage=1\n\
+                 [KeepEmpty]\nAssaultAnim=\n\
+                 [Clear]\nAssaultAnim=none\n\
+                 [Create]\nAssaultAnim=LateAnim\n",
+            ),
+        );
+        let processed = layers.process().unwrap();
+        let rules = RuleSet::from_processed_rules(&processed).unwrap();
+
+        assert_eq!(
+            rules.weapon("KeepMissing").unwrap().assault_anim.as_deref(),
+            Some("UCFLASH"),
+            "a later missing key retains the current animation"
+        );
+        assert_eq!(
+            rules.weapon("KeepEmpty").unwrap().assault_anim.as_deref(),
+            Some("UCFLASH"),
+            "an empty ReadString result retains the current animation"
+        );
+        assert_eq!(rules.weapon("Clear").unwrap().assault_anim, None);
+        assert_eq!(
+            rules.weapon("Create").unwrap().assault_anim.as_deref(),
+            Some("LateAnim"),
+            "the native factory allocates an unknown nonempty name"
+        );
+    }
+
+    #[test]
+    fn weapon_report_lists_use_the_sound_registry_filter_and_native_reset_rules() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+        use crate::rules::sound_ini::SoundRegistry;
+
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[VehicleTypes]\n0=UNIT\n[UNIT]\nPrimary=Filtered\nSecondary=Cleared\n\
+             [Filtered]\nDamage=1\nReport=A,Unknown,<none>,B,A\n\
+             DownReport=A,Unknown,<none>,B,A\n\
+             [Cleared]\nDamage=1\nReport=A,B\nDownReport=A,B\n",
+        ));
+        layers.push(
+            RulesLayerKind::GameMode,
+            IniFile::from_str("[Filtered]\nReport=\nDownReport=\n"),
+        );
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[Cleared]\nReport=Unknown,<none>\nDownReport=,,,\n"),
+        );
+
+        let processed = layers.process().unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        let sounds = SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=A\n1=B\n[A]\nSounds=a.wav\n[B]\nSounds=b.wav\n",
+        ));
+        rules.bind_type_sound_references(processed.ini(), &sounds);
+
+        let filtered = rules.weapon("Filtered").unwrap();
+        assert_eq!(
+            filtered
+                .report
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            vec!["A", "B", "A"],
+            "registered sounds retain native order and duplicate entries"
+        );
+        assert_eq!(
+            filtered
+                .down_report
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            vec!["A", "B", "A"]
+        );
+        assert_eq!(filtered.report_count(), 3);
+
+        let cleared = rules.weapon("Cleared").unwrap();
+        assert_eq!(
+            cleared.report_count(),
+            0,
+            "unknown-only replaces with empty"
+        );
+        assert!(
+            cleared.down_report.is_empty(),
+            "comma-only replaces with empty"
+        );
+    }
+
+    #[test]
+    fn weapon_fire_flags_keep_read_bool_defaults_across_rules_passes() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[VehicleTypes]\n0=UNIT\n[UNIT]\nPrimary=Probe\nSecondary=Defaults\n\
+             [Probe]\nDistributedWeaponFire=yes\nDisguiseFireOnly=yes\n\
+             [Defaults]\nDamage=1\n",
+        ));
+        layers.push(
+            RulesLayerKind::GameMode,
+            IniFile::from_str("[Probe]\nDistributedWeaponFire=on\nDisguiseFireOnly=no\n"),
+        );
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[Probe]\nDisguiseFireOnly=on\n"),
+        );
+
+        let rules = RuleSet::from_rules_layers(&layers).unwrap();
+        let probe = rules.weapon("Probe").unwrap();
+        assert!(
+            probe.distributed_weapon_fire,
+            "invalid 'on' keeps the current true value"
+        );
+        assert!(
+            !probe.disguise_fire_only,
+            "valid no followed by invalid 'on' keeps the current false value"
+        );
+        let defaults = rules.weapon("Defaults").unwrap();
+        assert!(!defaults.distributed_weapon_fire);
+        assert!(!defaults.disguise_fire_only);
+    }
+
+    #[test]
+    fn weapon_fire_flags_retail_battle_defaults_and_map_overrides() {
+        let Some(stock) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        for id in ["105mm", "MirageGun", "MirageGunE"] {
+            let weapon = stock.rules.weapon(id).expect("stock WeaponType");
+            assert!(!weapon.distributed_weapon_fire, "{id}");
+            assert!(!weapon.disguise_fire_only, "{id}");
+        }
+
+        let patch = IniFile::from_str("[105mm]\nDistributedWeaponFire=yes\nDisguiseFireOnly=yes\n");
+        let Some(patched) =
+            crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&patch)
+        else {
+            return;
+        };
+        let weapon = patched.rules.weapon("105mm").unwrap();
+        assert!(weapon.distributed_weapon_fire);
+        assert!(weapon.disguise_fire_only);
     }
 
     /// `CCINIClass::ReadRange` 0x00474620 multiplies by `256.0` and THEN chops,

@@ -310,7 +310,7 @@ def main(argv=None):
     # keeps importing the tool and asking for usage independent of retail assets
     # and optional native-emulation packages.
     from tools.ai_base_building_oracle import FAKE, STUBS
-    from tools.native_oracle import (image_sha256, run_checked, RET_MAGIC,
+    from tools.native_oracle import (run_checked, RET_MAGIC,
                                      STACK_BASE, STACK_SIZE, NATIVE_FPCW)
     from unicorn import UC_HOOK_CODE
     from unicorn.x86_const import (UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_EAX,
@@ -428,7 +428,6 @@ def main(argv=None):
     payload={
         'schema':'control-group-tail-native-v1',
         'provenance':{
-            'gamemd_sha256':image_sha256(),
             'font':{'name':'GAME.FNT','resolution':'ra2.mix -> local.mix',
                     'file_length':len(raw),'file_length_hex':hex(len(raw)),
                     'sha256':font_sha256},
@@ -456,7 +455,7 @@ def main(argv=None):
         expected=out.read_text(encoding='utf-8')
         if rendered != expected:
             raise RuntimeError(f'native output differs from {out}; inspect before replacing it with --write')
-    print(json.dumps({'corpus':str(out),'cases':len(corpus_rows),'native_sha256':payload['provenance']['gamemd_sha256'],
+    print(json.dumps({'corpus':str(out),'cases':len(corpus_rows),
         'font_sha256':payload['provenance']['font']['sha256'],'native_file_reads':payload['native_font_initialization']['native_file_reads'],
         'digit_advances':[x['advance'] for x in native_digit_metrics]},separators=(',',':')))
 

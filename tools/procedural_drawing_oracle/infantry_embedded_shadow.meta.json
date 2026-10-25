@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Prepared ground Infantry DrawIt body followed by an authored nonempty embedded shadow, with a NoShadow negative control",
+  "assumptions": [
+    "The existing shroud.generate_infantry_berserk_body owner prepares its original Infantry/Walk prefix, selected E1/GI type reader, palettes/Convert, flat Cells/TMP geometry, local owner, Ready frame0, native facing and RGB565 Surface. Its documented prepared-state limits remain; no scenario, COM activation, Unlimbo, display admission or whole campaign is executed.",
+    "Original Infantry518F90 -> Foot41C090 -> Techno705E00 -> CC_Draw_Shape4AED70 execute. The physical GI frame count and body remain; frame count/2 receives an authored4x2 raw stencil. This certifies the selected instructions on a positive input, not stock artwork, MO assets, full Infantry stances, airborne/bridge paths or rendered GPU parity.",
+    "Both controls restore the same CPU/FPU context, point and caller clip and reset the Surface/A/Z contents before original invocation. Native body and shadow returns supply observations. NoShadow is the only changed retained type field; constructor initially leaves it false. No saved body/frame/colour/clip output becomes a native expected input.",
+    "The body result is observed at70645D and final result at706602. Changed pixel count is an observation after native clipping, not an assertion that every authored stencil pixel must store. All source bytes, A/Z planes, three complete RNG buffers and original executable code remain unchanged; RNG call hooks observe no requests."
+  ],
+  "substitutions": [
+    "Reuse existing RetailRulesInputs, PaletteReader, shroud Infantry prefix, native TMP registry, Windows atomic/allocator/file boundaries and bridge_render_shape Surface storage. A temporary input catalog replaces only GI shadow frame metadata/payload; no VM, decoder, palette math, projection or raster implementation is copied."
+  ],
+  "entry_points": {
+    "infantry_body": "0x00518F90",
+    "foot_shape": "0x0041C090",
+    "draw_shp": "0x00705E00",
+    "no_shadow_read": "0x00706052",
+    "shape": "0x004AED70",
+    "body_return": "0x0070645D",
+    "shadow_return": "0x00706602"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.infantry_embedded_shadow",
+  "payload_sha256": "f1e2504ca3ed183e191d167b399a4764278ee74ece8b1a0bd23053ffea100ab8"
+}

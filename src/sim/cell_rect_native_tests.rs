@@ -194,7 +194,20 @@ fn map_localsize_normalization_matches_native_executed_prefix() {
              [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n",
             size.0, size.1, local[0], local[1], local[2], local[3],
         );
-        let map = crate::map::map_file::MapFile::from_bytes(text.as_bytes()).unwrap();
+        let parsed = crate::map::map_file::MapFile::from_bytes(text.as_bytes());
+        if size == (0, 0) {
+            // The native normalization kernel accepts this numeric control;
+            // full map admission requires a nonempty fixed-grid footprint.
+            assert!(matches!(
+                parsed,
+                Err(crate::map::map_file::MapError::InvalidDimensions {
+                    width: 0,
+                    height: 0
+                })
+            ));
+            continue;
+        }
+        let map = parsed.unwrap();
         let mut sim = crate::sim::world::Simulation::new();
         sim.install_playfield_from_map_header(&map.header);
         assert_eq!(

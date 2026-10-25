@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -46,5 +45,5 @@
     "can_be_occupied_reader": "0x004600DA"
   },
   "replay_command": "python -m tools.procedural_drawing_oracle.shroud --building-health",
-  "payload_sha256": "e16bb93deacc0ee1960b472c36652ed24c491b9959e03bf32a50e486e8877865"
+  "payload_sha256": "22878008d19ddf98b389b840f974916a9cc5459a5cb29788ec319bf0a4c71426"
 }

@@ -343,6 +343,12 @@ pub fn has_weapon_ability(rank: VeterancyRank, object: &ObjectType, ability: Abi
     }
 }
 
+/// A crusher: `Crusher=` (`TechnoType+0xD28`) or the Crusher ability by rank
+/// (`HasWeaponAbility(0x11)`, `0x0070D0D0`), the pair every crush gate reads.
+pub fn is_crusher(rank: VeterancyRank, object: &ObjectType) -> bool {
+    object.crusher || has_weapon_ability(rank, object, Ability::Crusher)
+}
+
 /// A demolition infantryman's test: `C4=` (`InfantryType+0xEC2`) or a rank
 /// holding weapon ability 14 ([`has_weapon_ability`]), in that order.
 pub fn holds_c4(rank: VeterancyRank, object: &ObjectType) -> bool {
@@ -376,6 +382,8 @@ pub fn ftol_scale(value: i32, multiplier: f64) -> i32 {
 /// `ftol(speed * Rules.VeteranSpeed)` at `0x004DB1F1..0x004DB200`. Each ftol
 /// keeps the low 32 bits. Stage 3 multiplies in the Foot+0x578 fraction
 /// (`movement::owner_current_speed_from_fraction`).
+/// Ares has already derived Foot+580 from its permanent crate baseline and
+/// ordered effects. This getter consumes that output without folding again.
 ///
 /// The stock crate factor 1.2 makes native type speed 10 become 11, not 12:
 /// crate_speed_effect.json executes both the writer and original getter, and
@@ -385,17 +393,17 @@ pub fn ftol_scale(value: i32, multiplier: f64) -> i32 {
 pub(crate) fn current_type_speed(
     type_speed: i32,
     house_bonus: crate::util::native_x87::NativeF32Bits,
-    crate_multiplier: crate::util::native_x87::NativeF64Bits,
+    speed_multiplier: crate::util::native_x87::NativeF64Bits,
     veteran_speed: Option<f64>,
 ) -> i32 {
     use crate::util::native_x87::{MaskedX87Chop53 as X, NativeF32Bits, NativeF64Bits};
     // Both factors 1.0: the product is the integer itself.
-    let speed = if house_bonus == NativeF32Bits::ONE && crate_multiplier == NativeF64Bits::ONE {
+    let speed = if house_bonus == NativeF32Bits::ONE && speed_multiplier == NativeF64Bits::ONE {
         type_speed
     } else {
         X::ftol_i32_low_masked(X::mul(
             X::mul(X::load_i32(type_speed), X::load_f32(house_bonus)),
-            X::load_f64(crate_multiplier),
+            X::load_f64(speed_multiplier),
         ))
     };
     veteran_speed.map_or(speed, |veteran_speed| ftol_scale(speed, veteran_speed))
@@ -438,7 +446,7 @@ pub fn locomotor_consults_current_speed(kind: Option<LocomotorKind>) -> bool {
 /// integer per-frame speed, then `HasWeaponAbility(0)` (`FASTER`) gates
 /// `ftol(speed * Rules.VeteranSpeed)`. Stage 3 multiplies in the
 /// `[this+0x578]` fraction (`movement::owner_current_speed`), so this helper
-/// stops one stage short deliberately. The crate factor is live Foot state;
+/// stops one stage short deliberately. The effective multiplier is live Foot state;
 /// `house_bonus` is the owner's `HouseClass::GetSpeedBonus @ 0x0050C050`
 /// (`movement::owner_speed_bonus`). The arithmetic is
 /// [`current_type_speed`]'s.
@@ -453,14 +461,14 @@ fn mover_speed_leptons_per_second(
     object: Option<&ObjectType>,
     veteran_speed: f64,
     house_bonus: crate::util::native_x87::NativeF32Bits,
-    crate_multiplier: crate::util::native_x87::NativeF64Bits,
+    speed_multiplier: crate::util::native_x87::NativeF64Bits,
 ) -> SimFixed {
     let type_speed = crate::util::fixed_math::ra2_speed_to_leptons_per_frame(raw_type_speed);
     let speed = match object {
         Some(object) if locomotor_consults_current_speed(loco_kind) => current_type_speed(
             type_speed,
             house_bonus,
-            crate_multiplier,
+            speed_multiplier,
             has_weapon_ability(rank, object, Ability::Faster).then_some(veteran_speed),
         ),
         _ => type_speed,
@@ -486,7 +494,7 @@ pub fn entity_mover_speed_leptons_per_second(
         object,
         veteran_speed,
         house_bonus,
-        entity.foot_speed.crate_multiplier(),
+        entity.foot_speed.effective_multiplier(),
     )
 }
 

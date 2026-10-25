@@ -1,0 +1,3382 @@
+{
+  "assets": {
+    "CAHEAD.HVA": {
+      "archive": "ra2md.mix -> localmd.mix",
+      "bytes": 88,
+      "sha256": "8191fcdc3f02e99e5c84a5e0d15ae6223b29befa649c6f91a404f3752b20f474"
+    },
+    "CAHEAD.VXL": {
+      "archive": "ra2md.mix -> localmd.mix",
+      "bytes": 182558,
+      "sha256": "8b4662e02274ecaad9b4e06616484d4d1fd06c9665a39c127da396e86edd5bee"
+    },
+    "FLAKTUR.HVA": {
+      "archive": "ra2.mix -> local.mix",
+      "bytes": 88,
+      "sha256": "810dae94db5ae67cef0866897da63f20d3b8d36ff2b73769abc0f5664ff4a2fe"
+    },
+    "FLAKTUR.VXL": {
+      "archive": "ra2.mix -> local.mix",
+      "bytes": 14781,
+      "sha256": "02b122f944a4154efc15fb554e46703a437467b99d728b2914fa51a0c44a99c4"
+    },
+    "GTGCANBARL.HVA": {
+      "archive": "ra2.mix -> local.mix",
+      "bytes": 88,
+      "sha256": "8f0d6c304ea663dfd632b81c85ebc567f781752fb98d15c06e832d3403173049"
+    },
+    "GTGCANBARL.VXL": {
+      "archive": "ra2.mix -> local.mix",
+      "bytes": 21417,
+      "sha256": "6f90d6bd920cd3f3f91d247c7bf70390504c616c37dc2384a02ddd3b19e7cc25"
+    },
+    "GTGCANTUR.HVA": {
+      "archive": "ra2.mix -> local.mix",
+      "bytes": 88,
+      "sha256": "8f0d6c304ea663dfd632b81c85ebc567f781752fb98d15c06e832d3403173049"
+    },
+    "GTGCANTUR.VXL": {
+      "archive": "ra2.mix -> local.mix",
+      "bytes": 89541,
+      "sha256": "6dfdc77eb7635b0601f6ce8e5a8ded3f13129af74426b66ff55321664154d72a"
+    },
+    "LASER.HVA": {
+      "archive": "ra2.mix -> local.mix",
+      "bytes": 88,
+      "sha256": "6341bcf07f7c0a6df8926b9c6303e220bd16951e44743491dff9823471f3bfcd"
+    },
+    "LASER.VXL": {
+      "archive": "ra2.mix -> local.mix",
+      "bytes": 16618,
+      "sha256": "286dac78239c1ebbecd2f97dd64236d304a5e4ddc93397092842153a5d354b6f"
+    },
+    "OUTP.HVA": {
+      "archive": "ra2.mix -> local.mix",
+      "bytes": 88,
+      "sha256": "da9ad51682011fcda6492c3f34ae3dd1382f32818374c06a55791bad5f92433f"
+    },
+    "OUTP.VXL": {
+      "archive": "ra2.mix -> local.mix",
+      "bytes": 25163,
+      "sha256": "30ab6767edd33b4e15a63c93b714ec6664ae95d725b9b2c9065595407a11be73"
+    },
+    "SAM.HVA": {
+      "archive": "ra2.mix -> local.mix",
+      "bytes": 88,
+      "sha256": "17cdede3aae9ab4115c60c7df162d68aa03eaccfd4b111661d32853e169558c8"
+    },
+    "SAM.VXL": {
+      "archive": "ra2.mix -> local.mix",
+      "bytes": 25161,
+      "sha256": "33ce1bf91cd968ac9b52f66686e57ca7581d5ea1e69df4620979b5fdcbb36c34"
+    },
+    "SMINTUR.HVA": {
+      "archive": "ra2md.mix -> localmd.mix",
+      "bytes": 88,
+      "sha256": "afd9e1fed3291c9ae01b0298cef1faebef8b394dd513773aa35fad5fdfa7241a"
+    },
+    "SMINTUR.VXL": {
+      "archive": "ra2md.mix -> localmd.mix",
+      "bytes": 4061,
+      "sha256": "f6343f48d8909a73495b7b088289e887bb3cf313802f2ff4a362bfff9962ac41"
+    },
+    "VOXELS.VPL": {
+      "archive": "ra2md.mix -> localmd.mix",
+      "bytes": 8976,
+      "sha256": "2d75fff8a6872ffe98308c7009858a9e904696e1529bc649181a44993979081c"
+    },
+    "YAGGUN.HVA": {
+      "archive": "ra2md.mix -> localmd.mix",
+      "bytes": 360,
+      "sha256": "4802f471da56efd33d61b2571d9d21ff5ce1b62f2e8e640f9f275daa929a25d6"
+    },
+    "YAGGUN.VXL": {
+      "archive": "ra2md.mix -> localmd.mix",
+      "bytes": 27101,
+      "sha256": "6aeaf60a720b04f94a2e68b339fe7d2bacae25b6e62e85a9291aa5d72b3c0b39"
+    }
+  },
+  "draws": [
+    {
+      "barrel_raw": 16384,
+      "building": "GTGCAN",
+      "crop_lit": 564,
+      "crop_lit_bounds": [
+        5,
+        10,
+        50,
+        40
+      ],
+      "crop_sha256": "fc2412c1972036b3ac652ce9b7c4d5c210ce865c6a62eee3cc35dada34f88c90",
+      "image": "GTGCANBARL",
+      "matrix_bits": [
+        1060421071,
+        3207941114,
+        0,
+        0,
+        1052074118,
+        1052037707,
+        1063103350,
+        0,
+        3206347780,
+        3206316265,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 0,
+      "rect": [
+        4,
+        -71,
+        99,
+        104,
+        58,
+        49
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "GTGCAN",
+      "crop_lit": 2161,
+      "crop_lit_bounds": [
+        15,
+        16,
+        66,
+        68
+      ],
+      "crop_sha256": "6d328822eddb3773460ce1983a1a49724e573cb8cb1404d457ee30630389b76d",
+      "image": "GTGCANTUR",
+      "matrix_bits": [
+        1060421071,
+        3207941114,
+        0,
+        0,
+        1052074118,
+        1052037707,
+        1063103350,
+        0,
+        3206347780,
+        3206316265,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 0,
+      "rect": [
+        -41,
+        -64,
+        88,
+        89,
+        81,
+        79
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "GTGCAN",
+      "crop_lit": 2257,
+      "crop_lit_bounds": [
+        5,
+        9,
+        57,
+        62
+      ],
+      "crop_sha256": "c1fbbd6f31582bfc5a1318c0adb2ce67ee5ad05bf843fd81441d9a1bb097fb21",
+      "image": "GTGCANTUR",
+      "matrix_bits": [
+        1065353195,
+        3133738935,
+        0,
+        0,
+        977872471,
+        1056968311,
+        1063103350,
+        0,
+        3131972186,
+        3210586979,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 8192,
+      "rect": [
+        -32,
+        -59,
+        97,
+        95,
+        62,
+        67
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "GTGCAN",
+      "crop_lit": 621,
+      "crop_lit_bounds": [
+        4,
+        8,
+        56,
+        24
+      ],
+      "crop_sha256": "a5a0e3e611c46003fffa66ecace4a43069e849d68152d399cc0c847a2769c3e9",
+      "image": "GTGCANBARL",
+      "matrix_bits": [
+        1065353195,
+        3133738935,
+        0,
+        0,
+        977872471,
+        1056968311,
+        1063103350,
+        0,
+        3131972186,
+        3210586979,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 8192,
+      "rect": [
+        18,
+        -46,
+        98,
+        112,
+        61,
+        33
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "GTGCAN",
+      "crop_lit": 2207,
+      "crop_lit_bounds": [
+        15,
+        14,
+        66,
+        69
+      ],
+      "crop_sha256": "e27da6d48a94e6977ea9c27e1cac14106ea26c95315b050673ad2309028b63b0",
+      "image": "GTGCANTUR",
+      "matrix_bits": [
+        1060457467,
+        1060421071,
+        0,
+        0,
+        3199521355,
+        1052074119,
+        1063103350,
+        0,
+        1058832617,
+        3206347781,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 16384,
+      "rect": [
+        -40,
+        -65,
+        88,
+        89,
+        81,
+        79
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "GTGCAN",
+      "crop_lit": 578,
+      "crop_lit_bounds": [
+        4,
+        7,
+        50,
+        38
+      ],
+      "crop_sha256": "a8afdb0aa9aebc74ec591babc903871a070288907076eb081b3728ee77978f64",
+      "image": "GTGCANBARL",
+      "matrix_bits": [
+        1060457467,
+        1060421071,
+        0,
+        0,
+        3199521355,
+        1052074119,
+        1063103350,
+        0,
+        1058832617,
+        3206347781,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 16384,
+      "rect": [
+        5,
+        -37,
+        99,
+        104,
+        58,
+        49
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "GTGCAN",
+      "crop_lit": 2089,
+      "crop_lit_bounds": [
+        4,
+        11,
+        54,
+        64
+      ],
+      "crop_sha256": "8c52e603ef0dc66f65ded1deab978e079e9ba18ca4651b967838f878cb4f9663",
+      "image": "GTGCANTUR",
+      "matrix_bits": [
+        994643879,
+        1065353136,
+        0,
+        0,
+        3204451929,
+        986261084,
+        1063103350,
+        0,
+        1063103280,
+        3140360637,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 24576,
+      "rect": [
+        -29,
+        -60,
+        99,
+        94,
+        58,
+        69
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "GTGCAN",
+      "crop_lit": 469,
+      "crop_lit_bounds": [
+        4,
+        6,
+        22,
+        42
+      ],
+      "crop_sha256": "3bb5fc11c0353a39516993d8089cb5dd85540f8443d796219da15e309b20bdb2",
+      "image": "GTGCANBARL",
+      "matrix_bits": [
+        994643879,
+        1065353136,
+        0,
+        0,
+        3204451929,
+        986261084,
+        1063103350,
+        0,
+        1063103280,
+        3140360637,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 24576,
+      "rect": [
+        -13,
+        -30,
+        115,
+        103,
+        26,
+        50
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "GTGCAN",
+      "crop_lit": 2196,
+      "crop_lit_bounds": [
+        12,
+        14,
+        64,
+        69
+      ],
+      "crop_sha256": "fdc6d343b509f2b08a6fc39e494f28af6a2d7f20f65487083db33bd815df91b3",
+      "image": "GTGCANTUR",
+      "matrix_bits": [
+        3207886478,
+        1060475622,
+        0,
+        0,
+        3199575930,
+        3199503106,
+        1063103350,
+        0,
+        1058879854,
+        1058816822,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 32768,
+      "rect": [
+        -39,
+        -65,
+        88,
+        89,
+        81,
+        79
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "GTGCAN",
+      "crop_lit": 570,
+      "crop_lit_bounds": [
+        7,
+        7,
+        52,
+        38
+      ],
+      "crop_sha256": "3f555fd4ad4668aadbc8003525eb67b3eb5a4f3f5c0856294b1cef17e7e9f4cd",
+      "image": "GTGCANBARL",
+      "matrix_bits": [
+        3207886478,
+        1060475622,
+        0,
+        0,
+        3199575930,
+        3199503106,
+        1063103350,
+        0,
+        1058879854,
+        1058816822,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 32768,
+      "rect": [
+        -62,
+        -36,
+        99,
+        104,
+        58,
+        49
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "GTGCAN",
+      "crop_lit": 609,
+      "crop_lit_bounds": [
+        4,
+        7,
+        56,
+        24
+      ],
+      "crop_sha256": "9016d2ebf48f3c90cd8cb22f4eedb0e0b133bcd03b1516d8eb803f64a837f5db",
+      "image": "GTGCANBARL",
+      "matrix_bits": [
+        3212836784,
+        994643879,
+        0,
+        0,
+        3133744732,
+        3204451929,
+        1063103350,
+        0,
+        992876989,
+        1063103280,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 40960,
+      "rect": [
+        -78,
+        -45,
+        98,
+        112,
+        61,
+        33
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "GTGCAN",
+      "crop_lit": 2246,
+      "crop_lit_bounds": [
+        5,
+        9,
+        57,
+        62
+      ],
+      "crop_sha256": "7f110aaed8dd23217ac283254decbd37cf6d94ab9cebee5637c8603140148f3b",
+      "image": "GTGCANTUR",
+      "matrix_bits": [
+        3212836784,
+        994643879,
+        0,
+        0,
+        3133744732,
+        3204451929,
+        1063103350,
+        0,
+        992876989,
+        1063103280,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 40960,
+      "rect": [
+        -30,
+        -58,
+        97,
+        95,
+        62,
+        67
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "GTGCAN",
+      "crop_lit": 563,
+      "crop_lit_bounds": [
+        7,
+        10,
+        53,
+        40
+      ],
+      "crop_sha256": "eefc66528092f96b2986ce8e11c81d6ebf64528409021e08f2ff8924a456ed22",
+      "image": "GTGCANBARL",
+      "matrix_bits": [
+        3207959270,
+        3207886478,
+        0,
+        0,
+        1052019458,
+        3199575930,
+        1063103350,
+        0,
+        3206300470,
+        1058879854,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 49152,
+      "rect": [
+        -63,
+        -70,
+        99,
+        104,
+        58,
+        49
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "GTGCAN",
+      "crop_lit": 2159,
+      "crop_lit_bounds": [
+        13,
+        16,
+        64,
+        68
+      ],
+      "crop_sha256": "0b97933b73a0566ca0ac802437315cec422a645c11f509b29a6cb88361e209b5",
+      "image": "GTGCANTUR",
+      "matrix_bits": [
+        3207959270,
+        3207886478,
+        0,
+        0,
+        1052019458,
+        3199575930,
+        1063103350,
+        0,
+        3206300470,
+        1058879854,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 49152,
+      "rect": [
+        -40,
+        -63,
+        88,
+        89,
+        81,
+        79
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "GTGCAN",
+      "crop_lit": 486,
+      "crop_lit_bounds": [
+        4,
+        8,
+        22,
+        44
+      ],
+      "crop_sha256": "0cf35728a5b4d7932619d70701830bc5f597f02a16e1665a042be049dc4828cd",
+      "image": "GTGCANBARL",
+      "matrix_bits": [
+        3142127527,
+        3212836784,
+        0,
+        0,
+        1056968281,
+        3133744732,
+        1063103350,
+        0,
+        3210586928,
+        992876989,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 57344,
+      "rect": [
+        -13,
+        -78,
+        115,
+        103,
+        26,
+        50
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "GTGCAN",
+      "crop_lit": 2078,
+      "crop_lit_bounds": [
+        4,
+        10,
+        54,
+        62
+      ],
+      "crop_sha256": "c35f02f4a9a0dacd9b6d210072840f4bdf6dadbc7b090af9a3bc3749b9d0e5fd",
+      "image": "GTGCANTUR",
+      "matrix_bits": [
+        3142127527,
+        3212836784,
+        0,
+        0,
+        1056968281,
+        3133744732,
+        1063103350,
+        0,
+        3210586928,
+        992876989,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 57344,
+      "rect": [
+        -29,
+        -58,
+        99,
+        94,
+        58,
+        69
+      ]
+    },
+    {
+      "barrel_raw": 14336,
+      "building": "GTGCAN",
+      "crop_lit": 587,
+      "crop_lit_bounds": [
+        6,
+        10,
+        51,
+        48
+      ],
+      "crop_sha256": "7662375dd3be2be7d62cfb1aab665a5a233a409b23bf2ef8a280825a772d5ef4",
+      "image": "GTGCANBARL",
+      "matrix_bits": [
+        1060197001,
+        3207941114,
+        3188454571,
+        0,
+        1057219220,
+        1052037707,
+        1061677991,
+        0,
+        3204528531,
+        3206316265,
+        1058801201,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 0,
+      "rect": [
+        -2,
+        -79,
+        98,
+        100,
+        60,
+        56
+      ]
+    },
+    {
+      "barrel_raw": 14336,
+      "building": "GTGCAN",
+      "crop_lit": 631,
+      "crop_lit_bounds": [
+        3,
+        10,
+        57,
+        32
+      ],
+      "crop_sha256": "a78766f76d7bdf3bb789eb4c9598379deeacc57f6c1e3320adc984d6c6bed8e3",
+      "image": "GTGCANBARL",
+      "matrix_bits": [
+        1065035826,
+        3133738935,
+        3192273723,
+        0,
+        1043098445,
+        1056968311,
+        1062826048,
+        0,
+        1036232326,
+        3210586979,
+        1056663154,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 8192,
+      "rect": [
+        9,
+        -57,
+        97,
+        108,
+        63,
+        41
+      ]
+    },
+    {
+      "barrel_raw": 14336,
+      "building": "GTGCAN",
+      "crop_lit": 558,
+      "crop_lit_bounds": [
+        5,
+        7,
+        51,
+        30
+      ],
+      "crop_sha256": "444491592e4c3ccd7c00be4d650f5fad604ab61eeac13eeee0b59f59bf5c7abd",
+      "image": "GTGCANBARL",
+      "matrix_bits": [
+        1060232709,
+        1060421071,
+        3188482754,
+        0,
+        3191285583,
+        1052074119,
+        1063975565,
+        0,
+        1060263228,
+        3206347781,
+        1052683460,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 16384,
+      "rect": [
+        -2,
+        -43,
+        98,
+        108,
+        60,
+        40
+      ]
+    },
+    {
+      "barrel_raw": 14336,
+      "building": "GTGCAN",
+      "crop_lit": 373,
+      "crop_lit_bounds": [
+        4,
+        5,
+        22,
+        34
+      ],
+      "crop_sha256": "dc5e1e9b9422396b4e3ed962869c1508e009b77267e368bb2dacd2e0f8a30f7c",
+      "image": "GTGCANBARL",
+      "matrix_bits": [
+        994394708,
+        1065353136,
+        3122376884,
+        0,
+        3198513524,
+        986261084,
+        1064453165,
+        0,
+        1064453104,
+        3140360637,
+        1051029982,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 24576,
+      "rect": [
+        -13,
+        -38,
+        115,
+        107,
+        26,
+        42
+      ]
+    },
+    {
+      "barrel_raw": 14336,
+      "building": "GTGCAN",
+      "crop_lit": 543,
+      "crop_lit_bounds": [
+        8,
+        7,
+        53,
+        30
+      ],
+      "crop_sha256": "2cb62957a27c552dbf4b141ccbb8af2392b468fde361d091ebfbf827d10ffb22",
+      "image": "GTGCANBARL",
+      "matrix_bits": [
+        3207662754,
+        1060475622,
+        1040956799,
+        0,
+        3191392670,
+        3199503106,
+        1063980848,
+        0,
+        1060309571,
+        1058816822,
+        1052665171,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 32768,
+      "rect": [
+        -58,
+        -42,
+        98,
+        108,
+        60,
+        41
+      ]
+    },
+    {
+      "barrel_raw": 14336,
+      "building": "GTGCAN",
+      "crop_lit": 620,
+      "crop_lit_bounds": [
+        4,
+        10,
+        57,
+        32
+      ],
+      "crop_sha256": "670e9e819ff7074cd216cbe4a2cdd21c8bc1c5606388ab544be8eb47a81e84ac",
+      "image": "GTGCANBARL",
+      "matrix_bits": [
+        3212519416,
+        994643879,
+        1044790029,
+        0,
+        1042946884,
+        3204451929,
+        1062833525,
+        0,
+        1036757051,
+        1063103280,
+        1056637270,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 40960,
+      "rect": [
+        -71,
+        -57,
+        97,
+        108,
+        63,
+        41
+      ]
+    },
+    {
+      "barrel_raw": 14336,
+      "building": "GTGCAN",
+      "crop_lit": 594,
+      "crop_lit_bounds": [
+        8,
+        10,
+        54,
+        47
+      ],
+      "crop_sha256": "d7cd36e2bf8dc36394373f7ae4b85ca2110fa001daf38aaa66ae3420dc4cff8a",
+      "image": "GTGCANBARL",
+      "matrix_bits": [
+        3207734169,
+        3207886478,
+        1041013165,
+        0,
+        1057192407,
+        3199575930,
+        1061683282,
+        0,
+        3204482116,
+        1058879854,
+        1058792042,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 49152,
+      "rect": [
+        -59,
+        -79,
+        98,
+        100,
+        60,
+        56
+      ]
+    },
+    {
+      "barrel_raw": 14336,
+      "building": "GTGCAN",
+      "crop_lit": 551,
+      "crop_lit_bounds": [
+        4,
+        7,
+        22,
+        49
+      ],
+      "crop_sha256": "58eb8960340925dedf931b10a112192955f31caefcd1153a26c2a56a5184fb72",
+      "image": "GTGCANBARL",
+      "matrix_bits": [
+        3141878356,
+        3212836784,
+        974893236,
+        0,
+        1059621812,
+        3133744732,
+        1061203916,
+        0,
+        3208687487,
+        992876989,
+        1059621839,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 57344,
+      "rect": [
+        -13,
+        -85,
+        115,
+        100,
+        26,
+        57
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NAFLAK",
+      "crop_lit": 537,
+      "crop_lit_bounds": [
+        6,
+        6,
+        33,
+        53
+      ],
+      "crop_sha256": "90582d20ebaf8053189c9ec325525b6cb30bb079c17da828a7a37d30df78b502",
+      "image": "FLAKTUR",
+      "matrix_bits": [
+        1060421071,
+        3207941114,
+        0,
+        0,
+        1052074118,
+        1052037707,
+        1063103350,
+        0,
+        3206347780,
+        3206316265,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 0,
+      "rect": [
+        -16,
+        -48,
+        107,
+        99,
+        43,
+        59
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NAFLAK",
+      "crop_lit": 544,
+      "crop_lit_bounds": [
+        4,
+        7,
+        38,
+        43
+      ],
+      "crop_sha256": "29626b0ba3520c1bd3d95ee9437bf10681c30ee167a166bd8301756bd284716c",
+      "image": "FLAKTUR",
+      "matrix_bits": [
+        1065353195,
+        3133738935,
+        0,
+        0,
+        977872471,
+        1056968311,
+        1063103350,
+        0,
+        3131972186,
+        3210586979,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 8192,
+      "rect": [
+        -13,
+        -40,
+        107,
+        104,
+        43,
+        49
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NAFLAK",
+      "crop_lit": 473,
+      "crop_lit_bounds": [
+        5,
+        17,
+        32,
+        47
+      ],
+      "crop_sha256": "6920e9d32af17594b157a07d437b40c914a7a357b12bc23b4c0da98631126abf",
+      "image": "FLAKTUR",
+      "matrix_bits": [
+        1060457467,
+        1060421071,
+        0,
+        0,
+        3199521355,
+        1052074119,
+        1063103350,
+        0,
+        1058832617,
+        3206347781,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 16384,
+      "rect": [
+        -15,
+        -42,
+        107,
+        99,
+        43,
+        59
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NAFLAK",
+      "crop_lit": 261,
+      "crop_lit_bounds": [
+        4,
+        19,
+        18,
+        45
+      ],
+      "crop_sha256": "711ebd2424f04b2372839172b54d81fc09545aa3a7adff1f8de9c4ae8681679d",
+      "image": "FLAKTUR",
+      "matrix_bits": [
+        994643879,
+        1065353136,
+        0,
+        0,
+        3204451929,
+        986261084,
+        1063103350,
+        0,
+        1063103280,
+        3140360637,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 24576,
+      "rect": [
+        -11,
+        -41,
+        117,
+        99,
+        22,
+        59
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NAFLAK",
+      "crop_lit": 463,
+      "crop_lit_bounds": [
+        8,
+        17,
+        35,
+        46
+      ],
+      "crop_sha256": "ada8ae146509671299e661bec93ebd4a817a02b932d0d5585ecf00a5dc58ca1b",
+      "image": "FLAKTUR",
+      "matrix_bits": [
+        3207886478,
+        1060475622,
+        0,
+        0,
+        3199575930,
+        3199503106,
+        1063103350,
+        0,
+        1058879854,
+        1058816822,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 32768,
+      "rect": [
+        -26,
+        -42,
+        107,
+        99,
+        42,
+        59
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NAFLAK",
+      "crop_lit": 538,
+      "crop_lit_bounds": [
+        4,
+        6,
+        38,
+        42
+      ],
+      "crop_sha256": "e1e758e30cd226757c5e6c145f2f5c8b4c35b9072ab342e793f70fe0c038c10f",
+      "image": "FLAKTUR",
+      "matrix_bits": [
+        3212836784,
+        994643879,
+        0,
+        0,
+        3133744732,
+        3204451929,
+        1063103350,
+        0,
+        992876989,
+        1063103280,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 40960,
+      "rect": [
+        -29,
+        -40,
+        107,
+        104,
+        43,
+        49
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NAFLAK",
+      "crop_lit": 543,
+      "crop_lit_bounds": [
+        8,
+        6,
+        36,
+        52
+      ],
+      "crop_sha256": "05f27367fa8821ff6981cd287fc9cb018c919d386dddc88c0049be7170253ade",
+      "image": "FLAKTUR",
+      "matrix_bits": [
+        3207959270,
+        3207886478,
+        0,
+        0,
+        1052019458,
+        3199575930,
+        1063103350,
+        0,
+        3206300470,
+        1058879854,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 49152,
+      "rect": [
+        -27,
+        -48,
+        107,
+        99,
+        43,
+        59
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NAFLAK",
+      "crop_lit": 398,
+      "crop_lit_bounds": [
+        4,
+        5,
+        18,
+        53
+      ],
+      "crop_sha256": "2454e1f33679ee311d32b622ad240f73f0032e23d09556e77ddffa669041ab0e",
+      "image": "FLAKTUR",
+      "matrix_bits": [
+        3142127527,
+        3212836784,
+        0,
+        0,
+        1056968281,
+        3133744732,
+        1063103350,
+        0,
+        3210586928,
+        992876989,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 57344,
+      "rect": [
+        -11,
+        -50,
+        117,
+        99,
+        22,
+        59
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "YAREFN",
+      "crop_lit": 142,
+      "crop_lit_bounds": [
+        4,
+        9,
+        24,
+        25
+      ],
+      "crop_sha256": "d6a119a15fb8b16188a23e4597cc96784608ce3c5960d49d5e2f120ad51c6425",
+      "image": "SMINTUR",
+      "matrix_bits": [
+        1060421071,
+        3207941114,
+        0,
+        0,
+        1052074118,
+        1052037707,
+        1063103350,
+        0,
+        3206347780,
+        3206316265,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 0,
+      "rect": [
+        -9,
+        -44,
+        113,
+        113,
+        30,
+        31
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "YAREFN",
+      "crop_lit": 165,
+      "crop_lit_bounds": [
+        4,
+        4,
+        30,
+        18
+      ],
+      "crop_sha256": "e7423d33116c144f57fa12dbd2021468d529d2721024118d3ddfd401ed45e166",
+      "image": "SMINTUR",
+      "matrix_bits": [
+        1065353195,
+        3133738935,
+        0,
+        0,
+        977872471,
+        1056968311,
+        1063103350,
+        0,
+        3131972186,
+        3210586979,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 8192,
+      "rect": [
+        -9,
+        -37,
+        111,
+        117,
+        34,
+        23
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "YAREFN",
+      "crop_lit": 142,
+      "crop_lit_bounds": [
+        4,
+        4,
+        24,
+        19
+      ],
+      "crop_sha256": "e15bcf0b3b7b33e91b96253addada6baf941f09afa7101b1fe3108228bcd5658",
+      "image": "SMINTUR",
+      "matrix_bits": [
+        1060457467,
+        1060421071,
+        0,
+        0,
+        3199521355,
+        1052074119,
+        1063103350,
+        0,
+        1058832617,
+        3206347781,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 16384,
+      "rect": [
+        -9,
+        -38,
+        113,
+        113,
+        30,
+        31
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "YAREFN",
+      "crop_lit": 70,
+      "crop_lit_bounds": [
+        4,
+        4,
+        8,
+        22
+      ],
+      "crop_sha256": "627b8d5422b3fd36366f25d0eb53f3c814ac4a6f77b6794bb330a84149b00353",
+      "image": "SMINTUR",
+      "matrix_bits": [
+        994643879,
+        1065353136,
+        0,
+        0,
+        3204451929,
+        986261084,
+        1063103350,
+        0,
+        1063103280,
+        3140360637,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 24576,
+      "rect": [
+        -6,
+        -38,
+        122,
+        112,
+        13,
+        33
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "YAREFN",
+      "crop_lit": 149,
+      "crop_lit_bounds": [
+        5,
+        3,
+        25,
+        19
+      ],
+      "crop_sha256": "33b54b4ba610d6adeabe8546bd932d6a5960dc7b0d48daf4f65d68cad446d4e0",
+      "image": "SMINTUR",
+      "matrix_bits": [
+        3207886478,
+        1060475622,
+        0,
+        0,
+        3199575930,
+        3199503106,
+        1063103350,
+        0,
+        1058879854,
+        1058816822,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 32768,
+      "rect": [
+        -21,
+        -38,
+        113,
+        113,
+        30,
+        31
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "YAREFN",
+      "crop_lit": 162,
+      "crop_lit_bounds": [
+        4,
+        4,
+        30,
+        18
+      ],
+      "crop_sha256": "85c9b1b60004d60f2b30da7cc11269ff10f1d6faeb17b2f32b6a14786c2b8b31",
+      "image": "SMINTUR",
+      "matrix_bits": [
+        3212836784,
+        994643879,
+        0,
+        0,
+        3133744732,
+        3204451929,
+        1063103350,
+        0,
+        992876989,
+        1063103280,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 40960,
+      "rect": [
+        -25,
+        -37,
+        111,
+        117,
+        34,
+        23
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "YAREFN",
+      "crop_lit": 141,
+      "crop_lit_bounds": [
+        5,
+        9,
+        25,
+        25
+      ],
+      "crop_sha256": "0fbf9ecd2e88e1b5fd35f4e258e25ab04ac3e2369e2faea733682f5c92a58747",
+      "image": "SMINTUR",
+      "matrix_bits": [
+        3207959270,
+        3207886478,
+        0,
+        0,
+        1052019458,
+        3199575930,
+        1063103350,
+        0,
+        3206300470,
+        1058879854,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 49152,
+      "rect": [
+        -21,
+        -45,
+        113,
+        113,
+        30,
+        31
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "YAREFN",
+      "crop_lit": 76,
+      "crop_lit_bounds": [
+        4,
+        9,
+        8,
+        27
+      ],
+      "crop_sha256": "4767f622734224794c4f894a9b26d6ccc5b85e8b4d4b007f4f58a8e7219a912b",
+      "image": "SMINTUR",
+      "matrix_bits": [
+        3142127527,
+        3212836784,
+        0,
+        0,
+        1056968281,
+        3133744732,
+        1063103350,
+        0,
+        3210586928,
+        992876989,
+        1056968322,
+        0
+      ],
+      "part": "turret",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 57344,
+      "rect": [
+        -6,
+        -47,
+        122,
+        112,
+        13,
+        33
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NASAM",
+      "crop_lit": 743,
+      "crop_lit_bounds": [
+        8,
+        8,
+        43,
+        42
+      ],
+      "crop_sha256": "6171f0e199f3f8125c93a637ec9d3a0df2ae6b5b49bef455ee43052211edde6d",
+      "image": "SAM",
+      "matrix_bits": [
+        1060421071,
+        3207941114,
+        0,
+        0,
+        1052074118,
+        1052037707,
+        1063103350,
+        0,
+        3206347780,
+        3206316265,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 0,
+      "rect": [
+        -23,
+        -38,
+        104,
+        101,
+        48,
+        55
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NASAM",
+      "crop_lit": 690,
+      "crop_lit_bounds": [
+        4,
+        6,
+        32,
+        38
+      ],
+      "crop_sha256": "525b4a72d43fc971f967a8cd47f2d13550aa91512a9e07b3b2821b84322e4f64",
+      "image": "SAM",
+      "matrix_bits": [
+        1065353195,
+        3133738935,
+        0,
+        0,
+        977872471,
+        1056968311,
+        1063103350,
+        0,
+        3131972186,
+        3210586979,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 8192,
+      "rect": [
+        -17,
+        -35,
+        110,
+        104,
+        36,
+        49
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NASAM",
+      "crop_lit": 744,
+      "crop_lit_bounds": [
+        7,
+        9,
+        42,
+        43
+      ],
+      "crop_sha256": "01dd529cc7038fb44763ff4e26851dd600319bb1f3feba9d08d8eed3efb120d0",
+      "image": "SAM",
+      "matrix_bits": [
+        1060457467,
+        1060421071,
+        0,
+        0,
+        3199521355,
+        1052074119,
+        1063103350,
+        0,
+        1058832617,
+        3206347781,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 16384,
+      "rect": [
+        -23,
+        -37,
+        104,
+        101,
+        48,
+        55
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NASAM",
+      "crop_lit": 592,
+      "crop_lit_bounds": [
+        4,
+        7,
+        32,
+        40
+      ],
+      "crop_sha256": "28350908237d658a565ce60656ae71d995282ad7b8b021a1812d14a95810c603",
+      "image": "SAM",
+      "matrix_bits": [
+        994643879,
+        1065353136,
+        0,
+        0,
+        3204451929,
+        986261084,
+        1063103350,
+        0,
+        1063103280,
+        3140360637,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 24576,
+      "rect": [
+        -18,
+        -34,
+        110,
+        104,
+        36,
+        49
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NASAM",
+      "crop_lit": 741,
+      "crop_lit_bounds": [
+        4,
+        9,
+        40,
+        43
+      ],
+      "crop_sha256": "d3e5da7fefbf9c299d37cfa77279b7c0809a2f1d4d4b3c7edfeed2072db221ff",
+      "image": "SAM",
+      "matrix_bits": [
+        3207886478,
+        1060475622,
+        0,
+        0,
+        3199575930,
+        3199503106,
+        1063103350,
+        0,
+        1058879854,
+        1058816822,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 32768,
+      "rect": [
+        -25,
+        -37,
+        104,
+        101,
+        48,
+        55
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NASAM",
+      "crop_lit": 678,
+      "crop_lit_bounds": [
+        4,
+        6,
+        32,
+        37
+      ],
+      "crop_sha256": "a76309b43d43c51809de56115a1f0be6b0f7a34e7e1e7c62e261aba23752312d",
+      "image": "SAM",
+      "matrix_bits": [
+        3212836784,
+        994643879,
+        0,
+        0,
+        3133744732,
+        3204451929,
+        1063103350,
+        0,
+        992876989,
+        1063103280,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 40960,
+      "rect": [
+        -19,
+        -35,
+        110,
+        104,
+        36,
+        49
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NASAM",
+      "crop_lit": 751,
+      "crop_lit_bounds": [
+        5,
+        8,
+        40,
+        41
+      ],
+      "crop_sha256": "9fbaae03060522392639ac48e21a7f7f1162b678566bbf2f5ac0385e4e46a755",
+      "image": "SAM",
+      "matrix_bits": [
+        3207959270,
+        3207886478,
+        0,
+        0,
+        1052019458,
+        3199575930,
+        1063103350,
+        0,
+        3206300470,
+        1058879854,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 49152,
+      "rect": [
+        -25,
+        -38,
+        104,
+        101,
+        48,
+        55
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NASAM",
+      "crop_lit": 752,
+      "crop_lit_bounds": [
+        4,
+        8,
+        32,
+        39
+      ],
+      "crop_sha256": "4d909046935af1a57f156cc55a939c010f8d00d9f19d25ad5d3d1a066bdcbab6",
+      "image": "SAM",
+      "matrix_bits": [
+        3142127527,
+        3212836784,
+        0,
+        0,
+        1056968281,
+        3133744732,
+        1063103350,
+        0,
+        3210586928,
+        992876989,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 57344,
+      "rect": [
+        -18,
+        -36,
+        110,
+        104,
+        36,
+        49
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NALASR",
+      "crop_lit": 428,
+      "crop_lit_bounds": [
+        5,
+        7,
+        39,
+        31
+      ],
+      "crop_sha256": "49bdea8601ffe97bf69f0e3615f6d39aff072da225d4abf36c9fc565b4ad1052",
+      "image": "LASER",
+      "matrix_bits": [
+        1060421071,
+        3207941114,
+        0,
+        0,
+        1052074118,
+        1052037707,
+        1063103350,
+        0,
+        3206347780,
+        3206316265,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 0,
+      "rect": [
+        -21,
+        -28,
+        105,
+        108,
+        46,
+        41
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NALASR",
+      "crop_lit": 472,
+      "crop_lit_bounds": [
+        4,
+        5,
+        38,
+        24
+      ],
+      "crop_sha256": "27c7ac4df9559610a18dd6ca63965c532d1306ebf5d6da4f08c281c2b20af149",
+      "image": "LASER",
+      "matrix_bits": [
+        1065353195,
+        3133738935,
+        0,
+        0,
+        977872471,
+        1056968311,
+        1063103350,
+        0,
+        3131972186,
+        3210586979,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 8192,
+      "rect": [
+        -17,
+        -22,
+        107,
+        113,
+        43,
+        31
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NALASR",
+      "crop_lit": 452,
+      "crop_lit_bounds": [
+        5,
+        6,
+        38,
+        28
+      ],
+      "crop_sha256": "faec52e35df4e337a03b03f05fd230db61730999ab03dcdba277a56cf6455a78",
+      "image": "LASER",
+      "matrix_bits": [
+        1060457467,
+        1060421071,
+        0,
+        0,
+        3199521355,
+        1052074119,
+        1063103350,
+        0,
+        1058832617,
+        3206347781,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 16384,
+      "rect": [
+        -21,
+        -25,
+        105,
+        108,
+        46,
+        41
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NALASR",
+      "crop_lit": 334,
+      "crop_lit_bounds": [
+        4,
+        5,
+        22,
+        26
+      ],
+      "crop_sha256": "5b90615d684eb41c4267c447c17a7c61bb6c0038db3ca20df4d8c9a26698f705",
+      "image": "LASER",
+      "matrix_bits": [
+        994643879,
+        1065353136,
+        0,
+        0,
+        3204451929,
+        986261084,
+        1063103350,
+        0,
+        1063103280,
+        3140360637,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 24576,
+      "rect": [
+        -13,
+        -24,
+        115,
+        109,
+        27,
+        39
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NALASR",
+      "crop_lit": 456,
+      "crop_lit_bounds": [
+        6,
+        6,
+        40,
+        28
+      ],
+      "crop_sha256": "f1683c4d688d587e93478667f4676579f783d38ce5dfd57f19394b5cb4a1c347",
+      "image": "LASER",
+      "matrix_bits": [
+        3207886478,
+        1060475622,
+        0,
+        0,
+        3199575930,
+        3199503106,
+        1063103350,
+        0,
+        1058879854,
+        1058816822,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 32768,
+      "rect": [
+        -25,
+        -25,
+        105,
+        108,
+        46,
+        41
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NALASR",
+      "crop_lit": 457,
+      "crop_lit_bounds": [
+        4,
+        5,
+        38,
+        24
+      ],
+      "crop_sha256": "5e507b0d5f47fc1bf8ad849f7ac7f44d5fb3e79450b01f81dc813e1d543a4a50",
+      "image": "LASER",
+      "matrix_bits": [
+        3212836784,
+        994643879,
+        0,
+        0,
+        3133744732,
+        3204451929,
+        1063103350,
+        0,
+        992876989,
+        1063103280,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 40960,
+      "rect": [
+        -25,
+        -22,
+        107,
+        113,
+        43,
+        31
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NALASR",
+      "crop_lit": 430,
+      "crop_lit_bounds": [
+        7,
+        7,
+        40,
+        31
+      ],
+      "crop_sha256": "98b00f5984d1dca12560f7e49f0f2e350048476db1d9fbfad1fdc84a2a81cc0f",
+      "image": "LASER",
+      "matrix_bits": [
+        3207959270,
+        3207886478,
+        0,
+        0,
+        1052019458,
+        3199575930,
+        1063103350,
+        0,
+        3206300470,
+        1058879854,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 49152,
+      "rect": [
+        -25,
+        -28,
+        105,
+        108,
+        46,
+        41
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "NALASR",
+      "crop_lit": 332,
+      "crop_lit_bounds": [
+        4,
+        6,
+        22,
+        30
+      ],
+      "crop_sha256": "e715bacada4bf9a34736be412eefcf9625130d331ae362a211fabfbb122e0cef",
+      "image": "LASER",
+      "matrix_bits": [
+        3142127527,
+        3212836784,
+        0,
+        0,
+        1056968281,
+        3133744732,
+        1063103350,
+        0,
+        3210586928,
+        992876989,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 57344,
+      "rect": [
+        -13,
+        -28,
+        115,
+        109,
+        27,
+        39
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "YAGGUN",
+      "crop_lit": 522,
+      "crop_lit_bounds": [
+        5,
+        13,
+        42,
+        36
+      ],
+      "crop_sha256": "fcc4aa91fda092ac33e77ea6b7c7aefae39f4b79e1209f9873f227d5756e25ee",
+      "image": "YAGGUN",
+      "matrix_bits": [
+        1060421071,
+        3207941114,
+        0,
+        0,
+        1052074118,
+        1052037707,
+        1063103350,
+        0,
+        3206347780,
+        3206316265,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 0,
+      "rect": [
+        -16,
+        -52,
+        104,
+        107,
+        48,
+        43
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "YAGGUN",
+      "crop_lit": 520,
+      "crop_lit_bounds": [
+        4,
+        9,
+        34,
+        30
+      ],
+      "crop_sha256": "f222e0b00c050ed549ed81ebf373e0e5e450abf202449668dac892210724b0b1",
+      "image": "YAGGUN",
+      "matrix_bits": [
+        1065353195,
+        3133738935,
+        0,
+        0,
+        977872471,
+        1056968311,
+        1063103350,
+        0,
+        3131972186,
+        3210586979,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 8192,
+      "rect": [
+        -7,
+        -45,
+        109,
+        110,
+        39,
+        36
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "YAGGUN",
+      "crop_lit": 554,
+      "crop_lit_bounds": [
+        5,
+        9,
+        42,
+        36
+      ],
+      "crop_sha256": "19ec4b4ed0a936919ed7021fb2ad9c45bb1698012c71e724ccdd7886dac58fde",
+      "image": "YAGGUN",
+      "matrix_bits": [
+        1060457467,
+        1060421071,
+        0,
+        0,
+        3199521355,
+        1052074119,
+        1063103350,
+        0,
+        1058832617,
+        3206347781,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 16384,
+      "rect": [
+        -16,
+        -43,
+        104,
+        107,
+        48,
+        43
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "YAGGUN",
+      "crop_lit": 506,
+      "crop_lit_bounds": [
+        4,
+        7,
+        30,
+        32
+      ],
+      "crop_sha256": "0a4d59eda30b58a17797ad43320c5325449b7cda54c6718ef725e64429c2dd19",
+      "image": "YAGGUN",
+      "matrix_bits": [
+        994643879,
+        1065353136,
+        0,
+        0,
+        3204451929,
+        986261084,
+        1063103350,
+        0,
+        1063103280,
+        3140360637,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 24576,
+      "rect": [
+        -17,
+        -39,
+        111,
+        109,
+        34,
+        38
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "YAGGUN",
+      "crop_lit": 552,
+      "crop_lit_bounds": [
+        5,
+        9,
+        42,
+        36
+      ],
+      "crop_sha256": "6182d4841bfe2a3d2d35f0b9161c446a6e8de0be89d6e5cc7293bf19f36635ef",
+      "image": "YAGGUN",
+      "matrix_bits": [
+        3207886478,
+        1060475622,
+        0,
+        0,
+        3199575930,
+        3199503106,
+        1063103350,
+        0,
+        1058879854,
+        1058816822,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 32768,
+      "rect": [
+        -32,
+        -43,
+        104,
+        107,
+        48,
+        43
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "YAGGUN",
+      "crop_lit": 525,
+      "crop_lit_bounds": [
+        4,
+        9,
+        34,
+        30
+      ],
+      "crop_sha256": "7dc0470eae6e2563610807d305265b6b424f3fb4834cdd3aca8b7dc0253ba3ec",
+      "image": "YAGGUN",
+      "matrix_bits": [
+        3212836784,
+        994643879,
+        0,
+        0,
+        3133744732,
+        3204451929,
+        1063103350,
+        0,
+        992876989,
+        1063103280,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 40960,
+      "rect": [
+        -31,
+        -44,
+        109,
+        110,
+        39,
+        36
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "YAGGUN",
+      "crop_lit": 518,
+      "crop_lit_bounds": [
+        5,
+        13,
+        42,
+        36
+      ],
+      "crop_sha256": "ac9774f3d9bed795db6acab776c27925e95c3c747d35ec0782b0ab581f79a97e",
+      "image": "YAGGUN",
+      "matrix_bits": [
+        3207959270,
+        3207886478,
+        0,
+        0,
+        1052019458,
+        3199575930,
+        1063103350,
+        0,
+        3206300470,
+        1058879854,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 49152,
+      "rect": [
+        -32,
+        -52,
+        104,
+        107,
+        48,
+        43
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "YAGGUN",
+      "crop_lit": 500,
+      "crop_lit_bounds": [
+        4,
+        13,
+        30,
+        32
+      ],
+      "crop_sha256": "73f93b120cf6fe40fe544e3617588895a1cc48aa95c8dca2706faff79aeaac02",
+      "image": "YAGGUN",
+      "matrix_bits": [
+        3142127527,
+        3212836784,
+        0,
+        0,
+        1056968281,
+        3133744732,
+        1063103350,
+        0,
+        3210586928,
+        992876989,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 57344,
+      "rect": [
+        -17,
+        -51,
+        111,
+        109,
+        34,
+        38
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "CAOUTP",
+      "crop_lit": 743,
+      "crop_lit_bounds": [
+        8,
+        8,
+        43,
+        42
+      ],
+      "crop_sha256": "368d40b1ccc94a8448129d7c7491da7a952dcdadda9d18e2c377ae1c56cab0ea",
+      "image": "OUTP",
+      "matrix_bits": [
+        1060421071,
+        3207941114,
+        0,
+        0,
+        1052074118,
+        1052037707,
+        1063103350,
+        0,
+        3206347780,
+        3206316265,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 0,
+      "rect": [
+        -23,
+        -93,
+        104,
+        101,
+        48,
+        55
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "CAOUTP",
+      "crop_lit": 690,
+      "crop_lit_bounds": [
+        4,
+        6,
+        32,
+        38
+      ],
+      "crop_sha256": "6599de745df11a92dd79fccaa4f37bb3d4768d39b6a2427a43cf59ae30708068",
+      "image": "OUTP",
+      "matrix_bits": [
+        1065353195,
+        3133738935,
+        0,
+        0,
+        977872471,
+        1056968311,
+        1063103350,
+        0,
+        3131972186,
+        3210586979,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 8192,
+      "rect": [
+        -17,
+        -89,
+        110,
+        104,
+        36,
+        49
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "CAOUTP",
+      "crop_lit": 744,
+      "crop_lit_bounds": [
+        7,
+        9,
+        42,
+        43
+      ],
+      "crop_sha256": "4d29dd58d1505b5f5e3e5ab59131d30171cf79c342f040c147a0afefeaa31288",
+      "image": "OUTP",
+      "matrix_bits": [
+        1060457467,
+        1060421071,
+        0,
+        0,
+        3199521355,
+        1052074119,
+        1063103350,
+        0,
+        1058832617,
+        3206347781,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 16384,
+      "rect": [
+        -23,
+        -91,
+        104,
+        101,
+        48,
+        55
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "CAOUTP",
+      "crop_lit": 592,
+      "crop_lit_bounds": [
+        4,
+        7,
+        32,
+        40
+      ],
+      "crop_sha256": "03480d0b648a18b6b3a2f00a4ff064e8172306e05c4e95ad9239141f03f84937",
+      "image": "OUTP",
+      "matrix_bits": [
+        994643879,
+        1065353136,
+        0,
+        0,
+        3204451929,
+        986261084,
+        1063103350,
+        0,
+        1063103280,
+        3140360637,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 24576,
+      "rect": [
+        -18,
+        -88,
+        110,
+        104,
+        36,
+        49
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "CAOUTP",
+      "crop_lit": 741,
+      "crop_lit_bounds": [
+        4,
+        9,
+        40,
+        43
+      ],
+      "crop_sha256": "f80920fb333f6edfbe8cbf499c9c5321dc17a18f3f494d62e3365aced50b1154",
+      "image": "OUTP",
+      "matrix_bits": [
+        3207886478,
+        1060475622,
+        0,
+        0,
+        3199575930,
+        3199503106,
+        1063103350,
+        0,
+        1058879854,
+        1058816822,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 32768,
+      "rect": [
+        -25,
+        -91,
+        104,
+        101,
+        48,
+        55
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "CAOUTP",
+      "crop_lit": 678,
+      "crop_lit_bounds": [
+        4,
+        6,
+        32,
+        37
+      ],
+      "crop_sha256": "19a0a307ebf40a8fdf8ded27eb8a9ef965dac7adb9a6987c863fada7c4f88c93",
+      "image": "OUTP",
+      "matrix_bits": [
+        3212836784,
+        994643879,
+        0,
+        0,
+        3133744732,
+        3204451929,
+        1063103350,
+        0,
+        992876989,
+        1063103280,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 40960,
+      "rect": [
+        -19,
+        -89,
+        110,
+        104,
+        36,
+        49
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "CAOUTP",
+      "crop_lit": 752,
+      "crop_lit_bounds": [
+        5,
+        8,
+        40,
+        41
+      ],
+      "crop_sha256": "c70bf59198ce23b99384d48f8b7b41aa543c94a8bc63674b2e1e4f1456f09620",
+      "image": "OUTP",
+      "matrix_bits": [
+        3207959270,
+        3207886478,
+        0,
+        0,
+        1052019458,
+        3199575930,
+        1063103350,
+        0,
+        3206300470,
+        1058879854,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 49152,
+      "rect": [
+        -25,
+        -93,
+        104,
+        101,
+        48,
+        55
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "CAOUTP",
+      "crop_lit": 752,
+      "crop_lit_bounds": [
+        4,
+        8,
+        32,
+        39
+      ],
+      "crop_sha256": "7aa5d57d2ef74ae25c19cb9e4f2bac005a108e5031093f2f239e34c6b006aa67",
+      "image": "OUTP",
+      "matrix_bits": [
+        3142127527,
+        3212836784,
+        0,
+        0,
+        1056968281,
+        3133744732,
+        1063103350,
+        0,
+        3210586928,
+        992876989,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 57344,
+      "rect": [
+        -18,
+        -90,
+        110,
+        104,
+        36,
+        49
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "CAEAST02",
+      "crop_lit": 4109,
+      "crop_lit_bounds": [
+        17,
+        25,
+        87,
+        96
+      ],
+      "crop_sha256": "3d0283e67c56e6f12d339e61cf95f143851cd7c2bdae01883f7e4fdb49deebea",
+      "image": "CAHEAD",
+      "matrix_bits": [
+        1060421071,
+        3207941114,
+        0,
+        0,
+        1052074118,
+        1052037707,
+        1063103350,
+        0,
+        3206347780,
+        3206316265,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 0,
+      "rect": [
+        -55,
+        -89,
+        73,
+        68,
+        111,
+        121
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "CAEAST02",
+      "crop_lit": 4407,
+      "crop_lit_bounds": [
+        4,
+        14,
+        82,
+        84
+      ],
+      "crop_sha256": "131b292656044f865effe754ef5be768af173e9318f64d43c98275b74465a86a",
+      "image": "CAHEAD",
+      "matrix_bits": [
+        1065353195,
+        3133738935,
+        0,
+        0,
+        977872471,
+        1056968311,
+        1063103350,
+        0,
+        3131972186,
+        3210586979,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 8192,
+      "rect": [
+        -43,
+        -80,
+        85,
+        77,
+        87,
+        103
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "CAEAST02",
+      "crop_lit": 4256,
+      "crop_lit_bounds": [
+        16,
+        21,
+        87,
+        102
+      ],
+      "crop_sha256": "534a5fdcd11e79c4fe0d5f45bfd47ce8d4940bb9e99579b13fc6aa62fa6f6df0",
+      "image": "CAHEAD",
+      "matrix_bits": [
+        1060457467,
+        1060421071,
+        0,
+        0,
+        3199521355,
+        1052074119,
+        1063103350,
+        0,
+        1058832617,
+        3206347781,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 16384,
+      "rect": [
+        -55,
+        -89,
+        73,
+        68,
+        111,
+        121
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "CAEAST02",
+      "crop_lit": 4242,
+      "crop_lit_bounds": [
+        4,
+        16,
+        70,
+        100
+      ],
+      "crop_sha256": "2940d7359aba83f6ca322898998b977dbfca28b1aaf25e9aa1088033d62c126a",
+      "image": "CAHEAD",
+      "matrix_bits": [
+        994643879,
+        1065353136,
+        0,
+        0,
+        3204451929,
+        986261084,
+        1063103350,
+        0,
+        1063103280,
+        3140360637,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 24576,
+      "rect": [
+        -37,
+        -83,
+        91,
+        74,
+        75,
+        109
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "CAEAST02",
+      "crop_lit": 4273,
+      "crop_lit_bounds": [
+        22,
+        21,
+        92,
+        102
+      ],
+      "crop_sha256": "dbf628410c87709ac734faa5fbfaf3fe4627b92b7c6ff10019234e1f9bc7486c",
+      "image": "CAHEAD",
+      "matrix_bits": [
+        3207886478,
+        1060475622,
+        0,
+        0,
+        3199575930,
+        3199503106,
+        1063103350,
+        0,
+        1058879854,
+        1058816822,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 32768,
+      "rect": [
+        -55,
+        -89,
+        73,
+        68,
+        111,
+        121
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "CAEAST02",
+      "crop_lit": 4429,
+      "crop_lit_bounds": [
+        4,
+        13,
+        82,
+        84
+      ],
+      "crop_sha256": "00921c398f4285f20db92affee718952ce899a435b3ae08bcf2c1e8d8a7be632",
+      "image": "CAHEAD",
+      "matrix_bits": [
+        3212836784,
+        994643879,
+        0,
+        0,
+        3133744732,
+        3204451929,
+        1063103350,
+        0,
+        992876989,
+        1063103280,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 40960,
+      "rect": [
+        -43,
+        -80,
+        85,
+        77,
+        87,
+        103
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "CAEAST02",
+      "crop_lit": 4148,
+      "crop_lit_bounds": [
+        22,
+        25,
+        93,
+        96
+      ],
+      "crop_sha256": "6c3e53dd7fecba546dc0a694855f8137431811c41c96b07b308f927699b1f0fe",
+      "image": "CAHEAD",
+      "matrix_bits": [
+        3207959270,
+        3207886478,
+        0,
+        0,
+        1052019458,
+        3199575930,
+        1063103350,
+        0,
+        3206300470,
+        1058879854,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 49152,
+      "rect": [
+        -55,
+        -89,
+        73,
+        68,
+        111,
+        121
+      ]
+    },
+    {
+      "barrel_raw": 16384,
+      "building": "CAEAST02",
+      "crop_lit": 3879,
+      "crop_lit_bounds": [
+        4,
+        18,
+        70,
+        93
+      ],
+      "crop_sha256": "475e8904cf465cf3e41b8c7d0ab78dbf6351a032332f693054e2d75d6b0d19c2",
+      "image": "CAHEAD",
+      "matrix_bits": [
+        3142127527,
+        3212836784,
+        0,
+        0,
+        1056968281,
+        3133744732,
+        1063103350,
+        0,
+        3210586928,
+        992876989,
+        1056968322,
+        0
+      ],
+      "part": "barrel",
+      "point": [
+        103,
+        140
+      ],
+      "primary_raw": 57344,
+      "rect": [
+        -37,
+        -83,
+        91,
+        74,
+        75,
+        109
+      ]
+    }
+  ],
+  "source": "unicorn/gamemd.exe"
+}

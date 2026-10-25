@@ -44,7 +44,7 @@ fn retail_root() -> PathBuf {
 }
 
 fn headless_device() -> (wgpu::Device, wgpu::Queue) {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
         ..Default::default()
@@ -185,6 +185,7 @@ fn retail_atlas_refresh_costs() {
         &extra,
         &remaps,
         &cell_drawers,
+        &Default::default(),
         Some(&theater.iso_palette),
         None,
         Some(sim.interner()),
@@ -310,6 +311,7 @@ fn retail_atlas_refresh_costs() {
                 &extra,
                 &remaps,
                 &cell_drawers,
+                &Default::default(),
                 Some(&theater.iso_palette),
                 Some(atlas),
                 Some(sim.interner()),
@@ -454,6 +456,7 @@ fn retail_atlas_refresh_costs() {
         &crate::app::frontend::skirmish::deployable_building_types(Some(rules)),
         &sprite_atlas::collect_anim_remap_base_keys(sim, &house_colors),
         &cell_drawers,
+        &Default::default(),
         Some(&theater.iso_palette),
         None,
         Some(sim.interner()),

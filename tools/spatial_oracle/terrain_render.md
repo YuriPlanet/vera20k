@@ -134,7 +134,7 @@ construction, animation AI or scene parity.
 
 The changed `overlays.rs` reads `TerrainObjectState::world_coord`, projects it
 through `absolute_leptons_to_screen`, and supplies the same retained-Z lift to
-`native_terrain_instances`. VERA's established world frame adds 15 to
+`native_terrain_instance`. VERA's established world frame adds 15 to
 native absolute screen Y. Its temporary half-tile subtraction/addition cancels
 before the pair is emitted. `lifted_z_adjust` matches the native body/shadow
 arguments; `compute_sprite_depth_params_lifted` cancels the lift for the legacy

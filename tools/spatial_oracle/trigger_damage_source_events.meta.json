@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -24,5 +23,5 @@
     "source_house_index_compare": "0x0071EE57"
   },
   "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --damage-source-events",
-  "payload_sha256": "cbcd73e254118ac7f57c525ae6d2b249ab00ba5d31e62486c3e1abb581e38498"
+  "payload_sha256": "047e68cd4fb3a160c586c22ad5d3e7985d2d05ca0cedfac5d04e85710f2a541d"
 }

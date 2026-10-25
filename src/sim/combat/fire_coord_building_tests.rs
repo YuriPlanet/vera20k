@@ -95,7 +95,7 @@ fn building_aim_directions_match_the_original() {
             .get_mut(1)
             .unwrap()
             .type_facts
-            .set_foundation_for_test(input["foundation"].as_str().unwrap().to_string());
+            .set_foundation_for_test(input["foundation"].as_str().unwrap().to_string().into());
         let target = &input["target"];
         if !target.is_null() {
             let (kind, category) = match target["kind"].as_str().unwrap() {
@@ -109,9 +109,7 @@ fn building_aim_directions_match_the_original() {
                     .get_mut(2)
                     .unwrap()
                     .type_facts
-                    .set_foundation_for_test(
-                        target["foundation"].as_str().unwrap_or("1x1").to_string(),
-                    );
+                    .set_foundation_for_test(target["foundation"].as_str().unwrap_or("1x1").into());
             }
         }
         let frame = sim.session.binary_frame();
@@ -241,6 +239,54 @@ fn triple(value: &Value) -> [i32; 3] {
 
 fn pair(value: &Value) -> [i32; 2] {
     std::array::from_fn(|axis| value[axis].as_i64().unwrap() as i32)
+}
+
+/// Selected original Building/GetFLH coordinate controls cover stock poses
+/// and asymmetric FLH/pivot inputs with both burst parities.
+#[test]
+fn building_identity_matrix_matches_original_get_flh() {
+    let native = crate::test_fixture::json("tools/spatial_oracle/building_flh_direct.json");
+    let rows = native.as_array().unwrap();
+    assert_eq!(rows.len(), 16);
+    for row in rows {
+        let input = &row["input"];
+        let [forward, lateral, height] = triple(&input["flh"]);
+        let offset = input["turret_offset"].as_i64().unwrap();
+        let mut rules = RuleSet::from_ini(&IniFile::from_str(
+            "[BuildingTypes]\n0=BLD\n[BLD]\nStrength=500\nPrimary=GUN\n[GUN]\nDamage=1\n",
+        ))
+        .unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&IniFile::from_str(&format!(
+            "[BLD]\nTurretOffset={offset}\nPrimaryFireFLH={forward},{lateral},{height}\n",
+        ))));
+        let mut sim = Simulation::new();
+        place(
+            &mut sim,
+            1,
+            "BLD",
+            EntityCategory::Structure,
+            &input["location"],
+        );
+        sim.substrate.entities.get_mut(1).unwrap().body_facing =
+            FacingClass::new(input["heading"].as_u64().unwrap() as u16, 0);
+        let source = FireSource::of_entity(sim.substrate.entities.get(1).unwrap());
+        let before = sim.state_hash();
+        let shot = fire_coordinate(
+            &sim,
+            &rules,
+            &source,
+            rules.object("BLD").unwrap(),
+            0,
+            input["burst"].as_u64().unwrap() as u8,
+            Flh::from(triple(&input["base"])),
+        );
+        assert_eq!(shot.coord, native_coord(&row["source"]), "{input}");
+        assert_eq!(
+            shot.offset_y,
+            triple(&row["source"])[1] - row["object_y"].as_i64().unwrap() as i32
+        );
+        assert_eq!(sim.state_hash(), before, "read-only fire-coordinate query");
+    }
 }
 
 /// The reader inputs one `building_voxel_flh.json` row writes: `[BLD]`'s type
@@ -407,7 +453,7 @@ fn a_voxel_turrets_laser_birth_uses_the_original_get_flh_coordinate() {
             .get_mut(2)
             .unwrap()
             .type_facts
-            .set_foundation_for_test("1x1".to_string());
+            .set_foundation_for_test("1x1".to_string().into());
         let heading = input["heading"].as_u64().unwrap() as u16;
         sim.substrate.entities.get_mut(1).unwrap().body_facing = FacingClass::new(heading, 0);
         sim.lifecycle_outputs.clear_for_test();

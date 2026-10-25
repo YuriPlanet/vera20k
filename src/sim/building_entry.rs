@@ -211,7 +211,7 @@ impl Simulation {
         let _ = self.assign_destination_represented(
             id,
             Some(NavTargetRef::object(best)),
-            Some(rules),
+            rules,
             registry,
             effects,
         );
@@ -265,7 +265,7 @@ impl Simulation {
             y: coordinate.y,
             z: coordinate.z,
         };
-        let context = UninitContext::new(Some(rules), registry).with_effects(effects);
+        let context = UninitContext::new(rules, registry).with_effects(effects);
         self.dispatch_object_tag_event(building_id, 1, Some(id), None, context);
 
         //519790..519865: VoiceDie (local human only), then DieSound.
@@ -285,7 +285,7 @@ impl Simulation {
             {
                 self.sound_events
                     .emit(SimSoundEvent::voc_at_world_coord(sound_id, entry_world));
-                effects.flush_sound(self, Some(rules));
+                effects.flush_sound(self, rules);
             }
         }
         // Infantry51986A / Unit73A0A5: the actor's refund comes first.
@@ -334,7 +334,7 @@ impl Simulation {
                         z: coordinate.z,
                     },
                 ));
-                effects.flush_sound(self, Some(rules));
+                effects.flush_sound(self, rules);
             }
             //5198CE gates the animation switch on the existing Active3
             //instance, not on the presence of a SpecialAnim declaration.
@@ -367,8 +367,7 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) {
         use crate::sim::passenger::{DepartureRoute, depart_cargo_head};
-        let context =
-            crate::sim::world::UninitContext::new(Some(rules), registry).with_effects(effects);
+        let context = crate::sim::world::UninitContext::new(rules, registry).with_effects(effects);
         while self
             .substrate
             .entities
@@ -442,7 +441,7 @@ impl Simulation {
                 absorber,
                 RadioMessage::CanEnter,
                 RadioPayload::default(),
-                Some(rules),
+                rules,
                 effects,
             ) == RadioResponse::Roger;
             let distance = match (
@@ -487,7 +486,7 @@ impl Simulation {
         let _ = self.assign_destination_represented(
             id,
             Some(NavTargetRef::object(best)),
-            Some(rules),
+            rules,
             registry,
             effects,
         );
@@ -531,7 +530,7 @@ impl Simulation {
         let _ = self.assign_destination_represented(
             id,
             Some(NavTargetRef::object(best)),
-            Some(rules),
+            rules,
             registry,
             effects,
         );
@@ -593,7 +592,7 @@ impl Simulation {
         let _ = self.assign_destination_represented(
             id,
             Some(NavTargetRef::object(best)),
-            Some(rules),
+            rules,
             registry,
             effects,
         );
@@ -643,7 +642,7 @@ impl Simulation {
         let _ = self.assign_destination_represented(
             id,
             Some(NavTargetRef::object(best)),
-            Some(rules),
+            rules,
             registry,
             effects,
         );
@@ -653,7 +652,7 @@ impl Simulation {
             best,
             RadioMessage::Hello,
             RadioPayload::default(),
-            Some(rules),
+            rules,
             effects,
         );
         let now = self.session.binary_frame();

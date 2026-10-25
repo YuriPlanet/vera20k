@@ -3,9 +3,11 @@
 Whole native callbacks produce every retained counter/score result. This adds
 observation and supplied boundary controls, not another gameplay fixture. See
 engineer_capture_accounting.md for reproduction and the inherited limits.
+Use --entered-owner for the joined two-callback owner controls.
 """
 import hashlib
 import struct
+import sys
 from pathlib import Path
 
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
@@ -35,6 +37,10 @@ SOURCE_PATHS = (
     'tools/spatial_oracle/anim_bouncer_launch.py',
     'tools/spatial_oracle/building_slot_replacement.py',
     'tools/spatial_oracle/anytown_damage/mission.py',
+    'tools/spatial_oracle/tag_lifecycle.py',
+    'tools/spatial_oracle/anytown_damage/navigation.py',
+    'tools/spatial_oracle/shrapnel_repair/zone_composition.py',
+    'tools/spatial_oracle/shrapnel_repair/hierarchy_composition.py',
 )
 
 # These PCs identify native sites to observe, never answers or injected code.
@@ -246,7 +252,7 @@ def generate():
                     for p in sorted(root.iterdir()) if p.is_file() and p.suffix.lower() != '.json']
     return dict(
         schema_version=1, kind='bounded-original-engineer-capture-accounting',
-        source='unicorn/gamemd.exe', native_sha256=native.NATIVE_SHA256,
+        source='unicorn/gamemd.exe',
         retail_files=retail_files,
         rules_building_layers=inputs.layers, engineer_layers=inputs.engineer_layers,
         native_building_entry_flags=inputs.building_entry,
@@ -256,6 +262,130 @@ def generate():
         record_kill_controls=record_kill_controls(inputs),
         capture_controls=capture_controls(inputs), built_controls=built_controls(inputs),
     )
+
+
+def entered_owner_control(inputs, first_change, second_change):
+    """Original two Entered callbacks, Action36, capture and deferred drain.
+
+    Definitions and admitted House/map priors are supplied. All live predicate,
+    action, ChangeOwner, navigation and cleanup decisions execute original code.
+    """
+    from tools.spatial_oracle import tag_lifecycle
+    from tools.spatial_oracle.anytown_damage.navigation import Navigation, MAP
+
+    f = engineer.EngineerJoinedFixture(inputs, live_tags=True, arena_size=0x1000000)
+    # The inherited fixture's runtime mode1 is a supplied prior. Override it
+    # before target setup, actor construction and command delivery to Skirmish5.
+    f.u.mem_write(0xA8B238, dwords(5))
+    infantry_vtable = bytes(f.u.mem_read(engineer.INF_VTABLE, 0x55C))
+    f.repair_target_prior()
+    u = f.u
+    houses = [engineer.HOUSE]
+    for index in range(1, 4):
+        house = f.allocate(0x6000)
+        u.mem_write(house, bytes(u.mem_read(engineer.HOUSE, 0x6000)))
+        u.mem_write(house + 0x30, dwords(index))
+        u.mem_write(house + 0x1EC, b'\1\1')
+        u.mem_write(house + 0x5788, dwords(1 << index))
+        houses.append(house)
+    countries = []
+    for index, house in enumerate(houses):
+        country = f.allocate(0x200)
+        u.mem_write(country, bytes(u.mem_read(inputs.country, 0x200)))
+        #7265F7 reads+B4;502D4A compares+B8. Both are explicit identities,
+        # not a claim that arbitrary Country constructors make them equal.
+        identity = (0, 7, 2, 3)[index]
+        u.mem_write(country + 0xB4, dwords(identity, identity))
+        u.mem_write(house + 0x34, dwords(country))
+        countries.append(country)
+        f.house_prior(house, (engineer.BLD,) if index == 2 else ())
+        for offset in (0x5528, 0x5578):
+            u.mem_write(house + offset, dwords(0x7E449C, f.allocate(128 * 4), 128, 1, 1, 10))
+    actor = f.actor((9, 10))
+    f.resolved_command(actor, f.ordinary_action(actor))
+    # Same delivered-friendly-order/enroute-owner race as the existing corpus.
+    u.mem_write(engineer.BLD + 0x21C, dwords(houses[2]))
+    items = f.allocate(4 * len(houses))
+    u.mem_write(items, dwords(*houses))
+    u.mem_write(0xA8022C, dwords(items))
+    u.mem_write(0xA80238, dwords(len(houses)))
+    f.owner_houses = houses
+    chosen = ('tag', 'tag_trigger_base', 'trigger', 'logic_tags', 'map_tags', 'cell_tags')
+    tag_lifecycle.initialize_registries(u, {name: f.allocate(128 * 4) for name in chosen})
+    tag_type = f.allocate(0xA4)
+    trigger_types = [f.allocate(0xC0) for _ in range(2)]
+    # Constructor6E4DE0 pushes front: TypeT0->T1 becomes liveT1->T0.
+    u.mem_write(tag_type + 0x9C, dwords(2, trigger_types[0]))
+    for branch, typ in enumerate(trigger_types):
+        source = 0 if branch == 0 or not first_change else 1
+        event, action = f.allocate(0xC0), f.allocate(0x140)
+        u.mem_write(typ + 0x9C, b'\1\1\1\1')
+        u.mem_write(typ + 0xA4, dwords(countries[source],
+                    trigger_types[1] if branch == 0 else 0, event, action))
+        u.mem_write(event + 0x28, dwords(event + 0x60, 1, 0, (0, 7, 2, 3)[source]))
+        u.mem_write(event + 0x88, dwords(0, 28 if branch == 0 else 27, 0, 11))
+        mutate = first_change if branch == 0 else second_change
+        if mutate:
+            u.mem_write(action + 0x28, dwords(action + 0xA0, 36))
+            u.mem_write(action + 0x90, dwords(7 if branch == 0 else 3))
+            action += 0xA0
+        u.mem_write(action + 0x28, dwords(0, 28))
+        u.mem_write(action + 0x90, dwords(11 if branch == 0 else 13))
+    tag = f.allocate(0x38)
+    construction.invoke(u, 0x6E4DE0, tag, tag_type)
+    construction.invoke(u, 0x5F5B50, engineer.BLD, tag)
+
+    # Action36 clears NavCom. Capture evacuation then executes Scatter and
+    # pathfinding, so install the existing native workspace/graph producer.
+    u.mem_write(MAP + 0xEC, dwords(0, 0, 16, 16))
+    u.mem_write(MAP + 0xFC, dwords(0, 0, 32, 32))
+    plane = bytearray(b'\x07\0\0\0' * (33 * 33))
+    for y in range(1, 32):
+        for x in range(1, 32):
+            struct.pack_into('<BBH', plane, (y * 33 + x) * 4, 0, 0, 0)
+    f.phase = 'setup_flat_connectivity'
+    nav = Navigation.on_existing_map(f, size=(16, 16), class_height_plane=bytes(plane))
+    nav.finish_graphs()
+    Navigation.setup_pathfinder(nav.call)
+    observation = AccountingObservation(f, {str(i): house for i, house in enumerate(houses)})
+
+    def observe(vm, pc, _size, _data):
+        sp = vm.reg_read(engineer.UC_X86_REG_ESP)
+        if pc == 0x6E53A0 and f.read32(sp + 4) == 1:
+            assert f.read32(sp + 8) == actor
+
+    hook = u.hook_add(UC_HOOK_CODE, observe)
+    f.phase = 'tagged_capture'
+    f.walk_arrival(actor, 10)
+    f.phase = 'tagged_capture_deferred_drain'
+    construction.invoke(u, 0x725C70, 0)
+    u.hook_del(hook)
+    runtime_game_mode = f.read32(0xA8B238)
+    if runtime_game_mode != 5:
+        raise native.OracleError('Tagged capture did not retain Skirmish runtime mode5')
+    # Keep original-code, route and RNG-call integrity checks internal;
+    # the fixture stores only the semantic fields the Rust regression reads.
+    observation.finish((0x519630, 0x519B53, 0x519F44, 0x519F71,
+                        0x6E53A0, 0x71E940, 0x7265C0, 0x448260,
+                        0x7014A0, 0x725C70, 0x517D90))
+    if bytes(u.mem_read(engineer.INF_VTABLE, 0x55C)) != infantry_vtable:
+        raise native.OracleError('Tagged capture changed the Infantry vtable')
+    return dict(first_change=first_change, second_change=second_change,
+                runtime_game_mode=runtime_game_mode,
+                owner=houses.index(f.read32(engineer.BLD + 0x21C)))
+
+
+def entered_owner_generate():
+    inputs = engineer.prepare_joined_inputs(engineer.JOINED_ROOT)
+    return dict(source='unicorn/gamemd.exe',
+        controls=[entered_owner_control(inputs, first, second)
+                  for first, second in ((False, False), (True, False), (False, True), (True, True))])
+
+
+def entered_owner_metadata():
+    return dict(
+        schema_version=1,
+        scope='Original Engineer two Entered callbacks, current-owner capture and deferred destruction; supplied admitted target, House/map priors and final arrival head. See engineer_capture_accounting.md for boundaries.')
 
 
 def metadata():
@@ -291,8 +421,13 @@ def metadata():
 
 def main(argv=None):
     root = Path(__file__).resolve().parents[2]
-    native.finish_vectors(generate, Path(__file__).with_suffix('.json'),
-                          provenance=metadata, argv=argv,
+    argv = list(sys.argv[1:] if argv is None else argv)
+    entered = '--entered-owner' in argv
+    if entered:
+        argv.remove('--entered-owner')
+    output = Path(__file__).with_name('engineer_capture_entered_owner.json') if entered else Path(__file__).with_suffix('.json')
+    native.finish_vectors(entered_owner_generate if entered else generate, output,
+                          provenance=entered_owner_metadata if entered else metadata, argv=argv,
                           source_paths={name: root / name for name in SOURCE_PATHS})
 
 

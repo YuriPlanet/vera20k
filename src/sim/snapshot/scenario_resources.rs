@@ -38,12 +38,21 @@ pub struct SavedScenarioResourcesRef<'a> {
 }
 
 impl<'a> SavedScenarioResourcesRef<'a> {
+    /// Native Cell Save483C10 sees the current Cell body, including after the
+    /// frame's Ground phase. Resource preparation may precede that boundary.
+    pub fn capture_live_cell_land(
+        &mut self,
+        live: &crate::map::resolved_terrain::ResolvedTerrainGrid,
+    ) -> Result<(), SavedTerrainError> {
+        self.terrain.capture_live_cell_land(live)
+    }
+
     pub(crate) fn compatibility(&self) -> crate::rules::compatibility::RulesCompatibility {
         self.processed_rules.compatibility()
     }
 
     pub fn capture(
-        resources: &'a SimResources,
+        resources: &SimResources,
         processed_rules: &'a ProcessedRulesLayers,
         fixed_art_hash: u64,
         terrain: SavedTerrainTemplate,
@@ -63,11 +72,26 @@ impl<'a> SavedScenarioResourcesRef<'a> {
             map,
         }
     }
+
+    /// ScenarioSave stops/accumulates its source clock at the actual save
+    /// boundary, after these immutable resource inputs have been gathered.
+    pub fn set_elapsed_buckets(&mut self, elapsed_buckets: u32) {
+        self.map.elapsed_buckets = elapsed_buckets;
+    }
 }
 
 impl SavedScenarioResources {
     pub fn processed_rules(&self) -> &ProcessedRulesLayers {
         &self.processed_rules
+    }
+
+    /// Native type Load calls mutate only this incoming, move-owned registry.
+    /// The app admits the saved digest before reaching this resource phase.
+    pub fn restore_object_image_loads(
+        &mut self,
+        theater: &str,
+    ) -> Result<(), crate::rules::error::RulesError> {
+        self.processed_rules.restore_object_image_loads(theater)
     }
 
     pub fn fixed_art_hash(&self) -> u64 {
@@ -118,6 +142,8 @@ pub struct SavedMapMetadata {
     source: crate::map::source::LoadedMapSource,
     basic: crate::map::basic::BasicSection,
     ranking: crate::map::ranking::RankingSection,
+    /// ScenarioSave689310 retains Full_Init's resolved +1360/+13DA names.
+    campaign_names: crate::rules::campaign_loading::CampaignScenarioNames,
     terrain_objects: Vec<crate::map::overlay::TerrainObject>,
     house_roster: crate::map::houses::HouseRoster,
     house_colors: crate::map::houses::HouseColorMap,
@@ -144,6 +170,7 @@ impl SavedMapMetadata {
         source: &crate::map::source::LoadedMapSource,
         basic: &crate::map::basic::BasicSection,
         ranking: &crate::map::ranking::RankingSection,
+        campaign_names: &crate::rules::campaign_loading::CampaignScenarioNames,
         terrain_objects: &[crate::map::overlay::TerrainObject],
         house_roster: &crate::map::houses::HouseRoster,
         house_colors: &crate::map::houses::HouseColorMap,
@@ -158,6 +185,7 @@ impl SavedMapMetadata {
             source: source.clone(),
             basic: basic.clone(),
             ranking: ranking.clone(),
+            campaign_names: campaign_names.clone(),
             terrain_objects: terrain_objects.to_vec(),
             house_roster: house_roster.clone(),
             house_colors: house_colors.clone(),
@@ -180,6 +208,9 @@ impl SavedMapMetadata {
     }
     pub fn ranking(&self) -> &crate::map::ranking::RankingSection {
         &self.ranking
+    }
+    pub fn campaign_names(&self) -> &crate::rules::campaign_loading::CampaignScenarioNames {
+        &self.campaign_names
     }
     pub fn terrain_objects(&self) -> &[crate::map::overlay::TerrainObject] {
         &self.terrain_objects
@@ -227,6 +258,11 @@ mod source_identity {
         deserializer: D,
     ) -> Result<crate::map::source::LoadedMapSource, D::Error> {
         let json = String::deserialize(deserializer)?;
+        // The JSON inside is outside the traced save layout; a schema change
+        // fails here as a decode error rather than as another layout.
+        if crate::util::save_codec::layout::describing() {
+            return Ok(crate::map::source::LoadedMapSource::LegacyFallback { label: json });
+        }
         serde_json::from_str(&json).map_err(serde::de::Error::custom)
     }
 }
@@ -259,6 +295,7 @@ mod tests {
         resources.rules = rules;
         resources.terrain_template = Some(crate::map::resolved_terrain::test_flat_ground_grid(3));
         let source = crate::map::source::LoadedMapSource::Loose {
+            cache_lease: Default::default(),
             path: "/nonexistent/saved-only-map.map".into(),
             payload_len: 27,
             source_sha256: "saved-source-identity".into(),
@@ -276,6 +313,7 @@ mod tests {
             SavedMapMetadata::capture(
                 123,
                 &source,
+                &Default::default(),
                 &Default::default(),
                 &Default::default(),
                 &[],

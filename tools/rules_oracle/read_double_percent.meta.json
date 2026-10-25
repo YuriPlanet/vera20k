@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -29,5 +28,5 @@
     "rules_ctor_c4_delay": "0x006675F0"
   },
   "replay_command": "python -m tools.rules_oracle.read_double_percent",
-  "payload_sha256": "f17d3780f1dd75c6b288b265eb1b74eaa3c427c209a5935c84ef271de4b8e27c"
+  "payload_sha256": "adddc41ad727c522c4d96e53320f8d90133a73802790c4c62db7f41458d6645e"
 }

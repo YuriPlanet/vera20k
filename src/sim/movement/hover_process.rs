@@ -113,7 +113,7 @@ pub(crate) fn hover_move_to(
     frame: u32,
 ) -> bool {
     let paralyzed = entity.parasite.is_paralyzed(frame);
-    let airborne = hover_is_powered(entity, terrain);
+    let airborne = hover_is_powered(entity, terrain.map(NativeCellQuery::canonical).as_ref());
     let Some(hover) = runtime_mut(entity) else {
         return false;
     };
@@ -163,14 +163,18 @@ pub(crate) fn hover_stop_moving(entity: &mut GameEntity) -> bool {
     true
 }
 
-/// Hover's `Is_Powered` (0x00516C70): the locomotor's powered byte, or the
-/// Foot above its surface (GetHeight 0x005F5F40 > 0).
-fn hover_is_powered(entity: &GameEntity, terrain: Option<&ResolvedTerrainGrid>) -> bool {
+/// Hover's `Is_Powered` (0x00516C70): the locomotor's powered byte (base
+/// 0x0055A930, called at 0x00516C76), or the Foot above its surface
+/// (GetHeight 0x005F5F40 > 0, its vt+0x1C8 at 0x00516C84). Draw_Matrix
+/// (0x00513F88) asks it too ([`super::hover_draw_slope`]), so the height reads
+/// through the caller's cell query: the simulation's canonical one, or an
+/// isolated one whose miss stamps its own dummy.
+pub(crate) fn hover_is_powered(entity: &GameEntity, cells: Option<&NativeCellQuery<'_>>) -> bool {
     entity
         .locomotor
         .as_ref()
         .is_some_and(|loco| loco.is_powered())
-        || super::super::air_movement::current_fly_height(entity, terrain) > 0
+        || super::super::air_movement::queried_flight_height(entity, cells) > 0
 }
 
 impl Simulation {
@@ -215,7 +219,7 @@ impl Simulation {
                 hover.head = None;
             }
         }
-        self.set_unit_null_destination(id, Some(rules), None, effects);
+        self.set_unit_null_destination(id, rules, None, effects);
         self.substrate.hover_halt(id);
     }
 
@@ -240,7 +244,13 @@ impl Simulation {
         if runtime(entity).is_none() {
             return false;
         }
-        let powered = hover_is_powered(entity, resolved_terrain.as_ref());
+        let powered = hover_is_powered(
+            entity,
+            resolved_terrain
+                .as_ref()
+                .map(NativeCellQuery::canonical)
+                .as_ref(),
+        );
         let settled = matches!(
             entity.mission.current().known(),
             Some(MissionType::Sleep | MissionType::Enter)
@@ -322,11 +332,10 @@ impl Simulation {
     pub(crate) fn process_hover_locomotor(
         &mut self,
         id: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<HoverProcessOutcome, FrameAdvanceError> {
-        let rules = rules.ok_or_else(|| self.hover_error(id, "Hover Process requires rules"))?;
         let mut out = HoverProcessOutcome::default();
         if self.hover_is_moving(id) && !self.hover_move(id, rules, registry, &mut out, effects)? {
             return Ok(out);
@@ -472,7 +481,7 @@ impl Simulation {
             out.bridge_state_changed |= self.per_cell_process(
                 id,
                 super::super::PerCellReason::Arrival,
-                Some(rules),
+                rules,
                 registry,
                 effects,
             )?;
@@ -492,7 +501,7 @@ impl Simulation {
             {
                 return Ok(Arrival::Return);
             }
-            self.set_unit_null_destination(id, Some(rules), None, effects);
+            self.set_unit_null_destination(id, rules, None, effects);
             self.substrate.hover_halt(id);
         } else if code != 0 {
             //514982..5149EA.
@@ -553,19 +562,19 @@ impl Simulation {
                 &mut self.substrate.entities,
                 id,
                 next,
-                Some(rules),
+                rules,
                 &self.interner,
             );
             return;
         }
         //5148DF..514973: Mark(REMOVE), SetCoords, SetZ, the bridge byte from
         //the new cell and the height, Mark(PUT).
-        self.foot_mark_remove(id, Some(rules), registry, effects);
+        self.foot_mark_remove(id, rules, registry, effects);
         super::super::ground_pose::foot_set_location(
             &mut self.substrate.entities,
             id,
             next,
-            Some(rules),
+            rules,
             &self.interner,
         );
         let terrain = self.resolved_terrain.as_ref();
@@ -588,7 +597,7 @@ impl Simulation {
                 entity.position.store_cell_level(level, on_bridge);
             }
         }
-        self.foot_mark_put(id, Some(rules), registry, effects);
+        self.foot_mark_put(id, rules, registry, effects);
     }
 
     /// Process 0x00514A21..0x00514C12: the altitude controller and the
@@ -651,7 +660,7 @@ impl Simulation {
         if drop {
             self.drop_as_bomb(
                 id,
-                crate::sim::world::UninitContext::new(Some(rules), registry).with_effects(effects),
+                crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
             );
         }
     }
@@ -663,10 +672,11 @@ impl Simulation {
         id: u64,
     ) {
         let frame = session.binary_frame();
+        let cells = resolved_terrain.as_ref().map(NativeCellQuery::canonical);
         let powered = substrate
             .entities
             .get(id)
-            .is_some_and(|entity| hover_is_powered(entity, resolved_terrain.as_ref()));
+            .is_some_and(|entity| hover_is_powered(entity, cells.as_ref()));
         let Some(entity) = substrate.entities.get_mut(id) else {
             return;
         };
@@ -759,7 +769,7 @@ impl Simulation {
             return Ok(());
         };
         let foot = ground_pose::position_world_coord(&entity.position);
-        let airborne = hover_is_powered(entity, terrain);
+        let airborne = hover_is_powered(entity, terrain.map(NativeCellQuery::canonical).as_ref());
         let pushed = hover.pushed;
         let boost = matches!(
             (path_word(entity, 0), path_word(entity, 1)),
@@ -850,7 +860,7 @@ impl Simulation {
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 hover_stop_moving(entity);
             }
-            self.set_unit_null_destination(id, Some(rules), None, effects);
+            self.set_unit_null_destination(id, rules, None, effects);
             return Ok(());
         }
         if path_word(entity, 0).is_some() {
@@ -988,7 +998,7 @@ impl Simulation {
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 hover_stop_moving(entity);
             }
-            self.set_unit_null_destination(id, Some(rules), None, effects);
+            self.set_unit_null_destination(id, rules, None, effects);
             return Ok(true);
         }
         self.scatter_blocked_track_cell(
@@ -1017,7 +1027,7 @@ impl Simulation {
             .foot_path_zone_precheck(id, destination, rules)
             .map_err(|cause| self.hover_error(id, cause))?
         {
-            self.set_unit_null_destination(id, Some(rules), None, effects);
+            self.set_unit_null_destination(id, rules, None, effects);
             return Ok(());
         }
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -1034,7 +1044,7 @@ impl Simulation {
             ) < rules.general.close_enough
             && matches!(mission, Some(MissionType::Move | MissionType::AreaGuard))
         {
-            self.set_unit_null_destination(id, Some(rules), None, effects);
+            self.set_unit_null_destination(id, rules, None, effects);
             if !self.hover_alive(id) {
                 return Ok(());
             }
@@ -1052,7 +1062,7 @@ impl Simulation {
             }
         } else {
             //5167D5..51681B: give up, with the retained scold sound.
-            self.set_unit_null_destination(id, Some(rules), None, effects);
+            self.set_unit_null_destination(id, rules, None, effects);
             if !self.hover_alive(id) {
                 return Ok(());
             }
@@ -1157,7 +1167,7 @@ impl Simulation {
             //5152D1..51532E: the invalid-tube arm (module residual): the
             //drop, then one more null destination.
             self.hover_drop_track(id, rules, effects);
-            self.set_unit_null_destination(id, Some(rules), None, effects);
+            self.set_unit_null_destination(id, rules, None, effects);
             return Ok(7);
         }
         let location = ground_pose::position_world_coord(&entity.position);
@@ -1192,7 +1202,7 @@ impl Simulation {
             hover.head = Some(head);
         }
         //5153D8..5153EE: the crate question on the candidate cell.
-        if !self.pickup_crate_at(id, cell, Some(rules), registry, effects) {
+        if !self.pickup_crate_at(id, cell, rules, registry, effects) {
             //5153F6..515478: a false answer (a placed free vehicle): an owner
             //in limbo rejoins the ordinary checks; a dead or falling one
             //returns; a live one drops its path head, head and speeds and
@@ -1229,7 +1239,7 @@ impl Simulation {
                 out.bridge_state_changed |= self.per_cell_process(
                     id,
                     super::super::PerCellReason::Arrival,
-                    Some(rules),
+                    rules,
                     registry,
                     effects,
                 )?;
@@ -1354,7 +1364,7 @@ impl Simulation {
                     if let Some(entity) = self.substrate.entities.get_mut(id) {
                         hover_stop_moving(entity);
                     }
-                    self.set_unit_null_destination(id, Some(rules), None, effects);
+                    self.set_unit_null_destination(id, rules, None, effects);
                     return Ok(7);
                 }
                 //515902..5159E1: scatter the head cell; the head drops.

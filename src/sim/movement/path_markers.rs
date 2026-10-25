@@ -79,7 +79,7 @@ pub(super) struct LiveBridgeMarkerPeers<'a> {
     pub mover_id: u64,
     pub mover: Option<&'a BridgeMarkerPeer>,
     pub entities: &'a EntityStore,
-    pub rules: Option<&'a crate::rules::ruleset::RuleSet>,
+    pub rules: &'a crate::rules::ruleset::RuleSet,
     pub interner: &'a StringInterner,
 }
 
@@ -142,7 +142,7 @@ pub(super) struct BridgeMarkerContext<'a> {
 pub(super) struct DeferredBridgeMarker<'a> {
     pub mover_id: u64,
     pub mover: Option<&'a BridgeMarkerPeer>,
-    pub rules: Option<&'a crate::rules::ruleset::RuleSet>,
+    pub rules: &'a crate::rules::ruleset::RuleSet,
     pub interner: &'a StringInterner,
     pub grid: &'a PathGrid,
     pub terrain: Option<&'a ResolvedTerrainGrid>,
@@ -317,12 +317,12 @@ fn remaining_path_from_entity(
 
 fn peer_from_entity(
     entity: &crate::sim::game_entity::GameEntity,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
     interner: &StringInterner,
 ) -> BridgeMarkerPeer {
     let (path_start, path_directions) = remaining_path_from_entity(entity);
-    let speed = rules
-        .and_then(|rules| interner.object_type(entity.type_ref(), rules))
+    let speed = interner
+        .object_type(entity.type_ref(), rules)
         .map_or(0, |object| object.speed);
     let foot_derived = matches!(
         entity.category(),
@@ -344,7 +344,7 @@ fn peer_from_entity(
 pub(super) fn bridge_marker_peer(
     entities: &EntityStore,
     entity_id: u64,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
     interner: &StringInterner,
 ) -> Option<BridgeMarkerPeer> {
     entities
@@ -638,10 +638,16 @@ mod tests {
                 .unwrap()
                 .set_head(Some(head));
         }
-        let interner = StringInterner::new();
+        let interner = crate::sim::intern::test_interner();
         let mut entities = EntityStore::new();
         entities.insert(entity);
-        let peer = bridge_marker_peer(&entities, 2, None, &interner).unwrap();
+        let peer = bridge_marker_peer(
+            &entities,
+            2,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            &interner,
+        )
+        .unwrap();
         let mut peers = BridgeMarkerPeerSnapshot::default();
         peers.peers.insert(2, peer);
         let mut occupancy = OccupancyGrid::new();

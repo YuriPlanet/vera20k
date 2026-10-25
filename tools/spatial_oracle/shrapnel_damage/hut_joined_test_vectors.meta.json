@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -22,10 +21,7 @@
   },
   "source_files": {
     "hut_joined.json.gz": "c566fb02a57652f11c26d71e4ed1b1bc8a093b81250efcfcd7f4e21a2eb8e517",
-    "hut_joined_promotion.json": "d5664bfa4608ad8072c3d47f3184727033a242120edc42a94a64fb4548f876e6",
-    "occupants_test_vectors.py": "dba865474bcfc3fe0d89585357e1bcacbf5c457bebdd832214958cb55507553a",
-    "occupants_joined_test_vectors.py": "1b5e51b661295eb0cd00882919cf43843c8a7d99e849be1d02eda174101d0ec2"
+    "hut_joined_promotion.json": "d5664bfa4608ad8072c3d47f3184727033a242120edc42a94a64fb4548f876e6"
   },
-  "projection_source_sha256": "e310c0ebde7f02788a2e7d4821d7f7af8953a62e706a1568145f0517500e619a",
-  "payload_sha256": "003fb6bb5ecf153cf06f74c9ea176244ff880aa262d23fd266b14c5da01f8b20"
+  "payload_sha256": "345561dd22970f3700ec4ae92b0be4c6f7895a08aa55a745c85350cd7d402138"
 }

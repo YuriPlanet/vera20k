@@ -1,0 +1,610 @@
+{
+  "cases": [
+    {
+      "constructed_pending": 1,
+      "inputs": {
+        "building": false,
+        "current": true,
+        "discovered": true,
+        "in_playfield": true,
+        "latched": true,
+        "limbo": false,
+        "passive": false,
+        "pending": true,
+        "sight": 0,
+        "startup": false
+      },
+      "startup": null,
+      "visits": [
+        {
+          "cached_coord": [
+            10240,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [
+            [
+              "entry",
+              "0x4adcd0"
+            ],
+            [
+              "entry",
+              "0x70af50"
+            ],
+            [
+              "border",
+              [
+                10496,
+                10240,
+                0
+              ],
+              0,
+              9,
+              0
+            ]
+          ],
+          "latch": 1,
+          "pending": 0
+        },
+        {
+          "cached_coord": [
+            10240,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [],
+          "latch": 1,
+          "pending": 0
+        }
+      ]
+    },
+    {
+      "constructed_pending": 1,
+      "inputs": {
+        "building": false,
+        "current": true,
+        "discovered": true,
+        "in_playfield": true,
+        "latched": true,
+        "limbo": false,
+        "passive": false,
+        "pending": false,
+        "sight": 0,
+        "startup": false
+      },
+      "startup": null,
+      "visits": [
+        {
+          "cached_coord": [
+            10240,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [],
+          "latch": 1,
+          "pending": 0
+        },
+        {
+          "cached_coord": [
+            10240,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [],
+          "latch": 1,
+          "pending": 0
+        }
+      ]
+    },
+    {
+      "constructed_pending": 1,
+      "inputs": {
+        "building": false,
+        "current": false,
+        "discovered": true,
+        "in_playfield": true,
+        "latched": true,
+        "limbo": false,
+        "passive": false,
+        "pending": true,
+        "sight": 0,
+        "startup": false
+      },
+      "startup": null,
+      "visits": [
+        {
+          "cached_coord": [
+            10240,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [],
+          "latch": 1,
+          "pending": 1
+        },
+        {
+          "cached_coord": [
+            10240,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [],
+          "latch": 1,
+          "pending": 1
+        }
+      ]
+    },
+    {
+      "constructed_pending": 1,
+      "inputs": {
+        "building": false,
+        "current": true,
+        "discovered": false,
+        "in_playfield": true,
+        "latched": true,
+        "limbo": false,
+        "passive": false,
+        "pending": true,
+        "sight": 0,
+        "startup": false
+      },
+      "startup": null,
+      "visits": [
+        {
+          "cached_coord": [
+            10240,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [
+            [
+              "entry",
+              "0x4adcd0"
+            ]
+          ],
+          "latch": 1,
+          "pending": 0
+        },
+        {
+          "cached_coord": [
+            10240,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [],
+          "latch": 1,
+          "pending": 0
+        }
+      ]
+    },
+    {
+      "constructed_pending": 1,
+      "inputs": {
+        "building": false,
+        "current": true,
+        "discovered": true,
+        "in_playfield": true,
+        "latched": true,
+        "limbo": true,
+        "passive": false,
+        "pending": true,
+        "sight": 0,
+        "startup": false
+      },
+      "startup": null,
+      "visits": [
+        {
+          "cached_coord": [
+            10240,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [
+            [
+              "entry",
+              "0x4adcd0"
+            ]
+          ],
+          "latch": 1,
+          "pending": 0
+        },
+        {
+          "cached_coord": [
+            10240,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [],
+          "latch": 1,
+          "pending": 0
+        }
+      ]
+    },
+    {
+      "constructed_pending": 1,
+      "inputs": {
+        "building": false,
+        "current": true,
+        "discovered": true,
+        "in_playfield": false,
+        "latched": true,
+        "limbo": false,
+        "passive": false,
+        "pending": true,
+        "sight": 0,
+        "startup": false
+      },
+      "startup": null,
+      "visits": [
+        {
+          "cached_coord": [
+            10240,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [
+            [
+              "entry",
+              "0x4adcd0"
+            ],
+            [
+              "entry",
+              "0x70af50"
+            ],
+            [
+              "border",
+              [
+                10496,
+                10240,
+                0
+              ],
+              0,
+              9,
+              0
+            ]
+          ],
+          "latch": 1,
+          "pending": 0
+        },
+        {
+          "cached_coord": [
+            10240,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [],
+          "latch": 1,
+          "pending": 0
+        }
+      ]
+    },
+    {
+      "constructed_pending": 1,
+      "inputs": {
+        "building": false,
+        "current": true,
+        "discovered": true,
+        "in_playfield": true,
+        "latched": true,
+        "limbo": false,
+        "passive": true,
+        "pending": true,
+        "sight": 0,
+        "startup": false
+      },
+      "startup": null,
+      "visits": [
+        {
+          "cached_coord": [
+            10240,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [
+            [
+              "entry",
+              "0x4adcd0"
+            ],
+            [
+              "entry",
+              "0x70af50"
+            ],
+            [
+              "border",
+              [
+                10496,
+                10240,
+                0
+              ],
+              0,
+              9,
+              0
+            ]
+          ],
+          "latch": 1,
+          "pending": 0
+        },
+        {
+          "cached_coord": [
+            10240,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [],
+          "latch": 1,
+          "pending": 0
+        }
+      ]
+    },
+    {
+      "constructed_pending": 1,
+      "inputs": {
+        "building": false,
+        "current": true,
+        "discovered": true,
+        "in_playfield": true,
+        "latched": false,
+        "limbo": false,
+        "passive": false,
+        "pending": true,
+        "sight": 6,
+        "startup": false
+      },
+      "startup": null,
+      "visits": [
+        {
+          "cached_coord": [
+            10496,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [
+            [
+              "entry",
+              "0x4adcd0"
+            ],
+            [
+              "entry",
+              "0x70af50"
+            ],
+            [
+              "area",
+              [
+                10496,
+                10240,
+                0
+              ],
+              6,
+              1347444736,
+              0,
+              0,
+              0,
+              1,
+              0
+            ],
+            [
+              "border",
+              [
+                10496,
+                10240,
+                0
+              ],
+              0,
+              9,
+              0
+            ]
+          ],
+          "latch": 1,
+          "pending": 0
+        },
+        {
+          "cached_coord": [
+            10496,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [],
+          "latch": 1,
+          "pending": 0
+        }
+      ]
+    },
+    {
+      "constructed_pending": 1,
+      "inputs": {
+        "building": false,
+        "current": true,
+        "discovered": true,
+        "in_playfield": true,
+        "latched": false,
+        "limbo": false,
+        "passive": false,
+        "pending": true,
+        "sight": 6,
+        "startup": true
+      },
+      "startup": {
+        "events": [
+          [
+            "entry",
+            "0x4adcd0"
+          ],
+          [
+            "entry",
+            "0x70af50"
+          ],
+          [
+            "area",
+            [
+              10496,
+              10240,
+              0
+            ],
+            6,
+            1347444736,
+            0,
+            0,
+            0,
+            1,
+            0
+          ],
+          [
+            "border",
+            [
+              10496,
+              10240,
+              0
+            ],
+            0,
+            9,
+            0
+          ]
+        ],
+        "pending": 1
+      },
+      "visits": [
+        {
+          "cached_coord": [
+            10496,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [
+            [
+              "entry",
+              "0x4adcd0"
+            ],
+            [
+              "entry",
+              "0x70af50"
+            ],
+            [
+              "border",
+              [
+                10496,
+                10240,
+                0
+              ],
+              0,
+              9,
+              0
+            ]
+          ],
+          "latch": 1,
+          "pending": 0
+        },
+        {
+          "cached_coord": [
+            10496,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [],
+          "latch": 1,
+          "pending": 0
+        }
+      ]
+    },
+    {
+      "constructed_pending": 1,
+      "inputs": {
+        "building": true,
+        "current": true,
+        "discovered": true,
+        "in_playfield": true,
+        "latched": false,
+        "limbo": false,
+        "passive": false,
+        "pending": true,
+        "sight": 6,
+        "startup": true
+      },
+      "startup": {
+        "events": [
+          [
+            "entry",
+            "0x4adcd0"
+          ]
+        ],
+        "pending": 1
+      },
+      "visits": [
+        {
+          "cached_coord": [
+            10496,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [
+            [
+              "entry",
+              "0x4adcd0"
+            ],
+            [
+              "entry",
+              "0x70af50"
+            ],
+            [
+              "area",
+              [
+                10496,
+                10240,
+                0
+              ],
+              6,
+              1347444736,
+              0,
+              0,
+              0,
+              1,
+              0
+            ],
+            [
+              "border",
+              [
+                10496,
+                10240,
+                0
+              ],
+              0,
+              9,
+              0
+            ]
+          ],
+          "latch": 1,
+          "pending": 0
+        },
+        {
+          "cached_coord": [
+            10496,
+            10240,
+            0
+          ],
+          "cached_radius": 6,
+          "events": [],
+          "latch": 1,
+          "pending": 0
+        }
+      ]
+    }
+  ]
+}

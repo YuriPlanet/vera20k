@@ -176,11 +176,11 @@ impl Gpu {
         Self::with_features(wgpu::Features::empty())
     }
     pub(crate) fn with_features(features: wgpu::Features) -> Self {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             // Use the production owner's standard WGPU_BACKEND override so
             // the same native readbacks can exercise Windows DX12 explicitly.
             backends: wgpu::Backends::PRIMARY.with_env(),
-            ..Default::default()
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
         let adapter = block_on(instance.request_adapter(&Default::default()))
             .expect("explicit GPU check needs an adapter");
@@ -467,6 +467,7 @@ pub(crate) fn clear(
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
+        multiview_mask: None,
     });
 }
 pub(crate) fn sprite(position: [f32; 2], size: [f32; 2], z_adjust: f32) -> SpriteInstance {
@@ -1794,13 +1795,13 @@ pub(crate) fn seed_depth_grid(
             primitive: Default::default(),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Always,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Always),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
     let binding = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1824,6 +1825,7 @@ pub(crate) fn seed_depth_grid(
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
+        multiview_mask: None,
     });
     pass.set_pipeline(&pipeline);
     pass.set_bind_group(0, &binding, &[]);

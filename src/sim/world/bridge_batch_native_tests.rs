@@ -350,6 +350,14 @@ fn live_raw_bridge_height_keeps_retained_cache_until_native_batch_publication() 
     };
     let cell = live.lookup((12, 10));
     live.write_raw_bridge_level(cell, 4).unwrap();
+    assert!(
+        matches!(
+            sim.lighting_sources.pending().last(),
+            Some(crate::sim::light_sources::LightingEvent::CellLevels { cells })
+                if cells == &vec![((12, 10), 4)]
+        ),
+        "the actual raw Cell+11B writer publishes its value before later sampling"
+    );
     let terrain = sim.resolved_terrain.as_ref().unwrap();
     assert_eq!(terrain.cell(12, 10).unwrap().level, 4);
     assert_eq!(sim.dynamic_terrain_cells.get(&(12, 10)).unwrap().level, 4);
@@ -399,6 +407,31 @@ fn live_raw_bridge_height_keeps_retained_cache_until_native_batch_publication() 
     assert_eq!(
         serde_json::json!(zones.base_topology_mut_for_test().levels()),
         expected["levels"]
+    );
+    let mut live = LivePublication {
+        frame_effects: FrameEffects::default(),
+        sim: &mut sim,
+        rules: &rules,
+        registry: Some(&registry),
+        collapsed: false,
+    };
+    // The earlier native batch input uses an invalid tile index. Supply a
+    // registered entry for this additional level-override publication check.
+    let resolved = live
+        .sim
+        .resolved_terrain
+        .as_mut()
+        .unwrap()
+        .cell_mut_for_test(12, 10)
+        .unwrap();
+    resolved.final_tile_index = 0;
+    resolved.final_sub_tile = 0;
+    live.recalc_cell(cell, 2).unwrap();
+    assert!(
+        matches!(live.sim.lighting_sources.pending().last(),
+        Some(crate::sim::light_sources::LightingEvent::CellLevels { cells })
+            if cells == &vec![((12, 10), 2)]),
+        "resident47D2B0 publishes the changed level before returning to its caller"
     );
 }
 

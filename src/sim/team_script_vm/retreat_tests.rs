@@ -94,6 +94,8 @@ fn retail_guard_retreat(ramp: bool) {
     sim.restore_map_authority_after_snapshot_load(&rules, &overlays, None)
         .unwrap();
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    // Player load discards active planning (ClearScene6370B0 / TechnoLoad70BF79).
+    sim.reset_planning_after_player_load();
     let before_rng = rng(&sim);
     let timers = {
         let state = &sim.team_script_vm.teams[&team];
@@ -155,8 +157,10 @@ fn snapshot_copy(
     rules: &RuleSet,
     overlays: &crate::rules::overlay_types::OverlayTypeRegistry,
 ) -> Simulation {
-    let bytes = GameSnapshot::save(sim, 0, 0, "retail-guard-retreat", 0);
-    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+    let bytes = GameSnapshot::save_validated(sim, 0, 0, "retail-guard-retreat", 0);
+    let mut restored = GameSnapshot::load_validated(&bytes, 0, 0, sim.session.map_name())
+        .unwrap()
+        .sim;
     restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(sim));
     restored.restore_after_snapshot_load().unwrap();
     restored.rebuild_caches_after_load(

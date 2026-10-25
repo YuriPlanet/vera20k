@@ -104,11 +104,11 @@ impl PackedSpriteGpu {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Packed source layout"),
                 bind_group_layouts: &[
-                    batch.camera_bind_group_layout(),
-                    source_layout,
-                    material_layout,
+                    Some(batch.camera_bind_group_layout()),
+                    Some(source_layout),
+                    Some(material_layout),
                 ],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("Packed source raster"),
@@ -135,7 +135,7 @@ impl PackedSpriteGpu {
                 primitive: Default::default(),
                 depth_stencil: None,
                 multisample: Default::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         };
@@ -186,13 +186,13 @@ impl PackedSpriteGpu {
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Packed resolve layout"),
-            bind_group_layouts: &[&layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
         });
         let clear_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Packed stencil reset layout"),
             bind_group_layouts: &[],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
         let full_screen = |entry,
                            layout: &wgpu::PipelineLayout,
@@ -216,15 +216,15 @@ impl PackedSpriteGpu {
                 primitive: Default::default(),
                 depth_stencil,
                 multisample: Default::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         };
         let depth = |write| {
             Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: write,
-                depth_compare: wgpu::CompareFunction::Always,
+                depth_write_enabled: Some(write),
+                depth_compare: Some(wgpu::CompareFunction::Always),
                 stencil: Default::default(),
                 bias: Default::default(),
             })
@@ -419,6 +419,27 @@ impl TerrainDrawRenderer {
         count
     }
 
+    /// Every pixel one composite reads or writes, colour and Z: its clipped
+    /// rect plus the displaced read halo. `None` when it draws nothing.
+    pub(crate) fn packed_footprint(
+        &self,
+        composite: &PackedComposite<'_>,
+        tactical: [u32; 4],
+    ) -> Option<[u32; 4]> {
+        let rect = composite_rect(&composite.pieces, self.camera, tactical)?;
+        let offset = effective_offset(composite.pieces.first()?.instance, composite.render_z);
+        if offset == 0 {
+            return Some(rect);
+        }
+        let size = self
+            .targets
+            .as_ref()
+            .expect("packed footprint after prepare")
+            .source_color
+            .size();
+        Some(read_halo(rect, offset, size.width, size.height))
+    }
+
     /// Pixel-local, equal-policy composites commute only when their complete
     /// conservative rectangles are disjoint. Reuse the destination-edit tile
     /// scheduler; displaced neighbor reads remain strict sequential fences.
@@ -438,12 +459,11 @@ impl TerrainDrawRenderer {
         let mut pieces = Vec::new();
         while cursor < composites.len() {
             let first = &composites[cursor];
-            let Some(piece) = first.pieces.first() else {
+            if first.pieces.is_empty() {
                 cursor += 1;
                 continue;
-            };
-            let selector = piece.instance.draw_state.native_selector_bits();
-            if effective_offset(piece.instance, first.render_z) != 0 {
+            }
+            let Some(key) = packed_wave_key(first) else {
                 stats.accumulate(self.draw_packed_composite(
                     encoder,
                     color,
@@ -456,18 +476,15 @@ impl TerrainDrawRenderer {
                 ));
                 cursor += 1;
                 continue;
-            }
+            };
             batches.begin_span([
                 self.camera.screen_size[0] as u32,
                 self.camera.screen_size[1] as u32,
             ]);
             let mut end = cursor;
             while let Some(composite) = composites.get(end) {
-                if let Some(piece) = composite.pieces.first() {
-                    if composite.render_z != first.render_z
-                        || piece.instance.draw_state.native_selector_bits() != selector
-                        || effective_offset(piece.instance, composite.render_z) != 0
-                    {
+                if !composite.pieces.is_empty() {
+                    if packed_wave_key(composite) != Some(key) {
                         break;
                     }
                     if let Some(rect) = composite_rect(&composite.pieces, self.camera, tactical) {
@@ -667,6 +684,7 @@ impl TerrainDrawRenderer {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&self.snapshot_pipeline);
             pass.set_bind_group(0, &targets.source, &[]);
@@ -680,6 +698,7 @@ impl TerrainDrawRenderer {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&packed.clear);
             pass.set_scissor_rect(rect[0], rect[1], rect[2], rect[3]);
@@ -741,6 +760,7 @@ impl TerrainDrawRenderer {
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(if writes {
                 &packed.resolve_write
@@ -759,6 +779,19 @@ impl TerrainDrawRenderer {
             tile_dependencies: 0,
         }
     }
+}
+
+/// The wave a non-empty composite may share with others in
+/// [`TerrainDrawRenderer::draw_packed_span`]: equal native selector and Z
+/// policy. `None` for displaced reads, which replay alone.
+pub(crate) fn packed_wave_key(composite: &PackedComposite<'_>) -> Option<(u32, RenderZPolicy)> {
+    let piece = composite.pieces.first()?;
+    (effective_offset(piece.instance, composite.render_z) == 0).then(|| {
+        (
+            piece.instance.draw_state.native_selector_bits(),
+            composite.render_z,
+        )
+    })
 }
 
 fn effective_offset(instance: &SpriteInstance, render_z: RenderZPolicy) -> i32 {

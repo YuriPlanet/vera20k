@@ -1689,9 +1689,9 @@ impl MapCommandBarThumbState {
             local_player_defeated: sim.local_player_defeated(),
             input_locked: sim.session().input_locked(),
             has_lost: house.map(|house| house.has_lost()),
-            exit_ready: house
-                .and_then(|house| house.outcome())
-                .map(|outcome| outcome.exit_ready),
+            exit_ready: owner
+                .zip(house)
+                .map(|(owner, _)| sim.ready_outcome_for_owner(owner).is_some()),
         })
     }
 }
@@ -2072,17 +2072,17 @@ fn disguise_inputs(
                 )
             })
             .flatten();
-        let terrain_pair = frame
-            .and_then(|frame| u8::try_from(frame).ok())
-            .is_some_and(|frame| {
-                state
-                    .match_state
-                    .match_presentation
-                    .overlay_atlas
-                    .as_ref()
-                    .and_then(|atlas| atlas.native_terrain_pair(&chosen, frame))
-                    .is_some()
-            });
+        let terrain_pair = frame.is_some_and(|frame| {
+            state
+                .match_state
+                .match_presentation
+                .overlay_atlas
+                .as_ref()
+                .is_some_and(|atlas| {
+                    let (body, shadow) = atlas.terrain_pieces(&chosen, i32::from(frame));
+                    body.is_some() || shadow.is_some()
+                })
+        });
         let decision = crate::render::draw_state::DrawState::for_entity(
             entity,
             sim.session().binary_frame(),
@@ -2455,6 +2455,7 @@ struct MapElectricBoltDrawObservation {
 #[derive(Debug, Serialize)]
 struct MapEffectObservation {
     scenario_rng_cursor: [i32; 2],
+    voxel_anims: Vec<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     projectiles: Option<Vec<Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2466,9 +2467,30 @@ struct MapEffectObservation {
 impl MapEffectObservation {
     fn capture(
         sim: &crate::sim::world::Simulation,
-        _rules: &crate::rules::ruleset::RuleSet,
+        rules: &crate::rules::ruleset::RuleSet,
         profile: &MapCaptureProfile,
     ) -> Result<Self> {
+        let voxel_anims = sim
+            .voxel_anims()
+            .iter()
+            .take(MAX_OBSERVATION_SAMPLES + 1)
+            .map(|(&id, debris)| {
+                let location = debris.world_coord();
+                let bounce = debris.bounce();
+                let lifecycle = debris.lifecycle();
+                // Retained Object.Location and the independent Bounce body are
+                // read separately; observing never advances either authority.
+                json!({"stable_id": id, "native_id": debris.native_unique_id(),
+                "type_id": rules.voxel_anim_type(debris.type_id()).name.as_str(),
+                "owner_house": debris.owner_house().map(|owner| sim.interner().resolve(owner)),
+                "stored_leptons": [location.x, location.y, location.z],
+                "duration": debris.duration(), "marked_for_deletion": debris.marked_for_deletion(),
+                "in_logic_vector": debris.in_logic_vector(),
+                "object_alive": lifecycle.object_alive(), "in_limbo": lifecycle.in_limbo(),
+                "bounce_position_bits": bounce.position().map(|value| value.bits()),
+                "bounce_velocity_bits": bounce.velocity().map(|value| value.bits())})
+            })
+            .collect::<Vec<_>>();
         let projectiles = (profile.observe_projectiles == Some(true)).then(|| {
             sim.projectiles().iter().take(MAX_OBSERVATION_SAMPLES + 1).map(|(&id, bullet)| {
                 let weapon = bullet.payload().installed_weapon().map(|id| sim.interner().resolve(id));
@@ -2514,6 +2536,7 @@ impl MapEffectObservation {
         let rng = sim.rng_views().scenario;
         let snapshot = Self {
             scenario_rng_cursor: [rng.index_a, rng.index_b],
+            voxel_anims,
             projectiles,
             waves,
             animations,
@@ -2526,7 +2549,8 @@ impl MapEffectObservation {
     }
 
     fn sample_count(&self) -> usize {
-        1 + self.projectiles.as_ref().map_or(0, Vec::len)
+        1 + self.voxel_anims.len()
+            + self.projectiles.as_ref().map_or(0, Vec::len)
             + self.waves.as_ref().map_or(0, Vec::len)
             + self.animations.as_ref().map_or(0, Vec::len)
     }
@@ -2891,6 +2915,11 @@ impl MapObservation {
             })
             .and_then(|count| count.checked_add(frame.missing_actor_ids.len()))
             .and_then(|count| count.checked_add(frame.terrain.len()))
+            .and_then(|count| {
+                frame.terrain.iter().try_fold(count, |count, cell| {
+                    count.checked_add(cell["terrain_instances"].as_array().map_or(0, Vec::len))
+                })
+            })
             .and_then(|count| {
                 count.checked_add(
                     frame
@@ -4172,7 +4201,32 @@ impl TacticalCaptureSession {
             let overlay = sim.overlay_grid().map(|grid| grid.cell(rx, ry));
             let terrain_object = sim.terrain_objects().cell_index().get(&at)
                 .and_then(|id| sim.terrain_objects().objects().get(id));
-            let animation = sim.terrain_objects().animations().get(&at);
+            let animation = terrain_object.and_then(|object| sim.terrain_objects().animations().get(&object.stable_id()));
+            let terrain_row = |object: &crate::sim::terrain_object::TerrainObjectState| {
+                let id = object.stable_id();
+                let animation = sim.terrain_objects().animations().get(&id);
+                json!({"id": id, "native_id": object.native_unique_id(), "name": sim.interner().resolve(object.type_ref()),
+                    "health": object.health(), "max_health": object.max_health(),
+                    "frame": animation.map(|animation| animation.current_frame()),
+                    "active": animation.map(|animation| animation.is_active())})
+            };
+            let member_ids: Vec<_> = sim.terrain_objects().members_at(at).collect();
+            let terrain_members: Vec<_> = member_ids.iter().map(|id| {
+                terrain_row(sim.terrain_objects().get(*id).expect("indexed Terrain remains represented"))
+            }).collect();
+            // Location, Cell content, Display and Logic are independent native
+            // memberships. Observe the retained owner even when Occupy_List
+            // placed no Cell member, and foreign-anchor members reached here;
+            // this never constructs or marks an object.
+            let terrain_instances: Vec<_> = sim.terrain_objects().objects().values()
+                .filter(|object| object.cell() == at || member_ids.contains(&object.stable_id())).map(|object| {
+                    let mut row = terrain_row(object);
+                    row["lifecycle"] = json!(object.lifecycle());
+                    row["cell_member"] = json!(member_ids.contains(&object.stable_id()));
+                    row["display_layer"] = json!(sim.display_layers().layer_of(object.stable_id()).map(|layer| layer.index()));
+                    row["in_logic_vector"] = json!(object.in_logic_vector());
+                    row
+            }).collect();
             // Observe the same viewer plane consumed by drawing and picking;
             // never reveal a cell or create missing visibility state for capture.
             let local_visibility = local_visibility_owner.map(|(owner, id)| json!({
@@ -4191,6 +4245,8 @@ impl TacticalCaptureSession {
                 })),
                 "local_visibility": local_visibility,
                 "overlay": overlay.map(|overlay| json!({"id": overlay.overlay_id, "density": overlay.overlay_data})),
+                "terrain_objects": terrain_members,
+                "terrain_instances": terrain_instances,
                 "terrain_object": terrain_object.map(|object| json!({"name": sim.interner().resolve(object.type_ref()),
                     "frame": animation.map(|animation| animation.current_frame()),
                     "active": animation.map(|animation| animation.is_active())})),
@@ -4962,7 +5018,7 @@ mod tests {
         // Actual presentation composites advance this owner without any Logic
         // tick. Numeric/native goldens belong to the renderer's own tests.
         for _ in 0..14 {
-            beams.composite(60, viewport);
+            beams.composite(60, viewport, |_| true);
         }
         let draws = beams.draws().to_vec();
         assert!(!draws.is_empty());
@@ -4988,7 +5044,7 @@ mod tests {
         );
         assert_eq!(serde_json::to_value(beams.observation()).unwrap(), retained);
         assert_eq!(beams.draws(), draws.as_slice());
-        beams.composite(60, viewport);
+        beams.composite(60, viewport, |_| true);
         let expired =
             serde_json::to_value(MapRadiationBeamObservation::capture(&beams).unwrap()).unwrap();
         assert!(expired["live"].as_array().unwrap().is_empty());

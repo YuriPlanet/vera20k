@@ -18,18 +18,18 @@
 //! (1191 rows over the four classes, codes and the ordered query log);
 //! `tests::original_fire_error_rows` replays every row here.
 //!
+//! The Magnetron hold (T4/T11/T28..T31/T42), the Robot Control Center latch
+//! (T6), the Chronosphere warp latch (T15) and open-topped passengers
+//! (T32/T33) read live state (`fire_error_world.rs`).
+//!
 //! RESIDUAL rows: each is ported and fires on its field, but VERA has no
 //! producer for that field yet, so it holds the constructor value:
-//! - T4/T11/T28..T31/T42: the Magnetron hold.
-//! - T6: the Robot Control Center latch.
-//! - T15: the Chronosphere warp latch.
 //! - T18: balloon docking.
 //! - T20: EMP.
-//! - T32/T33: open-topped passengers (VERA never fires from a transport).
-//! - T37/T46: particle systems. The Sonic wave and the damage-spark system
-//!   are live; Fire's own systems are not produced: `+0x304` (`0x006FF1A7`,
-//!   UseFireParticles), `+0x308` (`0x006FF1AD`, UseSparkParticles, the IFV's
-//!   RepairBullet) and `+0x314` (railgun), so those shots rearm on ROF alone.
+//! - T37/T46: particle systems. The Sonic wave, the damage-spark system and
+//!   Fire's `+0x308` spark system (`0x006FF1AD`, UseSparkParticles, the IFV's
+//!   RepairBullet) are live; `+0x304` (`0x006FF1A7`, UseFireParticles) and
+//!   `+0x314` (railgun) are not produced, so those shots rearm on ROF alone.
 //! - Dormant in retail: T44 (FiringSyncFrame), U1 (DeathFrames),
 //!   U3 (DirectRocker), U4 (DeployToFire), U7 (MobileFire=no), I3 (Pushy).
 //! - B3: EMPulseCannon, whose cannon fires only through its superweapon.

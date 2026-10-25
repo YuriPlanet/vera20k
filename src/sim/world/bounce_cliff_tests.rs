@@ -49,7 +49,7 @@ fn native_cliff_collisions_match_full_original_bounce_update() {
         let sim = fixture(&case["input"]);
         let terrain = ResolvedBounceTerrain {
             sim: &sim,
-            rules: Some(&rules),
+            rules: &rules,
         };
         let mut state = native_body(case["initial_body_hex"].as_str().unwrap());
         let actual = state.update(&terrain).unwrap();
@@ -238,7 +238,14 @@ fn native_physical_hills_tyre_constructor_flight_and_host_retirement() {
                 "before visit{visit}"
             );
         }
-        sim.visit_voxel_anim(id, Some(rules));
+        sim.visit_voxel_anim(id, rules, crate::sim::world::FrameEffects::default());
+        sim.process_pending_delete_with(
+            rules,
+            Some(rules.overlay_registry()),
+            crate::sim::world::FrameEffects::default(),
+            1,
+            sim.session().started(),
+        );
         if let Some(row) = checkpoint {
             let registered = row["after"]["logic_registered"].as_bool().unwrap();
             assert_eq!(
@@ -346,7 +353,14 @@ fn retail_hills_harv_death_admits_a_cliff_tyre_and_retires_its_display() {
                 .voxel_anims()
                 .get(id)
                 .map(|piece| piece.bounce().clone());
-            sim.visit_voxel_anim(id, Some(rules));
+            sim.visit_voxel_anim(id, rules, crate::sim::world::FrameEffects::default());
+            sim.process_pending_delete_with(
+                rules,
+                Some(rules.overlay_registry()),
+                crate::sim::world::FrameEffects::default(),
+                1,
+                sim.session().started(),
+            );
             if let (Some(before), Some(after)) = (before, sim.voxel_anims().get(id)) {
                 let coord = before.position_leptons();
                 reflected_at_selected_cliff |= coord.x / 256 == 102

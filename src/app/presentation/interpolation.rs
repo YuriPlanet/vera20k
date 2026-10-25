@@ -35,6 +35,10 @@ pub(crate) struct RenderPose {
     pub body: u16,
     pub turret: u16,
     pub barrel: u16,
+    /// Bank direction sampled from the native SecondaryFacing owner at this
+    /// binary frame; interpolation carries the current endpoint's discrete
+    /// direction without advancing or duplicating its timer.
+    pub fly_bank_direction: Option<crate::sim::movement::facing_class::RotationDirection>,
     pub angles: [f32; 2],
     pub rocket_pitch: f32,
     pub visual_lift: f32,
@@ -64,6 +68,18 @@ pub(crate) fn body_draw_facing(entity: &GameEntity, binary_frame: u32) -> u16 {
     }
 }
 
+fn fly_bank_direction(
+    entity: &GameEntity,
+    binary_frame: u32,
+) -> Option<crate::sim::movement::facing_class::RotationDirection> {
+    entity
+        .locomotor
+        .as_ref()
+        .filter(|loco| loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Fly)
+        .and_then(|_| entity.barrel_facing.as_ref())
+        .and_then(|facing| facing.rotation_direction_at(binary_frame))
+}
+
 impl RenderPose {
     fn read(entity: &GameEntity, frame: u32) -> Self {
         let location = object_location(entity, None);
@@ -73,6 +89,7 @@ impl RenderPose {
             screen: [x, y],
             body,
             barrel: entity.barrel_elevation().current(frame),
+            fly_bank_direction: fly_bank_direction(entity, frame),
             angles: entity
                 .rocking
                 .as_ref()
@@ -585,7 +602,7 @@ pub(crate) fn prepare(state: &mut AppState, exact_capture: bool) {
         || state
             .match_state
             .presentation_paused(&state.frontend.screen)
-        || state.platform.focus_freeze_active();
+        || state.focus_freeze_active();
     let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32;
     let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
         return;
@@ -596,7 +613,10 @@ pub(crate) fn prepare(state: &mut AppState, exact_capture: bool) {
         .game_options()
         .game_speed
         .clamp(0, 6) as u8;
-    let interval = state.platform.frame_pacer.budget_ms(speed);
+    let interval = state.platform.frame_pacer.budget_ms(
+        speed,
+        crate::app::match_runtime::network_match::frame_budget(state),
+    );
     let phase = state
         .platform
         .frame_pacer
@@ -624,6 +644,7 @@ mod tests {
             body: facing,
             turret: facing,
             barrel: 0,
+            fly_bank_direction: None,
             angles: [0.; 2],
             rocket_pitch: 0.,
             visual_lift: 0.,
@@ -881,6 +902,7 @@ mod tests {
             wrench: Some(sprite()),
             rank: Some(sprite()),
             background: Some(sprite()),
+            shield_background: Some(sprite()),
             fills: vec![sprite()],
             scale: vec![sprite()],
             self_heal: Some(sprite()),
@@ -889,6 +911,7 @@ mod tests {
                 rectangles: vec![sprite()],
                 text: vec![sprite()],
             },
+            ..Default::default()
         };
         status.translate_for_interpolation([1.5, -2.0]);
         let positions: Vec<_> = status
@@ -897,6 +920,7 @@ mod tests {
             .chain(status.wrench.iter())
             .chain(status.rank.iter())
             .chain(status.background.iter())
+            .chain(status.shield_background.iter())
             .chain(status.fills.iter())
             .chain(status.scale.iter())
             .chain(status.self_heal.iter())
@@ -905,7 +929,7 @@ mod tests {
             .chain(status.talk_bubble.iter())
             .map(|instance| instance.position)
             .collect();
-        assert_eq!(positions.len(), 10);
+        assert_eq!(positions.len(), 11);
         assert!(positions.iter().all(|position| *position == [11.5, 18.0]));
     }
 
@@ -1064,9 +1088,6 @@ mod tests {
                 None,
                 old.screen[0],
                 old.screen[1],
-                0.,
-                None,
-                None,
                 Some(sim.interner()),
                 None
             ),
@@ -1080,9 +1101,6 @@ mod tests {
                 None,
                 old.screen[0],
                 old.screen[1],
-                0.,
-                None,
-                None,
                 Some(sim.interner()),
                 None
             ),

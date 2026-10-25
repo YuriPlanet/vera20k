@@ -88,11 +88,14 @@ pub(super) fn bullet_type<'r>(
 /// `[base + displacement]` operand forms via `search_instructions`) — these keys
 /// must NOT divert a shot off authoritative flight, because native never reads
 /// them in the flight loop at all:
-/// - `Bouncy=` (`+0x2A7`) has **no consumer anywhere in the binary**. The
-///   apparent hits at `0x0070D2D2`/`0x0070D2EE` are `TechnoTypeClass+0x2A7`
-///   behind `VeterancyClass::IsVeteran/IsElite`. Stock `[Lobbed]` (the dog
-///   discus) is therefore an ordinary `Arcing` shell.
-/// - `Proximity=` (`+0x29F`) likewise has no consumer; `0x00702BC0`ff. are
+/// - `Bouncy=` (`+0x2A7`) is read by `BulletTypeClass::ComputeCRC @
+///   0x0046C560` (`0x0046C632`), but the bounded direct-displacement scan found
+///   no runtime gameplay read. The apparent hits at `0x0070D2D2`/`0x0070D2EE`
+///   are `TechnoTypeClass+0x2A7` behind `VeterancyClass::IsVeteran/IsElite`.
+///   Stock `[Lobbed]` (the dog discus) is therefore an ordinary `Arcing` shell.
+/// - `Proximity=` (`+0x29F`) is likewise read by `BulletTypeClass::ComputeCRC
+///   @ 0x0046C560` (`0x0046C5C2`); the bounded direct-displacement scan found no
+///   runtime gameplay read. The apparent `0x00702BC0` hits are
 ///   `TechnoTypeClass+0x29F` behind the same veterancy pattern.
 /// - `SubjectToCliffs=` (`+0x296`) is consumed only by the AI collision probe
 ///   `FUN_00468BB0 @ 0x00468BEC`, and `SubjectToElevation=` (`+0x297`) only by
@@ -103,8 +106,8 @@ pub(super) fn bullet_type<'r>(
 ///   stock user `[ChemMissile]` has `ROT=4`.
 /// - `Degenerates=` (`+0x2A6`) IS live code — `BulletClass::AI 0x00467C86`
 ///   decrements the bullet's damage on every non-detonating frame while it
-///   exceeds 5 — but stock `rulesmd.ini` has zero users, so it is recorded and
-///   not implemented.
+///   exceeds 5. The live Bullet AI reads this flag from its retained type;
+///   unchanged stock `rulesmd.ini` has zero users, but map overrides can enable it.
 /// - `Elasticity=` (`+0x2C8`) is live in the ARM B reflection block but has
 ///   zero stock projectile users (the `[PIECE]`/`[TIRE]` hits are VoxelAnims).
 ///

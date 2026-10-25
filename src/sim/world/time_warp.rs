@@ -197,7 +197,7 @@ impl Simulation {
             let Some(coord) = coord else {
                 self.uninit_with_context(
                     created,
-                    UninitContext::new(Some(rules), overlay_registry).with_effects(frame_effects),
+                    UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
                 );
                 return false;
             };
@@ -228,7 +228,7 @@ impl Simulation {
                 // the shared owner's repeated lifecycle/queue semantics.
                 self.uninit_with_context(
                     created,
-                    UninitContext::new(Some(rules), overlay_registry).with_effects(frame_effects),
+                    UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
                 );
             }
         }

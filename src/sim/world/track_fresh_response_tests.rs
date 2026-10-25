@@ -14,8 +14,7 @@
 //!   selected Drive pre-entry wall-tilt integration.
 //! - The speed rows set flat Cell levels, the Clear and Road rows, the four
 //!   `[General]` slope keys and the Foot's health, then compare the published
-//!   target (a double natively, 16 fraction bits here; every oracle value is
-//!   dyadic).
+//!   target and applied fraction as exact native doubles.
 //! - The far_zone rows are not replayed: splitting the zone of Cell 13,10
 //!   needs a terrain rebuild of this fixture. The refusal they reach
 //!   (0x4B3A3E, SetDestination(NULL)) is the one the code-1/7 rows take.
@@ -288,7 +287,18 @@ fn expected_records(events: &Value) -> Vec<FreshCallRecord> {
 fn compare(sim: &Simulation, id: u64, row: &Value, out: bool) {
     let e = sim.substrate.entities.get(id).unwrap();
     let state = &row["state"];
-    let (destination, head, valid, selector, target) = if row["input"]["family"] == "drive" {
+    let family = if row["input"]["family"] == "drive" {
+        TrackFamily::Drive
+    } else {
+        TrackFamily::Ship
+    };
+    let target = e
+        .locomotor
+        .as_ref()
+        .unwrap()
+        .track_target_fraction_native(family)
+        .unwrap();
+    let (destination, head, valid, selector) = if family == TrackFamily::Drive {
         let d = e
             .locomotor
             .as_ref()
@@ -305,7 +315,6 @@ fn compare(sim: &Simulation, id: u64, row: &Value, out: bool) {
             d.head_to(),
             d.track_valid(),
             d.track().turn_index(),
-            d.target_speed_fraction(),
         )
     } else {
         let s = e
@@ -319,7 +328,6 @@ fn compare(sim: &Simulation, id: u64, row: &Value, out: bool) {
             s.head_to(),
             s.track_valid(),
             s.track().turn_index(),
-            s.target_speed_fraction(),
         )
     };
     let coord = |c: Option<DriveCoord>| {
@@ -378,16 +386,14 @@ fn compare(sim: &Simulation, id: u64, row: &Value, out: bool) {
     for (key, actual) in fields {
         assert_eq!(actual, state[key], "{key}: {row}");
     }
-    // Loco+50 and Foot+578 are doubles; SimFixed holds 16 fraction bits.
+    // Both authoritative owners retain the original doubles, without a
+    // fixed projection between the fresh producer and this observation.
     for (key, actual) in [
         ("target_speed", target),
-        ("applied_speed", e.foot_speed.applied_fraction()),
+        ("applied_speed", e.foot_speed.native_applied_fraction()),
     ] {
         let expected = state[key].as_f64().unwrap();
-        assert!(
-            (actual.to_num::<f64>() - expected).abs() < 1.0 / 65536.0,
-            "{key}: {actual} vs {expected}: {row}"
-        );
+        assert_eq!(actual.bits(), expected.to_bits(), "{key}: {row}");
     }
 }
 

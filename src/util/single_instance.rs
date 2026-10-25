@@ -3,7 +3,7 @@
 //! Native `WinMain` creates a named mutex before it creates a window. When the
 //! name is already taken it raises and restores the window the first copy owns,
 //! closes its own handle, logs, and returns without ever creating a second
-//! window. Two live copies would otherwise both write `RA2MD.INI` on quit —
+//! window. Two live copies would otherwise both write `VERA.INI` on quit —
 //! the coherent `[Options]`/`[Video]`/`[Audio]` profile and the `[Skirmish]`
 //! snapshot are whole-key overwrites, so the copy that quits second silently
 //! discards everything the first one saved.

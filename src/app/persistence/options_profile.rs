@@ -1,7 +1,7 @@
 //! Process-owned retail Options/Video/Audio profile transaction.
 //!
 //! This module translates the active-YR `OptionsClass` profile boundary into
-//! one ordinary Rust value. It owns exact defaults, typed `RA2MD.INI` loading,
+//! one ordinary Rust value. It owns exact defaults, typed `VERA.INI` loading,
 //! separate game-pair resolution and frontend selection, native-shaped formatting, and the one-read /
 //! one-write preservation-safe commit. Runtime consumers remain in their
 //! existing app, presentation, and audio owners.
@@ -13,7 +13,7 @@ use crate::app::frontend::startup_options::{RetailStartupOptions, ScreenSize};
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::util::ini_writer::set_ini_values;
 
-pub(crate) const RA2MD_INI_FILENAME: &str = "RA2MD.INI";
+use super::profile_file;
 
 /// How many builds one Shift-click queues when `[VERA] ShiftQueueCount=` is
 /// absent, and the inclusive bounds a configured value is clamped to.
@@ -36,6 +36,10 @@ const NETWORK_SECTION: &str = "Network";
 const VERA_SECTION: &str = "VERA";
 /// Destination units `OptionsClass__ReadFromINI` passes for NetID (`push 0xC8`).
 const NET_ID_UNITS: usize = 0xC8;
+/// Destination units `[VERA] Display=`'s ReadString copies into. A VERA key, so
+/// the capacity is ours: a device name is at most `\\.\DISPLAY` plus a few
+/// digits, and 64 leaves room for a backend that names screens differently.
+const DISPLAY_CAPACITY: usize = 64;
 const SCREEN_SIZE_UNSET: i32 = -1;
 const DEFAULT_SCREEN_WIDTH: i32 = 800;
 const DEFAULT_SCREEN_HEIGHT: i32 = 600;
@@ -45,7 +49,7 @@ pub(crate) const RETAIL_SHELL_SIZE: ScreenSize = ScreenSize {
 };
 
 /// The process-lifetime subset of active-YR `OptionsClass` owned by
-/// `RA2MD.INI` `[Options]`, `[Video]`, and `[Audio]`.
+/// `VERA.INI` `[Options]`, `[Video]`, and `[Audio]`.
 ///
 /// Signed integer and raw volume fields deliberately retain values that are
 /// unsafe or outside a current UI control's range. Consumers clamp only at
@@ -70,10 +74,11 @@ pub(crate) struct RetailOptionsProfile {
     pub(crate) screen_width: i32,
     pub(crate) screen_height: i32,
     pub(crate) stretch_movies: bool,
-    /// Read and retained, but deliberately omitted by the native writer.
+    /// Read and retained, but deliberately omitted by the native writer. The
+    /// main-menu code HIRES toggles it.
     pub(crate) allow_hi_res_modes: bool,
-    /// Native stores this outside the contiguous Options object. It remains a
-    /// read-only retained profile value here and is never serialized.
+    /// Native stores this outside the contiguous Options object. The main-menu
+    /// code TOGGLE toggles it; it is never serialized.
     pub(crate) allow_mode_toggle: bool,
     /// Read and retained, but deliberately omitted by the native writer.
     pub(crate) allow_vram_sidebar: bool,
@@ -102,7 +107,7 @@ pub(crate) struct RetailOptionsProfile {
     pub(crate) network_port: i32,
 
     // [WOnline]'s nine WOL preferences, outside OptionsClass: the same
-    // RA2MD.INI object `WOL_Main`'s reader `0x0077DED0` reads at every WOL
+    // profile object (RA2MD.INI in native) `WOL_Main`'s reader `0x0077DED0` reads at every WOL
     // entry and WOL Options' writer `0x0077DFD0` writes.
     pub(crate) wol_preferences: crate::ui::wol_options::WolPreferences,
 
@@ -127,6 +132,9 @@ pub(crate) struct RetailOptionsProfile {
     /// default, so new profiles draw the original tick-stepped motion; it never
     /// changes the simulation rate or saves.
     pub(crate) render_interpolation: bool,
+    /// `[VERA] MouseWheelZoom=`: let the mouse wheel change the battle's
+    /// view distance. Off by default; this is a local camera preference.
+    pub(crate) mouse_wheel_zoom: bool,
     /// `[VERA] ShiftQueue=`: whether a Shift-click on a mobile strip queues
     /// [`Self::shift_queue_count`] builds: the Options page's Shift-Click
     /// Batch Queue. Off by default, so Shift + left click queues one copy as
@@ -141,9 +149,23 @@ pub(crate) struct RetailOptionsProfile {
     /// service instead of showing `TXT_APIMISSING`: the Options page's
     /// developer box. Off by default; no real service exists yet.
     pub(crate) wol_test_service: bool,
+    /// `[VERA] SoloSkirmish=`: Start accepts a skirmish whose AI rows are all
+    /// `None`, for an undisturbed test match. Off by default, so retail's
+    /// "at least two players" gate stays.
+    pub(crate) solo_skirmish: bool,
+    /// `[VERA] TranslateChat=`: the language received online chat is
+    /// translated into, or `None`, the default, for off. Only the `/translate`
+    /// chat command changes it ([`Self::commit_chat_translation`]).
+    pub(crate) translate_chat: Option<crate::ui::chat_translation::ChatLanguage>,
+    /// `[VERA] Display=`: the screen the game opens on, by the window system's
+    /// own name (`\\.\DISPLAY1`). Absent or empty means the system's choice,
+    /// which is how every earlier build behaved. A name no longer attached
+    /// stays here and opens on the system's choice, like [`Self::zoom`]'s
+    /// unknown steps.
+    pub(crate) display: crate::ui::main_menu_dialogs::options::DisplayTarget,
 }
 
-/// The two process-start products obtained from one physical `RA2MD.INI`
+/// The two process-start products obtained from one physical `VERA.INI`
 /// snapshot.
 ///
 /// Native resolves the game preference after an early Video read, separately
@@ -199,9 +221,13 @@ impl Default for RetailOptionsProfile {
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
             yr_original_style: false,
             render_interpolation: false,
+            mouse_wheel_zoom: false,
             shift_queue: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             wol_test_service: false,
+            solo_skirmish: false,
+            translate_chat: None,
+            display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
         }
     }
 }
@@ -218,7 +244,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 9],
+    pub(crate) vera: [(&'static str, String); 12],
 }
 
 impl RetailOptionsLoad {
@@ -226,39 +252,39 @@ impl RetailOptionsLoad {
     ///
     /// This is used when configuration is unavailable and by sealed capture
     /// after passing exact constructor defaults instead of operator argv.
-    pub(crate) fn without_ra2md(startup: &RetailStartupOptions) -> Self {
+    pub(crate) fn without_settings(startup: &RetailStartupOptions) -> Self {
         Self::from_ini_snapshot(startup, None)
     }
 
-    /// Read and parse one physical `RA2MD.INI` snapshot, then replay native's
+    /// Read and parse one physical `VERA.INI` snapshot, then replay native's
     /// early Video-only read and later complete profile read over it.
     ///
     /// Missing/unreadable/malformed input is non-fatal and follows the same
     /// no-snapshot path. Capture callers intentionally use
-    /// [`Self::without_ra2md`] so user profile state cannot contaminate sealed
+    /// [`Self::without_settings`] so user profile state cannot contaminate sealed
     /// capture output.
-    pub(crate) fn from_ra2md(ra2_dir: &Path, startup: &RetailStartupOptions) -> Self {
-        Self::from_ra2md_with(ra2_dir, startup, |path| std::fs::read(path))
+    pub(crate) fn from_settings(ra2_dir: &Path, startup: &RetailStartupOptions) -> Self {
+        Self::from_settings_with(ra2_dir, startup, |path| std::fs::read(path))
     }
 
-    /// Injectable form of [`Self::from_ra2md`] used to prove that both
+    /// Injectable form of [`Self::from_settings`] used to prove that both
     /// semantic reads share one physical filesystem read.
-    fn from_ra2md_with<Read>(ra2_dir: &Path, startup: &RetailStartupOptions, read: Read) -> Self
+    fn from_settings_with<Read>(ra2_dir: &Path, startup: &RetailStartupOptions, read: Read) -> Self
     where
         Read: FnOnce(&Path) -> io::Result<Vec<u8>>,
     {
-        let path = ra2_dir.join(RA2MD_INI_FILENAME);
+        let path = profile_file::path(ra2_dir);
         let bytes = match read(&path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                return Self::without_ra2md(startup);
+                return Self::without_settings(startup);
             }
             Err(error) => {
                 log::warn!(
                     "Could not read {} for retail options: {error}",
                     path.display()
                 );
-                return Self::without_ra2md(startup);
+                return Self::without_settings(startup);
             }
         };
         let ini = match IniFile::from_bytes(&bytes) {
@@ -268,7 +294,7 @@ impl RetailOptionsLoad {
                     "Could not parse {} for retail options: {error}",
                     path.display()
                 );
-                return Self::without_ra2md(startup);
+                return Self::without_settings(startup);
             }
         };
         Self::from_ini_snapshot(startup, Some(&ini))
@@ -417,6 +443,7 @@ impl RetailOptionsProfile {
             self.yr_original_style = vera.read_bool("YROriginalStyle", self.yr_original_style);
             self.render_interpolation =
                 vera.read_bool("RenderInterpolation", self.render_interpolation);
+            self.mouse_wheel_zoom = vera.read_bool("MouseWheelZoom", self.mouse_wheel_zoom);
             self.shift_queue = vera.read_bool("ShiftQueue", self.shift_queue);
             // Absent keeps the current value; present-but-nonnumeric answers 0,
             // which the range lifts to 1 rather than a click that queues nothing.
@@ -424,6 +451,14 @@ impl RetailOptionsProfile {
                 vera.read_int("ShiftQueueCount", self.shift_queue_count as i32),
             );
             self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
+            self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
+            if let Some(value) = vera.read_name("TranslateChat", 16) {
+                self.translate_chat = crate::ui::chat_translation::ChatLanguage::from_tag(value);
+            }
+            if let Some(value) = vera.read_name("Display", DISPLAY_CAPACITY) {
+                self.display =
+                    crate::ui::main_menu_dialogs::options::DisplayTarget::from_ini_value(value);
+            }
         }
     }
 
@@ -433,7 +468,7 @@ impl RetailOptionsProfile {
     /// as one pair. The later full read may then reapply a present single key
     /// over this fallback for retained profile state. Explicit non-sentinel
     /// zero/negative values are retained. VERA sizes no window from the pair:
-    /// it only round-trips to RA2MD.INI.
+    /// it only round-trips to VERA.INI.
     fn resolve_screen_size(&mut self) {
         // Retail provenance: pre-window screen-pair fallback — `WinMain` @
         // `0x006BB9A0`, branch `0x006BD94A..0x006BD9B5`.
@@ -515,16 +550,22 @@ impl RetailOptionsProfile {
                     "WolTestService",
                     format_bool(self.wol_test_service).to_string(),
                 ),
+                ("SoloSkirmish", format_bool(self.solo_skirmish).to_string()),
                 (
                     "RenderInterpolation",
                     format_bool(self.render_interpolation).to_string(),
                 ),
+                (
+                    "MouseWheelZoom",
+                    format_bool(self.mouse_wheel_zoom).to_string(),
+                ),
+                ("Display", self.display.ini_value().to_owned()),
             ],
         }
     }
 
     /// Transform one raw profile snapshot without performing filesystem I/O.
-    pub(crate) fn transform_ra2md(&self, input: &[u8]) -> Vec<u8> {
+    pub(crate) fn transform_settings(&self, input: &[u8]) -> Vec<u8> {
         let formatted = self.formatted_sections();
         let output = apply_formatted_section(input, OPTIONS_SECTION, &formatted.options);
         let output = apply_formatted_section(&output, VIDEO_SECTION, &formatted.video);
@@ -551,7 +592,11 @@ impl RetailOptionsProfile {
         let output =
             crate::util::ini_writer::set_ini_byte_values(&output, NETWORK_SECTION, &network);
         let output = apply_formatted_section(&output, VERA_SECTION, &formatted.vera);
-        crate::util::ini_writer::remove_ini_keys(&output, VERA_SECTION, &["RA2Look"])
+        crate::util::ini_writer::remove_ini_keys(
+            &output,
+            VERA_SECTION,
+            &["RA2Look", "SoundDefaultsApplied"],
+        )
     }
 
     /// Commit the complete modeled profile with one read and one write.
@@ -559,36 +604,32 @@ impl RetailOptionsProfile {
     /// `NotFound` is the only read failure that permits creating a new file.
     /// Refusing to replace other unreadable inputs prevents a partial snapshot
     /// from destroying profile bytes owned by other systems.
-    pub(crate) fn commit_ra2md(&self, ra2_dir: &Path) -> io::Result<()> {
-        self.commit_ra2md_with(
-            ra2_dir,
-            |path| std::fs::read(path),
-            |path, bytes| std::fs::write(path, bytes),
-        )
+    pub(crate) fn commit_settings(&self, ra2_dir: &Path) -> io::Result<()> {
+        profile_file::update(ra2_dir, |input| self.transform_settings(input))
     }
 
     /// D7's accepted firewall settings write only these two MultiPlayer keys
     /// (NetworkOptionsDialog__DlgProc_D7 at 560480). LAN fields are written
     /// by the parent Options writer.
     pub(crate) fn commit_network_options(&self, ra2_dir: &Path) -> io::Result<()> {
-        commit_transformed_profile(
-            ra2_dir,
-            |path| std::fs::read(path),
-            |path, bytes| std::fs::write(path, bytes),
-            |input| self.transform_network_options(input),
-        )
+        profile_file::update(ra2_dir, |input| self.transform_network_options(input))
     }
 
     /// WOL Options' writer `0x0077DFD0`: the nine `[WOnline]` keys in the
     /// reader's order, `WriteInt` decimal then `WriteBool` yes/no, and then
     /// `INIClass::Save`. Every other section and key is left as it is.
     pub(crate) fn commit_wol_preferences(&self, ra2_dir: &Path) -> io::Result<()> {
-        commit_transformed_profile(
-            ra2_dir,
-            |path| std::fs::read(path),
-            |path, bytes| std::fs::write(path, bytes),
-            |input| self.transform_wol_preferences(input),
-        )
+        profile_file::update(ra2_dir, |input| self.transform_wol_preferences(input))
+    }
+
+    /// The `/translate` command's writer: `[VERA] TranslateChat=` alone.
+    pub(crate) fn commit_chat_translation(&self, ra2_dir: &Path) -> io::Result<()> {
+        profile_file::update(ra2_dir, |input| self.transform_chat_translation(input))
+    }
+
+    fn transform_chat_translation(&self, input: &[u8]) -> Vec<u8> {
+        let tag = self.translate_chat.map_or("off", |language| language.tag());
+        set_ini_values(input, VERA_SECTION, &[("TranslateChat", tag)])
     }
 
     fn transform_wol_preferences(&self, input: &[u8]) -> Vec<u8> {
@@ -621,9 +662,10 @@ impl RetailOptionsProfile {
         )
     }
 
-    /// Injectable form of [`Self::commit_ra2md`] used to verify the physical
+    /// Injectable form of [`Self::commit_settings`] used to verify the physical
     /// one-read/one-write transaction without touching a user's profile.
-    pub(crate) fn commit_ra2md_with<Read, Write>(
+    #[cfg(test)]
+    pub(crate) fn commit_settings_with<Read, Write>(
         &self,
         ra2_dir: &Path,
         read: Read,
@@ -633,23 +675,8 @@ impl RetailOptionsProfile {
         Read: FnOnce(&Path) -> io::Result<Vec<u8>>,
         Write: FnOnce(&Path, &[u8]) -> io::Result<()>,
     {
-        commit_transformed_profile(ra2_dir, read, write, |input| self.transform_ra2md(input))
+        profile_file::update_with(ra2_dir, read, write, |input| self.transform_settings(input))
     }
-}
-
-fn commit_transformed_profile(
-    ra2_dir: &Path,
-    read: impl FnOnce(&Path) -> io::Result<Vec<u8>>,
-    write: impl FnOnce(&Path, &[u8]) -> io::Result<()>,
-    transform: impl FnOnce(&[u8]) -> Vec<u8>,
-) -> io::Result<()> {
-    let path = ra2_dir.join(RA2MD_INI_FILENAME);
-    let input = match read(&path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
-        Err(error) => return Err(error),
-    };
-    write(&path, &transform(&input))
 }
 
 /// `0x0077DED0`: ReadInt `0x5276D0` for seven keys and ReadBool `0x5295F0`
@@ -844,7 +871,7 @@ mod tests {
                 .read_int("PortNumberOverride", 0),
             -1
         );
-        let parent = profile.transform_ra2md(&d7);
+        let parent = profile.transform_settings(&d7);
         let parsed = IniFile::from_bytes(&parent).unwrap();
         assert_eq!(
             parsed.section_or_empty("Network").read_int("Socket", 0),
@@ -871,7 +898,7 @@ mod tests {
             b"[Network]\nDestNet=1\xe9.2.3.4\n",
         )
         .retained_profile;
-        let output = loaded.transform_ra2md(b"[Network]\nDestNet=old\n");
+        let output = loaded.transform_settings(b"[Network]\nDestNet=old\n");
         let reloaded = load_snapshot(&RetailStartupOptions::default(), &output).retained_profile;
         assert_eq!(loaded.network_destination, "1é.2.3.4");
         assert_eq!(reloaded.network_destination, loaded.network_destination);
@@ -889,7 +916,9 @@ mod tests {
     }
 
     fn load_snapshot(startup: &RetailStartupOptions, bytes: &[u8]) -> RetailOptionsLoad {
-        RetailOptionsLoad::from_ra2md_with(Path::new("C:/retail"), startup, |_| Ok(bytes.to_vec()))
+        RetailOptionsLoad::from_settings_with(Path::new("C:/retail"), startup, |_| {
+            Ok(bytes.to_vec())
+        })
     }
 
     #[test]
@@ -1091,14 +1120,49 @@ mod tests {
     }
 
     #[test]
+    fn first_start_preserves_imported_audio_and_keeps_saved_choices() {
+        let audio = |p: &RetailOptionsProfile| {
+            (
+                p.sound_volume,
+                p.voice_volume,
+                p.score_volume,
+                p.is_score_repeat,
+                p.is_score_shuffle,
+                p.sound_latency,
+                p.in_game_music,
+            )
+        };
+        let startup = RetailStartupOptions::default();
+        // A profile the original game or an older VERA20k wrote.
+        let old = b"[Options]\nGameSpeed=5\n[Audio]\nSoundVolume=0.5\nVoiceVolume=0.6\n\
+ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoom=150\n";
+        let first = load_snapshot(&startup, old).retained_profile;
+        assert_eq!(first.sound_volume, 0.5);
+        assert_eq!(first.voice_volume, 0.6);
+        assert_eq!(first.score_volume, 0.3);
+        assert!(first.is_score_shuffle);
+        assert!(!first.in_game_music);
+        assert_eq!(first.game_speed, 5);
+
+        // Any save records it, so the player's choices survive restarts.
+        let chosen = RetailOptionsProfile {
+            sound_volume: 0.25,
+            ..first
+        };
+        let saved = chosen.transform_settings(old);
+        let second = load_snapshot(&startup, &saved).retained_profile;
+        assert_eq!(audio(&second), audio(&chosen));
+    }
+
+    #[test]
     fn width_only_snapshot_uses_fallback_window_then_rereads_retained_width() {
         let reads = Cell::new(0);
-        let load = RetailOptionsLoad::from_ra2md_with(
+        let load = RetailOptionsLoad::from_settings_with(
             Path::new("C:/retail"),
             &RetailStartupOptions::default(),
             |path| {
                 reads.set(reads.get() + 1);
-                assert_eq!(path, Path::new("C:/retail").join(RA2MD_INI_FILENAME));
+                assert_eq!(path, Path::new("C:/retail").join(profile_file::FILENAME));
                 Ok(b"[Options]\nGameSpeed=5\n[Video]\nScreenWidth=640\n".to_vec())
             },
         );
@@ -1210,9 +1274,10 @@ mod tests {
             screen_height: 768,
             ..RetailStartupOptions::default()
         };
-        let missing = RetailOptionsLoad::from_ra2md_with(Path::new("C:/retail"), &complete, |_| {
-            Err(io::Error::new(io::ErrorKind::NotFound, "missing"))
-        });
+        let missing =
+            RetailOptionsLoad::from_settings_with(Path::new("C:/retail"), &complete, |_| {
+                Err(io::Error::new(io::ErrorKind::NotFound, "missing"))
+            });
         assert_eq!(
             missing.startup_shell_screen,
             ScreenSize {
@@ -1233,7 +1298,7 @@ mod tests {
             screen_height: SCREEN_SIZE_UNSET,
             ..RetailStartupOptions::default()
         };
-        let partial = RetailOptionsLoad::without_ra2md(&partial);
+        let partial = RetailOptionsLoad::without_settings(&partial);
         assert_eq!(
             partial.startup_shell_screen,
             ScreenSize {
@@ -1289,6 +1354,8 @@ mod tests {
         assert!(!defaults.retained_profile.shift_queue);
         // Internet shows TXT_APIMISSING, as on retail, until it is ticked.
         assert!(!defaults.retained_profile.wol_test_service);
+        // The retail minimum-player gate stays until SoloSkirmish= is enabled.
+        assert!(!defaults.retained_profile.solo_skirmish);
         assert_eq!(
             defaults.retained_profile.shift_queue_count,
             DEFAULT_SHIFT_QUEUE_COUNT
@@ -1296,7 +1363,7 @@ mod tests {
 
         let load = load_snapshot(
             &RetailStartupOptions::default(),
-            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\nShiftQueue=yes\nShiftQueueCount=8\nWolTestService=yes\n",
+            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\nShiftQueue=yes\nShiftQueueCount=8\nWolTestService=yes\nSoloSkirmish=yes\n",
         );
         assert!(load.retained_profile.full_screen);
         // The first release saved the whole factor.
@@ -1306,6 +1373,7 @@ mod tests {
         assert!(!load.retained_profile.yr_original_style);
         assert!(load.retained_profile.shift_queue);
         assert!(load.retained_profile.wol_test_service);
+        assert!(load.retained_profile.solo_skirmish);
         assert_eq!(load.retained_profile.shift_queue_count, 8);
         // A value this build doesn't know reads as Auto.
         let unknown = load_snapshot(&RetailStartupOptions::default(), b"[VERA]\nZoom=9\n");
@@ -1320,13 +1388,15 @@ mod tests {
             shift_queue: true,
             shift_queue_count: 7,
             wol_test_service: true,
+            solo_skirmish: true,
             ..RetailOptionsProfile::default()
         };
         let output =
-            String::from_utf8(profile.transform_ra2md(b"[Video]\r\nScreenWidth=800\r\n")).unwrap();
+            String::from_utf8(profile.transform_settings(b"[Video]\r\nScreenWidth=800\r\n"))
+                .unwrap();
         assert!(
             output.contains(
-                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nYROriginalStyle=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\n"
+                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nYROriginalStyle=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\nSoloSkirmish=yes\r\n"
             ),
             "{output}"
         );
@@ -1338,7 +1408,108 @@ mod tests {
         assert!(reread.retained_profile.yr_original_style);
         assert!(reread.retained_profile.shift_queue);
         assert!(reread.retained_profile.wol_test_service);
+        assert!(reread.retained_profile.solo_skirmish);
         assert_eq!(reread.retained_profile.shift_queue_count, 7);
+    }
+
+    #[test]
+    fn chat_translation_writes_only_its_own_key_and_reads_back() {
+        use crate::ui::chat_translation::ChatLanguage;
+        let startup = RetailStartupOptions::default();
+        let profile = RetailOptionsProfile {
+            translate_chat: Some(ChatLanguage::SimplifiedChinese),
+            ..RetailOptionsProfile::default()
+        };
+        let output = profile.transform_chat_translation(b"[VERA]\r\nZoom=150\r\n");
+        let text = String::from_utf8(output.clone()).unwrap();
+        assert!(
+            text.contains("Zoom=150") && text.contains("TranslateChat=zh-Hans"),
+            "{text}"
+        );
+        let reread = load_snapshot(&startup, &output);
+        assert_eq!(
+            reread.retained_profile.translate_chat,
+            Some(ChatLanguage::SimplifiedChinese)
+        );
+        let off = RetailOptionsProfile::default().transform_chat_translation(&output);
+        assert_eq!(
+            load_snapshot(&startup, &off)
+                .retained_profile
+                .translate_chat,
+            None
+        );
+    }
+
+    #[test]
+    fn display_preference_round_trips_through_the_vera_section() {
+        use crate::ui::main_menu_dialogs::options::DisplayTarget;
+        let startup = RetailStartupOptions::default();
+        // Absent and empty both mean Auto: the system chooses, as every
+        // earlier build did.
+        for input in [
+            b"".as_slice(),
+            b"[VERA]\n".as_slice(),
+            b"[VERA]\nDisplay=\n".as_slice(),
+        ] {
+            assert_eq!(
+                load_snapshot(&startup, input).retained_profile.display,
+                DisplayTarget::Auto
+            );
+        }
+        // A named screen survives a restart even when it is unplugged now; the
+        // window layer falls back at use, never at read.
+        let named = load_snapshot(&startup, b"[VERA]\nDisplay=\\\\.\\DISPLAY2\n");
+        assert_eq!(
+            named.retained_profile.display,
+            DisplayTarget::Fixed("\\\\.\\DISPLAY2".to_owned())
+        );
+        // The writer emits the key in the VERA block, and a re-read agrees.
+        let profile = RetailOptionsProfile {
+            display: DisplayTarget::Fixed("\\\\.\\DISPLAY1".to_owned()),
+            ..RetailOptionsProfile::default()
+        };
+        let output = profile.transform_settings(b"[Video]\r\nScreenWidth=800\r\n");
+        assert!(
+            String::from_utf8_lossy(&output).contains("Display=\\\\.\\DISPLAY1\r\n"),
+            "{}",
+            String::from_utf8_lossy(&output)
+        );
+        assert_eq!(
+            load_snapshot(&startup, &output).retained_profile.display,
+            DisplayTarget::Fixed("\\\\.\\DISPLAY1".to_owned())
+        );
+        // Auto writes an empty value, which reads back as Auto.
+        let auto = RetailOptionsProfile::default()
+            .transform_settings(b"[VERA]\nDisplay=\\\\.\\DISPLAY1\n");
+        assert_eq!(
+            load_snapshot(&startup, &auto).retained_profile.display,
+            DisplayTarget::Auto
+        );
+    }
+
+    #[test]
+    fn mouse_wheel_zoom_preference_round_trips_in_the_existing_vera_section() {
+        let startup = RetailStartupOptions::default();
+        assert!(
+            !load_snapshot(&startup, b"")
+                .retained_profile
+                .mouse_wheel_zoom
+        );
+        let input = b"[VERA]\nMouseWheelZoom=yes\nRenderInterpolation=no\nUnowned=keep\n";
+        let mut profile = load_snapshot(&startup, input).retained_profile;
+        assert!(profile.mouse_wheel_zoom);
+        let written = profile.transform_settings(input);
+        assert!(
+            load_snapshot(&startup, &written)
+                .retained_profile
+                .mouse_wheel_zoom
+        );
+        profile.mouse_wheel_zoom = false;
+        let written = profile.transform_settings(&written);
+        let reloaded = load_snapshot(&startup, &written).retained_profile;
+        assert!(!reloaded.mouse_wheel_zoom);
+        assert!(!reloaded.render_interpolation);
+        assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
     }
 
     #[test]
@@ -1353,7 +1524,7 @@ mod tests {
             let input = format!("[VERA]\nRenderInterpolation={value}\nUnowned=keep\n");
             let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
             assert_eq!(profile.render_interpolation, expected);
-            let written = profile.transform_ra2md(input.as_bytes());
+            let written = profile.transform_settings(input.as_bytes());
             assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
             assert_eq!(
                 load_snapshot(&startup, &written)
@@ -1377,7 +1548,7 @@ mod tests {
                 let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
                 assert_eq!(profile.yr_original_style, style);
                 assert_eq!(profile.render_interpolation, interpolation);
-                let written = profile.transform_ra2md(input.as_bytes());
+                let written = profile.transform_settings(input.as_bytes());
                 let text = String::from_utf8_lossy(&written);
                 assert!(!text.contains("RA2Look="));
                 assert!(text.contains("Unowned=keep"));
@@ -1424,7 +1595,7 @@ mod tests {
             ..RetailOptionsProfile::default()
         };
         let input = b"[VERA]\r\n; retain this comment\r\nFullScreen=yes\r\nRA2Look=no ; remove this whole line\r\nUnknownSetting=keep\r\n[other]\nRA2Look=keep in another section\n[vera]\nra2look=yes\nShiftQueue=yes";
-        let output = String::from_utf8(profile.transform_ra2md(input)).unwrap();
+        let output = String::from_utf8(profile.transform_settings(input)).unwrap();
 
         assert_eq!(output.matches("RA2Look=").count(), 1, "{output}");
         assert!(!output.contains("ra2look="), "{output}");
@@ -1564,16 +1735,16 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
         let root = Path::new("C:/retail");
 
         profile
-            .commit_ra2md_with(
+            .commit_settings_with(
                 root,
                 |path| {
                     reads.set(reads.get() + 1);
-                    assert_eq!(path, root.join(RA2MD_INI_FILENAME));
+                    assert_eq!(path, root.join(profile_file::FILENAME));
                     Ok(input.to_vec())
                 },
                 |path, bytes| {
                     writes.set(writes.get() + 1);
-                    assert_eq!(path, root.join(RA2MD_INI_FILENAME));
+                    assert_eq!(path, root.join(profile_file::FILENAME));
                     written.replace(Some(bytes.to_vec()));
                     Ok(())
                 },
@@ -1653,7 +1824,7 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
     #[test]
     fn unreadable_existing_profile_aborts_without_a_write() {
         let writes = Cell::new(0);
-        let result = RetailOptionsProfile::default().commit_ra2md_with(
+        let result = RetailOptionsProfile::default().commit_settings_with(
             Path::new("C:/retail"),
             |_| Err(io::Error::new(io::ErrorKind::PermissionDenied, "locked")),
             |_, _| {
@@ -1670,7 +1841,7 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
         let writes = Cell::new(0);
         let written = RefCell::new(Vec::new());
         RetailOptionsProfile::default()
-            .commit_ra2md_with(
+            .commit_settings_with(
                 Path::new("C:/retail"),
                 |_| Err(io::Error::new(io::ErrorKind::NotFound, "missing")),
                 |_, bytes| {

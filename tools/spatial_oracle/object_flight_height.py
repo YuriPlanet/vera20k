@@ -8,7 +8,7 @@ import hashlib,struct
 from pathlib import Path
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX,UC_X86_REG_ESP
-from tools.native_oracle import NATIVE_SHA256,finish_vectors,provenance
+from tools.native_oracle import finish_vectors,provenance
 from tools.projectile_oracle.ifv_fire_coord import prepare
 from tools.spatial_oracle.building_body_rules import dwords
 
@@ -54,7 +54,7 @@ def generate():
   finally:u.hook_del(h)
   assert m.read32(scenario+0x214)==cursor and bytes(u.mem_read(scenario+0x218,0x3F4))==rng
   rows.append(dict(input=case,height=height,low_flying=low,high_flying=high,height_queries=height_queries,low_queries=low_queries,high_queries=high_queries,dummy_xy=list(struct.unpack('<2h',u.mem_read(0xABDC50+0x24,4)))))
- return dict(native_sha256=NATIVE_SHA256,object_initializers=[f'{a:08x}'for a in initializers],height_globals={f'{a:08x}':m.read32(a)for a in(0xAC13C8,0xAC13BC)},rows=rows)
+ return dict(object_initializers=[f'{a:08x}'for a in initializers],height_globals={f'{a:08x}':m.read32(a)for a in(0xAC13C8,0xAC13BC)},rows=rows)
 
 def metadata():return provenance(scope=__doc__,entry_points={'object_crt_table':0x8141D8,'object_get_height':0x5F5F40,'map_floor':0x578080,'low_flying':0x5F6B60,'high_flying':0x5F6B90},assumptions=['24 controls:marked0/1,OnBridge0/1,relativeheights-1/0/207/208/209; two livegroundlevelchanges and two missing-cell cases.','Unit pose/lifecycle and sparse flat level6/7 cells are supplied. Original Object translation-unit14CRT entries execute; no native world loading/admission.','Direct GetHeight then low then high execute independently on unchanged object/terrain. Recorded query lists establish markedfalse skips GetHeight for low/high.','Uses native Map578080 and original Cell ground calculation; liveflags supplied100. No native bridge destruction/repair or aircraft/jumpjet virtual override claim.'],substitutions=['Preparation inherits selected physical FV/weapon INI caches and allocation boundaries. Claimed getter bodies execute unchanged without substituted calls.'])
 if __name__=='__main__':finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=metadata)

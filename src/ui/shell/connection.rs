@@ -17,7 +17,7 @@ use super::geom::{self, RectPx};
 use super::in_game_shell::{self, InGameShellLayout};
 use crate::ui::lan_shell::{LanChatLine, LanListState};
 
-/// Rows the dialog has, one per connection node (local player first).
+/// Physical row slots. VERA pages the complete local-first node snapshot.
 pub const CONNECTION_ROWS: usize = 8;
 
 /// Row button ids by row (table 0x00837300). The template swaps 0x641 and
@@ -47,12 +47,16 @@ pub enum ConnectionButton {
     /// Row button `0x640..0x647`: propose removing that player
     /// (0x0064AAE0).
     Player(usize),
+    PreviousPage,
+    NextPage,
 }
 
 /// A child the pointer can rest on, for the status-line help.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionControl {
     Quit,
+    PreviousPage,
+    NextPage,
     Player(usize),
     Bar(usize),
     Countdown,
@@ -64,6 +68,7 @@ impl ConnectionControl {
     pub fn help_key(self) -> &'static str {
         match self {
             Self::Quit => "STT:ReconnectButtonLeaveGame",
+            Self::PreviousPage | Self::NextPage => "",
             Self::Player(_) => "STT:ReconnectButtonPlayer",
             Self::Bar(_) => "STT:ReconnectProgressPlayer",
             Self::Countdown => "STT:ReconnectLabelTime",
@@ -75,6 +80,8 @@ impl ConnectionControl {
     pub fn id(self) -> u16 {
         match self {
             Self::Quit => 0x2,
+            Self::PreviousPage => 0xF201,
+            Self::NextPage => 0xF202,
             Self::Player(row) => PLAYER_IDS[row],
             Self::Bar(row) => BAR_IDS[row],
             Self::Countdown => 0x650,
@@ -85,6 +92,8 @@ impl ConnectionControl {
     fn button(self) -> Option<ConnectionButton> {
         match self {
             Self::Quit => Some(ConnectionButton::Quit),
+            Self::PreviousPage => Some(ConnectionButton::PreviousPage),
+            Self::NextPage => Some(ConnectionButton::NextPage),
             Self::Player(row) => Some(ConnectionButton::Player(row)),
             Self::Bar(_) | Self::Countdown | Self::List => None,
         }
@@ -95,6 +104,7 @@ impl ConnectionControl {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConnectionLayout {
     pub quit: RectPx,
+    pub paging: [RectPx; 2],
     pub status_line: RectPx,
     pub players: [RectPx; CONNECTION_ROWS],
     pub bars: [RectPx; CONNECTION_ROWS],
@@ -117,6 +127,7 @@ pub fn connection_layout(
     };
     ConnectionLayout {
         quit: shell.lower_button_rect(width, button_size),
+        paging: super::paging::button_rects(shell.lower_button_rect(width, button_size)),
         status_line: in_game_shell::status_line_rect(height),
         players: std::array::from_fn(|row| ordinary(player_dlu(row))),
         bars: std::array::from_fn(|row| ordinary(bar_dlu(row))),
@@ -138,6 +149,8 @@ impl ConnectionLayout {
     pub fn control_rect(&self, control: ConnectionControl) -> RectPx {
         match control {
             ConnectionControl::Quit => self.quit,
+            ConnectionControl::PreviousPage => self.paging[0],
+            ConnectionControl::NextPage => self.paging[1],
             ConnectionControl::Player(row) => self.players[row],
             ConnectionControl::Bar(row) => self.bars[row],
             ConnectionControl::Countdown => self.countdown,
@@ -159,8 +172,9 @@ pub struct BarPaint {
 }
 
 /// 0x0064A7B0 for one row. `lag` is the record's age in 16 ms buckets
-/// (`[0x00AFA418]` less the record's last-received bucket; row 0 is 0) and
-/// `age_ticks` the record's millisecond age ×60/1000. Green up to 240,
+/// (`[0x00AFA418]` less peer+C, the elapsed bucket at its latest FrameSync;
+/// row 0 is 0). `age_ticks` is the raw millisecond difference from peer+14,
+/// multiplied by 60 with u32 wrapping before division by 1000. Green up to 240,
 /// yellow up to 480, then red, or blue (with the age as the lag) while the
 /// age is under 420. The fill keeps `100 − lag·100/1200` percent of the
 /// width, at least 6 pixels, inset by 2.
@@ -188,12 +202,22 @@ pub fn bar_paint(rect: RectPx, lag: u32, age_ticks: u32) -> BarPaint {
     }
 }
 
+/// A named node bound at dialog creation. VERA keeps its stable source index
+/// with the retail name snapshot so disconnects cannot retarget a row button.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ConnectionRow {
+    pub(crate) source_index: usize,
+    pub(crate) name: String,
+}
+
 /// Pointer state and the list while 0xEA is open. The row names are fixed
 /// at the init arm (0x497): row `i < nodeCount` shows node `i`'s name, the
 /// rest are destroyed.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ConnectionPage {
-    pub(crate) rows: Vec<String>,
+    pub(crate) rows: Vec<ConnectionRow>,
+    /// VERA's viewport; rows remain the wait owner's complete snapshot.
+    pub(crate) page: super::paging::RowPage,
     /// Static 0x650 after its first `TXT_TIME_ALLOWED` write.
     pub(crate) countdown: Option<String>,
     /// List 0x651.
@@ -207,6 +231,25 @@ pub(crate) struct ConnectionPage {
 }
 
 impl ConnectionPage {
+    pub fn row_source(&self, row: usize) -> Option<usize> {
+        self.rows.get(row).map(|row| row.source_index)
+    }
+
+    pub fn visible_range(&self) -> std::ops::Range<usize> {
+        self.page.range(self.rows.len(), CONNECTION_ROWS)
+    }
+    pub fn page_count(&self) -> usize {
+        super::paging::RowPage::count(self.rows.len(), CONNECTION_ROWS)
+    }
+    pub fn change_page(&mut self, next: bool) -> bool {
+        let changed = self.page.change(next, self.rows.len(), CONNECTION_ROWS);
+        if changed {
+            self.buttons = Default::default();
+            self.hovered = None;
+        }
+        changed
+    }
+
     /// The visible child under a pointer, in template order (Quit, list,
     /// row buttons, bars, countdown), as `ChildWindowFromPointEx` finds it.
     pub fn control_at(
@@ -215,9 +258,15 @@ impl ConnectionPage {
         x: i32,
         y: i32,
     ) -> Option<ConnectionControl> {
-        let rows = self.rows.len().min(CONNECTION_ROWS);
+        let rows = self.visible_range().len();
         [ConnectionControl::Quit, ConnectionControl::List]
             .into_iter()
+            .chain(
+                (self.page_count() > 1)
+                    .then_some([ConnectionControl::PreviousPage, ConnectionControl::NextPage])
+                    .into_iter()
+                    .flatten(),
+            )
             .chain(TEMPLATE_PLAYER_ORDER.iter().filter_map(|id| {
                 PLAYER_IDS
                     .iter()
@@ -233,7 +282,12 @@ impl ConnectionPage {
     /// The button a control is, for capture.
     pub fn button_at(&self, layout: &ConnectionLayout, x: i32, y: i32) -> Option<ConnectionButton> {
         self.control_at(layout, x, y)
-            .and_then(ConnectionControl::button)
+            .and_then(|control| match control {
+                ConnectionControl::Player(visible) => Some(ConnectionButton::Player(
+                    self.visible_range().start + visible,
+                )),
+                other => other.button(),
+            })
     }
 
     /// The tail of 0x0064AAE0 / 0x0064AD10 after their line: keep at most
@@ -339,7 +393,16 @@ mod tests {
     fn row_buttons_follow_the_swapped_id_table_and_absent_rows_take_no_pointer() {
         let layout = connection_layout(800, 600, shell(800, 600), [125, 25]);
         let page = ConnectionPage {
-            rows: vec!["a".into(), "b".into()],
+            rows: vec![
+                ConnectionRow {
+                    source_index: 4,
+                    name: "a".into(),
+                },
+                ConnectionRow {
+                    source_index: 7,
+                    name: "b".into(),
+                },
+            ],
             ..Default::default()
         };
         let row1 = layout.players[1];
@@ -348,31 +411,92 @@ mod tests {
             Some(ConnectionControl::Player(1))
         );
         assert_eq!(ConnectionControl::Player(1).id(), 0x642);
+        assert_eq!(page.row_source(1), Some(7));
         let row2 = layout.players[2];
         assert_eq!(page.control_at(&layout, row2.x + 1, row2.y + 1), None);
         let bar2 = layout.bars[2];
         assert_eq!(page.control_at(&layout, bar2.x + 1, bar2.y + 1), None);
+        let mut page = ConnectionPage {
+            rows: (0..30)
+                .map(|row| ConnectionRow {
+                    source_index: 29 - row,
+                    name: row.to_string(),
+                })
+                .collect(),
+            ..Default::default()
+        };
+        assert!(page.change_page(true));
+        let first = layout.players[0];
+        assert_eq!(
+            page.button_at(&layout, first.x + 1, first.y + 1),
+            Some(ConnectionButton::Player(8))
+        );
+        assert_eq!(page.row_source(8), Some(21));
+        assert!(page.change_page(true));
+        assert!(page.change_page(true));
+        assert_eq!(page.visible_range(), 24..30);
     }
 
-    /// 0x0064A7B0's colour bands, the 1200-bucket empty point and the
-    /// 6-pixel floor.
+    /// Complete64A7B0 supplied both rows' original fill geometry and RGB565
+    /// colors. Cases cover timing bands, the blue threshold and wrapping
+    /// products; the format owner converts our RGB output for comparison.
     #[test]
-    fn bars_shrink_with_lag_and_change_colour_at_the_native_bands() {
-        let rect = RectPx::new(296, 80, 233, 23);
-        let full = bar_paint(rect, 0, 0);
-        assert_eq!(full.fill, RectPx::new(298, 82, 229, 19));
-        assert_eq!(full.fill_rgb, [0, 200, 0]);
-        assert_eq!(full.outline, rect);
-        assert_eq!(bar_paint(rect, 240, 1000).fill_rgb, [0, 200, 0]);
-        let yellow = bar_paint(rect, 420, 1000);
-        assert_eq!(yellow.fill_rgb, [200, 200, 0]);
-        assert_eq!(yellow.fill.w, 233 * 65 / 100 - 4);
-        assert_eq!(bar_paint(rect, 481, 1000).fill_rgb, [200, 0, 0]);
-        let blue = bar_paint(rect, 600, 120);
-        assert_eq!(blue.fill_rgb, [0, 0, 200]);
-        assert_eq!(blue.fill.w, 233 * 90 / 100 - 4);
-        assert_eq!(bar_paint(rect, 1200, 1000).fill.w, 2);
-        assert_eq!(bar_paint(rect, 5000, 1000).fill.w, 2);
+    fn bars_match_executed_native_timing_and_paint() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/lan_wait_bars.json",
+        ))
+        .unwrap();
+        let cases = corpus["cases"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let paint = case["paint"].as_array().unwrap();
+            for row_index in 0..2_u64 {
+                let row_key = row_index.to_string();
+                let native = &case["rows"][row_key.as_str()];
+                let outline = paint
+                    .iter()
+                    .find(|entry| {
+                        entry["row"].as_u64() == Some(row_index) && entry["operation"] == "outline"
+                    })
+                    .unwrap();
+                let fill = paint
+                    .iter()
+                    .find(|entry| {
+                        entry["row"].as_u64() == Some(row_index) && entry["operation"] == "fill"
+                    })
+                    .unwrap();
+                let rect = &outline["rect"];
+                let rect = RectPx::new(
+                    rect[0].as_i64().unwrap() as i32,
+                    rect[1].as_i64().unwrap() as i32,
+                    rect[2].as_i64().unwrap() as i32,
+                    rect[3].as_i64().unwrap() as i32,
+                );
+                // Native does not sample raw time for green/yellow bands;
+                // age is unused there, so zero is an arbitrary input only.
+                let age_ticks = native["age_ticks"].as_u64().unwrap_or(0) as u32;
+                let actual = bar_paint(rect, native["lag"].as_u64().unwrap() as u32, age_ticks);
+                assert_eq!(
+                    actual.outline, rect,
+                    "{} row {row_index}",
+                    case["input"]["name"]
+                );
+                assert_eq!(
+                    serde_json::json!([actual.fill.x, actual.fill.y, actual.fill.w, actual.fill.h]),
+                    fill["rect"],
+                    "{} row {row_index}",
+                    case["input"]["name"]
+                );
+                assert_eq!(
+                    u64::from(
+                        crate::render::native_surface_format::RGB565.pack_rgb8(actual.fill_rgb)
+                    ),
+                    fill["color"].as_u64().unwrap(),
+                    "{} row {row_index}",
+                    case["input"]["name"]
+                );
+            }
+        }
     }
 
     #[test]

@@ -177,6 +177,7 @@ mod tests {
                     ("HOST".to_owned(), 0, "RUNTIME".to_owned()),
                     ("HOST".to_owned(), 2, "THIRD".to_owned()),
                 ],
+                [],
             )
             .unwrap();
         assert!(
@@ -187,6 +188,7 @@ mod tests {
                         ("HOST".to_owned(), 0, "INVALID".to_owned()),
                         ("HOST".to_owned(), 3, "INVALID".to_owned())
                     ],
+                    [],
                 )
                 .is_err()
         );

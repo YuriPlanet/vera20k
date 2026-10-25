@@ -181,3 +181,45 @@ fn a_bunkered_unit_offers_deploy_over_itself() {
         );
     }
 }
+
+/// The player's lone selected Gap Generator offers Deploy over itself only
+/// while its House's power surplus exceeds the type's extra drain
+/// (`ExtraPower=-9000`, Building What_Action `0x004472B4..0x004472E1`);
+/// the click sends the Unload its ClickedAction queues (`0x00443514`).
+#[test]
+fn a_gap_generator_offers_its_supercharge_only_above_the_extra_drain() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = arena(rules);
+    let gap = sim
+        .spawn_object("GAGAP", "Americans", 16, 26, 0, rules)
+        .expect("gap generator");
+    for x in [1, 6, 11, 16, 21] {
+        sim.spawn_object("NANRCT", "Americans", x, 2, 0, rules)
+            .expect("reactor");
+    }
+    let settle = |sim: &mut Simulation| {
+        for _ in 0..4 {
+            sim.advance_tick(&[], Some(rules), None, None, 33);
+        }
+    };
+    settle(&mut sim);
+    assert_eq!(
+        self_click(&sim, rules, gap, HoverTargetKind::FriendlyStructure, false),
+        (
+            CursorFeedbackKind::Deploy,
+            Some(Command::UnloadPassengers { transport_id: gap })
+        )
+    );
+    // The retained totals (House+53A4/+53A8) the rung reads: 9100 - 100.
+    let owner = sim.interner().get("Americans").unwrap();
+    sim.power_states_mut_for_test()
+        .get_mut(&owner)
+        .unwrap()
+        .set_total_output_for_test(9100);
+    let (cursor, command) = self_click(&sim, rules, gap, HoverTargetKind::FriendlyStructure, false);
+    assert_ne!(cursor, CursorFeedbackKind::Deploy);
+    assert_eq!(command, None, "a 9000 surplus is not above the extra drain");
+}

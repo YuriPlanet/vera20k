@@ -232,65 +232,87 @@ fn tactical_world_tip_text_sampled(
         Some(view.interner().resolve(viewer)),
         world.0,
         world.1,
-        crate::app::input::dispatch::CLICK_SELECT_RADIUS,
-        Some(rules),
-        Some(sim.houses()),
         Some(view.interner()),
         Some(terrain),
     );
     let Some(entity) = picked.and_then(|id| view.entities().get(id)) else {
         return String::new();
     };
-    // Display4AE616's local-owned arm reaches virtual+90 directly.
-    // Building459ED0 returns Type+60. Infantry51F2C0's ordinary arm does too:
-    // ownerHouse4F9A50(currentHouse) is true for identity even when disguised.
-    // Source: `tools.native_inspect disasm 0x51F2C0 --bytes 0x65`.
-    // Residual: Nominal crew's runtime+6D9 is not represented (crew_survival);
-    // its earlier TXT_TECHNICIAN return requires the shared crew/House-count
-    // mechanism. This covers constructor-default own infantry, including E2.
-    let own = entity.owner() == viewer;
-    if !own && entity.category() != EntityCategory::Unit {
-        return String::new();
-    }
     let Some(object) = rules.object(view.interner().resolve(entity.type_ref())) else {
         return String::new();
     };
-    //4AE616..4AE666 repeats admission on the chosen object. On this Unit
-    // anchor path the shared picker already checked cloak/sensors. TypeInvisible
+    // DisplayClass tactical tooltip @0x004AE4F0 (4AE616..4AE672) repeats admission
+    // on the chosen object, then calls virtual+90 for every Techno category.
+    // The shared picker already checked cloak/sensors. TypeInvisible
     // refuses that winner; never pick another object behind it.
     // The bypass reads retained Techno+41A, not a human/control/alliance flag.
     if !entity.discovery.owned_by_current_house() && object.invisible {
         return String::new();
     }
     match entity.category() {
+        // InfantryClass::GetUIName @0x0051F2C0: the shared crew marker
+        // takes precedence over disguise. Type.Nominal alone does not.
+        EntityCategory::Infantry if entity.is_nominal_survivor() => {
+            return csf.map_or_else(
+                || "TXT_TECHNICIAN".to_owned(),
+                |csf| csf.text("TXT_TECHNICIAN").into_owned(),
+            );
+        }
+        // Infantry51F2E5..51F319 uses raw IsDisguised(+C4), then the
+        // OWNER's IsAlliedWith(PlayerPtr) @4F9A50, not IsDisguisedTo(+C8).
+        // GetDisguise(1) @522640 supplies a default when retained +518 is null.
+        // Source: `tools.native_inspect disasm 0x51F2C0 --bytes 0x65`.
+        EntityCategory::Infantry
+            if entity.disguise.as_ref().is_some_and(|d| d.is_disguised())
+                && !crate::sim::combat::combat_weapon::is_ally_by_object(
+                    Some(sim.house_alliances()),
+                    view.interner(),
+                    entity.owner(),
+                    viewer,
+                ) =>
+        {
+            return sim
+                .forced_disguise_type(entity.stable_id(), rules)
+                .and_then(|kind| rules.object(view.interner().resolve(kind)))
+                .map_or_else(String::new, |disguise| {
+                    crate::assets::csf_file::type_ui_name(disguise.ui_name.as_deref(), csf)
+                });
+        }
+        // BuildingClass::GetUIName @459ED0 returns actual Type+60.
         EntityCategory::Structure | EntityCategory::Infantry => {}
         // Aircraft41C1D0 returns its actual Type+60 directly, without a
         // disguise, dock or flight-state name branch. Keep the same picker
         // and exact-Z projection owner for grounded and flying aircraft.
         // Source: `tools.native_inspect disasm 0x41C1D0 --bytes 0xA`.
         EntityCategory::Aircraft => {}
-        // Unit746B20 first asks746750's canonical observer-disguise +C8.
-        // Native then names the disguise, or nothing when its house is null;
-        // the one retail disguised Unit, a Mirage worn as terrain, has none.
-        // A disguise with a house (no retail Unit) keeps this empty residual.
-        // Source: `tools.native_inspect disasm 0x746B20 --bytes 0x165`.
-        EntityCategory::Unit
+        EntityCategory::Unit => {
+            // UnitClass::GetUIName @746B20..746B6A first asks +C8.
+            // A null disguise TYPE falls through to the actual name; a
+            // nonnull type with null HOUSE (a Mirage as terrain) returns null.
+            // Source: `tools.native_inspect disasm 0x746B20 --bytes 0x165`.
             if entity.is_disguised_to(
                 viewer,
                 Some(view.fog()),
                 Some(sim.house_alliances()),
                 view.interner(),
-            ) =>
-        {
-            return String::new();
+            ) && let Some(kind) = sim.forced_disguise_type(entity.stable_id(), rules)
+            {
+                if entity.disguise_house(true, Some(viewer), false).is_none() {
+                    return String::new();
+                }
+                return rules.object(view.interner().resolve(kind)).map_or_else(
+                    String::new,
+                    |disguise| {
+                        crate::assets::csf_file::type_ui_name(disguise.ui_name.as_deref(), csf)
+                    },
+                );
+            }
+            //746B6B..746C84: TurretCount>0 and HasTurretTooltips select
+            // the formatter; otherwise actual Type+60 (HTNK, SREF, YTNK).
+            if object.turret_count > 0 && object.has_turret_tooltips {
+                return unit_turret_tip_text(&view, rules, entity, object, csf);
+            }
         }
-        // `0x00746B6C..0x00746B82`: TurretCount > 0 (70DC60 -> 717880) with
-        // HasTurretTooltips (70DC50, Type+0x806) takes the turret formatter;
-        // otherwise actual Type+60, as for HTNK, SREF and YTNK.
-        EntityCategory::Unit if object.turret_count > 0 && object.has_turret_tooltips => {
-            return unit_turret_tip_text(&view, rules, entity, object, csf);
-        }
-        EntityCategory::Unit => {}
     }
     crate::assets::csf_file::type_ui_name(object.ui_name.as_deref(), csf)
 }
@@ -834,6 +856,57 @@ mod tests {
     }
 
     #[test]
+    fn nominal_survivor_tip_uses_shared_runtime_marker() {
+        let patch =
+            crate::rules::ini_parser::IniFile::from_str("[CTECH]\nNominal=yes\nUIName=Name:E2\n");
+        let Some(MappedTipFixture {
+            mut runtime,
+            csf,
+            entity_id,
+            world,
+        }) = mapped_tip_fixture("CTECH", "Russians", "Russians", Some(&patch))
+        else {
+            return;
+        };
+        assert!(runtime.resources.rules.object("CTECH").unwrap().nominal());
+        let normal = tactical_world_tip_text(
+            runtime.view(),
+            &runtime.resources.rules,
+            Some(&csf),
+            world,
+            false,
+        );
+        let technician = csf.text("TXT_TECHNICIAN").into_owned();
+        assert_eq!(normal, csf.text("Name:E2"));
+        assert_ne!(
+            normal, technician,
+            "the two physical labels must distinguish the arms"
+        );
+        runtime
+            .simulation
+            .entities_mut_for_test()
+            .get_mut(entity_id)
+            .unwrap()
+            .mark_nominal_survivor_for_test();
+        let hash = runtime.simulation.state_hash();
+        assert_eq!(
+            tactical_world_tip_text(
+                runtime.view(),
+                &runtime.resources.rules,
+                Some(&csf),
+                world,
+                false,
+            ),
+            technician
+        );
+        assert_eq!(
+            runtime.simulation.state_hash(),
+            hash,
+            "UI lookup is read-only"
+        );
+    }
+
+    #[test]
     fn mapped_own_rhino_tip_uses_retail_ui_name_and_clears_after_limbo() {
         assert_mapped_tip_uses_retail_ui_name_and_clears_after_limbo(
             "HTNK",
@@ -871,6 +944,104 @@ mod tests {
             "Russians",
             "Unit746B20 TurretCount>0 without HasTurretTooltips",
         );
+    }
+
+    #[test]
+    fn mapped_nonlocal_objects_show_their_retail_names() {
+        for (kind, owner) in [
+            ("NAPOWR", "Russians"),
+            ("E2", "Russians"),
+            ("ORCA", "Russians"),
+            ("CAHOSP", "Neutral"),
+            ("CIV1", "Civilian"),
+        ] {
+            assert_mapped_tip_uses_retail_ui_name_and_clears_after_limbo(
+                kind,
+                owner,
+                "British",
+                "Display4AE66C virtual GetUIName",
+            );
+        }
+    }
+
+    #[test]
+    fn infantry_tip_uses_raw_disguise_and_the_owners_directional_alliance() {
+        let Some(mut fixture) = mapped_tip_fixture("SPY", "Russians", "British", None) else {
+            return;
+        };
+        let sim = &mut fixture.runtime.simulation;
+        let worn = sim.intern("E2");
+        let viewer = sim.intern("British");
+        sim.entities_mut_for_test()
+            .get_mut(fixture.entity_id)
+            .unwrap()
+            .disguise
+            .as_mut()
+            .unwrap()
+            .acquire(0, Some(worn), Some(viewer));
+        // Infantry51F2C0 asks raw +C4, not observer-sensitive +C8: neither
+        // disguise detectors nor a reverse-only alliance change its name.
+        sim.fog_mut_for_test()
+            .disguise_detect_add_at(viewer, (14, 14), 1);
+        sim.house_alliances_mut_for_test()
+            .insert("BRITISH".into(), ["RUSSIANS".into()].into());
+        for (owner_allied, label) in [(false, "Name:E2"), (true, "Name:SPY")] {
+            if owner_allied {
+                fixture
+                    .runtime
+                    .simulation
+                    .house_alliances_mut_for_test()
+                    .insert("RUSSIANS".into(), ["BRITISH".into()].into());
+            }
+            assert_eq!(
+                tactical_world_tip_text(
+                    fixture.runtime.view(),
+                    &fixture.runtime.resources.rules,
+                    Some(&fixture.csf),
+                    fixture.world,
+                    false,
+                ),
+                fixture.csf.text(label),
+            );
+        }
+    }
+
+    #[test]
+    fn unit_tip_distinguishes_a_missing_disguise_type_from_a_missing_house() {
+        let Some(mut fixture) = mapped_tip_fixture("HTNK", "Russians", "British", None) else {
+            return;
+        };
+        let sim = &mut fixture.runtime.simulation;
+        let viewer = sim.intern("British");
+        let worn = sim.intern("SREF");
+        for (kind, house, label) in [
+            (None, None, Some("Name:HTNK")),
+            (Some(worn), None, None),
+            (Some(worn), Some(viewer), Some("Name:SREF")),
+        ] {
+            fixture
+                .runtime
+                .simulation
+                .entities_mut_for_test()
+                .get_mut(fixture.entity_id)
+                .unwrap()
+                .disguise
+                .get_or_insert_with(|| crate::sim::cloak_disguise::DisguiseRuntime::new(0))
+                .acquire(0, kind, house);
+            let before = fixture.runtime.simulation.state_hash();
+            let text = tactical_world_tip_text(
+                fixture.runtime.view(),
+                &fixture.runtime.resources.rules,
+                Some(&fixture.csf),
+                fixture.world,
+                false,
+            );
+            assert_eq!(
+                text,
+                label.map_or_else(String::new, |key| fixture.csf.text(key).into_owned())
+            );
+            assert_eq!(fixture.runtime.simulation.state_hash(), before);
+        }
     }
 
     #[test]
@@ -959,35 +1130,44 @@ mod tests {
 
     #[test]
     fn invisible_type_refuses_nonlocal_tip_after_the_picker() {
-        let patch = crate::rules::ini_parser::IniFile::from_str("[HTNK]\nInvisible=yes\n");
-        for (viewer, shows_name) in [("British", false), ("Russians", true)] {
-            let Some(fixture) = mapped_tip_fixture("HTNK", "Russians", viewer, Some(&patch)) else {
-                return;
-            };
-            let object = fixture.runtime.resources.rules.object("HTNK").unwrap();
-            assert!(
-                object.invisible,
-                "explicit map input reaches the production reader"
-            );
-            let text = tactical_world_tip_text(
-                fixture.runtime.view(),
-                &fixture.runtime.resources.rules,
-                Some(&fixture.csf),
-                fixture.world,
-                false,
-            );
-            let expected = if shows_name {
-                fixture
-                    .csf
-                    .text(object.ui_name.as_deref().unwrap())
-                    .into_owned()
-            } else {
-                String::new()
-            };
-            assert_eq!(
-                text, expected,
-                "Display4AE616 retained-owned bypass, viewer{viewer}"
-            );
+        for (kind, input) in [
+            ("HTNK", "[HTNK]\nInvisible=yes\n"),
+            (
+                "NAPOWR",
+                "[NAPOWR]\nInvisible=no\nInvisibleInGame=yes\nRadarVisible=yes\n",
+            ),
+        ] {
+            let patch = crate::rules::ini_parser::IniFile::from_str(input);
+            for (viewer, shows_name) in [("British", false), ("Russians", true)] {
+                let Some(fixture) = mapped_tip_fixture(kind, "Russians", viewer, Some(&patch))
+                else {
+                    return;
+                };
+                let object = fixture.runtime.resources.rules.object(kind).unwrap();
+                assert!(
+                    object.invisible,
+                    "explicit map input reaches the production reader: {kind}"
+                );
+                let text = tactical_world_tip_text(
+                    fixture.runtime.view(),
+                    &fixture.runtime.resources.rules,
+                    Some(&fixture.csf),
+                    fixture.world,
+                    false,
+                );
+                let expected = if shows_name {
+                    fixture
+                        .csf
+                        .text(object.ui_name.as_deref().unwrap())
+                        .into_owned()
+                } else {
+                    String::new()
+                };
+                assert_eq!(
+                    text, expected,
+                    "Display4AE616 retained-owned bypass, {kind}, viewer{viewer}"
+                );
+            }
         }
     }
 
@@ -1046,12 +1226,6 @@ mod tests {
                 .as_ref()
                 .is_some_and(|cloak| cloak.is_fully_cloaked())
         );
-        assert!(
-            !entity
-                .disguise
-                .as_ref()
-                .is_some_and(|disguise| disguise.is_disguised())
-        );
         let world = crate::app::presentation::instances::interpolated_screen_position_entity(
             sim.entities().get(entity_id).unwrap(),
         );
@@ -1065,9 +1239,6 @@ mod tests {
                 Some(viewer_name),
                 world.0,
                 world.1,
-                0.0,
-                Some(&rules),
-                Some(sim.houses()),
                 Some(sim.interner()),
                 sim.resolved_terrain(),
             ),

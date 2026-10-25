@@ -6,7 +6,7 @@
 
 use super::*;
 use crate::rules::process_owner::NativeScenarioRulesPrefix;
-use crate::sim::command::Command;
+use crate::sim::command::{Command, ProductionEvent, ProductionRecord};
 use crate::sim::intern::InternedId;
 use crate::sim::production::{self, CanBuild, ProductionCategory};
 use crate::sim::runtime::{SimResources, SimRuntime};
@@ -398,15 +398,36 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
     let events: Vec<_> = commands
         .iter()
         .map(|command| {
-            assert_eq!(command.owner, owner);
             assert_eq!(command.execute_tick, output.tick.tick);
-            let Command::CancelProductionByType { type_id, all } = &command.payload else {
+            let Command::SynchronizedRecord { record } = &command.payload else {
                 panic!(
                     "unexpected generated production event {:?}",
                     command.payload
                 )
             };
-            let id = runtime.simulation.interner.resolve(*type_id);
+            // The shared command owner now publishes byte records. Their
+            // header owns House/frame; the outer envelope is diagnostic only.
+            let event = ProductionRecord::decode(record).expect("production cancellation record");
+            assert!(matches!(
+                event.event,
+                ProductionEvent::Abandon | ProductionEvent::AbandonAll
+            ));
+            assert_eq!(
+                runtime
+                    .simulation
+                    .houses
+                    .order()
+                    .get(usize::try_from(event.house_id).unwrap()),
+                Some(&owner)
+            );
+            assert_eq!(event.naval, 0);
+            let id = runtime
+                .resources
+                .rules
+                .type_array_ids(ObjectCategory::Aircraft)
+                .get(usize::try_from(event.type_index).unwrap())
+                .expect("record names a registered aircraft type")
+                .as_str();
             let object = runtime.resources.rules.object(id).unwrap();
             assert_eq!(object.category, ObjectCategory::Aircraft);
             // Native's declared fixture constructs selected AircraftTypes;
@@ -420,9 +441,9 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
                 .find(|entry| entry["id"] == id)
                 .expect("the generated command names an observed native AircraftType");
             json!({
-                "kind": if *all { 0x2e } else { 0x10 },
-                "frame": native_tail_frame,
-                "rtti": 3,
+                "kind": event.event.opcode(),
+                "frame": event.frame,
+                "rtti": event.rtti,
                 "index": native_type["index"],
             })
         })

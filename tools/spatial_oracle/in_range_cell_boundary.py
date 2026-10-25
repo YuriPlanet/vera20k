@@ -8,7 +8,7 @@ import struct
 from pathlib import Path
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_ESP,UC_X86_REG_EAX,UC_X86_REG_ECX
-from tools.native_oracle import NATIVE_SHA256,finish_vectors,provenance
+from tools.native_oracle import finish_vectors,provenance
 from tools.spatial_oracle import bridge_target_composed as c
 from tools.spatial_oracle.building_body_rules import dwords
 
@@ -71,7 +71,7 @@ def generate():
   dict(base,name='minimum_range_early_return',minimum_range=1000),
   dict(base,name='unlimited_range_no_queries',range=-512),
   dict(base,name='unmarked_target_no_height_queries',target_marked=0)]
- return dict(native_sha256=NATIVE_SHA256,rows=[execute(row)for row in rows])
+ return dict(rows=[execute(row)for row in rows])
 
 
 def metadata():

@@ -418,6 +418,45 @@ class MapObservationTests(unittest.TestCase):
                          {'scenario_rng_cursor': [0, 103], 'projectiles': [], 'animations': []})
         self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
 
+    def test_historical_effect_runtime_without_temporal_pause_remains_unchanged(self):
+        self.effect_profile()
+        for frame in self.effect_frames.values():
+            for animation in frame['animations']:
+                animation['runtime'].pop('temporal_paused')
+        run = self.valid_capture('effect-before-temporal-pause')
+        checked = observation.validate_run(run)
+        self.assertEqual(checked['status'], 'VALID', checked['errors'])
+        retained = checked['capture']['observations']['frames'][1]['effects']
+        self.assertEqual(retained, self.effect_frames[1])
+        self.assertNotIn('temporal_paused', retained['animations'][0]['runtime'])
+
+    def test_voxel_effect_rows_retain_location_bounce_and_cleanup(self):
+        self.effect_profile()
+        # Schema fixtures, not native flight/timing expectations.
+        row = {'stable_id': 21, 'native_id': -1, 'type_id': 'PIECE', 'owner_house': None,
+               'stored_leptons': [100, 200, -5], 'duration': -1, 'marked_for_deletion': False,
+               'in_logic_vector': True, 'object_alive': True, 'in_limbo': False,
+               'bounce_position_bits': [0x42c80000, 0x43480000, 0x41200000],
+               'bounce_velocity_bits': [0x3f800000, 0x80000000, 0xbf800000]}
+        self.effect_frames[1]['voxel_anims'] = [row]
+        self.effect_frames[2]['voxel_anims'] = []
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        frames = report['capture']['observations']['frames']
+        self.assertEqual(frames[1]['effects']['voxel_anims'], [row])
+        self.assertEqual(frames[2]['effects']['voxel_anims'], [])
+        self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+        for mutation in (lambda x: x.update(duration=True),
+                         lambda x: x.update(bounce_position_bits=[0, 0]),
+                         lambda x: x.update(bounce_velocity_bits=[0, 0, 1 << 32]),
+                         lambda x: x.update(in_limbo=0)):
+            bad = deepcopy(row); mutation(bad)
+            effects = dict(self.effect_frames[1], voxel_anims=[bad])
+            with self.assertRaises(ValidationError):
+                observation._effects(effects, self.profile, 'bad')
+        with self.assertRaises(ValidationError):
+            observation._effects(dict(self.effect_frames[1], voxel_anims=[row, row]), self.profile, 'bad')
+
     def test_wave_observations_retain_lifetime_and_refuse_malformed_snapshots(self):
         self.profile.update(schema_version=observation.PROFILE_V2, observe_waves=True)
         self.profile_path.write_text(json.dumps(self.profile))
@@ -3572,6 +3611,64 @@ class MapObservationTests(unittest.TestCase):
             with self.assertRaises(observation.ValidationError):
                 observation._building(invalid, 'building')
 
+    def test_animation_temporal_pause_extension_is_optional_and_strict(self):
+        legacy = self.building()['animation_slots'][0]['animation']['runtime']
+        legacy.pop('temporal_paused')
+        original = deepcopy(legacy)
+        observation._animation_runtime(legacy, 'runtime')
+        self.assertEqual(legacy, original)
+        self.assertNotIn('temporal_paused', legacy)
+        for paused in (False, True):
+            with self.subTest(paused=paused):
+                current = dict(legacy, temporal_paused=paused)
+                observation._animation_runtime(current, 'runtime')
+                self.assertEqual(current, dict(original, temporal_paused=paused))
+        for invalid in (None, 0, 1, 0.0, 'false', [], {}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValidationError):
+                observation._animation_runtime(dict(legacy, temporal_paused=invalid), 'runtime')
+        for extra in ({}, {'temporal_paused': False}):
+            current = dict(legacy, **extra)
+            with self.subTest(extra=extra), self.assertRaises(ValidationError):
+                observation._animation_runtime(dict(current, unknown_flag=False), 'runtime')
+            current.pop('paused')
+            with self.subTest(missing_required=True, extra=extra), self.assertRaises(ValidationError):
+                observation._animation_runtime(current, 'runtime')
+
+    def test_historical_v5_and_v8_building_runtime_without_temporal_pause_remains_unchanged(self):
+        self.production_profile()
+        for actors in self.actor_frames.values():
+            for slot in actors[0]['building']['animation_slots']:
+                slot['animation']['runtime'].pop('temporal_paused')
+        for version in (5, 8):
+            with self.subTest(version=version):
+                run = self.valid_capture(f'building-v{version}-before-temporal-pause')
+                if version == 5:
+                    self.make_historical_building(run)
+                paths = (run / 'run.json', run / 'child-output/capture.json')
+                originals = {path: path.read_bytes() for path in paths}
+                checked = observation.validate_run(run)
+                self.assertEqual(checked['status'], 'VALID', checked['errors'])
+                for frame in checked['capture']['observations']['frames']:
+                    slots = frame['actors'][0]['building']['animation_slots']
+                    self.assertNotIn('temporal_paused', slots[0]['animation']['runtime'])
+                for path, raw in originals.items():
+                    self.assertEqual(path.read_bytes(), raw)
+
+    def test_building_temporal_pause_is_retained_and_compared(self):
+        self.production_profile()
+        runtime = self.actor_frames[1][0]['building']['animation_slots'][0]['animation']['runtime']
+        before = self.valid_capture('building-temporal-running')
+        runtime['temporal_paused'] = True
+        after = self.valid_capture('building-temporal-paused')
+        checked = observation.validate_run(after)
+        self.assertEqual(checked['status'], 'VALID', checked['errors'])
+        retained = checked['capture']['observations']['frames'][1]['actors'][0]['building']
+        self.assertIs(retained['animation_slots'][0]['animation']['runtime']['temporal_paused'], True)
+        report = observation.compare_runs(before, after)
+        self.assertEqual(report['status'], 'MISMATCH', report['errors'])
+        self.assertEqual([row['field'] for row in report['differences']],
+                         ['observations.frames[1].actors[0].building.animation_slots[0].animation.runtime.temporal_paused'])
+
     def test_missing_live_animation_is_explicit_and_slots_count_towards_sample_budget(self):
         self.production_profile()
         self.actor_frames[1][0]['building']['animation_slots'][0]['animation'] = None
@@ -4023,6 +4120,40 @@ class MapObservationTests(unittest.TestCase):
                          ['payload']['LaunchSuperWeapon']['sw_type_id'], 'IronCurtainSpecial')
         self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
 
+    def test_tracked_production_profiles_bind_named_types_after_interner_reordering(self):
+        # Synthetic child witnesses exercise the production profile/binding
+        # validators; they do not establish successful in-game production.
+        registry = [
+            {'type_id': 'GAPOWR', 'interned_id': 907, 'category': 'Structure'},
+            {'type_id': 'GAPILE', 'interned_id': 1203, 'category': 'Structure'},
+            {'type_id': 'E1', 'interned_id': 55, 'category': 'Infantry'},
+        ]
+        for name in ('barracks-output', 'building-opening', 'barracks-interframe-rally'):
+            with self.subTest(profile=name):
+                path = observation.ROOT / f'tools/map_observation.{name}.example.json'
+                profile = json.loads(path.read_text())
+                observation._profile_extensions(profile)
+                commands = [row for row in profile['commands']
+                            if next(iter(row['payload'])) in ('QueueProduction', 'PlaceReadyBuilding')]
+                expected = ['GAPOWR', 'GAPOWR', 'GAPILE', 'GAPILE', 'E1']
+                if name != 'building-opening':
+                    expected.append('E1')
+                self.assertEqual([next(iter(row['payload'].values()))['type_id']
+                                  for row in commands], expected)
+                self.assertEqual(profile['schema_version'], observation.PROFILE_V3)
+                for ordinal, request in enumerate(commands):
+                    variant, arguments = next(iter(request['payload'].items()))
+                    binding = next(row for row in registry if row['type_id'] == arguments['type_id'])
+                    receipt = deepcopy(request)
+                    receipt['payload'][variant]['type_id'] = binding['interned_id']
+                    receipt['bindings'] = {f'/{variant}/type_id': deepcopy(binding)}
+                    label = f'{name}.commands[{ordinal}]'
+                    self.assertEqual(observation._command_bindings(
+                        receipt, request, registry, label), 1)
+                    receipt['payload'][variant]['type_id'] += 1
+                    with self.assertRaises(ValidationError):
+                        observation._command_bindings(receipt, request, registry, label)
+
     def test_symbolic_receipts_reject_wrong_binding_or_unbound_argument_changes(self):
         self.symbolic_profile()
         mutations = [
@@ -4159,6 +4290,56 @@ class MapObservationTests(unittest.TestCase):
         observation._terrain(cell, [74, 32], 'terrain')
         cell['terrain_object'] = None
         observation._terrain(cell, [74, 32], 'terrain')
+        cell['terrain_objects'] = [dict(id=20, name='TIBTRE01', frame=2, active=True),
+                                   dict(id=19, name='TIBTRE02', frame=1, active=True)]
+        cell['terrain_object'] = dict(name='TIBTRE01', frame=2, active=True)
+        observation._terrain(cell, [74, 32], 'terrain')
+        cell['terrain_objects'][0]['native_id'] = -(1 << 31)
+        cell['terrain_objects'][1]['native_id'] = None
+        observation._terrain(cell, [74, 32], 'terrain')
+        cell['terrain_objects'][0].update(health=-(1 << 31), max_health=(1 << 31) - 1)
+        cell['terrain_objects'][1].update(health=200, max_health=200)
+        observation._terrain(cell, [74, 32], 'terrain')
+        for key, value in (('id', True), ('id', 0), ('frame', True), ('active', 1),
+                           ('native_id', True), ('native_id', 1 << 31),
+                           ('health', True), ('max_health', 1 << 31)):
+            bad = deepcopy(cell)
+            bad['terrain_objects'][0][key] = value
+            with self.assertRaises(observation.ValidationError):
+                observation._terrain(bad, [74, 32], 'terrain')
+        bad = deepcopy(cell)
+        bad['terrain_objects'][1]['id'] = 20
+        with self.assertRaises(observation.ValidationError):
+            observation._terrain(bad, [74, 32], 'terrain')
+        bad = deepcopy(cell)
+        bad['terrain_object']['frame'] = 9
+        with self.assertRaises(observation.ValidationError):
+            observation._terrain(bad, [74, 32], 'terrain')
+
+    def test_terrain_instances_observe_live_objects_outside_cell_content(self):
+        cell = self.unallocated_cell([73, 31])
+        cell.update(overlay={'id': None, 'density': 0}, terrain_object=None,
+                    terrain_objects=[], terrain_instances=[dict(
+                        id=19, native_id=1040000, name='VERA_UNREAD', health=-1, max_health=-1,
+                        frame=None, active=None, lifecycle='Live', cell_member=False,
+                        display_layer=2, in_logic_vector=False)])
+        observation._terrain(cell, [73, 31], 'terrain')
+        for key, value in (('cell_member', True), ('display_layer', 5),
+                           ('in_logic_vector', 0), ('lifecycle', 'Missing')):
+            bad = deepcopy(cell)
+            bad['terrain_instances'][0][key] = value
+            with self.assertRaises(observation.ValidationError):
+                observation._terrain(bad, [73, 31], 'terrain')
+        bad = deepcopy(cell)
+        bad['terrain_instances'].append(deepcopy(bad['terrain_instances'][0]))
+        with self.assertRaises(observation.ValidationError):
+            observation._terrain(bad, [73, 31], 'terrain')
+        # A saved type's binding does not add its instance to the Cell chain.
+        # Both omission on legacy captures and a retained Limbo row are valid.
+        cell['terrain_instances'][0].update(lifecycle='Limbo', display_layer=None)
+        observation._terrain(cell, [73, 31], 'terrain')
+        cell.pop('terrain_instances')
+        observation._terrain(cell, [73, 31], 'terrain')
 
     def test_unit_extension_retains_animation_lifetime_and_compares_observations(self):
         self.scripted_profile()
@@ -5418,6 +5599,43 @@ class MapObservationTests(unittest.TestCase):
         report = observation.compare_runs(before, after)
         self.assertEqual(report['status'], 'MISMATCH', report['errors'])
         self.assertEqual([d['field'] for d in report['differences']], ['frame.bytes'])
+
+    def test_comparison_reports_tooltip_outputs_without_invalidating_clock(self):
+        self.profile.update(schema_version=observation.PROFILE_V3, observe_tooltips=True)
+        self.profile_path.write_text(json.dumps(self.profile))
+        shown = self.tooltip_observation()
+        shown['active'] = {'id': 999, 'text': 'Power',
+                           'cursor_px': [400, 200], 'shown_at_ms': 22}
+        # A middle draw must be compared even when the final tooltip/frame agrees.
+        self.tooltip_frames[2] = shown
+        before = self.valid_capture('tooltip-before')
+        unchanged = self.valid_capture('tooltip-unchanged')
+        report = observation.compare_runs(before, unchanged)
+        self.assertEqual(report['status'], 'MATCH', report['errors'])
+        self.assertEqual(report['differences'], [])
+        changes = [('active', shown['active'], None,
+                    lambda t: t.update(active=None)),
+                   ('active.text', 'Power', 'Low Power',
+                    lambda t: t['active'].update(text='Low Power')),
+                   ('active.shown_at_ms', 22, 44,
+                    lambda t: t['active'].update(shown_at_ms=44)),
+                   ('camera_zoom', 1.0, 2.0,
+                    lambda t: t.update(camera_zoom=2.0))]
+        for index, (field, old, new, change) in enumerate(changes):
+            with self.subTest(field=field):
+                changed = deepcopy(shown)
+                change(changed)
+                self.tooltip_frames[2] = changed
+                after = self.valid_capture(f'tooltip-after-{index}')
+                report = observation.compare_runs(before, after)
+                self.assertEqual(report['status'], 'MISMATCH', report['errors'])
+                self.assertEqual(report['differences'], [{
+                    'field': f'presentation_clock.draws[1].tooltip.{field}',
+                    'before': old, 'after': new}])
+                # The full validated transcripts remain available in the report.
+                for name, tooltip in (('before', shown), ('after', changed)):
+                    self.assertEqual(report[name]['capture']['presentation_clock']
+                                     ['draws'][1]['tooltip'], tooltip)
 
     def test_comparison_requires_same_input_bytes(self):
         before = self.valid_capture('input-before')

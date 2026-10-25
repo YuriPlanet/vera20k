@@ -6,7 +6,6 @@ use std::collections::HashMap;
 
 use crate::app::AppState;
 use crate::map::entities::EntityCategory;
-use crate::net::lockstep::SynchronizedCommand;
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::intern::InternedId;
 use crate::sim::production;
@@ -70,13 +69,24 @@ pub(crate) fn queue_build_by_type(state: &mut AppState, type_id: &str, repeat: u
     );
 }
 
-pub(crate) fn suspend_build(state: &mut AppState, category: production::ProductionCategory) {
+pub(crate) fn suspend_build(state: &mut AppState, type_id: &str) {
     let owner: String = resolve_owner(state);
-    schedule_command(state, &owner, Command::SuspendProduction { category });
+    let record = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+        let sim = &runtime.simulation;
+        sim.encode_production_record(
+            sim.interner().get(&owner)?,
+            crate::sim::command::ProductionEvent::Suspend,
+            sim.interner().get(type_id)?,
+            &runtime.resources.rules,
+        )
+    });
+    if let Some(record) = record {
+        schedule_command(state, &owner, Command::SynchronizedRecord { record });
+    }
     log::info!(
-        "Build hold command queued: owner={} category={} issue_frame=current",
+        "Build hold command queued: owner={} type={} issue_frame=current",
         owner,
-        category.label()
+        type_id
     );
 }
 
@@ -126,7 +136,6 @@ fn visible_object_under_point(state: &AppState, world_x: f32, world_y: f32) -> O
         world_y,
         &owner,
         state.match_state.sandbox_full_visibility,
-        state.rules(),
     )
     .map(|hover| hover.stable_id)
 }
@@ -405,7 +414,14 @@ pub(crate) fn try_repair_sell_mode_click(state: &mut AppState) -> bool {
     true
 }
 
-pub(crate) fn place_ready_building_at_cursor(state: &mut AppState, type_id: &str) {
+/// BandBox_LeftUp's placement branch (`0x004ABA16..0x004ABC67`) for the
+/// clicked `cursor_cell`: the tactical click's Cell, or the radar release's
+/// (`0x00653D58`).
+pub(crate) fn place_ready_building_at_cell(
+    state: &mut AppState,
+    type_id: &str,
+    cursor_cell: (u16, u16),
+) {
     // The original producer refuses a null current product and uses the
     // issuer captured by ManualPlace, rather than choosing a House again.
     let Some(issuer) = state.match_state.input.building_placement_issuer() else {
@@ -421,11 +437,6 @@ pub(crate) fn place_ready_building_at_cursor(state: &mut AppState, type_id: &str
     };
     // LeftUp4ABA16..4ABA59 uses its supplied clicked Cell and recomputes
     // proximity, rather than latching the previous draw's coordinate/result.
-    let cursor_cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
-        state,
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
-    );
     let (origin, in_build_area) = state
         .match_state
         .sim_runtime
@@ -436,10 +447,7 @@ pub(crate) fn place_ready_building_at_cursor(state: &mut AppState, type_id: &str
             rules.object(type_id).map(|object| {
                 // LeftUp4ABA16 adds the same type-derived offset as preview,
                 // using this fresh clicked Cell rather than the last draw.
-                let origin = crate::rules::foundation::placement_origin_at_cursor(
-                    &object.foundation,
-                    cursor_cell,
-                );
+                let origin = object.foundation.placement_origin_at_cursor(cursor_cell);
                 let in_build_area = crate::sim::production::is_within_build_area(
                     sim, rules, &owner, object, origin.0, origin.1,
                 );
@@ -450,6 +458,12 @@ pub(crate) fn place_ready_building_at_cursor(state: &mut AppState, type_id: &str
     let (rx, ry) = origin;
     // Visibility1181 is latched by UpdateFoundationCenter4A94DA. LeftUp
     // checks it after the freshly recomputed proximity1180(4ABAA4/4ABAB2).
+    // RESIDUAL: gamemd latches it from the tactical gadget only
+    // (`0x004AAC10` calls `0x004A91B0` at `0x004AAD04`); this preview follows
+    // the cursor's screen point over the sidebar too. Trigger: a radar
+    // placement (`0x00653D58`) in a shrouded game. Effect: it tests the Cell
+    // behind the radar rather than the last tactical one, so it may refuse
+    // or admit differently. Frequency: rare.
     let visible = state
         .match_state
         .input
@@ -539,13 +553,24 @@ pub(crate) fn launch_super_weapon_at_cursor(state: &mut AppState, section: &str)
         return;
     }
 
-    let owner: String = resolve_owner(state);
-    let sw_type_id = intern_in_sim(state, section);
-    let (rx, ry) = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
+    let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
         state,
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
+    launch_super_weapon_at_cell(state, section, cell);
+}
+
+/// BandBox_LeftUp's SPECIAL_PLACE (`0x004AC20C`) for `section` at the clicked
+/// `(rx, ry)`: the tactical click's Cell, or the radar release's
+/// (`0x00653D58`), whose action names no pointer target to admit.
+pub(crate) fn launch_super_weapon_at_cell(
+    state: &mut AppState,
+    section: &str,
+    (rx, ry): (u16, u16),
+) {
+    let owner: String = resolve_owner(state);
+    let sw_type_id = intern_in_sim(state, section);
     queue_super_weapon_click(state, &owner, sw_type_id, (rx, ry));
     log::info!(
         "SuperWeapon launch queued: owner={} section={} cell=({}, {}) issue_frame=current",
@@ -598,7 +623,7 @@ fn super_weapon_click_command(
     } else if let Some(mut selection) =
         sim.next_paid_super_weapon_selection(rules, owner_id, sw_type_id)
     {
-        if let Some(queued) = sim.pending_paid_super_weapon_sequence(owner_id, sw_type_id) {
+        if let Some(queued) = sim.pending_paid_super_weapon_sequence(owner_id, sw_type_id, rules) {
             let next = queued.checked_add(1)?;
             selection.sequence = selection.sequence.max(next);
         }
@@ -635,17 +660,20 @@ pub(crate) fn reconcile_paid_super_weapon_cursor(state: &mut AppState) {
         .targeting_mode
         .as_ref()
         .and_then(crate::app::types::TargetingMode::as_super_weapon);
-    if let Some(command) = paid_super_weapon_cursor_cancellation(sim, owner_id, selected) {
+    if let Some(command) =
+        paid_super_weapon_cursor_cancellation(sim, &runtime.resources.rules, owner_id, selected)
+    {
         try_schedule_command(state, &owner, command);
     }
 }
 
 fn paid_super_weapon_cursor_cancellation(
     sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
     owner: InternedId,
     selected: Option<&str>,
 ) -> Option<Command> {
-    let (selection, in_queue) = sim.projected_paid_super_weapon_selection(owner)?;
+    let (selection, in_queue) = sim.projected_paid_super_weapon_selection(owner, rules)?;
     let expected = if in_queue {
         selection.source
     } else {
@@ -655,6 +683,11 @@ fn paid_super_weapon_cursor_cancellation(
         .then_some(Command::CancelPaidSuperWeapon { selection })
 }
 
+/// Dev "Base" button: start the next opening building (power plant, barracks,
+/// refinery) the owner has none of on the map and the strip offers. A
+/// building never queues (`production::enqueue_by_type`), so each press
+/// starts one while the building factory holds nothing; place it, then press
+/// again.
 pub(crate) fn place_starter_base_for_local_owner(state: &mut AppState) {
     let owner: String = resolve_owner(state);
     let (Some(sim), Some(rules)) = (
@@ -676,41 +709,52 @@ pub(crate) fn place_starter_base_for_local_owner(state: &mut AppState) {
         ),
         pick_building_for_owner(rules, &owner, &["GAREFN", "NAREFN", "YAREFN", "GAOREP"]),
     ];
+    let owner_id = sim.interner().get(&owner);
     let build_options = production::build_options_for_owner(sim, rules, &owner);
-    let queueable: Vec<String> = opening
-        .into_iter()
-        .flatten()
-        .filter(|type_id| {
-            build_options.iter().any(|opt| {
-                let opt_str = sim.interner().resolve(opt.type_id);
-                opt_str.eq_ignore_ascii_case(type_id) && opt.enabled
+    let next = opening.into_iter().flatten().find(|type_id| {
+        let on_map = sim.interner().get(type_id).is_some_and(|type_ref| {
+            sim.entities().values().any(|entity| {
+                Some(entity.owner()) == owner_id
+                    && entity.type_ref() == type_ref
+                    && !entity.in_limbo()
             })
-        })
-        .collect();
-    let mut queued = 0u32;
-    for type_id in queueable {
-        let type_interned = intern_in_sim(state, &type_id);
-        schedule_command(
-            state,
-            &owner,
-            Command::QueueProduction {
-                type_id: type_interned,
-            },
-        );
-        queued += 1;
-    }
-    if queued > 0 {
-        log::info!(
-            "Starter opening queued: owner={} count={} issue_frame=current",
-            owner,
-            queued
-        );
-    } else {
+        });
+        !on_map
+            && build_options.iter().any(|opt| {
+                opt.enabled
+                    && sim
+                        .interner()
+                        .resolve(opt.type_id)
+                        .eq_ignore_ascii_case(type_id)
+            })
+    });
+    let Some(type_id) = next else {
+        log::warn!("Starter opening: owner={owner} has no opening building left to start");
+        return;
+    };
+    let Some(category) = rules.object(&type_id).map(production::category_for_object) else {
+        return;
+    };
+    if owner_id.is_some_and(|owner_id| {
+        sim.production()
+            .factories()
+            .view(owner_id, category)
+            .is_some_and(|factory| factory.object.is_some())
+    }) {
         log::warn!(
-            "Starter opening queue failed: owner={} (no compatible first-build sequence available)",
-            owner
+            "Starter opening: owner={owner} must place or cancel its current building first"
         );
+        return;
     }
+    let type_interned = intern_in_sim(state, &type_id);
+    schedule_command(
+        state,
+        &owner,
+        Command::QueueProduction {
+            type_id: type_interned,
+        },
+    );
+    log::info!("Starter opening started: owner={owner} type={type_id}");
 }
 
 /// Queue one attack-move per object for a dev stress army. Every order goes
@@ -1026,6 +1070,8 @@ pub(crate) fn schedule_command_in_sim(
         && !matches!(
             &payload,
             Command::SetGameSpeed { .. }
+                | Command::LiveGameSpeed { .. }
+                | Command::SetLatencyFudge { .. }
                 | Command::ExitMatch
                 | Command::Destruct
                 | Command::RemovePlayer { .. }
@@ -1056,38 +1102,47 @@ pub(crate) fn schedule_command_in_sim(
         _ => sim.intern(owner),
     };
     let envelope = match payload {
+        Command::SetLatencyFudge { value } => {
+            let record = sim.encode_latency_fudge_record(owner_id, value)?;
+            CommandEnvelope::synchronized(record, execute_tick)
+        }
         Command::Scatter { entity_id } => {
             let record = sim.encode_scatter_record(owner_id, entity_id)?;
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+            CommandEnvelope::synchronized(record, execute_tick)
         }
         Command::Cheer => {
             let record = sim.encode_cheer_record(owner_id)?;
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+            CommandEnvelope::synchronized(record, execute_tick)
         }
         Command::ExitMatch => {
             let record = sim.encode_exit_record(owner_id)?;
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+            CommandEnvelope::synchronized(record, execute_tick)
         }
         Command::Destruct => {
             let record = sim.encode_destruct_record(owner_id)?;
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+            CommandEnvelope::synchronized(record, execute_tick)
         }
         Command::RemovePlayer { house_index } => {
             let record = sim.encode_remove_player_record(owner_id, house_index)?;
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+            CommandEnvelope::synchronized(record, execute_tick)
         }
         Command::Ally { house_index } => {
             let record = sim.encode_ally_record(owner_id, house_index)?;
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+            CommandEnvelope::synchronized(record, execute_tick)
         }
         Command::SellWallAtCell { x, y } => {
             let record = sim.encode_sell_wall_at_cell_record(owner_id, x, y)?;
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)?
+            CommandEnvelope::synchronized(record, execute_tick)
         }
         payload => CommandEnvelope::new(owner_id, execute_tick, payload),
     };
-    let envelope = roundtrip_ordinary_local_megamission(sim, envelope)?;
-    sim.queue_command(envelope);
+    let envelope = encode_ordinary_local_command(sim, envelope)?;
+    // PlayerSend6FFDE6 ignores a full OutList's false return. The click is
+    // still handled and its voice/action-line effects are not rolled back.
+    let accepted = sim.issue_local_command(envelope);
+    if sim.session().game_mode().is_network() && !accepted {
+        return None;
+    }
     Some(execute_tick)
 }
 
@@ -1136,15 +1191,18 @@ pub(crate) fn object_move_destination(
         })
 }
 
-/// Make ordinary local Move and AreaGuard bytes authoritative at issue time.
+/// Make ordinary local mission bytes authoritative at issue time.
 ///
 /// Active YR routes a cell click through `ClickedAction` (`0x004D7D50`), and a
-/// Move over an object through `0x004D74E0`, to
-/// `EventClass__BuildMegaMissionEnvelope` (`0x004C6860`). Guard key730D60
-/// reaches the same producer through QueueMegaMission6FFBE0. Move, to a Cell
-/// or an object, and AreaGuard share this codec; other semantic commands pass
-/// through until their native record is established.
-pub(crate) fn roundtrip_ordinary_local_megamission(
+/// Move or Attack over an object through `0x004D74E0`, to
+/// `EventClass__BuildMegaMissionEnvelope` (`0x004C6860`). ClickedMission6FFBE0
+/// promotes Move/Attack to attack-move before QueueMission646E90 appends.
+/// Move, Attack, attack-move, AreaGuard and self-click Unload share this codec.
+/// Guard key730D60 reaches the same producer. The D key
+/// constructs its distinct Event9 before reaching this boundary. Other
+/// semantic commands retain their existing local/ingress ownership. Rules-indexed
+/// production and superweapon records are resolved by try_schedule_command.
+pub(crate) fn encode_ordinary_local_command(
     sim: &crate::sim::world::Simulation,
     envelope: CommandEnvelope,
 ) -> Option<CommandEnvelope> {
@@ -1154,11 +1212,59 @@ pub(crate) fn roundtrip_ordinary_local_megamission(
         payload,
     } = envelope;
     match payload {
-        Command::Move { .. } | Command::MoveToObject { .. } | Command::Guard { .. } => {
+        Command::Move { .. }
+        | Command::MoveToObject { .. }
+        | Command::Attack { .. }
+        | Command::ForceAttackCell { .. }
+        | Command::AttackMove { .. }
+        | Command::Guard { .. }
+        | Command::DeployMcv { .. }
+        | Command::ToggleInfantryDeploy { .. }
+        | Command::UnloadPassengers { .. }
+        | Command::PlantC4 { .. }
+        | Command::CaptureBuilding { .. }
+        | Command::MegaMission { .. } => {
             let record = sim.encode_megamission_record(owner, &payload)?;
-            SynchronizedCommand::opaque(record).decode_for_simulation(sim, execute_tick)
+            Some(CommandEnvelope::synchronized(record, execute_tick))
+        }
+        Command::SellBuilding { .. }
+        | Command::TogglePrimaryFactory { .. }
+        | Command::EjectBunker { .. } => {
+            let record = sim.encode_object_action_record(owner, &payload)?;
+            Some(CommandEnvelope::synchronized(record, execute_tick))
+        }
+        Command::CycleProducerFocus { category } => {
+            let record = sim.encode_cycle_producer_record(owner, category)?;
+            Some(CommandEnvelope::synchronized(record, execute_tick))
+        }
+        Command::LiveGameSpeed { speed } => {
+            let record = sim.encode_game_speed_record(owner, speed)?;
+            Some(CommandEnvelope::synchronized(record, execute_tick))
+        }
+        Command::Stop { entity_id } => {
+            let record = sim.encode_stop_record(owner, entity_id)?;
+            Some(CommandEnvelope::synchronized(record, execute_tick))
+        }
+        Command::ToggleRepair { entity_id } => {
+            let record = sim.encode_repair_record(owner, entity_id)?;
+            Some(CommandEnvelope::synchronized(record, execute_tick))
         }
         payload => Some(CommandEnvelope::new(owner, execute_tick, payload)),
+    }
+}
+
+/// Component tests can inspect the executable view without running a frame;
+/// production retains the encoded record until the DoList admits it.
+#[cfg(test)]
+pub(crate) fn roundtrip_ordinary_local_megamission(
+    sim: &crate::sim::world::Simulation,
+    envelope: CommandEnvelope,
+) -> Option<CommandEnvelope> {
+    let command = encode_ordinary_local_command(sim, envelope)?;
+    if let Command::SynchronizedRecord { record } = &command.payload {
+        sim.decode_native_command_record(record, command.execute_tick)
+    } else {
+        Some(command)
     }
 }
 
@@ -1172,17 +1278,110 @@ pub(crate) fn try_schedule_command(
     owner: &str,
     payload: Command,
 ) -> Option<u64> {
-    state
+    if state.match_state.match_diagnostics.is_replay_playback() {
+        return None;
+    }
+    // The relay owns a fixed match clock. Native connection/speed controls
+    // cannot independently retime this negotiated command timeline.
+    if state
         .match_state
-        .sim_runtime
-        .as_mut()
-        .map(|rt| &mut rt.simulation)
-        .and_then(|sim| schedule_command_in_sim(sim, owner, payload))
+        .live_network
+        .as_ref()
+        .is_some_and(|live| live.uses_sequenced_lockstep())
+        && matches!(
+            payload,
+            Command::SetGameSpeed { .. }
+                | Command::LiveGameSpeed { .. }
+                | Command::SetLatencyFudge { .. }
+                | Command::RemovePlayer { .. }
+        )
+    {
+        return None;
+    }
+    let runtime = state.match_state.sim_runtime.as_mut()?;
+    schedule_rules_command_in_sim(
+        &mut runtime.simulation,
+        &runtime.resources.rules,
+        owner,
+        payload,
+    )
+}
+
+// The ordinary AppState entry and component tests share this rules-dependent
+// issue boundary; the live OutList still owns the only pending command state.
+fn schedule_rules_command_in_sim(
+    sim: &mut crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    owner: &str,
+    payload: Command,
+) -> Option<u64> {
+    //6AAD00's selected cameo determines RTTI/type-array index/Naval when
+    //the event is issued. The raw queue retains those bytes until execution;
+    //the existing production owner resolves the then-current held object.
+    let record = match &payload {
+        Command::QueueProduction { type_id } => Some(sim.encode_production_record(
+            sim.interner().get(owner)?,
+            crate::sim::command::ProductionEvent::Produce,
+            *type_id,
+            rules,
+        )?),
+        Command::CancelProductionByType { type_id, all } => Some(sim.encode_production_record(
+            sim.interner().get(owner)?,
+            if *all {
+                crate::sim::command::ProductionEvent::AbandonAll
+            } else {
+                crate::sim::command::ProductionEvent::Abandon
+            },
+            *type_id,
+            rules,
+        )?),
+        Command::LaunchSuperWeapon { .. }
+        | Command::BeginPaidSuperWeapon { .. }
+        | Command::CompletePaidSuperWeapon { .. }
+        | Command::CancelPaidSuperWeapon { .. } => {
+            Some(sim.encode_superweapon_record(sim.interner().get(owner)?, &payload, rules)?)
+        }
+        Command::PlaceReadyBuilding { type_id, rx, ry } => Some(sim.encode_place_building_record(
+            sim.interner().get(owner)?,
+            *type_id,
+            (*rx, *ry),
+            rules,
+        )?),
+        _ => None,
+    };
+    let payload = record.map_or(payload, |record| Command::SynchronizedRecord { record });
+    schedule_command_in_sim(sim, owner, payload)
 }
 
 /// Preserve the existing unit-returning command boundary for ordinary callers.
 pub(crate) fn schedule_command(state: &mut AppState, owner: &str, payload: Command) {
-    let _ = try_schedule_command(state, owner, payload);
+    if try_schedule_command(state, owner, payload).is_none()
+        && state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .is_some_and(|runtime| {
+                runtime.simulation.session().game_mode().is_network()
+                    && runtime.simulation.available_local_command_slots() == 0
+            })
+    {
+        super::messages::post_command_backpressure(state);
+    }
+}
+
+pub(super) fn selection_input_has_capacity(state: &mut AppState, count: usize) -> bool {
+    let blocked = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .is_some_and(|runtime| {
+            runtime.simulation.session().game_mode().is_network()
+                && count > runtime.simulation.available_local_command_slots()
+        });
+    if blocked {
+        super::messages::post_command_backpressure(state);
+    }
+    !blocked
 }
 
 /// AllToCheer536C00 ->730F30. The input owner retains only its admission
@@ -1248,13 +1447,259 @@ mod tests {
     use crate::sim::world::Simulation;
 
     #[test]
-    fn stress_march_queues_one_attack_move_per_object_through_the_local_gate() {
-        let mut sim = Simulation::new();
-        let local = sim.intern("Local");
-        sim.houses_mut_for_test()
-            .register(HouseState::new(local, 0, None, true, 0, 10));
+    fn repair_click_publishes_a_raw_target_and_still_handles_a_full_outlist() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = retail.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4AC0BE);
+        let building = sim
+            .spawn_object("GAPILE", "Americans", 8, 8, 0, &rules)
+            .unwrap();
+        sim.session_mut_for_test().set_tick_for_test(41);
+        sim.session_mut_for_test().set_binary_frame_for_test(77);
+        let command = Command::ToggleRepair {
+            entity_id: building,
+        };
+        let before = sim.state_hash();
+        assert_eq!(
+            schedule_command_in_sim(&mut sim, "Americans", command.clone()),
+            Some(41)
+        );
+        assert_eq!(
+            sim.state_hash(),
+            before,
+            "input cannot toggle before dispatch"
+        );
+        let record = sim.network_command_queues().local_records().unwrap()[0].clone();
+        assert_eq!(
+            (record.opcode(), record.house_id(), record.frame_stamp()),
+            (0x15, 1, 77)
+        );
+        assert_eq!(&record.payload()[..4], &(building as i32).to_le_bytes());
+        assert_eq!(record.payload()[4], 0x34);
+        for _ in 1..128 {
+            assert!(sim.issue_local_command(CommandEnvelope::synchronized(record.clone(), 41)));
+        }
+        assert_eq!(
+            schedule_command_in_sim(&mut sim, "Americans", command),
+            Some(41)
+        );
+        assert_eq!(
+            sim.network_command_queues().local_records().unwrap().len(),
+            128
+        );
+        assert_eq!(sim.state_hash(), before);
+    }
 
-        let accepted = schedule_stress_attack_moves(&mut sim, "Local", &[11, 12, 13], (40, 60));
+    #[test]
+    fn ordinary_attacks_reach_the_raw_network_queue_before_stop() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let (mut sim, rules, _) = Simulation::walk_cell_input_test_scene_with(retail.rules, false);
+        let gi = sim.spawn_object("E1", "Local", 3, 5, 0, &rules).unwrap();
+        let target = sim.spawn_object("E1", "Local", 5, 5, 0, &rules).unwrap();
+        sim.session_mut_for_test().set_tick_for_test(41);
+        sim.session_mut_for_test().set_binary_frame_for_test(77);
+        let commands = [
+            Command::Attack {
+                attacker_id: gi,
+                target_id: target,
+            },
+            Command::ForceAttackCell {
+                attacker_id: gi,
+                target_rx: 6,
+                target_ry: 5,
+            },
+            Command::AttackMove {
+                entity_id: gi,
+                target: Some(TargetKind::Entity(target)),
+                destination: None,
+            },
+            Command::Stop { entity_id: gi },
+        ];
+        for command in &commands {
+            assert_eq!(
+                schedule_command_in_sim(&mut sim, "Local", command.clone()),
+                Some(41)
+            );
+        }
+        let records = sim
+            .network_command_queues()
+            .local_records()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            records
+                .iter()
+                .map(|record| record.opcode())
+                .collect::<Vec<_>>(),
+            [4, 4, 4, 6]
+        );
+        for (record, command) in records.iter().zip(commands) {
+            assert_eq!(record.frame_stamp(), 77);
+            assert_eq!(
+                sim.decode_native_command_record(record, 41)
+                    .unwrap()
+                    .payload,
+                command
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_player_actions_reach_the_live_packet_and_existing_receivers() {
+        use crate::net::event_packet::{EventPacketCodec, EventPacketHeader};
+        use crate::sim::command_queue::FrameInfo;
+        use crate::sim::mission::MissionType;
+
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        // This packet fixture places buildings, so use the buildable arena
+        // rather than the Foot-only cell-admission comparison map.
+        let rules = retail.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4C6F12);
+        let actor = sim
+            .spawn_object("E1", "Americans", 5, 5, 0, &rules)
+            .unwrap();
+        let building = sim
+            .spawn_object("GAPILE", "Americans", 3, 6, 0, &rules)
+            .unwrap();
+        let second = sim
+            .spawn_object("GAPILE", "Americans", 3, 10, 0, &rules)
+            .unwrap();
+        assert!(sim.production().is_primary_factory(building));
+        let commands = [
+            Command::CaptureBuilding {
+                engineer_id: actor,
+                target_building_id: building,
+            },
+            Command::PlantC4 {
+                attacker_id: actor,
+                target_building_id: building,
+            },
+            Command::MegaMission {
+                entity_id: actor,
+                mission: MissionType::Harvest,
+                target: None,
+                destination: None,
+            },
+            Command::SellBuilding {
+                entity_id: building,
+            },
+            Command::TogglePrimaryFactory {
+                entity_id: building,
+            },
+            Command::EjectBunker {
+                bunker_id: building,
+            },
+            Command::LiveGameSpeed { speed: 4 },
+            Command::CycleProducerFocus {
+                category: crate::sim::production::ProductionCategory::Infantry,
+            },
+            Command::CycleProducerFocus {
+                category: crate::sim::production::ProductionCategory::Infantry,
+            },
+        ];
+        for command in commands {
+            assert!(schedule_command_in_sim(&mut sim, "Americans", command).is_some());
+        }
+        let records: Vec<_> = sim
+            .network_command_queues()
+            .local_records()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect();
+        assert_eq!(
+            records.iter().map(|r| r.opcode()).collect::<Vec<_>>(),
+            [4, 4, 4, 0x16, 0x11, 0x31, 0x0d, 0x32, 0x32]
+        );
+        let source = records[0].house_id();
+        let packet = EventPacketCodec::default()
+            .encode_packet(
+                &records.iter().collect::<Vec<_>>(),
+                EventPacketHeader::Vera {
+                    frame_info: FrameInfo {
+                        house_id: source,
+                        event_frame: 17,
+                        checksum: 0,
+                        timing_word: 9,
+                        delay: 0,
+                    },
+                    command_frontier: 9,
+                },
+                0,
+                558,
+            )
+            .unwrap();
+        assert_eq!(packet.consumed_records(), 9);
+        let mut incoming = Vec::new();
+        EventPacketCodec::default()
+            .decode_packet(&packet.bytes, |record| {
+                incoming.push(record);
+                true
+            })
+            .unwrap();
+        let decoded: Vec<_> = incoming[1..]
+            .iter()
+            .map(|record| sim.decode_native_command_record(record, 17).unwrap())
+            .collect();
+        assert!(
+            decoded
+                .iter()
+                .all(|command| command.owner == sim.interner().get("Americans").unwrap())
+        );
+        assert!(matches!(
+            decoded[0].payload,
+            Command::MegaMission {
+                mission: MissionType::Capture,
+                ..
+            }
+        ));
+        assert!(matches!(
+            decoded[1].payload,
+            Command::MegaMission {
+                mission: MissionType::Sabotage,
+                ..
+            }
+        ));
+        assert!(matches!(
+            decoded[2].payload,
+            Command::MegaMission {
+                mission: MissionType::Harvest,
+                ..
+            }
+        ));
+        assert!(
+            matches!(decoded[3].payload, Command::SellBuilding { entity_id } if entity_id == building)
+        );
+        assert!(
+            matches!(decoded[4].payload, Command::TogglePrimaryFactory { entity_id } if entity_id == building)
+        );
+        assert!(
+            matches!(decoded[5].payload, Command::EjectBunker { bunker_id } if bunker_id == building)
+        );
+        assert!(sim.apply_command("Americans", &decoded[6].payload, Some(&rules)));
+        assert_eq!(sim.session().game_options().game_speed, 4);
+        assert!(sim.apply_command("Americans", &decoded[7].payload, Some(&rules)));
+        assert!(sim.production().is_primary_factory(second));
+        assert!(sim.apply_command("Americans", &decoded[8].payload, Some(&rules)));
+        assert!(sim.production().is_primary_factory(building));
+    }
+
+    #[test]
+    fn stress_march_queues_one_attack_move_per_object_through_the_local_gate() {
+        let (mut sim, rules, first) = Simulation::walk_cell_input_test_scene(false);
+        let second = sim.spawn_object("E1", "Local", 3, 5, 0, &rules).unwrap();
+        let third = sim.spawn_object("E1", "Local", 4, 5, 0, &rules).unwrap();
+
+        let accepted =
+            schedule_stress_attack_moves(&mut sim, "Local", &[first, second, third], (40, 60));
         assert_eq!(
             accepted, 3,
             "every object of the stress army gets its own order"
@@ -1385,6 +1830,58 @@ mod tests {
         (sim, local, peer)
     }
 
+    #[test]
+    fn local_outlist_overflow_keeps_click_success_and_local_options() {
+        let (mut sim, _, _) = two_human_sim();
+        // TryAppend6521C0 admits 128 events globally, before any payload
+        // receiver runs. A stale Stop still occupies its slot. PlayerSend
+        // 6FFDE6..6FFDEE ignores a full OutList's refusal and returns true.
+        for _ in 0..127 {
+            assert_eq!(
+                schedule_command_in_sim(&mut sim, "Local", Command::Stop { entity_id: 42 }),
+                Some(41)
+            );
+        }
+        assert_eq!(
+            schedule_command_in_sim(&mut sim, "Local", Command::LiveGameSpeed { speed: 4 }),
+            Some(41)
+        );
+        assert_eq!(
+            schedule_command_in_sim(&mut sim, "Peer", Command::LiveGameSpeed { speed: 6 }),
+            Some(41),
+            "overflow does not turn ordinary input feedback into a refusal"
+        );
+        assert_eq!(
+            schedule_command_in_sim(&mut sim, "Local", Command::SetGameSpeed { speed: 2 }),
+            Some(41),
+            "offline Options is outside EventClass OutList admission"
+        );
+        let due = sim.take_due_commands();
+        assert_eq!(due.len(), 1, "only local Options uses pre-Logic ingress");
+        // This second attempt is still before transfer; taking the ingress
+        // batch cannot free the event queue's occupied slots.
+        assert_eq!(
+            schedule_command_in_sim(&mut sim, "Peer", Command::LiveGameSpeed { speed: 6 }),
+            Some(41)
+        );
+        sim.advance_tick(&due, None, None, None, 33);
+        assert_eq!(
+            sim.session().game_options().game_speed,
+            4,
+            "local Options runs first, then slot 128; the peer's 129th event was dropped"
+        );
+        assert_eq!(
+            schedule_command_in_sim(&mut sim, "Peer", Command::LiveGameSpeed { speed: 6 }),
+            Some(42)
+        );
+        run_due(&mut sim);
+        assert_eq!(
+            sim.session().game_options().game_speed,
+            6,
+            "transfer reopens the queue"
+        );
+    }
+
     fn run_due(sim: &mut Simulation) -> bool {
         let due = sim.take_due_commands();
         sim.advance_tick(&due, None, None, None, 33).frame_committed
@@ -1452,6 +1949,24 @@ mod tests {
     }
 
     #[test]
+    fn a_wol_tournament_remove_player_skips_the_human_test() {
+        // 0x004C7BBF..0x004C7BCE: GameMode 4 with [0xB779C4] set flags the
+        // House without IsHumanControlled.
+        let (mut sim, _, _) = two_human_sim();
+        let ai = sim.intern("Ai");
+        sim.houses_mut_for_test()
+            .register(HouseState::new(ai, 0, None, false, 0, 10));
+        sim.session_mut_for_test()
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Wol);
+        sim.install_network_timing(10);
+        sim.install_wol_start(1, Default::default());
+        schedule_command_in_sim(&mut sim, "Local", Command::RemovePlayer { house_index: 2 })
+            .unwrap();
+        run_due(&mut sim);
+        assert!(sim.houses()[&ai].is_to_die());
+    }
+
+    #[test]
     fn the_ally_record_carries_the_other_house_index_through_the_queue() {
         // Ally 0x00731877..0x007318C8: EventClass(PlayerPtr, 3, index).
         let (mut sim, local, peer) = two_human_sim();
@@ -1459,7 +1974,7 @@ mod tests {
         assert_eq!(record.opcode(), crate::sim::command::ALLY_OPCODE);
         assert_eq!(&record.payload()[..4], &1i32.to_le_bytes());
         schedule_command_in_sim(&mut sim, "Local", Command::Ally { house_index: 1 }).unwrap();
-        let due = sim.take_due_commands();
+        let due = sim.take_frame_commands_for_test();
         assert!(matches!(
             due.as_slice(),
             [envelope] if envelope.owner == local
@@ -1494,7 +2009,10 @@ mod tests {
         );
 
         let due = sim.take_due_commands();
-        assert_eq!(due.len(), 1);
+        assert!(
+            due.is_empty(),
+            "the local EXIT remains staged until the tail"
+        );
         let result = sim.advance_tick(&due, None, None, None, 33);
         assert_eq!(result.executed_commands, 1);
         assert!(
@@ -1549,18 +2067,17 @@ mod tests {
             schedule_command_in_sim(&mut sim, "Local", Command::Destruct),
             Some(41)
         );
-        assert_eq!(
-            schedule_command_in_sim(&mut sim, "Ai", Command::Destruct),
-            Some(41)
-        );
+        // The payload itself has no Human guard. Exercise that receiver at
+        // the tail below, after the House rung's pending-death processing.
         let pending = sim.pending_command_snapshot();
-        assert_eq!(pending.len(), 2);
+        assert_eq!(pending.len(), 1);
         assert!(pending.iter().all(|c| c.payload == Command::Destruct));
         assert!(!sim.houses()[&local].is_to_die());
 
         let due = sim.take_due_commands();
         let result = sim.advance_tick(&due, None, None, None, 33);
-        assert_eq!(result.executed_commands, 2);
+        assert_eq!(result.executed_commands, 1);
+        assert!(sim.apply_command("Ai", &Command::Destruct, None));
         assert!(sim.houses()[&local].is_to_die());
         assert!(sim.houses()[&ai].is_to_die());
         assert!(!sim.quit_requested());
@@ -1629,9 +2146,7 @@ mod tests {
 
         let due = sim.take_due_commands();
         let result = sim.advance_tick(&due, None, None, None, 33);
-        let local_outcome_exit_ready = sim.houses()[&local]
-            .outcome()
-            .is_some_and(|outcome| outcome.exit_ready);
+        let local_outcome_exit_ready = sim.ready_outcome_for_owner(local).is_some();
 
         assert!(!result.frame_committed);
         assert!(local_outcome_exit_ready, "House expiry happened this frame");
@@ -1701,8 +2216,8 @@ mod tests {
         assert_eq!(singles.rng_state(), single_rng_before);
         assert_eq!(batches.rng_state(), batch_rng_before);
 
-        let due_from_singles = singles.take_due_commands();
-        let due_from_batches = batches.take_due_commands();
+        let due_from_singles = singles.take_frame_commands_for_test();
+        let due_from_batches = batches.take_frame_commands_for_test();
         let expected_due = vec![
             commands[0].clone(),
             commands[2].clone(),
@@ -1810,12 +2325,16 @@ mod tests {
     #[test]
     fn recorded_scheduler_stamps_the_current_raw_issue_ordinal() {
         let mut sim = Simulation::new();
+        let owner = sim.intern("Russians");
+        sim.houses_mut_for_test()
+            .register(HouseState::new(owner, 0, None, true, 0, 10));
         sim.session_mut_for_test().set_tick_for_test(41);
         sim.set_input_delay_ticks(7);
+        let command = Command::CycleProducerFocus {
+            category: crate::sim::production::ProductionCategory::Building,
+        };
 
-        let execute_tick =
-            schedule_command_in_sim(&mut sim, "Russians", Command::DeployMcv { entity_id: 99 })
-                .unwrap();
+        let execute_tick = schedule_command_in_sim(&mut sim, "Russians", command.clone()).unwrap();
 
         assert_eq!(execute_tick, 41);
         assert_eq!(sim.pending_command_snapshot().len(), 1);
@@ -1825,10 +2344,7 @@ mod tests {
                 .resolve(sim.pending_command_snapshot()[0].owner),
             "Russians"
         );
-        assert_eq!(
-            sim.pending_command_snapshot()[0].payload,
-            Command::DeployMcv { entity_id: 99 }
-        );
+        assert_eq!(sim.pending_command_snapshot()[0].payload, command);
     }
 
     #[test]
@@ -1938,7 +2454,7 @@ mod tests {
             sim.pending_command_snapshot()[0].payload,
             Command::SellWallAtCell { x: 0, y: 1 }
         );
-        assert_eq!(sim.take_due_commands().len(), 1);
+        assert_eq!(sim.take_frame_commands_for_test().len(), 1);
 
         sim.session_mut_for_test().set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),

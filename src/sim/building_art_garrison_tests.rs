@@ -6,7 +6,7 @@ use super::*;
 use crate::map::entities::EntityCategory;
 use crate::rules::art_data::{ArtRegistry, BuildingAnimVariantConfig};
 use crate::rules::ini_parser::IniFile;
-use crate::sim::passenger::{PassengerCargo, PassengerRole};
+use crate::sim::passenger::PassengerRole;
 use serde_json::Value;
 use std::collections::BTreeSet;
 
@@ -105,7 +105,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
     }
     let count = integer(&input["occupant_count"]);
     assert!((0..=1).contains(&count));
-    let mut cargo = PassengerCargo::new(1, 0.0);
+    let mut occupants = Vec::new();
     for _ in 0..count {
         let occupant_id = sim.substrate.allocate_stable_id();
         let mut occupant = GameEntity::test_default_of_category(
@@ -120,10 +120,13 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
         occupant.set_owner_for_test(sim.interner.intern("A"));
         occupant.passenger_role = PassengerRole::inside_for_test(id, false);
         sim.substrate.entities.insert(occupant);
-        cargo.board_forced_chain(&[(occupant_id, 1.0)]);
+        occupants.push(occupant_id);
     }
     let building = sim.substrate.entities.get_mut(id).unwrap();
-    building.passenger_role = PassengerRole::transport(cargo);
+    building
+        .passenger_role
+        .occupants_mut()
+        .set_ids_for_test(occupants);
     building.health.set_for_test(integer(&input["current_hp"]));
     building.building_art.damage_state_active = input["retained_damage_state"].as_bool().unwrap();
     (sim, rules, id)

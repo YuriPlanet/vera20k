@@ -10,7 +10,7 @@ import hashlib
 import struct
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import *
-from tools.native_oracle import NATIVE_SHA256, RET_MAGIC, run_checked, finish_vectors, provenance
+from tools.native_oracle import RET_MAGIC, run_checked, finish_vectors, provenance
 from tools.rules_oracle.bridge_anim_inputs import Reader
 from tools.rules_oracle.bridge_child_sound import Sound
 from tools.rules_oracle.infantry_speed_type import SpeedReader
@@ -180,11 +180,10 @@ def cell_early_gates():
 
 
 def generate():
-    return dict(schema_version=1, native_sha256=NATIVE_SHA256,
+    return dict(schema_version=1,
                 overlay_registry=overlay_registry(), engineer_immunity=engineer_immunity(),
                 vein_attack_rule=vein_rule(), emp=emp_predicate(),
-                cell_early_gates=cell_early_gates(),
-                harness_sha256=sha(Path(__file__).read_bytes()))
+                cell_early_gates=cell_early_gates())
 
 
 def metadata():

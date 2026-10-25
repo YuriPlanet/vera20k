@@ -7,7 +7,7 @@ import hashlib,struct
 from pathlib import Path
 from unicorn import Uc,UC_ARCH_X86,UC_MODE_32,UC_HOOK_CODE,UC_HOOK_MEM_WRITE
 from unicorn.x86_const import UC_X86_REG_EAX,UC_X86_REG_ECX,UC_X86_REG_ESP,UC_X86_REG_EIP
-from tools.native_oracle import SCRATCH,STACK_BASE,STACK_SIZE,RET_MAGIC,NATIVE_SHA256,load_image,run_checked,finish_vectors,provenance
+from tools.native_oracle import SCRATCH,STACK_BASE,STACK_SIZE,RET_MAGIC,load_image,run_checked,finish_vectors,provenance
 from tools.spatial_oracle.map_queries import TABLE,EMPTY_TABLE,DUMMY,dwords,packed
 ACTOR,CELL_A,CELL_B=SCRATCH+0x1000,SCRATCH+0x3000,SCRATCH+0x3200
 SP=STACK_BASE+STACK_SIZE-0x1000
@@ -44,7 +44,7 @@ def generate():
   ('signed_extreme',[-2147483648,2147483647,0],[[10,10],[11,10]])):
   for marked in (0,1):
    cases.append(dict(name=f'{name}_marked{marked}',xyz=xyz,marked=marked,mapped_cells=[dict(xy=xy,land=l,flags=f)for xy,l,f in zip(mapped,(7,2),(0x100,0x400))],dummy=dict(xy=[111,-222],land=2,flags=0x500)))
- return dict(native_sha256=NATIVE_SHA256,rows=[execute(c)for c in cases])
+ return dict(rows=[execute(c)for c in cases])
 
 def metadata():return provenance(scope=__doc__,entry_points={'object_get_cell':0x5F6960,'map_get_cell':0x565730},assumptions=['Ten controls: real/negativefraction/wrappedalias/missing/signedextreme with marked0/1. ObjectGetCell ignores marked and reads physicalXYZ twice.','Supplied sparse fixed512stride cells and retained dummyLand2/rawflags500. Neither map nor object lifecycle initialized. Read-only hooks; only allowed nonstackwrite is dummy coordinate.'],substitutions=[])
 if __name__=='__main__':finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=metadata)

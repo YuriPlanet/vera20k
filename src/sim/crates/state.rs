@@ -58,6 +58,15 @@ impl Default for CrateAuthority {
 }
 
 impl CrateAuthority {
+    /// Map no-init565190 follows MouseLoad's raw read and empties every slot,
+    /// including ghosts, without pausing/rebasing any of its three timer words.
+    pub(crate) fn reset_coordinates_after_user_load(&mut self) {
+        for slot in &mut self.slots {
+            slot.cell_x = 0;
+            slot.cell_y = 0;
+        }
+    }
+
     pub(crate) fn first_empty_index(&self) -> Option<usize> {
         self.slots.iter().position(|slot| slot.is_empty())
     }

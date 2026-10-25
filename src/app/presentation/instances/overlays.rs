@@ -7,7 +7,7 @@
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::app::AppState;
 use crate::map::terrain::{self, TILE_HEIGHT, TILE_WIDTH};
@@ -24,6 +24,7 @@ use crate::rules::overlay_types::is_bridge_overlay_index;
 
 use super::helpers::{
     ANIM_DRAW_DEPTH_BIAS_PX, apply_shape_z_adjust, compute_sprite_depth_params, in_view,
+    projection_admitted,
 };
 
 /// Map terrain entries remain the render metadata source, but once rules-backed
@@ -88,24 +89,47 @@ fn body_draw_skips_live_identity(overlay_id: u8) -> bool {
 /// with `-15 * level - 2`; ordinary non-walls use DrawFlat (+0x2B3), adding
 /// -15 only for upright non-rock art. Tiberium's flat branch uses gradient 0.
 ///
-/// Sloped resources use a separate native slope Z-shape, and the TS vein
-/// family also has special shape offsets; preserve their passthrough until
-/// those consumers have their own shape data, since a made-up flat Z would
-/// poison nearby walls. Rubble swaps in its building's art but keeps the
+/// Sloped resources and literal legacy identity7E also select the raw
+/// optional surface owned by OverlayAtlas. IsVeins/IsVeinholeMonster do
+/// not disable native depth. Rubble swaps in its building's art but keeps the
 /// ordinary flags-derived Z: 0047F6A0's IsRubble arm computes level,
 /// gradient and DrawFlat term exactly as the ordinary arm does.
+struct OverlayBodyDepth {
+    render_z: RenderZPolicy,
+    z_adjust: f32,
+    gradient: ZGradient,
+    shape: Option<crate::render::overlay_atlas::OverlayShapeRequest>,
+}
+
 fn ordinary_overlay_z(
+    overlay_id: u8,
     flags: Option<&OverlayTypeFlags>,
     slope: u8,
     level: u8,
-) -> (RenderZPolicy, f32, u32) {
+) -> Option<OverlayBodyDepth> {
     let Some(flags) = flags else {
-        return (RenderZPolicy::None, 0.0, 0);
+        return Some(OverlayBodyDepth {
+            render_z: RenderZPolicy::None,
+            z_adjust: 0.0,
+            gradient: ZGradient::Flat,
+            shape: None,
+        });
     };
-    if (flags.tiberium && slope != 0) || flags.is_veins || flags.is_veinhole_monster {
-        return (RenderZPolicy::None, 0.0, 0);
-    }
-    let (gradient, class_term) = if flags.tiberium {
+    let legacy_veins = !flags.tiberium && !flags.wall && overlay_id == 0x7E;
+    let shape = if (flags.tiberium || legacy_veins) && slope != 0 {
+        // Only AA1060..AA106C are native optional-shape pointers. Higher
+        // slopes index unrelated globals; skip that malformed draw safely.
+        if !(1..=4).contains(&slope) {
+            return None;
+        }
+        Some(crate::render::overlay_atlas::OverlayShapeRequest {
+            slope,
+            offset: if legacy_veins { [30, -2] } else { [0, 0] },
+        })
+    } else {
+        None
+    };
+    let (gradient, class_term) = if flags.tiberium || legacy_veins {
         (ZGradient::Flat, -2)
     } else if flags.wall {
         (ZGradient::Vertical, -2)
@@ -123,11 +147,12 @@ fn ordinary_overlay_z(
             },
         )
     };
-    (
-        RenderZPolicy::ReadWrite,
-        native_z::ground_anchored_z_adjust(i32::from(level), class_term) as f32,
-        pack_z_gradient(gradient, false),
-    )
+    Some(OverlayBodyDepth {
+        render_z: RenderZPolicy::ReadWrite,
+        z_adjust: native_z::ground_anchored_z_adjust(i32::from(level), class_term) as f32,
+        gradient,
+        shape,
+    })
 }
 
 /// `CellClass::DrawOverlay_Body @ 0x0047F6A0`'s IsRubble arm: the cell draws
@@ -166,13 +191,12 @@ pub(super) fn overlay_render_identity(
         .then_some((static_overlay_id, live_cell.overlay_data))
 }
 
-/// Choose the display-only identity for a flat resource cell.
+/// Choose the display-only identity for a resource cell.
 ///
 /// Active YR `CellClass__DrawOverlay_Body @ 0x0047F6A0` keeps the Cell's
 /// overlay identity/data as resource state but selects a coordinate-derived
-/// flat image when the resolved cell is not sloped. Missing render metadata,
-/// invalid signed indices, slopes, and non-resource overlays retain the live
-/// identity without approximation.
+/// image for the resolved slope. Missing metadata/non-resource overlays keep
+/// the live identity. Native-invalid slope selectors are skipped safely.
 fn overlay_display_identity(
     live_overlay_id: u8,
     overlay_data: u8,
@@ -181,22 +205,23 @@ fn overlay_display_identity(
     slope_type: Option<u8>,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     tiberium_types: Option<&crate::rules::tiberium_type::TiberiumTypeRegistry>,
-) -> (u8, u8) {
+) -> Option<(u8, u8)> {
     let (Some(overlay_registry), Some(tiberium_types)) = (overlay_registry, tiberium_types) else {
-        return (live_overlay_id, overlay_data);
+        return Some((live_overlay_id, overlay_data));
     };
-    if slope_type != Some(0)
+    if slope_type.is_none()
         || !overlay_registry
             .flags(live_overlay_id)
             .is_some_and(|flags| flags.tiberium)
     {
-        return (live_overlay_id, overlay_data);
+        return Some((live_overlay_id, overlay_data));
     }
 
-    let display_overlay_id = overlay_registry
-        .flat_tiberium_display_overlay_id(tiberium_types, live_overlay_id, rx, ry)
-        .unwrap_or(live_overlay_id);
-    (display_overlay_id, overlay_data)
+    let slope = slope_type.unwrap_or(0);
+    overlay_registry
+        .tiberium_display_overlay_id(tiberium_types, live_overlay_id, rx, ry, slope)
+        .or_else(|| (slope == 0).then_some(live_overlay_id))
+        .map(|display| (display, overlay_data))
 }
 
 /// Borrowed inputs to the one retained dynamic-effect traversal. App startup,
@@ -214,6 +239,7 @@ pub(crate) struct DisplayEffectInputs<'a> {
     pub detail: &'a std::cell::RefCell<crate::app::presentation::detail::DetailState>,
     pub detail_level: u32,
     pub lighting: &'a crate::map::lighting::CellLightGrid,
+    pub retained_anim_intensities: Option<&'a BTreeMap<u64, i32>>,
     pub house_colors: &'a crate::map::houses::HouseColorMap,
     pub hidden_super_anims: &'a std::collections::BTreeSet<crate::sim::anim_class::AnimId>,
     /// The local Show Hidden option (`Options+0x1F`).
@@ -225,12 +251,18 @@ pub(crate) struct DisplayEffectInputs<'a> {
 /// Traverse dynamic effect bodies in actual Display order. Anim and particle
 /// consumers share the mutative55AF60 FPS latch; grouping them by class changes
 /// native admission when the unsigned minimum/buffer arithmetic wraps.
+/// Prepared building slots keep their binding/light owner, but query and append
+/// only at their own encounter, even when preparation produced no visible piece.
 pub(crate) fn build_display_effect_instances(
     input: &DisplayEffectInputs<'_>,
     ground_objects: &mut Vec<
         crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance,
     >,
     ground_order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
+    mut prepared_building_anims: BTreeMap<
+        crate::sim::anim_class::AnimId,
+        crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance,
+    >,
 ) -> Option<Vec<super::particles::ParticleDrawObservation>> {
     let mut observations = input.observe_particles.then(Vec::new);
     let sim = input.sim;
@@ -255,12 +287,17 @@ pub(crate) fn build_display_effect_instances(
         input.render_size[0] as f32 / z2,
         input.render_size[1] as f32 / z2,
     );
-    let parachute_type = input
-        .rules
-        .general
-        .parachute_shp
-        .as_deref()
-        .and_then(|name| sim.interner().get(name));
+    let projection_viewport = [input.tactical[2] as f32 / z2, input.tactical[3] as f32 / z2];
+    // NPSE Paradrop C2FA75/C2F939 attaches either retained canopy type.
+    let parachute_types = [
+        input.rules.general.parachute_shp.as_deref(),
+        if crate::rules::NPATCH_ENABLED {
+            input.rules.general.vehicle_parachute.as_deref()
+        } else {
+            None
+        },
+    ]
+    .map(|name| name.and_then(|name| sim.interner().get(name)));
     let local_owner = input.local_owner;
     for &stable_id in sim.display_layers().ordered_ids() {
         if let Some(light) = sim.building_spotlight(stable_id, input.rules) {
@@ -302,19 +339,54 @@ pub(crate) fn build_display_effect_instances(
         let Some(anim) = sim.anim(stable_id) else {
             continue;
         };
-        // DrawIt422CA0..4238AF does not read native19B. Display membership
-        // supplies live draws; Building slots use the binding owner above.
-        if anim.is_building_anim() {
-            continue;
-        }
-        // The canopy is placed by `build_parachute_instances`, on its owner's
-        // sort key.
-        if parachute_type.is_some_and(|ty| parachute_canopy_owner(anim, ty).is_some()) {
-            continue;
-        }
+        // Paradrop creates a retained Anim, whose GetCoords resolves its
+        // owner-relative75-lepton lift. Draw it at its own Display encounter.
+        let is_parachute = parachute_types
+            .into_iter()
+            .flatten()
+            .any(|ty| parachute_canopy_owner(anim, ty).is_some());
         let type_name: &str = sim.interner().resolve(anim.type_id());
         let config = input.rules.art().anim_runtime_config(type_name);
-        if config.is_some_and(|config| !config.art_body_read) {
+        if config
+            .is_some_and(|config| !config.art_body_read && config.raw_shp_frame_count.is_none())
+        {
+            continue;
+        }
+        // AnimDrawIfVisible422C70 rejects delay+184 before Object5F4B10's
+        // Tactical6D2140 projection gate and the mutative DrawIt55AF60 query.
+        // Whole-slot controls: spatial_oracle/building_anim_detail.json.
+        if anim.runtime().delay_remaining != 0 {
+            continue;
+        }
+        // AnimGetCoords422BE0 resolves owner-relative coordinates. Admission
+        // uses the same painted point as the existing body emitter, without
+        // image offsets or the parent Building's viewport/body visibility.
+        let Some(anim_coord) = sim.anim_absolute_coord(stable_id) else {
+            continue;
+        };
+        let (mut center_x, mut center_y, rx, ry, _, mut lift_px) =
+            anim_world_render_coords(anim_coord);
+        let mut drawn_coord = [anim_coord.x, anim_coord.y, anim_coord.z];
+        let is_building_anim = anim.is_building_anim();
+        // Slot preparation uses the committed coordinate; retain that geometry.
+        // Free Anims keep their existing sampled point for admission and drawing.
+        if !is_building_anim && let Some(interpolation) = input.interpolation {
+            use crate::app::presentation::interpolation::{PointKind, PointPose};
+            let sample = interpolation.sample_point(
+                PointKind::Anim,
+                stable_id,
+                PointPose::new(
+                    [anim_coord.x, anim_coord.y, anim_coord.z],
+                    anim.type_id().index(),
+                    anim.owner_entity(),
+                ),
+                sim.session().binary_frame(),
+            );
+            [center_x, center_y] = sample.screen;
+            lift_px = sample.lift.round() as i32;
+            drawn_coord = sample.coord;
+        }
+        if !projection_admitted([center_x, center_y], input.camera, projection_viewport) {
             continue;
         }
         if !crate::sim::anim_class::anim_draw_detail_visible(
@@ -356,53 +428,52 @@ pub(crate) fn build_display_effect_instances(
         ) {
             continue;
         }
-        let Ok(frame) = u16::try_from(anim.runtime().current_frame) else {
-            continue;
-        };
-        // `AnimClass::GetCoords @ 0x00422BE0`: an owner-attached anim stores an
-        // owner-relative delta, so the draw position must be resolved through
-        // the owner rather than read off the field.
-        let Some(anim_coord) = sim.anim_absolute_coord(anim.stable_id()) else {
-            continue;
-        };
-        let (mut center_x, mut center_y, rx, ry, _, mut lift_px) =
-            anim_world_render_coords(anim_coord);
-        if let Some(interpolation) = input.interpolation {
-            use crate::app::presentation::interpolation::{PointKind, PointPose};
-            let sample = interpolation.sample_point(
-                PointKind::Anim,
-                stable_id,
-                PointPose::new(
-                    [anim_coord.x, anim_coord.y, anim_coord.z],
-                    anim.type_id().index(),
-                    anim.owner_entity(),
-                ),
-                sim.session().binary_frame(),
-            );
-            [center_x, center_y] = sample.screen;
-            lift_px = sample.lift.round() as i32;
-        }
-        if !in_view(
-            center_x, center_y, 200.0, 200.0, cam_x, cam_y, sw, sh, 200.0,
-        ) {
+        // AnimDrawIt423014..423026 applies the fog byte after its detail
+        // queries, and only when AnimType.ShouldFogRemove is set.
+        if config.is_none_or(|config| config.should_fog_remove)
+            && local_owner.is_some_and(|viewer| sim.fog().is_object_fogged(viewer, stable_id))
+        {
             continue;
         }
-        let tint = input.lighting.anim_tint_at((rx, ry), config);
+        if is_building_anim {
+            // DrawIt queries detail before hidden/image/material rejection.
+            // An absent prepared piece must not suppress that query.
+            if let Some(parent) = prepared_building_anims.remove(&stable_id) {
+                ground_objects.push(parent);
+            }
+            continue;
+        }
+        // DrawIt423055..42305D resolves the ordinary source as AC + AnimType.Start,
+        // just as the building-slot caller. Special draw arms retain their
+        // existing frame selection until their own renderer is ported, and so
+        // does a HasBounce ground shadow ahead of them, which natively takes
+        // AC + Start in every arm (4233CD). Residual: no retail Tiled or RING1
+        // type sets Bouncer=, IsMeteor= or Start=.
+        let start = if super::anim_draw::ordinary_anim_type(type_name, config) {
+            config.map_or(0, |config| config.start)
+        } else {
+            0
+        };
+        let Ok(frame) = u16::try_from(anim.runtime().current_frame.wrapping_add(start)) else {
+            continue;
+        };
         let remap_color =
             crate::render::sprite_atlas::anim_remap_color(anim, sim.interner(), input.house_colors);
-        let palette_light = if remap_color.is_some() {
-            Default::default()
-        } else {
-            crate::app::presentation::lighting::anim_palette_light(
-                input.lighting,
-                (rx, ry),
-                config,
-                anim.use_cell_drawer(),
-            )
-        };
+        let palette_light = crate::app::presentation::lighting::anim_palette_light(
+            input.lighting,
+            (rx, ry),
+            config,
+            anim.use_cell_drawer(),
+            anim.remap().as_ref(),
+            input
+                .retained_anim_intensities
+                .and_then(|samples| samples.get(&stable_id))
+                .copied()
+                .unwrap_or(1000),
+        );
         let key = ShpSpriteKey {
             palette_context: if anim.use_cell_drawer() {
-                crate::render::sprite_atlas::ShpPaletteContext::Cell
+                crate::render::sprite_atlas::ShpPaletteContext::AnimCell
             } else if remap_color.is_some() {
                 crate::render::sprite_atlas::anim_remap_context(anim)
             } else {
@@ -413,10 +484,20 @@ pub(crate) fn build_display_effect_instances(
             frame,
             house_color: remap_color.unwrap_or(HouseColorIndex(0)),
         };
-        let Some(entry) = atlas.get(&key) else {
-            continue;
+        let entry = atlas.get(&key);
+        // DrawIt422CA0's D4 instance Convert carries its palette/FC into
+        // the ordinary native blitter. Sparse FC absence means ctor1000;
+        // it is not a reason to choose the compatibility material.
+        let instance_scheme = remap_color.is_some()
+            && !anim.use_cell_drawer()
+            && entry.is_some_and(|entry| entry.source_palette != 0)
+            && super::anim_draw::ordinary_anim_type(type_name, config);
+        let tint = if is_parachute || instance_scheme {
+            [1.0; 3]
+        } else {
+            input.lighting.anim_tint_at((rx, ry), config)
         };
-        let Some(alpha) = anim_instance_alpha_with_flags(
+        let Some(flags) = anim_instance_flags(
             config,
             anim.draw_flags(),
             anim.runtime().current_frame,
@@ -429,6 +510,21 @@ pub(crate) fn build_display_effect_instances(
         ) else {
             continue;
         };
+        // Ordinary DrawIt422CA0 -> 4AED70 carries Convert's selector into
+        // the packed RGB565 blitter, rather than alpha-blending the source.
+        // Original full draw controls: spatial_oracle/anim_translucency.
+        let (alpha, draw_state) = if (remap_color.is_none() || instance_scheme)
+            && super::anim_draw::ordinary_anim_type(type_name, config)
+        {
+            (
+                1.0,
+                crate::render::draw_state::DrawState::from_native_selector(0, (flags & 6) as u8),
+            )
+        } else {
+            // Separate native draw arms and remapped compatibility sources
+            // without native palette metadata retain their existing material.
+            (anim_translucency_source_alpha(flags), Default::default())
+        };
         let (origin_y, world_height) = (input.axis.origin_y, input.axis.world_height);
         let fire_depth = super::helpers::compute_sprite_depth_params_lifted(
             origin_y,
@@ -437,16 +533,9 @@ pub(crate) fn build_display_effect_instances(
             lift_px,
         );
         debug_assert!(!anim.terrain_attached() || anim.use_cell_drawer());
-        // Native Z (`AnimClass__DrawIt @ 0x00422CA0`): 0x2800, gradient entry
-        // 2 (0 when Flat), `YDrawOffset + ZAdjust - AdjustForZ - 2`; tests Z
-        // per pixel and never writes. YDrawOffset is already in the atlas
-        // offset, so only ZAdjust - 2 remains beside the lift cancel.
+        // Prepare the ordinary body coordinate/material. The shared DrawIt
+        // pass builder owns Flat's separate Z term and the optional shadow.
         let instance = SpriteInstance {
-            position: [center_x + entry.offset_x, center_y + entry.offset_y],
-            size: entry.pixel_size,
-            uv_origin: entry.uv_origin,
-            uv_size: entry.uv_size,
-            source_palette: entry.source_palette,
             depth: apply_shape_z_adjust(
                 fire_depth,
                 anim.z_adjust() + ANIM_DRAW_DEPTH_BIAS_PX,
@@ -455,6 +544,7 @@ pub(crate) fn build_display_effect_instances(
             tint,
             palette_light,
             alpha,
+            draw_state,
             // YDrawOffset is baked into the atlas offset, so it must also
             // ride the Z term to keep Z on the un-offset row, as natively.
             z_adjust: super::helpers::lifted_z_adjust(
@@ -475,11 +565,26 @@ pub(crate) fn build_display_effect_instances(
             ground_objects.push(
                 crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance::object(
                     parent,
-                    vec![crate::app::presentation::render::draw_plan_lowering::ObjectPieceInstance {
-                        target: crate::app::presentation::render::draw_plan_lowering::ObjectTexture::ShpPage(entry.page as usize),
-                        render_z: parent.policy.render_z,
-                        instance,
-                    }],
+                    super::anim_draw::anim_draw_pieces(
+                        atlas,
+                        super::anim_draw::AnimDrawInput {
+                            key: &key,
+                            entry,
+                            point: [center_x, center_y],
+                            body: instance,
+                            config,
+                            flags,
+                            lift_px,
+                            axis: input.axis,
+                            viewport: [cam_x, cam_y, sw, sh],
+                            legacy_policy: parent.policy.render_z,
+                            bounce_drop_px: super::anim_draw::anim_bounce_drop_px(
+                                sim,
+                                anim,
+                                drawn_coord,
+                            ),
+                        },
+                    ),
                 ),
             );
         }
@@ -514,6 +619,7 @@ fn anim_instance_alpha(
 /// `AnimClass::DrawIt`'s translucency selection (`0x00423061`) as a source
 /// alpha, or `None` where it skips the draw. Free anims and building slot
 /// anims both draw through it.
+#[cfg(test)]
 pub(super) fn anim_instance_alpha_with_flags(
     config: Option<&AnimTypeRuntimeConfig>,
     base_flags: u32,
@@ -522,6 +628,26 @@ pub(super) fn anim_instance_alpha_with_flags(
     game_detail_level: i32,
     draw_runtime: crate::sim::anim_class::AnimDrawRuntime,
 ) -> Option<f32> {
+    anim_instance_flags(
+        config,
+        base_flags,
+        current_frame,
+        shp_frame_count,
+        game_detail_level,
+        draw_runtime,
+    )
+    .map(anim_translucency_source_alpha)
+}
+
+/// Keep DrawIt's selected flags for the body material and its later shadow.
+pub(super) fn anim_instance_flags(
+    config: Option<&AnimTypeRuntimeConfig>,
+    base_flags: u32,
+    current_frame: i32,
+    shp_frame_count: i32,
+    game_detail_level: i32,
+    draw_runtime: crate::sim::anim_class::AnimDrawRuntime,
+) -> Option<u32> {
     let result = crate::sim::anim_class::anim_translucency_selection(
         crate::sim::anim_class::AnimTranslucencyInput {
             base_flags,
@@ -537,9 +663,7 @@ pub(super) fn anim_instance_alpha_with_flags(
             instance_ramp: i32::from(draw_runtime.translucency_ramp),
         },
     );
-    result
-        .draw
-        .then(|| anim_translucency_source_alpha(result.flags))
+    result.draw.then_some(result.flags)
 }
 
 pub(super) fn presentation_anim_frame_count(
@@ -552,28 +676,8 @@ pub(super) fn presentation_anim_frame_count(
     })
 }
 
-/// Every object that owns a live canopy this frame: the falling ones, and the
-/// landed ones whose canopy is still playing out.
-pub(crate) fn parachute_canopy_owners(
-    state: &AppState,
-    sim: &crate::sim::world::Simulation,
-) -> std::collections::HashSet<u64> {
-    let Some(parachute_type) = state
-        .rules()
-        .and_then(|rules| rules.general.parachute_shp.as_deref())
-        .and_then(|name| sim.interner().get(name))
-    else {
-        return std::collections::HashSet::new();
-    };
-    sim.display_layers()
-        .ordered_ids()
-        .filter_map(|&id| sim.anim(id))
-        .filter_map(|anim| parachute_canopy_owner(anim, parachute_type))
-        .collect()
-}
-
 /// The object a canopy hangs on: an owner-attached anim of the
-/// `[General] Parachute=` type.
+/// retained `Parachute=` or NPSE `VehicleParachute=` type.
 fn parachute_canopy_owner(
     anim: &crate::sim::anim_class::AnimObject,
     parachute_type: crate::sim::intern::InternedId,
@@ -648,6 +752,11 @@ struct CellOverlayInputs<'a> {
     viewport: [f32; 2],
     origin_y: f32,
     world_height: f32,
+    /// Translucent fog: walls are objects, so they leave the draw plan when the
+    /// local viewer does not see their cell.
+    viewer: Option<crate::sim::intern::InternedId>,
+    fog: Option<&'a crate::sim::vision::FogState>,
+    fog_of_war: bool,
 }
 
 /// Cell_ContentRendering @ 0x006D6D10 -> DrawOverlay_Body @ 0x0047F6A0 for
@@ -685,11 +794,24 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
         }
         let overlay_registry = input.registry;
         let overlay_flags = overlay_registry.and_then(|reg| reg.flags(live_overlay_id));
+        // Walls are owned objects, not scenery: translucent fog keeps terrain,
+        // ore and trees visible but must not expose unseen wall lines.
+        if overlay_flags.is_some_and(|flags| flags.wall)
+            && super::helpers::translucent_fog_conceals_cell(
+                input.viewer,
+                input.fog,
+                entry.rx,
+                entry.ry,
+                input.fog_of_war,
+            )
+        {
+            continue;
+        }
         let slope_type = input
             .terrain
             .and_then(|terrain| terrain.cell(entry.rx, entry.ry))
             .map(|cell| cell.slope_type);
-        let (display_overlay_id, live_overlay_data) = overlay_display_identity(
+        let Some((display_overlay_id, live_overlay_data)) = overlay_display_identity(
             live_overlay_id,
             live_overlay_data,
             entry.rx,
@@ -697,7 +819,9 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             slope_type,
             overlay_registry,
             input.tiberium_types,
-        );
+        ) else {
+            continue;
+        };
         let name = if display_overlay_id == live_overlay_id {
             input.names.get(&live_overlay_id).cloned()
         } else {
@@ -778,7 +902,7 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
         // `render::overlay_atlas::resolve_body_frame`.
         let key = rubble_key.unwrap_or_else(|| OverlaySpriteKey {
             name: name.clone(),
-            frame: render_frame,
+            frame: i32::from(render_frame),
         });
         let Some(spr) = input.atlas.get(&key) else {
             continue;
@@ -786,33 +910,47 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
         let depth_z: u8 = z;
         let depth: f32 =
             compute_sprite_depth_params(input.origin_y, input.world_height, screen_y, depth_z);
-        let (policy, z_adjust, z_gradient) =
-            ordinary_overlay_z(overlay_flags, slope_type.unwrap_or(0), depth_z);
+        let Some(body_z) = ordinary_overlay_z(
+            live_overlay_id,
+            overlay_flags,
+            slope_type.unwrap_or(0),
+            depth_z,
+        ) else {
+            continue;
+        };
         let tint: [f32; 3] = input.lighting.overlay_tint_at((entry.rx, entry.ry));
         let palette_light =
             ordinary_overlay_palette_light(overlay_flags, input.lighting, (entry.rx, entry.ry));
+        let mut instance = SpriteInstance {
+            position: [
+                screen_x + TILE_WIDTH / 2.0 + spr.offset_x,
+                screen_y + TILE_HEIGHT / 2.0 + spr.offset_y,
+            ],
+            size: spr.pixel_size,
+            uv_origin: spr.uv_origin,
+            uv_size: spr.uv_size,
+            depth,
+            tint,
+            palette_light,
+            alpha: 1.0,
+            z_adjust: body_z.z_adjust,
+            z_gradient: pack_z_gradient(body_z.gradient, false),
+            ..Default::default()
+        };
+        if body_z.shape.is_some_and(|shape| {
+            !input
+                .atlas
+                .apply_zshape(shape, spr, input.camera, input.viewport, &mut instance)
+        }) {
+            continue;
+        }
         bodies.push(super::CellBody {
             cell: (entry.rx, entry.ry),
             draw: super::CellBodyDraw {
                 atlas: super::CellBodyAtlas::Overlay,
-                render_z: policy,
+                render_z: body_z.render_z,
             },
-            instance: SpriteInstance {
-                position: [
-                    screen_x + TILE_WIDTH / 2.0 + spr.offset_x,
-                    screen_y + TILE_HEIGHT / 2.0 + spr.offset_y,
-                ],
-                size: spr.pixel_size,
-                uv_origin: spr.uv_origin,
-                uv_size: spr.uv_size,
-                depth,
-                tint,
-                palette_light,
-                alpha: 1.0,
-                z_adjust,
-                z_gradient,
-                ..Default::default()
-            },
+            instance,
         });
     }
 
@@ -852,6 +990,25 @@ pub(crate) fn build_overlay_instances(
         .map(|g| (g.origin_y, g.world_height))
         .unwrap_or((0.0, 1.0));
 
+    let (viewer, fog, fog_of_war) =
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map_or((None, None, false), |runtime| {
+                let sim = &runtime.simulation;
+                let viewer = crate::app::input::commands::preferred_local_owner_name(state)
+                    .as_deref()
+                    .and_then(|name| sim.interner().get(name));
+                (
+                    viewer.filter(|_| {
+                        state.translucent_fog_enabled()
+                            && !state.match_state.sandbox_full_visibility
+                    }),
+                    Some(sim.fog()),
+                    sim.session().game_options().fog_of_war,
+                )
+            });
     build_cell_overlay_bodies(
         &CellOverlayInputs {
             entries: state.match_state.match_presentation.overlays.as_slice(),
@@ -880,17 +1037,14 @@ pub(crate) fn build_overlay_instances(
             viewport: [sw, sh],
             origin_y,
             world_height,
+            viewer,
+            fog,
+            fog_of_war,
         },
         bodies,
     );
 
     // Terrain objects from [Terrain] section.
-    // Residual raw/animated terrain paths retain the old editor adjustment.
-    // The proven ordinary extended body/shadow branch below does not use it.
-    // FA2 IsoView.cpp:6389 applies a -3px Y fudge to terrain objects (trees, rocks):
-    //   drawy = ... + f_y/2 - 3 - pic.wMaxHeight/2
-    const TERRAIN_OBJECT_Y_FUDGE: f32 = -3.0;
-
     let Some(sim) = state
         .match_state
         .sim_runtime
@@ -900,7 +1054,7 @@ pub(crate) fn build_overlay_instances(
         return;
     };
     for obj in sim.terrain_objects().objects().values() {
-        if !obj.is_live() || !obj.in_logic_vector() {
+        if !obj.is_live() {
             continue;
         }
         let name = sim.interner().resolve(obj.type_ref());
@@ -922,21 +1076,24 @@ pub(crate) fn build_overlay_instances(
             continue;
         }
 
+        let terrain_type = state
+            .rules()
+            .and_then(|rules| rules.terrain_object_type_case_insensitive(name));
+        let is_animated = terrain_type.is_some_and(|terrain_type| terrain_type.is_animated);
+        let spawns_tiberium = terrain_type.is_some_and(|terrain_type| terrain_type.spawns_tiberium);
         // Terrain DrawIt71C208 selects the Stage written by Terrain AI.
         // Wall-clock presentation cannot advance or restart a spawner.
-        let frame = sim
-            .terrain_objects()
-            .animations()
-            .get(&obj.cell())
-            .map_or(Some(0), |animation| {
-                u8::try_from(animation.current_frame()).ok()
-            });
-        let Some(frame) = frame else { continue };
-        let key = OverlaySpriteKey {
-            name: name.to_string(),
-            frame,
-        };
-        let Some(spr) = atlas.get(&key) else { continue };
+        let stage = is_animated.then(|| {
+            sim.terrain_objects()
+                .animations()
+                .get(&obj.stable_id())
+                .map_or(0, |animation| animation.current_frame())
+        });
+        let frame = terrain_draw_frame(stage, obj.health());
+        let (body, shadow) = atlas.terrain_pieces(name, frame);
+        if body.is_none() && shadow.is_none() {
+            continue;
+        }
 
         let depth = super::helpers::compute_sprite_depth_params_lifted(
             origin_y,
@@ -944,11 +1101,6 @@ pub(crate) fn build_overlay_instances(
             screen_y,
             lift_px,
         );
-        let spawns_tiberium = state
-            .rules()
-            .and_then(|rules| rules.terrain_object_type_case_insensitive(name))
-            .map(|terrain_type| terrain_type.spawns_tiberium)
-            .unwrap_or(false);
         let tint: [f32; 3] = state
             .match_state
             .match_presentation
@@ -969,87 +1121,78 @@ pub(crate) fn build_overlay_instances(
             crate::render::palette_light::PaletteLight::cell(light_grid, obj.cell(), false)
         };
 
-        let Some(parent) = ground_order.object_draw(obj.stable_id(), SpriteEncoding::Terrain)
+        let Some(mut parent) = ground_order.object_draw(obj.stable_id(), SpriteEncoding::Terrain)
         else {
             continue;
         };
-        if let Some((body, shadow)) = atlas.native_terrain_pair(name, frame) {
-            use crate::app::presentation::render::draw_plan_lowering::{
-                ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
-            };
-            use crate::render::tactical_draw_plan::RenderZPolicy;
-            use crate::render::terrain_draw::TerrainPiece;
-            // Terrain DrawIt 0071C304/0071C34E preserves one draw point for
-            // body and shadow. Each SHP's own integer canvas/frame offsets
-            // then locate the stored rectangle. No FA2 editor Y adjustment.
-            let point = [
-                screen_x + TILE_WIDTH / 2.0,
-                screen_y + TILE_HEIGHT / 2.0 - if spawns_tiberium { 16.0 } else { 0.0 },
-            ];
-            let [body_instance, shadow_instance] =
-                native_terrain_instances(body, shadow, point, lift_px, depth, tint, palette_light);
-            let mut parent = parent;
-            let render_z = if sim.terrain_objects().animations().contains_key(&obj.cell()) {
-                RenderZPolicy::ReadOnly
-            } else {
-                RenderZPolicy::ReadWrite
-            };
-            parent.policy.render_z = render_z;
-            ground_objects.push(PlannedObjectInstance::object(
-                parent,
-                vec![
-                    ObjectPieceInstance {
-                        target: ObjectTexture::TerrainShp(TerrainPiece::Body),
-                        render_z,
-                        instance: body_instance,
-                    },
-                    ObjectPieceInstance {
-                        target: ObjectTexture::TerrainShp(TerrainPiece::Shadow),
-                        render_z,
-                        instance: shadow_instance,
-                    },
-                ],
-            ));
-            continue;
-        }
-        ground_objects.push(
-            crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance::object(
-                parent,
-                vec![crate::app::presentation::render::draw_plan_lowering::ObjectPieceInstance {
-                    target: crate::app::presentation::render::draw_plan_lowering::ObjectTexture::OverlayAtlas,
-                    render_z: parent.policy.render_z,
-                    instance: SpriteInstance {
-                        position: [
-                            screen_x + TILE_WIDTH / 2.0 + spr.offset_x,
-                            screen_y + TILE_HEIGHT / 2.0 + spr.offset_y + TERRAIN_OBJECT_Y_FUDGE,
-                        ],
-                        size: spr.pixel_size,
-                        uv_origin: spr.uv_origin,
-                        uv_size: spr.uv_size,
+        use crate::app::presentation::render::draw_plan_lowering::{
+            ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
+        };
+        use crate::render::tactical_draw_plan::RenderZPolicy;
+        use crate::render::terrain_draw::TerrainPiece;
+        // Terrain DrawIt 0071C304/0071C34E preserves one draw point for
+        // body and shadow. Each SHP's own integer canvas/frame offsets
+        // then locate the stored rectangle.
+        let point = [
+            screen_x + TILE_WIDTH / 2.0,
+            screen_y + TILE_HEIGHT / 2.0 - if spawns_tiberium { 16.0 } else { 0.0 },
+        ];
+        // DrawIt flags 2E00 read Z only for an animated type; 4E00 also write.
+        let render_z = if is_animated {
+            RenderZPolicy::ReadOnly
+        } else {
+            RenderZPolicy::ReadWrite
+        };
+        parent.policy.render_z = render_z;
+        let pieces = [(TerrainPiece::Body, body), (TerrainPiece::Shadow, shadow)]
+            .into_iter()
+            .filter_map(|(piece, sprite)| {
+                Some(ObjectPieceInstance {
+                    target: ObjectTexture::TerrainShp(piece),
+                    render_z,
+                    instance: native_terrain_instance(
+                        sprite?,
+                        piece,
+                        point,
+                        lift_px,
                         depth,
                         tint,
                         palette_light,
-                        alpha: 1.0,
-                        ..Default::default()
-                    },
-                }],
-            ),
-        );
+                    ),
+                })
+            })
+            .collect();
+        ground_objects.push(PlannedObjectInstance::object(parent, pieces));
     }
 }
 
+/// Terrain DrawIt (0x71C1B0) frame: an IsAnimated type's stage, else frame 1
+/// below 2 health, else 0. Its crumbling arm never draws: Take_Damage
+/// (0x71B920) starts crumbling on a lethal hit and uninits the object in the
+/// same call.
+fn terrain_draw_frame(stage: Option<i32>, health: i32) -> i32 {
+    // Original71C208 keeps the whole signed Stage; frame bounds belong to
+    // the image/atlas, not the cell overlay-data byte's0..255 domain.
+    stage.unwrap_or_else(|| i32::from(health < 2))
+}
+
 /// Ordinary Terrain DrawIt 0071C304/0071C34E: both stored frames share one
-/// projected draw point. Native class terms and gradients remain piece data.
-fn native_terrain_instances(
-    body: &crate::render::overlay_atlas::OverlaySpriteEntry,
-    shadow: &crate::render::overlay_atlas::OverlaySpriteEntry,
+/// projected draw point. The body takes gradient 2 and class Z -12, the
+/// shadow gradient 0 and -3.
+fn native_terrain_instance(
+    sprite: &crate::render::overlay_atlas::OverlaySpriteEntry,
+    piece: crate::render::terrain_draw::TerrainPiece,
     point: [f32; 2],
     lift_px: i32,
     depth: f32,
     tint: [f32; 3],
     palette_light: crate::render::palette_light::PaletteLight,
-) -> [SpriteInstance; 2] {
-    [(body, 2, -12), (shadow, 0, -3)].map(|(sprite, gradient, class_z)| SpriteInstance {
+) -> SpriteInstance {
+    let (gradient, class_z) = match piece {
+        crate::render::terrain_draw::TerrainPiece::Body => (2, -12),
+        crate::render::terrain_draw::TerrainPiece::Shadow => (0, -3),
+    };
+    SpriteInstance {
         position: [point[0] + sprite.offset_x, point[1] + sprite.offset_y],
         size: sprite.pixel_size,
         uv_origin: sprite.uv_origin,
@@ -1061,7 +1204,7 @@ fn native_terrain_instances(
         z_gradient: gradient,
         z_adjust: super::helpers::lifted_z_adjust(lift_px, class_z),
         ..Default::default()
-    })
+    }
 }
 
 /// Sample the upstream polygon without rebuilding its native shape. History
@@ -1148,171 +1291,6 @@ pub(crate) fn build_weapon_wave_instances(
     // native DrawExtras first uses SpotlightClass type 16's zero-blend
     // shape-blitter/light-mask path, which this renderer does not yet expose.
     // A white quad or alpha approximation would invent visible behavior.
-}
-
-/// Emit one sprite instance per active parachute anim, anchored at the
-/// descending GI's screen position with the SHP atlas's pre-baked
-/// offset_x/offset_y handling sprite-center anchoring.
-///
-/// Depth: chute depth = GI body depth − epsilon, so it sorts above the body
-/// in the same Layer 2 (Ground) band — matching gamemd's
-/// AnimClass::GetLayer override that forces owner-attached anims to Layer 2
-/// regardless of art.ini Layer=.
-///
-/// The body's key arrives in `body_depths` from `build_shp_instances`, which
-/// must therefore have run first this frame. It is not re-derived here: the
-/// body's key is anchored on the ground row the GI is descending onto, not on
-/// the row it is drawn at, and a paradrop starts 216 px above that row. A
-/// canopy keyed off the drawn row would sort ~14 iso rows behind the man
-/// hanging on it and disappear behind any building in between.
-///
-/// Palette: native `ObjectClass::Paradrop @ 0x005F5940` stores the owner's
-/// `GetRemapColour` result at Anim+0xD4. The retained Anim remap selects the
-/// matching `SelectedScheme` atlas variant; an absent remap keeps the ordinary
-/// AltPalette `GlobalAnim`/colour-0 path.
-///
-/// RESIDUAL: native also copies `+0x10A` of the owner's cell (vtable+0x1BC)
-/// to Anim+0xFC after attach (`0x005F5B1F..0x005F5B30`); this renderer still
-/// draws without a Z test. It is independent of the owner's palette selection.
-pub(crate) fn build_parachute_instances(
-    input: &DisplayEffectInputs<'_>,
-    ground_objects: &mut [crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance],
-    body_depths: &super::shp::ParachuteBodyDepths,
-    interpolation: Option<&crate::app::presentation::interpolation::RenderInterpolation>,
-) {
-    /// Depth epsilon — chute sorts slightly above the GI body. Half of the
-    /// per-Z bias used in `compute_sprite_depth_params`. Increase if
-    /// z-fighting is observed in-game.
-    const CHUTE_DEPTH_EPSILON: f32 = 0.0005;
-
-    /// Vertical lift, in pixels, applied to the chute sprite so the canopy
-    /// sits above the GI's head rather than centered on the body. Tunable;
-    /// gamemd's PARACH SHP layout produces this offset implicitly through
-    /// frame-internal positioning, which our atlas doesn't replicate exactly.
-    const CHUTE_Y_LIFT: f32 = 8.0;
-
-    let sim = input.sim;
-    let Some(atlas) = input.atlas else {
-        return;
-    };
-    let z = input.zoom;
-    let (cam_x, cam_y, sw, sh) = (
-        input.camera[0],
-        input.camera[1],
-        input.render_size[0] as f32 / z,
-        input.render_size[1] as f32 / z,
-    );
-    // The canopy is a simulation `AnimClass` attached to the falling object
-    // (`Simulation::attach_parachute_anim`); this pass only places it on the
-    // body's sort key. The generic anim pass skips it (`parachute_canopy_owner`).
-    let Some(shp_name) = input.rules.general.parachute_shp.as_deref() else {
-        return;
-    };
-    let Some(parachute_type) = sim.interner().get(shp_name) else {
-        return;
-    };
-
-    for &anim_id in sim.display_layers().ordered_ids() {
-        let Some(anim) = sim.anim(anim_id) else {
-            continue;
-        };
-        let Some(target_id) = parachute_canopy_owner(anim, parachute_type) else {
-            continue;
-        };
-        let Ok(frame) = u16::try_from(anim.runtime().current_frame) else {
-            continue;
-        };
-        let entity = match sim.entities().get(target_id) {
-            Some(e) => e,
-            None => continue,
-        };
-        // The body's own key for this frame. Absent means the body was culled
-        // or never emitted, in which case there is nothing for a canopy to
-        // hang on and nothing to sort it against.
-        let Some(&body_depth) = body_depths.get(&target_id) else {
-            continue;
-        };
-        // Draw the chute exactly where the body is drawn, so it follows the
-        // airborne GI rather than the ground beneath it.
-        let (gx, gy) = interpolation.map_or_else(
-            || crate::render::locomotor_visual::screen_position(entity),
-            |interpolation| {
-                let pose = interpolation.sample_entity(entity, sim.session().binary_frame());
-                (pose.screen[0], pose.screen[1])
-            },
-        );
-        if !in_view(gx, gy, 200.0, 200.0, cam_x, cam_y, sw, sh, 200.0) {
-            continue;
-        }
-
-        // Single-facing anim (no Facings= in art.ini for PARACH).
-        let remap_color =
-            crate::render::sprite_atlas::anim_remap_color(anim, sim.interner(), input.house_colors);
-        let key = ShpSpriteKey {
-            palette_context: if remap_color.is_some() {
-                crate::render::sprite_atlas::anim_remap_context(anim)
-            } else {
-                crate::render::sprite_atlas::ShpPaletteContext::GlobalAnim
-            },
-            type_id: shp_name.to_string(),
-            facing: 0,
-            frame,
-            house_color: remap_color.unwrap_or(HouseColorIndex(0)),
-        };
-        let Some(entry) = atlas.get(&key) else {
-            // PARACH not yet loaded into the atlas. Logged once at startup
-            // by the atlas-load path; per-frame silence here is intentional.
-            continue;
-        };
-        let cx: f32 = gx + entry.offset_x;
-        let cy: f32 = gy + entry.offset_y - CHUTE_Y_LIFT;
-
-        // Preserve the existing canopy tint; only the source palette variant
-        // follows the native per-instance ConvertClass.
-        let tint: [f32; 3] = [1.0, 1.0, 1.0];
-
-        // Depth: GI body depth minus a small epsilon so the chute draws on
-        // top. ZAdjust=-10 in gamemd is a depth-sort fudge with no precise
-        // pixel mapping; in our depth-buffer rendering, lower depth = closer
-        // to camera = on top.
-        let depth = (body_depth - CHUTE_DEPTH_EPSILON).clamp(0.001, 0.999);
-
-        let Some(parent) = ground_objects
-            .iter_mut()
-            .find(|object| object.parent.id == target_id)
-        else {
-            continue;
-        };
-        parent.pieces.push(
-            crate::app::presentation::render::draw_plan_lowering::ObjectPieceInstance {
-                target:
-                    crate::app::presentation::render::draw_plan_lowering::ObjectTexture::ShpPage(
-                        entry.page as usize,
-                    ),
-                // VERA-internal: the chute's native Z term (an anim ZAdjust of
-                // -10 above a descending body) is not carried by this piece,
-                // so it draws without a Z test rather than with a wrong one.
-                render_z: crate::render::tactical_draw_plan::RenderZPolicy::None,
-                instance: SpriteInstance {
-                    position: [cx, cy],
-                    size: entry.pixel_size,
-                    uv_origin: entry.uv_origin,
-                    uv_size: entry.uv_size,
-                    source_palette: entry.source_palette,
-                    depth,
-                    tint,
-                    palette_light: crate::app::presentation::lighting::anim_palette_light(
-                        input.lighting,
-                        (entity.position.rx(), entity.position.ry()),
-                        input.rules.art().anim_runtime_config(shp_name),
-                        false,
-                    ),
-                    alpha: 1.0,
-                    ..Default::default()
-                },
-            },
-        );
-    }
 }
 
 #[cfg(test)]
@@ -1546,13 +1524,63 @@ mod tests {
             (4, ZGradient::Flat, -2),
         ] {
             for level in [0, 1, 4, 14] {
-                let (policy, z_adjust, packed) = ordinary_overlay_z(registry.flags(id), 0, level);
-                assert_eq!(policy, RenderZPolicy::ReadWrite);
+                let depth = ordinary_overlay_z(id, registry.flags(id), 0, level).unwrap();
+                assert_eq!(depth.render_z, RenderZPolicy::ReadWrite);
                 assert_eq!(
-                    packed, gradient as u32,
+                    depth.gradient, gradient,
                     "ordinary overlays have no BUILDNGZ"
                 );
-                assert_eq!(z_adjust as i32, class_term - i32::from(level) * 15);
+                assert_eq!(depth.z_adjust as i32, class_term - i32::from(level) * 15);
+            }
+        }
+    }
+
+    #[test]
+    fn retail_slope_bodies_use_read_write_depth() {
+        // Cell47F943 (sloped ore) and literal7E both request flags4E00.
+        // DUMMYOLD is the retail identity7E, independent of vein flags.
+        let Some((ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+            return;
+        };
+        let registry = OverlayTypeRegistry::from_ini(&ini, Some(&art_ini));
+        for name in ["TIB01", "DUMMYOLD"] {
+            let id = registry.id_for_name(name).expect("retail overlay");
+            assert!(!body_draw_skips_live_identity(id));
+            for slope in 0..=4 {
+                let depth = ordinary_overlay_z(id, registry.flags(id), slope, 5).unwrap();
+                assert_eq!(
+                    depth.render_z,
+                    RenderZPolicy::ReadWrite,
+                    "{name}, slope{slope}"
+                );
+                assert_eq!(
+                    depth.shape.map(|shape| shape.offset),
+                    (slope != 0).then_some(if id == 0x7E { [30, -2] } else { [0, 0] }),
+                    "{name}, slope{slope}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn vein_flags_do_not_bypass_depth_or_select_a_shape() {
+        // The ordinary47FB6B arm does not test these legacy INI flags.
+        // Supplied flags cover custom overlays; VEINHOLE is not a retail
+        // OverlayTypes entry, and the retail VEINHOLEDUMMY body is skipped.
+        for flags in [
+            OverlayTypeFlags {
+                is_veins: true,
+                ..Default::default()
+            },
+            OverlayTypeFlags {
+                is_veinhole_monster: true,
+                ..Default::default()
+            },
+        ] {
+            for slope in 0..=4 {
+                let depth = ordinary_overlay_z(0, Some(&flags), slope, 5).unwrap();
+                assert_eq!(depth.render_z, RenderZPolicy::ReadWrite);
+                assert!(depth.shape.is_none());
             }
         }
     }
@@ -1666,7 +1694,7 @@ mod tests {
     }
 
     #[test]
-    fn gsi_13_05_flat_resource_changes_only_display_identity_on_known_flat_cells() {
+    fn resource_display_selection_preserves_live_density_for_flat_and_slope_cells() {
         let mut text = String::from(
             "[Tiberiums]\n0=Riparius\n1=Cruentus\n\
              [Riparius]\nImage=1\n\
@@ -1674,14 +1702,14 @@ mod tests {
              [OverlayTypes]\n",
         );
         let mut resource_names = Vec::new();
-        for overlay_id in 0..=113 {
+        for overlay_id in 0..=121 {
             let name = match overlay_id {
                 27..=38 => format!("GEM{:02}", overlay_id - 26),
-                102..=113 => format!("TIB{:02}", overlay_id - 101),
+                102..=121 => format!("TIB{:02}", overlay_id - 101),
                 _ => format!("FILL{overlay_id:03}"),
             };
             text.push_str(&format!("{overlay_id}={name}\n"));
-            if matches!(overlay_id, 27..=38 | 102..=113) {
+            if matches!(overlay_id, 27..=38 | 102..=121) {
                 resource_names.push(name);
             }
         }
@@ -1694,22 +1722,23 @@ mod tests {
         let tib12 = overlays.id_for_name("TIB12").expect("TIB12");
         let tib01 = overlays.id_for_name("TIB01").expect("TIB01");
         let tib05 = overlays.id_for_name("TIB05").expect("TIB05");
+        let tib15 = overlays.id_for_name("TIB15").expect("TIB15");
         let gem12 = overlays.id_for_name("GEM12").expect("GEM12");
         let gem01 = overlays.id_for_name("GEM01").expect("GEM01");
         let non_tiberium = overlays.id_for_name("FILL000").expect("FILL000");
 
         assert_eq!(
             overlay_display_identity(tib12, 8, 4, 7, Some(0), Some(&overlays), Some(&tiberiums),),
-            (tib05, 8)
+            Some((tib05, 8))
         );
         assert_eq!(
             overlay_display_identity(gem12, 11, 0, 7, Some(0), Some(&overlays), Some(&tiberiums),),
-            (gem01, 11)
+            Some((gem01, 11))
         );
         assert_eq!(
             overlay_display_identity(tib12, 8, 4, 7, Some(2), Some(&overlays), Some(&tiberiums),),
-            (tib12, 8),
-            "sloped resource cells retain their stored display identity"
+            Some((tib15, 8)),
+            "slope2 selects its first extra image without changing live density"
         );
         assert_eq!(
             overlay_display_identity(
@@ -1721,7 +1750,7 @@ mod tests {
                 Some(&overlays),
                 Some(&tiberiums),
             ),
-            (non_tiberium, 9),
+            Some((non_tiberium, 9)),
             "non-resource overlays remain unchanged"
         );
         assert_eq!(
@@ -1734,7 +1763,7 @@ mod tests {
                 Some(&overlays),
                 Some(&tiberiums),
             ),
-            (tib01.checked_sub(1).expect("registered base - 1"), 8),
+            Some((tib01.checked_sub(1).expect("registered base - 1"), 8)),
             "signed base-relative display selection must not change live density state"
         );
     }

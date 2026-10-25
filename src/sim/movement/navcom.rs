@@ -10,7 +10,9 @@ use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::world::FrameEffects;
-use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+use crate::util::fixed_math::SIM_ZERO;
+#[cfg(test)]
+use crate::util::fixed_math::SimFixed;
 
 /// FootClass-style owner navigation fields, owned by this module: NavCom
 /// (`Foot+0x5A4`), its auxiliary slot (`Foot+0x5A0`), SuspendedNavCom
@@ -199,6 +201,12 @@ impl NavigationState {
     /// made before its refusal tests.
     pub(crate) fn clear_nav_com_aux(&mut self) {
         self.nav_com_aux = None;
+    }
+
+    /// FootClass::Set_NavComAux 0x004D94A0 stores the pointer at +0x5A0.
+    /// EventClass::Execute calls it after Set_Destination (0x004C74BA).
+    pub(crate) fn set_nav_com_aux(&mut self, target: Option<NavTargetRef>) {
+        self.nav_com_aux = target;
     }
 
     /// NavCom stored alone, without the setter's NavComAux clear: the null
@@ -391,7 +399,8 @@ const WALK_BRIDGE_LIFT_PIXELS: i32 = 60;
 
 /// Drive Stop_Moving 0x4AFE00 and Ship 0x69F510 clamp the class target
 /// fraction to the float 0.3 at 0x7E6240 / 0x7F1308 (identical bodies).
-const TRACK_STOP_TARGET_FRACTION: SimFixed = SimFixed::lit("0.3");
+const TRACK_STOP_TARGET_FRACTION: crate::util::native_x87::NativeF64Bits =
+    crate::util::native_x87::NativeF64Bits::from_bits(0x3fd3_3333_4000_0000);
 
 /// Accepted Walk75ACB0 destination store. This conversion is independent of
 /// HeadTo/OnBridge's416: a bridge cell lifts the destination by
@@ -476,6 +485,24 @@ pub(crate) fn target_cell_coord(
         y: point.y,
         z: point.z,
     }
+}
+
+/// Cell486840 through an already-retained pointer (virtual+48/+4C).
+/// Recover the allocation from the original command coordinate without a Map
+/// lookup: a later miss can have moved the shared Dummy, even onto a real
+/// cell's coordinate, while its own level and slope still belong to Dummy.
+pub(crate) fn retained_cell_coord(
+    rx: u16,
+    ry: u16,
+    cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+) -> DriveCoord {
+    let Some(cells) = cells else {
+        return target_cell_coord(rx, ry, None);
+    };
+    let identity = crate::sim::combat::TargetKind::Cell(rx, ry)
+        .cell_identity(cells.terrain())
+        .expect("Cell target has a Cell allocation identity");
+    crate::sim::cell_rect::native_cell_ref(cells, identity).get_coords()
 }
 
 /// Shared destination-setter adjustment (Drive4AFD40 / Ship69F450). Each call
@@ -588,7 +615,7 @@ pub(crate) fn nav_target_coordinate(
 ) -> Result<DriveCoord, String> {
     let id = match target {
         NavTargetRef::Cell { rx, ry } => {
-            return Ok(target_cell_coord(
+            return Ok(retained_cell_coord(
                 rx,
                 ry,
                 terrain
@@ -777,11 +804,11 @@ fn drive_stop_moving(entity: &mut GameEntity) {
     // 0x4AFE00 clamps the class target fraction (+0x50), then clears only
     // the destination; the head (+0x40) may continue to its endpoint. The
     // IsTrain follower cascade has no stock type (no retail IsTrain=yes).
-    if loco
-        .track_target_fraction(TrackFamily::Drive)
-        .is_some_and(|v| v > TRACK_STOP_TARGET_FRACTION)
-    {
-        loco.store_track_target_fraction(TrackFamily::Drive, TRACK_STOP_TARGET_FRACTION);
+    if let Some(target) = loco.track_target_fraction_native(TrackFamily::Drive) {
+        loco.store_track_target_fraction_native(
+            TrackFamily::Drive,
+            stopped_target_fraction(target),
+        );
     }
     loco.store_track_destination(TrackFamily::Drive, None);
     // Foot+578 is retained here. The common Process tail4B0828 owns its
@@ -818,11 +845,8 @@ fn ship_stop_moving(entity: &mut GameEntity) {
     loco.ensure_installed_track_state();
     // Ship Stop_Moving clamps the class-owned target fraction, then clears
     // only +0x30. A committed head may continue to its track endpoint.
-    if loco
-        .track_target_fraction(TrackFamily::Ship)
-        .is_some_and(|v| v > TRACK_STOP_TARGET_FRACTION)
-    {
-        loco.store_track_target_fraction(TrackFamily::Ship, TRACK_STOP_TARGET_FRACTION);
+    if let Some(target) = loco.track_target_fraction_native(TrackFamily::Ship) {
+        loco.store_track_target_fraction_native(TrackFamily::Ship, stopped_target_fraction(target));
     }
     loco.store_track_destination(TrackFamily::Ship, None);
 
@@ -830,7 +854,7 @@ fn ship_stop_moving(entity: &mut GameEntity) {
     // rest speed before the native Process-tail admission. FootStop4DF0D0
     // does NOT clear Foot+5E0; explicit abandonment is a separate owner call.
     if loco.track_head(TrackFamily::Ship).is_none()
-        && entity.foot_speed.applied_fraction() > SIM_ZERO
+        && entity.foot_speed.speed_fraction_is_positive()
     {
         entity.foot_speed.set_speed_fraction(SIM_ZERO);
     }
@@ -849,7 +873,7 @@ impl crate::sim::world::Simulation {
         &mut self,
         id: u64,
         nonnull: bool,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
@@ -894,7 +918,7 @@ impl crate::sim::world::Simulation {
     pub(crate) fn foot_null_destination(
         &mut self,
         id: u64,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
@@ -946,7 +970,7 @@ impl crate::sim::world::Simulation {
     pub(crate) fn locomotor_stop_moving(
         &mut self,
         id: u64,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), String> {
@@ -981,3 +1005,21 @@ impl crate::sim::world::Simulation {
 #[cfg(test)]
 #[path = "track_destination_tests.rs"]
 mod native_destination_tests;
+
+/// Stop4AFEA4/69F5B4 always spills the selected value. TEST AH,1 keeps
+/// Less/Unordered, and Equal/Greater selects the promoted-float floor.
+fn stopped_target_fraction(
+    target: crate::util::native_x87::NativeF64Bits,
+) -> crate::util::native_x87::NativeF64Bits {
+    use crate::util::native_x87::{
+        MaskedX87Chop53 as X,
+        MaskedX87Ordering::{Less, Unordered},
+    };
+    let target = X::load_f64(target);
+    let floor = X::load_f64(TRACK_STOP_TARGET_FRACTION);
+    X::store_f64_masked_chop(if matches!(X::compare(target, floor), Less | Unordered) {
+        target
+    } else {
+        floor
+    })
+}

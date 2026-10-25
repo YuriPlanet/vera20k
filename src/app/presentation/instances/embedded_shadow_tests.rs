@@ -39,6 +39,68 @@ fn atlas() -> (SpriteAtlas, ShpSpriteKey, ShpSpriteEntry) {
 }
 
 #[test]
+fn infantry_embedded_shadow_matches_original_positive_and_no_shadow_controls() {
+    let native =
+        crate::test_fixture::json("tools/procedural_drawing_oracle/infantry_embedded_shadow.json");
+    let (atlas, key, entry) = atlas();
+    let entity = GameEntity::test_default_of_category(
+        1,
+        "CONTROL",
+        "Americans",
+        2,
+        2,
+        EntityCategory::Infantry,
+    );
+    for row in native["rows"].as_array().unwrap() {
+        let suppressed = row["name"] == "no_shadow";
+        let rules = crate::rules::ruleset::RuleSet::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str(&format!(
+                "[InfantryTypes]\n0=CONTROL\n[CONTROL]\nNoShadow={}\n",
+                if suppressed { "yes" } else { "no" },
+            )),
+        )
+        .unwrap();
+        let piece = embedded_shp_shadow_piece(
+            &atlas,
+            rules.object("CONTROL"),
+            &entity,
+            None,
+            &key,
+            &entry,
+            SpriteInstance::default(),
+            DrawDecision {
+                visible: true,
+                state: DrawState::default(),
+                native_visual_state: 0,
+            },
+            BlitPolicy::z_read(SpriteEncoding::Plain),
+        );
+        let expected = row["draws"].as_array().unwrap().get(1);
+        assert_eq!(piece.is_some(), expected.is_some(), "{}", row["name"]);
+        if let (Some(piece), Some(expected)) = (piece, expected) {
+            assert_eq!(
+                expected["frame"].as_u64().unwrap(),
+                native["input"]["original_frame_count"].as_u64().unwrap() / 2,
+            );
+            assert_eq!(
+                piece.instance.z_adjust,
+                expected["z_adjust"].as_i64().unwrap() as f32
+            );
+            assert_eq!(
+                piece.instance.z_gradient,
+                expected["gradient"].as_u64().unwrap() as u32
+            );
+            assert_eq!(piece.render_z, RenderZPolicy::ReadOnly);
+            assert_ne!(
+                expected["flags"].as_u64().unwrap() & 1,
+                0,
+                "native stencil draw"
+            );
+        }
+    }
+}
+
+#[test]
 fn unit_shadow_matches_original_type_gate_point_and_read_only_policy() {
     let original = crate::test_fixture::json("tools/spatial_oracle/mirage_disguise.json");
     let terrain = test_grid(100, 60, |x, y| {
@@ -133,33 +195,35 @@ fn unit_shadow_matches_original_type_gate_point_and_read_only_policy() {
 }
 
 #[test]
-fn unit_shadow_queries_live_ground_and_bridge_height() {
+fn unit_and_infantry_shadow_query_live_ground_and_bridge_height() {
     let terrain = test_grid(5, 5, |x, y| {
         let mut cell = test_flat_cell(x, y);
         cell.level = 4;
         cell
     });
     let cells = NativeCellQuery::isolated(&terrain);
-    let mut entity =
-        GameEntity::test_default_of_category(1, "DRON", "Americans", 2, 2, EntityCategory::Unit);
     let decision = DrawDecision {
         visible: true,
         state: DrawState::default(),
         native_visual_state: 0,
     };
-    for (z, bridge, admitted) in [
-        (415, false, false),
-        (416, false, true),
-        (417, false, false),
-        (832, false, false),
-        (832, true, true),
-    ] {
-        entity.position.set_exact_z_leptons_for_test(Some(z));
-        entity.set_on_bridge(bridge);
-        assert_eq!(
-            embedded_shp_shadow_admitted(None, &entity, Some(&cells), decision),
-            admitted,
-            "worldZ={z}, OnBridge={bridge}"
-        );
+    for category in [EntityCategory::Unit, EntityCategory::Infantry] {
+        let mut entity =
+            GameEntity::test_default_of_category(1, "CONTROL", "Americans", 2, 2, category);
+        for (z, bridge, admitted) in [
+            (415, false, false),
+            (416, false, true),
+            (417, false, false),
+            (832, false, false),
+            (832, true, true),
+        ] {
+            entity.position.set_exact_z_leptons_for_test(Some(z));
+            entity.set_on_bridge(bridge);
+            assert_eq!(
+                embedded_shp_shadow_admitted(None, &entity, Some(&cells), decision),
+                admitted,
+                "{category:?}: worldZ={z}, OnBridge={bridge}"
+            );
+        }
     }
 }

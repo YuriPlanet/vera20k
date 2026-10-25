@@ -377,7 +377,7 @@ fn install_event31_cell_tags(sim: &mut Simulation, rules: &RuleSet, tags: &[(u16
         None,
     );
     sim.install_authored_cell_trigger_tags(&map);
-    sim.classify_map_triggers(Some(rules));
+    sim.classify_map_triggers(rules);
 }
 
 /// Apply one native rim hit and return the event31 Tag indices raised.

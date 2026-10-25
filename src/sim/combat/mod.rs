@@ -26,6 +26,7 @@
 
 pub mod aim_coord;
 mod attack_target;
+mod airburst;
 pub(crate) mod base_defense_response;
 pub mod burst;
 pub(crate) mod cell_spread;
@@ -115,6 +116,8 @@ mod radiation_beam_tests;
 #[cfg(test)]
 mod shrapnel_chain_tests;
 #[cfg(test)]
+mod screen_shake_tests;
+#[cfg(test)]
 mod unit_damage_response_tests;
 #[cfg(test)]
 mod walk_attack_tests;
@@ -125,17 +128,17 @@ pub(crate) use combat_targeting::build_attacker_snapshot;
 pub(crate) use detonation_anim::projectile_impact_cell;
 pub(crate) use effects::DeathEffects;
 pub use effects::{
-    CombatLightRequest, ExplosionEffect, SmudgeSpawnRequest, TiberiumReductionRequest,
-    UnderAttackEvent, UnitLostEvent,
+    CombatLightRequest, ExplosionEffect, ScreenShakeUpdate, SmudgeSpawnRequest,
+    TiberiumReductionRequest, UnderAttackEvent, UnitLostEvent,
 };
 pub use in_range::can_fire_at_target;
 pub use in_range::{MaplessTarget, can_fire_at_target_in_query, mapless_in_range};
 pub use object_health::{Health, health_category};
 pub(crate) use projectile_delivery::{FiredBullet, admit_fired_bullet};
-pub use receiver_call::TerrainDamageEvent;
+pub use receiver_call::{DamageWriteback, TerrainDamageEvent};
 pub(crate) use receiver_call::{
     BaseDefenseResponseCallSite, EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags,
-    wave_post_object_damage,
+    receiver_divisors, wave_post_object_damage,
 };
 pub(crate) use receiver_health::BerserkState;
 pub(crate) use record_kill::{KillCallback, KillRecord, KillSource};
@@ -155,13 +158,15 @@ use attack_target::{attack_world_z_leptons, cell_center_coords, target_coords};
 use projectile_delivery::{
     ProjectileDelivery, bullet_type, classify_projectile_delivery, projectile_arm_delay,
 };
+#[cfg(feature = "phobos")]
+use receiver_call::resolve_receive_damage_with_input;
 use receiver_call::{
     BuildingReceivePrelude, ResolvedReceiveDamage, apply_building_receive_prelude,
     area_near_center_ic_isolation_armed, near_center_ic_isolation_armed,
     postmortem_duration_for_event, receiver_anger_delta, resolve_receive_damage,
 };
 use shrapnel::emit_projectile_shrapnel;
-use techno_death::{ConcreteDeathSmudgePlan, append_selected_death_sounds, throw_debris_for_death};
+use techno_death::{ConcreteDeathSmudgePlan, throw_debris_for_death};
 
 #[cfg(any(test, feature = "test-support"))]
 pub use attack_target::{
@@ -194,7 +199,6 @@ use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseAllianceMap;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::animation_sequence::SequenceSet;
-use crate::rules::foundation::foundation_dimensions;
 use crate::rules::object_type::ObjectType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::{HouseCostFactors, RuleSet};

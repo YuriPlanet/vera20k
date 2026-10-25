@@ -284,8 +284,7 @@ mod tests {
         let mut diagnostics = DiagnosticsState::new(None);
         diagnostics.use_map_presentation_clock().unwrap();
         let mut messages = crate::ui::messages::MessageList::new(0, 0, 6, 600);
-        let pause_clock = crate::ui::messages::PauseAwareClock::default();
-        let now = |tick| pause_clock.now(diagnostics.presentation_ms(tick).unwrap());
+        let now = |tick| diagnostics.presentation_ms(tick).unwrap();
         messages.add_message(
             &crate::ui::messages::MessagePost {
                 prefix: None,

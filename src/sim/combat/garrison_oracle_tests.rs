@@ -13,7 +13,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::{StringInterner, test_interner};
-use crate::sim::passenger::{PassengerCargo, PassengerRole};
+use crate::sim::passenger::PassengerRole;
 use serde_json::Value;
 use std::fmt::Write;
 
@@ -21,7 +21,7 @@ use std::fmt::Write;
 /// GetWeapon. The null-weapon arm at 6FCFD2..6FCFDD returns one without a
 /// draw; `techno_rearm.json` executes that arm and records the complete RNG.
 /// The query corpus separately covers normal/elite missing occupant weapons.
-/// This is a production-emission regression with supplied cargo/shot state,
+/// This is a production-emission regression with supplied occupant/shot state,
 /// not a native comparison of boarding or the complete FireAt lifecycle.
 #[test]
 fn a_shot_before_an_unarmed_occupant_rearms_without_an_rng_draw() {
@@ -54,7 +54,6 @@ fn a_shot_before_an_unarmed_occupant_rearms_without_an_rng_draw() {
             10,
             EntityCategory::Structure,
         );
-        let mut cargo = PassengerCargo::new(5, 0.0);
         // Occupants in admission order: armed, then unarmed.
         for (id, kind) in [(2, "ARMED"), (3, "UNARMED")] {
             let mut occupant = GameEntity::test_default_of_category(
@@ -67,11 +66,10 @@ fn a_shot_before_an_unarmed_occupant_rearms_without_an_rng_draw() {
             );
             occupant.veterancy.set_rank_for_test(rank);
             occupant.passenger_role = PassengerRole::inside_for_test(1, false);
-            cargo.add_occupant(id, 1.0);
+            building.passenger_role.occupants_mut().add(id);
             world.substrate.entities.insert(occupant);
         }
-        assert_eq!(cargo.passengers(), [2, 3]);
-        building.passenger_role = PassengerRole::transport(cargo);
+        assert_eq!(building.passenger_role.occupants().ids(), [2, 3]);
         world.substrate.entities.insert(building);
         world.interner = test_interner();
         crate::sim::arena_fixture::flat_arena(&mut world, &rules);
@@ -124,14 +122,7 @@ fn a_shot_before_an_unarmed_occupant_rearms_without_an_rng_draw() {
         );
         assert_eq!(emitted.fire_events.len(), 1);
         let building = world.substrate.entities.get(1).unwrap();
-        assert_eq!(
-            building
-                .passenger_role
-                .cargo()
-                .unwrap()
-                .garrison_fire_index(),
-            1
-        );
+        assert_eq!(building.passenger_role.occupants().fire_index(), 1);
         assert!(
             get_weapon(
                 building,
@@ -228,7 +219,7 @@ pub(super) fn for_each_native_case(
         );
         building
             .type_facts
-            .set_foundation_for_test(object.foundation.clone());
+            .set_foundation_for_test(object.foundation.clone().into());
         building
             .veterancy
             .set_rank_for_test((input["building_veterancy"].as_f64().unwrap() * 100.0) as u16);
@@ -236,7 +227,6 @@ pub(super) fn for_each_native_case(
             input["current_weapon_number"].as_i64().unwrap() as i32,
             0,
         );
-        let mut cargo = PassengerCargo::new(5, 0.0);
         let mut entities = EntityStore::new();
         for (index, occupant) in occupants.iter().enumerate() {
             let id = index as u64 + 2;
@@ -251,11 +241,13 @@ pub(super) fn for_each_native_case(
             entity
                 .veterancy
                 .set_rank_for_test((occupant["veterancy"].as_f64().unwrap() * 100.0) as u16);
-            cargo.add_occupant(id, 1.0);
+            building.passenger_role.occupants_mut().add(id);
             entities.insert(entity);
         }
-        cargo.set_garrison_fire_index_for_test(input["fire_index"].as_u64().unwrap() as u8);
-        building.passenger_role = PassengerRole::transport(cargo);
+        building
+            .passenger_role
+            .occupants_mut()
+            .set_fire_index_for_test(input["fire_index"].as_i64().unwrap() as i32);
         check(case, &building, object, &entities, &rules, &test_interner());
     }
 }

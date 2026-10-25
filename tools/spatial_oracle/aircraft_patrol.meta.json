@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Aircraft Mission_Patrol states0..5 and UINT_MAX, real attack-cell search/landing/Rate/RNG, supplied destination/idle/locomotor/dock/scan/override/team boundaries.",
+  "assumptions": [
+    "aircraft_move.Run flat map; no legacy House+210 path; float-widened MissionControl rates; source Team null before the search."
+  ],
+  "substitutions": [
+    "Recorded destination, idle and locomotor virtuals; supplied dock and scan answers, recorded Override and Team AssignMissionTarget. Callback mutations are conditional controls, not observed stock callbacks."
+  ],
+  "entry_points": {
+    "mission_patrol": "0x00417300",
+    "find_attack_cell": "0x00418E20",
+    "cell_free_for_landing": "0x00419B00",
+    "mission_control": "0x005B3A00"
+  },
+  "replay_command": "python -m tools.spatial_oracle.aircraft_patrol",
+  "payload_sha256": "9ae723a30349be98111087565fedc2a481bd8f38b60843680422ad06343faa64"
+}

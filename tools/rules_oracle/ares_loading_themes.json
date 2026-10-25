@@ -1,0 +1,339 @@
+{
+  "binary_identity": {
+    "ares_sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83"
+  },
+  "histories": [
+    {
+      "code_guard": true,
+      "name": "campaignBasic",
+      "stages": [
+        {
+          "captured_eax": -2,
+          "hook_a_return": "00000000",
+          "hook_b_return": "00000000",
+          "input": {
+            "game_mode": 0,
+            "rows": []
+          },
+          "label": "missing",
+          "play_requests": [
+            0
+          ],
+          "read_calls": [
+            {
+              "capacity": 128,
+              "default": "",
+              "key": "LoadingTheme",
+              "section": "Basic",
+              "source": "map"
+            }
+          ],
+          "selected": -2
+        },
+        {
+          "captured_eax": 3,
+          "hook_a_return": "00000000",
+          "hook_b_return": "00683D14",
+          "input": {
+            "game_mode": 0,
+            "rows": [
+              {
+                "key": "LoadingTheme",
+                "section": "Basic",
+                "value": "mIsSiOn_ScOrE"
+              }
+            ]
+          },
+          "label": "named",
+          "play_requests": [
+            3
+          ],
+          "read_calls": [
+            {
+              "capacity": 128,
+              "default": "",
+              "key": "LoadingTheme",
+              "section": "Basic",
+              "source": "map"
+            }
+          ],
+          "selected": 3
+        },
+        {
+          "captured_eax": -1,
+          "hook_a_return": "00000000",
+          "hook_b_return": "00683D14",
+          "input": {
+            "game_mode": 0,
+            "rows": [
+              {
+                "key": "LoadingTheme",
+                "section": "Basic",
+                "value": "UNKNOWN_SCORE"
+              }
+            ]
+          },
+          "label": "unknown",
+          "play_requests": [
+            -1
+          ],
+          "read_calls": [
+            {
+              "capacity": 128,
+              "default": "",
+              "key": "LoadingTheme",
+              "section": "Basic",
+              "source": "map"
+            }
+          ],
+          "selected": -1
+        },
+        {
+          "captured_eax": -2,
+          "hook_a_return": "00000000",
+          "hook_b_return": "00000000",
+          "input": {
+            "game_mode": 0,
+            "rows": [
+              {
+                "key": "LoadingTheme",
+                "section": "Basic",
+                "value": ""
+              }
+            ]
+          },
+          "label": "empty",
+          "play_requests": [
+            0
+          ],
+          "read_calls": [
+            {
+              "capacity": 128,
+              "default": "",
+              "key": "LoadingTheme",
+              "section": "Basic",
+              "source": "map"
+            }
+          ],
+          "selected": -2
+        }
+      ],
+      "theme_keys": [
+        "LOADING",
+        "SIDE_SCORE",
+        "COUNTRY_SCORE",
+        "MISSION_SCORE"
+      ],
+      "three_rng_unchanged": true
+    },
+    {
+      "code_guard": true,
+      "name": "skirmishSideCountry",
+      "stages": [
+        {
+          "captured_eax": 1,
+          "hook_a_return": "00000000",
+          "hook_b_return": "00683D14",
+          "input": {
+            "game_mode": 1,
+            "rows": [
+              {
+                "key": "LoadingTheme",
+                "section": "SIDE",
+                "value": "SIDE_SCORE"
+              }
+            ]
+          },
+          "label": "side_and_missing_country",
+          "play_requests": [
+            1
+          ],
+          "read_calls": [
+            {
+              "capacity": 128,
+              "default": "",
+              "key": "LoadingTheme",
+              "section": "SIDE",
+              "source": "global_rules"
+            },
+            {
+              "capacity": 128,
+              "default": "",
+              "key": "LoadingTheme",
+              "section": "COUNTRY",
+              "source": "global_rules"
+            }
+          ],
+          "selected": 1
+        },
+        {
+          "captured_eax": 2,
+          "hook_a_return": "00000000",
+          "hook_b_return": "00683D14",
+          "input": {
+            "game_mode": 1,
+            "rows": [
+              {
+                "key": "LoadingTheme",
+                "section": "SIDE",
+                "value": "SIDE_SCORE"
+              },
+              {
+                "key": "LoadingTheme",
+                "section": "COUNTRY",
+                "value": "COUNTRY_SCORE"
+              }
+            ]
+          },
+          "label": "country_overrides_side",
+          "play_requests": [
+            2
+          ],
+          "read_calls": [
+            {
+              "capacity": 128,
+              "default": "",
+              "key": "LoadingTheme",
+              "section": "SIDE",
+              "source": "global_rules"
+            },
+            {
+              "capacity": 128,
+              "default": "",
+              "key": "LoadingTheme",
+              "section": "COUNTRY",
+              "source": "global_rules"
+            }
+          ],
+          "selected": 2
+        },
+        {
+          "captured_eax": -1,
+          "hook_a_return": "00000000",
+          "hook_b_return": "00683D14",
+          "input": {
+            "game_mode": 1,
+            "rows": [
+              {
+                "key": "LoadingTheme",
+                "section": "SIDE",
+                "value": "SIDE_SCORE"
+              },
+              {
+                "key": "LoadingTheme",
+                "section": "COUNTRY",
+                "value": "UNKNOWN_SCORE"
+              }
+            ]
+          },
+          "label": "unknown_country_overrides_side",
+          "play_requests": [
+            -1
+          ],
+          "read_calls": [
+            {
+              "capacity": 128,
+              "default": "",
+              "key": "LoadingTheme",
+              "section": "SIDE",
+              "source": "global_rules"
+            },
+            {
+              "capacity": 128,
+              "default": "",
+              "key": "LoadingTheme",
+              "section": "COUNTRY",
+              "source": "global_rules"
+            }
+          ],
+          "selected": -1
+        },
+        {
+          "captured_eax": -2,
+          "hook_a_return": "00000000",
+          "hook_b_return": "00000000",
+          "input": {
+            "game_mode": 1,
+            "rows": []
+          },
+          "label": "both_missing",
+          "play_requests": [
+            0
+          ],
+          "read_calls": [
+            {
+              "capacity": 128,
+              "default": "",
+              "key": "LoadingTheme",
+              "section": "SIDE",
+              "source": "global_rules"
+            },
+            {
+              "capacity": 128,
+              "default": "",
+              "key": "LoadingTheme",
+              "section": "COUNTRY",
+              "source": "global_rules"
+            }
+          ],
+          "selected": -2
+        },
+        {
+          "captured_eax": 2,
+          "hook_a_return": "00000000",
+          "hook_b_return": "00683D14",
+          "input": {
+            "game_mode": 1,
+            "rows": [
+              {
+                "key": "LoadingTheme",
+                "section": "SIDE",
+                "value": "UNKNOWN_SCORE"
+              },
+              {
+                "key": "LoadingTheme",
+                "section": "COUNTRY",
+                "value": "COUNTRY_SCORE"
+              }
+            ]
+          },
+          "label": "valid_country_overrides_unknown_side",
+          "play_requests": [
+            2
+          ],
+          "read_calls": [
+            {
+              "capacity": 128,
+              "default": "",
+              "key": "LoadingTheme",
+              "section": "SIDE",
+              "source": "global_rules"
+            },
+            {
+              "capacity": 128,
+              "default": "",
+              "key": "LoadingTheme",
+              "section": "COUNTRY",
+              "source": "global_rules"
+            }
+          ],
+          "selected": 2
+        }
+      ],
+      "theme_keys": [
+        "LOADING",
+        "SIDE_SCORE",
+        "COUNTRY_SCORE",
+        "MISSION_SCORE"
+      ],
+      "three_rng_unchanged": true
+    }
+  ],
+  "limits": [
+    "Original Ares hooks/retailReadTheme4758F0/From_Name721210 execute; registry and parsed ReadString input are supplied existing world/INI services.",
+    "Play_Song720BB0 request index recorded; no music decode/device/stream output parity.",
+    "Sole EmpProbe VM/CRT/INI allocation owner reused; no parser/alternative decision formula or old corpus replay."
+  ],
+  "schema": 1,
+  "status": "Two new synthetic histories executed"
+}

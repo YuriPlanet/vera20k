@@ -9,6 +9,9 @@ use thiserror::Error;
 /// Errors that can occur when parsing INI files or game data definitions.
 #[derive(Debug, Error)]
 pub enum RulesError {
+    #[error("map Terrain factory requires the current scenario Rules owner")]
+    MissingScenarioRegistry,
+
     #[error("Invalid saved Rules state: {0}")]
     InvalidSavedState(&'static str),
 

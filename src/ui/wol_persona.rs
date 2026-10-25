@@ -1,12 +1,16 @@
-//! The two persona questions of the WOL login flow, both family pages
-//! (`0x0060C540` accepts them):
+//! The WOL persona questions, all family pages (`0x0060C540` accepts
+//! them):
 //!
 //! - the auto-login query `0x112` (proc `0x0079AE00`), which `0x00787010`
 //!   shows after a dialog login while `[Ask] AutoLogin` is set
 //!   (`0x0078766F..0x007876C1`);
 //! - the locale page `0xFE` (proc `0x00796B90`), which the connect
 //!   `0x007864C0` shows when neither the persona nor the service knows the
-//!   player's locale (`0x00786BE6..0x00786C07`).
+//!   player's locale (`0x00786BE6..0x00786C07`);
+//! - the add-buddy query `0x122` (proc `0x007A29E0`), which Quick Match's
+//!   postmatch `0x007A2970` shows while `[Ask] AddMatchBuddies` is set. It
+//!   has the auto-login query's shape (Yes, No, Don't Ask and a question)
+//!   but no heading.
 //!
 //! The models own the controls and what each close answers; `wolinfoMD.ini`
 //! and the service belong to the app's WOL owner.
@@ -22,7 +26,8 @@ use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, Menu
 
 pub(crate) const AUTO_LOGIN_DIALOG: DialogId = DialogId(0x0112);
 pub(crate) const LOCALE_DIALOG: DialogId = DialogId(0x00FE);
-/// IDOK/IDCANCEL: Yes/No on `0x112`, OK/Cancel on `0xFE`.
+pub(crate) const ADD_BUDDY_DIALOG: DialogId = DialogId(0x0122);
+/// IDOK/IDCANCEL: Yes/No on `0x112` and `0x122`, OK/Cancel on `0xFE`.
 pub(crate) const ACCEPT: u16 = 0x0001;
 pub(crate) const DECLINE: u16 = 0x0002;
 pub(crate) const DO_NOT_ASK: u16 = 0x06F9;
@@ -70,8 +75,31 @@ pub(crate) const LOCALE_PAGE: MenuPageSpec = MenuPageSpec {
     },
 };
 
+/// RT_DIALOG `0x122`: Yes on top, No on the bottom row, and no heading
+/// `0x694` in the template.
+pub(crate) const ADD_BUDDY_PAGE: MenuPageSpec = MenuPageSpec {
+    dialog: ADD_BUDDY_DIALOG,
+    title_key: "",
+    stacked: &[MenuPageButtonSpec {
+        id: ACCEPT,
+        dlu_top: 116,
+        csf_key: "GUI:Yes",
+        tooltip_key: "STT:WOLAddBuddyQueryYes",
+        result: Some(1),
+    }],
+    back: MenuPageButtonSpec {
+        id: DECLINE,
+        dlu_top: 257,
+        csf_key: "GUI:No",
+        tooltip_key: "STT:WOLAddBuddyQueryNo",
+        result: Some(2),
+    },
+};
+
 /// The question text: a centred static (`0x50020201`).
 pub(crate) const AUTO_LOGIN_TEXT_KEY: &str = "GUI:AutoLoginQuery";
+/// `0x122`'s question `0x71B`, which init formats with the opponent.
+pub(crate) const ADD_BUDDY_TEXT_KEY: &str = "WOL:AddBuddyQuery";
 pub(crate) const DO_NOT_ASK_KEY: &str = "GUI:DoNotAsk";
 /// The list's caption (`0x50020001`, centred).
 pub(crate) const LOCALE_LABEL_KEY: &str = "GUI:YourLocation";
@@ -81,6 +109,8 @@ pub(crate) fn tooltip_key(dialog: DialogId, control: u16) -> Option<&'static str
     match (dialog, control) {
         (AUTO_LOGIN_DIALOG, DO_NOT_ASK) => Some("STT:WOLAutoLoginDoNotAsk"),
         (AUTO_LOGIN_DIALOG, _) => AUTO_LOGIN_PAGE.button(control).map(|spec| spec.tooltip_key),
+        (ADD_BUDDY_DIALOG, DO_NOT_ASK) => Some("STT:WOLAddBuddyQueryDoNotAsk"),
+        (ADD_BUDDY_DIALOG, _) => ADD_BUDDY_PAGE.button(control).map(|spec| spec.tooltip_key),
         (LOCALE_DIALOG, LOCALE_LIST) => Some("STT:WOLMyInformationLocale"),
         (LOCALE_DIALOG, _) => LOCALE_PAGE.button(control).map(|spec| spec.tooltip_key),
         _ => None,
@@ -98,8 +128,8 @@ pub(crate) enum AutoLoginAnswer {
     No { ask_again: bool },
 }
 
-/// Dialog `0x112` while it exists. Init only stores the controller, so Don't
-/// Ask starts unchecked; there is no Escape or Enter case.
+/// Dialog `0x112` or `0x122` while it exists. Init leaves Don't Ask
+/// unchecked; there is no Escape or Enter case.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct WolAutoLoginQuery {
     pub(crate) do_not_ask: bool,
@@ -111,6 +141,11 @@ impl WolAutoLoginQuery {
     /// A click on Don't Ask's icon: BS_AUTOCHECKBOX flips it.
     pub(crate) fn toggle(&mut self) {
         self.do_not_ask = !self.do_not_ask;
+    }
+
+    /// `0x122` writes `[Ask] AddMatchBuddies` from this on both buttons.
+    pub(crate) fn ask_again(&self) -> bool {
+        !self.do_not_ask
     }
 
     pub(crate) fn activate(&self, control: u16) -> Option<AutoLoginAnswer> {
@@ -213,16 +248,17 @@ impl WolLocalePage {
     }
 }
 
-/// Either page at the current screen: the family right panel, the status
-/// line and the left children at their template places (`0x0060C0C0`).
+/// A persona page at the current screen: the family right panel, the
+/// status line and the left children at their template places
+/// (`0x0060C0C0`).
 #[derive(Debug, Clone)]
 pub(crate) struct WolPersonaLayout {
     pub(crate) dialog: DialogId,
     pub(crate) page: MenuPageLayout,
     pub(crate) status_help: RectPx,
-    /// `0x112`: the question; `0xFE`: the list's caption.
+    /// `0x112`/`0x122`: the question; `0xFE`: the list's caption.
     pub(crate) text: RectPx,
-    /// `0x112`: Don't Ask; `0xFE`: the list `0x3F0`.
+    /// `0x112`/`0x122`: Don't Ask; `0xFE`: the list `0x3F0`.
     pub(crate) control: RectPx,
 }
 
@@ -241,10 +277,10 @@ impl WolPersonaLayout {
     }
 
     pub(crate) fn spec(dialog: DialogId) -> &'static MenuPageSpec {
-        if dialog == LOCALE_DIALOG {
-            &LOCALE_PAGE
-        } else {
-            &AUTO_LOGIN_PAGE
+        match dialog {
+            LOCALE_DIALOG => &LOCALE_PAGE,
+            ADD_BUDDY_DIALOG => &ADD_BUDDY_PAGE,
+            _ => &AUTO_LOGIN_PAGE,
         }
     }
 
@@ -283,16 +319,19 @@ impl WolPersonaLayout {
         } else {
             page.title = scale.scale_rect(title);
         }
-        let (text, control) = if locale {
-            (
+        let (text, control) = match dialog {
+            LOCALE_DIALOG => (
                 child_window(119, 91, 187, 15),
                 child_window(119, 112, 188, 145),
-            )
-        } else {
-            (
+            ),
+            ADD_BUDDY_DIALOG => (
+                child_window(21, 73, 380, 109),
+                child_window(109, 222, 220, 14),
+            ),
+            _ => (
                 child_window(15, 131, 392, 109),
                 child_window(124, 236, 157, 14),
-            )
+            ),
         };
         Self {
             dialog,
@@ -335,7 +374,7 @@ mod tests {
         ))
         .unwrap();
         let mut checked = 0;
-        for dialog in [AUTO_LOGIN_DIALOG, LOCALE_DIALOG] {
+        for dialog in [AUTO_LOGIN_DIALOG, LOCALE_DIALOG, ADD_BUDDY_DIALOG] {
             let key = format!("0x{:X}", dialog.0);
             for (size, case) in corpus["layouts"][&key]["sizes"].as_object().unwrap() {
                 let (width, height) = size.split_once('x').unwrap();
@@ -347,7 +386,7 @@ mod tests {
                         0x71C => layout.page.warning_monitor,
                         0x694 => layout.page.title,
                         0x695 => layout.status_help,
-                        0xFFFF => layout.text,
+                        0xFFFF | 0x71B => layout.text,
                         DO_NOT_ASK | LOCALE_LIST => layout.control,
                         _ => layout
                             .page
@@ -377,7 +416,7 @@ mod tests {
                 (record["d5"] != 0, record["d6"] != 0)
             );
         }
-        assert_eq!(checked, 42);
+        assert_eq!(checked, 42 + 3 * 6);
     }
 
     #[test]

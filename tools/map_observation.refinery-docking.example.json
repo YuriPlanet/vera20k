@@ -1,5 +1,5 @@
 {
-  "schema_version": "vera20k.map-observation-profile.v2",
+  "schema_version": "vera20k.map-observation-profile.v3",
   "launch": {
     "mode": {
       "class": "Battle",
@@ -148,7 +148,10 @@
       "owner": "VERA-OBSERVER",
       "payload": {
         "DeployMcv": {
-          "entity_id": 1371
+          "entity_id": {
+            "type_id": "SMCV",
+            "owner": "VERA-OBSERVER"
+          }
         }
       }
     },
@@ -157,7 +160,7 @@
       "owner": "VERA-OBSERVER",
       "payload": {
         "QueueProduction": {
-          "type_id": 282
+          "type_id": "NAPOWR"
         }
       }
     },
@@ -166,7 +169,7 @@
       "owner": "VERA-OBSERVER",
       "payload": {
         "PlaceReadyBuilding": {
-          "type_id": 282,
+          "type_id": "NAPOWR",
           "rx": 31,
           "ry": 89
         }
@@ -177,7 +180,7 @@
       "owner": "VERA-OBSERVER",
       "payload": {
         "QueueProduction": {
-          "type_id": 288
+          "type_id": "NAREFN"
         }
       }
     },
@@ -186,7 +189,7 @@
       "owner": "VERA-OBSERVER",
       "payload": {
         "PlaceReadyBuilding": {
-          "type_id": 288,
+          "type_id": "NAREFN",
           "rx": 31,
           "ry": 85
         }
@@ -200,5 +203,13 @@
     28,
     88
   ],
-  "terrain_cells": []
+  "terrain_cells": [],
+  "cursor_position": [
+    720,
+    556
+  ],
+  "observe_types": [
+    "HARV",
+    "NAREFN"
+  ]
 }

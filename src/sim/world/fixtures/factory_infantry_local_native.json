@@ -1,21 +1,20 @@
 {
   "schema_version": 2,
   "kind": "Initialized native local human barracks Infantry output",
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "source_receipts": {
     "no_rally": {
       "projection": "tools/spatial_oracle/_factory_infantry_output/fixtures/initialized-no_rally.json.gz",
-      "gzip_bytes": 132669,
-      "gzip_sha256": "993e9be3ebe28aba7821200261b2ad44d7aa507a894df7b2b795631a358808ff",
-      "complete_primary_sha256": "d2466041166db052c2ff73da0edcb513ffa5ea9c06e74bb9fa6635671c78b2bc",
-      "complete_private_sha256": "36b4dd1b8a0cbc5f22480e27d8eea8d448fe6572bd1e64f71011d8e817327073"
+      "gzip_bytes": 128613,
+      "gzip_sha256": "5bf6444d0cba31e6ba8ecac8d466a5354151259d1e39659b6fae6e11307dd7d4",
+      "complete_primary_sha256": "cf257c06f6272b13bf2da9a17af20df233293e7e24ff7cb78fd8aaf3ebd61433",
+      "complete_private_sha256": "4a37036df78cbcb1769c8612944526183379ec62b33f304330a2474a2cfe884a"
     },
     "rally": {
       "projection": "tools/spatial_oracle/_factory_infantry_output/fixtures/initialized-rally.json.gz",
-      "gzip_bytes": 141323,
-      "gzip_sha256": "a007f83e4df084db87d9f0cfe554b485e64a9b59c1e6618209826dbd32df57dc",
-      "complete_primary_sha256": "a9d2a2546350cd395e3cd53925451297abe5bd1dc7b500ba6ec1be1edf1ff512",
-      "complete_private_sha256": "b3b97a0652def2403b8d1aa585f5246e0feac547d692699ec7f743bcf1005b2d"
+      "gzip_bytes": 137263,
+      "gzip_sha256": "5ac30a5c19e0bb8d7f9cbf60118f63a9430283943a3088dfd9651320580117ad",
+      "complete_primary_sha256": "3f0b957ee2a950dfa1077931e003261c5ecbedbe7435c514e154aef81c3e240c",
+      "complete_private_sha256": "688368abfa62e1d09fb5c61e848c5a9634640e2a5bc0182c14d80e1f24d7db61"
     }
   },
   "producer_prior": {
@@ -308,10 +307,10 @@
   "rally": {
     "source_receipts": {
       "projection": "tools/spatial_oracle/_factory_infantry_output/fixtures/initialized-rally.json.gz",
-      "gzip_bytes": 141323,
-      "gzip_sha256": "a007f83e4df084db87d9f0cfe554b485e64a9b59c1e6618209826dbd32df57dc",
-      "complete_primary_sha256": "a9d2a2546350cd395e3cd53925451297abe5bd1dc7b500ba6ec1be1edf1ff512",
-      "complete_private_sha256": "b3b97a0652def2403b8d1aa585f5246e0feac547d692699ec7f743bcf1005b2d"
+      "gzip_bytes": 137263,
+      "gzip_sha256": "5ac30a5c19e0bb8d7f9cbf60118f63a9430283943a3088dfd9651320580117ad",
+      "complete_primary_sha256": "3f0b957ee2a950dfa1077931e003261c5ecbedbe7435c514e154aef81c3e240c",
+      "complete_private_sha256": "688368abfa62e1d09fb5c61e848c5a9634640e2a5bc0182c14d80e1f24d7db61"
     },
     "products": [
       {
@@ -635,8 +634,7 @@
         20
       ],
       "entry": "0x00443860",
-      "input_owner": "tools/spatial_oracle/_factory_infantry_output/exit.py",
-      "input_owner_sha256": "663ea2db521d5ad0d17e53b83d5ee48276a22438106f5556202f2285df6cda8a"
+      "input_owner": "tools/spatial_oracle/_factory_infantry_output/exit.py"
     },
     "exit_cell": [
       15,

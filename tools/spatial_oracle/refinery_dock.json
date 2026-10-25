@@ -446982,6 +446982,338 @@
         ],
         [
           "give_tiberium",
+          5.0,
+          0
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_gate_riparius_vinifera",
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          5,
+          0,
+          5,
+          0
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 125,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 25,
+        "stage": [
+          0,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          5.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          10
+        ],
+        [
+          "give_tiberium",
+          5.0,
+          2
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_gate_vinifera",
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          0,
+          0,
+          5,
+          0
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 125,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 25,
+        "stage": [
+          0,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          10
+        ],
+        [
+          "give_tiberium",
+          5.0,
+          2
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_gate_vinifera_aboreus",
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          0,
+          0,
+          5,
+          5
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 125,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 25,
+        "stage": [
+          0,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          5.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          10
+        ],
+        [
+          "give_tiberium",
+          5.0,
+          3
+        ]
+      ],
+      "input": {
+        "facing": 16384,
+        "miner_cell": [
+          9,
+          10
+        ],
+        "mission": "unload",
+        "name": "unload_gate_aboreus",
+        "stage": [
+          15,
+          0,
+          199,
+          1,
+          1
+        ],
+        "status": 3,
+        "storage": [
+          0,
+          0,
+          0,
+          5
+        ],
+        "unloading": true
+      },
+      "state": {
+        "balance": 125,
+        "dispatch_timer": [
+          0,
+          0
+        ],
+        "facing": {
+          "desired": 16384,
+          "duration": 0,
+          "start": 16384,
+          "timer_start": -1
+        },
+        "miner_contact": "refinery",
+        "miner_mission": 16,
+        "miner_nav": null,
+        "miner_queued": -1,
+        "miner_status": 3,
+        "miner_tether": 0,
+        "other_contact": null,
+        "refinery_bstate": [
+          0,
+          0
+        ],
+        "refinery_contact": "miner",
+        "refinery_queued": -1,
+        "refinery_tether": 0,
+        "score": 25,
+        "stage": [
+          0,
+          199,
+          1,
+          1
+        ],
+        "storage": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "unloading": 1
+      }
+    },
+    {
+      "delay": 1,
+      "events": [
+        [
+          "smoke",
+          0
+        ],
+        [
+          "play_anim",
+          10
+        ],
+        [
+          "give_tiberium",
           10.0,
           1
         ]
@@ -453974,7 +454306,7 @@
               "layer": "RULESMD.INI",
               "pc": "0x5b37bf",
               "size": 1,
-              "value": 3190999808
+              "value": 0
             },
             {
               "address": "0xa8e54d",
@@ -453982,7 +454314,7 @@
               "layer": "RULESMD.INI",
               "pc": "0x5b37e8",
               "size": 1,
-              "value": 2244492800
+              "value": 0
             },
             {
               "address": "0xa8e54e",
@@ -453990,7 +454322,7 @@
               "layer": "RULESMD.INI",
               "pc": "0x5b3811",
               "size": 1,
-              "value": 4052559873
+              "value": 1
             },
             {
               "address": "0xa8e54f",
@@ -453998,7 +454330,7 @@
               "layer": "RULESMD.INI",
               "pc": "0x5b383a",
               "size": 1,
-              "value": 2487738880
+              "value": 0
             },
             {
               "address": "0xa8e550",
@@ -454006,7 +454338,7 @@
               "layer": "RULESMD.INI",
               "pc": "0x5b3863",
               "size": 1,
-              "value": 1079298305
+              "value": 1
             },
             {
               "address": "0xa8e551",
@@ -454014,7 +454346,7 @@
               "layer": "RULESMD.INI",
               "pc": "0x5b388c",
               "size": 1,
-              "value": 3849229057
+              "value": 1
             },
             {
               "address": "0xa8e558",
@@ -456961,42 +457293,42 @@
             "layer": "RULESMD.INI",
             "pc": "0x5b37bf",
             "size": 1,
-            "value": 3190999808
+            "value": 0
           },
           {
             "field": "mission_control",
             "layer": "RULESMD.INI",
             "pc": "0x5b37e8",
             "size": 1,
-            "value": 2244492800
+            "value": 0
           },
           {
             "field": "mission_control",
             "layer": "RULESMD.INI",
             "pc": "0x5b3811",
             "size": 1,
-            "value": 4052559873
+            "value": 1
           },
           {
             "field": "mission_control",
             "layer": "RULESMD.INI",
             "pc": "0x5b383a",
             "size": 1,
-            "value": 2487738880
+            "value": 0
           },
           {
             "field": "mission_control",
             "layer": "RULESMD.INI",
             "pc": "0x5b3863",
             "size": 1,
-            "value": 1079298305
+            "value": 1
           },
           {
             "field": "mission_control",
             "layer": "RULESMD.INI",
             "pc": "0x5b388c",
             "size": 1,
-            "value": 3849229057
+            "value": 1
           },
           {
             "field": "mission_control",

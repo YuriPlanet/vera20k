@@ -2579,7 +2579,6 @@
     }
   },
   "native_fpcw": "0xE7F",
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "predicates": {
     "classification": {
       "kind": 17,
@@ -4720,7 +4719,6 @@
         }
       ]
     },
-    "retained_strategy_sidecar_native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
     "update_cadence_cases_are_independent": true,
     "update_cadence_from_native_delay": [
       {

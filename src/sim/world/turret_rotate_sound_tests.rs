@@ -32,6 +32,185 @@ const TICK_MS: u32 = 67;
 /// The stock cue's name, as `[GTGCAN]` authors it.
 const CUE: &str = "GrandCannonRotate";
 
+/// Techno6FA04F updates a turning turret's loop before the same Building
+/// visit's C4 expiry440333 kills it and Limbo6F6C50 releases the handle.
+/// Zero gain must stop it before Release can play decay at the old gain.
+#[test]
+fn retail_turning_cannon_updates_its_loop_before_fatal_limbo_releases_it() {
+    use crate::sim::anim_class::AnimWorldCoord;
+    use crate::sim::command::Command;
+    use crate::sim::world::TickLane;
+
+    struct Heard {
+        owner: u64,
+        delivered: Cell<usize>,
+        calls: RefCell<Vec<(&'static str, Option<AnimWorldCoord>)>>,
+    }
+    impl SoundBoundary for Heard {
+        fn consume(&self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+            for event in &events[self.delivered.get()..] {
+                if matches!(event, SimSoundEvent::ObjectSoundReleased { owner } if *owner == self.owner)
+                {
+                    self.calls.borrow_mut().push(("release", None));
+                }
+            }
+            self.delivered.set(events.len());
+        }
+        fn delivered(&self) -> usize {
+            self.delivered.get()
+        }
+        fn update_looping_sound(&self, _: &Simulation, owner: u64, world: AnimWorldCoord) {
+            if owner == self.owner {
+                self.calls.borrow_mut().push(("position", Some(world)));
+            }
+        }
+    }
+
+    let Some(mut retail) =
+        crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+    let roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&retail.rules);
+    retail
+        .rules
+        .bind_anim_class_assets(&roots, &assets, theater.extension, "TEMPERATE");
+    retail
+        .rules
+        .bind_effect_assets(&assets, theater.extension, "TEMPERATE");
+    let rules = retail.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x6fa04f);
+    let french = sim.interner.intern("French");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            french,
+            0,
+            Some(french),
+            true,
+            0,
+            10,
+        ));
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let cannon = sim
+        .spawn_object("GTGCAN", "French", 8, 10, 0, &rules)
+        .unwrap();
+    sim.spawn_object("GAPOWR", "French", 4, 4, 0, &rules)
+        .unwrap();
+    sim.spawn_object("NAPOWR", "Russians", 24, 24, 0, &rules)
+        .unwrap();
+    let tanya = sim
+        .spawn_object("TANY", "French", 7, 10, 0, &rules)
+        .unwrap();
+    assert!(sim.apply_command(
+        "French",
+        &Command::PlantC4 {
+            attacker_id: tanya,
+            target_building_id: cannon
+        },
+        Some(&rules),
+    ));
+    let planted = (0..180).any(|_| {
+        sim.advance_app_frame(
+            &[],
+            &rules,
+            None,
+            33,
+            TickLane::Ordinary,
+            FrameEffects::empty(),
+        )
+        .unwrap();
+        sim.entities()
+            .get(cannon)
+            .unwrap()
+            .pending_c4_detonation
+            .pending()
+            .is_some()
+    });
+    assert!(
+        planted,
+        "Tanya's forced own-building order plants the real charge"
+    );
+    let target = sim
+        .spawn_object("NAPOWR", "Russians", 16, 10, 0, &rules)
+        .unwrap();
+    assert!(sim.apply_command(
+        "French",
+        &Command::Attack {
+            attacker_id: cannon,
+            target_id: target
+        },
+        Some(&rules),
+    ));
+    let started = (0..120).any(|_| {
+        sim.advance_app_frame(
+            &[],
+            &rules,
+            None,
+            33,
+            TickLane::Ordinary,
+            FrameEffects::empty(),
+        )
+        .unwrap()
+        .sound_events
+        .iter()
+        .any(|event| {
+            matches!(event, SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
+                    if *anim_id == turret_rotate_sound_owner(cannon) && sound_id == CUE)
+        })
+    });
+    assert!(started, "the real Attack aim starts the stock turret cue");
+    assert!(!latch(&sim, cannon));
+    assert!(
+        sim.entities()
+            .get(cannon)
+            .unwrap()
+            .body_facing
+            .is_rotating(sim.session.binary_frame())
+    );
+    let world = Simulation::movement_sound_world(sim.entities().get(cannon).unwrap());
+    let heard = Heard {
+        owner: turret_rotate_sound_owner(cannon),
+        delivered: Cell::new(0),
+        calls: RefCell::default(),
+    };
+    let released = (0..60).any(|_| {
+        heard.delivered.set(0);
+        heard.calls.borrow_mut().clear();
+        sim.advance_app_frame(
+            &[],
+            &rules,
+            None,
+            33,
+            TickLane::Ordinary,
+            FrameEffects::for_sound(&heard),
+        )
+        .unwrap();
+        heard
+            .calls
+            .borrow()
+            .iter()
+            .any(|(kind, _)| *kind == "release")
+    });
+    assert!(
+        released,
+        "the planted charge reaches the normal fatal Limbo"
+    );
+    assert_eq!(
+        heard.calls.borrow().as_slice(),
+        [("position", Some(world)), ("release", None)]
+    );
+    assert!(
+        sim.entities()
+            .get(cannon)
+            .is_none_or(|entity| entity.health.current() == 0)
+    );
+}
+
 /// Three structures around the one stock shape: `GTGCAN` authors the key and
 /// carries `Turret=yes`, `NOKEY` carries the turret without the sound and
 /// `NOTURRET` the sound without the turret. Every one refuses passive
@@ -270,10 +449,10 @@ fn voice_precedes_turret_controls_and_each_control_reaches_its_native_boundary()
         id,
         ai_counter: sim.substrate.entities.get(id).unwrap().mission.ai_counter(),
     };
-    let effects = FrameEffects::for_sound(&boundary).with_rules(Some(&rules));
+    let effects = FrameEffects::for_sound(&boundary);
     sim.object_ai_visit_one_with_effects(
         id,
-        Some(&rules),
+        &rules,
         crate::sim::world::techno_ai::ObjectAiCtx {
             effects,
             ..Default::default()
@@ -366,7 +545,7 @@ fn turret_rotate_sound_matches_native_control_corpus() {
                 id,
                 visit["sample"].as_u64().unwrap() != 0,
                 &rules,
-                FrameEffects::for_sound(&boundary).with_rules(Some(&rules)),
+                FrameEffects::for_sound(&boundary),
             );
             let expected = visit["calls"]
                 .as_array()
@@ -423,7 +602,7 @@ fn turret_rotate_sound_matches_native_control_corpus() {
         }
         let prior = latch(&sim, id);
         sim.sound_events.clear_for_test();
-        sim.turret_rotate_sound_limbo(id, FrameEffects::default(), Some(&rules));
+        sim.turret_rotate_sound_limbo(id, FrameEffects::default(), &rules);
         assert_eq!(
             turret_events(&sim, id),
             if prior { vec![] } else { vec!["release"] }
@@ -542,7 +721,7 @@ fn a_retail_grand_cannons_mission_aim_starts_and_releases_the_retail_cue() {
     sim.assign_target_represented(
         id,
         Some(TargetKind::Entity(enemy)),
-        Some(&rules),
+        &rules,
         None,
         FrameEffects::default(),
     )

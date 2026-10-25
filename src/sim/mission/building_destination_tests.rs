@@ -129,7 +129,7 @@ fn building_destination_matches_64_native_mode_one_rows_for_all_target_shapes() 
             sim.assign_destination_represented(
                 1,
                 target(input["requested"].as_str().unwrap(), shape),
-                Some(&rules),
+                &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             )

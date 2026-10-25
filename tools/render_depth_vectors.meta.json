@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -26,6 +25,6 @@
     "foot_z_adjust": "0x004DAFC0",
     "tmp_dimensions": "0x00547150"
   },
-  "payload_sha256": "178fb6e51f8b672564452cb27cf306eef7b2b3f17505b8b159460faa63f2e545",
+  "payload_sha256": "1709859bafa6fa1ecabc01f69a77f34721df234d20aa6a63c96269ddf514719a",
   "replay_command": "python -m tools.render_depth_oracle"
 }

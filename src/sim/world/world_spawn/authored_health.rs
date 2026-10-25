@@ -68,14 +68,14 @@ impl Simulation {
         &mut self,
         entity: GameEntity,
         authored: i32,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> (u64, RevealOutcome) {
         let building = entity.category() == EntityCategory::Structure;
         // InitManagers belongs to construction, before the map loader's stores.
         let (id, position) =
             self.store_with_constructor_managers(entity, rules, super::FrameEffects::default());
-        if building && let Some(rules) = rules {
+        if building {
             let entity = self
                 .substrate
                 .entities
@@ -105,10 +105,7 @@ impl Simulation {
             true,
             super::FrameEffects::default(),
         );
-        if !building
-            && matches!(outcome, RevealOutcome::Revealed { .. })
-            && let Some(rules) = rules
-        {
+        if !building && matches!(outcome, RevealOutcome::Revealed { .. }) {
             let strength = self
                 .substrate
                 .entities

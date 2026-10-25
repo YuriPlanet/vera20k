@@ -163,7 +163,7 @@ fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
                     );
                     // Actor construction/cleanup are Rust fixture preparation,
                     // outside the original Record/limit comparison interval.
-                    sim.discard_constructed_limbo(product, Some(&rules), FrameEffects::default());
+                    sim.discard_constructed_limbo(product, &rules, FrameEffects::default());
                 }
                 "factory" => {
                     let strip = match category(family) {
@@ -179,7 +179,7 @@ fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
                         .and_then(|factory| factory.object)
                         .and_then(|object| object.entity_id);
                     if let Some(held) = held {
-                        sim.discard_constructed_limbo(held, Some(&rules), FrameEffects::default());
+                        sim.discard_constructed_limbo(held, &rules, FrameEffects::default());
                     }
                     sim.production
                         .factories_mut()
@@ -234,22 +234,26 @@ fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
                 } else {
                     owner
                 };
-                for control in query["can_build"].as_array().unwrap() {
-                    let args = control["args"].as_array().unwrap();
-                    let answer = can_build(
-                        &sim,
-                        &rules,
-                        owner,
-                        obj,
-                        args[0].as_bool().unwrap(),
-                        args[1].as_bool().unwrap(),
-                    );
-                    let answer = match answer {
-                        CanBuild::No => 0,
-                        CanBuild::Yes => 1,
-                        CanBuild::AtLimit => -1,
-                    };
-                    assert_eq!(answer, int(&control["answer"]), "{context}: {name}");
+                // These answers execute the complete stock gamemd CanBuild;
+                // Ares's replaced factory/limit path has its own executed corpus.
+                if !crate::rules::ARES_ENABLED {
+                    for control in query["can_build"].as_array().unwrap() {
+                        let args = control["args"].as_array().unwrap();
+                        let answer = can_build(
+                            &sim,
+                            &rules,
+                            owner,
+                            obj,
+                            args[0].as_bool().unwrap(),
+                            args[1].as_bool().unwrap(),
+                        );
+                        let answer = match answer {
+                            CanBuild::No => 0,
+                            CanBuild::Yes => 1,
+                            CanBuild::AtLimit => -1,
+                        };
+                        assert_eq!(answer, int(&control["answer"]), "{context}: {name}");
+                    }
                 }
                 assert_eq!(
                     check_build_limit(&sim, &rules, owner, obj),

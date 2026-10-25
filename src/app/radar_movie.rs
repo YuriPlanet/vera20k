@@ -6,7 +6,7 @@
 //! Native evidence: Steam gamemd,653963/6578F0/6579E0 and the executed
 //! prerequisite/lifecycle controls in the ALL01 native evidence packet.
 //! Queued pause transitions: original657BFA/657C7D controls in
-//! tools/scenario_pause.json; the sidecar records the executable identity.
+//! tools/scenario_pause.json.
 //! GPU/rodio, failed media decode and missing device are Rust substitutes;
 //! full native copy/final-paint and saved raw Radar fields remain unproven.
 
@@ -15,12 +15,68 @@ use std::sync::Arc;
 
 use crate::app::AppState;
 use crate::app::movie_playback::MoviePlayback;
+use crate::audio::arbiter::HandleOwner;
+use crate::audio::sfx::SpatialGain;
 use crate::render::bink_movie::BinkMovieSurface;
 use crate::render::radar::anim::RadarMovieCommand;
 use crate::rules::sound_ini::{EvaPriority, EvaType};
 use crate::sim::replay::ScenarioServiceInput;
 
 const INCOMING: &str = "EVA_IncomingTransmission"; //652D6E literal8392C0
+
+/// The radar's own VocHandle, RadarClass+0x14C0 on the radar singleton
+/// `0x0087F7E8`. Only MovieOn/MovieOff use it; RadarOn/RadarOff play unbound.
+const RADAR_SOUND: HandleOwner = HandleOwner::Global(0x00880CA8);
+
+/// `VocHandle__EndLooping @ 0x00406060` on the radar's handle. Native ends
+/// the loop when the housing finishes opening or closing (`RadarClass::Draw`
+/// `0x00653267`, `0x0065328C`) and on an availability change
+/// (`ActivateDeactivate` `0x00656C0E`, `0x00656C4E`).
+pub(crate) fn end_radar_sound_loop(state: &mut AppState) {
+    if let Some(sfx) = state.audio.sfx_player.as_mut() {
+        end_radar_sound_loop_with(sfx);
+    }
+}
+
+pub(crate) fn end_radar_sound_loop_with(sfx: &mut crate::audio::sfx::SfxPlayer) {
+    sfx.release_animation_sound(RADAR_SOUND);
+}
+
+/// EndLooping, then `PlayGlobal(Rules MovieOn or MovieOff, 0x2000, 1.0)`
+/// bound to the radar's handle (`VocHandle__SetEvent 0x004060F0`). Retail
+/// `[MovieOn]`/`[MovieOff]` are a `random loop all attack decay` static, so
+/// it runs until the housing settles.
+fn play_radar_sound_loop(state: &mut AppState, movie_on: bool) {
+    end_radar_sound_loop(state);
+    let sound = state.rules().and_then(|rules| {
+        if movie_on {
+            rules.general.movie_on.clone()
+        } else {
+            rules.general.movie_off.clone()
+        }
+    });
+    if let (Some(sound), Some(catalog), Some(sfx)) = (
+        sound,
+        state.process_assets.audio_catalog(),
+        state.audio.sfx_player.as_mut(),
+    ) {
+        sfx.play_animation_sound_spatial(
+            RADAR_SOUND,
+            &sound,
+            SpatialGain::CENTRED_FULL,
+            catalog.sounds(),
+        );
+    }
+}
+
+/// The head clip runs only while the window is active (`0x00432E40`'s
+/// BinkPause) and no in-game modal is open: `StateMachine__EnterPause`
+/// pauses it (`0x00683F4D` -> `0x005BF500(1)`) and `ExitPause` resumes it
+/// (`0x0068403C`). Not `MatchState::paused`, which holds the clip's own
+/// action-117 pause.
+pub(crate) fn playback_active(state: &AppState) -> bool {
+    state.platform.window_active && !state.match_state.match_presentation.in_game_menu.is_open()
+}
 
 struct QueuedMovie {
     surface: Option<BinkMovieSurface>,
@@ -187,14 +243,20 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
         _ => true,
     };
     let streams_ready = state.audio.movie_streams_ready();
+    // Admission and the prelude run from RadarClass vt+0x28 (`0x006539A2`)
+    // on the main loop's input path, which an in-game modal does not pump.
+    let menu_open = state.match_state.match_presentation.in_game_menu.is_open();
     let Some(radar) = state.match_state.match_presentation.radar_anim.as_mut() else {
         return;
     };
-    radar.admit_movie();
-    let command = radar.movie_command(selected_done, streams_ready);
+    let command = if menu_open {
+        RadarMovieCommand::None
+    } else {
+        radar.admit_movie();
+        radar.movie_command(selected_done, streams_ready)
+    };
     match command {
         RadarMovieCommand::Announce => {
-            let side = crate::app::presentation::building_anim::local_eva_side(state);
             if let Some(sfx) = state.audio.sfx_player.as_mut() {
                 sfx.clear_eva_queues();
                 if let (Some(catalog), Some(assets)) = (
@@ -206,8 +268,6 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
                         Some(EvaType::Standard),
                         Some(EvaPriority::Critical),
                         catalog.eva(),
-                        side,
-                        catalog.sounds(),
                         assets,
                         catalog.index(),
                     );
@@ -228,6 +288,8 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
                 .radar_movies
                 .release_eva_hold(state.audio.sfx_player.as_mut());
             state.audio.set_movie_audio_held(true, wall_ms);
+            //6578F0 stage2: SetRadarMode(3), EndLooping, then MovieOn.
+            play_radar_sound_loop(state, true);
         }
         RadarMovieCommand::None => {}
     }
@@ -264,6 +326,11 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
         crate::app::match_runtime::scenario_pause::apply_service(state, input);
     }
     reconcile_pause_clock(state, wall_ms);
+    let voice_volume = state
+        .persistence
+        .options_profile
+        .voice_volume
+        .clamp(0.0, 1.0);
     if state
         .match_state
         .match_presentation
@@ -281,14 +348,10 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
             .surface
             .take()
             .expect("unstarted head owns video");
-        let voice_volume = state
-            .persistence
-            .options_profile
-            .voice_volume
-            .clamp(0.0, 1.0);
         let playback = MoviePlayback::new(surface, state.audio.movie_mixer(), voice_volume);
         state.match_state.match_presentation.radar_movies.playing = Some(playback);
     }
+    let active = playback_active(state);
     let playback = state
         .match_state
         .match_presentation
@@ -296,9 +359,9 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
         .playing
         .as_mut()
         .expect("started head");
-    // Menu pause does not stop a communications clip; inactive-window BinkPause
-    // is separate from both scenario pause and the normal audio service gate.
-    playback.set_active(state.platform.window_active);
+    // Both pauses are separate from scenario pause and the audio service gate.
+    playback.set_active(active);
+    playback.set_voice_volume(voice_volume);
     let completed = match playback.step(&state.renderer.gpu) {
         Ok(completed) => completed,
         Err(error) => {
@@ -331,11 +394,17 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
             .as_mut()
             .expect("radar retirement")
             .finish_movie(has_next);
+        if has_next {
+            //657BB9..657BE1: EndLooping, MovieOn, phase4 frame25.
+            play_radar_sound_loop(state, true);
+        }
         if let Some(input) = service {
             crate::app::match_runtime::scenario_pause::apply_service(state, input);
         }
         if !has_next {
+            //657C2C..657C5B: ResumeAfterMovie, EndLooping, MovieOff.
             state.audio.retire_movie_audio(wall_ms);
+            play_radar_sound_loop(state, false);
             reconcile_pause_clock(state, wall_ms);
         }
     }
@@ -391,6 +460,20 @@ mod tests {
     use crate::sim::replay::{ReplayHeader, ReplayLog};
     use crate::sim::trigger_runtime::TriggerEffect;
     use crate::sim::world::Simulation;
+
+    /// Rules+6F8/+6FC (`0x0066AB5F..0x0066ABC7`) name the static that
+    /// `PlayRadarMovie 0x006578F0` and `PerFrameMovieUpdate 0x006579E0` play.
+    #[test]
+    fn retail_rules_name_the_transmission_static() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let general = &retail.rules.general;
+        assert_eq!(
+            (general.movie_on.as_deref(), general.movie_off.as_deref()),
+            (Some("MovieOn"), Some("MovieOff"))
+        );
+    }
 
     #[test]
     fn pause_holds_follow_native_queued_movie_transitions() {

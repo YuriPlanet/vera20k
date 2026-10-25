@@ -35,36 +35,21 @@ def retail_inputs():
 
 
 def manifest(inputs):
-    # Import the same owners; record transitive repository sources by relative
-    # name. No host paths, retail bytes, generated logs, or duplicate captures.
-    from . import hierarchy_composition, map_facts
-    from tools.native_oracle import image_sha256
-    import capstone
-    import unicorn
+    # Record owned data files (references, sidecars, inputs and manifests) by
+    # relative name; repository sources are not pinned (AGENTS.md). No host
+    # paths, retail bytes, generated logs, or duplicate captures. Runtime
+    # versions are not evidence: another environment reproduces the outputs.
     owned = {
         p.relative_to(HERE).as_posix(): sha(p)
         for p in sorted(HERE.rglob('*'))
-        if p.is_file() and p.name != 'receipt.json'
-        and p.suffix not in ('.log', '.pyc') and '__pycache__' not in p.parts
+        if p.is_file() and p.name != 'receipt.json' and p.suffix in ('.json', '.gz')
     }
-    dependencies = {}
-    for module in list(sys.modules.values()):
-        file = getattr(module, '__file__', None)
-        if not file:
-            continue
-        path = Path(file).resolve()
-        if path.suffix == '.py' and path.is_relative_to(ROOT / 'tools') and not path.is_relative_to(HERE):
-            dependencies[path.relative_to(ROOT).as_posix()] = sha(path)
     return {
         'schema': 2,
-        'native_sha256': image_sha256(),
-        'runtime': {'python_requires': '>=3.10', 'unicorn': unicorn.__version__,
-                    'capstone': capstone.__version__, 'lzo_version': map_facts.lib.lzo_version()},
         'runners': [f'{PACKAGE}.{runner}' for runner in RUNNERS],
         'owned': owned,
-        'dependencies': dict(sorted(dependencies.items())),
         'external_inputs': inputs,
-        'validation': 'Separate --write then --check invocations; four native/comparison outputs and exact source/input/artifact manifest. Check is read-only.',
+        'validation': 'Separate --write then --check invocations; four native/comparison outputs and exact input/artifact manifest. Check is read-only.',
         'scope': 'Two physical hut selectors; empty low repair, resident Recalc, native full connectivity/hierarchy from supplied production planes. No native scenario loader, Engineer prefix, or occupied repair claim.',
     }
 
@@ -97,7 +82,7 @@ def main():
     else:
         from tools.native_oracle import first_difference
         difference = first_difference(json.loads(path.read_bytes()), data)
-        assert difference is None, f'Source/input/artifact manifest changed: {difference}'
+        assert difference is None, f'Input/artifact manifest changed: {difference}'
         print('PASS independent packet check: four outputs and manifest match; no files written.', flush=True)
 
 

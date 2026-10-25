@@ -8,11 +8,11 @@ from pathlib import Path
 import hashlib,struct
 from unicorn.x86_const import *
 
-from tools.native_oracle import NATIVE_SHA256,provenance
+from tools.native_oracle import provenance
 from tools.spatial_oracle.shrapnel_repair.packet_io import finish_vectors
 from .publication import publication_projection
 from tools.spatial_oracle.anytown_damage.anytown_resident import Resident,rules,inputs,identity,sr
-from tools.spatial_oracle.anytown_damage.validate_packet import inputs as validate_inputs, source_provenance
+from tools.spatial_oracle.anytown_damage.validate_packet import inputs as validate_inputs
 
 HERE=Path(__file__).resolve().parent
 FRAME=1000
@@ -103,27 +103,25 @@ def run_case(hut,stage,t,r):
 
 def generate():
     retail=validate_inputs();t=identity.theater();r,fields=rules()
-    return dict(schema=1,native_sha256=NATIVE_SHA256,retail_inputs=retail,theater=t,rules=fields,
+    return dict(schema=1,retail_inputs=retail,theater=t,rules=fields,
         cases=[run_case(hut,stage,t,r) for hut in ([85,58],[89,51])
                for stage in ('healthy','first_damage','collapsed','repaired')],
         boundary='Original full587410 on physical concrete overlay cells; direct supplied hut query. Original57CCF0 and573540 create prerequisites using inherited Resident seams. No native scenario load, complete cursor UI/click/Engineer route, structural-record branch, other axis or Rust/production comparison.')
 
 
 def metadata():
-    result=provenance(scope=__doc__,assumptions=[
+    return provenance(scope=__doc__,assumptions=[
         'Physical XMP03T4.MAP cells, exact theater tile bases and original overlay/land readers are reused from anytown_damage.Resident. Both actual hut coordinates are supplied directly to original587410.',
         'Healthy, first_damage, collapsed and repaired states are made by zero/one/two original57CCF0 calls at87,54, plus original573540 from the selected hut for repaired. No overlay edits manufacture cursor results.',
         'Original587410 executes its entire selected path, including native Y-major25-cell selection, tile-family precedence, live last matching cell, concrete overlay orientation and both directed walks as reached. No cursor predicate or lookup answer is substituted.',
         'All180 cell snapshots, complete cell-memory hashes, scan/lookup/walk trace, return EAX/AL, frame1000 and complete Main/Scenario/MapGen states are recorded around the query. AL is the cursor Boolean; upper EAX bits are retained mechanically.',
-        'Original executable is SHA-pinned and complete mapped.text is unchanged after each measured native call.'
+        'Complete mapped.text is unchanged after each measured native call.'
     ],substitutions=[
         'The inherited sparse physical map, pristine TMP heads, supplied initial zone planes, empty objects, zero presentation/graph callbacks and successful bounded allocator remain as documented by the Resident owner. Actual selected Recalc executes.',
         'Map query starts at587410; no Input/Mouse/Engineer or full Building lifecycle executes. Structural record branch fails closed if reached and is not represented by synthetic fixtures. The stock overlay family takes the Y-axis path; the other-axis code is instruction-only.',
         'Native seed0 streams and frame1000 are supplied, not a full scenario-loaded RNG position. Preparatory repair consumes native MapGen; every cursor query records its own unchanged or changed streams independently.'
     ],entry_points={'cursor':0x587410,'lookup':0x5657A0,'damage':0x57CCF0,'repair':0x573540,
                     'recalc':0x47D2B0,'structural_branch_excluded':0x5876C6})
-    result.update(source_provenance(__file__))
-    return result
 
 
 if __name__=='__main__':finish_vectors(generate,HERE/'hut_cursor.json.gz',provenance=metadata,

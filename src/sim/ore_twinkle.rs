@@ -77,8 +77,8 @@ impl Simulation {
             return false;
         }
         if self.initialize_gas_cloud_system(rules).is_none() {
-            // Rules-less constructor fixtures retain their established ID
-            // reservation. Retail processing always registers GasCloudSys.
+            // Rules without GasCloudSys (constructor fixtures) still reserve
+            // its ID. Retail processing always registers GasCloudSys.
             let _ = self.native_unique_ids.as_mut().unwrap().next_id();
         }
         self.post_load_particle_system_constructed

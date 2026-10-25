@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -26,5 +25,5 @@
     "raster": "0x00754510"
   },
   "replay_command": "python -m tools.spatial_oracle.naval_draw_bounds --drone-tilt",
-  "payload_sha256": "96602d0d7ebb2bfda66abb19345c24b2104dd36670a0cb6a97fe40141f5dcf9f"
+  "payload_sha256": "30663c7b4b40dc20ab9b9f14194d92b1c8f858a712c90e69f82b29c34b33aa25"
 }

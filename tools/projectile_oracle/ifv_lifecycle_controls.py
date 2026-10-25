@@ -71,7 +71,7 @@ def teleport_targets():
 
     from unicorn import UC_HOOK_CODE
     from unicorn.x86_const import UC_X86_REG_ESP, UC_X86_REG_EBP
-    from tools.native_oracle import NATIVE_SHA256, run_checked
+    from tools.native_oracle import run_checked
     from tools.projectile_oracle import guided_step as g
     from tools.spatial_oracle.building_body_rules import dwords, SP
     from tools.spatial_oracle.object_flight_height import initialize_object_scalars
@@ -198,7 +198,7 @@ def teleport_targets():
         closing_bits=bytes(u.mem_read(bullet + 0x120, 8)).hex(),
         impact=u.mem_read(SP + 0x18, 1)[0],
     )
-    return dict(native_sha256=NATIVE_SHA256, initial=initial, rows=rows, flight=flight)
+    return dict(initial=initial, rows=rows, flight=flight)
 
 
 def teleport_metadata():

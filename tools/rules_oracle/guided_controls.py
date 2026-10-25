@@ -9,7 +9,7 @@ import struct
 from pathlib import Path
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_ESP
-from tools.native_oracle import NATIVE_SHA256, finish_vectors, provenance, run_checked
+from tools.native_oracle import finish_vectors, provenance, run_checked
 from tools.rules_oracle.weapon_speed_order import fresh
 from tools.spatial_oracle.building_body_rules import RULES, SP
 
@@ -124,8 +124,7 @@ def controls():
 
 
 def generate():
-    return dict(native_sha256=NATIVE_SHA256,
-                sequential=sequence(controls()),
+    return dict(sequential=sequence(controls()),
                 raw_empty_cache=sequence([
                     ('set_nonzero', {'General': {'MissileROTVar': '.75', 'MissileSafetyAltitude': '321'}}),
                     ('cached_empty_not_physical_omission', {'General': {'MissileROTVar': '', 'MissileSafetyAltitude': ''}}),

@@ -3,7 +3,7 @@
 //! exclude hardware completion, entry-state diagnostics and opening timing.
 
 use super::*;
-use crate::rules::sound_ini::{EvaRegistry, EvaSide};
+use crate::rules::sound_ini::EvaRegistry;
 use serde_json::{Value, json};
 
 fn corpus() -> Vec<Value> {
@@ -70,10 +70,9 @@ fn native_queue_image(state: &Value) -> Value {
     })
 }
 
-fn request_node(entry: &crate::rules::sound_ini::EvaEntry, side: EvaSide) -> VoxNode {
+fn request_node(entry: &crate::rules::sound_ini::EvaEntry) -> VoxNode {
     VoxNode {
         event: entry.name.to_ascii_uppercase(),
-        sample: entry.column(side).unwrap_or("").to_owned(),
         eva_type: entry.eva_type,
         priority: entry.priority,
         seq: 0,
@@ -89,7 +88,9 @@ fn dispatch(queue: &mut VoxQueue, registry: &EvaRegistry, step: &Value) -> Queue
         .unwrap();
     assert_eq!(call["type_override"], 2);
     assert_eq!(call["priority_override"], -1);
-    let side = EvaSide::from_side_index(step["before"]["side"].as_i64().unwrap() as i32);
+    // This fixture seeds the process cache image, not Scenario.Side or
+    // a SetSide call (the Ares binder has separate native controls).
+    queue.selected_voice = step["before"]["side"].as_i64().unwrap() as i32;
     let index = call["index"].as_i64().unwrap() as i32;
     let effect = registry
         .entry_by_index(index)
@@ -97,7 +98,6 @@ fn dispatch(queue: &mut VoxQueue, registry: &EvaRegistry, step: &Value) -> Queue
             queue.queue_voice(
                 VoxRequest {
                     event: &entry.name,
-                    sample: entry.column(side).unwrap_or(""),
                     eva_type: entry.eva_type,
                     priority: entry.priority,
                 },
@@ -172,10 +172,7 @@ fn retail_trigger_eva_requests_match_original_queue_admission_and_history() {
                     .as_deref()
             {
                 let name = before["current"]["name"].as_str().unwrap();
-                queue.current = Some(request_node(
-                    registry.entry(name).unwrap(),
-                    EvaSide::Russian,
-                ));
+                queue.current = Some(request_node(registry.entry(name).unwrap()));
             }
             if before["suspend"] == 1 && queue.suspend_depth == 0 {
                 queue.suspend();

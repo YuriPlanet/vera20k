@@ -51,7 +51,6 @@
 
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::sim::game_entity::GameEntity;
-use crate::util::fixed_math::SIM_ZERO;
 
 use super::locomotor::LocomotorState;
 use super::locomotor_ready::LocomotorReadyState;
@@ -61,11 +60,10 @@ use super::track_process::TrackFamily;
 /// producer yet (the gate then keeps its conservative "not moving" answer).
 ///
 /// Called straight from the Mission readiness gate, once per gate evaluation.
-/// `rules` gives Drive/Ship the owner's type and `VeteranSpeed`; without it
-/// the speed getter falls back to the order's stamped speed.
+/// `rules` gives Drive/Ship the owner's type and `VeteranSpeed`.
 pub(crate) fn ready_state_for(
     entity: &GameEntity,
-    rules: Option<super::SpeedRules<'_>>,
+    rules: super::SpeedRules<'_>,
     binary_frame: u32,
 ) -> Option<LocomotorReadyState> {
     let locomotor = entity.locomotor.as_ref()?;
@@ -113,7 +111,7 @@ const F64_BITS_ONE: u64 = 0x3FF0_0000_0000_0000;
 /// model.
 fn drive_family(
     entity: &GameEntity,
-    rules: Option<super::SpeedRules<'_>>,
+    rules: super::SpeedRules<'_>,
     binary_frame: u32,
     family: TrackFamily,
 ) -> LocomotorReadyState {
@@ -127,15 +125,7 @@ fn drive_family(
     // Is_Moving and the head test (`0x004AFC35..0x004AFC6A`); elsewhere the
     // predicate is already decided and the getter is not run.
     let owner_speed = if !turning_active && slot_moving && head_to_nonnull {
-        match rules {
-            Some(rules) => rules.owner_current_speed(entity),
-            None => super::foot_speed::owner_current_speed(
-                entity,
-                None,
-                1.0,
-                &crate::sim::houses::Houses::default(),
-            ),
-        }
+        rules.owner_current_speed(entity)
     } else {
         0
     };
@@ -207,12 +197,12 @@ fn jumpjet(locomotor: &LocomotorState) -> LocomotorReadyState {
 
 /// Walk75AB40 calls IsMoving75AB30, reads Foot+578 >0, then tests the
 /// retained step XYZ. The Walk owner retains all three inputs; NavCom is not
-/// an authority for this query. The fixed fraction's sign projects to 1/0
+/// an authority for this query. The native fraction's sign projects to 1/0
 /// without a float conversion.
 fn walk(entity: &GameEntity, locomotor: &LocomotorState) -> LocomotorReadyState {
     LocomotorReadyState::Walk {
         moving_byte: u8::from(locomotor.walk_is_moving().unwrap_or(false)),
-        applied_speed_bits: if entity.foot_speed.applied_fraction() > SIM_ZERO {
+        applied_speed_bits: if entity.foot_speed.speed_fraction_is_positive() {
             F64_BITS_ONE
         } else {
             0

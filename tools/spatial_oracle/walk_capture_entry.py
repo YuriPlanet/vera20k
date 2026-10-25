@@ -8,7 +8,7 @@ from pathlib import Path
 import argparse, hashlib, json, struct
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_READ
 from unicorn.x86_const import *
-from tools.native_oracle import NATIVE_SHA256, run_checked, provenance, finish_vectors
+from tools.native_oracle import run_checked, provenance, finish_vectors
 from tools.spatial_oracle.astar_capture_neighbor import prepare, synthetic_cases, digest
 from tools.spatial_oracle.building_body_rules import SP, dwords
 
@@ -84,11 +84,10 @@ def generate(input_path=None):
     rows = json.loads(input_path.read_text())['cases'] if input_path else [
         row for row in synthetic_cases()
         if row['name'] in ('synthetic_flat_capture', 'synthetic_iron_curtain_control')]
-    return dict(schema_version=1, native_sha256=NATIVE_SHA256, scope=__doc__,
+    return dict(schema_version=1, scope=__doc__,
                 source=input_path.name if input_path else 'explicit synthetic controls',
                 source_sha256=hashlib.sha256(input_path.read_bytes()).hexdigest() if input_path else None,
-                cases=[execute(row) for row in rows],
-                harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
+                cases=[execute(row) for row in rows])
 
 
 def metadata():

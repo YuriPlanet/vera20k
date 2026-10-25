@@ -192,7 +192,8 @@ mod tests {
         e.position.put_location(DriveCoord { x, y, z });
         let f = &crate::rules::foundation::FOUNDATION_TABLE
             [g["type_result"]["foundation"].as_u64().unwrap() as usize];
-        e.type_facts.set_foundation_for_test(f.name.to_owned());
+        e.type_facts
+            .set_foundation_for_test(f.name.to_owned().into());
         let center = object_get_coords(&e, None);
         let mut camera: [i32; 2] = point(&g["input"]["camera"]);
         camera[1] += 15; // Shared VERA world-row bias.

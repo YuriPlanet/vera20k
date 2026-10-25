@@ -71,9 +71,11 @@ pub struct SpriteInstance {
     pub z_adjust: f32,
     /// Gradient entry (bits 0-7, `native_z::ZGradient`) plus
     /// `native_z::Z_GRADIENT_ZSHAPE_FLAG` when the fragment shader must
-    /// subtract the BUILDNGZ z-shape at `zshape_origin`.
+    /// subtract an optional depth shape at `zshape_origin`. Linear overlay
+    /// shapes also pack their channel/stride; see `pack_overlay_z_gradient`.
     pub z_gradient: u32,
-    /// World-pixel origin of the z-shape canvas (`native_z::zshape_origin`).
+    /// World-pixel origin of the z-shape canvas (`native_z::zshape_origin`),
+    /// or raw overlay origin adjusted for the frame's encoded file offset.
     pub zshape_origin: [f32; 2],
     /// Selected native palette conversion; default preserves precomposed RGBA.
     pub palette_light: crate::render::palette_light::PaletteLight,
@@ -184,6 +186,26 @@ fn create_r8_texture_view_on_device(
     width: u32,
     height: u32,
 ) -> wgpu::TextureView {
+    create_unorm_texture_view_on_device(
+        device,
+        queue,
+        label,
+        bytes,
+        width,
+        height,
+        wgpu::TextureFormat::R8Unorm,
+    )
+}
+
+pub(crate) fn create_unorm_texture_view_on_device(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    label: &str,
+    bytes: &[u8],
+    width: u32,
+    height: u32,
+    format: wgpu::TextureFormat,
+) -> wgpu::TextureView {
     let texture: wgpu::Texture = device.create_texture_with_data(
         queue,
         &wgpu::TextureDescriptor {
@@ -196,7 +218,7 @@ fn create_r8_texture_view_on_device(
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
+            format,
             usage: wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         },
@@ -627,8 +649,11 @@ impl BatchRenderer {
         let pipeline_layout: wgpu::PipelineLayout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Batch Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout, &texture_bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[
+                    Some(&camera_bind_group_layout),
+                    Some(&texture_bind_group_layout),
+                ],
+                immediate_size: 0,
             });
 
         // Overlay pipeline: depth write ON, LessEqual compare.
@@ -663,13 +688,13 @@ impl BatchRenderer {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -707,13 +732,13 @@ impl BatchRenderer {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::Always,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::Always),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -754,13 +779,13 @@ impl BatchRenderer {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -798,13 +823,13 @@ impl BatchRenderer {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: false,
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -853,8 +878,11 @@ impl BatchRenderer {
         let zdepth_pipeline_layout: wgpu::PipelineLayout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("ZDepth Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout, &zdepth_texture_bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[
+                    Some(&camera_bind_group_layout),
+                    Some(&zdepth_texture_bind_group_layout),
+                ],
+                immediate_size: 0,
             });
         let zdepth_pipeline: wgpu::RenderPipeline =
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -886,14 +914,14 @@ impl BatchRenderer {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: true,
+                    depth_write_enabled: Some(true),
                     // `TMP_TileBlitter @ 0x00547CF0`: `base + zdata <= zbuf`.
-                    depth_compare: wgpu::CompareFunction::LessEqual,
+                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             });
 
@@ -942,11 +970,11 @@ impl BatchRenderer {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("ZSprite Pipeline Layout"),
                 bind_group_layouts: &[
-                    &camera_bind_group_layout,
-                    &texture_bind_group_layout,
-                    &zshape_bind_group_layout,
+                    Some(&camera_bind_group_layout),
+                    Some(&texture_bind_group_layout),
+                    Some(&zshape_bind_group_layout),
                 ],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
         let make_zsprite_pipeline = |label: &str, depth_write_enabled: bool| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -978,14 +1006,14 @@ impl BatchRenderer {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled,
+                    depth_write_enabled: Some(depth_write_enabled),
                     // Sprite leaves test `z < zbuf` (strict).
-                    depth_compare: wgpu::CompareFunction::Less,
+                    depth_compare: Some(wgpu::CompareFunction::Less),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         };
@@ -1065,11 +1093,11 @@ impl BatchRenderer {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Voxel Sprite Pipeline Layout"),
                 bind_group_layouts: &[
-                    &camera_bind_group_layout,
-                    &unit_atlas_bind_group_layout,
-                    &voxel_palette_bind_group_layout,
+                    Some(&camera_bind_group_layout),
+                    Some(&unit_atlas_bind_group_layout),
+                    Some(&voxel_palette_bind_group_layout),
                 ],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
         let voxel_pipeline = |label, depth_compare| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -1101,13 +1129,13 @@ impl BatchRenderer {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: false,
-                    depth_compare,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(depth_compare),
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
                 }),
                 multisample: wgpu::MultisampleState::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         };
@@ -1317,6 +1345,17 @@ impl BatchRenderer {
             },
             indices,
         )
+    }
+
+    /// Keep an indexed page's existing index plane when its shared palette
+    /// row texture grows. The source bind-group constructor remains shared.
+    pub(crate) fn rebind_indexed_palette(
+        &self,
+        device: &wgpu::Device,
+        page: &mut BatchTexture,
+        palette: &wgpu::TextureView,
+    ) {
+        page.bind_group = self.source_bind_group(device, palette, &page.view);
     }
 
     fn batch_texture(

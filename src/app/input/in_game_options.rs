@@ -84,14 +84,19 @@ pub(crate) fn in_game_options_hit(
 /// the audio device (4E2201..2229) and the GameSpeed row hides as
 /// [`game_speed_hidden`] decides.
 pub(crate) fn on_open(state: &mut AppState) {
-    let game_speed_hidden = game_speed_hidden(
-        state.match_state.session_mode(),
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .is_some_and(|runtime| runtime.simulation.local_player_defeated()),
-    );
+    let game_speed_hidden = state
+        .match_state
+        .live_network
+        .as_ref()
+        .is_some_and(|live| live.uses_sequenced_lockstep())
+        || game_speed_hidden(
+            state.match_state.session_mode(),
+            state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .is_some_and(|runtime| runtime.simulation.local_player_defeated()),
+        );
     let options = &mut state.match_state.match_presentation.in_game_options;
     options.sound_enabled = state.audio.launcher_audio_available;
     options.on_open(game_speed_hidden);
@@ -102,8 +107,8 @@ pub(crate) fn on_open(state: &mut AppState) {
 /// MPlayer_Defeated (4FC205) sets only for the local House.
 ///
 /// Residual: `startup_options` accepts `-SPEEDCONTROL` and drops it, so a
-/// campaign launched with it hides the row where native shows it. Its other
-/// reader, Main_Tick's campaign GameSpeed=2 (0x55D767), is not ported either.
+/// campaign launched with it hides the row where native shows it. Ordinary
+/// campaign startup installs Main_Tick's speed2 in the session owner.
 fn game_speed_hidden(
     mode: crate::app::match_runtime::session::SessionMode,
     local_defeated: bool,
@@ -144,6 +149,9 @@ pub(crate) fn in_game_options_mouse(state: &mut AppState, button: MouseButton, p
         }
         match in_game_options_hit(&laid, (cx, cy), game_speed_hidden) {
             OptionsHit::Button(id) => {
+                // BBB init disables Sound without an output device
+                // (0x004E220A..0x004E2223 while g_GameActive): a disabled
+                // window takes no press, so B8 never opens in-game then.
                 if id == control::SOUND && !state.audio.launcher_audio_available {
                     return;
                 }
@@ -155,9 +163,9 @@ pub(crate) fn in_game_options_mouse(state: &mut AppState, button: MouseButton, p
                     .in_game_options
                     .buttons
                     .press(Some(id));
-                // Shared type-2 procedure612B70,61374B..613771: ordinary
-                // button-down plays Rules+188's generic click before dispatch.
-                crate::app::App::play_skirmish_shell_generic_click_sound(state);
+                // Shared type-2 procedure 0x00612B70: button-down plays
+                // GUIMainButtonSound (Rules+0x188, 0x0061374B..0x00613771).
+                crate::app::App::play_main_menu_button_sound(state);
             }
             OptionsHit::Slider(id, _) => {
                 let rect = laid.iter().find(|l| l.id == id).expect("hit control").rect;

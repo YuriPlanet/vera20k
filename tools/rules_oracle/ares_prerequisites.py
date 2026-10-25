@@ -65,8 +65,27 @@ class Probe:
         self.groups = []
         self.buildings = []
         self.types = []
+        self.crt_thread = None
         self.specific_visits = set()
         self.u.hook_add(UC_HOOK_CODE, self.hook)
+
+    def enable_crt_thread(self):
+        """Opt in to an Ares CRT C-locale thread block, not a numeric parser.
+
+        Same boundary as ini_token_readers.Crt for the retail CRT. This image's
+        accessor 10085F5C would require Windows GetLastError/TLS initialization.
+        Its clients (including the actual sscanf scanner) still execute intact;
+        default prerequisite probes keep their previous transport unchanged.
+        """
+        if self.crt_thread is None:
+            self.crt_thread = self.alloc(0x1000)
+            # Original CRT's default C-locale initializer; thread locale fields
+            # match its constructor10085D5E/locale owner. No token result is set.
+            self.write(self.crt_thread + 0x4c, 0x100c02a8)
+            self.write(self.crt_thread + 0x48, 0x100c0450)
+            self.write(self.crt_thread + 0x350, 1)
+            Probe.call(self, 0x10085839)
+        return self.crt_thread
 
     def alloc(self, n=256):
         at = self.heap
@@ -157,7 +176,9 @@ class Probe:
         ret = self.read(sp)
         args = lambda n: [self.read(sp+4+i*4) for i in range(n)]
         cleanup = 0
-        if pc == 0x528a10:
+        if pc == 0x10085f5c and self.crt_thread is not None:
+            result = self.crt_thread
+        elif pc == 0x528a10:
             section, key, default, target, capacity = args(5)
             pair = (self.string(section), self.string(key))
             value = self.reads.get(pair, '')

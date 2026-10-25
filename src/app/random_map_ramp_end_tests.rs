@@ -51,7 +51,7 @@ fn retail_generation_inputs(
     )
     .expect("retail Generate rules")
     .into_parts();
-    let prepared = prepare_random_map_generation(&mut assets, options, Some(&rules))
+    let prepared = prepare_random_map_generation(&mut assets, options, Some(&rules), None)
         .expect("production Generate preparation");
     Some((assets, prepared, rules))
 }
@@ -245,7 +245,8 @@ fn generated_connector_uses_native_slope_piece_tileset() {
     let preview = crate::map::rmg::preview::preview_cells_from_map(
         &generated.map_file,
         &resolved,
-        &|_, _| None,
+        &|_, _, _| None,
+        &|_, _, _| None,
     );
     assert!(
         preview
@@ -261,7 +262,9 @@ fn generated_connector_uses_native_slope_piece_tileset() {
     seed_dir.write(seed_name, &seed_bytes);
     struct SilentProgress;
     impl crate::app::loading::pump::LoadingProgressSink for SilentProgress {
-        fn milestone(&mut self, _percent: u32) {}
+        fn milestone(&mut self, _percent: u32) -> anyhow::Result<()> {
+            Ok(())
+        }
     }
     let loaded = crate::app::loading::init::load_map_initial_with_assets(
         seed_dir.path().to_path_buf(),

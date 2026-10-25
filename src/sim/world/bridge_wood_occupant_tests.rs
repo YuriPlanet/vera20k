@@ -535,7 +535,7 @@ fn retail_wood_occupants_match_native_list_lifetime_detach_and_rng() {
                 host.inner.live.sim.stop_all_targeting_cell(
                     115,
                     59,
-                    Some(&runtime.resources.rules),
+                    &runtime.resources.rules,
                     Some(&runtime.resources.overlay_registry),
                     crate::sim::world::FrameEffects::default(),
                 );

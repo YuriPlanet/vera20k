@@ -45,7 +45,7 @@ impl Fixture {
             .assign_target_represented(
                 source,
                 target.map(TargetKind::Entity),
-                Some(&self.rules),
+                &self.rules,
                 None,
                 FrameEffects::default(),
             )
@@ -522,9 +522,7 @@ fn hash_distinguishes_charger_order_weapon_latch_and_foot_intent() {
 #[test]
 fn adjacency_uses_native_direction_order_and_same_owner_not_alliance() {
     let Some(mut f) = Fixture::new() else { return };
-    let (_, height) = crate::rules::foundation::foundation_dimensions(
-        &f.rules.object("TESLA").unwrap().foundation,
-    );
+    let (_, height) = f.rules.object("TESLA").unwrap().foundation.dimensions();
     let north = f
         .sim
         .spawn_object("TESLA", "Russians", 20, 20 - u16::from(height), 0, &f.rules)

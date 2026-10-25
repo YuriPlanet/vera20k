@@ -1500,6 +1500,10 @@ fn authored_fill_defers_all_executable_projection() {
     );
     map.replace_unconsumed_overlay_data(OverlayDataPack::from_cells([(2, 3, 99)]))
         .expect("fixture overlay data remains unconsumed");
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[TerrainTypes]\n0=TREE\n[TREE]\nTemperateOccupationBits=7\n",
+    ))
+    .expect("admitted Terrain blocker");
 
     let mut eager_scenario_rng = SimRng::new(0x401);
     let mut eager_fill_calls = 0usize;
@@ -1518,7 +1522,7 @@ fn authored_fill_defers_all_executable_projection() {
             Some(&assets),
             None,
             None,
-            None,
+            Some(&rules.terrain_object_types),
             true,
             2,
             &mut eager_fill,
@@ -3336,8 +3340,8 @@ fn gsi_04_04_load_selects_current_theater_terrain_occupation() {
 TemperateOccupationBits=4
 SnowOccupationBits=7
 [ZEROTREE]
-TemperateOccupationBits=0
-SnowOccupationBits=0
+TemperateOccupationBits=8
+SnowOccupationBits=-1
 ",
     ))
     .expect("terrain rules");
@@ -3345,7 +3349,7 @@ SnowOccupationBits=0
         vec![
             MapCell {
                 rx: 0,
-                ry: 0,
+                ry: 1,
                 tile_index: 0,
                 sub_tile: 0,
                 z: 0,
@@ -3362,7 +3366,7 @@ SnowOccupationBits=0
         vec![
             TerrainObject {
                 rx: 0,
-                ry: 0,
+                ry: 1,
                 name: "TIBTRE03".to_string(),
             },
             TerrainObject {
@@ -3389,13 +3393,13 @@ SnowOccupationBits=0
         None,
         PixelConversionBounds::default(),
     );
-    let temperate_tree = temperate.cell(0, 0).unwrap();
+    let temperate_tree = temperate.cell(0, 1).unwrap();
     assert_eq!(temperate_tree.terrain_object_occupation, Some(4));
     assert!(temperate_tree.terrain_object_blocks);
     assert_eq!(temperate_tree.zone_type, zone_class::BUILDING);
     assert!(!temperate_tree.base_build_blocked);
     let zero_tree = temperate.cell(1, 0).unwrap();
-    assert_eq!(zero_tree.terrain_object_occupation, Some(0));
+    assert_eq!(zero_tree.terrain_object_occupation, Some(8));
     assert!(!zero_tree.terrain_object_blocks);
     assert_eq!(zero_tree.zone_type, zone_class::BUILDING);
 
@@ -3416,10 +3420,14 @@ SnowOccupationBits=0
         None,
         PixelConversionBounds::default(),
     );
-    let snow_tree = snow.cell(0, 0).unwrap();
+    let snow_tree = snow.cell(0, 1).unwrap();
     assert_eq!(snow_tree.terrain_object_occupation, Some(7));
     assert!(snow_tree.terrain_object_blocks);
     assert_eq!(snow_tree.zone_type, zone_class::WALL);
+    let signed_tree = snow.cell(1, 0).unwrap();
+    assert_eq!(signed_tree.terrain_object_occupation, Some(-1));
+    assert!(signed_tree.terrain_object_blocks);
+    assert_eq!(signed_tree.zone_type, zone_class::BUILDING);
 }
 
 #[test]

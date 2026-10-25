@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K 横幅" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <strong>简体中文</strong> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
+  <a href="README.sv.md" lang="sv">Svenska</a> · <strong>简体中文</strong> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="最近一次手动运行的 macOS 库测试"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="macOS 库测试" height="23" align="middle"></a>
@@ -35,8 +35,33 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 - **战役：** 任务已可启动，支持尚不完整。
 - **AI：** 部分原版 AI 已能处理基地建设和脚本攻击。
 - **持续完善：** 游戏行为与原版的一致性、画面和性能。
-- **多人模式：** 尚不支持联机游玩。
-- **规模：** 尚未展示过 30 名玩家、20,000 个单位的对战。
+- **多人模式：** 当前源码构建已在 macOS 和 Linux 上支持局域网和在线对战。
+- **规模：** 连续两场在线对战通过了功能验证，每场均有 30 个独立客户端进程和超过 20,000 个活跃的可移动单位。
+  测试中的 Linux 客户端共用虚拟机；这不代表已实现流畅的实时性能。
+
+## 下载与游玩
+
+从[发布页面](https://github.com/YuriPlanet/vera20k/releases)下载适用于 Windows、macOS 或 Linux 的安装程序。它会找到你从 [Steam](https://store.steampowered.com/app/2229850/) 或 [EA app](https://www.ea.com/games/command-and-conquer/command-and-conquer-the-ultimate-collection) 获得的《尤里的复仇》，并把 VERA20K 安装到一个新文件夹。今后的模组和新内容也会放在那里，因此游戏本身的文件永远不会被改动。
+
+如需通过 CnCNet 客户端启动 YR 单人遭遇战或战役，请参阅[离线客户端设置](integrations/cncnet/README.md)。
+
+## 设置
+
+声音和操作设置请使用 **Options**，VERA 专属功能请使用 **Vera Options**。
+玩家偏好、键盘快捷键和大厅选项保存在 `VERA.INI` 中：
+
+- **Windows 安装版：** 与 `vera20k.exe` 位于同一目录。
+- **macOS：** `~/Library/Application Support/VERA20k/VERA.INI`。
+- **Linux：** `~/.local/share/VERA20k/VERA.INI`，或你的 XDG 数据目录。
+
+`config.toml` 用于指定游戏目录，也可用来选择另一个设置目录。
+
+如果 `VERA.INI` 不存在，VERA 会创建该文件，并导入一次现有偏好。如果没有旧设置，
+该文件初始为空，VERA 会使用内置默认值，直到设置被保存。
+原有的 `RA2MD.INI` 和 `KeyboardMD.ini` 只用于读取并导入，绝不会被覆盖。
+
+`VERARULES.INI` 位于同一文件夹，用于可选的游戏规则调整。初始内容是已注释的示例，任务和地图规则仍优先生效。
+有关编辑和覆盖这些规则的方法，请参阅[个人规则](docs/personal-rules.md)。
 
 ## 架构
 
@@ -52,18 +77,11 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 
 ![应用层向模拟层发送指令并接收世界状态，再向渲染层发送绘制数据。](docs/images/architecture.zh-CN.png)
 
-## 系统需求
-
-- **游戏：** 《红色警戒2：尤里的复仇》1.001 版。
-- **系统：** Windows 10 或更高、Linux（glibc 2.35 或更高，如 Ubuntu 22.04 或 Steam Deck），
-  或 Apple Silicon 上的 macOS 11 或更高。
-- **显卡：** Vulkan、DirectX 12 或 Metal。
-
 ## 编译与运行
 
 你需要：
 
-- **Rust 和 Git：** 通过 rustup 安装的 [Rust](https://rustup.rs/) 1.88 或更高版本，以及
+- **Rust 和 Git：** 通过 rustup 安装的 [Rust](https://rustup.rs/) 1.97 或更高版本，以及
   [Git](https://git-scm.com/)。
 - **构建工具：** Windows 上需要 Visual Studio 的 C++ 生成工具，Rust 安装程序会提示安装；macOS 上运行
   `xcode-select --install`；Debian 和 Ubuntu 上运行 `sudo apt install build-essential libasound2-dev pkg-config`。
@@ -96,12 +114,22 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 
 ## 自定义
 
-可选功能（例如 Ares 的功能）应能通过 INI 文件配置，并在适当情况下提供客户端开关。
+默认情况下，VERA20K 的玩法与原版游戏一致。每项新功能（包括 Ares 等模组的扩展）都必须默认关闭，
+只能通过以下方式之一开启：
+
+- **VERA 玩家选项**，位于 **Options → Vera Options**，保存在 `VERA.INI` 的 `[VERA]` 节下。
+- **构建选项**，例如用 `--features ares` 编译受支持的 [Ares 扩展](docs/ares.md)。
+- **游戏内大厅选项**，每局单独选择。
+- **INI 键**，由模组或地图设置。
+
+声音、画面和操作设置保存在 `VERA.INI` 中。游戏规则由大厅设置、模组或地图决定。
 
 ## 参与贡献
 
 欢迎帮忙。你可以编写代码、重构引擎、测试游戏、提出想法，或对照原版游玩，告诉我们哪些地方感觉不对。
-直接提交 PR 即可，剩下的交给我们。讨论在 [Discord](https://discord.gg/kmjRUn5m5F) 和 QQ 群（1097193563）进行。
+直接提交 PR 即可，剩下的交给我们。
+
+讨论在 [Discord](https://discord.gg/kmjRUn5m5F) 和 QQ 群（1097193563）进行。
 
 ## 支持项目
 

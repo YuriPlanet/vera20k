@@ -529,7 +529,9 @@ mod tests {
         let mut entity =
             crate::sim::game_entity::GameEntity::test_default(1, "BLDG", "Enemy", 4, 5);
         entity.set_category_for_test(EntityCategory::Structure);
-        entity.type_facts.set_foundation_for_test("3x2".to_string());
+        entity
+            .type_facts
+            .set_foundation_for_test("3x2".to_string().into());
         let raw = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
         let visibility = crate::sim::movement::ground_pose::object_center_xy(&entity);
         assert_eq!(radar_fog_cell_from_leptons(raw[0], raw[1]), Some((4, 5)));
@@ -895,7 +897,9 @@ mod tests {
         let local = crate::sim::intern::test_intern("Local");
         let mut entity =
             crate::sim::game_entity::GameEntity::test_default(1, "BLDG", "Enemy", 4, 4);
-        entity.type_facts.set_foundation_for_test("3x2".to_string());
+        entity
+            .type_facts
+            .set_foundation_for_test("3x2".to_string().into());
         let location = crate::sim::movement::ground_pose::object_location(&entity, None);
         let mut fog = FogState::default();
         fog.mark_visible_for_owner(local, 6, 5);
@@ -968,7 +972,7 @@ mod tests {
         building.set_category_for_test(EntityCategory::Structure);
         building
             .type_facts
-            .set_foundation_for_test("2x2".to_string());
+            .set_foundation_for_test("2x2".to_string().into());
         building.lifecycle.set_in_limbo_for_test(false);
         assert!(!visible(&building, &[(10, 10), (11, 11)]));
         assert!(visible(&building, &[(9, 9)]), "the raised far corner");

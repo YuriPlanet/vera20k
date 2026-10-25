@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -27,5 +26,5 @@
     "is_voxel": "0x006F9E10"
   },
   "replay_command": "python -m tools.projectile_oracle.ifv_area_receipt --rocker",
-  "payload_sha256": "0f4532ee17c5208cea278a221d412c9bd9de15609d23662df75d5b8e33430814"
+  "payload_sha256": "5e878d4ed378de68142dcd891e79891684288c1ffc4afbf820877f493f48706b"
 }

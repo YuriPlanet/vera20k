@@ -19,6 +19,25 @@ use crate::render::tile_atlas::TileAtlas;
 
 use super::merge_passes;
 
+/// One isolated pass for the Phobos placement preview artwork. The texture is
+/// owned by a `RefCell` cache, so the pass must end inside this call and the
+/// caller recreates its own pass afterwards.
+#[cfg(feature = "phobos")]
+fn draw_placement_ghost_pass(
+    encoder: &mut wgpu::CommandEncoder,
+    view: &wgpu::TextureView,
+    depth: &wgpu::TextureView,
+    clip: [u32; 4],
+    batch: &BatchRenderer,
+    texture: &BatchTexture,
+    buffer: &wgpu::Buffer,
+    count: u32,
+) {
+    let mut pass = begin_main_load_pass(encoder, view, depth);
+    pass.set_scissor_rect(clip[0], clip[1], clip[2], clip[3]);
+    batch.draw_with_buffer_passthrough(&mut pass, texture, buffer, count);
+}
+
 /// Data from the instance-building phase that the draw pass needs beyond `AppState`.
 ///
 /// These are local variables in `render_game()` that can't be accessed through `state`
@@ -28,6 +47,7 @@ pub(super) struct DrawPassData<'a> {
     pub cell_body_draws: &'a [CellBodyDraw],
     pub bridge_shadows: &'a [SpriteInstance],
     pub object_layers: &'a [super::draw_plan_lowering::ObjectLayerPass; 5],
+    pub fogged_objects: &'a super::draw_plan_lowering::ObjectLayerPass,
     pub building_status_text:
         &'a crate::app::presentation::ui_overlays::BuildingStatusTextInstances,
     pub surface_effects: crate::render::terrain_draw::SurfaceLineBatch,
@@ -55,17 +75,15 @@ fn draw_sidebar_surface(
 ) {
     #[cfg(any(target_os = "ios", target_os = "android"))]
     crate::app::ios_sidebar_art::prepare(state);
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
+    let side_index = crate::app::presentation::sidebar_render::current_sidebar_side(state);
     let presentation = &state.match_state.match_presentation;
-    let chrome = presentation.sidebar_chrome.as_ref().and_then(|set| {
-        crate::render::sidebar_chrome::select_sidebar_theme(
-            theme,
-            set.allied.as_ref(),
-            set.soviet.as_ref(),
-            set.yuri.as_ref(),
-        )
-        .map(|(_, atlas)| atlas)
-    });
+    let chrome = presentation
+        .sidebar_chrome
+        .as_ref()
+        .and_then(|set| set.resolve_side(side_index))
+        .map(|resolved| resolved.atlas);
     let renderer = &mut state.renderer;
     let Some(surface) = renderer.sidebar_surface.as_ref() else {
         return;
@@ -344,6 +362,45 @@ pub(super) fn dispatch_draw_passes(
     // C_SHADOW.SHP (545214..54524D), never RAILBRDG. Do not synthesize a bridge
     // railing pass from its tables. Retail gate/resource regression:
     // map::theater::theater_tests::active_retail_tile_shadow_route_is_dormant.
+
+    // Native base terrain6D3470 calls FoggedObject::DrawAll4D1890 before
+    // the live Building6D9920 sweep. Snapshots never enter Display layers.
+    if !data.fogged_objects.runs.is_empty() {
+        drop(pass);
+        state
+            .renderer
+            .terrain_draw_renderer
+            .note_external_passes(encoder, 1);
+        merge_passes::draw_native_object_pass(
+            encoder,
+            super::merge_passes::ObjectDrawPhase::Display,
+            view,
+            &state.renderer.depth_view,
+            &mut state.renderer.terrain_draw_renderer,
+            [tac_x, tac_y, tac_w, tac_h],
+            &state.renderer.batch_renderer,
+            pool.get("fogged_objects"),
+            data.fogged_objects,
+            state.match_state.match_presentation.overlay_atlas.as_ref(),
+            state.match_state.match_presentation.unit_atlas.as_ref(),
+            Some(&pose_cache),
+            state.match_state.match_presentation.sprite_atlas.as_ref(),
+            state.match_state.match_presentation.palette_set.as_ref(),
+            state
+                .match_state
+                .match_presentation
+                .building_zshape
+                .as_ref()
+                .map_or(
+                    state.renderer.batch_renderer.default_zshape_bind_group(),
+                    |z| &z.bind_group,
+                ),
+            None,
+            None,
+        );
+        pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+        pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
+    }
 
     // Native6D9920 ->43CEA0/43D290 draws Ground's building bases into the
     // background before rally6D4648. These ranges draw only here; Display's
@@ -676,6 +733,22 @@ pub(super) fn dispatch_draw_passes(
     let mut pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
     pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
 
+    // BeaconManager Draw 430AC0 (6D46B6) precedes BandBox. Its flags 600
+    // bypass A and Z; each House row has its own Convert strip.
+    if let Some(art) = state.match_state.match_presentation.beacon_art.as_ref() {
+        for house in 0..art.house_count() {
+            if let (Some(strip), Some((buffer, count))) =
+                (art.tactical_strip(house), pool.get_page("beacons", house))
+            {
+                state.renderer.batch_renderer.draw_with_buffer_passthrough(
+                    &mut pass,
+                    strip.texture(),
+                    buffer,
+                    count,
+                );
+            }
+        }
+    }
     // BandBox6DA180 is between the two rally passes (native6D46BD).
     // Drag rectangle — screen-fixed, use UI camera (zoom=1.0).
     let drag_tex = state
@@ -740,6 +813,36 @@ pub(super) fn dispatch_draw_passes(
             count,
         );
     }
+    // Phobos placement preview artwork (`0x6D528A`), after the PLACE cells.
+    // The texture lives behind the cache's RefCell borrow, so end this pass
+    // before releasing the guard and recreate it for the following stages.
+    #[cfg(feature = "phobos")]
+    if let Some((buffer, count)) = pool.get("placement_ghost")
+        && count > 0
+    {
+        {
+            let art = state
+                .match_state
+                .match_presentation
+                .placement_preview_art
+                .borrow();
+            if let Some(texture) = art.current_texture() {
+                drop(pass);
+                draw_placement_ghost_pass(
+                    encoder,
+                    view,
+                    &state.renderer.depth_view,
+                    [tac_x, tac_y, tac_w, tac_h],
+                    &state.renderer.batch_renderer,
+                    texture,
+                    buffer,
+                    count,
+                );
+                pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
+                pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
+            }
+        }
+    }
 
     // --- Step 10.5: PixelFX water/ore sparkles ---
     // gamemd writes these opaque one-pixel effects at the tactical tail, after
@@ -785,6 +888,30 @@ pub(super) fn dispatch_draw_passes(
         pool,
         Some(state.renderer.bit_font.atlas()),
         "super_timer_text",
+    );
+
+    // --- Step 10.7: build description ---
+    // GScreenClass_DrawText's Phobos VersionDescription (`0x4F4583`): the
+    // black box and red text at the tactical view's top right, same
+    // screen-fixed tactical clip as the timer lines above.
+    draw_pooled_ui_passthrough(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        state
+            .match_state
+            .match_presentation
+            .selection_overlay
+            .as_ref()
+            .map(|o| o.white_texture()),
+        "build_text_fill",
+    );
+    draw_pooled_ui_passthrough(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        Some(state.renderer.bit_font.atlas()),
+        "build_text_text",
     );
 
     // TacticalDraw6D4B25->6D4E20 is its last battlefield draw: centred
@@ -1063,10 +1190,19 @@ pub(crate) fn draw_pooled_cell_bodies<'a>(
     );
     for (start, count, draw) in cell_body_runs(draws) {
         let texture = match draw.atlas {
-            CellBodyAtlas::Overlay => overlay_atlas.map(|atlas| &atlas.texture),
-            CellBodyAtlas::Bridge => bridge_atlas.map(|atlas| &atlas.texture),
+            CellBodyAtlas::Overlay => overlay_atlas.map(|atlas| {
+                (
+                    &atlas.texture,
+                    atlas
+                        .zshape_bind_group()
+                        .unwrap_or_else(|| batch.default_zshape_bind_group()),
+                )
+            }),
+            CellBodyAtlas::Bridge => {
+                bridge_atlas.map(|atlas| (&atlas.texture, batch.default_zshape_bind_group()))
+            }
         };
-        let Some(texture) = texture else {
+        let Some((texture, zshape)) = texture else {
             continue;
         };
         if draw.render_z == RenderZPolicy::None {
@@ -1075,7 +1211,7 @@ pub(crate) fn draw_pooled_cell_bodies<'a>(
             batch.draw_zsprite_range(
                 pass,
                 texture,
-                batch.default_zshape_bind_group(),
+                zshape,
                 buf,
                 start,
                 count,
@@ -1213,8 +1349,9 @@ mod tests {
         let timer_tail = &SOURCE[sparkle..outcome_start];
         assert_eq!(
             timer_tail.matches(".draw").count() + timer_tail.matches("draw_pooled").count(),
-            3,
-            "PixelFX and the two timer submissions precede the native result draw"
+            5,
+            "PixelFX, the two timer submissions and the two Phobos build-description \
+             submissions (empty outside Phobos builds) precede the native result draw"
         );
     }
 

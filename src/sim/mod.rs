@@ -26,6 +26,7 @@ pub(crate) mod ai_base_defense;
 pub(crate) mod ai_base_site;
 pub mod ammo;
 pub mod anim_class;
+pub(crate) mod object_fall;
 #[cfg(any(test, feature = "test-support"))]
 pub mod arena_fixture;
 pub(crate) mod build_site;
@@ -42,6 +43,7 @@ pub mod campaign_carry_over; // the record 0x008A38E0 one campaign mission hands
 pub mod capture_manager;
 pub mod cloak_disguise;
 pub mod command;
+pub mod command_queue;
 pub mod components;
 #[cfg(any(test, feature = "test-support"))]
 pub mod health_ratio_fixture;
@@ -50,6 +52,8 @@ pub mod credit_income; // oil-derrick ProduceCash + Floating Disc money drain (o
 pub(crate) mod conversion_health;
 pub(crate) mod crew_survival; // building SpawnSurvivors and vehicle crew escape
 pub mod economy; // per-house wallet/storage/statistics value-type (production+economy substrate)
+#[cfg(feature = "ares")]
+pub(crate) mod factory_owners;
 #[cfg(feature = "telemetry")]
 pub mod frame_profile;
 #[cfg(feature = "telemetry")]
@@ -157,6 +161,12 @@ pub mod smudge_grid;
 
 // --- Per-cell radiation field (sites, spread/decay; damage applied by combat) ---
 pub mod radiation;
+
+// --- Phobos Shields: per-object shield points, absorption and recovery ---
+#[cfg(feature = "phobos")]
+pub mod shield;
+#[cfg(feature = "phobos")]
+pub mod digital_display;
 
 // --- Passengers, transport, slaves ---
 pub mod parity_digest;

@@ -1,0 +1,5335 @@
+{
+  "binaries": {
+    "Ares.dll": {
+      "bytes": 875520,
+      "sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83"
+    }
+  },
+  "physical_readers": {
+    "constructor_default": 0,
+    "rows": [
+      {
+        "after": 1,
+        "before": 0,
+        "diagnostics": [],
+        "file": "RULESMD.INI",
+        "load": {
+          "check_digest": 0,
+          "file": "RULESMD.INI",
+          "returned": 1,
+          "section_count": 1
+        },
+        "physical_ini": "[CONTROL]\nNoManualFire=yes\n",
+        "reads": [
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "NoManualFire",
+            "section": "CONTROL"
+          }
+        ],
+        "section_admitted": true
+      },
+      {
+        "after": 1,
+        "before": 1,
+        "diagnostics": [],
+        "file": "LANGRULE.INI",
+        "load": {
+          "check_digest": 0,
+          "file": "LANGRULE.INI",
+          "returned": 1,
+          "section_count": 1
+        },
+        "physical_ini": "[CONTROL]\nName=present\n",
+        "reads": [
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "NoManualFire",
+            "section": "CONTROL"
+          }
+        ],
+        "section_admitted": true
+      },
+      {
+        "after": 1,
+        "before": 1,
+        "diagnostics": [],
+        "file": "MODE.INI",
+        "load": {
+          "check_digest": 0,
+          "file": "MODE.INI",
+          "returned": 1,
+          "section_count": 1
+        },
+        "physical_ini": "[CONTROL]\nName=present\nNoManualFire=\n",
+        "reads": [
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "NoManualFire",
+            "section": "CONTROL"
+          }
+        ],
+        "section_admitted": true
+      },
+      {
+        "after": 1,
+        "before": 1,
+        "diagnostics": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "token": "junk"
+          }
+        ],
+        "file": "MAP.MAP",
+        "load": {
+          "check_digest": 0,
+          "file": "MAP.MAP",
+          "returned": 1,
+          "section_count": 1
+        },
+        "physical_ini": "[CONTROL]\nNoManualFire=junk\n",
+        "reads": [
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "NoManualFire",
+            "section": "CONTROL"
+          }
+        ],
+        "section_admitted": true
+      },
+      {
+        "after": 0,
+        "before": 1,
+        "diagnostics": [],
+        "file": "RESET.INI",
+        "load": {
+          "check_digest": 0,
+          "file": "RESET.INI",
+          "returned": 1,
+          "section_count": 1
+        },
+        "physical_ini": "[CONTROL]\nNoManualFire=no\n",
+        "reads": [
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "NoManualFire",
+            "section": "CONTROL"
+          }
+        ],
+        "section_admitted": true
+      },
+      {
+        "after": 0,
+        "before": 0,
+        "diagnostics": [],
+        "file": "WRONG.INI",
+        "load": {
+          "check_digest": 0,
+          "file": "WRONG.INI",
+          "returned": 1,
+          "section_count": 1
+        },
+        "physical_ini": "[OTHER]\nNoManualFire=yes\n",
+        "reads": [],
+        "section_admitted": false
+      },
+      {
+        "after": 0,
+        "before": 0,
+        "diagnostics": [],
+        "file": "KEYCASE.INI",
+        "load": {
+          "check_digest": 0,
+          "file": "KEYCASE.INI",
+          "returned": 1,
+          "section_count": 1
+        },
+        "physical_ini": "[CONTROL]\nNOMANUALFIRE=yes\n",
+        "reads": [
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "NoManualFire",
+            "section": "CONTROL"
+          }
+        ],
+        "section_admitted": true
+      },
+      {
+        "after": 1,
+        "before": 0,
+        "diagnostics": [],
+        "file": "TRIM.INI",
+        "load": {
+          "check_digest": 0,
+          "file": "TRIM.INI",
+          "returned": 1,
+          "section_count": 1
+        },
+        "physical_ini": "[CONTROL]\nNoManualFire= \tyeSplease \t\n",
+        "reads": [
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "NoManualFire",
+            "section": "CONTROL"
+          }
+        ],
+        "section_admitted": true
+      },
+      {
+        "after": 0,
+        "before": 1,
+        "diagnostics": [],
+        "file": "SECOND.INI",
+        "load": {
+          "check_digest": 0,
+          "file": "SECOND.INI",
+          "returned": 1,
+          "section_count": 1
+        },
+        "physical_ini": "[CONTROL]\nNoManualFire= \tno \t\n",
+        "reads": [
+          {
+            "capacity": 2048,
+            "default": "",
+            "key": "NoManualFire",
+            "section": "CONTROL"
+          }
+        ],
+        "section_admitted": true
+      }
+    ]
+  },
+  "readers": {
+    "constructor": {
+      "after_bytes": "01000000",
+      "entry": "1003C710",
+      "initial_bytes": "CCCCCCCC",
+      "no_manual_fire": 0,
+      "returned_self": true
+    },
+    "controls": [
+      {
+        "after": 0,
+        "cell_hook_return": 0,
+        "object_hook_return": 0,
+        "prior": 0,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": ""
+          }
+        ],
+        "value": null
+      },
+      {
+        "after": 1,
+        "cell_hook_return": 7342775,
+        "object_hook_return": 7341420,
+        "prior": 1,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": ""
+          }
+        ],
+        "value": null
+      },
+      {
+        "after": 1,
+        "cell_hook_return": 7342775,
+        "object_hook_return": 7341420,
+        "prior": 1,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": ""
+          }
+        ],
+        "value": ""
+      },
+      {
+        "after": 1,
+        "cell_hook_return": 7342775,
+        "object_hook_return": 7341420,
+        "prior": 0,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "yes"
+          }
+        ],
+        "value": "yes"
+      },
+      {
+        "after": 0,
+        "cell_hook_return": 0,
+        "object_hook_return": 0,
+        "prior": 1,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "no"
+          }
+        ],
+        "value": "no"
+      },
+      {
+        "after": 1,
+        "cell_hook_return": 7342775,
+        "object_hook_return": 7341420,
+        "prior": 0,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "true"
+          }
+        ],
+        "value": "true"
+      },
+      {
+        "after": 0,
+        "cell_hook_return": 0,
+        "object_hook_return": 0,
+        "prior": 1,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "false"
+          }
+        ],
+        "value": "false"
+      },
+      {
+        "after": 1,
+        "cell_hook_return": 7342775,
+        "object_hook_return": 7341420,
+        "prior": 0,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "1"
+          }
+        ],
+        "value": "1"
+      },
+      {
+        "after": 0,
+        "cell_hook_return": 0,
+        "object_hook_return": 0,
+        "prior": 1,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "0"
+          }
+        ],
+        "value": "0"
+      },
+      {
+        "after": 1,
+        "cell_hook_return": 7342775,
+        "object_hook_return": 7341420,
+        "prior": 1,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "junk"
+          },
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "suppressed_DebugINIParseFailed",
+            "token": "junk"
+          }
+        ],
+        "value": "junk"
+      },
+      {
+        "after": 1,
+        "cell_hook_return": 7342775,
+        "object_hook_return": 7341420,
+        "prior": 0,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "yeSplease"
+          }
+        ],
+        "value": "yeSplease"
+      },
+      {
+        "after": 1,
+        "cell_hook_return": 7342775,
+        "object_hook_return": 7341420,
+        "prior": 0,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "y"
+          }
+        ],
+        "value": "y"
+      },
+      {
+        "after": 1,
+        "cell_hook_return": 7342775,
+        "object_hook_return": 7341420,
+        "prior": 0,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "t"
+          }
+        ],
+        "value": "t"
+      },
+      {
+        "after": 0,
+        "cell_hook_return": 0,
+        "object_hook_return": 0,
+        "prior": 1,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "n"
+          }
+        ],
+        "value": "n"
+      },
+      {
+        "after": 0,
+        "cell_hook_return": 0,
+        "object_hook_return": 0,
+        "prior": 1,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "f"
+          }
+        ],
+        "value": "f"
+      },
+      {
+        "after": 0,
+        "cell_hook_return": 0,
+        "object_hook_return": 0,
+        "prior": 0,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "on"
+          },
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "suppressed_DebugINIParseFailed",
+            "token": "on"
+          }
+        ],
+        "value": "on"
+      },
+      {
+        "after": 1,
+        "cell_hook_return": 7342775,
+        "object_hook_return": 7341420,
+        "prior": 1,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "off"
+          },
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "suppressed_DebugINIParseFailed",
+            "token": "off"
+          }
+        ],
+        "value": "off"
+      },
+      {
+        "after": 0,
+        "cell_hook_return": 0,
+        "object_hook_return": 0,
+        "prior": 0,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": " yes "
+          },
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "suppressed_DebugINIParseFailed",
+            "token": " yes "
+          }
+        ],
+        "value": " yes "
+      },
+      {
+        "after": 1,
+        "cell_hook_return": 7342775,
+        "object_hook_return": 7341420,
+        "prior": 1,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": " no "
+          },
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "suppressed_DebugINIParseFailed",
+            "token": " no "
+          }
+        ],
+        "value": " no "
+      },
+      {
+        "after": 1,
+        "cell_hook_return": 7342775,
+        "object_hook_return": 7341420,
+        "prior": 0,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "YES"
+          }
+        ],
+        "value": "YES"
+      },
+      {
+        "after": 0,
+        "cell_hook_return": 0,
+        "object_hook_return": 0,
+        "prior": 1,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "FALSE"
+          }
+        ],
+        "value": "FALSE"
+      },
+      {
+        "after": 0,
+        "cell_hook_return": 0,
+        "object_hook_return": 0,
+        "prior": 0,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": " true\t"
+          },
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "suppressed_DebugINIParseFailed",
+            "token": " true\t"
+          }
+        ],
+        "value": " true\t"
+      },
+      {
+        "after": 0,
+        "cell_hook_return": 0,
+        "object_hook_return": 0,
+        "prior": 1,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "00"
+          }
+        ],
+        "value": "00"
+      },
+      {
+        "after": 1,
+        "cell_hook_return": 7342775,
+        "object_hook_return": 7341420,
+        "prior": 0,
+        "reader_events": [
+          {
+            "key": "NoManualFire",
+            "section": "CONTROL",
+            "service": "supplied_ReadString",
+            "value": "11"
+          }
+        ],
+        "value": "11"
+      }
+    ]
+  },
+  "rows": [
+    {
+      "action": 5,
+      "cell_return_values": [],
+      "clicked_action": {
+        "boundary": "mission_arguments",
+        "entry": "0x00738890",
+        "mission": 1,
+        "stop": "0x6ffbe0",
+        "target_is_hovered_object": true
+      },
+      "cursor_row": 20,
+      "hook_events": [
+        {
+          "export": "1004A460",
+          "returned": "00000000",
+          "site": "00700536"
+        },
+        {
+          "export": "1004A460",
+          "returned": "00000000",
+          "site": "00700536"
+        }
+      ],
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": false,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "enemy",
+        "route": "object",
+        "shift": false,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false
+      },
+      "left_up": {
+        "boundary": "object_dispatch",
+        "entry": "0x004AB9B0",
+        "stop": "0x4ae750"
+      },
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        },
+        {
+          "kind": "original",
+          "name": "UnitClickedObject",
+          "pc": "0x738890"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "FootClickedObject",
+          "pc": "0x4d74e0"
+        },
+        {
+          "kind": "original",
+          "name": "ClickedMission",
+          "pc": "0x6ffbe0"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 0,
+      "query_inputs": [
+        {
+          "entry": "0073FD50",
+          "phase": "hover",
+          "second_argument": 0
+        },
+        {
+          "entry": "0073FD50",
+          "phase": "clicked_requery",
+          "second_argument": 0
+        }
+      ]
+    },
+    {
+      "action": 2,
+      "cell_return_values": [],
+      "clicked_action": {
+        "boundary": "object_navigation_coordinates",
+        "entry": "0x00738890",
+        "stop": "0x4d78ba"
+      },
+      "cursor_row": 19,
+      "hook_events": [
+        {
+          "export": "1004A460",
+          "returned": "0070056C",
+          "site": "00700536"
+        },
+        {
+          "export": "1004A460",
+          "returned": "0070056C",
+          "site": "00700536"
+        }
+      ],
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": false,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "enemy",
+        "route": "object",
+        "shift": false,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false
+      },
+      "left_up": {
+        "boundary": "object_dispatch",
+        "entry": "0x004AB9B0",
+        "stop": "0x4ae750"
+      },
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNonAttackTail",
+          "pc": "0x70056c"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNoneReturn",
+          "pc": "0x7005e6"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        },
+        {
+          "kind": "original",
+          "name": "UnitClickedObject",
+          "pc": "0x738890"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNonAttackTail",
+          "pc": "0x70056c"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNoneReturn",
+          "pc": "0x7005e6"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "FootClickedObject",
+          "pc": "0x4d74e0"
+        },
+        {
+          "kind": "original",
+          "name": "NoMoveObjectReceiver",
+          "pc": "0x4d77bd"
+        },
+        {
+          "kind": "original",
+          "name": "MoveAdmission",
+          "pc": "0x4d77fb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 1,
+      "query_inputs": [
+        {
+          "entry": "0073FD50",
+          "phase": "hover",
+          "second_argument": 0
+        },
+        {
+          "entry": "0073FD50",
+          "phase": "clicked_requery",
+          "second_argument": 0
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [],
+      "clicked_action": {
+        "boundary": "object_navigation_coordinates",
+        "entry": "0x00738890",
+        "stop": "0x4d78ba"
+      },
+      "cursor_row": 18,
+      "hook_events": [],
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": true,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "enemy",
+        "route": "object",
+        "shift": false,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false
+      },
+      "left_up": {
+        "boundary": "object_dispatch",
+        "entry": "0x004AB9B0",
+        "stop": "0x4ae750"
+      },
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        },
+        {
+          "kind": "original",
+          "name": "UnitClickedObject",
+          "pc": "0x738890"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "FootClickedObject",
+          "pc": "0x4d74e0"
+        },
+        {
+          "kind": "original",
+          "name": "MoveAdmission",
+          "pc": "0x4d77fb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 0,
+      "query_inputs": [
+        {
+          "entry": "0073FD50",
+          "phase": "hover",
+          "second_argument": 0
+        },
+        {
+          "entry": "0073FD50",
+          "phase": "clicked_requery",
+          "second_argument": 0
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [],
+      "clicked_action": {
+        "boundary": "object_navigation_coordinates",
+        "entry": "0x00738890",
+        "stop": "0x4d78ba"
+      },
+      "cursor_row": 18,
+      "hook_events": [],
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": true,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "enemy",
+        "route": "object",
+        "shift": false,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false
+      },
+      "left_up": {
+        "boundary": "object_dispatch",
+        "entry": "0x004AB9B0",
+        "stop": "0x4ae750"
+      },
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        },
+        {
+          "kind": "original",
+          "name": "UnitClickedObject",
+          "pc": "0x738890"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "FootClickedObject",
+          "pc": "0x4d74e0"
+        },
+        {
+          "kind": "original",
+          "name": "MoveAdmission",
+          "pc": "0x4d77fb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 1,
+      "query_inputs": [
+        {
+          "entry": "0073FD50",
+          "phase": "hover",
+          "second_argument": 0
+        },
+        {
+          "entry": "0073FD50",
+          "phase": "clicked_requery",
+          "second_argument": 0
+        }
+      ]
+    },
+    {
+      "action": 8,
+      "cell_return_values": [],
+      "clicked_action": null,
+      "cursor_row": 17,
+      "hook_events": [],
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": false,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "enemy",
+        "route": "object",
+        "shift": true,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false
+      },
+      "left_up": {
+        "boundary": "shift_unselected",
+        "entry": "0x004AB9B0",
+        "stop": "0x4abd94"
+      },
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 0,
+      "query_inputs": [
+        {
+          "entry": "0073FD50",
+          "phase": "hover",
+          "second_argument": 0
+        }
+      ]
+    },
+    {
+      "action": 8,
+      "cell_return_values": [],
+      "clicked_action": null,
+      "cursor_row": 17,
+      "hook_events": [],
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": false,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "enemy",
+        "route": "object",
+        "shift": true,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false
+      },
+      "left_up": {
+        "boundary": "shift_unselected",
+        "entry": "0x004AB9B0",
+        "stop": "0x4abd94"
+      },
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 1,
+      "query_inputs": [
+        {
+          "entry": "0073FD50",
+          "phase": "hover",
+          "second_argument": 0
+        }
+      ]
+    },
+    {
+      "action": 8,
+      "cell_return_values": [],
+      "clicked_action": null,
+      "cursor_row": 17,
+      "hook_events": [],
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": true,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "enemy",
+        "route": "object",
+        "shift": true,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false
+      },
+      "left_up": {
+        "boundary": "shift_unselected",
+        "entry": "0x004AB9B0",
+        "stop": "0x4abd94"
+      },
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 0,
+      "query_inputs": [
+        {
+          "entry": "0073FD50",
+          "phase": "hover",
+          "second_argument": 0
+        }
+      ]
+    },
+    {
+      "action": 8,
+      "cell_return_values": [],
+      "clicked_action": null,
+      "cursor_row": 17,
+      "hook_events": [],
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": true,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "enemy",
+        "route": "object",
+        "shift": true,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false
+      },
+      "left_up": {
+        "boundary": "shift_unselected",
+        "entry": "0x004AB9B0",
+        "stop": "0x4abd94"
+      },
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 1,
+      "query_inputs": [
+        {
+          "entry": "0073FD50",
+          "phase": "hover",
+          "second_argument": 0
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cell_return_values": [],
+      "clicked_action": {
+        "boundary": "mission_arguments",
+        "entry": "0x00738890",
+        "mission": 1,
+        "stop": "0x6ffbe0",
+        "target_is_hovered_object": true
+      },
+      "cursor_row": 20,
+      "hook_events": [
+        {
+          "export": "1004A460",
+          "returned": "00000000",
+          "site": "00700536"
+        },
+        {
+          "export": "1004A460",
+          "returned": "00000000",
+          "site": "00700536"
+        }
+      ],
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": false,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "enemy",
+        "route": "object",
+        "shift": false,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false
+      },
+      "left_up": {
+        "boundary": "object_dispatch",
+        "entry": "0x004AB9B0",
+        "stop": "0x4ae750"
+      },
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": false,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536895488
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        },
+        {
+          "kind": "original",
+          "name": "UnitClickedObject",
+          "pc": "0x738890"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "FootClickedObject",
+          "pc": "0x4d74e0"
+        },
+        {
+          "kind": "original",
+          "name": "ClickedMission",
+          "pc": "0x6ffbe0"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 0,
+      "query_inputs": [
+        {
+          "entry": "0073FD50",
+          "phase": "hover",
+          "second_argument": 0
+        },
+        {
+          "entry": "0073FD50",
+          "phase": "clicked_requery",
+          "second_argument": 0
+        }
+      ]
+    },
+    {
+      "action": 2,
+      "cell_return_values": [],
+      "clicked_action": {
+        "boundary": "object_navigation_coordinates",
+        "entry": "0x00738890",
+        "stop": "0x4d78ba"
+      },
+      "cursor_row": 19,
+      "hook_events": [
+        {
+          "export": "1004A460",
+          "returned": "0070056C",
+          "site": "00700536"
+        },
+        {
+          "export": "1004A460",
+          "returned": "0070056C",
+          "site": "00700536"
+        }
+      ],
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": false,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "enemy",
+        "route": "object",
+        "shift": false,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false
+      },
+      "left_up": {
+        "boundary": "object_dispatch",
+        "entry": "0x004AB9B0",
+        "stop": "0x4ae750"
+      },
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNonAttackTail",
+          "pc": "0x70056c"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNoneReturn",
+          "pc": "0x7005e6"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        },
+        {
+          "kind": "original",
+          "name": "UnitClickedObject",
+          "pc": "0x738890"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNonAttackTail",
+          "pc": "0x70056c"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNoneReturn",
+          "pc": "0x7005e6"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "FootClickedObject",
+          "pc": "0x4d74e0"
+        },
+        {
+          "kind": "original",
+          "name": "NoMoveObjectReceiver",
+          "pc": "0x4d77bd"
+        },
+        {
+          "kind": "original",
+          "name": "MoveAdmission",
+          "pc": "0x4d77fb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 1,
+      "query_inputs": [
+        {
+          "entry": "0073FD50",
+          "phase": "hover",
+          "second_argument": 0
+        },
+        {
+          "entry": "0073FD50",
+          "phase": "clicked_requery",
+          "second_argument": 0
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [],
+      "clicked_action": {
+        "boundary": "object_navigation_coordinates",
+        "entry": "0x00738890",
+        "stop": "0x4d78ba"
+      },
+      "cursor_row": 18,
+      "hook_events": [],
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": true,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "enemy",
+        "route": "object",
+        "shift": false,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false
+      },
+      "left_up": {
+        "boundary": "object_dispatch",
+        "entry": "0x004AB9B0",
+        "stop": "0x4ae750"
+      },
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        },
+        {
+          "kind": "original",
+          "name": "UnitClickedObject",
+          "pc": "0x738890"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "FootClickedObject",
+          "pc": "0x4d74e0"
+        },
+        {
+          "kind": "original",
+          "name": "MoveAdmission",
+          "pc": "0x4d77fb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 0,
+      "query_inputs": [
+        {
+          "entry": "0073FD50",
+          "phase": "hover",
+          "second_argument": 0
+        },
+        {
+          "entry": "0073FD50",
+          "phase": "clicked_requery",
+          "second_argument": 0
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [],
+      "clicked_action": {
+        "boundary": "object_navigation_coordinates",
+        "entry": "0x00738890",
+        "stop": "0x4d78ba"
+      },
+      "cursor_row": 18,
+      "hook_events": [],
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": true,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "enemy",
+        "route": "object",
+        "shift": false,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false
+      },
+      "left_up": {
+        "boundary": "object_dispatch",
+        "entry": "0x004AB9B0",
+        "stop": "0x4ae750"
+      },
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        },
+        {
+          "kind": "original",
+          "name": "UnitClickedObject",
+          "pc": "0x738890"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "FootClickedObject",
+          "pc": "0x4d74e0"
+        },
+        {
+          "kind": "original",
+          "name": "MoveAdmission",
+          "pc": "0x4d77fb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 1,
+      "query_inputs": [
+        {
+          "entry": "0073FD50",
+          "phase": "hover",
+          "second_argument": 0
+        },
+        {
+          "entry": "0073FD50",
+          "phase": "clicked_requery",
+          "second_argument": 0
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cell_return_values": [],
+      "clicked_action": {
+        "boundary": "mission_arguments",
+        "entry": "0x00738890",
+        "mission": 1,
+        "stop": "0x6ffbe0",
+        "target_is_hovered_object": true
+      },
+      "cursor_row": 71,
+      "hook_events": [
+        {
+          "export": "1004A460",
+          "returned": "00000000",
+          "site": "00700536"
+        },
+        {
+          "export": "1004A460",
+          "returned": "00000000",
+          "site": "00700536"
+        }
+      ],
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": false,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "enemy",
+        "route": "object",
+        "shift": true,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false
+      },
+      "left_up": {
+        "boundary": "object_dispatch",
+        "entry": "0x004AB9B0",
+        "stop": "0x4ae750"
+      },
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        },
+        {
+          "kind": "original",
+          "name": "UnitClickedObject",
+          "pc": "0x738890"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectAttackReturn",
+          "pc": "0x70055d"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "FootClickedObject",
+          "pc": "0x4d74e0"
+        },
+        {
+          "kind": "original",
+          "name": "ClickedMission",
+          "pc": "0x6ffbe0"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 0,
+      "query_inputs": [
+        {
+          "entry": "0073FD50",
+          "phase": "hover",
+          "second_argument": 0
+        },
+        {
+          "entry": "0073FD50",
+          "phase": "clicked_requery",
+          "second_argument": 0
+        }
+      ]
+    },
+    {
+      "action": 2,
+      "cell_return_values": [],
+      "clicked_action": {
+        "boundary": "object_navigation_coordinates",
+        "entry": "0x00738890",
+        "stop": "0x4d78ba"
+      },
+      "cursor_row": 19,
+      "hook_events": [
+        {
+          "export": "1004A460",
+          "returned": "0070056C",
+          "site": "00700536"
+        },
+        {
+          "export": "1004A460",
+          "returned": "0070056C",
+          "site": "00700536"
+        }
+      ],
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": false,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "enemy",
+        "route": "object",
+        "shift": true,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false
+      },
+      "left_up": {
+        "boundary": "object_dispatch",
+        "entry": "0x004AB9B0",
+        "stop": "0x4ae750"
+      },
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNonAttackTail",
+          "pc": "0x70056c"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNoneReturn",
+          "pc": "0x7005e6"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        },
+        {
+          "kind": "original",
+          "name": "UnitClickedObject",
+          "pc": "0x738890"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNonAttackTail",
+          "pc": "0x70056c"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNoneReturn",
+          "pc": "0x7005e6"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "FootClickedObject",
+          "pc": "0x4d74e0"
+        },
+        {
+          "kind": "original",
+          "name": "NoMoveObjectReceiver",
+          "pc": "0x4d77bd"
+        },
+        {
+          "kind": "original",
+          "name": "MoveAdmission",
+          "pc": "0x4d77fb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 1,
+      "query_inputs": [
+        {
+          "entry": "0073FD50",
+          "phase": "hover",
+          "second_argument": 0
+        },
+        {
+          "entry": "0073FD50",
+          "phase": "clicked_requery",
+          "second_argument": 0
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [],
+      "clicked_action": {
+        "boundary": "object_navigation_coordinates",
+        "entry": "0x00738890",
+        "stop": "0x4d78ba"
+      },
+      "cursor_row": 71,
+      "hook_events": [],
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": true,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "enemy",
+        "route": "object",
+        "shift": true,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false
+      },
+      "left_up": {
+        "boundary": "object_dispatch",
+        "entry": "0x004AB9B0",
+        "stop": "0x4ae750"
+      },
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        },
+        {
+          "kind": "original",
+          "name": "UnitClickedObject",
+          "pc": "0x738890"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "FootClickedObject",
+          "pc": "0x4d74e0"
+        },
+        {
+          "kind": "original",
+          "name": "MoveAdmission",
+          "pc": "0x4d77fb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 0,
+      "query_inputs": [
+        {
+          "entry": "0073FD50",
+          "phase": "hover",
+          "second_argument": 0
+        },
+        {
+          "entry": "0073FD50",
+          "phase": "clicked_requery",
+          "second_argument": 0
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [],
+      "clicked_action": {
+        "boundary": "object_navigation_coordinates",
+        "entry": "0x00738890",
+        "stop": "0x4d78ba"
+      },
+      "cursor_row": 71,
+      "hook_events": [],
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": true,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "enemy",
+        "route": "object",
+        "shift": true,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false
+      },
+      "left_up": {
+        "boundary": "object_dispatch",
+        "entry": "0x004AB9B0",
+        "stop": "0x4ae750"
+      },
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        },
+        {
+          "kind": "original",
+          "name": "UnitClickedObject",
+          "pc": "0x738890"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "FootClickedObject",
+          "pc": "0x4d74e0"
+        },
+        {
+          "kind": "original",
+          "name": "MoveAdmission",
+          "pc": "0x4d77fb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 1,
+      "query_inputs": [
+        {
+          "entry": "0073FD50",
+          "phase": "hover",
+          "second_argument": 0
+        },
+        {
+          "entry": "0073FD50",
+          "phase": "clicked_requery",
+          "second_argument": 0
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [
+        {
+          "action": 1,
+          "callee": "TechnoCell",
+          "caller": "004DDDFE"
+        },
+        {
+          "action": 1,
+          "callee": "FootCell",
+          "caller": "007404FB"
+        }
+      ],
+      "clicked_action": null,
+      "cursor_row": 18,
+      "hook_events": [
+        {
+          "export": "1004A430",
+          "returned": "00000000",
+          "site": "007008D4"
+        }
+      ],
+      "input": {
+        "alt": false,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "installed": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "none",
+        "route": "cell",
+        "shift": false
+      },
+      "left_up": null,
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 0,
+      "query_inputs": [
+        {
+          "entry": "007404B0",
+          "phase": "hover",
+          "second_argument": 1
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [
+        {
+          "action": 1,
+          "callee": "TechnoCell",
+          "caller": "004DDDFE"
+        },
+        {
+          "action": 1,
+          "callee": "FootCell",
+          "caller": "007404FB"
+        }
+      ],
+      "clicked_action": null,
+      "cursor_row": 18,
+      "hook_events": [
+        {
+          "export": "1004A430",
+          "returned": "00700AB7",
+          "site": "007008D4"
+        }
+      ],
+      "input": {
+        "alt": false,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "installed": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "none",
+        "route": "cell",
+        "shift": false
+      },
+      "left_up": null,
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 1,
+      "query_inputs": [
+        {
+          "entry": "007404B0",
+          "phase": "hover",
+          "second_argument": 1
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [
+        {
+          "action": 1,
+          "callee": "TechnoCell",
+          "caller": "004DDDFE"
+        },
+        {
+          "action": 1,
+          "callee": "FootCell",
+          "caller": "007404FB"
+        }
+      ],
+      "clicked_action": null,
+      "cursor_row": 18,
+      "hook_events": [
+        {
+          "export": "1004A430",
+          "returned": "00000000",
+          "site": "007008D4"
+        }
+      ],
+      "input": {
+        "alt": true,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "installed": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "none",
+        "route": "cell",
+        "shift": false
+      },
+      "left_up": null,
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 0,
+      "query_inputs": [
+        {
+          "entry": "007404B0",
+          "phase": "hover",
+          "second_argument": 1
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [
+        {
+          "action": 1,
+          "callee": "TechnoCell",
+          "caller": "004DDDFE"
+        },
+        {
+          "action": 1,
+          "callee": "FootCell",
+          "caller": "007404FB"
+        }
+      ],
+      "clicked_action": null,
+      "cursor_row": 18,
+      "hook_events": [
+        {
+          "export": "1004A430",
+          "returned": "00700AB7",
+          "site": "007008D4"
+        }
+      ],
+      "input": {
+        "alt": true,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "installed": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "none",
+        "route": "cell",
+        "shift": false
+      },
+      "left_up": null,
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 1,
+      "query_inputs": [
+        {
+          "entry": "007404B0",
+          "phase": "hover",
+          "second_argument": 1
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [
+        {
+          "action": 1,
+          "callee": "TechnoCell",
+          "caller": "004DDDFE"
+        },
+        {
+          "action": 1,
+          "callee": "FootCell",
+          "caller": "007404FB"
+        }
+      ],
+      "clicked_action": null,
+      "cursor_row": 18,
+      "hook_events": [
+        {
+          "export": "1004A430",
+          "returned": "00000000",
+          "site": "007008D4"
+        }
+      ],
+      "input": {
+        "alt": false,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "installed": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "none",
+        "route": "cell",
+        "shift": true
+      },
+      "left_up": null,
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 0,
+      "query_inputs": [
+        {
+          "entry": "007404B0",
+          "phase": "hover",
+          "second_argument": 1
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [
+        {
+          "action": 1,
+          "callee": "TechnoCell",
+          "caller": "004DDDFE"
+        },
+        {
+          "action": 1,
+          "callee": "FootCell",
+          "caller": "007404FB"
+        }
+      ],
+      "clicked_action": null,
+      "cursor_row": 18,
+      "hook_events": [
+        {
+          "export": "1004A430",
+          "returned": "00700AB7",
+          "site": "007008D4"
+        }
+      ],
+      "input": {
+        "alt": false,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "installed": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "none",
+        "route": "cell",
+        "shift": true
+      },
+      "left_up": null,
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 1,
+      "query_inputs": [
+        {
+          "entry": "007404B0",
+          "phase": "hover",
+          "second_argument": 1
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [
+        {
+          "action": 1,
+          "callee": "TechnoCell",
+          "caller": "004DDDFE"
+        },
+        {
+          "action": 1,
+          "callee": "FootCell",
+          "caller": "007404FB"
+        }
+      ],
+      "clicked_action": null,
+      "cursor_row": 18,
+      "hook_events": [
+        {
+          "export": "1004A430",
+          "returned": "00000000",
+          "site": "007008D4"
+        }
+      ],
+      "input": {
+        "alt": true,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "installed": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "none",
+        "route": "cell",
+        "shift": true
+      },
+      "left_up": null,
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 0,
+      "query_inputs": [
+        {
+          "entry": "007404B0",
+          "phase": "hover",
+          "second_argument": 1
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [
+        {
+          "action": 1,
+          "callee": "TechnoCell",
+          "caller": "004DDDFE"
+        },
+        {
+          "action": 1,
+          "callee": "FootCell",
+          "caller": "007404FB"
+        }
+      ],
+      "clicked_action": null,
+      "cursor_row": 18,
+      "hook_events": [
+        {
+          "export": "1004A430",
+          "returned": "00700AB7",
+          "site": "007008D4"
+        }
+      ],
+      "input": {
+        "alt": true,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "installed": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "none",
+        "route": "cell",
+        "shift": true
+      },
+      "left_up": null,
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 1,
+      "query_inputs": [
+        {
+          "entry": "007404B0",
+          "phase": "hover",
+          "second_argument": 1
+        }
+      ]
+    },
+    {
+      "action": 5,
+      "cell_return_values": [
+        {
+          "action": 5,
+          "callee": "TechnoCell",
+          "caller": "004DDDFE"
+        },
+        {
+          "action": 5,
+          "callee": "FootCell",
+          "caller": "007404FB"
+        }
+      ],
+      "clicked_action": null,
+      "cursor_row": 20,
+      "hook_events": [
+        {
+          "export": "1004A430",
+          "returned": "00000000",
+          "site": "007008D4"
+        }
+      ],
+      "input": {
+        "alt": false,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "installed": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "none",
+        "route": "cell",
+        "shift": false
+      },
+      "left_up": null,
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellAttackReturn",
+          "pc": "0x700aa8"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayAttackArm",
+          "pc": "0x4ab4ee"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_consumer",
+          "pc": "0x4ab4ee",
+          "target": 536920064
+        }
+      ],
+      "no_manual_fire_native_reader_value": 0,
+      "query_inputs": [
+        {
+          "entry": "007404B0",
+          "phase": "hover",
+          "second_argument": 1
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [
+        {
+          "action": 1,
+          "callee": "TechnoCell",
+          "caller": "004DDDFE"
+        },
+        {
+          "action": 1,
+          "callee": "FootCell",
+          "caller": "007404FB"
+        }
+      ],
+      "clicked_action": null,
+      "cursor_row": 18,
+      "hook_events": [
+        {
+          "export": "1004A430",
+          "returned": "00700AB7",
+          "site": "007008D4"
+        }
+      ],
+      "input": {
+        "alt": false,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "installed": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "none",
+        "route": "cell",
+        "shift": false
+      },
+      "left_up": null,
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 1,
+      "query_inputs": [
+        {
+          "entry": "007404B0",
+          "phase": "hover",
+          "second_argument": 1
+        }
+      ]
+    },
+    {
+      "action": 26,
+      "cell_return_values": [
+        {
+          "action": 26,
+          "callee": "TechnoCell",
+          "caller": "004DDDFE"
+        },
+        {
+          "action": 26,
+          "callee": "FootCell",
+          "caller": "007404FB"
+        }
+      ],
+      "clicked_action": null,
+      "cursor_row": 22,
+      "hook_events": [],
+      "input": {
+        "alt": true,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "installed": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "none",
+        "route": "cell",
+        "shift": false
+      },
+      "left_up": null,
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 0,
+      "query_inputs": [
+        {
+          "entry": "007404B0",
+          "phase": "hover",
+          "second_argument": 1
+        }
+      ]
+    },
+    {
+      "action": 26,
+      "cell_return_values": [
+        {
+          "action": 26,
+          "callee": "TechnoCell",
+          "caller": "004DDDFE"
+        },
+        {
+          "action": 26,
+          "callee": "FootCell",
+          "caller": "007404FB"
+        }
+      ],
+      "clicked_action": null,
+      "cursor_row": 22,
+      "hook_events": [],
+      "input": {
+        "alt": true,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "installed": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "none",
+        "route": "cell",
+        "shift": false
+      },
+      "left_up": null,
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 1,
+      "query_inputs": [
+        {
+          "entry": "007404B0",
+          "phase": "hover",
+          "second_argument": 1
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [
+        {
+          "action": 1,
+          "callee": "TechnoCell",
+          "caller": "004DDDFE"
+        },
+        {
+          "action": 1,
+          "callee": "FootCell",
+          "caller": "007404FB"
+        }
+      ],
+      "clicked_action": null,
+      "cursor_row": 71,
+      "hook_events": [
+        {
+          "export": "1004A430",
+          "returned": "00000000",
+          "site": "007008D4"
+        }
+      ],
+      "input": {
+        "alt": false,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "installed": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "none",
+        "route": "cell",
+        "shift": true
+      },
+      "left_up": null,
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 0,
+      "query_inputs": [
+        {
+          "entry": "007404B0",
+          "phase": "hover",
+          "second_argument": 1
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [
+        {
+          "action": 1,
+          "callee": "TechnoCell",
+          "caller": "004DDDFE"
+        },
+        {
+          "action": 1,
+          "callee": "FootCell",
+          "caller": "007404FB"
+        }
+      ],
+      "clicked_action": null,
+      "cursor_row": 71,
+      "hook_events": [
+        {
+          "export": "1004A430",
+          "returned": "00700AB7",
+          "site": "007008D4"
+        }
+      ],
+      "input": {
+        "alt": false,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "installed": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "none",
+        "route": "cell",
+        "shift": true
+      },
+      "left_up": null,
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 1,
+      "query_inputs": [
+        {
+          "entry": "007404B0",
+          "phase": "hover",
+          "second_argument": 1
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [
+        {
+          "action": 1,
+          "callee": "TechnoCell",
+          "caller": "004DDDFE"
+        },
+        {
+          "action": 1,
+          "callee": "FootCell",
+          "caller": "007404FB"
+        }
+      ],
+      "clicked_action": null,
+      "cursor_row": 71,
+      "hook_events": [
+        {
+          "export": "1004A430",
+          "returned": "00000000",
+          "site": "007008D4"
+        }
+      ],
+      "input": {
+        "alt": true,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "installed": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "none",
+        "route": "cell",
+        "shift": true
+      },
+      "left_up": null,
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 0,
+      "query_inputs": [
+        {
+          "entry": "007404B0",
+          "phase": "hover",
+          "second_argument": 1
+        }
+      ]
+    },
+    {
+      "action": 1,
+      "cell_return_values": [
+        {
+          "action": 1,
+          "callee": "TechnoCell",
+          "caller": "004DDDFE"
+        },
+        {
+          "action": 1,
+          "callee": "FootCell",
+          "caller": "007404FB"
+        }
+      ],
+      "clicked_action": null,
+      "cursor_row": 71,
+      "hook_events": [
+        {
+          "export": "1004A430",
+          "returned": "00700AB7",
+          "site": "007008D4"
+        }
+      ],
+      "input": {
+        "alt": true,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "installed": false,
+        "mouse_over": true,
+        "name": "no_manual_fire",
+        "relation": "none",
+        "route": "cell",
+        "shift": true
+      },
+      "left_up": null,
+      "native_action_trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "original",
+          "name": "UnitCell",
+          "pc": "0x7404b0"
+        },
+        {
+          "kind": "original",
+          "name": "FootCell",
+          "pc": "0x4ddde0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoCell",
+          "pc": "0x700600"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "CellSimpleDeployerTail",
+          "pc": "0x74072b"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNoObject",
+          "pc": "0x4aafc9"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayResolveCell",
+          "pc": "0x4aafec"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayStoreCell",
+          "pc": "0x4aaff1"
+        },
+        {
+          "is_cell": true,
+          "kind": "display_target_producer",
+          "pc": "0x4aaff1",
+          "target": 536920064
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        }
+      ],
+      "no_manual_fire_native_reader_value": 1,
+      "query_inputs": [
+        {
+          "entry": "007404B0",
+          "phase": "hover",
+          "second_argument": 1
+        }
+      ]
+    }
+  ],
+  "schema_version": 1
+}

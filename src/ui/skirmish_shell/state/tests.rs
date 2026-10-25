@@ -523,6 +523,7 @@ fn hovered_shell_control_resolves_core_controls_and_dropdown_rows() {
     shell.open_combo_dropdown = Some(OpenComboDropdown {
         id: SkirmishComboId::AiType(0),
         top_index: 0,
+        hot_row: None,
     });
     let content =
         combo_dropdown_content_rect(&shell, &layout, &maps, SkirmishComboId::AiType(0)).unwrap();
@@ -824,7 +825,7 @@ fn the_game_starts_with_the_credits_the_slider_reads_back() {
     shell.starting_credits = 7549;
     assert_eq!(shell.credits(), 7500);
     let maps = [test_map_entry("first.mmx")];
-    let session = launch_session(&shell, &maps, &stock_skirmish_modes()).expect("session");
+    let session = launch_session(&shell, &maps, &stock_skirmish_modes(), false).expect("session");
     assert_eq!(session.options.starting_credits, 7500);
 }
 
@@ -932,7 +933,7 @@ fn launch_session_packs_selected_map_and_enabled_slots() {
 
     let maps = [test_map_entry("first.mmx"), test_map_entry("second.mmx")];
     let modes = stock_skirmish_modes();
-    let session = launch_session(&shell, &maps, &modes).expect("session");
+    let session = launch_session(&shell, &maps, &modes, false).expect("session");
 
     assert_eq!(session.mode.id, 1);
     assert_eq!(session.selected_map_file.as_deref(), Some("second.mmx"));
@@ -971,7 +972,7 @@ fn launch_session_forces_the_dialogs_fixed_session_options() {
     shell.launch_options_base.multi_engineer = true;
     let maps = [test_map_entry("first.mmx")];
     let modes = stock_skirmish_modes();
-    let options = launch_session(&shell, &maps, &modes)
+    let options = launch_session(&shell, &maps, &modes, false)
         .expect("session")
         .options;
     assert_eq!(
@@ -995,7 +996,7 @@ fn launch_session_preserves_selected_team_game_mode_id() {
     let modes = stock_skirmish_modes();
     repair_teams_for_selected_mode(&mut shell, &modes);
 
-    let session = launch_session(&shell, &maps, &modes).expect("session");
+    let session = launch_session(&shell, &maps, &modes, false).expect("session");
 
     assert_eq!(session.mode.id, 9);
     assert_eq!(session.mode.ui_name_key, "GUI:TeamGame");
@@ -1011,7 +1012,7 @@ fn launch_session_does_not_synthesize_unknown_mode() {
     let maps = [test_map_entry("map.mmx")];
 
     assert_eq!(
-        launch_session(&shell, &maps, &stock_skirmish_modes()).unwrap_err(),
+        launch_session(&shell, &maps, &stock_skirmish_modes(), false).unwrap_err(),
         LaunchValidationError::NoSelectedMode { mode_id: 99 }
     );
 }
@@ -1020,14 +1021,14 @@ fn launch_session_does_not_synthesize_unknown_mode() {
 fn launch_session_rejects_missing_map_and_bad_color() {
     let mut shell = controlled_country_shell();
     assert_eq!(
-        launch_session(&shell, &[], &stock_skirmish_modes()).unwrap_err(),
+        launch_session(&shell, &[], &stock_skirmish_modes(), false).unwrap_err(),
         LaunchValidationError::NoSelectedMap
     );
 
     shell.player_color_index = HOUSE_COLOR_COUNT;
     let maps = [test_map_entry("map.mmx")];
     assert_eq!(
-        launch_session(&shell, &maps, &stock_skirmish_modes()).unwrap_err(),
+        launch_session(&shell, &maps, &stock_skirmish_modes(), false).unwrap_err(),
         LaunchValidationError::InvalidColorIndex {
             slot: 0,
             color_index: HOUSE_COLOR_COUNT,
@@ -1045,14 +1046,14 @@ fn skirmish_launch_random_country_succeeds_and_flags_slot_for_resolution() {
 
     // A Random local country no longer blocks Start; the session is built with
     // the slot flagged so the concrete country is drawn during resolution.
-    let session = launch_session(&shell, &maps, &stock_skirmish_modes())
+    let session = launch_session(&shell, &maps, &stock_skirmish_modes(), false)
         .expect("random local country must not block Start");
     assert!(session.local_slot().country_random);
 
     shell.player_country_random = false;
     shell.opponents[0].country_random = true;
 
-    let session = launch_session(&shell, &maps, &stock_skirmish_modes())
+    let session = launch_session(&shell, &maps, &stock_skirmish_modes(), false)
         .expect("random AI country must not block Start");
     assert!(!session.local_slot().country_random);
     assert!(session.opponents[0].country_random);
@@ -1065,7 +1066,7 @@ fn launch_session_rejects_map_capacity_overflow() {
     let maps = [test_map_entry_with_starts("tiny.mmx", 2)];
 
     assert_eq!(
-        launch_session(&shell, &maps, &stock_skirmish_modes()).unwrap_err(),
+        launch_session(&shell, &maps, &stock_skirmish_modes(), false).unwrap_err(),
         LaunchValidationError::MapCapacityExceeded {
             capacity: 2,
             requested_players: 3,
@@ -1083,13 +1084,30 @@ fn raw_pack_skips_start_only_validation_for_back_transaction() {
     let modes = stock_skirmish_modes();
 
     assert_eq!(
-        launch_session(&shell, &maps, &modes).unwrap_err(),
+        launch_session(&shell, &maps, &modes, false).unwrap_err(),
         LaunchValidationError::NoEnabledOpponent
     );
     let packed = pack_launch_session_without_start_validation(&shell, &maps, &modes)
         .expect("Back must pack controls without Start-only gates");
     assert!(packed.opponents.is_empty());
     assert_eq!(packed.selected_map_file.as_deref(), Some("one-player.mmx"));
+}
+
+#[test]
+fn solo_skirmish_option_accepts_no_opponent_and_no_team_split() {
+    let mut shell = controlled_country_shell();
+    for opponent in &mut shell.opponents {
+        opponent.row_type = SkirmishAiRowType::None;
+    }
+    // An explicit team with no opponents is not a same-team conflict.
+    shell.player_team = 0;
+    let maps = [test_map_entry_with_starts("solo.mmx", 1)];
+
+    let session = launch_session(&shell, &maps, &stock_skirmish_modes(), true)
+        .expect("one player starts without opponents");
+    assert!(session.opponents.is_empty());
+    assert_eq!(session.ai_player_count, 0);
+    assert_eq!(session.humans.len(), 1);
 }
 
 #[test]
@@ -1145,7 +1163,7 @@ fn launch_session_rejects_same_explicit_team() {
     let maps = [test_map_entry("map.mmx")];
 
     assert_eq!(
-        launch_session(&shell, &maps, &stock_skirmish_modes()).unwrap_err(),
+        launch_session(&shell, &maps, &stock_skirmish_modes(), false).unwrap_err(),
         LaunchValidationError::SameExplicitTeam { team: 0 }
     );
 }
@@ -1212,6 +1230,7 @@ fn accepted_map_shrink_resets_and_hides_complete_opponent_rows_atomically() {
     shell.open_combo_dropdown = Some(OpenComboDropdown {
         id: SkirmishComboId::Team(3),
         top_index: 0,
+        hot_row: None,
     });
 
     assert!(accept_selected_map(&mut shell, &maps, 1));
@@ -1489,6 +1508,51 @@ fn side_combo_exposes_random_country_and_verified_dropdown_cap() {
 }
 
 #[test]
+fn dropdown_hover_uses_scrolled_rows_and_only_click_commits_the_choice() {
+    let layout = compute_layout(800, 600);
+    let mut shell = controlled_country_shell();
+    let maps = [test_map_entry("map.mmx")];
+    let id = SkirmishComboId::Side(0);
+    let rect = combo_rect(&layout, id).unwrap();
+    let saved = selected_combo_item(&shell, id);
+
+    handle_option_mouse_down(&mut shell, &layout, &maps, rect.x + rect.w - 1, rect.y + 1);
+    let scrollbar = combo_dropdown_scrollbar_rect(&shell, &layout, &maps, id).unwrap();
+    handle_option_mouse_down(
+        &mut shell,
+        &layout,
+        &maps,
+        scrollbar.x + 1,
+        scrollbar.y + scrollbar.h - 1,
+    );
+    handle_option_mouse_up(&mut shell);
+    shell.drain_pending_ui_sounds();
+    assert_eq!(shell.open_combo_dropdown.unwrap().top_index, 1);
+
+    let content = combo_dropdown_content_rect(&shell, &layout, &maps, id).unwrap();
+    let x = content.x + 1;
+    let y = content.y + 2 * COMBO_DROPDOWN_ROW_H + 1;
+    handle_option_mouse_move(&mut shell, &layout, &maps, x, y);
+    assert_eq!(shell.open_combo_dropdown.unwrap().hot_row, Some(3));
+    assert_eq!(selected_combo_item(&shell, id), saved);
+    assert!(shell.drain_pending_ui_sounds().is_empty());
+
+    // The scrollbar is popup chrome, not another selectable row.
+    handle_option_mouse_move(&mut shell, &layout, &maps, scrollbar.x + 1, scrollbar.y + 1);
+    assert_eq!(shell.open_combo_dropdown.unwrap().hot_row, Some(3));
+    assert_eq!(selected_combo_item(&shell, id), saved);
+
+    let picked = combo_items(&shell, &maps, id)[3];
+    handle_option_mouse_down(&mut shell, &layout, &maps, x, y);
+    assert_eq!(selected_combo_item(&shell, id), Some(picked));
+    assert!(shell.open_combo_dropdown.is_none());
+    assert_eq!(
+        shell.drain_pending_ui_sounds(),
+        vec![SkirmishShellUiSound::GuiComboCloseSound],
+    );
+}
+
+#[test]
 fn dropdown_wheel_is_inert_and_content_click_uses_top_index() {
     let layout = compute_layout(800, 600);
     let mut shell = controlled_country_shell();
@@ -1663,7 +1727,8 @@ fn combo_arrow_opens_dropdown_and_selects_color_row() {
         shell.open_combo_dropdown,
         Some(OpenComboDropdown {
             id: SkirmishComboId::Color(0),
-            top_index: 0
+            top_index: 0,
+            hot_row: Some(1),
         })
     );
 
@@ -2030,7 +2095,7 @@ fn launch_session_carries_random_color_marker_and_cached_placeholder() {
     let maps = [test_map_entry("map.mmx")];
     let modes = stock_skirmish_modes();
 
-    let session = launch_session(&shell, &maps, &modes).expect("session");
+    let session = launch_session(&shell, &maps, &modes, false).expect("session");
 
     assert_eq!(session.local_slot().color_index, 3);
     assert!(session.local_slot().color_random);

@@ -24,7 +24,7 @@ pub(crate) struct WolStartUser {
 /// writer exists (C2 draws nothing, `0x797276` is unreferenced debug code).
 /// That is the seed of the last `Init_Random_Number_System` (`0052FC20`):
 /// the resident match's seed, else the process start seed.
-pub(super) fn resident_seed(state: &AppState) -> u32 {
+pub(crate) fn resident_seed(state: &AppState) -> u32 {
     state
         .match_state
         .sim_runtime
@@ -72,7 +72,7 @@ impl App {
             state,
             launch,
             dialog,
-            [NetworkVacancy::Open; 8],
+            [NetworkVacancy::Open; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
             observer_row,
         ) {
             log::error!("Could not admit WOL join: {error:#}");
@@ -279,8 +279,61 @@ pub(crate) fn player_ready(state: &mut AppState, name: &str, value: i32) -> anyh
         return Ok(());
     }
     let result = ready_arm(state, name, value);
-    guest_sink_tail(state);
+    if super::quick_match(state) {
+        quick_match_start(state, name);
+    } else {
+        guest_sink_tail(state);
+    }
     result
+}
+
+/// `0x0077E900`'s Quick Match tail (`0x0077EA53..0x0077EB72`): any `A<n>`
+/// (`n` untested) from the node at index 1 while the channel has exactly
+/// two users, on the host before its StartGame: every channel user, in
+/// reverse channel order, to API+0x48, stage 9 (90 s) and `[0xB77DEC]`.
+fn quick_match_start(state: &mut AppState, name: &str) {
+    let session = &state.match_state.session;
+    let second = session
+        .network_setup()
+        .and_then(|launch| launch.humans.get(1))
+        .is_some_and(|human| human.name.eq_ignore_ascii_case(name));
+    let users = crate::app::shell_wol::lobby::member_names(state);
+    if !session.host() || !second || users.len() != 2 {
+        return;
+    }
+    let Some(protocol) = state.frontend.network_setup_protocol.as_mut() else {
+        return;
+    };
+    if protocol.wol_start_pending {
+        return;
+    }
+    protocol.wol_start_pending = true;
+    protocol.requests.push(NetworkSetupRequest::StartGame {
+        users: users.into_iter().rev().collect(),
+    });
+    crate::app::shell_wol::quick_match::start_requested(state);
+}
+
+/// The Quick Match guest's options sink `+0x58` after its parse
+/// (`0x007A7F72..0x007A8014`): its own node with a side and a colour, and
+/// exactly two channel users, accept at once: `"A1"` channel-wide
+/// (API+0x3C). The text is the host's digit-led options, and the parse
+/// already dropped it while a match runs or a start is pending.
+/// RESIDUAL: the channel-owner gate (`0x007931A0`, the first operator is
+/// not this user) holds for every guest the matchbot names.
+pub(super) fn quick_match_accept(state: &mut AppState) {
+    let assigned = state
+        .match_state
+        .session
+        .network_setup()
+        .is_some_and(|launch| {
+            let slot = &launch.local_player().slot;
+            !slot.country_random && !slot.color_random
+        });
+    if !assigned || crate::app::shell_wol::lobby::member_names(state).len() != 2 {
+        return;
+    }
+    queue(state, NetworkSetupRequest::Ready(true));
 }
 
 fn ready_arm(state: &mut AppState, name: &str, value: i32) -> anyhow::Result<()> {
@@ -340,8 +393,9 @@ fn guest_sink_tail(state: &mut AppState) {
 /// download running it asks again on each options text, unrestamped,
 /// unless the map verifies (`0x007A802B..0x007A80D7`). A verified mixfile
 /// map has its own preview and returned above (`0x007A80EF..0x007A8143`).
-/// RESIDUAL: the clan/tournament auto-unaccept that follows
-/// (`0x007A8145..0x007A8196`) is chain H4's. The 900-bucket branch reads
+/// Then, unless the map is `RandMap.Sed` (`0x007A80DD..0x007A80E9`), an
+/// accepted user in a tournament or clan room takes its acceptance back:
+/// `A0`, and Accept disabled (`0x007A8145..0x007A8196`). The 900-bucket branch reads
 /// the verification of the last map change; native verifies again
 /// (`0x007A8090..0x007A80AF`), which differs only when a map arrives
 /// without a change, and WOL transfers no map here.
@@ -351,12 +405,23 @@ pub(super) fn options_preview(state: &mut AppState, new_scenario: bool) {
     ) as u32;
     let globals = &mut state.frontend.wol_lobby_globals;
     let stamp = *globals.preview_stamp.get_or_insert(now);
-    let map_named = state
+    let file = state
         .match_state
         .session
         .network_setup()
-        .and_then(|launch| launch.selected_map_file.as_deref())
-        .is_some_and(|file| !file.is_empty());
+        .and_then(|launch| launch.selected_map_file.as_deref());
+    let map_named = file.is_some_and(|file| !file.is_empty());
+    let random = file
+        .is_some_and(|file| file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED));
+    let room = state.match_state.session.network_room();
+    let local = state
+        .match_state
+        .session
+        .network_setup()
+        .map(|launch| launch.local_player_index);
+    let unaccept = !random
+        && room.tournament_or_clan()
+        && local.is_some_and(|index| state.match_state.session.network_player_ready(index));
     let protocol = state
         .frontend
         .network_setup_protocol
@@ -379,8 +444,21 @@ pub(super) fn options_preview(state: &mut AppState, new_scenario: bool) {
             request = true;
         }
     }
+    if unaccept {
+        protocol.accept_eligible = false;
+        protocol.requests.push(NetworkSetupRequest::Ready(false));
+    }
     if request {
         protocol.requests.push(NetworkSetupRequest::RequestPreview);
+    }
+    if unaccept
+        && let Some(index) = local
+        && let Err(error) = state
+            .match_state
+            .session
+            .set_network_player_ready(index, false)
+    {
+        log::warn!("WOL room unaccept: {error:#}");
     }
 }
 
@@ -450,6 +528,12 @@ pub(crate) fn kicked_key(state: &AppState) -> &'static str {
 /// lobby rejoins (`0x788A30`). No box.
 pub(crate) fn local_left(state: &mut AppState) {
     play_player_left(state);
+    if super::quick_match(state) {
+        // No dialog: the nodes go with the setup; the runner's stage
+        // timeout moves on.
+        super::abandon_for_wol_runner(state);
+        return;
+    }
     let dialog = super::dialog(state);
     App::leave_shell_dialog(
         state,
@@ -499,7 +583,7 @@ pub(super) fn clear_guest_acceptance(state: &mut AppState) -> anyhow::Result<()>
 pub(super) fn game_started(
     state: &mut AppState,
     users: Vec<WolStartUser>,
-    pings: [i32; 8],
+    pings: Vec<i32>,
 ) -> anyhow::Result<()> {
     // 0x7A7B95: once a start has matched ([0xB77E27]), OnGameStart does
     // nothing more.
@@ -534,8 +618,9 @@ pub(super) fn game_started(
         }
         return Ok(());
     }
-    // 0x7A7CEE..0x7A7CFC: an open 0xCF closes. (0x117 closes first in the
-    // Quick Match modes 1-3.)
+    // 0x7A7CC3..0x7A7CE9: modes 1-3 close 0x117; 0x7A7CEE..0x7A7CFC: an
+    // open 0xCF closes.
+    crate::app::shell_wol::quick_match::game_started(state);
     crate::app::shell_wol::page::close_page_dialog(state);
     // 0x794F6F..: the first user row with flag bit0 is the channel owner.
     let channel_owner = users
@@ -546,6 +631,10 @@ pub(super) fn game_started(
         .match_state
         .session
         .prepare_wol_timing(pings, channel_owner)?;
+    // [0xB779C4] (0x7A7D0E..0x7A7D49) and Start Game Now's clan lists
+    // (0x795250..0x79546E) for the match.
+    let terms = crate::app::shell_wol::lobby::start_terms(state);
+    state.match_state.session.set_wol_start(terms);
     // C2/C9 stay up: Start Game Now (0x794BA0) pushes the verify 0x130
     // over them with the nodes in [0xA8DA78] order (0x794C5B).
     let names = launch_names(state);
@@ -611,13 +700,6 @@ pub(super) fn verify_connected(state: &mut AppState, node: usize) -> anyhow::Res
     Ok(())
 }
 
-/// A click on node `node`'s box of `0x130` (`0x00793280`).
-pub(crate) fn verify_click(state: &mut AppState, node: usize) {
-    if let Ok(verify) = verify_mut(state) {
-        verify.click(node);
-    }
-}
-
 /// `0x00794D0A..`: the negotiation's result. 0 closes `0x130`
 /// (`0x00794F30..0x00794F44`), leaves the game channel (API+0x24 at
 /// `0x007955F1`) and starts the match; 2 opens `0xD0` with
@@ -640,6 +722,12 @@ pub(super) fn negotiated(state: &mut AppState, result: u8) -> anyhow::Result<()>
             protocol.wol_verify = None;
             protocol.requests.push(NetworkSetupRequest::Leave);
             state.frontend.skirmish_preview_texture = None;
+            if super::quick_match(state) {
+                // 0x130 closes without a slide and no setup dialog exists.
+                crate::app::shell_wol::quick_match::start_leave(state);
+                super::commit_start(state, seed);
+                return Ok(());
+            }
             App::leave_shell_dialog(
                 state,
                 shell_transition::ShellExitThen::NetworkStart {
@@ -712,43 +800,52 @@ pub(crate) fn verify_mouse(state: &mut AppState, pressed: bool) {
         state.platform.window.request_redraw();
         return;
     }
-    if !pressed {
-        return;
-    }
     let layout = verify_layout(state);
-    let node = (0..verify.names.len()).find(|node| {
-        crate::ui::skirmish_shell::checkbox_icon_rect(
-            layout.boxes[*node],
-            crate::ui::shell::geom::ShellScale::RETAIL,
-        )
-        .contains(x, y)
-    });
-    if let Some(node) = node {
-        verify_click(state, node);
+    let node = verify_mut(state)
+        .ok()
+        .and_then(|verify| verify.pointer_button(&layout, x, y, pressed, Instant::now()));
+    if node.is_some() {
         App::play_launcher_options_cue(
             state,
             crate::ui::main_menu_dialogs::options::LauncherCue::Checkbox,
         );
-        state.platform.window.request_redraw();
     }
+    state.platform.window.request_redraw();
 }
 
 pub(crate) fn verify_cursor_moved(state: &mut AppState) {
     let (x, y) = state.match_state.input.cursor_px();
     let over = mismatch_ok_at(state, x, y);
-    if let Ok(verify) = verify_mut(state)
-        && verify.mismatch.is_some()
-    {
-        verify.ok.hovered = over;
+    let layout = verify_layout(state);
+    if let Ok(verify) = verify_mut(state) {
+        if verify.mismatch.is_some() {
+            verify.ok.hovered = over;
+        } else {
+            verify.pointer_moved(&layout, x, y);
+        }
         state.platform.window.request_redraw();
     }
+}
+
+pub(crate) fn verify_poll_scroll(state: &mut AppState) -> Option<Instant> {
+    let layout = verify_layout(state);
+    let (x, y) = state.match_state.input.cursor_px();
+    let verify = verify_mut(state).ok()?;
+    if verify.mismatch.is_some() {
+        return None;
+    }
+    let (changed, deadline) = verify.poll_scroll(&layout, x, y, Instant::now());
+    if changed {
+        state.platform.window.request_redraw();
+    }
+    deadline
 }
 
 /// C2/C9 0x540 Enter (notify 0x501): commands first, then a plain line.
 pub(super) fn chat(state: &mut AppState, text: Vec<u16>) {
     // 5EDD00's TrimRight("\n\r") result is what WOL sends.
     let text = wol_chat::trim_line_end(&text).to_vec();
-    if text.is_empty() {
+    if text.is_empty() || crate::app::shell_wol::translation::command(state, &text) {
         return;
     }
     let commands = wol_chat::WolChatCommands {

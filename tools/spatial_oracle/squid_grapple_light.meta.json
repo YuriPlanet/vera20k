@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Stock SQD/DEST whole6297F0 constructor/attachment fields after original Scenario defaults and nonzero Cell relight, then original DrawIt arguments at Surface entry; no Surface execution or pixels.",
+  "assumptions": [
+    "Existing building_death_anims grapple_inputs/grapple_fixture own physical SQD/DEST, SquidGrab/SQDJUMP/ParasitePlus, SQDG/WAKE/H2O readers, actual constructors/Unlimbo, native physical water Recalc, direct source ObjectLimbo and reciprocal AttachTo. Full FireAt/Bullet and complete House/scenario startup are excluded.",
+    "Original Scenario defaults6838D3..6839BD, normal Lighting reader68A817..68A979 and Level store68A984..68A98A execute through existing tmp_clear_render.profile and Reader lexical cache transport in the same VM. No authored Lighting keys are supplied; original defaults produce the recorded profile.",
+    "Options detail2 and Cell483E30 arguments0/65536/0/1000/1000/1000 are explicit existing component inputs. Source/victim water cells are level0. Full original Cell483E30 and reached gather/Convert bodies execute; the recorded signed Cell10A value is not assigned by the host. These inputs do not establish arbitrary live local-light/effect history.",
+    "Only first whole6297F0 executes after attachment. Original Anim constructor/Start, owner-change guard, SetOwner424B50, source705D70 and629DDE/629DE5 read/store run. Constructor arguments, +FC, +100, type+348, instance+196 and separate type+35C are observed independently. No Anim frame, timer, owner, depth or light result is supplied.",
+    "The inherited fixture has no physical House ColorScheme closure. Removing its selected705D70 transport sink lets the original getter return its actual null; AnimD4 remains null. This is not a physical remapped converter or frozen-light color claim.",
+    "Original DrawIt422CA0 runs on the real held SQDG with declared component point80/80 and clip0/0/160/160, stopping BEFORE Surface4AED70 executes. Original4237EA must be reached. Actual stack arguments, image/header identity and null Surface/Convert predicates are observed; no palette/cache, Convert pointer, vtable, frame, depth or intensity result is supplied. The call frame remains pending. No DrawIfVisible/projection admission, Surface completion/return, raster, pixels, full Display traversal, other actor/Anim AI or later lighting change is covered."
+  ],
+  "substitutions": [
+    "Existing physical lexical INI/requested-SHP/audio file transports, successful bounded allocation/delete, COM/CRT/TLS/Windows/audio-device services, supplied partial House/map/registry priors and inherited presentation sinks are retained. Only the705D70 sink is removed for the measured whole6297F0; original getter instructions execute. Original code and selected Unit/Anim vtables remain unchanged."
+  ],
+  "entry_points": {
+    "grapple": "0x006297F0",
+    "owner_change_guard": "0x00629DBF",
+    "set_owner": "0x00424B50",
+    "house_convert": "0x00705D70",
+    "cell_light_read": "0x00629DDE",
+    "copied_light_store": "0x00629DE5",
+    "anim_ctor": "0x00421EA0",
+    "scenario_defaults": "0x006838D3",
+    "normal_lighting": "0x0068A817",
+    "cell_relight": "0x00483E30",
+    "draw_it": "0x00422CA0",
+    "draw_z_read": "0x004237EA",
+    "surface_entry_only": "0x004AED70"
+  },
+  "replay_command": "python -m tools.spatial_oracle.squid_grapple_light",
+  "payload_sha256": "72a19004360a7833bfede5e69e5416bffe50b8d7bd4f0f4be8fe6bdd9ef51830"
+}

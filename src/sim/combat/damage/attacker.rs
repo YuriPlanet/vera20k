@@ -30,7 +30,7 @@ pub(crate) struct FireDamageStages {
     /// country's `Firepower=` (`HouseClass::SetDifficulty @ 0x004F6EC0`,
     /// `0x004F6F04..0x004F6F11`).
     pub house_firepower: NativeF64Bits,
-    /// `Techno+0x160`, raised only by a Firepower crate.
+    /// Effective `Techno+0x160`: permanent crate baseline and Ares attachments.
     pub unit_firepower: NativeF64Bits,
     /// `Rules+0x670` `VeteranCombat=` when the firer's rank holds FIREPOWER.
     pub rank_firepower: Option<NativeF64Bits>,

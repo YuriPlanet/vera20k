@@ -43,11 +43,7 @@ pub fn is_moving(entity: &GameEntity) -> Option<bool> {
 /// [`super::ready_producer::ready_state_for`] (Drive `0x004AFC20`, Ship,
 /// Walk, Hover `0x00514C80`, Teleport and Jumpjet `0x0054D0D0`). No locomotor
 /// answers false. `rules` gives Drive and Ship the owner's speed getter.
-pub fn is_moving_now(
-    entity: &GameEntity,
-    rules: Option<super::SpeedRules<'_>>,
-    binary_frame: u32,
-) -> bool {
+pub fn is_moving_now(entity: &GameEntity, rules: super::SpeedRules<'_>, binary_frame: u32) -> bool {
     let Some(locomotor) = entity.locomotor.as_ref() else {
         return false;
     };
@@ -69,7 +65,7 @@ pub fn is_moving_now(
 /// caller is the Infantry locomotion action tail (`0x00521161`).
 pub(crate) fn is_really_moving_now(
     entity: &GameEntity,
-    rules: Option<super::SpeedRules<'_>>,
+    rules: super::SpeedRules<'_>,
     binary_frame: u32,
 ) -> bool {
     match entity

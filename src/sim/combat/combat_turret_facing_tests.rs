@@ -17,6 +17,141 @@ use crate::sim::movement::turret::{body_facing_to_turret, facing_update};
 use crate::sim::power_system::PowerState;
 use crate::sim::world::Simulation;
 
+/// Unit736F78..736FAC re-aims a turret on FACING before Facing_Update,
+/// including when +6AF blocks that later routine's ordinary aiming arm.
+/// A retail IFV's homing projectile bypasses the ROTATING refusal.
+#[test]
+fn retail_ifv_retargets_its_turret_during_an_unfinished_turn() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x736f78);
+    sim.session.game_options_mut_for_test().short_game = false;
+    let ifv = sim
+        .spawn_object("FV", "Americans", 12, 12, 0, rules)
+        .unwrap();
+    let first = sim
+        .spawn_object("MTNK", "Russians", 15, 12, 0, rules)
+        .unwrap();
+    let second = sim
+        .spawn_object("MTNK", "Russians", 9, 12, 0, rules)
+        .unwrap();
+    let owner = sim.substrate.entities.get(ifv).unwrap().owner();
+    sim.refresh_object_sight(ifv, rules, 0, crate::sim::world::FrameEffects::default());
+    let actor = sim.substrate.entities.get(ifv).unwrap();
+    let obj = rules.object("FV").unwrap();
+    let weapon = super::combat_weapon::current_weapon(
+        actor,
+        obj,
+        &sim.substrate.entities,
+        rules,
+        &sim.interner,
+    )
+    .unwrap();
+    let projectile = weapon
+        .projectile
+        .as_deref()
+        .and_then(|id| rules.projectile(id))
+        .unwrap();
+    assert!(projectile.rot > 0, "the real selected IFV weapon is homing");
+
+    let advance = |sim: &mut Simulation, order: Option<Command>| {
+        let orders: Vec<_> = order
+            .into_iter()
+            .map(|payload| CommandEnvelope::new(owner, sim.session.tick() + 1, payload))
+            .collect();
+        let grid = sim.path_grid_snapshot();
+        let output = sim.advance_tick(&orders, Some(rules), grid.as_deref(), None, 67);
+        assert!(output.frame_committed, "the ordinary frame advances");
+        output
+    };
+    // Orders execute at the frame tail; the next visit starts the turn.
+    advance(
+        &mut sim,
+        Some(Command::Attack {
+            attacker_id: ifv,
+            target_id: first,
+        }),
+    );
+    advance(&mut sim, None);
+    let actor = sim.substrate.entities.get(ifv).unwrap();
+    let first_aim =
+        crate::sim::movement::turret::facing_toward_target(actor, &TargetKind::Entity(first), &sim)
+            .unwrap();
+    assert_eq!(
+        actor.barrel_facing.as_ref().unwrap().destination(),
+        first_aim
+    );
+    assert!(actor.turret_rotation_latch.is_set());
+    assert!(
+        actor
+            .barrel_facing
+            .as_ref()
+            .unwrap()
+            .is_rotating(sim.session.binary_frame())
+    );
+
+    advance(
+        &mut sim,
+        Some(Command::Attack {
+            attacker_id: ifv,
+            target_id: second,
+        }),
+    );
+    let actor = sim.substrate.entities.get(ifv).unwrap();
+    assert_eq!(
+        actor.attack_target.target(),
+        Some(TargetKind::Entity(second))
+    );
+    assert!(
+        actor.turret_rotation_latch.is_set(),
+        "retargeting did not clear the live latch"
+    );
+    assert!(
+        actor
+            .barrel_facing
+            .as_ref()
+            .unwrap()
+            .is_rotating(sim.session.binary_frame())
+    );
+    let expected = crate::sim::movement::turret::facing_toward_target(
+        actor,
+        &TargetKind::Entity(second),
+        &sim,
+    )
+    .unwrap();
+    assert_ne!(expected, first_aim);
+    assert_eq!(
+        super::fire_error_world::FireSubject {
+            world: &sim,
+            rules,
+            overlay_registry: None,
+            fog: None,
+            firer: actor,
+            obj,
+            target: Some(TargetKind::Entity(second)),
+            weapon_index: 0,
+        }
+        .fire_error(true),
+        super::fire_error::FireError::Facing
+    );
+    advance(&mut sim, None);
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(ifv)
+            .unwrap()
+            .barrel_facing
+            .as_ref()
+            .unwrap()
+            .destination(),
+        expected,
+        "Fire_At_Target re-aims before Facing_Update's latched aiming arm",
+    );
+}
+
 /// Minimal rules with MTNK at the given ROT byte.
 fn rules_with_mtnk_rot(rot: u32) -> RuleSet {
     let ini_str: String = format!(
@@ -173,15 +308,9 @@ fn save_load_round_trip_on_kill_tick() {
         .set_for_test(Some(TargetKind::Entity(2)));
     let toward_target = {
         let e = sim.substrate.entities.get(1).unwrap();
-        facing_update(
-            e,
-            &sim,
-            Some(&rules),
-            &sim.interner,
-            sim.session.binary_frame(),
-        )
-        .turret_destination
-        .expect("turreted")
+        facing_update(e, &sim, &rules, &sim.interner, sim.session.binary_frame())
+            .turret_destination
+            .expect("turreted")
     };
     sim.substrate.entities.get_mut(1).unwrap().barrel_facing =
         Some(FacingClass::new(toward_target, 100));
@@ -385,8 +514,8 @@ TurretAnimIsVoxel={}\n\n\
 /// shot, hull turns, and FacingClass interpolation — turret current and
 /// desired facing and the `+0x6AF` latch, frame for frame, through VERA's
 /// `facing_update` and `apply_unit_facing`. Rows exercising arms VERA does not
-/// model on this path (OmniFire, TurretLocked, a Battle Bunker, Magnetron,
-/// a NavCom, no weapon) are left out, as are
+/// model on this path (OmniFire, TurretLocked, a Battle Bunker, no weapon)
+/// are left out, as are
 /// targets off the map (negative world coordinates), which VERA's cell
 /// positions cannot hold.
 #[test]
@@ -417,18 +546,10 @@ fn turret_cadence_matches_the_original() {
         let int = |key: &str| input[key].as_i64().unwrap_or(0);
         let turret_spins = int("turret_spins") != 0;
         let weapon = &input["weapon"];
-        let navcom_events = input["events"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|event| event["kind"].as_str().unwrap().contains("navcom"));
         if weapon["present"] != 1
             || weapon["omni_fire"] != 0
             || weapon["turret_locked"] != 0
             || int("bunkered") != 0
-            || int("magnetron") != 0
-            || !input["navcom_coord"].is_null()
-            || navcom_events
             || (int("hull_rot") != int("turret_rot") && !turret_spins)
             || off_map(input)
         {
@@ -476,6 +597,13 @@ fn turret_cadence_matches_the_original() {
         unit.turret_rotation_latch
             .set_for_test(int("latch_init") != 0);
         unit.set_unit_simple_deploy_for_test(int("deployed") != 0, false, false);
+        unit.lift.set_swap_active_for_test(int("magnetron") != 0);
+        let mut navcom = GameEntity::test_default(3, "MTNK", "Americans", 0, 0);
+        if !input["navcom_coord"].is_null() {
+            place(&mut navcom, coord(&input["navcom_coord"]));
+            unit.navigation
+                .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::object(3)));
+        }
         let mut target = GameEntity::test_default(2, "GAPILE", "Soviet", 0, 0);
         if !input["target_coord"].is_null() {
             place(&mut target, coord(&input["target_coord"]));
@@ -483,6 +611,7 @@ fn turret_cadence_matches_the_original() {
         }
         sim.substrate.entities.insert(unit);
         sim.substrate.entities.insert(target);
+        sim.substrate.entities.insert(navcom);
         use_test_interner(&mut sim);
         let start = int("start") as u32;
         let events = input["events"].as_array().unwrap();
@@ -508,6 +637,25 @@ fn turret_cadence_matches_the_original() {
                             .attack_target
                             .set_for_test(None);
                     }
+                    "navcom_coord" => {
+                        place(sim.substrate.entities.get_mut(3).unwrap(), coord(value));
+                        sim.substrate
+                            .entities
+                            .get_mut(1)
+                            .unwrap()
+                            .navigation
+                            .set_nav_com_for_test(Some(
+                                crate::sim::components::NavTargetRef::object(3),
+                            ));
+                    }
+                    "clear_navcom" => {
+                        sim.substrate
+                            .entities
+                            .get_mut(1)
+                            .unwrap()
+                            .navigation
+                            .set_nav_com_for_test(None);
+                    }
                     "last_fire" => {
                         sim.substrate
                             .entities
@@ -526,7 +674,7 @@ fn turret_cadence_matches_the_original() {
             let update = facing_update(
                 sim.substrate.entities.get(1).unwrap(),
                 &sim,
-                Some(&rules),
+                &rules,
                 &sim.interner,
                 frame,
             );
@@ -577,6 +725,6 @@ fn turret_cadence_matches_the_original() {
         }
         compared += 1;
     }
-    assert!(compared >= 40, "only {compared} rows compared");
+    assert!(compared >= 52, "only {compared} rows compared");
     assert!(issues.is_empty(), "{}", issues.join("\n"));
 }

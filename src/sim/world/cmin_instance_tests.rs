@@ -4,8 +4,8 @@
 //! The existing CMIN scene supplies the same production setter and pad route.
 //! Only represented fields are compared: constructor padding, opaque words,
 //! COM counts and no-free allocation bytes remain native evidence. Fractions
-//! are compared after the existing SimFixed conversion, including Stop's 0.3
-//! precision difference. These are not native save/load or Ship witnesses.
+//! retain their native binary64 bits, including Stop's promoted-float 0.3.
+//! These are not native save/load or Ship witnesses.
 
 use super::{Scene, cmin_scene, coord, corpus};
 use crate::rules::ini_parser::IniFile;
@@ -20,7 +20,7 @@ use crate::sim::movement::slope_transition::SlopeTransitionState;
 use crate::sim::movement::track_process::TrackFamily;
 use crate::sim::movement::{self, DriveLocomotionRuntime, ground_pose, locomotor_owner};
 use crate::sim::timer::CdTimer;
-use crate::util::fixed_math::SimFixed;
+use crate::util::native_x87::NativeF64Bits;
 use serde_json::Value;
 
 fn integer(value: &Value) -> i32 {
@@ -35,11 +35,11 @@ fn pointer(value: &Value) -> u32 {
     u32::from_str_radix(value.as_str().unwrap().strip_prefix("0x").unwrap(), 16).unwrap()
 }
 
-fn fraction(bits: &Value) -> SimFixed {
+fn fraction(bits: &Value) -> NativeF64Bits {
     let bits = u64::from_str_radix(bits.as_str().unwrap(), 16).unwrap();
     let native = f64::from_bits(bits);
     assert!(native.is_finite());
-    SimFixed::from_num(native)
+    NativeF64Bits::from_bits(bits)
 }
 
 fn nonnull_coord(value: &Value) -> Option<DriveCoord> {
@@ -130,7 +130,7 @@ fn retained(native: &Value) -> DriveLocomotionRuntime {
         .with_track_valid_for_test(byte(&native["flags_60_67"][3]) != 0)
         .with_turn_latched_for_test(byte(&native["flags_60_67"][2]) != 0)
         .with_end_permitted_for_test(byte(&native["flags_60_67"][5]) != 0)
-        .with_target_speed_fraction_for_test(fraction(&native["target_speed_bits"]))
+        .with_target_speed_fraction_native_for_test(fraction(&native["target_speed_bits"]))
 }
 
 fn supply_retained(entity: &mut GameEntity, native: &Value) {
@@ -182,7 +182,7 @@ fn prepare(row: &Value) -> Scene {
     entity.set_on_bridge(byte(&native["on_bridge"]) != 0);
     entity
         .foot_speed
-        .set_speed_fraction(fraction(&native["applied_speed_bits"]));
+        .set_speed_fraction_native_bits(fraction(&native["applied_speed_bits"]).bits());
     entity
         .navigation
         .set_path_replay_for_test(FootPathQueue::for_test(
@@ -249,7 +249,7 @@ fn assert_boundary(scene: &Scene, row: &Value, expected: &Value, context: &str) 
         "{context}: exact Foot XYZ"
     );
     assert_eq!(
-        entity.foot_speed.applied_fraction(),
+        entity.foot_speed.native_applied_fraction(),
         fraction(&foot["applied_speed_bits"]),
         "{context}: independent Foot applied speed"
     );
@@ -518,7 +518,10 @@ fn replay(row: &Value) {
                     .unwrap();
                 let admitted = gate["return_eax"].as_u64().unwrap() & 0xFF != 0;
                 assert_eq!(
-                    scene.sim.try_end_piggyback(scene.miner, None),
+                    scene.sim.try_end_piggyback(
+                        scene.miner,
+                        crate::rules::ruleset::RuleSet::empty_for_test()
+                    ),
                     admitted,
                     "{label}: native END gate"
                 );

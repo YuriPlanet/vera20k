@@ -1,11 +1,24 @@
-//! Decoded LAN/WOL service results. These inputs exercise the original shell
-//! boundaries without implementing transport, file transfer or peers.
+//! Decoded LAN/WOL service results. The LAN transport and controlled captures
+//! share these shell boundaries; this owner applies admission and UI effects.
 
 use super::*;
 use crate::skirmish_launch::{SkirmishLaunchSession, SkirmishLocalSlot};
 use crate::ui::lan_shell::LanChatLine;
 use crate::ui::skirmish_shell::SkirmishValidationModalState;
 use std::time::Instant;
+
+/// A host's full options as `0x005E3D10`'s default (digit-led) arm decodes
+/// them: from the host, or in Quick Match from the matchbot's `Start`
+/// (`[0xB73714]`), which the host applies too (`0x007A6DE2..0x007A6DF3`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HostOptions {
+    pub(crate) launch: SkirmishLaunchSession,
+    pub(crate) map_metadata: crate::app::match_runtime::session::NetworkMapMetadata,
+    pub(crate) vacancies: [NetworkVacancy; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
+    pub(crate) observer_row: Option<u8>,
+    pub(crate) cooperative_difficulty: i32,
+    pub(crate) seed: Option<u32>,
+}
 
 pub(crate) enum NetworkSetupEvent {
     ParticipantJoined(SkirmishHumanSlot),
@@ -26,14 +39,7 @@ pub(crate) enum NetworkSetupEvent {
         index: usize,
         status: u8,
     },
-    HostSetup {
-        launch: SkirmishLaunchSession,
-        map_metadata: crate::app::match_runtime::session::NetworkMapMetadata,
-        vacancies: [NetworkVacancy; 8],
-        observer_row: Option<u8>,
-        cooperative_difficulty: i32,
-        seed: Option<u32>,
-    },
+    HostSetup(HostOptions),
     StartPrompt,
     /// Accepted LAN protocol timing, independent of local input-delay settings.
     Timing {
@@ -45,11 +51,22 @@ pub(crate) enum NetworkSetupEvent {
         reason = "the network transport, outside this change, delivers these packets"
     )]
     CooperativeAssignments(Vec<[[i32; 2]; 8]>),
+    /// The host's `C0` campaign text (packet `0x17` at `+0x2F`).
+    CooperativeCampaign(String),
     HostGo {
         agreed_seed: u32,
         max_ahead_frames: i32,
     },
     GoCompleted,
+    /// Explicit capture input, never emitted by the physical transport.
+    ControlledGoCompleted,
+    /// Type13 from a participant in the host's current GO reply wait.
+    GoAcknowledged {
+        source_index: usize,
+    },
+    GoMapRequested {
+        source_index: usize,
+    },
     MapTransferStarted,
     MapTransferProgress {
         completed: u32,
@@ -87,7 +104,7 @@ pub(crate) enum NetworkSetupEvent {
     /// user list and the ping table `0xB7790C` the timing block reads.
     GameStarted {
         users: Vec<super::WolStartUser>,
-        pings: [i32; 8],
+        pings: Vec<i32>,
     },
     /// WOL Start Game Now's verify `0x7947B0` began; with connection pairs
     /// it checks node 0 (`0x00794809`).
@@ -114,7 +131,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
     // The route stays NetworkSetup until the match returns, but GO's handoff
     // drops the setup protocol: later setup packets have no receiver.
     anyhow::ensure!(
-        state.frontend.shell_route.network_setup()
+        (state.frontend.shell_route.network_setup() || super::quick_match(state))
             && state.frontend.network_setup_protocol.is_some(),
         "no network setup is active"
     );
@@ -128,6 +145,9 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 NetworkSetupEvent::Timing { .. }
                     | NetworkSetupEvent::HostGo { .. }
                     | NetworkSetupEvent::GoCompleted
+                    | NetworkSetupEvent::ControlledGoCompleted
+                    | NetworkSetupEvent::GoAcknowledged { .. }
+                    | NetworkSetupEvent::GoMapRequested { .. }
                     | NetworkSetupEvent::MapTransferStarted
                     | NetworkSetupEvent::MapTransferProgress { .. }
                     | NetworkSetupEvent::MapTransferFinished { .. }
@@ -162,9 +182,25 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .and_then(|rules| rules.general.player_joined_sound())
                 .map(str::to_owned);
             App::play_shell_ui_sound_by_id(state, sound.as_deref());
+            let quick_match = super::quick_match(state);
+            if dialog.host && quick_match {
+                // 0x007A6DC2..0x007A6E50: modes 1/2 parse the matchbot's
+                // Start payload [0xB73714] (0x5E3D10) and select its
+                // scenario.
+                match crate::app::shell_wol::quick_match::start_options(state) {
+                    Some(options) => service_event(state, NetworkSetupEvent::HostSetup(options))?,
+                    None => log::warn!("WOL Quick Match host has no matchbot options"),
+                }
+            }
+            if dialog.host {
+                // 0x7A6E5A: 0x5E2FA0, the mode's +94 (Cooperative's C0)
+                // before the observer row, names and options.
+                super::cooperative::guest_joined(state)?;
+            }
             if dialog.host {
                 // 0x7A6E7D..9E: observer row, slot names, options, pings,
-                // then the refreshed advertisement.
+                // then the refreshed advertisement (0x78F000, skipped in
+                // modes 1-3 at 0x7A6B0D).
                 let row = state
                     .match_state
                     .session
@@ -180,11 +216,17 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     NetworkSetupRequest::PublishRoster,
                     NetworkSetupRequest::PublishOptions,
                     NetworkSetupRequest::RequestPings,
-                    NetworkSetupRequest::Advertise,
                 ]);
+                if !quick_match {
+                    protocol.requests.push(NetworkSetupRequest::Advertise);
+                }
             }
         }
-        NetworkSetupEvent::ParticipantJoined(human) => {
+        NetworkSetupEvent::ParticipantJoined(mut human) => {
+            if dialog.host {
+                // 0x5E1945..0x5E1973: the mode's +1C/+28 country check.
+                super::cooperative::admit_join_country(state, &mut human.slot);
+            }
             state.match_state.session.add_network_participant(human)?;
             // Type3 admission5E0770 and accepted host type6 at5E1B32.
             // This adapter is the admitted setup (membership>=2); repeated
@@ -194,6 +236,17 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .and_then(|rules| rules.general.player_joined_sound())
                 .map(str::to_owned);
             App::play_shell_ui_sound_by_id(state, sound.as_deref());
+            if dialog.host {
+                // 0x5E1B5A..0x5E1BF2: the options, the 0x16 roster to every
+                // guest, then 0x5E2FA0's mode +94.
+                let protocol = state
+                    .frontend
+                    .network_setup_protocol
+                    .as_mut()
+                    .expect("setup owns protocol");
+                protocol.republish_setup();
+                super::cooperative::guest_joined(state)?;
+            }
         }
         NetworkSetupEvent::ParticipantLeft { index } => {
             state
@@ -203,7 +256,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             if dialog.wol() {
                 // The part sink 0x785740 played PlayerLeft and clears the
                 // acceptances itself (super::wol::user_left).
-                clear_cooperative_partners(state);
+                super::cooperative::guest_left(state)?;
                 state.platform.window.request_redraw();
                 return Ok(());
             }
@@ -217,7 +270,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .and_then(|rules| rules.general.player_left_sound())
                 .map(str::to_owned);
             App::play_shell_ui_sound_by_id(state, sound.as_deref());
-            clear_cooperative_partners(state);
+            super::cooperative::guest_left(state)?;
         }
         NetworkSetupEvent::PlayerChoices {
             index,
@@ -226,10 +279,14 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         } => {
             // Cooperative's mode +0x1C (0x5C17B0) admits its campaign's
             // countries; the other modes' (0x5D67A0) admit any.
-            let countries = state
-                .frontend
-                .multiplayer_shell_runtime
-                .cooperative_player_countries();
+            let countries = super::cooperative::current(state)
+                .then(|| {
+                    state
+                        .frontend
+                        .multiplayer_shell_runtime
+                        .cooperative_player_countries()
+                })
+                .flatten();
             let change = state.match_state.session.accept_network_peer_choices(
                 index,
                 choices,
@@ -308,14 +365,14 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 );
             }
         }
-        NetworkSetupEvent::HostSetup {
+        NetworkSetupEvent::HostSetup(HostOptions {
             launch,
             map_metadata,
             vacancies,
             observer_row,
             cooperative_difficulty,
             seed,
-        } => {
+        }) => {
             // 0x5E3E73..0x5E3E90: a WOL parse drops every option text while
             // the game runs ([0xB77DC1]) or a StartGame is pending ([0xB77E28]).
             if dialog.wol()
@@ -323,12 +380,34 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
             {
                 return Ok(());
             }
+            // Only a Quick Match host parses options it did not author.
+            let quick_match = super::quick_match(state);
+            anyhow::ensure!(
+                !dialog.host || quick_match,
+                "a host cannot receive guest-authored host setup"
+            );
+            if let Some(file) = launch.selected_map_file.as_deref()
+                && let Err(error) = crate::map::source::validate_network_map_name(file)
+            {
+                fail_go_handoff(state);
+                return Err(error);
+            }
             let before = state
                 .match_state
                 .session
                 .network_setup()
                 .ok_or_else(|| anyhow::anyhow!("no admitted setup"))?
                 .clone();
+            // 0x5E5411..0x5E541D: the current mode's +24 on every parse.
+            if super::cooperative::current(state) {
+                state
+                    .frontend
+                    .multiplayer_shell_runtime
+                    .cooperative_parts()
+                    .progress
+                    .request_refresh();
+            }
+            let mode_changed = before.mode.id != launch.mode.id;
             let map_changed = state
                 .match_state
                 .session
@@ -385,12 +464,17 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 vacancies,
                 map_metadata.player_capacity,
                 observer_row,
+                quick_match,
             )?;
             state.match_state.session.accept_network_map_metadata(
                 map_metadata,
                 local_map.as_deref(),
                 map_changed,
             )?;
+            // 0x5E542B..0x5E5466: a changed mode's +9C/+20, then +7C.
+            if mode_changed {
+                super::cooperative::mode_entered(state)?;
+            }
             if let Some(admission) = map_admission {
                 apply_local_map_admission(state, admission)?;
             }
@@ -404,7 +488,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     .network_setup_protocol
                     .as_mut()
                     .expect("setup owns protocol");
-                protocol.received_preview = None;
+                protocol.invalidate_received_preview(map_changed);
                 // Native's receive blocks until it ends, so a file still in
                 // flight belongs to the map before this change.
                 protocol.awaiting_preview_file = false;
@@ -414,7 +498,8 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     protocol.requests.push(NetworkSetupRequest::RequestPreview);
                 }
             }
-            if dialog.wol() && !dialog.host {
+            // 0x007A7F72: modes 1-3 skip the guest's preview handling.
+            if dialog.wol() && !dialog.host && !quick_match {
                 super::wol::options_preview(state, map_changed);
             }
             // Full options5E5AAB updates persistent Color for the local name,
@@ -460,6 +545,9 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 invalidate_local_acceptance(state)?;
             }
             state.frontend.skirmish_preview_texture = None;
+            if dialog.wol() && !dialog.host && quick_match {
+                super::wol::quick_match_accept(state);
+            }
         }
         NetworkSetupEvent::StartPrompt => {
             let index = state
@@ -547,6 +635,7 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 .as_mut()
                 .expect("setup owns protocol");
             protocol.locked = true;
+            protocol.lan_go = Some(LanGoWait::GuestPreparing);
             protocol
                 .requests
                 .push(NetworkSetupRequest::PrepareMapForHandoff {
@@ -554,7 +643,48 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                 });
             state.frontend.skirmish_preview_texture = None;
         }
+        NetworkSetupEvent::GoAcknowledged { source_index } => {
+            anyhow::ensure!(
+                dialog.host && !dialog.wol(),
+                "GO reply has no LAN host receiver"
+            );
+            let protocol = state
+                .frontend
+                .network_setup_protocol
+                .as_mut()
+                .expect("setup");
+            if let Some(phase) = protocol.lan_go.as_mut() {
+                phase.acknowledge(source_index);
+            }
+        }
+        NetworkSetupEvent::GoMapRequested { source_index } => {
+            let required = state
+                .frontend
+                .network_setup_protocol
+                .as_ref()
+                .and_then(|protocol| protocol.lan_go.as_ref())
+                .is_some_and(|phase| {
+                    matches!(phase, LanGoWait::HostReplies { pending, .. }
+                    if pending.contains(&source_index))
+                });
+            if required {
+                // Native5DD6F8 records a file requester. This bounded local-map
+                // path cannot serve that file; retain an explicit failure.
+                fail_go_handoff(state);
+            }
+        }
         NetworkSetupEvent::GoCompleted => {
+            anyhow::ensure!(
+                state
+                    .frontend
+                    .network_setup_protocol
+                    .as_ref()
+                    .is_some_and(|protocol| matches!(protocol.lan_go, Some(LanGoWait::Complete))),
+                "physical GO completion preceded its native wait"
+            );
+            finish_go(state)?;
+        }
+        NetworkSetupEvent::ControlledGoCompleted => {
             prepare_local_map_for_handoff(state)?;
             finish_go(state)?;
         }
@@ -609,6 +739,9 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
         }
         NetworkSetupEvent::PreviewFileReceived { transferred_file } => {
             preview_file_received(state, transferred_file)?;
+        }
+        NetworkSetupEvent::CooperativeCampaign(text) => {
+            super::cooperative::campaign_received(state, &text)?;
         }
         NetworkSetupEvent::StartStaging(text) => {
             // The 'W' arm is not gated on role or map type; a string short
@@ -697,30 +830,23 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
                     }
                 }
             } else {
-                let message =
-                    App::csf_label(state, "TXT_UNABLE_PLAY_WAAUGH", "TXT_UNABLE_PLAY_WAAUGH");
-                let ok = App::csf_label(state, "TXT_OK", "OK");
-                state
-                    .frontend
-                    .multiplayer_setup
-                    .as_mut()
-                    .expect("setup interaction")
-                    .notice = Some(SkirmishValidationModalState::new(message, ok));
-                let protocol = state
-                    .frontend
-                    .network_setup_protocol
-                    .as_mut()
-                    .expect("setup owns protocol");
-                protocol.return_after_notice = true;
-                protocol.go_deadline = None;
-                state
-                    .frontend
-                    .shell_controller
-                    .push(crate::ui::shell::descriptor::DialogId(0xCE), true);
+                fail_go_handoff(state);
             }
         }
         NetworkSetupEvent::HostLeft => {
-            clear_cooperative_partners(state);
+            // The setup closes: only Cooperative +0x90's last step, the
+            // names, matters.
+            if state
+                .match_state
+                .session
+                .network_setup()
+                .is_some_and(|launch| launch.mode.class.uses_cooperative_setup())
+            {
+                state
+                    .frontend
+                    .multiplayer_shell_runtime
+                    .clear_network_cooperative_partners();
+            }
             App::leave_shell_dialog(
                 state,
                 shell_transition::ShellExitThen::NetworkSetupBack(dialog),
@@ -750,6 +876,65 @@ pub(crate) fn service_event(state: &mut AppState, event: NetworkSetupEvent) -> a
     Ok(())
 }
 
+/// Verify through the existing map owner before the transport queues Type13.
+/// A missing or mismatched map is not a successful local handoff.
+pub(crate) fn prepare_lan_guest_handoff(state: &mut AppState) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        state
+            .frontend
+            .network_setup_protocol
+            .as_ref()
+            .is_some_and(|protocol| matches!(protocol.lan_go, Some(LanGoWait::GuestPreparing))),
+        "no guest GO map preparation is pending"
+    );
+    if let Err(error) = prepare_local_map_for_handoff(state) {
+        fail_go_handoff(state);
+        return Err(error);
+    }
+    state
+        .frontend
+        .network_setup_protocol
+        .as_mut()
+        .expect("checked setup")
+        .lan_go = Some(LanGoWait::GuestSending);
+    Ok(())
+}
+
+pub(crate) fn fail_go_handoff(state: &mut AppState) {
+    if state
+        .frontend
+        .network_setup_protocol
+        .as_ref()
+        .is_some_and(|protocol| {
+            matches!(
+                protocol.lan_go,
+                Some(LanGoWait::Failed | LanGoWait::HandingOff)
+            )
+        })
+    {
+        return;
+    }
+    let message = App::csf_label(state, "TXT_UNABLE_PLAY_WAAUGH", "TXT_UNABLE_PLAY_WAAUGH");
+    let ok = App::csf_label(state, "TXT_OK", "OK");
+    state
+        .frontend
+        .multiplayer_setup
+        .as_mut()
+        .expect("setup interaction")
+        .notice = Some(SkirmishValidationModalState::new(message, ok));
+    let protocol = state
+        .frontend
+        .network_setup_protocol
+        .as_mut()
+        .expect("setup owner");
+    protocol.return_after_notice = true;
+    protocol.lan_go = Some(LanGoWait::Failed);
+    state
+        .frontend
+        .shell_controller
+        .push(crate::ui::shell::descriptor::DialogId(0xCE), true);
+}
+
 fn prepare_local_map_for_handoff(state: &mut AppState) -> anyhow::Result<()> {
     // DD8A0 calls6951F0 again after GO, independently of the setup's earlier
     // title/K probe. Only this successful local-file path canonicalizes the
@@ -763,6 +948,40 @@ fn prepare_local_map_for_handoff(state: &mut AppState) -> anyhow::Result<()> {
         .network_setup()
         .and_then(|launch| launch.selected_map_file.as_deref())
         .ok_or_else(|| anyhow::anyhow!("map preparation requires a selected map"))?;
+    // VERA prefetches through the same verified source/preview owners while
+    // setup is editable. DD8A0's post-GO local-file probe must not reject bytes
+    // already received and admitted before GO; keep the logical scenario name
+    // and retained physical source used by freeze_network_start/the loader.
+    if let Some(source) = session.network_local_map_source() {
+        let metadata = session
+            .network_map_metadata()
+            .ok_or_else(|| anyhow::anyhow!("map preparation requires host metadata"))?;
+        anyhow::ensure!(
+            source.physical_identity()
+                == Some((
+                    usize::try_from(metadata.byte_length)?,
+                    metadata.source_sha256.as_str()
+                ))
+                && session.network_local_map_effective_digest()
+                    == Some(metadata.effective_digest.as_str()),
+            "retained map source differs from accepted options"
+        );
+        if crate::map::rmg::is_seed_selection(file) {
+            anyhow::ensure!(
+                session.network_random_map_preview().is_some(),
+                "generated map preview has not been verified"
+            );
+            super::maps::checked_staging(
+                &state
+                    .frontend
+                    .multiplayer_shell_runtime
+                    .start_staging()
+                    .to_w_text(),
+                metadata.player_capacity,
+            )?;
+        }
+        return Ok(());
+    }
     // 0x006951F0 always fails for RandMap.Sed (0x0069520A), so a random map
     // is always transferred and never completes GO from a local file.
     anyhow::ensure!(
@@ -990,10 +1209,17 @@ fn preview_file_received(
         .ok()
         .and_then(|bytes| crate::map::preview::preview_bin_blob(&bytes))
         .and_then(|blob| crate::map::preview::paletted_preview_image(&blob));
-    let Some(mut image) = image else {
+    let Some(image) = image else {
         log::warn!("LAN preview {} did not decode", path.display());
         return Ok(());
     };
+    install_received_preview_image(state, image)
+}
+
+pub(super) fn install_received_preview_image(
+    state: &mut AppState,
+    mut image: crate::map::preview::DecodedPreview,
+) -> anyhow::Result<()> {
     // CreatePreviewSurface writes the colours into the 16-bit surface.
     let format = crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION;
     for pixel in image.rgba.as_chunks_mut::<4>().0 {
@@ -1005,6 +1231,7 @@ fn preview_file_received(
         .network_setup_protocol
         .as_mut()
         .expect("setup owns protocol");
+    protocol.accept_preview_bounds(None);
     protocol.received_preview_count += 1;
     protocol.received_preview = Some((protocol.received_preview_count, image));
     state.platform.window.request_redraw();
@@ -1058,20 +1285,37 @@ fn apply_local_map_admission(
     Ok(())
 }
 
-fn clear_cooperative_partners(state: &mut AppState) {
-    // Accepted type10 departure5E1235 invokes mode+90. Ordinary modes are
-    // no-ops; Cooperative5C3F80 clears49B760's retained partner buffers.
-    if state
+/// Verified map prefetch uses the editable lobby's existing progress owner
+/// before either LAN GO or WOL negotiation starts.
+pub(crate) fn set_network_map_progress(state: &mut AppState, progress: Option<(u32, u32)>) {
+    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+        protocol.transfer_progress = progress;
+        if progress.is_some() && !state.match_state.session.host() {
+            protocol.accept_eligible = false;
+        }
+    }
+    state.platform.window.request_redraw();
+}
+
+pub(crate) fn accept_network_map_source(
+    state: &mut AppState,
+    source: crate::map::source::LoadedMapSource,
+    effective_digest: String,
+) -> anyhow::Result<()> {
+    state
         .match_state
         .session
-        .network_setup()
-        .is_some_and(|launch| launch.mode.class.uses_cooperative_setup())
-    {
-        state
-            .frontend
-            .multiplayer_shell_runtime
-            .clear_network_cooperative_partners();
-    }
+        .accept_verified_network_map_source(source, effective_digest)?;
+    let protocol = state
+        .frontend
+        .network_setup_protocol
+        .as_mut()
+        .ok_or_else(|| anyhow::anyhow!("no editable network setup"))?;
+    protocol.accept_verified_map_source();
+    apply_local_map_admission(
+        state,
+        crate::app::match_runtime::session::NetworkMapAdmission::Present,
+    )
 }
 
 fn finish_go(state: &mut AppState) -> anyhow::Result<()> {
@@ -1089,7 +1333,8 @@ fn finish_go(state: &mut AppState) -> anyhow::Result<()> {
         .as_mut()
         .ok_or_else(|| anyhow::anyhow!("no setup protocol"))?;
     anyhow::ensure!(protocol.locked, "no accepted GO is pending");
-    protocol.go_deadline = None;
+    // Keep dequeue deferred until the transition removes this protocol.
+    protocol.lan_go = Some(LanGoWait::HandingOff);
     protocol.map_transfer_pending = false;
     protocol.transfer_progress = None;
     let seed = state
@@ -1104,6 +1349,31 @@ fn finish_go(state: &mut AppState) -> anyhow::Result<()> {
             agreed_seed: seed,
         },
     );
+    Ok(())
+}
+
+/// Apply an authoritative revision through the same admission/protocol owners as
+/// native unacceptance. Existing map-transfer eligibility remains decisive.
+pub(crate) fn invalidate_network_agreement(state: &mut AppState) -> anyhow::Result<()> {
+    state.match_state.session.invalidate_network_agreement()?;
+    let local_map = state
+        .match_state
+        .session
+        .network_setup()
+        .and_then(|launch| {
+            state
+                .match_state
+                .session
+                .network_map_status(launch.local_player_index)
+        });
+    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+        protocol.start_requested = false;
+        protocol.accept_eligible = local_map == Some(1) && protocol.transfer_progress.is_none();
+        protocol
+            .requests
+            .retain(|request| !matches!(request, NetworkSetupRequest::Ready(_)));
+    }
+    state.platform.window.request_redraw();
     Ok(())
 }
 
@@ -1189,19 +1459,39 @@ fn poll_preview_offer(state: &mut AppState) -> Option<Instant> {
 }
 
 fn poll_go(state: &mut AppState) -> Option<Instant> {
-    let protocol = state.frontend.network_setup_protocol.as_ref()?;
-    let deadline = protocol.go_deadline?;
-    if protocol.map_transfer_pending {
-        return None;
-    }
-    if Instant::now() >= deadline {
-        if let Err(error) = finish_go(state) {
-            // The start cannot proceed; leave like a failed network start.
-            log::error!("LAN GO completion refused: {error:#}");
-            super::commit_back(state);
-        }
-        None
-    } else {
-        Some(deadline)
-    }
+    let phase = state
+        .frontend
+        .network_setup_protocol
+        .as_ref()?
+        .lan_go
+        .as_ref()?;
+    let now = super::super::match_runtime::frame_pacer::frame_bucket(
+        super::super::match_runtime::frame_pacer::wall_clock_ms(),
+    );
+    let buckets = match phase {
+        LanGoWait::HostReplies { timer, .. } => timer.remaining(now),
+        LanGoWait::HostSending { .. }
+        | LanGoWait::HostDrain { .. }
+        | LanGoWait::GuestPreparing
+        | LanGoWait::GuestSending
+        | LanGoWait::GuestDrain => 1,
+        LanGoWait::Complete | LanGoWait::HandingOff | LanGoWait::Failed => return None,
+    };
+    // Scheduling is a derived view; only transport observations advance GO.
+    Some(Instant::now() + std::time::Duration::from_millis(u64::from(buckets) * 16))
+}
+
+/// Verified RandMap.img keeps the existing preview surface owner. Its local
+/// path is retained separately from the shared logical scenario name.
+pub(crate) fn accept_network_random_map_preview(
+    state: &mut AppState,
+    seed_digest: &str,
+    source: crate::map::source::LoadedMapSource,
+    image: crate::map::preview::DecodedPreview,
+) -> anyhow::Result<()> {
+    state
+        .match_state
+        .session
+        .accept_network_random_map_preview(seed_digest, source)?;
+    install_received_preview_image(state, image)
 }

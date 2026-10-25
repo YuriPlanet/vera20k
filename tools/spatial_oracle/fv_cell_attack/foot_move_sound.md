@@ -11,8 +11,8 @@ The fixture binds unchanged physical SQD data through original readers:
 INI. The inherited naval fixture's other selected prerequisites retain their
 declared XShrapnel input boundary. `SOUNDMD.INI` is fixed, with the original
 SoundList keys for `SquidMove` and `GenLargeWaterDie`. Registry indices are local
-to this subset; retained names identify the sounds. The metadata and payload
-pin the executable, imported Python sources and every physical input read.
+to this subset; retained names identify the sounds. The payload pins every
+physical input read.
 
 ## Executed boundaries
 

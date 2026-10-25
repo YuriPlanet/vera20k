@@ -13,11 +13,9 @@
 //! - Infantry actions and completion use the single Doing/Stage owner in
 //!   `movement::infantry_action`; this fear receiver requests actions without
 //!   advancing or copying that clock.
-//! - **The one-in-three voice comment** on the second fidget. It draws from the
-//!   process-global stream, not the scenario one — its gate is local-player-only
-//!   and therefore client-dependent, which is exactly why it cannot sit on the
-//!   lockstep stream. Not drawn here, so it cannot disturb the scenario cursor.
-//!   Needs the audio seam. Frequency: roughly one idle turn in nine, audio only.
+//! - The second fidget's one-in-three `VoiceComment=` draws on Main, not the
+//!   Scenario stream: its gate is local-player-only and therefore
+//!   client-dependent ([`crate::sim::world::Simulation::infantry_idle_comment`]).
 //! - The idle NULL-source Scatter (`51D0D0`, from the panic and roll-8 arms)
 //!   drops the owner's bridge-state answer: none of the three native callers
 //!   reads the idle result, and a Guard/AreaGuard/Hunt civilian's first Walk
@@ -424,9 +422,8 @@ enum IdleAction {
     Nothing,
     /// Rolls 3, 4, 5 — the first fidget.
     Fidget1,
-    /// Rolls 1, 2, 7 — the second fidget. gamemd also rolls a one-in-three
-    /// voice comment here for a local-player-owned man; that draw comes off the
-    /// process-global stream and is not modelled (see the module residual).
+    /// Rolls 1, 2, 7 — the second fidget, followed by the one-in-three
+    /// voice comment ([`crate::sim::world::Simulation::infantry_idle_comment`]).
     Fidget2,
     /// Rolls 6, 8, 9, 10 — turn to a random facing.
     TurnInPlace,
@@ -577,6 +574,9 @@ impl crate::sim::world::Simulation {
                 //51CEEA/51CF4C pass action9/10, force0, random-stage0 for
                 // every Infantry class, including ordinary ground E1.
                 let _accepted = self.infantry_do_action(id, action, false, rules, effects)?;
+                if action == crate::sim::movement::infantry_action::DO_IDLE2 {
+                    self.infantry_idle_comment(id, rules, effects);
+                }
             }
             IdleTurn::NullSourceScatter => {
                 // vt+0x174 Scatter(NullCoord 0xA8F200, forced 1, no-kidding
@@ -594,6 +594,41 @@ impl crate::sim::world::Simulation {
             IdleTurn::Spent => {}
         }
         Ok(true)
+    }
+
+    /// `0x0051CF52..0x0051CFCB`, after the second fidget's Do_Action: an
+    /// unselected (`+0x83`) man of a `HouseClass::IsHumanPlayer @ 0x0050B6F0`
+    /// house whose type has a `VoiceComment=` takes one Main
+    /// `RandomRanged(0, 2)` (`0x0051CF90`) and on 0 plays the first comment at
+    /// his Location (`VocClass::PlayAt @ 0x007509E0`).
+    pub(crate) fn infantry_idle_comment(
+        &mut self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(actor) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if actor.selection.is_selected() || !self.house_is_human_player(actor.owner()) {
+            return;
+        }
+        let Some(comment) = self
+            .object_type(actor.type_ref(), rules)
+            .and_then(|object| object.voice_comment.first())
+        else {
+            return;
+        };
+        if self.main_rng.next_range_i32_inclusive(0, 2) != 0 {
+            return;
+        }
+        let event = crate::sim::world::SimSoundEvent::voc_at_location(
+            comment.clone(),
+            actor,
+            self.resolved_terrain.as_ref(),
+        );
+        self.sound_events.emit(event);
+        effects.flush_sound(self, rules);
     }
 }
 
@@ -1237,6 +1272,75 @@ mod tests {
         };
         assert!((rx, ry) != (10, 10) && rx.abs_diff(10) <= 1 && ry.abs_diff(10) <= 1);
         assert_eq!(run("Americans").2, None);
+    }
+
+    /// `0x0051CF52..0x0051CFCB`: after the second fidget, a human player's man
+    /// whose type reads `VoiceComment=` (`0x00524193`) takes one Main
+    /// `RandomRanged(0, 2)` and on 0 plays the first comment; a computer's man
+    /// draws nothing.
+    #[test]
+    fn second_fidget_draws_main_for_a_human_players_voice_comment() {
+        use crate::rules::sound_ini::SoundRegistry;
+        use crate::sim::movement::infantry_action::DO_READY;
+        use crate::sim::rng::SimRng;
+        let Some(mut rules) = retail_e1_rules() else {
+            return;
+        };
+        let sounds = SoundRegistry::from_ini(&IniFile::from_str("[SoundList]\n0=Hi\n1=Bye\n"));
+        rules
+            .bind_type_sound_references(&IniFile::from_str("[E1]\nVoiceComment=Hi,Bye\n"), &sounds);
+        assert_eq!(rules.object("E1").unwrap().voice_comment, ["Hi", "Bye"]);
+        // A Scenario seed whose idle roll (after the wait draw) is fidget 2.
+        let scenario_seed = (0..64)
+            .find(|&seed| {
+                let mut rng = SimRng::new(seed);
+                rng.next_range_u32_inclusive(0, IDLE_WAIT_FRACTION_MAX);
+                let roll = rng.next_range_u32_inclusive(0, IDLE_ROLL_MAX);
+                idle_action_for_roll(roll) == IdleAction::Fidget2
+            })
+            .unwrap();
+        // The Main cursor before the turn, Main after it, and the comments.
+        let run = |owner: &str, arena_seed: u64| {
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, arena_seed);
+            let man = sim.spawn_object("E1", owner, 10, 10, 0, &rules).unwrap();
+            let frame = sim.session.binary_frame();
+            let actor = sim.substrate.entities.get_mut(man).unwrap();
+            actor
+                .mission_leaf
+                .set_infantry_doing_verified(DO_READY)
+                .unwrap();
+            actor.infantry.as_mut().unwrap().idle_action_timer =
+                crate::sim::mission::MissionTimer::armed(frame, 0);
+            sim.scenario_rng = SimRng::new(scenario_seed);
+            sim.sound_events.clear_for_test();
+            let before = sim.main_rng.snapshot_for_test();
+            assert!(
+                sim.infantry_idle_action(man, &rules, None, Default::default())
+                    .unwrap()
+            );
+            let comments: Vec<String> = sim
+                .sound_events
+                .iter()
+                .filter_map(|event| match event {
+                    crate::sim::world::SimSoundEvent::VocAt { sound_id, .. } => {
+                        Some(sound_id.clone())
+                    }
+                    _ => None,
+                })
+                .collect();
+            (before, sim.main_rng.state(), comments)
+        };
+        // An arena whose Main draw comes out 0, so the comment plays.
+        let (mut before, after, comments) = (0..64)
+            .map(|arena_seed| run("Americans", arena_seed))
+            .find(|(before, ..)| before.clone().next_range_i32_inclusive(0, 2) == 0)
+            .unwrap();
+        before.next_range_i32_inclusive(0, 2);
+        assert_eq!(after, before.state(), "exactly one Main RandomRanged(0, 2)");
+        assert_eq!(comments, ["Hi"]);
+        let (before, after, comments) = run("Russians", 0);
+        assert_eq!(after, before.state(), "no Main draw");
+        assert!(comments.is_empty());
     }
 
     /// Full original51CDB0 + actual75AB30 + original51D6F0 on the physical

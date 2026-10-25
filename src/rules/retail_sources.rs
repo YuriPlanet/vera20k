@@ -5,15 +5,20 @@
 //! describe exactly the consumed buffer, including loose-file winners.
 use std::sync::Arc;
 
-use crate::assets::asset_manager::AssetManager;
+use crate::assets::asset_manager::{AssetManager, AssetResolutionRef};
+use crate::assets::error::AssetError;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_parser::directives::{
     DirectiveDiagnostic, DirectiveOptions, include_identity, process_directives,
 };
+use crate::rules::personal_rules::PersonalRules;
 use crate::rules::process_owner::NativeRulesProcessOwner;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
 use crate::util::sha256::sha256_hex;
+
+const MAX_INCLUDED_SOURCE_BYTES: usize = 32 * 1024 * 1024;
+const INCLUDE_BYTES_EXCEEDED: &str = "INI included sources exceed the 32 MiB expansion budget";
 
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct IniSourceIdentity {
@@ -72,6 +77,8 @@ pub(crate) fn expand_ini_with_assets(
     String,
 > {
     let mut included_sources = Vec::new();
+    let mut included_bytes = 0usize;
+    let mut exceeded_budget = false;
     let expanded = process_directives(
         ini,
         name,
@@ -79,19 +86,33 @@ pub(crate) fn expand_ini_with_assets(
             // All references share the production VFS root; do not rebase on the
             // including document's host directory or open arbitrary host paths.
             let logical = include_identity(reference);
-            let Some(resolved) = assets.resolve_ref(&logical) else {
-                return Ok(None);
+            let remaining = MAX_INCLUDED_SOURCE_BYTES - included_bytes;
+            let resolved = match assets.resolve_ref_bounded(&logical, remaining) {
+                Ok(Some(resolved)) => resolved,
+                Ok(None) => return Ok(None),
+                Err(AssetError::ReadLimitExceeded { .. }) => {
+                    exceeded_budget = true;
+                    return Err(INCLUDE_BYTES_EXCEEDED.into());
+                }
+                Err(error) => return Err(error.to_string()),
             };
             if resolved.bytes.is_empty() {
                 return Ok(None);
             }
-            let child = select_physical_ini(assets, &logical)?;
+            // Charge every physical read, including repeated DAG references,
+            // before parsing. Resolution enforces the remaining budget before
+            // reading or retaining the first loose snapshot, not afterwards.
+            included_bytes += resolved.bytes.len();
+            let child = parse_physical_ini(&logical, resolved)?;
             included_sources.push(child.source);
             Ok(Some(child.ini))
         },
         options,
-    )
-    .map_err(|error| error.to_string())?;
+    );
+    if exceeded_budget {
+        return Err(INCLUDE_BYTES_EXCEEDED.into());
+    }
+    let expanded = expanded.map_err(|error| error.to_string())?;
     for diagnostic in &expanded.diagnostics {
         log::warn!("INI directive: {diagnostic}");
     }
@@ -102,6 +123,10 @@ fn select_physical_ini(assets: &AssetManager, name: &str) -> Result<SelectedIni,
     let selected = assets
         .resolve_ref(name)
         .ok_or_else(|| format!("retail INI {name} is unavailable"))?;
+    parse_physical_ini(name, selected)
+}
+
+fn parse_physical_ini(name: &str, selected: AssetResolutionRef<'_>) -> Result<SelectedIni, String> {
     log::info!(
         "Loading {name} ({} bytes) from {}",
         selected.bytes.len(),
@@ -157,6 +182,7 @@ pub struct RetailRulesSources {
     pub rulesmd: SelectedIni,
     pub langrule: Option<SelectedIni>,
     pub artmd: SelectedIni,
+    personal_rules: PersonalRules,
 }
 
 impl RetailRulesSources {
@@ -168,7 +194,19 @@ impl RetailRulesSources {
             rulesmd,
             langrule,
             artmd,
+            personal_rules: PersonalRules::default(),
         })
+    }
+
+    /// VERA-only source composition; physical source identities remain intact.
+    /// No extra native Rules pass is introduced by a personal override.
+    pub fn with_personal_rules(mut self, personal_rules: PersonalRules) -> Self {
+        personal_rules.apply_root(&mut self.rulesmd.ini);
+        if let Some(langrule) = self.langrule.as_mut() {
+            personal_rules.apply_base_layer(&mut langrule.ini);
+        }
+        self.personal_rules = personal_rules;
+        self
     }
 
     /// The cold-started native Rules authority alone, without the shell
@@ -188,6 +226,7 @@ impl RetailRulesSources {
                 self.rulesmd.source.logical_name,
                 self.artmd.source.logical_name,
             ],
+            self.personal_rules,
         )
         .map_err(|error| format!("Native rules cold startup failed: {error}"))
     }
@@ -266,6 +305,41 @@ mod ini_root_tests;
 mod tests {
     use super::*;
     use crate::map::source::test_support::TestDirectory;
+
+    #[test]
+    fn include_byte_limit_refuses_sparse_source_before_retaining_a_snapshot() {
+        let directory = TestDirectory::new("include-sparse-limit");
+        directory.write("root.ini", b"[#include]\n0=child.ini\n");
+        let child = directory.path().join("child.ini");
+        let sparse = std::fs::File::create(&child).unwrap();
+        sparse.set_len(32 * 1024 * 1024 + 1).unwrap();
+        drop(sparse);
+        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        let error = select_ini_with_options(&assets, "root.ini", DirectiveOptions::default())
+            .err()
+            .expect("even non-strict traversal must refuse an over-budget source");
+        assert!(error.contains("32 MiB expansion budget"));
+
+        // Refusal must leave the lazy source untouched. Retrying through the
+        // same manager after shrinking the physical file consumes its new bytes.
+        let bytes = b"[Unit]\nValue=bounded\n";
+        std::fs::write(child, bytes).unwrap();
+        let selected =
+            select_ini_with_options(&assets, "root.ini", DirectiveOptions::default()).unwrap();
+        assert_eq!(selected.included_sources.len(), 1);
+        assert_eq!(selected.included_sources[0].payload_len, bytes.len());
+        assert_eq!(
+            selected.included_sources[0].source_sha256,
+            sha256_hex(bytes)
+        );
+        assert_eq!(
+            selected
+                .ini
+                .section_or_empty("Unit")
+                .read_string("Value", "", 32),
+            "bounded"
+        );
+    }
 
     #[test]
     fn selected_sources_hash_consumed_bytes_and_survive_disk_changes() {

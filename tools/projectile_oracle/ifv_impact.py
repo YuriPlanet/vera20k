@@ -9,7 +9,7 @@ from collections import deque
 from unicorn import UC_HOOK_CODE,UC_HOOK_MEM_INVALID
 from unicorn.x86_const import *
 from capstone import Cs,CS_ARCH_X86,CS_MODE_32
-from tools.native_oracle import NATIVE_SHA256,RET_MAGIC,run_checked,finish_vectors,provenance,initialize_empty_windows_seh,checked_is_bad_read_ptr_transport
+from tools.native_oracle import RET_MAGIC,run_checked,finish_vectors,provenance,initialize_empty_windows_seh,checked_is_bad_read_ptr_transport
 from tools.spatial_oracle.building_body_rules import SP,dwords,INI
 from tools.projectile_oracle.bridge_render_inputs import lexical,assets_root
 # Isolate fixture adapters from other consumers of the shared launch harness.
@@ -127,7 +127,7 @@ def generate():
   assert row['after_drain']['queue_count']==0 and row['after_drain']['bullet_count']==0
   assert row['after_anim']['queue_count']==0 and row['after_anim']['anim_count']==0
   rows.append(row)
- return dict(native_sha256=NATIVE_SHA256,scope='Same five supplied launch/bridge-flag cases, physical DRAGON plus eight native HE AnimType ART readers, full original BulletAI/Detonate/AreaDamage with empty damage receivers and ScenarioDestroyableBridges=false, native impact Anim creation and Bullet retirement/drain, then single AnimAI until complete retirement. No damageable bridge topology, renderer, audio binding, Burst2 scheduler or whole Process/identity claim.',scenario_rng_seed=31,rows=rows)
+ return dict(scope='Same five supplied launch/bridge-flag cases, physical DRAGON plus eight native HE AnimType ART readers, full original BulletAI/Detonate/AreaDamage with empty damage receivers and ScenarioDestroyableBridges=false, native impact Anim creation and Bullet retirement/drain, then single AnimAI until complete retirement. No damageable bridge topology, renderer, audio binding, Burst2 scheduler or whole Process/identity claim.',scenario_rng_seed=31,rows=rows)
 def metadata():
  return provenance(scope='Five physical IFV impact controls: 125 original Bullet AI visits and 70 impact Anim AI visits through complete bounded retirement',assumptions=[
   'Original cell-spread table initializer561910, selected physical readers, FireAt launch, guided flight, full Detonate4690B0 and AreaDamage489280, impact SelectAnim/constructor/Start and full Bullet/Anim retirement execute. Earlier launch supplied boundaries remain: source lifecycle/FLH, Unlimbo/Display admission and inter-frame structural-bit changes.',

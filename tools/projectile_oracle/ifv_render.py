@@ -3,7 +3,7 @@ Shared launch is independently rerun; shape buffers/camera remain supplied.
 """
 import hashlib,json,math,struct
 from pathlib import Path
-from tools.native_oracle import NATIVE_SHA256,finish_vectors,provenance
+from tools.native_oracle import finish_vectors,provenance
 from tools.projectile_oracle import ifv_launch,guided_step,bridge_render_shape as shape
 from tools.projectile_oracle.bridge_render_inputs import assets_root
 from tools.projectile_oracle.bridge_render_inputs_palette import PaletteReader,initialize
@@ -44,7 +44,7 @@ def generate():
  assert len(set(directions))==32,directions
  v=dict(value=[10.,0.,0.],bits=[f'{v:016x}' for v in struct.unpack('<3Q',struct.pack('<3d',10.,0.,0.))])
  for name,extra in [('corner',dict(body_screen=[0,0])),('bottom',dict(body_screen=[63,95])),('outside',dict(body_screen=[65,16])),('dirty',dict(dirty=[9,11,32,40]))]:capture(name,[2688,5248,1041],v,1,256,kind='clip',extra=extra)
- return dict(native_sha256=NATIVE_SHA256,flight_source_sha256=hashlib.sha256(json.dumps(flight,sort_keys=True,separators=(',',':')).encode()).hexdigest(),type_inputs=initial,selected_native_type=native_type,shp_sha256=hashlib.sha256(raw).hexdigest(),palette_loads=pm.asset_loaded,surface=dict(width=shape.WIDTH,height=shape.HEIGHT,bytes_per_pixel=2,circular_depth_baseline=32768,a_value=127),frames=frames,draws=draws)
+ return dict(flight_source_sha256=hashlib.sha256(json.dumps(flight,sort_keys=True,separators=(',',':')).encode()).hexdigest(),type_inputs=initial,selected_native_type=native_type,shp_sha256=hashlib.sha256(raw).hexdigest(),palette_loads=pm.asset_loaded,surface=dict(width=shape.WIDTH,height=shape.HEIGHT,bytes_per_pixel=2,circular_depth_baseline=32768,a_value=127),frames=frames,draws=draws)
 
 def metadata():
  return provenance(scope='Original DRAGON frame getter and full physical shape drawing for125 independently rerun IFV flight states,5launch states,32direction centers and4clipping controls',assumptions=[

@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original coupled source/destination clipping and optional-shape gradient seeding; supplied component priors, not full SHP raster parity.",
+  "assumptions": [
+    "Four separate supplied signed32 rectangles; original7BBE20 and its421B60 calls execute unchanged, with complete returned rectangles recorded.",
+    "The slope-named controls use the observed rectangle dimensions as component priors. Their inclusion does not itself establish a complete caller state.",
+    "Shape seed controls execute437B8B until437BDF, before the virtual shape GetRect. Original817710 gradient entries are read from the image; registers/stack provide the declared top/height/Z term, a nonnull shape and a supplied ZBuffer with default32768/YOrigin0. No seed result or instruction is substituted."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "clip_blit_rects": "0x007BBE20",
+    "clip_rect": "0x00421B60",
+    "shape_gradient_seed": "0x00437B8B"
+  },
+  "replay_command": "python -m tools.spatial_oracle.ore_slopes --clip-only",
+  "payload_sha256": "c83ddd628c647bf725595ebd72462b9cb7612a82e29dd59118aae9af52e477c3"
+}

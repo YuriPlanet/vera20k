@@ -4,7 +4,7 @@
 `4666E0..4668BD`, including its Object AI predecessor, and the resulting full
 `AnimClass` constructor `421EA0`. The JSON contains native outputs; Python
 does not calculate cadence, RNG results or animation lifetime. Its sidecar
-pins the executable, shared source owners, command and coverage boundaries.
+records the command, input environment and coverage boundaries.
 
 The ordinary path is `SUB → SubTorpedo → Torpedo → ART[SUBT].Trailer=BBBLELRG`.
 The BulletType constructor `46BBC0` sets `SpawnDelay=3`,

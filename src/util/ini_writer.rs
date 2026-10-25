@@ -114,7 +114,13 @@ pub fn set_ini_byte_values(content: &[u8], section: &str, values: &[(&str, &[u8]
             out.extend_from_slice(key.as_bytes());
             out.push(b'=');
             out.extend_from_slice(value);
-            out.extend_from_slice(terminator);
+            // A replaced last line gains a CRLF: the loader discards a last
+            // line without LF (`IniFile::from_bytes`).
+            out.extend_from_slice(if terminator.is_empty() {
+                CRLF
+            } else {
+                terminator
+            });
         } else {
             out.extend_from_slice(text);
             out.extend_from_slice(terminator);
@@ -190,6 +196,26 @@ pub fn remove_ini_keys(content: &[u8], section: &str, keys: &[&str]) -> Vec<u8> 
     }
 
     out
+}
+
+/// Replace a whole section: every occurrence of `[section]` and its lines is
+/// dropped, then the section is appended with `values` in order. This is a
+/// CCINIClass `Clear(section)` followed by its puts and one file save,
+/// which re-creates the section after the others.
+pub fn replace_ini_section(content: &[u8], section: &str, values: &[(&str, &str)]) -> Vec<u8> {
+    let target_section = section.trim();
+    let mut in_target_section = false;
+    let mut kept = Vec::with_capacity(content.len());
+    for (text, terminator) in split_lines(content) {
+        if let Some(name) = std::str::from_utf8(text).ok().and_then(section_header_name) {
+            in_target_section = name.eq_ignore_ascii_case(target_section);
+        }
+        if !in_target_section {
+            kept.extend_from_slice(text);
+            kept.extend_from_slice(terminator);
+        }
+    }
+    set_ini_values(&kept, section, values)
 }
 
 /// Terminator for lines this writer *adds* (an inserted key or a created
@@ -311,6 +337,20 @@ ScoreVolume=0.600000\r\nInGameMusic=yes\r\n[Network]\r\nNetID=ffff,ffff,ffff,\r\
         assert_eq!(out, "[Audio]\r\nScoreVolume=0.4\r\n");
     }
 
+    /// A replaced unterminated last line gains a CRLF, so it survives the
+    /// loader's discard of a last line without LF.
+    #[test]
+    fn replaces_an_unterminated_last_line_with_a_terminated_one() {
+        let out = set_ini_values(
+            b"[Audio]\r\nScoreVolume=0.1",
+            "Audio",
+            &[("ScoreVolume", "0.4")],
+        );
+        assert_eq!(s(out.clone()), "[Audio]\r\nScoreVolume=0.4\r\n");
+        let reloaded = crate::rules::ini_parser::IniFile::from_bytes(&out).unwrap();
+        assert!(reloaded.section_or_empty("Audio").is_present("ScoreVolume"));
+    }
+
     /// With a duplicated section header, a missing key is appended into the
     /// FIRST matching block (Win32 first-section semantics), not the last.
     #[test]
@@ -412,6 +452,16 @@ ShortGame=yes\r\n"
         assert_eq!(
             out,
             b"[VERA]\r\nYROriginalStyle=no\r\n[Other]\r\nRA2Look=keep\r\n[VERA]suffix\r\nRA2Look=keep under malformed header\r\nYROriginalStyle=no"
+        );
+    }
+
+    #[test]
+    fn replacing_a_section_drops_its_old_keys_and_appends_it_last() {
+        let input = b"[AB]\r\nStale=1\r\nCurrentMap=0\r\n[Other]\r\nX=1\r\n";
+        let out = replace_ini_section(input, "AB", &[("CurrentMap", "1"), ("Time", "60")]);
+        assert_eq!(
+            s(out),
+            "[Other]\r\nX=1\r\n[AB]\r\nCurrentMap=1\r\nTime=60\r\n"
         );
     }
 }

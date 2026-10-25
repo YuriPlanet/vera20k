@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -23,6 +22,6 @@
   },
   "reproduce_command": "RA2_DIR='<retail-directory-containing-original-gamemd.exe>' python -m tools.spatial_oracle.house_difficulty --readers --check",
   "rulesmd_sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef",
-  "payload_sha256": "5b231ac2b1850921effef98a9f7a7092c9d995d923566836fa956cc6ec26d93c",
+  "payload_sha256": "e53d84a3ac594d5e7a6287b29cc7d9a974b112e6d5fb07030b6427e90d1bc9f4",
   "replay_command": "python -m tools.spatial_oracle.house_difficulty --readers"
 }

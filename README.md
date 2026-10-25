@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K hero image" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <strong>English</strong>
+  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <a href="README.tr.md" lang="tr">Türkçe</a> · <strong>English</strong>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Latest macOS library test run (run manually)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="macOS library tests" height="23" align="middle"></a>
@@ -38,8 +38,55 @@ VERA20K is made by gamers, for gamers, and gamers have the final say in where it
 - **Campaigns:** Missions can launch; support remains incomplete.
 - **AI:** Parts of the original AI handle base building and scripted attacks.
 - **Ongoing work:** Gameplay accuracy, visuals and performance.
-- **Multiplayer:** Network play is not available yet.
-- **Scale:** Battles with 30 players and 20,000 units have not yet been demonstrated.
+- **Multiplayer:** LAN and online play are available in current source builds on
+  macOS and Linux.
+- **Scale:** Two consecutive online matches passed functional validation with
+  30 independent client processes and more than 20,000 active mobile units per match.
+  Linux clients shared VMs; this does not establish smooth, real-time performance.
+
+## Download and play
+
+Download the installer for Windows, macOS or Linux from the
+[releases page](https://github.com/YuriPlanet/vera20k/releases). It finds your copy of
+Yuri's Revenge and sets up VERA20K in a new folder.
+
+To launch single-player YR skirmishes or campaigns from a CnCNet client, see the
+[offline client setup](integrations/cncnet/README.md).
+
+## Contributing
+
+Help is welcome. You can write code, refactor the engine, test the game, share ideas, or play
+it next to the original and tell us what feels wrong. Open a PR and we'll take it from there.
+
+Contributors can take responsibility for engine areas, with broad freedom to make changes that
+move VERA20K forward.
+
+Maintainers will help with review, integration and merging. You'll keep full credit for your
+contribution.
+
+Discussion is on [Discord](https://discord.gg/kmjRUn5m5F) and in the QQ group (1097193563).
+
+## Settings
+
+Use **Options** for sound and controls, and **Vera Options** for VERA-specific features.
+Player preferences, keyboard shortcuts and lobby choices are saved in `VERA.INI`:
+
+- **Windows installer:** beside `vera20k.exe`.
+- **macOS:** `~/Library/Application Support/VERA20k/VERA.INI`.
+- **Linux:** `~/.local/share/VERA20k/VERA.INI`, or your XDG data folder.
+
+`config.toml` sets the game folder and can select another settings folder.
+
+Enable **Mouse Wheel Zoom** in **Vera Options**, or set `[VERA] MouseWheelZoom=yes`
+in `VERA.INI` (default `no`).
+
+If `VERA.INI` is missing, VERA creates it and imports existing preferences once. With no
+old settings, it starts empty and VERA uses built-in defaults until settings are saved.
+The original `RA2MD.INI` and `KeyboardMD.ini` are only read for import, never overwritten.
+
+`VERARULES.INI`, in the same folder, contains optional gameplay changes. It starts with
+commented examples and leaves mission/map rules in control. See [personal rules](docs/personal-rules.md)
+for editing and overriding them.
 
 ## Architecture
 
@@ -56,22 +103,15 @@ Arrows show data flow:
 
 ![Application sends commands to simulation, which returns world state; application sends draw data to rendering.](docs/images/architecture.png)
 
-## System requirements
-
-- **Game:** Red Alert 2: Yuri's Revenge 1.001.
-- **OS:** Windows 10+, Linux (glibc 2.35+, e.g. Ubuntu 22.04 or Steam Deck), or macOS 11+ on
-  Apple Silicon.
-- **Graphics:** Vulkan, DirectX 12 or Metal.
-
 ## Build and run
 
 You need:
 
-- **Rust and Git:** [Rust](https://rustup.rs/) 1.88 or later, installed with rustup, and
+- **Rust and Git:** [Rust](https://rustup.rs/) 1.97 or later, installed with rustup, and
   [Git](https://git-scm.com/).
 - **Build tools:** on Windows, the Visual Studio C++ build tools, which the Rust installer offers
   to install; on macOS, `xcode-select --install`; on Debian and Ubuntu,
-  `sudo apt install build-essential libasound2-dev pkg-config`.
+  `sudo apt install build-essential libasound2-dev libxkbcommon-x11-0 pkg-config`.
 
 VERA20K has been played on Windows, Linux and macOS.
 
@@ -83,8 +123,6 @@ cp config.toml.example config.toml
 cargo run --release --bin vera20k
 ```
 
-The build writes several GB into `target/`.
-
 ## How we work
 
 Most of the code is written by AI coding agents. They use Ghidra to study the original
@@ -93,33 +131,15 @@ and playtesting. Agents follow [AGENTS.md](AGENTS.md).
 
 ## Customization
 
-Ares compatibility is an optional build capability. Default builds use the retail
-readers and dispatch; an INI or client setting cannot enable omitted extensions.
-Build the supported extensions explicitly:
+VERA20K plays like the original game by default. Every new feature, including extensions from
+mods such as Ares, must stay off until it is turned on with one of:
 
-```sh
-python -m tools.cargo_run -- build -p vera20k --profile fast --bin vera20k --features ares
-```
+- **A VERA player option**, in **Options → Vera Options**, saved under `[VERA]` in `VERA.INI`.
+- **A build option**, such as `--features ares` for the supported [Ares extensions](docs/ares.md).
+- **An INI key**, set by a mod or a map.
 
-Omit `--features ares` for a build without the extensions. Ares builds identify
-themselves in the window title and startup log. Supported INI keys configure
-existing GenericWarhead, UnitDelivery, superweapon building gates and money behavior;
-Include/inheritance expansion is also active only in Ares gameplay builds. The explicit
-read-only `asset ini-expand` probe remains available independently. Saves retain the
-build capability and cannot load in the other mode, even with identical retail INIs.
-This is partial Rust-native compatibility, not Ares DLL loading or general mod support.
-The enabled build also supports [generic production prerequisites](docs/ares-prerequisites.md),
-including alternate owned types and installed-upgrade qualification.
-
-To launch single-player YR skirmishes or campaigns through a dedicated CnCNet
-client, see the [offline client setup](integrations/cncnet/README.md). This needs
-a VERA build with the `-SPAWN` startup adapter.
-
-## Contributing
-
-Help is welcome. You can write code, refactor the engine, test the game, share ideas, or play
-it next to the original and tell us what feels wrong. Open a PR and we'll take it from there.
-Discussion is on [Discord](https://discord.gg/kmjRUn5m5F) and in the QQ group (1097193563).
+Sound, graphics and controls are saved in `VERA.INI`. Gameplay rules come from lobby
+settings, mods or maps.
 
 ## Support
 
@@ -139,5 +159,17 @@ Command & Conquer and Red Alert, World-Altering Editor, Final Alert, YRpp, Ares,
 many others.
 
 Licensed under the [GPLv3](LICENSE-GPL). This repository contains no game files. Command &
-Conquer and Red Alert are trademarks of Electronic Arts Inc., and the screenshots show game art
-owned by Electronic Arts. VERA20K is not affiliated with or endorsed by Electronic Arts.
+Conquer and Red Alert are trademarks of Electronic Arts Inc., and the screenshots and the app
+icon, Red Alert 2's red star, show game art owned by Electronic Arts. VERA20K is not affiliated
+with or endorsed by Electronic Arts.
+
+## Documentation
+
+- [Build and run](#build-and-run): requirements and building from source.
+- [INI profiles](docs/ini-roots.md): choosing rules, art and AI files.
+- [Ares](docs/ares.md), [Phobos](docs/phobos.md) and [NPatch](docs/npatch.md): extension support and limitations.
+- [Engine overview](docs/index.md): code layout and how the engine fits together.
+- [Developer tools](tools/README.md): builds, tests and asset inspection.
+- [Map testing](tools/map_observation.md): scripted scenarios, screenshots and match observations.
+- [Native comparisons](tools/native_oracle.md): comparing behavior with the original game.
+- [Ghidra workflow](docs/ghidra-workflow.md): inspecting the original engine.

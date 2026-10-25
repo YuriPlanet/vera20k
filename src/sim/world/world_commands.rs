@@ -15,15 +15,16 @@ use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::canonical_cell_coord;
 use crate::sim::combat;
-#[cfg(any(test, feature = "test-support"))]
-use crate::sim::combat::combat_aoe::CellTargetDetach;
 use crate::sim::command::{
-    BUILDING_OFF_LINE_OPCODE, BUILDING_ON_LINE_OPCODE, BuildingOnLineRecord, COMMAND_RECORD_LEN,
-    Command, CommandEnvelope, CommandRecord, ExitRecord, GameSpeedRecord, MegaMissionOrder,
-    MegaMissionRecord, MegaMissionTarget, ScatterRecord, SellWallAtCellRecord,
+    ArchiveRecord, BUILDING_OFF_LINE_OPCODE, BUILDING_ON_LINE_OPCODE, BuildingOnLineRecord,
+    COMMAND_RECORD_LEN, Command, CommandEnvelope, CommandRecord, CycleProducerRecord, DeployRecord,
+    ExitRecord, GameSpeedRecord, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget,
+    ObjectAction, ObjectActionRecord, PaidSuperAction, PaidSuperRecord, PlaceRecord,
+    ProductionEvent, ProductionRecord, RepairRecord, ScatterRecord, SellWallAtCellRecord,
+    SpecialPlaceRecord, StopRecord,
 };
 use crate::sim::house_diplomacy::HouseAlliances;
-use crate::sim::intern::StringInterner;
+use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::mission::MissionType;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::overlay_grid::{
@@ -147,7 +148,7 @@ impl Simulation {
             self.sound_events.emit(SimSoundEvent::VocCentered {
                 sound_id: sound_id.to_owned(),
             });
-            effects.flush_sound(self, Some(rules));
+            effects.flush_sound(self, rules);
         }
     }
 
@@ -207,6 +208,372 @@ impl Simulation {
         };
         let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).ok()?;
         typed.write_into(&mut record);
+        Some(record)
+    }
+
+    /// StopCommand730EE7 -> ClickedEvent6FFE34 -> EventCtor4C65E0 emits
+    /// IDLE6 with the current issuer and the actor's five-byte object token.
+    /// Keep the token even if its actor disappears before dispatch: native
+    /// Stop4C74CE resolves the identifier only when the event executes.
+    /// Source: original gamemd.exe instructions.
+    pub fn encode_stop_record(
+        &self,
+        command_owner: InternedId,
+        entity_id: u64,
+    ) -> Option<CommandRecord> {
+        let entity_id = i32::try_from(entity_id).ok()?;
+        let mut record =
+            self.encode_header_event(command_owner, crate::sim::command::IDLE_OPCODE)?;
+        StopRecord {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id,
+        }
+        .write_into(&mut record);
+        Some(record)
+    }
+
+    /// D-key ClickedEvent6FFE00 -> EventCtor4C65E0. Preserve a stale UID
+    /// until the event executes; the native receiver has no actor-owner gate.
+    pub fn encode_deploy_record(
+        &self,
+        command_owner: InternedId,
+        entity_id: u64,
+    ) -> Option<CommandRecord> {
+        let mut record =
+            self.encode_header_event(command_owner, crate::sim::command::DEPLOY_OPCODE)?;
+        DeployRecord {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: i32::try_from(entity_id).ok()?,
+        }
+        .write_into(&mut record);
+        Some(record)
+    }
+
+    /// Display4AC0D3..4AC198 constructs REPAIR15 with PlayerPtr+30 and
+    /// the picked object's token. Preserve that token until execution;
+    /// constructor4C65E0 does not read its owner or repair eligibility.
+    /// Source: original gamemd.exe instructions.
+    pub fn encode_repair_record(
+        &self,
+        command_owner: InternedId,
+        entity_id: u64,
+    ) -> Option<CommandRecord> {
+        let mut record =
+            self.encode_header_event(command_owner, crate::sim::command::REPAIR_OPCODE)?;
+        RepairRecord {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: i32::try_from(entity_id).ok()?,
+        }
+        .write_into(&mut record);
+        Some(record)
+    }
+
+    /// TargetEvent4C65E0 is used by SELL16 (Execute4C6F12) and
+    /// PRIMARY11 (Execute4C718C). Eject is the existing VERA bunker action,
+    /// carried explicitly rather than claiming a native self-Unload mapping.
+    pub fn encode_object_action_record(
+        &self,
+        owner: InternedId,
+        command: &Command,
+    ) -> Option<CommandRecord> {
+        let (entity, action) = match *command {
+            Command::SellBuilding { entity_id } => (entity_id, ObjectAction::Sell),
+            Command::TogglePrimaryFactory { entity_id } => (entity_id, ObjectAction::Primary),
+            Command::EjectBunker { bunker_id } => (bunker_id, ObjectAction::EjectBunker),
+            _ => return None,
+        };
+        let mut record = self.encode_header_event(owner, action.opcode())?;
+        ObjectActionRecord {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: i32::try_from(entity).ok()?,
+            action,
+        }
+        .write_into(&mut record);
+        Some(record)
+    }
+
+    /// Event0D4C794B retains its dword GameSpeed payload for the shared receiver.
+    pub fn encode_game_speed_record(&self, owner: InternedId, speed: u8) -> Option<CommandRecord> {
+        let header = self.encode_header_event(owner, crate::sim::command::GAME_SPEED_OPCODE)?;
+        GameSpeedRecord {
+            house_id: header.house_id(),
+            frame: header.frame_stamp(),
+            speed: i32::from(speed),
+        }
+        .encode()
+        .ok()
+    }
+
+    /// VERA sidebar cycles are ordered commands, because the selected primary
+    /// affects delivery. Keep the next-candidate decision in production's
+    /// existing cycle_active_producer_for_owner_category execution owner.
+    pub fn encode_cycle_producer_record(
+        &self,
+        owner: InternedId,
+        category: production::ProductionCategory,
+    ) -> Option<CommandRecord> {
+        let header =
+            self.encode_header_event(owner, crate::sim::command::VERA_CYCLE_PRODUCER_OPCODE)?;
+        CycleProducerRecord {
+            house_id: header.house_id(),
+            frame: header.frame_stamp(),
+            category,
+        }
+        .encode()
+        .ok()
+    }
+
+    /// SPECIAL_PLACE4C6B60 carries the rules-owned registry index, not an
+    /// InternedId. Paid selections use one VERA record so their existing
+    /// saved sequence guard and cancellation execute identically on all peers.
+    pub fn encode_superweapon_record(
+        &self,
+        owner: InternedId,
+        command: &Command,
+        rules: &RuleSet,
+    ) -> Option<CommandRecord> {
+        let header = self.encode_header_event(owner, SpecialPlaceRecord::OPCODE)?;
+        let index = |id| i32::try_from(rules.super_weapon_index(self.interner.resolve(id))?).ok();
+        let (selection, action, cell) = match *command {
+            Command::LaunchSuperWeapon {
+                sw_type_id,
+                target_rx,
+                target_ry,
+            } => {
+                if target_rx >= 512 || target_ry >= 512 {
+                    return None;
+                }
+                return SpecialPlaceRecord {
+                    house_id: header.house_id(),
+                    frame: header.frame_stamp(),
+                    type_index: index(sw_type_id)?,
+                    cell: (
+                        i16::try_from(target_rx).ok()?,
+                        i16::try_from(target_ry).ok()?,
+                    ),
+                }
+                .encode()
+                .ok();
+            }
+            Command::BeginPaidSuperWeapon {
+                selection,
+                target_rx,
+                target_ry,
+            } => (selection, PaidSuperAction::Begin, (target_rx, target_ry)),
+            Command::CompletePaidSuperWeapon {
+                selection,
+                target_rx,
+                target_ry,
+            } => (selection, PaidSuperAction::Complete, (target_rx, target_ry)),
+            Command::CancelPaidSuperWeapon { selection } => {
+                (selection, PaidSuperAction::Cancel, (0, 0))
+            }
+            _ => return None,
+        };
+        PaidSuperRecord {
+            house_id: header.house_id(),
+            frame: header.frame_stamp(),
+            action,
+            source: index(selection.source)?,
+            destination: index(selection.destination)?,
+            sequence: selection.sequence,
+            cell: (i16::try_from(cell.0).ok()?, i16::try_from(cell.1).ok()?),
+        }
+        .encode()
+    }
+
+    pub(super) fn superweapon_command_from_record(
+        &self,
+        record: &CommandRecord,
+        rules: &RuleSet,
+    ) -> Option<(InternedId, Command)> {
+        let owner = *self
+            .houses
+            .order()
+            .get(usize::try_from(record.house_id()).ok()?)?;
+        if !self.houses.contains_key(&owner) {
+            return None;
+        }
+        let type_id = |index| {
+            self.interner
+                .get(rules.super_weapon_order.get(usize::try_from(index).ok()?)?)
+        };
+        if let Some(event) = SpecialPlaceRecord::decode(record) {
+            if !(0..512).contains(&event.cell.0) || !(0..512).contains(&event.cell.1) {
+                return None;
+            }
+            return Some((
+                owner,
+                Command::LaunchSuperWeapon {
+                    sw_type_id: type_id(event.type_index)?,
+                    target_rx: u16::try_from(event.cell.0).ok()?,
+                    target_ry: u16::try_from(event.cell.1).ok()?,
+                },
+            ));
+        }
+        let event = PaidSuperRecord::decode(record)?;
+        let selection = crate::sim::superweapon::PaidSuperWeaponSelection {
+            source: type_id(event.source)?,
+            destination: type_id(event.destination)?,
+            sequence: event.sequence,
+        };
+        Some((
+            owner,
+            match event.action {
+                PaidSuperAction::Begin => Command::BeginPaidSuperWeapon {
+                    selection,
+                    target_rx: event.cell.0 as u16,
+                    target_ry: event.cell.1 as u16,
+                },
+                PaidSuperAction::Complete => Command::CompletePaidSuperWeapon {
+                    selection,
+                    target_rx: event.cell.0 as u16,
+                    target_ry: event.cell.1 as u16,
+                },
+                PaidSuperAction::Cancel => Command::CancelPaidSuperWeapon { selection },
+            },
+        ))
+    }
+
+    /// SetRallyPoint4439C5 and object-click44367B ask the actor's vt+38
+    /// (Techno6F9DB0), not PlayerPtr. Preserve that House and both tokens
+    /// at issue; send-time retiming remains the packet codec's responsibility.
+    /// Source: original gamemd.exe constructor4C6780.
+    pub(super) fn encode_archive_record(
+        &self,
+        entity_id: u64,
+        target: MegaMissionTarget,
+    ) -> Option<CommandRecord> {
+        let owner = self.substrate.entities.get(entity_id)?.owner();
+        let mut record = self.encode_header_event(owner, crate::sim::command::ARCHIVE_OPCODE)?;
+        ArchiveRecord {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            entity_id: i32::try_from(entity_id).ok()?,
+            target,
+        }
+        .write_into(&mut record)
+        .ok()?;
+        Some(record)
+    }
+
+    /// Select6AAD00's production events use the clicked type's native array
+    /// index, RTTI and Naval flag, captured now rather than when dispatched.
+    pub fn encode_production_record(
+        &self,
+        command_owner: InternedId,
+        event: ProductionEvent,
+        type_id: InternedId,
+        rules: &RuleSet,
+    ) -> Option<CommandRecord> {
+        let selection =
+            production::ProductionSelection::for_type(rules, self.object_type(type_id, rules)?)?;
+        self.encode_selected_production_record(command_owner, event, selection)
+    }
+
+    /// Typed callers retain Select6AAD00's existing RTTI/index/Naval fields.
+    /// The name-only encoder above deliberately keeps broad-name semantics.
+    pub fn encode_selected_production_record(
+        &self,
+        command_owner: InternedId,
+        event: ProductionEvent,
+        selection: production::ProductionSelection,
+    ) -> Option<CommandRecord> {
+        let mut record = self.encode_header_event(command_owner, event.opcode())?;
+        ProductionRecord {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            event,
+            rtti: selection.rtti,
+            type_index: selection.type_index,
+            naval: u32::from(selection.naval),
+        }
+        .write_into(&mut record);
+        Some(record)
+    }
+
+    /// Display4ABB39..4ABB55 uses the selected type's index and the held
+    /// building's object RTTI6. Cell words retain their native signed bits.
+    pub fn encode_place_building_record(
+        &self,
+        command_owner: InternedId,
+        type_id: InternedId,
+        cell: (u16, u16),
+        rules: &RuleSet,
+    ) -> Option<CommandRecord> {
+        let object = self.object_type(type_id, rules)?;
+        if object.category != crate::rules::object_type::ObjectCategory::Building {
+            return None;
+        }
+        let selection = production::ProductionSelection::for_type(rules, object)?;
+        self.encode_place_record(
+            command_owner,
+            production::ProductionSelection {
+                rtti: selection.object_rtti(),
+                ..selection
+            },
+            cell,
+        )
+    }
+
+    /// StripAI6A8EE8 snapshots the complete object's RTTI/Naval, but writes
+    /// index-1 and B07DD8's Cell(0,0), initialized by6A4BC0. The receiver
+    /// looks up the later held head; (-1,-1) is accepted but not issued here.
+    pub fn encode_place_mobile_record(
+        &self,
+        command_owner: InternedId,
+        category: production::ProductionCategory,
+        rules: &RuleSet,
+    ) -> Option<CommandRecord> {
+        let held = self
+            .production
+            .factories()
+            .view(command_owner, category)?
+            .complete_object()?;
+        let object = self.interner.object_type_in_category(
+            held.type_id,
+            category.object_category(),
+            rules,
+        )?;
+        if object.category == crate::rules::object_type::ObjectCategory::Building {
+            return None;
+        }
+        let selection = production::ProductionSelection::for_type(rules, object)?;
+        self.encode_place_record(
+            command_owner,
+            production::ProductionSelection {
+                rtti: selection.object_rtti(),
+                type_index: -1,
+                ..selection
+            },
+            (0, 0),
+        )
+    }
+
+    /// Shared EventCtor4C6AE0. Callers supply their native selector: manual
+    /// building placement, completed cameo, or automatic Strip completion.
+    pub fn encode_place_record(
+        &self,
+        command_owner: InternedId,
+        selection: production::ProductionSelection,
+        cell: (u16, u16),
+    ) -> Option<CommandRecord> {
+        let mut record =
+            self.encode_header_event(command_owner, crate::sim::command::PLACE_OPCODE)?;
+        PlaceRecord {
+            house_id: record.house_id(),
+            frame: record.frame_stamp(),
+            rtti: selection.rtti,
+            type_index: selection.type_index,
+            naval: u32::from(selection.naval),
+            x: cell.0 as i16,
+            y: cell.1 as i16,
+        }
+        .write_into(&mut record);
         Some(record)
     }
 
@@ -390,6 +757,7 @@ impl Simulation {
             .position(|&owner| owner == command_owner)
             .and_then(|index| i8::try_from(index).ok())?;
         let typed = MegaMissionRecord {
+            auxiliary: MegaMissionTarget::Null,
             house_id,
             frame: self.session.binary_frame() as i32,
             source_id: i32::try_from(source_id).ok()?,
@@ -436,6 +804,22 @@ impl Simulation {
         self.encode_header_event(command_owner, crate::sim::command::EXIT_OPCODE)
     }
 
+    pub fn encode_options_record(&self, command_owner: InternedId) -> Option<CommandRecord> {
+        self.encode_header_event(command_owner, crate::sim::command::OPTIONS_OPCODE)
+    }
+
+    pub fn encode_latency_fudge_record(
+        &self,
+        command_owner: InternedId,
+        value: i32,
+    ) -> Option<CommandRecord> {
+        self.encode_int_event(
+            command_owner,
+            crate::sim::command::LATENCY_FUDGE_OPCODE,
+            value,
+        )
+    }
+
     /// EVENT_DESTRUCT's header-only record: `EventClass(index, 8)`
     /// (`0x004C66C0`) writes only the type, House and frame.
     pub fn encode_destruct_record(
@@ -452,7 +836,7 @@ impl Simulation {
         command_owner: crate::sim::intern::InternedId,
         house_index: i32,
     ) -> Option<CommandRecord> {
-        self.encode_house_index_event(
+        self.encode_int_event(
             command_owner,
             crate::sim::command::REMOVE_PLAYER_OPCODE,
             house_index,
@@ -466,19 +850,19 @@ impl Simulation {
         command_owner: crate::sim::intern::InternedId,
         house_index: i32,
     ) -> Option<CommandRecord> {
-        self.encode_house_index_event(command_owner, crate::sim::command::ALLY_OPCODE, house_index)
+        self.encode_int_event(command_owner, crate::sim::command::ALLY_OPCODE, house_index)
     }
 
-    /// `EventClass(house, type, index)` (`0x004C6720`): a header event
-    /// whose dword payload is a House index.
-    fn encode_house_index_event(
+    /// `EventClass(house, type, value)` (`0x004C6720`): a header event
+    /// whose payload is one unmodified signed dword.
+    fn encode_int_event(
         &self,
         command_owner: crate::sim::intern::InternedId,
         opcode: u8,
-        house_index: i32,
+        value: i32,
     ) -> Option<CommandRecord> {
         let mut record = self.encode_header_event(command_owner, opcode)?;
-        record.payload_mut()[..4].copy_from_slice(&house_index.to_le_bytes());
+        record.payload_mut()[..4].copy_from_slice(&value.to_le_bytes());
         Some(record)
     }
 
@@ -513,6 +897,126 @@ impl Simulation {
         record: &CommandRecord,
         execute_tick: u64,
     ) -> Option<CommandEnvelope> {
+        if let Some(event) = RepairRecord::decode(record) {
+            let owner = *self
+                .houses
+                .order()
+                .get(usize::try_from(event.house_id).ok()?)?;
+            let entity_id = u64::try_from(event.entity_id).ok()?;
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(owner, execute_tick, Command::ToggleRepair { entity_id })
+            });
+        }
+        if let Some(event) = ArchiveRecord::decode(record) {
+            let owner = *self
+                .houses
+                .order()
+                .get(usize::try_from(event.house_id).ok()?)?;
+            if !self.houses.contains_key(&owner) {
+                return None;
+            }
+            // Preserve late object lookup and NULL. These semantic views do
+            // not replace the native record held by queues/replay/snapshots.
+            let entity_id = u64::try_from(event.entity_id).ok()?;
+            let payload = match event.target {
+                MegaMissionTarget::Cell { x, y } => Command::SetRally {
+                    rx: x as u16,
+                    ry: y as u16,
+                    producer_ids: vec![entity_id],
+                },
+                MegaMissionTarget::Object { id } if id >= 0 => Command::ArchiveObject {
+                    entity_id,
+                    target_id: id as u64,
+                },
+                _ => Command::SynchronizedRecord {
+                    record: record.clone(),
+                },
+            };
+            return Some(CommandEnvelope::new(owner, execute_tick, payload));
+        }
+        if let Some(event) = ObjectActionRecord::decode(record) {
+            let owner = *self
+                .houses
+                .order()
+                .get(usize::try_from(event.house_id).ok()?)?;
+            let entity_id = u64::try_from(event.entity_id).ok()?;
+            let command = match event.action {
+                ObjectAction::Sell => Command::SellBuilding { entity_id },
+                ObjectAction::Primary => Command::TogglePrimaryFactory { entity_id },
+                ObjectAction::EjectBunker => Command::EjectBunker {
+                    bunker_id: entity_id,
+                },
+            };
+            return self
+                .houses
+                .contains_key(&owner)
+                .then(|| CommandEnvelope::new(owner, execute_tick, command));
+        }
+        if let Some(event) = CycleProducerRecord::decode(record) {
+            let owner = *self
+                .houses
+                .order()
+                .get(usize::try_from(event.house_id).ok()?)?;
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(
+                    owner,
+                    execute_tick,
+                    Command::CycleProducerFocus {
+                        category: event.category,
+                    },
+                )
+            });
+        }
+        if ProductionRecord::decode(record).is_some()
+            || PlaceRecord::decode(record).is_some()
+            || SpecialPlaceRecord::decode(record).is_some()
+            || PaidSuperRecord::decode(record).is_some()
+        {
+            let owner = *self
+                .houses
+                .order()
+                .get(usize::try_from(record.house_id()).ok()?)?;
+            // Keep selectors raw: a category-only semantic view loses Naval,
+            // RTTI aliases and the -1 wildcard before the House receiver runs.
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(
+                    owner,
+                    execute_tick,
+                    Command::SynchronizedRecord {
+                        record: record.clone(),
+                    },
+                )
+            });
+        }
+        if let Some(typed) = DeployRecord::decode(record) {
+            let owner = *self
+                .houses
+                .order()
+                .get(usize::try_from(typed.house_id).ok()?)?;
+            let entity_id = u64::try_from(typed.entity_id).ok()?;
+            self.substrate.entities.get(entity_id)?;
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(owner, execute_tick, Command::DeployMcv { entity_id })
+            });
+        }
+        if matches!(
+            record.opcode(),
+            crate::sim::command::OPTIONS_OPCODE | crate::sim::command::LATENCY_FUDGE_OPCODE
+        ) {
+            let house_index = usize::try_from(record.house_id()).ok()?;
+            let owner = *self.houses.order().get(house_index)?;
+            let command = if record.opcode() == crate::sim::command::OPTIONS_OPCODE {
+                Command::OpenOptions
+            } else {
+                Command::SetLatencyFudge {
+                    value: i32::from_le_bytes(record.payload()[..4].try_into().ok()?),
+                }
+            };
+            return self
+                .houses
+                .contains_key(&owner)
+                .then(|| CommandEnvelope::new(owner, execute_tick, command));
+        }
         // PlanMgr637E00/638120 owns the payload and validates live actors.
         // Keep its native byte record intact through the scheduled envelope.
         if matches!(record.opcode(), 0x2A..=0x2C)
@@ -530,6 +1034,20 @@ impl Simulation {
                     },
                 )
             });
+        }
+        if let Some(typed) = StopRecord::decode(record) {
+            let house_index = usize::try_from(typed.house_id).ok()?;
+            let owner = *self.houses.order().get(house_index)?;
+            if !self.houses.contains_key(&owner) {
+                return None;
+            }
+            let entity_id = u64::try_from(typed.entity_id).ok()?;
+            self.substrate.entities.get(entity_id)?;
+            return Some(CommandEnvelope::new(
+                owner,
+                execute_tick,
+                Command::Stop { entity_id },
+            ));
         }
         if let Some(typed) = ScatterRecord::decode(record) {
             let house_index = usize::try_from(typed.house_id).ok()?;
@@ -553,6 +1071,17 @@ impl Simulation {
             }
             let entity_id = u64::try_from(typed.source_id).ok()?;
             self.substrate.entities.get(entity_id)?;
+            // Keep NavComAux in the native carrier until execution, where
+            // the shared MegaMission receiver applies it after the setters.
+            if typed.auxiliary != MegaMissionTarget::Null {
+                return Some(CommandEnvelope::new(
+                    owner,
+                    execute_tick,
+                    Command::SynchronizedRecord {
+                        record: record.clone(),
+                    },
+                ));
+            }
             let target = |token: MegaMissionTarget| -> Option<Option<combat::TargetKind>> {
                 Some(match token {
                     MegaMissionTarget::Null => None,
@@ -878,15 +1407,9 @@ impl Simulation {
         // Selling invokes exactly one PostDestructionWallCleanup at the sold
         // cell: N, E, S, W, self. It is not damage's four-cardinal fan-out.
         const CROSS: [(i32, i32); 5] = [(0, -1), (1, 0), (0, 1), (-1, 0), (0, 0)];
-        #[cfg(any(test, feature = "test-support"))]
-        let mut detach_trace: Vec<CellTargetDetach> = Vec::new();
         for (dx, dy) in CROSS {
             let visit = {
                 let mut host = SimulationWallRuntimeHost {
-                    entities: &mut self.substrate.entities,
-                    target_terrain_objects: self.terrain_objects.objects(),
-                    #[cfg(any(test, feature = "test-support"))]
-                    detach_trace: &mut detach_trace,
                     dirty_cells: &mut self.dirty_cells,
                     zone_grid: &mut self.zone_grid,
                     path_grid: &mut self.path_grid,
@@ -968,7 +1491,7 @@ impl Simulation {
 
         // House4FD018 calls70D4A0, not7258D0 pointer expiry: Restore runs
         // before the conditional target clear, then Team targets detach.
-        self.stop_all_targeting_cell(rx, ry, Some(rules), Some(overlays), effects);
+        self.stop_all_targeting_cell(rx, ry, rules, Some(overlays), effects);
 
         if let Some(tail_grid) = tail_grid {
             if self.zone_grid.is_some() {
@@ -988,6 +1511,79 @@ impl Simulation {
         true
     }
 
+    /// Execute4C70E1..4C718A hands the packet selector to the existing House
+    /// production owners. Keep it intact until this call; neither the issuing
+    /// client's type interner nor its then-current Factory head is authority.
+    fn apply_production_record(
+        &mut self,
+        record: &CommandRecord,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let Some(owner) = usize::try_from(record.house_id())
+            .ok()
+            .and_then(|index| self.houses.order().get(index))
+            .copied()
+            .filter(|owner| self.houses.contains_key(owner))
+        else {
+            return false;
+        };
+        let owner = self.interner.resolve(owner).to_owned();
+        if let Some(event) = ProductionRecord::decode(record) {
+            let selection = production::ProductionSelection {
+                rtti: event.rtti,
+                type_index: event.type_index,
+                naval: event.naval != 0,
+            };
+            return match event.event {
+                ProductionEvent::Produce => {
+                    production::enqueue_selected(self, rules, &owner, selection, effects, false)
+                }
+                ProductionEvent::Suspend => {
+                    let Some(category) = selection.category(rules) else {
+                        return false;
+                    };
+                    production::suspend_production(
+                        &self.interner,
+                        &mut self.production,
+                        &self.session,
+                        &owner,
+                        category,
+                    )
+                }
+                ProductionEvent::Abandon | ProductionEvent::AbandonAll => {
+                    production::cancel_production_for_owner(
+                        self,
+                        rules,
+                        &owner,
+                        production::ProductionCancellation::Selected(selection),
+                        event.event == ProductionEvent::AbandonAll,
+                        effects,
+                    )
+                }
+            };
+        }
+        if let Some(event) = PlaceRecord::decode(record) {
+            return production::place_production_with_overlays(
+                self,
+                rules,
+                &owner,
+                production::ProductionPlacement::Selected {
+                    selection: production::ProductionSelection {
+                        rtti: event.rtti,
+                        type_index: event.type_index,
+                        naval: event.naval != 0,
+                    },
+                    cell: (event.x as u16, event.y as u16),
+                },
+                overlay_registry,
+                effects,
+            );
+        }
+        false
+    }
+
     /// Dispatch a single command, returning true if it was successfully applied.
     #[cfg(any(test, feature = "test-support"))]
     pub fn apply_command(
@@ -999,7 +1595,7 @@ impl Simulation {
         self.apply_command_with_overlays(
             command_owner,
             cmd,
-            rules,
+            rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -1009,47 +1605,89 @@ impl Simulation {
         &mut self,
         command_owner: &str,
         cmd: &Command,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         // Event command receivers clear Plan tokens before applying ordinary
         // orders. Flag2 acknowledges its path without detaching it; use the
         // same payload dispatcher while keeping state installed for callbacks.
-        let decoded_planned;
+        let decoded_native;
+        let mut auxiliary = MegaMissionTarget::Null;
         let planned = matches!(cmd, Command::PlanningRecord { record }
             if record.opcode() == 4 && record.payload()[22] == 2);
-        let cmd = if planned {
-            let Command::PlanningRecord { record } = cmd else {
-                unreachable!()
-            };
+        let native_mission = match cmd {
+            Command::PlanningRecord { record } if planned => Some(record),
+            Command::SynchronizedRecord { record }
+                if record.opcode() == 4 && record.payload()[22] == 0 =>
+            {
+                Some(record)
+            }
+            _ => None,
+        };
+        let cmd = if let Some(record) = native_mission {
             let mut ordinary = record.clone();
             ordinary.payload_mut()[22] = 0;
             let Some(typed) = MegaMissionRecord::decode(&ordinary) else {
                 return false;
             };
+            auxiliary = typed.auxiliary;
+            // Only the temporary semantic projection omits NavComAux. The
+            // queue, plan graph and saved/replayed bytes keep the full token.
+            ordinary.payload_mut()[21] = 0;
             let Some(envelope) = self.decode_native_command_record(&ordinary, self.session.tick())
             else {
                 return false;
             };
-            if let Ok(actor) = u64::try_from(typed.source_id) {
+            if planned && let Ok(actor) = u64::try_from(typed.source_id) {
                 self.planning_acknowledge(actor);
             }
-            decoded_planned = envelope.payload;
-            &decoded_planned
+            decoded_native = envelope.payload;
+            &decoded_native
         } else {
             cmd
         };
         let ordinary_actor = match cmd {
             Command::Stop { entity_id }
             | Command::Scatter { entity_id }
-            | Command::DeployMcv { entity_id } => Some(*entity_id),
+            | Command::DeployMcv { entity_id }
+            | Command::ToggleRepair { entity_id }
+            // EventClass::Execute @ 0x004C6CB0, SELL arm 0x004C6F20:
+            // PlanningDetach precedes the target's alive/owner refusal.
+            | Command::SellBuilding { entity_id } => Some(*entity_id),
             _ => cmd.megamission_actor(),
         };
         if !planned && let Some(actor) = ordinary_actor {
             self.planning_detach_actor(actor);
         }
         match cmd {
+            Command::OpenOptions => {
+                // Execute_DoList64C8D8..64C911 dispatches OPTIONS only for
+                // the current House. Event4C7929 suppresses playback, then
+                // writes GameState1 at4C7939. Source: original instructions.
+                if self.interner.get(command_owner) != self.session.current_house() {
+                    return false;
+                }
+                if self.replaying_recorded_commands {
+                    return false;
+                }
+                self.lifecycle_outputs
+                    .emit(super::LifecycleOutput::OptionsRequested);
+                true
+            }
+            Command::SetLatencyFudge { value } => {
+                // Event LATENCYFUDGE4C7F4F stores the unmodified dword; its
+                // network-session owner receives the write after MainTick.
+                let Some(owner) = self.interner.get(command_owner) else {
+                    return false;
+                };
+                self.lifecycle_outputs
+                    .emit(super::LifecycleOutput::LatencyFudgeChanged {
+                        owner,
+                        value: *value,
+                    });
+                true
+            }
             Command::MegaMission {
                 entity_id,
                 mission,
@@ -1061,6 +1699,7 @@ impl Simulation {
                     *mission,
                     *target,
                     *destination,
+                    auxiliary,
                     rules,
                     overlay_registry,
                     frame_effects,
@@ -1068,6 +1707,38 @@ impl Simulation {
                 .accepted(),
             Command::PlanningRecord { record } => {
                 self.apply_planning_record(command_owner, record, rules)
+            }
+            Command::SynchronizedRecord { record } => {
+                if let Some((owner, command)) = self.superweapon_command_from_record(record, rules)
+                {
+                    let owner = self.interner.resolve(owner).to_owned();
+                    return self.apply_command_with_overlays(
+                        &owner,
+                        &command,
+                        rules,
+                        overlay_registry,
+                        frame_effects,
+                    );
+                }
+                if let Some(event) = ArchiveRecord::decode(record) {
+                    let Ok(entity_id) = u64::try_from(event.entity_id) else {
+                        return false;
+                    };
+                    let target = match event.target {
+                        MegaMissionTarget::Null => None,
+                        MegaMissionTarget::Cell { x, y } => {
+                            Some(combat::TargetKind::Cell(x as u16, y as u16))
+                        }
+                        MegaMissionTarget::Object { id } => {
+                            u64::try_from(id).ok().map(combat::TargetKind::Entity)
+                        }
+                    };
+                    return self.execute_archive_event(entity_id, target);
+                }
+                self.apply_production_record(record, rules, overlay_registry, frame_effects)
+            }
+            Command::AssignControlGroup { group, entity_ids } => {
+                self.assign_control_group(*group, entity_ids)
             }
             Command::Select { entity_ids, .. } => self.apply_selection_snapshot(
                 entity_ids,
@@ -1090,9 +1761,6 @@ impl Simulation {
                 if !admitted {
                     return false;
                 }
-                let Some(rules) = rules else {
-                    return false;
-                };
                 // Native also writes +6B2. Its observed consumers are class
                 // CRC4DBD60 and raw native Save/Load41035E/4103CD, not active
                 // peer checksum64DAB0. No unread Rust bookkeeping shadow is
@@ -1118,6 +1786,7 @@ impl Simulation {
                     MissionType::Move,
                     None,
                     Some(combat::TargetKind::Cell(*target_rx, *target_ry)),
+                    auxiliary,
                     rules,
                     overlay_registry,
                     frame_effects,
@@ -1132,16 +1801,18 @@ impl Simulation {
                     MissionType::Move,
                     None,
                     Some(combat::TargetKind::Entity(*target_id)),
+                    auxiliary,
                     rules,
                     overlay_registry,
                     frame_effects,
                 )
                 .accepted(),
             Command::Stop { entity_id } => {
-                if !self.entity_owned_by_id(command_owner, *entity_id) {
-                    return false;
-                }
-                // Native order admission (actor half).
+                // Event IDLE 0x004C74CB..0x004C76BB replaces the Event
+                // receiver with its decoded actor at 0x004C74D3. It never
+                // compares the sender's House with the actor's owner; sender
+                // eligibility belongs to Execute_DoList's House scan.
+                // Source: original gamemd.exe instructions.
                 if !self.order_actor_admits(*entity_id) {
                     return false;
                 }
@@ -1203,13 +1874,12 @@ impl Simulation {
                 // `0x004C75FE..0x004C7624`: a `BalloonHover=` type takes both
                 // again. Its setter's arm (`0x00741983`) kept the NavCom while
                 // the Target stood; without the Target this one clears it.
-                let balloon = rules.is_some_and(|rules| {
-                    self.substrate
-                        .entities
-                        .get(*entity_id)
-                        .and_then(|entity| self.object_type(entity.type_ref(), rules))
-                        .is_some_and(|object| object.balloon_hover)
-                });
+                let balloon = self
+                    .substrate
+                    .entities
+                    .get(*entity_id)
+                    .and_then(|entity| self.object_type(entity.type_ref(), rules))
+                    .is_some_and(|object| object.balloon_hover);
                 if balloon {
                     self.assign_null_destination(
                         *entity_id,
@@ -1267,21 +1937,17 @@ impl Simulation {
                 //
                 // `0x004C7639..0x004C7650`: an open-topped transport's riders
                 // let go of their targets too.
-                if let Some(rules) = rules {
-                    self.open_topped_passengers_take_target(
-                        *entity_id,
-                        None,
-                        rules,
-                        overlay_registry,
-                        frame_effects,
-                    );
-                }
-                self.commit_stop_miner_guard(*entity_id);
+                self.open_topped_passengers_take_target(
+                    *entity_id,
+                    None,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                );
+                self.commit_stop_miner_guard(*entity_id, rules);
                 // `0x004C769C..0x004C76AC`: Stop takes a Slave Miner off its
                 // hunt (`sim::slave_manager`).
-                if let Some(rules) = rules {
-                    self.reset_slave_manager(*entity_id, rules, frame_effects);
-                }
+                self.reset_slave_manager(*entity_id, rules, frame_effects);
                 true
             }
             // A Cell target is the Ctrl click on the ground.
@@ -1294,6 +1960,7 @@ impl Simulation {
                     MissionType::Attack,
                     Some(combat::TargetKind::Entity(*target_id)),
                     None,
+                    auxiliary,
                     rules,
                     overlay_registry,
                     frame_effects,
@@ -1309,6 +1976,7 @@ impl Simulation {
                     MissionType::Attack,
                     Some(combat::TargetKind::Cell(*target_rx, *target_ry)),
                     None,
+                    auxiliary,
                     rules,
                     overlay_registry,
                     frame_effects,
@@ -1324,6 +1992,7 @@ impl Simulation {
                     MissionType::AttackMove,
                     *target,
                     *destination,
+                    auxiliary,
                     rules,
                     overlay_registry,
                     frame_effects,
@@ -1335,16 +2004,15 @@ impl Simulation {
                     MissionType::AreaGuard,
                     *target,
                     None,
+                    auxiliary,
                     rules,
                     overlay_registry,
                     frame_effects,
                 )
                 .accepted(),
             Command::DeployMcv { entity_id } => {
-                let Some(rules) = rules else { return false };
-                if !self.entity_owned_by_id(command_owner, *entity_id) {
-                    return false;
-                }
+                // Event09's4C76BC receiver has no actor-owner comparison.
+                // D/self-click selection checks belong to their producers.
                 crate::sim::deploy::issue_order(self, *entity_id, rules, frame_effects)
             }
             // Legacy targetless order: no client sends it since the deploy key
@@ -1352,7 +2020,6 @@ impl Simulation {
             // keep it. The cell-click path sends SetRally followed by
             // SellBuilding, preserving native event1E/16.
             Command::UndeployBuilding { entity_id } => {
-                let Some(rules) = rules else { return false };
                 if !self.entity_owned_by_id(command_owner, *entity_id) {
                     return false;
                 }
@@ -1364,11 +2031,16 @@ impl Simulation {
             // CanDeploySlashUnload (`0x00700D50`) is the sender's admission
             // (deploy key, `Simulation::can_deploy_slash_unload`), not this
             // receiver's.
+            //
+            // RESIDUAL: this arm uses the clicked-mission owner instead of
+            // Event9 (`0x004C76D7..0x004C7818`). Trigger: a deployer infantry
+            // in Construction/Selling, a WeaponsFactory cell or a rejected
+            // ground projection. Effect: it can deploy where native ignores D.
+            // Frequency: rare; downstream risk: low.
             Command::ToggleInfantryDeploy { entity_id } => {
                 if !self.entity_owned_by_id(command_owner, *entity_id) {
                     return false;
                 }
-                let Some(rules) = rules else { return false };
                 let Some(actor) = self.substrate.entities.get(*entity_id) else {
                     return false;
                 };
@@ -1384,7 +2056,8 @@ impl Simulation {
                     MissionType::Unload,
                     None,
                     None,
-                    Some(rules),
+                    auxiliary,
+                    rules,
                     overlay_registry,
                     frame_effects,
                 )
@@ -1394,11 +2067,16 @@ impl Simulation {
                 rx,
                 ry,
                 producer_ids,
-            } => self.set_rally_point_for_producers(command_owner, producer_ids, *rx, *ry, rules),
+            } => self.set_rally_point_for_producers(producer_ids, *rx, *ry),
+            Command::ArchiveObject {
+                entity_id,
+                target_id,
+            } => {
+                self.execute_archive_event(*entity_id, Some(combat::TargetKind::Entity(*target_id)))
+            }
             // Production events act on the event's own house (the
             // EventClass header's house id); the payload names no owner.
             Command::QueueProduction { type_id } => {
-                let Some(rules) = rules else { return false };
                 let type_s = self.interner.resolve(*type_id).to_string();
                 production::enqueue_by_type(
                     self,
@@ -1431,12 +2109,9 @@ impl Simulation {
                     return false;
                 }
                 // The issuer adds no ownership/online/limbo/HP admission.
-                rules.is_some_and(|rules| {
-                    production::toggle_factory_primary(self, rules, *entity_id)
-                })
+                production::toggle_factory_primary(self, rules, *entity_id)
             }
             Command::CycleProducerFocus { category } => {
-                let Some(rules) = rules else { return false };
                 production::cycle_active_producer_for_owner_category(
                     self,
                     rules,
@@ -1445,7 +2120,6 @@ impl Simulation {
                 )
             }
             Command::PlaceReadyBuilding { type_id, rx, ry } => {
-                let Some(rules) = rules else { return false };
                 let type_s = self.interner.resolve(*type_id).to_string();
                 production::place_production_with_overlays(
                     self,
@@ -1460,9 +2134,6 @@ impl Simulation {
                 )
             }
             Command::PlaceProducedMobile { category } => {
-                let Some(rules) = rules else {
-                    return false;
-                };
                 production::place_production_with_overlays(
                     self,
                     rules,
@@ -1475,7 +2146,6 @@ impl Simulation {
                 )
             }
             Command::CancelProductionByType { type_id, all } => {
-                let Some(rules) = rules else { return false };
                 let type_s = self.interner.resolve(*type_id).to_string();
                 production::cancel_production_for_owner(
                     self,
@@ -1489,12 +2159,20 @@ impl Simulation {
                     frame_effects,
                 )
             }
-            // The SELL event (`EventClass::Execute 0x004C6F20`): the target's
-            // owner must be the event's house (`0x004C6F45`); a building
-            // takes `Sell_Back(-1)` (`0x004C6FA2`).
+            // EventClass::Execute @ 0x004C6CB0, SELL arm 0x004C6F12:
+            // the prefix above detaches Planning (4C6F20), then +90/alive
+            // and current Owner+30 must match the signed event House
+            // (4C6F2D..4C6F48). A building takes SellBack(-1) at4C6FA2;
+            // CanSell belongs to input admission, not this receiver.
+            // Depot Unit/Aircraft sales at4C6F5A..4C6F96 remain a separate
+            // unimplemented service lifecycle; this order handles buildings.
             Command::SellBuilding { entity_id } => {
-                let Some(rules) = rules else { return false };
-                if !self.entity_owned_by_id(command_owner, *entity_id) {
+                let Some(entity) = self.substrate.entities.get(*entity_id) else {
+                    return false;
+                };
+                if !entity.lifecycle.object_alive()
+                    || !self.entity_owned_by_id(command_owner, *entity_id)
+                {
                     return false;
                 }
                 production::sell_back(
@@ -1507,7 +2185,7 @@ impl Simulation {
                 )
             }
             Command::SellWallAtCell { x, y } => {
-                let (Some(rules), Some(overlays)) = (rules, overlay_registry) else {
+                let Some(overlays) = overlay_registry else {
                     return false;
                 };
                 // Event 0x4C6FC4 passes 0; ordinary SELL remains audible.
@@ -1520,19 +2198,36 @@ impl Simulation {
             // Stuff flag, factory queue refresh, EVA line for a human house). The
             // dispatch has no owner check, and none is added here.
             Command::SetBuildingOnLine { entity_id, on } => {
-                let (Some(rules), Some(owner)) = (rules, self.interner.get(command_owner)) else {
+                let Some(owner) = self.interner.get(command_owner) else {
                     return false;
                 };
                 if !self.houses.contains_key(&owner) {
                     return false;
                 }
-                // `0x004C6CF0`/`0x004C6D4D`: a null, dead (`+0x90`) or limboed
-                // (`+0x81`) target is dropped before GoOnline/GoOffline.
-                if !self
-                    .substrate
-                    .entities
-                    .get(*entity_id)
-                    .is_some_and(|e| e.lifecycle.object_alive() && !e.lifecycle.in_limbo())
+                // `0x004C6D09`/`0x004C6D17` (and `0x004C6D68`/`0x004C6D76` on the
+                // 0x02 branch): a null target, one whose ObjectClass IsAlive
+                // (`+0x90`) is clear, or one in Limbo (`+0x81`) is dropped
+                // before GoOnline/GoOffline. `+0x81` is Limbo, not a busy flag:
+                // `0x005438DB` sets it while clearing `+0x80` and detaching the
+                // object's cells (Limbo), `0x00543805` clears it (Unlimbo), and
+                // the create path at `0x0044EC68`/`0x0044ECC4` brackets object
+                // construction with a save/set/restore of the same byte.
+                let Some(entity) = self.substrate.entities.get(*entity_id) else {
+                    return false;
+                };
+                if !entity.lifecycle.object_alive() || entity.lifecycle.in_limbo() {
+                    return false;
+                }
+                let type_ref = entity.type_ref();
+                // The branch's last gate reads `[target+0x520]+0x16C0`, and
+                // `+0x520` is `BuildingClass::pType` (docs/ghidra-workflow.md):
+                // the target TYPE's `FirestormWall=` byte
+                // (`ObjectType.firestorm_wall`). A Firestorm Wall building is
+                // driven by the firestorm logic, not an On/Off Line event, so
+                // the record is dropped. Stock rules leave the key unset.
+                if self
+                    .object_type(type_ref, rules)
+                    .is_some_and(|object| object.firestorm_wall)
                 {
                     return false;
                 }
@@ -1550,7 +2245,7 @@ impl Simulation {
             // EventClass tail, before any House check.
             Command::LiveGameSpeed { speed } => self.session.apply_in_game_speed(*speed),
             Command::Cheer => {
-                let (Some(owner), Some(rules)) = (self.interner.get(command_owner), rules) else {
+                let Some(owner) = self.interner.get(command_owner) else {
                     return false;
                 };
                 if !self.houses.contains_key(&owner) {
@@ -1580,6 +2275,14 @@ impl Simulation {
                 // every sender: House+0x248, then Flag_To_Die when no other
                 // human House is undefeated (0x005E2BA0).
                 house.mark_left_game();
+                // Execute_DoList64C9B1 destroys this source on every peer.
+                // Retire its existing NodeNameTag timing row at the same shared
+                // event, before later records may choose another publisher.
+                if let Some(index) = self.houses.index_of(owner)
+                    && let Ok(house_id) = i8::try_from(index)
+                {
+                    self.session.retire_network_command_source(house_id);
+                }
                 if self.other_undefeated_humans(owner) == 0 {
                     self.flag_house_to_die(owner);
                 }
@@ -1605,18 +2308,15 @@ impl Simulation {
                 }
                 true
             }
-            Command::MoveFlash { rx, ry } => {
-                rules.is_some_and(|rules| self.spawn_move_flash(rules, (*rx, *ry)))
-            }
+            Command::MoveFlash { rx, ry } => self.spawn_move_flash(rules, (*rx, *ry)),
             Command::Ally { house_index } => {
                 // EventClass::Execute 0x004C6DEE..0x004C6E23: no admission
                 // gate; the sender toggles on its own mask, announced.
-                let (Some(owner), Some(other), Some(rules)) = (
+                let (Some(owner), Some(other)) = (
                     self.interner.get(command_owner),
                     usize::try_from(*house_index)
                         .ok()
                         .and_then(|index| self.houses.order().get(index).copied()),
-                    rules,
                 ) else {
                     return false;
                 };
@@ -1626,7 +2326,7 @@ impl Simulation {
                     owner,
                     other,
                 ) {
-                    self.make_enemy(owner, other, rules, true);
+                    self.make_enemy(owner, other, rules, overlay_registry, frame_effects, true);
                 } else {
                     self.make_ally(owner, other, rules, overlay_registry, frame_effects, true);
                 }
@@ -1635,55 +2335,73 @@ impl Simulation {
             Command::RemovePlayer { house_index } => {
                 // EventClass::Execute 0x004C7B73: IsHumanControlled
                 // (0x0050B730, House+0x1EC outside mode 0), then
-                // Flag_To_Die (0x004C7BE1).
+                // Flag_To_Die (0x004C7BE1). A WOL tournament game skips the
+                // human test (0x004C7BBF..0x004C7BCE).
+                // RESIDUAL: mode 4's ladder-stats call (0x004C7BA0..0x004C7BBA)
+                // is backend.
                 let Some(owner) = usize::try_from(*house_index)
                     .ok()
                     .and_then(|index| self.houses.order().get(index).copied())
                 else {
                     return false;
                 };
-                if !self
-                    .houses
-                    .get(&owner)
-                    .is_some_and(|house| house.is_human())
+                if !self.session.wol_tournament_game()
+                    && !self
+                        .houses
+                        .get(&owner)
+                        .is_some_and(|house| house.is_human())
                 {
                     return false;
                 }
                 self.flag_house_to_die(owner);
+                // REMOVEPLAYER is synchronized source loss, distinct from
+                // DESTRUCT/defeat: a connected WOL observer remains a publisher.
+                if let Ok(house_id) = i8::try_from(*house_index) {
+                    self.session.retire_network_command_source(house_id);
+                }
                 true
             }
-            // `EventClass::Execute 0x004C6ED2..0x004C6F01`: a live target
-            // (`+0x90`) toggles (`ToggleRepair(-1)`).
+            // Event4C6ED2 resolves Techno and detaches planning6386E0 above,
+            // before its only admission: Object+90. Accepted events survive
+            // capture; neither sender ownership nor CanRepair is rechecked.
+            // Source: original gamemd.exe instructions4C6ED2..4C6F01.
             Command::ToggleRepair { entity_id } => {
-                if !self.entity_owned_by_id(command_owner, *entity_id)
-                    || !self
-                        .substrate
-                        .entities
-                        .get(*entity_id)
-                        .is_some_and(|entity| entity.lifecycle.object_alive())
+                if !self
+                    .substrate
+                    .entities
+                    .get(*entity_id)
+                    .is_some_and(|entity| entity.lifecycle.object_alive())
                 {
                     return false;
                 }
-                rules.is_some_and(|rules| {
-                    production::toggle_repair(
-                        self,
-                        rules,
-                        *entity_id,
-                        production::RepairControl::Toggle,
-                    )
-                })
+                production::toggle_repair(
+                    self,
+                    rules,
+                    *entity_id,
+                    production::RepairControl::Toggle,
+                )
             }
             Command::UnloadPassengers { transport_id } => {
                 if !self.entity_owned_by_id(command_owner, *transport_id) {
                     return false;
                 }
-                let has_passengers = self
+                let has_passengers = self.substrate.entities.get(*transport_id).is_some_and(|t| {
+                    !t.passenger_role.occupants().is_empty()
+                        || t.passenger_role
+                            .cargo()
+                            .is_some_and(|cargo| !cargo.is_empty())
+                });
+                // A gap generator's self click sends the same Unload
+                // (`0x004434FF..0x00443514`) with no cargo; its mission
+                // toggles the super-charge.
+                let gap_generator = self
                     .substrate
                     .entities
                     .get(*transport_id)
-                    .and_then(|t| t.passenger_role.cargo())
-                    .is_some_and(|c| !c.is_empty());
-                if !has_passengers {
+                    .filter(|t| t.category() == crate::map::entities::EntityCategory::Structure)
+                    .and_then(|t| self.interner.object_type(t.type_ref(), rules))
+                    .is_some_and(|object| object.gap_generator);
+                if !has_passengers && !gap_generator {
                     return false;
                 }
                 let category = self
@@ -1738,7 +2456,6 @@ impl Simulation {
                         // Vehicle/aircraft transports unload through the Unload
                         // mission (`UnitClass::Mission_Unload @ 0x0073D630`
                         // transport branch; Aircraft slot `0x004151E0`).
-                        let Some(rules) = rules else { return false };
                         let is_transport = self
                             .substrate
                             .entities
@@ -1775,28 +2492,16 @@ impl Simulation {
                         // event's NULL target and destination stop a moving
                         // transport where it is, to unload there.
                         //
-                        // RESIDUAL: the deploy key sends DEPLOY instead
-                        // (`DeployCommandClass` `0x00730AF0` ->
-                        // `ClickedEvent(9)`), and VERA does not tell the two
-                        // apart. That arm (`0x004C7762..0x004C7812`) also
-                        // nulls the destination and target, but it refuses a
-                        // current mission 0x12 or 0x13, an aircraft, a cell
-                        // holding a `WeaponsFactory=` building (BuildingType
-                        // +0x16BD, read at `0x00460A72`), and a unit off a
-                        // bridge on a flat cell whose vt+0x2B0 answers true;
-                        // it leaves ArchiveTarget and the suspended
-                        // NavCom/TarCom alone. Trigger: the deploy key on a
-                        // loaded transport or a deployer infantry in one of
-                        // those states. Effect: VERA unloads or deploys where
-                        // native ignores the key, for example a transport
-                        // still in its war factory's cell. Frequency: rare.
-                        // Risk: low.
+                        // Unit transport D uses deploy::issue_order instead:
+                        // Event9 (`0x004C76D7..0x004C7818`) retains its own
+                        // admission guards and archive/suspended state.
                         self.apply_megamission_command(
                             *transport_id,
                             MissionType::Unload,
                             None,
                             None,
-                            Some(rules),
+                            auxiliary,
+                            rules,
                             overlay_registry,
                             frame_effects,
                         )
@@ -1809,7 +2514,6 @@ impl Simulation {
                 attacker_id,
                 target_building_id,
             } => {
-                let Some(rules) = rules else { return false };
                 if !self.entity_owned_by_id(command_owner, *attacker_id) {
                     return false;
                 }
@@ -1829,7 +2533,7 @@ impl Simulation {
                 if c4_ok.is_none() {
                     return false;
                 }
-                // Validate target is a CanC4, non-invisible enemy building, not iron-curtained.
+                // Validate target is a CanC4, non-invisible building, not iron-curtained.
                 // These gates stand in for the cursor's (What_Action), which
                 // is unread for a building being sold (Mission 0x13); the
                 // arrival plants nothing on one (`sim::c4_plant`).
@@ -1863,24 +2567,15 @@ impl Simulation {
                             Some((rules, &self.interner)),
                         )
                         .ok()?;
-                        Some(b.owner())
+                        Some(())
                     });
-                let Some(target_owner) = target_info else {
+                let Some(()) = target_info else {
                     return false;
                 };
-                // RESIDUAL: enemy-only, as the actor's house asks it. Native
-                // has no such gate: a Ctrl+click passes What_Action's ally
-                // test (`0x007003C4`), and neither the Sabotage click arm
-                // (`0x004D7788`) nor the arrival (`0x0051A4BF..0x0051A664`)
-                // tests an alliance, so a forced charge goes on an allied or
-                // own CanC4 building.
-                if crate::map::houses::is_allied_with(
-                    self.house_alliances.as_map(),
-                    command_owner,
-                    self.interner.resolve(target_owner),
-                ) {
-                    return false;
-                }
+                // The command carries the selected Sabotage action. Native
+                // What_Action permits Ctrl on allies (7003C4..700406); the
+                // click arm4D7788 emits mission17. That arm and arrival
+                // 51A4BF..51A664 do not test the target's alliance.
                 // Event4C747C: Set_Destination(target building, 1). The building is
                 // the NavCom, so the Infantry +1AC admits its footprint cells to a
                 // Sabotage C4 carrier (`0x0051C2D3..`); the walk ends inside, where
@@ -1890,7 +2585,8 @@ impl Simulation {
                     MissionType::Sabotage,
                     None,
                     Some(combat::TargetKind::Entity(*target_building_id)),
-                    Some(rules),
+                    auxiliary,
+                    rules,
                     overlay_registry,
                     frame_effects,
                 )
@@ -1900,7 +2596,6 @@ impl Simulation {
                 engineer_id,
                 target_building_id,
             } => {
-                let Some(rules) = rules else { return false };
                 if !self.entity_owned_by_id(command_owner, *engineer_id) {
                     return false;
                 }
@@ -1939,7 +2634,8 @@ impl Simulation {
                     MissionType::Capture,
                     None,
                     Some(combat::TargetKind::Entity(*target_building_id)),
-                    Some(rules),
+                    auxiliary,
+                    rules,
                     overlay_registry,
                     frame_effects,
                 )
@@ -1950,7 +2646,6 @@ impl Simulation {
                 target_rx,
                 target_ry,
             } => {
-                let Some(rules) = rules else { return false };
                 // The SPECIAL_PLACE event (`EventClass::Execute 0x004C78D6`).
                 let owner = self.interner.intern(command_owner);
                 self.fire_super_weapon(
@@ -1968,9 +2663,6 @@ impl Simulation {
                 target_rx,
                 target_ry,
             } => {
-                let Some(rules) = rules else {
-                    return false;
-                };
                 let owner = self.interner.intern(command_owner);
                 self.fire_super_weapon_selected(
                     rules,
@@ -1984,9 +2676,6 @@ impl Simulation {
                 )
             }
             Command::CancelPaidSuperWeapon { selection } => {
-                let Some(rules) = rules else {
-                    return false;
-                };
                 let owner = self.interner.intern(command_owner);
                 Self::cancel_paid_super_weapon_selection(
                     &mut self.substrate,
@@ -2002,9 +2691,6 @@ impl Simulation {
                 target_rx,
                 target_ry,
             } => {
-                let Some(rules) = rules else {
-                    return false;
-                };
                 let owner = self.interner.intern(command_owner);
                 self.fire_super_weapon_selected(
                     rules,
@@ -2018,7 +2704,6 @@ impl Simulation {
                 )
             }
             Command::EjectBunker { bunker_id } => {
-                let Some(rules) = rules else { return false };
                 if !self.entity_owned_by_id(command_owner, *bunker_id) {
                     return false;
                 }
@@ -2043,36 +2728,55 @@ impl Simulation {
 
     /// The rally click's event 0x1E for each selected factory:
     /// `BuildingClass::SetRallyPoint @ 0x00443860` queues it and
-    /// `EventClass::Execute @ 0x004C6DAA` runs `Set_ArchiveTarget @
-    /// 0x0070C610`, so the factory archives the cell (its only store).
+    /// [`Self::execute_archive_event`] runs it, so the factory archives the
+    /// cell (its only store). Input uses [`Self::takes_rally_point`] before
+    /// issuing it. The accepted event does not repeat ownership/admission:
+    /// native4C6DAA..4C6DDE tests only the resolved actor's Alive byte. A
+    /// capture between enqueue and dispatch must retain an accepted event,
+    /// even if a full OutList refuses the new owner's replacement rally.
     ///
     /// The input owner `factory_rally_cell_input` has already run native
     /// Map56DC20's nearby-passable search separately for each producer. This
     /// synchronized event stores that prepared target without searching again.
-    fn set_rally_point_for_producers(
-        &mut self,
-        command_owner: &str,
-        producer_ids: &[u64],
-        rx: u16,
-        ry: u16,
-        rules: Option<&RuleSet>,
-    ) -> bool {
-        let Some(rules) = rules else {
-            return true;
-        };
-        let mut ids = producer_ids.to_vec();
-        ids.sort_unstable();
-        ids.dedup();
-        for stable_id in ids {
-            if self.takes_rally_point(stable_id, command_owner, rules)
-                && let Some(entity) = self.substrate.entities.get_mut(stable_id)
-            {
-                entity.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(rx, ry)));
-            }
+    fn set_rally_point_for_producers(&mut self, producer_ids: &[u64], rx: u16, ry: u16) -> bool {
+        for &stable_id in producer_ids {
+            self.execute_archive_event(
+                stable_id,
+                Some(crate::sim::combat::TargetKind::Cell(rx, ry)),
+            );
         }
         // `EVA_NewRallyPointEstablished` is not a sim fact: `BuildingClass::
         // SetRallyPoint 0x00443A69` speaks inside the click handler, after the
         // rally EventClass is pushed and before it executes — the app owns it.
+        true
+    }
+
+    /// `EventClass::Execute @ 0x004C6DAA`'s event 0x1E (ARCHIVE) for
+    /// `entity_id`: its planning tokens are cleared (`0x006386E0`, event
+    /// NULL), a dead object (`+0x90`) is skipped, and otherwise
+    /// `Set_ArchiveTarget @ 0x0070C610` stores `target` as the event resolves
+    /// it ([`Self::resolve_event_token`]): null for an object no longer
+    /// present, while a Cell always resolves. Returns whether it archived.
+    fn execute_archive_event(
+        &mut self,
+        entity_id: u64,
+        target: Option<crate::sim::combat::TargetKind>,
+    ) -> bool {
+        self.planning_detach_actor(entity_id);
+        // The target resolves only for a live object (`0x004C6DCD` precedes
+        // `0x006E6E20`), so a dead one stamps no fallback Cell.
+        if !self
+            .substrate
+            .entities
+            .get(entity_id)
+            .is_some_and(|object| object.lifecycle.object_alive())
+        {
+            return false;
+        }
+        let target = self.resolve_event_token(target);
+        if let Some(object) = self.substrate.entities.get_mut(entity_id) {
+            object.set_archive_target(target);
+        }
         true
     }
 
@@ -2108,6 +2812,25 @@ impl Simulation {
     /// selection, but does not retroactively remove an existing one.
     /// VERA-only: applies the local `Command::Select` snapshot, its source of truth, to
     /// IsSelected `Object+0x83` through `Deselect @ 0x005F44A0` and `Select @ 0x005F4520`.
+    ///
+    /// RESIDUAL: the input ledger resolves a mutation's Select calls, their
+    /// planning expansion (`0x00637840`) and Unselect_All drains included;
+    /// this then Selects only the final new members, in vector order, with
+    /// the `0x00AC4CF6` guard clear. So (a) a Select a partner's Selected tag
+    /// event (33) starts expands its own tail node, where native's guard
+    /// returns early; (b) an object Selected and then drained within one
+    /// mutation, or a selected object drained and Selected again within it,
+    /// raises no event 33 (native raises one per Select, `0x006FBFE4`; the
+    /// re-Selected object keeps its bit here, so `try_select_object` sees it
+    /// already selected); (c) the new members' events run in vector order, not
+    /// call order. Trigger: a tag with event 33 on a planning partner (a);
+    /// on an object a later Select of the same mutation drains, which takes
+    /// another house's object on the player's planning node (b); or on two
+    /// objects one mutation selects (c). Effect: extra partners selected, or
+    /// a missing or reordered event 33 and the actions it runs (RNG draws
+    /// included). Frequency: rare; needs Selected triggers, and (a, b)
+    /// Planning Mode. Downstream risk: the selection's later orders, and
+    /// whatever those trigger actions change.
     fn apply_selection_snapshot(
         &mut self,
         stable_ids: &[u64],
@@ -2136,7 +2859,7 @@ impl Simulation {
     /// Its disguise arm (+C8 with a NULL +D0(1)) is
     /// [`crate::sim::game_entity::GameEntity::disguise_hides_house_from`]; it
     /// does not treat current fog as selectability.
-    pub fn object_is_selectable(&self, stable_id: u64, rules: Option<&RuleSet>) -> bool {
+    pub fn object_is_selectable(&self, stable_id: u64, rules: &RuleSet) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
         };
@@ -2155,37 +2878,111 @@ impl Simulation {
         }) {
             return false;
         }
-        rules.is_none_or(|r| {
-            self.interner
-                .object_type(entity.type_ref(), r)
-                .is_none_or(|object| object.selectable)
-        })
+        self.interner
+            .object_type(entity.type_ref(), rules)
+            .is_none_or(|object| object.selectable)
     }
 
     /// Object5F4520's state/type admission, shared by provisional local input
     /// and committed selection. Membership and pending placement are caller
     /// state: input checks its newest ledger/placement, the sim its stored bit.
     /// Original does not read Alive or Health here; search/click callers do.
-    pub fn can_select_object(&self, stable_id: u64, rules: Option<&RuleSet>) -> bool {
+    pub fn can_select_object(&self, stable_id: u64, rules: &RuleSet) -> bool {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return false;
         };
         !entity.lifecycle.in_limbo()
             && self.object_is_selectable(stable_id, rules)
-            && !(entity.is_mission_only()
-                && rules.is_some_and(|rules| self.techno_player_controllable(stable_id, rules)))
+            && !(entity.is_mission_only() && self.techno_player_controllable(stable_id, rules))
             && !entity.is_warped_out()
     }
 
     /// Commit an input-admitted Techno selection through Object5F4520, then
     /// its successful Techno6FBFD0..6FBFE4 Event33 callback (Steam gamemd).
-    /// The app's picking/navigation owner admits discovery+41B and House50B6F0
-    /// before emitting the ordered Select command. Keep the graphical-client
-    /// B73550 gate there: replaying this command must not depend on a renderer.
+    /// The app's input ledger applies TechnoClass::Select's gate
+    /// ([`Self::techno_select_admits`]) and Unselect_All
+    /// ([`Self::select_unselects_all`]) before emitting the ordered Select
+    /// command. Keep the graphical-client B73550 gate there: replaying this
+    /// command must not depend on a renderer.
     /// Raw lifecycle Select writers use Selection::select and do not raise33.
     pub(crate) fn try_select_object(
         &mut self,
         stable_id: u64,
+        context: super::UninitContext<'_>,
+    ) -> bool {
+        self.object_select(stable_id, false, context)
+    }
+
+    /// `TechnoClass::Select @ 0x006FBFA0`'s gate (`0x006FBFA3..0x006FBFC3`):
+    /// the current house has discovered the object (`+0x41B`) or its owner
+    /// is the human player (`HouseClass::IsHumanPlayer @ 0x0050B6F0`). Its
+    /// third arm, a zero main window handle (`0x00B73550`), never holds in a
+    /// running game. Every Select of a Techno passes it: the game's own
+    /// ([`Self::techno_select`]) and each Select the app's input ledger
+    /// resolves, planning partners included.
+    pub fn techno_select_admits(&self, stable_id: u64) -> bool {
+        self.substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| {
+                entity.discovery.discovered_by_current_house()
+                    || self.house_is_human_player(entity.owner())
+            })
+    }
+
+    /// `ObjectClass::Select @ 0x005F4520` into a non-empty selection whose
+    /// first object (current-objects `[0]`) is `first`
+    /// (`0x005F45AF..0x005F45F8`): Unselect_All (`0x0048DC90`) runs unless
+    /// both owners are the human player (`0x0050B6F0`), so a selection holds
+    /// either the player's objects or one other object. Both Select owners
+    /// decide with this: the input ledger, which knows `[0]`, and
+    /// [`Self::object_select`].
+    pub fn select_unselects_all(&self, first: u64, new: u64) -> bool {
+        let human = |id: u64| {
+            self.substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| self.house_is_human_player(entity.owner()))
+        };
+        let first_human = human(first);
+        first_human != human(new) || !first_human
+    }
+
+    /// ObjectClass::Deselect @ 0x005F44A0: an unselected object does
+    /// nothing; otherwise remove it from selection, then release Follow
+    /// (0x005F4503..0x005F4513). The app owns the retained input ledger.
+    pub(crate) fn object_deselect(&mut self, stable_id: u64) {
+        if let Some(entity) = self.substrate.entities.get_mut(stable_id)
+            && entity.selection.is_selected()
+        {
+            entity.selection.deselect();
+            self.lifecycle_outputs
+                .emit(super::LifecycleOutput::FollowReleased { stable_id });
+        }
+    }
+
+    /// `ObjectClass::Select @ 0x005F4520` and the Selected tag event that
+    /// `TechnoClass::Select` raises after it (`0x006FBFD0..0x006FBFE4`). A
+    /// Select the game makes itself (`logic`) first runs Unselect_All
+    /// (`0x0048DC90`: Deselect `0x005F44A0` of every selected object, each
+    /// releasing Follow, [`LifecycleOutput::FollowReleased`]) when
+    /// [`Self::select_unselects_all`] says so, then reports its insertion
+    /// into the current-objects vector ([`LifecycleOutput::ObjectSelected`]),
+    /// before the tag event can Select anything else. An input Select arrives
+    /// as a snapshot its owner already resolved.
+    ///
+    /// The simulation keeps selected bytes, not the vector's order, so this
+    /// reads the first selected object in store order as `[0]`. Every
+    /// Select keeps a selection all the player's or a single other object,
+    /// so any member answers as `[0]` would; they differ only if a selected
+    /// object changed owner and stayed selected.
+    ///
+    /// [`LifecycleOutput::ObjectSelected`]: super::LifecycleOutput::ObjectSelected
+    /// [`LifecycleOutput::FollowReleased`]: super::LifecycleOutput::FollowReleased
+    fn object_select(
+        &mut self,
+        stable_id: u64,
+        logic: bool,
         context: super::UninitContext<'_>,
     ) -> bool {
         if !self.can_select_object(stable_id, context.rules())
@@ -2197,55 +2994,63 @@ impl Simulation {
         {
             return false;
         }
+        if logic {
+            let first = self
+                .substrate
+                .entities
+                .values()
+                .find(|entity| entity.selection.is_selected())
+                .map(|entity| entity.stable_id());
+            if first.is_some_and(|first| self.select_unselects_all(first, stable_id)) {
+                for id in self.substrate.entities.keys_sorted() {
+                    self.object_deselect(id);
+                }
+            }
+        }
         let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
             return false;
         };
         entity.selection.select();
+        if logic {
+            self.lifecycle_outputs
+                .emit(super::LifecycleOutput::ObjectSelected { stable_id });
+        }
         // Selection has already changed when the synchronous Tag actions run.
         // They may change ownership, remove the Tag, or retire the object.
         self.dispatch_object_tag_event(stable_id, 33, Some(stable_id), None, context);
         true
     }
 
-    /// `TechnoClass::Select @ 0x006FBFA0` (vt+0x14C) for a logic caller that
-    /// re-selects one of its own objects: an object the current house has
-    /// not discovered (`+0x41B`) and does not own as its human player is
-    /// refused (the graphical client's gate); then ObjectClass::Select and
-    /// the tag event ([`Self::try_select_object`]); then, for a human
-    /// player's or passive house's object while the selection-voice latch
+    /// `TechnoClass::Select @ 0x006FBFA0` (vt+0x14C) for a logic caller: an
+    /// object [`Self::techno_select_admits`] refuses is not selected; then
+    /// ObjectClass::Select and the tag event ([`Self::object_select`]);
+    /// then, for a human player's
+    /// or passive house's object while the selection-voice latch
     /// `0x00822CF2` is set (`0x006FBFF4..0x006FC018`), VoiceSelect (vt+0x360)
-    /// through [`Self::selection_voice_request`].
-    ///
-    /// RESIDUAL: the planning-node selection add (`0x00637840`) runs in the
-    /// app's selection resolver, since planning mode is local; these logic
-    /// Selects skip it. It differs only when a reselected crewman, escapee or
-    /// parasite still holds a path while the local player is in planning mode.
+    /// through [`Self::selection_voice_request`]; last, the planning-node add
+    /// (`0x006FC020`, [`Self::planning_select_tail_node`]), which in the local
+    /// player's Planning Mode Selects this object's tail-node partners
+    /// through this same function. A passenger or parasite keeps its path
+    /// through Limbo, so a reselected escapee or released parasite pulls in
+    /// its node's partners.
     pub(crate) fn techno_select(
         &mut self,
         stable_id: u64,
         voice_latch: bool,
         context: super::UninitContext<'_>,
     ) -> bool {
-        let Some(entity) = self.substrate.entities.get(stable_id) else {
-            return false;
-        };
-        if !entity.discovery.discovered_by_current_house()
-            && !self.house_is_human_player(entity.owner())
-        {
+        if !self.techno_select_admits(stable_id) || !self.object_select(stable_id, true, context) {
             return false;
         }
-        if !self.try_select_object(stable_id, context) {
-            return false;
-        }
-        if let Some(rules) = context.rules()
-            && let Some(sound_id) = self.selection_voice_request(rules, stable_id, voice_latch)
-        {
+        let rules = context.rules();
+        if let Some(sound_id) = self.selection_voice_request(rules, stable_id, voice_latch) {
             let sound_id = sound_id.to_owned();
             self.sound_events.emit(SimSoundEvent::UnitVoiceRequested {
                 owner: stable_id,
                 sound_id,
             });
         }
+        self.planning_select_tail_node(stable_id, voice_latch, context);
         true
     }
 
@@ -2485,9 +3290,7 @@ impl Simulation {
     ///    back to Guard (`techno_ai::building_missions`).
     ///
     /// The tail (`0x004C749D..0x004C74BA`) hands a non-NULL third token to
-    /// the NavComAux setter (vt+0x47C). No represented order carries one:
-    /// [`crate::sim::command::MegaMissionRecord::decode`] refuses a non-NULL
-    /// auxiliary kind.
+    /// the NavComAux setter (vt+0x47C), after Set_Destination clears it.
     ///
     /// The arm tests neither the actor's owner (`0x004C71CA` resolves it
     /// independently of the event house) nor friendship nor the actor's
@@ -2503,7 +3306,8 @@ impl Simulation {
         mission: MissionType,
         target: Option<combat::TargetKind>,
         destination: Option<combat::TargetKind>,
-        rules: Option<&RuleSet>,
+        auxiliary: MegaMissionTarget,
+        rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> MegaMissionExecution {
@@ -2605,7 +3409,7 @@ impl Simulation {
         ) {
             log::warn!("MegaMission destination {entity_id}: {cause}");
         }
-        if let (Some(target), Some(rules)) = (target, rules) {
+        if let Some(target) = target {
             self.open_topped_passengers_take_target(
                 entity_id,
                 Some(target),
@@ -2614,9 +3418,31 @@ impl Simulation {
                 frame_effects,
             );
         }
+        if foot && auxiliary != MegaMissionTarget::Null {
+            let auxiliary = match auxiliary {
+                MegaMissionTarget::Null => None,
+                MegaMissionTarget::Cell { x, y } => {
+                    Some(combat::TargetKind::Cell(x as u16, y as u16))
+                }
+                MegaMissionTarget::Object { id } => {
+                    u64::try_from(id).ok().map(combat::TargetKind::Entity)
+                }
+            };
+            let auxiliary = self.resolve_event_token(auxiliary);
+            self.substrate
+                .entities
+                .get_mut(entity_id)
+                .unwrap()
+                .navigation
+                .set_nav_com_aux(auxiliary.map(Into::into));
+        }
         MegaMissionExecution::Executed
     }
 }
+
+#[cfg(test)]
+#[path = "battle_opening_tests.rs"]
+mod battle_opening_tests;
 
 #[cfg(test)]
 mod tests {
@@ -2629,7 +3455,7 @@ mod tests {
     use crate::sim::mission::MissionId;
     use crate::sim::movement::locomotor::LocomotorState;
 
-    fn amcv_move_rules() -> RuleSet {
+    pub(super) fn amcv_move_rules() -> RuleSet {
         let ini = IniFile::from_str(
             "[InfantryTypes]\n\
              [VehicleTypes]\n\
@@ -2647,7 +3473,12 @@ mod tests {
         RuleSet::from_ini(&ini).expect("amcv rules")
     }
 
-    fn spawn_rule_backed_unit(sim: &mut Simulation, sid: u64, type_id: &str, rules: &RuleSet) {
+    pub(super) fn spawn_rule_backed_unit(
+        sim: &mut Simulation,
+        sid: u64,
+        type_id: &str,
+        rules: &RuleSet,
+    ) {
         let owner = sim.interner.intern("Americans");
         let type_ref = sim.interner.intern(type_id);
         let obj = rules.object(type_id).expect("object type");
@@ -2682,6 +3513,283 @@ mod tests {
         // reads that byte, so the fixture must model a revealed object.
         entity.lifecycle.set_in_limbo_for_test(false);
         sim.substrate.entities.insert(entity);
+    }
+
+    #[test]
+    fn accepted_archive_keeps_its_tokens_after_capture_and_resolves_missing_target_to_null() {
+        use crate::sim::house_state::HouseState;
+        let rules = amcv_move_rules();
+        let mut sim = Simulation::new();
+        let old_owner = sim.intern("Americans");
+        let new_owner = sim.intern("British");
+        for owner in [old_owner, new_owner] {
+            sim.houses
+                .register(HouseState::new(owner, 0, None, true, 0, 10));
+        }
+        spawn_rule_backed_unit(&mut sim, 42, "AMCV", &rules);
+        spawn_rule_backed_unit(&mut sim, 43, "AMCV", &rules);
+        sim.substrate
+            .entities
+            .get_mut(42)
+            .unwrap()
+            .set_archive_target(Some(combat::TargetKind::Cell(5, 6)));
+        assert!(sim.issue_local_command(CommandEnvelope::new(
+            old_owner,
+            0,
+            Command::ArchiveObject {
+                entity_id: 42,
+                target_id: 43,
+            }
+        )));
+        let record = sim.network_command_queues().local_records().unwrap()[0].clone();
+        assert_eq!(
+            ArchiveRecord::decode(&record).unwrap().target,
+            MegaMissionTarget::Object { id: 43 }
+        );
+        sim.change_owner_with_rules(42, new_owner, &rules, None, FrameEffects::default());
+        sim.substrate.entities.remove(43);
+        let queued = sim.take_frame_commands_for_test();
+        assert_eq!(queued.len(), 1);
+        assert_eq!(queued[0].owner, old_owner);
+        assert!(sim.apply_command("Americans", &queued[0].payload, Some(&rules)));
+        assert_eq!(
+            sim.substrate.entities.get(42).unwrap().archive_target(),
+            None
+        );
+
+        // Native6E6F0F resolves an unknown kind to NULL too. It must still
+        // execute the archive setter, rather than silently dropping the event.
+        sim.substrate
+            .entities
+            .get_mut(42)
+            .unwrap()
+            .set_archive_target(Some(combat::TargetKind::Cell(7, 8)));
+        let mut null = record;
+        null.payload_mut()[9] = 0xff;
+        let command = sim.decode_native_command_record(&null, 0).unwrap();
+        assert!(sim.apply_command("Americans", &command.payload, Some(&rules)));
+        assert_eq!(
+            sim.substrate.entities.get(42).unwrap().archive_target(),
+            None
+        );
+    }
+
+    #[test]
+    fn queued_sale_retains_issuer_across_capture_and_does_not_readmit_can_sell() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut rules = retail.rules;
+        crate::map::theater::load_theater(&mut assets, "URBAN");
+        rules.bind_building_buildup_assets(&assets, "URBAN");
+        assert!(rules.has_buildup("GAPILE"));
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4C6F12);
+        let old_owner = sim.interner.get("Americans").unwrap();
+        let new_owner = sim.interner.get("Russians").unwrap();
+        sim.houses
+            .get_mut(&new_owner)
+            .unwrap()
+            .set_is_human_for_test(true);
+        let building = sim
+            .spawn_object("GAPILE", "Americans", 8, 8, 0, &rules)
+            .unwrap();
+        let record = sim
+            .encode_object_action_record(
+                old_owner,
+                &Command::SellBuilding {
+                    entity_id: building,
+                },
+            )
+            .unwrap();
+        assert!(sim.admit_native_command_record(record.clone()));
+        sim.change_owner_with_rules(building, new_owner, &rules, None, FrameEffects::default());
+        let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "sale", 0);
+        let mut sim = crate::sim::snapshot::GameSnapshot::load(&bytes)
+            .unwrap()
+            .sim;
+        sim.restore_after_snapshot_load().unwrap();
+        let admitted = sim.take_frame_commands_for_test();
+        assert_eq!(admitted.len(), 1);
+        assert_eq!(admitted[0].owner, old_owner);
+        assert!(!sim.apply_command("Americans", &admitted[0].payload, Some(&rules)));
+        assert!(
+            !sim.substrate
+                .entities
+                .get(building)
+                .unwrap()
+                .building_down()
+        );
+
+        // A double click can admit two events before the first starts Selling.
+        // The second still reaches SellBack(-1), even though CanSell now refuses.
+        let current = sim
+            .encode_object_action_record(
+                new_owner,
+                &Command::SellBuilding {
+                    entity_id: building,
+                },
+            )
+            .unwrap();
+        let envelope = sim.decode_native_command_record(&current, 0).unwrap();
+        let credits = sim.houses[&new_owner].economy().credits();
+        let (accepted, draws) = crate::sim::rng::trace_draws(|| {
+            sim.apply_command("Russians", &envelope.payload, Some(&rules))
+        });
+        assert!(accepted);
+        assert!(draws.is_empty(), "crew RNG belongs to later Selling visits");
+        let actor = sim.substrate.entities.get(building).unwrap();
+        assert!(actor.building_down());
+        let progress = (actor.mission.handler_state(), *actor.native_stage());
+        assert!(!production::can_sell_building(&sim, &rules, building));
+        assert!(sim.apply_command("Russians", &envelope.payload, Some(&rules)));
+        let actor = sim.substrate.entities.get(building).unwrap();
+        assert_eq!(
+            (actor.mission.handler_state(), *actor.native_stage()),
+            progress
+        );
+        assert_eq!(sim.houses[&new_owner].economy().credits(), credits);
+        // Event4C6F2D..4C6F35 refuses a retained but no-longer-alive target.
+        sim.substrate
+            .entities
+            .get_mut(building)
+            .unwrap()
+            .lifecycle
+            .set_object_alive_for_test(false);
+        sim.sound_events.clear_for_test();
+        assert!(!sim.apply_command("Russians", &envelope.payload, Some(&rules)));
+        assert!(sim.sound_events.iter().next().is_none());
+        sim.substrate.entities.remove(building);
+        let stale = sim.decode_native_command_record(&record, 0).unwrap();
+        assert!(!sim.apply_command("Americans", &stale.payload, Some(&rules)));
+    }
+
+    #[test]
+    fn accepted_repair_resolves_the_captured_building_and_stale_target_at_dispatch() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let rules = retail.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4C6ED2);
+        let old_owner = sim.interner.get("Americans").unwrap();
+        let new_owner = sim.interner.get("Russians").unwrap();
+        let building = sim
+            .spawn_object("GAPILE", "Americans", 8, 8, 0, &rules)
+            .unwrap();
+        sim.substrate
+            .entities
+            .get_mut(building)
+            .unwrap()
+            .health
+            .set(300);
+        let record = sim.encode_repair_record(old_owner, building).unwrap();
+        assert!(sim.admit_native_command_record(record.clone()));
+        sim.change_owner_with_rules(building, new_owner, &rules, None, FrameEffects::default());
+        assert!(
+            !sim.substrate
+                .entities
+                .get(building)
+                .unwrap()
+                .repairing
+                .is_on()
+        );
+        let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "repair", 0);
+        let mut sim = crate::sim::snapshot::GameSnapshot::load(&bytes)
+            .unwrap()
+            .sim;
+        sim.restore_after_snapshot_load().unwrap();
+        let admitted = sim.take_frame_commands_for_test();
+        assert_eq!(admitted.len(), 1);
+        assert_eq!(admitted[0].owner, old_owner);
+        let (accepted, draws) = crate::sim::rng::trace_draws(|| {
+            sim.apply_command("Americans", &admitted[0].payload, Some(&rules))
+        });
+        assert!(accepted, "the old issuer is not receiver admission");
+        assert!(draws.is_empty());
+        assert!(
+            sim.substrate
+                .entities
+                .get(building)
+                .unwrap()
+                .repairing
+                .is_on()
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(building)
+                .unwrap()
+                .health
+                .current(),
+            300
+        );
+        sim.substrate.entities.remove(building);
+        let stale = sim.decode_native_command_record(&record, 0).unwrap();
+        assert!(!sim.apply_command("Americans", &stale.payload, Some(&rules)));
+    }
+
+    #[test]
+    fn idle_record_preserves_unresolved_token_and_decodes_at_execution() {
+        use crate::sim::house_state::HouseState;
+
+        let rules = amcv_move_rules();
+        let mut sim = Simulation::new();
+        sim.interner.intern("Interner gap");
+        let actor_owner = sim.interner.intern("Americans");
+        let issuer = sim.interner.intern("British");
+        sim.houses
+            .register(HouseState::new(actor_owner, 0, None, true, 0, 10));
+        sim.houses
+            .register(HouseState::new(issuer, 1, None, true, 0, 10));
+        sim.session.set_binary_frame_for_test(u32::MAX - 3);
+
+        // Encoding must not resolve a stale identifier. The native token is
+        // retained until4C74CE, independently of the issuer's House.
+        let record = sim.encode_stop_record(issuer, 42).unwrap();
+        assert_eq!(record.house_id(), 1);
+        assert_eq!(record.frame_stamp(), -4);
+        assert_eq!(StopRecord::decode(&record).unwrap().entity_id, 42);
+        assert!(sim.decode_native_command_record(&record, 123).is_none());
+        assert!(sim.encode_scatter_record(issuer, 42).is_none());
+
+        spawn_rule_backed_unit(&mut sim, 42, "AMCV", &rules);
+        let actor = sim.substrate.entities.get_mut(42).unwrap();
+        actor.navigation.set_nav_list_for_test(
+            vec![crate::sim::components::NavTargetRef::cell(12, 13)],
+            false,
+        );
+        let command = sim.decode_native_command_record(&record, 123).unwrap();
+        assert_eq!(command.owner, issuer);
+        assert_eq!(command.execute_tick, 123);
+        assert_eq!(command.payload, Command::Stop { entity_id: 42 });
+        assert!(sim.apply_command("British", &command.payload, Some(&rules)));
+        assert!(
+            sim.substrate
+                .entities
+                .get(42)
+                .unwrap()
+                .navigation
+                .nav_list()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn idle_record_rejects_unmapped_issuer_and_out_of_range_identifier() {
+        use crate::sim::house_state::HouseState;
+
+        let mut sim = Simulation::new();
+        let issuer = sim.interner.intern("British");
+        assert!(sim.encode_stop_record(issuer, 1).is_none());
+        sim.houses
+            .register(HouseState::new(issuer, 0, None, true, 0, 10));
+        assert!(sim.encode_stop_record(issuer, i32::MAX as u64).is_some());
+        assert!(
+            sim.encode_stop_record(issuer, i32::MAX as u64 + 1)
+                .is_none()
+        );
     }
 
     // ===== Order admission (GSI-07.01): liveness, strength and limbo =====
@@ -3012,7 +4120,15 @@ mod tests {
             .get_mut(2)
             .unwrap()
             .type_facts
-            .set_foundation_for_test(retail.rules.object("NATBNK").unwrap().foundation.clone());
+            .set_foundation_for_test(
+                retail
+                    .rules
+                    .object("NATBNK")
+                    .unwrap()
+                    .foundation
+                    .clone()
+                    .into(),
+            );
         // The install's arrival test reads its cell's building list
         // (`0x0047C520`), so the bunker stands on its retail foundation.
         for (rx, ry) in

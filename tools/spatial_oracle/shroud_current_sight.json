@@ -1,4 +1,179 @@
 {
+  "alliance_human_controls": [
+    {
+      "ally_bits": 0,
+      "cached_radius": 6,
+      "events": [
+        [
+          "entry",
+          "0x4adee0"
+        ],
+        [
+          "entry",
+          "0x70b1d0"
+        ],
+        [
+          "area",
+          [
+            10240,
+            10240,
+            0
+          ],
+          6,
+          1347444736,
+          0,
+          0,
+          0,
+          1,
+          1
+        ],
+        [
+          "anger",
+          1347477504,
+          1,
+          1347444736
+        ],
+        [
+          "entry",
+          "0x4adcd0"
+        ],
+        [
+          "entry",
+          "0x70af50"
+        ],
+        [
+          "border",
+          [
+            10496,
+            10240,
+            0
+          ],
+          0,
+          9,
+          0
+        ]
+      ],
+      "inputs": {
+        "discovered": true,
+        "in_playfield": true,
+        "limbo": false,
+        "passive": false
+      },
+      "latch": 0
+    },
+    {
+      "ally_bits": 0,
+      "cached_radius": 6,
+      "events": [
+        [
+          "entry",
+          "0x4adee0"
+        ],
+        [
+          "anger",
+          1347477504,
+          1,
+          1347444736
+        ],
+        [
+          "entry",
+          "0x4adcd0"
+        ]
+      ],
+      "inputs": {
+        "discovered": false,
+        "in_playfield": true,
+        "limbo": false,
+        "passive": false
+      },
+      "latch": 1
+    },
+    {
+      "ally_bits": 0,
+      "cached_radius": 6,
+      "events": [
+        [
+          "entry",
+          "0x4adee0"
+        ],
+        [
+          "anger",
+          1347477504,
+          1,
+          1347444736
+        ],
+        [
+          "entry",
+          "0x4adcd0"
+        ]
+      ],
+      "inputs": {
+        "discovered": true,
+        "in_playfield": true,
+        "limbo": true,
+        "passive": false
+      },
+      "latch": 1
+    },
+    {
+      "ally_bits": 0,
+      "cached_radius": 6,
+      "events": [
+        [
+          "entry",
+          "0x4adee0"
+        ],
+        [
+          "entry",
+          "0x70b1d0"
+        ],
+        [
+          "anger",
+          1347477504,
+          1,
+          1347444736
+        ],
+        [
+          "entry",
+          "0x4adcd0"
+        ],
+        [
+          "entry",
+          "0x70af50"
+        ],
+        [
+          "border",
+          [
+            10496,
+            10240,
+            0
+          ],
+          0,
+          9,
+          0
+        ]
+      ],
+      "inputs": {
+        "discovered": true,
+        "in_playfield": false,
+        "limbo": false,
+        "passive": false
+      },
+      "latch": 1
+    },
+    {
+      "ally_bits": 0,
+      "cached_radius": 6,
+      "events": [],
+      "inputs": {
+        "discovered": true,
+        "in_playfield": true,
+        "limbo": false,
+        "passive": true
+      },
+      "latch": 1
+    }
+  ],
   "cases": [
     {
       "name": "never_seen",

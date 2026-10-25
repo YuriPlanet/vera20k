@@ -139,7 +139,14 @@ fn saved_terrain_load_selector_matches_executed_native_cells_and_main_continuati
             let index = y * 3 + x;
             grid.native_allocated.as_mut().unwrap()[index] = true;
             grid.cells[index].final_tile_index = if input["sentinel"].as_bool().unwrap() {
-                0xffff
+                if name == "cold_clear_sentinel_count1_initializes" {
+                    // Generated maps retain NO_TILE as -1. It represents the
+                    // same native FFFF sentinel this executed case supplies;
+                    // the other sentinel controls retain the positive form.
+                    theater::NO_TILE
+                } else {
+                    0xffff
+                }
             } else {
                 0
             };

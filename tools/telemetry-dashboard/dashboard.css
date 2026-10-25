@@ -65,6 +65,11 @@
     display: flex;
     align-items: center;
     gap: 10px;
+    /* The session reading and the anomaly badges are both allowed to be absent,
+       and both are allowed to be long. Wrapping the bar keeps the tick/entity
+       readings whole instead of clipping them at the right edge. */
+    flex-wrap: wrap;
+    row-gap: 6px;
     padding: 8px 14px;
     flex: none;
     background: linear-gradient(158deg, rgba(255, 255, 255, 0.10),
@@ -110,6 +115,14 @@
     color: #6f9bb5;
     white-space: nowrap;
   }
+  /* Which binary is producing this stream, beside the console's own name. */
+  .brand-build {
+    font-size: 9.5px;
+    letter-spacing: 0.1em;
+    color: #557a95;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
 
   /* Primary nav: icon + label per item, the active one carrying cyan and a
      dark pill — the reference's selected-tab treatment. */
@@ -144,10 +157,17 @@
   .nav-item.on svg { filter: drop-shadow(0 0 5px rgba(111, 183, 255, 0.7)); }
 
   /* Right cluster: readings, link state and language. */
+  /* The bar's second row: badges, readings and the link pill. It takes the
+     whole line on purpose — the wall under a fixed-height bar never moves
+     when an alert arrives or clears. */
+  #readings {
+    display: flex; align-items: center; gap: 14px;
+    flex-basis: 100%; min-width: 0; flex-wrap: wrap;
+  }
   .head-meta {
     display: flex; align-items: center; gap: 14px;
     margin-left: auto; padding-left: 12px;
-    min-width: 0; overflow: hidden;
+    min-width: 0;
   }
   header .meta {
     color: var(--dim); font-variant-numeric: tabular-nums; letter-spacing: 0.06em;
@@ -160,11 +180,45 @@
     text-shadow: 0 0 12px rgba(111, 183, 255, 0.4);
     margin-left: 2px;
   }
+  /* A map name is the longest reading here, and the one a reader can always get
+     from the title, so it clips before the numbers that frame the match do. */
+  #session {
+    display: inline-block; vertical-align: bottom;
+    max-width: 40ch; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* Anomaly badges. They carry the same three states as the panels' readings,
+     so a red pill here and a red cell there mean the same thing. */
+  #alerts { display: flex; align-items: center; gap: 6px; }
+  .badge {
+    font-size: 10.5px; letter-spacing: 0.06em; white-space: nowrap;
+    text-transform: uppercase;
+    padding: 3px 9px; border-radius: 999px; font-variant-numeric: tabular-nums;
+    color: var(--dim); background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--line);
+  }
+  .badge.warn {
+    color: var(--amber); border-color: rgba(255, 202, 116, 0.32);
+    background: rgba(255, 182, 72, 0.10);
+  }
+  .badge.bad {
+    color: #ffb3bc; border-color: rgba(255, 122, 138, 0.36);
+    background: rgba(255, 90, 110, 0.12);
+  }
+  .badge.good {
+    color: #9df0cd; border-color: rgba(84, 232, 176, 0.32);
+    background: rgba(84, 232, 176, 0.10);
+  }
+  /* A frozen simulation is the state a reader is most likely to forget. */
+  .badge.pause { animation: pulse 2.4s ease-in-out infinite; }
+  button.badge { cursor: pointer; font: inherit; }
   /* The connection pill. The green tint is the live state, so it has to come
      and go with it — a permanently green pill would read "streaming" while the
      socket was down. */
   #status {
     display: flex; align-items: center; gap: 6px; white-space: nowrap;
+    /* The link pill keeps the first row's right end, beside the language
+       switcher, as it did before the readings moved down. */
+    margin-left: auto;
     padding: 4px 10px; border-radius: 999px; font-size: 11.5px;
     color: var(--dim); background: rgba(255, 255, 255, 0.05);
     border: 1px solid var(--line);
@@ -1268,9 +1322,7 @@
   /* The wall's 300px + flexible + 360px columns cannot keep their shapes below
      this, so every panel takes a full track and the wall itself scrolls. */
   @media (max-width: 1180px) {
-    header { flex-wrap: wrap; row-gap: 6px; }
-    #nav { align-self: center; order: 3; }
-    .head-meta { margin-left: 0; flex-wrap: wrap; row-gap: 4px; }
+    .head-meta { flex-wrap: wrap; row-gap: 4px; }
     .panel-btn, #lang button { white-space: nowrap; }
 
     main, main.detail, main.report, main.logs {

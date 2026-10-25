@@ -15,7 +15,6 @@ use std::convert::Infallible;
 
 use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily, BridgeStampSlot};
 use crate::map::cell_index::NativeCellIdentity;
-use crate::map::lighting::LightingProfileUnits;
 use crate::map::overlay_mark::{OverlayCellAnim, OverlayMarkHost};
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
@@ -33,23 +32,20 @@ pub(crate) struct SimulationMarkHost<'a> {
     sim: &'a mut Simulation,
     /// `None` only for focused crate fixtures that bind CrateRules alone:
     /// they refuse walls and construct no CellAnim.
-    rules: Option<&'a RuleSet>,
+    rules: &'a RuleSet,
     registry: &'a OverlayTypeRegistry,
-    lighting_profile: LightingProfileUnits,
 }
 
 impl<'a> SimulationMarkHost<'a> {
     pub(crate) fn new(
         sim: &'a mut Simulation,
-        rules: Option<&'a RuleSet>,
+        rules: &'a RuleSet,
         registry: &'a OverlayTypeRegistry,
-        lighting_profile: LightingProfileUnits,
     ) -> Self {
         Self {
             sim,
             rules,
             registry,
-            lighting_profile,
         }
     }
 
@@ -81,14 +77,8 @@ impl<'a> SimulationMarkHost<'a> {
         ) -> R,
     ) -> Option<R> {
         let sim = &mut *self.sim;
-        #[cfg(any(test, feature = "test-support"))]
-        let mut detach_trace = Vec::new();
         let playfield_bounds = sim.playfield_bounds();
         let mut host = SimulationWallRuntimeHost {
-            entities: &mut sim.substrate.entities,
-            target_terrain_objects: sim.terrain_objects.objects(),
-            #[cfg(any(test, feature = "test-support"))]
-            detach_trace: &mut detach_trace,
             dirty_cells: &mut sim.dirty_cells,
             zone_grid: &mut sim.zone_grid,
             path_grid: &mut sim.path_grid,
@@ -255,9 +245,7 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
     }
 
     fn wall_clear_to_build(&mut self, anchor: NativeCellIdentity) -> Result<bool, Infallible> {
-        let Some(rules) = self.rules else {
-            return Ok(false);
-        };
+        let rules = self.rules;
         let cells = NativeCellQuery::canonical(self.terrain());
         Ok(crate::sim::build_site::is_clear_to_build(
             self.sim,
@@ -317,15 +305,12 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
     }
 
     fn spawn_cell_anim(&mut self, request: OverlayCellAnim<'_>) -> Result<(), Infallible> {
-        let Some(rules) = self.rules else {
-            return Ok(());
-        };
+        let rules = self.rules;
         let ground = OverlayCellAnimGround::read(self.terrain(), &request);
         if let Err(error) = self.sim.construct_overlay_cell_anim(
             rules,
             request,
             ground,
-            self.lighting_profile,
             AnimConstructorInput::Runtime,
         ) {
             panic!(
@@ -393,12 +378,12 @@ pub(crate) fn mark_passability_args(
 
 /// The CellClass inputs of an Overlay's CellAnim, read from the CellClass
 /// array its Mark ran on: `MapClass @ 0x00578080`'s ground height at the
-/// Overlay's Location and the Mark cell's level, from which its `+0x10A`
-/// ground adjustment derives.
+/// Overlay's Location and the identity of the original Mark cell, whose
+/// retained `+0x10A` intensity is sampled in the lighting transaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct OverlayCellAnimGround {
     z: i32,
-    level: u8,
+    cell: Option<(u16, u16)>,
 }
 
 impl OverlayCellAnimGround {
@@ -414,7 +399,13 @@ impl OverlayCellAnimGround {
         .unwrap_or(0);
         Self {
             z,
-            level: terrain.native_cell_ground_fields(request.cell).0,
+            cell: match request.cell {
+                NativeCellIdentity::Real(_) => {
+                    let (x, y) = terrain.native_cell_coord(request.cell);
+                    Some((x as u16, y as u16))
+                }
+                NativeCellIdentity::Dummy => None,
+            },
         }
     }
 }
@@ -425,13 +416,13 @@ impl Simulation {
     /// `MapClass @ 0x00578080` reports at the Location, with `(0, 1, 0x600,
     /// 0, 0)`. Only a cell that resolved a TiberiumClass enters the tint
     /// block: that class's Color scheme into `+0xD4` and the cell's `+0x10A`
-    /// ground adjustment into `+0xFC`. Otherwise the constructor's values stay.
+    /// signed light intensity into `+0xFC`, independently of depth `+0x100`.
+    /// Otherwise the constructor's values stay. Source: original instructions.
     pub(crate) fn construct_overlay_cell_anim(
         &mut self,
         rules: &RuleSet,
         request: OverlayCellAnim<'_>,
         ground: OverlayCellAnimGround,
-        lighting_profile: LightingProfileUnits,
         constructor: AnimConstructorInput,
     ) -> Result<AnimId, AnimSpawnError> {
         let [x, y] = request.anim_xy;
@@ -470,13 +461,13 @@ impl Simulation {
             })
             .and_then(|entry| u8::try_from(entry).ok())
             .map(crate::rules::house_colors::HouseColorIndex);
-        let z_adjust = crate::map::lighting::cell_ground_z_adjust(lighting_profile, ground.level);
-        assert!(
-            self.substrate
-                .anims
-                .set_cell_anim_draw_authority(anim_id, remap_color, z_adjust),
-            "Overlay CellAnim {anim_id} disappeared before OverlayClass post-constructor writes"
-        );
+        if let Some(color) = remap_color {
+            assert!(self.substrate.anims.set_anim_remap(
+                anim_id,
+                crate::sim::anim_class::AnimRemap::ColorScheme(color),
+            ));
+        }
+        self.retain_anim_cell_light(anim_id, ground.cell);
         Ok(anim_id)
     }
 }
@@ -508,13 +499,8 @@ impl Simulation {
             tiberium_types: Some(&rules.tiberium_types),
             crate_images: MarkCrateImages::resolve(&rules.crate_rules, registry),
         };
-        let lighting = self
-            .session
-            .lighting()
-            .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
-            .into();
         match mark_overlay(
-            &mut SimulationMarkHost::new(self, Some(rules), registry, lighting),
+            &mut SimulationMarkHost::new(self, rules, registry),
             &request,
         ) {
             Ok(outcome) => outcome,

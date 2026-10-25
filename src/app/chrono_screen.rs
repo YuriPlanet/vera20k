@@ -163,8 +163,9 @@ pub(crate) fn apply(state: &mut AppState, command: ChronoScreenCommand) {
         }
         ChronoScreenCommand::Finish => {
             if let Some(sfx) = state.audio.sfx_player.as_mut() {
-                //684180/406F40 runs while original phase is still3: the
-                //53BAD0 gate skips SFX resume but unpauses EVA.
+                // 684180/406F40 runs while the phase is still 3. Its SFX
+                // resume has nothing to undo, since Enter skipped the sounds
+                // under the 53BAD0 gate; it unpauses EVA.
                 sfx.release_animation_sound(HANDLE);
                 sfx.stop_animation_sound(HANDLE); //4060F0(NULL),405C00
                 sfx.set_voc_enabled(true);

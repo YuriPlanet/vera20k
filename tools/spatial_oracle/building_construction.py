@@ -1339,7 +1339,6 @@ def manual_primary_case(inputs, case):
 
 
 def manual_primary_generate():
-    from tools.native_oracle import NATIVE_SHA256, image_sha256
     from tools.rules_oracle.bridge_child_sound import sections
     # Same existing cache owner and physical-layer selection. GAWEAP only
     # needs the exact original scalar blocks declared by primary_field_names.
@@ -1374,7 +1373,7 @@ def manual_primary_generate():
     admission_controls = [manual_primary_case(a, case)
                           for case in manual_primary_admission_cases()]
     scold_index = a.invoke(0x7514D0, a.cstring('MenuScold'))
-    return dict(schema_version=1, source='unicorn/gamemd.exe', native_sha256=NATIVE_SHA256,
+    return dict(schema_version=1, source='unicorn/gamemd.exe',
                 seed=31, layers=m.layers, country_catalog=m.country_catalog,
                 retail_files=[dict(name=name, size=(JOINED_ROOT / name).stat().st_size,
                                    sha256=hashlib.sha256((JOINED_ROOT / name).read_bytes()).hexdigest())
@@ -1434,7 +1433,6 @@ def manual_primary_metadata():
 
 def joined_generate():
     import json
-    from tools.native_oracle import NATIVE_SHA256
     m = joined_inputs(JOINED_ROOT)
     receipts_path = JOINED_ROOT / 'receipts.json'
     receipts = json.loads(receipts_path.read_text()) if receipts_path.is_file() else []
@@ -1449,7 +1447,7 @@ def joined_generate():
               joined_route(m, 'GAPOWR', 'computer'),
               joined_route(m, 'GAPOWR', 'player', 250),
               joined_route(m, 'GAPOWR', 'computer', guard_control=True)]
-    return dict(schema_version=1, source='unicorn/gamemd.exe', native_sha256=NATIVE_SHA256,
+    return dict(schema_version=1, source='unicorn/gamemd.exe',
                 retail_files=files, extraction_receipts=receipts, layers=m.layers,
                 native_type_inputs=m.type_rows, native_anim_inputs=m.anim_rows,
                 selected_animation_list=m.animation_list,

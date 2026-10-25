@@ -833,7 +833,7 @@ def generate():
     assert equal['beam']['z_adjust'] == 0
     assert not any(row['name'] == 'project_for_source_adjust' for row in equal['calls'])
     birth = births[0]['beam']
-    result = dict(schema_version=1, native_sha256=native.image_sha256(),
+    result = dict(schema_version=1,
         inputs=machine.reader_inputs, color_controls=colors,
         birth_rng_before=machine.rng_initial, birth_rng_after=machine.rng_trace.states(),
         birth_rows=births, fps_rows=fps_rows(birth), length_rows=length_rows(birth),
@@ -853,7 +853,7 @@ def generate_chrono():
     cases = [dict(case, name=case['name'].replace('deso', 'cleg'))
              for case in birth_cases()[:4]]
     births = [machine.birth(case) for case in cases]
-    result = dict(schema_version=1, native_sha256=native.image_sha256(),
+    result = dict(schema_version=1,
         inputs=machine.reader_inputs, color_controls=colors,
         birth_rng_before=machine.rng_initial, birth_rng_after=machine.rng_trace.states(),
         birth_rows=births, geometry_rows=geometry_rows(births[0]['beam'], cases=[

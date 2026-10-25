@@ -15,6 +15,21 @@ use crate::sim::world::Simulation;
 pub(crate) const FRESH_SCENARIO_NATIVE_ID_SEED: u32 = 1_000_000;
 pub(crate) const MAP_READ_NATIVE_ID_RESERVATION: u32 = 0x2710;
 
+/// VERA modern online startup policy: original multi-human WOL admissions
+/// share one pre-map checkpoint, independent of each process's Rules history.
+/// Native LAN and original solo AI retain their actual Full_Init checkpoint.
+/// This intentionally changes native-history phases: guided bullets use
+/// UID-dependent modulo15 timing, powered-unit modulo30 sparks consume two Scenario draws, and gas/
+/// particle UID cadence affects lifetime. Those algorithms remain unchanged;
+/// the shared startup input makes the resulting trajectory deterministic.
+pub fn modern_online_native_id_prefix(
+    mode: crate::sim::scenario_session::ScenarioGameMode,
+    original_humans: usize,
+) -> Option<u32> {
+    (mode == crate::sim::scenario_session::ScenarioGameMode::Wol && original_humans > 1)
+        .then_some(0)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 enum NativeFreshIdPhase {
     // Preserve these existing derived-Hash discriminants when adding phases.
@@ -147,6 +162,8 @@ impl NativeUniqueIdCursor {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum NativeIdentityError {
+    #[error("accepted native-ID prefix must be installed before map and House construction")]
+    AcceptedPrefixRequiresPreMapWorld,
     #[error("fresh native-ID prefix has not reached its saved Resize checkpoint")]
     FreshPrefixNotFinished,
     #[error("fresh native-ID prefix was already finished")]
@@ -172,6 +189,40 @@ pub enum NativeMapTubeConstructionError {
 }
 
 impl Simulation {
+    /// Effective saved pre-map checkpoint used by this world, independent of
+    /// later allocations. It may be Full_Init's process-history result or an
+    /// accepted modern online policy; replay records the actual chosen input.
+    pub fn native_identity_prefix_checkpoint(&self) -> Option<u32> {
+        self.native_unique_ids.as_ref().and_then(|cursor| {
+            (cursor.phase == NativeFreshIdPhase::MapReadReserved)
+                .then_some(cursor.saved_after_fresh_prefix)
+        })
+    }
+
+    /// An immutable startup supplies its checkpoint: the actual recorded
+    /// prefix for replay, or the modern online shared policy above. Install
+    /// it at the same pre-map fence;
+    /// mapreader4AD026 still performs the one saved+0x2710 reservation and all
+    /// subsequent constructors allocate normally through this cursor.
+    pub fn install_accepted_native_id_prefix(
+        &mut self,
+        checkpoint: u32,
+    ) -> Result<(), NativeIdentityError> {
+        if !self.houses.is_empty()
+            || !self.substrate.entities.is_empty()
+            || self.session.tick() != 0
+            || self.session.binary_frame() != 0
+            || self
+                .native_unique_ids
+                .as_ref()
+                .is_none_or(|cursor| cursor.phase != NativeFreshIdPhase::PrefixSaved)
+        {
+            return Err(NativeIdentityError::AcceptedPrefixRequiresPreMapWorld);
+        }
+        self.native_unique_ids = Some(NativeUniqueIdCursor::from_saved_prefix(checkpoint));
+        Ok(())
+    }
+
     /// Immutable Scenario+214 cursor for capture. Reading never reserves IDs.
     pub fn native_identity_cursor(&self) -> Option<u32> {
         self.native_unique_ids.as_ref().map(|cursor| cursor.value)

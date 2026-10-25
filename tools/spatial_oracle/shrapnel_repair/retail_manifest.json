@@ -70,7 +70,6 @@
       "sha256": "c32e412e938e1b9a0b29f89ff9bc0e6f410f75bc76701fb4acef6581fd19b438"
     }
   },
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "prior_mode_alias": {
     "evidence": "Frozen packet directly compared alias bytes with active MPBattleMD.ini; portable packet checks the active bytes against that retained hash.",
     "name": "MPBattle.INI",

@@ -210,6 +210,7 @@ impl UpscalePass {
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
         let (x, y) = self.geometry.origin;
         let (width, height) = self.geometry.frame_size();

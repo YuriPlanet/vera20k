@@ -161,19 +161,8 @@ fn scene(rules: &RuleSet, input: &Value) -> (Simulation, u64, u64) {
     (sim, source, target)
 }
 
-// Existing shared GetFLH returns X one lepton below native for the aimed
-// TESLA control (<1 projected pixel). Preserve this explicit source-only
-// residual; target, Z adjustment, IDs and RNG remain exact comparisons.
 fn assert_source(actual: ProjectileCoord, expected: ProjectileCoord, name: &str) {
-    assert!(
-        (0..=1).contains(&(i64::from(expected.x) - i64::from(actual.x))),
-        "{name} source X exceeds recorded one-lepton residual: {actual:?} vs {expected:?}"
-    );
-    assert_eq!(
-        [actual.y, actual.z],
-        [expected.y, expected.z],
-        "{name} source Y/Z"
-    );
+    assert_eq!(actual, expected, "{name} native GetFLH source");
 }
 
 fn assert_birth(actual: ElectricBoltBirth, expected: &Value, frame: i32, name: &str) {
@@ -203,7 +192,7 @@ fn assert_birth(actual: ElectricBoltBirth, expected: &Value, frame: i32, name: &
 
 #[test]
 #[ignore = "slow; run when changing what it covers"]
-fn retail_birth_fields_match_native_with_documented_flh_residual() {
+fn retail_birth_fields_match_native_exact_flh() {
     let Some(retail) = retail_battle_rules_for_map("XMP03T4.MAP") else {
         return;
     };
@@ -520,7 +509,7 @@ fn fatal_coil_bolt_releases_navigation_before_the_next_logic_reader() {
     for _ in 0..2 {
         sim.advance_app_frame(
             &[],
-            Some(rules),
+            rules,
             None,
             67,
             TickLane::Ordinary,
@@ -585,7 +574,7 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
     let frame = sim
         .advance_app_frame(
             &[],
-            Some(rules),
+            rules,
             None,
             67,
             TickLane::Ordinary,
@@ -602,7 +591,7 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
         .collect();
     assert_eq!(births.len(), 1, "one actual delayed CoilBolt shot");
     // Full FireAt includes its preceding report/ROF consumers; their RNG is
-    // outside the isolated Init seed boundary. Retain the source residual.
+    // outside the isolated Init seed boundary. The shared GetFLH is exact.
     assert_source(births[0].from, coord(&row["bolts"][0]["source"]), "delayed");
     assert_eq!(births[0].to, coord(&row["bolts"][0]["target"]));
     assert_eq!(births[0].z_adjust, int(&row["bolts"][0]["z_adjust"]));
@@ -696,7 +685,7 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
     let next = sim
         .advance_app_frame(
             &[],
-            Some(rules),
+            rules,
             None,
             67,
             TickLane::Ordinary,
@@ -824,7 +813,7 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
         for _ in 0..start {
             sim.advance_app_frame(
                 &[],
-                Some(rules),
+                rules,
                 None,
                 67,
                 TickLane::Ordinary,
@@ -844,7 +833,7 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
             );
             sim.advance_app_frame(
                 &[],
-                Some(rules),
+                rules,
                 None,
                 67,
                 TickLane::Ordinary,
@@ -900,7 +889,7 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
             let frame = sim
                 .advance_app_frame(
                     &[],
-                    Some(rules),
+                    rules,
                     None,
                     67,
                     TickLane::Ordinary,

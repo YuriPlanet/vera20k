@@ -1,13 +1,12 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
     1,
     33621247
   ],
-  "scope": "Original host/guest LAN MaxAhead blocks 5DD48D/5DD2CD and response getters 5424C0/48BA80; BC host seed block 5DEC3B..5DEC61 (Main RNG -> CRT srand/rand), Battle assignments 69B8C0, observer starts 5D6890, Cooperative AI preparation 5C30C0 and campaign round assignments 5C2710 with full Scenario RNG state/draw order; BB/BC/BD relayout/help and NewEdit 614B30 -> BB 5DDBD0 -> chat cap 5EDD00 -> send 5DE360",
+  "scope": "Original host/guest LAN MaxAhead blocks 5DD48D/5DD2CD and response getters 5424C0/48BA80; BC host seed block 5DEC3B..5DEC61 (Main RNG -> CRT srand/rand), Battle assignments 69B8C0, observer starts 5D6890, Cooperative AI preparation 5C30C0 and campaign round assignments 5C2710 with full Scenario RNG state/draw order; BB/BC/BD/BC6 relayout/help and NewEdit 614B30 -> BB 5DDBD0 -> chat cap 5EDD00 -> send 5DE360",
   "assumptions": [
     "Loading wait controls execute original643C50 signed-percent updates (including regressions/upper clamp),6433D0 average and68444C..684465 completion comparison. Only643AE0 drawing is suppressed. Explicit2/8-row controls include99/100 and signed negative input; native stored doubles and branch destinations are observed, not calculated by Python.",
     "Starting-MCV no-match controls execute complete5D7030, Owner-only505310 and originalCountryName5117D0 with explicit Owner masks and Country0. Unit constructor entry is fail-closed; completeScenario RNG bytes and callback result are observed. Separate original65C7E0(0,FFFF) records the orchestrator tail5D6FFE; no constructor/RNG result is substituted.",
@@ -68,5 +67,5 @@
     "help": "0x006040B0"
   },
   "replay_command": "python -m tools.storage_oracle.lan_lobby",
-  "payload_sha256": "7040ad641233b5a21f0e546565b9e21d919a602bcbaf947adafe618fff560926"
+  "payload_sha256": "4518e4cf88bf98b4819c65e412a08ec96260b2665693d7430d0c7f7481d61b87"
 }

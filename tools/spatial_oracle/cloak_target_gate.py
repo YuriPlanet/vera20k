@@ -18,7 +18,7 @@ from unicorn.x86_const import (
 
 from tools.native_oracle import (
     NativeCallTrace, RET_MAGIC, changed_byte_spans, finish_vectors,
-    image_sha256, provenance, run_checked,
+    provenance, run_checked,
 )
 from tools.projectile_oracle.bridge_render_inputs import assets_root, lexical
 from tools.rules_oracle.bridge_anim_inputs import Reader
@@ -391,7 +391,7 @@ def generate():
     assert map_path.is_file() and map_path.read_bytes().lstrip().startswith((b';', b'[')), \
         'VERA20K_CLOAK_MAP must be the selected physical inner map INI'
     machine = CloakTargetGate(root, map_path)
-    return dict(schema_version=1, native_sha256=image_sha256(), inputs=machine.inputs,
+    return dict(schema_version=1, inputs=machine.inputs,
                 rows=[machine.execute(row) for row in cases()], native_code_unchanged=True)
 
 

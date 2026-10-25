@@ -20,11 +20,11 @@ START, END = 0x7273B9, 0x72749B
 class FlagsFixture(VectorFixture):
     def call(self, address, args, *, ecx=0, cdecl=False):
         u = self.u
-        u.mem_write(SP, dwords(RET_MAGIC, *args))
-        u.reg_write(UC_X86_REG_ESP, SP)
+        u.mem_write(self.sp, dwords(RET_MAGIC, *args))
+        u.reg_write(UC_X86_REG_ESP, self.sp)
         u.reg_write(UC_X86_REG_ECX, ecx)
         run_checked(u, address, RET_MAGIC)
-        assert u.reg_read(UC_X86_REG_ESP) == SP + 4 + (0 if cdecl else 4 * len(args))
+        assert u.reg_read(UC_X86_REG_ESP) == self.sp + 4 + (0 if cdecl else 4 * len(args))
         return u.reg_read(UC_X86_REG_EAX)
 
     def execute(self, raw, prior):
@@ -41,11 +41,11 @@ class FlagsFixture(VectorFixture):
             # These are the original tokenizer calls, not Python tokenization.
             for pointer in (BUFFER, 0, 0):
                 self.call(0x7C9CC2, [pointer, 0x817F70], cdecl=True)
-            u.reg_write(UC_X86_REG_ESP, SP)
+            u.reg_write(UC_X86_REG_ESP, self.sp)
             u.reg_write(UC_X86_REG_EBP, TYPE)
             u.reg_write(UC_X86_REG_EBX, 0)
             run_checked(u, START, END)
-            assert u.reg_read(UC_X86_REG_ESP) == SP
+            assert u.reg_read(UC_X86_REG_ESP) == self.sp
         assert bytes(u.mem_read(START, END - START)) == code
         return dict(raw=raw, prior=prior, read=read, applied=bool(length),
                     output=list(u.mem_read(TYPE + 0x9C, 5)))

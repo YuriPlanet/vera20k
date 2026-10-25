@@ -110,6 +110,32 @@ pub(crate) fn cameo_click(
     press: CameoPress,
     at_build_limit: bool,
 ) -> CameoClick {
+    cameo_click_with_queue(
+        queue,
+        category,
+        type_id,
+        own,
+        request,
+        press,
+        at_build_limit,
+        false,
+    )
+}
+
+/// [`cameo_click`] with Phobos `[General] BuildingProductionQueue=`. When
+/// enabled, a busy structure strip accepts a left press instead of refusing it
+/// with `EVA_UnableToComply`; the sim owner appends the queued building.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn cameo_click_with_queue(
+    queue: &[QueueItemView],
+    category: ProductionCategory,
+    type_id: Option<InternedId>,
+    own: Option<BuildQueueState>,
+    request: Option<CameoRequestState>,
+    press: CameoPress,
+    at_build_limit: bool,
+    building_production_queue: bool,
+) -> CameoClick {
     let in_category = || queue.iter().filter(|item| item.queue_category == category);
     let click = |eva: Option<&'static str>, order: CameoOrder| CameoClick {
         clear_building_placement: false,
@@ -141,7 +167,7 @@ pub(crate) fn cameo_click(
         }
         (CameoPress::Left, _) => {
             let busy = in_category().next().is_some();
-            if busy && is_structure_strip(category) {
+            if busy && is_structure_strip(category) && !building_production_queue {
                 CameoClick {
                     clear_building_placement: false,
                     sound: false,
@@ -198,8 +224,21 @@ pub(crate) fn shift_queue_repeat(
     shift: bool,
     count: u32,
 ) -> u32 {
-    let appends_a_copy = !is_structure_strip(category)
-        && !matches!(own, Some(BuildQueueState::Paused | BuildQueueState::Done));
+    shift_queue_repeat_with_queue(category, own, shift, count, false)
+}
+
+/// [`shift_queue_repeat`] with the Phobos building queue switch. A structure
+/// strip appends copies only when the queue is enabled; otherwise it keeps
+/// the native single PRODUCE.
+pub(crate) fn shift_queue_repeat_with_queue(
+    category: ProductionCategory,
+    own: Option<BuildQueueState>,
+    shift: bool,
+    count: u32,
+    building_production_queue: bool,
+) -> u32 {
+    let appends_a_copy = !matches!(own, Some(BuildQueueState::Paused | BuildQueueState::Done))
+        && (building_production_queue || !is_structure_strip(category));
     if shift && appends_a_copy {
         count.max(1)
     } else {
@@ -324,6 +363,59 @@ mod tests {
         // A configured 0 must still send the click's own PRODUCE.
         assert_eq!(
             shift_queue_repeat(ProductionCategory::Infantry, None, true, 0),
+            1
+        );
+    }
+
+    /// Phobos `BuildingProductionQueue`: a busy building strip accepts a
+    /// left press and lets the sim queue; without it the stock
+    /// `EVA_UnableToComply` refusal remains.
+    #[test]
+    fn building_queue_switch_admits_a_busy_structure_press() {
+        use crate::sim::production::{BuildQueueState, QueueItemView};
+        let mut interner = StringInterner::new();
+        let running = interner.intern("GAPOWR");
+        let clicked = interner.intern("GAPILL");
+        let queue = [QueueItemView {
+            type_id: running,
+            display_name: "GAPOWR".to_owned(),
+            queue_category: ProductionCategory::Building,
+            state: BuildQueueState::Building,
+            progress: 10,
+        }];
+        let refused = cameo_click(
+            &queue,
+            ProductionCategory::Building,
+            Some(clicked),
+            None,
+            None,
+            CameoPress::Left,
+            false,
+        );
+        assert_eq!(refused.order, None);
+        assert_eq!(refused.eva, Some(EVA_UNABLE_TO_COMPLY));
+        assert!(!refused.sound);
+
+        let queued = cameo_click_with_queue(
+            &queue,
+            ProductionCategory::Building,
+            Some(clicked),
+            None,
+            None,
+            CameoPress::Left,
+            false,
+            true,
+        );
+        assert_eq!(queued.order, Some(CameoOrder::Produce));
+        assert_eq!(queued.eva, None);
+        assert!(queued.sound);
+
+        assert_eq!(
+            shift_queue_repeat_with_queue(ProductionCategory::Building, None, true, 5, true),
+            5
+        );
+        assert_eq!(
+            shift_queue_repeat_with_queue(ProductionCategory::Building, None, true, 5, false),
             1
         );
     }

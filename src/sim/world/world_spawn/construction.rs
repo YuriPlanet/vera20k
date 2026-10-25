@@ -7,7 +7,7 @@
 use super::{GeneratedTechnoInitError, object_uses_voxel};
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::LocomotorKind;
-use crate::rules::object_type::{FactoryType, ObjectType};
+use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::animation::{Animation, SequenceKind};
 use crate::sim::combat::Health;
@@ -33,6 +33,17 @@ pub(super) enum ComponentOrigin {
 }
 
 impl Simulation {
+    /// Actual receiver's constructor type; unlike the name-only convenience
+    /// lookup, this preserves GetTechnoType's class registry (Infantry51FAF0).
+    pub fn entity_object_type<'r>(
+        &self,
+        entity: &GameEntity,
+        rules: &'r RuleSet,
+    ) -> Option<&'r ObjectType> {
+        self.interner
+            .object_type_in_category(entity.type_ref(), entity.category().into(), rules)
+    }
+
     pub(super) fn construct_runtime_techno(
         &mut self,
         type_id: &str,
@@ -47,6 +58,23 @@ impl Simulation {
         let Some(obj) = rules.object(type_id) else {
             return Ok(None);
         };
+        self.construct_resolved_runtime_techno(obj, type_id, owner, rx, ry, facing, z, rules, init)
+    }
+
+    /// Type::CreateInstance (FactoryStart4C9C70) consumes the selected typed
+    /// pointer. Both broad-name and typed callers share this constructor body.
+    pub(super) fn construct_resolved_runtime_techno(
+        &mut self,
+        obj: &ObjectType,
+        type_id: &str,
+        owner: &str,
+        rx: u16,
+        ry: u16,
+        facing: u8,
+        z: u8,
+        rules: &RuleSet,
+        init: TechnoConstructorInit,
+    ) -> Result<Option<GameEntity>, GeneratedTechnoInitError> {
         // Native class constructors copy signed type Strength unchanged.
         // Original copy slices: object_health corpus / constructors.
         let health = Health::new(obj.strength);
@@ -84,7 +112,7 @@ impl Simulation {
             &self.houses,
             &mut ge,
             Some(obj),
-            Some(rules),
+            rules,
             ComponentOrigin::Runtime,
         );
         Ok(Some(ge))
@@ -96,7 +124,7 @@ impl Simulation {
         houses: &Houses,
         ge: &mut GameEntity,
         obj: Option<&ObjectType>,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         origin: ComponentOrigin,
     ) {
         let category = ge.category();
@@ -108,7 +136,40 @@ impl Simulation {
         ge.discovery
             .classify_owner(session.current_house() == Some(ge.owner()));
 
+        #[cfg(feature = "ares")]
+        ge.initialize_factory_country(houses.get(&ge.owner()).and_then(|house| {
+            crate::sim::factory_owners::parent_or_self_country(
+                rules,
+                interner.resolve(house.house_type_id()),
+            )
+        }));
+
+        // Building InitManagers442C48..442C5C records the owner's Country
+        // array index (+0xB8), not its House registration index. Capture and
+        // snapshot restoration retain this value; only construction runs here.
+        if category == EntityCategory::Structure
+            && let Some(country) = houses.get(&ge.owner()).and_then(|house| house.country())
+            && let Some(index) = rules.country_index(interner.resolve(country))
+        {
+            ge.initialize_building_loss_index(i32::from(index.0));
+        }
+
         stamp_scoring_flags(ge, obj, rules);
+        // Phobos `TechnoClass_Init` (`Hooks.cpp:297..301`): allocate the
+        // ShieldClass only when the bound type resolves and its `Strength` is
+        // above zero; `SetHP(InitialStrength.Get(Strength))` clamps at creation.
+        #[cfg(feature = "phobos")]
+        if let Some(object) = obj
+            && let Some(name) = object.shield_type()
+            && let Some(ty) = rules.shield_type(name)
+            && ty.strength() > 0
+        {
+            ge.shield = Some(crate::sim::shield::ShieldState::new(
+                name.to_owned(),
+                ty.initial_strength(),
+                ty.strength(),
+            ));
+        }
         if let Some(object) = obj {
             ge.sight.stamp_type_sight(object.sight);
         }
@@ -189,18 +250,14 @@ impl Simulation {
         }
         // BuildingClass::Init_Managers, from the constructor (`0x0043BB29`):
         // no Buildup SHP clears the AI sale byte (`0x00442CBC`).
-        if category == EntityCategory::Structure
-            && let Some(rules) = rules
-        {
+        if category == EntityCategory::Structure {
             ge.bind_building_construction_control(rules.buildup_control(&obj.id));
             if matches!(origin, ComponentOrigin::Authored { .. }) {
                 ge.initialize_building_idle_body(session.binary_frame() as i32);
             }
         }
-        ge.ai_sell_repair.construct(
-            category == EntityCategory::Structure
-                && rules.is_some_and(|rules| rules.has_buildup(&obj.id)),
-        );
+        ge.ai_sell_repair
+            .construct(category == EntityCategory::Structure && rules.has_buildup(&obj.id));
         if should_construct_locomotor(category, obj) {
             ge.locomotor = Some(LocomotorState::from_object_type(
                 obj,
@@ -217,81 +274,74 @@ impl Simulation {
                     .ensure_installed_track_state();
             }
         }
-        // The concrete Foot constructors all select InitialAmmo unless it is
+        // Building InitManagers442C81..442C92 and the concrete Foot
+        // constructors select InitialAmmo unless it is
         // exactly -1; otherwise Ammo. Chrono reinforcement65EC30 also reads
         // and decrements this count for ground Units (ammo module evidence).
         if matches!(
             category,
-            EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+            EntityCategory::Unit
+                | EntityCategory::Infantry
+                | EntityCategory::Aircraft
+                | EntityCategory::Structure
         ) {
             ge.initialize_ammo_from_type(obj);
         }
         // InitManagers6F40FC..6F414E: a weapon-0 Parasite warhead owns its
         // ParasiteClass (Foot+69C) from construction, not from the first shot.
-        if let Some(rules) = rules
-            && crate::sim::combat::parasite::type_allocates_parasite(
-                rules,
-                obj,
-                category,
-                ge.veterancy.rank(),
-            )
-        {
+        if crate::sim::combat::parasite::type_allocates_parasite(
+            rules,
+            obj,
+            category,
+            ge.veterancy.rank(),
+        ) {
             ge.parasite.allocate_class(session.binary_frame());
         }
         install_authored_bridge(ge, origin);
 
         if let Some(kind) = miner_kind_for_object(obj) {
-            let mcfg: MinerConfig = rules.map(MinerConfig::from_rules).unwrap_or_default();
+            let mcfg = MinerConfig::default();
             let storage = obj.storage.max(0) as u16;
             ge.miner = Some(Miner::new(kind, &mcfg, storage));
         }
-        // Passenger cargo for transports and garrisonable buildings.
+        // Cargo+114 is independent of Building occupants+684 (Ctor43B8DC).
         if obj.passengers > 0 {
             ge.passenger_role = crate::sim::passenger::PassengerRole::transport(
                 crate::sim::passenger::PassengerCargo::new(obj.passengers as u32, obj.size_limit),
-            );
-        } else if obj.can_be_occupied && obj.max_number_occupants > 0 {
-            ge.passenger_role = crate::sim::passenger::PassengerRole::transport(
-                crate::sim::passenger::PassengerCargo::new(
-                    obj.max_number_occupants,
-                    obj.size_limit,
-                ),
             );
         }
 
         stamp_building_cell_profile(ge, Some(obj));
         // TechnoClass::Init_Managers — manager-owned children are committed
         // after this parent enters the limbo store and before its Unlimbo.
-        if let Some(rules) = rules {
-            ge.capture_manager = crate::sim::capture_manager::init_capture_manager(obj, rules);
-            ge.temporal = crate::sim::temporal::init_temporal(obj, rules);
-            ge.spawn_manager = crate::sim::spawn_manager::init_spawn_manager(
-                obj,
-                rules,
-                interner,
-                session.binary_frame(),
-            );
-            // 0x006F41FE..0x006F4271: a CanDisguise=/PermaDisguise= type (stock
-            // SPY) starts disguised as its owner, wearing the Rules disguise
-            // of the owner's side (House+0x1E8: 0, 1, else Third). Native has
-            // no owner guard; a Techno without a represented house is a
-            // fixture case. Rust never re-runs this InitFromType tail (Unit
-            // slot +0x24 can); only retail [SPY], an Infantry, sets the keys.
-            if obj.can_disguise
-                && obj.perma_disguise
-                && let Some(side) = houses.get(&ge.owner()).map(|h| h.side_index())
-            {
-                let worn = rules.general.infantry_disguises[match side {
-                    0 => 0,
-                    1 => 1,
-                    _ => 2,
-                }]
-                .as_deref()
-                .map(|name| interner.intern(name));
-                let owner = ge.owner();
-                let frame = session.binary_frame();
-                ge.disguise_mut(frame).wear_from_construction(worn, owner);
-            }
+        ge.capture_manager = crate::sim::capture_manager::init_capture_manager(obj, rules);
+        ge.temporal = crate::sim::temporal::init_temporal(obj, rules);
+        ge.spawn_manager = crate::sim::spawn_manager::init_spawn_manager(
+            obj,
+            rules,
+            interner,
+            session.binary_frame(),
+        );
+        // 0x006F41FE..0x006F4271: a CanDisguise=/PermaDisguise= type (stock
+        // SPY) starts disguised as its owner, wearing the Rules disguise
+        // of the owner's side (House+0x1E8: 0, 1, else Third). Native has
+        // no owner guard; a Techno without a represented house is a
+        // fixture case. Rust never re-runs this InitFromType tail (Unit
+        // slot +0x24 can); only retail [SPY], an Infantry, sets the keys.
+        if obj.can_disguise
+            && obj.perma_disguise
+            && let Some(side) = houses.get(&ge.owner()).map(|h| h.side_index())
+        {
+            let worn = rules.general.infantry_disguises[match side {
+                0 => 0,
+                1 => 1,
+                _ => 2,
+            }]
+            .as_deref()
+            .map(|name| interner.intern(name));
+            let owner = ge.owner();
+            let frame = session.binary_frame();
+            ge.disguise_mut(frame).wear_from_construction(worn, owner);
         }
         // After the managers, InitFromType makes the object veteran
         // (`SetVeteran(1)`, `0x00750090`) where its house's spies entered a
@@ -305,9 +355,12 @@ impl Simulation {
         // restriction: Infantry517CE7, Unit735604/746827, and the reached
         // Aircraft InitFromType413F98 called by constructor413E2E.
         // Aircraft read VeteranAircraft but neither of the spy flags below.
-        // Evidence: tools/rules_oracle/country_veterancy.md.
+        // Ares Building Init_Managers442D1B ->100236D0 adds the current
+        // Country's retained VeteranBuildings membership, also without a
+        // Trainable gate. The shared Rules query owns all four categories.
+        // Evidence: tools/rules_oracle/{country_veterancy,ares_country_veterancy}.md.
         let house = houses.get(&ge.owner());
-        if let (Some(house), Some(rules)) = (house, rules)
+        if let Some(house) = house
             && rules.country_starts_veteran(interner.resolve(house.house_type_id()), obj)
         {
             ge.veterancy.set_veteran();
@@ -353,7 +406,7 @@ fn install_authored_bridge(ge: &mut GameEntity, origin: ComponentOrigin) {
 fn stamp_scoring_flags(
     ge: &mut GameEntity,
     obj: Option<&crate::rules::object_type::ObjectType>,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
 ) {
     ge.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(ge.category(), obj, rules);
 }
@@ -522,9 +575,9 @@ fn default_true() -> bool {
     true
 }
 
-/// Facts the object's type fixes, copied when the object is built so paths
-/// without a RuleSet can read them: the cell-list exits of UnInit and Limbo,
-/// the House base lists, BasePlan and owner transfer. Natively a building
+/// Facts the object's type fixes, copied when the object is built. The
+/// cell-list exits of UnInit and Limbo, the House base lists, BasePlan and
+/// owner transfer read the copies. Natively a building
 /// reads each through its type pointer (`BuildingClass+0x520`); the rules
 /// reader owns the native reads (the matching `ObjectType` fields). Only the
 /// construction stamp writes them.
@@ -537,7 +590,7 @@ pub struct TypeFacts {
     /// `Foundation=`, as its rules string: the structure footprint the cell
     /// lists cover; `1x1` for a type without one.
     #[serde(default = "default_foundation")]
-    foundation: String,
+    foundation: crate::rules::foundation::Foundation,
     /// A building's hidden-object counter inputs
     /// (`ObjectType::hidden_occupancy`), so cell-list exit can reverse its
     /// contribution.
@@ -547,9 +600,6 @@ pub struct TypeFacts {
     /// reservation writer; `None` is the native BuildingType gate.
     #[serde(default)]
     base_reservation_spacing: Option<i32>,
-    /// `Factory=BuildingType`: the House edge refresh callback's input.
-    #[serde(default)]
-    determines_waypoint_edge: bool,
     /// Membership in the resolved `[AI] BuildConst=` vector
     /// (`RulesClass__ReadAI @ 0x00672AE0`, `0x00672B14..0x00672C01`).
     #[serde(default)]
@@ -567,8 +617,8 @@ pub struct TypeFacts {
     base_plan_has_undeploy_target: bool,
 }
 
-fn default_foundation() -> String {
-    "1x1".to_string()
+fn default_foundation() -> crate::rules::foundation::Foundation {
+    crate::rules::foundation::Foundation::default()
 }
 
 fn default_base_plan_type_index() -> i32 {
@@ -585,7 +635,6 @@ impl TypeFacts {
             building_hidden_occupancy: (category == EntityCategory::Structure)
                 .then(crate::rules::object_type::BuildingHiddenOccupancyProfile::default),
             base_reservation_spacing: None,
-            determines_waypoint_edge: false,
             build_const_eligible: false,
             base_plan_type_index: default_base_plan_type_index(),
             base_plan_is_defense: false,
@@ -602,7 +651,6 @@ impl TypeFacts {
         if category == EntityCategory::Structure {
             self.building_hidden_occupancy = Some(obj.hidden_occupancy);
             self.base_reservation_spacing = obj.base_reservation_spacing;
-            self.determines_waypoint_edge = obj.factory_type() == Some(FactoryType::BuildingType);
             self.build_const_eligible = obj.build_const_eligible;
             self.base_plan_type_index = obj.base_plan_type_index;
             self.base_plan_is_defense = obj.is_base_defense;
@@ -610,8 +658,8 @@ impl TypeFacts {
         }
     }
 
-    /// `Foundation=`, as its rules string.
-    pub fn foundation(&self) -> &str {
+    /// The resolved type foundation, including Ares cells and ordered exits.
+    pub fn foundation(&self) -> &crate::rules::foundation::Foundation {
         &self.foundation
     }
 
@@ -629,11 +677,6 @@ impl TypeFacts {
     /// `[AI] AIBaseSpacing=` for a base-reserving building.
     pub(crate) fn base_reservation_spacing(&self) -> Option<i32> {
         self.base_reservation_spacing
-    }
-
-    /// `Factory=BuildingType`.
-    pub(crate) fn determines_waypoint_edge(&self) -> bool {
-        self.determines_waypoint_edge
     }
 
     /// In `[AI] BuildConst=`.
@@ -658,7 +701,7 @@ impl TypeFacts {
 
     /// Install a fixture's `foundation`.
     #[cfg(any(test, feature = "test-support"))]
-    pub fn set_foundation_for_test(&mut self, value: String) {
+    pub fn set_foundation_for_test(&mut self, value: crate::rules::foundation::Foundation) {
         self.foundation = value;
     }
 
@@ -675,12 +718,6 @@ impl TypeFacts {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_base_reservation_spacing_for_test(&mut self, value: Option<i32>) {
         self.base_reservation_spacing = value;
-    }
-
-    /// Install a fixture's `determines_waypoint_edge`.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn set_determines_waypoint_edge_for_test(&mut self, value: bool) {
-        self.determines_waypoint_edge = value;
     }
 
     /// Install a fixture's `build_const_eligible`.

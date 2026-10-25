@@ -24,12 +24,7 @@ fn home_action_uses_current_player_and_preserves_no_target_success() {
         sim.resolved_terrain.as_ref(),
     );
     sim.session.set_binary_frame_for_test(8);
-    sim.raise_house_tags(
-        houses[1],
-        Some(&rules),
-        Some(&registry),
-        FrameEffects::default(),
-    );
+    sim.raise_house_tags(houses[1], &rules, Some(&registry), FrameEffects::default());
     assert_eq!(
         sim.drain_trigger_effects(),
         [TriggerEffect::HomeCamera {
@@ -50,7 +45,7 @@ fn home_action_uses_current_player_and_preserves_no_target_success() {
             input: TagEventInput::default(),
         },
         &mut effects,
-        Some(&rules),
+        &rules,
         Some(&registry),
         FrameEffects::default()
     ));

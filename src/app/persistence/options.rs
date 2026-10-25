@@ -59,6 +59,28 @@ fn apply_target_lines(target_lines: &mut TargetLineState, options: &InGameOption
     target_lines.set_unit_action_lines_enabled(options.unit_action_lines);
 }
 
+fn in_game_speed_command(
+    sim: &crate::sim::world::Simulation,
+    speed: u8,
+) -> Option<crate::sim::command::Command> {
+    // ApplyFromInGameDialog4E1E1B..4E1E22 compares the live speed before
+    // choosing a route. Pending events do not change this producer's gate.
+    if sim.session().game_options().game_speed == i32::from(speed) {
+        return None;
+    }
+    // ApplyFromInGameDialog4E1E28..4E1E59 queues GAMESPEED in active
+    // modes 1..4; campaign/skirmish store it locally.
+    Some(
+        if sim.session().game_mode().command_queue_route()
+            == crate::sim::world::CommandQueueRoute::Multiplayer
+        {
+            crate::sim::command::Command::LiveGameSpeed { speed }
+        } else {
+            crate::sim::command::Command::SetGameSpeed { speed }
+        },
+    )
+}
+
 /// Project the two boot/live boolean gates with existing presentation owners.
 ///
 /// Retail provenance: the tail of `OptionsClass__ReadFromINI @ 0x005FA620`
@@ -97,15 +119,20 @@ fn apply_in_game_options(state: &mut AppState) {
                 .game_speed,
         )
         .ok();
-        let scheduled = match (owner, speed) {
-            (Some(owner), Some(speed)) => crate::app::input::commands::try_schedule_command(
-                state,
-                &owner,
-                crate::sim::command::Command::SetGameSpeed { speed },
-            ),
-            _ => None,
-        };
-        if scheduled.is_none() {
+        let command = speed.and_then(|speed| {
+            in_game_speed_command(
+                &state.match_state.sim_runtime.as_ref().unwrap().simulation,
+                speed,
+            )
+        });
+        if let Some(command) = command
+            && owner
+                .as_deref()
+                .and_then(|owner| {
+                    crate::app::input::commands::try_schedule_command(state, owner, command)
+                })
+                .is_none()
+        {
             log::warn!(
                 "In-game Options could not queue GameSpeed={} for the local house",
                 state
@@ -114,8 +141,10 @@ fn apply_in_game_options(state: &mut AppState) {
                     .in_game_options
                     .game_speed
             );
-            crate::app::loading::transitions::sync_in_game_options_speed_from_sim(state);
         }
+        // Native network Options retains the old speed when its OutList
+        // insertion fails. Reflect only the accepted pending/current value.
+        crate::app::loading::transitions::sync_in_game_options_speed_from_sim(state);
     }
 
     let options = &state.match_state.match_presentation.in_game_options;
@@ -137,9 +166,9 @@ pub(crate) fn persist_options_profile(state: &AppState) {
     if let Err(error) = state
         .persistence
         .options_profile
-        .commit_ra2md(config.paths.settings_dir())
+        .commit_settings(config.paths.settings_dir())
     {
-        log::warn!("Failed to persist Options profile to RA2MD.INI: {error}");
+        log::warn!("Failed to persist Options profile to VERA.INI: {error}");
     }
 }
 
@@ -206,6 +235,61 @@ pub(crate) fn accept_in_game_options(state: &mut AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::input::commands::schedule_command_in_sim;
+    use crate::sim::command::{Command, CommandEnvelope};
+    use crate::sim::house_state::HouseState;
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::sim::world::Simulation;
+
+    fn network_speed_fixture() -> Simulation {
+        let mut sim = Simulation::new();
+        let owner = sim.intern("Local");
+        sim.houses_mut_for_test()
+            .register(HouseState::new(owner, 0, None, true, 0, 10));
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
+        sim.session_mut_for_test()
+            .set_game_mode(ScenarioGameMode::Wol);
+        sim.session_mut_for_test()
+            .game_options_mut_for_test()
+            .game_speed = 3;
+        sim
+    }
+
+    #[test]
+    fn unchanged_network_options_preserves_the_last_event_slot() {
+        let mut sim = network_speed_fixture();
+        for _ in 0..127 {
+            schedule_command_in_sim(&mut sim, "Local", Command::Stop { entity_id: 42 });
+        }
+        if let Some(command) = in_game_speed_command(&sim, 3) {
+            schedule_command_in_sim(&mut sim, "Local", command);
+        }
+        schedule_command_in_sim(&mut sim, "Local", Command::LiveGameSpeed { speed: 6 });
+        let due = sim.take_due_commands();
+        sim.advance_tick(&due, None, None, None, 33);
+        assert_eq!(
+            sim.session().game_options().game_speed,
+            6,
+            "unchanged Options must not consume the slot needed by the next event"
+        );
+    }
+
+    #[test]
+    fn options_compares_live_speed_and_does_not_deduplicate_pending_events() {
+        let mut sim = network_speed_fixture();
+        let owner = sim.interner().get("Local").unwrap();
+        sim.queue_command(CommandEnvelope::new(
+            owner,
+            0,
+            Command::LiveGameSpeed { speed: 6 },
+        ));
+        assert_eq!(in_game_speed_command(&sim, 3), None);
+        assert_eq!(
+            in_game_speed_command(&sim, 6),
+            Some(Command::LiveGameSpeed { speed: 6 })
+        );
+    }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum TransactionEvent {

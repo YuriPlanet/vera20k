@@ -11,7 +11,6 @@ import json
 from itertools import product
 from pathlib import Path
 
-from tools.native_oracle import image_sha256
 from tools.spatial_oracle.bunker_attack_action import (
     ACTOR, COORD, RET_MAGIC, SP, TARGET, TARGET_TYPE, TYPE, WEAPON,
     UC_HOOK_CODE, UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_ECX,
@@ -119,7 +118,7 @@ def generate():
         dict(name='flare_invisible', mig=True, building=True, invisible=True),
         dict(name='plain', building=True),
     ]
-    return dict(schema=1, native_sha256=image_sha256(), modifiers=controls,
+    return dict(schema=1, modifiers=controls,
                 weapons=[weapon_control(spec) for spec in specs])
 
 

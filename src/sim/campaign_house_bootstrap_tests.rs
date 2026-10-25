@@ -313,7 +313,13 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
             ..Default::default()
         });
         sim.session
-            .initialize_campaign_startup(i32_at(row, "option"), i32_at(row, "mission_number"), None)
+            .initialize_campaign_startup(
+                i32_at(row, "option"),
+                i32_at(row, "mission_number"),
+                None,
+                0,
+                crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+            )
             .unwrap();
         sim.native_unique_ids = Some(NativeUniqueIdCursor::begin_campaign_prefix(
             0,
@@ -326,7 +332,7 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
                 .into();
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(row["rng_before"]["mapgen"].as_str().unwrap());
-        initialize_map_roster_houses(&mut sim, &roster, Some(&rules), Some(&ini));
+        initialize_map_roster_houses(&mut sim, &roster, &rules, Some(&ini));
         assert_houses(&sim, &roster, &rules, &row["houses"], 0);
         initialize_campaign_current_house(&mut sim.session, &mut sim.houses, &ini);
         assert_houses(&sim, &roster, &rules, &row["final_houses"], 0);
@@ -393,6 +399,9 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
                         difficulty: i32_at(row, "option"),
                         mission_counter: i32_at(row, "mission_number"),
                         game_options: None,
+                        campaign_index: 0,
+                        restart_carry_over:
+                            crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
                     },
                 )
                 .unwrap();
@@ -432,6 +441,87 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
 }
 
 #[test]
+fn fresh_campaign_constructs_registered_supers_without_supported_dispatch_bodies() {
+    // House4F6202..4F6290 and Super6CAF90 use the registered type pointer,
+    // not its Type+B4 dispatch. campaign_start.py --houses executes the same
+    // constructors with twelve freshly registered, unread (Type=-1) types.
+    let root = IniFile::from_str(
+        "[Colors]\nLightGold=25,255,255\nGold=43,239,255\n\
+         [Countries]\n0=Americans\n[Americans]\nColor=Gold\n\
+         [General]\nTeamDelays=1,1,1\n\
+         [SuperWeaponTypes]\n0=KnownDispatch\n1=UnknownDispatch\n2=UnreadType\n\
+         [KnownDispatch]\nType=PsychicReveal\n\
+         [UnknownDispatch]\nType=FutureExtension\n",
+    );
+    let mut process = NativeRulesProcessOwner::from_cold_start_sources(
+        root,
+        None,
+        IniFile::empty(),
+        std::sync::Arc::default(),
+        Default::default(),
+    )
+    .unwrap();
+    let map = MapFile::from_bytes(
+        b"[Map]\nSize=0,0,4,4\n[IsoMapPack5]\n1=CAAEABUAAAAAEQAA\n\
+          [Basic]\nPlayer=KnownHouse\n\
+          [Houses]\n0=KnownHouse\n1=OtherHouse\n\
+          [KnownHouse]\nCountry=Americans\n\
+          [OtherHouse]\nCountry=Americans\n",
+    )
+    .unwrap();
+    let (rules, _, _, receipt) = process
+        .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &map.ini)
+        .unwrap()
+        .into_parts();
+    assert_eq!(
+        rules.super_weapon_order,
+        ["KnownDispatch", "UnknownDispatch", "UnreadType"]
+    );
+    assert!(rules.super_weapon("KnownDispatch").is_some());
+    for name in ["UnknownDispatch", "UnreadType"] {
+        assert_eq!(
+            rules.super_weapon(name).unwrap().kind,
+            crate::rules::superweapon_type::SuperWeaponKind::NoEffect
+        );
+    }
+    let roster = parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
+    let (sim, projection) = ScenarioBootstrapRng::new(31)
+        .into_fresh_staged_simulation(
+            &ScenarioDescriptor {
+                seed: 31,
+                ..Default::default()
+            },
+            FreshScenarioPrefix::Campaign {
+                native_rules_receipt: receipt,
+                rules: &rules,
+                map_data: &map,
+                house_roster: &roster,
+                difficulty: 1,
+                mission_counter: 1,
+                game_options: None,
+                campaign_index: 0,
+                restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
+            },
+        )
+        .expect("registered Super instances do not require a supported launch body");
+    assert!(projection.is_none());
+    assert_eq!(sim.houses.order().len(), 2);
+    for &owner in sim.houses.order() {
+        let house_id = sim.houses[&owner].native_unique_id().unwrap();
+        let supers = &sim.super_weapons[&owner];
+        assert_eq!(supers.len(), 3);
+        for (index, name) in rules.super_weapon_order.iter().enumerate() {
+            let instance = &supers[&sim.interner.get(name).unwrap()];
+            assert_eq!(
+                instance.native_unique_id(),
+                Some(house_id + index as i32 + 1)
+            );
+            assert!(!instance.is_active() && !instance.is_ready() && !instance.is_suspended());
+        }
+    }
+}
+
+#[test]
 fn fresh_campaign_rejects_an_absent_stock_roster_instead_of_fabricating_offline_houses() {
     let ini =
         IniFile::from_str("[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n");
@@ -460,6 +550,8 @@ fn fresh_campaign_rejects_an_absent_stock_roster_instead_of_fabricating_offline_
             difficulty: 1,
             mission_counter: 1,
             game_options: None,
+            campaign_index: 0,
+            restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
         },
     );
     assert!(matches!(
@@ -505,6 +597,8 @@ fn fresh_campaign_rejects_unknown_country_factory_before_house_construction() {
             difficulty: 1,
             mission_counter: 1,
             game_options: None,
+            campaign_index: 0,
+            restart_carry_over: crate::sim::campaign_carry_over::CampaignCarryOver::CLEARED,
         },
     );
     assert!(matches!(

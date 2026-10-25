@@ -22,14 +22,15 @@ pub(crate) fn body_palette_light(
 ) -> crate::render::palette_light::PaletteLight {
     let top = grid.cell_light_at(cell).map_or(1000, |l| l.top_scalar);
     crate::render::palette_light::PaletteLight::color_scheme(
-        grid.palette_rgb(grid.profiles().default_profile_id()),
+        grid.color_scheme_rgb(),
         top.wrapping_add(extra),
     )
 }
 
 /// The light a Techno's body draw adds to its cell's intensity:
 /// UnitClass::DrawIt's bridge/side-cell arm and ExtraUnitLight=,
-/// ExtraInfantryLight= for infantry (`0x00518F90`), [`aircraft_extra_light`]
+/// InfantryClass::DrawIt's side/height arm and ExtraInfantryLight=
+/// (`0x00518F90`), [`aircraft_extra_light`]
 /// for an aircraft, and none for a building's voxel turret.
 ///
 /// The caller supplies its frame's isolated query; drawing never stamps the
@@ -103,7 +104,48 @@ pub(crate) fn body_extra_light(
                 extra
             }
         }
-        EntityCategory::Infantry => rules.general.extra_infantry_light,
+        EntityCategory::Infantry => {
+            use crate::map::bridge_facts::BRIDGE_FLAG_EXTRA_SIDE;
+            use crate::sim::movement::{air_movement, ground_pose};
+
+            let extra = rules.general.extra_infantry_light;
+            let Some(cells) = cells else {
+                return extra;
+            };
+            // Infantry DrawIt51933B..5193C5: OnBridge bypasses the side
+            // test. Map565730 reads the physical world-coordinate Cell,
+            // independently of the navigation Cell's top intensity.
+            let location = ground_pose::object_location(entity, Some(cells.terrain()));
+            let side = !entity.on_bridge()
+                && cells.flags(cells.lookup_world(location.x, location.y)) & BRIDGE_FLAG_EXTRA_SIDE
+                    != 0;
+            let height_arm = entity.on_bridge()
+                || (side
+                    && location.z
+                        > ground_pose::query_ground_height(cells, location)
+                            .unwrap_or(0)
+                            .wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS / 2));
+            if height_arm {
+                //51941A..519457: Object5F5F40 subtracts ground AND the
+                //OnBridge deck. Signed height/208 truncates toward zero;
+                //an ordinary deck height0 adds no Level. The shared weather
+                //owner selects Ion, Dominator, Nuke fade-in, then Normal.
+                let height = air_movement::queried_flight_height(entity, Some(cells));
+                let level = sim
+                    .session()
+                    .lighting()
+                    .profile(sim.lighting_cell_profile())
+                    .level_units;
+                extra.wrapping_add(
+                    (height / (crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS / 2))
+                        .wrapping_mul(level),
+                )
+            } else if side {
+                extra.wrapping_sub(500)
+            } else {
+                extra
+            }
+        }
         EntityCategory::Aircraft => aircraft_extra_light(
             rules.general.extra_aircraft_light,
             crate::sim::movement::air_movement::queried_flight_height(entity, cells),
@@ -142,8 +184,8 @@ pub(crate) fn aircraft_extra_light(
 /// Building DrawBody's body and bib (`0x0043D812..0x0043D85F`), whichever
 /// image GetImage returned, Buildup included; TerrainPalette overrides both
 /// scalar and Convert in 00705EC7..00705F52. Only the gate branch
-/// (`0x0043D644`, Mission Open while its UnloadTimer runs) omits
-/// ExtraLight; VERA does not draw that branch.
+/// (`0x0043D644`, [`crate::sim::building_art::gate_open_body_frame`])
+/// omits ExtraLight; VERA keeps it there (retail's gate sets none).
 pub(crate) fn building_palette_light(
     grid: &CellLightGrid,
     cell: (u16, u16),
@@ -155,24 +197,29 @@ pub(crate) fn building_palette_light(
     }
     let top = grid.cell_light_at(cell).map_or(1000, |l| l.top_scalar);
     let extra = art.map_or(0, |a| i32::from(a.extra_light as i16));
-    PaletteLight::color_scheme(
-        grid.palette_rgb(grid.profiles().default_profile_id()),
-        top.wrapping_add(extra),
-    )
+    PaletteLight::color_scheme(grid.color_scheme_rgb(), top.wrapping_add(extra))
 }
 
-/// AnimClass DrawIt 00423280..00423354: explicit cell drawer selects cell
-/// common; otherwise global ANIM Convert selects top. AltPalette selects the
-/// first ColorScheme (one row), not the player's 53-row scheme.
+/// AnimClass DrawIt 00423280..00423354: an instance Convert at `+0xD4` draws
+/// and returns before the `AltPalette` override, so that flag cannot narrow the
+/// draw to one row; an explicit cell drawer selects cell common; otherwise the
+/// global ANIM Convert selects top. AltPalette selects the first ColorScheme
+/// (one row), not the player's 53-row scheme.
 pub(crate) fn anim_palette_light(
     grid: &CellLightGrid,
     cell: (u16, u16),
     config: Option<&crate::rules::art_data::AnimTypeRuntimeConfig>,
     cell_drawer: bool,
+    remap: Option<&crate::sim::anim_class::AnimRemap>,
+    retained_intensity: i32,
 ) -> crate::render::palette_light::PaletteLight {
     use crate::render::palette_light::PaletteLight;
     let brightness = if config.is_some_and(|c| c.use_normal_light) {
         1000
+    } else if !cell_drawer && remap.is_some() {
+        // AnimDrawIt4232BF reads the retained signed dword+FC, not the
+        // current draw cell. Constructor421F06 starts it at1000.
+        retained_intensity
     } else {
         grid.cell_light_at(cell).map_or(1000, |l| {
             if cell_drawer {
@@ -184,6 +231,17 @@ pub(crate) fn anim_palette_light(
     };
     if cell_drawer {
         PaletteLight::cell(grid, cell, false).with_brightness(brightness)
+    } else if remap.is_some() {
+        // `0x004232A3..0x004232C9` selects the instance Convert and jumps to the
+        // draw, so the `AltPalette` swap at `0x004232E2` never runs for it.
+        // `ObjectClass::Paradrop @ 0x005F5940` (`0x005F5AFE..0x005F5B19`) stores
+        // the owner's `Techno705D70` scheme there — the same 53-row ColorScheme
+        // Convert [`body_palette_light`] gives a body. Named Tiberium colors
+        // also select N53: TiberiumReadINI721B35 calls CCINI474A90, whose
+        //474AF2..474AF9 skips the same-name N1 scheme. Original instructions.
+        // Invalid-name retained fallback and custom-palette load rebinding
+        // are separate reader/load residuals, not encoded by ColorScheme.
+        PaletteLight::color_scheme(grid.color_scheme_rgb(), brightness)
     } else if config.is_some_and(|c| c.alt_palette) {
         // Default AltPalette uses B054D4[0], the neutral N1 ColorScheme.
         //68C710 supplies RGB1000;53AD4D skips default schemes with N<=1.
@@ -192,6 +250,87 @@ pub(crate) fn anim_palette_light(
     } else {
         PaletteLight::plain(53, brightness)
     }
+}
+
+/// `Drawing::RGB_To_Int` (YRpp `Drawing::Color16bit`): the 16-bit RGB565 word
+/// `(B >> 3) | ((G >> 2) << 5) | ((R >> 3) << 11)`.
+#[cfg(feature = "phobos")]
+fn rgb565_word([red, green, blue]: [u8; 3]) -> u16 {
+    (u16::from(blue) >> 3) | ((u16::from(green) >> 2) << 5) | ((u16::from(red) >> 3) << 11)
+}
+
+/// `TechnoExt::ApplyCustomTintValues`'s viewer bucket: the owner's own draw
+/// takes Owner, an ally's Allies and anyone else's Enemies.
+#[cfg(feature = "phobos")]
+fn tint_bucket(
+    owner: crate::sim::intern::InternedId,
+    viewer: Option<crate::sim::intern::InternedId>,
+    allied: impl FnOnce() -> bool,
+) -> crate::rules::phobos_shields::AffectedHouse {
+    use crate::rules::phobos_shields::AffectedHouse;
+    match viewer {
+        Some(viewer) if viewer == owner => AffectedHouse::OWNER,
+        Some(_) if allied() => AffectedHouse::ALLIES,
+        _ => AffectedHouse::ENEMIES,
+    }
+}
+
+/// Phobos `TechnoExt::ApplyCustomTintValues`
+/// (`src/Ext/Techno/Body.Internal.cpp:211..231`) for the shield entry that
+/// `UpdateTintValues` adds last (`Body.Update.cpp:1278..1282`): the viewer is
+/// the CurrentPlayer, so the owner's shield takes the Owner bucket, an ally's
+/// the Allies bucket and anyone else's the Enemies bucket, gated by
+/// `Tint.VisibleToHouses`. Returns the OR word and the summed intensity.
+///
+/// Read only: no simulation state, timer, RNG or detach is written.
+pub(crate) fn shield_tint(
+    entity: &crate::sim::game_entity::GameEntity,
+    simulation: &Simulation,
+    rules: &RuleSet,
+) -> (u16, i32) {
+    #[cfg(feature = "phobos")]
+    {
+        let Some(shield) = entity.shield().filter(|shield| shield.is_active()) else {
+            return (0, 0);
+        };
+        let Some(shield_type) = rules.shield_type(shield.type_name()) else {
+            return (0, 0);
+        };
+        if !shield_type.has_tint() {
+            return (0, 0);
+        }
+        let owner = entity.owner();
+        let bucket = tint_bucket(owner, simulation.session().current_house(), || {
+            let Some(viewer) = simulation.session().current_house() else {
+                return false;
+            };
+            crate::map::houses::is_allied_with(
+                simulation.house_alliances(),
+                simulation.interner().resolve(owner),
+                simulation.interner().resolve(viewer),
+            )
+        });
+        if !shield_type.tint_visible_to_houses().contains(bucket) {
+            return (0, 0);
+        }
+        let word = shield_type
+            .tint_color()
+            .map_or(0, |(red, green, blue)| rgb565_word([red, green, blue]));
+        let intensity = (shield_type.tint_intensity() * 1000.0) as i32;
+        (word, intensity)
+    }
+    #[cfg(not(feature = "phobos"))]
+    {
+        let _ = (entity, simulation, rules);
+        (0, 0)
+    }
+}
+
+/// Selects the native draw hook that orders custom tint and effect intensity.
+#[derive(Clone, Copy)]
+pub(crate) enum TechnoDraw {
+    Shape,
+    Voxel,
 }
 
 /// TechnoClass's flash and curtain arms on a draw's intensity. The signed
@@ -221,13 +360,18 @@ pub(crate) fn techno_effect_light(
     tint: [f32; 3],
     light: crate::render::palette_light::PaletteLight,
     sim: &Simulation,
+    rules: Option<&RuleSet>,
+    draw: TechnoDraw,
 ) -> ([f32; 3], crate::render::palette_light::PaletteLight) {
+    let custom = rules.map_or(0, |rules| shield_tint(entity, sim, rules).1);
     techno_effect_light_at(
         entity,
         tint,
         light,
         sim.session().binary_frame(),
         sim.airstrike_tint_active(entity.stable_id()),
+        custom,
+        draw,
     )
 }
 
@@ -246,18 +390,22 @@ pub(crate) fn building_anim_light(
     tint: [f32; 3],
     light: crate::render::palette_light::PaletteLight,
     sim: &Simulation,
+    rules: Option<&RuleSet>,
 ) -> ([f32; 3], crate::render::palette_light::PaletteLight) {
+    let custom = rules.map_or(0, |rules| shield_tint(building, sim, rules).1);
     let (tint, light) = if let Some(sample) = building.building_art.tint_sample() {
         effect_light(
             tint,
             light,
             TintLightState {
                 building: true,
+                custom_before_effects: false,
                 flashed: sample.flashed(),
                 curtain: sample.invulnerability(),
                 airstrike: sample.airstrike(),
                 airstrike_active: sample.airstrike_active(),
                 frame: sample.frame(),
+                custom_intensity: custom,
             },
         )
     } else {
@@ -267,6 +415,8 @@ pub(crate) fn building_anim_light(
             light,
             sim.session().binary_frame().wrapping_sub(1),
             sim.airstrike_tint_active(building.stable_id()),
+            custom,
+            TechnoDraw::Shape,
         )
     };
     (tint, light.with_brightness(light.brightness() & 0xFFFF))
@@ -278,28 +428,39 @@ fn techno_effect_light_at(
     light: crate::render::palette_light::PaletteLight,
     frame: u32,
     airstrike_active: bool,
+    custom_intensity: i32,
+    draw: TechnoDraw,
 ) -> ([f32; 3], crate::render::palette_light::PaletteLight) {
     effect_light(
         tint,
         light,
         TintLightState {
             building: entity.category() == crate::map::entities::EntityCategory::Structure,
+            custom_before_effects: matches!(draw, TechnoDraw::Voxel)
+                && entity.category() != crate::map::entities::EntityCategory::Unit,
             flashed: entity.flashing.flashed(),
             curtain: entity.invulnerability.as_ref(),
             airstrike: &entity.airstrike_tint,
             airstrike_active,
             frame,
+            custom_intensity,
         },
     )
 }
 
 struct TintLightState<'a> {
     building: bool,
+    /// TechnoClass_DrawVoxel_TintColor (0x706786) adds custom intensity
+    /// before curtain/airstrike for aircraft and building voxel guns. Unit
+    /// composites and SHP draws add it after those effects.
+    /// https://github.com/Phobos-developers/Phobos/blob/b90ab4bcba3f4b0b8ce74d2119ac0d561eaccc8f/src/Ext/Techno/Hooks.Tint.cpp#L252-L280
+    custom_before_effects: bool,
     flashed: bool,
     curtain: Option<&'a crate::sim::superweapon::invulnerability::InvulnerabilityState>,
     airstrike: &'a crate::sim::superweapon::airstrike_tint::AirstrikeTintState,
     airstrike_active: bool,
     frame: u32,
+    custom_intensity: i32,
 }
 
 fn effect_light(
@@ -321,6 +482,11 @@ fn effect_light(
     } else {
         500
     };
+    let flashed = if state.custom_before_effects {
+        flashed.wrapping_add(state.custom_intensity)
+    } else {
+        flashed
+    };
     let curtained =
         crate::sim::superweapon::invulnerability::is_invulnerable(state.curtain, state.frame);
     let tinted = if curtained || (state.building && state.airstrike_active) {
@@ -332,6 +498,11 @@ fn effect_light(
             .effect_tint_intensity(iron, state.frame as i32)
     } else {
         flashed
+    };
+    let tinted = if state.custom_before_effects {
+        tinted
+    } else {
+        tinted.wrapping_add(state.custom_intensity)
     };
     with_intensity(tint, light, tinted)
 }
@@ -352,27 +523,38 @@ pub(crate) fn unit_voxel_effect_light(
     tint: [f32; 3],
     light: crate::render::palette_light::PaletteLight,
     rules: Option<&RuleSet>,
+    sim: &Simulation,
     frame: u32,
 ) -> ([f32; 3], crate::render::palette_light::PaletteLight) {
     let mut light = light;
-    if entity.category() == crate::map::entities::EntityCategory::Unit {
+    let category = entity.category();
+    if category == crate::map::entities::EntityCategory::Unit
+        || category == crate::map::entities::EntityCategory::Aircraft
+    {
+        // Unit73BF95 and Aircraft706786 OR the custom shield tint into the
+        // class word after their curtain/berserk arms.
         let word = rules.map_or(0, |rules| {
-            let curtain = if crate::sim::superweapon::invulnerability::is_invulnerable(
-                entity.invulnerability.as_ref(),
-                frame,
-            ) {
-                rules
-                    .color_add
-                    .rgb565_word(rules.general.iron_curtain_color)
+            let class = if category == crate::map::entities::EntityCategory::Unit {
+                let curtain = if crate::sim::superweapon::invulnerability::is_invulnerable(
+                    entity.invulnerability.as_ref(),
+                    frame,
+                ) {
+                    rules
+                        .color_add
+                        .rgb565_word(rules.general.iron_curtain_color)
+                } else {
+                    0
+                };
+                let berserk = if entity.berserk.is_active() {
+                    rules.color_add.rgb565_word(rules.general.berserk_color)
+                } else {
+                    0
+                };
+                curtain | berserk
             } else {
                 0
             };
-            let berserk = if entity.berserk.is_active() {
-                rules.color_add.rgb565_word(rules.general.berserk_color)
-            } else {
-                0
-            };
-            curtain | berserk
+            class | shield_tint(entity, sim, rules).0
         });
         light = light.with_colour_word(light.colour_word() | word);
     }
@@ -427,16 +609,20 @@ pub(crate) fn shp_colour_word(
     rules: &RuleSet,
     shrouded: impl FnOnce() -> bool,
 ) -> u16 {
+    // Shield tint is the custom tint those hooks OR in after their class word,
+    // including for a shrouded draw (the hooks replace the native shroud clear).
+    let shield_word = shield_tint(entity, sim, rules).0;
     match entity.category() {
         crate::map::entities::EntityCategory::Infantry => {
-            return if entity.berserk.is_active() && !shrouded() {
+            let berserk = if entity.berserk.is_active() && !shrouded() {
                 rules.color_add.rgb565_word(rules.general.berserk_color)
             } else {
                 0
             };
+            return berserk | shield_word;
         }
         crate::map::entities::EntityCategory::Structure => {}
-        _ => return 0,
+        _ => return shield_word,
     }
     let shielded = entity.invulnerability.as_ref().is_some_and(|curtain| {
         curtain.kind() == crate::sim::superweapon::invulnerability::InvulnKind::ForceShield
@@ -447,7 +633,7 @@ pub(crate) fn shp_colour_word(
     });
     let marked = entity.has_airstrike_marker();
     if !(shielded || marked) || shrouded() {
-        return 0;
+        return shield_word;
     }
     let shield = if shielded {
         rules
@@ -463,13 +649,14 @@ pub(crate) fn shp_colour_word(
     } else {
         0
     };
-    shield | laser
+    shield | laser | shield_word
 }
 
 use crate::sim::light_sources::{LightingEvent, PaletteUpdate};
 use crate::sim::scenario_session::ScenarioLightingState;
 use std::collections::{BTreeMap, BTreeSet};
 
+#[derive(Clone)]
 pub(crate) struct MatchLighting {
     grid: CellLightGrid,
     config: LightingConfig,
@@ -486,6 +673,19 @@ pub(crate) struct MatchLighting {
     /// last applied, kept like `buildings`.
     scenario: Option<ScenarioLightingState>,
     detail_level: u32,
+    /// Free Anim+FC copies, independent of cell refreshes and depth+100.
+    /// Sparse: absent means constructor421F06's1000. Building slots retain
+    /// their existing BuildingTintSample owner and do not populate this map.
+    /// No value is fed back to simulation decisions, Hash or RNG.
+    anim_intensities: BTreeMap<u64, i32>,
+    /// Cell+11B at its ordered write boundary. A height store alone never
+    /// refreshes the retained Cell scalars or an earlier Anim+FC copy.
+    heights: BTreeMap<(u16, u16), u8>,
+    global_cells: Vec<(u16, u16)>,
+    dimensions: [u16; 2],
+    /// ColorScheme normal RGB survives a same-theater user load and menu
+    /// return; fresh installs and a different Init_Theater recreate it.
+    theater: Option<String>,
 }
 
 impl Default for MatchLighting {
@@ -498,6 +698,11 @@ impl Default for MatchLighting {
             profile: lighting::normal_profile_units(&LightingConfig::default()).into(),
             scenario: None,
             detail_level: 2,
+            anim_intensities: BTreeMap::new(),
+            heights: BTreeMap::new(),
+            global_cells: Vec::new(),
+            dimensions: [0; 2],
+            theater: None,
         }
     }
 }
@@ -511,13 +716,43 @@ impl MatchLighting {
         &self.grid
     }
 
+    pub(crate) fn anim_intensities(&self) -> &BTreeMap<u64, i32> {
+        &self.anim_intensities
+    }
+
+    pub(crate) fn restore_anim_intensities(&mut self, saved: Vec<(u64, i32)>) {
+        self.anim_intensities = saved.into_iter().collect();
+    }
+
+    /// The actual pre-Logic save boundary can follow ingress producers but
+    /// precede ordinary event publication. Replay that pending prefix into a
+    /// temporary copy of this owner, leaving live state and the queue alone.
+    /// AnimSave4253B0 -> AbstractSave410320 retains FC in the raw object.
+    pub(crate) fn saved_at(
+        mut self,
+        sim: &Simulation,
+    ) -> (lighting::SavedCellLighting, Vec<(u64, i32)>) {
+        if let Some(terrain) = sim.resolved_terrain() {
+            self.apply_events(terrain, sim.lighting_sources().pending());
+        }
+        let cells = self.grid.saved_local_lighting();
+        let anims = self
+            .anim_intensities
+            .into_iter()
+            .filter(|(id, _)| sim.anim(*id).is_some())
+            .collect();
+        (cells, anims)
+    }
+
     pub(crate) fn install(
         &mut self,
-        grid: CellLightGrid,
+        mut grid: CellLightGrid,
         config: LightingConfig,
         detail_level: u32,
         live: Option<(&ResolvedTerrainGrid, &Simulation)>,
+        initial_events: Option<&[LightingEvent]>,
     ) {
+        let saved = grid.take_saved_local_lighting();
         *self = Self {
             grid,
             config,
@@ -526,36 +761,90 @@ impl MatchLighting {
         };
         self.profile = lighting::normal_profile_units(&self.config).into();
         if let Some((terrain, sim)) = live {
-            let view = derive_lighting_view(&self.config, Some(sim), detail_level);
+            self.theater = Some(sim.session().theater().to_owned());
+            let mut view = derive_lighting_view(&self.config, Some(sim), detail_level);
+            if initial_events.is_some() {
+                // Fresh Fill starts with the installed normal profile before
+                // authored overlays and later building source creation. Seed
+                // no final sources ahead of their ordered events.
+                view.point_lights.clear();
+            }
             self.grid = build_lighting_grid_from_view(terrain, &view);
             self.profile = view.profile;
             self.scenario = Some(*sim.session().lighting());
-            (self.buildings, self.radiation) = source_maps(sim);
+            self.heights = terrain
+                .iter()
+                .map(|cell| ((cell.rx, cell.ry), cell.level))
+                .collect();
+            self.dimensions = [terrain.width(), terrain.height()];
+            self.global_cells = sim.map_size_diamond().map_or_else(
+                || self.heights.keys().copied().collect(),
+                |(width, _)| lighting::native_lighting_cells(terrain, width).collect(),
+            );
+            if let Some(events) = initial_events {
+                self.apply_events(terrain, events);
+                self.refresh(terrain, sim, detail_level);
+            } else {
+                (self.buildings, self.radiation) = source_maps(sim);
+            }
+        }
+        if let Some((saved, normal_rgb)) = saved {
+            self.grid.apply_saved_local_lighting(&saved);
+            self.grid.restore_color_scheme_normal_rgb(normal_rgb);
+            // Load685120 ->53AB50 ->53C280 ->4AE4C0 refreshes only the
+            // native iterator, using retained104/108. FC has its existing
+            // envelope/commit owner; noniterated Cell10A stays saved.
+            self.grid.refresh_retained_scalars(
+                self.global_cells
+                    .iter()
+                    .filter_map(|cell| self.heights.get(cell).map(|height| (*cell, *height))),
+                self.profile.units,
+            );
         }
     }
 
     /// Replay native source/global ordering before a draw. Source changes can
-    /// coalesce only between global operations; their entire dirty-area union
+    /// coalesce only between global operations or retained Anim reads; their dirty-area union
     /// survives even if the source registry returns to identical final values.
     pub(crate) fn apply_events(&mut self, terrain: &ResolvedTerrainGrid, events: &[LightingEvent]) {
         let mut dirty = BTreeSet::new();
+        let mut rad_centers: Vec<(u16, u16)> = Vec::new();
         for event in events {
             match event {
+                LightingEvent::RetainAnimIntensity { anim, cell } => {
+                    self.commit_source_cells(terrain, &mut dirty);
+                    // Original OverlayMark5FD1ED/Paradrop5F5B29 use MOVSX
+                    // word. A dummy/missing cell keeps ctor47BC9F's1000;
+                    // its separate unmodeled Recalc history remains open.
+                    let intensity = cell
+                        .and_then(|cell| self.grid.cell_light_at(cell))
+                        .map_or(1000, |light| i32::from(light.top_scalar as i16));
+                    self.anim_intensities.insert(*anim, intensity);
+                }
                 LightingEvent::Building { id, source } => {
                     let old = match source {
                         Some(source) => self.buildings.insert(*id, source.clone()),
                         None => self.buildings.remove(id),
                     };
-                    queue_area(old.as_ref(), terrain, self.detail_level, &mut dirty);
-                    queue_area(source.as_ref(), terrain, self.detail_level, &mut dirty);
+                    self.queue_area(old.as_ref(), self.detail_level, &mut dirty);
+                    self.queue_area(source.as_ref(), self.detail_level, &mut dirty);
                 }
                 LightingEvent::Radiation { center, source } => {
                     let old = match source {
                         Some(source) => self.radiation.insert(*center, source.clone()),
                         None => self.radiation.remove(center),
                     };
-                    queue_area(old.as_ref(), terrain, 2, &mut dirty);
-                    queue_area(source.as_ref(), terrain, 2, &mut dirty);
+                    self.queue_area(old.as_ref(), 2, &mut dirty);
+                    self.queue_area(source.as_ref(), 2, &mut dirty);
+                    rad_centers.push(*center);
+                }
+                LightingEvent::CellLevels { cells } => {
+                    self.commit_source_cells(terrain, &mut dirty);
+                    for &(cell, level) in cells {
+                        if let Some(height) = self.heights.get_mut(&cell) {
+                            *height = level;
+                        }
+                    }
                 }
                 LightingEvent::Global {
                     state,
@@ -573,7 +862,9 @@ impl MatchLighting {
                     }
                     //53AD00 updates Converts before4AE4C0 refreshes Cells.
                     self.grid.refresh_retained_scalars(
-                        terrain.iter().map(|cell| ((cell.rx, cell.ry), cell.level)),
+                        self.global_cells.iter().filter_map(|cell| {
+                            self.heights.get(cell).map(|height| (*cell, *height))
+                        }),
                         self.profile.units,
                     );
                     self.grid.set_constructor_alternate_rgb(*constructor_rgb);
@@ -592,11 +883,23 @@ impl MatchLighting {
             }
         }
         self.commit_source_cells(terrain, &mut dirty);
+        // A radiation site's light is the only app input a mod's type can
+        // recolor, so report what the grid actually holds once the frame's
+        // area is committed.
+        for center in rad_centers {
+            let source = self.radiation.get(&center);
+            log::debug!(
+                "lighting radiation {:?}: source={:?} cell={:?}",
+                center,
+                source.map(|source| (source.tint, source.intensity)),
+                self.grid.tint_at(center),
+            );
+        }
     }
 
     fn commit_source_cells(
         &mut self,
-        terrain: &ResolvedTerrainGrid,
+        _terrain: &ResolvedTerrainGrid,
         dirty: &mut BTreeSet<(u16, u16)>,
     ) {
         if dirty.is_empty() {
@@ -604,7 +907,7 @@ impl MatchLighting {
         }
         let heights = std::mem::take(dirty)
             .into_iter()
-            .filter_map(|cell| terrain.cell(cell.0, cell.1).map(|data| (cell, data.level)));
+            .filter_map(|cell| self.heights.get(&cell).map(|height| (cell, *height)));
         let sources = self
             .buildings
             .values()
@@ -632,17 +935,10 @@ impl MatchLighting {
         sim: &Simulation,
         detail_level: u32,
     ) {
-        if self.detail_level != detail_level.min(2) {
-            // Existing detail-change full reconstruction is retained as a
-            // compatibility boundary; no claim to native option-history parity.
-            self.install(
-                CellLightGrid::new(),
-                self.config.clone(),
-                detail_level,
-                Some((terrain, sim)),
-            );
-            return;
-        }
+        // Retire only at physical disposal, never merely UnInit, detach or
+        // loss of Logic/Display membership. Save uses the same store check.
+        self.anim_intensities
+            .retain(|id, _| sim.anim(*id).is_some());
         let (buildings, radiation) = source_maps(sim);
         let mut events = Vec::new();
         for id in self
@@ -700,25 +996,83 @@ impl MatchLighting {
             });
         }
         self.apply_events(terrain, &events);
+        if self.detail_level != detail_level.min(2) {
+            // Display4AE450 ->545000 destroys only Cell Converts. The
+            // synchronous native iterator resample preserves ColorSchemes
+            // and every already copied Anim+FC.
+            self.detail_level = detail_level.min(2);
+            self.grid.reset_cell_converts(sim.palette_constructor_rgb());
+            let mut dirty = self.global_cells.iter().copied().collect();
+            self.commit_source_cells(terrain, &mut dirty);
+        }
+    }
+
+    fn queue_area(
+        &self,
+        source: Option<&PointLight>,
+        detail: u32,
+        dirty: &mut BTreeSet<(u16, u16)>,
+    ) {
+        let Some(source) = source.filter(|source| source.active && source.detail && detail >= 2)
+        else {
+            return;
+        };
+        dirty.extend(
+            lighting::point_light_area_cells(
+                source,
+                self.dimensions[0],
+                self.dimensions[1],
+                |x, y| self.heights.get(&(x, y)).copied(),
+            )
+            .into_iter()
+            .map(|(cell, _)| cell),
+        );
+    }
+
+    /// ClearScene539760 restores normal mode without replacing its RGB.
+    /// The process value is projected on a clone, including pending writes;
+    /// failed preparation cannot mutate outgoing Cells, events or Converts.
+    pub(crate) fn normal_scheme_for_user_load(
+        &self,
+        outgoing: Option<&Simulation>,
+        incoming_theater: &str,
+    ) -> [i32; 3] {
+        if self.theater.as_deref() != Some(incoming_theater) {
+            return [1000; 3];
+        }
+        let mut current = self.clone();
+        if let Some(sim) = outgoing
+            && let Some(terrain) = sim.resolved_terrain()
+        {
+            current.apply_events(terrain, sim.lighting_sources().pending());
+        }
+        current.grid.color_scheme_normal_rgb()
     }
 }
 
-fn queue_area(
-    source: Option<&PointLight>,
-    terrain: &ResolvedTerrainGrid,
-    detail: u32,
-    dirty: &mut BTreeSet<(u16, u16)>,
-) {
-    let Some(source) = source.filter(|source| source.active && source.detail && detail >= 2) else {
-        return;
-    };
-    dirty.extend(
-        lighting::point_light_area_cells(source, terrain.width(), terrain.height(), |x, y| {
-            terrain.cell(x, y).map(|cell| cell.level)
-        })
-        .into_iter()
-        .map(|(cell, _)| cell),
-    );
+/// Only incoming allocated Cell value authority is admitted. Native CellSave
+/// retains104/108/10A; pointers and outgoing palette history are separate.
+pub(crate) fn validate_saved_lighting(
+    saved: &lighting::SavedCellLighting,
+    sim: &Simulation,
+) -> Result<(), crate::sim::snapshot::saved_local_view::SavedLocalViewError> {
+    use crate::sim::snapshot::saved_local_view::SavedLocalViewError;
+    let invalid = |field| SavedLocalViewError::InvalidLighting { field };
+    let terrain = sim.resolved_terrain().ok_or_else(|| invalid("terrain"))?;
+    let expected: BTreeSet<_> = terrain.iter().map(|cell| (cell.rx, cell.ry)).collect();
+    let mut seen = BTreeSet::new();
+    for &(cell, _scale16, additive, top) in &saved.cells {
+        if !seen.insert(cell)
+            || !(0..=2000).contains(&top)
+            || i32::from(additive as i16) != additive
+        {
+            return Err(invalid("Cell scalar"));
+        }
+    }
+    if seen != expected {
+        return Err(invalid("Cell allocation"));
+    }
+    Ok(())
 }
 
 fn source_maps(sim: &Simulation) -> (BTreeMap<u64, PointLight>, BTreeMap<(u16, u16), PointLight>) {
@@ -852,8 +1206,16 @@ mod curtain_tint_tests;
 mod tint_tests;
 
 #[cfg(test)]
+#[path = "anim_lighting_tests.rs"]
+mod anim_lighting_tests;
+
+#[cfg(test)]
 #[path = "unit_light_tests.rs"]
 mod unit_light_tests;
+
+#[cfg(test)]
+#[path = "infantry_light_tests.rs"]
+mod infantry_light_tests;
 
 #[cfg(test)]
 mod palette_producer_tests {

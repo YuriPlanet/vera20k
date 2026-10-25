@@ -84,7 +84,7 @@ fn head_for(sim: &mut Simulation, rules: &RuleSet, id: u64, building: u64) {
     sim.assign_destination_represented(
         id,
         Some(NavTargetRef::object(building)),
-        Some(rules),
+        rules,
         None,
         FrameEffects::default(),
     )
@@ -233,7 +233,7 @@ fn a_capturing_infantryman_heads_for_its_building_target() {
         sim.assign_target_represented(
             id,
             Some(TargetKind::Entity(plant)),
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )

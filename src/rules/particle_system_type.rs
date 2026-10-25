@@ -68,6 +68,14 @@ pub struct ParticleSystemType {
     // ── Identity ─────────────────────────────────────────────────────
     /// Section name in rulesmd.ini (e.g., "BigGreySmokeSys").
     pub name: String,
+    /// ObjectType+0x1F8 Image buffer. `ObjectTypeClass::Constructor @
+    /// 0x005F7090` starts with the AbstractType ID; `ParticleSystemTypeClass::
+    /// ReadINI @ 0x006442D0` reaches `ObjectTypeClass::ReadINI @ 0x005F92D0`,
+    /// which retains the current 25-byte string when Image is missing or empty.
+    pub image: String,
+    /// Inherited `ObjectTypeClass::ReadINI @ 0x005F92D0` AlphaImage buffer
+    /// (`+0x213`, `char[25]`), separate from the particle system's Image.
+    pub(crate) alpha_image: String,
     /// System-level behavior dispatch — selects the per-tick spawn / AI branch.
     pub behaves_like: ParticleSystemBehavesLike,
 
@@ -147,6 +155,8 @@ impl ParticleSystemType {
 
         Self {
             name: name.to_string(),
+            image: section.read_name("Image", 0x19).unwrap_or(name).to_owned(),
+            alpha_image: section.read_object_alpha_image(""),
             behaves_like,
             holds_what: None,
             spawns: section.read_bool("Spawns", false),

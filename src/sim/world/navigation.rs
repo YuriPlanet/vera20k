@@ -36,8 +36,8 @@ pub(super) fn marked_structure_movement_cells(
     }
     let object_type = interner.object_type(entity.type_ref(), rules);
     let foundation = object_type
-        .map(|object| object.foundation.as_str())
-        .unwrap_or("1x1");
+        .map(|object| &object.foundation)
+        .unwrap_or_else(|| entity.type_facts.foundation());
     let has_bib = object_type.is_some_and(|object| object.bib);
     let foundation_cells = crate::sim::production::building_base_foundation_cells(
         entity.position.rx(),

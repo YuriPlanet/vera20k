@@ -712,6 +712,24 @@ impl OverlayGrid {
         true
     }
 
+    /// CellLoad483BE0 clears literal179/242, independently of Rules crate-image
+    /// pointers or lobby options. Loading emits no runtime dirty/recalc receipt.
+    pub(crate) fn reset_crate_fields_after_user_load(
+        &mut self,
+        cells: impl Iterator<Item = (u16, u16)>,
+    ) {
+        for (rx, ry) in cells {
+            let Some(index) = index_of(self.width, self.height, rx, ry) else {
+                continue;
+            };
+            let cell = &mut self.cells[index];
+            if matches!(cell.overlay_id, Some(179 | 242)) {
+                cell.overlay_id = None;
+                cell.overlay_data = 0;
+            }
+        }
+    }
+
     /// Drain the coordinates whose overlay identity was erased without a
     /// recalc. The frame finalizer forwards these to presentation so the
     /// removed sprite stops drawing.
@@ -750,10 +768,10 @@ impl OverlayGrid {
         true
     }
 
-    /// Literal576BA0 +44=-1 after the separately published +11E store. Keep
+    /// Literal576BA0 / AreaDamage48A2F0 +44=-1. Keep
     /// the state, wall owner and retained attributes; only presentation drops
     /// the removed identity. This must not enqueue a frame-tail Recalc.
-    pub(crate) fn clear_literal_bridge_identity(&mut self, rx: u16, ry: u16) -> bool {
+    pub(crate) fn clear_literal_overlay_identity(&mut self, rx: u16, ry: u16) -> bool {
         self.bump_mutation_epoch();
         let Some(idx) = index_of(self.width, self.height, rx, ry) else {
             return false;
@@ -1351,8 +1369,10 @@ fn damage_wall_recursive(
     // — and apply damage only when roll < damage; otherwise no effect. The
     // engine uses `< damage` (so roll == damage is a no-op) and the inclusive
     // top, both of which differ from an exclusive `[0, Strength-1]` / `>` test.
-    if damage != -1 && damage < i32::from(flags.strength) {
-        let roll = rng.next_range_u32_inclusive(0, u32::from(flags.strength)) as i32;
+    // CellClass::DestroyOverlay480CE9..480D18 compares signed dwords and
+    // forwards the full bound to RandomRanged65C7E0, including negative ones.
+    if damage != -1 && damage < flags.strength {
+        let roll = rng.next_range_i32_inclusive(0, flags.strength);
         if roll >= damage {
             return;
         }
@@ -1382,7 +1402,7 @@ fn damage_wall_recursive(
     let damage_level = new_data >> 4;
 
     // At penultimate damage level: chain-damage cardinal neighbors.
-    if flags.damage_levels > 2 && u16::from(damage_level) == flags.damage_levels.saturating_sub(1) {
+    if flags.damage_levels > 2 && i32::from(damage_level) == flags.damage_levels.wrapping_sub(1) {
         const CARDINAL: [(i32, i32); 4] = [(0, -1), (1, 0), (0, 1), (-1, 0)];
         for (dx, dy) in CARDINAL {
             let Some((base_x, base_y)) =
@@ -1423,10 +1443,13 @@ fn damage_wall_recursive(
     let post_chain_data =
         native_runtime_overlay_target_state(grid, resolved_terrain.as_deref(), target).1;
     let post_chain_level = post_chain_data >> 4;
-    let penultimate = flags.damage_levels.saturating_sub(1);
     let connected = post_chain_data & 0x0F != 0;
-    let retain = u16::from(post_chain_level) < penultimate
-        || (u16::from(post_chain_level) == penultimate && connected);
+    // DestroyOverlay480EDD..480EEA tests signed stage<levels BEFORE DEC.
+    // In particular i32::MIN removes, rather than wrapping its penultimate
+    // into a positive value and retaining the wall.
+    let stage = i32::from(post_chain_level);
+    let retain =
+        stage < flags.damage_levels && (stage != flags.damage_levels.wrapping_sub(1) || connected);
     if damage != -1 && retain {
         // The native state write preceded the chain. Export a real-cell render
         // mutation only; the shared dummy's pair stays live through its handle.
@@ -2157,7 +2180,7 @@ mod tests {
         grid.cells[0].overlay_id = Some(24);
         grid.cells[0].wall_owner = Some(crate::sim::intern::test_intern("RetainedOwner"));
         let owner = grid.cells[0].wall_owner;
-        assert!(grid.clear_literal_bridge_identity(0, 0));
+        assert!(grid.clear_literal_overlay_identity(0, 0));
         assert_eq!(grid.cell(0, 0).overlay_id, None);
         assert_eq!(
             grid.cell(0, 0).overlay_data,

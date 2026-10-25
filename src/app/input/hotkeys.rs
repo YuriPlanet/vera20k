@@ -1,7 +1,7 @@
 //! Retail keyboard binding loading and logical-key dispatch.
 //!
 //! This app-layer module translates winit's logical keys into the encoded
-//! Win32 key words stored in `KEYBOARDMD.INI`. It deliberately stops at
+//! Win32 key words imported from `KEYBOARDMD.INI` and saved in `VERA.INI`. It deliberately stops at
 //! semantic command names; gameplay effects remain in `input::dispatch`.
 
 use std::collections::BTreeMap;
@@ -59,6 +59,9 @@ pub(crate) enum HotkeyCommand {
     Taunt(usize),
     ScreenCapture,
     SetView(usize),
+    /// VeraX: load the selection into nearby transports. Registered in the
+    /// `vera20k` keyboard category with the Ctrl+D default.
+    AutoLoad,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,6 +171,10 @@ pub(crate) fn physical_scroll_key(
 #[derive(Debug, Clone, Default)]
 pub(crate) struct HotkeyBindings {
     by_key: BTreeMap<u16, HotkeyCommand>,
+    /// VeraX AutoLoad was explicitly unbound (`AutoLoad=0`); reloads and
+    /// startups keep it unbound instead of restoring the Ctrl+D default.
+    #[cfg(feature = "verax")]
+    vera_autoload_cleared: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -200,7 +207,13 @@ impl HotkeyBindings {
                     continue;
                 };
                 // Reload `0x00533D20`: ReadInt over 0 for each entry name.
-                let Some(encoded) = Some(section.read_int(name, 0))
+                let value = section.read_int(name, 0);
+                #[cfg(feature = "verax")]
+                if command == HotkeyCommand::AutoLoad && value == 0 {
+                    bindings.vera_autoload_cleared = true;
+                    continue;
+                }
+                let Some(encoded) = Some(value)
                     .filter(|value| *value != 0)
                     .and_then(|value| u16::try_from(value).ok())
                 else {
@@ -208,6 +221,19 @@ impl HotkeyBindings {
                 };
                 bindings.by_key.insert(encoded, command);
             }
+        }
+        // VeraX AutoLoad keeps Ctrl+D whenever the profile neither remaps it,
+        // explicitly clears it, nor gives Ctrl+D to another command. Installing
+        // it here, rather than only at startup, also makes Cancel and Reset All
+        // show and restore the default.
+        #[cfg(feature = "verax")]
+        if !bindings.vera_autoload_cleared
+            && bindings.first_key(HotkeyCommand::AutoLoad).is_none()
+            && !bindings.by_key.contains_key(&(CTRL_BIT | 0x44))
+        {
+            bindings
+                .by_key
+                .insert(CTRL_BIT | 0x44, HotkeyCommand::AutoLoad);
         }
 
         bindings
@@ -243,6 +269,10 @@ impl HotkeyBindings {
                 return Err(BindingAssignmentError::CannotRemap);
             }
         }
+        #[cfg(feature = "verax")]
+        if command == HotkeyCommand::AutoLoad {
+            self.vera_autoload_cleared = encoded == 0;
+        }
         if let Some(key) = self.first_key(command) {
             self.by_key.remove(&key);
         }
@@ -273,6 +303,12 @@ impl HotkeyBindings {
             } else {
                 entries.push((metadata.ini_name, key));
             }
+        }
+        #[cfg(feature = "verax")]
+        if self.vera_autoload_cleared {
+            // An explicit zero keeps a deliberate unbind through reloads and
+            // the next startup; an absent row would restore the default.
+            entries.push(("AutoLoad", 0));
         }
         let mut output = String::from("[Hotkey]\n");
         for (name, key) in entries {
@@ -617,7 +653,7 @@ mod tests {
     fn registered_catalog_matches_original_objects_and_metadata_getters() {
         let fixture = native_keyboard_fixture();
         let native = fixture["catalog"].as_array().unwrap();
-        let catalog = catalog::registered_commands();
+        let catalog = catalog::retail_commands();
         assert_eq!(catalog.len(), 87);
         assert_eq!(catalog.len(), native.len());
         for (index, (actual, expected)) in catalog.iter().zip(native).enumerate() {
@@ -656,7 +692,7 @@ mod tests {
         }
         let loaded = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
         assert_eq!(loaded.by_key.len(), 87);
-        for (index, metadata) in catalog::registered_commands().iter().enumerate() {
+        for (index, metadata) in catalog::retail_commands().iter().enumerate() {
             assert_eq!(
                 loaded.command_at(0x200 + index as u16),
                 Some(metadata.command)
@@ -694,11 +730,18 @@ mod tests {
             assert_eq!(command_from_name(alias), None);
             writeln!(ini, "{alias}={}", 0x200 + index).unwrap();
         }
-        assert!(
-            HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()))
-                .by_key
-                .is_empty()
-        );
+        let rejected = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
+        #[cfg(not(feature = "verax"))]
+        assert!(rejected.by_key.is_empty());
+        #[cfg(feature = "verax")]
+        {
+            // Only the VeraX startup default survives; no alias row is parsed.
+            assert_eq!(
+                rejected.first_key(HotkeyCommand::AutoLoad),
+                Some(CTRL_BIT | 0x44)
+            );
+            assert_eq!(rejected.by_key.len(), 1);
+        }
         // The stock team10 -> engine slot0 mapping remains valid through metadata.
         assert_eq!(
             command_from_name("TeamSelect_10"),
@@ -763,13 +806,16 @@ mod tests {
             HotkeyBindings::from_ini_bytes(Some(b"[Hotkey]\nDelete=110\nStopObject=83\n"));
         assert_eq!(startup.first_key(HotkeyCommand::Delete), Some(46));
         let serialized = startup.to_ini_string();
-        assert_eq!(
-            serialized,
-            "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\n"
-        );
+        #[cfg(feature = "verax")]
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\nAutoLoad=580\n";
+        #[cfg(not(feature = "verax"))]
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\n";
+        assert_eq!(serialized, expected);
         let mut reloaded = HotkeyBindings::reload_from_ini_bytes(Some(serialized.as_bytes()));
         assert_eq!(reloaded.command_at(46), None);
         assert_eq!(reloaded.first_key(HotkeyCommand::Delete), Some(110));
+        #[cfg(feature = "verax")]
+        assert_eq!(reloaded.first_key(HotkeyCommand::AutoLoad), Some(580));
         reloaded.assign(HotkeyCommand::Options, 0).unwrap();
         reloaded
             .assign(HotkeyCommand::CenterOnRadarEvent, 0)
@@ -873,6 +919,68 @@ mod tests {
 
     fn character(value: &str) -> Key {
         Key::Character(value.into())
+    }
+
+    #[cfg(feature = "verax")]
+    #[test]
+    fn verax_autoload_registers_its_category_and_ctrl_d_default() {
+        let catalog = catalog::registered_commands();
+        let row = catalog
+            .iter()
+            .find(|row| row.ini_name == "AutoLoad")
+            .expect("AutoLoad is registered");
+        assert_eq!(row.command, HotkeyCommand::AutoLoad);
+        assert_eq!(row.category_key, catalog::VERA_CATEGORY_KEY);
+        assert_eq!(row.name_key, "AutoLoad");
+        assert_eq!(command_from_name("AutoLoad"), Some(HotkeyCommand::AutoLoad));
+
+        let bindings = HotkeyBindings::from_ini_bytes(None);
+        assert_eq!(
+            bindings.first_key(HotkeyCommand::AutoLoad),
+            Some(CTRL_BIT | 0x44)
+        );
+        assert_eq!(
+            bindings.resolve(
+                &character("d"),
+                KeyLocation::Standard,
+                ModifiersState::CONTROL
+            ),
+            Some(HotkeyCommand::AutoLoad)
+        );
+        // Bare D keeps whatever the retail table gives it.
+        assert_eq!(
+            bindings.resolve(
+                &character("d"),
+                KeyLocation::Standard,
+                ModifiersState::empty()
+            ),
+            None
+        );
+
+        // A saved remap survives, and a saved Ctrl+D owner wins over the default.
+        let remapped = HotkeyBindings::from_ini_bytes(Some(b"[Hotkey]\nAutoLoad=88\n"));
+        assert_eq!(remapped.first_key(HotkeyCommand::AutoLoad), Some(88));
+        let occupied = HotkeyBindings::from_ini_bytes(Some(b"[Hotkey]\nStopObject=580\n"));
+        assert_eq!(
+            occupied.command_at(CTRL_BIT | 0x44),
+            Some(HotkeyCommand::StopObject)
+        );
+        assert_eq!(occupied.first_key(HotkeyCommand::AutoLoad), None);
+
+        // A deliberate unbind writes AutoLoad=0 and keeps the default away
+        // through the next reload; Cancel/Reset restores it when no explicit
+        // zero is on disk.
+        let mut cleared = HotkeyBindings::from_ini_bytes(None);
+        cleared.assign(HotkeyCommand::AutoLoad, 0).unwrap();
+        assert_eq!(cleared.first_key(HotkeyCommand::AutoLoad), None);
+        let saved = cleared.to_ini_string();
+        assert!(saved.ends_with("AutoLoad=0\n"), "{saved}");
+        let reloaded = HotkeyBindings::reload_from_ini_bytes(Some(saved.as_bytes()));
+        assert_eq!(reloaded.first_key(HotkeyCommand::AutoLoad), None);
+        assert_eq!(
+            HotkeyBindings::reload_from_ini_bytes(None).first_key(HotkeyCommand::AutoLoad),
+            Some(CTRL_BIT | 0x44)
+        );
     }
 
     #[test]

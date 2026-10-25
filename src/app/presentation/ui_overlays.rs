@@ -53,7 +53,6 @@ fn health_bar_hover_target(
         world_y,
         local_owner,
         state.match_state.sandbox_full_visibility,
-        state.rules(),
     )?;
     match hover.kind {
         HoverTargetKind::FriendlyStructure
@@ -91,7 +90,7 @@ pub(crate) fn status_visibility(selected: bool, hovered: bool) -> (bool, bool) {
 /// or discovery+41B. Hover already passed ProcessClickCoords' projected query.
 /// Reuse the body admission owner for lifecycle/cloak instead of adding another
 /// fog interpretation here. Native dispatch controls: health_hover.json.
-fn health_bar_drawable(
+pub(crate) fn health_bar_drawable(
     sim: &crate::sim::world::Simulation,
     entity: &crate::sim::game_entity::GameEntity,
     hovered_id: Option<u64>,
@@ -125,6 +124,63 @@ fn health_strip_visibility(
                 )
             }));
     status_visibility(selected, hovered)
+}
+
+/// A building's health-bar geometry. BuildingType464AF0 owns Foundation*256
+/// and fixed ART Height*104; 6F6536/656E project local offsets through
+/// Tactical6D1F10, without the absolute projection's camera or +15 world-row
+/// origin. Phobos's building select bracket starts from the same points.
+pub(crate) struct BuildingBarGeometry {
+    /// The projected foundation edge at Z=0 (6F659E).
+    pub(crate) edge: (i32, i32),
+    /// `edge.1` raised by the ART height.
+    pub(crate) upper_y: i32,
+    /// Both upper projections carry the same Z; it cancels in 6F65BC..CF.
+    pub(crate) num_pips: i32,
+    /// Fixed ART Height*104, in leptons.
+    #[cfg(feature = "phobos")]
+    pub(crate) height_leptons: i32,
+}
+
+impl BuildingBarGeometry {
+    pub(crate) fn new(rules: &RuleSet, object: &crate::rules::object_type::ObjectType) -> Self {
+        let [width, height, z] = rules.building_dimensions(object);
+        let left = (width - width / 2).wrapping_neg();
+        let back = height - height / 2;
+        let (ax, ay) = crate::util::lepton::project_absolute_lepton_xy(left, back);
+        let (_, by) = crate::util::lepton::project_absolute_lepton_xy(left, back.wrapping_neg());
+        Self {
+            edge: (ax, ay),
+            upper_y: ay - crate::util::native_x87::adjust_for_z_standard(z),
+            num_pips: (ay - by) / 2,
+            #[cfg(feature = "phobos")]
+            height_leptons: z,
+        }
+    }
+
+    /// The first health pip at screen point `(sx, sy)`, which is also Phobos's
+    /// building select-bracket Top anchor.
+    pub(crate) fn first_pip(&self, sx: f32, sy: f32) -> (f32, f32) {
+        (
+            sx + (self.edge.0 + 4 * self.num_pips + 3) as f32,
+            sy + (self.upper_y + 4 - 2 * self.num_pips) as f32,
+        )
+    }
+}
+
+/// Phobos `TechnoExt::GetFootSelectBracketPosition`'s rectangle at screen
+/// point `(sx, sy)`: the 8-pip Infantry or 17-pip mobile bracket, as
+/// `[x, y, width, height]`.
+#[cfg(feature = "phobos")]
+pub(crate) fn foot_select_bracket(sx: f32, sy: f32, infantry: bool) -> [f32; 4] {
+    let length = if infantry { 8.0 } else { 17.0 };
+    let nudge = if infantry { 1.0 } else { 0.0 };
+    [
+        sx - length + nudge + 1.0,
+        sy - 28.0 + nudge,
+        length * 2.0,
+        length * 3.0,
+    ]
 }
 
 /// Retained Display membership and the shared tactical draw admission.
@@ -163,12 +219,13 @@ pub(crate) fn admitted_techno_observer(
 /// Native `DrawHealthBar @0x006F64A0` guards its class `vt+0x450` pip/status
 /// tail after the health strip. It admits CurrentPlayer's allies directly; the
 /// other arm tests the object's current-player display bit at Techno+0x210.
-/// That bit has no Rust owner yet, so this covers the common current-owned /-
-/// allied path and leaves the non-allied display-bit arm as a bounded residual.
+/// Its only writers found (the constructor 0x006F2D05, 0x0044162A and the
+/// ChangeOwner clears 0x00448324/0x00448DB3) store zero, so the non-allied
+/// arm is dormant and only the current-owned / allied path is modelled.
 /// Building6F67DC..67FE also admits CanBeOccupied/PipsDrawForAll; the
 /// mobile caller never reads the latter.709B61 suppresses the complete
 /// Building Tiberium tail. All pip/group consumers share these decisions.
-/// Source: procedural_drawing_oracle/absorber_pips; +210 remains unresolved.
+/// Source: procedural_drawing_oracle/absorber_pips.
 fn entity_status_pips_drawable(
     sim: &crate::sim::world::Simulation,
     entity: &crate::sim::game_entity::GameEntity,
@@ -205,15 +262,14 @@ fn entity_status_pips_drawable(
         )
 }
 
-/// Project the input-owned control-group membership onto the live objects that
-/// reach the status-pip draw. The membership remains owned by
-/// `MatchInputState`; this transient index only makes each frame's lookup
+/// Project the simulation-owned control-group membership onto the live objects that
+/// reach the status-pip draw. This transient index only makes each frame's lookup
 /// linear in the retained Display list plus the ten group lists.
 ///
 /// Native `DrawHealthBar @0x006F64A0` calls the class pip-scale slot
 /// (`vtable +0x450`), whose tail reads Techno `+0x214` at
 /// `DrawPipScalePips @0x00709A90`. Native `+0x214` is a zero-based slot; Rust's
-/// input-owned control groups are indexed by the registered hotkey digit
+/// projected control groups are indexed by the registered hotkey digit
 /// (`TeamCreate_1` stores slot 1 and `TeamCreate_10` stores slot 0), so the
 /// displayed digit is the Rust slot itself. The native caller's selected/hovered
 /// admission is shared with the health strip for units, infantry, and buildings.
@@ -231,9 +287,8 @@ pub(crate) fn control_group_status_labels(
     let mut slot_by_id = HashMap::new();
     for (slot, members) in control_groups.iter().take(10).enumerate() {
         for &stable_id in members {
-            // The input owner maintains unique membership. Last-slot choice
-            // only makes malformed/restored duplicates deterministic; it
-            // does not reconstruct a native assignment history.
+            // Simulation derives this unique membership from each entity's
+            // native group field and pending local assignment commands.
             slot_by_id.insert(stable_id, slot);
         }
     }
@@ -443,11 +498,7 @@ pub(crate) fn build_control_group_status_render_instances(
                             [width, height]
                         })
                 })
-                .unwrap_or_else(|| {
-                    crate::rules::foundation::foundation_dimensions_leptons(
-                        entity.type_facts.foundation(),
-                    )
-                });
+                .unwrap_or_else(|| entity.type_facts.foundation().dimensions_leptons());
             let (foundation_x, foundation_y) = crate::util::lepton::project_absolute_lepton_xy(
                 -(width - width / 2),
                 height - height / 2,
@@ -537,7 +588,7 @@ pub(crate) fn build_control_group_status_instances(
     ];
     build_control_group_status_render_instances(
         sim,
-        &state.match_state.input.control_groups,
+        &sim.projected_control_groups(),
         hovered_entity_id,
         local_owner_id,
         state.match_state.sandbox_full_visibility,
@@ -591,8 +642,9 @@ pub(crate) fn build_building_status_render_instances(
         {
             continue;
         }
-        //43E7EF's separate non-allied Techno+210 display-bit producer is
-        //still an explicit status-owner residual; do not invent its state.
+        //43E7EF's separate non-allied Techno+210 display-bit arm is
+        //dormant: no writer found sets the bit nonzero (see
+        //entity_status_pips_drawable).
         let Some(object) = sim.interner().object_type(entity.type_ref(), rules) else {
             continue;
         };
@@ -623,8 +675,7 @@ pub(crate) fn build_building_status_render_instances(
         }
         let text = if primary {
             //70AC24's45EC90 uses foundation CELL width, not Dimension2 leptons.
-            let key = if crate::rules::foundation::foundation_dimensions(&object.foundation).0 == 1
-            {
+            let key = if object.foundation.dimensions().0 == 1 {
                 "TXT_PRI"
             } else {
                 "TXT_PRIMARY"
@@ -808,12 +859,19 @@ pub(crate) struct TechnoExtras {
     pub wrench: Option<SpriteInstance>,
     pub rank: Option<SpriteInstance>,
     pub background: Option<SpriteInstance>,
-    /// Plain600 PIPS commands: health followed by any garrison occupants.
+    /// Phobos mobile shield PIPBRD/E00, before the shield and health fills.
+    pub shield_background: Option<SpriteInstance>,
+    /// Plain600 PIPS commands: shield, health, then any garrison occupants.
     pub fills: Vec<SpriteInstance>,
     /// Plain600 PIPS2 scale commands, after this parent's health.
     pub scale: Vec<SpriteInstance>,
     /// Existing House-owned self-heal marker, between scale and group text.
     pub self_heal: Option<SpriteInstance>,
+    /// Phobos DigitalDisplay text, one backing+glyph set per list entry, after
+    /// the control-group label and drawn in list order.
+    pub digital_text: Vec<StatusTextOverlayInstances>,
+    /// Phobos DigitalDisplay custom-SHP glyphs: catalog index + sprite.
+    pub digital_shapes: Vec<(u32, SpriteInstance)>,
     ///709A90's group tail follows this parent's pip scale, not a global sweep.
     pub group: StatusTextOverlayInstances,
     ///6F5E8D..5EDE: after health/pips/group, plain600 at the caller point.
@@ -830,6 +888,7 @@ impl TechnoExtras {
             .chain(self.wrench.iter_mut())
             .chain(self.rank.iter_mut())
             .chain(self.background.iter_mut())
+            .chain(self.shield_background.iter_mut())
             .chain(self.fills.iter_mut())
             .chain(self.scale.iter_mut())
             .chain(self.self_heal.iter_mut())
@@ -840,6 +899,145 @@ impl TechnoExtras {
             instance.position[0] += offset[0];
             instance.position[1] += offset[1];
         }
+        for text in &mut self.digital_text {
+            for instance in text.rectangles.iter_mut().chain(text.text.iter_mut()) {
+                instance.position[0] += offset[0];
+                instance.position[1] += offset[1];
+            }
+        }
+        for (_, instance) in &mut self.digital_shapes {
+            instance.position[0] += offset[0];
+            instance.position[1] += offset[1];
+        }
+    }
+}
+
+/// Phobos `ShieldClass::DrawShieldBar_Pip`: the entry's own triplet when its
+/// X is set, otherwise the global `[AudioVisual] Pips.Shield*` triplet, then
+/// the native 5 (building) / 16 (mobile) fallback.
+#[cfg(feature = "phobos")]
+fn shield_pip_frame(
+    building: bool,
+    hp: i32,
+    ty: &crate::rules::phobos_shields::ShieldType,
+    globals: &crate::rules::phobos_shields::ShieldGlobals,
+) -> usize {
+    let local = ty.pips(building);
+    let pips = if local[0] != -1 {
+        local
+    } else {
+        globals.pips(building)
+    };
+    let strength = f64::from(ty.strength());
+    let yellow = ty.condition_yellow(globals.condition_yellow());
+    let red = ty.condition_red(globals.condition_red());
+    let pick = |fallback: i32| usize::try_from(fallback.max(0)).unwrap_or(0);
+    if f64::from(hp) > yellow * strength && pips[0] != -1 {
+        pick(pips[0])
+    } else if f64::from(hp) > red * strength && (pips[1] != -1 || pips[0] != -1) {
+        pick(if pips[1] == -1 { pips[0] } else { pips[1] })
+    } else if pips[2] != -1 || pips[0] != -1 {
+        pick(if pips[2] == -1 { pips[0] } else { pips[2] })
+    } else {
+        if building { 5 } else { 16 }
+    }
+}
+
+/// Phobos `DrawShieldBar_Building`/`DrawShieldBar_Other` sprite commands.
+/// `bracket` is the native bracket anchor after the class fixed offsets;
+/// `bracket_delta` is the shield's own `BracketDelta` (foot only).
+#[cfg(feature = "phobos")]
+#[allow(clippy::too_many_arguments)]
+fn shield_bar_instances(
+    entity: &crate::sim::game_entity::GameEntity,
+    rules: &RuleSet,
+    shape: &crate::render::selection_overlay::CenteredShapeStrip,
+    pip_board: Option<&crate::render::selection_overlay::CenteredShapeStrip>,
+    building: bool,
+    length: i32,
+    bracket: (f32, f32),
+    bracket_delta: f32,
+    strip: &mut TechnoExtras,
+) {
+    let Some(shield) = entity.shield() else {
+        return;
+    };
+    let Some(ty) = rules.shield_type(shield.type_name()) else {
+        return;
+    };
+    // `0x6F65D1`/`0x6F683C` skip the whole shield bar, background included,
+    // while the shield is broken and nothing will respawn it.
+    if shield.broken_non_respawning(ty) {
+        return;
+    }
+    let globals = rules.shield_globals();
+    if shield.hp() <= 0 && ty.pips_hide_if_no_strength() {
+        return;
+    }
+    let strength = ty.strength();
+    let total = if shield.is_active() && strength != 0 {
+        ((f64::from(shield.hp()) / f64::from(strength) * f64::from(length)).round() as i32)
+            .clamp(1, length.max(1))
+    } else {
+        0
+    };
+    let frame = shield_pip_frame(building, shield.hp(), ty, globals);
+    let depth = if building { 0.0006 } else { 0.0005 };
+    let instance = |frame: usize, point: (f32, f32)| {
+        shape.instance(frame, point, depth).map(|mut instance| {
+            instance.palette_light = crate::render::palette_light::PaletteLight::plain(53, 1000);
+            instance
+        })
+    };
+    if building {
+        for index in 0..total {
+            strip.fills.extend(instance(
+                frame,
+                (
+                    bracket.0 - 4.0 * index as f32,
+                    bracket.1 + 2.0 * index as f32,
+                ),
+            ));
+        }
+        let empty_frame = ty
+            .pips_building_empty()
+            .or_else(|| globals.pips_building_empty())
+            .unwrap_or(0);
+        let empty_frame = usize::try_from(empty_frame.max(0)).unwrap_or(0);
+        for index in total..length {
+            strip.fills.extend(instance(
+                empty_frame,
+                (
+                    bracket.0 - 4.0 * index as f32,
+                    bracket.1 + 2.0 * index as f32,
+                ),
+            ));
+        }
+        return;
+    }
+    let base = (bracket.0, bracket.1 + bracket_delta);
+    let infantry = entity.category() == EntityCategory::Infantry;
+    if entity.selection.is_selected()
+        && let Some(board) = pip_board
+    {
+        let board_frame = if board.frame_count() > 2 { 2 } else { 0 } + usize::from(infantry);
+        let offset = length + 1 + if infantry { length + 1 } else { 0 };
+        // Phobos DrawShieldBar_Other (0x6F683C) draws PIPBRD with E00;
+        // keep its texture/material separate from the following PIPS/600.
+        // https://github.com/Phobos-developers/Phobos/blob/b90ab4bcba3f4b0b8ce74d2119ac0d561eaccc8f/src/New/Entity/ShieldClass.cpp#L1195-L1209
+        strip.shield_background = board
+            .instance(board_frame, (base.0 + offset as f32, base.1), depth)
+            .map(|mut instance| {
+                instance.palette_light =
+                    crate::render::palette_light::PaletteLight::plain(53, 1000);
+                instance
+            });
+    }
+    for index in 0..total {
+        strip.fills.extend(instance(
+            frame,
+            (base.0 + 2.0 * (index + 1) as f32, base.1 + 1.0),
+        ));
     }
 }
 
@@ -1052,19 +1250,30 @@ pub(crate) fn techno_extras_for_parent(
         let (Some(rules), Some(object), Some(shape)) = (rules, object, overlay.pips()) else {
             return strip;
         };
-        // BuildingType464AF0 owns Foundation*256 and fixed ART Height*104.
-        //6F6536/656E project local offsets through Tactical6D1F10, without
-        // the absolute projection's camera or +15 world-row origin.
-        let [width, height, z] = rules.building_dimensions(object);
-        let left = (width - width / 2).wrapping_neg();
-        let back = height - height / 2;
-        let (ax, ay) = crate::util::lepton::project_absolute_lepton_xy(left, back);
-        let (_, by) = crate::util::lepton::project_absolute_lepton_xy(left, back.wrapping_neg());
-        let upper_y = ay - crate::util::native_x87::adjust_for_z_standard(z);
-        // Both upper projections carry the same Z; it cancels in6F65BC..CF.
-        let num_pips = (ay - by) / 2;
+        let geometry = BuildingBarGeometry::new(rules, object);
+        let (ax, ay) = geometry.edge;
+        let num_pips = geometry.num_pips;
         if num_pips <= 0 {
             return strip;
+        }
+        // Phobos `TechnoClass_DrawHealthBar_Buildings 0x6F65D1` ->
+        // `DrawShieldBar_Building(length, bound)`, before the native health
+        // fill. The building bracket is the Top anchor minus (6,3).
+        #[cfg(feature = "phobos")]
+        {
+            let top = geometry.first_pip(sx, sy);
+            let bracket = (top.0 - 6.0, top.1 - 3.0);
+            shield_bar_instances(
+                entity,
+                rules,
+                shape,
+                overlay.pipbrd(),
+                true,
+                num_pips,
+                bracket,
+                0.0,
+                &mut strip,
+            );
         }
         let filled = filled_count(object.strength, num_pips);
         //6F660A/661F use the existing health-category predicates; zero HP
@@ -1079,10 +1288,7 @@ pub(crate) fn techno_extras_for_parent(
             1 => 2,
             _ => 1,
         };
-        let start = (
-            sx + (ax + 4 * num_pips + 3) as f32,
-            sy + (upper_y + 4 - 2 * num_pips) as f32,
-        );
+        let start = geometry.first_pip(sx, sy);
         strip.fills.reserve(num_pips as usize);
         //6F6658..6774: filled first, then empty frame0, walking [-4,+2].
         // Building PIPS600 bypasses A and Z; the replay owner preserves both
@@ -1129,6 +1335,31 @@ pub(crate) fn techno_extras_for_parent(
     let (Some(rules), Some(object), Some(shape)) = (rules, object, overlay.pips()) else {
         return strip;
     };
+    // Phobos `TechnoClass_DrawHealthBar_Units 0x6F683C` ->
+    // `DrawShieldBar_Other`, before the native health fill. The foot bracket
+    // is the (Left, Top) anchor minus (1,0); the shield's own `BracketDelta`
+    // adds the object bracket delta and the type's offset -3.
+    #[cfg(feature = "phobos")]
+    {
+        let length = if infantry { 8 } else { 17 };
+        let [left, top, _, _] = foot_select_bracket(sx, sy, infantry);
+        let bracket = (left - 1.0, top);
+        let type_delta = entity
+            .shield()
+            .and_then(|shield| rules.shield_type(shield.type_name()))
+            .map_or(0.0, |ty| ty.bracket_delta() as f32);
+        shield_bar_instances(
+            entity,
+            rules,
+            shape,
+            overlay.pipbrd(),
+            false,
+            length as i32,
+            bracket,
+            delta + type_delta - 3.0,
+            &mut strip,
+        );
+    }
     let filled = filled_count(object.strength, num_pips as i32) as u32;
     //6F69B1..69F3 compares independently: <=red overrides <=yellow. These
     // are direct ratio comparisons, unlike Building's positive-HP red gate.
@@ -1281,13 +1512,10 @@ pub(crate) fn scale_pip_draws(
     //709C27..D17 precedes passengers and uses raw OccupyPip, including
     //reader-produced1..5 as well as person frames6..12. Keep its own origin.
     if building && object.show_occupant_pips && object.max_number_occupants > 0 {
-        let occupants = entity
-            .passenger_role
-            .cargo()
-            .map(|cargo| cargo.passengers());
+        let occupants = entity.passenger_role.occupants().ids();
         pips.extend((0..object.max_number_occupants as usize).map(|slot| {
             let frame = occupants
-                .and_then(|ids| ids.get(slot))
+                .get(slot)
                 .and_then(|id| sim.entities().get(*id))
                 .and_then(|passenger| sim.interner().object_type(passenger.type_ref(), rules))
                 .map_or(6, |passenger| passenger.occupy_pip() as usize);
@@ -1551,6 +1779,46 @@ mod mind_control_pip_tests;
 
 #[cfg(test)]
 mod tests {
+    /// Phobos `DrawShieldBar_Pip`: the shield type's own frames first, then the
+    /// global `[AudioVisual] Pips.Shield*` triplet, then the native 16/5.
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn shield_pip_frames_follow_local_then_global_then_fallback() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+
+        let local = RuleSet::from_ini(&IniFile::from_str(
+            "[ShieldTypes]\n0=S\n[S]\nStrength=100\nPips=20,21,22\nPips.Building=30,31,32\n",
+        ))
+        .unwrap();
+        let ty = local.shield_type("S").unwrap();
+        let globals = local.shield_globals();
+        assert_eq!(shield_pip_frame(false, 90, ty, globals), 20);
+        assert_eq!(shield_pip_frame(false, 40, ty, globals), 21);
+        assert_eq!(shield_pip_frame(false, 10, ty, globals), 22);
+        assert_eq!(shield_pip_frame(true, 90, ty, globals), 30);
+        assert_eq!(shield_pip_frame(true, 10, ty, globals), 32);
+
+        let global = RuleSet::from_ini(&IniFile::from_str(
+            "[ShieldTypes]\n0=S\n[S]\nStrength=100\n\
+             [AudioVisual]\nPips.Shield=10,11,12\nPips.Shield.Building=40,41,42\n",
+        ))
+        .unwrap();
+        let ty = global.shield_type("S").unwrap();
+        let globals = global.shield_globals();
+        assert_eq!(shield_pip_frame(false, 90, ty, globals), 10);
+        assert_eq!(shield_pip_frame(false, 10, ty, globals), 12);
+        assert_eq!(shield_pip_frame(true, 10, ty, globals), 42);
+
+        let bare = RuleSet::from_ini(&IniFile::from_str(
+            "[ShieldTypes]\n0=S\n[S]\nStrength=100\n",
+        ))
+        .unwrap();
+        let ty = bare.shield_type("S").unwrap();
+        assert_eq!(shield_pip_frame(false, 90, ty, bare.shield_globals()), 16);
+        assert_eq!(shield_pip_frame(true, 90, ty, bare.shield_globals()), 5);
+    }
+
     /// `tools/spatial_oracle/building_repair.json` `wrench` rows: the frame
     /// DrawExtras picks over every stored game speed.
     #[test]
@@ -1860,7 +2128,6 @@ mod tests {
             sy,
             &viewer_name,
             false,
-            Some(rules),
         )
         .expect("revealed time-machine hover");
         assert_eq!(hover.stable_id, id);

@@ -34,7 +34,7 @@ All rows preserve Scenario RNG.
 Physical HE is read through its full native reader; CellSpread overrides also
 use that reader. Health, occupancy, XYZ and timer state are supplied incoming
 inputs. This is not a Unit constructor, occupancy or receiver mutation proof.
-Companion metadata pins the executable and output payload; `--check` independently
+Companion metadata pins the output payload; `--check` independently
 reproduces without writing, while `--write` explicitly regenerates.
 
 

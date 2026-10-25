@@ -146,11 +146,18 @@ pub(crate) enum ObjectExtrasRun {
         wrench: Option<u32>,
         rank: Option<u32>,
         background: Option<u32>,
+        shield_background: Option<u32>,
         fills: std::ops::Range<u32>,
         scale: std::ops::Range<u32>,
         self_heal: Option<u32>,
         group_rectangles: std::ops::Range<u32>,
         group_text: std::ops::Range<u32>,
+        /// Phobos digital display text: per-entry backing/glyph ranges in
+        /// list order (rectangles, then glyphs).
+        digital_text: Vec<(std::ops::Range<u32>, std::ops::Range<u32>)>,
+        /// Phobos digital display custom-SHP glyphs: catalog index and the
+        /// uploaded instance index, in emission order.
+        digital_shapes: Vec<(u32, u32)>,
         talk_bubble: Option<u32>,
     },
 }
@@ -361,6 +368,11 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     lowered.extras_instances.push(instance);
                     index
                 });
+                let shield_background = strip.shield_background.map(|instance| {
+                    let index = lowered.extras_instances.len() as u32;
+                    lowered.extras_instances.push(instance);
+                    index
+                });
                 let start = lowered.extras_instances.len() as u32;
                 lowered.extras_instances.extend(strip.fills);
                 let end = lowered.extras_instances.len() as u32;
@@ -376,6 +388,24 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                 let rectangles_end = lowered.extras_instances.len() as u32;
                 lowered.extras_instances.extend(strip.group.text);
                 let text_end = lowered.extras_instances.len() as u32;
+                let mut digital_text = Vec::with_capacity(strip.digital_text.len());
+                for text in strip.digital_text {
+                    let rectangles_start = lowered.extras_instances.len() as u32;
+                    lowered.extras_instances.extend(text.rectangles);
+                    let rectangles_end = lowered.extras_instances.len() as u32;
+                    lowered.extras_instances.extend(text.text);
+                    let text_end = lowered.extras_instances.len() as u32;
+                    digital_text.push((rectangles_start..rectangles_end, rectangles_end..text_end));
+                }
+                let digital_shapes = strip
+                    .digital_shapes
+                    .into_iter()
+                    .map(|(catalog, instance)| {
+                        let index = lowered.extras_instances.len() as u32;
+                        lowered.extras_instances.push(instance);
+                        (catalog, index)
+                    })
+                    .collect();
                 let talk_bubble = strip.talk_bubble.map(|instance| {
                     let index = lowered.extras_instances.len() as u32;
                     lowered.extras_instances.push(instance);
@@ -388,11 +418,14 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     wrench,
                     rank,
                     background,
+                    shield_background,
                     fills: start..end,
                     scale: end..scale_end,
                     self_heal,
                     group_rectangles: rectangles_start..rectangles_end,
                     group_text: rectangles_end..text_end,
+                    digital_text,
+                    digital_shapes,
                     talk_bubble,
                 }
             });
@@ -418,11 +451,14 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                         wrench: *wrench,
                         rank: *rank,
                         background: None,
+                        shield_background: None,
                         fills: fills.start..fills.start,
                         scale: fills.start..fills.start,
                         self_heal: None,
                         group_rectangles: fills.start..fills.start,
                         group_text: fills.start..fills.start,
+                        digital_text: Vec::new(),
+                        digital_shapes: Vec::new(),
                         talk_bubble: None,
                     });
                 }
@@ -472,11 +508,14 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                 wrench,
                 rank,
                 background,
+                shield_background,
                 fills,
                 scale,
                 self_heal,
                 group_rectangles,
                 group_text,
+                digital_text,
+                digital_shapes,
                 talk_bubble,
                 ..
             }) = strip
@@ -488,11 +527,14 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     || wrench.is_some()
                     || rank.is_some()
                     || background.is_some()
+                    || shield_background.is_some()
                     || !fills.is_empty()
                     || !scale.is_empty()
                     || self_heal.is_some()
                     || !group_rectangles.is_empty()
                     || !group_text.is_empty()
+                    || !digital_text.is_empty()
+                    || !digital_shapes.is_empty()
                     || talk_bubble.is_some()
                 {
                     if is_building {
@@ -508,11 +550,14 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                         wrench,
                         rank,
                         background,
+                        shield_background,
                         fills,
                         scale,
                         self_heal,
                         group_rectangles,
                         group_text,
+                        digital_text,
+                        digital_shapes,
                         talk_bubble,
                     });
                 }
@@ -586,6 +631,21 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
     layers
 }
 
+/// FoggedObjectClass::DrawAll4D1890 has its own sorted index, outside
+/// Display. Lower in supplied order using the same primitive GPU writers.
+pub(crate) fn lower_fogged_object_pieces(
+    entries: impl IntoIterator<Item = (DrawId, Vec<ObjectPieceInstance>)>,
+) -> ObjectLayerPass {
+    let mut pass = ObjectLayerPass::default();
+    for (id, pieces) in entries {
+        for piece in pieces {
+            let run = push_object_piece(&mut pass, id, piece);
+            append_object_run(&mut pass.runs, run);
+        }
+    }
+    pass
+}
+
 fn push_combat_light(
     pass: &mut ObjectLayerPass,
     record: crate::render::combat_light::CombatLightDrawRecord,
@@ -654,15 +714,22 @@ fn push_object_piece(
     // the packed leaves through Convert490E50. Source pieces retain their
     // parent here so hull/turret/barrel are not blended separately. Native
     // selectors and coverage: procedural_drawing_oracle/translucent_blitter_a.md.
-    let packed_parent = (matches!(
+    let packed_body = matches!(
         piece.target,
         ObjectTexture::UnitAtlasPage(_)
             | ObjectTexture::UnitPosePage(_)
             | ObjectTexture::ShpPage(_)
             | ObjectTexture::TerrainShp(crate::render::terrain_draw::TerrainPiece::Body)
     ) && piece.instance.draw_state.native_selector_bits() & 6 != 0
-        && piece.instance.draw_state.fx_flags & crate::render::draw_state::FX_SHADOW == 0)
-        .then_some(owner);
+        && piece.instance.draw_state.fx_flags & crate::render::draw_state::FX_SHADOW == 0;
+    // Anim42389E can select the no-Z shadow leaf496250. Its nonzero index
+    // stencil uses the existing packed-half operation, not Terrain's Z-tested
+    // edit pipeline. Retain the parent so it also fences adjacent edit spans.
+    let packed_shadow = matches!(
+        piece.target,
+        ObjectTexture::SpriteAtlasEdit(_, crate::render::terrain_draw::TerrainPiece::Shadow)
+    ) && piece.render_z == RenderZPolicy::None;
+    let packed_parent = (packed_body || packed_shadow).then_some(owner);
     let start = pass.instances.len() as u32;
     let run = ObjectDrawRun {
         target: piece.target,
@@ -842,11 +909,13 @@ mod tests {
             wrench: None,
             rank: Some(SpriteInstance::default()),
             background: None,
+            shield_background: None,
             fills: vec![SpriteInstance::default(); 15],
             scale: Vec::new(),
             group: Default::default(),
             talk_bubble: None,
             self_heal: None,
+            ..Default::default()
         });
         let pass = lower_ground_object_instances(vec![parent]);
         // Native6D9920 draws the base before rally. Display6D913C Behind,

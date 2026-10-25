@@ -174,7 +174,7 @@ impl HuntHost for WorldHunt<'_> {
             .assign_target_represented(
                 self.id,
                 threat.map(TargetKind::Entity),
-                Some(self.rules),
+                self.rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             )
@@ -197,7 +197,7 @@ impl HuntHost for WorldHunt<'_> {
 
     fn leave_team(&mut self) {
         self.sim
-            .leave_team(self.id, false, Some(self.rules), self.ctx.effects);
+            .leave_team(self.id, false, self.rules, self.ctx.effects);
     }
 
     fn epilogue(&mut self) -> i32 {

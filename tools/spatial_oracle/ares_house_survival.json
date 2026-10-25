@@ -1,0 +1,1558 @@
+{
+  "capture": {
+    "after": {
+      "new": {
+        "building_keep_alive": 0,
+        "building_type": 0,
+        "buildings": 0,
+        "keep_alive": 1,
+        "unit_type": 0,
+        "vehicles": 0
+      },
+      "old": {
+        "building_keep_alive": 0,
+        "building_type": 0,
+        "buildings": 0,
+        "keep_alive": 0,
+        "unit_type": 0,
+        "vehicles": 0
+      }
+    },
+    "before": {
+      "new": {
+        "building_keep_alive": 0,
+        "building_type": 0,
+        "buildings": 0,
+        "keep_alive": 0,
+        "unit_type": 0,
+        "vehicles": 0
+      },
+      "old": {
+        "building_keep_alive": 0,
+        "building_type": 0,
+        "buildings": 0,
+        "keep_alive": 1,
+        "unit_type": 0,
+        "vehicles": 0
+      }
+    },
+    "hooks": [
+      {
+        "returned": "004FF6CE",
+        "site": "004FF563"
+      },
+      {
+        "returned": "004FF8C6",
+        "site": "004FF71B"
+      }
+    ],
+    "input": {
+      "class": "unit",
+      "insignificant": true,
+      "keep_alive": true
+    },
+    "owner_pointer_still_old": true
+  },
+  "reader_histories": [
+    {
+      "constructor_default": {
+        "is_set": 0,
+        "value": 0
+      },
+      "name": "physical_retention",
+      "steps": [
+        {
+          "after": {
+            "is_set": 0,
+            "value": 0
+          },
+          "before": {
+            "is_set": 0,
+            "value": 0
+          },
+          "diagnostics": [],
+          "file": "UNSET.INI",
+          "physical_ini": "[CONTROL]\nName=present\n",
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "KeepAlive",
+              "section": "CONTROL"
+            }
+          ],
+          "section_admitted": true
+        },
+        {
+          "after": {
+            "is_set": 1,
+            "value": 1
+          },
+          "before": {
+            "is_set": 0,
+            "value": 0
+          },
+          "diagnostics": [],
+          "file": "YES.INI",
+          "physical_ini": "[CONTROL]\nKeepAlive=yes\n",
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "KeepAlive",
+              "section": "CONTROL"
+            }
+          ],
+          "section_admitted": true
+        },
+        {
+          "after": {
+            "is_set": 1,
+            "value": 1
+          },
+          "before": {
+            "is_set": 1,
+            "value": 1
+          },
+          "diagnostics": [],
+          "file": "MISSING.INI",
+          "physical_ini": "[CONTROL]\nName=present\n",
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "KeepAlive",
+              "section": "CONTROL"
+            }
+          ],
+          "section_admitted": true
+        },
+        {
+          "after": {
+            "is_set": 1,
+            "value": 1
+          },
+          "before": {
+            "is_set": 1,
+            "value": 1
+          },
+          "diagnostics": [],
+          "file": "EMPTY.INI",
+          "physical_ini": "[CONTROL]\nKeepAlive=\n",
+          "reads": [],
+          "section_admitted": false
+        },
+        {
+          "after": {
+            "is_set": 1,
+            "value": 1
+          },
+          "before": {
+            "is_set": 1,
+            "value": 1
+          },
+          "diagnostics": [
+            "on"
+          ],
+          "file": "INVALID.INI",
+          "physical_ini": "[CONTROL]\nKeepAlive=on\n",
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "KeepAlive",
+              "section": "CONTROL"
+            }
+          ],
+          "section_admitted": true
+        },
+        {
+          "after": {
+            "is_set": 1,
+            "value": 1
+          },
+          "before": {
+            "is_set": 1,
+            "value": 1
+          },
+          "diagnostics": [
+            "<none>"
+          ],
+          "file": "BRACKET_NONE.INI",
+          "physical_ini": "[CONTROL]\nKeepAlive=<none>\n",
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "KeepAlive",
+              "section": "CONTROL"
+            }
+          ],
+          "section_admitted": true
+        },
+        {
+          "after": {
+            "is_set": 1,
+            "value": 0
+          },
+          "before": {
+            "is_set": 1,
+            "value": 1
+          },
+          "diagnostics": [],
+          "file": "NONE.INI",
+          "physical_ini": "[CONTROL]\nKeepAlive=none\n",
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "KeepAlive",
+              "section": "CONTROL"
+            }
+          ],
+          "section_admitted": true
+        },
+        {
+          "after": {
+            "is_set": 1,
+            "value": 0
+          },
+          "before": {
+            "is_set": 1,
+            "value": 0
+          },
+          "diagnostics": [],
+          "file": "NO.INI",
+          "physical_ini": "[CONTROL]\nKeepAlive=no\n",
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "KeepAlive",
+              "section": "CONTROL"
+            }
+          ],
+          "section_admitted": true
+        },
+        {
+          "after": {
+            "is_set": 1,
+            "value": 1
+          },
+          "before": {
+            "is_set": 1,
+            "value": 0
+          },
+          "diagnostics": [],
+          "file": "PREFIX.INI",
+          "physical_ini": "[CONTROL]\nKeepAlive=yeSplease\n",
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "KeepAlive",
+              "section": "CONTROL"
+            }
+          ],
+          "section_admitted": true
+        },
+        {
+          "after": {
+            "is_set": 1,
+            "value": 0
+          },
+          "before": {
+            "is_set": 1,
+            "value": 1
+          },
+          "diagnostics": [],
+          "file": "TRIM.INI",
+          "physical_ini": "[CONTROL]\nKeepAlive= \tno \t\n",
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "KeepAlive",
+              "section": "CONTROL"
+            }
+          ],
+          "section_admitted": true
+        },
+        {
+          "after": {
+            "is_set": 1,
+            "value": 0
+          },
+          "before": {
+            "is_set": 1,
+            "value": 0
+          },
+          "diagnostics": [],
+          "file": "KEYCASE.INI",
+          "physical_ini": "[CONTROL]\nKEEPALIVE=yes\n",
+          "reads": [
+            {
+              "capacity": 2048,
+              "default": "",
+              "key": "KeepAlive",
+              "section": "CONTROL"
+            }
+          ],
+          "section_admitted": true
+        },
+        {
+          "after": {
+            "is_set": 1,
+            "value": 0
+          },
+          "before": {
+            "is_set": 1,
+            "value": 0
+          },
+          "diagnostics": [],
+          "file": "OTHER.INI",
+          "physical_ini": "[OTHER]\nKeepAlive=yes\n",
+          "reads": [],
+          "section_admitted": false
+        }
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "stream_cases": [
+    {
+      "consumed_bytes": 5,
+      "input": {
+        "keep_alive_count": 0,
+        "nullable": {
+          "is_set": 0,
+          "value": 0
+        }
+      },
+      "name": "unset",
+      "restored": {
+        "keep_alive_count": 0,
+        "nullable": {
+          "is_set": 0,
+          "value": 0
+        }
+      },
+      "stored_bytes": "0000000000"
+    },
+    {
+      "consumed_bytes": 6,
+      "input": {
+        "keep_alive_count": -2147483648,
+        "nullable": {
+          "is_set": 1,
+          "value": 1
+        }
+      },
+      "name": "true_wrapped",
+      "restored": {
+        "keep_alive_count": -2147483648,
+        "nullable": {
+          "is_set": 1,
+          "value": 1
+        }
+      },
+      "stored_bytes": "010100000080"
+    },
+    {
+      "consumed_bytes": 6,
+      "input": {
+        "keep_alive_count": 1,
+        "nullable": {
+          "is_set": 1,
+          "value": 0
+        }
+      },
+      "name": "false",
+      "restored": {
+        "keep_alive_count": 1,
+        "nullable": {
+          "is_set": 1,
+          "value": 0
+        }
+      },
+      "stored_bytes": "010001000000"
+    }
+  ],
+  "survival_cases": [
+    {
+      "base_slots_visited": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "classes_visited": [],
+      "events": [],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 0,
+        "active_infantry": 0,
+        "active_units": 0,
+        "base_indices": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "capacity": 16,
+        "counts": {
+          "6": 1
+        },
+        "keep_alive_count": 0,
+        "name": "short_fourth",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": []
+        },
+        "short_game": true
+      },
+      "objects_visited": []
+    },
+    {
+      "base_slots_visited": [],
+      "classes_visited": [],
+      "events": [
+        "blowup_all",
+        "mplayer_defeated"
+      ],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 0,
+        "active_infantry": 0,
+        "active_units": 0,
+        "base_indices": [],
+        "capacity": 16,
+        "counts": {},
+        "keep_alive_count": 0,
+        "name": "short_empty",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": []
+        },
+        "short_game": true
+      },
+      "objects_visited": []
+    },
+    {
+      "base_slots_visited": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "classes_visited": [],
+      "events": [
+        "blowup_all",
+        "mplayer_defeated"
+      ],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 0,
+        "active_infantry": 0,
+        "active_units": 0,
+        "base_indices": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "capacity": 16,
+        "counts": {},
+        "keep_alive_count": 0,
+        "name": "short_all_zero",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": []
+        },
+        "short_game": true
+      },
+      "objects_visited": []
+    },
+    {
+      "base_slots_visited": [
+        0
+      ],
+      "classes_visited": [],
+      "events": [],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 0,
+        "active_infantry": 0,
+        "active_units": 0,
+        "base_indices": [
+          3,
+          3,
+          4,
+          6
+        ],
+        "capacity": 16,
+        "counts": {
+          "3": 1
+        },
+        "keep_alive_count": 0,
+        "name": "short_duplicates",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": []
+        },
+        "short_game": true
+      },
+      "objects_visited": []
+    },
+    {
+      "base_slots_visited": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "classes_visited": [],
+      "events": [],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 0,
+        "active_infantry": 0,
+        "active_units": 0,
+        "base_indices": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "capacity": 16,
+        "counts": {
+          "6": -1
+        },
+        "keep_alive_count": 0,
+        "name": "short_negative",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": []
+        },
+        "short_game": true
+      },
+      "objects_visited": []
+    },
+    {
+      "base_slots_visited": [
+        0
+      ],
+      "classes_visited": [],
+      "events": [],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 0,
+        "active_infantry": 0,
+        "active_units": 0,
+        "base_indices": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "capacity": 16,
+        "counts": {
+          "3": 1,
+          "4": -1
+        },
+        "keep_alive_count": 0,
+        "name": "short_cancelling",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": []
+        },
+        "short_game": true
+      },
+      "objects_visited": []
+    },
+    {
+      "base_slots_visited": [
+        0,
+        1
+      ],
+      "classes_visited": [],
+      "events": [
+        "blowup_all",
+        "mplayer_defeated"
+      ],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 0,
+        "active_infantry": 0,
+        "active_units": 0,
+        "base_indices": [
+          15,
+          16
+        ],
+        "capacity": 16,
+        "counts": {
+          "16": 7
+        },
+        "keep_alive_count": 0,
+        "name": "short_capacity",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": []
+        },
+        "short_game": true
+      },
+      "objects_visited": []
+    },
+    {
+      "base_slots_visited": [],
+      "classes_visited": [],
+      "events": [],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 0,
+        "active_infantry": 0,
+        "active_units": 0,
+        "base_indices": [],
+        "capacity": 16,
+        "counts": {},
+        "keep_alive_count": -1,
+        "name": "short_negative_keep_alive",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": []
+        },
+        "short_game": true
+      },
+      "objects_visited": []
+    },
+    {
+      "base_slots_visited": [],
+      "classes_visited": [],
+      "events": [
+        "blowup_all",
+        "mplayer_defeated"
+      ],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 0,
+        "active_infantry": 0,
+        "active_units": 0,
+        "base_indices": [],
+        "buildings": 1,
+        "capacity": 16,
+        "counts": {},
+        "keep_alive_count": 0,
+        "name": "short_ignores_original_buildings",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": []
+        },
+        "short_game": true
+      },
+      "objects_visited": []
+    },
+    {
+      "base_slots_visited": [],
+      "classes_visited": [],
+      "events": [],
+      "hooks": [],
+      "input": {
+        "active_aircraft": 0,
+        "active_infantry": 0,
+        "active_units": 0,
+        "base_indices": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "capacity": 16,
+        "counts": {
+          "6": 1
+        },
+        "keep_alive_count": 0,
+        "name": "passive_skips_hook",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": []
+        },
+        "passive": true,
+        "short_game": true
+      },
+      "objects_visited": []
+    },
+    {
+      "base_slots_visited": [],
+      "classes_visited": [
+        "unit"
+      ],
+      "events": [],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 0,
+        "active_infantry": 0,
+        "active_units": 1,
+        "base_indices": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "capacity": 16,
+        "counts": {},
+        "keep_alive_count": 0,
+        "name": "normal_unit",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": [
+            {
+              "category": "unit",
+              "limbo": false,
+              "name": "ours",
+              "owner": "ours",
+              "parasite": false
+            }
+          ]
+        },
+        "short_game": false
+      },
+      "objects_visited": [
+        [
+          "unit",
+          "ours"
+        ]
+      ]
+    },
+    {
+      "base_slots_visited": [],
+      "classes_visited": [],
+      "events": [
+        "blowup_all",
+        "mplayer_defeated"
+      ],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 0,
+        "active_infantry": 0,
+        "active_units": 0,
+        "base_indices": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "capacity": 16,
+        "counts": {},
+        "keep_alive_count": 0,
+        "name": "normal_zero_total",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": [
+            {
+              "category": "unit",
+              "limbo": false,
+              "name": "ours",
+              "owner": "ours",
+              "parasite": false
+            }
+          ]
+        },
+        "short_game": false
+      },
+      "objects_visited": []
+    },
+    {
+      "base_slots_visited": [],
+      "classes_visited": [
+        "unit"
+      ],
+      "events": [
+        "blowup_all",
+        "mplayer_defeated"
+      ],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 0,
+        "active_infantry": 0,
+        "active_units": 1,
+        "base_indices": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "capacity": 16,
+        "counts": {},
+        "keep_alive_count": 0,
+        "name": "normal_other_owner",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": [
+            {
+              "category": "unit",
+              "limbo": false,
+              "name": "other",
+              "owner": "other",
+              "parasite": false
+            }
+          ]
+        },
+        "short_game": false
+      },
+      "objects_visited": [
+        [
+          "unit",
+          "other"
+        ]
+      ]
+    },
+    {
+      "base_slots_visited": [],
+      "classes_visited": [
+        "unit"
+      ],
+      "events": [
+        "blowup_all",
+        "mplayer_defeated"
+      ],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 0,
+        "active_infantry": 0,
+        "active_units": 1,
+        "base_indices": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "capacity": 16,
+        "counts": {},
+        "keep_alive_count": 0,
+        "name": "normal_limbo",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": [
+            {
+              "category": "unit",
+              "limbo": true,
+              "name": "limbo",
+              "owner": "ours",
+              "parasite": false
+            }
+          ]
+        },
+        "short_game": false
+      },
+      "objects_visited": [
+        [
+          "unit",
+          "limbo"
+        ]
+      ]
+    },
+    {
+      "base_slots_visited": [],
+      "classes_visited": [
+        "unit"
+      ],
+      "events": [],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 0,
+        "active_infantry": 0,
+        "active_units": 1,
+        "base_indices": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "capacity": 16,
+        "counts": {},
+        "keep_alive_count": 0,
+        "name": "normal_limbo_parasite",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": [
+            {
+              "category": "unit",
+              "limbo": true,
+              "name": "parasite",
+              "owner": "ours",
+              "parasite": true
+            }
+          ]
+        },
+        "short_game": false
+      },
+      "objects_visited": [
+        [
+          "unit",
+          "parasite"
+        ]
+      ]
+    },
+    {
+      "base_slots_visited": [],
+      "classes_visited": [
+        "unit",
+        "infantry",
+        "aircraft"
+      ],
+      "events": [],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 1,
+        "active_infantry": 1,
+        "active_units": -1,
+        "base_indices": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "capacity": 16,
+        "counts": {},
+        "keep_alive_count": 0,
+        "name": "normal_class_order",
+        "objects": {
+          "aircraft": [
+            {
+              "category": "aircraft",
+              "limbo": false,
+              "name": "air",
+              "owner": "ours",
+              "parasite": false
+            }
+          ],
+          "infantry": [
+            {
+              "category": "infantry",
+              "limbo": true,
+              "name": "limbo",
+              "owner": "ours",
+              "parasite": false
+            }
+          ],
+          "unit": [
+            {
+              "category": "unit",
+              "limbo": false,
+              "name": "other",
+              "owner": "other",
+              "parasite": false
+            }
+          ]
+        },
+        "short_game": false
+      },
+      "objects_visited": [
+        [
+          "unit",
+          "other"
+        ],
+        [
+          "infantry",
+          "limbo"
+        ],
+        [
+          "aircraft",
+          "air"
+        ]
+      ]
+    },
+    {
+      "base_slots_visited": [],
+      "classes_visited": [],
+      "events": [],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 0,
+        "active_infantry": 0,
+        "active_units": 1,
+        "base_indices": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "capacity": 16,
+        "counts": {},
+        "keep_alive_count": 1,
+        "name": "normal_keep_alive_first",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": [
+            {
+              "category": "unit",
+              "limbo": false,
+              "name": "ignored",
+              "owner": "ours",
+              "parasite": false
+            }
+          ]
+        },
+        "short_game": false
+      },
+      "objects_visited": []
+    },
+    {
+      "base_slots_visited": [],
+      "classes_visited": [
+        "unit",
+        "infantry",
+        "aircraft"
+      ],
+      "events": [
+        "blowup_all",
+        "mplayer_defeated"
+      ],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 1,
+        "active_infantry": -1,
+        "active_units": 1,
+        "base_indices": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "capacity": 16,
+        "counts": {},
+        "keep_alive_count": 0,
+        "name": "normal_totals_without_objects",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": []
+        },
+        "short_game": false
+      },
+      "objects_visited": []
+    },
+    {
+      "base_slots_visited": [],
+      "classes_visited": [],
+      "events": [
+        "blowup_all",
+        "mplayer_defeated"
+      ],
+      "hooks": [
+        {
+          "returned": "004F8F87",
+          "site": "004F8EBD"
+        }
+      ],
+      "input": {
+        "active_aircraft": 0,
+        "active_infantry": 0,
+        "active_units": 0,
+        "active_yarefn": 1,
+        "base_indices": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "capacity": 16,
+        "counts": {},
+        "keep_alive_count": 0,
+        "name": "normal_ignores_refinery",
+        "objects": {
+          "aircraft": [],
+          "infantry": [],
+          "unit": []
+        },
+        "short_game": false
+      },
+      "objects_visited": []
+    }
+  ],
+  "tracking_histories": [
+    {
+      "input": {
+        "class": "building",
+        "keep_alive": null,
+        "name": "default_building",
+        "operations": [
+          "gain",
+          "loss"
+        ]
+      },
+      "steps": [
+        {
+          "after": {
+            "building_keep_alive": 1,
+            "building_type": 1,
+            "buildings": 1,
+            "keep_alive": 1,
+            "unit_type": 0,
+            "vehicles": 0
+          },
+          "hooks": [
+            {
+              "returned": "004FF748",
+              "site": "004FF71B"
+            }
+          ],
+          "operation": "gain"
+        },
+        {
+          "after": {
+            "building_keep_alive": 0,
+            "building_type": 0,
+            "buildings": 0,
+            "keep_alive": 0,
+            "unit_type": 0,
+            "vehicles": 0
+          },
+          "hooks": [
+            {
+              "returned": "004FF596",
+              "site": "004FF563"
+            }
+          ],
+          "operation": "loss"
+        }
+      ]
+    },
+    {
+      "input": {
+        "class": "unit",
+        "keep_alive": null,
+        "name": "default_unit",
+        "operations": [
+          "gain",
+          "loss"
+        ]
+      },
+      "steps": [
+        {
+          "after": {
+            "building_keep_alive": 0,
+            "building_type": 0,
+            "buildings": 0,
+            "keep_alive": 0,
+            "unit_type": 1,
+            "vehicles": 1
+          },
+          "hooks": [
+            {
+              "returned": "004FF748",
+              "site": "004FF71B"
+            }
+          ],
+          "operation": "gain"
+        },
+        {
+          "after": {
+            "building_keep_alive": 0,
+            "building_type": 0,
+            "buildings": 0,
+            "keep_alive": 0,
+            "unit_type": 0,
+            "vehicles": 0
+          },
+          "hooks": [
+            {
+              "returned": "004FF596",
+              "site": "004FF563"
+            }
+          ],
+          "operation": "loss"
+        }
+      ]
+    },
+    {
+      "input": {
+        "class": "building",
+        "keep_alive": null,
+        "name": "default_unit_like_building",
+        "operations": [
+          "gain",
+          "loss"
+        ],
+        "unit_like": true
+      },
+      "steps": [
+        {
+          "after": {
+            "building_keep_alive": 1,
+            "building_type": 1,
+            "buildings": 0,
+            "keep_alive": 1,
+            "unit_type": 0,
+            "vehicles": 1
+          },
+          "hooks": [
+            {
+              "returned": "004FF748",
+              "site": "004FF71B"
+            }
+          ],
+          "operation": "gain"
+        },
+        {
+          "after": {
+            "building_keep_alive": 0,
+            "building_type": 0,
+            "buildings": 0,
+            "keep_alive": 0,
+            "unit_type": 0,
+            "vehicles": 0
+          },
+          "hooks": [
+            {
+              "returned": "004FF596",
+              "site": "004FF563"
+            }
+          ],
+          "operation": "loss"
+        }
+      ]
+    },
+    {
+      "input": {
+        "class": "building",
+        "dont_score": true,
+        "keep_alive": null,
+        "name": "excluded_default",
+        "operations": [
+          "gain",
+          "loss"
+        ]
+      },
+      "steps": [
+        {
+          "after": {
+            "building_keep_alive": 0,
+            "building_type": 0,
+            "buildings": 0,
+            "keep_alive": 0,
+            "unit_type": 0,
+            "vehicles": 0
+          },
+          "hooks": [
+            {
+              "returned": "004FF8C6",
+              "site": "004FF71B"
+            }
+          ],
+          "operation": "gain"
+        },
+        {
+          "after": {
+            "building_keep_alive": 0,
+            "building_type": 0,
+            "buildings": 0,
+            "keep_alive": 0,
+            "unit_type": 0,
+            "vehicles": 0
+          },
+          "hooks": [
+            {
+              "returned": "004FF6CE",
+              "site": "004FF563"
+            }
+          ],
+          "operation": "loss"
+        }
+      ]
+    },
+    {
+      "input": {
+        "class": "unit",
+        "insignificant": true,
+        "keep_alive": true,
+        "name": "excluded_override_yes",
+        "operations": [
+          "gain",
+          "loss"
+        ]
+      },
+      "steps": [
+        {
+          "after": {
+            "building_keep_alive": 0,
+            "building_type": 0,
+            "buildings": 0,
+            "keep_alive": 1,
+            "unit_type": 0,
+            "vehicles": 0
+          },
+          "hooks": [
+            {
+              "returned": "004FF8C6",
+              "site": "004FF71B"
+            }
+          ],
+          "operation": "gain"
+        },
+        {
+          "after": {
+            "building_keep_alive": 0,
+            "building_type": 0,
+            "buildings": 0,
+            "keep_alive": 0,
+            "unit_type": 0,
+            "vehicles": 0
+          },
+          "hooks": [
+            {
+              "returned": "004FF6CE",
+              "site": "004FF563"
+            }
+          ],
+          "operation": "loss"
+        }
+      ]
+    },
+    {
+      "input": {
+        "class": "building",
+        "keep_alive": false,
+        "name": "building_override_no",
+        "operations": [
+          "gain",
+          "loss"
+        ]
+      },
+      "steps": [
+        {
+          "after": {
+            "building_keep_alive": 0,
+            "building_type": 1,
+            "buildings": 1,
+            "keep_alive": 0,
+            "unit_type": 0,
+            "vehicles": 0
+          },
+          "hooks": [
+            {
+              "returned": "004FF748",
+              "site": "004FF71B"
+            }
+          ],
+          "operation": "gain"
+        },
+        {
+          "after": {
+            "building_keep_alive": 0,
+            "building_type": 0,
+            "buildings": 0,
+            "keep_alive": 0,
+            "unit_type": 0,
+            "vehicles": 0
+          },
+          "hooks": [
+            {
+              "returned": "004FF596",
+              "site": "004FF563"
+            }
+          ],
+          "operation": "loss"
+        }
+      ]
+    },
+    {
+      "input": {
+        "class": "building",
+        "keep_alive": null,
+        "name": "building_wrap",
+        "operations": [
+          "gain",
+          "loss"
+        ],
+        "start": 2147483647
+      },
+      "steps": [
+        {
+          "after": {
+            "building_keep_alive": -2147483648,
+            "building_type": 1,
+            "buildings": 1,
+            "keep_alive": -2147483648,
+            "unit_type": 0,
+            "vehicles": 0
+          },
+          "hooks": [
+            {
+              "returned": "004FF748",
+              "site": "004FF71B"
+            }
+          ],
+          "operation": "gain"
+        },
+        {
+          "after": {
+            "building_keep_alive": 2147483647,
+            "building_type": 0,
+            "buildings": 0,
+            "keep_alive": 2147483647,
+            "unit_type": 0,
+            "vehicles": 0
+          },
+          "hooks": [
+            {
+              "returned": "004FF596",
+              "site": "004FF563"
+            }
+          ],
+          "operation": "loss"
+        }
+      ]
+    },
+    {
+      "input": {
+        "class": "unit",
+        "insignificant": true,
+        "keep_alive": true,
+        "name": "unit_underflow",
+        "operations": [
+          "loss",
+          "gain"
+        ],
+        "start": -2147483648
+      },
+      "steps": [
+        {
+          "after": {
+            "building_keep_alive": 0,
+            "building_type": 0,
+            "buildings": 0,
+            "keep_alive": 2147483647,
+            "unit_type": 0,
+            "vehicles": 0
+          },
+          "hooks": [
+            {
+              "returned": "004FF6CE",
+              "site": "004FF563"
+            }
+          ],
+          "operation": "loss"
+        },
+        {
+          "after": {
+            "building_keep_alive": 0,
+            "building_type": 0,
+            "buildings": 0,
+            "keep_alive": -2147483648,
+            "unit_type": 0,
+            "vehicles": 0
+          },
+          "hooks": [
+            {
+              "returned": "004FF8C6",
+              "site": "004FF71B"
+            }
+          ],
+          "operation": "gain"
+        }
+      ]
+    }
+  ]
+}

@@ -8,13 +8,13 @@ use std::collections::HashMap;
 
 use super::current_cell::CurrentRadarCellAuthority;
 use super::geometry::NativeRadarSurfaceGeometry;
-use super::helpers::{MINIMAP_WIDTH, OverlayPixel, RadarSurfacePixel, TerrainPixel, set_pixel};
+use super::helpers::{MINIMAP_WIDTH, OverlayPixel, RadarSurfacePixel, TerrainPixels, set_pixel};
 use super::projection::{aperture_pixel, rasterize_native_terrain};
 use super::terrain::{NativeRadarCellColors, NativeRadarCellUpdate, NativeRadarTerrainSurface};
 
 pub(crate) struct RadarTerrainUpdateLayers<'a> {
     pub base_rgba: &'a mut Vec<u8>,
-    pub terrain_pixels: &'a [TerrainPixel],
+    pub terrain_pixels: &'a TerrainPixels,
     pub surface_pixels: &'a mut Vec<RadarSurfacePixel>,
     pub overlay_pixels: &'a mut Vec<OverlayPixel>,
     pub native_surface: Option<NativeRadarSurfaceGeometry>,
@@ -110,15 +110,8 @@ pub(super) fn apply_radar_terrain_dirty_cells(
         .as_ref()
         .map_or(1.0, NativeRadarTerrainSurface::terrain_brightness);
     for &(rx, ry) in cells {
-        let source = authority.source(
-            rx,
-            ry,
-            structural_bridge_color,
-            overlay_radar_colors,
-        );
-        if let Some((left, right)) =
-            authority.tile_radar_colors(rx, ry, terrain_brightness)
-        {
+        let source = authority.source(rx, ry, structural_bridge_color, overlay_radar_colors);
+        if let Some((left, right)) = authority.tile_radar_colors(rx, ry, terrain_brightness) {
             native_changes.push(NativeRadarCellUpdate {
                 base: NativeRadarCellColors {
                     cell: (rx, ry),
@@ -128,25 +121,13 @@ pub(super) fn apply_radar_terrain_dirty_cells(
                 override_color: source.map(|(color, _)| color),
             });
         }
-        let Some(terrain_pixel) = layers
-            .terrain_pixels
-            .iter()
-            .find(|pixel| pixel.rx == rx && pixel.ry == ry)
-            .copied()
-        else {
+        let Some(terrain_pixel) = layers.terrain_pixels.cell(rx, ry).copied() else {
             continue;
         };
-        if let Some((x, y)) = aperture_pixel(
-            layers.native_surface,
-            (terrain_pixel.px, terrain_pixel.py),
-        ) {
-            set_pixel(
-                layers.base_rgba,
-                MINIMAP_WIDTH,
-                x,
-                y,
-                terrain_pixel.color,
-            );
+        if let Some((x, y)) =
+            aperture_pixel(layers.native_surface, (terrain_pixel.px, terrain_pixel.py))
+        {
+            set_pixel(layers.base_rgba, MINIMAP_WIDTH, x, y, terrain_pixel.color);
         }
 
         if let Some((native_color, classification)) = source {

@@ -16,6 +16,13 @@
 //! shell slide's SHOW completion (`0x4EC`) starts both and plays
 //! `ScoreAnimSound`. The app supplies already-resolved display strings. This
 //! module owns no score calculation, campaign progression or asset lookup.
+//!
+//! The same module drives the LAN Cooperative campaign-end dialog `0xBC7`
+//! (`CampaignEndScoreClass vt+4` `0x00471420`, proc `0x00470D30`): it loads
+//! the same side art, slides the same way and animates `0x72B` on the same
+//! timer, with its own controls, monitor `0x71C` and score cells. Its
+//! template, kind-1 groups, help keys and relayout were executed the same
+//! way; its body statics keep their template windows at every retail size.
 
 use std::time::{Duration, Instant};
 
@@ -68,6 +75,9 @@ pub const CAMPAIGN_SCORE_PAGE: MenuPageSpec = MenuPageSpec {
 pub enum CampaignScoreControlKind {
     Button,
     Static,
+    /// A static the dialog fills once and paints whole (no kind-1 reveal),
+    /// such as `0xBC7`'s score cells.
+    Text,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -239,6 +249,164 @@ pub const CAMPAIGN_SCORE_CONTROLS: [CampaignScoreControlSpec; 12] = [
     },
 ];
 
+/// The LAN Cooperative campaign-end dialog `0xBC7`
+/// (`CampaignEndScoreClass vt+4` `0x00471420`, proc `0x00470D30`).
+pub const CAMPAIGN_END_DIALOG: DialogId = DialogId(0x0BC7);
+pub const CAMPAIGN_END_CONTINUE: u16 = 0x06D1;
+pub const CAMPAIGN_END_NAME: u16 = 0x0733;
+pub const CAMPAIGN_END_NUMBER: u16 = 0x0735;
+pub const CAMPAIGN_END_DIFFICULTY: u16 = 0x0732;
+pub const CAMPAIGN_END_TIME: u16 = 0x03EA;
+/// First place's name and score, then second place's (`0x00470F73..`).
+pub const CAMPAIGN_END_PLACES: [(u16, u16); 2] = [(0x073A, 0x073B), (0x0739, 0x0738)];
+/// The right-panel warning monitor static.
+pub const CAMPAIGN_END_MONITOR: u16 = 0x071C;
+
+pub const CAMPAIGN_END_PAGE: MenuPageSpec = MenuPageSpec {
+    dialog: CAMPAIGN_END_DIALOG,
+    title_key: "GUI:CampaignResults",
+    stacked: &[],
+    back: MenuPageButtonSpec {
+        id: CAMPAIGN_END_CONTINUE,
+        dlu_top: 346,
+        csf_key: "GUI:Continue",
+        tooltip_key: "STT:MPScoreButtonContinue",
+        result: None,
+    },
+};
+
+/// `0xBC7`'s kind-1 groups, executed from the same getters as `0x103`'s.
+const PLACE_LABEL_REVEAL: CampaignScoreRevealSpec = CampaignScoreRevealSpec {
+    interval_ms: 15,
+    step: 1,
+    highlight_range: 8,
+};
+const PLACE_REVEAL: CampaignScoreRevealSpec = CampaignScoreRevealSpec {
+    interval_ms: 60,
+    step: 1,
+    highlight_range: 32,
+};
+const HEADER_REVEAL: CampaignScoreRevealSpec = CampaignScoreRevealSpec {
+    interval_ms: 30,
+    step: 1,
+    highlight_range: 16,
+};
+
+const fn end_control(
+    id: u16,
+    kind: CampaignScoreControlKind,
+    template_dlu: RectPx,
+    native_style: u32,
+    caption_key: Option<&'static str>,
+    tooltip_key: Option<&'static str>,
+    reveal: Option<CampaignScoreRevealSpec>,
+) -> CampaignScoreControlSpec {
+    CampaignScoreControlSpec {
+        id,
+        kind,
+        template_dlu,
+        native_style,
+        caption_key,
+        tooltip_key,
+        action: if id == CAMPAIGN_END_CONTINUE {
+            Some(CampaignScoreAction::Continue)
+        } else {
+            None
+        },
+        reveal,
+    }
+}
+
+/// Retail `RT_DIALOG 0xBC7` in template order. The score cells
+/// `0x781..0x78A` share `0xBC6`'s table `0x0081B1EC` and are not kind-1.
+#[rustfmt::skip]
+pub const CAMPAIGN_END_CONTROLS: [CampaignScoreControlSpec; 30] = {
+    use CampaignScoreControlKind::{Button, Static, Text};
+    const BLANK: Option<&str> = Some("GUI:Blank");
+    [
+        end_control(0x06D1, Button, RectPx::new(425, 130, 108, 23), 0x5000_000B, Some("GUI:Continue"), Some("STT:MPScoreButtonContinue"), None),
+        end_control(0x0736, Static, RectPx::new(113, 232, 74, 10), 0x5000_0001, Some("GUI:FirstPlace"), None, Some(PLACE_LABEL_REVEAL)),
+        end_control(0x0737, Static, RectPx::new(233, 232, 68, 10), 0x5000_0001, Some("GUI:SecondPlace"), None, Some(PLACE_LABEL_REVEAL)),
+        end_control(0x073A, Static, RectPx::new(123, 242, 55, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelPlayer"), Some(PLACE_REVEAL)),
+        end_control(0x0739, Static, RectPx::new(240, 242, 55, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelPlayer"), Some(PLACE_REVEAL)),
+        end_control(0x0733, Static, RectPx::new(83, 4, 257, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelCampaignName"), Some(TEXT_REVEAL)),
+        end_control(0x0735, Static, RectPx::new(83, 19, 64, 10), 0x5000_0000, BLANK, Some("STT:MPCampEndCampaignNumber"), Some(TEXT_REVEAL)),
+        end_control(STATUS_HELP_STATIC, Static, RectPx::new(10, 356, 303, 12), 0x5000_0200, BLANK, None, Some(LONG_TEXT_REVEAL)),
+        end_control(SCORE_ART_REGION_STATIC, Static, RectPx::new(70, 84, 282, 141), 0x5000_0007, None, None, None),
+        end_control(TITLE_STATIC, Static, RectPx::new(425, 1, 108, 10), 0x5002_0001, Some("GUI:CampaignResults"), None, Some(TEXT_REVEAL)),
+        end_control(0x0732, Static, RectPx::new(167, 19, 87, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelDifficulty"), Some(TEXT_REVEAL)),
+        end_control(0x03EA, Static, RectPx::new(257, 19, 80, 10), 0x5000_0002, BLANK, Some("STT:MPCampEndTime"), Some(TEXT_REVEAL)),
+        end_control(0x0738, Static, RectPx::new(240, 254, 55, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelScore"), Some(PLACE_REVEAL)),
+        end_control(0x073B, Static, RectPx::new(123, 254, 55, 10), 0x5000_0001, BLANK, Some("STT:MPScoreLabelScore"), Some(PLACE_REVEAL)),
+        end_control(0x073C, Static, RectPx::new(83, 31, 49, 10), 0x5000_0000, Some("GUI:Player"), None, Some(HEADER_REVEAL)),
+        end_control(0x073D, Static, RectPx::new(149, 31, 41, 10), 0x5000_0002, Some("GUI:Kills"), None, Some(HEADER_REVEAL)),
+        end_control(0x073E, Static, RectPx::new(202, 31, 41, 10), 0x5000_0002, Some("GUI:Losses"), None, Some(HEADER_REVEAL)),
+        end_control(0x073F, Static, RectPx::new(247, 31, 41, 10), 0x5000_0002, Some("GUI:Built"), None, Some(HEADER_REVEAL)),
+        end_control(0x0740, Static, RectPx::new(294, 31, 41, 10), 0x5000_0002, Some("GUI:Score"), None, Some(HEADER_REVEAL)),
+        end_control(0x0781, Text, RectPx::new(83, 40, 68, 10), 0x5000_0000, BLANK, None, None),
+        end_control(0x0782, Text, RectPx::new(83, 51, 68, 10), 0x5000_0000, BLANK, None, None),
+        end_control(0x0783, Text, RectPx::new(149, 40, 37, 10), 0x5000_0002, BLANK, None, None),
+        end_control(0x0784, Text, RectPx::new(149, 51, 37, 10), 0x5000_0002, BLANK, None, None),
+        end_control(0x0785, Text, RectPx::new(197, 40, 39, 10), 0x5000_0002, BLANK, None, None),
+        end_control(0x0786, Text, RectPx::new(197, 51, 39, 10), 0x5000_0002, BLANK, None, None),
+        end_control(0x0787, Text, RectPx::new(252, 40, 34, 10), 0x5000_0002, BLANK, None, None),
+        end_control(0x0788, Text, RectPx::new(252, 51, 34, 10), 0x5000_0002, BLANK, None, None),
+        end_control(0x0789, Text, RectPx::new(293, 40, 41, 8), 0x5000_0002, BLANK, None, None),
+        end_control(0x078A, Text, RectPx::new(293, 51, 41, 8), 0x5000_0002, BLANK, None, None),
+        end_control(CAMPAIGN_END_MONITOR, Static, RectPx::new(449, 29, 61, 33), 0x5000_0007, None, None, None),
+    ]
+};
+
+/// The dialogs this module drives. Both load the side's SCRBK/SCRT/SCRA
+/// (`0x0072D300`), slide with SCRT frames and animate `0x72B` every
+/// 100 ms, and both handle `0x72B`'s frame-zero `0x4D8` by selecting frame
+/// 29 (`0x006C93C9`, `0x00470E8E`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CampaignScoreDialog {
+    /// Campaign victory StandaloneScore `0x103`.
+    #[default]
+    Victory,
+    /// The LAN co-op campaign end `0xBC7`.
+    CampaignEnd,
+}
+
+impl CampaignScoreDialog {
+    pub const fn id(self) -> DialogId {
+        self.page().dialog
+    }
+
+    pub const fn page(self) -> &'static MenuPageSpec {
+        match self {
+            Self::Victory => &CAMPAIGN_SCORE_PAGE,
+            Self::CampaignEnd => &CAMPAIGN_END_PAGE,
+        }
+    }
+
+    pub fn controls(self) -> &'static [CampaignScoreControlSpec] {
+        match self {
+            Self::Victory => &CAMPAIGN_SCORE_CONTROLS,
+            Self::CampaignEnd => &CAMPAIGN_END_CONTROLS,
+        }
+    }
+
+    pub const fn continue_button(self) -> u16 {
+        self.page().back.id
+    }
+
+    pub fn control(self, id: u16) -> Option<&'static CampaignScoreControlSpec> {
+        self.controls().iter().find(|control| control.id == id)
+    }
+
+    /// `0x0060B950` moves `0x103`'s text statics up from 800 pixels wide;
+    /// `0xBC7`'s keep their template windows at every retail size.
+    const fn text_shift(self, screen_w: i32) -> i32 {
+        match self {
+            Self::Victory if screen_w >= 800 => TEXT_UPPER_SHIFT,
+            _ => 0,
+        }
+    }
+}
+
 /// Already-resolved text from the campaign victory path. The app owns all
 /// value formatting and sends these strings to the page unchanged.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -267,6 +435,30 @@ pub struct CampaignScoreTexts {
     pub enemies_destroyed_label: String,
 }
 
+/// The texts `0xBC7`'s init (`0x00470D30`, `WM_INITDIALOG`) writes, resolved
+/// by the app: the campaign name `0x733`, `GUI:CampaignLabel` over the
+/// campaign's number `0x735`, `GUI:DifficultyString` `0x732`, the time
+/// `0x3EA`, and the two partners' rows as `0x00471420` sorted them.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CampaignEndModel {
+    /// Scenario `+0x34B8`, which picks the score art (`0x0072D300`).
+    pub side: i32,
+    pub campaign_name: String,
+    pub campaign_number: String,
+    pub difficulty: String,
+    pub time: String,
+    pub rows: Vec<crate::ui::score_shell::ScoreRow>,
+}
+
+/// One of `0xBC7`'s plain score cells (`0x781..0x78A`): its text and the
+/// row colour `0x498` set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CampaignScoreCell {
+    pub id: u16,
+    pub text: String,
+    pub rgb: [u8; 3],
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CampaignScoreControlRect {
     pub id: u16,
@@ -293,7 +485,8 @@ pub struct CampaignScoreLayout {
     pub title: RectPx,
     pub status_help: RectPx,
     pub continue_button: RectPx,
-    pub controls: [CampaignScoreControlRect; CAMPAIGN_SCORE_CONTROLS.len()],
+    pub warning_monitor: RectPx,
+    pub controls: Vec<CampaignScoreControlRect>,
 }
 
 /// Root window width the campaign score page was authored for.
@@ -315,13 +508,26 @@ impl CampaignScoreLayout {
 
     /// Retail window placement for one campaign side.
     pub fn compute_layout_for_side(screen_w: u32, screen_h: u32, side: i32) -> Self {
-        let page = menu_page::compute_layout(&CAMPAIGN_SCORE_PAGE, screen_w, screen_h);
+        Self::compute_dialog_layout(CampaignScoreDialog::Victory, screen_w, screen_h, side)
+    }
+
+    /// Retail window placement of either dialog for one campaign side.
+    pub fn compute_dialog_layout(
+        dialog: CampaignScoreDialog,
+        screen_w: u32,
+        screen_h: u32,
+        side: i32,
+    ) -> Self {
+        let page = menu_page::compute_layout(dialog.page(), screen_w, screen_h);
         let screen_w = screen_w as i32;
         let screen_h = screen_h as i32;
         let continue_button = page
-            .button_rect(CONTINUE_BUTTON)
+            .button_rect(dialog.continue_button())
             .expect("campaign score page lays out Continue");
-        let status_help = status_line_rect(STATUS_LINE_DLU, screen_w, screen_h);
+        let status_dlu = dialog
+            .control(STATUS_HELP_STATIC)
+            .map_or(STATUS_LINE_DLU, |spec| spec.template_dlu);
+        let status_help = status_line_rect(status_dlu, screen_w, screen_h);
         let (origin_x, origin_y) = geom::dialog_origin(screen_w, screen_h);
         let small = screen_w == 640;
         let background = RectPx::new(
@@ -337,22 +543,27 @@ impl CampaignScoreLayout {
             448,
         );
         let art = campaign_score_art_rect(screen_w, screen_h, side);
-        let text_shift = if screen_w >= 800 { TEXT_UPPER_SHIFT } else { 0 };
-        let controls = std::array::from_fn(|index| {
-            let spec = CAMPAIGN_SCORE_CONTROLS[index];
-            let rect = match spec.id {
-                TITLE_STATIC => page.title,
-                STATUS_HELP_STATIC => status_help,
-                CONTINUE_BUTTON => continue_button,
-                SCORE_ART_REGION_STATIC => art,
-                _ => {
-                    let template = spec.template_dlu;
-                    let rect = child_window(template.x, template.y, template.w, template.h);
-                    RectPx::new(rect.x, rect.y - text_shift, rect.w, rect.h)
-                }
-            };
-            CampaignScoreControlRect { id: spec.id, rect }
-        });
+        let text_shift = dialog.text_shift(screen_w);
+        let continue_id = dialog.continue_button();
+        let controls = dialog
+            .controls()
+            .iter()
+            .map(|spec| {
+                let rect = match spec.id {
+                    TITLE_STATIC => page.title,
+                    STATUS_HELP_STATIC => status_help,
+                    id if id == continue_id => continue_button,
+                    SCORE_ART_REGION_STATIC => art,
+                    CAMPAIGN_END_MONITOR => page.warning_monitor,
+                    _ => {
+                        let template = spec.template_dlu;
+                        let rect = child_window(template.x, template.y, template.w, template.h);
+                        RectPx::new(rect.x, rect.y - text_shift, rect.w, rect.h)
+                    }
+                };
+                CampaignScoreControlRect { id: spec.id, rect }
+            })
+            .collect();
         Self {
             scale: page.scale,
             screen: page.screen,
@@ -363,6 +574,7 @@ impl CampaignScoreLayout {
             title: page.title,
             status_help,
             continue_button,
+            warning_monitor: page.warning_monitor,
             controls,
         }
     }
@@ -375,7 +587,23 @@ impl CampaignScoreLayout {
 
     /// Uniformly scale the 800x600 page for one campaign side.
     pub fn compute_responsive_layout_for_side(screen_w: u32, screen_h: u32, side: i32) -> Self {
-        let base = Self::compute_layout_for_side(SCORE_PAGE_W as u32, SCORE_PAGE_H as u32, side);
+        Self::compute_responsive_dialog_layout(
+            CampaignScoreDialog::Victory,
+            screen_w,
+            screen_h,
+            side,
+        )
+    }
+
+    /// Uniformly scale either dialog's 800x600 page for one campaign side.
+    pub fn compute_responsive_dialog_layout(
+        dialog: CampaignScoreDialog,
+        screen_w: u32,
+        screen_h: u32,
+        side: i32,
+    ) -> Self {
+        let base =
+            Self::compute_dialog_layout(dialog, SCORE_PAGE_W as u32, SCORE_PAGE_H as u32, side);
         let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
         base.scaled(scale)
     }
@@ -386,6 +614,7 @@ impl CampaignScoreLayout {
         self.title = scale.scale_rect(self.title);
         self.status_help = scale.scale_rect(self.status_help);
         self.continue_button = scale.scale_rect(self.continue_button);
+        self.warning_monitor = scale.scale_rect(self.warning_monitor);
         self.background = scale.scale_rect(self.background);
         self.panel = scale.scale_rect(self.panel);
         self.right_panel = scale.scale_panel(self.right_panel);
@@ -458,6 +687,8 @@ fn reveal_params(spec: CampaignScoreRevealSpec) -> Kind1Params {
 #[derive(Debug, Clone)]
 pub struct CampaignScoreStatic {
     pub id: u16,
+    /// The colour a `0x498` set, else the shell's yellow.
+    pub rgb: Option<[u8; 3]>,
     reveal_spec: CampaignScoreRevealSpec,
     reveal: PresentedKind1Static,
 }
@@ -473,6 +704,7 @@ impl CampaignScoreStatic {
         reveal.set_text(text, now);
         Self {
             id: spec.id,
+            rgb: None,
             reveal_spec,
             reveal,
         }
@@ -496,9 +728,11 @@ impl CampaignScoreStatic {
 /// The open campaign victory score dialog `0x103`.
 #[derive(Debug, Clone)]
 pub struct CampaignScorePage {
+    pub dialog: CampaignScoreDialog,
     pub model: CampaignScoreScreenModel,
     pub texts: CampaignScoreTexts,
     statics: Vec<CampaignScoreStatic>,
+    cells: Vec<CampaignScoreCell>,
     emblem_animation: Option<CampaignScoreEmblemAnimation>,
     /// The native SHOW completion (`0x4EC`) has started reveals and the
     /// kind-4 timer. False until then, including a page whose slide was
@@ -574,12 +808,93 @@ impl CampaignScorePage {
             statics.push(CampaignScoreStatic::new(&spec, text, reveal, now));
         }
         Self {
+            dialog: CampaignScoreDialog::Victory,
             model,
             texts,
             statics,
+            cells: Vec::new(),
             emblem_animation: None,
             presentation_started: false,
         }
+    }
+
+    /// `0xBC7`'s `WM_INITDIALOG` (`0x00470D30`): the campaign texts, then
+    /// per row its five cells (table `0x0081B1EC`) and, for the first two
+    /// rows, the place's name and score, each in the row's colour. Statics
+    /// it does not write keep their template captions, resolved by
+    /// `caption`.
+    pub fn open_campaign_end(
+        model: CampaignEndModel,
+        caption: impl Fn(&'static str) -> String,
+        now: Instant,
+    ) -> Self {
+        let dialog = CampaignScoreDialog::CampaignEnd;
+        let mut statics = Vec::new();
+        for spec in dialog.controls() {
+            let Some(reveal) = spec.reveal else {
+                continue;
+            };
+            let place =
+                CAMPAIGN_END_PLACES
+                    .iter()
+                    .zip(&model.rows)
+                    .find_map(|(&(name, score), row)| {
+                        (spec.id == name)
+                            .then(|| row.name.clone())
+                            .or_else(|| (spec.id == score).then(|| row.score.to_string()))
+                            .map(|text| (text, row.rgb))
+                    });
+            let (text, rgb) = match (spec.id, place) {
+                (_, Some((text, rgb))) => (text, Some(rgb)),
+                (STATUS_HELP_STATIC, _) => (String::new(), None),
+                (CAMPAIGN_END_NAME, _) => (model.campaign_name.clone(), None),
+                (CAMPAIGN_END_NUMBER, _) => (model.campaign_number.clone(), None),
+                (CAMPAIGN_END_DIFFICULTY, _) => (model.difficulty.clone(), None),
+                (CAMPAIGN_END_TIME, _) => (model.time.clone(), None),
+                _ => (spec.caption_key.map(&caption).unwrap_or_default(), None),
+            };
+            let mut static_text = CampaignScoreStatic::new(spec, &text, reveal, now);
+            static_text.rgb = rgb;
+            statics.push(static_text);
+        }
+        let mut cells = Vec::new();
+        for (row, ids) in model
+            .rows
+            .iter()
+            .zip(crate::ui::coop_score_shell::ROW_CELLS)
+        {
+            let values = [
+                row.name.clone(),
+                row.kills.to_string(),
+                row.losses.to_string(),
+                row.built.to_string(),
+                row.score.to_string(),
+            ];
+            for (id, text) in ids.into_iter().zip(values) {
+                cells.push(CampaignScoreCell {
+                    id,
+                    text,
+                    rgb: row.rgb,
+                });
+            }
+        }
+        Self {
+            dialog,
+            model: CampaignScoreScreenModel {
+                side: model.side,
+                ..Default::default()
+            },
+            texts: CampaignScoreTexts::default(),
+            statics,
+            cells,
+            emblem_animation: None,
+            presentation_started: false,
+        }
+    }
+
+    /// `0xBC7`'s score cells; empty on `0x103`.
+    pub fn cells(&self) -> &[CampaignScoreCell] {
+        &self.cells
     }
 
     /// Native SHOW completion (`0x4EC`): start every kind-1 static and the
@@ -602,13 +917,19 @@ impl CampaignScorePage {
     /// path is unscaled; the app's fill-window path scales the 800x600 page.
     pub fn layout(&self, screen_w: u32, screen_h: u32, fills_window: bool) -> CampaignScoreLayout {
         if fills_window {
-            CampaignScoreLayout::compute_responsive_layout_for_side(
+            CampaignScoreLayout::compute_responsive_dialog_layout(
+                self.dialog,
                 screen_w,
                 screen_h,
                 self.model.side,
             )
         } else {
-            CampaignScoreLayout::compute_layout_for_side(screen_w, screen_h, self.model.side)
+            CampaignScoreLayout::compute_dialog_layout(
+                self.dialog,
+                screen_w,
+                screen_h,
+                self.model.side,
+            )
         }
     }
 
@@ -687,24 +1008,14 @@ impl CampaignScorePage {
     }
 }
 
-impl CampaignScoreControlSpec {
-    pub fn for_id(id: u16) -> Option<&'static Self> {
-        CAMPAIGN_SCORE_CONTROLS
-            .iter()
-            .find(|control| control.id == id)
-    }
-
-    pub fn action_for_id(id: u16) -> Option<CampaignScoreAction> {
-        Self::for_id(id).and_then(|control| control.action)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn spec(id: u16) -> &'static CampaignScoreControlSpec {
-        CampaignScoreControlSpec::for_id(id).unwrap_or_else(|| panic!("0x103/{id:#x}"))
+        CampaignScoreDialog::Victory
+            .control(id)
+            .unwrap_or_else(|| panic!("0x103/{id:#x}"))
     }
 
     #[test]
@@ -980,5 +1291,111 @@ mod tests {
         );
         assert!(!page.reveals_terminal());
         page.commit_presented();
+    }
+
+    /// `0xBC7`'s executed WM_INITDIALOG relayout (side 0): the right-panel
+    /// anchors and the `0x72B` override move with the screen while the body
+    /// statics keep their template windows.
+    #[test]
+    fn campaign_end_windows_match_the_executed_0xbc7_relayout() {
+        let cases: [(u32, u32, [(u16, [i32; 4]); 6]); 2] = [
+            (
+                800,
+                600,
+                [
+                    (CAMPAIGN_END_CONTINUE, [644, 535, 156, 42]),
+                    (STATUS_HELP_STATIC, [10, 578, 456, 21]),
+                    (SCORE_ART_REGION_STATIC, [104, 142, 424, 220]),
+                    (TITLE_STATIC, [635, 9, 163, 18]),
+                    (CAMPAIGN_END_MONITOR, [670, 47, 93, 55]),
+                    (0x0789, [440, 65, 63, 14]),
+                ],
+            ),
+            (
+                1024,
+                768,
+                [
+                    (CAMPAIGN_END_CONTINUE, [756, 619, 156, 42]),
+                    (STATUS_HELP_STATIC, [122, 662, 456, 21]),
+                    (SCORE_ART_REGION_STATIC, [216, 226, 424, 220]),
+                    (TITLE_STATIC, [747, 93, 163, 18]),
+                    (CAMPAIGN_END_MONITOR, [782, 131, 93, 55]),
+                    (0x0733, [125, 7, 387, 17]),
+                ],
+            ),
+        ];
+        for (width, height, expected) in cases {
+            let layout = CampaignScoreLayout::compute_dialog_layout(
+                CampaignScoreDialog::CampaignEnd,
+                width,
+                height,
+                0,
+            );
+            for (id, [x, y, w, h]) in expected {
+                assert_eq!(
+                    layout.control_rect(id),
+                    Some(RectPx::new(x, y, w, h)),
+                    "{width}x{height} {id:#x}"
+                );
+            }
+        }
+    }
+
+    /// `0x00470D30`'s init: each row's cells in its colour, the first two
+    /// rows' places, and the template captions elsewhere.
+    #[test]
+    fn campaign_end_binds_rows_to_cells_and_places() {
+        let row = |name: &str, rgb, score| crate::ui::score_shell::ScoreRow {
+            name: name.into(),
+            rgb,
+            kills: 7,
+            losses: 2,
+            built: 30,
+            score,
+        };
+        let model = CampaignEndModel {
+            side: 1,
+            campaign_name: "Soviet Campaign".into(),
+            campaign_number: "Campaign 2".into(),
+            difficulty: "Difficulty: Medium".into(),
+            time: "01:02:03".into(),
+            rows: vec![
+                row("Host", [10, 20, 30], 900),
+                row("Guest", [40, 50, 60], 400),
+            ],
+        };
+        let page =
+            CampaignScorePage::open_campaign_end(model, |key| key.to_owned(), Instant::now());
+        assert_eq!(page.dialog, CampaignScoreDialog::CampaignEnd);
+        assert_eq!(page.static_text(CAMPAIGN_END_NAME), Some("Soviet Campaign"));
+        assert_eq!(page.static_text(CAMPAIGN_END_TIME), Some("01:02:03"));
+        assert_eq!(page.static_text(0x0736), Some("GUI:FirstPlace"));
+        assert_eq!(page.static_text(TITLE_STATIC), Some("GUI:CampaignResults"));
+        let place = |id| {
+            page.statics()
+                .iter()
+                .find(|text| text.id == id)
+                .map(|text| (text.text().to_owned(), text.rgb))
+        };
+        assert_eq!(place(0x073A), Some(("Host".into(), Some([10, 20, 30]))));
+        assert_eq!(place(0x073B), Some(("900".into(), Some([10, 20, 30]))));
+        assert_eq!(place(0x0739), Some(("Guest".into(), Some([40, 50, 60]))));
+        assert_eq!(place(0x0738), Some(("400".into(), Some([40, 50, 60]))));
+        let cells: Vec<_> = page
+            .cells()
+            .iter()
+            .map(|cell| (cell.id, cell.text.as_str(), cell.rgb))
+            .collect();
+        assert_eq!(
+            cells[..5],
+            [
+                (0x0781, "Host", [10, 20, 30]),
+                (0x0783, "7", [10, 20, 30]),
+                (0x0785, "2", [10, 20, 30]),
+                (0x0787, "30", [10, 20, 30]),
+                (0x0789, "900", [10, 20, 30]),
+            ]
+        );
+        assert_eq!(cells[5], (0x0782, "Guest", [40, 50, 60]));
     }
 }

@@ -293,7 +293,7 @@ fn walk_boundary_relinks_current_xyz_and_leaves_the_raw_bit_on_the_head() {
     sim.run_walk_boundary(
         id,
         crossing,
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default(),
     );
@@ -486,7 +486,7 @@ pub(in crate::sim::world) fn ready_engineer(
     sim.run_walk_boundary(
         id,
         head,
-        Some(rules),
+        rules,
         Some(registry),
         crate::sim::world::FrameEffects::default(),
     );
@@ -640,7 +640,7 @@ fn later_repair_scatters_stationary_hut_occupant_and_processes_it_synchronously(
     sim.run_completed_walk_step(
         last,
         DriveCoord::cell(16, 15, 0),
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default(),
     )
@@ -730,7 +730,7 @@ fn hut_repair_scatters_a_jumpjet_occupant_through_its_air_destination_owner() {
     sim.run_completed_walk_step(
         engineer,
         DriveCoord::cell(16, 15, 0),
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default(),
     )
@@ -1053,7 +1053,7 @@ fn walk_completion_uses_retained_destination_and_exact_height_tolerance() {
         sim.run_completed_walk_step(
             id,
             head,
-            Some(&rules),
+            &rules,
             Some(&registry),
             crate::sim::world::FrameEffects::default(),
         )
@@ -1289,7 +1289,7 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
                     target_rx: 20,
                     target_ry: 15,
                 },
-                Some(&rules),
+                &rules,
                 Some(&registry),
                 crate::sim::world::FrameEffects::default()
             ));
@@ -1334,7 +1334,7 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
             // adapter no longer touches Jumpjets at all.
             sim.tick_air_movement_with_cell_lists_one(
                 rocketeer,
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
                 crate::sim::world::FrameEffects::default(),
             )
@@ -1582,7 +1582,7 @@ fn jumpjet_stop_command_keeps_native_moving_and_selected_coordinate() {
     sim.assign_destination_represented(
         id,
         Some(crate::sim::components::NavTargetRef::cell(20, 15)),
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     )
@@ -1601,7 +1601,7 @@ fn jumpjet_stop_command_keeps_native_moving_and_selected_coordinate() {
     assert!(sim.apply_command_with_overlays(
         "Americans",
         &Command::Stop { entity_id: id },
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default()
     ));
@@ -1671,7 +1671,7 @@ fn failed_jumpjet_stop_stock_fatal_receiver_precedes_cache_retirement() {
             .with_phase_for_test(1);
         assert!(sim.jumpjet_stop_moving(
             id,
-            Some(&rules),
+            &rules,
             Some(&registry),
             crate::sim::world::FrameEffects::default()
         ));
@@ -1715,10 +1715,8 @@ fn failed_jumpjet_stop_stock_fatal_receiver_precedes_cache_retirement() {
 /// The accepted setter's timer tail (Foot 0x4D96C2..0x4D9707); callers
 /// supply the Walk destination and head.
 fn accept_destination(sim: &mut Simulation, id: u64, rules: &RuleSet) {
-    let timing = crate::sim::movement::DestinationTiming::from_rules(
-        sim.session.binary_frame(),
-        Some(rules),
-    );
+    let timing =
+        crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame(), rules);
     let e = sim.substrate.entities.get_mut(id).unwrap();
     timing.accept(e);
 }

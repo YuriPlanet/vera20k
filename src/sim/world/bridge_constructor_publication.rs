@@ -243,16 +243,10 @@ impl OverlayMarkHost for BridgeMarkHost<'_, '_> {
             &request,
         );
         let sim = &mut *self.publication.sim;
-        let lighting = sim
-            .session
-            .lighting()
-            .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
-            .into();
         sim.construct_overlay_cell_anim(
             rules,
             request,
             ground,
-            lighting,
             crate::sim::anim_class::AnimConstructorInput::Runtime,
         )
         .map(|_| ())

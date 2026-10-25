@@ -5,7 +5,6 @@ raw observations separately; never change the production model to emulate that b
 This standalone assembler-only Rust probe does not call VERA20k arithmetic code.
 """
 from pathlib import Path
-import hashlib
 import json
 import platform
 import subprocess
@@ -70,7 +69,7 @@ def metadata():
         scope='2376 actual x87 hardware primitive captures using authenticated original arithmetic opcodes in an x86_64 register/operand wrapper',
         assumptions=[
             'The standalone Rust source contains inline original x87 opcode bytes, never calls the VERA20k numeric implementation, and observes memory/condition bits directly. Python supplies raw operands and formats integer/hex outputs; no software floating-point model supplies expected values',
-            'Original numerical opcode bytes are authenticated against the pinned PE before compilation. They are relocated into a compiler-owned wrapper: address registers use 64-bit fixture pointers. This is hardware instruction-value evidence, not execution of original 32-bit parent control flow',
+            'Original numerical opcode bytes are authenticated against the loaded PE before compilation. They are relocated into a compiler-owned wrapper: address registers use 64-bit fixture pointers. This is hardware instruction-value evidence, not execution of original 32-bit parent control flow',
             'Each row saves/restores the full caller FPU state with FXSAVE64/FXRSTOR64, initializes the x87 stack, supplies and observes0E7F, and verifies final TOP0. The hardware status word is recorded but only compare conditions and stack balance are asserted; this does not certify a full FPU environment model',
             'FTOL rows execute the original FISTP qword opcode7C5F1B and observe low32 under0E7F, not the entire helper/control-cache function. The separate Unicorn corpus executes that original whole helper',
             'The saved Unicorn2.1.4 observations remain alongside hardware values. Its FLD conversion preserves signaling NaNs instead of quieting them; later NaN selection consequently differs. Hardware outputs are reference authority for this matrix, including the rows where Unicorn disagrees',
@@ -81,8 +80,6 @@ def metadata():
         entry_points={**{name: address for name, (address, _) in FRAGMENTS.items()}, 'fistp': 0x7C5F1B},
     )
     result['hardware_capture'] = dict(CAPTURE)
-    # Git's Windows CRLF checkout conversion must not change source identity.
-    result['probe_source_sha256'] = hashlib.sha256(SOURCE.read_text(encoding='utf-8').encode('utf-8')).hexdigest()
     return result
 
 

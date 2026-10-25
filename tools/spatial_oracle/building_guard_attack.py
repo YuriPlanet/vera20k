@@ -31,6 +31,11 @@
   (0x6FC94F..0x6FC975: REARM while the timer has time left, else OK). Row
   events set or clear TarCom (the passive scan's or a pointer detach's write)
   or queue Attack as a player order (Queue_Mission(Attack, false)).
+- `hidden_startup` rows: original map idle/Guard queue, then UpdateAnimation,
+  both ready checks, the Techno AI counter/MissionClass dispatch and queued
+  body. A turret with ready0 stays on mission None; ready1 and the non-turret
+  control commence Guard. All three RNG streams and native timer stores are
+  retained. Discovery/first Grand_Opening and the rest of AI are not executed.
 
 - `--gate`: additive original Gate admission/Open true-RET controls and the
   shared Door / building mission cadence. Its separate corpus records complete
@@ -43,7 +48,7 @@ import hashlib
 import struct
 import sys
 
-from unicorn import UC_HOOK_CODE
+from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_EIP, UC_X86_REG_ESP, UC_X86_REG_FPCW
 from tools.native_oracle import finish_vectors, provenance, image_bytes, file_span
 from tools.spatial_oracle import building_construction as bc
@@ -334,7 +339,8 @@ def generate():
             'attack': [one_call(MISSION_ATTACK)(case) for case in attack_cases()],
             'set_target': [one_call(BUILDING_SET_TARGET)(case) for case in set_target_cases()],
             'unlimbo': [unlimbo(case) for case in unlimbo_cases()],
-            'cadence': [cadence(case) for case in cadence_cases()]}
+            'cadence': [cadence(case) for case in cadence_cases()],
+            'hidden_startup': [hidden_startup(case) for case in hidden_startup_cases()]}
 
 
 GATE_OPEN, GATE_ADMISSION = 0x44E440, 0x452540
@@ -351,6 +357,70 @@ GATE_RNGS = {'main': 0x886B88, 'scenario': SCENARIO + 0x218, 'mapgen': 0xABE890}
 def gate_rng(u):
     return {name: bytes(u.mem_read(pointer, 1012)).hex()
             for name, pointer in GATE_RNGS.items()}
+
+
+def hidden_startup_cases():
+    return [dict(name=name, frame=200, frames=2, seed=1, turret=turret, ready=ready,
+                 armed=True)
+            for name, turret, ready in (
+                ('hidden_turret', True, 0),
+                ('opened_turret', True, 1),
+                ('hidden_nonturret', False, 0))]
+
+
+def hidden_startup(case):
+    """The existing Building VM, with supplied discovery/ready prior.
+
+    Original44D6A0 establishes the map's idle body and Guard queue. No
+    successful discovery or Grand_Opening return is fabricated: ready is an
+    explicit input, contrasting the unopened and already-ready entries.
+    The non-turret remains armed to isolate UpdateAnimation's ready gate;
+    it is not a claim about CABARR02's absent weapon.
+    """
+    u, _read32, building, frame, events = fixture(dict(case, mission='none'))
+    assert frame == case['frame']
+    u.mem_write(sm.YTYPE + 0xCA1, bytes([case['turret']]))
+    u.mem_write(bc.SCENARIO_INIT, dwords(1))
+    bc.invoke(u, ENTER_CONSTRUCTION, building, 1, 1)
+    u.mem_write(bc.SCENARIO_INIT, dwords(0))
+    for pointer in GATE_RNGS.values():
+        bc.invoke(u, RANDOM_SEED, pointer, case['seed'])
+    events.clear()
+    initial = state(u, building)
+    before = gate_rng(u)
+    timer_fields = {building + offset: (timer, field) for offset, timer, field in (
+        (0xC8, 'mission', 'start'), (0xD0, 'mission', 'duration'),
+        (0x100, 'body', 'start'), (0x108, 'body', 'duration'))}
+    writes = []
+
+    def timer_write(_u, _access, address, size, value, _data):
+        if address in timer_fields:
+            assert size == 4
+            timer, field = timer_fields[address]
+            writes.append(dict(timer=timer, field=field,
+                               value=struct.unpack('<i', dwords(value))[0],
+                               pc=f'0x{u.reg_read(UC_X86_REG_EIP):08X}'))
+
+    hook = u.hook_add(UC_HOOK_MEM_WRITE, timer_write)
+    frames = []
+    for step in range(1, case['frames'] + 1):
+        u.mem_write(bc.FRAME, dwords(frame + step))
+        start = len(events)
+        writes.clear()
+        bc.invoke(u, bc.UPDATE_ANIMATION, building)
+        bc.run_block(u, building, bc.READY_COMMENCE_UNLESS_BUILDING)
+        bc.run_block(u, building, GATE_MISSION_HOST)
+        bc.run_block(u, building, bc.READY_COMMENCE)
+        bc.run_block(u, building, bc.QUEUED_BSTATE, ebp=-1)
+        frame_events = events[start:]
+        frames.append(dict(frame=frame + step, events=frame_events,
+                           draws=draws(frame_events), timer_writes=list(writes),
+                           **state(u, building)))
+    u.hook_del(hook)
+    assert bytes(u.mem_read(0x401000, 0x3E0000)) == file_span(
+        image_bytes(), 0x401000, 0x3E0000)[1], 'fixture patched original .text'
+    return dict(input=case, initial=initial, frames=frames,
+                rng_before=before, rng_after=gate_rng(u))
 
 
 def gate_state(u, building):
@@ -642,11 +712,15 @@ def main(argv=None):
         provenance=lambda: provenance(
             scope='BuildingClass::Mission_Guard 0x4496B0, BuildingClass::Mission_Attack 0x44ACF0, '
                   'BuildingClass::SetTarget 0x443B90, BuildingClass 0x44D6A0 and their dispatch by '
-                  'MissionClass::AI 0x5B3060 between BuildingClass::Update\'s ready checks',
+                  'MissionClass::AI 0x5B3060 between BuildingClass::Update\'s ready checks; '
+                  'additive hidden-startup UpdateAnimation and native mission-counter controls',
             entry_points={'mission_guard': MISSION_GUARD, 'mission_attack': MISSION_ATTACK,
                           'set_target': BUILDING_SET_TARGET, 'enter_construction': ENTER_CONSTRUCTION,
                           'mission_ai': bc.MISSION_AI, 'update_ready_commence_unless_building': 0x43FE27,
-                          'update_ready_commence': 0x43FF91},
+                          'update_ready_commence': 0x43FF91,
+                          'update_animation': bc.UPDATE_ANIMATION,
+                          'mission_counter_host': GATE_MISSION_HOST[0],
+                          'queued_body': bc.QUEUED_BSTATE[0]},
             assumptions=['the building_construction fixture refinery (slave_manager fixture, Building '
                          'vtables), armed through Weapon[0] = a supplied WeaponType whose Projectile is a '
                          'supplied BulletType; TarCom is the fixture\'s unit',
@@ -654,7 +728,15 @@ def main(argv=None):
                          '0x5283D0); retail [Guard] .030/.016, [Sticky] .016/.016, [Attack] .016/.016',
                          'cadence rows run only the Update mission pieces; UpdateAnimation, TechnoClass::'
                          'AI_Update\'s other steps and the passive scan are not run (the row events stand '
-                         'in for the scan\'s TarCom write)'],
+                         'in for the scan\'s TarCom write)',
+                         'hidden_startup adds three two-frame controls through original44D6A0 under '
+                         'ScenarioInit, then4509D0,43FE27..43FE54,6FA646..6FA65A,'
+                         '43FF91..43FFB4 and43FFB4..440042. Type+CA1 Turret and prior+6DD ready '
+                         'are inputs; the actor is armed and has no target. The non-turret is an '
+                         'isolated ready-gate contrast, not a retail CABARR02 type replay. Discovery, '
+                         'first Grand_Opening, passive targeting and whole BuildingUpdate are excluded. '
+                         'All three1012-byte RNG buffers are seeded1 after setup; each frame records '
+                         'native mission/body timer start/duration stores, excluding stack padding'],
             substitutions=['BuildingClass::GetFireError 0x447F10 answered (per row, or the rearm test in '
                            'cadence rows); Fire_At 0x6FDD50 answered (cadence rows write its rearm timer); '
                            'TechnoClass::SetTarget 0x6FCDB0 answered with its +0x2B4 write; FacingClass::'

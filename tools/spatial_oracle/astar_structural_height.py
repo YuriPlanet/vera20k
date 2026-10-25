@@ -16,7 +16,7 @@ from fractions import Fraction
 from pathlib import Path
 import hashlib,json,struct
 from unicorn.x86_const import *
-from tools.native_oracle import NATIVE_SHA256,RET_MAGIC,run_checked,provenance,finish_vectors
+from tools.native_oracle import RET_MAGIC,run_checked,provenance,finish_vectors
 from tools.spatial_oracle.tube_hierarchy import initialized_process_fixture
 from tools.spatial_oracle.map_queries import dwords,packed
 from tools.spatial_oracle.guarded_arena import Arena
@@ -204,7 +204,7 @@ def closed_rows():
     return result
 
 def generate():
-    result=dict(schema_version=1,native_sha256=NATIVE_SHA256,scope=__doc__,cases=[execute(row)for row in rows()],
+    result=dict(schema_version=1,scope=__doc__,cases=[execute(row)for row in rows()],
                 allocation_guards=[allocation_guard(direction,allocated) for direction in (2,8) for allocated in (False,True)],
                 edge_costs=[edge_cost(row) for row in edge_rows()],node_costs=[node_cost(row) for row in node_rows()],
                 closed_retries=[closed_retry(row) for row in closed_rows()])

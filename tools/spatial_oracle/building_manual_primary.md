@@ -50,7 +50,12 @@ Only accepted clicks continue through the original click/event and LeftUp's
 suffix or a primary event. Full Display picking/scheduling remains outside
 the fixture.
 
-Native `AC4B84` counts actor paths containing at least one remaining command.
+Native `AC4B84` retains independent per-House accounting. Under the ordinary
+histories supplied above it equals the number of nonempty paths, but late
+invalid-target pruning `637270 -> 636B50` and node deletion `639BC0` do not
+release a charge when they empty a path. Reappend charges again; destroying an
+already empty token does not repair the earlier charge. Capacity therefore
+must read retained accounting rather than recompute it from live paths.
 Append `638120` increments only on empty-to-nonempty (`638402..638470`).
 Consume `636590` decrements at zero remaining commands (`636718..636760`),
 even while the empty path remains executing until acknowledgement. Clearing
@@ -61,8 +66,8 @@ redirected to the current player for a controlled House. Ordinary capture
 therefore clears rather than transfers a path count. Append increments by
 event issuer; delayed old-issuer append after capture is a distinct bound,
 not evidence that every unusual ownership history can be reduced to a live
-owner count. The current Rust planning owner already retains empty executing
-paths and clears paths before changing owner; its map length is not this count.
+owner count. The Rust planning owner retains this accounting separately from
+nodes and token registration order. Normal user load resets all three.
 
 Capacity refusal selects literal `MSG:PlannerMaximum` (`836C6C`), sets the
 per-frame `AC4C08` refusal latch and calls `730A90` with duration480. The

@@ -18,6 +18,13 @@
 
 use crate::sim::timer::CdTimer;
 
+/// Sign of a live native-facing turn, as consumed by Fly's normal bank arm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RotationDirection {
+    Positive,
+    Negative,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct FacingClass {
     /// Destination — where the rotation will end up. 16-bit DirStruct.
@@ -201,6 +208,22 @@ impl FacingClass {
     /// not cached.
     pub fn is_rotating(&self, binary_frame: u32) -> bool {
         (self.rot_per_frame as i16) > 0 && self.remaining_frames(binary_frame) != 0
+    }
+
+    /// Whether the live SecondaryFacing turn selects Fly's positive or
+    /// negative bank. `FlyLocomotionClass::Draw_Matrix @ 0x004CF610` calls
+    /// `IsRotatingPositive @ 0x004C94B0` before
+    /// `IsRotatingNegative @ 0x004C94F0`; both require positive ROT and a
+    /// nonzero timer, then test the wrapped signed-16 `destination - start`.
+    pub fn rotation_direction_at(&self, binary_frame: u32) -> Option<RotationDirection> {
+        if !self.is_rotating(binary_frame) {
+            return None;
+        }
+        match self.current.wrapping_sub(self.prev) as i16 {
+            delta if delta > 0 => Some(RotationDirection::Positive),
+            delta if delta < 0 => Some(RotationDirection::Negative),
+            _ => None,
+        }
     }
 
     /// The rotation timer's time left (`4C93E9..4C93F8` / `4C948D..4C94A0`).

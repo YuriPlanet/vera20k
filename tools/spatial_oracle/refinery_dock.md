@@ -3,6 +3,13 @@
 `refinery_dock.py` retains the original 107 rows, 57 continuation controls and
 three War Miner histories. Separate additions contain nine actual-slot admission
 controls and four Building contact-constructor controls.
+Four further unload controls distinguish native slots 0/2 and 2/3, including
+Vinifera and Aboreus alone. Each starts at a declared payout gate with integer
+amounts; it executes the original slot selection, removal and payment. The
+paired Rust retail test harvests Vinifera before Riparius from XMP17T6 overlay
+identities, saves/loads the mixed hold, then reaches two production Unload gates.
+Its flat world, pad pose and stage gates are supplied test boundaries; this is
+not a full retail match or a float-storage comparison.
 Unicorn 2.1.4 executes unchanged original text and Unit/Building vtables.
 The JSON contains native outputs, not values calculated by Rust or the harness.
 The sidecar records the payload hash.
@@ -33,7 +40,7 @@ for the retained controls and
 for the retained histories.
 [`refinery_dock_retail_tests.rs`](../../src/sim/world/refinery_dock_retail_tests.rs)
 binds these native selected data receipts to production Battle/XMP03T4 rules
-processing and installed fixed ART, including the frame/ppm representations.
+processing and installed fixed ART, including frame counts and raw float fields.
 `actual_contact_slots_match_original_admission_receiver_and_scanner` replays the
 nine slot controls through `Contacts`, CAN_LOAD and the narrow scanner.
 `building_contact_constructor_matches_original_slots_before_hello` in
@@ -286,9 +293,11 @@ false; that gate does not re-check offline state.
   prefix leaves tether bits/building contact present; whole-world DetachAll,
   House roster/type-counter cleanup, foundation removal and destruction are
   excluded. The prefix is not evidence for final native cleanup.
-- Stock integer cargo/payment is covered. Native four float cargo slots,
-  non-stock IncomeMult 0.9 (the preserved legacy native 899/Rust 900 difference),
-  Weeder/absorbers/naval/slave/Chrono branches, general repair payment cadence
+- Whole cargo/payment is covered, including the native IncomeMult 0.9 result
+  of 899 credits. The [income controls](refinery_income.md) additionally compare
+  raw House arithmetic, narrowed purifier bonuses and native field readers.
+  Native four float cargo slots, Weeder/absorbers/naval/slave/Chrono branches,
+  general repair payment cadence
   and unrelated Building Guard docking RNG remain separately bounded mechanisms.
 
 These boundaries accompany the goldens and must accompany any parity claim.

@@ -37,9 +37,8 @@ const RESERVED_LITERALS: [&str; 7] = [
     "<OpenObserver>",
 ];
 
-/// Semantic service requests, not serialized packets or an online backend.
-/// A controlled service drains these and returns the same events as a future
-/// transport adapter. No request ever manufactures a successful response.
+/// Semantic UI requests consumed by the LAN transport adapter. Controlled
+/// captures use the same boundary; no request manufactures a successful reply.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LanServiceRequest {
     Refresh,
@@ -70,6 +69,9 @@ pub(crate) enum LanServiceEvent {
         game_id: u64,
         reason: u32,
     },
+    JoinCanceled {
+        game_id: u64,
+    },
     JoinAccepted(LanJoinAcceptance),
 }
 
@@ -78,6 +80,7 @@ struct PendingJoin {
     game_id: u64,
     observe: bool,
     expires: Instant,
+    canceling: bool,
 }
 
 pub(crate) struct LanShellRuntime {
@@ -126,6 +129,7 @@ impl App {
     /// MainMenu52E418 and setup-return5DC624/5DC964 construct a fresh BB.
     /// The retained preference owner supplies the edit; admission stays empty.
     pub(crate) fn open_lan_lobby(state: &mut AppState) {
+        crate::app::shell_main_menu::clear_typed_codes_for_network_session(state);
         Self::prepare_multiplayer_settings(
             state,
             crate::app::shell_main_menu::MultiplayerSettingsContext::Shell,
@@ -144,6 +148,7 @@ impl App {
             .lobby
             .replace_players(vec![local_lobby_row(&local.name)]);
         state.frontend.lan = Some(runtime);
+        crate::app::lan_service::open(state);
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         shell_transition::invalidate_main_menu_dialog_instance(state);
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::LanLobby;
@@ -159,6 +164,7 @@ impl App {
             .multiplayer_shell_runtime
             .persist_lan_preferences();
         state.frontend.lan = None;
+        crate::app::lan_service::close(state);
         state.match_state.session.leave_network();
         Self::close_single_player_shell(state);
         state
@@ -170,12 +176,13 @@ impl App {
     }
 
     pub(crate) fn commit_lan_create(state: &mut AppState, observe: bool) {
+        crate::app::lan_service::force_presence(state);
         state.frontend.lan = None;
         Self::open_host_setup(state, observe);
     }
 }
 
-fn local_lobby_row(name: &str) -> LanPlayerRow {
+pub(crate) fn local_lobby_row(name: &str) -> LanPlayerRow {
     LanPlayerRow {
         name: name.to_owned(),
         color: None,
@@ -248,6 +255,9 @@ fn denial_modal(reason: u32, observer: bool) -> Option<&'static str> {
         5 => Some("TXT_GAME_CANCELLED"),
         6 => Some("TXT_MISMATCH"),
         7 => Some("TXT_SERIAL_DUP"),
+        // VERA direct-client admission extends native version checks with the
+        // actual source build and enabled gameplay feature identity.
+        8 => Some("VERA20k build or enabled gameplay features differ."),
         _ => None,
     }
 }
@@ -263,6 +273,11 @@ fn show_modal(state: &mut AppState, key: &'static str) {
 /// all wrapping, row retention and scroll behavior for BB, BC and BD.
 pub(crate) fn append_chat(state: &mut AppState, line: LanChatLine) {
     let route = state.frontend.shell_route;
+    // WOL Quick Match's 0x117 is the top dialog with a 0x53F.
+    if route.wol() && crate::app::shell_wol::quick_match::page_open(state) {
+        crate::app::shell_wol::quick_match::append_line(state, line);
+        return;
+    }
     let setup = route == crate::app::shell_route::ShellRoute::NetworkSetup;
     append_chat_to(state, setup, !setup && route.wol_lobby(), line);
 }
@@ -377,6 +392,7 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                     game_id,
                     observe,
                     expires: Instant::now() + JOIN_TIMEOUT,
+                    canceling: false,
                 });
                 runtime.lobby.selection_enabled = false;
                 runtime
@@ -399,12 +415,15 @@ pub(crate) fn dispatch(state: &mut AppState, action: LanLobbyAction) {
                 .push(LanServiceRequest::NameChanged(value.clone()));
             // Local discovery row is a projection. It is always first only
             // when looking at the Lobby sentinel, never a selected game's roster.
+            // 0x541's handler rebuilds the roster (0x005DAFE0), so a selected
+            // own row loses its selection with its old name.
             if runtime.lobby.game_list.selected == Some(0) {
-                if let Some(local) = runtime.lobby.players.first_mut() {
-                    local.name = value;
-                } else {
-                    runtime.lobby.players.push(local_lobby_row(&value));
+                let mut players = runtime.lobby.players.clone();
+                match players.first_mut() {
+                    Some(local) => local.name = value,
+                    None => players.push(local_lobby_row(&value)),
                 }
+                runtime.lobby.replace_players(players);
             }
         }
         LanLobbyAction::SendChat(message) => {
@@ -473,7 +492,7 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
             let Some(pending) = runtime
                 .pending_join
                 .as_ref()
-                .filter(|pending| pending.game_id == game_id)
+                .filter(|pending| pending.game_id == game_id && !pending.canceling)
             else {
                 return;
             };
@@ -485,7 +504,11 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
             }
         }
         LanServiceEvent::JoinAccepted(accepted) => {
-            if runtime.pending_game() != Some(accepted.game_id) {
+            if !runtime
+                .pending_join
+                .as_ref()
+                .is_some_and(|pending| pending.game_id == accepted.game_id && !pending.canceling)
+            {
                 return;
             }
             runtime.pending_join = None;
@@ -493,6 +516,15 @@ pub(crate) fn service_event(state: &mut AppState, event: LanServiceEvent) {
                 state,
                 shell_transition::ShellExitThen::LanJoinAccepted(accepted),
             );
+        }
+        LanServiceEvent::JoinCanceled { game_id } => {
+            if runtime
+                .pending_join
+                .as_ref()
+                .is_some_and(|pending| pending.game_id == game_id && pending.canceling)
+            {
+                runtime.release_request();
+            }
         }
     }
     state.platform.window.request_redraw();
@@ -565,6 +597,26 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
         };
         key_press(state, code, event.text.as_deref());
     }
+}
+
+/// The chat NewEdit while it takes keys, for the input method
+/// (`app::input::ime`). The name edit takes byte text only, so it keeps
+/// plain key text.
+pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::RectPx> {
+    let routed = state.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
+        && state.frontend.shell_route.lan_lobby()
+        && !shell_transition::blocks_shell_input(state);
+    state
+        .frontend
+        .lan
+        .as_ref()
+        .filter(|runtime| {
+            routed
+                && runtime.modal.is_none()
+                && runtime.lobby.enabled
+                && runtime.lobby.focused_control == CHAT
+        })
+        .map(|_| layout(state).chat)
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
@@ -741,6 +793,30 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
                 }
                 App::play_launcher_options_cue(state, LauncherCue::GenericClick);
             }
+        } else if control == Some(PLAYERS) {
+            let geometry =
+                lobby
+                    .player_list
+                    .geometry(layout.players, lobby.players.len(), layout.page.scale);
+            // A double-click's second press only notifies LBN_DBLCLK
+            // (0x0061A904..0x0061A945), which this dialog ignores.
+            // RESIDUAL: native also focuses the list (SetFocus, 0x0061A9CB),
+            // which would stop chat typing; VERA keeps chat focus, as for the
+            // games list.
+            let double = crate::ui::shell::list::is_double_click(
+                &mut lobby.player_list.last_press,
+                Instant::now(),
+                x,
+                y,
+                crate::ui::shell::saved_file_input::host_double_click_limits(),
+            );
+            if !double
+                && let Some(row) =
+                    geometry.row_at(lobby.players.len(), lobby.player_list.top_index, x, y)
+                && lobby.select_player(row)
+            {
+                App::play_launcher_options_cue(state, LauncherCue::GenericClick);
+            }
         } else if matches!(control, Some(OBSERVER_IMAGE | OBSERVER_TOGGLE)) {
             let icon_hit = control == Some(OBSERVER_IMAGE)
                 || crate::ui::skirmish_shell::checkbox_icon_rect(
@@ -791,17 +867,28 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
     if runtime
         .pending_join
         .as_ref()
-        .is_some_and(|request| now >= request.expires)
+        .is_some_and(|request| !request.canceling && now >= request.expires)
     {
         let game_id = runtime.pending_game().unwrap();
         runtime
             .requests
             .push(LanServiceRequest::CancelJoin { game_id });
-        runtime.release_request();
+        // Native5DF410 bounds the request by600 wall buckets. VERA also
+        // retires a possibly committed UDP admission before enabling retry;
+        // an old reply may not enter setup after the timeout was reported.
+        runtime
+            .pending_join
+            .as_mut()
+            .expect("timed request")
+            .canceling = true;
         report_error(state, "TXT_REQUEST_DENIED");
     }
     let runtime = state.frontend.lan.as_mut()?;
-    let mut deadline = runtime.pending_join.as_ref().map(|request| request.expires);
+    let mut deadline = runtime
+        .pending_join
+        .as_ref()
+        .filter(|request| !request.canceling)
+        .map(|request| request.expires);
     let lobby = &mut runtime.lobby;
     if runtime.modal.is_none() && lobby.enabled {
         for (list, rect, count) in [
@@ -912,6 +999,7 @@ mod tests {
             game_id: 7,
             observe: false,
             expires: Instant::now() + JOIN_TIMEOUT,
+            canceling: false,
         });
         assert!(!runtime.lobby.enabled);
         assert_eq!(runtime.lobby.activate(CREATE), None);

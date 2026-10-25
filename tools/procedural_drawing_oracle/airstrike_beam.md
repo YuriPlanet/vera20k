@@ -1,8 +1,8 @@
 # Boris Tactical airstrike beam
 
-`airstrike_beam.json` is produced by the original Steam executable identified in
-its `.meta.json`, using the existing Rally memory surface, native PE loader and
-native-fixture RNG seed owner. No gameplay instructions are patched.
+`airstrike_beam.json` is produced by the original executable, using the existing
+Rally memory surface, native PE loader and native-fixture RNG seed owner. No
+gameplay instructions are patched.
 
 Run `python -m tools.procedural_drawing_oracle.airstrike_beam --write` with
 `RA2_DIR` or `VERA20K_GAMEMD_EXE` pointing at a supported executable. Without

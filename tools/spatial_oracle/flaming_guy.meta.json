@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Fresh physical FLAMEGUY reader/constructor then original4260F0 admission,425D10 destination or bounded423AC0/425670 AI. Sparse supplied map/cell priors; no complete damage producer, map startup, sound catalog, draw or pixel claim.",
+  "assumptions": [
+    "External ARTMD.INI/RULESMD.INI/FLAMEGUY.SHP/H2O_EXP3.SHP lexical/file inputs. Native cached-INI reader executes; physical INI/MIX loading is excluded.",
+    "Original Rules/AnimType/Anim/Cell constructors, scalar readers and SplashList reader execute. Empty sound registry: sound name resolution is native under a declared absent catalog, not stock audio parity.",
+    "Original thirteen-entry Anim startup group81252C initializes level104/deck416/zero sentinels; existing discovery and slope-table startup execute. Supplied Size48x48/LocalSize0,0,48,48, sparse cells16..48, level0/slope0/no overlays/default ground/alternate occupation except explicit controls; raw preallocated Map caches. No terrain classification result is supplied.",
+    "Whole original SetLocation, Mark, Display, Map queries, FlamingGuyAI, destination/admission methods and ObjectAI run. Full AI histories schedule only the primary Anim. Child constructors execute, but children are not separately scheduled.",
+    "Original Logic header constructor40CB80..40CBB6 precedes supplied spare storage. Native Unlimbo performs real Logic admission; observations check live Logic87F778 vector membership against Object+98, never substitute the distinct deferred AnimClass array.",
+    "Original code/vtables checked unchanged; native IDs, heap pointers and clock padding are not published. No hand-computed expected XY, stage or RNG output is supplied."
+  ],
+  "substitutions": [
+    "Inherited Reader file lookup returns exact named physical SHP bytes; operator new is a bounds-checked bump allocator, delete is a no-op and CRT TLS is supplied. No gameplay-return substitutions are installed by this producer."
+  ],
+  "entry_points": {
+    "anim_ai": "0x00423AC0",
+    "flaming_ai": "0x00425670",
+    "next_coord": "0x00425D10",
+    "enter_cell": "0x004260F0",
+    "anim_ctor": "0x00421EA0",
+    "anim_type_reader": "0x00427D00",
+    "splash_reader": "0x0066C184",
+    "object_ai": "0x005F3E70",
+    "logic_startup": "0x0040CB80",
+    "logic_register": "0x0055BAA0",
+    "logic_unregister": "0x0055BAE0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.flaming_guy",
+  "payload_sha256": "d0da0bad0e151af37356beea09271d65ab42e03a53f9cc7b4eba16c9fdd6b4fa"
+}

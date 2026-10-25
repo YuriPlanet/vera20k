@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -17,7 +16,5 @@
   "entry_points": {
     "bridge_exit": "0x00583820"
   },
-  "harness_sha256": "d743748b098662d404baff65d0b99bbcf8ece435e8552663a94b6a1851848aab",
-  "pursuit_owner_sha256": "32e44b3a032c9dca51ca37f826143d0b021272b202e26564e7de0dc51c13dfed",
   "payload_sha256": "1935146a9081cdc586759022b4841ede26b9f661d6997154588b609419e5d3bd"
 }

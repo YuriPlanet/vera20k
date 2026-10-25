@@ -65,6 +65,38 @@ pub(crate) fn render_diplomacy_shell(
         SHELL_LABEL_TEXT_RGB,
         ShellAlign::H_CENTER | ShellAlign::V_CENTER,
     );
+    if view.page_count > 1 {
+        for (index, button, label) in [
+            (0, DiplomacyButton::PreviousPage, "Previous"),
+            (1, DiplomacyButton::NextPage, "Next"),
+        ] {
+            let pressed = interaction.button.is_pressed(button);
+            let frame = button_frame(PauseMenuButtonState {
+                pressed,
+                ..Default::default()
+            });
+            if let Some(entry) =
+                atlas.in_game_shell.buttons[frame].or(atlas.in_game_shell.buttons[0])
+            {
+                in_game_shell::push_art(&mut art, entry, layout.paging[index], screen);
+            }
+            text(
+                &mut texts,
+                label,
+                button_text_rect(layout.paging[index], pressed),
+                SHELL_LABEL_TEXT_RGB,
+                ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            );
+        }
+        let first = layout.paging[0];
+        text(
+            &mut texts,
+            &format!("Page {}/{}", view.page_index + 1, view.page_count),
+            RectPx::new(first.x, first.y - 24, first.w, 20),
+            SHELL_LABEL_TEXT_RGB,
+            ShellAlign::H_CENTER,
+        );
+    }
     // Title 0x694 is SS_CENTER; every other static is left-aligned.
     text(
         &mut texts,

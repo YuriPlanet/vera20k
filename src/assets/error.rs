@@ -18,6 +18,10 @@ pub enum AssetError {
     #[error("IO error reading asset file: {0}")]
     Io(#[from] std::io::Error),
 
+    /// The selected source exceeds a caller's byte budget.
+    #[error("Asset exceeds {maximum}-byte read limit (observed {actual} bytes)")]
+    ReadLimitExceeded { maximum: usize, actual: u64 },
+
     /// PAL file has wrong size. Must be exactly 768 bytes (256 colors * 3 bytes RGB).
     #[error("Invalid PAL file: expected {expected} bytes, got {actual}")]
     InvalidPalSize { expected: usize, actual: usize },

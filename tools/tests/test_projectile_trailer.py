@@ -24,6 +24,7 @@ class ScalableExecutionTests(unittest.TestCase):
             output = Path(directory) / 'candidate.json'
             with patch.object(trailer, 'run_case', return_value=({}, {})), \
                  patch.object(trailer, 'source_files', return_value=[]), \
+                 patch.object(trailer, 'seeded_struct', return_value=b''), \
                  patch.object(trailer, 'retail_projectiles', return_value=[]), \
                  patch.object(trailer, 'placement_controls', return_value={}), \
                  patch.object(trailer, 'scalable_controls',

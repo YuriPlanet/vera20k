@@ -18,7 +18,7 @@ from unicorn.x86_const import (
 )
 
 from tools.native_oracle import (
-    RET_MAGIC, finish_vectors, image_sha256, provenance, run_checked,
+    RET_MAGIC, finish_vectors, provenance, run_checked,
 )
 from tools import native_oracle
 from tools.projectile_oracle.bridge_render_inputs import lexical
@@ -330,7 +330,7 @@ class FireOnce:
                 u.mem_write(pointer, raw)
 
     def corpus(self):
-        return dict(schema_version=1, native_sha256=image_sha256(),
+        return dict(schema_version=1,
             inputs=dict(shapes=self.shapes, reader_layers=self.reader_layers,
                         placements=self.placements, weapon_defaults=self.weapon_defaults,
                         house=dict(is_human=self.u.mem_read(self.q.house + 0x1EC, 1)[0],

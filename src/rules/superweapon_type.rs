@@ -58,6 +58,10 @@ pub enum SuperWeaponKind {
     GenericWarhead,
     /// Ares reinforcement delivery extension.
     UnitDelivery,
+    /// Constructor Type=-1: no recognized name has replaced it. Launch's
+    /// unsigned guard6CC3AC returns without a case; ordinary ClickFire still
+    /// consumes readiness or its one-time grant. This is not an extension.
+    NoEffect,
 }
 
 impl SuperWeaponKind {
@@ -78,6 +82,7 @@ impl SuperWeaponKind {
             Self::PsychicReveal => 11,
             Self::UnitDelivery => 0x101,
             Self::GenericWarhead => -1,
+            Self::NoEffect => -1,
         }
     }
 
@@ -157,6 +162,9 @@ pub struct SuperWeaponType {
     pub action: Option<String>,
     /// SHP filename for sidebar cameo (e.g., "INTICON").
     pub sidebar_image: Option<String>,
+    /// Optional Ares PCX; the existing SHP remains the loading fallback.
+    #[cfg(feature = "ares")]
+    sidebar_pcx: Option<String>,
     /// Whether to show the charge timer countdown on the sidebar.
     pub show_timer: bool,
     /// Whether this SW can be disabled from the game lobby.
@@ -196,15 +204,19 @@ pub struct SuperWeaponType {
     /// stores VocClass::FindIndex (`0x007514D0`) of the name; an absent key
     /// or an unknown name keeps the field (`0x006CEB96`), the constructor's
     /// -1 or an earlier layer's sound.
-    /// RESIDUAL: the last non-empty name wins here, so a later layer naming
-    /// an unknown sound silences a cue an earlier layer set, where native
-    /// keeps it. Trigger: a mode INI or map naming an unknown sound after an
-    /// earlier layer named a known one. Effect: the cue does not play.
+    /// The process audio binder resolves the reached read history against
+    /// the fixed SOUNDMD catalog, retaining the last valid cue.
     pub special_sound: Option<String>,
     /// `StartSound=` (`+0xC4`, `0x006CEBB0`, read as `SpecialSound=` with
-    /// the same residual, `0x006CEBD8`): the cue the Force Shield's launch
+    /// the same retention, `0x006CEBD8`): the cue the Force Shield's launch
     /// plays (`0x006CD176`).
     pub start_sound: Option<String>,
+    /// `FlashSidebarTabFrames=` (`SuperWeaponTypeClass+0xE8`): constructor
+    /// default `-1` at `0x006CE5B0`; `ReadINI @ 0x006CEA20` reads the current
+    /// value with `ReadInt @ 0x005276D0`, without a clamp. The native
+    /// `SuperClass::ShouldFlashTab @ 0x006CE1A0` treats -1 as unlimited, zero
+    /// as disabled, and otherwise tests `ReadyFrame + value > current frame`.
+    pub flash_sidebar_tab_frames: i32,
     /// `AIDefendAgainst=` (`+0xEC`, ReadBool at `0x006CEAF7`, constructor
     /// clear): a launch of this type alerts each computer house whose base is
     /// near the target (`HouseClass::Fire_SW @ 0x004FAE50`'s house loop).
@@ -217,16 +229,29 @@ pub struct SuperWeaponType {
 }
 
 impl SuperWeaponType {
+    /// Ares3.0 SWType extension reader10033B50..10033B66, PCXFile100762C0.
+    #[cfg(feature = "ares")]
+    pub fn sidebar_pcx(&self) -> Option<&str> {
+        self.sidebar_pcx.as_deref()
+    }
+
     /// Parse a SuperWeaponType from a rules.ini section
     /// (`SuperWeaponTypeClass::ReadINI`, reads `0x006CEA6D`-`0x006CEDB1`).
     /// Ares extensions require the explicit `ares` build feature.
-    pub fn from_ini_section(id: &str, section: &IniSection) -> Option<Self> {
+    pub fn from_ini_section(id: &str, section: &IniSection) -> Self {
         // Native reads Range and LineMultiplier before Type. The constructor
         // owns the zero defaults; keep the same current-value defaults here.
         let range = section.read_float("Range", 0.0);
         let line_multiplier = section.read_int("LineMultiplier", 0);
-        // ReadString 0x28 ahead of the kind lookup (`0x006CEC2D`).
-        let kind = SuperWeaponKind::from_ini_str(section.read_name("Type", 0x28)?)?;
+        // ReadINI6CEC2D..6CEC7E: each 0x28-byte ReadString is compared
+        // against the kind names; a rejected name leaves the prior field.
+        let kind = section
+            .read_string_with("Type", 0x28, None, |current, value| {
+                SuperWeaponKind::from_ini_str(value).or(current)
+            })
+            // Ctor6CE5B0 initializes Type to -1; rejected/missing reads do
+            // not remove the registered type or skip its other fields.
+            .unwrap_or(SuperWeaponKind::NoEffect);
         #[cfg(feature = "ares")]
         let extension_kind = matches!(
             kind,
@@ -234,7 +259,7 @@ impl SuperWeaponType {
         );
         #[cfg(not(feature = "ares"))]
         let extension_kind = false;
-        Some(Self {
+        Self {
             id: id.to_string(),
             // AbstractTypeClass `UIName=`, ReadString 0x20 (`0x00410AFB`).
             ui_name: section.read_name("UIName", 0x20).map(str::to_string),
@@ -271,13 +296,15 @@ impl SuperWeaponType {
                         .unwrap_or("ParaDrop")
                         .to_string(),
                 ),
-                _ => section.read_name("Action", 0x20).map(str::to_string),
+                _ => section.read_action_name("Action").map(str::to_string),
             },
             // ReadString 0x100, then a 24-byte copy (`0x006CEDB1`,
             // `0x006CEDD6`) that names the cameo.
             sidebar_image: section
                 .read_name("SidebarImage", 0x100)
                 .map(|name| truncate_native_bytes(name, 0x18).to_string()),
+            #[cfg(feature = "ares")]
+            sidebar_pcx: section.read_ares_pcx_filename("SidebarPCX"),
             show_timer: section.read_bool("ShowTimer", false),
             disableable_from_shell: section.read_bool("DisableableFromShell", false),
             use_charge_drain: section.read_bool("UseChargeDrain", false),
@@ -285,15 +312,16 @@ impl SuperWeaponType {
             // not user tags. GenericWarhead is an ordinary one-click type.
             pre_click: !extension_kind && section.read_bool("PreClick", false),
             post_click: !extension_kind && section.read_bool("PostClick", false),
-            // ReadString 0x28 (`0x006CEC98`).
+            // ReadINI6CEC98..6CECE9 keeps the prior pair index when its
+            // 0x28-byte ReadString does not match one of the 12 native names.
             pre_dependent: if extension_kind {
                 -1
             } else {
-                section
-                    .read_name("PreDependent", 0x28)
-                    .and_then(SuperWeaponKind::from_ini_str)
-                    .filter(|kind| (0..12).contains(&kind.native_index()))
-                    .map_or(-1, SuperWeaponKind::native_index)
+                section.read_string_with("PreDependent", 0x28, -1, |current, value| {
+                    SuperWeaponKind::from_ini_str(value)
+                        .filter(|kind| (0..12).contains(&kind.native_index()))
+                        .map_or(current, SuperWeaponKind::native_index)
+                })
             },
             // Constructor nulls; only the ordered Process owner reads them.
             weapon_type: None,
@@ -307,6 +335,9 @@ impl SuperWeaponType {
             unit_delivery: None,
             special_sound: section.read_name("SpecialSound", 0x80).map(str::to_string),
             start_sound: section.read_name("StartSound", 0x80).map(str::to_string),
+            // The native constructor starts at -1; the final projected INI
+            // retains a lower pass when later passes omit this key.
+            flash_sidebar_tab_frames: section.read_int("FlashSidebarTabFrames", -1),
             ai_defend_against: section.read_bool("AIDefendAgainst", false),
             manual_control: section.read_bool("ManualControl", false),
             #[cfg(not(feature = "ares"))]
@@ -334,7 +365,7 @@ impl SuperWeaponType {
                     ),
                 }
             }),
-        })
+        }
     }
 }
 
@@ -392,11 +423,154 @@ pub struct SuperWeaponBuildingRequirements {
     pub negative: Vec<String>,
 }
 
+/// SWTypeExt100329E0's non-building gates. Constructor1003173D..10031844;
+/// ordered reads1003349E..100334C5 and10033A0F..10033A8C. Building lists
+/// remain with their existing retained owner below. Native executed controls:
+/// tools/rules_oracle/ares_super_anims.json, fourth availability history.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresSuperWeaponAvailability {
+    allow_player: bool,
+    allow_ai: bool,
+    required_houses: u32,
+    forbidden_houses: u32,
+    shots: i32,
+}
+
+/// Immutable availability metadata for every registered definition, including
+/// Types whose effect dispatch is not implemented. ProcessedRules owns reads;
+/// RuleSet projects this one catalog independently of effect-body admission.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct AresSuperWeaponMetadata {
+    availability: AresSuperWeaponAvailability,
+    native_auxiliary: Option<String>,
+    buildings: Option<SuperWeaponBuildingRequirements>,
+}
+
+#[cfg(feature = "ares")]
+impl AresSuperWeaponMetadata {
+    pub(super) fn project(
+        availability: &AresSuperWeaponAvailability,
+        native_auxiliary: Option<&str>,
+        buildings: Option<&SuperWeaponBuildingRequirements>,
+    ) -> Self {
+        Self {
+            availability: availability.clone(),
+            native_auxiliary: native_auxiliary.map(str::to_owned),
+            buildings: buildings.cloned(),
+        }
+    }
+
+    pub(crate) fn availability(&self) -> &AresSuperWeaponAvailability {
+        &self.availability
+    }
+    pub(crate) fn native_auxiliary(&self) -> Option<&str> {
+        self.native_auxiliary.as_deref()
+    }
+    pub(crate) fn building_requirements(&self) -> Option<&SuperWeaponBuildingRequirements> {
+        self.buildings.as_ref()
+    }
+}
+
+#[cfg(feature = "ares")]
+impl Default for AresSuperWeaponAvailability {
+    fn default() -> Self {
+        Self {
+            allow_player: true,
+            allow_ai: true,
+            required_houses: u32::MAX,
+            forbidden_houses: 0,
+            shots: -1,
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl AresSuperWeaponAvailability {
+    pub(crate) fn read_allowance_pass(&mut self, section: &IniSection) {
+        self.allow_player = section.read_ares_bool("SW.AllowPlayer", self.allow_player);
+        self.allow_ai = section.read_ares_bool("SW.AllowAI", self.allow_ai);
+    }
+
+    pub(crate) fn read_house_pass(&mut self, mut read: impl FnMut(&str, u32) -> u32) {
+        self.required_houses = read("SW.RequiredHouses", self.required_houses);
+        self.forbidden_houses = read("SW.ForbiddenHouses", self.forbidden_houses);
+    }
+
+    pub(crate) fn read_shots_pass(&mut self, section: &IniSection) {
+        self.shots = section.read_ares_int("SW.Shots", self.shots);
+    }
+
+    pub(crate) fn allows_shots(&self, count: i32) -> bool {
+        self.shots < 0 || count < self.shots
+    }
+
+    pub(crate) fn allows_controller(&self, player: bool) -> bool {
+        if player {
+            self.allow_player
+        } else {
+            self.allow_ai
+        }
+    }
+
+    pub(crate) fn allows_country(&self, index: i32) -> bool {
+        let bit = 1u32.wrapping_shl(index as u32);
+        self.required_houses & bit != 0 && self.forbidden_houses & bit == 0
+    }
+}
+
 impl SuperWeaponBuildingRequirements {
     #[cfg(feature = "ares")]
     pub fn allows(&self, mut present: impl FnMut(&str) -> bool) -> bool {
         (self.auxiliary.is_empty() || self.auxiliary.iter().any(|id| present(id)))
             && !self.negative.iter().any(|id| present(id))
+    }
+}
+
+/// Phobos `SWTypeExt`'s techno gates: `SW.TechLevel`, `SW.AuxTechnos` and
+/// `SW.NegTechnos` (`src/Ext/SWType/SWHelpers.cpp::IsAvailable`). The ordered
+/// Process owner reads them and `RuleSet` projects one entry per registered
+/// definition, so a type whose effect body is unimplemented still answers
+/// availability. Constructor defaults: level 0, both lists empty.
+#[cfg(feature = "phobos")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct PhobosSuperWeaponAvailability {
+    tech_level: i32,
+    aux_technos: Vec<String>,
+    neg_technos: Vec<String>,
+}
+
+#[cfg(feature = "phobos")]
+impl PhobosSuperWeaponAvailability {
+    pub(crate) fn tech_level(&self) -> i32 {
+        self.tech_level
+    }
+
+    pub(crate) fn set_tech_level(&mut self, level: i32) {
+        self.tech_level = level;
+    }
+
+    pub(crate) fn set_aux_technos(&mut self, technos: Vec<String>) {
+        self.aux_technos = technos;
+    }
+
+    pub(crate) fn set_neg_technos(&mut self, technos: Vec<String>) {
+        self.neg_technos = technos;
+    }
+
+    /// `pHouse->TechLevel < SW_TechLevel` refuses the weapon; the level is a
+    /// plain minimum and `-1` is not special.
+    pub(crate) fn allows_tech_level(&self, level: i32) -> bool {
+        level >= self.tech_level
+    }
+
+    /// `SW.AuxTechnos` needs at least one listed techno owned, `SW.NegTechnos`
+    /// refuses on any. Both look at owned technos that are present on the map
+    /// or in limbo (`HouseExt::CountOwnedPresentAndLimboed`).
+    pub(crate) fn allows_technos(&self, mut present: impl FnMut(&str) -> bool) -> bool {
+        (self.aux_technos.is_empty() || self.aux_technos.iter().any(|id| present(id)))
+            && !self.neg_technos.iter().any(|id| present(id))
     }
 }
 
@@ -422,12 +596,13 @@ DisableableFromShell=yes
 ";
         let ini = IniFile::from_str(ini_text);
         let section = ini.section("LightningStormSpecial").unwrap();
-        let sw = SuperWeaponType::from_ini_section("LightningStormSpecial", section).unwrap();
+        let sw = SuperWeaponType::from_ini_section("LightningStormSpecial", section);
         assert_eq!(sw.kind, SuperWeaponKind::LightningStorm);
         assert_eq!(sw.recharge_time_frames, 9000); // 10 min × 900
         assert!(sw.is_powered);
         assert!(sw.show_timer);
         assert!(sw.disableable_from_shell);
+        assert_eq!(sw.flash_sidebar_tab_frames, -1);
         // The sidebar cameo tooltip shows the localized UIName, not `Name=`
         // and not the section id. Retail value, not a plausible-looking one.
         assert_eq!(sw.ui_name.as_deref(), Some("Name:Storm"));
@@ -435,7 +610,7 @@ DisableableFromShell=yes
     }
 
     #[test]
-    fn retail_battle_nuke_range_fields_follow_production_rules_reader() {
+    fn retail_battle_superweapon_fields_follow_production_rules_reader() {
         let Some(retail) =
             crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
         else {
@@ -444,17 +619,55 @@ DisableableFromShell=yes
         let nuke = retail.rules.super_weapon("NukeSpecial").unwrap();
         assert_eq!(nuke.range, 7.0);
         assert_eq!(nuke.line_multiplier, 2);
+        for id in [
+            "ForceShieldSpecial",
+            "SpyPlaneSpecial",
+            "PsychicRevealSpecial",
+        ] {
+            assert_eq!(
+                retail
+                    .rules
+                    .super_weapon(id)
+                    .expect("retail SuperWeaponType")
+                    .flash_sidebar_tab_frames,
+                120,
+                "the selected retail map pass omits this RULESMD value"
+            );
+        }
+        assert_eq!(
+            nuke.flash_sidebar_tab_frames, -1,
+            "a type without the key keeps the constructor default"
+        );
+
+        let patch = IniFile::from_str("[ForceShieldSpecial]\nFlashSidebarTabFrames=0\n");
+        let Some(overridden) =
+            crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&patch)
+        else {
+            return;
+        };
+        assert_eq!(
+            overridden
+                .rules
+                .super_weapon("ForceShieldSpecial")
+                .unwrap()
+                .flash_sidebar_tab_frames,
+            0
+        );
     }
 
     #[test]
-    fn parse_unknown_type_returns_none() {
+    fn parse_unknown_type_keeps_the_native_constructor_dispatch() {
         let ini_text = "\
 [BogusWeapon]
 Type=BogusType
 ";
         let ini = IniFile::from_str(ini_text);
         let section = ini.section("BogusWeapon").unwrap();
-        assert!(SuperWeaponType::from_ini_section("BogusWeapon", section).is_none());
+        let sw = SuperWeaponType::from_ini_section("BogusWeapon", section);
+        assert_eq!(sw.kind, SuperWeaponKind::NoEffect);
+        assert_eq!(sw.kind.native_index(), -1);
+        assert_eq!(sw.recharge_time_frames, CTOR_RECHARGE_FRAMES);
+        assert!(sw.generic_warhead.is_none() && sw.unit_delivery.is_none());
     }
 
     #[cfg(feature = "ares")]
@@ -462,8 +675,7 @@ Type=BogusType
     fn parse_ares_generic_warhead() {
         let ini =
             IniFile::from_str("[Strike]\nType=GenericWarhead\nSW.Warhead=Payload\nSW.Damage=75\n");
-        let sw = SuperWeaponType::from_ini_section("Strike", ini.section("Strike").unwrap())
-            .expect("Ares GenericWarhead is a supported superweapon type");
+        let sw = SuperWeaponType::from_ini_section("Strike", ini.section("Strike").unwrap());
         assert_eq!(
             sw.kind.native_index(),
             -1,
@@ -473,8 +685,7 @@ Type=BogusType
         assert_eq!(sw.action.as_deref(), Some("Attack"));
         let defaults = IniFile::from_str("[Default]\nType=gEnErIcWaRhEaD\n");
         let default_sw =
-            SuperWeaponType::from_ini_section("Default", defaults.section("Default").unwrap())
-                .unwrap();
+            SuperWeaponType::from_ini_section("Default", defaults.section("Default").unwrap());
         assert_eq!(default_sw.generic_warhead.as_ref().unwrap().damage, 0);
         assert_eq!(
             default_sw.generic_warhead.as_ref().unwrap().ai_targeting,
@@ -484,7 +695,7 @@ Type=BogusType
 
     #[cfg(not(feature = "ares"))]
     #[test]
-    fn default_build_rejects_extension_kinds_and_ignores_money_tags() {
+    fn default_build_keeps_unrecognized_types_without_extension_payloads() {
         let ini = IniFile::from_str(
             "[Strike]\nType=GenericWarhead\nSW.Warhead=Payload\nSW.Damage=75\n\
              [Delivery]\nType=UnitDelivery\nDeliver.Types=UNIT\n\
@@ -492,10 +703,13 @@ Type=BogusType
              Action=PsychicReveal\nRange=7\nLineMultiplier=2\nSW.RequiresTarget=unknown-mask\n",
         );
         for id in ["Strike", "Delivery"] {
-            assert!(SuperWeaponType::from_ini_section(id, ini.section(id).unwrap()).is_none());
+            let sw = SuperWeaponType::from_ini_section(id, ini.section(id).unwrap());
+            assert_eq!(sw.kind, SuperWeaponKind::NoEffect);
+            assert!(sw.generic_warhead.is_none() && sw.unit_delivery.is_none());
+            assert!(sw.action.is_none());
+            assert_eq!(sw.money_amount, 0);
         }
-        let stock = SuperWeaponType::from_ini_section("Reveal", ini.section("Reveal").unwrap())
-            .expect("native types remain available with extension tags present");
+        let stock = SuperWeaponType::from_ini_section("Reveal", ini.section("Reveal").unwrap());
         assert_eq!(stock.kind, SuperWeaponKind::PsychicReveal);
         assert_eq!(stock.recharge_time_frames, 1800);
         assert_eq!(stock.action.as_deref(), Some("PsychicReveal"));

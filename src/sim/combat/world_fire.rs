@@ -322,16 +322,27 @@ fn admit_attacker_fire<'r>(
     match snap.category {
         // The table at `0x00737148`.
         EntityCategory::Unit => match code {
-            // Case 2 (`0x00736F78..0x0073701C`): a turretless vehicle
+            // Case 2 (`0x00736F78..0x0073701C`): a turret first sets its aim
+            // directly, before Facing_Update and without its +6AF gate.
+            // Homing projectiles can reach FACING while that latch is set.
+            // A turretless vehicle
             // (`UnitType+0xE11`, which ReadINI sets to !`Turret=` at
             // `0x00747759`) with no NavCom (`+0x5A4`, `0x00736FB6`) whose
             // locomotor's Is_Moving (ILocomotion+0x10, `0x00736FE1`) is false
             // turns its hull toward the target at its own `ROT=` (`0x00737004`)
             // and copies the hull's destination into the turret slot
-            // (`0x0073701C`). A pending order is neither. A turret follows its
-            // target through the turret sweep.
+            // (`0x0073701C`). A pending order is neither.
             fire_error::FireError::Facing => {
-                if snap.barrel_facing.is_none()
+                if let Some(barrel) = world
+                    .substrate
+                    .entities
+                    .get_mut(snap.stable_id)
+                    .and_then(|firer| firer.barrel_facing.as_mut())
+                {
+                    // Set_Desired(+3A0)736FAC retains ROT and +6AF. Apply it
+                    // now so the later Facing_Update samples this new arc.
+                    barrel.set(direction, binary_frame);
+                } else if snap.barrel_facing.is_none()
                     && world
                         .substrate
                         .entities
@@ -384,7 +395,7 @@ fn admit_attacker_fire<'r>(
                 crate::sim::spawn_manager::clear_all_spawn_targets(
                     world,
                     snap.stable_id,
-                    Some(rules),
+                    rules,
                     overlay_registry,
                     effects,
                 );
@@ -461,9 +472,16 @@ fn admit_attacker_fire<'r>(
         //5208FE may refuse unchanged/noninterruptible/absent actions.520912
         // raises+68D regardless of AL; the retained Doing/Stage still decides
         // when this attempt can discharge.
-        // Infantry520866..520884: an Airstrike owner firing secondary
-        // restarts only +F8, even when its existing action is noninterruptible.
-        if actor.airstrike_link().is_some() && matches!(requested, 40 | 41) {
+        // gamemd Infantry::Fire_At_Target52083E..520884 checks retained
+        // Doing40/41 before selecting a new ground firing action. FireFly
+        // precedes this ladder. The direct restart changes only Stage+F8.
+        if !fire_fly
+            && actor.airstrike_link().is_some()
+            && actor
+                .mission_leaf
+                .as_infantry()
+                .is_some_and(|leaf| matches!(leaf.doing(), 40 | 41))
+        {
             world
                 .substrate
                 .entities
@@ -981,8 +999,8 @@ fn reveal_on_fire(
         return;
     };
     viewers.dedup();
-    let context = crate::sim::world::UninitContext::new(Some(rules), None);
-    let config = world.sight_reveal_config(Some(rules));
+    let context = crate::sim::world::UninitContext::new(rules, None);
+    let config = world.sight_reveal_config(rules);
     let heights = world.sight_height_grid(&config);
     for house in viewers {
         let Some(firer) = world.substrate.entities.get(firer_id) else {
@@ -1125,9 +1143,12 @@ pub(crate) fn snapshot_get_rof(
     let firer = substrate.entities.get(snap.stable_id);
     super::rof::get_rof(
         &super::rof::RofQuery {
-            // RESIDUAL: a building's own Ammo (`+0x2FC`) is not kept;
-            // no retail building sets `Ammo=`.
-            building_ammo: None,
+            // GetROF6FCFA9: a Building with more than one round returns1
+            // before weapon queries and the ordinary ROF variation draw.
+            building_ammo: firer
+                .filter(|entity| entity.category() == EntityCategory::Structure)
+                .and_then(|entity| entity.ammo())
+                .map(|ammo| ammo.current()),
             weapon: rof_weapon,
             live,
             burst_index,
@@ -1143,7 +1164,7 @@ pub(crate) fn snapshot_get_rof(
                 crate::rules::object_type::Ability::Rof,
             ),
             veteran_rof: rules.general.veteran_rof,
-            occupants: snap.garrison.as_ref().map(|gs| gs.occupant_count as i32),
+            occupants: snap.garrison.as_ref().map(|gs| gs.occupant_count),
             bunkered: snap.category != EntityCategory::Structure
                 && firer.is_some_and(|firer| {
                     matches!(
@@ -1322,7 +1343,7 @@ pub(super) fn emit_admitted_fire(
     // an AreaFire shot off its own cell (`0x0051CB08`); a Unit fires it from
     // range, so a Chaos Drone's gas rises around the drone, not the victim. A
     // fixture without terrain has no cell and keeps the victim.
-    let area_fire_cell = (weapon.area_fire && !obj.spray_attack)
+    let area_fire_cell = (weapon.area_fire && combat_weapon::is_not_spray_attack(obj))
         .then(|| object_get_coords(world, snap.stable_id))
         .flatten()
         .and_then(|coord| world.packed_map_cell(coord.x, coord.y));
@@ -1785,14 +1806,8 @@ pub(super) fn emit_admitted_fire(
     // occupant's ROF and Burst) and the shot's own kill credit, since its
     // Inviso bullet detonates later in its own AI (possibly this frame's
     // Logic tail, once its impact/fuse admits it).
-    if is_garrison
-        && let Some(cargo) = world
-            .substrate
-            .entities
-            .get_mut(snap.stable_id)
-            .and_then(|building| building.passenger_role.cargo_mut())
-    {
-        cargo.advance_garrison_fire_index();
+    if is_garrison && let Some(building) = world.substrate.entities.get_mut(snap.stable_id) {
+        building.passenger_role.occupants_mut().advance_fire_index();
     }
     // Techno6FF0B7..6FF15B: only a successfully launched shot arms recoil.
     // Stock recoil buildings have their own Turret=yes. Building4527D0's
@@ -1882,6 +1897,22 @@ pub(super) fn emit_admitted_fire(
         entity.weapon_burst.complete_shot(weapon.burst.max(1));
         entity.last_fire_frame.record(binary_frame);
     }
+    // TechnoClass::FireAt6FF38F calls VocClass::PlayAt7509E0 before the
+    // muzzle constructor6FF3C2. Admit through the shared sound owner here:
+    // later Bullet AI can submit a death cue competing for the same pool.
+    if let Some(report_id) = report_sound_id
+        && sound_enabled(world)
+    {
+        world.sound_events.emit(SimSoundEvent::voc_at_world_coord(
+            world.interner.resolve(report_id).to_owned(),
+            crate::sim::anim_class::AnimWorldCoord {
+                x: launch_source.coord.x,
+                y: launch_source.coord.y,
+                z: launch_source.coord.z,
+            },
+        ));
+        effects.flush_sound(world, rules);
+    }
     // `0x006FF394..0x006FF43F`, after GetROF: the muzzle anim, appended to the
     // Logic vector behind this shot's bullet.
     if let Some(event) = out.fire_events.last().cloned() {
@@ -1913,8 +1944,14 @@ pub(super) fn emit_admitted_fire(
     {
         world.commit_fired_wave(rules, &event, 3);
     }
-    // `0x006FF656`: DecreaseAmmo (vt+0x390). Only an aircraft holds Ammo here,
-    // and `AircraftClass`'s slot is a bare RET (`0x0041B900`).
+    // FireAt6FF65A: shared DecreaseAmmo70D670 (+390) debits only signed>0.
+    // Aircraft's override is RET41B900; release/dock retain their own writes.
+    if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id)
+        && entity.category() != EntityCategory::Aircraft
+        && let Some(ammo) = entity.ammo_mut()
+    {
+        ammo.decrease();
+    }
     // `0x006FF66C`, after DecreaseAmmo (`0x006FF656`): RevealOnFire.
     reveal_on_fire(
         world,
@@ -1941,6 +1978,19 @@ pub(super) fn emit_admitted_fire(
     // UnitTarget and direct mission calls; constructors/shrapnel/other
     // classes never pass this Unit-only postprocessing boundary.
     if snap.category == EntityCategory::Unit {
+        // UnitFireAt7413D3..741401: only a nonnull base Bullet return
+        // restarts a finite, non-full automatic magazine. Re-read the live
+        // type after the common tail, before the firing counter/scalable.
+        if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id)
+            && let Some(live_type) = world.interner.object_type(entity.type_ref(), rules)
+            && live_type.ammo > 0
+            && entity
+                .ammo()
+                .is_some_and(|ammo| ammo.current() < live_type.ammo)
+            && !live_type.manual_reload
+        {
+            entity.start_reloading_ammo(live_type, binary_frame as i32);
+        }
         let frames = rules
             .unit_shp_read_state(world.interner.resolve(snap.type_id))
             .map_or(0, |layout| layout.firing_frames());
@@ -1969,7 +2019,6 @@ pub(super) fn emit_admitted_fire(
             .and_then(|entity| entity.disguise.as_mut())
     {
         disguise.start_fire_blink(binary_frame, weapon.disguise_fake_blink_time);
-        world.note_disguise_blink_started();
     }
     Some(bullet_id)
 }
@@ -2030,7 +2079,7 @@ fn fireat_tail(
             .unwrap()
             .remember_distributed_fire_target(snap.target);
         world
-            .assign_target_represented(snap.stable_id, None, Some(rules), overlay_registry, effects)
+            .assign_target_represented(snap.stable_id, None, rules, overlay_registry, effects)
             .expect("DistributedFire firer retains its concrete target receiver");
     }
     if weapon.fire_once {
@@ -2039,7 +2088,7 @@ fn fireat_tail(
             world.team_fire_once_complete(snap.stable_id, rules, overlay_registry, effects);
         }
         world
-            .assign_target_represented(snap.stable_id, None, Some(rules), overlay_registry, effects)
+            .assign_target_represented(snap.stable_id, None, rules, overlay_registry, effects)
             .expect("FireOnce firer retains its concrete target receiver");
     }
 }
@@ -2168,7 +2217,7 @@ fn commit_fire_bookkeeping(
         ) {
             world.free_all_captures(victim_id, rules, overlay_registry, effects);
             crate::sim::credit_income::attach_drain_anim(world, drainer_id, rules);
-            world.leave_team(drainer_id, true, Some(rules), effects);
+            world.leave_team(drainer_id, true, rules, effects);
         }
         if let Some(drainer) = world.substrate.entities.get_mut(drainer_id) {
             represented_assign_target(drainer, None);
@@ -2385,10 +2434,9 @@ pub(crate) fn visit_fire(
                     .interner
                     .object_type(actor.type_ref(), rules)
                     .filter(|obj| combat_weapon::is_occupied(actor, obj))
-                    .and_then(|_| actor.passenger_role.cargo())
-                    .map(|cargo| GarrisonSnapshot {
-                        fire_index: cargo.garrison_fire_index(),
-                        occupant_count: cargo.count() as u8,
+                    .map(|_| GarrisonSnapshot {
+                        fire_index: actor.passenger_role.occupants().fire_index(),
+                        occupant_count: actor.passenger_role.occupants().count(),
                     });
                 AttackerSnapshot {
                     building_shot: Some(shot),
@@ -2527,7 +2575,7 @@ pub(crate) fn visit_fire(
             .assign_target_represented(
                 removed,
                 None,
-                Some(rules),
+                rules,
                 overlay_registry,
                 FrameEffects::default(),
             )
@@ -2560,7 +2608,7 @@ pub(crate) fn visit_fire(
                 crate::sim::movement::turret::facing_update(
                     entity,
                     world,
-                    Some(rules),
+                    rules,
                     &world.interner,
                     binary_frame,
                 ),
@@ -2694,7 +2742,7 @@ pub(crate) fn tick_combat(
                 det,
                 binary_frame,
                 &world.session.theater(),
-                &rules.radiation,
+                rules,
                 world.resolved_terrain.as_ref(),
                 &mut crate::sim::light_sources::LightingSources::default(),
             );
@@ -2708,7 +2756,7 @@ pub(crate) fn tick_combat(
         let _ = world.assign_target_represented(
             attacker_id,
             None,
-            Some(rules),
+            rules,
             overlay_registry,
             FrameEffects::default(),
         );
@@ -2719,11 +2767,10 @@ pub(crate) fn tick_combat(
     // DamageConsequences UnInits only grounded aircraft and fixture victims.
     if sound_enabled {
         let sink = &mut world.sound_events;
-        for (die_id, rx, ry) in effects.death_sounds.drain(..) {
+        for (die_id, world) in effects.death_sounds.drain(..) {
             sink.emit(SimSoundEvent::EntityDied {
                 die_sound_id: die_id,
-                rx,
-                ry,
+                world,
             });
         }
     }
@@ -2808,6 +2855,96 @@ mod reveal_on_fire_tests {
             !revealed(&sim, "Soviet", 10, 10),
             "the firer's map is untouched"
         );
+    }
+
+    /// The actual FireAt disclosure continuation after ordinary scout sight
+    /// and a powered retail GAGAP event. Shot admission/damage are separate.
+    #[test]
+    fn fire_disclosure_under_a_gap_remaps_previously_explored_ground() {
+        let Some(retail) =
+            crate::rules::retail_ini_fixture::retail_battle_rules_for_map("Hills.mmx")
+        else {
+            return;
+        };
+        let rules = retail.rules;
+        let mut sim = Simulation::with_seed(0x143);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        sim.fog.set_width_for_test(32);
+        sim.fog.set_height_for_test(32);
+        sim.session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+        for (index, name, human) in [(0, "Americans", true), (1, "French", false)] {
+            let owner = sim.interner.intern(name);
+            sim.houses.register(HouseState::new(
+                owner,
+                index,
+                Some(owner),
+                human,
+                10_000,
+                10,
+            ));
+        }
+        let viewer = sim.interner.get("Americans").unwrap();
+        sim.session.set_current_house_for_test(Some(viewer));
+        let firer = sim
+            .spawn_object("GTGCAN", "French", 20, 10, 0, &rules)
+            .unwrap();
+        let target = sim
+            .spawn_object("E1", "Americans", 10, 13, 0, &rules)
+            .unwrap();
+        assert!(sim.map_cell_in_bounds((10, 13)));
+        sim.spawn_object("GAPOWR", "French", 24, 16, 0, &rules)
+            .unwrap();
+        let scout = sim
+            .spawn_object("AMCV", "Americans", 18, 10, 0, &rules)
+            .unwrap();
+        let context = crate::sim::world::UninitContext::with_rules(&rules);
+        sim.update_object_sight_with_context(scout, 0, None, context);
+        let coord = crate::sim::movement::ground_pose::object_get_coords(
+            sim.entities().get(firer).unwrap(),
+            sim.resolved_terrain.as_ref(),
+        );
+        let cell = ((coord.x / 256) as u16, (coord.y / 256) as u16);
+        let index = usize::from(cell.1) * 32 + usize::from(cell.0);
+        assert!(sim.fog.is_cell_revealed(viewer, cell.0, cell.1));
+        sim.uninit_with_rules(scout, &rules);
+        let gap = sim
+            .spawn_object("GAGAP", "French", 20, 14, 0, &rules)
+            .unwrap();
+        crate::sim::power_system::tick_power_states(
+            &mut sim.power_states,
+            &mut sim.substrate.entities,
+            &rules,
+            &sim.interner,
+            sim.session.binary_frame(),
+        );
+        sim.visit_building_operational(gap, &rules, None, FrameEffects::default());
+        assert!(!sim.fog.is_cell_revealed(viewer, cell.0, cell.1));
+        assert_eq!(
+            sim.fog.by_owner()[&viewer].ground_flags_raw()[index] & 0x18,
+            0
+        );
+        assert!(!sim.fog.by_owner()[&viewer].shroud_knowledge_raw()[index].pending());
+        let rng = sim.rng_state();
+
+        let enabled = rules.weapon("GrandCannonWeapon").unwrap().reveal_on_fire;
+        assert!(enabled);
+        reveal_on_fire(
+            &mut sim,
+            &rules,
+            firer,
+            TargetKind::Entity(target),
+            enabled,
+            FireDisclosurePath::Shot,
+        );
+
+        assert!(sim.fog.is_cell_revealed(viewer, cell.0, cell.1));
+        assert_eq!(
+            sim.fog.by_owner()[&viewer].ground_flags_raw()[index] & 0x18,
+            0x18
+        );
+        assert!(sim.fog.by_owner()[&viewer].shroud_knowledge_raw()[index].pending());
+        assert_eq!(sim.rng_state(), rng);
     }
 
     #[test]

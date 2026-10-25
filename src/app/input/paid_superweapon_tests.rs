@@ -48,7 +48,7 @@ fn fixture(paid: bool) -> (RuleSet, Simulation, InternedId, InternedId, Interned
 }
 
 fn drain(sim: &mut Simulation, rules: &RuleSet) {
-    for command in sim.take_due_commands() {
+    for command in sim.take_frame_commands_for_test() {
         assert!(sim.apply_command("Americans", &command.payload, Some(rules),));
     }
 }
@@ -65,10 +65,10 @@ fn paid_superweapon_input_cancels_before_source_exec_and_does_not_duplicate_canc
         panic!("ticketed source");
     };
     schedule_command_in_sim(&mut sim, "Americans", command);
-    assert!(paid_super_weapon_cursor_cancellation(&sim, owner, Some("Sphere")).is_none());
-    let cancel = paid_super_weapon_cursor_cancellation(&sim, owner, None).unwrap();
+    assert!(paid_super_weapon_cursor_cancellation(&sim, &rules, owner, Some("Sphere")).is_none());
+    let cancel = paid_super_weapon_cursor_cancellation(&sim, &rules, owner, None).unwrap();
     schedule_command_in_sim(&mut sim, "Americans", cancel);
-    assert!(paid_super_weapon_cursor_cancellation(&sim, owner, None).is_none());
+    assert!(paid_super_weapon_cursor_cancellation(&sim, &rules, owner, None).is_none());
     let next = super_weapon_click_command(&sim, &rules, owner, source, (11, 11)).unwrap();
     let Command::BeginPaidSuperWeapon {
         selection: second, ..
@@ -91,10 +91,10 @@ fn paid_superweapon_input_final_and_mode_switch_use_the_saved_ticket() {
     schedule_command_in_sim(&mut sim, "Americans", source_click);
     drain(&mut sim, &rules);
     let ticket = sim.paid_super_weapon_selection(owner).unwrap();
-    assert!(paid_super_weapon_cursor_cancellation(&sim, owner, Some("Warp")).is_none());
+    assert!(paid_super_weapon_cursor_cancellation(&sim, &rules, owner, Some("Warp")).is_none());
     for changed_mode in [None, Some("Sphere"), Some("OtherPower"), Some("Building")] {
         assert_eq!(
-            paid_super_weapon_cursor_cancellation(&sim, owner, changed_mode),
+            paid_super_weapon_cursor_cancellation(&sim, &rules, owner, changed_mode),
             Some(Command::CancelPaidSuperWeapon { selection: ticket })
         );
     }
@@ -104,7 +104,7 @@ fn paid_superweapon_input_final_and_mode_switch_use_the_saved_ticket() {
         matches!(final_click, Command::CompletePaidSuperWeapon { selection, .. } if selection == ticket)
     );
     schedule_command_in_sim(&mut sim, "Americans", final_click);
-    assert!(paid_super_weapon_cursor_cancellation(&sim, owner, None).is_none());
+    assert!(paid_super_weapon_cursor_cancellation(&sim, &rules, owner, None).is_none());
     drain(&mut sim, &rules);
     assert_eq!(sim.houses()[&owner].economy().credits(), 500);
     assert!(sim.paid_super_weapon_selection(owner).is_none());
@@ -123,7 +123,7 @@ fn paid_superweapon_input_free_pair_keeps_native_command_shape() {
             })
         );
     }
-    assert!(paid_super_weapon_cursor_cancellation(&sim, owner, None).is_none());
+    assert!(paid_super_weapon_cursor_cancellation(&sim, &rules, owner, None).is_none());
 }
 
 #[cfg(not(feature = "ares"))]
@@ -151,5 +151,116 @@ fn disabled_ares_money_keeps_two_stage_clicks_on_stock_commands() {
             target_ry: 15,
         })
     );
-    assert!(paid_super_weapon_cursor_cancellation(&sim, owner, None).is_none());
+    assert!(paid_super_weapon_cursor_cancellation(&sim, &rules, owner, None).is_none());
+}
+
+// Exercise the same rules-dependent issue boundary as the normal SW cursor,
+// then decode the production live packet before invoking its existing receiver.
+fn drain_wire(sim: &mut Simulation, rules: &RuleSet) -> Vec<crate::sim::command::CommandRecord> {
+    use crate::net::event_packet::{EventPacketCodec, EventPacketHeader};
+    use crate::sim::command_queue::FrameInfo;
+    let records: Vec<_> = sim
+        .network_command_queues()
+        .local_records()
+        .unwrap()
+        .into_iter()
+        .cloned()
+        .collect();
+    let count = records.len();
+    let packet = EventPacketCodec::default()
+        .encode_packet(
+            &records.iter().collect::<Vec<_>>(),
+            EventPacketHeader::Vera {
+                frame_info: FrameInfo {
+                    house_id: 0,
+                    event_frame: 0,
+                    checksum: 0,
+                    timing_word: count as u16,
+                    delay: 0,
+                },
+                command_frontier: count as u64,
+            },
+            0,
+            558,
+        )
+        .unwrap();
+    assert_eq!(packet.consumed_records(), count);
+    let mut incoming = Vec::new();
+    EventPacketCodec::default()
+        .decode_packet(&packet.bytes, |record| {
+            if record.opcode() != 0x1c {
+                incoming.push(record);
+            }
+            true
+        })
+        .unwrap();
+    assert_eq!(sim.take_frame_commands_for_test().len(), count);
+    for record in &incoming {
+        // The record header, not the enclosing diagnostic owner, chooses House.
+        assert!(sim.apply_command(
+            "UnrelatedOuterOwner",
+            &Command::SynchronizedRecord {
+                record: record.clone()
+            },
+            Some(rules)
+        ));
+    }
+    incoming
+}
+
+#[test]
+fn superweapon_input_uses_rule_indices_and_live_packet_dispatch() {
+    use crate::sim::command::SpecialPlaceRecord;
+    let (rules, mut sim, owner, source, _) = fixture(false);
+    let click = super_weapon_click_command(&sim, &rules, owner, source, (10, 10)).unwrap();
+    assert!(schedule_rules_command_in_sim(&mut sim, &rules, "Americans", click).is_some());
+    let wire = drain_wire(&mut sim, &rules);
+    assert_eq!(SpecialPlaceRecord::decode(&wire[0]).unwrap().type_index, 3);
+    assert_eq!(sim.houses()[&owner].economy().credits(), 1000);
+
+    #[cfg(feature = "ares")]
+    {
+        use crate::sim::command::{PaidSuperAction, PaidSuperRecord};
+        let (rules, mut sim, owner, source, destination) = fixture(true);
+        let first = super_weapon_click_command(&sim, &rules, owner, source, (10, 10)).unwrap();
+        assert!(schedule_rules_command_in_sim(&mut sim, &rules, "Americans", first).is_some());
+        let (first, _) = sim
+            .projected_paid_super_weapon_selection(owner, &rules)
+            .unwrap();
+        let cancel = paid_super_weapon_cursor_cancellation(&sim, &rules, owner, None).unwrap();
+        assert!(schedule_rules_command_in_sim(&mut sim, &rules, "Americans", cancel).is_some());
+        assert!(
+            sim.projected_paid_super_weapon_selection(owner, &rules)
+                .is_none()
+        );
+        let next = super_weapon_click_command(&sim, &rules, owner, source, (11, 11)).unwrap();
+        assert!(schedule_rules_command_in_sim(&mut sim, &rules, "Americans", next).is_some());
+        let (next, _) = sim
+            .projected_paid_super_weapon_selection(owner, &rules)
+            .unwrap();
+        assert!(next.sequence > first.sequence);
+        let wire = drain_wire(&mut sim, &rules);
+        assert_eq!(wire.len(), 3);
+        assert_eq!(
+            PaidSuperRecord::decode(&wire[1]).unwrap().action,
+            PaidSuperAction::Cancel
+        );
+        assert!(wire.iter().all(|r| {
+            PaidSuperRecord::decode(r).is_some_and(|p| p.source == 3 && p.destination == 4)
+        }));
+        assert_eq!(sim.paid_super_weapon_selection(owner), Some(next));
+        let click = super_weapon_click_command(&sim, &rules, owner, destination, (15, 15)).unwrap();
+        assert!(schedule_rules_command_in_sim(&mut sim, &rules, "Americans", click).is_some());
+        let final_record = drain_wire(&mut sim, &rules).pop().unwrap();
+        assert_eq!(sim.houses()[&owner].economy().credits(), 500);
+        assert!(sim.paid_super_weapon_selection(owner).is_none());
+        assert!(!sim.apply_command(
+            "UnrelatedOuterOwner",
+            &Command::SynchronizedRecord {
+                record: final_record
+            },
+            Some(&rules)
+        ));
+        assert_eq!(sim.houses()[&owner].economy().credits(), 500);
+    }
 }

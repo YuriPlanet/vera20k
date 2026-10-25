@@ -39,6 +39,14 @@ pub(crate) struct PlatformState {
     /// pointer position remains owned by the existing input state.
     #[cfg(target_os = "macos")]
     pub(crate) macos_cursor: crate::app::input::cursor::macos::MacCursorConfinement,
+    /// Whether the last confinement call actually holds the OS pointer in the
+    /// client area: `ClipCursor` on Windows, an accepted Confined grab
+    /// elsewhere. winit 0.30.12 refuses Confined on macOS and pure Wayland, so
+    /// there the generic path cannot hold the pointer. The macOS Locked
+    /// backend records its accepted grab here too, while integrating relative
+    /// motion itself. Only `input::cursor`'s confinement calls write it.
+    /// Presentation-only.
+    pub(crate) pointer_held: std::cell::Cell<bool>,
     /// Whether the OS pointer is inside the window's client area, from winit's
     /// enter/leave edges. Outside it the system owns the pointer — the title bar
     /// and resize border need the system arrow, which `DefWindowProc` installs
@@ -61,6 +69,8 @@ pub(crate) struct PlatformState {
     /// The physical modifier keys held, the source both modifier views are
     /// derived from (see `HeldModifierKeys`).
     pub(crate) held_modifier_keys: crate::app::input::hotkeys::HeldModifierKeys,
+    /// The input method's state for the chat edits (`app::input::ime`).
+    pub(crate) ime: crate::app::input::ime::ImeState,
     /// Whether this application currently owns the foreground.
     ///
     /// gamemd tracks the same edge-triggered byte from `WM_ACTIVATEAPP` and
@@ -92,6 +102,12 @@ pub(crate) struct PlatformState {
     /// A sealed capture's exact surface. Present only in capture runs, which
     /// keep it through match launch and never zoom or go full screen.
     pub(crate) capture_client_size: Option<PhysicalSize<u32>>,
+    /// Whether the windowed window still has to be put on the Display choice's
+    /// screen. Set when the window comes back from full screen, because winit
+    /// restores the placement it saved on entry and does that on its own
+    /// thread, so the choice is re-asserted over the next passes until the
+    /// window is really there. Presentation-only, never serialized.
+    pub(crate) recenter_windowed: bool,
 }
 
 impl PlatformState {
@@ -108,27 +124,29 @@ impl PlatformState {
             cursor_confined: true,
             #[cfg(target_os = "macos")]
             macos_cursor: Default::default(),
+            pointer_held: std::cell::Cell::new(false),
             pointer_in_client: true,
             os_cursor_visible: None,
             live_modifiers: winit::keyboard::ModifiersState::empty(),
             held_modifier_keys: Default::default(),
+            ime: Default::default(),
             window_active: true,
             pause_on_focus_loss,
             window_hidden: false,
             frame_pacer: LocalFramePacer::new(),
             game_config,
             capture_client_size,
+            recenter_windowed: false,
         }
     }
 
-    /// Is the match frozen because the window is not the foreground?
-    ///
-    /// True only while the window is deactivated and `pause_on_focus_loss` is
-    /// configured; the single gate for the simulation and the message clock.
+    /// True while the window is deactivated and `pause_on_focus_loss` is
+    /// configured; [`super::AppState::focus_freeze_active`] adds the session
+    /// gate and is the single gate for the simulation and the message clock.
     /// The audio stop is deliberately not part of it: gamemd gates its primary
     /// output on the activation edge itself, so that gate follows
     /// [`Self::window_active`] alone.
-    pub(crate) fn focus_freeze_active(&self) -> bool {
+    pub(crate) fn focus_freeze_configured(&self) -> bool {
         self.pause_on_focus_loss && !self.window_active
     }
 }

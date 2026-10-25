@@ -4,7 +4,7 @@ Physical file/archive loading is supplied. No VERA-interpreted scalar input.
 import argparse,hashlib,json,struct,os
 from pathlib import Path
 from unicorn.x86_const import *
-from tools.native_oracle import image_sha256,run_checked
+from tools.native_oracle import run_checked
 from tools.rules_oracle.bridge_anim_inputs import Reader
 from tools.spatial_oracle.building_body_rules import INI,RULES,SP,dwords
 
@@ -32,9 +32,9 @@ def lexical(raw, wanted):
     return out,lines
 
 class BulletReader(Reader):
-    def __init__(self,art,root=None,*,arena_size=0x400000):
+    def __init__(self,art,root=None,*,arena_size=0x400000,asset_names=None):
         self.reads=[]
-        super().__init__(root or assets_root(),art,arena_size=arena_size)
+        super().__init__(root or assets_root(),art,arena_size=arena_size,asset_names=asset_names)
         self.u.mem_write(0xa83c80,dwords(0x7eb6d4,self.alloc(4096),1024,1,0,10))
         scenario=self.alloc(0x7000)
         self.u.mem_write(0xa8b230,dwords(scenario))
@@ -132,7 +132,7 @@ def generate():
         raw=(ROOT/name).read_bytes()
         palettes.append(dict(name=name,sha256=hashlib.sha256(raw).hexdigest(),bytes=len(raw),
             colors=[dict(index=i,raw6=list(raw[i*3:i*3+3])) for i in sorted(set(shp[32:]))]))
-    return dict(native_sha256=image_sha256(),constructor=initial,art=dict(bytes=len(art_raw),sha256=hashlib.sha256(art_raw).hexdigest(),raw_sections=art,source_lines=art_lines),layers=layers,controls=controls(),ordinary_selection=selection(),physical_image=physical_image,palettes=palettes)
+    return dict(constructor=initial,art=dict(bytes=len(art_raw),sha256=hashlib.sha256(art_raw).hexdigest(),raw_sections=art,source_lines=art_lines),layers=layers,controls=controls(),ordinary_selection=selection(),physical_image=physical_image,palettes=palettes)
 
 if __name__=='__main__':
     a=argparse.ArgumentParser();a.add_argument('--check',type=Path);args=a.parse_args()

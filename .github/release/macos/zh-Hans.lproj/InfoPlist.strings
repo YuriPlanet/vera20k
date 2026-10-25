@@ -1,0 +1,9 @@
+/* Info.plist text for players whose first language is Simplified Chinese
+   (Info.plist.in has the English). Listing zh-Hans in CFBundleLocalizations
+   also makes macOS's own buttons and menus in the app Chinese. */
+"NSDesktopFolderUsageDescription" = "VERA20K 需要从这里读取你的《尤里的复仇》游戏文件。";
+"NSDocumentsFolderUsageDescription" = "VERA20K 需要从这里读取你的《尤里的复仇》游戏文件。";
+"NSDownloadsFolderUsageDescription" = "VERA20K 需要从这里读取你的《尤里的复仇》游戏文件。";
+"NSHumanReadableCopyright" = "依据 GNU GPL 第 3 版发布的自由软件。与 Electronic Arts 无关，也未获其认可。";
+"NSNetworkVolumesUsageDescription" = "VERA20K 需要从这里读取你的《尤里的复仇》游戏文件。";
+"NSRemovableVolumesUsageDescription" = "VERA20K 需要从这里读取你的《尤里的复仇》游戏文件。";

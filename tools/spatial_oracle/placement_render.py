@@ -3,7 +3,7 @@ import hashlib
 import struct
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import *
-from tools.native_oracle import NATIVE_SHA256, configured_gamemd, provenance, run_checked
+from tools.native_oracle import configured_gamemd, provenance, run_checked
 from tools.spatial_oracle.bridge_shadow_render import (
     prepare as shared_prepare, CELL, POINT, CLIP, WIDTH, HEIGHT, COUNT,
     PIXELS, Z, A, ints, snapshot,
@@ -430,7 +430,7 @@ def generate():
               for level, point in ((0, [66, 81]), (6, [66, 171]), (-128, [66, -1839]))]
     rows = [execute(m, typ, table, case) for case in cases]
     scene = foundation_scene(m, typ, foundation, table)
-    return dict(native_sha256=NATIVE_SHA256, inputs=inputs,
+    return dict(inputs=inputs,
         surface=dict(width=WIDTH, height=HEIGHT, bytes_per_pixel=2), rows=rows,
         scenes=[scene], centering=centering(m, table))
 

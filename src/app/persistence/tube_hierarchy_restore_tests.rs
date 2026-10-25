@@ -119,6 +119,7 @@ fn tube_hierarchy_restore_prepares_detached_dummy_then_publishes_terminal_fields
         "late restore failure",
         0,
         &[],
+        &[],
         Some(&sidebar),
         None,
         None,

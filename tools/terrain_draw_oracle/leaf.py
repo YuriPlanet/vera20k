@@ -1,6 +1,6 @@
 """Original TREE ordinary body/shadow leaf semantics on synthetic surface data.
 
-Set VERA20K_GAMEMD_EXE or RA2_DIR to the pinned executable. No retail assets
+Set VERA20K_GAMEMD_EXE or RA2_DIR to the retail executable. No retail assets
 are copied. Prepared Convert/A/Z tables isolate pixel compare/write behavior;
 the full draw caller and row walker are separate evidence boundaries.
 """
@@ -108,7 +108,7 @@ def main(output):
                               'colors': colors, 'depths': depths})
     output.mkdir(parents=True, exist_ok=True)
     (output / 'half-rgb565.bin').write_bytes(packed)
-    result = {'executable_sha256': image_sha256(), 'mask': mask,
+    result = {'mask': mask,
               'leaves': ['004990E0', '00497390'], 'packed_cases': 65536,
               'packed_sha256': hashlib.sha256(packed).hexdigest(),
               'depth_record': 'shadow, row candidate, signed shape byte, old u16 Z, output color, stored u16 Z, repeat output color',

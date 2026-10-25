@@ -10,6 +10,22 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::tiberium_type::TiberiumTypeRegistry;
 use crate::util::direction::DIRECTION_DELTAS;
 
+/// TerrainClass::Unlimbo @0x0071D000, original instructions71D0E2..71D12B:
+/// clear only an existing Tiberium overlay's identity and data, without Recalc.
+/// Live and generated cells commit this shared result through their owners;
+/// their type lookup differs because RMG has only its literal ore/gem ranges.
+pub(crate) fn terrain_unlimbo_overlay_fields(
+    overlay_id: i32,
+    overlay_data: u8,
+    is_tiberium: impl FnOnce(i32) -> bool,
+) -> (i32, u8) {
+    if overlay_id != -1 && is_tiberium(overlay_id) {
+        (-1, 0)
+    } else {
+        (overlay_id, overlay_data)
+    }
+}
+
 /// `CellClass::Get_Tiberium_Value @ 0x00485020`: zero unless
 /// `CellClass::OverlayToTiberiumIndex` resolves the overlay to a
 /// TiberiumClass, otherwise `TiberiumClass+0xB8 (Value) * (OverlayData + 1)`

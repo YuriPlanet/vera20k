@@ -13,7 +13,7 @@ use crate::sim::movement::{ground_pose, motion_query, nav_target_coordinate};
 
 #[cfg(test)]
 #[path = "aircraft_move_tests.rs"]
-mod tests;
+pub(crate) mod tests;
 
 /// `Rules+0x1478`, the leptons Find_Attack_Cell searches out to: the
 /// RulesClass constructor's 0x2000 (`0x00667235`), which no INI reader
@@ -68,7 +68,7 @@ impl Simulation {
             return Some(target);
         }
         let mut claims = None;
-        if self.foot_land_zone_clear(id, target, Some(rules)) {
+        if self.foot_land_zone_clear(id, target, rules) {
             let coord = nav_target_coordinate(
                 target,
                 None,
@@ -111,7 +111,7 @@ impl Simulation {
                         t.native_cell_coord(t.native_cell_identity(candidate))
                     });
                     let cell = NavTargetRef::cell(cell.0 as u16, cell.1 as u16);
-                    if self.foot_land_zone_clear(id, cell, Some(rules))
+                    if self.foot_land_zone_clear(id, cell, rules)
                         && self.aircraft_cell_free_for_landing(
                             id,
                             candidate,

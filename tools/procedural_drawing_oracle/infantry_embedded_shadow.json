@@ -1,0 +1,92 @@
+{
+  "input": {
+    "a_value": 127,
+    "authored_indices": [
+      1,
+      0,
+      1,
+      0,
+      0,
+      1,
+      1,
+      0
+    ],
+    "authored_rect": [
+      38,
+      34,
+      4,
+      2
+    ],
+    "background": 14823,
+    "old_z": 2000,
+    "original_frame_count": 744,
+    "shadow_frame": 372,
+    "surface": [
+      64,
+      96
+    ]
+  },
+  "rows": [
+    {
+      "a_unchanged": true,
+      "changed_after_body": [
+        {
+          "body": 14823,
+          "final": 6371,
+          "index": 3232,
+          "x": 32,
+          "y": 50
+        },
+        {
+          "body": 14823,
+          "final": 6371,
+          "index": 3233,
+          "x": 33,
+          "y": 50
+        }
+      ],
+      "draws": [
+        {
+          "colour_word": 0,
+          "flags": 11776,
+          "frame": 0,
+          "gradient": 2,
+          "intensity": 1200,
+          "z_adjust": -13
+        },
+        {
+          "colour_word": 0,
+          "flags": 11777,
+          "frame": 372,
+          "gradient": 0,
+          "intensity": 1000,
+          "z_adjust": -4
+        }
+      ],
+      "name": "ordinary",
+      "original_code_unchanged": true,
+      "rng_unchanged": true,
+      "source_unchanged": true,
+      "z_unchanged": true
+    },
+    {
+      "a_unchanged": true,
+      "changed_after_body": [],
+      "draws": [
+        {
+          "colour_word": 0,
+          "flags": 11776,
+          "frame": 0,
+          "gradient": 2,
+          "intensity": 1200,
+          "z_adjust": -13
+        }
+      ],
+      "name": "no_shadow",
+      "original_code_unchanged": true,
+      "rng_unchanged": true,
+      "source_unchanged": true,
+      "z_unchanged": true
+    }
+  ]
+}

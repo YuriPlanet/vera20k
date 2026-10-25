@@ -24,9 +24,10 @@ python -m tools.input_oracle.area_guard --check
 ```
 
 `VERA20K_GAMEMD_EXE` or the shared oracle's normal retail executable discovery
-selects the binary. The sidecar records its identity and all loaded Python
-sources. The first source snapshot includes helpers otherwise imported lazily;
-publication rejects changes during generation or newly loaded unpinned helpers.
+selects the binary. The source check before and after generation covers every
+loaded Python source, including helpers otherwise imported lazily; publication
+rejects a run whose sources changed or that loaded an undeclared helper. The
+sidecar records neither the executable nor the sources.
 `--write --output /scratch/area_guard.json` stages a fresh executed result.
 
 The retail reader rows use physical `RULESMD.INI`, absent `LANGRULE.INI`,

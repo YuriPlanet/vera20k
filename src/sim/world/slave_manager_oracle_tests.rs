@@ -46,7 +46,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::sim::combat::TargetKind;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::miner::{CargoBale, ResourceType};
-use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::rng::SimRng;
 use crate::sim::slave_manager::{DeployCellSearch, ManagerState, SlaveLink, SlaveNode, SlaveState};
@@ -60,9 +60,6 @@ use std::collections::BTreeMap;
 
 /// Rows whose inputs the Rust scene does not reproduce.
 const SKIPPED: &[&str] = &[
-    // IncomeMult 0.9: VERA's integer credit fold pays 90 where the native
-    // float product truncates to 89 (the economy owner's recorded residual).
-    "dep_income_mult",
     // A supplied Unlimbo refusal on an open cell: the Rust Unlimbo places it.
     "d_unlimbo_refused",
     // FindDeployCell's supplied Find_Nearby_Passable_Cell miss: the scene's
@@ -193,6 +190,11 @@ pub(super) fn row_scene_edited(
         *text = text.replacen("2=GAOREP\n", "2=GAOREP\n3=YAREFN\n", 1);
         *text = text.replacen("1=MTNK\n", "1=MTNK\n2=SMIN\n", 1);
         text.push_str(&slave_rules(&input));
+        if let Some(mult) = input["income_mult"].as_f64() {
+            text.push_str(&format!(
+                "[Countries]\n0=Americans\n[Americans]\nIncomeMult={mult}\n"
+            ));
+        }
         art.merge(&IniFile::from_str("[YAREFN]\nFoundation=2x2\n"));
         edit(text, art);
     });
@@ -386,7 +388,7 @@ fn place_slave(
             MissionId::from_known(mission(queued)),
             0,
             frame,
-            &EntityReadyInputProvider,
+            &LiveReadyInputProvider { rules },
         )
         .unwrap();
     }
@@ -412,6 +414,7 @@ fn place_slave(
         let count = storage.map_or(0, |s| s[slot].as_f64().unwrap() as usize);
         for _ in 0..count {
             cargo.push(CargoBale {
+                tiberium_type: crate::rules::tiberium_type::TiberiumTypeId(slot as u8),
                 resource_type: kind,
                 value,
             });
@@ -808,7 +811,9 @@ fn slave_mission_harvest_matches_the_original_dig() {
                     MissionId::from_known(MissionType::Guard),
                     0,
                     frame,
-                    &EntityReadyInputProvider,
+                    &LiveReadyInputProvider {
+                        rules: crate::rules::ruleset::RuleSet::empty_for_test(),
+                    },
                 )
                 .unwrap();
         }
@@ -982,5 +987,5 @@ fn replay_covers_every_row() {
     .map(|group| corpus[*group].as_array().unwrap().len())
     .sum();
     assert_eq!(total, 104);
-    assert_eq!(SKIPPED.len(), 4);
+    assert_eq!(SKIPPED.len(), 3);
 }

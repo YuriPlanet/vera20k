@@ -29,7 +29,7 @@ fn run(sim: &mut Simulation, action: &RuntimeAction) -> bool {
             input: TagEventInput::default(),
         },
         &mut Vec::new(),
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         FrameEffects::default(),
     )
@@ -123,7 +123,7 @@ fn ordered_tag_rgb_actions_then_the_production_fade_keep_distinct_palette_operat
         None,
         None,
     );
-    sim.classify_map_triggers(None);
+    sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     sim.session.publish_started();
     sim.session.set_map_width_for_test(32);
     sim.session.set_map_height_for_test(32);
@@ -136,7 +136,7 @@ fn ordered_tag_rgb_actions_then_the_production_fade_keep_distinct_palette_operat
     let frame = sim
         .advance_app_frame(
             &[],
-            Some(&rules),
+            &rules,
             None,
             67,
             TickLane::Ordinary,

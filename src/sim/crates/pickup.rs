@@ -237,7 +237,7 @@ fn announce_upgrade(
 
 /// `0x00481C03..0x00481D6B`: the multiplayer eligibility switch on the
 /// selected slot and the over-water test. Returns the slot the arm runs.
-fn multiplayer_eligible_slot(
+pub(crate) fn multiplayer_eligible_slot(
     sim: &Simulation,
     rules: &RuleSet,
     actor_id: u64,
@@ -266,14 +266,18 @@ fn multiplayer_eligible_slot(
         // `0x00481CDE`: an actor already sped up, or an Aircraft.
         POWERUP_SPEED => {
             actor.foot_speed.crate_multiplier() == NativeF64Bits::ONE
-                && actor.category() != EntityCategory::Aircraft
+                // Ares Speed1@1005F9D0 returns481D52 directly after its
+                // Ext+90 check, bypassing the stock Aircraft(+2C==2) gate.
+                && (crate::rules::ARES_ENABLED || actor.category() != EntityCategory::Aircraft)
         }
         // `0x00481D0B`: an actor already boosted, or unarmed (`Is_Armed`).
         POWERUP_FIREPOWER => {
-            actor.crate_multipliers.firepower() == NativeF64Bits::ONE
-                && object.is_some_and(|object| {
+            actor.crate_multipliers.crate_firepower() == NativeF64Bits::ONE
+                // Installed Firepower1@1005F940 returns481D52 directly,
+                //bypassing stock Is_Armed just as Speed1 bypasses Aircraft.
+                && (crate::rules::ARES_ENABLED || object.is_some_and(|object| {
                     crate::sim::combat::combat_weapon::is_armed(actor, object)
-                })
+                }))
         }
         // `0x00481C91`: a Techno actor whose type is not `Trainable=`, or
         // one already elite.
@@ -377,7 +381,7 @@ pub(crate) fn pickup_crate(
             49,
             Some(actor_id),
             None,
-            crate::sim::world::UninitContext::new(Some(rules), Some(registry))
+            crate::sim::world::UninitContext::new(rules, Some(registry))
                 .with_effects(frame_effects),
         );
         if had_tag
@@ -424,18 +428,7 @@ pub(crate) fn pickup_crate(
     // `0x00481D86`: removal, then the replacement crate.
     let _ = remove_pickup_crate(sim, rules, registry, cell);
     if multiplayer && sim.session.game_options().crates {
-        let lighting = sim
-            .session
-            .lighting()
-            .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
-            .into();
-        let _ = place_one_random_crate(
-            sim,
-            rules,
-            registry,
-            lighting,
-            ForcedPostPrecheckFailure::None,
-        );
+        let _ = place_one_random_crate(sim, rules, registry, ForcedPostPrecheckFailure::None);
     }
     if powerup == POWERUP_SQUAD {
         powerup = POWERUP_MONEY;
@@ -531,7 +524,7 @@ pub(crate) fn pickup_crate(
                     cell,
                     center,
                 );
-                effects::apply_heal_base_crate(sim, rules, Some(registry), owner, frame_effects);
+                effects::apply_heal_base_crate(sim, rules, Some(registry), actor_id, frame_effects);
             }
             POWERUP_DARKNESS => {
                 sim.reset_shroud_for_owner(owner, rules);
@@ -550,6 +543,8 @@ pub(crate) fn pickup_crate(
             POWERUP_ARMOR => {
                 let owners = effects::apply_multiplier_crate(
                     &mut sim.substrate,
+                    rules,
+                    &sim.interner,
                     center,
                     radius,
                     magnitude,
@@ -568,6 +563,8 @@ pub(crate) fn pickup_crate(
                 if super::speed::apply_speed_crate(
                     &mut sim.substrate,
                     &sim.houses,
+                    rules,
+                    &sim.interner,
                     center,
                     radius,
                     magnitude,
@@ -593,6 +590,8 @@ pub(crate) fn pickup_crate(
             POWERUP_FIREPOWER => {
                 let owners = effects::apply_multiplier_crate(
                     &mut sim.substrate,
+                    rules,
+                    &sim.interner,
                     center,
                     radius,
                     magnitude,

@@ -91,6 +91,18 @@ pub const WOL_WELCOME_PAGE: MenuPageSpec = MenuPageSpec {
     },
 };
 
+/// The live service currently offers custom games. Keep the other entry points
+/// on the legacy page until their online flows are ready.
+pub const WOL_ONLINE_WELCOME_PAGE: MenuPageSpec = MenuPageSpec {
+    stacked: &[button(
+        CUSTOM_MATCH,
+        116,
+        "GUI:CustomMatch",
+        "STT:WOLWelcomeCustomMatch",
+    )],
+    ..WOL_WELCOME_PAGE
+};
+
 /// The buttons in template order, which is their Z-order: a hit test finds
 /// the first. At 640x480 Community and Main Menu share the last row: Main
 /// Menu, created first, takes the pointer, and Community paints over it.
@@ -168,25 +180,33 @@ pub enum StaticAlign {
     Right,
 }
 
-/// A text static of the left side: id (status help), caption key, template
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WolTextCaption {
+    Csf(&'static str),
+    Literal(&'static str),
+}
+
+use WolTextCaption::{Csf, Literal};
+
+/// A text static of the left side: id (status help), caption, template
 /// rect and alignment. Kind 0: painted at once, without a reveal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WolTextStatic {
     pub id: Option<u16>,
-    pub key: &'static str,
+    pub caption: WolTextCaption,
     pub dlu: (i32, i32, i32, i32),
     pub align: StaticAlign,
 }
 
 const fn text(
     id: Option<u16>,
-    key: &'static str,
+    caption: WolTextCaption,
     dlu: (i32, i32, i32, i32),
     align: StaticAlign,
 ) -> WolTextStatic {
     WolTextStatic {
         id,
-        key,
+        caption,
         dlu,
         align,
     }
@@ -198,119 +218,219 @@ const fn text(
 /// values keep `GUI:UnknownStats` and `0x6EF` and `0x797` stay empty.
 pub const WOL_TEXT_STATICS: [WolTextStatic; 20] = [
     // The persona heading: centred (`0x50020001`), empty caption.
-    text(Some(0x06EF), "", (86, 41, 254, 12), StaticAlign::Center),
+    text(
+        Some(0x06EF),
+        Csf(""),
+        (86, 41, 254, 12),
+        StaticAlign::Center,
+    ),
     text(
         None,
-        "GUI:IconGlossary",
+        Csf("GUI:IconGlossary"),
         (60, 167, 308, 13),
         StaticAlign::Center,
     ),
     text(
         None,
-        "GUI:LadderWins",
+        Csf("GUI:LadderWins"),
         (87, 63, 115, 12),
         StaticAlign::Right,
     ),
     text(
         None,
-        "GUI:LadderLosses",
+        Csf("GUI:LadderLosses"),
         (87, 79, 115, 12),
         StaticAlign::Right,
     ),
     text(
         None,
-        "GUI:Disconnects",
+        Csf("GUI:Disconnects"),
         (87, 95, 115, 12),
         StaticAlign::Right,
     ),
     text(
         None,
-        "GUI:LadderRank",
+        Csf("GUI:LadderRank"),
         (87, 111, 115, 12),
         StaticAlign::Right,
     ),
     text(
         None,
-        "GUI:LadderPoints",
+        Csf("GUI:LadderPoints"),
         (87, 127, 115, 12),
         StaticAlign::Right,
     ),
     text(
         Some(0x06F0),
-        "GUI:UnknownStats",
+        Csf("GUI:UnknownStats"),
         (214, 63, 110, 12),
         StaticAlign::Left,
     ),
     text(
         Some(0x06F1),
-        "GUI:UnknownStats",
+        Csf("GUI:UnknownStats"),
         (214, 79, 110, 12),
         StaticAlign::Left,
     ),
     text(
         Some(0x0701),
-        "GUI:UnknownStats",
+        Csf("GUI:UnknownStats"),
         (214, 95, 110, 12),
         StaticAlign::Left,
     ),
     text(
         Some(0x06F4),
-        "GUI:UnknownStats",
+        Csf("GUI:UnknownStats"),
         (214, 111, 110, 12),
         StaticAlign::Left,
     ),
     text(
         Some(0x06F5),
-        "GUI:UnknownStats",
+        Csf("GUI:UnknownStats"),
         (214, 127, 110, 12),
         StaticAlign::Left,
     ),
     text(
         Some(0x0797),
-        "GUI:Blank",
+        Csf("GUI:Blank"),
         (95, 143, 229, 12),
         StaticAlign::Center,
     ),
     text(
         Some(0x074C),
-        "GUI:NormalGameIconDesc",
+        Csf("GUI:NormalGameIconDesc"),
         (89, 200, 257, 12),
         StaticAlign::Left,
     ),
     text(
         Some(0x074E),
-        "GUI:ClanGameIconDesc",
+        Csf("GUI:ClanGameIconDesc"),
         (89, 215, 257, 12),
         StaticAlign::Left,
     ),
     text(
         Some(0x074F),
-        "GUI:ResolutionLimitIconDesc",
+        Csf("GUI:ResolutionLimitIconDesc"),
         (89, 230, 257, 12),
         StaticAlign::Left,
     ),
     text(
         Some(0x0750),
-        "GUI:ObserverAllowedIconDesc",
+        Csf("GUI:ObserverAllowedIconDesc"),
         (89, 245, 257, 12),
         StaticAlign::Left,
     ),
     text(
         Some(0x0753),
-        "GUI:PasswordIconDesc",
+        Csf("GUI:PasswordIconDesc"),
         (89, 260, 257, 12),
         StaticAlign::Left,
     ),
     text(
         None,
-        "GUI:LatencyIconDesc",
+        Csf("GUI:LatencyIconDesc"),
         (103, 275, 243, 12),
         StaticAlign::Left,
     ),
     text(
         None,
-        "GUI:BadgesOfHonor",
+        Csf("GUI:BadgesOfHonor"),
         (113, 290, 221, 12),
+        StaticAlign::Left,
+    ),
+];
+
+/// VERA's ids for the online welcome's lobby counts (`GET /v1/stats`,
+/// `services/lobby/protocol.md`); no native control uses them.
+const LOBBY_STATS_HEADING: u16 = 0x7F00;
+const LOBBY_STATS_BODY: u16 = 0x7F01;
+pub const LOBBY_STATS_IDS: [u16; 2] = [LOBBY_STATS_HEADING, LOBBY_STATS_BODY];
+
+/// The lobby's public counts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+pub struct WolLobbyStats {
+    pub online: u32,
+    pub in_game: u32,
+    pub open_games: u32,
+    pub games_24h: u32,
+    pub games_total: u32,
+}
+
+impl WolLobbyStats {
+    /// The texts of [`LOBBY_STATS_IDS`]; they stay blank until counts arrive.
+    pub fn texts(self) -> [(u16, String); 2] {
+        let count =
+            |n: u32, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+        [
+            (LOBBY_STATS_HEADING, "RIGHT NOW".to_owned()),
+            (
+                LOBBY_STATS_BODY,
+                format!(
+                    "{} online, {} in games, {}.\n{} in the last 24 hours, {} in all.",
+                    count(self.online, "player", "players"),
+                    self.in_game,
+                    count(self.open_games, "open game", "open games"),
+                    count(self.games_24h, "game", "games"),
+                    self.games_total,
+                ),
+            ),
+        ]
+    }
+}
+
+const ONLINE_WELCOME_TEXT: [WolTextStatic; 8] = [
+    text(
+        None,
+        Literal("VERA20k Online"),
+        (42, 50, 330, 18),
+        StaticAlign::Left,
+    ),
+    text(
+        None,
+        Literal(
+            "Custom games for VERA20k players.\nMeet in German Bunker to create or join a game.",
+        ),
+        (42, 80, 330, 34),
+        StaticAlign::Left,
+    ),
+    text(
+        None,
+        Literal("GET STARTED"),
+        (42, 134, 330, 12),
+        StaticAlign::Left,
+    ),
+    text(
+        None,
+        Literal(
+            "Select Custom Match, enter a username and press OK.\nUse Create Game, or select an available game and Join.",
+        ),
+        (42, 152, 330, 36),
+        StaticAlign::Left,
+    ),
+    text(
+        None,
+        Literal("PLAY AGAINST AI"),
+        (42, 206, 330, 12),
+        StaticAlign::Left,
+    ),
+    text(
+        None,
+        Literal(
+            "Create a game and choose an AI difficulty in an open\nplayer slot before pressing Start.",
+        ),
+        (42, 224, 330, 36),
+        StaticAlign::Left,
+    ),
+    text(
+        Some(LOBBY_STATS_HEADING),
+        Literal(""),
+        (42, 278, 330, 12),
+        StaticAlign::Left,
+    ),
+    text(
+        Some(LOBBY_STATS_BODY),
+        Literal(""),
+        (42, 296, 330, 36),
         StaticAlign::Left,
     ),
 ];
@@ -365,16 +485,24 @@ pub const WOL_GROUP_BOXES: [(i32, i32, i32, i32); 2] = [(81, 52, 255, 106), (61,
 /// children at their template places (`0x0060C0C0` keeps them at every size).
 #[derive(Debug, Clone)]
 pub struct WolWelcomeLayout {
+    spec: &'static MenuPageSpec,
     pub page: MenuPageLayout,
     /// Status line `0x695`: the template is 316 DLU wide here.
     pub status_help: RectPx,
     pub texts: Vec<(WolTextStatic, RectPx)>,
     pub icons: Vec<(&'static str, RectPx)>,
-    pub group_boxes: [RectPx; 2],
+    pub group_boxes: Vec<RectPx>,
 }
 
-pub fn compute_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayout {
-    let mut page = menu_page::compute_layout(&WOL_WELCOME_PAGE, screen_w, screen_h);
+pub fn compute_layout(
+    screen_w: u32,
+    screen_h: u32,
+    spec: &'static MenuPageSpec,
+) -> WolWelcomeLayout {
+    let mut page = menu_page::compute_layout(spec, screen_w, screen_h);
+    // Account statistics and the old icon glossary belong to the legacy
+    // information entry, which the normal online page does not offer.
+    let information = spec.button(MY_INFORMATION).is_some();
     // The heading template is 108x11 DLU here (the family's is 108x10): the
     // relayout keeps the family place and the window is one row taller.
     page.title.h = dlu_rect(423, 4, 108, 11).h + 1;
@@ -383,15 +511,25 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayout {
         screen_w as i32,
         screen_h as i32,
     );
-    let texts = WOL_TEXT_STATICS
+    let statics = if information {
+        &WOL_TEXT_STATICS[..]
+    } else {
+        &ONLINE_WELCOME_TEXT[..]
+    };
+    let texts = statics
         .iter()
         .map(|text| {
             let (x, y, w, h) = text.dlu;
-            (*text, child_window(x, y, w, h))
+            let mut rect = child_window(x, y, w, h);
+            if !information {
+                rect.w = rect.w.min((page.right_panel.top.x - rect.x - 24).max(0));
+            }
+            (*text, rect)
         })
         .collect();
     let icons = WOL_ICONS
         .iter()
+        .filter(|_| information)
         .map(|icon| {
             let (x, y, w, h) = icon.dlu;
             let mut window = child_window(x, y, w, h);
@@ -402,24 +540,34 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayout {
         })
         .collect();
     WolWelcomeLayout {
+        spec,
         page,
         status_help,
         texts,
         icons,
-        group_boxes: WOL_GROUP_BOXES.map(|(x, y, w, h)| child_window(x, y, w, h)),
+        group_boxes: WOL_GROUP_BOXES
+            .into_iter()
+            .filter(|_| information)
+            .map(|(x, y, w, h)| child_window(x, y, w, h))
+            .collect(),
     }
 }
 
 /// The responsive variant of [`compute_layout`]: the verified 800x600 `0x10E`
 /// scaled to fit the window, keeping its shape. Identity at the base size.
-pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayout {
+pub fn compute_responsive_layout(
+    screen_w: u32,
+    screen_h: u32,
+    spec: &'static MenuPageSpec,
+) -> WolWelcomeLayout {
     let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
-    let base = compute_layout(SHELL_BASE_W as u32, SHELL_BASE_H as u32);
-    let mut page = menu_page::compute_responsive_layout(&WOL_WELCOME_PAGE, screen_w, screen_h);
+    let base = compute_layout(SHELL_BASE_W as u32, SHELL_BASE_H as u32, spec);
+    let mut page = menu_page::compute_responsive_layout(spec, screen_w, screen_h);
     // The heading override is authored 11 DLU tall, so it stretches from the
     // overridden base rect rather than the family's 10.
     page.title = scale.scale_rect(base.page.title);
     WolWelcomeLayout {
+        spec,
         page,
         status_help: scale.scale_rect(base.status_help),
         texts: base
@@ -432,11 +580,19 @@ pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> WolWelcomeLayo
             .iter()
             .map(|(file, window)| (*file, scale.scale_rect(*window)))
             .collect(),
-        group_boxes: base.group_boxes.map(|window| scale.scale_rect(window)),
+        group_boxes: base
+            .group_boxes
+            .into_iter()
+            .map(|window| scale.scale_rect(window))
+            .collect(),
     }
 }
 
 impl WolWelcomeLayout {
+    pub fn page_spec(&self) -> &'static MenuPageSpec {
+        self.spec
+    }
+
     /// The page's buttons in hit-test order.
     pub fn buttons_in_z_order(&self) -> Vec<MenuPageButtonRect> {
         WOL_BUTTON_Z_ORDER
@@ -482,9 +638,7 @@ impl WolWelcomeLayout {
             .into_iter()
             .find(|button| button.rect.contains(x, y))
         {
-            return WOL_WELCOME_PAGE
-                .button(button.id)
-                .map(|spec| spec.tooltip_key);
+            return self.spec.button(button.id).map(|spec| spec.tooltip_key);
         }
         self.texts
             .iter()
@@ -592,6 +746,73 @@ mod tests {
     }
 
     #[test]
+    fn online_welcome_only_paints_and_hits_custom_match_and_main_menu() {
+        let layout = compute_layout(800, 600, &WOL_ONLINE_WELCOME_PAGE);
+        let controls: Vec<_> = layout
+            .painted_buttons(None)
+            .iter()
+            .map(|button| button.id)
+            .collect();
+        assert_eq!(controls, [CUSTOM_MATCH, MAIN_MENU]);
+        assert!(!layout.texts.is_empty());
+        assert!(layout.icons.is_empty() && layout.group_boxes.is_empty());
+        assert!(layout.texts.iter().all(|(text, _)| {
+            matches!(text.caption, Literal(_))
+                && text.id.is_none_or(|id| LOBBY_STATS_IDS.contains(&id))
+        }));
+        let first = layout.page.button_rect(CUSTOM_MATCH).unwrap();
+        assert_eq!(first, RectPx::new(644, 199, 156, 42));
+        assert_eq!(
+            layout.status_help_key(first.x + 5, first.y + 5),
+            Some("STT:WOLWelcomeCustomMatch")
+        );
+        let legacy = compute_layout(800, 600, &WOL_WELCOME_PAGE);
+        for control in [
+            QUICK_MATCH,
+            QUICK_COOP,
+            PLAY_BUDDY,
+            MY_INFORMATION,
+            COMMUNITY,
+        ] {
+            assert_eq!(layout.page.button_rect(control), None);
+        }
+        let old_buddy = legacy.page.button_rect(PLAY_BUDDY).unwrap();
+        assert!(
+            !layout
+                .buttons_in_z_order()
+                .iter()
+                .any(|button| { button.rect.contains(old_buddy.x + 5, old_buddy.y + 5) })
+        );
+        assert_eq!(
+            layout.status_help_key(old_buddy.x + 5, old_buddy.y + 5),
+            None
+        );
+        let scaled = compute_responsive_layout(1600, 1200, &WOL_ONLINE_WELCOME_PAGE);
+        assert_eq!(scaled.painted_buttons(None).len(), 2);
+        assert!(!scaled.texts.is_empty());
+        assert!(scaled.icons.is_empty() && scaled.group_boxes.is_empty());
+        assert_eq!(
+            scaled.page.button_rect(CUSTOM_MATCH),
+            Some(RectPx::new(1288, 398, 312, 84))
+        );
+    }
+
+    #[test]
+    fn lobby_stats_read_as_counted_phrases() {
+        let stats = WolLobbyStats {
+            online: 1,
+            in_game: 0,
+            open_games: 2,
+            games_24h: 1,
+            games_total: 40,
+        };
+        assert_eq!(
+            stats.texts()[1].1,
+            "1 player online, 0 in games, 2 open games.\n1 game in the last 24 hours, 40 in all."
+        );
+    }
+
+    #[test]
     fn wait_box_shows_once_its_timer_fires() {
         let opened_at = std::time::Instant::now();
         let mut wait = WolWaitBox {
@@ -609,7 +830,7 @@ mod tests {
 
     #[test]
     fn right_panel_matches_the_executed_relayout() {
-        let layout = compute_layout(800, 600);
+        let layout = compute_layout(800, 600, &WOL_WELCOME_PAGE);
         let rows: Vec<(u16, RectPx)> = layout
             .page
             .buttons
@@ -632,24 +853,24 @@ mod tests {
         // The executed relayout of heading 0x694 (dlu 423,4,108,11).
         assert_eq!(layout.page.title, RectPx::new(635, 9, 163, 19));
         assert_eq!(
-            compute_layout(640, 480).page.title,
+            compute_layout(640, 480, &WOL_WELCOME_PAGE).page.title,
             RectPx::new(475, 9, 163, 19)
         );
         assert_eq!(
-            compute_layout(1024, 768).page.title,
+            compute_layout(1024, 768, &WOL_WELCOME_PAGE).page.title,
             RectPx::new(747, 93, 163, 19)
         );
     }
 
     #[test]
     fn left_children_keep_their_template_places() {
-        let layout = compute_layout(800, 600);
+        let layout = compute_layout(800, 600, &WOL_WELCOME_PAGE);
         assert_eq!(layout.group_boxes[0], RectPx::new(122, 85, 384, 173));
         assert_eq!(layout.group_boxes[1], RectPx::new(92, 302, 435, 206));
         let wins = layout
             .texts
             .iter()
-            .find(|(text, _)| text.key == "GUI:LadderWins")
+            .find(|(text, _)| text.caption == Csf("GUI:LadderWins"))
             .unwrap();
         assert_eq!(wins.1, RectPx::new(131, 102, 174, 21));
         // The executed kind-2 placement: gt18 at (108, 328), the second
@@ -659,20 +880,20 @@ mod tests {
         let (_, number0) = layout.icons[9];
         assert_eq!(centred_in_window(number0, 8, 16), (110, 473));
         // 1024x768 leaves them at their 800x600 places.
-        let wide = compute_layout(1024, 768);
+        let wide = compute_layout(1024, 768, &WOL_WELCOME_PAGE);
         assert_eq!(wide.group_boxes, layout.group_boxes);
     }
 
     #[test]
     fn responsive_layout_stretches_the_page_and_the_left_side() {
-        let base = compute_layout(800, 600);
+        let base = compute_layout(800, 600, &WOL_WELCOME_PAGE);
         // Identity at the authored size, where the retail layout is used.
-        let same = compute_responsive_layout(800, 600);
+        let same = compute_responsive_layout(800, 600, &WOL_WELCOME_PAGE);
         assert_eq!(same.page.title, base.page.title);
         assert_eq!(same.status_help, base.status_help);
         assert_eq!(same.group_boxes, base.group_boxes);
         let scale = ShellScale::from_screen(1600, 1200);
-        let scaled = compute_responsive_layout(1600, 1200);
+        let scaled = compute_responsive_layout(1600, 1200, &WOL_WELCOME_PAGE);
         assert_eq!(scaled.page.scale, scale);
         assert_eq!(scaled.page.title, RectPx::new(1270, 18, 326, 38));
         assert_eq!(scaled.status_help, RectPx::new(20, 1156, 950, 42));
@@ -695,7 +916,7 @@ mod tests {
         let wins = scaled
             .texts
             .iter()
-            .find(|(text, _)| text.key == "GUI:LadderWins")
+            .find(|(text, _)| text.caption == Csf("GUI:LadderWins"))
             .unwrap();
         assert_eq!(wins.1, RectPx::new(262, 204, 348, 42));
         assert_eq!(
@@ -708,7 +929,7 @@ mod tests {
 
     #[test]
     fn status_help_covers_buttons_and_stats_values() {
-        let layout = compute_layout(800, 600);
+        let layout = compute_layout(800, 600, &WOL_WELCOME_PAGE);
         assert_eq!(
             layout.status_help_key(720, 220),
             Some("STT:WOLWelcomeQuickMatch")
@@ -728,7 +949,7 @@ mod tests {
 
     #[test]
     fn main_menu_takes_the_shared_last_row_at_640() {
-        let layout = compute_layout(640, 480);
+        let layout = compute_layout(640, 480, &WOL_WELCOME_PAGE);
         let community = layout.page.button_rect(COMMUNITY).unwrap();
         assert_eq!(layout.page.button_rect(MAIN_MENU), Some(community));
         let first = layout
@@ -750,6 +971,11 @@ mod tests {
         assert_eq!(shown(None), [COMMUNITY]);
         assert_eq!(shown(Some(MAIN_MENU)), [MAIN_MENU]);
         assert_eq!(layout.painted_buttons(None).len(), 6);
-        assert_eq!(compute_layout(800, 600).painted_buttons(None).len(), 7);
+        assert_eq!(
+            compute_layout(800, 600, &WOL_WELCOME_PAGE)
+                .painted_buttons(None)
+                .len(),
+            7
+        );
     }
 }

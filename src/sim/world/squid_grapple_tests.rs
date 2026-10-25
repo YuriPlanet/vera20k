@@ -18,6 +18,8 @@ struct Encounter {
     squid: u64,
     ship: u64,
     elite: bool,
+    last_sound_events: Vec<super::SimSoundEvent>,
+    lighting_events: Vec<crate::sim::light_sources::LightingEvent>,
 }
 
 impl Encounter {
@@ -64,8 +66,8 @@ impl Encounter {
                 .expect("original game-speed readback")
                 as i32;
             // Supplied original component input: the native harness has not
-            // run map lighting/recalculation. Import its measured profile,
-            // retaining the production Cell ground-Z-adjust calculation.
+            // run map lighting/recalculation. Import its measured zero-light
+            // profile rather than the ordinary arena's Scenario defaults.
             sim.session.lighting_mut().set_normal_for_test(
                 serde_json::from_value(initial["lighting"]["normal_profile"].clone())
                     .expect("original Scenario lighting profile readback"),
@@ -172,6 +174,8 @@ impl Encounter {
             squid,
             ship,
             elite,
+            last_sound_events: Vec::new(),
+            lighting_events: Vec::new(),
         })
     }
 
@@ -181,7 +185,7 @@ impl Encounter {
             .sim
             .advance_app_frame(
                 &commands,
-                Some(&self.rules),
+                &self.rules,
                 None,
                 33,
                 TickLane::Ordinary,
@@ -189,6 +193,8 @@ impl Encounter {
             )
             .expect("ordinary open-water Squid combat frame");
         assert!(output.tick.frame_committed);
+        self.last_sound_events = output.sound_events;
+        self.lighting_events.extend(output.lighting_events);
         output.fire_events
     }
 
@@ -495,6 +501,24 @@ fn entire_grapple(elite: bool) {
                 previous_z - 5,
                 "cull sinks in the victim's same Unit turn"
             );
+            let lowered_z = position_world_coord(&ship.position).z;
+            let sinking_sound = scene
+                .rules
+                .object("DEST")
+                .unwrap()
+                .sinking_sound
+                .as_ref()
+                .or(scene.rules.general.sinking_sound.as_ref())
+                .unwrap()
+                .clone();
+            // Foot4DABC7 precedes ParasiteAI629FD0's cull. Unit7364A1
+            // then lowers the hull; the NEXT Foot edge plays at that Z.
+            assert!(
+                !scene.last_sound_events.iter().any(|event| matches!(event,
+                super::SimSoundEvent::AnimationStarted { anim_id, sound_id, .. }
+                    if *anim_id == scene.ship && sound_id.eq_ignore_ascii_case(&sinking_sound))),
+                "culling cannot retroactively run the earlier sinking-sound edge"
+            );
             scene.assert_released(anim);
             assert!(
                 !scene
@@ -507,6 +531,14 @@ fn entire_grapple(elite: bool) {
                     .is_paralyzed(scene.sim.session.binary_frame())
             );
             culled = true;
+            scene.step();
+            assert!(
+                scene.last_sound_events.iter().any(|event| matches!(event,
+                super::SimSoundEvent::AnimationStarted { anim_id, sound_id, world }
+                    if *anim_id == scene.ship && sound_id.eq_ignore_ascii_case(&sinking_sound)
+                        && world.z == lowered_z)),
+                "next Foot visit uses the already-lowered hull coordinate"
+            );
             break;
         }
         if ship.health.current() < previous_health {
@@ -543,6 +575,93 @@ fn stock_normal_and_elite_squid_grapples_roll_bite_cull_and_retire_the_ship() {
     for elite in [false, true] {
         entire_grapple(elite);
     }
+}
+
+#[test]
+fn stock_squid_grapple_keeps_depth_separate_from_cell_lighting() {
+    let native = crate::test_fixture::json("tools/spatial_oracle/squid_grapple_light.json");
+    let profile: crate::sim::scenario_session::ScenarioLightProfileUnits =
+        serde_json::from_value(native["normal_profile"].clone()).unwrap();
+    let light = native["cell_light"].as_i64().unwrap();
+    let expected_z = native["held_anim"]["z_adjust"].as_i64().unwrap() as i32;
+    assert_ne!(
+        light, 0,
+        "the original Cell light must distinguish the fields"
+    );
+    assert_eq!(
+        native["held_anim"]["light_intensity_fc"].as_i64(),
+        Some(light)
+    );
+    for elite in [false, true] {
+        let Some(mut scene) = Encounter::retail(elite) else {
+            return;
+        };
+        // The older native grapple stream supplies an all-zero lighting
+        // profile, which cannot distinguish light from depth. Use the normal
+        // arena profile and the actual stock Attack/Projectile/AttachTo chain.
+        assert_eq!(scene.sim.session.lighting().normal(), profile);
+        assert_eq!(
+            scene
+                .rules
+                .art()
+                .anim_runtime_config("SQDG")
+                .unwrap()
+                .z_adjust,
+            expected_z,
+            "physical SQDG ART depth matches the original constructor"
+        );
+        scene.attach_after_actual_shot();
+        let id = scene.wait_for_roll();
+        for _ in 0..12 {
+            let anim = scene
+                .sim
+                .anim(id)
+                .expect("the live stock roll retains SQDG");
+            assert_eq!(anim.owner_entity(), Some(scene.ship));
+            // Original629DE5 writes the nonzero Cell+10A light to Anim+FC;
+            // it leaves constructor/type ZAdjust at Anim+100 unchanged.
+            assert_eq!(anim.z_adjust(), expected_z, "cell light is not ZAdjust");
+            scene.step();
+        }
+    }
+}
+
+#[test]
+fn stock_squid_publishes_retained_light_only_at_owner_assignment() {
+    use crate::sim::light_sources::LightingEvent;
+    let Some(mut scene) = Encounter::retail(false) else {
+        return;
+    };
+    scene.attach_after_actual_shot();
+    let id = scene.wait_for_roll();
+    let captures = |events: &[LightingEvent]| {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                LightingEvent::RetainAnimIntensity {
+                    anim,
+                    cell: Some(cell),
+                } if *anim == id => Some(*cell),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(captures(&scene.lighting_events), [(25, 24)]);
+    scene.lighting_events.clear();
+    for _ in 0..12 {
+        scene.step();
+    }
+    assert!(
+        captures(&scene.lighting_events).is_empty(),
+        "same-owner629DBF retains FC"
+    );
+    assert_eq!(scene.sim.anim(id).unwrap().z_adjust(), 0);
+    // Controlled native owner-change arm after the actual stock launch and
+    // attachment. This does not claim a new stock command that detaches it.
+    scene.sim.set_anim_owner_object(id, None, &scene.rules);
+    scene.step();
+    assert_eq!(scene.sim.anim(id).unwrap().owner_entity(), Some(scene.ship));
+    assert_eq!(captures(&scene.lighting_events), [(25, 24)]);
 }
 
 #[test]
@@ -787,7 +906,7 @@ fn stock_squid_internal_snapshot_preserves_live_roll_progress_and_reference() {
         loaded
             .advance_app_frame(
                 &commands,
-                Some(&scene.rules),
+                &scene.rules,
                 None,
                 33,
                 TickLane::Ordinary,
@@ -911,8 +1030,12 @@ fn stock_squid_paralysis_refuses_an_ordinary_ship_move_command() {
     scene.wait_for_roll();
     let ship = scene.sim.substrate.entities.get(scene.ship).unwrap();
     let initial = position_world_coord(&ship.position);
+    // The human Americans send the computer ship's Move: the DoList skips computer Houses' events
+    // (0x0064C4FB..0x0064C50D), and MegaMission never compares sender and actor
+    // (0x004C71F6..0x004C721F).
+    let sender = scene.sim.interner.get("Americans").unwrap();
     scene.sim.queue_command(CommandEnvelope::new(
-        ship.owner(),
+        sender,
         scene.sim.session.tick() + 1,
         Command::Move {
             entity_id: scene.ship,

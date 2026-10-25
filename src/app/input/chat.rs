@@ -7,12 +7,13 @@
 //! [`NetworkLoadingRequest::Chat`](crate::app::match_runtime::session::NetworkLoadingRequest)
 //! and a received packet arrives as `NetworkMatchEvent::Chat`.
 //!
-//! RESIDUAL: the beacon-message branch of the pre-hook (`0x0055E4E2`) needs a
-//! beacon of the player's House; VERA has no beacons. WOL's `/page` and
+//! RESIDUAL: the beacon-message branch of the pre-hook (`0x0055E4E2`), with
+//! an own beacon selected, is the beacon-text residual of
+//! [`crate::app::match_runtime::beacons`]. WOL's `/page` and
 //! `/reply` commands (`0x0078A6B0`) and its relay mask (`0x0055F056`) are WOL
-//! backend. The IME queue `0xB730EC` is not modelled; typed text arrives as
-//! the key event's text, every UTF-16 unit of it. Native WM_CHAR delivers one
-//! ANSI byte per character (`0x0054F56C`), and Shift/Ctrl+Backspace delete
+//! backend. Typed text arrives as the key event's text, every UTF-16 unit of
+//! it, and input-method text through [`commit_text`]. Native WM_CHAR delivers
+//! one ANSI byte per character (`0x0054F56C`), and Shift/Ctrl+Backspace delete
 //! twice or append `0x7F` there; VERA deletes once.
 //!
 //! ## Dependency rules
@@ -45,36 +46,38 @@ pub(crate) struct ChatState {
     target: ChatTarget,
     /// Indexed by House array index. Dialog 0x73 writes it (`0x006582C3`);
     /// the local player's own byte is never written there.
-    mask: [bool; 8],
+    muted: std::collections::BTreeSet<usize>,
 }
 
 impl Default for ChatState {
     fn default() -> Self {
         Self {
             target: ChatTarget::None,
-            mask: [true; 8],
+            muted: Default::default(),
         }
     }
 }
 
 impl ChatState {
     pub(crate) fn listens(&self, house_index: usize) -> bool {
-        // Native reads past the eight bytes for a higher index; Multiplay
-        // Houses take the first indices.
-        self.mask.get(house_index).copied().unwrap_or(false)
+        // VERA extends the native eight-byte mask to actual House indices,
+        // including player Houses after Neutral/Special in a large roster.
+        !self.muted.contains(&house_index)
     }
 
     /// A chat box click: the byte takes the box's new check state
     /// (`HIWORD(wParam) == 1`, `0x00658294..0x006582C3`).
     pub(crate) fn set_listens(&mut self, house_index: usize, listens: bool) {
-        if let Some(byte) = self.mask.get_mut(house_index) {
-            *byte = listens;
+        if listens {
+            self.muted.remove(&house_index);
+        } else {
+            self.muted.insert(house_index);
         }
     }
 
     /// MPlayer_Defeated's local branch (`0x004FC23E`) sets every byte.
     pub(crate) fn local_player_defeated(&mut self) {
-        self.mask = [true; 8];
+        self.muted.clear();
     }
 }
 
@@ -137,6 +140,17 @@ pub(crate) fn key_edge(state: &mut AppState, edge: &InGameKeyEdge<'_>) -> bool {
         apply_input(state, key);
     }
     true
+}
+
+/// The pre-hook's head (`0x0055E42C..0x0055E465`): every unit queued from
+/// WM_IME_CHAR at `0xB730EC` goes to Input before the frame's key.
+pub(crate) fn commit_text(state: &mut AppState, text: &str) {
+    if !state.match_state.match_presentation.message_list.editing() {
+        return;
+    }
+    for unit in text.encode_utf16() {
+        apply_input(state, EditKey::Unit(unit));
+    }
 }
 
 /// A right press or release (key 2 or `0x802`) ends an open edit; the game
@@ -314,9 +328,8 @@ fn route_houses(
 /// Receive `0x0048D8DD..0x0048D9B8`: the line under the sender's node
 /// name in its colour, then one more IncomingMessage (`0x0048D995`) on top
 /// of Add_Message's own. No mask, alliance or defeat filter applies.
-/// RESIDUAL: the packet's own name and colour fields stand as the sending
-/// participant's name and House colour; the `-MESSAGES` hash filter
-/// (`[0xA8D60D]`, off by default) is not modelled.
+/// Controlled service input resolves the participant's name/colour. Physical
+/// global messages use receive_packet with their original carrier fields.
 pub(crate) fn receive(state: &mut AppState, source_index: usize, text: &str) {
     let session = &state.match_state.session;
     let name = crate::app::match_runtime::network_match::participant_name(session, source_index);
@@ -333,7 +346,27 @@ pub(crate) fn receive(state: &mut AppState, source_index: usize, text: &str) {
     let rgb = owner.map_or([1.0; 3], |owner| {
         crate::app::input::messages::player_line_rgb(state, owner)
     });
-    crate::app::input::messages::post_chat_line(state, &name, text, rgb);
+    receive_resolved(state, &name, text, rgb);
+}
+
+/// Global packet48D8DD supplies its own name and colour. Endpoint admission
+/// and the optional -MESSAGES hash gate belong to the network service.
+pub(crate) fn receive_packet(state: &mut AppState, name: &str, color: i32, text: &str) {
+    let rgb = crate::app::input::messages::packet_player_line_rgb(state, color);
+    receive_resolved(state, name, text, rgb);
+    let units: Vec<u16> = text.encode_utf16().collect();
+    crate::app::shell_wol::translation::received(
+        state,
+        &units,
+        crate::app::shell_wol::translation::TranslatedLine::Match {
+            name: name.to_owned(),
+            color,
+        },
+    );
+}
+
+fn receive_resolved(state: &mut AppState, name: &str, text: &str, rgb: [f32; 3]) {
+    crate::app::input::messages::post_chat_line(state, name, text, rgb);
     let sound = state
         .rules()
         .and_then(|rules| rules.general.incoming_message_sound().map(str::to_owned));
@@ -454,12 +487,52 @@ mod tests {
     }
 
     #[test]
+    fn later_house_chat_and_beacons_survive_defeat_and_reset() {
+        let mut chat = ChatState::default();
+        let houses = [
+            ChatHouse {
+                index: 8,
+                allied: false,
+                peer: Some(7),
+            },
+            ChatHouse {
+                index: 31,
+                allied: true,
+                peer: Some(29),
+            },
+        ];
+        assert_eq!(
+            route_houses(ChatTarget::Listeners, false, &chat, &houses),
+            (vec![7, 29], false)
+        );
+        chat.set_listens(31, false);
+        assert_eq!(
+            route_houses(ChatTarget::Listeners, false, &chat, &houses),
+            (vec![7], false)
+        );
+        chat.local_player_defeated();
+        assert_eq!(
+            route_houses(ChatTarget::Listeners, true, &chat, &houses),
+            (vec![7, 29], false)
+        );
+        let mut beacons = crate::app::match_runtime::beacons::BeaconManager::default();
+        assert_eq!(beacons.store(31, [10, 20, 0], None), Some(0));
+        assert_eq!(
+            beacons.iter().next().map(|(house, slot, _)| (house, slot)),
+            Some((31, 0))
+        );
+        beacons = Default::default();
+        assert_eq!(beacons.iter().count(), 0);
+        assert!(beacons.can_place(31));
+    }
+
+    #[test]
     fn the_mask_starts_set_and_defeat_sets_it_again() {
         let mut chat = ChatState::default();
         assert!((0..8).all(|index| chat.listens(index)));
         chat.set_listens(2, false);
         assert!(!chat.listens(2));
-        assert!(!chat.listens(8), "no byte past the eighth");
+        assert!(chat.listens(31), "VERA includes every House registry index");
         chat.local_player_defeated();
         assert!(chat.listens(2));
     }

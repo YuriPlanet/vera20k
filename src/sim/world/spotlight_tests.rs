@@ -21,7 +21,7 @@ fn overflowed_authored_spotlight_motion_keeps_its_last_pose_and_cleanup() {
         );
         let mut sim = Simulation::with_seed(9);
         let p = parent(&mut sim, EntityCategory::Structure);
-        sim.construct_spotlight(p, Some(&rules));
+        sim.construct_spotlight(p, &rules);
         let id = sim
             .substrate
             .entities
@@ -32,12 +32,12 @@ fn overflowed_authored_spotlight_motion_keeps_its_last_pose_and_cleanup() {
             .unwrap();
         let before = sim.substrate.spotlights.get(id).unwrap().coord;
         sim.set_spotlight_behavior(id, 2);
-        sim.visit_spotlight(id, &rules, UninitContext::new(Some(&rules), None));
+        sim.visit_spotlight(id, &rules, UninitContext::new(&rules, None));
         assert_eq!(sim.substrate.spotlights.get(id).unwrap().coord, before);
         assert!(sim.building_spotlight(id, &rules).is_some());
         // Invalid authored motion must not bypass ordinary orphan cleanup.
         sim.substrate.spotlights_pointer_expired(p);
-        sim.visit_spotlight(id, &rules, UninitContext::new(Some(&rules), None));
+        sim.visit_spotlight(id, &rules, UninitContext::new(&rules, None));
         assert!(
             sim.substrate
                 .pending_delete
@@ -128,7 +128,7 @@ fn original_constructor_endpoints_and_full_ai_motion_controls() {
             },
         );
         for frame in 1..=160 {
-            sim.visit_spotlight(2, &rules, UninitContext::new(Some(&rules), None));
+            sim.visit_spotlight(2, &rules, UninitContext::new(&rules, None));
             if let Some(expected) = case["states"]
                 .as_array()
                 .unwrap()
@@ -160,7 +160,7 @@ fn shared_ids_logic_snapshot_and_parent_limbo_retire_the_independent_child() {
     let rules = rules();
     let mut sim = Simulation::with_seed(9);
     let p = parent(&mut sim, EntityCategory::Structure);
-    sim.construct_spotlight(p, Some(&rules));
+    sim.construct_spotlight(p, &rules);
     let id = sim
         .substrate
         .entities
@@ -183,7 +183,7 @@ fn shared_ids_logic_snapshot_and_parent_limbo_retire_the_independent_child() {
     loaded.restore_after_snapshot_load().unwrap();
     assert_eq!(loaded.substrate.spotlights.get(id), Some(&state));
     loaded.debug_assert_logic_membership_consistent();
-    loaded.destroy_spotlight_for_parent(p, UninitContext::new(Some(&rules), None));
+    loaded.destroy_spotlight_for_parent(p, UninitContext::new(&rules, None));
     assert!(!loaded.substrate.spotlights.contains_key(id));
     assert!(!loaded.substrate.logic.as_slice().contains(&id));
     assert_eq!(
@@ -208,7 +208,7 @@ fn init(sim: &mut Simulation, map: &crate::map::map_file::MapFile) {
         None,
         None,
     );
-    sim.classify_map_triggers(None);
+    sim.classify_map_triggers(crate::rules::ruleset::RuleSet::empty_for_test());
     sim.session.publish_started();
 }
 #[test]
@@ -223,7 +223,7 @@ fn spotlight_action52_counts_only_matching_live_trigger_buildings_and_keeps_full
             .unwrap()
             .lifecycle
             .set_cell_marked_for_test(true);
-        sim.construct_spotlight(first, Some(&rules));
+        sim.construct_spotlight(first, &rules);
         let second = parent_id(&mut sim, EntityCategory::Structure, 3);
         sim.substrate
             .entities
@@ -231,7 +231,7 @@ fn spotlight_action52_counts_only_matching_live_trigger_buildings_and_keeps_full
             .unwrap()
             .lifecycle
             .set_cell_marked_for_test(true);
-        sim.construct_spotlight(second, Some(&rules));
+        sim.construct_spotlight(second, &rules);
         let a = sim
             .substrate
             .entities
@@ -252,7 +252,7 @@ fn spotlight_action52_counts_only_matching_live_trigger_buildings_and_keeps_full
         init(&mut sim, &map);
         sim.attach_object_trigger_tag(first, Some("TAG"));
         sim.attach_object_trigger_tag(second, Some("OTHER"));
-        sim.advance_triggers(Some(&rules), None, super::super::FrameEffects::default());
+        sim.advance_triggers(&rules, None, super::super::FrameEffects::default());
         assert_eq!(sim.substrate.spotlights.get(a).unwrap().mode, mode);
         assert_eq!(sim.substrate.spotlights.get(b).unwrap().mode, 1);
     }
@@ -268,7 +268,7 @@ fn spotlight_event35_uses_child_ground_lists_mode_gate_and_synchronous_tag_actio
         let rules = rules();
         let mut sim = Simulation::with_seed(8);
         let p = parent(&mut sim, EntityCategory::Structure);
-        sim.construct_spotlight(p, Some(&rules));
+        sim.construct_spotlight(p, &rules);
         let id = sim
             .substrate
             .entities
@@ -340,7 +340,7 @@ fn spotlight_cone_geometry_matches_original_before_projection() {
     for row in corpus["draw_geometry"].as_array().unwrap() {
         let mut sim = Simulation::with_seed(8);
         let p = parent(&mut sim, EntityCategory::Structure);
-        sim.construct_spotlight(p, Some(&rules));
+        sim.construct_spotlight(p, &rules);
         let id = sim
             .substrate
             .entities
@@ -384,7 +384,7 @@ fn spotlight_real_building_unlimbo_registers_the_child_and_limbo_cleans_both_own
     assert!(
         order.iter().position(|&x| x == id).unwrap() < order.iter().position(|&x| x == p).unwrap()
     );
-    sim.uninit_with_context(p, UninitContext::new(Some(&rules), None));
+    sim.uninit_with_context(p, UninitContext::new(&rules, None));
     assert!(!sim.substrate.spotlights.contains_key(id));
     assert_eq!(
         sim.substrate
@@ -402,7 +402,7 @@ fn spotlight_tracking_selects_first_nearest_enemy_and_expiry_clears_the_pointer(
     let rules = rules();
     let mut sim = Simulation::with_seed(8);
     let p = parent(&mut sim, EntityCategory::Structure);
-    sim.construct_spotlight(p, Some(&rules));
+    sim.construct_spotlight(p, &rules);
     let id = sim
         .substrate
         .entities
@@ -449,6 +449,6 @@ fn spotlight_tracking_selects_first_nearest_enemy_and_expiry_clears_the_pointer(
     assert_eq!(sim.substrate.spotlights.get(id).unwrap().target, Some(4));
     sim.set_spotlight_behavior(id, 2);
     assert_eq!(sim.substrate.spotlights.get(id).unwrap().target, Some(4));
-    sim.notify_pointer_expired(4, UninitContext::new(Some(&rules), None));
+    sim.notify_pointer_expired(4, UninitContext::new(&rules, None));
     assert_eq!(sim.substrate.spotlights.get(id).unwrap().target, None);
 }

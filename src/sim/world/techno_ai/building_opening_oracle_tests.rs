@@ -107,7 +107,7 @@ fn joined_fixture(rules: &RuleSet, row: &Value) -> (Simulation, u64) {
             id,
             RadioMessage::Hello,
             RadioPayload::default(),
-            Some(rules),
+            rules,
             crate::sim::world::FrameEffects::default(),
         );
     }
@@ -123,14 +123,14 @@ fn joined_fixture(rules: &RuleSet, row: &Value) -> (Simulation, u64) {
             yard,
             RadioMessage::DockArrived,
             RadioPayload::default(),
-            Some(rules),
+            rules,
             crate::sim::world::FrameEffects::default(),
         );
         transmit_to_contact(
             &mut sim,
             yard,
             RadioMessage::Break,
-            Some(rules),
+            rules,
             crate::sim::world::FrameEffects::default(),
         );
     }
@@ -472,15 +472,9 @@ fn stock_opening_matches_original_building_and_same_pass_anim_visits() {
                             None,
                             crate::sim::world::FrameEffects::default(),
                         );
-                        update_animation(sim, stable_id, Some(rules));
+                        update_animation(sim, stable_id, rules);
                         ready_commence(&sim.session, &mut sim.substrate, stable_id, true);
-                        dispatch(
-                            sim,
-                            stable_id,
-                            Some(rules),
-                            ObjectAiCtx::default(),
-                            &mut false,
-                        );
+                        dispatch(sim, stable_id, rules, ObjectAiCtx::default(), &mut false);
                         ready_commence(&sim.session, &mut sim.substrate, stable_id, false);
                         apply_queued_body(&sim.session, &mut sim.substrate, stable_id);
                     }
@@ -636,14 +630,7 @@ fn place_selects_the_original_house_order_and_primary_factory() {
             .production
             .primary_factory_ids(owner, ProductionCategory::Building)
             .next();
-        initialize_factory_primary(
-            &sim.interner,
-            &mut sim.production,
-            &sim.substrate,
-            &sim.houses,
-            ids[index],
-            &rules,
-        );
+        initialize_factory_primary(&mut sim, &rules, ids[index]);
         let after = sim
             .production
             .primary_factory_ids(owner, ProductionCategory::Building)

@@ -235,7 +235,7 @@ impl Scene {
         super::dispatch(
             &mut self.sim,
             self.depot,
-            Some(&self.rules),
+            &self.rules,
             ObjectAiCtx::default(),
             &mut false,
         );
@@ -639,7 +639,7 @@ fn native_pending_entry_and_radio_lifecycle_use_shared_command_owners() {
             "unit_null" => {
                 scene.sim.set_unit_null_destination(
                     scene.tank,
-                    Some(&scene.rules),
+                    &scene.rules,
                     None,
                     crate::sim::world::FrameEffects::default(),
                 );
@@ -656,7 +656,7 @@ fn native_pending_entry_and_radio_lifecycle_use_shared_command_owners() {
             "unit_idle" => {
                 let _ = scene.sim.unit_enter_idle_mode(
                     scene.tank,
-                    Some(&scene.rules),
+                    &scene.rules,
                     false,
                     crate::sim::world::FrameEffects::default(),
                 );
@@ -668,7 +668,7 @@ fn native_pending_entry_and_radio_lifecycle_use_shared_command_owners() {
                     MissionType::Move,
                     None,
                     None,
-                    Some(&scene.rules),
+                    &scene.rules,
                     crate::sim::world::FrameEffects::default(),
                 );
             }
@@ -918,7 +918,7 @@ fn native_unit_radio_repair_payment_heal_and_responses() {
             Some(scene.depot),
             RadioMessage::RepairTick,
             RadioPayload::default(),
-            Some(&scene.rules),
+            &scene.rules,
             crate::sim::world::FrameEffects::default(),
         );
         let step = &row["steps"][0];
@@ -993,7 +993,7 @@ fn native_unit_destination_power_tail_uses_raw_cell_and_shared_setters() {
         if row["input"]["null"] == true {
             scene.sim.set_unit_null_destination(
                 scene.tank,
-                Some(&scene.rules),
+                &scene.rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
             );
@@ -1100,7 +1100,7 @@ fn native_ready_prerequisites_use_the_building_commence_owner() {
                         Some(scene.tank),
                         RadioMessage::DockNow,
                         RadioPayload::default(),
-                        Some(&scene.rules),
+                        &scene.rules,
                         crate::sim::world::FrameEffects::default(),
                     );
                     assert_eq!(
@@ -1130,7 +1130,7 @@ fn native_paid_retry_full_release_histories_run_mission_dispatch_every_frame() {
                 Some(scene.tank),
                 RadioMessage::DockNow,
                 RadioPayload::default(),
-                Some(&scene.rules),
+                &scene.rules,
                 crate::sim::world::FrameEffects::default(),
             );
             let native = steps.next().unwrap();

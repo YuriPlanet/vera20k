@@ -3,10 +3,13 @@
 //! UI overlays, selection brackets, target lines, and the overlay render index.
 
 pub(crate) mod airstrike_lines;
+pub(crate) mod build_text;
 pub(crate) mod building_anim;
 pub(crate) mod combat_lights;
 pub(crate) mod control_links;
 pub(crate) mod detail;
+#[cfg(feature = "phobos")]
+pub(crate) mod digital_display;
 pub(crate) mod electric_bolts;
 pub(crate) mod fire_effects;
 pub(crate) mod house_ui;
@@ -17,9 +20,12 @@ pub(crate) mod lasers;
 pub(crate) mod line_trails;
 pub(crate) mod outcome_banner;
 pub(crate) mod overlay_index;
+#[cfg(feature = "phobos")]
+pub(crate) mod placement_preview;
 pub(crate) mod radial_indicators;
 pub(crate) mod radiation_beams;
 pub(crate) mod render;
+pub(crate) mod screen_shake;
 pub(crate) mod selection_brackets;
 pub(crate) mod sidebar_build;
 pub(crate) mod sidebar_gadgets;

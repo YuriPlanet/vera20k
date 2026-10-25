@@ -124,7 +124,7 @@ fn ground_walk_order_preserves_native_human_deploy_refusal() {
     let _ = sim.assign_destination_represented(
         id,
         Some(crate::sim::components::NavTargetRef::cell(11, 10)),
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     );
@@ -210,7 +210,7 @@ fn only_the_click_asks_can_enter_cell() {
 /// own bank.
 #[test]
 fn an_aircraft_click_keeps_a_river_cell() {
-    let Some((sim, rules, owner, gi, harrier)) = retail_scene("ORCA") else {
+    let Some((mut sim, rules, owner, gi, harrier)) = retail_scene("ORCA") else {
         return;
     };
     assert_eq!(
@@ -222,6 +222,28 @@ fn an_aircraft_click_keeps_a_river_cell() {
         .unwrap()
         .unwrap();
     assert!(goal.0 < 8, "{goal:?}");
+    // ClickedAction_Cell4D806F resolves each destination independently, but
+    // 4D8095 sends the original click as auxiliary to the shared plan node.
+    sim.session.set_current_house_for_test(Some(owner));
+    for (actor, destination) in [(gi, goal), (harrier, (9, 5))] {
+        let record = sim
+            .encode_planning_order_record(
+                owner,
+                &crate::sim::command::Command::Move {
+                    entity_id: actor,
+                    target_rx: destination.0,
+                    target_ry: destination.1,
+                },
+                Some((9, 5)),
+            )
+            .unwrap();
+        let order = sim.decode_native_command_record(&record, 0).unwrap();
+        assert!(sim.apply_command("Local", &order.payload, Some(&rules)));
+    }
+    let graph = sim.planning_draw_graph(owner, &[gi, harrier], None, None);
+    assert_eq!(graph.nodes.len(), 1, "one river click is one shared node");
+    assert_eq!(graph.nodes[0].coord, DriveCoord::cell(9, 5, 0));
+    assert_eq!(graph.nodes[0].members, vec![gi, harrier]);
 }
 
 /// A Teleporter whose own What_Action answers Move keeps the clicked Cell,

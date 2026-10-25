@@ -891,13 +891,12 @@ fn indexed_model_loader_requires_turret_pairs_but_allows_absent_barrels() {
             .unwrap();
         }
         let fixture = AssetManager::from_loose_root_for_test(directory.path());
-        let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        let art = IniFile::from_str("[FV]\nVoxel=yes\n");
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&format!(
             "[VehicleTypes]\n0=FV\n[FV]\nTurretCount=2\nTurret={turret}\nIsGattling={gattling}\n"
-        )))
+        )), &art)
         .unwrap();
-        rules.install_art_fixture(crate::rules::art_data::ArtRegistry::from_ini(
-            &IniFile::from_str("[FV]\nVoxel=yes\n"),
-        ));
+        rules.install_art_fixture(crate::rules::art_data::ArtRegistry::from_ini(&art));
         assert_eq!(
             UnitModel::load(&fixture, "FV", Some(&rules)).map(|model| model.guns.len()),
             expected_guns,

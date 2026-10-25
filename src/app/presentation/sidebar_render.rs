@@ -117,8 +117,16 @@ fn apply_cameo_transitions(
 /// transitions, never from a view consumer.
 pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
     refresh_radar_animation_source(state);
+    let theme = current_sidebar_theme(state);
+    #[cfg(feature = "phobos")]
+    let gdi_positions = state.rules().map_or(
+        theme == crate::render::sidebar_chrome::SidebarTheme::Allied,
+        |rules| rules.side_gdi_positions(current_sidebar_side(state)),
+    );
+    #[cfg(not(feature = "phobos"))]
+    let gdi_positions = theme == crate::render::sidebar_chrome::SidebarTheme::Allied;
     let mut spec =
-        crate::ui::sidebar::SidebarChromeLayoutSpec::for_theme(current_sidebar_theme(state));
+        crate::ui::sidebar::SidebarChromeLayoutSpec::for_theme_and_positions(theme, gdi_positions);
     #[cfg(any(target_os = "ios", target_os = "android"))]
     {
         spec.touch_controls = true;
@@ -345,19 +353,36 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         .sidebar_cameo_atlas
         .as_ref()
     {
-        let house = state
+        let simulation = state
             .match_state
             .sim_runtime
             .as_ref()
-            .and_then(|rt| rt.simulation.houses().get(&owner));
+            .map(|rt| &rt.simulation);
+        let house = simulation.and_then(|sim| sim.houses().get(&owner));
         let rules = state.rules();
         for item in &mut view.items {
-            item.alt_cameo = house.is_some_and(|house| {
-                rules
-                    .and_then(|rules| rules.object(&item.type_id))
-                    .is_some_and(|obj| shows_alt_cameo(house, obj))
-            });
-            item.has_cameo_art = atlas.cameo(&item.type_id, item.alt_cameo).is_some();
+            item.alt_cameo = !item.is_superweapon
+                && house.is_some_and(|house| {
+                    rules.is_some_and(|rules| {
+                        rules.object(&item.type_id).is_some_and(|obj| {
+                            let country = simulation
+                                .map_or("", |sim| sim.interner().resolve(house.house_type_id()));
+                            shows_alt_cameo(
+                                house,
+                                obj,
+                                rules,
+                                country,
+                                atlas.has_alternate(&item.type_id),
+                            )
+                        })
+                    })
+                });
+            item.has_cameo_art = if item.is_superweapon {
+                atlas.superweapon(&item.type_id)
+            } else {
+                atlas.cameo(&item.type_id, item.alt_cameo)
+            }
+            .is_some();
         }
     }
     // The rebuilt view takes its drawn cameo state from the same projection
@@ -435,12 +460,39 @@ pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
 /// and for buildings that undeploy). [`SidebarCameoAtlas::cameo`] keeps the
 /// plain cameo when no alternate image loaded.
 ///
+/// Ares1003D800 additionally admits the current Country's retained lists.
+/// An undeploying Building uses the Unit-list branch, comparing its own
+/// BuildingType pointer, not UndeploysInto; that cannot match an INI-produced
+/// UnitType list. New Ares SpyEffect.Custom House gains are a separate chain;
+/// this selector reads the stock spy flags currently represented by HouseState.
+///
 /// [`SidebarCameoAtlas::cameo`]: crate::render::sidebar_cameo_atlas::SidebarCameoAtlas::cameo
 fn shows_alt_cameo(
     house: &crate::sim::house_state::HouseState,
     obj: &crate::rules::object_type::ObjectType,
+    rules: &crate::rules::ruleset::RuleSet,
+    country: &str,
+    has_alternate: bool,
 ) -> bool {
     use crate::rules::object_type::ObjectCategory;
+    if !has_alternate {
+        return false;
+    }
+    if crate::rules::ARES_ENABLED {
+        if obj.category == ObjectCategory::Building && obj.undeploys_into.is_some() {
+            return false;
+        }
+        if rules.country_starts_veteran(country, obj) {
+            return true;
+        }
+        return obj.trainable
+            && !obj.naval
+            && match obj.category {
+                ObjectCategory::Infantry => house.veteran_infantry(),
+                ObjectCategory::Vehicle => house.veteran_units(),
+                ObjectCategory::Aircraft | ObjectCategory::Building => false,
+            };
+    }
     obj.trainable
         && match obj.category {
             ObjectCategory::Infantry => house.veteran_infantry(),
@@ -473,12 +525,10 @@ pub(crate) fn try_begin_minimap_drag(state: &mut AppState) -> bool {
     if !is_cursor_over_minimap(state) {
         return false;
     }
-    // RadarClass input @ 0x006539D0 routes ordinary selected objects to the
-    // camera branch before DisplayClass::BandBox_LeftUp. A minimap press never
-    // gains selected-unit Move/AttackMove precedence.
+    // Capture the region for the release; Radar653CC0..653D6F decides
+    // separately whether this press centers the view or awaits an order.
     state.match_state.input.minimap_dragging = true;
     state.match_state.input.selection_state.cancel_drag();
-    update_camera_from_minimap_cursor(state);
     true
 }
 
@@ -514,6 +564,26 @@ pub(crate) fn minimap_camera_target(
             (tactical_w as i32, tactical_h as i32),
         )
     })
+}
+
+/// The order/cursor target precedes the camera branch's viewport clamp in
+/// RadarClass::Input (`0x00653ABC` versus `0x00653D7A`).
+pub(crate) fn minimap_input_target(
+    state: &AppState,
+) -> Option<crate::render::radar::NativeRadarInputTarget> {
+    let rect = active_minimap_screen_rect(state);
+    let runtime = state.match_state.sim_runtime.as_ref()?;
+    state
+        .match_state
+        .match_presentation
+        .minimap
+        .as_ref()?
+        .native_input_target_in_rect(
+            sidebar_cursor(state),
+            [rect.x, rect.y, rect.w, rect.h],
+            &runtime.simulation,
+            &runtime.resources.rules,
+        )
 }
 
 pub(crate) fn minimap_object_click_position(state: &AppState, id: u64) -> Option<[u32; 2]> {
@@ -631,40 +701,42 @@ pub(crate) fn active_minimap_screen_rect(state: &AppState) -> crate::ui::sidebar
 pub(crate) fn current_sidebar_theme(
     state: &AppState,
 ) -> crate::render::sidebar_chrome::SidebarTheme {
-    preferred_local_owner_name(state)
-        .and_then(|owner| {
-            sidebar_theme_for_owner(
-                state
-                    .match_state
-                    .sim_runtime
-                    .as_ref()
-                    .map(|rt| &rt.simulation),
-                &owner,
-            )
-        })
-        .unwrap_or(crate::render::sidebar_chrome::SidebarTheme::Allied)
+    crate::render::sidebar_chrome::sidebar_theme_for_side(current_sidebar_side(state))
 }
 
-/// Shared installed-owner and atlas fallback projection for chrome and radar.
-/// The map loader calls the final sidebar refresh only after installing the
-/// new simulation and pinned owner; this helper never reads old load inputs.
-pub(crate) fn project_sidebar_source<'a, T>(
+/// The active native Scenario.Side owns Ares MIX selection. The retail sandbox
+/// retains its development owner switch. Neither path rewrites House identity.
+pub(crate) fn current_sidebar_side(state: &AppState) -> i32 {
+    let sim = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|rt| &rt.simulation);
+    #[cfg(feature = "ares")]
+    let owner = None::<String>;
+    #[cfg(not(feature = "ares"))]
+    let owner = preferred_local_owner_name(state);
+    project_sidebar_side(sim, owner.as_deref())
+}
+
+/// The production chrome and radar adapters share this side-index decision.
+/// Original68781F/534FA0 and Ares1002FA00 consume the installed Scenario.Side;
+/// the ordinary sandbox retains its existing live-owner development switch.
+pub(crate) fn project_sidebar_side(
     simulation: Option<&crate::sim::world::Simulation>,
     owner: Option<&str>,
-    allied: Option<&'a T>,
-    soviet: Option<&'a T>,
-    yuri: Option<&'a T>,
-) -> Option<(
-    crate::render::sidebar_chrome::SidebarTheme,
-    crate::render::sidebar_chrome::SidebarTheme,
-    &'a T,
-)> {
-    let requested = owner
-        .and_then(|owner| sidebar_theme_for_owner(simulation, owner))
-        .unwrap_or(crate::render::sidebar_chrome::SidebarTheme::Allied);
-    let (actual, source) =
-        crate::render::sidebar_chrome::select_sidebar_theme(requested, allied, soviet, yuri)?;
-    Some((requested, actual, source))
+) -> i32 {
+    #[cfg(feature = "ares")]
+    if let Some(sim) = simulation {
+        return sim.session().scenario_side();
+    }
+    owner
+        .zip(simulation)
+        .and_then(|(owner, sim)| {
+            crate::sim::house_state::house_state_for_owner(sim.houses(), owner, sim.interner())
+                .map(|house| house.side_index())
+        })
+        .unwrap_or(0)
 }
 
 fn current_sidebar_resolution(
@@ -675,23 +747,7 @@ fn current_sidebar_resolution(
         .match_presentation
         .sidebar_chrome
         .as_ref()?;
-    let owner = preferred_local_owner_name(state);
-    let (requested_theme, actual_theme, atlas) = project_sidebar_source(
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        owner.as_deref(),
-        set.allied.as_ref(),
-        set.soviet.as_ref(),
-        set.yuri.as_ref(),
-    )?;
-    Some(crate::render::sidebar_chrome::ResolvedSidebarChrome {
-        requested_theme,
-        actual_theme,
-        atlas,
-    })
+    set.resolve_side(current_sidebar_side(state))
 }
 
 pub(crate) fn current_sidebar_chrome(
@@ -707,6 +763,8 @@ fn refresh_radar_animation_source(state: &mut AppState) {
     let Some(resolved) = current_sidebar_resolution(state) else {
         let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         crate::app::radar_movie::retire(state, wall_ms);
+        // No housing is left to settle and end the radar's static.
+        crate::app::radar_movie::end_radar_sound_loop(state);
         let presentation = &mut state.match_state.match_presentation;
         presentation.radar_anim = None;
         presentation.radar_animation_source = None;
@@ -761,32 +819,7 @@ fn refresh_radar_animation_source(state: &mut AppState) {
     if presentation.radar_anim.is_none() {
         let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         crate::app::radar_movie::retire(state, wall_ms);
-    }
-}
-
-/// Original gamemd.exe:
-/// Full_Init @ 0x006877C9..0x0068781F resolves Basic.Player with 0x0050C170,
-/// reads House.Country+0x34 -> Country.Side+0xBC, then installs that side for
-/// InitSideMixFiles @ 0x00534FA0. Radar @ 0x00652E90 and resource selection
-/// @ 0x0072FA10 consume the installed side. Map House Side/Country text is
-/// not a second presentation authority. The executed stock House bindings
-/// are in tools/input_oracle/campaign_start_houses.json; they establish
-/// Americans/0 and Russians/1, without certifying native raster output.
-pub(crate) fn sidebar_theme_for_owner(
-    simulation: Option<&crate::sim::world::Simulation>,
-    owner: &str,
-) -> Option<crate::render::sidebar_chrome::SidebarTheme> {
-    let simulation = simulation?;
-    let live_house = crate::sim::house_state::house_state_for_owner(
-        simulation.houses(),
-        owner,
-        simulation.interner(),
-    )?;
-    match live_house.side_index() {
-        0 => Some(crate::render::sidebar_chrome::SidebarTheme::Allied),
-        1 => Some(crate::render::sidebar_chrome::SidebarTheme::Soviet),
-        2 => Some(crate::render::sidebar_chrome::SidebarTheme::Yuri),
-        _ => None,
+        crate::app::radar_movie::end_radar_sound_loop(state);
     }
 }
 
@@ -821,6 +854,7 @@ pub(crate) fn begin_main_pass<'a>(
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
+        multiview_mask: None,
     })
 }
 
@@ -852,6 +886,7 @@ pub(crate) fn begin_main_load_pass<'a>(
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
+        multiview_mask: None,
     })
 }
 
@@ -1036,7 +1071,13 @@ mod tests {
         let rules = &retail.rules;
         let id = crate::sim::intern::InternedId::default();
         let shows = |house: &HouseState, kind: &str| {
-            shows_alt_cameo(house, rules.object(kind).expect("a retail type"))
+            shows_alt_cameo(
+                house,
+                rules.object(kind).expect("a retail type"),
+                rules,
+                "",
+                true,
+            )
         };
         let mut barracks = HouseState::new(id, 0, None, true, 0, 10);
         barracks.grant_veteran_infantry();
@@ -1046,7 +1087,11 @@ mod tests {
         let mut war_factory = HouseState::new(id, 0, None, true, 0, 10);
         war_factory.grant_veteran_units();
         assert!(shows(&war_factory, "MTNK"));
-        assert!(shows(&war_factory, "DEST"), "GetCameo does not ask Naval=");
+        assert_eq!(
+            shows(&war_factory, "DEST"),
+            !crate::rules::ARES_ENABLED,
+            "stock GetCameo uses the ground spy flag for ships; Ares separates naval gains"
+        );
         assert!(!shows(&war_factory, "ORCA"));
         assert!(!shows(&war_factory, "E1"));
 
@@ -1061,5 +1106,76 @@ mod tests {
             Some("FALCUICO"),
             "declared, but GetCameo never draws an aircraft's"
         );
+    }
+
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_country_alternate_cameos_match_native_category_and_art_gates() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+        let corpus = crate::test_fixture::json("tools/rules_oracle/ares_country_veterancy.json");
+        for row in corpus["cameo_country"].as_array().unwrap() {
+            if row["unit_list_self"].as_bool().unwrap() {
+                // This native pointer-comparison witness places a BuildingType
+                // in a UnitType-only vector, outside normal INI-produced state.
+                assert!(row["input_limit"].as_str().is_some());
+                continue;
+            }
+            let (registry, key) = match row["category"].as_str().unwrap() {
+                "infantry" => ("InfantryTypes", "VeteranInfantry"),
+                "unit" => ("VehicleTypes", "VeteranUnits"),
+                "aircraft" => ("AircraftTypes", "VeteranAircraft"),
+                "building" => ("BuildingTypes", "VeteranBuildings"),
+                other => panic!("unknown native category {other}"),
+            };
+            let undeploys = row["undeploys"].as_bool().unwrap();
+            let target_list = if row["unit_list_undeploy_target"].as_bool().unwrap() {
+                "VeteranUnits=UNDEPLOY_TARGET\n"
+            } else {
+                ""
+            };
+            let registries = if registry == "VehicleTypes" {
+                "[VehicleTypes]\n0=SUBJECT\n99=UNDEPLOY_TARGET\n".to_owned()
+            } else {
+                format!("[{registry}]\n0=SUBJECT\n[VehicleTypes]\n99=UNDEPLOY_TARGET\n")
+            };
+            let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[Countries]\n0=SYNTHCOUNTRY\n[SYNTHCOUNTRY]\n{key}={}\n{target_list}\
+                 {registries}\
+                 [UNDEPLOY_TARGET]\nStrength=100\n[SUBJECT]\nStrength=100\nTrainable={}\n{}",
+                if row["member"].as_bool().unwrap() {
+                    "SUBJECT"
+                } else {
+                    "none"
+                },
+                if row["trainable"].as_bool().unwrap() {
+                    "yes"
+                } else {
+                    "no"
+                },
+                if undeploys {
+                    "UndeploysInto=UNDEPLOY_TARGET\n"
+                } else {
+                    ""
+                },
+            )))
+            .unwrap();
+            let mut interner = StringInterner::default();
+            let owner = interner.intern("HOUSE");
+            let country = interner.intern("SYNTHCOUNTRY");
+            let house = HouseState::new(owner, 0, Some(country), true, 0, 10);
+            assert_eq!(
+                shows_alt_cameo(
+                    &house,
+                    rules.object("SUBJECT").unwrap(),
+                    &rules,
+                    "SYNTHCOUNTRY",
+                    row["alt_art"].as_bool().unwrap()
+                ),
+                row["eligible"].as_bool().unwrap(),
+                "{}",
+                row["name"]
+            );
+        }
     }
 }

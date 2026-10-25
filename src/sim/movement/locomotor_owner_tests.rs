@@ -10,13 +10,14 @@ use crate::sim::combat::Health;
 use crate::sim::command::Command;
 use crate::sim::components::DriveCoord;
 use crate::sim::movement;
+use crate::sim::movement::DriveLocomotionRuntime;
 use crate::sim::movement::locomotion::LocomotorRuntimePayload;
 use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::movement::track_process::TrackFamily;
-use crate::sim::movement::{DriveLocomotionRuntime, ShipLocomotionRuntime};
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::world::Simulation;
-use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+use crate::util::fixed_math::SimFixed;
+use crate::util::native_x87::NativeF64Bits;
 
 fn fixture() -> (Simulation, RuleSet) {
     let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -159,9 +160,9 @@ fn foot_ai_restore_retires_same_drive_fields_as_direct_destination() {
     let (mut sim, _) = fixture();
     activate_drive(sim.substrate.entities.get_mut(1).unwrap());
 
-    assert!(sim.try_end_piggyback(1, None));
+    assert!(sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
     assert_retired(sim.substrate.entities.get(1).unwrap());
-    assert!(!sim.try_end_piggyback(1, None));
+    assert!(!sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
 }
 
 /// The arm's can't-end branch (`0x0074258C..0x007425C6`): a Drive still on
@@ -184,14 +185,14 @@ fn refused_restore_keeps_live_head_and_forced_segment() {
                 1,
                 0x47,
                 DriveCoord::cell(9, 8, 731),
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
                 crate::sim::world::FrameEffects::default()
             ));
         }
 
         assert!(destination(&mut sim, &rules, true));
-        assert!(!sim.try_end_piggyback(1, None));
+        assert!(!sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
         let entity = sim.substrate.entities.get(1).unwrap();
         let locomotor = entity.locomotor.as_ref().unwrap();
         assert_eq!(locomotor.active_kind(), LocomotorKind::Drive);
@@ -234,7 +235,7 @@ fn out_of_contact_destination_installs_fresh_drive_without_previous_instance_sta
     let mut track = loco.track_progress(TrackFamily::Drive).unwrap();
     track.set_turn_index(0x47);
     loco.store_track_progress(TrackFamily::Drive, track);
-    assert!(sim.try_end_piggyback(1, None));
+    assert!(sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
 
     assert!(destination(&mut sim, &rules, false));
 
@@ -262,7 +263,7 @@ fn reusing_active_drive_keeps_complete_instance_including_forced_track() {
         1,
         0x47,
         DriveCoord::cell(9, 8, 731),
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default()
     ));
@@ -337,8 +338,8 @@ fn refused_installation_and_absent_stash_preserve_instance_and_foot_state() {
         let before = owned_state(entity);
 
         assert!(!begin_drive_for_teleporter(entity, 37));
-        assert!(!sim.try_end_piggyback(1, None));
-        assert!(!sim.end_admitted_piggyback(1, None));
+        assert!(!sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
+        assert!(!sim.end_admitted_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
         assert_eq!(owned_state(sim.substrate.entities.get(1).unwrap()), before);
     }
 }
@@ -400,7 +401,7 @@ fn refused_miner_order_leaves_teleport_payload_untouched() {
         let (mut sim, rules) = fixture();
         if retired_drive {
             activate_drive(sim.substrate.entities.get_mut(1).unwrap());
-            assert!(sim.try_end_piggyback(1, None));
+            assert!(sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
         }
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         let mut path_runtime = crate::sim::components::FootPathRuntime::at_frame(0);
@@ -447,7 +448,7 @@ fn foot_queue_survives_drive_retirement_construction_and_reuse() {
     ));
     let queue = entity.navigation.path_replay().clone();
     let speed = entity.foot_speed.clone();
-    assert!(sim.try_end_piggyback(1, None));
+    assert!(sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     assert_retired(entity);
     assert_eq!(entity.navigation.path_replay().clone(), queue);
@@ -528,24 +529,30 @@ fn foot_speed_ownership_matches_original_helper_witnesses() {
         .collect();
     assert_eq!(cases.len(), 12);
     for case in cases {
-        let requested = SimFixed::from_num(case["input"]["requested"].as_f64().unwrap());
-        let expected = SimFixed::from_num(case["output"]["applied"].as_f64().unwrap());
+        let requested =
+            NativeF64Bits::from_bits(case["input"]["requested"].as_f64().unwrap().to_bits());
+        let expected =
+            NativeF64Bits::from_bits(case["output"]["applied"].as_f64().unwrap().to_bits());
         let (mut sim, _) = fixture();
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         let mut owner_speed = FootSpeedState::default();
         // The non-accelerating production branch reaches the same finite
         // SetSpeedFraction clamp. Native witnesses execute the complete setter.
         if case["input"]["family"] == "drive" {
-            let drive =
-                DriveLocomotionRuntime::default().with_target_speed_fraction_for_test(requested);
+            let mut drive = LocomotorState::for_test_kind(LocomotorKind::Drive);
+            assert!(drive.ensure_installed_track_state());
+            assert!(drive.store_track_target_fraction_native(TrackFamily::Drive, requested));
             let step = super::super::drive_locomotion::track_speed_prefix(
                 &non_accelerating_prefix(),
                 || unreachable!("Accelerates=false measures no distance"),
-                drive.target_speed_fraction(),
-                owner_speed.applied_fraction(),
+                drive
+                    .track_target_fraction_native(TrackFamily::Drive)
+                    .unwrap(),
+                owner_speed.native_applied_fraction(),
             );
-            owner_speed.set_speed_fraction(step.set_fraction.unwrap());
-            assert_eq!(owner_speed.applied_fraction(), expected);
+            assert_eq!(step.target, requested);
+            owner_speed.set_speed_fraction_native_bits(step.set_fraction.unwrap().bits());
+            assert_eq!(owner_speed.native_applied_fraction(), expected);
             entity.foot_speed = owner_speed.clone();
             assert!(begin_drive_for_teleporter(entity, 3));
             super::super::navcom::set_destination_internal_cell(entity, (12, 8), None, 0);
@@ -555,27 +562,35 @@ fn foot_speed_ownership_matches_original_helper_witnesses() {
                     .locomotor
                     .as_ref()
                     .unwrap()
-                    .track_target_fraction(TrackFamily::Drive),
-                Some(SimFixed::from_num(
-                    case["output"]["constructor_target"].as_f64().unwrap()
+                    .track_target_fraction_native(TrackFamily::Drive),
+                Some(NativeF64Bits::from_bits(
+                    case["output"]["constructor_target"]
+                        .as_f64()
+                        .unwrap()
+                        .to_bits()
                 ))
             );
-            assert!(sim.end_admitted_piggyback(1, None));
+            assert!(
+                sim.end_admitted_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test())
+            );
             let entity = sim.substrate.entities.get(1).unwrap();
             assert_retired(entity);
             assert_eq!(entity.foot_speed, owner_speed);
             assert_eq!(case["output"]["end_preserves_owner"], true);
         } else {
-            let ship =
-                ShipLocomotionRuntime::default().with_target_speed_fraction_for_test(requested);
+            let mut ship = LocomotorState::for_test_kind(LocomotorKind::Ship);
+            assert!(ship.ensure_installed_track_state());
+            assert!(ship.store_track_target_fraction_native(TrackFamily::Ship, requested));
             let step = super::super::drive_locomotion::track_speed_prefix(
                 &non_accelerating_prefix(),
                 || unreachable!("Accelerates=false measures no distance"),
-                ship.target_speed_fraction(),
-                owner_speed.applied_fraction(),
+                ship.track_target_fraction_native(TrackFamily::Ship)
+                    .unwrap(),
+                owner_speed.native_applied_fraction(),
             );
-            owner_speed.set_speed_fraction(step.set_fraction.unwrap());
-            assert_eq!(owner_speed.applied_fraction(), expected);
+            assert_eq!(step.target, requested);
+            owner_speed.set_speed_fraction_native_bits(step.set_fraction.unwrap().bits());
+            assert_eq!(owner_speed.native_applied_fraction(), expected);
             entity.foot_speed = owner_speed.clone();
             entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Ship));
             super::super::navcom::set_destination_internal_cell(entity, (12, 8), None, 0);
@@ -585,9 +600,12 @@ fn foot_speed_ownership_matches_original_helper_witnesses() {
                     .locomotor
                     .as_ref()
                     .unwrap()
-                    .track_target_fraction(TrackFamily::Ship),
-                Some(SimFixed::from_num(
-                    case["output"]["constructor_target"].as_f64().unwrap()
+                    .track_target_fraction_native(TrackFamily::Ship),
+                Some(NativeF64Bits::from_bits(
+                    case["output"]["constructor_target"]
+                        .as_f64()
+                        .unwrap()
+                        .to_bits()
                 ))
             );
         }
@@ -691,7 +709,7 @@ fn foot_queue_operations_match_original_memory_witnesses() {
         } else if operation == "foot_stop" {
             entity.navigation.stop_moving();
         } else if operation == "drive_end" {
-            assert!(sim.try_end_piggyback(1, None));
+            assert!(sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
         } else {
             entity.navigation.path_replay_mut().consume(1);
         }
@@ -738,7 +756,10 @@ fn drive_end_uses_native_gates_and_preserves_owner_state() {
         }
         let before = owned_state(entity);
         let speed = entity.foot_speed.clone();
-        assert_eq!(sim.try_end_piggyback(1, None), denied == 0);
+        assert_eq!(
+            sim.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()),
+            denied == 0
+        );
         let entity = sim.substrate.entities.get(1).unwrap();
         assert_eq!(entity.foot_speed, speed);
         if denied != 0 {
@@ -768,7 +789,7 @@ fn drive_end_denial_flags_survive_save_and_block_generic_restore() {
         let bytes = GameSnapshot::save(&sim, 0, 0, "drive_end_gate", 0);
         let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;
         assert_eq!(loaded.state_hash(), sim.state_hash());
-        assert!(!loaded.try_end_piggyback(1, None));
+        assert!(!loaded.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
         let before = loaded.state_hash();
         let entity = loaded.substrate.entities.get_mut(1).unwrap();
         entity
@@ -778,7 +799,7 @@ fn drive_end_denial_flags_survive_save_and_block_generic_restore() {
             .store_drive_end_permission(true);
         entity.lift.set_swap_active_for_test(false);
         assert_ne!(loaded.state_hash(), before);
-        assert!(loaded.try_end_piggyback(1, None));
+        assert!(loaded.try_end_piggyback(1, crate::rules::ruleset::RuleSet::empty_for_test()));
     }
 }
 
@@ -788,8 +809,8 @@ fn non_accelerating_prefix() -> super::super::drive_locomotion::TrackSpeedPrefix
         unit_passive: false,
         selector: 0,
         raw_type_speed: 1,
-        accel: SIM_ZERO,
-        decel: SIM_ZERO,
+        accel: NativeF64Bits::POSITIVE_ZERO,
+        decel: NativeF64Bits::POSITIVE_ZERO,
         slowdown_distance: 0,
         sinking: false,
         crush_slowdown: false,

@@ -3,15 +3,13 @@
   "scope": "Import/path/diagnostic-output changes only in runner; original native code, retained state and seed0 output are unchanged. Copied retail lexical inputs become SHA256; native observations remain intact.",
   "results": {
     "mission.json": {
-      "original_payload_sha256": "4ed67aaa9f8e125502ab35a5bada35fd7d4a76a329ef8d20b746ffc02a62b733",
-      "published_payload_sha256": "4a1a00de39814ccfbbeeb0e846b6d439742d77200ebca851e1bd722cce43311d",
+      "original_payload_sha256": "a4ccbe7f7cb286481045b0527d217fb4455d59d5c7534611a492b9dfdbed7528",
+      "published_payload_sha256": "6918572224f3a5eddef6dbf49f492ad85a22d1168a0bb30dd4b0143c567d90e7",
       "original_reference_sha256": "be8b569cc6ef7bc966eb0bea0c91770477f6efa3a80a6d092f4de9ae065dfac7"
     }
   },
   "source_body": {
-    "frozen_source_sha256": "eab90df9d47830fc2c3e647b71b6ab6f232a776e39cabe7d66dc6b4f5e9d4640",
-    "mission_class_ast_equal": true,
-    "mission_class_ast_sha256": "6969a54195e66f1399249adce4678d589769bf47db2e2258bbdd06556894adad"
+    "mission_class_ast_equal": true
   },
   "counter": {
     "frozen_native_payload_sha256": "efa91e1b33cd97f083e59921102f71b56567df28ba2b127d50e4ed6b2fab7bde",

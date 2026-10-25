@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -43,5 +42,5 @@
     "snow_activation_channels": "0x0065B604"
   },
   "replay_command": "python -m tools.spatial_oracle.radiation_damage_boundary --snow-light-lifecycle --light-cell 37,86",
-  "payload_sha256": "d51013fa28ebcb1d3835bb34f6657c2b5ce91504223e0761defcf310b7b50560"
+  "payload_sha256": "0ee9f3753ab877eaf980d675b0c0a5bf7644156ad6b6d62372b0fb1f32682263"
 }

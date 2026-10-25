@@ -1,11 +1,11 @@
 //! Rules-owned overlay type registry — overlay ID to name, flags, and
 //! tiberium/wall/crate semantics parsed from rules.ini `[OverlayTypes]` and
-//! per-overlay sections (with art.ini image overrides).
+//! per-overlay sections and the retained native fixed-ART reader.
 //!
 //! Declaration order is authoritative: `[OverlayTypes]` list position IS the
 //! overlay ID, and every name/first-match lookup preserves it. High-bridge
-//! stamp geometry lives in `map::bridge_facts`; render-only SHP name
-//! resolution lives in `render::overlay_assets`.
+//! stamp geometry lives in `map::bridge_facts`; reached SHP requests are
+//! immutable projections of the process type owner.
 //!
 //! ## Dependency rules
 //! - Part of rules/ and depends only on rules siblings plus std.
@@ -13,7 +13,9 @@
 use crate::rules::ini_parser::IniFile;
 use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainRules};
 use crate::rules::tiberium_type::{TiberiumType, TiberiumTypeId, TiberiumTypeRegistry};
-use std::collections::HashSet;
+use std::hash::{Hash, Hasher};
+
+use crate::rules::object_image::ObjectImageState;
 
 #[cfg(any(test, feature = "test-support"))]
 const STOCK_FLAT_RIPARIUS_VARIANT_COUNT: usize = 12;
@@ -54,6 +56,10 @@ impl NativeTiberiumOverlayRange {
     }
 }
 
+/// Cold-read projection of TiberiumClass::ReadINI721C5C..721CD6.
+/// Native Image2 leaves the previous extra count intact: Image1 then Image2
+/// retains8, whereas constructor then Image2 has0. The existing rules model
+/// retains only the final Image, so layered reread history is not represented.
 fn native_tiberium_overlay_range(image: u8) -> NativeTiberiumOverlayRange {
     match image {
         2 => NativeTiberiumOverlayRange::new(
@@ -77,6 +83,28 @@ fn native_tiberium_overlay_range(image: u8) -> NativeTiberiumOverlayRange {
             NATIVE_TIBERIUM_EXTRA_IMAGE_COUNT,
         ),
     }
+}
+
+/// Overlay id bands whose radar colour comes back with green and blue swapped.
+///
+/// Two contiguous bands are re-packed on the way out; everything else is copied
+/// straight through. Copying all of them straight through leaves these bands the
+/// wrong hue while the rest look correct, which is a miserable thing to spot by
+/// eye.
+const SWAPPED_CHANNEL_BANDS: [(u8, u8); 2] = [(0x7F, 0x8A), (0x93, 0x9E)];
+
+/// OverlayTypeClass::GetRadarColor5FED34..5FED8E swaps these SHP-header channels.
+/// Callers selecting a Rules RadarColor use that separate triple unchanged.
+pub const fn overlay_radar_channel_order(overlay_id: u8, rgb: [u8; 3]) -> [u8; 3] {
+    let mut band = 0;
+    while band < SWAPPED_CHANNEL_BANDS.len() {
+        let (low, high) = SWAPPED_CHANNEL_BANDS[band];
+        if overlay_id >= low && overlay_id <= high {
+            return [rgb[0], rgb[2], rgb[1]];
+        }
+        band += 1;
+    }
+    rgb
 }
 
 /// Check if an overlay index is a bridge overlay. The original engine identifies
@@ -108,6 +136,9 @@ pub struct OverlayTypeFlags {
     pub tiberium: bool,
     /// ChainReaction=yes permits Apply_area_damage resource reduction.
     pub chain_reaction: bool,
+    /// OverlayRead5FE839..5FE853 reads the current Explodes+2B0 byte;
+    /// OverlayCtor5FE2C0 starts false. AreaDamage and building deaths consume it.
+    pub explodes: bool,
     /// Wall=yes — rendered with unit palette, gets -12px Y offset.
     pub wall: bool,
     /// `CrushSound=` -> `OverlayTypeClass+0x1F0`: the Voc `UnitClass::PerCellProcess
@@ -144,8 +175,9 @@ pub struct OverlayTypeFlags {
     pub overrides: bool,
     /// Parsed `CellAnim=` AnimType identity (`OverlayTypeClass+0x29C`).
     ///
-    /// `OverlayTypeClass::ReadINI @ 0x005FE770` resolves this name through
-    /// `AnimTypeClass::FindByName`; it is not the overlay's own SHP image.
+    /// OverlayRead5FE897 resolves through AnimTypeFindOrAllocate428B80;
+    /// this is separate from the Overlay's own SHP. Implicit construction
+    /// remains the factory residual noted at this registry's projection.
     pub cell_anim: Option<String>,
     /// IsRubble=yes — explicitly returns reduced ZoneType 0 after earlier overlay checks.
     pub is_rubble: bool,
@@ -157,9 +189,9 @@ pub struct OverlayTypeFlags {
     pub bridge_deck: bool,
     /// `RadarColor=R,G,B` from the type's rules section.
     ///
-    /// The engine prefers the growth stage's colour out of the overlay SHP and
-    /// falls back to this when that comes back essentially black, so an overlay
-    /// whose art is missing still paints the right colour on radar and previews.
+    /// GenerateTerrainPreview641409 prefers this for Tiberium when its
+    /// packed value exceeds5. Other overlay previews prefer the SHP header;
+    /// in-match Cell radar has its own Tiberium/CellAnim selection.
     pub radar_color: Option<[u8; 3]>,
     /// Railroad track overlay (TRACKS01..TRACKS16). FA2 renders these +15px lower.
     pub track: bool,
@@ -183,12 +215,12 @@ pub struct OverlayTypeFlags {
     /// re-derived from that stored LandType. VERA caches the derivation, so the
     /// cache has to move with the LandType that produced it.
     pub land_ground_blocked: bool,
-    /// Strength= from rules.ini — hit points for destructible overlays.
-    /// Only meaningful when wall=true. Default 1.
-    pub strength: u16,
+    /// Signed wall damage-roll bound. OverlayTypeCtor5FE26B defaults to1;
+    /// OverlayTypeRead5FE7B1..5FE7DA retains the full current-default ReadInt.
+    pub strength: i32,
     /// DamageLevels= from art.ini — number of damage stages for walls.
     /// Only meaningful when wall=true. Default 1.
-    pub damage_levels: u16,
+    pub damage_levels: i32,
 }
 
 impl Default for OverlayTypeFlags {
@@ -196,6 +228,7 @@ impl Default for OverlayTypeFlags {
         Self {
             tiberium: false,
             chain_reaction: false,
+            explodes: false,
             wall: false,
             crush_sound: None,
             draw_flat: true,
@@ -270,12 +303,16 @@ pub fn native_mark_overlay_data(flags: &OverlayTypeFlags) -> u8 {
 ///
 /// Built from the [OverlayTypes] section of rules.ini.
 /// Overlay IDs 0..N map to the names listed in order.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct OverlayTypeRegistry {
     /// Overlay ID -> name (indexed by preserved internal [OverlayTypes] IDs).
     names: Vec<String>,
     /// Per-type rendering flags (same indexing as names).
     flags: Vec<OverlayTypeFlags>,
+    /// Inherited ObjectTypeClass AlphaImage buffer (`+0x213`, char[25]), by ID.
+    alpha_images: Vec<String>,
+    /// Immutable projection; ProcessedType remains the mutable reader owner.
+    images: Vec<ObjectImageState>,
 }
 
 impl OverlayTypeRegistry {
@@ -285,7 +322,47 @@ impl OverlayTypeRegistry {
     /// RA2/YR may skip some numeric keys, but internal overlay ids still follow
     /// the ordered list rather than reserving holes for every missing raw key.
     /// Returns an empty registry if the section is missing.
+    /// Compatibility fixtures execute the shared fresh reader/postpass; real
+    /// loads project their already processed owner with from_processed_rules.
     pub fn from_ini(ini: &IniFile, art_ini: Option<&IniFile>) -> Self {
+        let empty_art = IniFile::empty();
+        let processed = crate::rules::native_processing::RulesLayerStack::new(ini.clone())
+            .process_with_fixed_art_and_registry_state_recovering(
+                art_ini.unwrap_or(&empty_art),
+                crate::rules::native_processing::NativeRulesRegistryState::default(),
+                crate::rules::native_processing::RulesProcessContext::ScenarioReset(
+                    crate::rules::object_image::ImageTheater::from_map(ini),
+                ),
+                &crate::rules::sound_ini::EvaRegistry::default(),
+            )
+            .unwrap_or_else(|failure| {
+                panic!(
+                    "Overlay fixture must satisfy native Rules processing: {}",
+                    failure.into_parts().0
+                )
+            });
+        Self::from_processed_rules(&processed)
+    }
+
+    /// Project the one retained process authority without replaying a read or
+    /// image load. RMG preview uses this same projection without a RuleSet.
+    pub fn from_processed_rules(
+        processed: &crate::rules::native_processing::ProcessedRulesLayers,
+    ) -> Self {
+        let mut registry = Self::from_projected_ini(processed.ini());
+        for (index, (_, damage_levels, explodes, cell_anim, image)) in
+            processed.overlay_type_states().enumerate()
+        {
+            registry.flags[index].damage_levels = damage_levels;
+            registry.flags[index].explodes = explodes;
+            registry.flags[index].cell_anim = cell_anim.map(str::to_ascii_uppercase);
+            registry.images.push(image.clone());
+        }
+        assert_eq!(registry.names.len(), registry.images.len());
+        registry
+    }
+
+    fn from_projected_ini(ini: &IniFile) -> Self {
         let section = match ini.section("OverlayTypes") {
             Some(s) => s,
             None => {
@@ -293,6 +370,8 @@ impl OverlayTypeRegistry {
                 return OverlayTypeRegistry {
                     names: Vec::new(),
                     flags: Vec::new(),
+                    alpha_images: Vec::new(),
+                    images: Vec::new(),
                 };
             }
         };
@@ -307,6 +386,8 @@ impl OverlayTypeRegistry {
             return OverlayTypeRegistry {
                 names: Vec::new(),
                 flags: Vec::new(),
+                alpha_images: Vec::new(),
+                images: Vec::new(),
             };
         }
 
@@ -317,21 +398,8 @@ impl OverlayTypeRegistry {
         let clear_speed_costs = clear_semantics.map(|semantics| semantics.speed_costs);
         let clear_ground_blocked =
             clear_semantics.is_some_and(|semantics| semantics.ground_blocked);
-        // `OverlayTypeClass::ReadINI @ 0x005FE770` uses
-        // `AnimTypeClass::FindByName`: an unknown CellAnim name leaves +0x29C
-        // null rather than becoming an unresolved filename.
-        let registered_anim_types: HashSet<String> = ini
-            .section("Animations")
-            .map(|section| {
-                section
-                    .registry_ids()
-                    .into_iter()
-                    .filter(|name| !name.is_empty())
-                    .map(str::to_ascii_uppercase)
-                    .collect()
-            })
-            .unwrap_or_default();
         let mut flags: Vec<OverlayTypeFlags> = Vec::with_capacity(names.len());
+        let mut alpha_images: Vec<String> = Vec::with_capacity(names.len());
         for (idx, name) in names.iter().enumerate() {
             let upper_name = name.to_ascii_uppercase();
             // Bridge overlays are identified by hardcoded index position in
@@ -339,6 +407,7 @@ impl OverlayTypeRegistry {
             let bridge_deck = is_bridge_overlay_index(idx as u8);
             let track = upper_name.starts_with("TRACKS");
             if let Some(type_section) = ini.section(name) {
+                alpha_images.push(type_section.read_object_alpha_image(""));
                 let tiberium = type_section.read_bool("Tiberium", false);
                 // `0x005FE7AC`: ReadString 0x80 ahead of the land-name lookup.
                 let mut land = type_section
@@ -354,25 +423,19 @@ impl OverlayTypeRegistry {
                     land_semantics.is_some_and(|semantics| semantics.ground_blocked);
                 let land_wheel_speed_zero =
                     land_speed_costs.is_some_and(|speed_costs| speed_costs.wheel == Some(0));
-                // ReadInt over the constructor's 1 (`0x005FE7C6`, `0x005FE265`),
-                // e.g. [GAWALL] Strength=300.
-                let strength = u16::try_from(type_section.read_int("Strength", 1)).unwrap_or(1);
+                // OverlayTypeClass::ReadINI5FE7B1..5FE7DA stores all of EAX,
+                // with no clamp. The retained pass reader uses current values.
+                let strength = type_section.read_int("Strength", 1);
                 // ReadColorRGB (`0x005FE947`) for an authored key; an absent one
                 // leaves the overlay's art colour to the caller.
                 let radar_color = type_section
                     .is_present("RadarColor")
                     .then(|| type_section.read_color_rgb("RadarColor", [0; 3], None));
-                // `0x005FE8BE`: ReadInt from the art INI section the Image
-                // names, over the constructor's 1 (e.g. [GASAND]
-                // DamageLevels=2).
-                let image = type_section.read_name("Image", 0x19).unwrap_or(name);
-                let damage_levels = art_ini.map_or(1, |art| {
-                    u16::try_from(art.section_or_empty(image).read_int("DamageLevels", 1))
-                        .unwrap_or(1)
-                });
                 flags.push(OverlayTypeFlags {
                     tiberium,
                     chain_reaction: type_section.read_bool("ChainReaction", false),
+                    // The retained reader below supplies this, never flattened text.
+                    explodes: false,
                     wall: type_section.read_bool("Wall", false),
                     // ObjectType ReadString 0x80 (`0x005F93A8`).
                     crush_sound: type_section
@@ -390,11 +453,9 @@ impl OverlayTypeRegistry {
                     crate_type: type_section.read_bool("Crate", false),
                     crate_trigger: type_section.read_bool("CrateTrigger", false),
                     overrides: type_section.read_bool("Overrides", false),
-                    // ReadString 0x80 (`0x005FE88A`).
-                    cell_anim: type_section
-                        .read_name("CellAnim", 0x80)
-                        .map(str::to_ascii_uppercase)
-                        .filter(|value| registered_anim_types.contains(value)),
+                    // OverlayRead5FE867..5FE8A0's retained factory result
+                    // is projected from ProcessedType above, never re-read.
+                    cell_anim: None,
                     is_rubble: type_section.read_bool("IsRubble", false),
                     is_a_rock: type_section.read_bool("IsARock", false),
                     land_wheel_speed_zero,
@@ -406,9 +467,10 @@ impl OverlayTypeRegistry {
                     land_ground_blocked,
                     radar_color,
                     strength,
-                    damage_levels,
+                    damage_levels: 1,
                 });
             } else {
+                alpha_images.push(String::new());
                 flags.push(OverlayTypeFlags {
                     bridge_deck,
                     track,
@@ -427,7 +489,47 @@ impl OverlayTypeRegistry {
             names.len(),
             max_index,
         );
-        OverlayTypeRegistry { names, flags }
+        OverlayTypeRegistry {
+            names,
+            flags,
+            alpha_images,
+            images: Vec::new(),
+        }
+    }
+
+    /// OverlayRead5FE928, InitTheater5FE620 and saved Load5FEAF0's
+    /// reached requests, in first-success order. Resource availability never
+    /// changes the retained Image/latch or infers lazy owned Shape+A8.
+    pub fn shp_candidates(&self, name: &str, theater_ext: &str, theater_name: &str) -> Vec<String> {
+        self.names
+            .iter()
+            .position(|id| id.eq_ignore_ascii_case(name))
+            .and_then(|index| self.images.get(index))
+            .into_iter()
+            .flat_map(|image| image.shp_loads())
+            .flat_map(|load| load.shp_names(theater_ext, theater_name))
+            .collect()
+    }
+
+    pub(crate) fn hash_configuration<H: Hasher>(&self, state: &mut H) {
+        b"overlay-image-history-v1".hash(state);
+        self.names.hash(state);
+        self.images.hash(state);
+        for flags in &self.flags {
+            flags.damage_levels.hash(state);
+        }
+        if self.flags.iter().any(|flags| flags.explodes) {
+            b"overlay-explodes-v1".hash(state);
+            for flags in &self.flags {
+                flags.explodes.hash(state);
+            }
+        }
+        if self.flags.iter().any(|flags| flags.cell_anim.is_some()) {
+            b"overlay-cellanim-reference-v1".hash(state);
+            for flags in &self.flags {
+                flags.cell_anim.hash(state);
+            }
+        }
     }
 
     /// Create an empty registry (used as fallback when map loading fails).
@@ -435,7 +537,14 @@ impl OverlayTypeRegistry {
         OverlayTypeRegistry {
             names: Vec::new(),
             flags: Vec::new(),
+            alpha_images: Vec::new(),
+            images: Vec::new(),
         }
+    }
+
+    /// AlphaImage strings retained by the allocated OverlayType entries.
+    pub(crate) fn alpha_images(&self) -> impl Iterator<Item = &str> {
+        self.alpha_images.iter().map(String::as_str)
     }
 
     /// Look up the name for an overlay ID. Returns None if out of range.
@@ -529,32 +638,53 @@ impl OverlayTypeRegistry {
         tiberium_types.types().first().map(|ty| ty.id)
     }
 
-    /// Resolve the flat resource image selected for one rendered cell.
+    /// Registered image slots the native resource display can select.
+    /// ReadINI721C5C..721CD6 installs12 primary slots and8 extras, except
+    /// a cold Cruentus (Image2) read, which has no extras. This shares the range owner
+    /// used by OverlayToTiberiumIndex5FDD20 rather than inferring filenames.
+    pub fn tiberium_display_variant_ids(&self, ty: &TiberiumType) -> std::ops::Range<u8> {
+        let range = native_tiberium_overlay_range(ty.image);
+        range.base as u8
+            ..(range.base + range.primary_count + range.extra_count).min(self.names.len()) as u8
+    }
+
+    /// Resolve the resource image selected for one rendered cell.
     ///
     /// The stored overlay identity remains authoritative for resource type and
     /// density. This returns only the display identity; callers keep the Cell
     /// overlay-data byte as the SHP frame.
     ///
     /// Active YR `CellClass__DrawOverlay_Body @ 0x0047F6A0` selects the parsed
-    /// TiberiumClass from the stored overlay, then indexes that type's 12 flat
-    /// images with `((short)rx * (short)ry) % 12`. Preserve the signed native
-    /// intermediates: add the possibly-negative remainder to the signed family
-    /// base ordinal before validating the final registered overlay identity.
-    pub fn flat_tiberium_display_overlay_id(
+    /// TiberiumClass from the stored overlay. Flat47F8D7 uses product%12;
+    /// slope47F888 uses2 extras per slope for the green families. Preserve
+    /// signed coordinate products/remainders before validating the final ID.
+    /// Invalid slopes and cold Cruentus slopes have no valid native draw.
+    pub fn tiberium_display_overlay_id(
         &self,
         tiberium_types: &TiberiumTypeRegistry,
         overlay_id: u8,
         rx: u16,
         ry: u16,
+        slope: u8,
     ) -> Option<u8> {
         let ty = self
             .tiberium_type_for_overlay(tiberium_types, overlay_id)
             .and_then(|id| tiberium_types.get(id))?;
-        let variants = self.flat_tiberium_variant_ids(ty)?;
+        let range = native_tiberium_overlay_range(ty.image);
         let signed_rx = i32::from(rx as i16);
         let signed_ry = i32::from(ry as i16);
-        let variant = signed_rx.wrapping_mul(signed_ry) % TIBERIUM_FLAT_VARIANT_COUNT as i32;
-        let display_ordinal = i32::from(variants[0]).wrapping_add(variant);
+        let product = signed_rx.wrapping_mul(signed_ry);
+        let display_ordinal = if slope == 0 {
+            (range.base as i32).wrapping_add(product % range.primary_count as i32)
+        } else {
+            let per_slope = range.extra_count as i32 / 4;
+            if slope > 4 || per_slope == 0 {
+                return None;
+            }
+            (range.base as i32 + range.primary_count as i32)
+                .wrapping_add((i32::from(slope) - 1) * per_slope)
+                .wrapping_add(product % per_slope)
+        };
         let display_id = u8::try_from(display_ordinal).ok()?;
         self.name(display_id).map(|_| display_id)
     }
@@ -631,6 +761,113 @@ pub(crate) fn retained_overlay_land(flags: &OverlayTypeFlags, slope_type: u8) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retail_wall_image_override_retains_damage_stages_through_a_hit() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
+            &IniFile::from_str("[Map]\nTheater=SNOW\n[GAWALL]\nImage=TIB01\n"),
+        ) else {
+            return;
+        };
+        let registry = retail.rules.overlay_registry();
+        let wall = registry.id_for_name("GAWALL").unwrap();
+        // OverlayRead5FE8A6..5FE8C3 uses the retained dword as default:
+        // ART[TIB01]'s missing key keeps ART[GAWALL]'s prior three stages.
+        assert_eq!(registry.flags(wall).unwrap().damage_levels, 3);
+        let mut grid = crate::sim::overlay_grid::OverlayGrid::from_overlay_entries(
+            &[crate::map::overlay::OverlayEntry {
+                rx: 2,
+                ry: 2,
+                overlay_id: wall,
+                frame: 0,
+            }],
+            5,
+            5,
+        );
+        let mut rng = crate::sim::rng::SimRng::new(123);
+        let before = rng.native_state_hex();
+        let result =
+            crate::sim::overlay_grid::damage_wall_overlay(&mut grid, registry, 2, 2, 300, &mut rng);
+        // DestroyOverlay480EDD compares stage1 against retained3 before
+        // its penultimate/connection check. This hit needs no RNG draw.
+        assert!(result.destroyed_cells.is_empty());
+        assert_eq!(grid.cell(2, 2).overlay_id, Some(wall));
+        assert_eq!(grid.cell(2, 2).overlay_data, 0x10);
+        assert_eq!(rng.native_state_hex(), before);
+    }
+
+    #[test]
+    fn retail_wide_wall_strength_keeps_the_damage_rng_gate() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
+            &IniFile::from_str("[GAWALL]\nStrength=65536\n"),
+        ) else {
+            return;
+        };
+        let registry = retail.rules.overlay_registry();
+        let wall = registry.id_for_name("GAWALL").unwrap();
+        // OverlayTypeRead5FE7B1..5FE7DA retains the whole signed ReadInt.
+        assert_eq!(i64::from(registry.flags(wall).unwrap().strength), 65536);
+        let mut grid = crate::sim::overlay_grid::OverlayGrid::new(5, 5);
+        grid.place_overlay(2, 2, wall, 0);
+        let mut rng = crate::sim::rng::SimRng::new(1);
+        let before = rng.native_state_hex();
+        let result =
+            crate::sim::overlay_grid::damage_wall_overlay(&mut grid, registry, 2, 2, 65, &mut rng);
+        // DestroyOverlay480CEF..480D18 must reach the shared ranged owner.
+        // Original RandomRanged65C7E0 on seed1 over0..65536 returns21713,
+        // so this ordinary AP-sized hit is rejected before any wall write.
+        assert!(result.destroyed_cells.is_empty());
+        assert_eq!(grid.cell(2, 2).overlay_id, Some(wall));
+        assert_eq!(grid.cell(2, 2).overlay_data, 0);
+        assert_ne!(rng.native_state_hex(), before);
+    }
+
+    #[test]
+    fn negative_wall_strength_uses_signed_damage_admission() {
+        let registry = OverlayTypeRegistry::from_ini(
+            &IniFile::from_str("[OverlayTypes]\n0=WALL\n[WALL]\nWall=yes\nStrength=-2147483648\n"),
+            Some(&IniFile::from_str("[WALL]\nDamageLevels=3\n")),
+        );
+        assert_eq!(
+            i64::from(registry.flags(0).unwrap().strength),
+            i64::from(i32::MIN)
+        );
+        let mut grid = crate::sim::overlay_grid::OverlayGrid::new(5, 5);
+        grid.place_overlay(2, 2, 0, 0);
+        let mut rng = crate::sim::rng::SimRng::new(1);
+        let before = rng.native_state_hex();
+        // DestroyOverlay480CEF signed JGE admits damage0 over MIN without
+        // a random call. Narrowing Strength to1 would reject this instead.
+        crate::sim::overlay_grid::damage_wall_overlay(&mut grid, &registry, 2, 2, 0, &mut rng);
+        assert_eq!(grid.cell(2, 2).overlay_data, 0x10);
+        assert_eq!(rng.native_state_hex(), before);
+    }
+
+    #[test]
+    fn signed_damage_stages_keep_native_width_and_removal_order() {
+        let rules =
+            IniFile::from_str("[OverlayTypes]\n0=MIN\n1=WIDE\n[MIN]\nWall=yes\n[WIDE]\nWall=yes\n");
+        let art =
+            IniFile::from_str("[MIN]\nDamageLevels=-2147483648\n[WIDE]\nDamageLevels=65537\n");
+        let registry = OverlayTypeRegistry::from_ini(&rules, Some(&art));
+        assert_eq!(registry.flags(0).unwrap().damage_levels, i32::MIN);
+        assert_eq!(registry.flags(1).unwrap().damage_levels, 65537);
+        let mut grid = crate::sim::overlay_grid::OverlayGrid::new(5, 5);
+        grid.place_overlay(1, 2, 0, 0);
+        grid.place_overlay(3, 2, 1, 0);
+        let mut rng = crate::sim::rng::SimRng::new(123);
+        let before = rng.native_state_hex();
+        // DestroyOverlay480EDD signed JGE precedes DEC480EE1. The MIN
+        // value removes despite wrapping(levels-1); WIDE must not narrow to1.
+        crate::sim::overlay_grid::damage_wall_overlay(&mut grid, &registry, 1, 2, 1, &mut rng);
+        crate::sim::overlay_grid::damage_wall_overlay(&mut grid, &registry, 3, 2, 1, &mut rng);
+        assert_eq!(grid.cell(1, 2).overlay_id, None);
+        assert_eq!(
+            (grid.cell(3, 2).overlay_id, grid.cell(3, 2).overlay_data),
+            (Some(1), 0x10)
+        );
+        assert_eq!(rng.native_state_hex(), before);
+    }
 
     #[test]
     fn mark_data_tests_land_five_not_road() {
@@ -1153,17 +1390,17 @@ Image=5
         let gem01 = overlays.id_for_name("GEM01").expect("GEM01");
 
         assert_eq!(
-            overlays.flat_tiberium_display_overlay_id(&tiberiums, tib12, 4, 7),
+            overlays.tiberium_display_overlay_id(&tiberiums, tib12, 4, 7, 0),
             Some(tib05),
             "4 * 7 % 12 selects the fifth Riparius flat image"
         );
         assert_eq!(
-            overlays.flat_tiberium_display_overlay_id(&tiberiums, gem12, 0, 7),
+            overlays.tiberium_display_overlay_id(&tiberiums, gem12, 0, 7, 0),
             Some(gem01),
             "the stored Cruentus identity selects the GEM flat-image family"
         );
         assert_eq!(
-            overlays.flat_tiberium_display_overlay_id(&tiberiums, tib12, u16::MAX, 1),
+            overlays.tiberium_display_overlay_id(&tiberiums, tib12, u16::MAX, 1, 0),
             tib01.checked_sub(1),
             "(short)0xffff is -1, so the signed family-base addition selects base - 1"
         );
@@ -1224,5 +1461,23 @@ Image=5
         // A scan that stops early keeps the constructor's black.
         assert_eq!(reg.flags(1).unwrap().radar_color, Some([0, 0, 0]));
         assert_eq!(reg.flags(2).unwrap().radar_color, None);
+    }
+    #[test]
+    fn only_the_two_bands_get_their_channels_reordered() {
+        let rgb = [10, 20, 30];
+        // Straight through outside the bands.
+        assert_eq!(overlay_radar_channel_order(0x00, rgb), rgb);
+        assert_eq!(overlay_radar_channel_order(0x7E, rgb), rgb);
+        assert_eq!(overlay_radar_channel_order(0x8B, rgb), rgb);
+        assert_eq!(overlay_radar_channel_order(0x92, rgb), rgb);
+        assert_eq!(overlay_radar_channel_order(0x9F, rgb), rgb);
+        // Green and blue swap inside them, edges included.
+        for id in [0x7F, 0x8A, 0x93, 0x9E] {
+            assert_eq!(
+                overlay_radar_channel_order(id, rgb),
+                [10, 30, 20],
+                "id {id:#04x} sits in a swapped band"
+            );
+        }
     }
 }

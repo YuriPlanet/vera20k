@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>VERA20K</string>
+	<key>CFBundleIconFile</key>
+	<string>VERA20K</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.github.yuriplanet.vera20k</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>zh-Hans</string>
+	</array>
+	<key>CFBundleName</key>
+	<string>VERA20K</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>@VERSION@</string>
+	<key>CFBundleVersion</key>
+	<string>@BUILD@</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.strategy-games</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>@MINIMUM_MACOS@</string>
+	<key>LSSupportsGameMode</key>
+	<true/>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>VERA20K reads your Yuri's Revenge game files from this location.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>VERA20K reads your Yuri's Revenge game files from this location.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>VERA20K reads your Yuri's Revenge game files from this location.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Free software under the GNU GPL version 3. Not affiliated with or endorsed by Electronic Arts.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>VERA20K reads your Yuri's Revenge game files from this location.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>VERA20K reads your Yuri's Revenge game files from this location.</string>
+</dict>
+</plist>

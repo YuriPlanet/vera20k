@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -57,5 +56,5 @@
     "body": "0x0043D290"
   },
   "replay_command": "python -m tools.procedural_drawing_oracle.shroud --bomb-clock",
-  "payload_sha256": "d94f50cbac1a4255f9cfe56ba11861b04d9dd5d4fd0f19845fca7bed899545f4"
+  "payload_sha256": "d2d795339a895d5e5c4f91d606fb78b8ea0912091fb8becd8bfdb60f43f5549b"
 }

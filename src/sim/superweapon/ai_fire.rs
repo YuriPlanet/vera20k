@@ -113,7 +113,8 @@ impl AiFireArm {
             SuperWeaponKind::GenericWarhead => Self::GenericWarhead,
             SuperWeaponKind::IronCurtain
             | SuperWeaponKind::ChronoSphere
-            | SuperWeaponKind::ChronoWarp => Self::None,
+            | SuperWeaponKind::ChronoWarp
+            | SuperWeaponKind::NoEffect => Self::None,
         }
     }
 }
@@ -180,10 +181,8 @@ pub(crate) fn try_fire(
             continue;
         }
         // Reject extension-gated types before target search can consume RNG.
-        #[cfg(feature = "ares")]
-        if sw.building_requirements.is_some()
-            && !super::building_requirements_met(sim, rules, owner, sw)
-        {
+        #[cfg(any(feature = "ares", feature = "phobos"))]
+        if !super::super_weapon_available(sim, rules, owner, &sw.id) {
             continue;
         }
         #[cfg(feature = "ares")]
@@ -422,7 +421,7 @@ fn rally_entry(
 ) -> RallyEntry {
     let id = entity.stable_id();
     let (candidate, value) = if entity.owner() == enemy {
-        let standing = sim.entity_display_layer(id, Some(rules))
+        let standing = sim.entity_display_layer(id, rules)
             == Some(crate::sim::world::display_layers::DisplayLayer::GROUND)
             && entity.is_object_alive()
             && !entity.lifecycle.in_limbo();

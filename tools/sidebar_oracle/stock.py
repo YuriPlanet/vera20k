@@ -7,8 +7,6 @@ Requires cryptography for the encrypted MIX index.
 from pathlib import Path
 import struct,zlib,os
 from functools import lru_cache
-from cryptography.hazmat.primitives.ciphers import Cipher,modes
-from cryptography.hazmat.decrepit.ciphers.algorithms import Blowfish
 from tools.native_oracle import configured_gamemd
 
 def mix_hash(name):
@@ -18,6 +16,9 @@ def mix_hash(name):
 def mix(data):
     marker,flags=struct.unpack_from('<HH',data)
     if marker==0 and flags&2:
+        # Only encrypted indexes need cryptography; importing this module does not.
+        from cryptography.hazmat.primitives.ciphers import Cipher,modes
+        from cryptography.hazmat.decrepit.ciphers.algorithms import Blowfish
         b=data[4:84][::-1];n=int('51bcda086d39fce4565160d651713fa2e8aa54fa6682b04aabdd0e6af8b0c1e6d1fb4f3daa437f15',16)
         key=((pow(int.from_bytes(b[:40],'big'),65537,n)<<312)+pow(int.from_bytes(b[40:],'big'),65537,n)).to_bytes(80,'big')[-56:][::-1]
         def dec(b):return Cipher(Blowfish(key),modes.ECB()).decryptor().update(b)
@@ -55,3 +56,17 @@ def stock_archives():
 
 def stock_bytes(archive,name):
  return stock_archives()[archive][mix_hash(name)]
+
+@lru_cache(maxsize=1)
+def local_archives():
+ """YR's localmd.mix, then RA2's local.mix."""
+ root=configured_gamemd().parent
+ return [(f'{top} -> {inner}',mix(mix((root/top).read_bytes())[mix_hash(inner)]))
+   for top,inner in (('ra2md.mix','localmd.mix'),('ra2.mix','local.mix'))]
+
+def local_file(name):
+ """(archive, bytes) from the first of local_archives() holding name."""
+ for archive,table in local_archives():
+  if (raw:=table.get(mix_hash(name))) is not None:
+   return archive,raw
+ raise FileNotFoundError(name)

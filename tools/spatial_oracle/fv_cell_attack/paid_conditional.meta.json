@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -11,7 +10,7 @@
   "assumptions": [
     "The input declares the Scenario identity cursor before actual FV construction, original GameOptions speed3, declared Scenario seed (default31) executed by original65C6D0 immediately before the actual FV ctor, command frame1, constructor RNG-boundary hashes and outside raw-Next prefix/suffix receipts. It contains no expected selected-object outcomes. Boundary hashes are checked, never imported.",
     "Original constructor/placement/Event, Mission/Approach/Drive, MoveSound/FireAt, Bullet flight/impact/bridge damage, Anim AI and live-vector removal/append/deferred cleanup execute unchanged through the supplied bounded frame schedule. Full native states, raw calls/ranged requests/results, native IDs, velocity bytes, Anim runtime/config and ordered callbacks remain output.",
-    "The physical four-stage map is freshly produced by the existing owner and matches its frozen cells/navigation/hierarchies before selected execution. Source pins and compact production input provenance are preserved."
+    "The physical four-stage map is freshly produced by the existing owner and matches its frozen cells/navigation/hierarchies before selected execution. Compact production input provenance is preserved."
   ],
   "substitutions": [
     "Whole native Scenario startup/population and other-world AI are not executed. Their recorded Next calls run original65C780 as explicit outside-world inputs. This is selected-owner native evidence conditional on incoming identity/options/RNG scheduling, not whole-world parity.",
@@ -28,67 +27,13 @@
     "ranged_word": "0x0065C84B",
     "anim_ai": "0x00423AC0"
   },
-  "input_sha256": "04d973f8fb119e3ca207aca2b34a225f76aa6d3e1619c2ded0b078c52d7783ff",
-  "harness_sha256": "2ddc6494833f63f383b2912ae8f2839dcbf2ea552c6670ef24616949615498b7",
-  "source_pins": {
-    "tools/native_oracle.py": "79dac1057d97e706f106a26145f00fa220d92c172b5173876c60fed22c17530c",
-    "tools/spatial_oracle/__init__.py": "d2b8761741eec0f99f145b6b84c9efbe5e91a8d08b59b83ef67bef54c75f0415",
-    "tools/spatial_oracle/building_body_rules.py": "4c01dd452ccf63c0058e8b58cb751c1e13933fcc25b9ef639cb57c628f4e8643",
-    "tools/spatial_oracle/fv_cell_attack/__init__.py": "70b0110690abfba1eb3104d00c3902189eb6db726d56b3f768d52235a1eca7c7",
-    "tools/spatial_oracle/anytown_damage/__init__.py": "5cca8aa87d9e3c1c8ff349b7a2c105a2bdfbce58bb13acae9fbda5645ef8c66a",
-    "tools/rules_oracle/bridge_anim_lists.py": "2a7a96ea1e24f1129161e8fe5608c0ab69ac584ee6ad78fa91c43bd3ad072045",
-    "tools/spatial_oracle/map_queries.py": "f1c798f50bf8a69ebe53c6d0e2327ce395ad99ba5c7017e74e353757770f4305",
-    "tools/projectile_oracle/flat_art.py": "2f663fbb2b8c88925dd8aa46e8be9216d580ec033bac3e08a138bcd0b272b7c6",
-    "tools/rules_oracle/bridge_anim_inputs.py": "f7f2941e11bbede50ffab19554a789e4e3e42f4969b04ad4e9697973e659d316",
-    "tools/projectile_oracle/bridge_render_inputs.py": "4bfc6d80d7cd0d75f3db0123bb646011b6706f9195a8c1137e0f397941bff9e4",
-    "tools/projectile_oracle/guided_step.py": "66862363b6ada9a83f71645f8d2f1684984bde8cd35cb52091607d40427e528e",
-    "tools/native_slope.py": "737b8294db419d298d362029825a255ae70df9945bef4c8b588369a53eaf13de",
-    "tools/rules_oracle/bridge_child_sound.py": "ea32c11dbb9f1ee1aeb3cdc1069605658ca100d864e90dacb3cd5bfe8f01c350",
-    "tools/spatial_oracle/shrapnel_repair/__init__.py": "181c307c7f2f1767bee7fc8812eb72698df94241d26c669526254bf13084e003",
-    "tools/rules_oracle/theater_general_reader.py": "a466f2d5d94e5f4d8908bed0a97c69cf2aeb2d9356694d0af107491349e7afbd",
-    "tools/spatial_oracle/shrapnel_repair/retail_inputs.py": "5386be531deb221b2abf0a06cf46371937a3134fd4fdde142a7d20fc97691400",
-    "tools/spatial_oracle/bridge_rim.py": "4227c24dcd27ea44a2de55a866057b1accffee8106c5029dedf0171b776fa32b",
-    "tools/spatial_oracle/shrapnel_repair/map_facts.py": "8fec739ee85c0110096180ae7c7712ad96e5191752ec9362dc3d9eb21e5d6768",
-    "tools/rmg_oracle/gen_rng_vectors.py": "bac5dde765d07d3f522b7281a21a8527869f5d4da59eb385e7f9fed7493775a2",
-    "tools/spatial_oracle/mapgen_range.py": "df39b5ab3a2450c98dfa749a67826d5cb87f9d73086dc2511ff3261906724eef",
-    "tools/spatial_oracle/shrapnel_repair/production_inputs.py": "0e29a8c5bac7eb2f6f8819e6d54b2959045f3205e4930c162e96e479bef76289",
-    "tools/spatial_oracle/shrapnel_repair/packet_io.py": "80d7a5dd328c47c9fe453d0048c5ae116feef741220537f1d1dc4e587387b865",
-    "tools/spatial_oracle/shrapnel_repair/shrapnel_repair.py": "766d30e22188ef36c66a940eb4546ad52e025fa80e80c864a9644a1a4662b27c",
-    "tools/spatial_oracle/anytown_damage/inputs.py": "c3e1732837e85deb628f04862aaab8cf72dc3e8ba2804ce55db5dc46f2a68f25",
-    "tools/spatial_oracle/anytown_damage/publication.py": "9331a5cc2c46ff487774b898918f267df740347dcb1745b23364703f9e24d650",
-    "tools/spatial_oracle/anytown_damage/next_family_native.py": "b5545ca21bc1b678335dfe74f0eda02b3af4f013d37a965529243c0d170b8881",
-    "tools/spatial_oracle/anytown_damage/anytown_geometry.py": "012d148f0299bfa6aee589070fb87bfb8ad14ebd09cdc30c3b22bf11df562e69",
-    "tools/spatial_oracle/anytown_damage/anytown_resident.py": "a3fd84ea7a7d038014fac37ebda4e72609f06662619506722fd11318b9d7f285",
-    "tools/spatial_oracle/anytown_damage/mtnk_attack.py": "629ce5742d89065c25f897b7ab2336a71f9c88c6176fa2e032e585c59f7113b3",
-    "tools/spatial_oracle/anytown_damage/mission_publication.py": "658212dba467967a1d2673b96279f45303c5ebc1c2d00033a6a01f49d3938f3e",
-    "tools/spatial_oracle/anytown_damage/mission.py": "4c0ebd785de2a39bc832f2a5365b81e613fdc1d3ffb651f06252b0563f953b9a",
-    "tools/projectile_oracle/ifv_fire_coord.py": "b4a869ace6b42a8283aa4519898ad568b4defa8ea7b773bb36373c713c5021d2",
-    "tools/spatial_oracle/bridge_target_composed.py": "fb3c713e877cfaa88c5003e7624056b91343354d4034eb6bc83ee4d477f3d453",
-    "tools/spatial_oracle/fv_cell_attack/publication.py": "a246e250433db002ac154032cc830c75949d52d65ac81f4b03bf6e9e50022cc6",
-    "tools/spatial_oracle/fv_cell_attack/range.py": "07a7deabfa090a457db13f4b322dcbd51471ba3a7b17be4c32848bf48267bb9e",
-    "tools/spatial_oracle/fv_cell_attack/pursuit.py": "32e44b3a032c9dca51ca37f826143d0b021272b202e26564e7de0dc51c13dfed",
-    "tools/sidebar_oracle/stock.py": "62b855dba1836bf484bb6c112b9249003ff4427c3004a1ef3d95c3aac985ba9b",
-    "tools/rules_oracle/bridge_landing_inputs.py": "489e7999c957edfc1141d6ca8b5d72e36e570cb4065b2f208564875ed81174e5",
-    "tools/spatial_oracle/anytown_damage/navigation_inputs.py": "aba234d20bd320102832b69c2a3a15a7f3ebcb131e4a5ab7b715c2bfe931e705",
-    "tools/spatial_oracle/anytown_damage/navigation_publication.py": "4d6d09e465e67bf3ed3415495f1efee7f51f069f8c762f53dbc7cb437be91211",
-    "tools/spatial_oracle/shrapnel_repair/zone_composition.py": "0eb3b38561c804dd4bfbbfdb3e858babd2e9a1c2214f296eedfe6447901db73e",
-    "tools/spatial_oracle/shrapnel_repair/hierarchy_composition.py": "a545496a5203c56d02dfed6d37da792c0f261b26db6b128db4ea57b9acc19ac0",
-    "tools/spatial_oracle/anytown_damage/navigation.py": "2d60a0ff6e1febb46542361c849a96a8cc9b9384783d5bab09b339560c2c7cbd",
-    "tools/spatial_oracle/naval_occupants.py": "95979c94da43df23f8d582a662d0269f0151c3f4ce926bae3a8b40167f1b36f5",
-    "tools/spatial_oracle/naval_head_producer.py": "7bed44f4b603862979d2b247f786a9e6d25cceef51f46ebbf94719cf2c17796d",
-    "tools/spatial_oracle/fv_cell_attack/paid_world.py": "62d4e74eb889fd8df47e7df9c52494ea6c121952e79a6541eb4e227837b41fe5",
-    "tools/spatial_oracle/fv_cell_attack/move_sound.py": "47de034c0d8e7cadead9170a8c43f0c90a688d8b97d34ddb6091e79a48f1fec6",
-    "tools/spatial_oracle/anim_bouncer_launch.py": "6fa5df589e686573addd7843c16fae49a883c437f6dba3091d4f9c8d7b601055",
-    "tools/projectile_oracle/ifv_impact.py": "946d5af432bdd3c3ba9d43eef8f8d68dc1d30ea77cbb92a1313669d9cb4422ac",
-    "tools/spatial_oracle/fire_error.py": "ea1137e160745ff92b8d7f87930fca15c307b3d8b7bca92a99d35e2526b9c402",
-    "tools/spatial_oracle/fv_cell_attack/paid_conditional.py": "2ddc6494833f63f383b2912ae8f2839dcbf2ea552c6670ef24616949615498b7"
-  },
-  "payload_sha256": "aec5821ac4d8fbf9bed6c0527ea2eb6d89eefd00b0d7188d78601a81340288bb",
+  "input_sha256": "922fdab035af9b74af563b505190b7688e1fc402c46eaf428c8c42aa748be8c7",
+  "payload_sha256": "0b1aa9d560737d53172b16f8c61426256ba0104f6aa6d1f3473e40ce6d8c8a7c",
   "frozen_source_sha256": "80cf09902305750f7e3ac2cefb8c9992a9d9ad92e82cc9f5009c8985c6e5d60a",
   "frozen_source_metadata_sha256": "3d8b8abb2fd882ebd7ad2b11f3a2d40840f8b4a1aca24da645b0bd22d1a87e4d",
   "publication_changes": [
     "The standalone original runner is promoted with package-relative input/output and the shared immutable compressed publisher. Original native execution and all selected values are unchanged.",
-    "Copied lexical INI text is represented by SHA256 and checkout references become relative. Imported Python source census stays in metadata; historical Rust input receipts stay sealed in the compact input."
+    "Copied lexical INI text is represented by SHA256 and checkout references become relative. Historical Rust input receipts stay sealed in the compact input."
   ],
   "packaging": "canonical JSON; gzip mtime=0; copied lexical inputs replaced by SHA256"
 }

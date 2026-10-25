@@ -16,7 +16,7 @@ import struct
 
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_ESP
-from tools.native_oracle import NATIVE_SHA256, provenance, run_checked
+from tools.native_oracle import provenance, run_checked
 from tools.spatial_oracle import astar_hills_bridge_inputs as inputs
 from tools.spatial_oracle.map_queries import dwords, packed
 from tools.spatial_oracle.anytown_damage.navigation import MAP, Navigation, sr
@@ -199,7 +199,7 @@ def generate():
     owner = Route()
     cases = [owner.run('ramp_to_deck', (75,75), (80,75), height=6),
              owner.run('ground_underpass', (78,77), (78,72), height=2), owner.blocked()]
-    return dict(schema_version=1, native_sha256=NATIVE_SHA256, scope=__doc__,
+    return dict(schema_version=1, scope=__doc__,
                 physical=owner.inputs['physical'], native_type=owner.inputs['native_type'],
                 input_receipt_sha256=sha(json.dumps(owner.inputs, sort_keys=True).encode()),
                 navigation_sha256=sha(json.dumps(owner.navigation, sort_keys=True).encode()),
@@ -375,7 +375,7 @@ def generate_markers():
     assert before_unmark == states(m)
     assert bytes(u.mem_read(owner.cell, 0x200)).hex() == owner.cell_before_mark
     assert owner.marker_cells() == []
-    return dict(schema_version=1, native_sha256=NATIVE_SHA256,
+    return dict(schema_version=1,
                 scope='Original same-type MTNK marker downgrade, full physical Hills routes and code2 clearing-chain costs; explicit peer queue/Drive prestates, no paid movement or scheduler.',
                 physical=owner.inputs['physical'], native_type=owner.inputs['native_type'],
                 occupancy_startup=owner.occupancy_startup,

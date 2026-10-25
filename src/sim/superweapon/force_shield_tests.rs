@@ -168,7 +168,15 @@ fn the_launch_matches_native() {
         let russians = sim.interner.intern("Russians");
         let sw_type = charge_super(&mut sim, russians, FORCE_SHIELD);
         let frame = sim.session.binary_frame();
-        assert!(launch(&mut sim, &rules, russians, cell.0, cell.1, sw_type));
+        assert!(launch(
+            &mut sim,
+            &rules,
+            russians,
+            cell.0,
+            cell.1,
+            sw_type,
+            crate::sim::world::FrameEffects::default()
+        ));
 
         let native_anim = events(row, "anim").next().unwrap();
         let invoke = sim.interner.intern("FORCSHLD");
@@ -222,6 +230,13 @@ fn retail_force_shield_shields_allied_buildings_and_fades() {
         let (world_rules, mut sim, _) = world_with(rules, 64, &[]);
         rules = world_rules;
         let russians = sim.interner.intern("Russians");
+        // The Russians click as a human player: the DoList runs only human or
+        // PlayerControl Houses' events (0x0064C4FB..0x0064C50D), and SPECIAL_PLACE
+        // fires the sender House's own Super (0x004C78D6).
+        sim.houses
+            .get_mut(&russians)
+            .unwrap()
+            .set_is_human_for_test(true);
         if americans_list_russians {
             sim.house_alliances_mut_for_test()
                 .entry("AMERICANS".to_string())
@@ -246,6 +261,10 @@ fn retail_force_shield_shields_allied_buildings_and_fades() {
         let north = spawn(&mut sim, "GAPOWR", "Russians", (40, 36));
         let american = spawn(&mut sim, "GAPOWR", "Americans", (40, 43));
         let far = spawn(&mut sim, "GAPOWR", "Russians", (44, 40));
+        // Supply settled power before the launch-only charged fixture.
+        // Building registration already counts the lab's native drain.
+        sim.assess_power_for_test(&rules);
+        assert!(!sim.power_states[&russians].is_low_power());
         charge_super(&mut sim, russians, FORCE_SHIELD);
         let launch_frame = sim.session.binary_frame();
         click(&mut sim, &rules, russians, FORCE_SHIELD, (40, 40));
@@ -304,12 +323,22 @@ fn a_bridge_cell_walks_from_the_ground_centre() {
     terrain.cells_mut_for_test()[index].bridge_facts.raw_flags =
         crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
     let russians = sim.interner.intern("Russians");
+    // The Russians click as a human player: the DoList runs only human or
+    // PlayerControl Houses' events (0x0064C4FB..0x0064C50D), and SPECIAL_PLACE
+    // fires the sender House's own Super (0x004C78D6).
+    sim.houses
+        .get_mut(&russians)
+        .unwrap()
+        .set_is_human_for_test(true);
     sim.spawn_object_at_height("NATECH", "Russians", 10, 10, 0, 0, &rules)
         .unwrap();
     // The 2x2 foundation's centre (11264, 10752).
     let plant = sim
         .spawn_object_at_height("GAPOWR", "Russians", 43, 41, 0, 0, &rules)
         .unwrap();
+    // This sparse geometry fixture supplies assessed power, then charge.
+    sim.assess_power_for_test(&rules);
+    assert!(!sim.power_states[&russians].is_low_power());
     let sw_type = charge_super(&mut sim, russians, FORCE_SHIELD);
     click(&mut sim, &rules, russians, FORCE_SHIELD, (40, 40));
 
@@ -366,4 +395,219 @@ fn a_grant_keeps_the_countdown_and_releases_the_anim() {
             .loop_remaining,
         0
     );
+}
+
+mod sound_reference_history {
+    use std::sync::Arc;
+
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::native_processing::ProcessedRulesLayers;
+    use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
+    use crate::rules::ruleset::RuleSet;
+    use crate::rules::sound_ini::SoundRegistry;
+    use crate::sim::command::Command;
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::sim::superweapon::{construct_house_supers, superweapon_views_for_owner};
+    use crate::sim::world::{FrameEffects, SimSoundEvent};
+
+    const SHIELD: &str = "LayeredShield";
+    const OWNER: &str = "Americans";
+
+    fn process_owner(language: &str) -> (NativeRulesProcessOwner, Arc<SoundRegistry>) {
+        let sounds = Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=RootStart\n1=RootFade\n2=LanguageStart\n3=LanguageFade\n\
+             4=MapStart\n5=MapFade\n[SectionOnly]\nSounds=unregistered\n",
+        )));
+        let owner = NativeRulesProcessOwner::from_cold_start_sources(
+            crate::sim::arena_fixture::clear_ground_ini(
+                "[Countries]\n0=Americans\n1=Russians\n\
+                 [InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n\
+                 [BuildingTypes]\n0=PROVIDER\n\
+                 [PROVIDER]\nStrength=1000\nTurret=no\nSight=0\nSuperWeapon=LayeredShield\n\
+                 [SuperWeaponTypes]\n0=LayeredShield\n\
+                 [LayeredShield]\nType=ForceShield\nAction=ForceShield\nRechargeTime=0.1\n\
+                 IsPowered=no\nStartSound=RootStart\nSpecialSound=RootFade\n\
+                 [General]\nForceShieldDuration=5\nForceShieldPlayFadeSoundTime=2\n\
+                 ForceShieldBlackoutDuration=0\n",
+            ),
+            Some(IniFile::from_str(language)),
+            IniFile::from_str("[PROVIDER]\nFoundation=1x1\n"),
+            Arc::clone(&sounds),
+            Default::default(),
+        )
+        .unwrap();
+        (owner, sounds)
+    }
+
+    /// Authored short countdown in a supplied static arena. Real Building
+    /// Unlimbo/House grant, finite charge and semantic command own the state;
+    /// no paid factory placement, whole startup or audio device is modeled.
+    fn launch_and_fade(rules: &RuleSet, expected_start: &str, expected_fade: &str) {
+        let sw = rules.super_weapon(SHIELD).unwrap();
+        assert_eq!(sw.start_sound.as_deref(), Some(expected_start));
+        assert_eq!(sw.special_sound.as_deref(), Some(expected_fade));
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 23);
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+        sim.session.game_options_mut_for_test().super_weapons = true;
+        for name in [OWNER, "Russians"] {
+            let owner = sim.interner.get(name).unwrap();
+            let house = sim.houses.get_mut(&owner).unwrap();
+            house.set_is_human_for_test(true);
+            house.set_player_control_for_test(true);
+            construct_house_supers(&mut sim, rules, owner, false);
+        }
+        let owner = sim.interner.get(OWNER).unwrap();
+        sim.session.set_current_house_for_test(Some(owner));
+        let provider = sim
+            .spawn_object("PROVIDER", OWNER, 10, 10, 0, rules)
+            .unwrap();
+        sim.spawn_object("PROVIDER", "Russians", 27, 27, 0, rules)
+            .unwrap();
+        sim.recheck_house_tech_tree(owner, rules);
+        let type_id = sim.interner.get(SHIELD).unwrap();
+        assert!(sim.super_weapons[&owner][&type_id].is_active());
+        assert!(!sim.super_weapons[&owner][&type_id].is_ready());
+        assert!(sw.recharge_time_frames > 0 && sw.recharge_time_frames <= 90);
+        for _ in 0..=sw.recharge_time_frames {
+            sim.advance_tick(&[], Some(rules), None, None, 33);
+        }
+        assert!(
+            superweapon_views_for_owner(&sim, rules, &owner)
+                .iter()
+                .any(|view| view.type_id == type_id && view.can_fire)
+        );
+        sim.sound_events.clear_for_test();
+        assert!(sim.apply_command_with_overlays(
+            OWNER,
+            &Command::LaunchSuperWeapon {
+                sw_type_id: type_id,
+                target_rx: 10,
+                target_ry: 10
+            },
+            rules,
+            None,
+            FrameEffects::default(),
+        ));
+        // StartSound is expanded by the app from this actual Launch fact and
+        // the bound type. Its cue consumer is tested in sound_dispatch; core
+        // owns the real delayed SpecialSound producer6CBCA8..6CBCCF below.
+        assert_eq!(
+            sim.sound_events
+                .iter()
+                .filter(|event| {
+                    matches!(event,
+                        SimSoundEvent::SuperWeaponLaunched { owner: actual_owner, sw_type, world }
+                            if *actual_owner == owner && *sw_type == type_id
+                                && world.to_cell_sub_z().0 == 10 && world.to_cell_sub_z().1 == 10)
+                })
+                .count(),
+            1
+        );
+        assert!(!sim.super_weapons[&owner][&type_id].is_ready());
+        assert_eq!(
+            sim.super_weapons[&owner][&type_id].fade(),
+            (3, [2688, 2688, 0])
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(provider)
+                .unwrap()
+                .invulnerability
+                .as_ref()
+                .unwrap()
+                .kind(),
+            crate::sim::superweapon::invulnerability::InvulnKind::ForceShield
+        );
+        let mut fade_visits = Vec::new();
+        for visit in 1..=4 {
+            sim.sound_events.clear_for_test();
+            sim.advance_tick(&[], Some(rules), None, None, 33);
+            for event in sim.sound_events.iter() {
+                if let SimSoundEvent::VocAt {
+                    sound_id,
+                    audible_to: None,
+                    rx: 10,
+                    ry: 10,
+                    sub_x,
+                    sub_y,
+                    world_z_leptons: 0,
+                } = event
+                {
+                    assert_eq!(
+                        (*sub_x, *sub_y),
+                        (
+                            crate::util::lepton::CELL_CENTER_LEPTON,
+                            crate::util::lepton::CELL_CENTER_LEPTON
+                        )
+                    );
+                    assert_eq!(sound_id, expected_fade);
+                    fade_visits.push(visit);
+                }
+            }
+        }
+        assert_eq!(
+            fade_visits,
+            [3],
+            "one native countdown edge, no duplicate cue"
+        );
+    }
+
+    #[test]
+    fn force_shield_keeps_fixed_catalog_sounds_across_rejected_and_empty_layers() {
+        // Original6CEA20 retains the current Voc index when7514D0 returns-1;
+        // missing/empty strings also keep it. SOUNDMD is not a Rules layer.
+        let (mut owner, sounds) =
+            process_owner("[LayeredShield]\nStartSound=UnknownStart\nSpecialSound=UnknownFade\n");
+        let mode = IniFile::from_str(
+            "[LayeredShield]\nStartSound=\nSpecialSound=\n\
+             [SoundList]\n0=ModeOnly\n[ModeOnly]\nSounds=not_loaded\n",
+        );
+        let map =
+            IniFile::from_str("[LayeredShield]\nStartSound=ModeOnly\nSpecialSound=SectionOnly\n");
+        let (rules, _, _, _) = owner
+            .load_scenario(NativeScenarioRulesPrefix::NonCampaign(Some(&mode)), &map)
+            .unwrap()
+            .into_parts();
+        assert!(Arc::ptr_eq(owner.fixed_sounds(), &sounds));
+        assert!(sounds.get("ModeOnly").is_none() && sounds.get("SectionOnly").is_none());
+        launch_and_fade(&rules, "RootStart", "RootFade");
+    }
+
+    #[test]
+    fn force_shield_replacement_sounds_survive_saved_rules_projection_and_drive_fade() {
+        let (mut owner, sounds) =
+            process_owner("[LayeredShield]\nStartSound=LanguageStart\nSpecialSound=LanguageFade\n");
+        let mode = IniFile::from_str(
+            "[LayeredShield]\nStartSound= lAnGuAgEsTaRt \nSpecialSound=lAnGuAgEfAdE\n",
+        );
+        let map = IniFile::from_str("[LayeredShield]\nStartSound=MapStart\nSpecialSound=mApFaDe\n");
+        let (rules, _, _, _) = owner
+            .load_scenario(NativeScenarioRulesPrefix::NonCampaign(Some(&mode)), &map)
+            .unwrap()
+            .into_parts();
+        assert_eq!(
+            rules.super_weapon(SHIELD).unwrap().start_sound.as_deref(),
+            Some("MapStart")
+        );
+        assert_eq!(
+            rules.super_weapon(SHIELD).unwrap().special_sound.as_deref(),
+            Some("MapFade")
+        );
+        // The saved resource owner carries this existing ProcessedRulesLayers
+        // wire state. Reproject through the actual loader's fixed-catalog API;
+        // this is same-build rules reconstruction, not a whole-world save test.
+        let bytes =
+            crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+        let saved: ProcessedRulesLayers = crate::util::save_codec::deserialize(&bytes).unwrap();
+        let restored = owner.project_saved_scenario_rules(&saved).unwrap();
+        assert_eq!(
+            restored.simulation_config_hash(),
+            rules.simulation_config_hash()
+        );
+        assert!(Arc::ptr_eq(owner.fixed_sounds(), &sounds));
+        launch_and_fade(&restored, "MapStart", "MapFade");
+    }
 }

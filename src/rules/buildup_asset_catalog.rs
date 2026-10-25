@@ -66,13 +66,6 @@ pub fn buildup_control(
     [0, count, rate]
 }
 
-/// The two files the Buildup load tries (`0x0045F24A..`): `Buildup=` plus
-/// `.SHP` through the theater lookup (`art_data::theater_shp_names`).
-pub fn buildup_shp_names(buildup: &str, theater_name: &str) -> [String; 2] {
-    crate::rules::art_data::theater_shp_names(&buildup.to_ascii_uppercase(), theater_name)
-        .map(|name| format!("{name}.SHP"))
-}
-
 /// The construction control of every building type whose Buildup SHP the
 /// active theater resolves. Keys are uppercase type IDs; a `BTreeMap` keeps
 /// binding and hashing order deterministic.
@@ -100,7 +93,7 @@ impl BuildupAssetCatalog {
             let Some(buildup) = art.buildup.as_deref() else {
                 continue;
             };
-            let Some(data) = buildup_shp_names(buildup, theater_name)
+            let Some(data) = crate::rules::art_data::building_shp_names(buildup, theater_name)
                 .iter()
                 .find_map(|candidate| asset_manager.get_ref(candidate))
             else {
@@ -184,21 +177,21 @@ mod tests {
     #[test]
     fn buildup_names_take_the_theater_letter_then_the_generic_one() {
         assert_eq!(
-            buildup_shp_names("YAREFNMK", "TEMPERATE"),
+            crate::rules::art_data::building_shp_names("YAREFNMK", "TEMPERATE"),
             ["YTREFNMK.SHP".to_string(), "YGREFNMK.SHP".to_string()]
         );
         assert_eq!(
-            buildup_shp_names("gacnstmk", "SNOW"),
+            crate::rules::art_data::building_shp_names("gacnstmk", "SNOW"),
             ["GACNSTMK.SHP".to_string(), "GGCNSTMK.SHP".to_string()]
         );
         // Not a G/N/C/Y + A/T name: tried as it is, then with G.
         assert_eq!(
-            buildup_shp_names("NXPOWRMK", "TEMPERATE"),
+            crate::rules::art_data::building_shp_names("NXPOWRMK", "TEMPERATE"),
             ["NXPOWRMK.SHP".to_string(), "NGPOWRMK.SHP".to_string()]
         );
         // An unknown theater: no substitution.
         assert_eq!(
-            buildup_shp_names("GTCNSTMK", "NONE"),
+            crate::rules::art_data::building_shp_names("GTCNSTMK", "NONE"),
             ["GTCNSTMK.SHP".to_string(), "GGCNSTMK.SHP".to_string()]
         );
     }

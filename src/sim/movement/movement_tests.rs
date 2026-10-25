@@ -434,7 +434,7 @@ fn walk_path_timer_waits_without_double_aging_or_losing_owner_state() {
         sim.session.set_binary_frame_for_test(200);
         assert!(sim.set_infantry_null_destination(
             1,
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             None,
             crate::sim::world::FrameEffects::default()
         ));
@@ -614,7 +614,7 @@ fn drive_slope_boundary_is_detected_on_process_after_forced_track_crossing() {
         1,
         0x47,
         DriveCoord { x: 0, y: 256, z: 0 },
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default()
     ));
@@ -1005,7 +1005,7 @@ fn forced_track_object_turn_relinks_each_committed_cell() {
         1,
         0x47,
         head,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default()
     ));
@@ -1203,7 +1203,7 @@ fn tree_speed_test_cell(
     bits: u8,
 ) -> crate::map::resolved_terrain::ResolvedTerrainCell {
     crate::map::resolved_terrain::ResolvedTerrainCell {
-        terrain_object_occupation: Some(bits),
+        terrain_object_occupation: Some(i32::from(bits)),
         terrain_object_blocks: bits != 0,
         ground_walk_blocked: bits != 0,
         base_ground_walk_blocked: false,
@@ -1268,7 +1268,7 @@ fn walk_move(
             target_rx: to.0,
             target_ry: to.1,
         },
-        Some(rules),
+        rules,
         None,
         crate::sim::world::FrameEffects::default(),
     ));

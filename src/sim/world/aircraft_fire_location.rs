@@ -20,7 +20,7 @@ mod tests;
 mod approach_tests;
 
 /// Live occupants and Cell NavCom reservations read once per search.
-/// Is_Cell_Free_For_Landing419B00 is an any-match over live objects, so one
+/// Is_Cell_Free_For_Landing419B00 is an any-match over marked objects, so one
 /// pass answers every candidate of one search; nothing mutates between them.
 /// One search passes one `include_self`, which the pass already applied.
 /// VERA-only: the sets are bitmaps, built from every live object and asked
@@ -323,7 +323,9 @@ impl Simulation {
         for other in self.substrate.entities.values() {
             if carried == Some(other.stable_id())
                 || own == Some(other.stable_id())
-                || !other.lifecycle.object_alive()
+                //419C13..419C22 reads InLimbo+81 and Marked+74, not Alive+90.
+                // A fatal ship receiver unmarks its retained, living hull.
+                || !other.lifecycle.cell_marked()
                 || other.lifecycle.in_limbo()
                 || !matches!(
                     other.category(),

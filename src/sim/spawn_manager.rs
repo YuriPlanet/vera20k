@@ -72,7 +72,7 @@ use crate::sim::combat::TargetKind;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::MissionType;
 use crate::sim::timer::CdTimer;
-use crate::sim::world::{Simulation, UninitContext};
+use crate::sim::world::{PlacementEvidence, RevealRequest, Simulation, UninitContext};
 use crate::util::direction::DIRECTION_DELTAS;
 
 #[cfg(test)]
@@ -395,6 +395,13 @@ impl SpawnManagerState {
             .count()
     }
 
+    /// Phobos `SpawnManagerClass::CountLaunchingSpawns`: children that are
+    /// alive but not docked, i.e. the complement of
+    /// [`Self::count_docked_spawns`] inside [`Self::count_alive_spawns`].
+    pub fn count_launching_spawns(&self) -> usize {
+        self.count_alive_spawns() - self.count_docked_spawns()
+    }
+
     /// Native `0x006B7D80`, read by the Drive/Ship Process_Movement gate
     /// (0x4B272C / 0x6A1D49) before its no-queue path request: slots waiting
     /// out a kamikaze launch (state 1), plus in-flight children (state 2)
@@ -457,9 +464,12 @@ pub fn init_spawn_manager(
     if obj.spawns_number <= 0 {
         return None;
     }
-    // Native resolves `Spawns=` through the TechnoType registry; an unresolved
+    // TechnoType ReadINI714E9E resolves Spawns through AircraftType67BD30; an unresolved
     // name leaves the pointer null and no manager is created.
-    rules.object(spawn_type_name)?;
+    rules.object_in_category(
+        crate::rules::object_type::ObjectCategory::Aircraft,
+        spawn_type_name,
+    )?;
 
     let missile_family = rules.missile_spawn.family_of(spawn_type_name);
     let is_missile_spawn = missile_family.is_some();
@@ -1000,7 +1010,7 @@ pub(crate) fn spawn_manager_ai(
     if let Some(mut host) = WorldSpawn::new(
         sim,
         owner_id,
-        UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+        UninitContext::new(rules, registry).with_effects(frame_effects),
     ) {
         ai(&mut host);
     }
@@ -1047,7 +1057,7 @@ pub(crate) fn notify_pointer_expired(
     sim: &mut Simulation,
     listener_id: u64,
     expired_id: u64,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
@@ -1063,13 +1073,11 @@ pub(crate) fn notify_pointer_expired(
 /// [`clear_all_targets`] for one owner. Native callers besides the manager's
 /// own bodies: the Stop event (`0x004C7634`), Stun (`0x006FCD90`, wired for
 /// its death arm), Retaliate_And_Scan's CANT arm (`0x007098FB`) and
-/// UnitClass::Fire_At_Target's CANT case (`0x0073705E`). The rules-less
-/// UnInit adapters (tests and fixtures only) find no `MissileSpawn=` child, so
-/// only the clear runs.
+/// UnitClass::Fire_At_Target's CANT case (`0x0073705E`).
 pub(crate) fn clear_all_spawn_targets(
     sim: &mut Simulation,
     owner_id: u64,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
@@ -1094,9 +1102,6 @@ pub(crate) fn clear_all_spawn_targets(
 ///   WIRED, via `Simulation::imbue_locomotor`.
 /// - `TechnoClass::Stun` (`0x006FCD40`) — WIRED via
 ///   `Simulation::techno_death_stun`, which a lifted Foot skips.
-///
-/// Push needs the rules; the rules-less UnInit adapters (tests and fixtures
-/// only) skip it.
 pub(crate) fn kill_all_spawns_with_context(
     sim: &mut Simulation,
     owner_id: u64,
@@ -1129,13 +1134,13 @@ impl<'a, 'c> WorldSpawn<'a, 'c> {
     }
 
     fn child_type(&self, child: u64) -> Option<&crate::rules::object_type::ObjectType> {
-        let rules = self.context.rules()?;
+        let rules = self.context.rules();
         let entity = self.sim.substrate.entities.get(child)?;
         self.sim.object_type(entity.type_ref(), rules)
     }
 
     fn owner_type(&self) -> Option<&crate::rules::object_type::ObjectType> {
-        let rules = self.context.rules()?;
+        let rules = self.context.rules();
         let owner = self.sim.substrate.entities.get(self.owner_id)?;
         self.sim.object_type(owner.type_ref(), rules)
     }
@@ -1169,9 +1174,8 @@ impl SpawnHost for WorldSpawn<'_, '_> {
     }
 
     fn pool_is_cmisl(&self) -> bool {
-        self.context
-            .rules()
-            .is_some_and(|rules| cmisl_pool(self.sim, rules, self.manager_ref().spawn_type))
+        let rules = self.context.rules();
+        cmisl_pool(self.sim, rules, self.manager_ref().spawn_type)
     }
 
     fn owner_is_moving(&mut self) -> bool {
@@ -1183,9 +1187,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
     }
 
     fn owner_is_moving_now(&mut self) -> bool {
-        let Some(rules) = self.context.rules() else {
-            return false;
-        };
+        let rules = self.context.rules();
         let sim = &*self.sim;
         sim.substrate
             .entities
@@ -1193,11 +1195,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             .is_some_and(|owner| {
                 crate::sim::movement::motion_query::is_moving_now(
                     owner,
-                    Some(crate::sim::movement::SpeedRules::new(
-                        rules,
-                        &sim.interner,
-                        &sim.houses,
-                    )),
+                    crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
                     sim.session.binary_frame(),
                 )
             })
@@ -1218,7 +1216,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
     }
 
     fn owner_weapon_burst(&self) -> Option<i32> {
-        let rules = self.context.rules()?;
+        let rules = self.context.rules();
         let owner = self.sim.substrate.entities.get(self.owner_id)?;
         crate::sim::combat::combat_weapon::primary_for_tier(
             self.owner_type()?,
@@ -1260,9 +1258,8 @@ impl SpawnHost for WorldSpawn<'_, '_> {
     fn can_fire_at(&mut self, target: TargetKind) -> bool {
         // Unit's vt+0x3AC is `TechnoClass::CanFireAtTarget @ 0x006F7780`
         // (InRange with the selected weapon).
-        let (Some(rules), Some(terrain)) =
-            (self.context.rules(), self.sim.resolved_terrain.as_ref())
-        else {
+        let rules = self.context.rules();
+        let Some(terrain) = self.sim.resolved_terrain.as_ref() else {
             return false;
         };
         let sim = &*self.sim;
@@ -1339,9 +1336,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
     }
 
     fn launch(&mut self, child: u64, burst_parity: Option<i32>) {
-        let Some(rules) = self.context.rules() else {
-            return;
-        };
+        let rules = self.context.rules();
         let frame = self.sim.session.binary_frame();
         let Some(owner) = self.sim.substrate.entities.get(self.owner_id) else {
             return;
@@ -1353,17 +1348,44 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         let Some(launch) = launch_coordinate(self.sim, rules, self.owner_id, burst_parity) else {
             return;
         };
-        // The child's Unlimbo (vt+0xD8, `0x006B7505`) at that coordinate,
-        // staged on its limbo Location for Reveal: a `MissileSpawn=` type keeps
-        // it whole (`unlimbo_z`); an aircraft's Z is replaced there. Its
-        // Unlimbo snaps the body to the direction (`0x006F6DAA`). The coarse
-        // level stays the owner's. The original ignores its answer.
-        if let Some(child) = self.sim.substrate.entities.get_mut(child) {
-            child.position.put_location(launch);
-            child.position.copy_level_from(&owner_position);
-            child.body_facing.snap(u16::from(launch_dir) << 8, frame);
-        }
-        let _ = self.sim.reveal_entity_with_rules(child, rules);
+        // The child's Unlimbo (vt+0xD8, `0x006B7505`) at that coordinate and
+        // direction, with no `0x00A8E7AC` raised: AircraftClass::Unlimbo
+        // (`0x00414310`) reaches Object's class +1AC query (`0x005F4F1B`),
+        // AircraftClass::Can_Enter_Cell, which can refuse it. The request
+        // keeps the owner's coarse level; a `MissileSpawn=` type keeps its Z
+        // whole (`unlimbo_z`), an aircraft's is replaced. A placed child snaps
+        // its body to the direction (`0x006F6DAA`). The original ignores the
+        // answer: a refused child stays in limbo where it was.
+        let Some(mut requested) = self
+            .sim
+            .substrate
+            .entities
+            .get(child)
+            .map(|child| child.position)
+        else {
+            return;
+        };
+        requested.put_location(launch);
+        requested.copy_level_from(&owner_position);
+        let context = self.context.with_unlimbo_facing(Some(launch_dir));
+        let Some((position, placement)) = self.sim.unlimbo_class_entry(
+            child,
+            requested,
+            PlacementEvidence::EvaluateMark,
+            rules,
+            context.registry(),
+        ) else {
+            return;
+        };
+        let _ = self.sim.try_reveal_entity_with_context(
+            child,
+            RevealRequest {
+                position,
+                placement,
+                logic_eligible: true,
+            },
+            context,
+        );
     }
 
     fn reset_owner_burst(&mut self) {
@@ -1376,9 +1398,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         // `AnimClass(V3TAKOFF, &Location, 2, 1, 0x600, -10, 0)`; `[0x00840098]`
         // names it too. The constructor draws only for `RandomRate=`,
         // `IsMeteor=` or `Bouncer=`, which retail `[V3TAKOFF]` leaves unset.
-        let Some(rules) = self.context.rules() else {
-            return;
-        };
+        let rules = self.context.rules();
         let Some(location) =
             self.sim.substrate.entities.get(child).map(|child| {
                 crate::sim::movement::ground_pose::position_world_coord(&child.position)
@@ -1401,9 +1421,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
     }
 
     fn set_destination(&mut self, child: u64, destination: SpawnDestination) {
-        let Some(rules) = self.context.rules() else {
-            return;
-        };
+        let rules = self.context.rules();
         let destination = match destination {
             // The Foot setter hands a missile's target coordinate to Rocket
             // Move_To (`rocket_movement::move_to`).
@@ -1432,7 +1450,9 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             crate::sim::mission::MissionId::from_known(mission),
             0,
             self.sim.session.binary_frame(),
-            &crate::sim::mission::authority::EntityReadyInputProvider,
+            &crate::sim::mission::authority::LiveReadyInputProvider {
+                rules: self.context.rules(),
+            },
         );
     }
 
@@ -1455,9 +1475,8 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             .entities
             .get(child)
             .is_none_or(|child| child.lifecycle.in_limbo());
-        if let (false, Some(rules)) = (in_limbo, self.context.rules()) {
-            self.sim
-                .techno_limbo_with_context(child, self.context.requiring_rules(rules));
+        if !in_limbo {
+            self.sim.techno_limbo_with_context(child, self.context);
         }
     }
 
@@ -1476,15 +1495,18 @@ impl SpawnHost for WorldSpawn<'_, '_> {
     }
 
     fn create_child(&mut self) -> Option<u64> {
-        let rules = self.context.rules()?;
+        let rules = self.context.rules();
         let spawn_type = self.manager().spawn_type;
         let owner = self.sim.substrate.entities.get(self.owner_id)?;
         let house = self.sim.interner.resolve(owner.owner()).to_string();
         let (rx, ry, z) = (owner.position.rx(), owner.position.ry(), owner.position.z());
         let facing = owner.body_facing_byte(self.sim.session.binary_frame());
         let type_name = self.sim.interner.resolve(spawn_type).to_string();
-        self.sim.construct_object_limbo_at_height(
-            &type_name,
+        self.sim.construct_resolved_object_limbo_at_height(
+            rules.object_in_category(
+                crate::rules::object_type::ObjectCategory::Aircraft,
+                &type_name,
+            )?,
             &house,
             rx,
             ry,
@@ -1506,15 +1528,13 @@ impl SpawnHost for WorldSpawn<'_, '_> {
     }
 
     fn push(&mut self, child: u64, target: Option<TargetKind>) {
-        if let Some(rules) = self.context.rules() {
-            self.sim.kamikaze_push(
-                child,
-                target,
-                rules,
-                self.context.registry(),
-                self.context.effects(),
-            );
-        }
+        self.sim.kamikaze_push(
+            child,
+            target,
+            self.context.rules(),
+            self.context.registry(),
+            self.context.effects(),
+        );
     }
 
     fn restart_kamikaze(&mut self) {

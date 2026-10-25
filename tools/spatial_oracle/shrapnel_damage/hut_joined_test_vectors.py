@@ -14,7 +14,6 @@ def generate():
     promotion = json.loads((HERE / 'hut_joined_promotion.json').read_bytes())
     identity = packet_io.digest(_canonical(source))
     assert identity == promotion['results']['hut_joined.json']['published_payload_sha256']
-    meta = json.loads((HERE / 'hut_joined.meta.json').read_bytes())
     result = project_joined_cases(source, ('hut_call', 'hut_call_return'))
     for case, native in zip(result['cases'], source['cases'], strict=True):
         stage, = case['stages']
@@ -22,7 +21,7 @@ def generate():
         for key in ('span_before', 'display_dirty_before', 'display_dirty_after'):
             stage[key] = raw[key]
         case['bridge_explosion_layers'] = native['art_input']['bridge_explosion_layers']
-    return dict(schema=1, native_sha256=meta['native_sha256'],
+    return dict(schema=1,
                 joined_native_payload_sha256=identity, scene=source['scene'],
                 native_actor_inputs=source['cases'][0]['native_inputs'], **result)
 
@@ -34,9 +33,7 @@ def metadata():
     ], substitutions=[], entry_points=dict(hut=0x574C20, walker=0x575540,
         driver=0x57BAA0, occupants=0x487A10, constructor=0x421EA0)) | dict(
         source_files={name: packet_io.digest((HERE / name).read_bytes()) for name in (
-            'hut_joined.json.gz', 'hut_joined_promotion.json',
-            'occupants_test_vectors.py', 'occupants_joined_test_vectors.py')},
-        projection_source_sha256=packet_io.digest(Path(__file__).read_bytes()))
+            'hut_joined.json.gz', 'hut_joined_promotion.json')})
 
 
 if __name__ == '__main__':

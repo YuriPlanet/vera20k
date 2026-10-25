@@ -1,0 +1,450 @@
+[
+  {
+    "input": {
+      "base": [
+        7,
+        11,
+        13
+      ],
+      "burst": 0,
+      "flh": [
+        50,
+        0,
+        300
+      ],
+      "heading": 0,
+      "location": [
+        3200,
+        3200,
+        0
+      ],
+      "turret_offset": 0
+    },
+    "object_y": 3072,
+    "source": [
+      3072,
+      3022,
+      300
+    ]
+  },
+  {
+    "input": {
+      "base": [
+        7,
+        11,
+        13
+      ],
+      "burst": 0,
+      "flh": [
+        50,
+        0,
+        300
+      ],
+      "heading": 2048,
+      "location": [
+        3200,
+        3200,
+        0
+      ],
+      "turret_offset": 0
+    },
+    "object_y": 3072,
+    "source": [
+      3081,
+      3023,
+      300
+    ]
+  },
+  {
+    "input": {
+      "base": [
+        7,
+        11,
+        13
+      ],
+      "burst": 0,
+      "flh": [
+        50,
+        0,
+        300
+      ],
+      "heading": 8192,
+      "location": [
+        3200,
+        3200,
+        0
+      ],
+      "turret_offset": 0
+    },
+    "object_y": 3072,
+    "source": [
+      3107,
+      3037,
+      300
+    ]
+  },
+  {
+    "input": {
+      "base": [
+        7,
+        11,
+        13
+      ],
+      "burst": 0,
+      "flh": [
+        50,
+        0,
+        300
+      ],
+      "heading": 16384,
+      "location": [
+        3200,
+        3200,
+        0
+      ],
+      "turret_offset": 0
+    },
+    "object_y": 3072,
+    "source": [
+      3122,
+      3072,
+      300
+    ]
+  },
+  {
+    "input": {
+      "base": [
+        7,
+        11,
+        13
+      ],
+      "burst": 0,
+      "flh": [
+        50,
+        0,
+        300
+      ],
+      "heading": 32768,
+      "location": [
+        3200,
+        3200,
+        0
+      ],
+      "turret_offset": 0
+    },
+    "object_y": 3072,
+    "source": [
+      3072,
+      3121,
+      300
+    ]
+  },
+  {
+    "input": {
+      "base": [
+        7,
+        11,
+        13
+      ],
+      "burst": 0,
+      "flh": [
+        50,
+        0,
+        300
+      ],
+      "heading": 49152,
+      "location": [
+        3200,
+        3200,
+        0
+      ],
+      "turret_offset": 0
+    },
+    "object_y": 3072,
+    "source": [
+      3023,
+      3072,
+      300
+    ]
+  },
+  {
+    "input": {
+      "base": [
+        7,
+        11,
+        13
+      ],
+      "burst": 0,
+      "flh": [
+        -250,
+        37,
+        -23
+      ],
+      "heading": 0,
+      "location": [
+        3200,
+        3200,
+        0
+      ],
+      "turret_offset": 95
+    },
+    "object_y": 3072,
+    "source": [
+      3129,
+      3321,
+      -23
+    ]
+  },
+  {
+    "input": {
+      "base": [
+        7,
+        11,
+        13
+      ],
+      "burst": 1,
+      "flh": [
+        -250,
+        37,
+        -23
+      ],
+      "heading": 0,
+      "location": [
+        3200,
+        3200,
+        0
+      ],
+      "turret_offset": 95
+    },
+    "object_y": 3072,
+    "source": [
+      3203,
+      3322,
+      -23
+    ]
+  },
+  {
+    "input": {
+      "base": [
+        7,
+        11,
+        13
+      ],
+      "burst": 0,
+      "flh": [
+        -250,
+        37,
+        -23
+      ],
+      "heading": 6144,
+      "location": [
+        3200,
+        3200,
+        0
+      ],
+      "turret_offset": 95
+    },
+    "object_y": 3072,
+    "source": [
+      2998,
+      3259,
+      -23
+    ]
+  },
+  {
+    "input": {
+      "base": [
+        7,
+        11,
+        13
+      ],
+      "burst": 1,
+      "flh": [
+        -250,
+        37,
+        -23
+      ],
+      "heading": 6144,
+      "location": [
+        3200,
+        3200,
+        0
+      ],
+      "turret_offset": 95
+    },
+    "object_y": 3072,
+    "source": [
+      3059,
+      3300,
+      -23
+    ]
+  },
+  {
+    "input": {
+      "base": [
+        7,
+        11,
+        13
+      ],
+      "burst": 0,
+      "flh": [
+        -250,
+        37,
+        -23
+      ],
+      "heading": 18432,
+      "location": [
+        3200,
+        3200,
+        0
+      ],
+      "turret_offset": 95
+    },
+    "object_y": 3072,
+    "source": [
+      2929,
+      2988,
+      -23
+    ]
+  },
+  {
+    "input": {
+      "base": [
+        7,
+        11,
+        13
+      ],
+      "burst": 1,
+      "flh": [
+        -250,
+        37,
+        -23
+      ],
+      "heading": 18432,
+      "location": [
+        3200,
+        3200,
+        0
+      ],
+      "turret_offset": 95
+    },
+    "object_y": 3072,
+    "source": [
+      2915,
+      3060,
+      -23
+    ]
+  },
+  {
+    "input": {
+      "base": [
+        7,
+        11,
+        13
+      ],
+      "burst": 0,
+      "flh": [
+        -250,
+        37,
+        -23
+      ],
+      "heading": 34816,
+      "location": [
+        3200,
+        3200,
+        0
+      ],
+      "turret_offset": 95
+    },
+    "object_y": 3072,
+    "source": [
+      3251,
+      2834,
+      -23
+    ]
+  },
+  {
+    "input": {
+      "base": [
+        7,
+        11,
+        13
+      ],
+      "burst": 1,
+      "flh": [
+        -250,
+        37,
+        -23
+      ],
+      "heading": 34816,
+      "location": [
+        3200,
+        3200,
+        0
+      ],
+      "turret_offset": 95
+    },
+    "object_y": 3072,
+    "source": [
+      3179,
+      2820,
+      -23
+    ]
+  },
+  {
+    "input": {
+      "base": [
+        7,
+        11,
+        13
+      ],
+      "burst": 0,
+      "flh": [
+        -250,
+        37,
+        -23
+      ],
+      "heading": 59392,
+      "location": [
+        3200,
+        3200,
+        0
+      ],
+      "turret_offset": 95
+    },
+    "object_y": 3072,
+    "source": [
+      3275,
+      3300,
+      -23
+    ]
+  },
+  {
+    "input": {
+      "base": [
+        7,
+        11,
+        13
+      ],
+      "burst": 1,
+      "flh": [
+        -250,
+        37,
+        -23
+      ],
+      "heading": 59392,
+      "location": [
+        3200,
+        3200,
+        0
+      ],
+      "turret_offset": 95
+    },
+    "object_y": 3072,
+    "source": [
+      3336,
+      3259,
+      -23
+    ]
+  }
+]

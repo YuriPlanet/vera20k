@@ -158,7 +158,7 @@ fn building_navigation_capture_command_preserves_the_native_dock_coordinate() {
     );
     building
         .type_facts
-        .set_foundation_for_test(rules.object("BUILDING").unwrap().foundation.clone());
+        .set_foundation_for_test(rules.object("BUILDING").unwrap().foundation.clone().into());
     building.radio_contacts = contacts(input);
     building.lifecycle.set_in_limbo_for_test(false);
     position(&mut building, coord(&input["current"]));
@@ -233,7 +233,7 @@ fn building_navcom_reads_live_type_requester_and_radio_slots_after_restore() {
         );
         building
             .type_facts
-            .set_foundation_for_test(rules.object("BUILDING").unwrap().foundation.clone());
+            .set_foundation_for_test(rules.object("BUILDING").unwrap().foundation.clone().into());
         building.radio_contacts = contacts(input);
         position(&mut building, current);
         sim.substrate.entities.insert(building);

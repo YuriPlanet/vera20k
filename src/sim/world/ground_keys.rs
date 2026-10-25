@@ -79,7 +79,7 @@ pub(crate) struct GroundKeys {
 /// in, by [`RuleSet::serial`](crate::rules::ruleset::RuleSet::serial).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ReadContext {
-    pub(crate) rules: Option<u64>,
+    pub(crate) rules: u64,
 }
 
 impl GroundKeys {
@@ -305,7 +305,7 @@ mod tests {
         }
     }
 
-    const CONTEXT: ReadContext = ReadContext { rules: None };
+    const CONTEXT: ReadContext = ReadContext { rules: 0 };
 
     /// A deterministic sequence of submits, departures, adjacent passes, own
     /// moves and owner moves gives the same layers whether the reads are kept
@@ -381,7 +381,7 @@ mod tests {
         scene.owner_of.insert(6, 50);
         scene.owner_terms.insert(50, 0);
         for forget in [
-            (ReadContext { rules: Some(8) }, Touched::Ids(Vec::new())),
+            (ReadContext { rules: 8 }, Touched::Ids(Vec::new())),
             (CONTEXT, Touched::All),
         ] {
             let mut display = DisplayLayers::default();

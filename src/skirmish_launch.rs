@@ -12,6 +12,9 @@ use crate::skirmish_modes::SkirmishGameMode;
 
 pub const SKIRMISH_PLAYER_SLOT_COUNT: usize = 8;
 pub const SKIRMISH_AI_SLOT_COUNT: usize = SKIRMISH_PLAYER_SLOT_COUNT - 1;
+/// VERA network rooms extend the retail eight-row setup without changing the
+/// offline shell's resource rows or the eight-colour retail palette.
+pub const NETWORK_PLAYER_SLOT_COUNT: usize = 30;
 pub const HOUSE_COLOR_COUNT: usize = 8;
 
 /// One human node in the native pre-Fill House-construction roster.
@@ -580,6 +583,14 @@ impl TryFrom<SkirmishHumanSlotInput> for SkirmishHumanSlot {
     }
 }
 impl SkirmishHumanSlot {
+    /// CreateHouses687F66..687F84 retains source order for equal colors.
+    /// VERA's LAN transport nodes are local-first, so the admitted host row
+    /// supplies the shared source order when the eight colors are reused.
+    /// Unbound editable nodes keep their source order until the roster arrives.
+    pub(crate) fn house_source_order(&self, source_index: usize) -> u8 {
+        self.raw_slot_index.unwrap_or(source_index as u8)
+    }
+
     pub const fn is_observer(&self) -> bool {
         matches!(self.role, LaunchHumanRole::Observer)
     }
@@ -598,8 +609,9 @@ pub struct SkirmishLaunchSession {
     pub mode: SkirmishLaunchMode,
     pub selected_map_file: Option<String>,
     /// Native NodeNameType source order, before CreateHouses sorts by color.
-    /// A received setup retains the host's resolved order; this client's
-    /// identity is an index, never inferred from a display name or House order.
+    /// LAN nodes remain local-first; admitted rows supply shared equal-color
+    /// House order. This client's identity remains an index, never inferred
+    /// from a display name or House order.
     pub humans: Vec<SkirmishHumanSlot>,
     pub local_player_index: usize,
     /// Session+A8B274 declared computer count. Usually equals active rows;
@@ -672,12 +684,12 @@ impl TryFrom<SkirmishLaunchSessionInput> for SkirmishLaunchSession {
         opponents.sort_by_key(|opponent| opponent.raw_slot_index);
         if opponents
             .iter()
-            .any(|opponent| opponent.raw_slot_index >= SKIRMISH_PLAYER_SLOT_COUNT as u8)
+            .any(|opponent| opponent.raw_slot_index >= NETWORK_PLAYER_SLOT_COUNT as u8)
             || opponents
                 .windows(2)
                 .any(|pair| pair[0].raw_slot_index == pair[1].raw_slot_index)
         {
-            return Err("launch AI raw slot indices must be distinct and below8".into());
+            return Err("launch AI raw slot indices must be distinct and below30".into());
         }
         Ok(Self {
             mode: input.mode,
@@ -846,11 +858,18 @@ impl SkirmishLaunchSession {
             .enumerate()
             .map(|(index, human)| PreFillHumanHouse {
                 priority: i32::from(human.slot.color_index),
-                source_order: index as u8,
+                source_order: human.house_source_order(index),
                 observer: human.is_observer(),
             })
             .collect();
-        let ai = (0..SKIRMISH_PLAYER_SLOT_COUNT)
+        let ai_rows = self
+            .opponents
+            .iter()
+            .map(|ai| usize::from(ai.raw_slot_index) + 1)
+            .max()
+            .unwrap_or(0)
+            .max(SKIRMISH_PLAYER_SLOT_COUNT);
+        let ai = (0..ai_rows)
             .map(|index| PreFillAiHouseSlot {
                 slot_index: index as u8,
                 valid: self
@@ -951,9 +970,26 @@ pub enum RandomCountryRole {
 /// Draw an unused shell colour in `0..=7`.
 ///
 /// Each collision retry advances the supplied Scenario stream once. More
-/// Random colour slots than free colours intentionally has no exit, matching
-/// the native malformed-state behavior.
+/// The first eight allocations retain native retries and RNG order. Larger
+/// VERA rooms reuse the least-used palette colours instead of exhausting it.
 fn draw_collision_free_color(rng: &mut SimRng, used: &[u8]) -> u8 {
+    if (0..HOUSE_COLOR_COUNT as u8).all(|color| used.contains(&color)) {
+        // VERA's >8-player extension: retain the retail palette and select
+        // among its least-used colours. One draw is enough; the native retry
+        // loop cannot terminate once every colour has been assigned.
+        let counts: [usize; HOUSE_COLOR_COUNT] = std::array::from_fn(|color| {
+            used.iter()
+                .filter(|&&used| usize::from(used) == color)
+                .count()
+        });
+        let minimum = *counts.iter().min().expect("retail palette is nonempty");
+        let available: Vec<_> = counts
+            .iter()
+            .enumerate()
+            .filter_map(|(color, &count)| (count == minimum).then_some(color as u8))
+            .collect();
+        return available[rng.next_range_u32_inclusive(0, available.len() as u32 - 1) as usize];
+    }
     loop {
         let color = rng.next_range_u32_inclusive(0, 7) as u8;
         if !used.contains(&color) {
@@ -1357,6 +1393,37 @@ mod tests {
         assert_eq!(resolved.opponents[1].country, LaunchCountry::Cuba);
         assert!(!resolved.opponents[1].country_random);
         assert_eq!(rng.state(), expected_rng.state());
+    }
+
+    #[test]
+    fn thirty_random_human_colours_terminate_with_balanced_deterministic_reuse() {
+        let mut session = random_test_session();
+        let template = session.local_player().clone();
+        session.humans = (0..30)
+            .map(|row| {
+                let mut human = template.clone();
+                human.name = format!("Player{row}");
+                human.raw_slot_index = Some(row);
+                human.slot.color_random = true;
+                human.slot.country_random = false;
+                human
+            })
+            .collect();
+        session.opponents.clear();
+        session.ai_player_count = 0;
+        session.rebuild_house_roster();
+        let a = session.resolve_shell_random_assignments(&mut SimRng::new(42));
+        let b = session.resolve_shell_random_assignments(&mut SimRng::new(42));
+        assert_eq!(a, b);
+        let counts: [usize; 8] = std::array::from_fn(|color| {
+            a.humans
+                .iter()
+                .filter(|human| usize::from(human.slot.color_index) == color)
+                .count()
+        });
+        assert!(counts.iter().all(|count| (3..=4).contains(count)));
+        assert!(a.humans.iter().all(|human| !human.slot.color_random));
+        assert!(a.house_roster_is_consistent());
     }
 
     #[test]

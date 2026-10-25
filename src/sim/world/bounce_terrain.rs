@@ -9,7 +9,7 @@ use glam::IVec3;
 
 pub(super) struct ResolvedBounceTerrain<'a> {
     pub sim: &'a Simulation,
-    pub rules: Option<&'a RuleSet>,
+    pub rules: &'a RuleSet,
 }
 
 impl<'a> BounceTerrain for ResolvedBounceTerrain<'a> {
@@ -91,10 +91,7 @@ impl<'a> BounceTerrain for ResolvedBounceTerrain<'a> {
                 .sim
                 .entities()
                 .get(sid)
-                .and_then(|entity| {
-                    self.rules
-                        .and_then(|rules| self.sim.object_type(entity.type_ref(), rules))
-                })
+                .and_then(|entity| self.sim.object_type(entity.type_ref(), self.rules))
                 .is_some_and(|kind| !kind.is_1x1_with_undeploy());
         }
         // 480510(-1,-1) accepts these three raw overlay IDs only.

@@ -3,7 +3,6 @@
 
 use super::*;
 use crate::sim::movement::air_movement::current_fly_speed;
-use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::NativeF64Bits;
 use serde_json::{Value, json};
 
@@ -58,7 +57,8 @@ impl FireAtHost for Recorder {
     }
 
     fn apparent_speed(&mut self) -> i32 {
-        let fraction = SimFixed::from_num(self.input["current_speed"].as_f64().unwrap());
+        let fraction =
+            NativeF64Bits::from_bits(self.input["current_speed"].as_f64().unwrap().to_bits());
         let speed = current_fly_speed(int(&self.input["type_speed"]), fraction);
         self.calls.push(json!(["apparent_speed", speed]));
         speed

@@ -268,6 +268,26 @@ pub(crate) fn load_rules_with_merged_ini(
     IniFile,
     crate::rules::process_owner::NativeScenarioRulesReceipt,
 )> {
+    load_rules_with_prefix_for_test(
+        asset_manager,
+        crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(mode_rules_override),
+        map_rules_overrides,
+    )
+}
+
+/// Same production owner as the ordinary fixture; the generated launch snapshot
+/// explicitly preserves Full_Init's RMG admission instead of inferring it from INI.
+#[cfg(test)]
+pub(crate) fn load_rules_with_prefix_for_test(
+    asset_manager: &AssetManager,
+    prefix: crate::rules::process_owner::NativeScenarioRulesPrefix<'_>,
+    map_rules_overrides: Option<&IniFile>,
+) -> Option<(
+    RuleSet,
+    IniFile,
+    IniFile,
+    crate::rules::process_owner::NativeScenarioRulesReceipt,
+)> {
     let audio = crate::rules::audio_sources::AudioDefinitions::select(asset_manager);
     let (_, _, mut native_owner) = load_startup_rules(
         asset_manager,
@@ -277,12 +297,7 @@ pub(crate) fn load_rules_with_merged_ini(
     .into_parts();
     let no_map = IniFile::from_str("");
     let (rules, processed_ini, fixed_art_ini, receipt) = native_owner
-        .load_scenario(
-            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
-                mode_rules_override,
-            ),
-            map_rules_overrides.unwrap_or(&no_map),
-        )
+        .load_scenario(prefix, map_rules_overrides.unwrap_or(&no_map))
         .map_err(|error| log::warn!("Failed native noncampaign rules rebuild: {error}"))
         .ok()?
         .into_parts();
@@ -337,15 +352,17 @@ pub(crate) fn bind_rules_art_metadata(
 
 /// The common post-terrain asset binding order. Saved loading supplies the
 /// complete retained scheduler closure, including authored animations that
-/// have since expired, rather than constructing their objects again.
+/// have since expired, rather than constructing their objects again. The
+/// Terrain phase preserves the distinct fresh/saved shape residency.
 pub(crate) fn bind_rules_asset_closure(
     rules: &mut RuleSet,
-    processed_ini: &IniFile,
     fixed_art: &IniFile,
+    overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
     roots: &[String],
     assets: &AssetManager,
     theater_ext: &str,
     theater_name: &str,
+    terrain_phase: crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase,
 ) -> anyhow::Result<()> {
     rules.bind_scheduler_anim_assets(roots, assets, theater_ext, theater_name)?;
     // The strict pass replaces the scheduler set; tolerant bindings must follow.
@@ -355,7 +372,9 @@ pub(crate) fn bind_rules_asset_closure(
     rules.bind_effect_assets(assets, theater_ext, theater_name);
     rules.bind_building_buildup_assets(assets, theater_name);
     rules.bind_building_rubble_assets(assets, theater_ext, theater_name);
-    rules.bind_terrain_spawner_assets(processed_ini, assets, theater_ext, theater_name);
+    rules.bind_terrain_assets(assets, theater_ext, terrain_phase);
+    let _alpha_image_bindings =
+        crate::rules::alpha_image_assets::bind(rules, overlay_registry, assets);
     let sequences = crate::rules::infantry_sequence::parse_infantry_sequence_registry(fixed_art);
     rules.bind_animation_sequences(&sequences);
     Ok(())
@@ -416,14 +435,14 @@ pub(crate) fn populate_staged_app_scenario<F>(
     map_data: &MapFile,
     resolved_terrain: &ResolvedTerrainGrid,
     theater_name: &str,
-    rules: Option<&RuleSet>,
+    rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
     bridge_destroyability_mode: BridgeDestroyabilityMode,
     descriptor: &crate::sim::scenario_session::ScenarioDescriptor,
     generated_inits: Option<&crate::sim::world::GeneratedTechnoInitTable>,
     initialize_houses_before_objects: F,
-) -> Result<(), crate::sim::world::GeneratedTechnoInitError>
+) -> Result<(), crate::sim::runtime::ScenarioPopulationError>
 where
     F: FnOnce(&mut Simulation),
 {
@@ -489,6 +508,9 @@ pub(crate) fn build_presentation_manifest(
         .flat_map(|terrain| terrain.tile_animations())
         .map(|anim| anim.anim_name.to_ascii_uppercase())
         .collect();
+    let frozen_keys = rules.map_or_else(HashSet::new, |rules| {
+        sprite_atlas::collect_fogged_sprite_keys(sim, rules, house_colors)
+    });
     let shp_atlas: Option<SpriteAtlas> = palette.and_then(|pal| {
         sprite_atlas::build_sprite_atlas(
             &gpu.device,
@@ -505,6 +527,7 @@ pub(crate) fn build_presentation_manifest(
             &extra_buildings,
             &anim_remap_keys,
             &cell_drawer_type_ids,
+            &frozen_keys,
             theater_iso_palette,
             None, // initial build — no existing cache
             Some(sim.interner()),
@@ -560,7 +583,7 @@ pub(crate) fn finish_presentation_assets(
     overlays: crate::app::frontend::skirmish::OverlayPresentationAssets,
     house_color_map: HouseColorMap,
     csf: Option<crate::assets::csf_file::CsfFile>,
-) -> crate::app::loading::init::PresentationLoadAssets {
+) -> anyhow::Result<crate::app::loading::init::PresentationLoadAssets> {
     // These nested MIXes live inside local.mix/localmd.mix and are not
     // auto-extracted by the two-level archive discovery pass.
     for cameo_mix in ["cameomd.mix", "cameo.mix"] {
@@ -570,8 +593,13 @@ pub(crate) fn finish_presentation_assets(
         }
     }
     let sidebar_cameo_atlas = build_sidebar_cameo_atlas(gpu, batch, asset_manager, Some(rules));
-    let sidebar_chrome =
-        crate::render::sidebar_chrome::build_sidebar_chrome_set(gpu, batch, asset_manager);
+    let sidebar_chrome = crate::render::sidebar_chrome::build_sidebar_chrome_set(
+        gpu,
+        batch,
+        asset_manager,
+        rules,
+        simulation.session().scenario_side(),
+    )?;
     let fnt_file = asset_manager.get_ref("GAME.FNT").and_then(|data| {
         crate::assets::fnt_file::FntFile::from_bytes(data)
             .map_err(|error| log::warn!("Failed to parse GAME.FNT: {error}"))
@@ -595,7 +623,7 @@ pub(crate) fn finish_presentation_assets(
         Some(simulation),
         detail_level,
     );
-    crate::app::loading::init::PresentationLoadAssets {
+    Ok(crate::app::loading::init::PresentationLoadAssets {
         tile_atlas,
         building_zshape,
         unit_atlas: manifest.unit_atlas,
@@ -612,7 +640,7 @@ pub(crate) fn finish_presentation_assets(
         lighting_grid,
         csf,
         fnt_file,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -726,8 +754,8 @@ mod tests {
         land: LandType,
         no_use_tile_land_type: bool,
         land_speed_costs: Option<SpeedCostProfile>,
-        strength: u16,
-        damage_levels: u16,
+        strength: i32,
+        damage_levels: i32,
     }
 
     #[test]
@@ -992,6 +1020,105 @@ mod tests {
         assert_eq!(
             rules.production.build_speed,
             crate::util::native_x87::NativeF64Bits::ONE
+        );
+    }
+
+    #[test]
+    fn particle_frame_reader_keeps_prior_values_when_scenario_omits_keys() {
+        use crate::rules::native_processing::RulesLayerKind;
+
+        let Some(rulesmd) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let probe_rules = RuleSet::from_ini(&rulesmd).expect("retail root rules parse");
+        let particle_name = "GasCloud1";
+        let stock_particle_id = probe_rules
+            .p_type_id_by_name(particle_name)
+            .expect("retail root allocates GasCloud1");
+        let stock_particle = probe_rules.particle_type(stock_particle_id);
+        assert_eq!(stock_particle.start_frame, 0);
+        assert_eq!(stock_particle.num_loop_frames, 1);
+        let mut layers = RulesLayerStack::new(rulesmd);
+        layers.push(
+            RulesLayerKind::GameMode,
+            IniFile::from_str(&format!(
+                "[{particle_name}]\nStartFrame=-3\nNumLoopFrames=-5\n"
+            )),
+        );
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str(&format!(
+                "[{particle_name}]\nStartFrame=not-a-hexH\nFixtureOnly=1\n"
+            )),
+        );
+
+        let rules = RuleSet::from_rules_layers(&layers).expect("retail layered rules parse");
+        let particle_id = rules
+            .p_type_id_by_name(&particle_name)
+            .expect("the same root-registered ParticleType survives projection");
+        let particle = rules.particle_type(particle_id);
+        assert_eq!(particle.start_frame, -3);
+        assert_eq!(particle.num_loop_frames, -5);
+    }
+
+    fn retail_rulesmd_with_bullet_reader_triggers() -> Option<IniFile> {
+        let mut rulesmd = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini")?;
+        // ChemLauncher and Grenade are retail weapons whose projectiles this
+        // rules fixture needs to allocate before the BulletType body reads.
+        rulesmd.merge(&IniFile::from_str(
+            "[E1]\nPrimary=ChemLauncher\nSecondary=Grenade\n",
+        ));
+        Some(rulesmd)
+    }
+
+    #[test]
+    fn projectile_rule_state_retains_stock_reader_fields() {
+        let Some(rulesmd) = retail_rulesmd_with_bullet_reader_triggers() else {
+            return;
+        };
+        let rules = RuleSet::from_ini(&rulesmd).expect("retail RULESMD through production reader");
+
+        assert!(
+            rules
+                .projectile("ChemMissile")
+                .expect("stock ChemMissile projectile")
+                .proximity
+        );
+        assert!(
+            rules
+                .projectile("Lobbed")
+                .expect("stock Lobbed projectile")
+                .bouncy
+        );
+    }
+
+    #[test]
+    fn projectile_rule_state_retains_bools_across_invalid_and_missing_pass_keys() {
+        let Some(rulesmd) = retail_rulesmd_with_bullet_reader_triggers() else {
+            return;
+        };
+        let patch =
+            IniFile::from_str("[ChemMissile]\nProximity=invalid\n[Lobbed]\nFixtureOnly=1\n");
+        let mut layers = RulesLayerStack::new(rulesmd);
+        layers.push(
+            crate::rules::native_processing::RulesLayerKind::Scenario,
+            patch,
+        );
+        let rules = RuleSet::from_rules_layers(&layers).expect("retail layered rules parse");
+
+        assert!(
+            rules
+                .projectile("ChemMissile")
+                .expect("stock ChemMissile projectile")
+                .proximity,
+            "the map pass's invalid value retains the prior stock Proximity=yes"
+        );
+        assert!(
+            rules
+                .projectile("Lobbed")
+                .expect("stock Lobbed projectile")
+                .bouncy,
+            "the map pass's section without Bouncy retains the prior stock Bouncy=yes"
         );
     }
 

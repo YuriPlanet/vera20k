@@ -664,8 +664,8 @@ fn apply_cameo_hover_tooltip(state: &mut AppState) {
     }
 }
 
-/// [AudioVisual] GUITabSound — played on every consumed tab click AND every
-/// consumed strip-scroll click (even when the scroll is clamped at an end).
+/// [AudioVisual] GUITabSound — played on every consumed tab click, including
+/// a click on the tab that is already active (Sidebar Action `0x006A7A66`).
 fn play_gui_tab_sound(state: &mut AppState) {
     let sound = state.rules().and_then(|r| r.general.gui_tab_sound.clone());
     crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
@@ -711,27 +711,25 @@ fn apply_gadget_result(state: &mut AppState, view: &SidebarView, result: u16) {
             crate::app::input::dispatch::apply_sidebar_action(state, SidebarAction::ToggleSellMode);
             play_gui_main_button_sound(state);
         }
-        // One PAGE per click (G23: mask 0x55 has no held bits ⇒ no repeat).
-        // Page = visible cameo rows; gamemd computes (strip px height)/50
-        // which equals the visible row count. The click sound fires on every
-        // consumed release, including clamped no-op scrolls at either end.
-        ID_SCROLL_DOWN => {
-            let page = view.layout.side2_tile_count.max(1);
+        // One page per click (mask 0x55 has no held bits ⇒ no repeat).
+        // Sidebar Action 0x006A7780 queues the page on the active strip while
+        // that direction has rows left and plays GUITabSound; at an end it
+        // plays ScoldSound and queues nothing. StripClass::AI rolls the queue.
+        ID_SCROLL_DOWN | ID_SCROLL_UP => {
             let presentation = &mut state.match_state.match_presentation;
-            presentation.sidebar_projection.set_scroll_row(
+            let queued = presentation.sidebar_projection.queue_page_scroll(
                 presentation.active_sidebar_tab,
-                (view.scroll_rows + page).min(view.max_scroll_rows),
+                id == ID_SCROLL_DOWN,
+                view.layout.side2_tile_count,
             );
-            play_gui_tab_sound(state);
-        }
-        ID_SCROLL_UP => {
-            let page = view.layout.side2_tile_count.max(1);
-            let presentation = &mut state.match_state.match_presentation;
-            presentation.sidebar_projection.set_scroll_row(
-                presentation.active_sidebar_tab,
-                view.scroll_rows.saturating_sub(page),
-            );
-            play_gui_tab_sound(state);
+            let sound = state.rules().and_then(|rules| {
+                if queued {
+                    rules.general.gui_tab_sound.clone()
+                } else {
+                    rules.general.scold_sound.clone()
+                }
+            });
+            crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
         }
         // Cameo press (A2): map the fired id back to its SidebarItem and run the
         // cameo action. `RESULT_RIGHT` (right-press marker) selects the right
@@ -767,7 +765,8 @@ fn apply_gadget_result(state: &mut AppState, view: &SidebarView, result: u16) {
     }
 }
 
-/// Publish the transient pressed bits for the 5-frame visuals (frames 3/4).
+/// Publish the transient pressed bits of the buttons whose frame shows them
+/// (`shape_button_frame`): the scroll pair and Diplomacy/Options.
 fn publish_pressed_visuals(state: &mut AppState) {
     command_bar::publish(state);
     let Some(handles) = state.match_state.match_presentation.in_game_gadgets.handles else {
@@ -782,16 +781,10 @@ fn publish_pressed_visuals(state: &mut AppState) {
             .get(h)
             .is_some_and(|g| matches!(g.behavior, GadgetBehavior::Button(b) if b.is_pressed))
     };
-    let tabs = handles.tabs.map(pressed);
-    let repair = pressed(handles.repair);
-    let sell = pressed(handles.sell);
     let down = pressed(handles.scroll_down);
     let up = pressed(handles.scroll_up);
     let top = handles.top.map(pressed);
     let gs = &mut state.match_state.match_presentation.sidebar_gadget_state;
-    gs.tab_pressed = tabs;
-    gs.repair_pressed = repair;
-    gs.sell_pressed = sell;
     gs.scroll_down_pressed = down;
     gs.scroll_up_pressed = up;
     gs.top_pressed = top;

@@ -10,7 +10,7 @@
 //! different field subsets, so they cannot be folded into a fixed teardown
 //! without diverging.
 
-use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::radio::{self, RadioMessage};
 use crate::sim::world::FrameEffects;
@@ -35,7 +35,7 @@ impl Simulation {
         mission: MissionType,
         target: Option<crate::sim::combat::TargetKind>,
         destination: Option<crate::sim::combat::TargetKind>,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         frame_effects: FrameEffects<'_>,
     ) -> MissionType {
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -57,8 +57,7 @@ impl Simulation {
                     contact.is_object_alive()
                         && contact.category() == crate::map::entities::EntityCategory::Structure
                 })
-                .zip(rules)
-                .and_then(|(contact, rules)| self.object_type(contact.type_ref(), rules))
+                .and_then(|contact| self.object_type(contact.type_ref(), rules))
                 .is_some_and(|object| object.dock_unload);
         if !tethered || break_tether {
             radio::transmit_to_contact(self, id, RadioMessage::Break, rules, frame_effects);
@@ -93,8 +92,8 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) {
         let now = self.session.binary_frame();
-        self.assign_null_destination(id, Some(rules), None, frame_effects);
-        let _ = self.assign_target_represented(id, None, Some(rules), None, frame_effects);
+        self.assign_null_destination(id, rules, None, frame_effects);
+        let _ = self.assign_target_represented(id, None, rules, None, frame_effects);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.set_archive_target(None);
         }
@@ -110,7 +109,12 @@ impl Simulation {
     /// the MEGAMISSION event arm (`Simulation::apply_megamission_command`,
     /// through [`Self::queue_megamission`]) and the transport unload's
     /// passenger moves. Stop has its own no-queue Event6 route above.
-    pub fn queue_order_mission(&mut self, id: u64, mission: MissionType) {
+    pub fn queue_order_mission(
+        &mut self,
+        id: u64,
+        mission: MissionType,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
         let now = self.session.binary_frame();
         // A missing receiver performs no write (same as the native event path
         // skipping a dead target); Queue's own guards decide the rest.
@@ -119,7 +123,7 @@ impl Simulation {
             MissionId::from_known(mission),
             0,
             now,
-            &EntityReadyInputProvider,
+            &LiveReadyInputProvider { rules },
         );
     }
 
@@ -170,7 +174,7 @@ impl Simulation {
         mission: MissionType,
         target: Option<crate::sim::combat::TargetKind>,
         destination: Option<crate::sim::combat::TargetKind>,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         frame_effects: FrameEffects<'_>,
     ) {
         let queued =
@@ -180,7 +184,7 @@ impl Simulation {
         if mission == MissionType::Harvest {
             crate::sim::miner::clear_unload_latch(&mut self.substrate, id);
         }
-        self.queue_order_mission(id, queued);
+        self.queue_order_mission(id, queued, rules);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.suspended_attack_target.clear();
             if entity.category() != crate::map::entities::EntityCategory::Structure {
@@ -189,9 +193,7 @@ impl Simulation {
         }
         // `0x004C73E1..0x004C73EA`: any queued mission but Attack takes a
         // Slave Miner off its hunt (`sim::slave_manager`).
-        if queued != MissionType::Attack
-            && let Some(rules) = rules
-        {
+        if queued != MissionType::Attack {
             self.reset_slave_manager(id, rules, frame_effects);
         }
         self.substrate.megamission_foot_clears(id, mission);
@@ -212,7 +214,7 @@ impl Simulation {
     /// The flag is the type's `Harvester=` (`+0xE0E`, `0x004C766B`): every
     /// VERA miner but the Slave Miner, whose Miner component is only an
     /// order marker (`sim::slave_manager`).
-    pub fn commit_stop_miner_guard(&mut self, id: u64) {
+    pub fn commit_stop_miner_guard(&mut self, id: u64, rules: &crate::rules::ruleset::RuleSet) {
         let is_stoppable_miner = self.substrate.entities.get(id).is_some_and(|entity| {
             entity.category() == crate::map::entities::EntityCategory::Unit
                 && entity.is_harvester()
@@ -230,7 +232,7 @@ impl Simulation {
             MissionId::from_known(MissionType::Guard),
             0,
             now,
-            &EntityReadyInputProvider,
+            &LiveReadyInputProvider { rules },
         );
         let _ = self.substrate.mission_commence_exact(id, now);
     }

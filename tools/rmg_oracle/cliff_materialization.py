@@ -696,7 +696,7 @@ def generate():
     from tools import native_oracle as native
     fixture, pool = CliffFixture(), StatePool()
     rows = [fixture.run(row, pool) for row in controls()]
-    return dict(schema=2, native_sha256=native.image_sha256(), inputs=fixture.inputs,
+    return dict(schema=2, inputs=fixture.inputs,
                 rng_states_hex=pool.states, rows=rows)
 
 

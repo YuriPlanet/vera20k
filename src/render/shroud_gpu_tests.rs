@@ -340,7 +340,23 @@ fn production_world_a_sampling_matches_cpu_source_at_fractional_scroll_and_zoom(
                         % alphas.len()]
                 })
                 .collect::<Vec<_>>();
-            let source = ShroudBuffer::fixture(&gpu.device, &gpu.queue, virtual_size, scroll, &a);
+            let mut source =
+                ShroudBuffer::fixture(&gpu.device, &gpu.queue, virtual_size, scroll, &a);
+            assert_eq!(
+                source.sample_world(scroll[0], scroll[1], scroll[0], scroll[1]),
+                Some(a[0]),
+                "the production source defaults to native A"
+            );
+            // One fractional view exercises the opt-in style; the remaining
+            // views retain the production default and native color goldens.
+            let translucent = zoom == 0.75 && scroll == [13.25, -7.25];
+            source.set_translucent_fog(&gpu.queue, translucent);
+            if translucent {
+                assert_ne!(
+                    source.sample_world(scroll[0], scroll[1], scroll[0], scroll[1]),
+                    Some(a[0])
+                );
+            }
             // Every iteration replaces the source view, even at identical size.
             batch.bind_shroud(&gpu.device, Some(&source));
             let instance = SpriteInstance {
@@ -402,9 +418,22 @@ fn production_world_a_sampling_matches_cpu_source_at_fractional_scroll_and_zoom(
                                     .unwrap_or(127)
                             };
                             let offset = ((y * size[0] + x) * 4) as usize;
+                            // The elective style has no native color golden.
+                            // Compare its real GPU output with the CPU palette
+                            // owner using the same sampled A; opaque views
+                            // continue to assert executed native colors.
+                            let expected = if translucent {
+                                PaletteLight::color_scheme([1000; 3], 1000).rgb565(
+                                    [200, 100, 50],
+                                    1,
+                                    a,
+                                )
+                            } else {
+                                expected_colors[a as usize]
+                            };
                             assert_eq!(
                                 &output[0][offset..offset + 4],
-                                &encoded(expected_colors[a as usize], format),
+                                &encoded(expected, format),
                                 "{route} zoom{zoom} scroll{scroll:?} disabled{disabled} pixel{x},{y} A{a}"
                             );
                         }
@@ -434,7 +463,8 @@ fn production_a_blitter_workload_timing() {
     let pixels = (0..size[0] * size[1])
         .map(|i| [0, 63, 127][(i as usize / 16) % 3])
         .collect::<Vec<_>>();
-    let source = ShroudBuffer::fixture(&gpu.device, &gpu.queue, size, [0.0; 2], &pixels);
+    let mut source = ShroudBuffer::fixture(&gpu.device, &gpu.queue, size, [0.0; 2], &pixels);
+    source.set_translucent_fog(&gpu.queue, true);
     let color = gpu.target(size, format);
     let cv = color.create_view(&Default::default());
     let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
@@ -503,6 +533,7 @@ fn production_a_blitter_workload_timing() {
                             end_of_pass_write_index: Some(1),
                         }),
                         occlusion_query_set: None,
+                        multiview_mask: None,
                     });
                     batch.draw_passthrough_range(&mut pass, &texture, &instances, 0, count);
                 }

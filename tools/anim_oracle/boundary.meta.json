@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -12,7 +11,7 @@
     "Fresh verified PE image and synthetic Anim/type memory. Each case supplies type bounds/flags, committed stage, frame step, remaining loop byte and constructor direction; entry ESI/EAX/EBX/EDI/ESP/EFLAGS match the previous fixture.",
     "One machine is reused across cases in the original order. The original case inputs are rewritten before each entry. No native constructor, CRT, floating-point startup, OS or scenario initialization executes.",
     "Each call must execute42468C and reach4246DC,4247B1,4247F3 or424B42 before the100-instruction/10-second limits. Boundary instructions themselves do not execute.",
-    "Recorded region_sha256/disassembly cover42468C..4247B7 only; the checked whole-image hash identifies the later terminal/continue paths as well.",
+    "Recorded region_sha256/disassembly cover42468C..4247B7 only; the later terminal/continue paths execute from the loaded image without a recorded digest.",
     "Stock-shaped bounds are supplied examples, not an ART/type loader witness. Signed/wrapping bounds characterize arithmetic and are not claimed to arise in retail.",
     "Stops precede downstream Next/destruction/epilogue consumers. No timer cadence, RNG ordering, detach calls, constructor or whole-frame lifecycle equivalence is claimed."
   ],
@@ -26,12 +25,6 @@
     "terminal": "0x004247F3",
     "continuation": "0x00424B42"
   },
-  "harness_sha256": "1d4bd98e02f2b72fe2046cb8c55ee31520bdf37efd88cb0349aba45e6110ae33",
   "capstone": "5.0.7",
-  "historical_identity": {
-    "removed_payload_script_sha256": "cf03db0129b23b7d84ca0a58eea54440e8d2776775f16b5823f7b485d6523c8e",
-    "checked_in_producer_before_migration_sha256": "772d6b62ad42455323e6456cb15beffd10e3d1d034a81efd9c9ef8f7a137dfca",
-    "reason": "The legacy script_sha256 field was already stale. Its historical value is retained here; current source identity has one sidecar owner. All other payload fields are checked against the legacy native observations."
-  },
-  "payload_sha256": "9a07a42d4caf7af188811162f098229aa79991696656234fbf1e7fb49a808901"
+  "payload_sha256": "e9ebd7e558e4e3de4fc5e4d928b426d6559af9f9b90d6061e3a70dc154c0e0b3"
 }

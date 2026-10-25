@@ -77,6 +77,11 @@ fn building(sim: &mut Simulation, id: u64, owner: InternedId, kind: &str, health
     entity.lifecycle.set_object_alive_for_test(true);
     entity.lifecycle.set_in_limbo_for_test(false);
     entity.lifecycle.set_cell_marked_for_test(true);
+    // The original fixture supplies +41B=1 for the plant, drain and radar
+    // providers (house_power_consumers.py:51/59/70).
+    entity
+        .discovery
+        .set_discovered_by_current_house_for_test(true);
     entity.set_in_playfield(true);
     entity.building_art.set_actually_placed_for_test(true);
     entity.finish_building_construction_for_test();
@@ -116,6 +121,9 @@ fn fixture(radar: bool) -> (Simulation, RuleSet, InternedId) {
     )))
     .unwrap();
     let mut sim = Simulation::with_seed(31);
+    // Match the original fixture's GameMode1, not the synthetic default0.
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_game_mode(1));
     // The reused native fixture supplies an unseeded zero Main buffer and
     // seeds Scenario31 through the original seeder. Adopt the Main prior
     // through the existing serialized RNG owner, without a new RNG codec.
@@ -147,7 +155,7 @@ fn fixture(radar: bool) -> (Simulation, RuleSet, InternedId) {
         .tracking_facts = crate::sim::house_tracking::TrackingFacts::of(
         EntityCategory::Structure,
         rules.object("FACTORY"),
-        Some(&rules),
+        &rules,
     );
     Simulation::update_house_tracking(
         &mut sim.substrate,
@@ -296,7 +304,7 @@ fn settled_repair_native_health_sample_factory_cadence_radar_and_later_advice() 
             .get_mut(&owner)
             .unwrap()
             .start_blackout(int(&timer[0]) as u32, int(&timer[2]));
-        sim.assess_house_derived_state(owner, &rules);
+        sim.assess_house_derived_state(owner, &rules, super::FrameEffects::empty());
         let type_ref = sim.interner.intern("PENDING");
         assert!(sim.production.factories_mut().test_enqueue_kernel(
             owner,
@@ -305,9 +313,31 @@ fn settled_repair_native_health_sample_factory_cadence_radar_and_later_advice() 
             1,
             600
         ));
+        // The native non-null Factory+58 has a real Techno receiver for
+        // TimeToBuild6F47A0, including its actual owner at +21C.
+        let product_id = PRODUCER + 1;
+        sim.substrate
+            .entities
+            .insert(GameEntity::new_at_frame_zero_for_test(
+                product_id,
+                0,
+                0,
+                0,
+                0,
+                owner,
+                Health::new(100),
+                type_ref,
+                EntityCategory::Unit,
+                0,
+                5,
+                false,
+            ));
         // Exact native-produced frame195 prior, not a Rust-derived start.
         let pending = &prior["factory"];
         let factory = sim.production.factories_mut().test_first_mut().unwrap();
+        let mut held = factory.object().unwrap().clone();
+        held.entity_id = Some(product_id);
+        factory.set_object_for_test(Some(held));
         factory.set_progress_for_test(int(&pending["stage"]) as u16);
         factory.set_step_rate_frames_for_test(int(&pending["rate"]) as u16);
         factory.set_step_timer_for_test(CdTimer::from_raw(
@@ -366,7 +396,7 @@ fn settled_repair_native_health_sample_factory_cadence_radar_and_later_advice() 
                 }
                 "actual_global_factory_then_house_prefix" => {
                     production::step_factories(&mut sim);
-                    sim.assess_house_derived_state(owner, &rules);
+                    sim.assess_house_derived_state(owner, &rules, super::FrameEffects::empty());
                 }
                 "later_local_house_advice" => house_eva::update_house_eva(&mut sim, &rules, owner),
                 phase => panic!("unmapped native boundary {phase}"),
@@ -401,7 +431,7 @@ fn native_blackout_setter_replaces_shorter_longer_and_zero_durations() {
         // Establish the supplied settled prior through the existing House
         // receiver. The full50BC90 comparison itself executes only the
         // setter; ForceShield/Spy activation and numeric inputs are outside.
-        sim.assess_house_derived_state(owner, &rules);
+        sim.assess_house_derived_state(owner, &rules, super::FrameEffects::empty());
         if input["prior_dirty"] == true {
             Simulation::invalidate_house_power(
                 &sim.houses,
@@ -443,14 +473,14 @@ fn native_blackout_zero_one_and_two_remaining_with_clean_or_dirty_house() {
             .start_blackout(start, int(&input["duration"]));
         // Reach a clean power assessment while the timer still has2 frames.
         // Local radar's separately supplied prior bool is not compared here.
-        sim.assess_house_derived_state(owner, &rules);
+        sim.assess_house_derived_state(owner, &rules, super::FrameEffects::empty());
         sim.session
             .set_binary_frame_for_test(int(&input["frame"]) as u32);
         if input["prior_dirty"] == true {
             Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, false);
         }
         assert_power(&sim, owner, &row["before"], "blackout prior");
-        sim.assess_house_derived_state(owner, &rules);
+        sim.assess_house_derived_state(owner, &rules, super::FrameEffects::empty());
         assert_power(&sim, owner, &row["output"], "native blackout receiver");
         assert_rng(&sim, &row["receipt"]["rng_after"], "blackout receiver");
     }
@@ -523,6 +553,7 @@ fn native_local_radar_projection_uses_represented_provider_predicates_and_house_
             &sim.interner,
             sim.session.free_radar(),
             sim.session.binary_frame(),
+            false,
         );
         sim.power_states.map_mut_for_test().insert(owner, state);
         assert_eq!(

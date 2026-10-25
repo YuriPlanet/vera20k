@@ -8,7 +8,7 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::docking::bunker_install::BunkerRuntime;
-use crate::sim::mission::authority::{EntityReadyInputProvider, LiveReadyInputProvider};
+use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::ground_pose::object_get_coords;
 use crate::sim::radio::{RadioMessage, RadioPayload, transmit};
@@ -109,8 +109,8 @@ pub fn can_auto_deploy_here(sim: &Simulation, unit_id: u64, rules: &RuleSet) -> 
 /// Bunker install state 5 (459301..459337): reciprocal links, deselection,
 /// state 6, then Guard5/1. Unit virtual+150 is Object deselect5F44A0, not
 /// Limbo: preserve coordinates, track, radio contacts and Logic membership.
-/// Native +214=-1 also removes control-group membership; that owner currently
-/// lives only in app input and is an explicit missing integration here.
+/// gamemd.exe UpdateBunker458E50/459315 clears the one retained Techno+214
+/// Group before deselection; input derives membership from that same field.
 pub fn install_bunker_link(sim: &mut Simulation, building_id: u64, unit_id: u64, rules: &RuleSet) {
     if !sim
         .substrate
@@ -126,8 +126,9 @@ pub fn install_bunker_link(sim: &mut Simulation, building_id: u64, unit_id: u64,
     }
     if let Some(u) = sim.substrate.entities.get_mut(unit_id) {
         u.bunker.link = BunkerLink::Installed(building_id);
-        u.selection.deselect();
+        u.assign_object_group(-1);
     }
+    sim.object_deselect(unit_id);
     if let Some(rt) = sim
         .substrate
         .entities
@@ -144,7 +145,13 @@ pub fn install_bunker_link(sim: &mut Simulation, building_id: u64, unit_id: u64,
         now,
         &LiveReadyInputProvider { rules },
     );
-    emit_bunker_wall_sound(&sim.substrate, &mut sim.sound_events, building_id, true);
+    emit_bunker_wall_sound(
+        &sim.substrate,
+        sim.resolved_terrain.as_ref(),
+        &mut sim.sound_events,
+        building_id,
+        true,
+    );
 }
 
 /// Clear BOTH sides of the link and send the radio BREAK. Returns the unit id
@@ -163,7 +170,7 @@ pub(crate) fn break_bunker_link(
         unit_id,
         RadioMessage::Break,
         RadioPayload::default(),
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         effects,
     );
     if let Some(u) = sim.substrate.entities.get_mut(unit_id) {
@@ -180,8 +187,11 @@ pub(crate) fn break_bunker_link(
 /// sound id and skips it when the rules key is empty.
 /// Played by `BuildingClass::UpdateBunker` (`0x00458E50`) state 5 (`0x0045936F`), and on
 /// teardown by `EmptyBunker` (`0x004595C0`) and `ClearBunker` (`0x00459470`).
+/// Every site plays at the bunker building's Location (`0x0045934A..0x0045936F`,
+/// `0x004594A2..0x004594C8`, `0x004595E7..0x0045960D`).
 pub(crate) fn emit_bunker_wall_sound(
     substrate: &ObjectSubstrate,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     sound_events: &mut FrameChannel<SimSoundEvent>,
     building_id: u64,
     up: bool,
@@ -189,11 +199,11 @@ pub(crate) fn emit_bunker_wall_sound(
     let Some(b) = substrate.entities.get(building_id) else {
         return;
     };
-    let (rx, ry) = (b.position.rx(), b.position.ry());
+    let world = crate::sim::movement::ground_pose::object_location(b, terrain).into();
     sound_events.emit(if up {
-        SimSoundEvent::BunkerWallsUp { rx, ry }
+        SimSoundEvent::BunkerWallsUp { world }
     } else {
-        SimSoundEvent::BunkerWallsDown { rx, ry }
+        SimSoundEvent::BunkerWallsDown { world }
     });
 }
 
@@ -241,7 +251,13 @@ pub(crate) fn release_normal(
     effects: FrameEffects<'_>,
 ) {
     emit_bunker_wall_anim(sim, building_id, false, rules);
-    emit_bunker_wall_sound(&sim.substrate, &mut sim.sound_events, building_id, false);
+    emit_bunker_wall_sound(
+        &sim.substrate,
+        sim.resolved_terrain.as_ref(),
+        &mut sim.sound_events,
+        building_id,
+        false,
+    );
     let Some(unit_id) = sim
         .substrate
         .entities
@@ -249,7 +265,7 @@ pub(crate) fn release_normal(
         .and_then(|building| building.bunker.occupant())
     else {
         reset_bunker_idle(&mut sim.substrate, building_id);
-        queue_guard(sim, building_id);
+        queue_guard(sim, building_id, rules);
         return;
     };
     if !is_release_unit(sim, unit_id) {
@@ -261,7 +277,7 @@ pub(crate) fn release_normal(
     }
     #[cfg(test)]
     release_tests::record(sim, building_id, unit_id, "unit-link");
-    power_and_force_release(sim, building_id, unit_id, Some(rules), effects);
+    power_and_force_release(sim, building_id, unit_id, rules, effects);
     if let Some(cell) = bunker_exit_cell(sim, building_id, unit_id, rules) {
         let terrain = sim.resolved_terrain.as_ref();
         let frame = sim.session.binary_frame();
@@ -277,7 +293,7 @@ pub(crate) fn release_normal(
         MissionId::from_known(MissionType::Move),
         0,
         now,
-        &EntityReadyInputProvider,
+        &LiveReadyInputProvider { rules },
     );
     #[cfg(test)]
     release_tests::record(sim, building_id, unit_id, "move");
@@ -285,10 +301,10 @@ pub(crate) fn release_normal(
         building.bunker.occupant = None;
     }
     reset_bunker_idle(&mut sim.substrate, building_id);
-    queue_guard(sim, building_id);
+    queue_guard(sim, building_id, rules);
     #[cfg(test)]
     release_tests::record(sim, building_id, unit_id, "building-link");
-    break_first_contact(sim, building_id, effects);
+    break_first_contact(sim, building_id, rules, effects);
     #[cfg(test)]
     release_tests::record(sim, building_id, unit_id, "break");
 }
@@ -301,6 +317,7 @@ pub(crate) fn release_normal(
 pub(crate) fn release_sell_destroy(
     sim: &mut Simulation,
     building_id: u64,
+    rules: &RuleSet,
     effects: FrameEffects<'_>,
 ) {
     let Some(unit_id) = sim
@@ -314,7 +331,7 @@ pub(crate) fn release_sell_destroy(
     if !is_release_unit(sim, unit_id) {
         return;
     }
-    power_and_force_release(sim, building_id, unit_id, None, effects);
+    power_and_force_release(sim, building_id, unit_id, rules, effects);
     if let Some(u) = sim.substrate.entities.get_mut(unit_id) {
         u.bunker.link = BunkerLink::None;
     }
@@ -325,7 +342,7 @@ pub(crate) fn release_sell_destroy(
     }
     #[cfg(test)]
     release_tests::record(sim, building_id, unit_id, "building-link");
-    break_first_contact(sim, building_id, effects);
+    break_first_contact(sim, building_id, rules, effects);
     #[cfg(test)]
     release_tests::record(sim, building_id, unit_id, "break");
 }
@@ -337,16 +354,14 @@ fn is_release_unit(sim: &Simulation, unit_id: u64) -> bool {
         .is_some_and(|unit| unit.category() == EntityCategory::Unit)
 }
 
-/// `rules` feeds the forced head's crate pickup (`Force_Track` 0x4B0D1B);
-/// the sell/destroy release has no rules at hand, so a crate on that head
-/// stays until something else enters the cell (a bunker's exit cell, which
-/// the crate placer never chooses while the bunker stands).
+/// The forced head commits to the bunker's exit cell through the crate pickup
+/// (`Force_Track` 0x4B0D1B, [`Simulation::pickup_crate_at`]) with the frame's
+/// OverlayType table.
 fn power_and_force_release(
     sim: &mut Simulation,
     building_id: u64,
     unit_id: u64,
-    rules: Option<&RuleSet>,
-
+    rules: &RuleSet,
     effects: FrameEffects<'_>,
 ) {
     let Some(unit) = sim.substrate.entities.get_mut(unit_id) else {
@@ -368,7 +383,14 @@ fn power_and_force_release(
     head.y = head.y.wrapping_add(128);
     // No entity borrow spans Force's synchronous world receiver. Its bool
     // describes retained-track admission, not whether the caller continues.
-    let _ = sim.force_track(unit_id, 0x47, head, rules, None, effects);
+    let _ = sim.force_track(
+        unit_id,
+        0x47,
+        head,
+        rules,
+        effects.overlay_registry(),
+        effects,
+    );
     #[cfg(test)]
     release_tests::record(sim, building_id, unit_id, "force");
     //45944A/45976F write this even after Force's null/limbo early return.
@@ -382,7 +404,12 @@ fn power_and_force_release(
 
 /// Radio65ACB0 reads slot0, including an empty slot0 before later live slots.
 /// It neither searches for a live contact nor substitutes the bunker occupant.
-fn break_first_contact(sim: &mut Simulation, building_id: u64, effects: FrameEffects<'_>) {
+fn break_first_contact(
+    sim: &mut Simulation,
+    building_id: u64,
+    rules: &RuleSet,
+    effects: FrameEffects<'_>,
+) {
     let contact = sim
         .substrate
         .entities
@@ -395,7 +422,7 @@ fn break_first_contact(sim: &mut Simulation, building_id: u64, effects: FrameEff
             contact,
             RadioMessage::Break,
             RadioPayload::default(),
-            None,
+            rules,
             effects,
         );
     }
@@ -403,14 +430,14 @@ fn break_first_contact(sim: &mut Simulation, building_id: u64, effects: FrameEff
 
 /// `Queue_Mission(Guard, 0)` (vt+0x1E8) on the bunker, which leaves its
 /// Repair mission at the next commence.
-pub(super) fn queue_guard(sim: &mut Simulation, building_id: u64) {
+pub(super) fn queue_guard(sim: &mut Simulation, building_id: u64, rules: &RuleSet) {
     let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         building_id,
         MissionId::from_known(MissionType::Guard),
         0,
         now,
-        &EntityReadyInputProvider,
+        &LiveReadyInputProvider { rules },
     );
 }
 
@@ -437,8 +464,14 @@ pub(crate) fn clear_bunker(
         return;
     };
     emit_bunker_wall_anim(sim, building_id, false, rules);
-    emit_bunker_wall_sound(&sim.substrate, &mut sim.sound_events, building_id, false);
-    break_first_contact(sim, building_id, effects);
+    emit_bunker_wall_sound(
+        &sim.substrate,
+        sim.resolved_terrain.as_ref(),
+        &mut sim.sound_events,
+        building_id,
+        false,
+    );
+    break_first_contact(sim, building_id, rules, effects);
     if let Some(u) = sim.substrate.entities.get_mut(unit_id) {
         u.bunker.link = BunkerLink::None;
     }
@@ -446,7 +479,7 @@ pub(crate) fn clear_bunker(
         b.bunker.occupant = None;
     }
     reset_bunker_idle(&mut sim.substrate, building_id);
-    queue_guard(sim, building_id);
+    queue_guard(sim, building_id, rules);
 }
 
 /// Clear the installed reciprocal link when either object expires.
@@ -728,6 +761,13 @@ mod tests {
         let mut sim = Simulation::new();
         let rules = rules();
         spawn_bunker(&mut sim, 2, "Americans");
+        // On level-2 ground: the cue keeps the bunker's height.
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .position
+            .set_z_for_test(2);
         spawn_tank(&mut sim, 1, "Americans", "TANK");
         // Native deselection preserves this live membership.
         assert!(matches!(sim.reveal(1), RevealOutcome::Revealed { .. }));
@@ -738,6 +778,11 @@ mod tests {
             .unwrap()
             .selection
             .set_selected_for_test(true);
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .assign_object_group(4);
         install_bunker_link(&mut sim, 2, 1, &rules);
 
         let bunker = sim.substrate.entities.get(2).unwrap();
@@ -757,17 +802,47 @@ mod tests {
         assert!(!unit.lifecycle.in_limbo());
         assert!(unit.lifecycle.cell_marked());
         assert!(!unit.selection.is_selected());
+        assert_eq!(unit.object_group(), -1);
+        let follow: Vec<_> = sim
+            .take_lifecycle_outputs_for_test()
+            .into_iter()
+            .filter(|output| {
+                matches!(
+                    output,
+                    crate::sim::world::LifecycleOutput::FollowReleased { .. }
+                )
+            })
+            .collect();
+        assert_eq!(
+            follow,
+            [crate::sim::world::LifecycleOutput::FollowReleased { stable_id: 1 }],
+            "UpdateBunker clears membership before Deselect releases Follow"
+        );
+        let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(
             unit.mission.current(),
             MissionId::from_known(MissionType::Guard)
         );
 
-        let up = sim
+        let up: Vec<_> = sim
             .sound_events
             .iter()
-            .filter(|e| matches!(e, SimSoundEvent::BunkerWallsUp { .. }))
-            .count();
-        assert_eq!(up, 1, "exactly one walls-up sound on install");
+            .filter_map(|e| match e {
+                SimSoundEvent::BunkerWallsUp { world } => Some(*world),
+                _ => None,
+            })
+            .collect();
+        // UpdateBunker state 5 plays it at the bunker's Location
+        // (`0x0045934A..0x0045936F`).
+        assert_eq!(
+            up,
+            [crate::sim::anim_class::AnimWorldCoord {
+                x: 10 * 256 + 128,
+                y: 10 * 256 + 128,
+                z: 208,
+            }],
+            "exactly one walls-up sound on install, at the bunker's Location"
+        );
     }
 
     #[test]
@@ -960,7 +1035,12 @@ mod tests {
     #[test]
     fn release_sell_destroy_forces_without_reposition_no_move_no_sound() {
         let mut sim = installed_sim();
-        release_sell_destroy(&mut sim, 2, crate::sim::world::FrameEffects::default());
+        release_sell_destroy(
+            &mut sim,
+            2,
+            &rules(),
+            crate::sim::world::FrameEffects::default(),
+        );
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.bunker.link(), BunkerLink::None);
         assert!(unit.in_logic_vector.is_member(), "unit remains active");
@@ -1091,7 +1171,12 @@ mod tests {
     fn release_sell_destroy_emits_no_anim_event() {
         let mut sim = installed_sim();
         sim.bunker_wall_events.clear();
-        release_sell_destroy(&mut sim, 2, crate::sim::world::FrameEffects::default());
+        release_sell_destroy(
+            &mut sim,
+            2,
+            &rules(),
+            crate::sim::world::FrameEffects::default(),
+        );
         assert!(
             sim.bunker_wall_events.is_empty(),
             "sell/destroy teardown emits no wall anim (UndockUnit)"

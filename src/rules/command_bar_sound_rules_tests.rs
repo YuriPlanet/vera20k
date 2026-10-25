@@ -226,6 +226,24 @@ fn lan_player_left_uses_fixed_catalog_and_retains_failed_later_reads() {
 }
 
 #[test]
+fn retail_startup_rules_bind_the_main_menu_options_changed_cue() {
+    // Rules+6B4 (66A868..66A8AE) from the shell's startup rules: RULESMD
+    // [AudioVisual] OptionsChanged=OptionsChanged, bound in SOUNDMD.
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    assert_eq!(GeneralRules::default().options_changed_sound(), None);
+    let owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+    let processed = owner.startup_compatibility_projection().unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    owner.bind_type_audio_references(&mut rules, &processed);
+    assert_eq!(
+        rules.general.options_changed_sound(),
+        Some("OptionsChanged")
+    );
+}
+
+#[test]
 fn lan_discovery_and_join_sounds_bind_independently_across_rules_layers() {
     let defaults = GeneralRules::default();
     assert_eq!(
@@ -521,4 +539,18 @@ fn physical_command_bar_sounds_use_current_battle_rules_and_fixed_sound_catalog(
             ((0, 0), (0, 0), 0)
         );
     }
+}
+
+#[test]
+fn retail_battle_place_beacon_sound_binds_through_the_audio_visual_pass() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    // Constructor6658E6 starts Rules+1CC at -1; AudioVisual669BA8 reads the
+    // physical RULESMD value and no later Battle/map pass overrides it.
+    assert_eq!(GeneralRules::default().place_beacon_sound, None);
+    assert_eq!(
+        retail.rules.general.place_beacon_sound.as_deref(),
+        Some("BeaconPlaced")
+    );
 }

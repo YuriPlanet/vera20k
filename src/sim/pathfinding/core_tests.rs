@@ -473,7 +473,7 @@ fn test_block_building_movement_cells() {
     assert!(grid.is_walkable(3, 3));
     assert!(grid.is_walkable(4, 4));
     // Block a 2x2 building at (3, 3).
-    grid.block_building_movement_cells(3, 3, "2x2", false);
+    grid.block_building_movement_cells(3, 3, &"2x2".into(), false);
     assert!(!grid.is_walkable(3, 3));
     assert!(!grid.is_walkable(4, 3));
     assert!(!grid.is_walkable(3, 4));
@@ -486,7 +486,7 @@ fn test_block_building_movement_cells() {
 #[test]
 fn garefn_footprint_leaves_dock_pad_walkable() {
     let mut grid = PathGrid::new(32, 32);
-    grid.block_building_movement_cells(10, 10, "4x3", false);
+    grid.block_building_movement_cells(10, 10, &"4x3".into(), false);
     assert!(
         !grid.is_walkable(13, 11),
         "base foundation should block the dock pad"
@@ -506,7 +506,7 @@ fn garefn_footprint_leaves_dock_pad_walkable() {
 #[test]
 fn garefn_bib_static_blockers_only_relax_east_edge() {
     let mut grid = PathGrid::new(32, 32);
-    grid.block_building_movement_cells(10, 10, "4x3", true);
+    grid.block_building_movement_cells(10, 10, &"4x3".into(), true);
     assert!(!grid.is_walkable(10, 11));
     assert!(!grid.is_walkable(12, 11));
     assert!(grid.is_walkable(13, 11));
@@ -1267,7 +1267,7 @@ fn gsi_04_10_resolved_zero_occupation_is_walkable_path_input() {
 /// terrain types are `=4`, i.e. a single sub-cell bit.
 fn tree_cell(rx: u16, ry: u16, bits: u8) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
-        terrain_object_occupation: Some(bits),
+        terrain_object_occupation: Some(i32::from(bits)),
         terrain_object_blocks: bits != 0,
         // Resolved terrain folds the terrain object into ground_walk_blocked;
         // base_ground_walk_blocked is the value without it.

@@ -30,7 +30,7 @@ use crate::asset_tools::identify;
 use crate::asset_tools::report::{AnimSlot, ArtCandidate, ArtForReport, ErrorReport};
 use crate::assets::asset_manager::AssetManager;
 use crate::rules::art_data::{
-    ArtRegistry, anim_shp_candidates, object_shp_candidates, voxel_asset_names,
+    ArtRegistry, effect_shp_candidates, object_shp_candidates, voxel_asset_names,
 };
 
 /// Theater assumed when the caller does not pass `--theater`. Temperate is the
@@ -205,6 +205,15 @@ fn assemble(
         theater_ext,
         theater_name,
     );
+    #[cfg(feature = "ares")]
+    let names = {
+        let mut names = names;
+        if let [Some(filename), _] = art_registry.resolve_declared_pcx_cameos(type_id, rules_image)
+        {
+            names.cameo.insert(0, filename.to_owned());
+        }
+        names
+    };
 
     let mut warnings: Vec<String> = Vec::new();
     // Registry state first: it changes how every id below must be read.
@@ -256,7 +265,8 @@ fn assemble(
                     // theater convention, so it resolves independently.
                     let slot_upper = anim.anim_type.to_ascii_uppercase();
                     let slot_image = art_registry.resolve_effective_image_id(&slot_upper, "");
-                    let names = anim_shp_candidates(
+                    let names = effect_shp_candidates(
+                        crate::rules::art_data::EffectImageKind::Animation,
                         Some(art_registry),
                         &slot_upper,
                         &slot_image,
@@ -546,6 +556,17 @@ mod tests {
         let registry = ArtRegistry::empty();
         let names = candidate_names(&registry, "E1", "E1", "E1", "tem", "TEMPERATE");
         assert_eq!(names.shp, vec!["E1.SHP", "E1.TEM"]);
+    }
+
+    #[cfg(feature = "ares")]
+    #[test]
+    fn report_puts_the_authored_pcx_ahead_of_body_shp_fallbacks() {
+        let registry = ArtRegistry::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            "[IMAGE]\nImage=BODY\nCameoPCX=Normal.PCX\n[BODY]\nCameoPCX=wrong.pcx\n",
+        ));
+        let report = assemble(&registry, "TYPE", "IMAGE", "tem", "TEMPERATE", &mut miss());
+        assert_eq!(report.cameo_candidates[0].name, "normal.pcx");
+        assert_eq!(report.cameo_candidates[1].name, "BODY.SHP");
     }
 
     #[test]

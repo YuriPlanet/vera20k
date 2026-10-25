@@ -2,27 +2,25 @@
   "status": "PASS",
   "prior": {
     "path": "accepted/archive_A_B-r9.json.gz",
-    "bytes": 355098,
-    "sha256": "3ec294171874d0499618329235344a2c394ac6252a89e9e9d0cab6c84c4d0a32",
-    "uncompressed_bytes": 7368697,
-    "uncompressed_sha256": "964c897060089976b513629e2c64d236b93bfea7c21cdf81b643b326a2c32366",
+    "bytes": 354635,
+    "sha256": "f21caf37573af256be9c877eac59d5d6d1984426c5e87286c20609c4ef093aa2",
+    "uncompressed_bytes": 7367710,
+    "uncompressed_sha256": "7bbd6d33e4cf37a3b81ac48c7dd782492ba25469f3a06a5bc2b1f14bb96a7b18",
     "name": "archive_A_B",
-    "source_boundary": "as-run-r9",
-    "projected_sha256": "fd610ed735737b90bdfad136863eb33e75a9783244107d4d3f32e9b1249fd81f"
+    "projected_sha256": "75a0d912a5e8f8b4b4bbc531c816af3b2fdf82543b71a5027669dd2b76fb63ae"
   },
   "observed": {
     "path": "accepted/archive_A_B-r13.json.gz",
-    "bytes": 363027,
-    "sha256": "0c46e768af28f58c7b18309a92b060ccb44bbc5d6e74185583d5ffdf95f319d6",
-    "uncompressed_bytes": 7412572,
-    "uncompressed_sha256": "192c4c97da71902ca5d708c8e50e2d12eee667e2d6a8948cdbf29389541fef59",
+    "bytes": 362694,
+    "sha256": "1096b166fb390d2769d16147bf9598badae5e82127cc1b29bc6ef887b8c46b0c",
+    "uncompressed_bytes": 7411585,
+    "uncompressed_sha256": "542df6e66818a7fe9a9f8cb7c9f282e67c261af9973053a1396590b14cd25b97",
     "name": "archive_A_B",
-    "source_boundary": "as-run-r13",
-    "projected_sha256": "c098b70bc8cb052586fda70ade329d36497d8fa8e641c43d4e9cbef517de1ffe"
+    "projected_sha256": "a502a045fcfd1cecba07b1a496dc99b37c1e043eee228679b0062a777765cd03"
   },
   "new_readonly_fields": [
     "input_context"
   ],
   "first_prior_native_field_difference": null,
-  "prior_fields_sha256": "fd610ed735737b90bdfad136863eb33e75a9783244107d4d3f32e9b1249fd81f"
+  "prior_fields_sha256": "75a0d912a5e8f8b4b4bbc531c816af3b2fdf82543b71a5027669dd2b76fb63ae"
 }

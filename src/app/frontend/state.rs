@@ -26,10 +26,6 @@ pub(crate) struct FrontendState {
     /// Cooperative progress authority.
     pub(crate) multiplayer_shell_runtime:
         crate::app::frontend::skirmish_session::MultiplayerShellRuntime,
-    /// Last owner-draw Skirmish button state observed by the native render path.
-    /// Used for the retail GenericClick paint-transition sound.
-    pub(crate) skirmish_shell_last_painted_pressed_button:
-        Option<crate::ui::skirmish_shell::OwnerDrawButton>,
     pub(crate) skirmish_shell_chrome:
         Option<crate::render::skirmish_shell_chrome::SkirmishShellChromeAtlas>,
     pub(crate) main_menu_shell_state: crate::ui::main_menu_shell::MainMenuShellState,
@@ -112,6 +108,8 @@ pub(crate) struct FrontendState {
     /// One Westwood Online visit (`WOL_Main` `0x0077B2A0`): welcome, login,
     /// waits, boxes and the lobby entry, from Internet until WOL is left.
     pub(crate) wol: Option<crate::app::shell_wol::WolVisit>,
+    /// Retains only the departing online visit's bounded HTTP cleanup owner.
+    pub(crate) online_cleanup: crate::app::shell_wol::OnlineCleanup,
     /// The login chain's process globals (nickname, password, Remember,
     /// changed byte); they outlive every WOL visit.
     pub(crate) wol_account: crate::ui::wol_login::WolAccountGlobals,
@@ -140,6 +138,8 @@ pub(crate) struct FrontendState {
     pub(crate) wol_auto_login_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     /// The Buddy List `0x116`'s art (`0x0072C060`).
     pub(crate) wol_buddy_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
+    /// `0x117`'s quickmatch.shp/.PAL (`0x0072BE80`).
+    pub(crate) wol_quick_match_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     /// The buddy mirror and its queues (process globals `0xB73AA8`..).
     pub(crate) wol_buddies: crate::app::shell_wol::buddies::WolBuddies,
     /// The offline WOL test service's buddy list, standing in for the
@@ -166,6 +166,9 @@ pub(crate) struct FrontendState {
     pub(crate) score_page: Option<crate::ui::score_shell::ScorePage>,
     /// Campaign victory dialog `0x103`, separate from Skirmish score dialog `0x108`.
     pub(crate) campaign_score_page: Option<crate::ui::campaign_score_shell::CampaignScorePage>,
+    /// The LAN co-op result dialog `0xBC6` between missions. Its `SCRBK`
+    /// background is held in `campaign_score_art`.
+    pub(crate) coop_score_page: Option<crate::ui::coop_score_shell::CoopScorePage>,
     /// `0x108`'s side art, loaded for the open page (`0x0072D730`) and
     /// released with it (`0x0072D780`).
     pub(crate) score_art: Option<crate::render::main_menu_shell_chrome::ScoreArt>,
@@ -236,4 +239,6 @@ pub(crate) enum ShellMessageBoxPurpose {
     /// GameExit::Defeat `0x006860E5`: Yes restarts this start, if VERA can
     /// rebuild one; No returns to the shell.
     CampaignReplay(Option<Box<crate::app::match_bootstrap::PreparedCampaignStartup>>),
+    /// MapSelect's failed Init message returns to the victory continuation.
+    CampaignVictory(Box<crate::app::campaign_victory::CampaignVictory>),
 }

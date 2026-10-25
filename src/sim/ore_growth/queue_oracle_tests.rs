@@ -702,7 +702,7 @@ fn compare_case(row: &Value) {
         if let Some(expected) = row["after_drains"].get(step) {
             compare_dummy(&terrain, &expected["state"], name);
             constructors.process_pending_delete_with(
-                None,
+                crate::rules::ruleset::RuleSet::empty_for_test(),
                 None,
                 crate::sim::world::FrameEffects::default(),
                 1,

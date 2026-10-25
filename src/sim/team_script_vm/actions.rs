@@ -17,18 +17,21 @@
 //! `deploy` rows (actions 14, 43, 8 and 9) in `transport_tests`.
 //!
 //! RESIDUALS:
-//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 10, 11, 14, 16, 17, 19, 20, 21, 24, 30, 37, 39, 40, 41, 42, 43,
-//!   46, 47, 49, 50, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63 and 64 are not ported. A team
-//!   that reaches one stays on it, as a native handler that has not
-//!   finished does, and records the first as its refusal; the rest of its
-//!   update runs. Trigger: none of the 163 retail AIMD TeamTypes reaches
-//!   one. Effect: the team idles on that action for good, keeping its
+//! - Actions outside [`action_is_ported`] are not ported. A team that reaches
+//!   one stays on it and records the first as its refusal; the rest of its
+//!   update runs. Trigger: an authored script reaches an unsupported action.
+//!   Effect: the team idles on that action for good, keeping its
 //!   members and its TeamType's `Max=` slot, and nothing else sends those
 //!   units out.
-//! - `Coordinate_Attack` keeps a cell target that only a terrain object
-//!   blocks: a team target holds no terrain object. Trigger: a cell target,
-//!   which no ported caller gives (`Greatest_Threat`'s wall fallback is not
-//!   ported). Effect: the members fire at the cell instead of the tree.
+//! - Script22's LAN/WOL path remains refused: Map580BC0 reads process-current
+//!   shroud586360; native LAN guest setup5E0841..5E0931 installs its local
+//!   participant at index0, then688109 makes that House PlayerPtr. Feeding
+//!   this local plane into shared Scenario RNG would make network results
+//!   client-dependent. A deterministic network visibility contract is still
+//!   required; this is not an unreachable native branch or a whole22 port.
+//!   Such teams retain their members and Max slot. Native would request one
+//!   Scenario range for a nonempty pool, with no private timer or detach;
+//!   the refused handler currently performs none of those effects.
 //! - `Coordinate_Attack` orders an unloading unit to attack without asking
 //!   Unit vt+0x4E4 (`0x00736D50`), which keeps it unloading when its type is
 //!   `DeployToFire=`, or when a computer unit's `DeploysInto=` building is
@@ -40,14 +43,9 @@
 //!   natively, as in VERA, those actions take them off Unload in the air.
 //!   Trigger: a member of a modded type deploying when its team attacks.
 //!   Effect: it stops deploying and attacks.
-//! - Non-aircraft ammunition (`+0x2FC`) retains its constructor and chrono
-//!   reinforcement writes; ordinary weapon-fire debits remain unported.
-//!   Actions 0 and 46 therefore do not find an ordinary finite-ammo team spent
-//!   (`team_out_of_ammo`). Trigger: a team of units with `Ammo=` above 0.
-//!   Effect: the team keeps attacking where native would move on once all
-//!   are empty.
 
 use crate::map::entities::EntityCategory;
+use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -65,6 +63,10 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 
 use super::super_actions::ChronoshiftTarget;
+
+#[cfg(test)]
+#[path = "idle_animation_tests.rs"]
+mod idle_animation_tests;
 use super::team_ai::member_is_live_joined;
 use super::{TeamScriptAction, TeamScriptRefusal, TeamScriptState, TeamTarget, script_action_at};
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
@@ -72,6 +74,18 @@ use crate::sim::intern::StringInterner;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::team_script_vm::TeamScriptVm;
 use crate::sim::world::ObjectSubstrate;
+
+#[cfg(test)]
+#[path = "scout_tests.rs"]
+mod scout_tests;
+
+#[cfg(test)]
+#[path = "result_tests.rs"]
+mod result_tests;
+
+#[cfg(test)]
+#[path = "spy_waypoint_tests.rs"]
+mod spy_waypoint_tests;
 
 impl TeamScriptState {
     /// TeamFlash6EF5F0 walks +54/+5D8 head first and writes signed Techno+F0.
@@ -107,28 +121,41 @@ impl Simulation {
     }
 }
 
-/// Whether the dispatch ports `action_id`'s handler.
+/// Whether the dispatch has a port of `action_id`'s handler. Mode-specific
+/// residuals can still refuse a path (Script22 currently admits single player).
 pub(super) const fn action_is_ported(action_id: i32) -> bool {
     matches!(
         action_id,
         0 | 1
             | 2
             | 3
+            | 4
             | 5
             | 6
+            | 7
             | 8
             | 9
             | 10
             | 11
+            | 12
+            | 13
             | 14
+            | 15
             | 16
             | 17
             | 19
             | 20
             | 21
+            | 22
+            | 23
             | 24
+            | 25
+            | 26
+            | 27
             | 30
+            | 34
             | 37
+            | 38
             | 39
             | 40
             | 41
@@ -153,17 +180,6 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
     )
 }
 
-/// A member's NavCom (`+0x5A4`) names `target`.
-fn nav_names(nav: NavTargetRef, target: TeamTarget) -> bool {
-    match (nav, target) {
-        (NavTargetRef::Cell { rx, ry }, TeamTarget::Cell { x, y }) => {
-            rx == x as u16 && ry == y as u16
-        }
-        (NavTargetRef::Object { id }, TeamTarget::Object(object)) => id == object,
-        _ => false,
-    }
-}
-
 /// A member's NavCom as a team target, for `Distance`.
 fn nav_target(nav: NavTargetRef) -> TeamTarget {
     match nav {
@@ -172,22 +188,6 @@ fn nav_target(nav: NavTargetRef) -> TeamTarget {
             y: ry as i16,
         },
         NavTargetRef::Object { id } => TeamTarget::Object(id),
-    }
-}
-
-/// A member's TarCom (`+0x2B4`) names `target`.
-fn tarcom_names(entity: &GameEntity, target: TeamTarget) -> bool {
-    entity
-        .attack_target
-        .target()
-        .is_some_and(|attack| attack == target.target_kind())
-}
-
-/// The cell holding a member's Location (`vt+0x1BC`), as a team target.
-fn member_cell(entity: &GameEntity) -> TeamTarget {
-    TeamTarget::Cell {
-        x: entity.position.rx() as i16,
-        y: entity.position.ry() as i16,
     }
 }
 
@@ -304,6 +304,14 @@ impl Simulation {
                 registry,
                 frame_effects,
             ),
+            15 => self.team_action_spy_waypoint(
+                team_id,
+                action.argument,
+                first,
+                rules,
+                registry,
+                frame_effects,
+            ),
             59 => self.team_action_attack_waypoint_building(
                 team_id,
                 action.argument,
@@ -322,6 +330,79 @@ impl Simulation {
                 registry,
                 frame_effects,
             ),
+            // TeamClass::AI Script4, 6E95B3..6E95EA: signed packed128
+            // coordinates, Map5657A0, AssignMissionTarget, CoordinateMove.
+            // The shared owners retain member orders, timers and cleanup;
+            // this handler has no private RNG draw, timer or detach call.
+            4 => {
+                if first {
+                    let target = self.canonical_team_cell((
+                        (action.argument % 128) as i16,
+                        (action.argument / 128) as i16,
+                    ));
+                    self.team_assign_mission_target(
+                        team_id,
+                        Some(target),
+                        rules,
+                        registry,
+                        frame_effects,
+                    );
+                }
+                self.team_coordinate_move(team_id, rules, registry, frame_effects);
+            }
+            // TeamClass::AI Script22 at6E9583: first visit uses centre or
+            // head, Map580BC0 and AssignMissionTarget; every visit moves.
+            // Its script argument is unused. Shared movement owns timers
+            // and detach/EOF cleanup; only the search can request RNG.
+            22 => {
+                if !self.session.game_mode().is_single_player() {
+                    self.refuse_team_script_action(team_id, action.action_id);
+                    return;
+                }
+                if first {
+                    let origin = self.team_script_vm.teams.get(&team_id).and_then(|team| {
+                        team.zone
+                            .or_else(|| team.members().next().map(TeamTarget::Object))
+                    });
+                    let Some(viewer) = self.session.current_house() else {
+                        return;
+                    };
+                    let target = origin
+                        .and_then(|origin| self.nearby_shrouded_cell(origin.target_kind(), viewer))
+                        .map(|target| {
+                            TeamTarget::from(crate::sim::combat::TargetKind::from(target))
+                        });
+                    self.team_assign_mission_target(
+                        team_id,
+                        target,
+                        rules,
+                        registry,
+                        frame_effects,
+                    );
+                }
+                self.team_coordinate_move(team_id, rules, registry, frame_effects);
+            }
+            // TeamClass::AI Script7/23, table6E9F90/6E9FD0 ->6E98C9/6E98E5:
+            // FlagWin4FC9E0/FlagLose4FCBD0(PlayerPtr, false), then Team+80=1.
+            // Original gamemd instructions: no first-visit/argument gate,
+            // RNG draw, private timer or detach; House owns SavourDelay+298.
+            7 | 23 => {
+                self.request_player_outcome(
+                    crate::sim::world::PlayerOutcomeRequest::Flag {
+                        kind: if action.action_id == 7 {
+                            crate::sim::house_state::HouseOutcomeKind::Victory
+                        } else {
+                            crate::sim::house_state::HouseOutcomeKind::Defeat
+                        },
+                        skip_timer: false,
+                    },
+                    rules,
+                    frame_effects,
+                );
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
             // `0x006E97CE`: the guard timer starts on the first frame at
             // `argument * 15` frames; each frame the team regroups (the result
             // is ignored) and moves on once the timer has run out.
@@ -357,6 +438,27 @@ impl Simulation {
                 registry,
                 frame_effects,
             ),
+            // gamemd.exe TeamClass::AI Script13,6E9FA8 ->6E9879..98AD:
+            // each member's class virtual520(argument), next link read AFTER
+            // the callback, then +80=1. Refused animations still advance.
+            13 => {
+                let mut member = self
+                    .team_script_vm
+                    .teams
+                    .get(&team_id)
+                    .and_then(|team| team.members().next());
+                while let Some(current) = member {
+                    self.foot_play_idle_animation(current, action.argument, rules, frame_effects);
+                    member = self
+                        .team_script_vm
+                        .teams
+                        .get(&team_id)
+                        .and_then(|team| team.next_member_after(current));
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
             14 => self.team_action_load_onto_transport(team_id, rules, registry, frame_effects),
             16 => self.team_action_patrol_waypoint(
                 team_id,
@@ -395,12 +497,44 @@ impl Simulation {
                     );
                 }
             }
+            // Original gamemd.exe TeamClass::AI Script34, table6E9FFC ->
+            //6E9ACF..6E9B6A: Zone+34 GetCoords, Ground578080, then Map565730
+            // bridge flags100/400. Keep subcell XY even for an object Zone.
+            // FocusOn6D2420 copies the coordinate; Team+80 completes now,
+            // independently of the camera's progress. No House/first gate.
+            34 => {
+                let coord = self
+                    .team_script_vm
+                    .teams
+                    .get(&team_id)
+                    .and_then(|team| team.zone)
+                    .and_then(|zone| self.team_target_coord(zone));
+                if let (Some(coord), Some(terrain)) = (coord, self.resolved_terrain.as_ref()) {
+                    let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+                    let ground =
+                        crate::sim::movement::ground_pose::query_ground_height(&cells, coord)
+                            .expect("authored camera ground query requires a valid native slope");
+                    let cell = cells.lookup_world(coord.x, coord.y);
+                    let on_bridge = cells.flags(cell) & 0x100 != 0
+                        || cells.flags(cells.lookup_world(coord.x, coord.y)) & 0x400 != 0;
+                    let z = crate::sim::movement::ground_pose::z_at_height(ground, 0, on_bridge);
+                    self.publish_trigger_effects(vec![
+                        crate::sim::trigger_runtime::TriggerEffect::CameraAtCoord {
+                            coord: [coord.x, coord.y, z],
+                            velocity: Some(action.argument),
+                        },
+                    ]);
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
             37 => {
                 //Steam gamemd:6E954D..6E957A caches Foot+5D8 before
                 //vtD4 Limbo and vtF8 UnInit, then marks+80 to advance.
                 //Neither direct deletion nor a damage/RecordKill path is
                 //this action's call. Reuse the complete class lifecycle.
-                let context = crate::sim::world::UninitContext::new(Some(rules), registry)
+                let context = crate::sim::world::UninitContext::new(rules, registry)
                     .with_effects(frame_effects);
                 let mut member = self
                     .team_script_vm
@@ -437,7 +571,7 @@ impl Simulation {
                         .get(&team_id)
                         .and_then(|team| team.next_member_after(current));
                     if self.foot_enter_nearest_occupiable(current, rules, registry, frame_effects) {
-                        self.team_remove_member(team_id, current, true, Some(rules), frame_effects);
+                        self.team_remove_member(team_id, current, true, rules, frame_effects);
                     }
                     member = next;
                 }
@@ -445,18 +579,19 @@ impl Simulation {
                     team.advance_pending = true;
                 }
             }
-            // Steam gamemd: Script39 at6E9BA1 and Script40 at6E9BBE
-            // call SetLocal689910(argument, true/false), respectively,
-            // then team+80=1 even if the variable index was rejected. The
-            // existing trigger owner keeps dirty admission and timer resets.
-            39 | 40 => {
+            // Retail TeamClass::AI6E9140's active table6E9F74 sends
+            // Script12/38 to6E982B/6E9530 -> SetGlobal689670;39/40 at
+            //6E9BA1/6E9BBE call SetLocal689910. All complete Team+80
+            // even for a rejected or unchanged value. The shared trigger
+            // owner retains dirty admission, linked timers and RNG order.
+            12 | 38 | 39 | 40 => {
                 Self::set_trigger_variable(
                     &self.session,
                     &mut self.scenario_rng,
                     &mut self.trigger_runtime,
-                    false,
+                    matches!(action.action_id, 12 | 38),
                     action.argument,
-                    action.action_id == 39,
+                    matches!(action.action_id, 12 | 39),
                 );
                 if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
                     team.advance_pending = true;
@@ -564,6 +699,49 @@ impl Simulation {
                         log::debug!("team member {member} did not scatter: {cause}");
                     }
                 }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
+            // `TeamClass::AI` case 25 (`0x006E9901..0x006E9912`): PlayAtPos
+            // `0x00750920` of the raw argument, centred (`0x2000`), volume
+            // 1.0, no handle, then Team+80=1. The argument is a SOUNDMD
+            // ordinal the process catalog resolves.
+            25 => {
+                self.sound_events
+                    .emit(crate::sim::world::SimSoundEvent::VocCenteredIndex {
+                        index: action.argument,
+                    });
+                frame_effects.flush_sound(self, rules);
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
+            // Case 26 (`0x006E9921..0x006E992F`): the full-screen movie
+            // `0x005BF260(argument, -1, 1, 1, 1)`, then Team+80=1. Trigger
+            // action 10 makes the same call inside a bracket this case skips:
+            // mouse hide/show, `0x006842F0` display mode and the `0x0072DDB0`
+            // shell surfaces. VERA's one movie owner presents both alike
+            // (presentation only).
+            26 => {
+                self.publish_trigger_effects(vec![
+                    crate::sim::trigger_runtime::TriggerEffect::FullscreenMovie {
+                        index: action.argument,
+                    },
+                ]);
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
+            // Case 27 (`0x006E993E..0x006E9949`): Theme Queue_Song
+            // `0x00720B20` of the argument, then Team+80=1. Trigger action
+            // 20's ordinal form takes the same Theme request.
+            27 => {
+                self.publish_trigger_effects(vec![
+                    crate::sim::trigger_runtime::TriggerEffect::MusicTheme {
+                        request: crate::sim::trigger_runtime::ThemeRequest::Index(action.argument),
+                    },
+                ]);
                 if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
                     team.advance_pending = true;
                 }
@@ -683,7 +861,7 @@ impl Simulation {
                         _ => self.foot_enter_battle_bunker(member, rules, registry, frame_effects),
                     };
                     if found {
-                        self.team_remove_member(team_id, member, true, Some(rules), frame_effects);
+                        self.team_remove_member(team_id, member, true, rules, frame_effects);
                     }
                 }
                 if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
@@ -692,15 +870,18 @@ impl Simulation {
             }
             action_id => {
                 debug_assert!(!action_is_ported(action_id));
-                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id)
-                    && team.refusal.is_none()
-                {
-                    team.refusal = Some(TeamScriptRefusal::UnsupportedAction { action_id });
-                    log::warn!(
-                        "TeamClass::AI: team {team_id} stays on unported script action {action_id}"
-                    );
-                }
+                self.refuse_team_script_action(team_id, action_id);
             }
+        }
+    }
+
+    /// Keep the existing first-refusal diagnostic for unported action paths.
+    fn refuse_team_script_action(&mut self, team_id: u64, action_id: i32) {
+        if let Some(team) = self.team_script_vm.teams.get_mut(&team_id)
+            && team.refusal.is_none()
+        {
+            team.refusal = Some(TeamScriptRefusal::UnsupportedAction { action_id });
+            log::warn!("TeamClass::AI: team {team_id} stays on unported script action {action_id}");
         }
     }
 
@@ -792,10 +973,10 @@ impl Simulation {
         self.team_coordinate_move(team_id, rules, registry, effects);
     }
 
-    /// Preserve Map5657A0 canonical slot aliasing and Dummy stamping before
-    /// a Team takes a Cell target. Storage of the retained Dummy identity is
-    /// still a separate residual in TeamTarget; real stock opening cells use
-    /// their exact map-owned coordinates.
+    /// Map5657A0 before a Team retains its Cell pointer. Real cells use the
+    /// selected allocation's coordinates; a miss retains its invalid request
+    /// as the Dummy token. Later virtual queries read that allocation's live
+    /// state through the shared target-coordinate owner.
     pub(super) fn canonical_team_cell(&self, (x, y): (i16, i16)) -> TeamTarget {
         let (x, y) = self.resolved_terrain.as_ref().map_or((x, y), |terrain| {
             terrain.native_cell_coord(terrain.native_cell_identity((x, y)))
@@ -916,7 +1097,15 @@ impl Simulation {
                         .teams
                         .get(&team_id)
                         .and_then(|team| team.focus);
-                    if threat.is_some() || focus != Some(waypoint_target) {
+                    // Team6ECE1A compares Abstract pointers, including Dummy.
+                    if threat.is_some()
+                        || focus.is_none_or(|focus| {
+                            !NavTargetRef::from(focus.target_kind()).same_pointer(
+                                waypoint_target.target_kind().into(),
+                                self.resolved_terrain.as_ref(),
+                            )
+                        })
+                    {
                         self.team_assign_mission_target(
                             team_id,
                             threat.map(TeamTarget::Object),
@@ -1148,8 +1337,19 @@ impl Simulation {
             .is_some_and(|team| vm.transports_return_on_unload(team))
             && let Some(entity) = self.substrate.entities.get_mut(transport)
         {
-            let cell = member_cell(entity);
-            entity.set_archive_target(Some(cell.target_kind()));
+            // Team6ED44C..6ED47C: raw Location -> ONE Map565730 lookup,
+            // then SetArchiveTarget. Object+1BC would query twice.
+            let physical = position_world_coord(&entity.position);
+            let (x, y) = self.resolved_terrain.as_ref().map_or(
+                ((physical.x / 256) as i16, (physical.y / 256) as i16),
+                |terrain| {
+                    let cells = NativeCellQuery::canonical(terrain);
+                    cells.coord(cells.lookup_world(physical.x, physical.y))
+                },
+            );
+            entity.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(
+                x as u16, y as u16,
+            )));
         }
         if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
             team.advance_pending = true;
@@ -1278,7 +1478,7 @@ impl Simulation {
                 continue;
             }
             if transport && returns {
-                self.team_remove_member(team_id, member, false, Some(rules), frame_effects);
+                self.team_remove_member(team_id, member, false, rules, frame_effects);
                 self.team_member_clear_target(member, rules);
                 let archive = self
                     .substrate
@@ -1293,7 +1493,7 @@ impl Simulation {
             } else if (transport && matches!(argument, 2 | 3))
                 || (!transport && matches!(argument, 1 | 3))
             {
-                self.team_remove_member(team_id, member, false, Some(rules), frame_effects);
+                self.team_remove_member(team_id, member, false, rules, frame_effects);
                 self.team_member_clear_target(member, rules);
                 self.team_member_set_destination(member, None, rules, registry, frame_effects);
             }
@@ -1366,7 +1566,7 @@ impl Simulation {
                 if unloading {
                     continue;
                 }
-                self.foot_mark_remove(member, Some(rules), registry, frame_effects);
+                self.foot_mark_remove(member, rules, registry, frame_effects);
                 let placeable = crate::sim::build_site::can_place_building_at(
                     self, rules, registry, building, cell, None, None, None,
                 );
@@ -1381,7 +1581,7 @@ impl Simulation {
                         frame_effects,
                     );
                 }
-                self.foot_mark_put(member, Some(rules), registry, frame_effects);
+                self.foot_mark_put(member, rules, registry, frame_effects);
                 if placeable {
                     self.team_member_set_destination(member, None, rules, registry, frame_effects);
                     self.team_member_clear_target(member, rules);
@@ -1554,10 +1754,8 @@ impl Simulation {
                 )
             })
             .unwrap_or((0, 0));
-        let target = TeamTarget::Cell {
-            x: cell.0 as i16,
-            y: cell.1 as i16,
-        };
+        // Gather53/54: Map5657A0 at6EF99F/6EFC4F precedes the setter.
+        let target = self.canonical_team_cell((cell.0 as i16, cell.1 as i16));
         self.team_assign_mission_target(team_id, Some(target), rules, registry, frame_effects);
     }
 
@@ -1587,10 +1785,8 @@ impl Simulation {
             && let Some(building) = self.team_find_own_building(leader, argument)
             && let Some(cell) = self.team_building_approach_cell(leader, building, rules)
         {
-            let target = TeamTarget::Cell {
-                x: cell.0 as i16,
-                y: cell.1 as i16,
-            };
+            // TeamMoveToOwnBuilding6EE7B9 resolves the returned CellStruct.
+            let target = self.canonical_team_cell((cell.0 as i16, cell.1 as i16));
             self.team_assign_mission_target(team_id, Some(target), rules, registry, frame_effects);
         }
         let Some(team) = self.team_script_vm.teams.get_mut(&team_id) else {
@@ -1683,7 +1879,7 @@ impl Simulation {
     /// mission target unless it had moved off it; a cell target off the
     /// playfield (`0x00578540`) sets leaving-map and clears every member's
     /// destination, one on it clears leaving-map.
-    pub(super) fn team_assign_mission_target(
+    pub(crate) fn team_assign_mission_target(
         &mut self,
         team_id: u64,
         target: Option<TeamTarget>,
@@ -1697,17 +1893,23 @@ impl Simulation {
         let old = team.mission_target;
         let members: Vec<u64> = team.members().collect();
         if let Some(old) = old
-            && target != Some(old)
+            && !target.is_some_and(|new| {
+                NavTargetRef::from(old.target_kind())
+                    .same_pointer(new.target_kind().into(), self.resolved_terrain.as_ref())
+            })
         {
             for &member in &members {
                 let Some(entity) = self.substrate.entities.get(member) else {
                     continue;
                 };
-                let aimed = tarcom_names(entity, old);
-                let moving = entity
-                    .navigation
-                    .nav_com()
-                    .is_some_and(|nav| nav_names(nav, old));
+                //6E907B/6E9080 compare the retained allocation, not XYZ.
+                let aimed = entity.attack_target.target().is_some_and(|attack| {
+                    NavTargetRef::from(attack)
+                        .same_pointer(old.target_kind().into(), self.resolved_terrain.as_ref())
+                });
+                let moving = entity.navigation.nav_com().is_some_and(|nav| {
+                    nav.same_pointer(old.target_kind().into(), self.resolved_terrain.as_ref())
+                });
                 if aimed || moving {
                     self.team_member_queue_mission(member, MissionType::Guard, rules);
                     if moving {
@@ -1729,15 +1931,38 @@ impl Simulation {
         let Some(team) = self.team_script_vm.teams.get_mut(&team_id) else {
             return;
         };
-        if team.focus == old || team.focus.is_none() {
+        //6E90D3 reloads the old pointer after the member setters return.
+        if team.focus.is_none()
+            || team
+                .focus
+                .zip(team.mission_target)
+                .is_some_and(|(focus, old)| {
+                    NavTargetRef::from(focus.target_kind())
+                        .same_pointer(old.target_kind().into(), self.resolved_terrain.as_ref())
+                })
+        {
             team.focus = target;
         }
         team.mission_target = target;
-        if let Some(TeamTarget::Cell { x, y }) = target {
-            let in_playfield = crate::sim::cell_rect::cell_is_in_playfield_height_aware(
-                (i32::from(x), i32::from(y)),
-                playfield_bounds,
-                self.resolved_terrain.as_ref(),
+        if let Some(cell @ TeamTarget::Cell { x, y }) = target {
+            //6E90FD -> Map578540 reads the retained Cell, even when the
+            //new/old pointers matched. It does not restamp Map's Dummy.
+            let in_playfield = self.resolved_terrain.as_ref().map_or_else(
+                || {
+                    crate::sim::cell_rect::cell_is_in_playfield_height_aware(
+                        (i32::from(x), i32::from(y)),
+                        playfield_bounds,
+                        None,
+                    )
+                },
+                |terrain| {
+                    let cells = NativeCellQuery::canonical(terrain);
+                    crate::sim::cell_rect::retained_cell_is_in_playfield(
+                        cell.target_kind().cell_identity(terrain).unwrap(),
+                        playfield_bounds,
+                        &cells,
+                    )
+                },
             );
             team.leaving_map = !in_playfield;
             if !in_playfield {
@@ -1896,13 +2121,23 @@ impl Simulation {
             {
                 near = false;
             }
-            if near
-                && aircraft
-                && position_world_coord(&entity.position).z > 0
-                && member_cell(entity) != focus
-                && next_action != 3
-            {
-                near = false;
+            if near && aircraft && position_world_coord(&entity.position).z > 0 {
+                //6EBD25..6EBD33: GetCoords+48 -> one Map565730 lookup.
+                let same_cell = self.resolved_terrain.as_ref().map_or_else(
+                    || {
+                        NavTargetRef::cell(entity.position.rx(), entity.position.ry())
+                            .same_pointer(focus.target_kind().into(), None)
+                    },
+                    |terrain| {
+                        let cells = NativeCellQuery::canonical(terrain);
+                        let coord = object_get_coords(entity, Some(terrain));
+                        let current = cells.lookup_world(coord.x, coord.y);
+                        focus.target_kind().cell_identity(terrain) == Some(current)
+                    },
+                );
+                if !same_cell && next_action != 3 {
+                    near = false;
+                }
             }
             if near {
                 if entity.mission.effective() == MissionId::from_known(MissionType::Move) {
@@ -1964,8 +2199,32 @@ impl Simulation {
                     .object_type(entity.type_ref(), rules)
                     .is_some_and(|object| object.balloon_hover);
                 let resend = entity.navigation.nav_com().is_some_and(|nav| {
-                    !nav_names(nav, focus)
-                        && (balloon_hover || (aircraft && nav_names(nav, member_cell(entity))))
+                    !nav.same_pointer(focus.target_kind().into(), self.resolved_terrain.as_ref())
+                        && (balloon_hover
+                            || (aircraft
+                                && self.resolved_terrain.as_ref().map_or_else(
+                                    || {
+                                        nav.same_pointer(
+                                            NavTargetRef::cell(
+                                                entity.position.rx(),
+                                                entity.position.ry(),
+                                            ),
+                                            None,
+                                        )
+                                    },
+                                    |terrain| {
+                                        //6EBE92: Object+1BC performs two lookups.
+                                        let cells = NativeCellQuery::canonical(terrain);
+                                        let current =
+                                            crate::sim::movement::ground_pose::query_object_cell(
+                                                &cells,
+                                                position_world_coord(&entity.position),
+                                            );
+                                        crate::sim::combat::TargetKind::from(nav)
+                                            .cell_identity(terrain)
+                                            == Some(current)
+                                    },
+                                )))
                 }) || (entity.navigation.nav_com().is_none() && balloon_hover);
                 if resend {
                     self.team_member_set_destination(
@@ -1981,11 +2240,35 @@ impl Simulation {
             let Some(entity) = self.substrate.entities.get(member) else {
                 continue;
             };
-            if let Some(nav) = entity.navigation.nav_com() {
+            let nav = entity.navigation.nav_com();
+            //6EBEC1 repeats Object+1BC after the destination setter, even
+            //with a NULL NavCom; its ordered Dummy lookups still take effect.
+            let aircraft_on_it = aircraft
+                && self.resolved_terrain.as_ref().map_or_else(
+                    || {
+                        nav.is_some_and(|nav| {
+                            nav.same_pointer(
+                                NavTargetRef::cell(entity.position.rx(), entity.position.ry()),
+                                None,
+                            )
+                        })
+                    },
+                    |terrain| {
+                        let cells = NativeCellQuery::canonical(terrain);
+                        let current = crate::sim::movement::ground_pose::query_object_cell(
+                            &cells,
+                            position_world_coord(&entity.position),
+                        );
+                        nav.is_some_and(|nav| {
+                            crate::sim::combat::TargetKind::from(nav).cell_identity(terrain)
+                                == Some(current)
+                        })
+                    },
+                );
+            if nav.is_some() {
                 let balloon_hover = self
                     .object_type(entity.type_ref(), rules)
                     .is_some_and(|object| object.balloon_hover);
-                let aircraft_on_it = aircraft && nav_names(nav, member_cell(entity));
                 if !aircraft_on_it && !(balloon_hover && distance < stray) {
                     finished = false;
                 }
@@ -2043,8 +2326,9 @@ impl Simulation {
     /// team clears it and finishes; otherwise the existing CoordinateAttack
     /// owner orders the members. No RNG or timer write in this handler.
     /// Source: original6EC9A0..6ECA64 and6E9605..6E961D in Steam gamemd.exe.
-    /// Terrain targets and retained Dummy identity remain the existing
-    /// TeamTarget residuals; ALL01 Nuke_Repair's waypoint364 names a Building.
+    /// Cell47C5A0's Terrain result retains the same Object identity as a
+    /// Techno, so PointerExpired6EAE97..6EAEA4 clears it after destruction.
+    /// Retained Dummy Cell identity remains a separate TeamTarget residual.
     fn team_action_attack_waypoint(
         &mut self,
         team_id: u64,
@@ -2058,8 +2342,10 @@ impl Simulation {
             let target =
                 self.team_waypoint_blocker(waypoint)
                     .map(|(target, blocker)| match blocker {
-                        Some(BlockingObject::Entity(object)) => TeamTarget::Object(object),
-                        Some(BlockingObject::Terrain(_)) | None => target,
+                        Some(BlockingObject::Entity(object) | BlockingObject::Terrain(object)) => {
+                            TeamTarget::Object(object)
+                        }
+                        None => target,
                     });
             self.team_assign_mission_target(team_id, target, rules, registry, frame_effects);
         }
@@ -2074,6 +2360,62 @@ impl Simulation {
             return;
         }
         self.team_coordinate_attack(team_id, rules, registry, frame_effects);
+    }
+
+    /// Script15 / Team6ECE60, dispatched at6E9637 (table6E9FB0).
+    /// Original gamemd6ECE60..6ECF0C: first assign the waypoint Cell, then
+    /// retry its ground-only Cell47C5A0 until an Object appears. Later visits
+    /// retain that Object; PointerExpired leaves NULL, which advances without
+    /// another waypoint query. No outer ammo gate, RNG, timer or detach here.
+    /// The shared CoordinateAttack owns Infiltrate infantry's Capture order.
+    fn team_action_spy_waypoint(
+        &mut self,
+        team_id: u64,
+        waypoint: i32,
+        first: bool,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        if first {
+            let target = self
+                .session
+                .waypoint_cell(waypoint)
+                .map(|cell| self.canonical_team_cell(cell));
+            self.team_assign_mission_target(team_id, target, rules, registry, effects);
+        }
+        let Some(team) = self.team_script_vm.teams.get(&team_id) else {
+            return;
+        };
+        match team.mission_target {
+            Some(target @ TeamTarget::Cell { .. }) => {
+                let cell = target
+                    .target_kind()
+                    .tarcom_cell(self.resolved_terrain.as_ref())
+                    .expect("a retained Cell has a coordinate");
+                let Some(BlockingObject::Entity(object) | BlockingObject::Terrain(object)) =
+                    self.find_blocking_object(cell, MovementLayer::Ground)
+                else {
+                    return;
+                };
+                self.team_assign_mission_target(
+                    team_id,
+                    Some(TeamTarget::Object(object)),
+                    rules,
+                    registry,
+                    effects,
+                );
+            }
+            Some(TeamTarget::Object(_)) => {}
+            None => {
+                self.team_assign_mission_target(team_id, None, rules, registry, effects);
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+                return;
+            }
+        }
+        self.team_coordinate_attack(team_id, rules, registry, effects);
     }
 
     /// Shared Scenario68BCE0 -> Cell47C5A0 selection for Script1 and59.
@@ -2294,12 +2636,10 @@ impl Simulation {
         if let Some(unit) = unit {
             // `0x006EE411..0x006EE591`.
             if let Some(building) = self.team_find_target_building(team_id, unit, argument) {
-                let target =
-                    self.team_building_approach_cell(unit, building, rules)
-                        .map(|(x, y)| TeamTarget::Cell {
-                            x: x as i16,
-                            y: y as i16,
-                        });
+                let target = self
+                    .team_building_approach_cell(unit, building, rules)
+                    //TeamMoveToBuilding6EE583 selects the Cell pointer.
+                    .map(|(x, y)| self.canonical_team_cell((x as i16, y as i16)));
                 self.team_assign_mission_target(team_id, target, rules, registry, frame_effects);
             }
             // `0x006EE59A..0x006EE5A3`.
@@ -2427,14 +2767,15 @@ impl Simulation {
         let mut focus = team.focus;
         let has_members = !team.members.is_empty();
         let leader = self.team_leader(team_id, rules);
-        // `0x006EB51A..0x006EB593`; a terrain object is not a team target
-        // (module residual).
+        // CoordinateAttack6EB51A..6EB593 retains any Cell47C5A0 Object,
+        // including Terrain. Shared Object identity lets the existing
+        // PointerExpired6EAE97..6EAEA4 clear it. Source: gamemd instructions.
         if let Some(TeamTarget::Cell { x, y }) = focus
             && has_members
             && leader
                 .and_then(|leader| self.substrate.entities.get(leader))
                 .is_some_and(|entity| entity.category() != EntityCategory::Aircraft)
-            && let Some(BlockingObject::Entity(object)) =
+            && let Some(BlockingObject::Entity(object) | BlockingObject::Terrain(object)) =
                 self.find_blocking_object((x as u16, y as u16), MovementLayer::Ground)
             && let Some(team) = self.team_script_vm.teams.get_mut(&team_id)
         {
@@ -2505,7 +2846,7 @@ impl Simulation {
                     self,
                     member,
                     crate::sim::radio::RadioMessage::Break,
-                    Some(rules),
+                    rules,
                     frame_effects,
                 );
                 self.team_member_queue_mission(member, MissionType::Attack, rules);

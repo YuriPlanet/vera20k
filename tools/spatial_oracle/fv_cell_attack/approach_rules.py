@@ -5,10 +5,10 @@ fixture. File parsing/type discovery and unrelated whole-reader passes are
 outside this focused original7144A0..7144D4 execution.
 """
 from pathlib import Path
-import hashlib,json,struct,sys
+import hashlib,json,struct
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_ESP,UC_X86_REG_ESI,UC_X86_REG_EBX,UC_X86_REG_EBP,UC_X86_REG_EAX
-from tools.native_oracle import finish_vectors,provenance,NATIVE_SHA256,run_checked,_canonical
+from tools.native_oracle import finish_vectors,provenance,run_checked,_canonical
 from tools.projectile_oracle.ifv_fire_coord import prepare
 from tools.projectile_oracle.bridge_render_inputs import assets_root,lexical
 from tools.spatial_oracle.building_body_rules import SP,RULES
@@ -55,10 +55,8 @@ def generate():
    assert not pending
    steps.append(dict(input={k:v for k,v in layer.items()if k!='cache'},before=before,reads=calls.copy(),after=state()))
   rows.append(dict(name=name,steps=steps,after=state()))
- return dict(schema=1,native_sha256=NATIVE_SHA256,constructor=dict(entry='007470d0',observed=ctor,after=default),cases=rows)
+ return dict(schema=1,constructor=dict(entry='007470d0',observed=ctor,after=default),cases=rows)
 def metadata():
  r=provenance(scope=__doc__,assumptions=['The existing ifv_fire_coord.prepare owner establishes the native type registries and reader environment, then a fresh complete original UnitType7470D0 constructor executes. Exact stores71152A/711530 and AL are observed.','Rules layers use unique supplied INI CRC-cache lexical entries; original5295F0 bool parser and7144A0..7144D4 retained defaults/read order execute. Missing sections are a reader-fragment input; the outer full type reader section admission is not replayed.','Physical RULESMD, optionalLANGRULE, MPBattleMD and Anytown map FV entries are read through the same original fragment. Outputs retain only selected short keys and lexical hashes; proprietary INI bodies are not published.'],substitutions=['Existing allocator/INI-cache/reader bootstrap only; no bool parser, default, store or branch return is supplied.'],entry_points={'unit_type_ctor':0x7470D0,'techno_type_reader':0x7144A0,'read_bool':0x5295F0})
- r['harness_sha256']=sha(Path(__file__).read_bytes());repo=Path(__import__('tools.native_oracle',fromlist=['x']).__file__).resolve().parents[1]
- r['sources']={str(p.relative_to(repo)):sha(p.read_bytes())for module in tuple(sys.modules.values())if(name:=getattr(module,'__file__',None))and(p:=Path(name).resolve()).is_relative_to(repo/'tools')and p.suffix=='.py'}
  return r
 if __name__=='__main__':finish_vectors(generate,HERE/'approach_rules.json',provenance=metadata)

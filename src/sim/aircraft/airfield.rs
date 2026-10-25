@@ -157,7 +157,7 @@ impl Simulation {
                 cached,
                 crate::sim::radio::RadioMessage::CanEnter,
                 crate::sim::radio::RadioPayload::default(),
-                Some(rules),
+                rules,
                 effects,
             ) == crate::sim::radio::RadioResponse::Roger
             {
@@ -165,8 +165,10 @@ impl Simulation {
             }
             self.substrate.set_aircraft_dock(id, None);
         }
+        let type_ref = self.substrate.entities.get(id)?.type_ref();
+        let dock_types = &self.interner.object_type(type_ref, rules)?.dock;
         let dock = crate::sim::miner::miner_system::find_docking_bay(
-            self, rules, id, false, false, effects,
+            self, rules, id, dock_types, false, false, effects,
         );
         self.substrate.set_aircraft_dock(id, dock);
         dock

@@ -5,7 +5,7 @@ are inherited from bridge_render_inputs.BulletReader. No physical INI loader.
 import hashlib,json,struct,sys
 from pathlib import Path
 from unicorn.x86_const import *
-from tools.native_oracle import NATIVE_SHA256,run_checked,finish_vectors,provenance
+from tools.native_oracle import run_checked,finish_vectors,provenance
 from tools.projectile_oracle.bridge_render_inputs import BulletReader,assets_root,lexical
 from tools.projectile_oracle.bridge_render_inputs_selection import initialize_weapon
 from tools.spatial_oracle.building_body_rules import RULES,SP,dwords
@@ -82,7 +82,7 @@ def cannon():
  return dict(reader_speed=before,range_leptons=s32(m,w+0xb4),gravity=s32(m,r+0x16b8),postpass_speed=s32(m,w+0xa8),get_speed500=m.invoke(0x773070,w,(500,)))
 
 def generate():
- return dict(native_sha256=NATIVE_SHA256,controls=controls(),physical_ifv=physical(),ordinary_cannon=cannon(),postpass_history=postpass_history())
+ return dict(controls=controls(),physical_ifv=physical(),ordinary_cannon=cannon(),postpass_history=postpass_history())
 
 def metadata():
  return provenance(scope='Original retained Weapon ReadSpeed, postpass components and physical IFV scalar inputs', assumptions=[

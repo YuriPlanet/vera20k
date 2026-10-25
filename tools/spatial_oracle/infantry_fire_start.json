@@ -2161,5 +2161,421 @@
     ],
     "target_kind": "cell",
     "weapon_slot": 0
+  },
+  {
+    "action": 4,
+    "airstrike_control": true,
+    "airstrike_link": true,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "current_doing": 0,
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_stage": 5,
+    "initial_start": 4294967295,
+    "name": "airstrike_doing_0_slot_0",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "stage_after": 5,
+    "start": 100,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 40,
+    "airstrike_control": true,
+    "airstrike_link": true,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "current_doing": 0,
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_stage": 5,
+    "initial_start": 4294967295,
+    "name": "airstrike_doing_0_slot_1",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "stage_after": 5,
+    "start": 100,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 40,
+    "airstrike_control": true,
+    "airstrike_link": true,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "current_doing": 40,
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_stage": 5,
+    "initial_start": 4294967295,
+    "name": "airstrike_doing_40_slot_0",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "stage_after": 0,
+    "start": 100,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 40,
+    "airstrike_control": true,
+    "airstrike_link": true,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "current_doing": 40,
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_stage": 5,
+    "initial_start": 4294967295,
+    "name": "airstrike_doing_40_slot_1",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "stage_after": 0,
+    "start": 100,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 41,
+    "airstrike_control": true,
+    "airstrike_link": true,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "current_doing": 41,
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_stage": 5,
+    "initial_start": 4294967295,
+    "name": "airstrike_doing_41_slot_0",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "stage_after": 0,
+    "start": 100,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 41,
+    "airstrike_control": true,
+    "airstrike_link": true,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "current_doing": 41,
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_stage": 5,
+    "initial_start": 4294967295,
+    "name": "airstrike_doing_41_slot_1",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "stage_after": 0,
+    "start": 100,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 29,
+    "airstrike_control": true,
+    "airstrike_link": true,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "current_doing": 28,
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_stage": 5,
+    "initial_start": 4294967295,
+    "name": "airstrike_doing_28_slot_0",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "stage_after": 5,
+    "start": 100,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 29,
+    "airstrike_control": true,
+    "airstrike_link": true,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "current_doing": 28,
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_stage": 5,
+    "initial_start": 4294967295,
+    "name": "airstrike_doing_28_slot_1",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "stage_after": 5,
+    "start": 100,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 1
+  },
+  {
+    "action": 4,
+    "airstrike_control": true,
+    "airstrike_link": false,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "current_doing": 40,
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_stage": 5,
+    "initial_start": 4294967295,
+    "name": "no_airstrike_doing_40",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "stage_after": 5,
+    "start": 100,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
+  },
+  {
+    "action": 4,
+    "airstrike_control": true,
+    "airstrike_link": false,
+    "calls": [
+      "select_weapon",
+      "get_fire_error",
+      "do_action",
+      "direction_to_target",
+      "update_facing"
+    ],
+    "current_doing": 41,
+    "deployed": false,
+    "duration": 0,
+    "facing": 16383,
+    "fire_error": 0,
+    "has_target": true,
+    "initial_duration": 0,
+    "initial_facing": 33059,
+    "initial_previous": 33059,
+    "initial_stage": 5,
+    "initial_start": 4294967295,
+    "name": "no_airstrike_doing_41",
+    "pending": 0,
+    "pending_after": 1,
+    "previous": 16383,
+    "prone": 0,
+    "raw_rot": 1280,
+    "rot": 5,
+    "source": [
+      1409,
+      1517
+    ],
+    "stage_after": 5,
+    "start": 100,
+    "target": [
+      2177,
+      1517
+    ],
+    "target_kind": "object",
+    "weapon_slot": 0
   }
 ]

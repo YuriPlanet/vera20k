@@ -10,7 +10,7 @@ from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import *
 from tools.projectile_oracle.ifv_select_anim import setup
 from tools.projectile_oracle import ifv_impact as impact
-from tools.native_oracle import NATIVE_SHA256,run_checked,finish_vectors,provenance
+from tools.native_oracle import run_checked,finish_vectors,provenance
 from tools.spatial_oracle.building_body_rules import SP,RULES,INI,dwords
 from tools.rmg_oracle.gen_rng_vectors import seeded_struct
 
@@ -77,7 +77,7 @@ def generate():
  initial=rows[0].pop('initial');art=rows[0].pop('art')
  for row in rows[1:]:assert row.pop('initial')==initial and row.pop('art')==art
  assert {row['area_result'] for row in rows}=={0,1,2}
- return dict(native_sha256=NATIVE_SHA256,initial=initial,nullify_art=art,rows=rows)
+ return dict(initial=initial,nullify_art=art,rows=rows)
 
 def metadata():
  return provenance(scope='Six full native Bullet detonation controls joining AreaDamage0/1/2, EMEffect selector RNG and ordinary versus WeaponNullifyAnim construction',assumptions=[
@@ -302,7 +302,7 @@ def brute_generate():
    assert len(successor)==1 and successor[0]['low']==256 and successor[0]['high']==512
   for anim in row['anims']:
    if anim['type']!='IRONFX':assert anim['location']==[2688,5248,644]
- return dict(native_sha256=NATIVE_SHA256,initial=initial,rows=rows)
+ return dict(initial=initial,rows=rows)
 
 
 def brute_metadata():
@@ -332,7 +332,7 @@ def typed_generate():
  for row in rows:
   assert row['native_cursor_after']-row['native_cursor_before']==len(row['anims'])+len(row['voxels'])
   assert all(v['registry_registered'] and v['logic_registered'] and v['display_layers']==[3] for v in row['voxels'])
- return dict(native_sha256=NATIVE_SHA256,initial=initial,rows=rows)
+ return dict(initial=initial,rows=rows)
 
 
 def typed_metadata():

@@ -210,6 +210,9 @@ fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
             false
         ));
     }
+    for output in sim.take_lifecycle_outputs_for_test() {
+        projection.apply_lifecycle_output(&output, Some(owner));
+    }
     projection.reconcile_factory_links(&sim, owner);
     assert_eq!(projection.ready_building_tabs(&sim, owner), [false; 2]);
     for category in [ProductionCategory::Building, ProductionCategory::Defense] {
@@ -835,6 +838,9 @@ fn building_production_darkens_other_cameos_until_cancelled() {
         crate::sim::world::FrameEffects::default(),
         false,
     ));
+    for output in sim.take_lifecycle_outputs_for_test() {
+        projection.apply_lifecycle_output(&output, Some(owner));
+    }
     projection.reconcile_factory_links(&sim, owner);
     projection.refresh_cameo_draw_state(&sim, &rules, owner, None);
     let items = &projection.view().unwrap().items;
@@ -890,7 +896,7 @@ fn building_production_darkens_other_cameos_until_cancelled() {
         let frame = sim
             .advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 None,
                 67,
                 crate::sim::world::TickLane::Ordinary,
@@ -933,6 +939,9 @@ fn building_production_darkens_other_cameos_until_cancelled() {
         false,
         crate::sim::world::FrameEffects::default(),
     ));
+    for output in sim.take_lifecycle_outputs_for_test() {
+        projection.apply_lifecycle_output(&output, Some(owner));
+    }
     projection.reconcile_factory_links(&sim, owner);
     projection.refresh_cameo_draw_state(&sim, &rules, owner, None);
     assert!(
@@ -1055,6 +1064,9 @@ fn busy_strip_draw_matches_native_pending_and_linked_controls() {
                 ),
                 "{control}"
             );
+        }
+        for output in sim.take_lifecycle_outputs_for_test() {
+            projection.apply_lifecycle_output(&output, Some(owner));
         }
         projection.reconcile_factory_links(&sim, owner);
         let tab = SidebarTab::all()[control["tab"].as_u64().unwrap() as usize];
@@ -1248,7 +1260,7 @@ fn superweapon_retained_cameo_keeps_identity_through_hold_and_recovery() {
             .map(|entry| entry.id)
             .collect();
         assert_eq!(ids, vec![CameoId::SuperWeapon(sw_views[0].type_id)]);
-        let sidebar = build_sidebar_view_with_spec(
+        let mut sidebar = build_sidebar_view_with_spec(
             SidebarChromeLayoutSpec::stock(),
             800.0,
             430.0,
@@ -1276,6 +1288,14 @@ fn superweapon_retained_cameo_keeps_identity_through_hold_and_recovery() {
             sidebar.items.len(),
             1,
             "one retained Super, without duplicates"
+        );
+        // The per-frame receiver must restore the live Super display without
+        // rebuilding membership; drain transitions use this same receiver.
+        sidebar.items[0].super_weapon_display = None;
+        projection.apply_cameo_draw_state(&mut sidebar, sim, rules, owner, None);
+        assert_eq!(
+            sidebar.items[0].super_weapon_display,
+            Some(sw_views[0].display)
         );
         (sidebar.items[0].clone(), change)
     }

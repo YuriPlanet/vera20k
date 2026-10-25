@@ -16,8 +16,20 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::assets::audio_bag::AudioIndex;
 use crate::assets::error::AssetError;
-use crate::assets::mix_archive::MixArchive;
+use crate::assets::mix_archive::{MixArchive, SharedBytes};
 use crate::assets::mix_hash::mix_hash;
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "asset_manager_ares_sidebar_tests.rs"]
+mod ares_sidebar_tests;
+
+#[cfg(test)]
+#[path = "asset_manager_audio_bags_tests.rs"]
+mod audio_bags_tests;
+
+#[cfg(test)]
+#[path = "asset_manager_install_tests.rs"]
+mod install_inspection_tests;
 
 /// A MIX archive with a human-readable name for logging and diagnostics.
 #[derive(Clone)]
@@ -32,7 +44,7 @@ struct NamedArchive {
 struct LooseAsset {
     path: PathBuf,
     source_name: String,
-    bytes: OnceLock<Option<Box<[u8]>>>,
+    bytes: OnceLock<Option<Arc<[u8]>>>,
 }
 
 impl LooseAsset {
@@ -41,17 +53,67 @@ impl LooseAsset {
     /// and cannot safely coexist with truncation on other platforms. Snapshot
     /// only requested payloads; root indexing must not copy entire MIX archives.
     /// This is Rust storage policy, not native raw-file cache equivalence.
-    fn bytes(&self) -> Option<&[u8]> {
-        self.bytes
-            .get_or_init(|| match std::fs::read(&self.path) {
-                Ok(bytes) => Some(bytes.into_boxed_slice()),
-                Err(err) => {
-                    log::debug!("Skipping loose {}: {}", self.path.display(), err);
-                    None
-                }
-            })
-            .as_deref()
+    fn snapshot(&self) -> &Option<Arc<[u8]>> {
+        self.bytes.get_or_init(|| {
+            self.read_snapshot(None)
+                .expect("unbounded asset snapshots cannot exceed a read limit")
+        })
     }
+
+    fn read_snapshot(&self, maximum: Option<usize>) -> Result<Option<Arc<[u8]>>, AssetError> {
+        let read = || -> Result<Vec<u8>, AssetError> {
+            let Some(maximum) = maximum else {
+                return Ok(std::fs::read(&self.path)?);
+            };
+            use std::io::Read;
+            let file = std::fs::File::open(&self.path)?;
+            check_asset_read_limit(file.metadata()?.len(), maximum)?;
+            let mut bytes = Vec::new();
+            // A file can grow after metadata inspection. Never allocate or
+            // read the rest of that growth before refusing the source.
+            file.take((maximum as u64).saturating_add(1))
+                .read_to_end(&mut bytes)?;
+            check_asset_read_limit(bytes.len() as u64, maximum)?;
+            Ok(bytes)
+        };
+        match read() {
+            Ok(bytes) => Ok(Some(bytes.into())),
+            Err(AssetError::Io(err)) => {
+                log::debug!("Skipping loose {}: {}", self.path.display(), err);
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    fn bytes(&self) -> Option<&[u8]> {
+        self.snapshot().as_deref()
+    }
+
+    fn bytes_bounded(&self, maximum: usize) -> Result<Option<&[u8]>, AssetError> {
+        if self.bytes.get().is_none() {
+            let snapshot = self.read_snapshot(Some(maximum))?;
+            // A budget refusal never poisons the shared first-read snapshot.
+            // Concurrent readers still use whichever snapshot was set first.
+            let _ = self.bytes.set(snapshot);
+        }
+        let bytes = self
+            .bytes
+            .get()
+            .expect("snapshot was initialized")
+            .as_deref();
+        if let Some(bytes) = bytes {
+            check_asset_read_limit(bytes.len() as u64, maximum)?;
+        }
+        Ok(bytes)
+    }
+}
+
+fn check_asset_read_limit(actual: u64, maximum: usize) -> Result<(), AssetError> {
+    if actual > maximum as u64 {
+        return Err(AssetError::ReadLimitExceeded { maximum, actual });
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -96,6 +158,9 @@ pub struct AudioIndexSources {
 pub struct LoadedAudioIndex {
     pub index: AudioIndex,
     pub sources: AudioIndexSources,
+    /// Further admitted pairs in append order. The first remains `sources`.
+    #[cfg(feature = "ares")]
+    pub additional_sources: Vec<AudioIndexSources>,
 }
 
 /// Parse a selected pair without making another source-selection decision.
@@ -104,23 +169,35 @@ pub fn load_audio_index_pair(
     idx: AssetResolutionRef<'_>,
     bag: AssetResolutionRef<'_>,
 ) -> Result<LoadedAudioIndex, AssetError> {
-    let identity = |source: AssetResolutionRef<'_>| AudioSourceIdentity {
-        source_archive: source.source_archive.to_owned(),
-        entry_id: source.entry_id,
-        payload_len: source.bytes.len(),
-        source_sha256: crate::util::sha256::sha256_hex(source.bytes),
-    };
-    let sources = AudioIndexSources {
-        idx: identity(idx),
-        bag: identity(bag),
-    };
+    let sources = audio_index_sources(idx, bag);
     let index = AudioIndex::from_idx_bag(idx.bytes, bag.bytes.to_vec()).ok_or_else(|| {
         AssetError::ParseError {
             format: "audio.idx".to_owned(),
             detail: format!("unsupported or truncated index from {}", idx.source_archive),
         }
     })?;
-    Ok(LoadedAudioIndex { index, sources })
+    Ok(LoadedAudioIndex {
+        index,
+        sources,
+        #[cfg(feature = "ares")]
+        additional_sources: Vec::new(),
+    })
+}
+
+fn audio_index_sources(
+    idx: AssetResolutionRef<'_>,
+    bag: AssetResolutionRef<'_>,
+) -> AudioIndexSources {
+    let identity = |source: AssetResolutionRef<'_>| AudioSourceIdentity {
+        source_archive: source.source_archive.to_owned(),
+        entry_id: source.entry_id,
+        payload_len: source.bytes.len(),
+        source_sha256: crate::util::sha256::sha256_hex(source.bytes),
+    };
+    AudioIndexSources {
+        idx: identity(idx),
+        bag: identity(bag),
+    }
 }
 
 /// A frozen resolver winner, not another archive search list. Archive storage
@@ -180,7 +257,8 @@ pub struct MixFileLoad {
 /// - **Process-sticky** — `load_file_from_mix`: the native
 ///   `LoadFileFromMIX @ 0x005B40B0` normalized-CRC first-winner cache. The
 ///   first resolution wins for the life of the process, deliberately
-///   surviving theater swaps. Never invalidated, matching retail.
+///   surviving theater swaps. Native UI palette reloads explicitly retire
+///   their CRC entries; ordinary archive changes do not invalidate it.
 ///
 /// Pick by invalidation semantics, not convenience: provenance/evidence reads
 /// and theater-dependent assets want current-resolution; anything mirroring
@@ -199,12 +277,14 @@ pub struct AssetManager {
     /// Mutable profile/seed/preview consumers read the filesystem directly.
     loose_files: HashMap<String, LooseAsset>,
     /// Selected at AudioSystem::Init, before later bulk/theater mounts.
-    audio_pair: SelectedAudioPair,
+    audio_pairs: Vec<SelectedAudioPair>,
     /// Frozen root-file policy shared by Rules, Art, AI and tooling.
     ini_roots: crate::util::ini_roots::IniRoots,
     /// Currently registered theater identity and its archive names.
     active_theater: Option<String>,
     active_theater_archives: Vec<String>,
+    #[cfg(feature = "ares")]
+    active_sidebar_archives: Vec<String>,
     /// Path to the RA2 installation directory.
     ra2_dir: PathBuf,
 }
@@ -228,10 +308,12 @@ impl Clone for AssetManager {
                     .clone(),
             ),
             loose_files: self.loose_files.clone(),
-            audio_pair: self.audio_pair.clone(),
+            audio_pairs: self.audio_pairs.clone(),
             ini_roots: self.ini_roots.clone(),
             active_theater: self.active_theater.clone(),
             active_theater_archives: self.active_theater_archives.clone(),
+            #[cfg(feature = "ares")]
+            active_sidebar_archives: self.active_sidebar_archives.clone(),
             ra2_dir: self.ra2_dir.clone(),
         }
     }
@@ -243,7 +325,18 @@ struct SavedLoadLookupAuthority {
     archives: Vec<NamedArchive>,
     active_theater: Option<String>,
     active_theater_archives: Vec<String>,
+    #[cfg(feature = "ares")]
+    active_sidebar_archives: Vec<String>,
 }
+
+#[cfg(feature = "ares")]
+const SIDEBAR_RETIRED_PALETTES: [&str; 5] = [
+    "YRII.PAL",
+    "OBSERVER.PAL",
+    "SIDEBAR.PAL",
+    "SIDEBAR.PAL",
+    "UIBKGD.PAL",
+];
 
 /// Named nested archives shipped by the active retail RA2/YR install.
 ///
@@ -303,6 +396,33 @@ const KNOWN_NESTED_MIX_NAMES: &[&str] = &[
     "urbann.mix",
 ];
 
+/// Active Yuri's Revenge requires both masters, in this order.
+pub const MASTER_ARCHIVES: [&str; 2] = ["ra2md.mix", "ra2.mix"];
+
+/// One startup archive that an install inspection could not mount.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArchiveIssue {
+    pub name: String,
+    pub required: bool,
+    pub detail: String,
+}
+
+enum StartupArchivePolicy<'a> {
+    OptionalWarnings,
+    Inspect(&'a mut Vec<ArchiveIssue>),
+    #[cfg(test)]
+    FailFast,
+}
+
+/// Whether `dir` is a Yuri's Revenge install folder: it holds both master
+/// archives, however the install spells their case. A folder chooser checks
+/// this before any archive is opened.
+pub fn holds_master_archives(dir: &Path) -> bool {
+    MASTER_ARCHIVES
+        .iter()
+        .all(|name| crate::util::case_insensitive_path::find(dir, name).is_some())
+}
+
 impl AssetManager {
     /// Consume a newly assembled provider, then freeze one root choice before
     /// consumers receive it. This never mounts an archive or changes a winner.
@@ -343,10 +463,12 @@ impl AssetManager {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: Self::open_loose_root(ra2_dir)?,
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
+            #[cfg(feature = "ares")]
+            active_sidebar_archives: Vec::new(),
             ra2_dir: ra2_dir.to_path_buf(),
         })
     }
@@ -360,40 +482,58 @@ impl AssetManager {
 
     /// Load the core runtime archive stack for one native media-selection mode.
     pub fn new(ra2_dir: &Path, media_mode: MediaArchiveMode) -> Result<Self, AssetError> {
-        let mut manager = Self {
-            archives: Vec::new(),
-            archive_catalog: Vec::new(),
-            lookup_index: HashMap::new(),
-            mix_file_cache: Mutex::new(HashMap::new()),
-            loose_files: Self::open_loose_root(ra2_dir)?,
-            audio_pair: SelectedAudioPair::default(),
-            ini_roots: Default::default(),
-            active_theater: None,
-            active_theater_archives: Vec::new(),
-            ra2_dir: ra2_dir.to_path_buf(),
-        };
+        Self::open_startup_archives(ra2_dir, media_mode, StartupArchivePolicy::OptionalWarnings)
+    }
+
+    /// Inspect the ordinary startup stack while retaining readable archives for
+    /// resource diagnostics. Missing optional probes stay silent. The partial
+    /// manager is diagnostic only: ordinary startup still stops on required
+    /// failures, while unreadable optional archives are logged and skipped.
+    pub fn inspect_install(
+        ra2_dir: &Path,
+        media_mode: MediaArchiveMode,
+    ) -> Result<(Self, Vec<ArchiveIssue>), AssetError> {
+        let mut issues = Vec::new();
+        let manager = Self::open_startup_archives(
+            ra2_dir,
+            media_mode,
+            StartupArchivePolicy::Inspect(&mut issues),
+        )?;
+        Ok((manager, issues))
+    }
+
+    fn open_startup_archives(
+        ra2_dir: &Path,
+        media_mode: MediaArchiveMode,
+        mut policy: StartupArchivePolicy<'_>,
+    ) -> Result<Self, AssetError> {
+        let mut manager = Self::from_ini_probe_root(ra2_dir)?;
 
         // WinMain registers the YR language archive before the RA2 fallback.
-        manager.mount_named_archive("langmd.mix", false)?;
-        manager.mount_named_archive("language.mix", false)?;
+        manager.mount_startup_archive("langmd.mix", false, &mut policy)?;
+        manager.mount_startup_archive("language.mix", false, &mut policy)?;
 
         // Init_Base_Mix_Files probes all expansion slots in descending order.
         for index in (0..=99).rev() {
-            manager.mount_named_archive(&format!("expandmd{index:02}.mix"), false)?;
+            manager.mount_startup_archive(
+                &format!("expandmd{index:02}.mix"),
+                false,
+                &mut policy,
+            )?;
         }
 
-        // Active Yuri's Revenge requires both masters, in this order.
-        manager.mount_named_archive("ra2md.mix", true)?;
-        manager.mount_named_archive("ra2.mix", true)?;
+        for name in MASTER_ARCHIVES {
+            manager.mount_startup_archive(name, true, &mut policy)?;
+        }
 
         for name in ["cachemd.mix", "cache.mix", "localmd.mix", "local.mix"] {
-            manager.mount_named_archive(name, true)?;
+            manager.mount_startup_archive(name, true, &mut policy)?;
         }
 
         // AudioSystem__Init uses exactly one archive: the MD archive when
         // present, otherwise the base archive.
-        if !manager.mount_named_archive("audiomd.mix", false)? {
-            manager.mount_named_archive("audio.mix", false)?;
+        if !manager.mount_startup_archive("audiomd.mix", false, &mut policy)? {
+            manager.mount_startup_archive("audio.mix", false, &mut policy)?;
         }
 
         manager.select_audio_pair();
@@ -401,25 +541,25 @@ impl AssetManager {
         // Init_Mix_Files constructs only these named core archives. Optional
         // constructors are allowed to fail exactly where retail does not gate
         // startup on their result.
-        manager.mount_named_archive("conqmd.mix", true)?;
-        manager.mount_named_archive("genermd.mix", false)?;
-        manager.mount_named_archive("generic.mix", false)?;
-        manager.mount_named_archive("isogenmd.mix", false)?;
-        manager.mount_named_archive("isogen.mix", false)?;
-        manager.mount_named_archive("conquer.mix", true)?;
-        manager.mount_named_archive("cameomd.mix", true)?;
-        manager.mount_named_archive("cameo.mix", true)?;
+        manager.mount_startup_archive("conqmd.mix", true, &mut policy)?;
+        manager.mount_startup_archive("genermd.mix", false, &mut policy)?;
+        manager.mount_startup_archive("generic.mix", false, &mut policy)?;
+        manager.mount_startup_archive("isogenmd.mix", false, &mut policy)?;
+        manager.mount_startup_archive("isogen.mix", false, &mut policy)?;
+        manager.mount_startup_archive("conquer.mix", true, &mut policy)?;
+        manager.mount_startup_archive("cameomd.mix", true, &mut policy)?;
+        manager.mount_startup_archive("cameo.mix", true, &mut policy)?;
 
-        manager.mount_native_map_media(media_mode)?;
-        manager.mount_named_archive("multimd.mix", true)?;
-        manager.mount_named_archive("thememd.mix", false)?;
+        manager.mount_startup_map_media(media_mode, &mut policy)?;
+        manager.mount_startup_archive("multimd.mix", true, &mut policy)?;
+        manager.mount_startup_archive("thememd.mix", false, &mut policy)?;
         // VERA presentation extension: native YR mounts THEME.MIX only when
         // THEMEMD.MIX is absent. Keep MD first, then make original RA2 music
         // available to the shared Theme catalog without displacing YR files.
         // Preserve this user-requested parity exception during future parity
         // work unless the user explicitly asks to change the music catalog.
-        manager.mount_named_archive("theme.mix", false)?;
-        manager.mount_native_movie_media(media_mode)?;
+        manager.mount_startup_archive("theme.mix", false, &mut policy)?;
+        manager.mount_startup_movie_media(media_mode, &mut policy)?;
 
         // Loose YRO archives are deliberately absent here. Retail registers
         // each one during SessionClass scenario enumeration, immediately
@@ -457,10 +597,23 @@ impl AssetManager {
                     .map(|_| name.to_owned()),
             })
         };
-        self.audio_pair = SelectedAudioPair {
-            idx: select("audio.idx"),
-            bag: select("audio.bag"),
-        };
+        #[cfg(not(feature = "ares"))]
+        let stems = vec!["audio".to_owned()];
+        // Installed hook4011C0 -> Audio_Load1005ADD0: audio, ares, audio01..99.
+        // Selection stays before bulk mounts. Executed native loop and merge:
+        // tools/rules_oracle/ares_audio_bags.{py,json,md}.
+        #[cfg(feature = "ares")]
+        let stems = ["audio".to_owned(), "ares".to_owned()]
+            .into_iter()
+            .chain((1..100).map(|i| format!("audio{i:02}")))
+            .collect::<Vec<_>>();
+        self.audio_pairs = stems
+            .into_iter()
+            .map(|stem| SelectedAudioPair {
+                idx: select(&format!("{stem}.idx")),
+                bag: select(&format!("{stem}.bag")),
+            })
+            .collect();
     }
 
     fn selected_audio_ref<'a>(
@@ -484,24 +637,71 @@ impl AssetManager {
         })
     }
 
-    /// Load the one startup-selected audio index. Call only when launch policy
+    /// Load the startup-selected catalog. Call only when launch policy
     /// enables the index: selection retains MIX handles without copying BAG
     /// data, and this method performs parsing and the index's owned BAG copy.
     /// Loose overrides already use the manager's existing byte snapshot.
-    /// No second archive or per-sample fallback follows an absent/invalid pair.
+    /// Stock has one strict pair; Ares skips invalid pairs in its frozen append
+    /// list. Neither mode retries another archive or backtracks per sample.
     pub fn load_audio_index(&self) -> Result<Option<LoadedAudioIndex>, AssetError> {
-        let (Some(idx), Some(bag)) = (&self.audio_pair.idx, &self.audio_pair.bag) else {
-            return Ok(None);
-        };
         let missing = |source: &SelectedAudioFile| AssetError::AssetNotFound {
             name: format!(
                 "retained audio entry {:08X} in {}",
                 source.entry_id, source.source_archive
             ),
         };
-        let idx_bytes = self.selected_audio_ref(idx).ok_or_else(|| missing(idx))?;
-        let bag_bytes = self.selected_audio_ref(bag).ok_or_else(|| missing(bag))?;
-        load_audio_index_pair(idx_bytes, bag_bytes).map(Some)
+        #[cfg(not(feature = "ares"))]
+        {
+            let Some(pair) = self.audio_pairs.first() else {
+                return Ok(None);
+            };
+            let (Some(idx), Some(bag)) = (&pair.idx, &pair.bag) else {
+                return Ok(None);
+            };
+            let idx_bytes = self.selected_audio_ref(idx).ok_or_else(|| missing(idx))?;
+            let bag_bytes = self.selected_audio_ref(bag).ok_or_else(|| missing(bag))?;
+            load_audio_index_pair(idx_bytes, bag_bytes).map(Some)
+        }
+        #[cfg(feature = "ares")]
+        {
+            let mut indexes = Vec::new();
+            let mut sources = Vec::new();
+            for pair in &self.audio_pairs {
+                let (Some(idx), Some(bag)) = (&pair.idx, &pair.bag) else {
+                    continue;
+                };
+                let Some(idx_bytes) = self.selected_audio_ref(idx) else {
+                    log::warn!("Ares audio pair skipped: {}", missing(idx));
+                    continue;
+                };
+                let Some(bag_bytes) = self.selected_audio_ref(bag) else {
+                    log::warn!("Ares audio pair skipped: {}", missing(bag));
+                    continue;
+                };
+                // Open1005AA00 rejects only this pair on short reads. The outer
+                // append loop continues, including when audio itself is absent.
+                let Some(index) =
+                    AudioIndex::from_ares_idx_bag(idx_bytes.bytes, bag_bytes.bytes.to_vec())
+                else {
+                    log::warn!(
+                        "Ares audio pair skipped: malformed index from {}",
+                        idx_bytes.source_archive
+                    );
+                    continue;
+                };
+                sources.push(audio_index_sources(idx_bytes, bag_bytes));
+                indexes.push(index);
+            }
+            let mut sources = sources.into_iter();
+            let Some(first) = sources.next() else {
+                return Ok(None);
+            };
+            Ok(Some(LoadedAudioIndex {
+                index: AudioIndex::merge_ares(indexes),
+                sources: first,
+                additional_sources: sources.collect(),
+            }))
+        }
     }
 
     /// Look up a file by name across all loaded archives.
@@ -524,6 +724,19 @@ impl AssetManager {
         let (named, entry_id) = self.lookup_asset_entry(name)?;
         log::trace!("Found '{}' in {}", name, named.name);
         named.archive.get_by_id(entry_id)
+    }
+
+    /// [`Self::get_ref`]'s file as a share of its storage, for a reader that
+    /// outlives the borrow (a theme song the audio device streams).
+    pub fn get_shared(&self, name: &str) -> Option<SharedBytes> {
+        if let Some(bytes) = self
+            .loose_asset(name)
+            .and_then(|loose| loose.snapshot().clone())
+        {
+            return Some(bytes.into());
+        }
+        let (named, entry_id) = self.lookup_asset_entry(name)?;
+        named.archive.get_shared_by_id(entry_id)
     }
 
     /// Registered archive fallback for mutable loose-file owners. These callers
@@ -554,22 +767,53 @@ impl AssetManager {
 
     /// Resolve one file through the normal first-match archive lookup.
     pub fn resolve_ref(&self, name: &str) -> Option<AssetResolutionRef<'_>> {
-        if let Some((loose, bytes)) = self.loose_bytes(name) {
-            return Some(AssetResolutionRef {
-                bytes,
-                source_archive: loose.source_name.as_str(),
-                entry_id: mix_hash(name),
-            });
+        self.resolve_ref_with_limit(name, None)
+            .expect("unbounded asset resolution cannot exceed a read limit")
+    }
+
+    /// Resolve the same VFS winner while bounding a first loose-file read.
+    /// An oversized winner is an error, never permission to select a smaller
+    /// archive fallback. Existing snapshots and mapped MIX entries stay borrowed.
+    pub fn resolve_ref_bounded(
+        &self,
+        name: &str,
+        maximum: usize,
+    ) -> Result<Option<AssetResolutionRef<'_>>, AssetError> {
+        self.resolve_ref_with_limit(name, Some(maximum))
+    }
+
+    fn resolve_ref_with_limit(
+        &self,
+        name: &str,
+        maximum: Option<usize>,
+    ) -> Result<Option<AssetResolutionRef<'_>>, AssetError> {
+        if let Some(loose) = self.loose_asset(name) {
+            let bytes = match maximum {
+                Some(maximum) => loose.bytes_bounded(maximum)?,
+                None => loose.bytes(),
+            };
+            if let Some(bytes) = bytes {
+                return Ok(Some(AssetResolutionRef {
+                    bytes,
+                    source_archive: loose.source_name.as_str(),
+                    entry_id: mix_hash(name),
+                }));
+            }
         }
-        let (named, entry_id) = self.lookup_asset_entry(name)?;
-        named
-            .archive
-            .get_by_id(entry_id)
-            .map(|bytes| AssetResolutionRef {
-                bytes,
-                source_archive: named.name.as_str(),
-                entry_id,
-            })
+        let Some((named, entry_id)) = self.lookup_asset_entry(name) else {
+            return Ok(None);
+        };
+        let Some(bytes) = named.archive.get_by_id(entry_id) else {
+            return Ok(None);
+        };
+        if let Some(maximum) = maximum {
+            check_asset_read_limit(bytes.len() as u64, maximum)?;
+        }
+        Ok(Some(AssetResolutionRef {
+            bytes,
+            source_archive: named.name.as_str(),
+            entry_id,
+        }))
     }
 
     /// Load through retail's `LoadFileFromMIX @ 0x005B40B0` boundary.
@@ -655,6 +899,65 @@ impl AssetManager {
         self.mount_named_archive(name, true).map(|_| ())
     }
 
+    /// InitSideMixFiles534FA0 and Ares1002FA00 retain the actual Side
+    /// separately from this signed MIX selector. See ares_side_sidebar corpus.
+    /// On failure the native caller aborts loading; partial MD registration is
+    /// retained until the next attempt. VERA's saved-load transaction may roll
+    /// registrations back, but this method does not invent a native rollback.
+    #[cfg(feature = "ares")]
+    pub fn activate_sidebar_archives(&mut self, mix_index: i32) -> Result<bool, AssetError> {
+        let adjusted = mix_index.wrapping_sub(1);
+        if adjusted < 0 {
+            // Current enrolled retail4A80D0 returns2;534FC6 accepts only0/1.
+            // This failure precedes destruction of the old archive slots.
+            return Ok(false);
+        }
+        let index = adjusted.wrapping_add(1);
+        let old = std::mem::take(&mut self.active_sidebar_archives);
+        self.retire_registered_archives(&old);
+        for (name, required) in [
+            (format!("sidec{index:02}md.mix"), false),
+            (format!("sidec{index:02}.mix"), true),
+            (format!("sidenc{index:02}.mix"), false),
+        ] {
+            let mounted = self.mount_named_archive(&name, false)?;
+            if mounted {
+                self.active_sidebar_archives.push(name);
+            } else if required {
+                return Ok(false);
+            }
+        }
+        //5352E3 ->72F350 ->730400 ->5B4270. The duplicate SIDEBAR
+        // removal is native order, not a second independent cache owner.
+        let mut cache = self
+            .mix_file_cache
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        for name in SIDEBAR_RETIRED_PALETTES {
+            cache.remove(&mix_hash(name));
+        }
+        Ok(true)
+    }
+
+    fn retire_registered_archives(&mut self, names: &[String]) {
+        if names.is_empty() {
+            return;
+        }
+        let mut retained = Vec::with_capacity(self.archives.len());
+        for archive in self.archives.drain(..) {
+            if names
+                .iter()
+                .any(|name| archive_name_matches(&archive.name, name))
+            {
+                self.archive_catalog.push(archive);
+            } else {
+                retained.push(archive);
+            }
+        }
+        self.archives = retained;
+        self.rebuild_indexes();
+    }
+
     /// Retail provenance: theater archive-group lifecycle — `Init_Theater` @ `0x005349C0`.
     ///
     /// The previous group is destroyed, every optional slot is attempted in
@@ -675,19 +978,7 @@ impl AssetManager {
 
         if !self.active_theater_archives.is_empty() {
             let old_names = std::mem::take(&mut self.active_theater_archives);
-            let mut retained = Vec::with_capacity(self.archives.len());
-            for archive in self.archives.drain(..) {
-                if old_names
-                    .iter()
-                    .any(|name| archive_name_matches(&archive.name, name))
-                {
-                    self.archive_catalog.push(archive);
-                } else {
-                    retained.push(archive);
-                }
-            }
-            self.archives = retained;
-            self.rebuild_indexes();
+            self.retire_registered_archives(&old_names);
         }
 
         for &name in archive_names {
@@ -716,6 +1007,22 @@ impl AssetManager {
             archives: self.archives.clone(),
             active_theater: self.active_theater.clone(),
             active_theater_archives: self.active_theater_archives.clone(),
+            #[cfg(feature = "ares")]
+            active_sidebar_archives: self.active_sidebar_archives.clone(),
+        };
+        #[cfg(feature = "ares")]
+        let previous_sidebar_cache: Vec<_> = {
+            let cache = self
+                .mix_file_cache
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            SIDEBAR_RETIRED_PALETTES
+                .iter()
+                .map(|name| {
+                    let key = mix_hash(name);
+                    (key, cache.get(&key).cloned())
+                })
+                .collect()
         };
         let result = prepare(self);
         if result.is_err() {
@@ -737,6 +1044,21 @@ impl AssetManager {
             self.archives = previous.archives;
             self.active_theater = previous.active_theater;
             self.active_theater_archives = previous.active_theater_archives;
+            #[cfg(feature = "ares")]
+            {
+                self.active_sidebar_archives = previous.active_sidebar_archives;
+                let mut cache = self
+                    .mix_file_cache
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner());
+                for (key, value) in previous_sidebar_cache {
+                    if let Some(value) = value {
+                        cache.insert(key, value);
+                    } else {
+                        cache.remove(&key);
+                    }
+                }
+            }
             self.rebuild_indexes();
         }
         result
@@ -915,36 +1237,60 @@ impl AssetManager {
         self.archives.push(named);
     }
 
+    #[cfg(test)]
     fn mount_native_map_media(&mut self, mode: MediaArchiveMode) -> Result<(), AssetError> {
+        self.mount_startup_map_media(mode, &mut StartupArchivePolicy::FailFast)
+    }
+
+    fn mount_startup_map_media(
+        &mut self,
+        mode: MediaArchiveMode,
+        policy: &mut StartupArchivePolicy<'_>,
+    ) -> Result<(), AssetError> {
         match mode {
             MediaArchiveMode::Numbered { media_index } => {
                 let number = media_index.wrapping_add(1);
-                self.mount_named_archive(&format!("mapsmd{number:02}.mix"), true)?;
-                self.mount_named_archive(&format!("maps{number:02}.mix"), false)?;
+                self.mount_startup_archive(&format!("mapsmd{number:02}.mix"), true, policy)?;
+                self.mount_startup_archive(&format!("maps{number:02}.mix"), false, policy)?;
             }
             MediaArchiveMode::CdWildcard => {
-                let md = self.mount_wildcard_archives(None, "mapsmd")?;
-                if !md.matched {
-                    // This is the native fallback branch, even though active
-                    // YR still fails the later required-MD global check.
-                    self.mount_wildcard_archives(None, "maps")?;
-                }
-                if !md.first_registered {
-                    return Err(AssetError::AssetNotFound {
-                        name: "MAPSMD*.MIX".to_string(),
-                    });
+                let result = (|| {
+                    let md = self.mount_wildcard_archives(None, "mapsmd")?;
+                    if !md.matched {
+                        // This is the native fallback branch, even though active
+                        // YR still fails the later required-MD global check.
+                        self.mount_wildcard_archives(None, "maps")?;
+                    }
+                    if !md.first_registered {
+                        return Err(AssetError::AssetNotFound {
+                            name: "MAPSMD*.MIX".to_string(),
+                        });
+                    }
+                    Ok(())
+                })();
+                if let Err(error) = result {
+                    Self::record_archive_issue("MAPSMD*.MIX", true, error, policy)?;
                 }
             }
         }
         Ok(())
     }
 
+    #[cfg(test)]
     fn mount_native_movie_media(&mut self, mode: MediaArchiveMode) -> Result<(), AssetError> {
+        self.mount_startup_movie_media(mode, &mut StartupArchivePolicy::FailFast)
+    }
+
+    fn mount_startup_movie_media(
+        &mut self,
+        mode: MediaArchiveMode,
+        policy: &mut StartupArchivePolicy<'_>,
+    ) -> Result<(), AssetError> {
         match mode {
             MediaArchiveMode::Numbered { media_index } => {
                 let number = media_index.wrapping_add(1);
-                if !self.mount_named_archive(&format!("movmd{number:02}.mix"), false)? {
-                    self.mount_named_archive(&format!("movies{number:02}.mix"), true)?;
+                if !self.mount_startup_archive(&format!("movmd{number:02}.mix"), false, policy)? {
+                    self.mount_startup_archive(&format!("movies{number:02}.mix"), true, policy)?;
                 }
             }
             MediaArchiveMode::CdWildcard => {
@@ -966,18 +1312,25 @@ impl AssetManager {
                     }
                 }
 
-                let mut mounted = self.mount_wildcard_archives(directory, family)?;
-                if !mounted.matched {
-                    mounted = self.mount_wildcard_archives(None, "movies")?;
-                }
-                if !mounted.first_registered {
-                    return Err(AssetError::AssetNotFound {
-                        name: if family == "movmd" {
-                            "MOVMD*.MIX".to_string()
-                        } else {
-                            "MOVIES*.MIX".to_string()
-                        },
-                    });
+                let name = if family == "movmd" {
+                    "MOVMD*.MIX"
+                } else {
+                    "MOVIES*.MIX"
+                };
+                let result = (|| {
+                    let mut mounted = self.mount_wildcard_archives(directory, family)?;
+                    if !mounted.matched {
+                        mounted = self.mount_wildcard_archives(None, "movies")?;
+                    }
+                    if !mounted.first_registered {
+                        return Err(AssetError::AssetNotFound {
+                            name: name.to_string(),
+                        });
+                    }
+                    Ok(())
+                })();
+                if let Err(error) = result {
+                    Self::record_archive_issue(name, true, error, policy)?;
                 }
             }
         }
@@ -1050,6 +1403,46 @@ impl AssetManager {
 
     fn raw_relative_file_available(&self, relative: &str) -> bool {
         retail_enumerated_file(&self.ra2_dir.join(relative))
+    }
+
+    fn record_archive_issue(
+        name: &str,
+        required: bool,
+        error: AssetError,
+        policy: &mut StartupArchivePolicy<'_>,
+    ) -> Result<(), AssetError> {
+        match policy {
+            StartupArchivePolicy::Inspect(issues) => {
+                issues.push(ArchiveIssue {
+                    name: name.to_owned(),
+                    required,
+                    detail: error.to_string(),
+                });
+                Ok(())
+            }
+            StartupArchivePolicy::OptionalWarnings if !required => {
+                // Install warnings must remain optional when the game starts.
+                // This changes no required archive or standalone media gate.
+                log::warn!("Skipping unreadable optional archive {name}: {error}");
+                Ok(())
+            }
+            _ => Err(error),
+        }
+    }
+
+    fn mount_startup_archive(
+        &mut self,
+        name: &str,
+        required: bool,
+        policy: &mut StartupArchivePolicy<'_>,
+    ) -> Result<bool, AssetError> {
+        match self.mount_named_archive(name, required) {
+            Ok(mounted) => Ok(mounted),
+            Err(error) => {
+                Self::record_archive_issue(name, required, error, policy)?;
+                Ok(false)
+            }
+        }
     }
 
     fn mount_named_archive(&mut self, name: &str, required: bool) -> Result<bool, AssetError> {
@@ -1421,10 +1814,12 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: AssetManager::open_loose_root(ra2_dir).expect("open loose test root"),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
+            #[cfg(feature = "ares")]
+            active_sidebar_archives: Vec::new(),
             ra2_dir: ra2_dir.to_path_buf(),
         }
     }
@@ -1432,6 +1827,16 @@ mod tests {
     fn make_new_format_mix(name: &str, body: &[u8]) -> MixArchive {
         MixArchive::from_bytes(make_new_format_mix_bytes(name, body))
             .expect("new-format test mix should parse")
+    }
+
+    #[test]
+    fn an_install_folder_holds_both_masters_in_any_case() {
+        let dir = TestDirectory::new("masters");
+        std::fs::write(dir.path().join("RA2MD.MIX"), b"").unwrap();
+        assert!(!holds_master_archives(dir.path()));
+        std::fs::write(dir.path().join("Ra2.mix"), b"").unwrap();
+        assert!(holds_master_archives(dir.path()));
+        assert!(!holds_master_archives(&dir.path().join("missing")));
     }
 
     #[test]
@@ -1539,10 +1944,16 @@ mod tests {
         write_audio_archive(&dir, "audiomd.mix", b"truncated", &[1, 2]);
         write_audio_archive(&dir, "audio.mix", &base, &[3, 4]);
         let manager = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+        #[cfg(not(feature = "ares"))]
         assert!(matches!(
             manager.load_audio_index(),
             Err(AssetError::ParseError { .. })
         ));
+        #[cfg(feature = "ares")]
+        assert!(
+            manager.load_audio_index().unwrap().is_none(),
+            "Ares skips the malformed pair without opening another audio archive"
+        );
     }
 
     #[test]
@@ -1564,6 +1975,85 @@ mod tests {
         assert!(
             !manager.contains("taunts\\tauam01.wav"),
             "the startup loose catalog stays top-level"
+        );
+    }
+
+    #[test]
+    fn bounded_loose_resolution_refuses_sparse_winner_without_snapshot_or_mix_fallback() {
+        let dir = TestDirectory::new("bounded-sparse-loose");
+        let path = dir.path().join("child.ini");
+        let sparse = std::fs::File::create(&path).unwrap();
+        sparse.set_len(64 * 1024 * 1024).unwrap();
+        drop(sparse);
+        let mut manager = empty_manager(dir.path());
+        manager.archives.push(NamedArchive {
+            name: "fallback.mix".into(),
+            archive: make_new_format_mix("child.ini", b"small"),
+        });
+        manager.rebuild_indexes();
+        assert!(matches!(
+            manager.resolve_ref_bounded("CHILD.INI", 32 * 1024 * 1024),
+            Err(AssetError::ReadLimitExceeded {
+                actual: 67_108_864,
+                ..
+            })
+        ));
+        assert!(
+            manager
+                .loose_asset("child.ini")
+                .unwrap()
+                .bytes
+                .get()
+                .is_none()
+        );
+
+        std::fs::write(&path, b"loose").unwrap();
+        let selected = manager
+            .resolve_ref_bounded("child.ini", 5)
+            .unwrap()
+            .unwrap();
+        assert_eq!(selected.bytes, b"loose");
+        assert!(selected.source_archive.starts_with("loose:"));
+        std::fs::write(&path, b"replacement").unwrap();
+        assert!(matches!(
+            manager.resolve_ref_bounded("child.ini", 4),
+            Err(AssetError::ReadLimitExceeded { actual: 5, .. })
+        ));
+        assert_eq!(manager.resolve_ref("child.ini").unwrap().bytes, b"loose");
+    }
+
+    #[test]
+    fn bounded_resolution_keeps_unreadable_loose_fallback_and_archive_borrows() {
+        let dir = TestDirectory::new("bounded-mix-winner");
+        let path = dir.path().join("child.ini");
+        std::fs::write(&path, b"loose").unwrap();
+        let mut manager = empty_manager(dir.path());
+        for (name, bytes) in [("first.mix", &b"archived"[..]), ("second.mix", &b"ok"[..])] {
+            manager.archives.push(NamedArchive {
+                name: name.into(),
+                archive: make_new_format_mix("child.ini", bytes),
+            });
+        }
+        manager.rebuild_indexes();
+        std::fs::remove_file(&path).unwrap();
+        assert!(matches!(
+            manager.resolve_ref_bounded("child.ini", 2),
+            Err(AssetError::ReadLimitExceeded { actual: 8, .. })
+        ));
+        let bounded = manager
+            .resolve_ref_bounded("child.ini", 8)
+            .unwrap()
+            .unwrap();
+        let ordinary = manager.resolve_ref("child.ini").unwrap();
+        assert_eq!(bounded.bytes, b"archived");
+        assert!(std::ptr::eq(bounded.bytes, ordinary.bytes));
+        assert_eq!(bounded.source_archive, "first.mix");
+        assert_eq!(bounded.entry_id, ordinary.entry_id);
+        assert!(
+            manager
+                .resolve_ref_bounded("missing.ini", 0)
+                .unwrap()
+                .is_none()
         );
     }
 
@@ -1790,10 +2280,12 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
+            #[cfg(feature = "ares")]
+            active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
         };
         manager.rebuild_indexes();
@@ -1872,10 +2364,12 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
+            #[cfg(feature = "ares")]
+            active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
         };
         manager.rebuild_indexes();
@@ -1944,10 +2438,12 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
+            #[cfg(feature = "ares")]
+            active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
         };
         manager.rebuild_indexes();
@@ -1984,10 +2480,12 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
+            #[cfg(feature = "ares")]
+            active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
         };
         manager.rebuild_indexes();
@@ -2022,10 +2520,12 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
+            #[cfg(feature = "ares")]
+            active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
         };
         manager.rebuild_indexes();
@@ -2061,10 +2561,12 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
+            #[cfg(feature = "ares")]
+            active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
         };
         manager.rebuild_indexes();
@@ -2092,13 +2594,15 @@ mod tests {
                 LooseAsset {
                     path: PathBuf::from("RA2MD.CSF"),
                     source_name: "loose:RA2MD.CSF".to_string(),
-                    bytes: OnceLock::from(Some(Box::from(&b"loose"[..]))),
+                    bytes: OnceLock::from(Some(Arc::from(&b"loose"[..]))),
                 },
             )]),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
+            #[cfg(feature = "ares")]
+            active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
         };
         manager.rebuild_indexes();
@@ -2150,10 +2654,12 @@ mod tests {
             lookup_index: HashMap::new(),
             mix_file_cache: Mutex::new(HashMap::new()),
             loose_files: HashMap::new(),
-            audio_pair: SelectedAudioPair::default(),
+            audio_pairs: Vec::new(),
             ini_roots: Default::default(),
             active_theater: None,
             active_theater_archives: Vec::new(),
+            #[cfg(feature = "ares")]
+            active_sidebar_archives: Vec::new(),
             ra2_dir: PathBuf::new(),
         };
         manager.rebuild_indexes();

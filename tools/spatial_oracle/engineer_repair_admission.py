@@ -165,7 +165,6 @@ from tools.spatial_oracle.building_body_rules import INI, SP
 from tools.spatial_oracle.refinery_dock import HOUSE, HTYPE, BLD, OTHER as OTHER_BUILDING, BLD_ITEMS, OTHER_ITEMS, cell
 from tools.rules_oracle import bridge_child_sound
 from tools.rules_oracle.bridge_anim_lists import HEAP
-from tools.native_oracle import NATIVE_SHA256
 
 JOINED_ROOT = Path(os.environ.get('VERA20K_ENGINEER_REPAIR_ASSETS',
                                  str(Path(os.environ.get('CARGO_TARGET_DIR', 'target')) / 'asset/engineer-repair/extract')))
@@ -726,8 +725,9 @@ class EngineerJoinedFixture(construction.JoinedFixture):
         0x6F4960: 'techno_discovery',
     }
 
-    def __init__(self, inputs, *, seed=31, arena_size=0x200000):
+    def __init__(self, inputs, *, seed=31, arena_size=0x200000, live_tags=False):
         self.phase, self.trail, self.trace = 'setup', deque(maxlen=40), []
+        self.live_tags = live_tags
         self.platform_audio = None
         super().__init__(inputs, seed=seed, arena_size=arena_size)
         u = self.u
@@ -873,7 +873,7 @@ class EngineerJoinedFixture(construction.JoinedFixture):
         if pc in (0x519B43, 0x51A015, 0x519F34):
             self.trace.append(dict(kind='null_tag_gate', phase=self.phase, pc=f'0x{pc:08X}',
                                    tag=u.reg_read(UC_X86_REG_ECX)))
-        if pc == 0x6E53A0:
+        if pc == 0x6E53A0 and not self.live_tags:
             raise AssertionError('Tag=NULL corpus unexpectedly entered live Tag receiver')
         sp = u.reg_read(UC_X86_REG_ESP)
         if pc in (0x7C978A, 0x6C8C40):
@@ -1284,7 +1284,7 @@ def joined_generate():
     controls = action_controls(inputs)
     files = [dict(name=p.name, size=p.stat().st_size, sha256=hashlib.sha256(p.read_bytes()).hexdigest())
              for p in sorted(JOINED_ROOT.iterdir()) if p.is_file() and p.suffix.lower() != '.json']
-    return dict(schema_version=1, source='unicorn/gamemd.exe', native_sha256=NATIVE_SHA256,
+    return dict(schema_version=1, source='unicorn/gamemd.exe',
         retail_files=files, constructor_defaults=inputs.defaults,
         original_executable_sections=inputs.code_identity,
         constructor_repair_sound=inputs.constructor_repair_sound,

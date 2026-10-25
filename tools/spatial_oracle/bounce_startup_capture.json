@@ -1,6 +1,5 @@
 {
   "recorded_os": "Windows-11-10.0.26200-SP0",
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "mechanism": "hardware execution breakpoints, no WriteProcessMemory or code patches",
   "coverage": "original process PE entry, Bounce initializer439610 and following439640 and WinMain entry, before application startup; no runtime immutability or arbitrary process-memory proof",
   "captures": [

@@ -4,7 +4,7 @@
 
 use crate::map::preview::{PreviewSection, PreviewSourceBounds, PreviewStartPoint};
 use crate::map::waypoints::{
-    Waypoint, multiplayer_start_waypoints, parse_waypoints, skirmish_player_capacity,
+    Waypoint, multiplayer_start_waypoints_for_capacity, parse_waypoints, skirmish_player_capacity,
 };
 use crate::rules::ini_parser::IniFile;
 
@@ -35,17 +35,21 @@ pub(crate) fn read_map_menu_entry_from_ini(ini: &IniFile, file_name: &str) -> Ma
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| file_name.to_string());
 
+    let player_capacity = skirmish_player_capacity(ini);
     MapMenuEntry {
         file_name: file_name.to_string(),
         display_name,
         author: basic.author,
         preview: crate::map::preview::parse_preview_section(ini),
-        multiplayer_start_waypoints: multiplayer_start_waypoints(&parse_waypoints(ini)),
-        player_capacity: skirmish_player_capacity(ini),
+        multiplayer_start_waypoints: multiplayer_start_waypoints_for_capacity(
+            &parse_waypoints(ini),
+            player_capacity,
+        ),
+        player_capacity,
         preview_source_bounds: preview_source_bounds_from_verified_source(ini),
     }
 }
-fn preview_source_bounds_from_verified_source(ini: &IniFile) -> Option<PreviewSourceBounds> {
+pub fn preview_source_bounds_from_verified_source(ini: &IniFile) -> Option<PreviewSourceBounds> {
     let header = ini.section("Header")?;
     // `0x00689D8D`-`0x00689E05` ReadInt each field; VERA requires all five.
     let field = |key: &str| header.is_present(key).then(|| header.read_int(key, 0));
@@ -55,7 +59,11 @@ fn preview_source_bounds_from_verified_source(ini: &IniFile) -> Option<PreviewSo
     let height = field("Height")?;
     let count = field("NumberStartingPoints")?;
 
-    if width <= 0 || height <= 0 || count <= 0 || count >= 9 {
+    if width <= 0
+        || height <= 0
+        || count <= 0
+        || count > crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32
+    {
         return None;
     }
 

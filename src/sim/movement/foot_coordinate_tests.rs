@@ -280,7 +280,7 @@ fn production_drive_reaim_reads_retained_target_head() {
         sim.begin_track_end_continuation(
             1,
             crate::sim::movement::track_process::TrackFamily::Drive,
-            None,
+            crate::rules::ruleset::RuleSet::empty_for_test(),
             crate::sim::world::FrameEffects::default()
         )
         .unwrap()
@@ -309,7 +309,6 @@ fn missing_foot_receiver_is_an_error_and_tube_does_not_hide_missing_descriptor()
 #[test]
 fn flight_queries_follow_live_altitude_producers_and_keep_jumpjet_exact_z() {
     let mut sim = Simulation::new();
-    sim.interner = crate::sim::intern::test_interner();
     let base = DriveCoord::cell(8, 6, 104);
     // Fly reads GetHeight against actual terrain.
     let terrain = crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(
@@ -343,10 +342,11 @@ fn flight_queries_follow_live_altitude_producers_and_keep_jumpjet_exact_z() {
         .unwrap()
         .retain_destination(DriveCoord::cell(12, 6, 0), None, || 0);
     sim.substrate.entities.insert(fly);
+    sim.interner = crate::sim::intern::test_interner();
     sim.resolved_terrain = Some(terrain);
     sim.tick_air_movement_with_cell_lists_one(
         1,
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         crate::sim::world::FrameEffects::default(),
     )

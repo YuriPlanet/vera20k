@@ -25,6 +25,63 @@ fn expand(root: &str, files: &[(&str, &str)]) -> ExpandedIni {
 }
 
 #[test]
+fn ini_directives_total_reference_budget_rejects_before_loading_an_oversized_list() {
+    let mut root = String::from("[#include]\n");
+    for index in 0..MAX_INCLUDE_REFERENCES {
+        root.push_str(&format!("{index}=child.ini\n"));
+    }
+    let mut loads = 0;
+    let exact = process_directives(
+        IniFile::from_str(&root),
+        "root.ini",
+        |_| {
+            loads += 1;
+            Ok(Some(IniFile::from_str("[Unit]\nValue=child\n")))
+        },
+        DirectiveOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(loads, 1024);
+    assert_eq!(text(&exact.ini, "Unit", "Value").as_deref(), Some("child"));
+    root.push_str("1024=child.ini\n");
+    let error = process_directives(
+        IniFile::from_str(&root),
+        "root.ini",
+        |_| panic!("over-budget list must fail before loading any child"),
+        DirectiveOptions::default(),
+    )
+    .err()
+    .unwrap();
+    assert_eq!(error.kind, DiagnosticKind::IncludeWorkLimit);
+}
+
+#[test]
+fn ini_directives_physical_byte_budget_counts_repeated_children() {
+    use crate::map::source::test_support::TestDirectory;
+    use crate::rules::retail_sources::select_ini_with_options;
+    let root = TestDirectory::new("include-byte-budget");
+    let mut child = vec![b' '; 1024 * 1024];
+    let prefix = b"[Unit]\nValue=x\n; ";
+    child[..prefix.len()].copy_from_slice(prefix);
+    root.write("child.ini", &child);
+    let mut parent = String::from("[#include]\n");
+    for index in 0..32 {
+        parent.push_str(&format!("{index}=child.ini\n"));
+    }
+    root.write("exact.ini", parent.as_bytes());
+    parent.push_str("32=child.ini\n");
+    root.write("over.ini", parent.as_bytes());
+    let assets = crate::assets::asset_manager::AssetManager::from_loose_root_for_test(root.path());
+    let exact = select_ini_with_options(&assets, "exact.ini", DirectiveOptions::default()).unwrap();
+    assert_eq!(exact.included_sources.len(), 32);
+    assert_eq!(text(&exact.ini, "Unit", "Value").as_deref(), Some("x"));
+    let error = select_ini_with_options(&assets, "over.ini", DirectiveOptions::default())
+        .err()
+        .unwrap();
+    assert!(error.contains("32 MiB expansion budget"));
+}
+
+#[test]
 fn ini_directives_ares_nested_descendants_and_later_includes_override_parents() {
     let root = "[#include]\n10=late.ini\n2=early.ini\n[Unit]\nOwner=root\n";
     let result = expand(

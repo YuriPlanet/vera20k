@@ -22,7 +22,7 @@ fn run(sim: &mut Simulation, rules: &RuleSet, entry: crate::map::actions::Action
             input: TagEventInput::default(),
         },
         &mut Vec::new(),
-        Some(rules),
+        rules,
         None,
         FrameEffects::default(),
     )
@@ -346,6 +346,7 @@ fn retail_transylv_ambient_action_reaches_native_fade_and_large_flash_request() 
             sim.retire_object_type_tech_levels(),
             sim.session.lighting_mut().retire_ambient_change_inputs(),
             sim.retire_building_upgrade_art_names(),
+            sim.retire_voxel_type_damage(),
         )
         .unwrap();
     let next = owner
@@ -676,6 +677,7 @@ fn ambient_action_values_survive_save_and_transfer_to_retained_rules_at_retireme
                 .lighting_mut()
                 .retire_ambient_change_inputs(),
             restored.retire_building_upgrade_art_names(),
+            restored.retire_voxel_type_damage(),
         )
         .unwrap();
     assert_eq!(
@@ -729,7 +731,7 @@ fn ordered_timer_trigger_updates_live_ambient_inputs_before_the_next_fade() {
         .lighting_mut()
         .set_transition_timer_for_test(CdTimer::started(12, 8));
     sim.session.set_binary_frame_for_test(20);
-    sim.advance_triggers(Some(&rules), Some(&overlays), FrameEffects::default());
+    sim.advance_triggers(&rules, Some(&overlays), FrameEffects::default());
     assert_eq!(
         sim.trigger_runtime
             .action_trace

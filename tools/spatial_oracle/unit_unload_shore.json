@@ -1,0 +1,506 @@
+[
+  {
+    "events": [
+      [
+        "map_get_cell",
+        [
+          10,
+          10
+        ]
+      ],
+      [
+        "supplied_fnpc_empty",
+        2
+      ],
+      [
+        "map_get_cell",
+        [
+          0,
+          0
+        ]
+      ],
+      [
+        "unit_destination",
+        "real",
+        1
+      ],
+      [
+        "map_get_cell",
+        [
+          9,
+          10
+        ]
+      ],
+      [
+        "hover_move_to",
+        [
+          128,
+          128,
+          0
+        ]
+      ],
+      [
+        "hover_helper",
+        "0x5164d0",
+        [
+          200,
+          1
+        ],
+        "ffff",
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      [
+        "hover_helper",
+        "0x514f70",
+        [
+          200,
+          1
+        ],
+        "ffff",
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      [
+        "hover_helper",
+        "0x5164d0",
+        [
+          200,
+          1
+        ],
+        "ffff",
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    ],
+    "input": {
+      "height": 120,
+      "missing_west": false,
+      "missing_zero": false
+    },
+    "output": {
+      "delay": 10,
+      "destination": [
+        128,
+        128,
+        0
+      ],
+      "destination_after_later_lookup": [
+        128,
+        128,
+        0
+      ],
+      "dummy_coord": [
+        0,
+        0
+      ],
+      "empty_cell_reachable": false,
+      "handler_state": 0,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "later_coordinate": [
+        128,
+        128,
+        0
+      ],
+      "movement_timer": [
+        200,
+        0
+      ],
+      "movement_timer_pad": 128,
+      "nav": "real",
+      "path_word": -1,
+      "rng_unchanged": true
+    }
+  },
+  {
+    "events": [
+      [
+        "map_get_cell",
+        [
+          10,
+          10
+        ]
+      ],
+      [
+        "supplied_fnpc_empty",
+        2
+      ],
+      [
+        "map_get_cell",
+        [
+          0,
+          0
+        ]
+      ],
+      [
+        "unit_destination",
+        "dummy",
+        1
+      ],
+      [
+        "map_get_cell",
+        [
+          9,
+          10
+        ]
+      ],
+      [
+        "hover_move_to",
+        [
+          128,
+          128,
+          0
+        ]
+      ],
+      [
+        "hover_helper",
+        "0x5164d0",
+        [
+          200,
+          1
+        ],
+        "ffff",
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      [
+        "hover_helper",
+        "0x514f70",
+        [
+          200,
+          1
+        ],
+        "ffff",
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      [
+        "hover_helper",
+        "0x5164d0",
+        [
+          200,
+          1
+        ],
+        "ffff",
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    ],
+    "input": {
+      "height": 120,
+      "missing_west": false,
+      "missing_zero": true
+    },
+    "output": {
+      "delay": 10,
+      "destination": [
+        128,
+        128,
+        0
+      ],
+      "destination_after_later_lookup": [
+        128,
+        128,
+        0
+      ],
+      "dummy_coord": [
+        0,
+        0
+      ],
+      "empty_cell_reachable": false,
+      "handler_state": 0,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "later_coordinate": [
+        10368,
+        10624,
+        0
+      ],
+      "movement_timer": [
+        200,
+        0
+      ],
+      "movement_timer_pad": 128,
+      "nav": "dummy",
+      "path_word": -1,
+      "rng_unchanged": true
+    }
+  },
+  {
+    "events": [
+      [
+        "map_get_cell",
+        [
+          10,
+          10
+        ]
+      ],
+      [
+        "supplied_fnpc_empty",
+        2
+      ],
+      [
+        "map_get_cell",
+        [
+          0,
+          0
+        ]
+      ],
+      [
+        "unit_destination",
+        "dummy",
+        1
+      ],
+      [
+        "map_get_cell",
+        [
+          9,
+          10
+        ]
+      ],
+      [
+        "hover_move_to",
+        [
+          2432,
+          2688,
+          0
+        ]
+      ],
+      [
+        "hover_helper",
+        "0x5164d0",
+        [
+          200,
+          1
+        ],
+        "ffff",
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      [
+        "hover_helper",
+        "0x514f70",
+        [
+          200,
+          1
+        ],
+        "ffff",
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      [
+        "hover_helper",
+        "0x5164d0",
+        [
+          200,
+          1
+        ],
+        "ffff",
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    ],
+    "input": {
+      "height": 120,
+      "missing_west": true,
+      "missing_zero": true
+    },
+    "output": {
+      "delay": 10,
+      "destination": [
+        2432,
+        2688,
+        0
+      ],
+      "destination_after_later_lookup": [
+        2432,
+        2688,
+        0
+      ],
+      "dummy_coord": [
+        9,
+        10
+      ],
+      "empty_cell_reachable": false,
+      "handler_state": 0,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "later_coordinate": [
+        10368,
+        10624,
+        0
+      ],
+      "movement_timer": [
+        200,
+        0
+      ],
+      "movement_timer_pad": 2688,
+      "nav": "dummy",
+      "path_word": -1,
+      "rng_unchanged": true
+    }
+  },
+  {
+    "events": [
+      [
+        "map_get_cell",
+        [
+          10,
+          10
+        ]
+      ],
+      [
+        "supplied_fnpc_empty",
+        2
+      ],
+      [
+        "map_get_cell",
+        [
+          0,
+          0
+        ]
+      ],
+      [
+        "unit_destination",
+        "dummy",
+        1
+      ],
+      [
+        "map_get_cell",
+        [
+          9,
+          10
+        ]
+      ],
+      [
+        "hover_move_to",
+        [
+          2432,
+          2688,
+          0
+        ]
+      ],
+      [
+        "hover_helper",
+        "0x5164d0",
+        [
+          200,
+          1
+        ],
+        "ffff",
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      [
+        "hover_helper",
+        "0x514f70",
+        [
+          200,
+          1
+        ],
+        "ffff",
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      [
+        "hover_helper",
+        "0x5164d0",
+        [
+          200,
+          1
+        ],
+        "ffff",
+        [
+          0,
+          0,
+          0
+        ]
+      ]
+    ],
+    "input": {
+      "height": 0,
+      "missing_west": true,
+      "missing_zero": true
+    },
+    "output": {
+      "delay": 10,
+      "destination": [
+        2432,
+        2688,
+        0
+      ],
+      "destination_after_later_lookup": [
+        2432,
+        2688,
+        0
+      ],
+      "dummy_coord": [
+        9,
+        10
+      ],
+      "empty_cell_reachable": false,
+      "handler_state": 0,
+      "head": [
+        0,
+        0,
+        0
+      ],
+      "later_coordinate": [
+        10368,
+        10624,
+        0
+      ],
+      "movement_timer": [
+        200,
+        0
+      ],
+      "movement_timer_pad": 2688,
+      "nav": "dummy",
+      "path_word": -1,
+      "rng_unchanged": true
+    }
+  }
+]

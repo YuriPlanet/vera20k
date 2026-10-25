@@ -366,12 +366,7 @@ where
         color_index: 0,
         color_accumulator: NativeF64Bits::POSITIVE_ZERO,
     });
-    Simulation::reveal_particle(
-        &sim.interner,
-        &sim.terrain_objects,
-        &mut sim.substrate,
-        particle.stable_id(),
-    );
+    Simulation::reveal_particle(&mut sim.substrate, particle.stable_id());
     Ok(particle)
 }
 

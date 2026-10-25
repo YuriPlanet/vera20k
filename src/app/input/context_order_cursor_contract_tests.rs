@@ -154,6 +154,7 @@ fn retail_weapon_cursors_keep_native_attack_and_sabotage_commands() {
             &[actor],
             TargetKind::Entity(target),
             true,
+            OrderMode::Move,
             &registry,
         );
         let mission = &native["weapons"]
@@ -218,6 +219,7 @@ fn retail_engineer_forced_attack_keeps_native_no_move_override() {
         &[actor],
         TargetKind::Entity(target),
         true,
+        OrderMode::Move,
         &registry,
     );
     assert_eq!(dispatch.commands.len(), 1);
@@ -328,7 +330,17 @@ fn a_deployed_gi_answers_nomove_beyond_his_deployed_range() {
     assert_eq!(cursor(near), Some(CursorId::Attack));
     assert_eq!(cursor(far), Some(CursorId::NoMove));
 
-    let ctrl = |target| attack_branch_orders(&sim, rules, &[deployed], target, true, &registry);
+    let ctrl = |target| {
+        attack_branch_orders(
+            &sim,
+            rules,
+            &[deployed],
+            target,
+            true,
+            OrderMode::Move,
+            &registry,
+        )
+    };
     assert_eq!(
         ctrl(TargetKind::Entity(near)).commands,
         [Command::Attack {

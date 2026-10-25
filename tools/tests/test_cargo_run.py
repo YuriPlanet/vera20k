@@ -30,13 +30,37 @@ def free(path):
         return False
 
 shared, checkout, report, status, edit = sys.argv[1:]
-with open(report, 'a') as handle:
-    handle.write(json.dumps({'shared': free(shared), 'checkout': free(checkout), 'cwd': os.getcwd(),
-                             'package': os.environ.get('CARGO_PKG_NAME')}) + '\\n')
+line = json.dumps({'shared': free(shared), 'checkout': free(checkout), 'cwd': os.getcwd(),
+                   'package': os.environ.get('CARGO_PKG_NAME')}) + '\\n'
+# Recorded executables run at once, and Windows appends from two processes can interleave.
+with file_lock(Path(report + '.lock'), time.monotonic() + 30), open(report, 'a') as handle:
+    handle.write(line)
 if edit:
     Path(edit).write_text('edited during the tests')
 sys.exit(int(status))
 '''
+
+
+class CargoLauncherTests(unittest.TestCase):
+    def test_local_tool_uses_coordinated_runner_and_preserves_environment(self):
+        with patch.dict(os.environ, {"GITHUB_ACTIONS": "", "RA2_DIR": "/retail"}), \
+             patch.object(cargo_run.subprocess, "call", return_value=7) as call:
+            self.assertEqual(cargo_run.invoke(
+                ["build", "--bin", "vera20k"], cwd=REPOSITORY,
+                env_extra={"RA2_QUICKPLAY": "/map.map"}), 7)
+            command = call.call_args.args[0]
+            self.assertEqual(command, [sys.executable, "-m", "tools.cargo_run", "--",
+                                       "build", "--bin", "vera20k"])
+            self.assertEqual(call.call_args.kwargs["cwd"], REPOSITORY)
+            self.assertEqual(call.call_args.kwargs["env"]["RA2_DIR"], "/retail")
+            self.assertEqual(call.call_args.kwargs["env"]["RA2_QUICKPLAY"], "/map.map")
+
+    def test_github_runner_uses_plain_cargo(self):
+        with patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}), \
+             patch.object(cargo_run.subprocess, "call", return_value=0) as call:
+            self.assertEqual(cargo_run.invoke(
+                ["check", "--lib"], cwd=REPOSITORY, isolated_ci=True), 0)
+            self.assertEqual(call.call_args.args[0], ["cargo", "check", "--lib"])
 
 
 class CargoRunTests(unittest.TestCase):
@@ -195,10 +219,21 @@ class CargoRunTests(unittest.TestCase):
         # Any feature difference gives `-p vera20k-core` its own core test
         # executable; src/Cargo.toml's dev-dependencies must then gain it.
         def tree(*selection):
-            listing = subprocess.run(
-                ['cargo', 'tree', '--locked', '--offline', *selection, '-e', 'normal,build,dev',
-                 '--prefix', 'none', '--no-dedupe', '-f', '{p} {f}'],
-                cwd=REPOSITORY, check=True, capture_output=True, text=True).stdout
+            try:
+                listing = subprocess.run(
+                    ['cargo', 'tree', '--locked', '--offline', *selection, '-e', 'normal,build,dev',
+                     '--prefix', 'none', '--no-dedupe', '-f', '{p} {f}'],
+                    cwd=REPOSITORY, check=True, capture_output=True, text=True).stdout
+            except FileNotFoundError:
+                self.skipTest('needs cargo')
+            except subprocess.CalledProcessError as error:
+                # A fresh machine has no locked crates in Cargo's cache; any other
+                # resolution error, such as a stale Cargo.lock, still fails.
+                offline = ('offline mode (via `--offline`)', "you're using offline mode",
+                           'but --offline was specified')
+                if any(text in error.stderr for text in offline):
+                    self.skipTest('needs the locked crates in Cargo\'s cache: run cargo fetch --locked')
+                raise
             features = {}
             for line in filter(None, listing.splitlines()):
                 package, version, *rest = line.replace(' (*)', '').split(' ')

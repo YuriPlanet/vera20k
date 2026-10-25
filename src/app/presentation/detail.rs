@@ -2,7 +2,8 @@
 //!
 //! Logic55AFB0 counts visits; Throttle55E33B publishes them every 60 wall-clock
 //! buckets (timeGetTime >> 4). GameGetMinFrameRate55AF60 owns the hysteresis
-//! shared by Anim and LaserDraw. This state does not affect simulation.
+//! shared by Anim and LaserDraw. Its published rate also supplies WOL's
+//! transport pacing without directly mutating deterministic simulation state.
 //! Executed controls: tools/spatial_oracle/building_prism.{py,json,meta.json},
 //! `laser_fps` and `laser_detail_selection`; gamemd binary.
 

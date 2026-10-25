@@ -1,17 +1,18 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
     1,
     33621247
   ],
-  "scope": "49 unchanged original lifecycle histories,11 additive active-flag/difficulty cleanup/poll histories,3 bounded stock SOV construction/registration/first-action-boundary histories,44 original TAction reference-reader controls,12 physical TeamType Tag reference controls and2 mixed deferred-queue histories. Establishes native registry source/first-reference order, retained TeamType Tag references and buffer/type-ID boundaries, CellTag refcounts, classification, disabled Event13 reset, explicit-frame resolved53 fanout and event predicates, mutable list/cleanup gates, shared Object/Tag/Trigger readiness/duplicate-removal/destructor-tail order. Mixed controls supply the ordered queue prior and an explicit Object readiness transition; original base Object/Tag/Trigger destruction executes. Excludes concrete object factory/placement and authored Object Tag attachments, complete map/Rules/House prefix, Script/TaskForce body reads, Team lifecycle, gameplay actions after the first stock poll boundary, scenario countdown expiry and later Logic AI.",
+  "scope": "49 unchanged original lifecycle histories,11 additive active-flag/difficulty cleanup/poll histories,3 bounded stock SOV construction/registration/first-action-boundary histories,44 original TAction reference-reader controls,12 physical TeamType Tag reference controls,2 mixed deferred-queue histories and4 Scenario countdown completion histories. Establishes native registry source/first-reference order, retained TeamType Tag references and buffer/type-ID boundaries, CellTag refcounts, classification, disabled Event13 reset, explicit-frame resolved53 fanout and event predicates, mutable list/cleanup gates, shared Object/Tag/Trigger readiness/duplicate-removal/destructor-tail order. Countdown controls establish real Action27 initialization, post-loop expiry, explicit14 fallback and callback restart retention. Mixed controls supply the ordered queue prior and an explicit Object readiness transition; original base Object/Tag/Trigger destruction executes. Excludes concrete object factory/placement and authored Object Tag attachments, complete map/Rules/House prefix, Script/TaskForce body reads, Team lifecycle, gameplay actions after the first stock poll boundary and later Logic AI.",
   "assumptions": [
     "Original49: resolved definitions, one registered House and initialized Scenario RNG.",
     "Registries have spare capacity and native initialized vtables; map cells exist. Lifecycle cases construct real base Objects; no Teams are registered.",
     "Small-world polling cases supply the Logic registration list and run55AFB0..55B205; the scenario countdown is stopped, excluding its expiry/UI callback. Distinct TagTypes may share TriggerTypes.",
+    "Four scenario_timer controls additionally execute Action27 before polling frames29/30/31, starting duration30 at frame0. They retain real Tag/Trigger constructors, predicates, callbacks, mutable Logic traversal, explicit14 after unsuccessful13/51 and post-loop expiry55B17D..55B1D8. Two repeat2 Tags may share one Type; a callback Action27/4 restarts the clock at frame30 and the tail preserves the new duration60. No timer state is supplied between polls. These cases do not establish whole-SOV01 timing, repeat0 traversal behavior or rendered pixels.",
+    "scenario_timer controls supply only the original Mouse primary vptr from constructor instruction5BDA4A so Action27 Tab6D0F00 can call original4F42F0 through slot+38. The allocated screen fields and absent Tactical pointer remain fixture priors; the real redraw flag/level and epoch stores execute. Full Mouse/Scenario construction and display drawing are excluded. Their history scenario_timer fields observe original426630 remaining and the native start!=-1 display gate; all three RNG buffers stay unchanged through the histories.",
     "Original49 have false A8E9A0/A8ED5C. Eleven additive GameMode0 controls vary both flags and supplied cursors/AllowWin count, executing destructor cursor/House timer gates and mutable polling at difficulty0/1/2.",
     "Three stock SOV cases use original Scenario/Country constructors, cached ordered physical INI entries, original fixed-AIMD/map TeamType/TriggerType/TagType readers, minimal authored House/Country bindings and sparse cell storage. Complete Rules/House/terrain/concrete Techno construction is excluded.",
     "Stock classification runs684D47..684EC1 before the later AllowWin loop. The first55AFB0 poll stops before the first6DD8B0 gameplay action; its incomplete guard/stack state is observed, then its stack is abandoned for separate complete resolved53/predicate calls at explicit supplied frames.",
@@ -40,6 +41,10 @@
     "object_can_delete": "0x005F6690",
     "object_deleting_destructor": "0x005F6DC0",
     "logic_tag_poll_prefix": "0x0055AFB0",
+    "scenario_timer_expiry": "0x0055B17D",
+    "timer_remaining": "0x00426630",
+    "timer_action_redraw": "0x006D0F00",
+    "redraw": "0x004F42F0",
     "tag_destructor": "0x006E4F60",
     "trigger_deleting_destructor": "0x00726950",
     "fixed_map_teamtypes": "0x006F19B0",
@@ -69,6 +74,7 @@
       "stock_histories": 3,
       "reference_rows": 44,
       "mixed_deferred_histories": 2,
+      "scenario_timer_histories": 4,
       "stock_difficulties": [
         0,
         1,
@@ -77,6 +83,6 @@
     },
     "legacy_payload_sha256": "59eb67f4543f243db25eeadf7d7a77412e77708d93d6dd1e743893aa6c1d0899"
   },
-  "payload_sha256": "9031c6d77429e8fed4e757a6194ceae91a34b29c69bd8f456d82dde2891afe05",
-  "replay_command": "python -m tools.spatial_oracle.tag_lifecycle"
+  "replay_command": "python -m tools.spatial_oracle.tag_lifecycle",
+  "payload_sha256": "e032fcb27569d3caafc1e6c4651481e1edfc694c509ffc75df37512bf7885bed"
 }

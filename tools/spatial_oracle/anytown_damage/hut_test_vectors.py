@@ -32,7 +32,7 @@ def generate():
                           result=dict(rng_before=result['rng_before'], rng_after=result['rng_after'],
                                       final_bridge_cells=cells, animation_requests=animations)))
     assert len(cases) == 6
-    return dict(schema=1, native_sha256=source['native_sha256'],
+    return dict(schema=1,
                 original_native_payload_sha256=identity['original_payload_sha256'],
                 published_native_payload_sha256=identity['published_payload_sha256'], cases=cases)
 
@@ -42,8 +42,7 @@ def metadata():
         'Pure projection of hash-pinned hut.json.gz: immediate hut-call before/after complete RNG states, all21 final physical span cells and ordered seven-argument animation requests.',
         'The native execution and explicit constructor/graph/lifecycle boundaries remain those of hut.meta.json. No new native execution or production comparison occurs while generating this projection.'
     ], substitutions=[], entry_points={'hut': 0x574000, 'animation_request': 0x421EA0}) | dict(
-        source_file='hut.json.gz', source_file_sha256=packet_io.digest((HERE / 'hut.json.gz').read_bytes()),
-        projection_source_sha256=packet_io.digest(Path(__file__).read_bytes()))
+        source_file='hut.json.gz', source_file_sha256=packet_io.digest((HERE / 'hut.json.gz').read_bytes()))
 
 
 if __name__ == '__main__':

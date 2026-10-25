@@ -34,7 +34,7 @@ impl Scene {
             .assign_target_represented(
                 source,
                 Some(TargetKind::Entity(target)),
-                Some(&rules),
+                &rules,
                 None,
                 FrameEffects::default(),
             )

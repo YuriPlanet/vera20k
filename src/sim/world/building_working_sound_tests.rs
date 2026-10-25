@@ -13,6 +13,169 @@ use crate::sim::house_state::HouseState;
 
 const TICK_MS: u32 = 67;
 
+/// Building43FC34 updates +6B4 before the same visit's C4 expiry440358
+/// and destructor Release43BD1A. PowerOn is a positional one-shot: Release
+/// alone leaves it playing, whereas an earlier zero-gain update stops it.
+#[test]
+fn retail_patriot_updates_its_working_sound_before_c4_destructor_release() {
+    use std::cell::{Cell, RefCell};
+
+    use crate::sim::anim_class::AnimWorldCoord;
+    use crate::sim::command::Command;
+    use crate::sim::world::{FrameEffects, SoundBoundary, TickLane};
+
+    struct Heard {
+        owner: u64,
+        delivered: Cell<usize>,
+        calls: RefCell<Vec<(&'static str, Option<AnimWorldCoord>)>>,
+    }
+    impl SoundBoundary for Heard {
+        fn consume(&self, _: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+            for event in &events[self.delivered.get()..] {
+                let kind = match event {
+                    SimSoundEvent::ObjectSoundDetached { owner } if *owner == self.owner => {
+                        "detach"
+                    }
+                    SimSoundEvent::AnimationStarted {
+                        anim_id, sound_id, ..
+                    } if *anim_id == self.owner && sound_id == "PowerOn" => "PowerOn",
+                    SimSoundEvent::ObjectSoundReleased { owner } if *owner == self.owner => {
+                        "release"
+                    }
+                    _ => continue,
+                };
+                self.calls.borrow_mut().push((kind, None));
+            }
+            self.delivered.set(events.len());
+        }
+        fn delivered(&self) -> usize {
+            self.delivered.get()
+        }
+        fn update_looping_sound(&self, _: &Simulation, owner: u64, world: AnimWorldCoord) {
+            if owner == self.owner {
+                self.calls.borrow_mut().push(("position", Some(world)));
+            }
+        }
+    }
+
+    let Some(mut retail) =
+        crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+    let roots = crate::rules::effect_asset_catalog::tolerant_anim_class_roots(&retail.rules);
+    retail
+        .rules
+        .bind_anim_class_assets(&roots, &assets, theater.extension, "TEMPERATE");
+    retail
+        .rules
+        .bind_effect_assets(&assets, theater.extension, "TEMPERATE");
+    let rules = retail.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x43fc34);
+    assert!(sim.session.apply_in_game_speed(4));
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    sim.spawn_object("GAPOWR", "Americans", 4, 4, 0, &rules)
+        .unwrap();
+    sim.spawn_object("NAPOWR", "Russians", 24, 24, 0, &rules)
+        .unwrap();
+    let patriot = sim
+        .spawn_object("NASAM", "Americans", 8, 10, 0, &rules)
+        .unwrap();
+    let tanya = sim
+        .spawn_object("TANY", "Americans", 7, 10, 0, &rules)
+        .unwrap();
+    let heard = Heard {
+        owner: working_sound_owner(patriot),
+        delivered: Cell::new(0),
+        calls: RefCell::default(),
+    };
+    let started = (0..120).any(|_| {
+        heard.delivered.set(0);
+        heard.calls.borrow_mut().clear();
+        let output = sim
+            .advance_app_frame(
+                &[],
+                &rules,
+                None,
+                64,
+                TickLane::Ordinary,
+                FrameEffects::for_sound(&heard),
+            )
+            .unwrap();
+        heard.consume(&sim, &rules, &output.sound_events);
+        heard
+            .calls
+            .borrow()
+            .iter()
+            .any(|(kind, _)| *kind == "PowerOn")
+    });
+    assert!(started, "the powered Patriot starts its real working cue");
+    assert_eq!(
+        heard.calls.borrow().as_slice(),
+        [("detach", None), ("PowerOn", None)],
+        "the changed operational edge skips the positional-update branch"
+    );
+    let started_frame = sim.session.binary_frame();
+    let world = Simulation::movement_sound_world(sim.entities().get(patriot).unwrap());
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::PlantC4 {
+            attacker_id: tanya,
+            target_building_id: patriot
+        },
+        Some(&rules),
+    ));
+    let mut planted = false;
+    let released = (0..180).any(|_| {
+        heard.delivered.set(0);
+        heard.calls.borrow_mut().clear();
+        let output = sim
+            .advance_app_frame(
+                &[],
+                &rules,
+                None,
+                64,
+                TickLane::Ordinary,
+                FrameEffects::for_sound(&heard),
+            )
+            .unwrap();
+        // Destructors publish the undelivered suffix after their owner is
+        // removed; consume it at the same boundary as the app.
+        heard.consume(&sim, &rules, &output.sound_events);
+        planted |= sim
+            .entities()
+            .get(patriot)
+            .is_some_and(|entity| entity.pending_c4_detonation.pending().is_some());
+        heard
+            .calls
+            .borrow()
+            .iter()
+            .any(|(kind, _)| *kind == "release")
+    });
+    assert!(planted, "Tanya's actual order arms the normal C4 fuse");
+    assert!(
+        released,
+        "normal C4 expiry reaches the same-frame destructor"
+    );
+    assert!(
+        sim.entities().get(patriot).is_none(),
+        "the destructor removes the owner"
+    );
+    assert!(
+        sim.session.binary_frame() - started_frame <= 45,
+        "at selected GameSpeed4, 45 frames take 2880ms of PowerOn's 3044ms playout"
+    );
+    assert_eq!(
+        heard.calls.borrow().as_slice(),
+        [("position", Some(world)), ("release", None)]
+    );
+}
+
 /// `PLANT` powers the house. `DEF` is a powered defence with both cues and
 /// `HUM` a powered building with the working cue alone.
 fn rules() -> RuleSet {
@@ -40,6 +203,8 @@ fn rules() -> RuleSet {
 /// reaches the power recount (`invalidate_house_power`).
 fn world(size: u16) -> Simulation {
     let mut sim = Simulation::new();
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
     sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(size));
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     let owner = sim.interner.intern("Americans");
@@ -124,7 +289,7 @@ fn limbo_keeps_the_handle_and_the_destructor_releases_it() {
         "Limbo leaves +0x6B4 alone"
     );
     sim.process_pending_delete_with(
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
         1,

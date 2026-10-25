@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "17 unchanged original53 predicates,53/54 StateA/B,8 Foot4D8978..4D8A70 caller-slice controls and one real repeat0 linked53/54 Tag/action history. Not full PerCell, Spy construction/death, a retail-authored53 map or whole-game parity.",
+  "assumptions": [
+    "PowerEventControls/FlagsFixture executes the original counted TEvent reader, HasOccurred71E940, first-Country House502D30, forced Infantry DisplayOwner5226C0 and IsAllied4F9A50. Supplied House+30 identities20/21/22 and Country bindings0/7/0 distinguish House identity from Country identity; their constructors and ownership/disguise writers do not execute.",
+    "53 requires matching raise, actor, value!=-1 and first matching registered Country House. GetDisplayOwner(1) reads retained worn House even with raw Disguised false, otherwise PlayerPtr; it is called twice for nonnull results. Match sets caller persistence1; failure preserves it. Event+54 sentinel and timer bytes stay unchanged. This leaf contains no RNG or detach; no general zero-timer/RNG/detach claim extends to Tag actions.",
+    "Caller controls reuse the entered-cell slice owner. Real GetMapCoords41BEA0 and4D8A14 Agent/Infantry admission execute; supplied Map5657A0 and recorded Tag6E53A0 sinks apply named changes. After53, clearing Agent/Alive, replacing Type or detaching CellTag does not suppress54; moving changes54 Location. These sinks establish caller rereads, not the behavior of actual mutation actions.",
+    "The independent linked history reuses execute: original Tag/Trigger constructors, real53/54 predicates and Infantry forced identity/type/index getters, Register/Spring, Action56 SetLocal, ReplaceTag, pointer-expiry and deferred enqueue execute. Resolved definitions and an unregistered original-layout Spy/Type/House are supplied priors. The same caller-supplied Tag receives53 then54 then53; it is not a Foot execution or a physical Infantry constructor.",
+    "With repeat0,53 sets local7 and marks only its Trigger pending. CellTag is immediately0 and Tag refs0 but Tag.pending stays0, so the cached Tag still dispatches54 to the other Trigger, setting local8. Both Triggers then pending; a further53 executes no action. Queue counts2 then4 include the duplicated Tag ticket; no queue drain, TAction70 immediate free/UAF or general destruction parity is claimed. Existing next_random is a terminal continuation probe outside history."
+  ],
+  "substitutions": [
+    "Existing FlagsFixture/execute platform allocation/CRT transport and explicit actor/type/House/resolved-definition priors. Arrival slice only: recorded Map and Tag callout sinks with named field mutations. No selected predicate, forced getter, Tag lifecycle instruction, action or RNG return is replaced."
+  ],
+  "entry_points": {
+    "has_occurred": "0x0071E940",
+    "spy_house_compare": "0x0071ECF5",
+    "spy_type_compare": "0x0071ED59",
+    "house_country": "0x00502D30",
+    "display_owner": "0x005226C0",
+    "disguise_type": "0x00522640",
+    "infantry_type_index": "0x00524D60",
+    "house_allied": "0x004F9A50",
+    "foot_slice": "0x004D8978",
+    "agent_admission": "0x004D8A14",
+    "raise53": "0x004D8A4B",
+    "raise54": "0x004D8A6B",
+    "map_coords": "0x0041BEA0",
+    "tag_process": "0x006E53A0",
+    "register": "0x007264C0",
+    "spring": "0x007265C0",
+    "trigger_destroy": "0x00726720",
+    "pointer_expiry": "0x007258D0",
+    "set_local": "0x00689910"
+  },
+  "replay_command": "python -m tools.spatial_oracle.tag_lifecycle --spy-entry-events",
+  "payload_sha256": "76c87db2c89c9efdb6ebf29ccf93cc86be3f53f1727bde4d4a77174ad98a08cc"
+}

@@ -18,8 +18,9 @@ use crate::assets::vxl_file::{VxlFile, VxlLimb};
 #[cfg(test)]
 use crate::map::voxel_pose::voxel_tilt_applies;
 use crate::map::voxel_pose::{
-    VxlSlopeBlend, compute_slope_blend_rotation, compute_slope_rotation, ground_locomotor_matrix,
-    voxel_body_facing, voxel_table_rotation, voxel_tilt_frame,
+    VxlSlopeBlend, compute_slope_blend_rotation, compute_slope_rotation,
+    crash_fly_locomotor_matrix as voxel_crash_locomotor_matrix, ground_locomotor_matrix,
+    normal_fly_locomotor_matrix, voxel_body_facing, voxel_tilt_frame,
 };
 use crate::render::vxl_normals;
 #[cfg(test)]
@@ -167,12 +168,17 @@ fn voxel_crash_rotation(step: u8, tilt: [f32; 2]) -> Mat4 {
     .expect("finite voxel rotation")
 }
 
-/// The locomotor half of [`voxel_crash_rotation`], before the camera.
-fn voxel_crash_locomotor_matrix(step: u8, tilt: [f32; 2]) -> Mat4 {
-    let (sin, cos) = voxel_table_rotation(tilt[0]);
-    let frame = affine::rotate_x(voxel_body_facing(step), sin, cos);
-    let (sin, cos) = voxel_table_rotation(tilt[1]);
-    affine::rotate_y(frame, sin, cos)
+/// Normal-flight `FlyLocomotionClass::Draw_Matrix @ 0x004CF610` uses
+/// SecondaryFacing yaw, then optional PitchAngle `RotateY @ 0x005AF080`, then
+/// the selected signed RollAngle `RotateX @ 0x005AEF60`. Keep this separate
+/// from the crash arm's X-then-Y matrix above; both share the same facing,
+/// lookup-table rotations, affine owner and camera.
+fn voxel_normal_fly_rotation(step: u8, pitch: f32, roll: f32) -> Mat4 {
+    affine::matrix_product(
+        voxel_camera_view(),
+        normal_fly_locomotor_matrix(step, pitch, roll),
+    )
+    .expect("finite normal Fly matrix")
 }
 
 /// `RocketLocomotionClass::Draw_Matrix @ 0x00663470`: the facing matrix of
@@ -218,7 +224,7 @@ fn voxel_jumpjet_tilt_locomotor_matrix(step: u8, angles: [f32; 2], half_sizes: [
     product(product(lift, voxel_body_facing(step)), frame)
 }
 
-/// Drive4AFF60 / Ship69F670 render-only per-part inputs. The locomotor owns slope/blend; the
+/// Drive4AFF60 / Ship69F670 (and Hover513F40 rocking) render-only per-part inputs. The locomotor owns slope/blend; the
 /// object owns facing and angles; ART owns TurretOffset. The loaded model
 /// supplies the main first-section half sizes, including for its gun parts.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -267,6 +273,10 @@ pub enum BodyTilt {
     /// `FlyLocomotionClass` Draw_Matrix's crashing arm (`0x004CF610`): roll
     /// and pitch in radians.
     Fly([f32; 2]),
+    /// Normal-flight `FlyLocomotionClass::Draw_Matrix @ 0x004CF610`: after
+    /// the strict current-speed/PitchSpeed gate, RotateY(PitchAngle) followed
+    /// by signed RotateX(RollAngle), both in radians.
+    FlyNormal { pitch: f32, roll: f32 },
     /// `JumpjetLocomotionClass` Draw_Matrix's `TiltCrashJumpjet=` arm
     /// (`0x0054DCC0`): roll and pitch in radians, and the main voxel's half
     /// sizes ([`crate::rules::voxel_asset_catalog::voxel_tilt_half_sizes`]).
@@ -345,6 +355,7 @@ pub(crate) fn projectile_voxel_matrix(
 fn voxel_params_draw_rotation(params: &VxlRenderParams, step: u8) -> Mat4 {
     match params.body_tilt {
         Some(BodyTilt::Fly(tilt)) => voxel_crash_rotation(step, tilt),
+        Some(BodyTilt::FlyNormal { pitch, roll }) => voxel_normal_fly_rotation(step, pitch, roll),
         Some(BodyTilt::Jumpjet { angles, half_sizes }) => affine::matrix_product(
             voxel_camera_view(),
             voxel_jumpjet_tilt_locomotor_matrix(step, angles, half_sizes),

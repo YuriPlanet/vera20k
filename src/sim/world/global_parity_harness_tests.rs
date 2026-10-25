@@ -125,6 +125,7 @@ pub(super) fn record_replay_diagnostic(
                 "committed":r.frame_committed,"executed_commands":r.executed_commands,
                 "state_hash":r.state_hash,"terminal_score_finalized":r.terminal_score_finalized})),
             "commands":commands,"entities":actors,"logic_order":sim.logic_order(),
+            "planning":sim.planning,
             "fire_events_accumulated":fires,
             "lifecycle_outputs_accumulated":format!("{:?}",sim.lifecycle_outputs),
             "rng":{"scenario":sim.scenario_rng.native_state_hex(),
@@ -696,7 +697,13 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
 // without that one call gave the previous value. The arrival's idle entry and
 // Commence (`0x0051A88B..0x0051A8C5`) move nothing here.
 // Previous: 0x1052_E1D9_3D61_E22C.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0xF5F0_1892_EC3E_8BD4;
+// The registered ScriptIssuer adds a House and an interned name while leaving
+// the actor Houses' AI flags, actor/RNG assertions and replay checks intact.
+// This pin describes that fixture; it is not a native parity golden. The
+// older fixture's independent pre-existing drift remains tracked in #1946.
+// The fold also covers constructor planning registration and ammo reload clocks;
+// this fixture's unlimited magazines and empty plans leave its gameplay unchanged.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0xD3AD_CDC9_DFF6_FCF4;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a
@@ -786,6 +793,7 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
         mission: None,
         recruitable_a: true,
         recruitable_b: true,
+        group: -1,
         structure_upgrades: [None, None, None],
         structure_ai_sellable: false,
         structure_ai_repairable: false,
@@ -832,7 +840,8 @@ fn seed_scenario(sim: &mut Simulation, rules: &RuleSet, overlays: &OverlayTypeRe
     // AttackMove tank keeps moving when hit), and the harvester branches that
     // treat a missing house as human are not reached in these 700 ticks.
     // Registered, they run House AI; with no credits it builds nothing and
-    // forms no team.
+    // forms no team. A separate eligible sender below supplies the scripted
+    // events without changing these actors' AI-control semantics.
     for (owner, side) in [("Americans", 0), ("Soviet", 1)] {
         let id = sim.interner.intern(owner);
         sim.houses.get_or_register_for_test(id, || {
@@ -887,6 +896,15 @@ fn seed_scenario(sim: &mut Simulation, rules: &RuleSet, overlays: &OverlayTypeRe
             sim.playfield_bounds,
         ),
     );
+    // Native MegaMission and IDLE select the actor from their payload, without
+    // comparing its House to the Event header. Keep the fixture's two AI actor
+    // Houses unchanged; this human House has no actors and only issues orders.
+    // Add it after object seeding to preserve prior actor/type identities.
+    let issuer = sim.interner.intern("ScriptIssuer");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            issuer, 2, None, true, 0, 10,
+        ));
 }
 
 /// Scripted commands keyed by `execute_tick` (fires when tick+1 == execute_tick).
@@ -929,9 +947,9 @@ fn harness_script() -> Vec<(u64, Command)> {
     ]
 }
 
-/// Owner of every scripted command (all are issued by the Allied player).
+/// Owner of every scripted command; actor Houses retain their AI behavior.
 fn due_commands(sim: &Simulation, script: &[(u64, Command)], tick: u64) -> Vec<CommandEnvelope> {
-    let owner = sim.interner.get("Americans").expect("Americans interned");
+    let owner = sim.interner.get("ScriptIssuer").expect("sender registered");
     script
         .iter()
         .filter(|(t, _)| *t == tick + 1)
@@ -940,7 +958,7 @@ fn due_commands(sim: &Simulation, script: &[(u64, Command)], tick: u64) -> Vec<C
 }
 
 #[test]
-fn cross_house_move_executes_and_replays_without_changing_actor_owner() {
+fn cross_house_move_and_stop_execute_and_replay_without_changing_actor_owner() {
     let rules = harness_rules();
     let overlays = harness_overlays();
     let grid = PathGrid::new(HARNESS_CELL_SIDE, HARNESS_CELL_SIDE);
@@ -948,7 +966,7 @@ fn cross_house_move_executes_and_replays_without_changing_actor_owner() {
     recorded.hash_state_every(std::num::NonZeroU64::MIN);
     seed_scenario(&mut recorded, &rules, &overlays);
     let actor_owner = recorded.substrate.entities.get(6).unwrap().owner();
-    let issuer = recorded.interner.get("Americans").unwrap();
+    let issuer = recorded.interner.get("ScriptIssuer").unwrap();
     assert_ne!(actor_owner, issuer);
     let destination = (28 + HARNESS_COORD_SHIFT, 10 + HARNESS_COORD_SHIFT);
     let command = CommandEnvelope::new(
@@ -989,6 +1007,27 @@ fn cross_house_move_executes_and_replays_without_changing_actor_owner() {
         ))
     );
     replay.record_tick(0, vec![command], result.state_hash);
+    // Event IDLE 0x4C74CB replaces its Event receiver with the decoded actor
+    // at 0x4C74D3. It has no sender/actor ownership comparison.
+    let stop = CommandEnvelope::new(issuer, 2, Command::Stop { entity_id: 6 });
+    let stopped = recorded.advance_tick(
+        std::slice::from_ref(&stop),
+        Some(&rules),
+        Some(&grid),
+        Some(&overlays),
+        HARNESS_TICK_MS,
+    );
+    assert!(
+        recorded
+            .substrate
+            .entities
+            .get(6)
+            .unwrap()
+            .navigation
+            .nav_com()
+            .is_none()
+    );
+    replay.record_tick(1, vec![stop], stopped.state_hash);
     let replay: ReplayLog = serde_json::from_slice(&serde_json::to_vec(&replay).unwrap()).unwrap();
     let mut restored = Simulation::with_seed(HARNESS_SEED);
     seed_scenario(&mut restored, &rules, &overlays);
@@ -1000,17 +1039,11 @@ fn cross_house_move_executes_and_replays_without_changing_actor_owner() {
         Some(&overlays),
         HARNESS_TICK_MS,
     );
-    assert_eq!(hashes, vec![result.state_hash]);
+    assert_eq!(hashes, vec![result.state_hash, stopped.state_hash]);
     assert_eq!(restored.state_hash(), recorded.state_hash());
     let actor = restored.substrate.entities.get(6).unwrap();
     assert_eq!(actor.owner(), actor_owner);
-    assert_eq!(
-        actor.navigation.nav_com(),
-        Some(crate::sim::components::NavTargetRef::cell(
-            destination.0,
-            destination.1
-        ))
-    );
+    assert!(actor.navigation.nav_com().is_none());
 }
 
 #[test]
@@ -1114,11 +1147,11 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
                     assert!(
                         crate::sim::movement::ready_producer::ready_state_for(
                             tank,
-                            Some(crate::sim::movement::SpeedRules::new(
+                            crate::sim::movement::SpeedRules::new(
                                 &rules,
                                 &rec.interner,
                                 &rec.houses
-                            )),
+                            ),
                             rec.session.binary_frame(),
                         )
                         .is_some_and(|state| state.is_moving_now())
@@ -1259,6 +1292,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     for &checkpoint in STREAM_CHECKPOINT_TICKS {
         let chunk_end = (checkpoint as usize + 1).min(log.ticks.len());
         let chunk = ReplayLog {
+            startup: None,
             header: log.header.clone(),
             ticks: log.ticks[chunk_start..chunk_end].to_vec(),
             initial_scenario_services: if chunk_start == 0 {
@@ -1285,6 +1319,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     }
     if chunk_start < log.ticks.len() {
         let tail = ReplayLog {
+            startup: None,
             header: log.header.clone(),
             ticks: log.ticks[chunk_start..].to_vec(),
             initial_scenario_services: Vec::new(),
@@ -1489,10 +1524,12 @@ fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
                 Some(call["timer_start"].as_u64().unwrap() as u32)
             );
         }
-        // Native load resets Scenario to Seed0 and retains process streams.
-        // Equalize only that documented load effect before comparing the
-        // movement-state round trip and its continued full-world hashes.
+        // Native load resets Scenario to Seed0 and clears planning tokens
+        // (ClearScene6370B0, TechnoLoad70BF79), retaining process streams.
+        // Equalize those load effects before comparing the movement state
+        // and its continued full-world hashes.
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        sim.reset_planning_after_player_load();
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 1, 0, "Fresh turn", 0);
         let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
             .unwrap()

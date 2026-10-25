@@ -102,6 +102,12 @@ impl ComboPopup {
             .contains(x, y)
             .then(|| self.first + ((y - self.rect.y) / self.row_height) as usize)
     }
+    pub(crate) fn track_hot_row(&self, hot_row: &mut Option<usize>, x: i32, y: i32) {
+        // 60E262 retains the previous hot row after leaving the row content.
+        if let Some(row) = self.row_at(x, y) {
+            *hot_row = Some(row);
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -138,10 +144,7 @@ impl<Id: Copy> ComboPopupInteraction<Id> {
         self.scroll.cancel();
     }
     pub(crate) fn pointer_moved(&mut self, popup: ComboPopup, x: i32, y: i32) {
-        // 60E262 retains the previous hot row after leaving the row content.
-        if let Some(row) = popup.row_at(x, y) {
-            self.hot_row = Some(row);
-        }
+        popup.track_hot_row(&mut self.hot_row, x, y);
         self.scroll
             .pointer_moved(popup.scroll_geometry(), &mut self.top_index, x, y);
     }

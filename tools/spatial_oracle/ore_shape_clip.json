@@ -1,0 +1,911 @@
+{
+  "rows": [
+    {
+      "accepted": true,
+      "clipped_destination": [
+        3,
+        4,
+        8,
+        6
+      ],
+      "clipped_source": [
+        1,
+        2,
+        8,
+        6
+      ],
+      "destination": [
+        3,
+        4,
+        8,
+        6
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        40,
+        30
+      ],
+      "name": "inside",
+      "source": [
+        1,
+        2,
+        8,
+        6
+      ],
+      "source_bounds": [
+        0,
+        0,
+        20,
+        20
+      ]
+    },
+    {
+      "accepted": true,
+      "clipped_destination": [
+        6,
+        6,
+        5,
+        4
+      ],
+      "clipped_source": [
+        0,
+        0,
+        5,
+        4
+      ],
+      "destination": [
+        3,
+        4,
+        8,
+        6
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        40,
+        30
+      ],
+      "name": "source_left_top",
+      "source": [
+        -3,
+        -2,
+        8,
+        6
+      ],
+      "source_bounds": [
+        0,
+        0,
+        20,
+        20
+      ]
+    },
+    {
+      "accepted": true,
+      "clipped_destination": [
+        3,
+        4,
+        3,
+        2
+      ],
+      "clipped_source": [
+        17,
+        18,
+        3,
+        2
+      ],
+      "destination": [
+        3,
+        4,
+        8,
+        6
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        40,
+        30
+      ],
+      "name": "source_right_bottom",
+      "source": [
+        17,
+        18,
+        8,
+        6
+      ],
+      "source_bounds": [
+        0,
+        0,
+        20,
+        20
+      ]
+    },
+    {
+      "accepted": true,
+      "clipped_destination": [
+        0,
+        0,
+        5,
+        4
+      ],
+      "clipped_source": [
+        4,
+        4,
+        5,
+        4
+      ],
+      "destination": [
+        -3,
+        -2,
+        8,
+        6
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        40,
+        30
+      ],
+      "name": "destination_left_top",
+      "source": [
+        1,
+        2,
+        8,
+        6
+      ],
+      "source_bounds": [
+        0,
+        0,
+        20,
+        20
+      ]
+    },
+    {
+      "accepted": true,
+      "clipped_destination": [
+        37,
+        28,
+        3,
+        2
+      ],
+      "clipped_source": [
+        1,
+        2,
+        3,
+        2
+      ],
+      "destination": [
+        37,
+        28,
+        8,
+        6
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        40,
+        30
+      ],
+      "name": "destination_right_bottom",
+      "source": [
+        1,
+        2,
+        8,
+        6
+      ],
+      "source_bounds": [
+        0,
+        0,
+        20,
+        20
+      ]
+    },
+    {
+      "accepted": false,
+      "clipped_destination": [
+        3,
+        4,
+        -1,
+        6
+      ],
+      "clipped_source": [
+        21,
+        2,
+        -1,
+        6
+      ],
+      "destination": [
+        3,
+        4,
+        8,
+        6
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        40,
+        30
+      ],
+      "name": "outside_source",
+      "source": [
+        21,
+        2,
+        8,
+        6
+      ],
+      "source_bounds": [
+        0,
+        0,
+        20,
+        20
+      ]
+    },
+    {
+      "accepted": false,
+      "clipped_destination": [
+        41,
+        4,
+        -1,
+        6
+      ],
+      "clipped_source": [
+        1,
+        2,
+        -1,
+        6
+      ],
+      "destination": [
+        41,
+        4,
+        8,
+        6
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        40,
+        30
+      ],
+      "name": "outside_destination",
+      "source": [
+        1,
+        2,
+        8,
+        6
+      ],
+      "source_bounds": [
+        0,
+        0,
+        20,
+        20
+      ]
+    },
+    {
+      "accepted": true,
+      "clipped_destination": [
+        37,
+        0,
+        3,
+        5
+      ],
+      "clipped_source": [
+        0,
+        2,
+        5,
+        6
+      ],
+      "destination": [
+        37,
+        -2,
+        10,
+        7
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        40,
+        30
+      ],
+      "name": "unequal",
+      "source": [
+        -3,
+        2,
+        8,
+        6
+      ],
+      "source_bounds": [
+        0,
+        0,
+        20,
+        20
+      ]
+    },
+    {
+      "accepted": true,
+      "clipped_destination": [
+        37,
+        28,
+        8,
+        7
+      ],
+      "clipped_source": [
+        3,
+        4,
+        6,
+        4
+      ],
+      "destination": [
+        37,
+        28,
+        10,
+        7
+      ],
+      "destination_bounds": [
+        5,
+        6,
+        40,
+        30
+      ],
+      "name": "unequal_nonzero_bounds",
+      "source": [
+        1,
+        2,
+        8,
+        6
+      ],
+      "source_bounds": [
+        3,
+        4,
+        20,
+        20
+      ]
+    },
+    {
+      "accepted": true,
+      "clipped_destination": [
+        37,
+        28,
+        3,
+        2
+      ],
+      "clipped_source": [
+        1,
+        2,
+        3,
+        2
+      ],
+      "destination": [
+        37,
+        28,
+        8,
+        6
+      ],
+      "destination_bounds": [
+        5,
+        6,
+        40,
+        30
+      ],
+      "name": "equal_nonzero_bounds",
+      "source": [
+        1,
+        2,
+        8,
+        6
+      ],
+      "source_bounds": [
+        3,
+        4,
+        20,
+        20
+      ]
+    },
+    {
+      "accepted": false,
+      "clipped_destination": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "clipped_source": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "destination": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        40,
+        30
+      ],
+      "name": "empty",
+      "source": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "source_bounds": [
+        0,
+        0,
+        20,
+        20
+      ]
+    },
+    {
+      "accepted": false,
+      "clipped_destination": [
+        75,
+        74,
+        -9,
+        21
+      ],
+      "clipped_source": [
+        21,
+        0,
+        -9,
+        21
+      ],
+      "destination": [
+        75,
+        74,
+        12,
+        21
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        192,
+        160
+      ],
+      "name": "slope1_intersection",
+      "source": [
+        21,
+        0,
+        12,
+        21
+      ],
+      "source_bounds": [
+        21,
+        0,
+        12,
+        21
+      ]
+    },
+    {
+      "accepted": true,
+      "clipped_destination": [
+        82,
+        73,
+        8,
+        13
+      ],
+      "clipped_source": [
+        14,
+        0,
+        8,
+        13
+      ],
+      "destination": [
+        82,
+        73,
+        22,
+        13
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        192,
+        160
+      ],
+      "name": "slope2_intersection",
+      "source": [
+        14,
+        0,
+        22,
+        13
+      ],
+      "source_bounds": [
+        14,
+        0,
+        22,
+        13
+      ]
+    },
+    {
+      "accepted": true,
+      "clipped_destination": [
+        75,
+        75,
+        4,
+        19
+      ],
+      "clipped_source": [
+        20,
+        0,
+        4,
+        19
+      ],
+      "destination": [
+        75,
+        75,
+        24,
+        19
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        192,
+        160
+      ],
+      "name": "slope3_intersection",
+      "source": [
+        20,
+        0,
+        24,
+        19
+      ],
+      "source_bounds": [
+        20,
+        0,
+        24,
+        19
+      ]
+    },
+    {
+      "accepted": false,
+      "clipped_destination": [
+        -2147483645,
+        4,
+        -2147483611,
+        6
+      ],
+      "clipped_source": [
+        0,
+        2,
+        -2147483611,
+        6
+      ],
+      "destination": [
+        3,
+        4,
+        2147483647,
+        6
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        40,
+        30
+      ],
+      "name": "negative_wrap",
+      "source": [
+        -2147483648,
+        2,
+        2147483647,
+        6
+      ],
+      "source_bounds": [
+        0,
+        0,
+        20,
+        20
+      ]
+    },
+    {
+      "accepted": false,
+      "clipped_destination": [
+        3,
+        4,
+        -2147483627,
+        6
+      ],
+      "clipped_source": [
+        2147483647,
+        2,
+        -2147483627,
+        6
+      ],
+      "destination": [
+        3,
+        4,
+        8,
+        6
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        40,
+        30
+      ],
+      "name": "positive_wrap",
+      "source": [
+        2147483647,
+        2,
+        8,
+        6
+      ],
+      "source_bounds": [
+        0,
+        0,
+        20,
+        20
+      ]
+    },
+    {
+      "accepted": false,
+      "clipped_destination": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "clipped_source": [
+        3,
+        4,
+        10,
+        7
+      ],
+      "destination": [
+        2147483647,
+        2,
+        8,
+        6
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        20,
+        20
+      ],
+      "name": "unequal_destination_x_wrap",
+      "source": [
+        3,
+        4,
+        10,
+        7
+      ],
+      "source_bounds": [
+        0,
+        0,
+        40,
+        30
+      ]
+    },
+    {
+      "accepted": false,
+      "clipped_destination": [
+        1,
+        2,
+        8,
+        6
+      ],
+      "clipped_source": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "destination": [
+        1,
+        2,
+        8,
+        6
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        20,
+        20
+      ],
+      "name": "unequal_source_x_wrap",
+      "source": [
+        2147483647,
+        4,
+        10,
+        7
+      ],
+      "source_bounds": [
+        0,
+        0,
+        40,
+        30
+      ]
+    },
+    {
+      "accepted": false,
+      "clipped_destination": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "clipped_source": [
+        3,
+        4,
+        10,
+        7
+      ],
+      "destination": [
+        1,
+        2147483647,
+        8,
+        6
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        20,
+        20
+      ],
+      "name": "unequal_destination_y_wrap",
+      "source": [
+        3,
+        4,
+        10,
+        7
+      ],
+      "source_bounds": [
+        0,
+        0,
+        40,
+        30
+      ]
+    },
+    {
+      "accepted": false,
+      "clipped_destination": [
+        1,
+        2,
+        8,
+        6
+      ],
+      "clipped_source": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "destination": [
+        1,
+        2,
+        8,
+        6
+      ],
+      "destination_bounds": [
+        0,
+        0,
+        20,
+        20
+      ],
+      "name": "unequal_source_y_wrap",
+      "source": [
+        3,
+        2147483647,
+        10,
+        7
+      ],
+      "source_bounds": [
+        0,
+        0,
+        40,
+        30
+      ]
+    }
+  ],
+  "shape_seeds": [
+    {
+      "gradient": 0,
+      "height": 8,
+      "screen_top": 0,
+      "seed": 32767,
+      "z_adjust": -1
+    },
+    {
+      "gradient": 0,
+      "height": 13,
+      "screen_top": 73,
+      "seed": 32618,
+      "z_adjust": -77
+    },
+    {
+      "gradient": 0,
+      "height": 19,
+      "screen_top": 75,
+      "seed": 32616,
+      "z_adjust": -77
+    },
+    {
+      "gradient": 0,
+      "height": 7,
+      "screen_top": -2,
+      "seed": 32768,
+      "z_adjust": -2
+    },
+    {
+      "gradient": 0,
+      "height": 3,
+      "screen_top": 32768,
+      "seed": -2,
+      "z_adjust": -2
+    },
+    {
+      "gradient": 1,
+      "height": 8,
+      "screen_top": 0,
+      "seed": 32766,
+      "z_adjust": -1
+    },
+    {
+      "gradient": 1,
+      "height": 13,
+      "screen_top": 73,
+      "seed": 32616,
+      "z_adjust": -77
+    },
+    {
+      "gradient": 1,
+      "height": 19,
+      "screen_top": 75,
+      "seed": 32616,
+      "z_adjust": -77
+    },
+    {
+      "gradient": 1,
+      "height": 7,
+      "screen_top": -2,
+      "seed": 32766,
+      "z_adjust": -2
+    },
+    {
+      "gradient": 1,
+      "height": 3,
+      "screen_top": 32768,
+      "seed": 0,
+      "z_adjust": -2
+    },
+    {
+      "gradient": 2,
+      "height": 8,
+      "screen_top": 0,
+      "seed": 32760,
+      "z_adjust": -1
+    },
+    {
+      "gradient": 2,
+      "height": 13,
+      "screen_top": 73,
+      "seed": 32606,
+      "z_adjust": -77
+    },
+    {
+      "gradient": 2,
+      "height": 19,
+      "screen_top": 75,
+      "seed": 32598,
+      "z_adjust": -77
+    },
+    {
+      "gradient": 2,
+      "height": 7,
+      "screen_top": -2,
+      "seed": 32762,
+      "z_adjust": -2
+    },
+    {
+      "gradient": 2,
+      "height": 3,
+      "screen_top": 32768,
+      "seed": 65532,
+      "z_adjust": -2
+    }
+  ]
+}

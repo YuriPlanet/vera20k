@@ -42,6 +42,7 @@ pub(crate) enum FreshStartupProvenance {
     Accepted,
     ResolvedLegacy,
     NetworkAccepted,
+    Replay,
     CampaignCatalog,
 }
 
@@ -152,6 +153,9 @@ impl FreshScenarioLoadContextDescriptor {
                 prepared.seed.value,
                 FreshStartupProvenance::NetworkAccepted,
             ),
+            LoadingStartup::Replay { session, seed, .. } => {
+                (session.clone(), seed.value, FreshStartupProvenance::Replay)
+            }
             LoadingStartup::UnverifiedLegacy { session, seed } => (
                 session.clone(),
                 seed.value,
@@ -162,8 +166,13 @@ impl FreshScenarioLoadContextDescriptor {
             }
             LoadingStartup::Campaign(_) => unreachable!("campaign admitted above"),
         };
-        let launch = MatchLaunchDescriptor::from_resolved(session.clone())
+        let mut launch = MatchLaunchDescriptor::from_resolved(session.clone())
             .map_err(|err| anyhow::anyhow!("fresh stock-offline launch is unresolved: {err}"))?;
+        if let LoadingStartup::Network(prepared) = startup
+            && prepared.wol_start().quick_coop
+        {
+            launch = launch.with_quick_coop_starts();
+        }
         let selected_map = session
             .selected_map_file
             .as_deref()
@@ -346,6 +355,9 @@ impl FreshScenarioLoadContextDescriptor {
                 prepared.seed.value,
                 prepared.launch_session(),
             ),
+            LoadingStartup::Replay { session, seed, .. } => {
+                (FreshStartupProvenance::Replay, seed.value, session)
+            }
             LoadingStartup::UnverifiedLegacy { session, seed } => {
                 (FreshStartupProvenance::ResolvedLegacy, seed.value, session)
             }

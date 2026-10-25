@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -134,5 +133,5 @@
     "post_put_dirty_ring": "0x00486E70"
   },
   "replay_command": "python -m tools.spatial_oracle.building_death_anims --joined-stock-smudges",
-  "payload_sha256": "602cfbd02b8377121233bd6e5c9739975d0dbaa698f353ed3b77945e319f841d"
+  "payload_sha256": "99019befa22435945755140b4c5905c8e07cf0f41318cef3329708abf21e4724"
 }

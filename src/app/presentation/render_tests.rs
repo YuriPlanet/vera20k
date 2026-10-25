@@ -1,5 +1,4 @@
 use super::HoverTargetKind;
-use crate::app::input::dispatch::CLICK_SELECT_RADIUS;
 use crate::app::input::entity_pick::{
     compute_box_selection_snapshot, compute_click_selection_snapshot, hover_target_at_point,
 };
@@ -67,9 +66,7 @@ fn test_click_additive_toggles_membership() {
         None,
         second_x,
         second_y,
-        CLICK_SELECT_RADIUS,
         true,
-        None,
         None,
         None,
     )
@@ -84,9 +81,7 @@ fn test_click_additive_toggles_membership() {
         None,
         first_x,
         first_y,
-        CLICK_SELECT_RADIUS,
         true,
-        None,
         None,
         None,
     )
@@ -383,14 +378,13 @@ fn test_hover_target_distinguishes_friendly_and_enemy_categories() {
         sim.fog_mut_for_test()
             .mark_visible_for_owner(americans_id, rx, ry);
     }
-    let friendly_hover =
-        hover_target_at_point(&sim, friendly_sx, friendly_sy, "Americans", false, None)
-            .expect("friendly hover");
+    let friendly_hover = hover_target_at_point(&sim, friendly_sx, friendly_sy, "Americans", false)
+        .expect("friendly hover");
     assert_eq!(friendly_hover.kind, HoverTargetKind::FriendlyStructure);
     assert_eq!(friendly_hover.stable_id, 10);
 
-    let enemy_hover = hover_target_at_point(&sim, enemy_sx, enemy_sy, "Americans", false, None)
-        .expect("enemy hover");
+    let enemy_hover =
+        hover_target_at_point(&sim, enemy_sx, enemy_sy, "Americans", false).expect("enemy hover");
     assert_eq!(enemy_hover.kind, HoverTargetKind::EnemyUnit);
     assert_eq!(enemy_hover.stable_id, 11);
 }

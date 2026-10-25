@@ -17,7 +17,7 @@ cell coordinates and level bytes, empty/negative explosion counts, editor mode,
 allocation refusal, and two supplied ground-object lists. The 12 `death_loop`
 rows execute the original `0x007024E0..0x00702572` loop on the same types to protect
 the shared constructor consumer. These are native outputs, not Rust-generated
-expectations. The sidecar identifies the executable and all substitutions.
+expectations. The sidecar records all substitutions.
 
 The lists are the actual native General reader results: 15 metallic entries,
 ending with `D` because its 128-byte input buffer truncates the authored list,

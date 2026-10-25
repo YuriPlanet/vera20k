@@ -179,7 +179,8 @@ palette-for
   --palette <NAME>     Test a specific palette against the inference chain.
 
 csf-get / csf-grep
-  --source <NAME>      Which .csf to read. Default: ra2md.csf then ra2.csf.
+  --source <NAME>      Inspect one raw .csf. Default: the active game table
+                       (ra2md.csf; Ares builds also apply its supplements).
   --raw                Also report the stored text before normalisation.
   --limit/--offset     Paging. Default limit 50.
 

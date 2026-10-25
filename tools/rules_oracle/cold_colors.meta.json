@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Cold selected-root Colors admission and ordered scheme identities only",
+  "assumptions": [
+    "Executes original cold caller before the optional LANGRULE branch, original physical INI, Colors reader and scheme constructors.",
+    "Rust tests consume these names/indices to check cold admission and the later Country reader; no rendered color or whole startup parity."
+  ],
+  "substitutions": [
+    "Existing weapon_speed_order.retail_history VM owns allocator, CRT, INI and platform boundaries; no second mapper or parser.",
+    "68C3B0 palette/Convert generation returns NULL with native ret32 ABI; no Convert, RGB, loading pixels or palette generation is certified."
+  ],
+  "entry_points": {
+    "cold_colors_call": "0x0052D0FF",
+    "colors": "0x0066D3A0",
+    "color_scheme_constructor": "0x0068C710"
+  },
+  "replay_command": "python -m tools.rules_oracle.cold_colors",
+  "payload_sha256": "250bc220bcb22e6bb406f49a993e2553048a9a49ccd72e275e9ff99279938ec0"
+}

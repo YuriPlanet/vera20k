@@ -64,6 +64,7 @@ pub(crate) const MAX_STEP_INDEX: i32 = 0x58;
 ///
 /// `IMA_ADPCM__DecodeSample @ 0x0040ACD0` keeps this as two `i32` at
 /// `[EDX]` (predictor) and `[EDX+4]` (step index).
+#[derive(Clone, Copy)]
 pub(crate) struct ImaAdpcmState {
     index: i32,
     predicted: i32,
@@ -209,36 +210,67 @@ const GROUP_BYTES_PER_CHANNEL: usize = 4;
 ///   natively. We do not reproduce the over-read values, which the rejected
 ///   block discards anyway.
 pub fn decode_blocks(data: &[u8], channels: u16, block_align: u32) -> Vec<i16> {
-    // VERA-internal, gamemd equivalent UNCHECKED: with `+0xA4 == 0` the native's
-    // stereo loop at `0x0040ABED` subtracts 0 per pass and spins forever, so
-    // there is no native behavior to match. No retail entry declares 0 channels
-    // (`AudioIndex__GetFormat @ 0x00401640` derives it from a flag bit).
-    let channels = channels.max(1) as usize;
-    let preamble = PREAMBLE_BYTES_PER_CHANNEL * channels;
-    let group = GROUP_BYTES_PER_CHANNEL * channels;
+    let mut out: Vec<i16> = Vec::with_capacity(data.len() * 2 + usize::from(channels.max(1)));
+    let mut decoder = ImaBlockDecoder::new(channels, block_align);
+    while decoder.decode_next(data, &mut out) {}
+    out
+}
 
-    // `FUN_00409C40` copies the format descriptor's `+0x18` straight into the
-    // stream's input-buffer size, so a zero stride leaves the block decoder with
-    // zero available bytes and it fails on its first call: the sound is silent.
-    // (No retail entry reaches this — both retail `audio.idx` files are v2 and
-    // every IMA entry carries 512 (mono) or 1024 (stereo).)
-    let block_align = block_align as usize;
-    if block_align < preamble {
-        return Vec::new();
+/// [`decode_blocks`]' feed one block per call, so a long stream (a theme song)
+/// decodes as its output pulls it, as the native pump calls
+/// `IMA_ADPCM__DecodeBlock @ 0x0040AA70` once per refill rather than once per
+/// file.
+pub(crate) struct ImaBlockDecoder {
+    channels: usize,
+    block_align: usize,
+    /// Payload offset of the next block.
+    pos: usize,
+    states: Vec<ImaAdpcmState>,
+    /// A rejected or lone short block ended the stream.
+    ended: bool,
+}
+
+impl ImaBlockDecoder {
+    pub(crate) fn new(channels: u16, block_align: u32) -> Self {
+        // VERA-internal, gamemd equivalent UNCHECKED: with `+0xA4 == 0` the native's
+        // stereo loop at `0x0040ABED` subtracts 0 per pass and spins forever, so
+        // there is no native behavior to match. No retail entry declares 0 channels
+        // (`AudioIndex__GetFormat @ 0x00401640` derives it from a flag bit).
+        let channels = channels.max(1) as usize;
+        let block_align = block_align as usize;
+        Self {
+            channels,
+            block_align,
+            pos: 0,
+            states: (0..channels).map(|_| ImaAdpcmState::new()).collect(),
+            // `FUN_00409C40` copies the format descriptor's `+0x18` straight into
+            // the stream's input-buffer size, so a zero stride leaves the block
+            // decoder with zero available bytes and it fails on its first call:
+            // the sound is silent. (No retail entry reaches this — both retail
+            // `audio.idx` files are v2 and every IMA entry carries 512 (mono) or
+            // 1024 (stereo).)
+            ended: block_align < PREAMBLE_BYTES_PER_CHANNEL * channels,
+        }
     }
 
-    let mut out: Vec<i16> = Vec::with_capacity(data.len() * 2 + channels);
-    let mut states: Vec<ImaAdpcmState> = (0..channels).map(|_| ImaAdpcmState::new()).collect();
-    let mut pos = 0usize;
+    /// Append the next block of `data` — the whole payload, passed again on
+    /// every call — to `out` as interleaved frames; `false`, appending
+    /// nothing, once the stream has ended.
+    pub(crate) fn decode_next(&mut self, data: &[u8], out: &mut Vec<i16>) -> bool {
+        let (channels, block_align, pos) = (self.channels, self.block_align, self.pos);
+        if self.ended || pos >= data.len() {
+            return false;
+        }
+        let preamble = PREAMBLE_BYTES_PER_CHANNEL * channels;
+        let group = GROUP_BYTES_PER_CHANNEL * channels;
 
-    while pos < data.len() {
         let real = &data[pos..(pos + block_align).min(data.len())];
         let stale_padded;
         let block: &[u8] = if real.len() == block_align {
             real
         } else if pos >= block_align {
             // End-of-stream flush: the input buffer still holds the previous
-            // block's bytes past the short tail (see the module comment above).
+            // block's bytes past the short tail (see `decode_blocks`).
             let mut buffer = Vec::with_capacity(block_align);
             buffer.extend_from_slice(real);
             buffer.extend_from_slice(&data[pos - block_align + real.len()..pos]);
@@ -252,18 +284,19 @@ pub fn decode_blocks(data: &[u8], channels: u16, block_align: u32) -> Vec<i16> {
             // stride grows. Neither is reproducible from the file, so we decode
             // the whole groups this sound actually carries.
             if real.len() < preamble {
-                break;
+                self.ended = true;
+                return false;
             }
             &real[..preamble + (real.len() - preamble) / group * group]
         };
 
         // A rejected block is discarded whole by the caller, so everything this
-        // iteration appends has to go with it.
+        // call appends has to go with it.
         let block_out_start = out.len();
 
         // Preambles: predictor, step index, reserved — per channel, in order.
         let mut rejected = !(block.len() - preamble).is_multiple_of(group);
-        for (ch, state) in states.iter_mut().enumerate() {
+        for (ch, state) in self.states.iter_mut().enumerate() {
             if rejected {
                 break;
             }
@@ -280,35 +313,42 @@ pub fn decode_blocks(data: &[u8], channels: u16, block_align: u32) -> Vec<i16> {
         }
         if rejected {
             out.truncate(block_out_start);
-            return out;
+            self.ended = true;
+            return false;
         }
 
+        // The loops work on a local copy of each state and a slice of `out`:
+        // through `&mut self` and `&mut Vec` the optimizer must assume every
+        // sample store may alias them (measured about 5% slower).
         let payload = &block[preamble..];
         if channels == 1 {
-            decode_nibbles(payload, &mut states[0], &mut out);
+            let mut state = self.states[0];
+            decode_nibbles(payload, &mut state, out);
+            self.states[0] = state;
         } else {
             let mut group_start = out.len();
             for chunk in payload.chunks_exact(group) {
                 out.resize(group_start + 8 * channels, 0);
-                for (ch, state) in states.iter_mut().enumerate() {
+                let frames = &mut out[group_start..];
+                for (ch, slot) in self.states.iter_mut().enumerate() {
+                    let mut state = *slot;
                     let bytes = &chunk[ch * GROUP_BYTES_PER_CHANNEL..][..GROUP_BYTES_PER_CHANNEL];
                     let mut frame = 0usize;
                     for &byte in bytes {
-                        out[group_start + frame * channels + ch] = state.decode_nibble(byte & 0x0F);
+                        frames[frame * channels + ch] = state.decode_nibble(byte & 0x0F);
                         frame += 1;
-                        out[group_start + frame * channels + ch] =
-                            state.decode_nibble((byte >> 4) & 0x0F);
+                        frames[frame * channels + ch] = state.decode_nibble((byte >> 4) & 0x0F);
                         frame += 1;
                     }
+                    *slot = state;
                 }
                 group_start += 8 * channels;
             }
         }
 
-        pos += block_align;
+        self.pos += block_align;
+        true
     }
-
-    out
 }
 
 #[cfg(test)]

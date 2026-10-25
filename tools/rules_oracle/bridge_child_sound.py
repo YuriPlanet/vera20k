@@ -13,6 +13,10 @@ from tools.spatial_oracle.building_body_rules import INI,SP,dwords
 from tools.native_oracle import run_checked,RET_MAGIC,finish_vectors,provenance
 ROOT=Path(os.environ.get('VERA20K_BRIDGE_CHILD_SOUND_ASSETS',str(Path(os.environ.get('CARGO_TARGET_DIR','target'))/'asset/bridge-child-sound/extract')))
 def sections(raw):
+ # A last line without LF is not loaded: ReadINITextLine 65D5C0 flags the end
+ # of the file and a fresh LoadFromStraw 525A60 discards that line (executed
+ # controls: tools/storage_oracle/ini_crc). Retail ARTMD and MPMeatMD end so.
+ raw=raw[:raw.rfind(b'\n')+1]
  out={};cur=None
  for line in raw.decode('latin1').splitlines():
   line=line.split(';',1)[0].strip()

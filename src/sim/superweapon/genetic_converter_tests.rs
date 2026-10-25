@@ -246,9 +246,11 @@ fn the_launch_matches_native() {
                 SimSoundEvent::SuperWeaponLaunched {
                     owner: by,
                     sw_type: kind,
-                    rx,
-                    ry,
-                } if *by == owner && *kind == sw_type && (*rx, *ry) == cell => {
+                    world,
+                } if *by == owner
+                    && *kind == sw_type
+                    && (world.to_cell_sub_z().0, world.to_cell_sub_z().1) == cell =>
+                {
                     Some("launched".to_string())
                 }
                 SimSoundEvent::RadarEvent { radar } => Some(format!(
@@ -259,6 +261,25 @@ fn the_launch_matches_native() {
             })
             .collect();
         assert_eq!(pushed, lines, "{row}");
+        // PlayAtCoord's full coordinate, deck height included.
+        let sound: Vec<[i32; 3]> = row["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|event| event[0] == "play_at")
+            .map(|event| [int(&event[2][0]), int(&event[2][1]), int(&event[2][2])])
+            .collect();
+        let played: Vec<[i32; 3]> = sim
+            .sound_events
+            .iter()
+            .filter_map(|event| match *event {
+                SimSoundEvent::SuperWeaponLaunched {
+                    owner: by, world, ..
+                } if by == owner => Some([world.x, world.y, world.z]),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(played, sound, "{row}");
 
         let warhead = sim.interner.intern("Mutate");
         let explosion = sim.interner.intern("MutateExplosion");
@@ -787,7 +808,8 @@ fn retail_mutator_turns_conscripts_into_the_players_brutes() {
 
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
-        SimSoundEvent::SuperWeaponLaunched { owner, rx: 40, ry: 40, .. } if *owner == americans
+        SimSoundEvent::SuperWeaponLaunched { owner, world, .. }
+            if *owner == americans && world.to_cell_sub_z().0 == 40 && world.to_cell_sub_z().1 == 40
     )));
     for &id in &conscripts {
         assert!(

@@ -336,14 +336,41 @@ impl RandomMapSetupModalState {
         self.open_combo = None;
     }
 
-    /// Clicking a combo face opens it, or closes it if it was already open.
-    /// Opening one closes any other.
-    pub fn toggle_combo(&mut self, combo: SetupCombo) {
-        self.open_combo = if self.open_combo == Some(combo) {
-            None
-        } else {
-            Some(combo)
-        };
+    /// A mouse press on the combos, and the cue it plays; `None` when the
+    /// press is not theirs. `OwnerDraw_ComboBox @ 0x00617250` plays the open
+    /// cue on any press of an enabled face (`0x006184A2..0x006184BA`) and
+    /// opens the list only from its arrow zone, `x > right - 0x14`
+    /// (`0x006184BF..0x006184D7`; the shared hit rect is 1 px wider). The open list's drop window (`0x0060D540`) captures the
+    /// mouse: a pick, or a press anywhere else, closes it with the close cue
+    /// (`0x0060E4E9..0x0060E500`) and goes no further.
+    pub fn press_combos(
+        &mut self,
+        layout: &super::super::layout::RandomMapSetupLayout,
+        x: i32,
+        y: i32,
+    ) -> Option<super::SkirmishShellUiSound> {
+        if let Some(combo) = self.open_combo {
+            let items = setup_combo_items(combo);
+            if let Some(index) = super::super::layout::random_map_setup_dropdown_row_at(
+                layout,
+                combo.row(),
+                items.len(),
+                x,
+                y,
+            ) {
+                self.set_combo_value(combo, items[index].value);
+            }
+            self.open_combo = None;
+            return Some(super::SkirmishShellUiSound::GuiComboCloseSound);
+        }
+        let combo = super::super::layout::random_map_setup_control_at(layout, x, y)
+            .and_then(SetupCombo::from_control)
+            .filter(|combo| self.is_enabled(combo.control()))?;
+        let face = layout.control_rects[combo.row()];
+        if super::super::layout::combo_arrow_hit_rect(face, layout.scale).contains(x, y) {
+            self.open_combo = Some(combo);
+        }
+        Some(super::SkirmishShellUiSound::GuiComboOpenSound)
     }
 
     fn on_option_changed(&mut self) {
@@ -674,8 +701,7 @@ mod tests {
     #[test]
     fn picking_an_entry_closes_the_dropdown_and_invalidates_the_result() {
         let mut state = opened();
-        state.toggle_combo(SetupCombo::Resources);
-        assert_eq!(state.open_combo, Some(SetupCombo::Resources));
+        state.open_combo = Some(SetupCombo::Resources);
         state.generated = true;
         state.set_combo_value(SetupCombo::Resources, 3);
         assert_eq!(state.open_combo, None);
@@ -683,13 +709,59 @@ mod tests {
         assert!(!state.generated);
     }
 
+    /// A face press plays the open cue but only the arrow opens the list. With
+    /// a list open, a press on a row picks it and one anywhere else only
+    /// closes it; both play the close cue.
     #[test]
-    fn opening_one_combo_closes_another() {
+    fn combo_presses_open_from_the_arrow_and_close_from_anywhere() {
+        use super::super::SkirmishShellUiSound::{GuiComboCloseSound, GuiComboOpenSound};
+        let layout = super::super::super::layout::compute_random_map_setup_layout(800, 600);
         let mut state = opened();
-        state.toggle_combo(SetupCombo::Time);
-        state.toggle_combo(SetupCombo::Theater);
-        assert_eq!(state.open_combo, Some(SetupCombo::Theater));
-        state.toggle_combo(SetupCombo::Theater);
+        let time = layout.control_rects[SetupCombo::Time.row()];
+        let (text, arrow) = ((time.x + 4, time.y + 4), (time.x + time.w - 4, time.y + 4));
+        assert_eq!(
+            state.press_combos(&layout, text.0, text.1),
+            Some(GuiComboOpenSound)
+        );
         assert_eq!(state.open_combo, None);
+        assert_eq!(
+            state.press_combos(&layout, arrow.0, arrow.1),
+            Some(GuiComboOpenSound)
+        );
+        assert_eq!(state.open_combo, Some(SetupCombo::Time));
+        let list = super::super::super::layout::random_map_setup_dropdown_rect(
+            &layout,
+            SetupCombo::Time.row(),
+            setup_combo_items(SetupCombo::Time).len(),
+        );
+        let dusk_row = list.y + list.h * 5 / 8;
+        assert_eq!(
+            state.press_combos(&layout, list.x + 4, dusk_row),
+            Some(GuiComboCloseSound)
+        );
+        assert_eq!(
+            (
+                state.open_combo,
+                state.selected_item_index(SetupCombo::Time)
+            ),
+            (None, Some(2))
+        );
+        assert_eq!(
+            state.press_combos(&layout, arrow.0, arrow.1),
+            Some(GuiComboOpenSound)
+        );
+        let outside = (layout.randomize.x + 1, layout.randomize.y + 1);
+        assert_eq!(
+            state.press_combos(&layout, outside.0, outside.1),
+            Some(GuiComboCloseSound)
+        );
+        assert_eq!(
+            (
+                state.open_combo,
+                state.selected_item_index(SetupCombo::Time)
+            ),
+            (None, Some(2))
+        );
+        assert_eq!(state.press_combos(&layout, outside.0, outside.1), None);
     }
 }

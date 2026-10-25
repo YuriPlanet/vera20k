@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -38,5 +37,5 @@
     "csf_transport": "0x00734E60"
   },
   "replay_command": "python -m tools.procedural_drawing_oracle.shroud --primary-factory-status",
-  "payload_sha256": "f3f48c941fff2bfd4f1d1d006ef61eeb3d89873ab021120d56bc69c14779d327"
+  "payload_sha256": "982da66954bc821a597e193452ce33affc4b791375f034317b388cff78e220ce"
 }

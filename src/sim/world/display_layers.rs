@@ -195,6 +195,9 @@ impl Serialize for DisplayLayers {
 impl<'de> Deserialize<'de> for DisplayLayers {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let layers = <[Vec<u64>; 5]>::deserialize(deserializer)?;
+        if crate::util::save_codec::layout::describing() {
+            return Ok(Self::default());
+        }
         let mut registered = LookupMap::default();
         for (layer, members) in layers.iter().enumerate() {
             for &id in members {

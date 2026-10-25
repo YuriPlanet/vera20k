@@ -22,12 +22,19 @@ use crate::render::gpu::GpuContext;
 use crate::render::overlay_assets::resolve_overlay_name_for_render;
 use crate::rules::art_data::{self, ArtRegistry};
 use crate::rules::crate_rules::CrateRules;
-use crate::rules::ini_parser::IniFile;
+use crate::rules::effect_asset_catalog::load_overlay_shape;
 use crate::rules::overlay_types::{
     OverlayTypeFlags, OverlayTypeRegistry, is_bridge_overlay_index, is_high_bridge_index,
     native_mark_overlay_data,
 };
+use crate::rules::ruleset::RuleSet;
+use crate::rules::terrain_object_type::TerrainObjectType;
 use crate::rules::tiberium_type::TiberiumTypeRegistry;
+
+#[path = "overlay_zshape.rs"]
+mod zshape;
+pub(crate) use zshape::OverlayShapeRequest;
+use zshape::OverlayZShapes;
 
 /// Padding between sprites in the atlas to prevent texture bleeding.
 const SPRITE_PADDING: u32 = 1;
@@ -53,34 +60,13 @@ pub const CRATE_BODY_FRAME: u8 = 0;
 
 /// Count of body frames a wall overlay type can request at runtime.
 ///
-/// `DamageLevels=` (art.ini) is the number of damage stages the sim can step
-/// through, and each stage spans a full 16-frame connectivity block. Preloading
-/// only the first block is what makes a freshly scratched wall miss the atlas
-/// and fall back to frame 0 — a pristine, fully disconnected post.
-fn wall_body_frame_count(damage_levels: u16) -> u32 {
-    u32::from(damage_levels.max(1))
+/// Retained `DamageLevels=` spans16 connectivity frames per stage. Keep the
+/// initial connectivity block even for a nonpositive declaration: an accepted
+/// hit removes that wall, but its initial cells still draw before the hit.
+fn wall_body_frame_count(damage_levels: i32) -> u32 {
+    (damage_levels.max(1) as u32)
         .saturating_mul(WALL_CONNECTIVITY_FRAMES)
         .min(MAX_OVERLAY_FRAME_COUNT)
-}
-
-/// Leading SHP frames that are body art rather than shadow stencils.
-///
-/// Wall and bridge SHPs mirror every body frame with a 1-bit shadow stencil in
-/// the second half of the file (GAWALL.SHP: 48 body + 48 shadow). Resolving a
-/// frame out of the shadow half would blit a flat silhouette as the wall body.
-///
-/// The wall arm is VERA-internal with the gamemd equivalent UNCHECKED: the
-/// native overlay draw indexes the cell's overlay byte straight into the shape
-/// with no such cap. It cannot fire on stock content — every wall type's
-/// `16 * DamageLevels` reachable range lands inside its SHP's body half — so it
-/// is a guard against modded art/rules disagreeing, not a behaviour the engine
-/// relies on.
-fn body_frame_count(flags: &OverlayTypeFlags, total_frames: usize) -> usize {
-    if flags.bridge_deck || flags.wall {
-        total_frames / 2
-    } else {
-        total_frames
-    }
 }
 
 /// SHP frame an overlay cell draws, or `None` when the cell draws nothing.
@@ -98,23 +84,13 @@ fn body_frame_count(flags: &OverlayTypeFlags, total_frames: usize) -> usize {
 /// single wide sprite covers the row. Substituting the nearest populated frame
 /// here painted a full deck onto all three columns.
 ///
-/// The out-of-range arm is VERA-internal with the gamemd equivalent UNCHECKED:
-/// it pairs with `body_frame_count`'s shadow-half cap, and collapsing to frame 0
-/// keeps a wall visible when modded art declares fewer body frames than
-/// `DamageLevels` can reach.
-fn resolve_body_frame(
-    requested: u8,
-    max_normal_frame: usize,
-    frame_sizes: &[(u16, u16)],
-) -> Option<usize> {
+/// Original CellClass::DrawOverlay_Body47F96A..47F9AA forwards the same byte
+/// even beyond the first half. SHPStruct::GetFrameBounds69E7E9..69E820 checks
+/// the whole frame count; a missing or zero-size frame never substitutes0.
+fn resolve_body_frame(requested: u8, frame_sizes: &[(u16, u16)]) -> Option<usize> {
     let requested_idx: usize = requested as usize;
-    let frame_idx: usize = if requested_idx < max_normal_frame {
-        requested_idx
-    } else {
-        0
-    };
-    let (width, height) = frame_sizes.get(frame_idx).copied()?;
-    (width > 0 && height > 0).then_some(frame_idx)
+    let (width, height) = frame_sizes.get(requested_idx).copied()?;
+    (width > 0 && height > 0).then_some(requested_idx)
 }
 
 /// Namespace prefix for smudge atlas keys.
@@ -126,8 +102,17 @@ fn resolve_body_frame(
 /// so the prefix can never drift between sides.
 pub const SMUDGE_KEY_PREFIX: &str = "__smudge::";
 
+/// Source identity for Terrain DrawIt's body frame, apart from overlay keys:
+/// a TerrainType draws its own image even when an OverlayType shares its name.
+pub fn terrain_body_key(name: &str, frame: i32) -> OverlaySpriteKey {
+    OverlaySpriteKey {
+        name: format!("__terrain::{}", name.to_uppercase()),
+        frame,
+    }
+}
+
 /// Separate source identity for Terrain DrawIt's paired second-half stencil.
-pub fn terrain_shadow_key(name: &str, frame: u8) -> OverlaySpriteKey {
+pub fn terrain_shadow_key(name: &str, frame: i32) -> OverlaySpriteKey {
     OverlaySpriteKey {
         name: format!("__terrain_shadow::{}", name.to_uppercase()),
         frame,
@@ -140,7 +125,7 @@ pub fn terrain_shadow_key(name: &str, frame: u8) -> OverlaySpriteKey {
 pub fn rubble_key(shp: &str, frame: u16) -> OverlaySpriteKey {
     OverlaySpriteKey {
         name: rubble_image_name(shp),
-        frame: frame as u8,
+        frame: i32::from(frame as u8),
     }
 }
 
@@ -166,13 +151,14 @@ pub fn smudge_key(name: &str) -> OverlaySpriteKey {
 pub struct OverlaySpriteKey {
     /// Overlay or terrain object name (e.g., "GEM01", "INTREE01").
     pub name: String,
-    /// Frame/variant index.
-    pub frame: u8,
+    /// Terrain DrawIt71C208 retains the signed Stage dword. Ordinary overlay
+    /// callers still supply their unchanged raw data byte (47F6A0).
+    pub frame: i32,
 }
 
 /// Atlas keys reachable when a map-pack low bridge mutates its live overlay
 /// identity. The data byte is preserved by every damage/repair writer, so only
-/// data values actually seeded by low-bridge cells (plus frame zero fallback)
+/// data values actually seeded by low-bridge cells (plus frame zero)
 /// are reachable; every registered low-bridge identity can be selected later.
 fn runtime_low_bridge_sprite_keys(
     overlays: &[OverlayEntry],
@@ -201,28 +187,26 @@ fn runtime_low_bridge_sprite_keys(
         for &frame in &frames {
             keys.insert(OverlaySpriteKey {
                 name: name.clone(),
-                frame,
+                frame: i32::from(frame),
             });
         }
     }
     keys
 }
 
-/// Atlas keys reachable through the flat-cell resource display selector.
+/// Atlas keys reachable through the native flat/sloped resource selector.
 ///
 /// Active YR `CellClass__DrawOverlay_Body @ 0x0047F6A0` may draw any of the
-/// parsed TiberiumClass's 12 primary flat images while retaining the Cell data
-/// byte as the density frame. Preload that complete parsed product instead of
-/// inferring image families from stock filename prefixes or current map use.
-fn runtime_flat_tiberium_sprite_keys(
+/// TiberiumClass's12 primary and8 extra images (no extras for Image2) while
+/// retaining the Cell data byte. Preload the same range owner the display
+/// selector uses, including images absent from the current map pack.
+fn runtime_tiberium_sprite_keys(
     overlay_registry: &OverlayTypeRegistry,
     tiberium_types: &TiberiumTypeRegistry,
 ) -> HashSet<OverlaySpriteKey> {
     let mut keys = HashSet::new();
     for ty in tiberium_types.types() {
-        let Some(variant_ids) = overlay_registry.flat_tiberium_variant_ids(ty) else {
-            continue;
-        };
+        let variant_ids = overlay_registry.tiberium_display_variant_ids(ty);
         for overlay_id in variant_ids {
             let Some(name) = overlay_registry.name(overlay_id).map(str::to_owned) else {
                 continue;
@@ -230,7 +214,7 @@ fn runtime_flat_tiberium_sprite_keys(
             for frame in 0..ty.max_density {
                 keys.insert(OverlaySpriteKey {
                     name: name.clone(),
-                    frame,
+                    frame: i32::from(frame),
                 });
             }
         }
@@ -266,7 +250,7 @@ fn runtime_crate_sprite_keys(
         {
             keys.insert(OverlaySpriteKey {
                 name,
-                frame: CRATE_BODY_FRAME,
+                frame: i32::from(CRATE_BODY_FRAME),
             });
         }
     }
@@ -364,7 +348,7 @@ fn runtime_crate_sprite_keys(
             for frame in frames {
                 keys.insert(OverlaySpriteKey {
                     name: name.clone(),
-                    frame,
+                    frame: i32::from(frame),
                 });
             }
         }
@@ -385,6 +369,11 @@ pub struct OverlaySpriteEntry {
     pub offset_x: f32,
     /// Y offset from the cell center to the sprite's top-left corner.
     pub offset_y: f32,
+    /// Ordinary overlay crop/centering to CC_Draw_Shape's point. Bridge and
+    /// terrain proxies do not consume optional overlay shape metadata.
+    pub draw_point_offset: [i32; 2],
+    /// Only the extended ordinary SHP walker consumes optional depth bytes.
+    pub extended: bool,
 }
 
 /// A GPU texture atlas containing pre-rendered overlay sprites.
@@ -393,29 +382,49 @@ pub struct OverlayAtlas {
     pub texture: BatchTexture,
     /// Lookup: (name, frame) → UV rectangle + offset data.
     entries: HashMap<OverlaySpriteKey, OverlaySpriteEntry>,
-    native_terrain: HashSet<String>,
+    zshapes: Option<OverlayZShapes>,
 }
 
 impl OverlayAtlas {
+    pub(crate) fn apply_zshape(
+        &self,
+        request: OverlayShapeRequest,
+        sprite: &OverlaySpriteEntry,
+        camera: [f32; 2],
+        viewport: [f32; 2],
+        instance: &mut crate::render::batch::SpriteInstance,
+    ) -> bool {
+        self.zshapes.as_ref().is_none_or(|shapes| {
+            shapes.apply(
+                request,
+                sprite.draw_point_offset,
+                sprite.extended,
+                camera,
+                viewport,
+                instance,
+            )
+        })
+    }
+
+    pub(crate) fn zshape_bind_group(&self) -> Option<&wgpu::BindGroup> {
+        self.zshapes.as_ref().map(|shapes| &shapes.bind_group)
+    }
     /// Look up the atlas entry for a given (name, frame) pair.
     pub fn get(&self, key: &OverlaySpriteKey) -> Option<&OverlaySpriteEntry> {
         self.entries.get(key)
     }
 
-    /// Terrain body and its corresponding second-half stencil from one SHP.
-    pub fn native_terrain_pair(
+    /// Terrain body frame `frame` and its second-half stencil from one SHP.
+    /// Either is `None` when its frame is missing or empty and draws nothing.
+    pub fn terrain_pieces(
         &self,
         name: &str,
-        frame: u8,
-    ) -> Option<(&OverlaySpriteEntry, &OverlaySpriteEntry)> {
-        self.native_terrain.contains(name).then_some(())?;
-        Some((
-            self.get(&OverlaySpriteKey {
-                name: name.to_owned(),
-                frame,
-            })?,
-            self.get(&terrain_shadow_key(name, frame))?,
-        ))
+        frame: i32,
+    ) -> (Option<&OverlaySpriteEntry>, Option<&OverlaySpriteEntry>) {
+        (
+            self.get(&terrain_body_key(name, frame)),
+            self.get(&terrain_shadow_key(name, frame)),
+        )
     }
 
     /// Number of unique sprites in the atlas.
@@ -433,6 +442,8 @@ struct RenderedOverlay {
     height: u32,
     offset_x: f32,
     offset_y: f32,
+    draw_point_offset: [i32; 2],
+    extended: bool,
 }
 
 /// Build an overlay sprite atlas from map overlay/terrain data.
@@ -452,10 +463,7 @@ pub fn build_overlay_atlas(
     theater_ext: &str,
     theater_name: &str,
     overlay_registry: &OverlayTypeRegistry,
-    tiberium_types: &TiberiumTypeRegistry,
-    crate_rules: &CrateRules,
-    rules_ini: &IniFile,
-    art_registry: &ArtRegistry,
+    rules: &RuleSet,
     smudge_types: Option<&crate::rules::smudge_type::SmudgeTypeRegistry>,
     rubble_arts: &[crate::rules::building_rubble::RubbleArt],
 ) -> Option<OverlayAtlas> {
@@ -473,10 +481,7 @@ pub fn build_overlay_atlas(
         theater_ext,
         theater_name,
         overlay_registry,
-        tiberium_types,
-        crate_rules,
-        rules_ini,
-        art_registry,
+        rules,
         smudge_types,
         rubble_arts,
     )
@@ -498,13 +503,12 @@ pub(crate) fn build_overlay_atlas_on_device(
     theater_ext: &str,
     theater_name: &str,
     overlay_registry: &OverlayTypeRegistry,
-    tiberium_types: &TiberiumTypeRegistry,
-    crate_rules: &CrateRules,
-    rules_ini: &IniFile,
-    art_registry: &ArtRegistry,
+    rules: &RuleSet,
     smudge_types: Option<&crate::rules::smudge_type::SmudgeTypeRegistry>,
     rubble_arts: &[crate::rules::building_rubble::RubbleArt],
 ) -> Option<OverlayAtlas> {
+    let tiberium_types = &rules.tiberium_types;
+    let crate_rules = &rules.crate_rules;
     // Collect unique (name, frame) pairs from overlays.
     let mut needed: HashSet<OverlaySpriteKey> = HashSet::new();
 
@@ -514,9 +518,9 @@ pub(crate) fn build_overlay_atlas_on_device(
         {
             needed.insert(OverlaySpriteKey {
                 name: mapped_name.clone(),
-                frame: entry.frame,
+                frame: i32::from(entry.frame),
             });
-            // Also include frame 0 as fallback.
+            // Retain frame0 alongside the authored byte; lookups stay exact.
             needed.insert(OverlaySpriteKey {
                 name: mapped_name,
                 frame: 0,
@@ -533,13 +537,13 @@ pub(crate) fn build_overlay_atlas_on_device(
         needed.extend(low_bridge_keys);
     }
 
-    let flat_tiberium_keys = runtime_flat_tiberium_sprite_keys(overlay_registry, tiberium_types);
-    if !flat_tiberium_keys.is_empty() {
+    let tiberium_keys = runtime_tiberium_sprite_keys(overlay_registry, tiberium_types);
+    if !tiberium_keys.is_empty() {
         log::info!(
-            "Pre-loading {} flat tiberium display frame(s)",
-            flat_tiberium_keys.len()
+            "Pre-loading {} tiberium display frame(s)",
+            tiberium_keys.len()
         );
-        needed.extend(flat_tiberium_keys);
+        needed.extend(tiberium_keys);
     }
 
     // Overlay types the sim can create or mutate after this atlas is built are
@@ -571,7 +575,7 @@ pub(crate) fn build_overlay_atlas_on_device(
             for frame in 0..frame_count {
                 needed.insert(OverlaySpriteKey {
                     name: mapped_name.clone(),
-                    frame: frame as u8,
+                    frame: frame as i32,
                 });
             }
         }
@@ -595,61 +599,20 @@ pub(crate) fn build_overlay_atlas_on_device(
         );
     }
 
-    // For terrain objects, probe SHP frame counts. Animated objects (flags, etc.)
-    // need all frames loaded; static objects just need frame 0.
-    let mut terrain_anim_frames: HashMap<String, u8> = HashMap::new();
-    let mut native_terrain_candidates = HashSet::new();
-    let mut native_terrain = HashSet::new();
     // Mirage defaults are registered TerrainTypes even when no map Terrain
     // object uses them. Type/image loading must precede the first disguise.
+    let mut terrain_names: Vec<&str> = Vec::new();
     for name in terrain_objects
         .iter()
         .map(|object| object.name.as_str())
         .chain(extra_terrain_types.iter().map(String::as_str))
     {
-        if terrain_anim_frames.contains_key(name)
-            || needed.contains(&OverlaySpriteKey {
-                name: name.to_owned(),
-                frame: 0,
-            })
-        {
-            // Already processed this terrain type.
-            continue;
-        }
-        let frame_count = probe_terrain_shp_frame_count(
-            asset_manager,
-            name,
-            theater_ext,
-            theater_name,
-            rules_ini,
-            art_registry,
-        );
-        let ordinary_static = rules_ini.section(name).is_none_or(|s| {
-            !s.read_bool("IsAnimated", false) && !s.read_bool("SpawnsTiberium", false)
-        }) && overlay_registry.flags_by_name(name).is_none();
-        let animated_spawner = rules_ini.section(name).is_some_and(|section| {
-            section.read_bool("IsAnimated", false) && section.read_bool("SpawnsTiberium", false)
-        });
-        if (frame_count == 1 && ordinary_static) || animated_spawner {
-            native_terrain_candidates.insert(name.to_owned());
-        }
-        if frame_count > 1 {
-            terrain_anim_frames.insert(name.to_owned(), frame_count);
-            for frame in 0..frame_count {
-                needed.insert(OverlaySpriteKey {
-                    name: name.to_owned(),
-                    frame,
-                });
-            }
-        } else {
-            needed.insert(OverlaySpriteKey {
-                name: name.to_owned(),
-                frame: 0,
-            });
+        if !terrain_names.contains(&name) {
+            terrain_names.push(name);
         }
     }
 
-    if needed.is_empty() {
+    if needed.is_empty() && terrain_names.is_empty() {
         log::info!("No overlay/terrain sprites needed — skipping overlay atlas");
         return None;
     }
@@ -668,21 +631,13 @@ pub(crate) fn build_overlay_atlas_on_device(
             .flags_by_name(&key.name)
             .cloned()
             .unwrap_or_default();
-        // Terrain objects (e.g. TIBTRE01) aren't in OverlayTypeRegistry, so flags
-        // will be default. Check rules.ini for SpawnsTiberium=yes to detect
-        // tiberium trees — the original engine uses unit palette + -16px draw-point shift for these.
-        let spawns_tiberium: bool = !flags.tiberium
-            && rules_ini
-                .section_or_empty(&key.name)
-                .read_bool("SpawnsTiberium", false);
         // Palette selection:
         // - Tiberium overlays → tiberium palette (e.g., temperat.pal), NO remap
-        // - SpawnsTiberium terrain objects → unit palette
         // - Walls/veins/veinhole → unit palette
         // - Everything else → theater palette
         let palette: &Palette = if flags.tiberium {
             tiberium_palette
-        } else if spawns_tiberium || flags.wall || flags.is_veins || flags.is_veinhole_monster {
+        } else if flags.wall || flags.is_veins || flags.is_veinhole_monster {
             unit_palette
         } else {
             theater_palette
@@ -693,31 +648,16 @@ pub(crate) fn build_overlay_atlas_on_device(
             key,
             theater_ext,
             theater_name,
-            rules_ini,
-            art_registry,
+            overlay_registry,
             &flags,
-            spawns_tiberium,
-            native_terrain_candidates.contains(&key.name),
         ) {
-            Some((sprite, shadow)) => {
-                rendered.push(sprite);
-                if let Some(shadow) = shadow {
-                    native_terrain.insert(key.name.clone());
-                    rendered.push(shadow);
-                }
-            }
+            Some(sprite) => rendered.push(sprite),
             None => {
                 load_fail_count += 1;
                 // Only log at debug level — some overlay types (e.g., CYCL)
                 // are unused RA1 remnants with no backing SHP file.
-                let image_id: String = art_registry.resolve_overlay_image_id(&key.name, rules_ini);
-                let candidates: Vec<String> = art_data::overlay_shp_candidates(
-                    Some(art_registry),
-                    &key.name,
-                    &image_id,
-                    theater_ext,
-                    theater_name,
-                );
+                let candidates =
+                    overlay_registry.shp_candidates(&key.name, theater_ext, theater_name);
                 log::debug!(
                     "Overlay sprite not found: name={} frame={} (tried: {:?})",
                     key.name,
@@ -733,6 +673,35 @@ pub(crate) fn build_overlay_atlas_on_device(
         rendered.len(),
         load_fail_count,
         needed.len()
+    );
+
+    // --- Terrain objects ---
+    // SpawnsTiberium trees use the unit palette; their draw point carries
+    // Terrain DrawIt's 16-pixel lift.
+    let overlay_sprite_count = rendered.len();
+    for &name in &terrain_names {
+        let Some(terrain_type) = rules.terrain_object_type_case_insensitive(name) else {
+            continue;
+        };
+        let Some(shape_filename) = rules.terrain_shape_filename(name) else {
+            continue;
+        };
+        let palette = if terrain_type.spawns_tiberium {
+            unit_palette
+        } else {
+            theater_palette
+        };
+        rendered.extend(render_terrain_sprites(
+            asset_manager,
+            palette,
+            terrain_type,
+            shape_filename,
+        ));
+    }
+    log::info!(
+        "Terrain sprites: {} for {} type(s)",
+        rendered.len() - overlay_sprite_count,
+        terrain_names.len()
     );
 
     // --- Smudge SHPs ---
@@ -812,104 +781,64 @@ pub(crate) fn build_overlay_atlas_on_device(
         return None;
     }
 
-    if !terrain_anim_frames.is_empty() {
-        log::info!(
-            "Animated terrain objects: {} types ({:?})",
-            terrain_anim_frames.len(),
-            terrain_anim_frames,
-        );
-    }
-
-    Some(pack_overlay_sprites(
-        device,
-        queue,
-        batch,
-        &rendered,
-        native_terrain,
-    ))
+    let mut atlas = pack_overlay_sprites(device, queue, batch, &rendered);
+    atlas.zshapes = OverlayZShapes::load(device, queue, batch, asset_manager, theater_ext);
+    Some(atlas)
 }
 
 /// Load and render a single overlay SHP sprite to RGBA pixels.
 ///
-/// Uses explicit overlay image resolution first, then original-style filename
-/// conventions. Repo-only numeric-suffix fallback remains local to this module.
+/// The first candidate file that loads is the image, even when every frame is
+/// empty: `CellClass::DrawOverlay_Body` (0x47F6A0) draws the shape
+/// `OverlayTypeClass::GetImage` (0x5FEDE0) reads from the type's own image
+/// name. No other file stands in, so retail's empty LOBRDG27/LOBRDB27 rows
+/// draw nothing.
 fn render_overlay_sprite(
     asset_manager: &AssetManager,
     palette: &Palette,
     key: &OverlaySpriteKey,
     theater_ext: &str,
     theater_name: &str,
-    rules_ini: &IniFile,
-    art_registry: &ArtRegistry,
+    overlay_registry: &OverlayTypeRegistry,
     flags: &OverlayTypeFlags,
-    spawns_tiberium: bool,
-    native_terrain: bool,
-) -> Option<(RenderedOverlay, Option<RenderedOverlay>)> {
-    let image_id: String = art_registry.resolve_overlay_image_id(&key.name, rules_ini);
-    let mut candidates: Vec<String> = art_data::overlay_shp_candidates(
-        Some(art_registry),
-        &key.name,
-        &image_id,
-        theater_ext,
-        theater_name,
-    );
+) -> Option<RenderedOverlay> {
     // Debug override: force all tiberium overlays to render using one chosen image
     // (e.g. TIB01/TIB02/TIB03) to quickly validate sprite selection issues.
-    if flags.tiberium
-        && let Some(forced_name) = forced_tiberium_image_name()
-    {
-        candidates.insert(
-            0,
-            format!("{}.{}", forced_name.to_ascii_lowercase(), theater_ext),
-        );
-        candidates.insert(1, format!("{}.shp", forced_name.to_ascii_lowercase()));
-        candidates.insert(2, format!("{}.{}", forced_name, theater_ext));
-        candidates.insert(3, format!("{}.shp", forced_name));
-    }
-
-    if let Some(alias) = decrement_numeric_suffix(&key.name) {
-        candidates.push(format!("{}.{}", alias, theater_ext));
-        candidates.push(format!("{}.shp", alias));
-        candidates.push(format!("{}.{}", alias.to_ascii_lowercase(), theater_ext));
-        candidates.push(format!("{}.shp", alias.to_ascii_lowercase()));
-    }
+    let forced_shape = flags
+        .tiberium
+        .then(forced_tiberium_image_name)
+        .flatten()
+        .and_then(|forced_name| {
+            [
+                format!("{}.{}", forced_name.to_ascii_lowercase(), theater_ext),
+                format!("{}.shp", forced_name.to_ascii_lowercase()),
+                format!("{}.{}", forced_name, theater_ext),
+                format!("{}.shp", forced_name),
+            ]
+            .into_iter()
+            .find_map(|name| {
+                ShpFile::from_bytes(asset_manager.get_ref(&name)?)
+                    .ok()
+                    .map(|shp| (name, shp))
+            })
+        });
 
     // Tiberium overlays now use the dedicated tiberium palette (e.g., temperat.pal)
     // which already has correct ore colors at all indices — no remap needed.
     // Walls use the unit palette with default remap range colors.
 
-    let mut found_name: String = String::new();
-    let mut shp_opt: Option<ShpFile> = None;
-    for name in &candidates {
-        let Some(data) = asset_manager.get_ref(name) else {
-            continue;
-        };
-        let Ok(shp) = ShpFile::from_bytes(data) else {
-            continue;
-        };
-        // Skip template files with no drawable frames (e.g. some bridge stubs).
-        let has_drawable = shp
-            .frames
-            .iter()
-            .any(|fr| fr.frame_width > 0 && fr.frame_height > 0);
-        if !has_drawable {
-            continue;
-        }
-        found_name = name.clone();
-        shp_opt = Some(shp);
-        break;
-    }
-    let shp: ShpFile = shp_opt?;
+    // ReadINI5FE770, InitTheater5FE620 and saved Load5FEAF0 share the
+    // processed type's reached load requests with authored admission/radar.
+    let (found_name, shp) = forced_shape.or_else(|| {
+        load_overlay_shape(
+            asset_manager,
+            overlay_registry,
+            &key.name,
+            theater_ext,
+            theater_name,
+        )
+    })?;
     log::trace!("Overlay sprite {} uses {}", key.name, found_name);
-
-    if shp.frames.is_empty() {
-        return None;
-    }
-
-    // Bridge and wall SHPs contain shadow frames in the second half (bridge:
-    // frames 18-35 of 36; GAWALL: frames 48-95 of 96). Cap to the normal
-    // (non-shadow) range so we never render a shadow stencil as the body.
-    let max_normal_frame: usize = body_frame_count(flags, shp.frames.len());
 
     // Select frame:
     // High bridge overlays (BRIDGE1/2, BRIDGEB1/2) share one SHP file
@@ -921,41 +850,63 @@ fn render_overlay_sprite(
         .iter()
         .map(|fr| (fr.frame_width, fr.frame_height))
         .collect();
-    let frame_idx: usize = resolve_body_frame(key.frame, max_normal_frame, &frame_sizes)?;
-
-    let y_offset: f32 = if native_terrain {
-        0.0
-    } else if spawns_tiberium {
-        -16.0
-    } else {
-        flags.y_draw_offset()
-    };
-    let body = render_decoded_overlay_frame(&shp, palette, key.clone(), frame_idx, y_offset)?;
-    // Terrain DrawIt71C1B0 selects body Stage and shadow Stage+rawcount/2.
-    // Stock TIBTRE format3 dispatch and draw arguments: terrain_render.md.
-    let shadow = native_terrain_shadow_frame(&shp, frame_idx, native_terrain).and_then(|frame| {
-        render_decoded_overlay_frame(
-            &shp,
-            palette,
-            terrain_shadow_key(&key.name, key.frame),
-            frame,
-            0.0,
-        )
-    });
-    Some((body, shadow))
+    let frame_idx: usize = resolve_body_frame(u8::try_from(key.frame).ok()?, &frame_sizes)?;
+    render_decoded_overlay_frame(&shp, palette, key.clone(), frame_idx, flags.y_draw_offset())
 }
 
-fn native_terrain_shadow_frame(shp: &ShpFile, frame: usize, native_terrain: bool) -> Option<usize> {
-    let shadow = frame.checked_add(shp.frames.len() / 2)?;
-    let body = shp.frames.get(frame)?;
-    let stencil = shp.frames.get(shadow)?;
-    (native_terrain
-        && frame < shp.frames.len() / 2
-        && body.format & 2 != 0
-        && stencil.format & 2 != 0
-        && stencil.frame_width > 0
-        && stencil.frame_height > 0)
-        .then_some(shadow)
+/// Body and shadow sprites of one TerrainType for every frame Terrain DrawIt
+/// (0x71C1B0) can pick: each stage of an IsAnimated type, else frame 0 and the
+/// frame 1 it draws below 2 health. Frame F's shadow is frame F + count/2.
+///
+/// Both draw whatever their SHP format: CC_Draw_Shape (0x4AED70) sends an
+/// uncompressed frame through Bit_Blit_ClipRects (0x4373B0) to the same Z
+/// read/write and darken blitters as the RLE path. One unported difference:
+/// that walker seeds the body's bottom-seeded gradient from the clipped
+/// rectangle, so an uncompressed body cut by the screen's bottom edge gets a
+/// slightly different Z. A missing or empty frame draws nothing, as
+/// SHPStruct::GetFrameBounds (0x69E7E0) gives CC_Draw_Shape an empty rectangle.
+/// The rules asset owner supplies the resident shape selected by original
+/// TerrainTypeClass::ReadINI (0x71DEA0) and InitTheater (0x71DCA0).
+fn render_terrain_sprites(
+    asset_manager: &AssetManager,
+    palette: &Palette,
+    terrain_type: &TerrainObjectType,
+    shape_filename: &str,
+) -> Vec<RenderedOverlay> {
+    let Some(shp) = asset_manager
+        .get_ref(shape_filename)
+        .and_then(|bytes| ShpFile::from_bytes(bytes).ok())
+    else {
+        log::debug!("Terrain image not found: {shape_filename}");
+        return Vec::new();
+    };
+    let name = &terrain_type.name;
+    let half = shp.frames.len() / 2;
+    let frames = if terrain_type.is_animated {
+        0..half.max(1)
+    } else {
+        0..2
+    };
+    let mut sprites = Vec::new();
+    for frame in frames {
+        // Terrain DrawIt71C208/71C344 passes the full Stage and Stage+half
+        // to CC_Draw_Shape. The SHP count, not an OverlayData byte, bounds
+        // this animated-spawner preload domain (AI71C87A).
+        let stage = frame as i32;
+        for (key, index) in [
+            (terrain_body_key(name, stage), frame),
+            (terrain_shadow_key(name, stage), frame + half),
+        ] {
+            if shp
+                .frames
+                .get(index)
+                .is_some_and(|source| source.frame_width > 0 && source.frame_height > 0)
+            {
+                sprites.extend(render_decoded_overlay_frame(&shp, palette, key, index, 0.0));
+            }
+        }
+    }
+    sprites
 }
 
 /// Retain the literal palette index/stencil next to decoded RGB. No palette
@@ -983,6 +934,11 @@ fn render_decoded_overlay_frame(
         height: u32::from(frame.frame_height),
         offset_x,
         offset_y,
+        draw_point_offset: [
+            i32::from(shp.width / 2) - i32::from(frame.frame_x),
+            i32::from(shp.height / 2) - i32::from(frame.frame_y),
+        ],
+        extended: frame.format & 2 != 0,
     })
 }
 
@@ -1001,22 +957,6 @@ pub(crate) fn stored_frame_offset(
         f32::from(frame_x) - f32::from(canvas_width / 2),
         f32::from(frame_y) - f32::from(canvas_height / 2) + y_offset,
     )
-}
-
-/// If a name ends in digits, return a variant with that numeric suffix decremented.
-/// Example: "LOBRDG27" -> "LOBRDG26", "FENCE21" -> "FENCE20".
-fn decrement_numeric_suffix(name: &str) -> Option<String> {
-    let split: usize = name.rfind(|c: char| !c.is_ascii_digit())?;
-    if split + 1 >= name.len() {
-        return None;
-    }
-    let (prefix, digits) = name.split_at(split + 1);
-    let width: usize = digits.len();
-    let n: u32 = digits.parse().ok()?;
-    if n == 0 {
-        return None;
-    }
-    Some(format!("{}{:0width$}", prefix, n - 1, width = width))
 }
 
 /// Build the candidate SHP filename list for a SmudgeType.
@@ -1047,10 +987,18 @@ fn forced_tiberium_image_name() -> Option<&'static str> {
         .as_deref()
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum OverlayRadarColorSource {
+    /// Cell47C060 bypasses the type image for Tiberium's CellAnim branch.
+    Cell,
+    /// Preview641140 calls OverlayTypeGetRadarColor5FED00 directly.
+    OverlayType,
+}
+
 /// Read exact SHP-frame radar metadata for every runtime-addressable overlay.
 ///
 /// `CellClass::GetRadarColor @ 0x0047C060` selects frame 1 for the two low-
-/// bridge ranges and the cell data byte otherwise. `OverlayClass::GetRadarColor
+/// bridge ranges and the cell data byte otherwise. `OverlayTypeClass::GetRadarColor
 /// @ 0x005FED00` / `GetTiberiumRadarColor @ 0x0069E860` read bytes 0x0C..0x0E
 /// from that frame header; rendered-pixel averages and palettes are not part of
 /// this path. Tiberium is deliberately different: `OverlayTypeClass::ReadINI
@@ -1061,10 +1009,10 @@ fn forced_tiberium_image_name() -> Option<&'static str> {
 pub fn compute_overlay_radar_colors(
     asset_manager: &AssetManager,
     overlay_registry: &OverlayTypeRegistry,
+    source: OverlayRadarColorSource,
     overlay_names: &BTreeMap<u8, String>,
     theater_ext: &str,
     theater_name: &str,
-    rules_ini: &IniFile,
     art_registry: &ArtRegistry,
 ) -> HashMap<(u8, u8), [u8; 3]> {
     // Cache: overlay_id -> loaded ShpFile
@@ -1079,12 +1027,13 @@ pub fn compute_overlay_radar_colors(
         };
         let flags = overlay_registry.flags(overlay_id);
         let is_tiberium = flags.is_some_and(|flags| flags.tiberium);
-        let shp = if is_tiberium {
+        let cell_anim = || {
             flags
                 .and_then(|flags| flags.cell_anim.as_deref())
                 .and_then(|anim| {
                     let image_id = art_registry.resolve_anim_image_id(anim);
-                    load(art_data::anim_shp_candidates(
+                    load(art_data::effect_shp_candidates(
+                        crate::rules::art_data::EffectImageKind::Animation,
                         Some(art_registry),
                         anim,
                         &image_id,
@@ -1092,15 +1041,19 @@ pub fn compute_overlay_radar_colors(
                         theater_name,
                     ))
                 })
+        };
+        let shp = if source == OverlayRadarColorSource::Cell && is_tiberium {
+            cell_anim()
         } else {
-            let image_id = art_registry.resolve_overlay_image_id(name, rules_ini);
-            load(art_data::overlay_shp_candidates(
-                Some(art_registry),
+            load_overlay_shape(
+                asset_manager,
+                overlay_registry,
                 name,
-                &image_id,
                 theater_ext,
                 theater_name,
-            ))
+            )
+            .map(|(_, shp)| shp)
+            .or_else(cell_anim)
         };
         if let Some(shp) = shp {
             shp_cache.insert(overlay_id, shp);
@@ -1112,7 +1065,19 @@ pub fn compute_overlay_radar_colors(
         for (frame, header) in shp.frames.iter().take(usize::from(u8::MAX) + 1).enumerate() {
             if let Ok(frame) = u8::try_from(frame) {
                 // Black is data, not an absence sentinel (e.g. retail bridge.tem).
-                result.insert((overlay_id, frame), header.radar_color);
+                let rgb = if source == OverlayRadarColorSource::Cell
+                    && overlay_registry
+                        .flags(overlay_id)
+                        .is_some_and(|flags| flags.tiberium)
+                {
+                    header.radar_color
+                } else {
+                    crate::rules::overlay_types::overlay_radar_channel_order(
+                        overlay_id,
+                        header.radar_color,
+                    )
+                };
+                result.insert((overlay_id, frame), rgb);
             }
         }
     }
@@ -1124,41 +1089,6 @@ pub fn compute_overlay_radar_colors(
     );
 
     result
-}
-
-/// Probe the SHP frame count for a terrain object.
-///
-/// Loads the SHP file and returns the number of non-empty frames.
-/// Returns 1 if the SHP cannot be loaded or has only one frame.
-fn probe_terrain_shp_frame_count(
-    asset_manager: &AssetManager,
-    name: &str,
-    theater_ext: &str,
-    theater_name: &str,
-    rules_ini: &IniFile,
-    art_registry: &ArtRegistry,
-) -> u8 {
-    let image_id: String = art_registry.resolve_overlay_image_id(name, rules_ini);
-    let candidates: Vec<String> = art_data::overlay_shp_candidates(
-        Some(art_registry),
-        name,
-        &image_id,
-        theater_ext,
-        theater_name,
-    );
-    for candidate in &candidates {
-        let Some(data) = asset_manager.get_ref(candidate) else {
-            continue;
-        };
-        let Ok(shp) = ShpFile::from_bytes(data) else {
-            continue;
-        };
-        // Terrain SHPs store shadow frames in the second half (same layout
-        // as buildings/bridges). Only the first half are normal image frames.
-        let normal = (shp.frames.len() / 2).clamp(1, 255) as u8;
-        return normal;
-    }
-    1
 }
 
 /// Load and render a single SmudgeType SHP frame 0 to RGBA pixels.
@@ -1253,6 +1183,8 @@ fn render_smudge_sprite(
         height: full_h,
         offset_x,
         offset_y,
+        draw_point_offset: [0; 2],
+        extended: false,
     })
 }
 
@@ -1270,7 +1202,6 @@ fn pack_overlay_sprites(
     queue: &wgpu::Queue,
     batch: &BatchRenderer,
     sprites: &[RenderedOverlay],
-    native_terrain: HashSet<String>,
 ) -> OverlayAtlas {
     let PackedOverlaySprites {
         rgba,
@@ -1298,7 +1229,7 @@ fn pack_overlay_sprites(
     OverlayAtlas {
         texture,
         entries,
-        native_terrain,
+        zshapes: None,
     }
 }
 
@@ -1400,6 +1331,8 @@ fn pack_overlay_pixels(sprites: &[RenderedOverlay], max_texture_dim: u32) -> Pac
                 pixel_size: [w as f32, h as f32],
                 offset_x: spr.offset_x,
                 offset_y: spr.offset_y,
+                draw_point_offset: spr.draw_point_offset,
+                extended: spr.extended,
             },
         );
     }
@@ -1419,13 +1352,65 @@ impl OverlayAtlas {
         Self {
             texture,
             entries: HashMap::new(),
-            native_terrain: HashSet::new(),
+            zshapes: None,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn animated_terrain_binds_stage_256_body_and_paired_shadow() {
+        use super::*;
+        // TerrainAI71C87A resets a spawner at raw count/2, so514 is the
+        // first shape whose Stage256 reaches DrawIt71C208/71C344.
+        let directory = crate::map::source::test_support::TestDirectory::new("terrain-stage-256");
+        let mut bytes = vec![0u8; 8 + 514 * 24];
+        for (offset, value) in [(2, 1u16), (4, 1), (6, 514)] {
+            bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+        }
+        // Empty earlier frames keep this a single boundary witness. Palette
+        // indices are authored input bytes, not native arithmetic goldens.
+        for (frame, index) in [(256, 7u8), (513, 1)] {
+            let header = 8 + frame * 24;
+            bytes[header + 4..header + 6].copy_from_slice(&1u16.to_le_bytes());
+            bytes[header + 6..header + 8].copy_from_slice(&1u16.to_le_bytes());
+            let offset = bytes.len() as u32;
+            bytes[header + 20..header + 24].copy_from_slice(&offset.to_le_bytes());
+            bytes.push(index);
+        }
+        directory.write("TIBTRE01.TEM", &bytes);
+        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        let palette = Palette::from_bytes(&[0; 768]).unwrap();
+        let ini = IniFile::from_str(
+            "[TerrainTypes]\n0=TIBTRE01\n[TIBTRE01]\nIsAnimated=yes\nSpawnsTiberium=yes\n",
+        );
+        let art = IniFile::from_str("[TIBTRE01]\nTheater=yes\n");
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+        rules.bind_terrain_assets(&assets, "TEM", TerrainAssetLoadPhase::Fresh);
+        let sprites = render_terrain_sprites(
+            &assets,
+            &palette,
+            rules
+                .terrain_object_type_case_insensitive("TIBTRE01")
+                .unwrap(),
+            rules.terrain_shape_filename("TIBTRE01").unwrap(),
+        );
+        assert_eq!(sprites.len(), 2, "both pieces of the last pre-reset stage");
+        let packed = pack_overlay_pixels(&sprites, 64);
+        for (prefix, index) in [("__terrain::", 7), ("__terrain_shadow::", 1)] {
+            let (key, entry) = packed
+                .entries
+                .iter()
+                .find(|(key, _)| key.name.starts_with(prefix))
+                .unwrap();
+            assert_eq!(key.frame, 256);
+            let x = (entry.uv_origin[0] * packed.width as f32).round() as usize;
+            let y = (entry.uv_origin[1] * packed.height as f32).round() as usize;
+            assert_eq!(packed.source_indices[y * packed.width as usize + x], index);
+        }
+    }
+
     #[test]
     fn static_extended_pair_preserves_source_indices_through_decode_and_atlas_copy() {
         use super::*;
@@ -1449,15 +1434,9 @@ mod tests {
             bytes.extend_from_slice(&((payload.len() + 2) as u16).to_le_bytes());
             bytes.extend_from_slice(&payload);
         }
-        let mut shp = ShpFile::from_bytes(&bytes).unwrap();
-        assert_eq!(native_terrain_shadow_frame(&shp, 0, true), Some(1));
-        assert_eq!(native_terrain_shadow_frame(&shp, 0, false), None);
-        assert_eq!(native_terrain_shadow_frame(&shp, 1, true), None);
+        let shp = ShpFile::from_bytes(&bytes).unwrap();
         let palette = Palette::from_bytes(&[0u8; 768]).unwrap();
-        let key = OverlaySpriteKey {
-            name: "TREE01".into(),
-            frame: 0,
-        };
+        let key = terrain_body_key("TREE01", 0);
         let body = render_decoded_overlay_frame(&shp, &palette, key.clone(), 0, 0.0).unwrap();
         let shadow_key = terrain_shadow_key("TREE01", 0);
         let shadow =
@@ -1486,35 +1465,202 @@ mod tests {
                 "atlas padding must not become a stencil pixel"
             );
         }
-        shp.frames[1].format = 0;
-        assert_eq!(native_terrain_shadow_frame(&shp, 0, true), None);
-        shp.frames[1].format = 3;
-        shp.frames[1].frame_width = 0;
-        assert_eq!(native_terrain_shadow_frame(&shp, 0, true), None);
     }
 
     use std::fmt::Write as _;
 
     use super::{
-        MAX_OVERLAY_FRAME_COUNT, OverlaySpriteKey, OverlayTypeFlags, body_frame_count,
-        decrement_numeric_suffix, resolve_body_frame, runtime_crate_sprite_keys,
-        runtime_flat_tiberium_sprite_keys, runtime_low_bridge_sprite_keys, stored_frame_offset,
+        MAX_OVERLAY_FRAME_COUNT, OverlaySpriteKey, resolve_body_frame, runtime_crate_sprite_keys,
+        runtime_low_bridge_sprite_keys, runtime_tiberium_sprite_keys, stored_frame_offset,
         wall_body_frame_count,
     };
     use crate::map::overlay::OverlayEntry;
     use crate::rules::crate_rules::CrateRules;
     use crate::rules::ini_parser::IniFile;
     use crate::rules::overlay_types::OverlayTypeRegistry;
+    use crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase;
     use crate::rules::tiberium_type::TiberiumTypeRegistry;
 
+    /// `CellClass::DrawOverlay_Body` (0x47F6A0) draws the shape that
+    /// `OverlayTypeClass::GetImage` (0x5FEDE0) loads from the type's own image
+    /// name, at the cell's frame byte. Retail's destroyed north-south low
+    /// bridge rows, `LOBRDG27` (wood) and `LOBRDB27` (concrete), are all-empty
+    /// SHPs, so they draw nothing; the previous piece's art never stands in.
     #[test]
-    fn test_decrement_numeric_suffix_is_local_fallback() {
+    fn retail_destroyed_low_bridge_rows_draw_their_own_empty_art() {
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let retail = crate::rules::retail_ini_fixture::retail_battle_rules()
+            .expect("retail Battle rules beside the archives");
+        let theater = crate::map::theater::load_theater(&mut assets, "SNOW").unwrap();
+        let registry = retail.rules.overlay_registry();
+        let render = |name: &str| {
+            super::render_overlay_sprite(
+                &assets,
+                &theater.iso_palette,
+                &OverlaySpriteKey {
+                    name: name.to_owned(),
+                    frame: 1,
+                },
+                theater.extension,
+                "SNOW",
+                registry,
+                registry.flags_by_name(name).unwrap(),
+            )
+        };
+        for (standing, destroyed) in [("LOBRDG26", "LOBRDG27"), ("LOBRDB26", "LOBRDB27")] {
+            assert!(render(standing).is_some(), "{standing} draws frame 1");
+            assert!(render(destroyed).is_none(), "{destroyed} draws nothing");
+        }
+    }
+
+    /// OverlayTypeClass::ReadINI5FE8BE retains ART[GAWALL]'s3 stages when
+    /// the later Image=TIB01 ART omits DamageLevels. Wall draw47F99C passes
+    /// raw16; GetFrameBounds69E7E9 reads that empty frame, never frame0.
+    #[test]
+    fn retail_snow_wall_redirect_draws_no_body_for_empty_damage_frame() {
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+            "XXmas.MAP",
+            &IniFile::from_str("[GAWALL]\nImage=TIB01\n"),
+        )
+        .expect("retail Battle/XXmas owner with an authored Image override");
+        let theater = crate::map::theater::load_theater(&mut assets, "SNOW").unwrap();
+        let registry = retail.rules.overlay_registry();
+        let flags = registry.flags_by_name("GAWALL").unwrap();
+        assert_eq!(flags.damage_levels, 3);
+        let (filename, shape) =
+            super::load_overlay_shape(&assets, registry, "GAWALL", theater.extension, "SNOW")
+                .unwrap();
+        assert!(filename.eq_ignore_ascii_case("TIB01.SNO"));
+        assert!(shape.frames[0].pixels.iter().any(|&pixel| pixel != 0));
         assert_eq!(
-            decrement_numeric_suffix("LOBRDG27"),
-            Some("LOBRDG26".to_string())
+            (shape.frames[16].frame_width, shape.frames[16].frame_height),
+            (0, 0)
         );
-        assert_eq!(decrement_numeric_suffix("FENCE00"), None);
-        assert_eq!(decrement_numeric_suffix("BRIDGE"), None);
+        let render = |frame| {
+            super::render_overlay_sprite(
+                &assets,
+                &theater.unit_palette,
+                &OverlaySpriteKey {
+                    name: "GAWALL".to_owned(),
+                    frame,
+                },
+                theater.extension,
+                "SNOW",
+                registry,
+                flags,
+            )
+        };
+        assert!(render(0).is_some(), "standing frame remains drawable");
+        assert!(
+            render(16).is_none(),
+            "empty damage frame must not substitute0"
+        );
+    }
+
+    /// Terrain DrawIt (0x71C1B0) draws body frame F and shadow frame
+    /// F + count/2 whatever their SHP format, and an empty frame draws
+    /// nothing. Retail SIGN03 has an uncompressed body; TREE19.SNO has an
+    /// empty shadow frame. Frame 1 is the body DrawIt picks below 2 health.
+    #[test]
+    fn retail_terrain_draws_uncompressed_bodies_and_skips_empty_frames() {
+        use super::{terrain_body_key, terrain_shadow_key};
+        use std::collections::HashSet;
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut retail = crate::rules::retail_ini_fixture::retail_battle_rules()
+            .expect("retail Battle rules beside the archives");
+        let theater = crate::map::theater::load_theater(&mut assets, "SNOW").unwrap();
+        retail
+            .rules
+            .bind_terrain_assets(&assets, theater.extension, TerrainAssetLoadPhase::Fresh);
+        let keys = |name: &str| {
+            super::render_terrain_sprites(
+                &assets,
+                &theater.iso_palette,
+                retail
+                    .rules
+                    .terrain_object_type_case_insensitive(name)
+                    .unwrap(),
+                retail.rules.terrain_shape_filename(name).unwrap(),
+            )
+            .into_iter()
+            .map(|sprite| sprite.key)
+            .collect::<HashSet<_>>()
+        };
+        assert_eq!(
+            keys("SIGN03"),
+            HashSet::from([
+                terrain_body_key("SIGN03", 0),
+                terrain_shadow_key("SIGN03", 0),
+                terrain_body_key("SIGN03", 1),
+            ])
+        );
+        assert_eq!(
+            keys("TREE19"),
+            HashSet::from([terrain_body_key("TREE19", 0)])
+        );
+    }
+
+    /// Original TerrainTypeClass::InitTheater (0x71DCA0) loads the stored
+    /// type ID, while TerrainTypeClass::ReadINI (0x71DEA0) keeps Image for
+    /// its separate ART/read-time uses. Atlas pixels follow the resident SHP.
+    #[test]
+    fn retail_theater_spawner_atlas_ignores_rules_image_redirect() {
+        use super::*;
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let patch = IniFile::from_str("[TIBTRE01]\nImage=TREE01\n");
+        let mut retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+            "Hills.mmx",
+            &patch,
+        )
+        .expect("retail scenario reader with the authored Image override");
+        let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+        retail
+            .rules
+            .bind_terrain_assets(&assets, theater.extension, TerrainAssetLoadPhase::Fresh);
+        let source = ShpFile::from_bytes(assets.get_ref("TIBTRE01.TEM").unwrap()).unwrap();
+        let sprites = render_terrain_sprites(
+            &assets,
+            &theater.unit_palette,
+            retail
+                .rules
+                .terrain_object_type_case_insensitive("TIBTRE01")
+                .unwrap(),
+            retail.rules.terrain_shape_filename("TIBTRE01").unwrap(),
+        );
+        let packed = pack_overlay_pixels(&sprites, 4096);
+        for (key, frame) in [
+            (terrain_body_key("TIBTRE01", 0), &source.frames[0]),
+            (
+                terrain_shadow_key("TIBTRE01", 0),
+                &source.frames[source.frames.len() / 2],
+            ),
+        ] {
+            let entry = &packed.entries[&key];
+            assert_eq!(
+                entry.pixel_size,
+                [f32::from(frame.frame_width), f32::from(frame.frame_height)]
+            );
+            let x = (entry.uv_origin[0] * packed.width as f32).round() as usize;
+            let y = (entry.uv_origin[1] * packed.height as f32).round() as usize;
+            let width = usize::from(frame.frame_width);
+            for row in 0..usize::from(frame.frame_height) {
+                let start = (y + row) * packed.width as usize + x;
+                assert_eq!(
+                    packed.source_indices[start..start + width],
+                    frame.pixels[row * width..(row + 1) * width],
+                    "{key:?}: physical own-ID body/stencil source"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1657,31 +1803,29 @@ mod tests {
         // the middle column carries art; its single 120px-wide sprite covers the
         // whole row. Resolving the flanks to the populated frame drew the deck
         // three times, offset by a cell each way.
-        let max_normal_frame: usize = LOW_BRIDGE_FRAME_SIZES.len() / 2;
         assert_eq!(
-            resolve_body_frame(0, max_normal_frame, &LOW_BRIDGE_FRAME_SIZES),
+            resolve_body_frame(0, &LOW_BRIDGE_FRAME_SIZES),
             None,
             "left flank must draw nothing"
         );
         assert_eq!(
-            resolve_body_frame(1, max_normal_frame, &LOW_BRIDGE_FRAME_SIZES),
+            resolve_body_frame(1, &LOW_BRIDGE_FRAME_SIZES),
             Some(1),
             "middle column carries the deck sprite"
         );
         assert_eq!(
-            resolve_body_frame(2, max_normal_frame, &LOW_BRIDGE_FRAME_SIZES),
+            resolve_body_frame(2, &LOW_BRIDGE_FRAME_SIZES),
             None,
             "right flank must draw nothing"
         );
     }
 
     #[test]
-    fn out_of_range_frames_still_collapse_to_zero() {
-        // VERA-internal guard (gamemd equivalent UNCHECKED): a wall whose art
-        // declares fewer body frames than DamageLevels can reach stays visible
-        // as a pristine post rather than vanishing.
+    fn missing_frames_draw_nothing_without_a_shadow_half_cap() {
+        // GetFrameBounds69E7E9 checks the full count, not its body half.
         let wall: Vec<(u16, u16)> = vec![(30, 30); 16];
-        assert_eq!(resolve_body_frame(0x2F, wall.len(), &wall), Some(0));
+        assert_eq!(resolve_body_frame(15, &wall), Some(15));
+        assert_eq!(resolve_body_frame(0x2F, &wall), None);
     }
 
     #[test]
@@ -1689,7 +1833,7 @@ mod tests {
         // [GAWALL] DamageLevels=3 (artmd.ini): the sim writes damage 0..2 into
         // the high nibble, so a fully damaged, fully connected segment asks for
         // frame 0x2F. Preloading only the first connectivity block (0..16) is
-        // what makes a scratched wall fall back to the pristine isolated post.
+        // what makes a scratched wall miss its actual damage art.
         assert_eq!(wall_body_frame_count(3), 48);
         assert!(
             wall_body_frame_count(3) > 0x2F,
@@ -1702,34 +1846,8 @@ mod tests {
         assert_eq!(wall_body_frame_count(1), 16);
         assert_eq!(wall_body_frame_count(0), 16);
         // The overlay-data byte is a u8 — nothing past 255 is addressable.
-        assert_eq!(wall_body_frame_count(u16::MAX), MAX_OVERLAY_FRAME_COUNT);
-    }
-
-    #[test]
-    fn wall_body_range_excludes_the_shadow_half() {
-        // GAWALL.SHP is 96 frames: 48 body (3 damage x 16 connectivity) plus
-        // 48 one-bit shadow stencils. A wall must never resolve a stencil as
-        // its body art.
-        let wall = OverlayTypeFlags {
-            wall: true,
-            ..OverlayTypeFlags::default()
-        };
-        assert_eq!(body_frame_count(&wall, 96), 48);
-        assert_eq!(
-            u32::try_from(body_frame_count(&wall, 96)).unwrap(),
-            wall_body_frame_count(3),
-            "GAWALL's body half and its DamageLevels-derived range must agree"
-        );
-
-        let bridge = OverlayTypeFlags {
-            bridge_deck: true,
-            ..OverlayTypeFlags::default()
-        };
-        assert_eq!(body_frame_count(&bridge, 36), 18);
-
-        // Ordinary overlays (ore, gems, tracks) keep every frame addressable.
-        let generic = OverlayTypeFlags::default();
-        assert_eq!(body_frame_count(&generic, 96), 96);
+        assert_eq!(wall_body_frame_count(i32::MAX), MAX_OVERLAY_FRAME_COUNT);
+        assert_eq!(wall_body_frame_count(i32::MIN), 16);
     }
 
     #[test]
@@ -1806,7 +1924,7 @@ mod tests {
         let overlays = OverlayTypeRegistry::from_ini(&ini, None);
         let tiberiums = TiberiumTypeRegistry::from_ini(&ini);
 
-        let keys = runtime_flat_tiberium_sprite_keys(&overlays, &tiberiums);
+        let keys = runtime_tiberium_sprite_keys(&overlays, &tiberiums);
 
         assert_eq!(keys.len(), 288, "2 types * 12 images * 12 densities");
         for (name, frame) in [("TIB05", 8), ("GEM01", 11)] {

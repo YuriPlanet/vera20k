@@ -42,9 +42,8 @@ fn coord(value: &Value) -> [i32; 3] {
 /// - RevealArea's coordinate (the cell's GetCoords, no deck over a bridge)
 ///   and radius (as read), for the pair of calls native makes with the
 ///   Super's house, final 0 then 1 and no other argument;
-/// - the launch event at the cell PlayAtCoord's coordinate is in, the app's
-///   cue (`sound_dispatch::launch_lines_match_native`). Native plays it at
-///   the coordinate's height (module RESIDUAL).
+/// - the launch event at PlayAtCoord's coordinate, its height included, the
+///   app's cue (`sound_dispatch::launch_lines_match_native`).
 ///
 /// The player's tail is the app's (`super_selection`, `sound_dispatch`).
 #[test]
@@ -99,24 +98,20 @@ fn the_launch_matches_native() {
             .collect();
         assert_eq!(observed, native, "{row}");
 
-        let sound: Vec<(u16, u16)> = events
+        let sound: Vec<[i32; 3]> = events
             .iter()
             .filter(|e| e[0] == "play_at")
-            .map(|e| {
-                let [x, y, _] = coord(&e[2]);
-                ((x / 256) as u16, (y / 256) as u16)
-            })
+            .map(|e| coord(&e[2]))
             .collect();
-        let pushed: Vec<(u16, u16)> = sim
+        let pushed: Vec<[i32; 3]> = sim
             .sound_events
             .iter()
             .filter_map(|event| match *event {
                 SimSoundEvent::SuperWeaponLaunched {
                     owner: by,
                     sw_type: kind,
-                    rx,
-                    ry,
-                } if by == owner && kind == sw_type => Some((rx, ry)),
+                    world,
+                } if by == owner && kind == sw_type => Some([world.x, world.y, world.z]),
                 _ => None,
             })
             .collect();

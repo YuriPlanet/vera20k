@@ -56,12 +56,57 @@ pub const SDBTNANM_CELL_W_NARROW: i32 = 156;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RightPanelRects {
     pub top: RectPx,
+    /// The first tile row. Later rows come from [`Self::tile_row`], not from
+    /// stepping this rect's height.
     pub tile: RectPx,
     pub tile_count: i32,
     pub bottom: RectPx,
+    /// The mapping these rects went through and the tile it mapped, so a row
+    /// or a cell in it scales like every other authored rect.
+    scale: ShellScale,
+    authored_tile: RectPx,
 }
 
 impl RightPanelRects {
+    /// Tile row `row` of the column. A scaled panel rounds each row's edges
+    /// like any other authored rect, so row `k` lands where a button authored
+    /// on row `k` does; stepping `tile.y` by the rounded height drifts a pixel
+    /// every few rows. Identity on the unscaled panel.
+    pub fn tile_row(&self, row: i32) -> RectPx {
+        self.row_cell(row, self.authored_tile.w, self.authored_tile.h)
+    }
+
+    /// A `w`x`h` shape authored right-aligned at the top of tile row `row`, in
+    /// window space: where `0x006071E0` draws each slide frame (the executed
+    /// positions in `tools/storage_oracle/shell_slide_engine.json`) and where
+    /// the SDBTNANM buttons sit.
+    pub fn row_cell(&self, row: i32, w: i32, h: i32) -> RectPx {
+        let tile = self.authored_tile;
+        self.scale.scale_rect(RectPx::new(
+            tile.x + tile.w - w,
+            tile.y + row * tile.h,
+            w,
+            h,
+        ))
+    }
+
+    /// The panel moved `(dx, dy)` window pixels, as a fixed 800x600 layout is
+    /// centred in a larger window. Only an unscaled panel moves; its authored
+    /// tile is its window tile.
+    pub fn translate(self, dx: i32, dy: i32) -> Self {
+        debug_assert!(
+            self.scale.is_retail(),
+            "a scaled panel already fills its window"
+        );
+        Self {
+            top: self.top.translate(dx, dy),
+            tile: self.tile.translate(dx, dy),
+            bottom: self.bottom.translate(dx, dy),
+            authored_tile: self.authored_tile.translate(dx, dy),
+            ..self
+        }
+    }
+
     /// How far these rects sit from the 168x199 SDTP canvas the panel art is
     /// authored against: `(1.0, 1.0)` on the retail layout at every screen size,
     /// the shell's scale factor once the 800x600 dialog is scaled into the
@@ -224,11 +269,14 @@ impl ShellScale {
     }
 
     pub fn scale_panel(self, panel: RightPanelRects) -> RightPanelRects {
+        debug_assert!(panel.scale.is_retail(), "panels scale once, from 800x600");
         RightPanelRects {
             top: self.scale_rect(panel.top),
             tile: self.scale_rect(panel.tile),
             tile_count: panel.tile_count,
             bottom: self.scale_rect(panel.bottom),
+            scale: self,
+            authored_tile: panel.authored_tile,
         }
     }
 
@@ -356,6 +404,8 @@ pub fn right_panel_rects(screen_w: i32, screen_h: i32) -> RightPanelRects {
         tile,
         tile_count,
         bottom: RectPx::new(top.x, bottom_y, RIGHT_PANEL_WIDTH, bottom_h),
+        scale: ShellScale::RETAIL,
+        authored_tile: tile,
     }
 }
 

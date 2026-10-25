@@ -20,7 +20,7 @@ from unicorn.x86_const import (
     UC_X86_REG_EBP, UC_X86_REG_EDX,
 )
 from tools.native_oracle import (
-    STACK_BASE, STACK_SIZE, RET_MAGIC, SCRATCH, NATIVE_SHA256, file_span,
+    STACK_BASE, STACK_SIZE, RET_MAGIC, SCRATCH, file_span,
     image_bytes, run_checked, finish_vectors, provenance,
 )
 from tools.spatial_oracle.map_queries import TABLE, EMPTY_TABLE, DUMMY, dwords, packed
@@ -516,7 +516,7 @@ def generate_bridge_layers():
                               constructor_prefill_byte=0xA5,
                               scalar_globals={'0x0089E7C0': 104, '0x00AC13C8': 104, '0x00A8ED84': frame})
             constructor_rows.append(OriginalBridgeQuery(row).run_constructed_bridge())
-    return dict(native_sha256=NATIVE_SHA256, rows=rows, response_seams=seams, harvest_seams=harvest_seams,
+    return dict(rows=rows, response_seams=seams, harvest_seams=harvest_seams,
                 constructor_rows=constructor_rows,
                 original_spans={name: dict(address=f'0x{address:08X}', bytes=file_span(image_bytes(), address, size)[1].hex())
                                 for name, (address, size) in BRIDGE_SPANS.items()},
@@ -1373,7 +1373,7 @@ def generate_base_response():
         dispatch_rows.append(native.dispatch(dict(base, name=f'retail_scored_budget_{budget}', budget=budget,
                              scores=[row['output'] for row in retail_scores], original_score_rows=retail_scores)))
     whole = whole_base_response()
-    return dict(schema_version=1, native_sha256=NATIVE_SHA256, physical_files=native.files,
+    return dict(schema_version=1, physical_files=native.files,
                 constructor=native.constructor, section_pointers={f'0x{p:08X}': dict(pointer=f'0x{native.m.read32(p):08X}',
                 section=native.m.string(native.m.read32(p))) for p in (0x7F0C9C, 0x7F0CD4)},
                 physical=physical, reader_controls=readers, type_reader_controls=type_readers,

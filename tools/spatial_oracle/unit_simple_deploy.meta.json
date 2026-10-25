@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -50,5 +49,5 @@
     "aircraft_body_remainder": "0x004145B0"
   },
   "replay_command": "python -m tools.spatial_oracle.unit_simple_deploy",
-  "payload_sha256": "cad66bb95270215f30996b915a3410903e95d1ef769371e1c0770fdbd1ed0efc"
+  "payload_sha256": "a38ae23145776329a07a3af3ef9bff6b2e9d62c828528c7685427157f20e4311"
 }

@@ -206,6 +206,11 @@ impl TemporalState {
         self.link.is_some()
     }
 
+    /// `TemporalClass+0x48 WarpRemaining` on this object's own link.
+    pub fn warp_remaining(&self) -> Option<i32> {
+        self.link.as_ref().map(|link| link.warp_remaining)
+    }
+
     /// Every object id this state names, for the snapshot reference check.
     pub(crate) fn references(&self) -> impl Iterator<Item = u64> + '_ {
         self.head.into_iter().chain(
@@ -396,7 +401,7 @@ impl Simulation {
                 crate::sim::spawn_manager::kill_all_spawns_with_context(
                     self,
                     target,
-                    UninitContext::new(Some(rules), registry).with_effects(effects),
+                    UninitContext::new(rules, registry).with_effects(effects),
                 );
             }
             if self
@@ -450,7 +455,7 @@ impl Simulation {
                 if let Some(link) = self.substrate.temporal_link_mut(attacker) {
                     link.warp_remaining = strength.wrapping_mul(10);
                 }
-                self.temporal_warp_start_notice(target, rules);
+                self.temporal_warp_start_notice(target, rules, registry, effects);
             }
             Some(head) => {
                 // 0x0071B0D1..0x0071B0E4: insert right after the head.
@@ -510,23 +515,31 @@ impl Simulation {
     /// gated on the player's own house, which the app applies); a building
     /// that is not `Insignificant=` and not a 1x1 undeployer (`vtable+0x80`,
     /// `0x00465D40`, as on the damage path) notifies its house it is under
-    /// attack.
-    fn temporal_warp_start_notice(&mut self, target: u64, rules: &RuleSet) {
+    /// attack (`0x0071B0CA`), whose call ends by raising event 6 on that
+    /// House's Tags ([`Self::raise_house_attacked_tags`]).
+    fn temporal_warp_start_notice(
+        &mut self,
+        target: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
         let Some(entity) = self.substrate.entities.get(target) else {
             return;
         };
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        match entity.category() {
-            EntityCategory::Unit if object.harvester => {}
+        let notify_house = match entity.category() {
+            EntityCategory::Unit if object.harvester => false,
             EntityCategory::Structure
                 if !object.insignificant && !object.is_1x1_with_undeploy() =>
             {
                 // HouseNotify owns the deployed-miner subtype.
+                true
             }
             _ => return,
-        }
+        };
         // The radar cell is the victim's GetCoords (vt+0x48): a building's
         // foundation centre (`0x00447AC0`; NotifyUnderAttack `0x004F94AE`,
         // `0x004F950E`, `0x004F956A`).
@@ -542,15 +555,13 @@ impl Simulation {
             owner: entity.owner(),
             victim_type: entity.type_ref(),
         };
-        Self::dispatch_under_attack_events(
-            &self.interner,
-            &self.session,
-            &self.house_alliances,
-            &mut self.sound_events,
-            &self.houses,
-            &[event],
-            rules,
-        );
+        if notify_house {
+            self.notify_house_under_attack(event, rules, registry, effects);
+            return;
+        }
+        // Temporal71B04C/71B05F's harvester branch calls radar/EVA directly, with
+        // no House Tags, and also completes before returning to the warp.
+        self.submit_under_attack_warning(event, rules, effects);
     }
 
     /// `TemporalClass::CanWarpTarget @ 0x0071AE50`: a `Warpable=` type, not
@@ -720,10 +731,31 @@ impl Simulation {
             return;
         };
         if category == EntityCategory::Structure {
+            // Temporal71A9A0..71A9A7: only positive true Occupants count
+            // calls KillOccupants(NULL), ahead of Cargo disposal/bunker release.
+            if self
+                .substrate
+                .entities
+                .get(target)
+                .is_some_and(|entity| entity.passenger_role.occupants().count() > 0)
+            {
+                crate::sim::passenger::garrison_eject::kill_building_occupants(
+                    self,
+                    target,
+                    UninitContext::new(rules, registry).with_effects(effects),
+                );
+            }
+            // TemporalClass::Update (0x0071A9AC..0x0071A9DC) scalar-deletes Cargo
+            // before the parent's kill/UnInit. This private erase runs inside
+            // the admitted live object pass, whose active GameState is 1.
+            self.scalar_delete_building_cargo(
+                target,
+                UninitContext::new(rules, registry).with_effects(effects),
+                1,
+            );
             // 0x0071A9EE..0x0071AA15: a Tank Bunker releases its occupant
-            // (`0x004593A0`). Garrison occupants and absorbed passengers go
-            // in the UnInit below (module residual).
-            crate::sim::docking::bunker_link::release_sell_destroy(self, target, effects);
+            // (`0x004593A0`) after the synchronous Cargo destructors.
+            crate::sim::docking::bunker_link::release_sell_destroy(self, target, rules, effects);
         }
         // 0x0071AA90: the erased object's own bunker link (`+0x2E4`) names a
         // building — `BuildingClass::ClearBunker @ 0x00459470`, ahead of
@@ -748,8 +780,26 @@ impl Simulation {
         // attacker's house (FreeSlaves, no supplied house). Its UnInit and
         // owner-change callbacks share this object turn's map inputs.
         self.free_slaves(target, Some(head), None, rules, registry, effects);
-        if category != EntityCategory::Structure
-            && let Some(entity) = self.substrate.entities.get(target)
+        if category == EntityCategory::Structure {
+            // 0x0071AA3A vtable +0x3B8: `BuildingClass::Death_Announcement @
+            // 0x0044D760`. A current player's building (`0x0050B6F0`) pushes
+            // the Cell of its +4C coordinate (`0x00447E90`, no requester)
+            // onto the Spacebar ring (`0x00660B80`); no EVA, no radar event.
+            if let Some(entity) = self.substrate.entities.get(target)
+                && self.house_is_human_player(entity.owner())
+                && let Ok(coord) = self.navigation_target_coordinate(
+                    crate::sim::components::NavTargetRef::Object { id: target },
+                    None,
+                    rules,
+                )
+            {
+                self.publish_trigger_effects(vec![
+                    crate::sim::trigger_runtime::TriggerEffect::RecentEventCell {
+                        cell: ((coord.x / 256) as i16, (coord.y / 256) as i16),
+                    },
+                ]);
+            }
+        } else if let Some(entity) = self.substrate.entities.get(target)
             && let Some(object) = self.object_type(entity.type_ref(), rules)
             && let Some(event) = crate::sim::combat::death_announcement_event(
                 object,
@@ -770,13 +820,13 @@ impl Simulation {
             target,
             crate::sim::combat::KillSource::Techno(Some(head)),
             crate::sim::combat::KillCallback::Terminal,
-            UninitContext::new(Some(rules), registry).with_effects(effects),
+            UninitContext::new(rules, registry).with_effects(effects),
         );
         let target_owner = self.substrate.entities.get(target).map(GameEntity::owner);
         // vtable +0xF8 UnInit: no death effects, no survivors.
         self.uninit_with_context(
             target,
-            UninitContext::new(Some(rules), registry).with_effects(effects),
+            UninitContext::new(rules, registry).with_effects(effects),
         );
         //71AA5A..71AA60 requests the owner's House tail; the actual late
         //Building destructor separately calls hold/revoke43BEF0.
@@ -975,15 +1025,9 @@ impl Simulation {
             return;
         };
         if let Some(target) = target {
+            //71AD40 clears only +270/+278 here. Unlike ClearWarp71ACD0,
+            //it never calls ForceOnline452210 or dirties the target House.
             self.substrate.set_temporal_head(target, None);
-            self.substrate
-                .set_building_online_for_temporal(target, true); //ClearWarp71AD0B
-            if let Some(owner) = self.substrate.entities.get(target).and_then(|entity| {
-                (entity.category() == EntityCategory::Structure).then_some(entity.owner())
-            }) {
-                Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false); //ClearWarp71AD04
-                self.houses.request_house_tech_tree_recheck(owner); //71AD17
-            }
             if let Some(stored) = self.substrate.temporal_link_mut(attacker) {
                 stored.target = None;
             }
@@ -1014,14 +1058,12 @@ impl Simulation {
     /// `TechnoClass::PointerExpired`'s forward (`0x00707B34` ->
     /// `0x0071AB60`), outside the removal gate: the attacker's own expiry lets
     /// go; its target's expiry clears the link and idles the attacker without
-    /// relinking the chain. `rules` is absent only for a rules-less UnInit
-    /// (fixtures; production passes the frame's rules), which has no idle
-    /// selector, so the idle is skipped there.
+    /// relinking the chain.
     pub(crate) fn temporal_pointer_expired(
         &mut self,
         listener: u64,
         expired: u64,
-        rules: Option<&RuleSet>,
+        rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
         let Some(target) = Self::temporal_link(&self.substrate, listener).map(|link| link.target)
@@ -1037,9 +1079,7 @@ impl Simulation {
             );
         } else if target == Some(expired) {
             self.substrate.temporal_clear_fields(listener);
-            if let Some(rules) = rules {
-                self.temporal_owner_idle(listener, rules, effects);
-            }
+            self.temporal_owner_idle(listener, rules, effects);
         }
     }
 
@@ -1168,7 +1208,7 @@ impl Simulation {
                 // Process even in Limbo. Its71930C..719322 early arm calls the
                 // existing TimerCheck owner; FootAI's later Limbo gate remains.
                 // Native execution: infantry_teleport_prologue.json (Steam gamemd).
-                self.process_teleport(id, Some(rules), ctx);
+                self.process_teleport(id, rules, ctx);
             }
             if self
                 .substrate
@@ -1210,7 +1250,7 @@ impl Simulation {
             // Each frozen class calls virtual +3C8 (Infantry51BBEF), not
             // the Techno base write set. Its reached tail also clears a
             // Tesla Trooper's automatic charging intent at51B33F.
-            let _ = self.assign_target_represented(id, None, Some(rules), registry, ctx.effects);
+            let _ = self.assign_target_represented(id, None, rules, registry, ctx.effects);
         }
         let clears_destination = category != EntityCategory::Structure
             && self
@@ -1219,7 +1259,7 @@ impl Simulation {
                 .get(id)
                 .is_some_and(|entity| entity.navigation.nav_com().is_some());
         if clears_destination {
-            self.assign_null_destination(id, Some(rules), registry, ctx.effects);
+            self.assign_null_destination(id, rules, registry, ctx.effects);
         }
         true
     }
@@ -1401,3 +1441,7 @@ fn location_coord(entity: &GameEntity) -> AnimWorldCoord {
 #[cfg(test)]
 #[path = "temporal_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "temporal_cargo_disposal_tests.rs"]
+mod cargo_disposal_tests;

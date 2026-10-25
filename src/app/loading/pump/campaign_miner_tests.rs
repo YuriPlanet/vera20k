@@ -3,7 +3,9 @@ use super::*;
 
 struct SilentProgress;
 impl LoadingProgressSink for SilentProgress {
-    fn milestone(&mut self, _percent: u32) {}
+    fn milestone(&mut self, _percent: u32) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 /// Preserve the retail terrain, ore packs, rules and roster. Select its two
@@ -93,6 +95,8 @@ fn load_campaign(
         request,
         initial,
         context,
+        #[cfg(feature = "ares")]
+            rules_prefix: mut prepared_rules_prefix,
     } = request.prepare_initial(initial).unwrap();
     let dummy = process.shared_cell_dummy.clone();
     let (rules, cache, audio) = process.native_rules_mut_with_tile_cache();
@@ -106,6 +110,8 @@ fn load_campaign(
         false,
         8,
         rules.unwrap(),
+        #[cfg(feature = "ares")]
+        &mut prepared_rules_prefix,
         audio,
         dummy,
         cache,
@@ -231,7 +237,7 @@ fn retail_all05_campaign_miner_obeys_shroud_through_normal_loading_and_frames() 
             )
             .unwrap(),
     );
-    let gpu = GpuContext::new(window).unwrap();
+    let gpu = GpuContext::new(window, events.owned_display_handle(), true).unwrap();
     let batch = BatchRenderer::new(&gpu);
     // Ask the production mission to select an actually reachable distant
     // stock ore cell; distance is fixture admission, not another scan port.

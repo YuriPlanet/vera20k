@@ -2,8 +2,8 @@
 //!
 //! The original-code rows (`tools/spatial_oracle/crate_pickup.json`, whose
 //! sidecar bounds them to the guards, selection, removal and the Speed arm)
-//! run through [`pickup_crate`] itself; the other arms are Rust regression
-//! checks against the native reading cited at each arm.
+//! run through [`pickup_crate`] itself; the other arms are Rust regressions
+//! against the native reading cited at each arm.
 
 use super::super::tests::{crate_cells, crate_registry, crate_ruleset, sim_with_grid};
 use super::*;
@@ -34,6 +34,7 @@ fn house(sim: &mut Simulation, name: &str, player_control: bool) -> InternedId {
 /// A revealed Ground-layer object at the centre of `cell`.
 fn place_actor(
     sim: &mut Simulation,
+    rules: &RuleSet,
     owner: InternedId,
     cell: (u16, u16),
     category: EntityCategory,
@@ -58,7 +59,7 @@ fn place_actor(
     entity.position.set_sub_x_for_test(SimFixed::from_num(128));
     entity.position.set_sub_y_for_test(SimFixed::from_num(128));
     sim.substrate.entities.insert(entity);
-    sim.try_reveal_entity(
+    sim.try_reveal_entity_with_context(
         id,
         RevealRequest {
             position: RevealPosition::new(
@@ -72,6 +73,7 @@ fn place_actor(
             placement: PlacementEvidence::MarkSucceeded,
             logic_eligible: true,
         },
+        crate::sim::world::UninitContext::with_rules(rules),
     );
     id
 }
@@ -158,6 +160,7 @@ fn multiplayer_fixture(slot: u8) -> (Simulation, RuleSet, OverlayTypeRegistry, I
     let owner = house(&mut sim, "H0", false);
     let actor = place_actor(
         &mut sim,
+        &rules,
         owner,
         (CELL.0 as u16, CELL.1 as u16),
         EntityCategory::Infantry,
@@ -268,7 +271,14 @@ fn original_pickup_rows_match_through_the_dispatcher() {
         } else {
             // The fixture's one actor always stands at (10, 10)'s centre,
             // whatever cell the crate occupies.
-            place_actor(&mut sim, owner, (10, 10), EntityCategory::Infantry, "E1")
+            place_actor(
+                &mut sim,
+                &rules,
+                owner,
+                (10, 10),
+                EntityCategory::Infantry,
+                "E1",
+            )
         };
         assert_eq!(
             sim.scenario_rng.native_state_hex(),
@@ -418,8 +428,22 @@ fn effect_rules(extra: &str) -> RuleSet {
 fn veteran_crate_promotes_trainable_technos_within_the_radius() {
     let (mut sim, _, registry, owner, actor) = multiplayer_fixture(POWERUP_VETERAN as u8);
     let rules = effect_rules("[AudioVisual]\nCratePromoteSound=CratePromoted\n");
-    let civilian = place_actor(&mut sim, owner, (10, 10), EntityCategory::Infantry, "CIV");
-    let distant = place_actor(&mut sim, owner, (20, 20), EntityCategory::Infantry, "E1");
+    let civilian = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (10, 10),
+        EntityCategory::Infantry,
+        "CIV",
+    );
+    let distant = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (20, 20),
+        EntityCategory::Infantry,
+        "E1",
+    );
 
     assert!(pickup_crate(
         &mut sim,
@@ -462,7 +486,14 @@ fn armor_and_firepower_crates_multiply_once_and_announce() {
         .get_mut(&owner)
         .unwrap()
         .set_player_control_for_test(true);
-    let distant = place_actor(&mut sim, owner, (20, 20), EntityCategory::Infantry, "E1");
+    let distant = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (20, 20),
+        EntityCategory::Infantry,
+        "E1",
+    );
 
     assert!(pickup_crate(
         &mut sim,
@@ -612,10 +643,11 @@ const ARENA_RULES: &str = "[Countries]\n0=Americans\n1=Russians\n[Sides]\nAllied
              [General]\nBaseUnit=AMCV\nHarvesterUnit=HARV\n[AI]\nBuildConst=YARD\n\
              [CombatDamage]\nC4Warhead=Super\n[Warheads]\n0=Super\n\
              [Super]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
-             [InfantryTypes]\n0=E1\n[AircraftTypes]\n[VehicleTypes]\n0=TNK\n1=AMCV\n2=HARV\n[BuildingTypes]\n0=YARD\n\
+             [InfantryTypes]\n0=E1\n[AircraftTypes]\n0=PLANE\n[VehicleTypes]\n0=TNK\n1=AMCV\n2=HARV\n[BuildingTypes]\n0=YARD\n\
              [E1]\nStrength=100\nSpeed=4\nSpeedType=Foot\nMovementZone=Normal\nOwner=Americans,Russians\n\
              Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
-             [TNK]\nStrength=300\nSpeed=5\nROT=5\nOwner=Americans,Russians\nCrateGoodie=yes\n\
+             [PLANE]\nStrength=150\n\
+             [TNK]\nStrength=300\nCloakingSpeed=4\nSpeed=5\nROT=5\nOwner=Americans,Russians\nCrateGoodie=yes\n\
              Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
              [AMCV]\nStrength=1000\nSpeed=4\nROT=5\nOwner=Americans,Russians\nDeploysInto=YARD\n\
              Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
@@ -781,7 +813,7 @@ fn mcv_preempt_grants_the_base_unit_with_bases_on() {
 
 /// `0x00482B8F..0x00482C9C`: the HealBase sound, then `Health - Strength`
 /// through `ReceiveDamage(.., C4Warhead=, .., 1, 1, ..)` on the actor
-/// house's buildings only.
+/// house's Logic members, including buildings.
 #[test]
 fn heal_base_crate_restores_the_owners_buildings() {
     let (mut sim, rules, registry, owner, actor) = arena();
@@ -828,6 +860,93 @@ fn heal_base_crate_restores_the_owners_buildings() {
     );
 }
 
+/// HealBase482C18 walks Logic, so it reaches owned mobile classes and skips
+/// an Aircraft absent from Logic. Zero damage still reaches the full-health
+/// collector's surviving Techno receiver and uncloaks it.
+#[test]
+fn heal_base_reaches_mobile_logic_members_and_the_zero_damage_receiver() {
+    let (mut sim, mut rules, registry, owner, tank) = arena();
+    rules.general.cloaking_stages = 10;
+    sim.session.set_binary_frame_for_test(100);
+    let rival = sim.interner.intern("Russians");
+    sim.houses
+        .register(HouseState::new(rival, 1, Some(rival), false, 5000, 10));
+    let infantry = sim
+        .spawn_object("E1", "Americans", 8, 8, 0, &rules)
+        .unwrap();
+    let enemy = sim
+        .spawn_object("TNK", "Russians", 8, 20, 0, &rules)
+        .unwrap();
+    let aircraft = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (10, 10),
+        EntityCategory::Aircraft,
+        "PLANE",
+    );
+    let outside_logic = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (12, 10),
+        EntityCategory::Aircraft,
+        "PLANE",
+    );
+    for (id, health) in [
+        (infantry, 50),
+        (enemy, 100),
+        (aircraft, 75),
+        (outside_logic, 75),
+    ] {
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .health
+            .set_for_test(health);
+    }
+    let mut cloak = crate::sim::cloak_disguise::CloakRuntime::new(0);
+    cloak.set_state_for_test(2);
+    sim.substrate.entities.get_mut(tank).unwrap().cloak = Some(cloak);
+    let logic = vec![aircraft, 0, enemy, infantry, tank];
+    sim.set_logic_order_for_test(logic.clone());
+    place_registered_crate(&mut sim, &registry, (21, 22), POWERUP_HEAL_BASE as u8);
+
+    assert!(pickup_crate(
+        &mut sim,
+        &rules,
+        &registry,
+        (21, 22),
+        tank,
+        crate::sim::world::FrameEffects::default()
+    ));
+
+    let health = |id| sim.substrate.entities.get(id).unwrap().health.current();
+    assert_eq!(
+        [
+            health(tank),
+            health(infantry),
+            health(enemy),
+            health(aircraft),
+            health(outside_logic)
+        ],
+        [300, 100, 100, 150, 75]
+    );
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(tank)
+            .unwrap()
+            .cloak
+            .unwrap()
+            .state(),
+        3
+    );
+    assert_eq!(sim.logic_order(), logic);
+    assert_eq!(overlay_at(&sim, (21, 22)), None);
+}
+
 /// Drive `Process_Movement` (`0x004B405D`/`0x004B46E6`) through the master
 /// frame: a tank ordered across a crate cell picks the crate up.
 #[test]
@@ -861,6 +980,56 @@ fn a_moving_tank_picks_up_the_crate_on_its_path() {
     assert!(sim.houses[&owner].economy().credits() > credits);
 }
 
+/// The ordinary Drive movement host reaches HealBase without a direct call to
+/// the pickup helper. Healing also reaches a distant same-house Infantry.
+#[test]
+fn a_moving_tank_collects_heal_base_for_its_house() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    let (mut sim, rules, registry, owner, tank) = arena();
+    let rival = sim.interner.intern("Russians");
+    sim.houses
+        .register(HouseState::new(rival, 1, Some(rival), false, 5000, 10));
+    let own = sim
+        .spawn_object("E1", "Americans", 8, 8, 0, &rules)
+        .unwrap();
+    let theirs = sim
+        .spawn_object("E1", "Russians", 8, 20, 0, &rules)
+        .unwrap();
+    for id in [tank, own, theirs] {
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .health
+            .set_for_test(25);
+    }
+    place_registered_crate(&mut sim, &registry, (22, 22), POWERUP_HEAL_BASE as u8);
+    let grid = sim.path_grid_snapshot();
+    let order = CommandEnvelope::new(
+        owner,
+        sim.session.tick() + 1,
+        Command::Move {
+            entity_id: tank,
+            target_rx: 25,
+            target_ry: 22,
+        },
+    );
+    sim.advance_tick(&[order], Some(&rules), grid.as_deref(), Some(&registry), 22);
+    for _ in 0..400 {
+        if overlay_at(&sim, (22, 22)).is_none() {
+            break;
+        }
+        sim.advance_tick(&[], Some(&rules), grid.as_deref(), Some(&registry), 22);
+    }
+    assert_eq!(
+        overlay_at(&sim, (22, 22)),
+        None,
+        "the tank crossed the crate"
+    );
+    let health = |id| sim.substrate.entities.get(id).unwrap().health.current();
+    assert_eq!([health(tank), health(own), health(theirs)], [300, 100, 25]);
+}
+
 /// Drive `Force_Track`'s false answer (`0x004B0D22`): a Unit crate on the
 /// supplied cell places the free vehicle, and the host drops the head it was
 /// installing instead of claiming the cell.
@@ -873,7 +1042,7 @@ fn force_track_onto_a_unit_crate_drops_the_head() {
         actor,
         -1,
         DriveCoord::cell(21, 22, 0),
-        Some(&rules),
+        &rules,
         Some(&registry),
         crate::sim::world::FrameEffects::default()
     ));
@@ -1142,6 +1311,7 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
         // body. Install that prior through the existing tracking owner.
         let yard = place_actor(
             &mut sim,
+            &rules,
             owner,
             (24, 24),
             EntityCategory::Structure,

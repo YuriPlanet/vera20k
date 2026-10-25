@@ -12,7 +12,7 @@ import hashlib, json, os, struct
 
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import *
-from tools.native_oracle import NATIVE_SHA256, RET_MAGIC, run_checked, finish_vectors, provenance
+from tools.native_oracle import RET_MAGIC, run_checked, finish_vectors, provenance
 from tools.rules_oracle.bridge_landing_inputs import Landing, TYPE as RULES, INI, SP, WH, RULES as RULE_BLOCKS
 from tools.projectile_oracle.bridge_render_inputs import lexical
 from tools.spatial_oracle.map_queries import dwords, packed
@@ -262,7 +262,7 @@ def generate():
     rows=[];m=None
     for case in inputs():
         m=Native(case);rows.append(dict(input=case,output=m.run()))
-    return dict(schema_version=1,native_sha256=NATIVE_SHA256,scope=__doc__,constructor=m.ctor,actor_constructor=m.actor_ctor,retail_inputs=m.inputs,layers=m.layers,cases=rows,harness_sha256=sha(Path(__file__).read_bytes()))
+    return dict(schema_version=1,scope=__doc__,constructor=m.ctor,actor_constructor=m.actor_ctor,retail_inputs=m.inputs,layers=m.layers,cases=rows)
 
 def metadata():
     p=provenance(scope=__doc__,assumptions=[
@@ -278,7 +278,6 @@ def metadata():
     ],entry_points={'occupants':0x487A10,'unit_can_enter':0x73F0A0,'foot_can_enter':0x4D9C10,'ship_at_coord':0x6A3F50,'unit_damage':0x737C90,'foot_damage':0x4D7330,'techno_damage':0x701900,'object_damage':0x5F5390,'unit_record_kill':0x744720,'self_pointer_expired':0x7446E0,'sink_state_stores':0x737E43})
     m=Native(next(inputs()))
     p['original_slices']=[dict(start=hex(a),end_exclusive=hex(b),hex=raw.hex(),sha256=sha(raw)) for (a,b),raw in zip(m.code_spans,m.code_before)]
-    p['harness_sha256']=sha(Path(__file__).read_bytes())
     return p
 
 if __name__=='__main__':finish_vectors(generate,HERE/'naval_occupants.json',provenance=metadata)

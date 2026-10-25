@@ -56,7 +56,7 @@ impl SlaveDepositQuery<'_> {
         let foundation = self
             .interner
             .object_type(owner.type_ref(), self.rules)
-            .map(|kind| crate::rules::foundation::foundation_dimensions(&kind.foundation));
+            .map(|kind| kind.foundation.dimensions());
         let Some(primary) = crate::sim::slave_manager::deploy_center(owner, foundation) else {
             return false;
         };

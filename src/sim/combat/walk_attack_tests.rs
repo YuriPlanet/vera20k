@@ -91,7 +91,7 @@ fn walk_command(sim: &mut Simulation, rules: &RuleSet, command: crate::sim::comm
     assert!(sim.apply_command_with_overlays(
         "Local",
         &command,
-        Some(rules),
+        rules,
         None,
         crate::sim::world::FrameEffects::default()
     ));
@@ -144,7 +144,7 @@ fn walk_destination_search_observes_route_opened_before_process() {
             target_rx: 14,
             target_ry: 10,
         },
-        Some(&rules),
+        &rules,
         None,
         crate::sim::world::FrameEffects::default(),
     ));
@@ -677,7 +677,7 @@ fn walk_null_setter_matches_original_caller_rows() {
         }
         assert!(sim.set_infantry_null_destination(
             actor,
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default()
         ));

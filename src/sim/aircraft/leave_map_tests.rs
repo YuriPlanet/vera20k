@@ -10,9 +10,10 @@ use crate::map::playfield::PlayfieldBounds;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
+use crate::sim::components::NavTargetRef;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::state::MissionTestFixture;
-use crate::sim::mission::{MissionDispatchTimer, MissionId};
+use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
 use crate::sim::world::{SimSoundEvent, Simulation};
 use crate::util::fixed_math::SimFixed;
 use serde_json::Value;
@@ -196,5 +197,124 @@ fn removal_releases_the_planes_sounds() {
         sim.sound_events
             .iter()
             .any(|event| { matches!(event, SimSoundEvent::ObjectSoundReleased { owner: 1 }) })
+    );
+}
+
+fn cleanup_world() -> (Simulation, RuleSet, u64) {
+    let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules("");
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    let plane = sim
+        .spawn_object_with_overlay_registry("HORNET", "Americans", 15, 15, 0, &rules, &registry)
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(plane)
+        .unwrap()
+        .mission
+        .set_current_for_test(MissionId::from_known(MissionType::SpyplaneOverfly), 0);
+    (sim, rules, plane)
+}
+
+#[test]
+fn dummy_cleanup_uses_allocation_identity_and_does_not_stamp_the_dummy() {
+    let (mut sim, rules, plane) = cleanup_world();
+    // The packed fixed-stride alias is real (1,1), despite its negative X.
+    let alias = NavTargetRef::cell((-511_i16) as u16, 2);
+    assert!(matches!(
+        TargetKind::from(alias).cell_identity(sim.resolved_terrain.as_ref().unwrap()),
+        Some(crate::map::cell_index::NativeCellIdentity::Real(_))
+    ));
+    for pointer in [None, Some(alias), Some(NavTargetRef::object(plane))] {
+        let entity = sim.substrate.entities.get_mut(plane).unwrap();
+        entity.navigation.set_nav_com_for_test(pointer);
+        entity
+            .attack_target
+            .set_for_test(pointer.map(TargetKind::from));
+        let before = entity.navigation.path_runtime().clone();
+        let rng = sim.scenario_rng.logical_state();
+        sim.resolved_terrain
+            .as_ref()
+            .unwrap()
+            .stamp_dummy_cell_requested_coord(700, 701);
+        sim.cleanup_aircraft_dummy_cells(plane, &rules, None, Default::default());
+        let entity = sim.substrate.entities.get(plane).unwrap();
+        assert_eq!(entity.navigation.nav_com(), pointer);
+        assert_eq!(entity.attack_target.target(), pointer.map(TargetKind::from));
+        assert_eq!(entity.navigation.path_runtime(), &before);
+        assert_eq!(sim.scenario_rng.logical_state(), rng);
+        assert_eq!(
+            sim.resolved_terrain
+                .as_ref()
+                .unwrap()
+                .dummy_cell_requested_coord(),
+            (700, 701)
+        );
+    }
+
+    // A hole inside the storage rectangle is Dummy too; playfield/Size
+    // checks alone cannot establish CellClass allocation identity.
+    let cells: Vec<_> = (0..33)
+        .flat_map(|y| (0..33).map(move |x| (x, y)))
+        .filter(|&at| at != (20, 20))
+        .collect();
+    sim.resolved_terrain
+        .as_mut()
+        .unwrap()
+        .test_set_native_allocated_cells(&cells);
+    sim.substrate
+        .entities
+        .get_mut(plane)
+        .unwrap()
+        .navigation
+        .set_nav_com_for_test(Some(NavTargetRef::cell(20, 20)));
+    sim.cleanup_aircraft_dummy_cells(plane, &rules, None, Default::default());
+    let entity = sim.substrate.entities.get(plane).unwrap();
+    assert_eq!(entity.navigation.nav_com(), None);
+    assert_eq!(entity.attack_target.target(), None);
+}
+
+/// The first Idle restores a suspended Target. AI415016 must read that new
+/// pointer, then execute its second complete setter/Idle sequence.
+#[test]
+fn dummy_cleanup_rereads_the_target_after_idle_restores_a_mission() {
+    let (mut sim, rules, plane) = cleanup_world();
+    let entity = sim.substrate.entities.get_mut(plane).unwrap();
+    let mission = MissionId::from_known(MissionType::SpyplaneOverfly);
+    entity.mission.apply_test_fixture(MissionTestFixture {
+        current: mission,
+        suspended: mission,
+        queued: MissionId::NONE,
+        movement_bypass_latch: 0,
+        handler_state: 0,
+        mission_start_frame: 0,
+        ai_counter: 0,
+        dispatch_timer: MissionDispatchTimer::at_frame(0),
+    });
+    entity
+        .navigation
+        .set_nav_com_for_test(Some(NavTargetRef::cell(700, 700)));
+    entity
+        .navigation
+        .set_suspended_nav_com_for_test(Some(NavTargetRef::cell(16, 15)));
+    entity
+        .suspended_attack_target
+        .set_for_test(Some(TargetKind::Cell(701, 701)));
+    sim.cleanup_aircraft_dummy_cells(plane, &rules, None, Default::default());
+    let entity = sim.substrate.entities.get(plane).unwrap();
+    assert_eq!(entity.mission.current(), mission);
+    assert_eq!(entity.mission.suspended(), MissionId::NONE);
+    assert_eq!(
+        entity.navigation.nav_com(),
+        None,
+        "second clear drops restored NavCom"
+    );
+    assert_eq!(
+        entity.attack_target.target(),
+        None,
+        "second clear drops restored Target"
     );
 }

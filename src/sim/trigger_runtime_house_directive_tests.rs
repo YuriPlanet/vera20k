@@ -67,7 +67,7 @@ fn run(
             input: TagEventInput::default(),
         },
         &mut Vec::new(),
-        Some(rules),
+        rules,
         Some(registry),
         FrameEffects::default(),
     )
@@ -404,6 +404,56 @@ fn house_directive_ordinary_capture_keeps_controller_but_clears_original_and_res
     );
 }
 
+/// House50D290 retains the pre-transfer owner; Blowup_All4FC70D admits
+/// that owner's buildings without a unit CaptureManager, even under another House.
+#[test]
+fn house_directive_transferred_base_dies_with_original_house() {
+    let (mut sim, rules, registry, houses, ids) = building_scene();
+    assert!(run(
+        &mut sim,
+        &rules,
+        &registry,
+        Some(houses[0]),
+        123,
+        "1",
+        true
+    ));
+    assert_eq!(sim.techno_original_owner(ids[1]), Some(houses[1]));
+    assert_eq!(
+        sim.substrate.entities.get(ids[1]).unwrap().owner(),
+        houses[0]
+    );
+    // An ordinary later capture clears only +2E0; that building no longer
+    // belongs to the old original owner for this sweep.
+    sim.change_owner_with_rules(
+        ids[2],
+        houses[2],
+        &rules,
+        Some(&registry),
+        FrameEffects::default(),
+    );
+    assert_eq!(sim.techno_original_owner(ids[2]), None);
+    assert!(run(
+        &mut sim,
+        &rules,
+        &registry,
+        Some(houses[0]),
+        119,
+        "1",
+        true
+    ));
+    assert!(
+        sim.substrate
+            .entities
+            .get(ids[1])
+            .is_none_or(|entity| entity.health.current() <= 0),
+        "the original house's destruction must kill its transferred building"
+    );
+    assert!(sim.substrate.entities.get(ids[2]).unwrap().health.current() > 0);
+    assert!(sim.substrate.entities.get(ids[0]).unwrap().health.current() > 0);
+    assert!(sim.substrate.entities.get(ids[3]).unwrap().health.current() > 0);
+}
+
 #[test]
 fn house_directive_self_control_and_retained_selector_keep_native_state_writes() {
     let (mut sim, rules, registry, houses, ids) = building_scene();
@@ -529,7 +579,7 @@ fn house_directive_target_kind_reaches_first_own_team_threat_scan_and_real_super
         Some(&registry),
         FrameEffects::default(),
     );
-    assert!(sim.sound_events.iter().any(|e| matches!(e,crate::sim::world::SimSoundEvent::SuperWeaponLaunched { owner,sw_type,rx:17,ry:15 } if *owner==houses[0] && *sw_type==sw)), "the closer third House is excluded by native arg3=true");
+    assert!(sim.sound_events.iter().any(|e| matches!(e,crate::sim::world::SimSoundEvent::SuperWeaponLaunched { owner,sw_type,world } if *owner==houses[0] && *sw_type==sw && world.to_cell_sub_z().0==17 && world.to_cell_sub_z().1==15)), "the closer third House is excluded by native arg3=true");
     assert!(
         !crate::sim::superweapon::superweapon_views_for_owner(&sim, &rules, &houses[0])
             .iter()
@@ -555,7 +605,8 @@ fn house_directive_target_kind_reaches_first_own_team_threat_scan_and_real_super
     );
     assert!(sim.sound_events.iter().any(|e| matches!(
         e,
-        crate::sim::world::SimSoundEvent::SuperWeaponLaunched { rx: 16, ry: 15, .. }
+        crate::sim::world::SimSoundEvent::SuperWeaponLaunched { world, .. }
+            if world.to_cell_sub_z().0 == 16 && world.to_cell_sub_z().1 == 15
     )));
     sim.houses
         .get_mut(&houses[0])

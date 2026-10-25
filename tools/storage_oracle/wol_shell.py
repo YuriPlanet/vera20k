@@ -34,7 +34,7 @@ OUTPUTS = dict(max_ahead=0xA8B550, frame_send_rate=0xA8B554, precalc_max_ahead=0
                current_speed=0xA8EB60)
 USER_LEN = 0x6C
 SIZES = ((640, 480), (800, 600), (1024, 768))
-PAGES = (0x10F, 0x113, 0xC2, 0xC9, 0x2BC, 0xD6, 0x112, 0xFE, 0x114, 0x116, 0x122)
+PAGES = (0x10F, 0x113, 0xC2, 0xC9, 0x2BC, 0xD6, 0x112, 0xFE, 0x114, 0x116, 0x117, 0x122)
 POPUPS = (0xC3, 0xE1, 0xC4, 0xCF, 0x11E, 0x115, 0x130)
 
 
@@ -213,7 +213,7 @@ def generate():
 
 if __name__ == "__main__":
     finish_vectors(generate, Path(__file__).with_suffix(".json"), provenance=lambda: provenance(
-        scope="WOL Start Game Now timing block 0x794F6F..0x79523E (inside 0x794BA0); relayout/popup geometry and status-line help of WOL dialogs 0x10F, 0x113, 0xC2, 0xC9, 0x2BC and its Sound Options page 0xD6, the auto-login query 0x112, the locale page 0xFE, My Information 0x114, the Buddy List 0x116 and the add-buddy query 0x122 (pages) and 0xC3, 0xE1, 0xC4, the page dialog 0xCF, the page-received dialog 0x11E, Add Buddy 0x115 and the connection verify 0x130 (popups) at 640x480, 800x600 and 1024x768; slide record flags 0x6228BD..0x6229D4 and top/bottom classifiers 0x60A180/0x60A250 for the eleven pages",
+        scope="WOL Start Game Now timing block 0x794F6F..0x79523E (inside 0x794BA0); relayout/popup geometry and status-line help of WOL dialogs 0x10F, 0x113, 0xC2, 0xC9, 0x2BC and its Sound Options page 0xD6, the auto-login query 0x112, the locale page 0xFE, My Information 0x114, the Buddy List 0x116, Quick Match 0x117 and the add-buddy query 0x122 (pages) and 0xC3, 0xE1, 0xC4, the page dialog 0xCF, the page-received dialog 0x11E, Add Buddy 0x115 and the connection verify 0x130 (popups) at 640x480, 800x600 and 1024x768; slide record flags 0x6228BD..0x6229D4 and top/bottom classifiers 0x60A180/0x60A250 for the twelve pages",
         assumptions=[
             "Timing enters 0x794F6F with caller-established ESI=0 (0x794F3A) and stops at 0x79523E, before the debug-only 0x664610 call and the WDT/clan name block. Game speed, the eight raw ping dwords, the debug byte 0xA8E2C8, the channel user list (count 0xB77900, 0x6C-byte rows at [0xB77908]: +0 flags, +0x24 nickname) and the local nickname string at [0xB73E40] are controlled inputs; every output starts at 0xDEADBEEF and 0xA8B574[0xD0] at 0xA5 bytes, so each observed value is a native write",
             "channel_owner is observed, not supplied: true when 0x795094 (PreCalcFrameRate=0) is not executed, i.e. the first user row with flags bit0 has a nickname _stricmp-equal (0x7C8D20, C locale handle 0) to the local one",

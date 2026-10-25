@@ -126,7 +126,7 @@ fn meteor_update_compensation_matches_original_flights_on_declared_crop() {
     let sim = flight_sim("flat2", 40);
     let terrain = ResolvedBounceTerrain {
         sim: &sim,
-        rules: None,
+        rules: crate::rules::ruleset::RuleSet::empty_for_test(),
     };
     for row in rows {
         let constructor =

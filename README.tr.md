@@ -1,7 +1,7 @@
 <img src="docs/images/new-conscirpt-hero-image.png" alt="VERA20K kapak görseli" width="100%">
 
 <p align="center" dir="ltr">
-  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <strong>Türkçe</strong> · <a href="README.md" lang="en">English</a>
+  <a href="README.sv.md" lang="sv">Svenska</a> · <a href="README.zh-CN.md" lang="zh-CN">简体中文</a> · <a href="README.de.md" lang="de">Deutsch</a> · <a href="README.ar.md" lang="ar" dir="rtl">العربية</a> · <a href="README.es.md" lang="es">Español</a> · <a href="README.ru.md" lang="ru">Русский</a> · <a href="README.th.md" lang="th">ไทย</a> · <strong>Türkçe</strong> · <a href="README.md" lang="en">English</a>
 </p>
 <p align="center" dir="ltr">
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Son macOS kütüphane testi çalıştırması (elle başlatılır)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="macOS kütüphane testleri" height="23" align="middle"></a>
@@ -38,8 +38,42 @@ oyuncular söylüyor.
 - **Senaryolar:** Görevler başlatılabiliyor; destek henüz tamamlanmış değil.
 - **Yapay zekâ:** Orijinal yapay zekânın bazı bölümleri üs kurma ve betiklerle yönetilen saldırıları yürütüyor.
 - **Devam eden çalışmalar:** Oynanışın aslına uygunluğu, görseller ve performans.
-- **Çok oyunculu mod:** Ağ üzerinden oyun henüz mevcut değil.
-- **Ölçek:** 30 oyunculu, 20.000 birimli savaşlar henüz gösterilmiş değil.
+- **Çok oyunculu mod:** Güncel kaynak kodu derlemelerinde macOS ve Linux üzerinde LAN ve çevrimiçi oyun kullanılabilir.
+- **Ölçek:** Art arda iki çevrimiçi maç, her maçta 30 bağımsız istemci süreci ve
+  20.000'den fazla etkin hareketli birimle işlevsel doğrulamayı geçti.
+  Linux istemcileri sanal makineleri paylaştı; bu sonuç akıcı gerçek zamanlı performansı kanıtlamaz.
+
+## İndir ve oyna
+
+Windows, macOS veya Linux yükleyicisini
+[sürümler sayfasından](https://github.com/YuriPlanet/vera20k/releases) indirin. Yükleyici,
+[Steam](https://store.steampowered.com/app/2229850/)'den ya da
+[EA uygulamasından](https://www.ea.com/games/command-and-conquer/command-and-conquer-the-ultimate-collection)
+aldığınız Yuri's Revenge'i bulur ve VERA20K'yi yeni bir klasöre kurar. Modlar ve yeni içerikler de
+oraya gidecek; böylece oyunun kendi dosyaları hiç değiştirilmez.
+
+Tek oyunculu YR çatışmalarını veya senaryolarını bir CnCNet istemcisinden başlatmak için
+[çevrimdışı istemci kurulumuna](integrations/cncnet/README.md) bakın.
+
+## Ayarlar
+
+Ses ve kontroller için **Options**, VERA'ya özgü özellikler için **Vera Options** menüsünü kullanın.
+Oyuncu tercihleri, klavye kısayolları ve lobi seçimleri `VERA.INI` dosyasına kaydedilir:
+
+- **Windows yükleyicisi:** `vera20k.exe` ile aynı klasörde.
+- **macOS:** `~/Library/Application Support/VERA20k/VERA.INI`.
+- **Linux:** `~/.local/share/VERA20k/VERA.INI` veya XDG veri klasörünüzde.
+
+`config.toml` oyun klasörünü belirler ve farklı bir ayar klasörü seçilmesine olanak tanır.
+
+`VERA.INI` yoksa VERA dosyayı oluşturur ve mevcut tercihleri bir kez içe aktarır.
+Eski ayarlar yoksa dosya başlangıçta boştur; ayarlar kaydedilene kadar VERA yerleşik varsayılanları
+kullanır. Orijinal `RA2MD.INI` ve `KeyboardMD.ini` dosyaları yalnızca içe aktarma için okunur,
+asla üzerlerine yazılmaz.
+
+Aynı klasördeki `VERARULES.INI`, isteğe bağlı oynanış değişikliklerini içerir. Başlangıçta yorum
+satırı hâline getirilmiş örnekler içerir ve görev ve harita kurallarına öncelik tanır. Bunları
+düzenlemek ve geçersiz kılmak için [kişisel kurallar](docs/personal-rules.md) bölümüne bakın.
 
 ## Mimari
 
@@ -56,18 +90,11 @@ Oklar veri akışını gösterir:
 
 ![Uygulama simülasyona komut gönderir ve dünya durumunu alır; görüntülemeye çizim verilerini gönderir.](docs/images/architecture.tr.png)
 
-## Sistem gereksinimleri
-
-- **Oyun:** Red Alert 2: Yuri's Revenge 1.001.
-- **İşletim sistemi:** Windows 10+, Linux (glibc 2.35+, ör. Ubuntu 22.04 veya Steam Deck) ya da
-  Apple Silicon üzerinde macOS 11+.
-- **Grafik:** Vulkan, DirectX 12 ya da Metal.
-
 ## Derleme ve çalıştırma
 
 Gerekenler:
 
-- **Rust ve Git:** rustup ile kurulmuş [Rust](https://rustup.rs/) 1.88 veya üzeri ve
+- **Rust ve Git:** rustup ile kurulmuş [Rust](https://rustup.rs/) 1.97 veya üzeri ve
   [Git](https://git-scm.com/).
 - **Derleme araçları:** Windows'ta, Rust kurulum programının kurmayı önerdiği Visual Studio C++
   derleme araçları; macOS'te `xcode-select --install`; Debian ve Ubuntu'da
@@ -93,14 +120,23 @@ ile oyun testleri kullanarak kontrol ediyor. Ajanlar [AGENTS.md](AGENTS.md) dosy
 
 ## Özelleştirme
 
-İsteğe bağlı özellikler (ör. Ares özellikleri) INI dosyaları üzerinden yapılandırılabilmeli
-ve uygun olduğunda istemciden açılıp kapatılabilmelidir.
+VERA20K varsayılan olarak orijinal oyun gibi oynanır. Ares gibi modlardan gelen eklentiler dahil
+her yeni özellik, şu yollardan biriyle açılana kadar kapalı kalmalıdır:
+
+- **Bir VERA oyuncu seçeneği**: **Options → Vera Options** altında bulunur ve `VERA.INI` dosyasının `[VERA]` bölümüne kaydedilir.
+- **Bir derleme seçeneği**: örneğin desteklenen [Ares eklentileri](docs/ares.md) için `--features ares`.
+- **Bir oyun içi lobi seçeneği**: her maç için seçilir.
+- **Bir INI anahtarı**: bir mod ya da harita tarafından ayarlanır.
+
+Ses, grafik ve kontrol ayarları `VERA.INI` dosyasına kaydedilir. Oynanış kuralları lobi
+ayarlarından, modlardan veya haritalardan gelir.
 
 ## Katkıda bulunma
 
 Yardımlarınızı bekliyoruz. Kod yazabilir, motoru yeniden düzenleyebilir, oyunu test edebilir,
 fikirlerinizi paylaşabilir veya orijinal oyunla yan yana oynayıp neyin yanlış hissettirdiğini
 bize anlatabilirsiniz. Bir PR açın, gerisini biz hallederiz.
+
 Tartışmalar [Discord](https://discord.gg/kmjRUn5m5F) üzerinden ve QQ grubunda (1097193563) yürür.
 
 ## Destek

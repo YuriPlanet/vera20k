@@ -133,7 +133,7 @@ fn assert_native_primary_type(rules: &RuleSet, name: &str, expected: &serde_json
             "factory": object.factory_rtti(),
             "build_category": build_category,
             "construction_yard": u8::from(object.construction_yard),
-            "foundation": crate::rules::foundation::foundation_id(&object.foundation),
+            "foundation": object.foundation.selector(),
             "gap_generator": u8::from(object.gap_generator),
             "infantry_absorb": u8::from(object.infantry_absorb),
             "invisible_in_game": u8::from(object.invisible_in_game),
@@ -509,14 +509,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                 sim.sound_events.clear_for_test();
                 let mut event = None;
                 match input["op"].as_str().unwrap() {
-                    "automatic" => initialize_factory_primary(
-                        &sim.interner,
-                        &mut sim.production,
-                        &sim.substrate,
-                        &sim.houses,
-                        id,
-                        &rules,
-                    ),
+                    "automatic" => initialize_factory_primary(&mut sim, &rules, id),
                     "click" => {
                         for &selected in &ids {
                             sim.substrate
@@ -584,10 +577,11 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                         "{context}: no Stage writes"
                     );
                 }
-                // Yard setting calls the existing edge owner. Its broader
-                // geometry is an explicit separate bound; all other phases,
-                // including already-primary yard clear, preserve every House
-                // field and timer. Compare cloned state, not a mirror owner.
+                // Yard setting calls DetermineEdge; these controls record the
+                // call, and `house_base::edge_tests` covers the edge it writes.
+                // All other phases, including already-primary yard clear,
+                // preserve every House field and timer. Compare cloned state,
+                // not a mirror owner.
                 let has_edge = phase["effects"]
                     .as_array()
                     .unwrap()
@@ -698,6 +692,7 @@ fn primary_event_failed_building_resolution_preserves_a_live_units_plan() {
                 target_rx: 12,
                 target_ry: 20,
             },
+            None,
         )
         .unwrap();
     let planned = sim.decode_native_command_record(&record, 0).unwrap();

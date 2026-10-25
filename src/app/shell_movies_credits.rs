@@ -252,6 +252,18 @@ impl App {
             .options_profile
             .movie_progress
             .note_played(stem);
+        // 0x005BED61..0x005BED6A: outside a campaign (GameMode != 0) Play_Movie
+        // returns right after that note, with no video, audio hold or suspend,
+        // so a skirmish or multiplayer map's movie action only moves on.
+        if running_scenario
+            && state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .is_some_and(|runtime| runtime.simulation.session().game_mode_nonzero())
+        {
+            return;
+        }
         let file_name = format!("{stem}.BIK");
         let resolved = state.process_assets.manager().and_then(|assets| {
             assets
@@ -282,11 +294,13 @@ impl App {
                 return;
             }
         };
-        //5BEDFB..5BEE38 enters the same ABF35C movie hold as radar5BF580:
-        //Vox/streams pause, both VolumeInterp targets become0x2000.
-        //The separate menu pause owner must not acquire another movie credit.
+        // 5BEDFB..5BEE38 enters the same ABF35C movie hold as radar 5BF580
+        // (Vox/streams pause, both masters glide to 0x2000), then 5BEE3E
+        // suspends the sound events, which the radar movie does not. The
+        // separate menu pause owner must not acquire another movie credit.
         let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         state.audio.set_movie_audio_held(true, wall_ms);
+        state.audio.set_movie_sounds_suspended(true, wall_ms);
         // The Bink soundtrack plays at VoiceVolume: BinkSetVolume(ftol(
         // VoiceVolume * 32768.0)) at `0x00432897` (32768 = unity gain).
         let voice_volume = state
@@ -374,6 +388,9 @@ impl App {
             MovieReturn::RunningScenario => {
                 state.frontend.screen = crate::ui::game_screen::GameScreen::InGame;
                 state.platform.window.request_redraw();
+            }
+            MovieReturn::CampaignResult(destination) => {
+                Self::complete_scenario_exit(state, *destination);
             }
             MovieReturn::CampaignVictory(victory) => {
                 Self::advance_campaign_victory(state, *victory);

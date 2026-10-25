@@ -5,12 +5,20 @@
 //! shells that reuse the same cursor/key plumbing). Sim-authoritative input —
 //! queued commands — lives in the simulation, never here.
 
+use crate::render::upscale_pass::ZoomGeometry;
 use crate::sim::intern::InternedId;
 use crate::sim::snapshot::saved_local_view::{
-    CONTROL_GROUP_SLOTS, SavedCursorModes, SavedLocalView, SavedLocalViewError, SavedTargeting,
+    SavedCursorModes, SavedLocalView, SavedLocalViewError, SavedTargeting,
 };
 use std::collections::HashSet;
 use winit::keyboard::{KeyCode, ModifiersState};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TacticalPointerMode<'a> {
+    Ordinary,
+    SuperWeapon(&'a str),
+    RepairSell,
+}
 
 /// Client-side handles installed by ManualPlace4FB840. The House factory
 /// remains the owner of the completed object; these are cursor references,
@@ -83,19 +91,12 @@ impl PreparedSavedLocalView {
                 }
             }
         }
-        for &object_id in saved.control_groups().iter().flatten() {
-            if simulation.entities().get(object_id).is_none() {
-                return Err(SavedLocalViewError::MissingEntityReference {
-                    field: "control group",
-                    object_id,
-                });
-            }
-        }
         let (order, pending) = crate::app::input::dispatch::selection_order_for_world(
             simulation,
             Some(rules),
             saved.selection_order(),
             saved.selection_order_pending(),
+            &[],
         );
         if order != saved.selection_order() || pending != saved.selection_order_pending() {
             return Err(SavedLocalViewError::SelectionTimelineMismatch);
@@ -144,8 +145,8 @@ impl PreparedSavedLocalView {
         Ok(Self { saved, targeting })
     }
 
-    /// Restore exactly the saved owners after navigation's world-replacement
-    /// invalidation. The Tactical view has its own owner,
+    /// Restore persistent owners after navigation's world-replacement
+    /// invalidation. Active YR PlanMgr is reset, not restored. The Tactical view has its own owner,
     /// camera::restore_tactical_view, applied once new geometry is installed.
     pub(crate) fn commit_into(
         self,
@@ -156,7 +157,10 @@ impl PreparedSavedLocalView {
             .view_bookmarks
             .restore_saved_cells(self.saved.view_bookmarks());
         let modes = self.saved.modes();
-        input.planning.restore_active(modes.planning);
+        // ClearScene6370B0 clears active YR Q at AC4CF4. Mouse raw load can
+        // restore legacy Display+11B3, a different byte. Do not use the saved
+        // VERA bit to reactivate the producer or emit a new PLANCOMMIT.
+        input.planning.reset();
         sidebar.repair_mode_on = modes.repair;
         sidebar.sell_mode_on = modes.sell;
         input.targeting_mode = self.targeting;
@@ -165,10 +169,9 @@ impl PreparedSavedLocalView {
         // raw but MouseLoad never swizzles it, so no retry survives a load.
         input.building_placement_preview = None;
         input.saved_building_placement = None;
-        let (order, pending, groups, follow) = self.saved.into_local_input();
+        let (order, pending, follow) = self.saved.into_local_input();
         input.selection_order = order;
         input.selection_order_pending = pending;
-        input.control_groups = groups.into();
         input.follow_target = follow;
         // ClearScene685640 and PostLoad6851D2 call734210, which resets the
         // last team slot to -1 and rewinds both click clocks. None has the
@@ -208,6 +211,10 @@ pub(crate) struct MatchInputState {
     /// The match zoom `cursor_x`/`cursor_y` are in; `None` is window pixels.
     /// `AppState::sync_cursor_space` keeps it matching the current screen.
     pub(crate) cursor_zoom: Option<crate::render::upscale_pass::ZoomGeometry>,
+    /// Last physical window event, used only to measure confined cursor motion.
+    /// The source cursor above remains authoritative; this anchor is neither
+    /// saved nor simulation state and is discarded when pointer focus changes.
+    last_cursor_window: Option<(f32, f32)>,
     pub(crate) keys_held: HashSet<KeyCode>,
     pub(crate) hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings,
     pub(crate) hotkey_modifiers: ModifiersState,
@@ -227,6 +234,15 @@ pub(crate) struct MatchInputState {
     pub(crate) retail_screenshot_requested: bool,
     /// True while left-dragging on minimap (camera pan mode).
     pub(crate) minimap_dragging: bool,
+    /// Touch gestures translated into mouse input (Windows touchscreens). Its
+    /// sticky gesture lives here, beside the other pointer bytes, so the match
+    /// teardown ladder resets it with them.
+    pub(crate) touch_mapper: crate::app::input::touch::TouchMouseMapper,
+    /// The cursor position came from a touch, not a hardware pointer. VERA
+    /// internal: edge auto-scroll needs a pointer that can leave the band, and
+    /// a lifted finger leaves the synthetic cursor parked. The next real
+    /// `CursorMoved` clears it.
+    pub(crate) cursor_from_touch: bool,
     /// Selection drag state — tracks mouse drag for box-select.
     pub(crate) selection_state: crate::sim::selection::SelectionState,
     /// Player-side `g_CurrentObjects` order. Selection commands update this
@@ -239,8 +255,6 @@ pub(crate) struct MatchInputState {
     pub(crate) selection_voice_enabled: bool,
     /// Pending order mode for the next right-click command.
     pub(crate) queued_order_mode: crate::app::types::OrderMode,
-    /// Control group slots (0-9) storing stable entity ids.
-    pub(crate) control_groups: Vec<Vec<u64>>,
     /// Slot and wall-clock instant of the last plain control-group recall, for
     /// the 800 ms double-tap that centres the camera. Wall clock, never sim
     /// state: the original stamps `timeGetTime()` here and only a recall writes
@@ -263,17 +277,134 @@ pub(crate) struct MatchInputState {
 mod ready_building_placement_tests;
 
 impl MatchInputState {
+    /// DetermineAction692610 returns the selected object's action early.
+    /// With no selection, its armed targeted Super overrides Repair/Sell
+    /// at692B06..692B24. Cursor feedback and release share this decision;
+    /// the existing Super producer still owns target admission and launch.
+    /// Source: original gamemd.exe instructions.
+    pub(crate) fn tactical_pointer_mode(
+        &self,
+        sidebar: &crate::ui::sidebar::gadget_flash::SidebarGadgetState,
+        selection_empty: bool,
+    ) -> TacticalPointerMode<'_> {
+        if !selection_empty {
+            return TacticalPointerMode::Ordinary;
+        }
+        if let Some(section) = self
+            .targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_super_weapon)
+        {
+            return TacticalPointerMode::SuperWeapon(section);
+        }
+        if sidebar.repair_mode_on || sidebar.sell_mode_on {
+            return TacticalPointerMode::RepairSell;
+        }
+        TacticalPointerMode::Ordinary
+    }
+
+    /// Display Cancel4AAD30 consumes one represented cursor rung: current
+    /// placement product, Repair/Sell, then Super. Repair/Sell setters still
+    /// refuse a retained placement TYPE after its product expires. The
+    /// caller handles the beacon rung (4AAE47) and the final UnselectAll rung.
+    /// Power/Waypoint remain unrepresented Display flags.
+    /// Source: original gamemd.exe4AAD34..4AAE84.
+    pub(crate) fn cancel_pointer_mode(
+        &mut self,
+        sidebar: &mut crate::ui::sidebar::gadget_flash::SidebarGadgetState,
+    ) -> bool {
+        if self.cancel_building_placement() {
+            return true;
+        }
+        if sidebar.repair_mode_on || sidebar.sell_mode_on {
+            let placement_armed = self
+                .targeting_mode
+                .as_ref()
+                .and_then(crate::app::types::TargetingMode::as_building_placement)
+                .is_some();
+            sidebar.disable_selection_modes(placement_armed);
+            return true;
+        }
+        if self
+            .targeting_mode
+            .as_ref()
+            .and_then(crate::app::types::TargetingMode::as_super_weapon)
+            .is_some()
+        {
+            self.targeting_mode = None;
+            self.building_placement_preview = None;
+            return true;
+        }
+        false
+    }
+
+    /// Record physical window input in the current screen's coordinate space.
+    pub(crate) fn set_cursor_from_window(
+        &mut self,
+        point: (f32, f32),
+        zoom: Option<ZoomGeometry>,
+        confined: bool,
+    ) {
+        self.sync_cursor_space(zoom);
+        (self.cursor_x, self.cursor_y) = match (zoom, self.last_cursor_window) {
+            (Some(zoom), Some(previous)) if confined => {
+                // The hidden OS pointer can enter the letterbox bars even
+                // while confined to the client area. Clamp each movement so
+                // reversing it immediately moves the visible cursor. Using
+                // window events also works without a platform cursor warp.
+                let current = zoom.source_to_window(self.cursor_x, self.cursor_y);
+                zoom.window_to_source(
+                    current.0 + (point.0 - previous.0),
+                    current.1 + (point.1 - previous.1),
+                )
+            }
+            (Some(zoom), _) => zoom.window_to_source(point.0, point.1),
+            (None, _) => point,
+        };
+        self.last_cursor_window = Some(point);
+    }
+
+    /// Begin a fresh physical pointer history after focus or client entry changes.
+    pub(crate) fn reset_window_cursor_motion(&mut self) {
+        self.last_cursor_window = None;
+    }
+
+    /// Re-express a retained cursor after a resize or screen transition.
+    pub(crate) fn sync_cursor_space(&mut self, zoom: Option<ZoomGeometry>) {
+        if self.cursor_zoom != zoom {
+            // Tactical install already initializes source coordinates on entry.
+            // Leaving or resizing a match maps through physical window pixels.
+            if let Some(from) = self.cursor_zoom {
+                let rendered = from.source_to_window(self.cursor_x, self.cursor_y);
+                // Outside the match the OS cursor becomes visible again. Use
+                // its actual position; capture-only source input has no such
+                // anchor and keeps the existing rendered-position fallback.
+                let point = if zoom.is_none() {
+                    self.last_cursor_window.unwrap_or(rendered)
+                } else {
+                    rendered
+                };
+                (self.cursor_x, self.cursor_y) =
+                    zoom.map_or(point, |to| to.window_to_source(point.0, point.1));
+            } else {
+                self.reset_window_cursor_motion();
+            }
+            self.cursor_zoom = zoom;
+        }
+    }
+
     /// Construct the match input owner with the ordinary startup defaults.
     pub(crate) fn new(hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings) -> Self {
         Self {
             cursor_visibility: Default::default(),
             minimap_dragging: false,
+            touch_mapper: crate::app::input::touch::TouchMouseMapper::new(),
+            cursor_from_touch: false,
             selection_state: crate::sim::selection::SelectionState::new(),
             selection_order: Vec::new(),
             selection_order_pending: false,
             selection_voice_enabled: true,
             queued_order_mode: crate::app::types::OrderMode::Move,
-            control_groups: vec![Vec::new(); CONTROL_GROUP_SLOTS],
             last_control_group_press: None,
             follow_target: None,
             targeting_mode: None,
@@ -292,6 +423,7 @@ impl MatchInputState {
             cursor_x: 0.0,
             cursor_y: 0.0,
             cursor_zoom: None,
+            last_cursor_window: None,
             keys_held: HashSet::new(),
             hotkey_bindings,
             hotkey_modifiers: ModifiersState::empty(),
@@ -471,7 +603,7 @@ impl MatchInputState {
 
     /// Consume the ordered native lifecycle facts through this input owner.
     /// Returning true requests an actual-cursor preview refresh after retry.
-    pub(crate) fn apply_building_placement_output(
+    pub(crate) fn apply_lifecycle_output(
         &mut self,
         output: &crate::sim::world::LifecycleOutput,
         local_house: Option<InternedId>,
@@ -533,6 +665,10 @@ impl MatchInputState {
         self.minimap_dragging = false;
         self.selection_state.cancel_drag();
         self.tactical_mouse.cancel_mouse_drag();
+        // The touch gesture is the mapper's; without this a finger still down
+        // when the drag is torn down would deliver its release into the screen
+        // that replaced it.
+        self.touch_mapper.reset();
     }
 
     /// TAction46 clears the active display modes before Lock684240 cancels
@@ -569,18 +705,8 @@ impl MatchInputState {
             Some(rules),
             &self.selection_order,
             self.selection_order_pending,
+            &[],
         );
-        assert_eq!(self.control_groups.len(), CONTROL_GROUP_SLOTS);
-        // Native membership lives on each serialized Techno, not in a list
-        // retaining already-deleted objects. Project the existing app lists
-        // onto the same entity store being saved, preserving member order.
-        let groups = std::array::from_fn(|slot| {
-            self.control_groups[slot]
-                .iter()
-                .copied()
-                .filter(|id| simulation.entities().get(*id).is_some())
-                .collect()
-        });
         let alive = |id: &u64| simulation.entities().get(*id).is_some();
         let targeting = self.targeting_mode.as_ref().map(|mode| match mode {
             crate::app::types::TargetingMode::BuildingPlacement(target) => {
@@ -598,17 +724,21 @@ impl MatchInputState {
             self.view_bookmarks.saved_cells(),
             order,
             pending,
-            groups,
             self.follow_target.filter(alive),
             SavedCursorModes {
                 repair: sidebar.repair_mode_on,
                 sell: sidebar.sell_mode_on,
-                planning: self.planning.active(),
+                // Active YR PlanMgr is outside Mouse's saved Display body.
+                planning: false,
                 targeting,
             },
         )
     }
 }
+
+#[cfg(test)]
+#[path = "pointer_resolution_tests.rs"]
+mod pointer_resolution_tests;
 
 #[cfg(test)]
 #[path = "saved_local_view_tests.rs"]

@@ -91,6 +91,9 @@ pub(crate) struct ImmunityInputs {
     /// Target ImmuneToPsionics.
     pub psionics_immune: bool,
     pub target_is_building: bool,
+    /// The Phobos shield hook wrote a zero packet and suppressed
+    /// `0x007019D8`'s `< 1 -> 1` floor for it.
+    pub skip_low_damage_check: bool,
 }
 
 /// Caller-built target view — decouples the service from GameEntity.
@@ -106,7 +109,7 @@ pub(crate) struct TargetDamageView {
 pub(crate) enum DamageGate {
     Pass,
     /// Short-circuit to 0 HP delta, no state change.
-    Nullified,
+    Nullified { clear_damage: bool },
     /// Active IronCurtain/ForceShield short-circuit. Kept distinct because
     /// TechnoClass emits its transient combat-light before returning.
     Invulnerable,
@@ -129,6 +132,9 @@ pub enum DamageState {
 /// Prepared receiver packet, before the Object HP transaction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DamageOutcome {
+    /// Packet at Techno701ADB, before bunker/warhead/Object immunity.
+    /// None when TypeImmune, IC/FS or WarpingOut returned earlier.
+    pub readiness_damage: Option<i32>,
     /// Object entry admitted the packet before its kernel (which may yield0).
     pub apply_object_damage: bool,
     /// Prepared signed kernel result; Object owns the final cap and HP write.

@@ -43,8 +43,9 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     if pressed {
         page.buttons.press(target);
         if target.is_some() {
-            // Owner-draw buttons click at button-down (0x0061374B..0x00613771).
-            App::play_skirmish_shell_generic_click_sound(state);
+            // Owner-draw buttons play GUIMainButtonSound at button-down
+            // (0x0061374B..0x00613771).
+            App::play_main_menu_button_sound(state);
         }
         return;
     }
@@ -54,6 +55,12 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         }
         Some(ConnectionButton::Player(row)) => {
             crate::app::match_runtime::network_match::propose_kick(state, row)
+        }
+        Some(button @ (ConnectionButton::PreviousPage | ConnectionButton::NextPage)) => {
+            if let Some(page) = state.match_state.network_wait.page_mut() {
+                page.change_page(button == ConnectionButton::NextPage);
+            }
+            state.platform.window.request_redraw();
         }
         None => {}
     }

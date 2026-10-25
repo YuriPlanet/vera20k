@@ -1,17 +1,17 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
     1,
     33621247
   ],
-  "scope": "BuildingClass::Mission_Guard 0x4496B0, BuildingClass::Mission_Attack 0x44ACF0, BuildingClass::SetTarget 0x443B90, BuildingClass 0x44D6A0 and their dispatch by MissionClass::AI 0x5B3060 between BuildingClass::Update's ready checks",
+  "scope": "BuildingClass::Mission_Guard 0x4496B0, BuildingClass::Mission_Attack 0x44ACF0, BuildingClass::SetTarget 0x443B90, BuildingClass 0x44D6A0 and their dispatch by MissionClass::AI 0x5B3060 between BuildingClass::Update's ready checks; additive hidden-startup UpdateAnimation and native mission-counter controls",
   "assumptions": [
     "the building_construction fixture refinery (slave_manager fixture, Building vtables), armed through Weapon[0] = a supplied WeaponType whose Projectile is a supplied BulletType; TarCom is the fixture's unit",
     "MissionControl Rate/AARate written as float-widened doubles (ReadDouble 0x5283D0); retail [Guard] .030/.016, [Sticky] .016/.016, [Attack] .016/.016",
-    "cadence rows run only the Update mission pieces; UpdateAnimation, TechnoClass::AI_Update's other steps and the passive scan are not run (the row events stand in for the scan's TarCom write)"
+    "cadence rows run only the Update mission pieces; UpdateAnimation, TechnoClass::AI_Update's other steps and the passive scan are not run (the row events stand in for the scan's TarCom write)",
+    "hidden_startup adds three two-frame controls through original44D6A0 under ScenarioInit, then4509D0,43FE27..43FE54,6FA646..6FA65A,43FF91..43FFB4 and43FFB4..440042. Type+CA1 Turret and prior+6DD ready are inputs; the actor is armed and has no target. The non-turret is an isolated ready-gate contrast, not a retail CABARR02 type replay. Discovery, first Grand_Opening, passive targeting and whole BuildingUpdate are excluded. All three1012-byte RNG buffers are seeded1 after setup; each frame records native mission/body timer start/duration stores, excluding stack padding"
   ],
   "substitutions": [
     "BuildingClass::GetFireError 0x447F10 answered (per row, or the rearm test in cadence rows); Fire_At 0x6FDD50 answered (cadence rows write its rearm timer); TechnoClass::SetTarget 0x6FCDB0 answered with its +0x2B4 write; FacingClass::Set_Desired 0x4C9220, the direction 0x43ED40, StartUncloaking 0x7036C0, the delayed-fire anim 0x451890 and ClearBibArea 0x449540 observed and answered (DestroyNthAnim 0x451E40 by the refinery_dock observer); Is_Operational 0x4555D0, IsCloseEnough 0x6F7780, IsHumanPlayer 0x50B730 and the EMP test 0x70EFD0 answered from the row"
@@ -23,7 +23,11 @@
     "enter_construction": "0x0044D6A0",
     "mission_ai": "0x005B3060",
     "update_ready_commence_unless_building": "0x0043FE27",
-    "update_ready_commence": "0x0043FF91"
+    "update_ready_commence": "0x0043FF91",
+    "update_animation": "0x004509D0",
+    "mission_counter_host": "0x006FA646",
+    "queued_body": "0x0043FFB4"
   },
-  "payload_sha256": "398486fe04bc8d13814ea12518933cae1dabfa4d618b28ada25801c16fec8539"
+  "replay_command": "python -m tools.spatial_oracle.building_guard_attack",
+  "payload_sha256": "87201028adb706c2f2d213b297cbce6958a37763fe3023f1b51cf4d1461be6c2"
 }

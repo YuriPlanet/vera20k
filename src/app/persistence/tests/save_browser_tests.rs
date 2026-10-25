@@ -7,14 +7,14 @@ fn browser_admission_rejects_other_build_capability() {
     let repository = SaveRepository::at(directory.path());
     let bytes = GameSnapshot::save_validated(&Simulation::new(), 0, 0, "other build", 0);
     let header = GameSnapshot::read_header(&bytes).unwrap();
-    let other_capability = match header.compatibility() {
-        crate::rules::compatibility::RulesCompatibility::Retail => {
-            crate::rules::compatibility::RulesCompatibility::Ares
-        }
-        crate::rules::compatibility::RulesCompatibility::Ares => {
-            crate::rules::compatibility::RulesCompatibility::Retail
-        }
-    };
+    // Any other capability combination must be refused; flip every bit so this
+    // stays a foreign mode as capabilities are added.
+    let other_capability = crate::rules::compatibility::RulesCompatibility::from_capabilities(
+        !crate::rules::ARES_ENABLED,
+        !crate::rules::PHOBOS_ENABLED,
+        !crate::rules::NPATCH_ENABLED,
+        !crate::rules::VERAX_ENABLED,
+    );
     let mut header = serde_json::to_value(header).unwrap();
     header["compatibility"] = serde_json::to_value(other_capability).unwrap();
     let header: GameSnapshotHeader = serde_json::from_value(header).unwrap();
@@ -57,7 +57,7 @@ fn browser_admission_keeps_empty_descriptions_and_uses_file_time() {
         .set_times(std::fs::FileTimes::new().set_modified(modified))
         .unwrap();
     let mut header = GameSnapshot::read_header(&bytes).unwrap();
-    header.version = 0;
+    header.layout = 0;
     repository
         .write_named("incompatible.bin", &save_codec::serialize(&header).unwrap())
         .unwrap();

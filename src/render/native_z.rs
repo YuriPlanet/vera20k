@@ -17,8 +17,9 @@
 //!   seeding paths below, then the per-row step applied after each row
 //!   (`0x00437921..0x0043793f`).
 //! - `Extended_SHP_blitter @ 0x00437A10`: ordinary gradients without a
-//!   second shape; with one, constant raw bottom seed (no gradient), minus
-//!   the per-pixel signed z-shape byte in the leaf (`0x004990E0`).
+//!   second shape; with one, a constant seed minus the per-pixel signed
+//!   z-shape byte. Top-seeded gradients keep their quantisation; only the
+//!   bottom-seeded building gradient bypasses it (`0x00437BAB..0x00437C72`).
 //! - `TMP_TileBlitter @ 0x00547CF0`: `DAT_00AA1104 = (u16)(DefaultZ + YOrigin
 //!   - y - tileH) - tileH * heightLevel / 2`, per pixel `base + zdata <= zbuf`.
 //! - `TechnoClass_DrawSHP @ 0x00705E00`: CC stack slot 7 = a7 - 2
@@ -57,10 +58,6 @@ pub fn stored_z(depth: f32) -> u16 {
 /// `TechnoClass_DrawSHP` pushes `a7 - 2` as the CC_Draw_Shape Z term
 /// (`0x00706430`, `0x00706505`, `0x007065D4`). Every SHP object draw carries it.
 pub const SHP_DRAW_Z_ADJUST_PX: i32 = -2;
-
-/// `BuildingClass_DrawBody @ 0x0043D9C9` pushes `-1 - AdjustForZ(Z)` as the
-/// bib's a7; the bib body then carries `-1 - 2` on top of the lift cancel.
-pub const BIB_Z_ADJUST_PX: i32 = -1;
 
 /// Terrain height levels project 15 screen rows apart. Raw object Z instead
 /// uses `native_x87::adjust_for_z_standard` (the active 104-lepton ground
@@ -155,6 +152,19 @@ pub const Z_GRADIENT_ZSHAPE_CLIP_FLAG: u32 = 0x200;
 /// one native composite rectangle; its last 16 rows use gradient 2/FootZ,
 /// while preceding rows use gradient 0/FootZ-5. Shadows do not carry it.
 pub const Z_GRADIENT_VOXEL_BRIDGE_SPLIT_FLAG: u32 = 0x400;
+
+/// Encoded overlay depth file: geometry was clipped on the CPU and the
+/// optional surface reads signed raw bytes by linear address. Bits12..13
+/// select one of four RGBA channels; high16 stores the native row stride.
+pub const Z_GRADIENT_LINEAR_SHAPE_FLAG: u32 = 0x800;
+
+pub fn pack_overlay_z_gradient(gradient: ZGradient, slope: u8, stride: u16) -> u32 {
+    debug_assert!((1..=4).contains(&slope));
+    pack_z_gradient(gradient, true)
+        | Z_GRADIENT_LINEAR_SHAPE_FLAG
+        | (u32::from(slope - 1) << 12)
+        | (u32::from(stride) << 16)
+}
 
 pub const fn pack_voxel_z_gradient(gradient: ZGradient, bridge_split: bool) -> u32 {
     gradient as u32
@@ -338,14 +348,19 @@ pub fn sprite_row_z(
     seed + entry.step_dir * steps
 }
 
-/// Constant seed of an extended SHP blit with a second shape (BUILDNGZ).
-/// `Extended_SHP_blitter @ 0x00437C39..0x00437C72` bypasses gradient
-/// quantisation; `0x00437E67..0x00437EA7` advances shape rows without stepping Z.
+/// Constant seed of an extended SHP blit with a second shape.
+/// `437BAB..437BD9` keeps top-gradient quantisation; `437C39..437C72`
+/// bypasses it for the bottom gradient. `437E67..437EA7` advances shape rows
+/// without stepping Z. Consumed original controls: ore_shape_clip.json.
 /// The per-pixel leaf then subtracts the signed shape byte. Raw SHP frames
 /// use the standard walker and do not consume the second shape.
 #[cfg(test)]
-pub fn zshape_seed_z(screen_top: i32, height: i32, z_adjust: i32) -> i32 {
-    ((DEFAULT_Z - height - screen_top + 1) & 0xFFFF) + z_adjust
+pub fn zshape_seed_z(gradient: ZGradient, screen_top: i32, height: i32, z_adjust: i32) -> i32 {
+    if gradient.entry().top_seeded {
+        sprite_seed_z(gradient, screen_top, height, z_adjust).0
+    } else {
+        ((DEFAULT_Z - height - screen_top + 1) & 0xFFFF) + z_adjust
+    }
 }
 
 /// Tile base Z (`DAT_00AA1104`). `screen_top` is the diamond top row on
@@ -361,7 +376,7 @@ pub fn tile_base_z(screen_top: i32, height_level: i32) -> i32 {
 /// result anchors on the ground-projected row: every native class folds
 /// `-AdjustForZ(Location.Z)` into its adjustment, cancelling the screen lift.
 /// `class_term` is the remaining class constant (`SHP_DRAW_Z_ADJUST_PX`,
-/// `NormalZAdjust`, bib `-1`, anim `ZAdjust`, ...).
+/// `NormalZAdjust`, anim `ZAdjust`, ...).
 pub fn ground_anchored_z_adjust(height_level: i32, class_term: i32) -> i32 {
     class_term - HEIGHT_LEVEL_PX * height_level
 }
@@ -563,15 +578,39 @@ mod tests {
     fn building_shape_uses_unquantised_bottom_seed_and_raw_frames_only_clip() {
         // Regression derived from the 437C39..437C72 arithmetic, not a
         // captured parity golden. A neutral shape must have one Z at all rows.
-        assert_eq!(zshape_seed_z(100, 30, -2), DEFAULT_Z - 131);
+        assert_eq!(
+            zshape_seed_z(ZGradient::Vertical, 100, 30, -2),
+            DEFAULT_Z - 131
+        );
         assert_ne!(
-            zshape_seed_z(100, 30, -2),
+            zshape_seed_z(ZGradient::Vertical, 100, 30, -2),
             sprite_row_z(ZGradient::Vertical, 100, 30, -2, 0),
         );
-        assert_eq!(zshape_seed_z(85, 30, -17), zshape_seed_z(100, 30, -2));
+        assert_eq!(
+            zshape_seed_z(ZGradient::Vertical, 85, 30, -17),
+            zshape_seed_z(ZGradient::Vertical, 100, 30, -2)
+        );
         assert_eq!(pack_building_z_gradient(true, true), 0x302);
         assert_eq!(pack_building_z_gradient(true, false), 0x202);
         assert_eq!(pack_building_z_gradient(false, true), 2);
+    }
+
+    #[test]
+    fn shape_seeds_match_original_gradient_branches() {
+        let native = crate::test_fixture::json("tools/spatial_oracle/ore_shape_clip.json");
+        for row in native["shape_seeds"].as_array().unwrap() {
+            let value = |key: &str| row[key].as_i64().unwrap() as i32;
+            assert_eq!(
+                zshape_seed_z(
+                    ZGradient::from_index(value("gradient") as u32),
+                    value("screen_top"),
+                    value("height"),
+                    value("z_adjust")
+                ),
+                value("seed"),
+                "{row}"
+            );
+        }
     }
 
     #[test]

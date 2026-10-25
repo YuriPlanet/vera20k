@@ -712,7 +712,7 @@ fn a_gattling_tank_boards_with_its_spin_reset() {
     spin.sim.foot_set_location_marked(
         spin.tank,
         arrival,
-        Some(&spin.rules),
+        &spin.rules,
         None,
         crate::sim::world::FrameEffects::default(),
     );
@@ -733,7 +733,7 @@ fn a_gattling_tank_boards_with_its_spin_reset() {
             hover,
             crate::sim::radio::RadioMessage::Hello,
             crate::sim::radio::RadioPayload::default(),
-            Some(&spin.rules),
+            &spin.rules,
             crate::sim::world::FrameEffects::default(),
         ),
         crate::sim::radio::RadioResponse::Roger,
@@ -743,7 +743,7 @@ fn a_gattling_tank_boards_with_its_spin_reset() {
         .per_cell_process(
             spin.tank,
             crate::sim::movement::PerCellReason::Arrival,
-            Some(&spin.rules),
+            &spin.rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )

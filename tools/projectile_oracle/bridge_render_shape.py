@@ -10,7 +10,7 @@ import struct
 
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_ESP
-from tools.native_oracle import NATIVE_SHA256, finish_vectors, provenance
+from tools.native_oracle import finish_vectors, provenance
 from tools.projectile_oracle.bridge_render import setup, ints
 from tools.projectile_oracle.bridge_render_inputs import assets_root, load_retail_type
 from tools.projectile_oracle.bridge_render_inputs_palette import PaletteReader, initialize
@@ -162,8 +162,7 @@ def generate():
                      ('collapsed',dict(flags=0))]]
     canonical += [dict(name=f'canonical_depth_{z}',depth_baseline=32768,old_z=z)
                   for z in (32571,32574,32575)]
-    return dict(native_sha256=NATIVE_SHA256,
-                selected_native_type=native_type, shp_sha256=hashlib.sha256(raw_shp).hexdigest(),
+    return dict(selected_native_type=native_type, shp_sha256=hashlib.sha256(raw_shp).hexdigest(),
                 palette_loads=m.asset_loaded,
                 surface=dict(width=WIDTH,height=HEIGHT,bytes_per_pixel=2,
                              circular_depth_baseline=1024,a_value=127),

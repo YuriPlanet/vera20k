@@ -365,17 +365,17 @@ mod tests {
         );
 
         assert_eq!(
-            sim.successful_non_wall_placement_owner(&refinery_command, false, Some(&rules)),
+            sim.successful_non_wall_placement_owner(&refinery_command, false, &rules),
             None,
             "a rejected placement cannot borrow an unrelated spawn signal"
         );
         assert_eq!(
-            sim.successful_non_wall_placement_owner(&wall_command, true, Some(&rules)),
+            sim.successful_non_wall_placement_owner(&wall_command, true, &rules),
             None,
             "wall overlays do not arm a producer crane"
         );
         assert_eq!(
-            sim.successful_non_wall_placement_owner(&refinery_command, true, Some(&rules)),
+            sim.successful_non_wall_placement_owner(&refinery_command, true, &rules),
             Some(owner)
         );
     }
@@ -393,7 +393,7 @@ mod tests {
         let app_output = app_sim
             .advance_app_frame(
                 &[],
-                Some(&rules),
+                &rules,
                 None,
                 67,
                 crate::sim::world::TickLane::Ordinary,
@@ -455,8 +455,11 @@ mod tests {
             );
         }
     }
+    /// Without `SpecialAnimDamaged=`, ReadINI's copy at `0x00462DDE` leaves the
+    /// damaged name `GAREFN_B`: `0x00451750` takes it for a damaged building,
+    /// and `0x00451890` raises the damaged flag and constructs it.
     #[test]
-    fn missing_damaged_name_smokes_without_constructing_or_changing_flag() {
+    fn missing_damaged_name_constructs_the_normal_anim_and_sets_flag() {
         let rules = refinery_rules_and_art();
         let mut sim = refinery_sim_with_bale();
         sim.substrate
@@ -470,8 +473,12 @@ mod tests {
         assert!(sim.bale_events.is_empty());
         assert_eq!(sim.particle_systems().len(), 1);
         let building = sim.entities().get(41).unwrap();
-        assert_eq!(building.building_art.anim_slots()[10], None);
-        assert!(!building.building_art.damage_state_active());
+        let anim = building.building_art.anim_slots()[10].expect("damaged SpecialAnim");
+        assert_eq!(
+            sim.interner.resolve(sim.anim(anim).unwrap().type_id()),
+            "GAREFN_B"
+        );
+        assert!(building.building_art.damage_state_active());
     }
     #[test]
     fn empty_bale_constructs_then_scalar_deletes_and_drain_only_emits_once() {

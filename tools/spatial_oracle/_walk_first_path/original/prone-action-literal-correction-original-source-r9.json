@@ -1,8 +1,7 @@
 {
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "correction": "Failed r8 control named Down but executed literal6 (Crawl). Original request5 (Down) writes Prone+6DB=1; literal6 does not take that suffix. Preserve failed6 receipt and execute original5; no animation/AI producer inference.",
   "failed_receipt": "prone_B-r8.json.gz",
-  "failed_sha256": "6e2a616e7d6815f78c1a001477964f1b26db2b2c40e4038b75b18b11f4e3305b",
+  "failed_sha256": "c8d7d6d737a44457f984458ecaf0e1dfe3ba83dc63dd5826491b964a3cc708cd",
   "spans": [
     {
       "start": "0x51d6f0",

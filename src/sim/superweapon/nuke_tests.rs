@@ -372,6 +372,7 @@ fn wait_matches_native() {
                 false,
                 false,
                 0,
+                false,
                 |_, _, _| None,
                 Some(&context),
             )
@@ -546,8 +547,9 @@ fn launch_rules(types: &[(bool, i32, i32)]) -> RuleSet {
 /// - the type scan: only the building of the type native asks for fires;
 /// - the Missile mission queued and commenced on it, the house's
 ///   NukeTarget (`+0x5784`) and the silo's firing type (`+0x5F8`);
-/// - the launch event at the cell of PlayAtCoord's coordinate, for the
-///   app's sound and line (`sound_dispatch::launch_lines_match_native`).
+/// - the launch event at PlayAtCoord's coordinate, the target's floor
+///   included, for the app's sound and line
+///   (`sound_dispatch::launch_lines_match_native`).
 ///
 /// Also compared: the common-tail recheck flag `+0x1FC`. Not compared:
 /// the player's tail (the app's, `super_selection`) and the mute row.
@@ -563,7 +565,10 @@ fn the_launch_matches_native() {
             .iter()
             .map(|entry| (entry[0] == true, int(&entry[1]), int(&entry[2])))
             .collect();
-        let (rules, mut sim, owner) = world_with(launch_rules(&types), 128, &[]);
+        let target = (int(&row["target"][0]) as u16, int(&row["target"][1]) as u16);
+        // The row's floor (Map578080) under the target, in levels.
+        let floor = [(target, (int(&row["floor"]) / 104) as u8)];
+        let (rules, mut sim, owner) = world_with(launch_rules(&types), 128, &floor);
         let events = row["events"].as_array().unwrap();
         let asked = events
             .iter()
@@ -596,7 +601,6 @@ fn the_launch_matches_native() {
             .get_mut(&sw_type)
             .unwrap()
             .is_ready = row["charged"] == true;
-        let target = (int(&row["target"][0]) as u16, int(&row["target"][1]) as u16);
         let sw = rules.super_weapon("NukeSpecial").unwrap().clone();
         // The native harness begins with a cleared House+1FC, independently
         // of provider fixture construction and its ordinary Unlimbo request.
@@ -632,24 +636,20 @@ fn the_launch_matches_native() {
             (nuke_target[0] as u16, nuke_target[1] as u16),
             "{row}"
         );
-        let native: Vec<(u16, u16)> = events
+        let native: Vec<Vec<i32>> = events
             .iter()
             .filter(|event| event[0] == "play_at")
-            .map(|event| {
-                let xyz = ints(&event[2]);
-                ((xyz[0] / 256) as u16, (xyz[1] / 256) as u16)
-            })
+            .map(|event| ints(&event[2]))
             .collect();
-        let pushed: Vec<(u16, u16)> = sim
+        let pushed: Vec<Vec<i32>> = sim
             .sound_events
             .iter()
             .filter_map(|event| match *event {
                 SimSoundEvent::SuperWeaponLaunched {
                     owner: by,
                     sw_type: kind,
-                    rx,
-                    ry,
-                } if by == owner && kind == sw_type => Some((rx, ry)),
+                    world,
+                } if by == owner && kind == sw_type => Some(vec![world.x, world.y, world.z]),
                 _ => None,
             })
             .collect();
@@ -821,7 +821,8 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
     assert_eq!(sim.houses[&russians].nuke_target(), TARGET);
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
-        SimSoundEvent::SuperWeaponLaunched { owner, rx: 40, ry: 40, .. } if *owner == russians
+        SimSoundEvent::SuperWeaponLaunched { owner, world, .. }
+            if *owner == russians && world.to_cell_sub_z().0 == 40 && world.to_cell_sub_z().1 == 40
     )));
     // The computer house near the target took up the defence of its base.
     assert_eq!(sim.houses[&americans].super_weapon_defense().0, (42, 42));

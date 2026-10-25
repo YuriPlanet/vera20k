@@ -27,7 +27,6 @@ fn retail_paid_two_gap_wall_retains_constructor_identities_until_deferred_drain(
     )
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
-    scene.runtime.simulation.batch_target_scans();
     // Periodic frame hashes feed replay and sync checks, which nothing here
     // reads; an interval no tick reaches skips them (11-12% of each frame in
     // this unoptimized test build).
@@ -161,13 +160,7 @@ fn retail_paid_two_gap_wall_retains_constructor_identities_until_deferred_drain(
         crate::sim::production::ready_building_entity_for_owner(sim, rules, owner, wall_type)
             .is_none()
     );
-    sim.process_pending_delete_with(
-        Some(rules),
-        Some(registry),
-        FrameEffects::default(),
-        1,
-        true,
-    );
+    sim.process_pending_delete_with(rules, Some(registry), FrameEffects::default(), 1, true);
     for id in buildings {
         assert!(sim.entities().get(id).is_none());
     }
@@ -191,7 +184,6 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
     )
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
-    scene.runtime.simulation.batch_target_scans();
     // Periodic frame hashes feed replay and sync checks, which nothing here
     // reads; an interval no tick reaches skips them (11-12% of each frame in
     // this unoptimized test build).

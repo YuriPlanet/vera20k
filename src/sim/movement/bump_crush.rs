@@ -37,11 +37,18 @@ pub(crate) fn build_blocker_neighbor_counts_with_overlays(
     width: u16,
     height: u16,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
+    terrain_objects: &crate::sim::terrain_object::TerrainObjectStore,
     overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
     interner: &crate::sim::intern::StringInterner,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
 ) -> BlockerNeighborCounts {
-    let mut counts = blocker_plane_base(width, height, resolved_terrain, overlay_grid);
+    let mut counts = blocker_plane_base(
+        width,
+        height,
+        resolved_terrain,
+        terrain_objects,
+        overlay_grid,
+    );
     let retained_foot = overlay_grid.is_some();
     for entity in entities.values() {
         if let Some(source) =
@@ -60,6 +67,7 @@ pub(crate) fn blocker_plane_base(
     width: u16,
     height: u16,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
+    terrain_objects: &crate::sim::terrain_object::TerrainObjectStore,
     overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
 ) -> BlockerNeighborCounts {
     let retained_wall_counts = overlay_grid.map(|grid| {
@@ -74,16 +82,33 @@ pub(crate) fn blocker_plane_base(
         .map(|plane| BlockerNeighborCounts::from_retained_wall_plane(width, height, plane))
         .unwrap_or_else(|| BlockerNeighborCounts::new(width, height));
 
-    if let Some(terrain) = resolved_terrain {
-        for y in 0..height {
-            for x in 0..width {
-                let Some(cell) = terrain.cell(x, y) else {
-                    continue;
-                };
-                if cell.terrain_object_occupation.is_some() {
-                    counts.add_single_cell_neighbor_source(x, y);
+    // TerrainUnlimbo71D000 / Limbo71C930 increment/decrement the eight
+    // neighbouring Cell+122 bytes once per instance, including overlaps.
+    // This derived plane reads the live owner; raw occupation is independent.
+    for object in terrain_objects
+        .objects()
+        .values()
+        .filter(|object| object.is_live())
+    {
+        if let Some(terrain) = resolved_terrain {
+            // Rebuild only real allocated identities, including fixed512
+            // aliases. Actual Unlimbo/Limbo already wrote Dummy's retained
+            // byte; a derived cache must neither replay nor stamp it.
+            for (x, y) in object.neighbor_cells() {
+                if let Some(index) = terrain.native_fixed_cell_index(x, y) {
+                    let (x, y) = terrain
+                        .native_cell_coord(crate::map::cell_index::NativeCellIdentity::Real(index));
+                    if x >= 0 && y >= 0 && (x as u16) < width && (y as u16) < height {
+                        counts.apply_retained_delta(
+                            usize::from(y as u16) * usize::from(width) + usize::from(x as u16),
+                            1,
+                        );
+                    }
                 }
             }
+        } else {
+            let (x, y) = object.cell();
+            counts.add_single_cell_neighbor_source(x, y);
         }
     }
 
@@ -129,7 +154,7 @@ pub(crate) fn blocker_plane_source(
     entity: &GameEntity,
     terrain: Option<&ResolvedTerrainGrid>,
     interner: &crate::sim::intern::StringInterner,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
     retained_foot: bool,
 ) -> Option<BlockerPlaneSource> {
     if retained_foot && entity.category() != EntityCategory::Structure {
@@ -148,9 +173,9 @@ pub(crate) fn blocker_plane_source(
     }
     let pos = (entity.position.rx(), entity.position.ry());
     if entity.category() == EntityCategory::Structure {
-        let size = rules
-            .and_then(|r| interner.object_type(entity.type_ref(), r))
-            .map(|obj| crate::rules::foundation::foundation_dimensions(&obj.foundation))
+        let size = interner
+            .object_type(entity.type_ref(), rules)
+            .map(|obj| obj.foundation.dimensions())
             .unwrap_or((1, 1));
         Some(BlockerPlaneSource::Building { origin: pos, size })
     } else {
@@ -165,7 +190,7 @@ pub(crate) fn blocker_plane_source(
 fn ground_gate_is_open(
     occupancy: &OccupancyGrid,
     entities: &EntityStore,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
     cell: (u16, u16),
 ) -> bool {
@@ -173,8 +198,8 @@ fn ground_gate_is_open(
         .first_building_on_layer(cell.0, cell.1, MovementLayer::Ground)
         .and_then(|id| entities.get(id))
         .is_some_and(|building| {
-            rules
-                .and_then(|rules| interner.object_type(building.type_ref(), rules))
+            interner
+                .object_type(building.type_ref(), rules)
                 .is_some_and(|object| object.gate)
                 && building.is_open_gate()
         })
@@ -188,7 +213,7 @@ pub(crate) enum GroundGate<'a> {
     Live {
         occupancy: &'a OccupancyGrid,
         entities: &'a EntityStore,
-        rules: Option<&'a crate::rules::ruleset::RuleSet>,
+        rules: &'a crate::rules::ruleset::RuleSet,
         interner: &'a crate::sim::intern::StringInterner,
     },
     /// The answer an original-executable replay recorded.
@@ -292,7 +317,7 @@ pub(crate) fn pick_infantry_sublocation(
     raw: &crate::sim::occupancy::RawCellOccupationGrid,
     occupancy: &OccupancyGrid,
     entities: &EntityStore,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
     rng: &mut SimRng,
     coords: DriveCoord,
@@ -421,7 +446,7 @@ impl crate::sim::world::Simulation {
             GroundGate::Live {
                 occupancy: &substrate.occupancy,
                 entities: &substrate.entities,
-                rules: Some(rules),
+                rules,
                 interner: world_interner,
             },
             scenario_rng,
@@ -600,18 +625,17 @@ fn deploy_crush_immune(entity: &GameEntity) -> bool {
 }
 
 /// Emit the crush-path `EntityCrushed` (CrushSound) event for a victim at the
-/// crush coordinate; native crush teardown does not also enter the ordinary
-/// DieSound path. Skipped when CrushSound is absent. Call before removing the
-/// victim from the EntityStore, while its type is still readable.
+/// crusher's Location (`0x007418AA..0x007418DC`, `0x0054CCDE..0x0054CD14`);
+/// native crush teardown does not also enter the ordinary DieSound path.
+/// Skipped when CrushSound is absent. Call before removing the victim from
+/// the EntityStore, while its type is still readable.
 pub(crate) fn emit_crush_kill_sounds_at(
     victim: &crate::sim::game_entity::GameEntity,
-    crush_coord: (i32, i32),
+    crusher_location: DriveCoord,
     rules: &crate::rules::ruleset::RuleSet,
     interner: &mut crate::sim::intern::StringInterner,
     sound_events: &mut crate::sim::world::FrameChannel<crate::sim::world::SimSoundEvent>,
 ) {
-    let rx = crush_coord.0.clamp(0, i32::from(u16::MAX)) as u16;
-    let ry = crush_coord.1.clamp(0, i32::from(u16::MAX)) as u16;
     let type_str = interner.resolve(victim.type_ref()).to_string();
     let Some(obj) = rules.object(&type_str) else {
         return;
@@ -620,8 +644,7 @@ pub(crate) fn emit_crush_kill_sounds_at(
         let id = interner.intern(crush_sound);
         sound_events.emit(crate::sim::world::SimSoundEvent::EntityCrushed {
             crush_sound_id: id,
-            rx,
-            ry,
+            world: crusher_location.into(),
         });
     }
 }
@@ -671,6 +694,9 @@ pub fn select_crush_victims(
                             )
                         },
                     )
+                    // UnitCrush741811..741819 skips Object+8D only here;
+                    // the falling occupant remains crushable for cell entry.
+                    && !victim.is_falling_down()
             })
         })
         .collect()

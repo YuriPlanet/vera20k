@@ -112,7 +112,11 @@ pub(crate) fn request_gate_open_for_cell(
 
 ///44E3A0: GetFoundation(false), then main Ground lists. Any pointer other
 ///than the Gate obstructs; bridge-layer occupants and Health are not queried.
-fn footprint_has_other_object(sim: &Simulation, id: u64, foundation: &str) -> bool {
+fn footprint_has_other_object(
+    sim: &Simulation,
+    id: u64,
+    foundation: &crate::rules::foundation::Foundation,
+) -> bool {
     let Some(gate) = sim.substrate.entities.get(id) else {
         return false;
     };
@@ -202,13 +206,13 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
             if phase == DoorPhase::ClosedStable {
                 //44E70C: canonical Building44D6A0(0,1), then state5.
                 //Guard stays queued until the host's Ready check.
-                sim.building_enter_idle_mode(id, false, Some(rules));
+                sim.building_enter_idle_mode(id, false, rules);
                 if let Some(entity) = sim.substrate.entities.get_mut(id) {
                     entity.mission.set_handler_state(5);
                 }
             }
-            //GateStage+703, dirty+80, sound and repaint remain the existing
-            //presentation residual; there is no second Door state.
+            //GateStage+703, dirty+80 and sound remain presentation residuals;
+            //the drawn frame reads the Door (building_art::gate_open_body_frame).
             0
         }
         2 => {
@@ -536,7 +540,7 @@ mod tests {
         // The cadence's starting hold clock is the fixture's retained input.
         let setup = json!({"input": row["input"], "initial": {"hold": [100,180,180]}});
         let (mut sim, rules) = native_fixture(&setup);
-        sim.building_enter_idle_mode(GATE, false, Some(&rules));
+        sim.building_enter_idle_mode(GATE, false, &rules);
         sim.substrate
             .mission_assign_exact(GATE, MissionId::from_known(MissionType::Guard), 100)
             .unwrap();
@@ -683,6 +687,49 @@ mod tests {
         (sim, rules)
     }
 
+    /// DrawBody's gate branch (`0x0043D546..0x0043D68F`) over the shared
+    /// Door: `ftol(progress * GateStages)` while opening, counted back while
+    /// closing, `GateStages - 1` once open and clamped there, plus
+    /// `GateStages + 1` at ConditionYellow or below; closed, or off Mission
+    /// Open, GetCurrentFrame draws instead.
+    #[test]
+    fn a_gate_draws_its_door_progress_while_open() {
+        let (mut sim, _) = fixture();
+        let frame_at = |sim: &Simulation, frame: u32| {
+            crate::sim::building_art::gate_open_body_frame(
+                sim.substrate.entities.get(GATE).unwrap(),
+                9,
+                1000,
+                0.5,
+                frame,
+            )
+        };
+        let gate = sim.substrate.entities.get_mut(GATE).unwrap();
+        gate.health = Health::new(1000);
+        gate.open_door(10, 0);
+        assert_eq!(frame_at(&sim, 5), None, "not on Mission Open");
+        sim.substrate
+            .mission_assign_exact(GATE, MissionId::from_known(MissionType::Open), 0)
+            .unwrap();
+        for (frame, stage) in [(0, 0), (1, 0), (5, 4), (9, 8), (10, 8)] {
+            assert_eq!(frame_at(&sim, frame), Some(stage), "opening at {frame}");
+        }
+        let gate = sim.substrate.entities.get_mut(GATE).unwrap();
+        gate.advance_door(10);
+        assert_eq!(frame_at(&sim, 12), Some(8), "open");
+        let gate = sim.substrate.entities.get_mut(GATE).unwrap();
+        gate.close_door(10, 20);
+        for (frame, stage) in [(20, 8), (21, 8), (25, 5), (29, 1), (30, 0)] {
+            assert_eq!(frame_at(&sim, frame), Some(stage), "closing at {frame}");
+        }
+        let gate = sim.substrate.entities.get_mut(GATE).unwrap();
+        gate.health = Health::new(500);
+        assert_eq!(frame_at(&sim, 25), Some(15), "yellow health");
+        let gate = sim.substrate.entities.get_mut(GATE).unwrap();
+        gate.advance_door(30);
+        assert_eq!(frame_at(&sim, 31), None, "closed");
+    }
+
     /// PlaceInfantryInCell refuses a ground object bit unless its building
     /// is an open Gate (`0x00481298..0x00481313`). `0x004ACA10`, which places
     /// unloaded passengers, deployed slaves and Jumpjet infantry, reads the
@@ -708,7 +755,7 @@ mod tests {
                 &sim.substrate.raw_cell_occupation,
                 &sim.substrate.occupancy,
                 &sim.substrate.entities,
-                Some(&rules),
+                &rules,
                 &sim.interner,
                 &mut sim.scenario_rng,
                 crate::sim::components::DriveCoord {

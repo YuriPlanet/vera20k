@@ -68,9 +68,9 @@ fn remaining_balance_after(cost: i32, progress: u16) -> i32 {
 pub struct PendingObject {
     pub type_id: InternedId,
     pub entity_id: Option<u64>,
-    /// Native completion accounting belongs to the one held factory object, not to
-    /// each delivery attempt. A refused Unlimbo keeps this serialized latch with the
-    /// same identity; the next promoted object starts with it clear.
+    /// Local completion notification belongs to the held object, not to each
+    /// delivery attempt. A refused Unlimbo keeps this serialized latch; the next
+    /// promoted object starts clear. Delivered score/history has its own owner.
     #[serde(default)]
     pub completion_accounted: bool,
 }
@@ -253,7 +253,9 @@ impl Factory {
     }
 
     /// The world chooses registry holder order;
-    /// this owner folds the complete Factory state, including private latches.
+    /// this owner folds shared Factory state. Strip HasChanged4C9C60 and its
+    /// completion notification are process-local, just like current_house;
+    /// visiting different local sidebars must not change a shared state hash.
     pub(crate) fn hash_state(&self, hasher: &mut impl Hasher) {
         self.owner.hash(hasher);
         (self.category as u8).hash(hasher);
@@ -274,16 +276,12 @@ impl Factory {
                     }
                     None => 0u8.hash(hasher),
                 }
-                object.completion_accounted.hash(hasher);
             }
             None => 0u8.hash(hasher),
         }
         self.on_hold.hash(hasher);
         self.suspended.hash(hasher);
         self.auto_resume_blocked.hash(hasher);
-        if self.changed {
-            b"factory-changed-5d".hash(hasher);
-        }
         (self.queue.len() as u64).hash(hasher);
         for entry in &self.queue {
             entry.type_id.hash(hasher);
@@ -644,6 +642,25 @@ pub(super) fn time_to_build_inputs(
     }
 }
 
+/// Techno6F47A0 reads the held object's owner (+21C), independently of the
+/// Factory's owner (+6C). Action36 can transfer a limbo product while its
+/// original House retains the Factory and a producer. Both GetRate4C9FB0
+/// and Resume4C9EEF/UpdateBuildRate4CA705 call this same Techno receiver.
+pub(super) fn held_time_to_build(
+    sim: &crate::sim::world::Simulation,
+    rules: &RuleSet,
+    held: &PendingObject,
+) -> i32 {
+    held.entity_id
+        .and_then(|id| sim.substrate.entities.get(id))
+        .and_then(|entity| {
+            sim.entity_object_type(entity, rules).map(|object| {
+                time_to_build(&time_to_build_inputs(sim, rules, entity.owner(), object))
+            })
+        })
+        .unwrap_or(0)
+}
+
 /// Map an object type to the `ProductionCategory` whose factory produces it — the Rust
 /// analog of the engine's begin-production factory-slot resolution. A thin tested
 /// delegate over `production_category_for_object`: ONE routing source, not a fork. Its
@@ -685,12 +702,6 @@ pub struct AbandonedObject {
 /// paying the house, and its cancel refund (Cost_Of less that Balance) takes
 /// the Cost_Of instead of nothing.
 ///
-/// RESIDUAL: VERA keeps no object `+0x300`. Its gameplay reader, the
-/// building's construction completion (`0x00446AE3..0x00446B10`), gives a
-/// human's building no FreeUnit when that stored price is non-zero and at most
-/// the type's GetCost, which in retail needs the FreeUnit's Cost_Of at 0 or
-/// less: 26 Industrial Plants for a refinery's Miner. Effect: VERA still
-/// delivers the free unit.
 fn seeded_balance(cost: i32) -> i32 {
     cost.max(0)
 }
@@ -755,14 +766,7 @@ impl<'a> FactoryView<'a> {
     pub fn build_step_rate(&self, sim: &crate::sim::world::Simulation, rules: &RuleSet) -> u16 {
         let duration = self
             .object
-            .and_then(|object| object.entity_id)
-            .and_then(|id| sim.substrate.entities.get(id))
-            .and_then(|entity| {
-                sim.object_type(entity.type_ref(), rules).map(|object| {
-                    time_to_build(&time_to_build_inputs(sim, rules, entity.owner(), object))
-                })
-            })
-            .unwrap_or(0);
+            .map_or(0, |held| held_time_to_build(sim, rules, held));
         build_step_rate(duration)
     }
 
@@ -1305,16 +1309,20 @@ impl FactoryRegistry {
         &mut self,
         holder: FactoryHolder,
         entity_id: u64,
+        start_price: i32,
     ) -> Option<u64> {
         let factory = self.factories.get_mut(&holder)?;
         let object = factory.object.as_mut()?;
         if object.entity_id.is_none() {
             object.entity_id = Some(entity_id);
+            // StartProduction4C9DEA samples Cost_Of after CreateInstance.
+            // The same quote is retained separately on that Techno at4C9DED.
+            factory.balance = seeded_balance(start_price);
         }
         object.entity_id
     }
 
-    /// Claim the score-screen completion accounting edge for the one active,
+    /// Claim the local completion notification edge for the one active,
     /// completed object. Delivery refusal does not clear the object, so later
     /// retries observe `false`; StartProduction constructs the next head with
     /// a fresh `false` latch.
@@ -1342,27 +1350,46 @@ impl FactoryRegistry {
         true
     }
 
-    /// Strip6A8DD3 calls HasChanged4C9C60 before IsComplete4CA130.
-    /// Consume every House factory's change flag, including unfinished heads;
-    /// only changed, completed, held heads can issue a ready edge. A suspended
-    /// complete head with no new writer cannot emit again on later frames.
-    pub(crate) fn take_changed_completed_keys(&mut self) -> Vec<(InternedId, ProductionCategory)> {
-        let order: Vec<FactoryHolder> = self
-            .holders_insertion_ordered()
-            .into_iter()
-            .filter_map(|(holder, _)| matches!(holder, FactoryHolder::House(..)).then_some(holder))
+    /// Strip6A8DD3 calls HasChanged4C9C60 before IsComplete4CA130. Validate
+    /// the borrowed foreign identity before consuming +5D, even for an
+    /// unfinished head. Repeated/stale cameo links cannot consume a new Factory.
+    pub(crate) fn take_changed_complete(
+        &mut self,
+        owner: InternedId,
+        visit: super::ProductionFactoryVisit,
+    ) -> bool {
+        let Some(factory) = self
+            .factories
+            .get_mut(&FactoryHolder::House(owner, visit.category))
+        else {
+            return false;
+        };
+        factory.insertion_seq == visit.construction_order
+            && std::mem::take(&mut factory.changed)
+            && factory.progress >= PRODUCTION_STEPS
+            && factory.object.is_some()
+    }
+
+    /// Headless fixtures explicitly supply a strip; ordinary frame effects
+    /// never infer one from Factory state. Fixture ordering is category order.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn strip_visits_for_test(&self, owner: InternedId) -> Vec<super::ProductionFactoryVisit> {
+        let mut visits: Vec<_> = self
+            .factories
+            .iter()
+            .filter_map(|(holder, factory)| {
+                if !matches!(holder, FactoryHolder::House(house, _) if *house == owner) {
+                    return None;
+                }
+                Some(super::ProductionFactoryVisit {
+                    type_id: factory.object.as_ref()?.type_id,
+                    category: factory.category,
+                    construction_order: factory.insertion_seq,
+                })
+            })
             .collect();
-        let mut completed = Vec::new();
-        for holder in order {
-            let factory = self.factories.get_mut(&holder).expect("retained Factory");
-            if std::mem::take(&mut factory.changed)
-                && factory.progress >= PRODUCTION_STEPS
-                && factory.object.is_some()
-            {
-                completed.push((factory.owner, factory.category));
-            }
-        }
-        completed
+        visits.sort_by_key(|visit| visit.category);
+        visits
     }
 
     /// `FactoryClass::Update_Build_Rate @ 0x004CA6E0`, called by the
@@ -1392,10 +1419,7 @@ impl FactoryRegistry {
             let rate = factory
                 .object
                 .as_ref()
-                .and_then(|object| sim.object_type(object.type_id, rules))
-                .map_or(1, |object| {
-                    time_to_build(&time_to_build_inputs(sim, rules, owner, object))
-                });
+                .map_or(0, |held| held_time_to_build(sim, rules, held));
             factory.set_rate(rate);
         }
     }
@@ -1924,7 +1948,7 @@ mod tests {
             producer.tracking_facts = crate::sim::house_tracking::TrackingFacts::of(
                 EntityCategory::Structure,
                 rules.object("PRODUCER"),
-                Some(&rules),
+                &rules,
             );
             sim.substrate.entities.insert(producer);
             crate::sim::world::Simulation::update_house_tracking(
@@ -1966,13 +1990,36 @@ mod tests {
                     i32::from_le_bytes(bytes)
                 };
                 assert_eq!(word(8), 0, "supplied native middle timer dword");
+                let head_owner = if status == "foreign" { foreign } else { owner };
+                // The native non-null +58 calls its actual Techno receiver.
+                let entity_id = (status != "null").then(|| {
+                    let id = 1000 + index as u64;
+                    sim.substrate
+                        .entities
+                        .insert(GameEntity::new_at_frame_zero_for_test(
+                            id,
+                            0,
+                            0,
+                            0,
+                            0,
+                            head_owner,
+                            Health::new(100),
+                            type_id,
+                            EntityCategory::Unit,
+                            0,
+                            5,
+                            false,
+                        ));
+                    id
+                });
                 registry.factories.insert(
                     FactoryHolder::Building(100 + index as u64),
                     Factory {
-                        owner: if status == "foreign" { foreign } else { owner },
+                        owner: head_owner,
                         category: ProductionCategory::Vehicle,
                         object: (status != "null").then_some(PendingObject {
                             type_id,
+                            entity_id,
                             ..Default::default()
                         }),
                         progress: if status == "complete" {

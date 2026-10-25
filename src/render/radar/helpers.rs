@@ -69,6 +69,49 @@ pub(super) struct TerrainPixel {
     pub color: [u8; 4],
 }
 
+/// Immutable projection pixels and their derived cell lookup. Replacing a
+/// playfield projection replaces both together; dirty radar updates never
+/// mutate these source pixels. The index retains the first pixel for duplicate
+/// coordinates, matching the former forward scan without scanning the whole
+/// map for every dirty cell in a large movement batch.
+pub(super) struct TerrainPixels {
+    pixels: Vec<TerrainPixel>,
+    by_cell: Vec<(u32, usize)>,
+}
+
+impl TerrainPixels {
+    pub fn new(pixels: Vec<TerrainPixel>) -> Self {
+        let mut by_cell: Vec<_> = pixels
+            .iter()
+            .enumerate()
+            .map(|(index, pixel)| (Self::key(pixel.rx, pixel.ry), index))
+            .collect();
+        by_cell.sort_unstable();
+        by_cell.dedup_by_key(|entry| entry.0);
+        Self { pixels, by_cell }
+    }
+
+    fn key(rx: u16, ry: u16) -> u32 {
+        (u32::from(rx) << 16) | u32::from(ry)
+    }
+
+    pub fn len(&self) -> usize {
+        self.pixels.len()
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, TerrainPixel> {
+        self.pixels.iter()
+    }
+
+    pub fn cell(&self, rx: u16, ry: u16) -> Option<&TerrainPixel> {
+        let entry = self
+            .by_cell
+            .binary_search_by_key(&Self::key(rx, ry), |entry| entry.0)
+            .ok()?;
+        Some(&self.pixels[self.by_cell[entry].1])
+    }
+}
+
 pub(crate) fn minimap_overlay_datum(
     rx: u16,
     ry: u16,
@@ -203,7 +246,9 @@ pub(super) fn overlay_radar_color(
     else {
         return Some([200, 200, 160]);
     };
-    if matches!(overlay_id, 100 | 101 | 231 | 232 | 239) {
+    // 47C108..47C136's nested 100/101 then 231/232 tests cannot both
+    // match. Those four IDs reach Overlay5FED00; only 239 skips it.
+    if overlay_id == 239 {
         return None;
     }
     let frame = if [Family::Low, Family::High]
@@ -236,11 +281,7 @@ pub(super) fn overlay_radar_color(
         .get(&(overlay_id, frame))
         .copied()
         .unwrap_or([0, 0, 0]);
-    if matches!(overlay_id, 0x7F..=0x8A | 0x93..=0x9E) {
-        Some([r, b, g])
-    } else {
-        Some([r, g, b])
-    }
+    Some([r, g, b])
 }
 
 pub(super) fn current_cell_radar_source(
@@ -387,8 +428,10 @@ pub(super) fn terrain_brightness_for_theater(theater_name: &str) -> f32 {
 }
 
 /// Resolve a gamemd foundation name into minimap footprint dimensions.
-pub(super) fn parse_foundation_size(foundation: &str) -> (u32, u32) {
-    let (w, h) = crate::rules::foundation::foundation_dimensions(foundation);
+pub(super) fn parse_foundation_size(
+    foundation: &crate::rules::foundation::Foundation,
+) -> (u32, u32) {
+    let (w, h) = foundation.dimensions();
     (u32::from(w), u32::from(h))
 }
 
@@ -431,6 +474,40 @@ pub(super) fn surface_visibility_color(
     }
     fog.is_cell_revealed(local_owner, pixel.rx, pixel.ry)
         .then_some(pixel.color)
+}
+
+#[cfg(test)]
+mod terrain_pixel_tests {
+    use super::*;
+
+    #[test]
+    fn cell_lookup_preserves_first_source_pixel_and_projection_replacement() {
+        let pixel = |rx, ry, red| TerrainPixel {
+            rx,
+            ry,
+            px: 0,
+            py: 0,
+            color: [red, 0, 0, 255],
+        };
+        let projection = TerrainPixels::new(vec![
+            pixel(u16::MAX, 2, 11),
+            pixel(2, u16::MAX, 22),
+            pixel(u16::MAX, 2, 33),
+        ]);
+        assert_eq!(projection.cell(u16::MAX, 2).unwrap().color[0], 11);
+        assert_eq!(projection.cell(2, u16::MAX).unwrap().color[0], 22);
+        assert!(projection.cell(2, 2).is_none());
+        assert_eq!(
+            projection
+                .iter()
+                .map(|pixel| pixel.color[0])
+                .collect::<Vec<_>>(),
+            [11, 22, 33],
+        );
+        let projection = TerrainPixels::new(vec![pixel(2, 2, 44)]);
+        assert!(projection.cell(u16::MAX, 2).is_none());
+        assert_eq!(projection.cell(2, 2).unwrap().color[0], 44);
+    }
 }
 
 #[cfg(test)]
@@ -504,11 +581,11 @@ mod radar_color_tests {
     fn native_overlay_color_tree_pins_skip_forced_swap_and_fallbacks() {
         let colors = HashMap::from([
             ((74, 1), [1, 2, 3]),
-            ((127, 4), [10, 20, 30]),
+            ((127, 4), [10, 30, 20]),
             ((147, 4), [40, 50, 60]),
         ]);
         assert_eq!(
-            overlay_radar_color(overlay(100, 9, false, false, false), &colors),
+            overlay_radar_color(overlay(239, 9, false, false, false), &colors),
             None
         );
         assert_eq!(
@@ -519,7 +596,7 @@ mod radar_color_tests {
         assert_eq!(
             overlay_radar_color(overlay(127, 4, false, false, false), &colors),
             Some([10, 30, 20]),
-            "OverlayClass swaps G/B only in the special ID ranges",
+            "the shared header table already applied OverlayType channel order",
         );
         assert_eq!(
             overlay_radar_color(overlay(147, 4, true, true, true), &colors),
@@ -579,6 +656,23 @@ mod radar_color_tests {
             current_cell_radar_source(false, false, None, [4, 5, 6], &colors),
             None,
             "clearing an overlay restores the selected TMP source",
+        );
+    }
+
+    #[test]
+    fn terminal_bridge_overlays_use_the_current_header_frame_and_preserve_black() {
+        // Authored header colors distinguish current-frame admission from the
+        // standing bridge ranges' forced frame 1. Original47C060 controls also
+        // return the shipped terminal images' black for every valid frame.
+        let colors = HashMap::from([((100, 1), [11, 22, 33]), ((100, 4), [0, 0, 0])]);
+        assert_eq!(
+            overlay_radar_color(overlay(100, 1, false, false, false), &colors),
+            Some([11, 22, 33]),
+        );
+        assert_eq!(
+            overlay_radar_color(overlay(100, 4, false, false, false), &colors),
+            Some([0, 0, 0]),
+            "the terminal overlay retains its current frame and valid black",
         );
     }
 }

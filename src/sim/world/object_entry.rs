@@ -8,7 +8,6 @@ use crate::map::{
     cell_index::NativeCellIdentity as Cell, entities::EntityCategory,
     resolved_terrain::ResolvedTerrainGrid,
 };
-use crate::rules::object_type::Ability;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::{
     locomotor_type::{LocomotorKind, SpeedType},
@@ -16,7 +15,6 @@ use crate::rules::{
     object_type::ObjectType,
 };
 use crate::sim::combat::combat_weapon;
-use crate::sim::combat::veterancy::has_weapon_ability;
 use crate::sim::movement::bump_crush::{self, CrushCapability};
 use crate::sim::movement::infantry_entry::PreludeCells;
 use crate::sim::{components::NavTargetRef, game_entity::GameEntity, intern::InternedId};
@@ -207,14 +205,15 @@ impl EntryCell {
         };
         let at = (p.0 as u16, p.1 as u16);
         let sim = live.sim;
-        let terrain_object = terrain_object
-            .then(|| sim.terrain_objects.cell_index().get(&at).copied())
-            .flatten();
+        let terrain_objects = sim
+            .terrain_objects
+            .members_at(at)
+            .filter(move |_| terrain_object);
         listed
             .then(|| {
                 sim.substrate
                     .occupancy
-                    .cell_objects(at.0, at.1, layer, terrain_object)
+                    .cell_objects(at.0, at.1, layer, terrain_objects)
             })
             .into_iter()
             .flatten()
@@ -569,7 +568,7 @@ impl Simulation {
             .ok_or("Can_Enter_Cell of a retired building")?;
         let obj = self
             .interner
-            .object_type(e.type_ref(), rules)
+            .object_type_in_category(e.type_ref(), e.category().into(), rules)
             .ok_or("Can_Enter_Cell of a building without its type")?;
         let terrain = self
             .resolved_terrain
@@ -672,7 +671,7 @@ fn classify_entry(
     let obj = live
         .sim
         .interner
-        .object_type(e.type_ref(), live.rules)
+        .object_type_in_category(e.type_ref(), e.category().into(), live.rules)
         .ok_or("repair admission missing ObjectType")?;
     if e.category() == EntityCategory::Structure {
         return building_impassable(live, e, obj, cell, None).map(|hard| if hard { 7 } else { 0 });
@@ -694,11 +693,12 @@ struct EntryMover<'a> {
     weapon0: Option<&'a crate::rules::weapon_type::WeaponType>,
     crusher: bool,
     /// Answers of `allied(mover owner, house)` already asked, and blocker
-    /// types already resolved by name; the alliance graph and rules are fixed
-    /// for the receiver's lifetime. A search asks these for every blocker it
+    /// types already resolved by concrete class and name. Alliances and rules
+    /// are fixed for the receiver's lifetime. A search asks these for every blocker it
     /// meets.
     allies: InternedCache<bool>,
-    types: InternedCache<&'a ObjectType>,
+    // Native blocker GetTechnoType; same-name classes cannot alias a slot.
+    types: [InternedCache<&'a ObjectType>; 4],
     /// The receiver's `weapon_damage_value`, which the Infantry branches
     /// compare with zero for each enemy blocker. The receiver is borrowed
     /// unchanged for the mover's lifetime, so one computation serves them all.
@@ -737,8 +737,7 @@ impl<'a> EntryMover<'a> {
     fn new(live: &EntryReadContext<'a>, id: u64, e: &'a GameEntity, obj: &'a ObjectType) -> Self {
         let weapon0 = combat_weapon::weapon_for_index(obj, e.veterancy.rank(), 0)
             .and_then(|(name, _)| live.rules.weapon(name));
-        let crusher =
-            obj.crusher || has_weapon_ability(e.veterancy.rank_kind(), obj, Ability::Crusher);
+        let crusher = crate::sim::combat::veterancy::is_crusher(e.veterancy.rank_kind(), obj);
         Self {
             id,
             e,
@@ -746,7 +745,7 @@ impl<'a> EntryMover<'a> {
             weapon0,
             crusher,
             allies: InternedCache::new(),
-            types: InternedCache::new(),
+            types: std::array::from_fn(|_| InternedCache::new()),
             damage: std::cell::OnceCell::new(),
         }
     }
@@ -763,9 +762,22 @@ impl<'a> EntryMover<'a> {
         })
     }
 
-    fn object_type(&self, live: &EntryReadContext<'a>, id: InternedId) -> Option<&'a ObjectType> {
-        self.types
-            .get_or(id, || live.sim.interner.object_type(id, live.rules))
+    fn object_type(
+        &self,
+        live: &EntryReadContext<'a>,
+        entity: &GameEntity,
+    ) -> Option<&'a ObjectType> {
+        use crate::rules::object_type::ObjectCategory;
+        let category: ObjectCategory = entity.category().into();
+        let slot = match category {
+            ObjectCategory::Building => 0,
+            ObjectCategory::Infantry => 1,
+            ObjectCategory::Vehicle => 2,
+            ObjectCategory::Aircraft => 3,
+        };
+        self.types[slot].get_or(entity.type_ref(), || {
+            live.sim.entity_object_type(entity, live.rules)
+        })
     }
 
     fn allied_with(&self, live: &EntryReadContext<'_>, house: InternedId) -> bool {
@@ -857,7 +869,7 @@ impl Simulation {
             .ok_or("Foot entry requires a live Infantry or Unit receiver")?;
         let obj = self
             .interner
-            .object_type(e.type_ref(), rules)
+            .object_type_in_category(e.type_ref(), e.category().into(), rules)
             .ok_or("repair admission missing ObjectType")?;
         let mover = EntryMover::new(&live, id, e, obj);
         Ok(FootEntryReceiver { live, mover })
@@ -1101,7 +1113,7 @@ fn full_foot_entry<'a>(
                 //51C1BB..51C223: a wall at damage stage DamageLevels (+0x2A0)
                 //is no wall to Infantry. Otherwise the primary warhead needs
                 //Wall= (772AC0); Infantry has no crusher or Wood= route.
-                if u16::from(live_overlay.overlay_data >> 4) != flags.damage_levels {
+                if i32::from(live_overlay.overlay_data >> 4) != flags.damage_levels {
                     if !combat_weapon::is_armed(e, obj) || !warhead.is_some_and(|w| w.wall) {
                         return Ok(7);
                     }
@@ -1187,7 +1199,7 @@ fn full_foot_entry<'a>(
             return Ok(0);
         }
         let bt = mover
-            .object_type(live, b.type_ref)
+            .object_type(live, blocker)
             .ok_or("repair list missing blocker type")?;
         if infantry && e.slave.owner() == Some(blocker_id) {
             let query = crate::sim::slave_deposit::SlaveDepositQuery {
@@ -1717,7 +1729,10 @@ fn terrain_impassable(
     } else {
         SpeedType::Track
     };
-    for offset in crate::rules::foundation::foundation_cell_offsets(&ty.foundation) {
+    for offset in ty
+        .occupied_cell_offsets()
+        .map_err(|error| error.to_string())?
+    {
         let selected = live
             .terrain()
             .native_cell_identity((p.0.wrapping_add(offset.0), p.1.wrapping_add(offset.1)));

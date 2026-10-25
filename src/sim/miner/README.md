@@ -104,6 +104,16 @@ observes cargo, House payment, radio release and resumed harvesting through
 the normal loader and synchronized commands. The packet records the exact
 boundaries of its repair, movement, scheduling and rendering evidence.
 
+Payment reads the selected Tiberium type's current signed `Value` and the
+recipient country's stored `IncomeMult` float. The shared House owner follows
+the original x87 operation order for both credits and harvested score; the
+purifier bonus is stored as a float before its separate positive payment.
+The [income controls](../../../tools/spatial_oracle/refinery_income.md) compare
+191 original House calls, 258 Unit numeric interiors and twelve field reads.
+Rust replays the Unit and shared slave payment paths, including the existing
+native slave `dep_income_mult` control. Fractional cargo representation remains
+outside these whole-cargo callers.
+
 The docking validation receipt (`tools/spatial_oracle/refinery_dock.validation.json`, in git at 1b1a8b43e)
 binds the final Rust hashes, native comparisons and release run. That ordinary
 run observed two 40-bale deposits paying 1,000 credits each, with radio release

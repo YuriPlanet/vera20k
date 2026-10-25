@@ -1,24 +1,15 @@
 {
   "schema": 1,
   "kind": "sealed-native-factory-publication-input-interleaving",
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "parent_manifest_sha256": "2864c48044891746cf597cd0d4f4a5e8e6554b208ddccfa47313d1a22bbe68ea",
   "files": {
-    "README.md": {
-      "bytes": 7181,
-      "sha256": "f66831147110064b11a4e81549c11f092ecbfcfe0f6c44e89abfbed7b2c29546"
-    },
-    "check.py": {
-      "bytes": 10849,
-      "sha256": "d7292d4ec556239f9bdea2756f19c68248193d135d4aa1aba5fdf65860fd83af"
-    },
     "input-closure.json": {
       "bytes": 18965,
       "sha256": "1158184d99b4c706fc8d9d8621a3eecaa4a255217ca4928457463d756fadd549"
     },
     "local-native.json": {
-      "bytes": 6322,
-      "sha256": "451aea001a9e16115948f1491bd7d8cc66d3636d9da60cfeb98de981fe012b86"
+      "bytes": 6235,
+      "sha256": "cec3f579b801f87d1cb2ab5a6d523ed5fbba503def3ec646ccad5655201af77e"
     },
     "native-after-strip-attempt-1.json.gz": {
       "bytes": 230712,
@@ -31,10 +22,6 @@
     "native-phase-instructions.json": {
       "bytes": 505562,
       "sha256": "fcb0e73a29860aa334a4ba8b342ab332b3916ea7f9ce99cb5209c7641fd94394"
-    },
-    "run.py": {
-      "bytes": 15551,
-      "sha256": "079cca4a095b34f163aca322043ffc1f9e3d5a727501cbc534c7d4f6e6009a2a"
     }
   }
 }

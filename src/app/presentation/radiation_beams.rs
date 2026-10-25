@@ -58,7 +58,12 @@ impl RadiationBeams {
         });
     }
 
-    pub(crate) fn composite(&mut self, frame_rate: u32, viewport: SurfaceLineViewport) {
+    pub(crate) fn composite(
+        &mut self,
+        frame_rate: u32,
+        viewport: SurfaceLineViewport,
+        mut visible: impl FnMut(&RadiationBeamBirth) -> bool,
+    ) {
         self.draws.clear();
         self.composites.clear();
         if self.live.is_empty() {
@@ -74,9 +79,11 @@ impl RadiationBeams {
                 .get_or_insert_with(|| BeamGeometry::new(beam.birth.from, beam.birth.to));
             let before = self.draws.len();
             beam.spacing = spacing;
-            geometry.lines(beam.birth, beam.progress, spacing, viewport, |line| {
-                self.draws.push(SurfaceDraw::Line(line))
-            });
+            if visible(&beam.birth) {
+                geometry.lines(beam.birth, beam.progress, spacing, viewport, |line| {
+                    self.draws.push(SurfaceDraw::Line(line))
+                });
+            }
             let progress_before = beam.progress;
             beam.progress = beam.progress.wrapping_add(1);
             self.composites.push(BeamCompositeObservation {

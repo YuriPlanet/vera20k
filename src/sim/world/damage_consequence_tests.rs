@@ -80,15 +80,19 @@ fn delivered_ids(sim: &Simulation) -> Vec<u64> {
     ids
 }
 
-/// The kill lands in the bullet's tail slot, whose commit admits the death
-/// anims (their `Report=`) before it queues the die sound. RESIDUAL: the
-/// order of same-frame sound starts is not taken from gamemd; inaudible.
+/// Techno ReceiveDamage7021FB submits DieSound before debris and the later
+/// Unit death animation constructors. Each AnimClass owns its Report request.
 fn delivery_sounds(sim: &Simulation) -> Vec<String> {
     sim.sound_events
         .iter()
         .filter_map(|event| match event {
-            SimSoundEvent::EntityDied { die_sound_id, .. } => Some(die_sound_id.clone()),
-            SimSoundEvent::AnimationStarted { sound_id, .. } => Some(sound_id.clone()),
+            SimSoundEvent::VocAt { sound_id, .. }
+            | SimSoundEvent::VocAtCoord { sound_id, .. }
+            | SimSoundEvent::EntityDied {
+                die_sound_id: sound_id,
+                ..
+            }
+            | SimSoundEvent::AnimationStarted { sound_id, .. } => Some(sound_id.clone()),
             _ => None,
         })
         .collect()
@@ -136,13 +140,15 @@ fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
     );
     assert_eq!(
         delivery_sounds(&sim),
-        ["DEATHREPORT", "DESTROYREPORT", "DieA"]
+        ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
     assert!(sim.substrate.entities.get(victim).is_none());
-    // Existing Rust stream regressions remain unchanged; native numeric body
-    // comparisons live with the constructor owner rather than a serialized
-    // Rust fingerprint that changes whenever its wire layout gains a field.
-    assert_eq!(sim.scenario_rng.state(), 3954386809370758752);
+    // Rust stream regressions: 16 Scenario words, three of them the Guard
+    // cadence of the idle mission both units take at Unlimbo, and 2 Main
+    // words. Native numeric body comparisons live with the constructor owner
+    // rather than a serialized Rust fingerprint that changes whenever its wire
+    // layout gains a field.
+    assert_eq!(sim.scenario_rng.state(), 2039729963231954301);
     assert_eq!(sim.main_rng.state(), 8272706873942388551);
     let debris_native = sim.voxel_anims().get(ids[0]).unwrap().native_unique_id();
     let death_native = sim
@@ -165,7 +171,7 @@ fn ordinary_lethal_fire_commits_debris_animations_and_sparks_once() {
     assert_eq!(delivered_ids(&sim), ids[..3]);
     assert_eq!(
         delivery_sounds(&sim),
-        ["DEATHREPORT", "DESTROYREPORT", "DieA"]
+        ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
     assert_eq!(sim.particle_systems().len(), 1);
 }
@@ -208,7 +214,7 @@ fn ordinary_fatal_transport_finishes_cargo_lifecycle_before_consequence_admissio
     );
     assert_eq!(
         delivery_sounds(&sim),
-        ["DEATHREPORT", "DESTROYREPORT", "DieA"]
+        ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
 }
 
@@ -251,7 +257,7 @@ fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
     );
     assert_eq!(
         delivery_sounds(&sim),
-        ["DEATHREPORT", "DESTROYREPORT", "DieA"]
+        ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
     assert!(sim.particle_systems().is_empty());
     // Existing Rust stream regressions from the real Bullet AI.
@@ -262,7 +268,7 @@ fn immediate_bullet_commits_before_return_with_its_original_sound_order() {
     let _ = sim.object_ai_visit_one(projectile, Some(&rules), ObjectAiCtx::default());
     assert_eq!(
         delivery_sounds(&sim),
-        ["DEATHREPORT", "DESTROYREPORT", "DieA"]
+        ["DieA", "DEATHREPORT", "DESTROYREPORT"]
     );
     assert_eq!(delivered_ids(&sim), ids);
 }

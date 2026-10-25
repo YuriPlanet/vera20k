@@ -148,11 +148,12 @@ pub(super) fn launch(
         radar: RadarEventRequest::new(RadarEventType::ImpactSilent, rx, ry),
     });
     start(sim, rules, owner, (rx as i16, ry as i16));
+    // `0x006CCDFF..0x006CCE28`: the cell's GetCoords (`0x00486840`), no deck.
+    let ground = crate::sim::projectile::cell_ground_coord(sim.resolved_terrain.as_ref(), rx, ry);
     sim.sound_events.emit(SimSoundEvent::SuperWeaponLaunched {
         owner,
         sw_type,
-        rx,
-        ry,
+        world: ground.into(),
     });
     true
 }

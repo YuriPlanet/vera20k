@@ -8,7 +8,7 @@ from pathlib import Path
 import hashlib,struct
 from unicorn import UC_HOOK_MEM_WRITE
 from unicorn.x86_const import *
-from tools.native_oracle import NATIVE_SHA256,RET_MAGIC,run_checked,provenance,finish_vectors
+from tools.native_oracle import RET_MAGIC,run_checked,provenance,finish_vectors
 from tools.rules_oracle.bridge_anim_inputs import Reader
 from tools.projectile_oracle.bridge_render_inputs import lexical,assets_root
 from tools.spatial_oracle.building_body_rules import INI,SP,dwords
@@ -88,9 +88,8 @@ def generate():
         stack.append(dict(name=label,supplied_sections=sections,**c.read_layer(sections,label)))
     assert physical['constructor']['speed_type']==physical['final_speed_type']==0
     assert [x['after'] for x in stack]==[1,1,1,-1,-1,0]
-    return dict(schema_version=1,native_sha256=NATIVE_SHA256,scope=__doc__,speed_type_table=table,key=m.string(0x844504),
-                physical=physical,controls=controls,explicit_layer_controls=stack,
-                harness_sha256=sha(Path(__file__).read_bytes()))
+    return dict(schema_version=1,scope=__doc__,speed_type_table=table,key=m.string(0x844504),
+                physical=physical,controls=controls,explicit_layer_controls=stack)
 
 
 def metadata():

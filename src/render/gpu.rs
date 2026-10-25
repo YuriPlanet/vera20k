@@ -19,6 +19,7 @@ use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::task::{Context as TaskContext, Poll, Wake, Waker};
 
 use anyhow::{Context, Result, bail};
+use winit::event_loop::OwnedDisplayHandle;
 use winit::window::Window;
 
 /// Largest 2D texture edge the renderer will ask for.
@@ -33,6 +34,64 @@ pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 16_384;
 // while avoiding 16384-square atlas allocations on the phone's shared memory.
 #[cfg(target_os = "ios")]
 pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 8_192;
+
+/// One production frame, backed by either the window or its hidden capture target.
+pub struct GpuFrame {
+    pub texture: wgpu::Texture,
+    surface: Option<wgpu::SurfaceTexture>,
+}
+
+impl GpuFrame {
+    fn from_surface(surface: wgpu::SurfaceTexture) -> Self {
+        Self {
+            texture: surface.texture.clone(),
+            surface: Some(surface),
+        }
+    }
+
+    pub fn present(self) {
+        if let Some(surface) = self.surface {
+            surface.present();
+        }
+    }
+}
+
+/// Derived render target for an explicitly hidden diagnostic window.
+struct CaptureTarget {
+    texture: wgpu::Texture,
+}
+
+impl CaptureTarget {
+    fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
+        Self {
+            texture: device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Hidden Capture Frame"),
+                size: wgpu::Extent3d {
+                    width: config.width,
+                    height: config.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: config.format,
+                usage: config.usage,
+                view_formats: &config.view_formats,
+            }),
+        }
+    }
+
+    fn resize(&mut self, device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) {
+        *self = Self::new(device, config);
+    }
+
+    fn frame(&self) -> GpuFrame {
+        GpuFrame {
+            texture: self.texture.clone(),
+            surface: None,
+        }
+    }
+}
 
 /// Borrowed, serialization-ready identity of the adapter selected for this GPU
 /// context. This is observation only: it mirrors the immutable `AdapterInfo`
@@ -68,9 +127,12 @@ impl<'a> From<&'a wgpu::AdapterInfo> for GpuAdapterObservation<'a> {
 /// Other render modules borrow `device` and `queue` from this struct.
 pub struct GpuContext {
     /// The GPU surface we render to (tied to the window).
-    surface: Option<wgpu::Surface<'static>>,
-    #[cfg(target_os = "android")]
+    // Loading progress shares the GPU context with asset uploads. Only this
+    // owner locks the surface, briefly, to acquire or replace a lost swapchain.
+    // Android temporarily releases it while its SurfaceView is suspended.
+    surface: Mutex<Option<wgpu::Surface<'static>>>,
     instance: wgpu::Instance,
+    window: Arc<Window>,
     #[cfg(target_os = "android")]
     adapter: wgpu::Adapter,
     /// The logical GPU device — used to create buffers, textures, pipelines.
@@ -83,6 +145,7 @@ pub struct GpuContext {
     pub surface_format: wgpu::TextureFormat,
     /// Exact identity returned by the adapter that backs this context.
     adapter_info: wgpu::AdapterInfo,
+    capture_target: Option<CaptureTarget>,
 }
 
 impl GpuContext {
@@ -90,18 +153,29 @@ impl GpuContext {
     ///
     /// This blocks on async wgpu calls using [`block_on`]. Safe to call from
     /// winit's sync ApplicationHandler::resumed().
-    pub fn new(window: Arc<Window>) -> Result<Self> {
-        block_on(Self::new_async(window))
+    /// `hidden_capture` is the startup owner's deliberate capture choice, not
+    /// the current visibility/occlusion of a player's ordinary window.
+    pub fn new(
+        window: Arc<Window>,
+        display: OwnedDisplayHandle,
+        hidden_capture: bool,
+    ) -> Result<Self> {
+        block_on(Self::new_async(window, display, hidden_capture))
     }
 
     /// Async initialization — called by new() via block_on().
-    async fn new_async(window: Arc<Window>) -> Result<Self> {
-        // wgpu 27's standard override selects a backend for reproducible
+    async fn new_async(
+        window: Arc<Window>,
+        display: OwnedDisplayHandle,
+        hidden_capture: bool,
+    ) -> Result<Self> {
+        // The standard override selects a backend for reproducible
         // shroud GPU comparisons while retaining primary backends by default.
-        // https://docs.rs/wgpu-types/27.0.1/wgpu_types/struct.Backends.html#method.with_env
-        let instance: wgpu::Instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        // wgpu 29 requires the display at instance creation for Wayland EGL:
+        // https://docs.rs/wgpu-types/29.0.1/wgpu_types/struct.InstanceDescriptor.html
+        let instance: wgpu::Instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY.with_env(),
-            ..Default::default()
+            ..wgpu::InstanceDescriptor::new_with_display_handle(Box::new(display))
         });
 
         // Create the surface from our window. The surface is what we draw pixels to.
@@ -215,6 +289,13 @@ impl GpuContext {
             desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
+        // wgpu-hal 29.0.4 Metal acquire_texture refuses any macOS NSWindow
+        // without NSWindowOcclusionStateVisible, including deliberately hidden
+        // captures. Render those frames offscreen with the same format/usages;
+        // the normal render, loading, readback and capture-driver paths remain
+        // shared. Ordinary occluded windows retain swapchain skip/recovery.
+        // https://docs.rs/wgpu-hal/29.0.4/src/wgpu_hal/metal/surface.rs.html#126-151
+        let capture_target = hidden_capture.then(|| CaptureTarget::new(&device, &config));
 
         log::info!(
             "GPU initialized: {}x{}, format={:?}",
@@ -224,9 +305,9 @@ impl GpuContext {
         );
 
         Ok(Self {
-            surface: Some(surface),
-            #[cfg(target_os = "android")]
+            surface: Mutex::new(Some(surface)),
             instance,
+            window,
             #[cfg(target_os = "android")]
             adapter,
             device,
@@ -234,6 +315,7 @@ impl GpuContext {
             config,
             surface_format,
             adapter_info,
+            capture_target,
         })
     }
 
@@ -252,8 +334,16 @@ impl GpuContext {
         }
         self.config.width = width;
         self.config.height = height;
-        if let Some(surface) = self.surface.as_ref() {
+        if let Some(surface) = self
+            .surface
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+        {
             surface.configure(&self.device, &self.config);
+        }
+        if let Some(target) = &mut self.capture_target {
+            target.resize(&self.device, &self.config);
         }
         log::debug!("Surface resized to {}x{}", width, height);
     }
@@ -262,12 +352,20 @@ impl GpuContext {
     /// released before that callback returns. GPU/game resources stay alive.
     #[cfg(target_os = "android")]
     pub(crate) fn suspend_surface(&mut self) {
-        self.surface = None;
+        *self
+            .surface
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner) = None;
     }
 
     #[cfg(target_os = "android")]
     pub(crate) fn resume_surface(&mut self, window: Arc<Window>) -> Result<()> {
-        if self.surface.is_some() {
+        if self
+            .surface
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some()
+        {
             return Ok(());
         }
         let surface = self
@@ -283,7 +381,11 @@ impl GpuContext {
             caps.usages.contains(self.config.usage),
             "resumed Android surface no longer supports required usages"
         );
-        self.surface = Some(surface);
+        *self
+            .surface
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner) = Some(surface);
+        self.window = window.clone();
         let size = window.inner_size();
         self.resize(size.width, size.height);
         Ok(())
@@ -292,30 +394,38 @@ impl GpuContext {
     /// Take the window's next frame to draw into, or `None` when there is none
     /// this time and the next redraw should try again.
     ///
-    /// A swapchain the driver no longer considers fit for its window shows up
-    /// only here: `SurfaceTexture::present` drops that status, and the only
-    /// other reconfigure is a resize event, which a change that leaves the
-    /// window's size alone never sends. So a stale, lost or failed swapchain is
-    /// reconfigured once and asked again, as wgpu 27's own example does
-    /// (`SurfaceWrapper::acquire`, `examples/features/src/framework.rs` at
-    /// v27.0.1). A frame wgpu marks suboptimal is drawn as it is, as there.
-    pub fn acquire_frame(&self) -> Result<Option<wgpu::SurfaceTexture>, wgpu::SurfaceError> {
-        let Some(surface) = self.surface.as_ref() else {
-            // Android has released its SurfaceView while suspended. The retained
-            // renderer is ready to draw again after resume_surface reattaches it.
+    /// A stale or suboptimal swapchain is reconfigured once and asked again;
+    /// a lost surface is recreated first, as required by wgpu 29. Timeout and
+    /// occlusion skip this redraw. Validation failures remain errors.
+    /// https://docs.rs/wgpu/29.0.4/wgpu/enum.CurrentSurfaceTexture.html
+    pub fn acquire_frame(&self) -> Result<Option<GpuFrame>> {
+        if let Some(target) = &self.capture_target {
+            return Ok(Some(target.frame()));
+        }
+        let mut surface_guard = self.surface.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(surface) = surface_guard.as_mut() else {
+            // The retained renderer waits for Android's resumed callback to
+            // attach the replacement SurfaceView before drawing again.
             return Ok(None);
         };
-        acquire_with_recovery(
-            || surface.get_current_texture(),
-            |error| {
+        acquire_with_recovery(|recovery| {
+            if let Some(recovery) = recovery {
                 log::warn!(
-                    "Surface texture: {error}; reconfiguring the surface at {}x{}",
+                    "Surface texture: {recovery:?}; recovering the surface at {}x{}",
                     self.config.width,
                     self.config.height
                 );
+                if recovery == SurfaceRecovery::Recreate {
+                    *surface = self
+                        .instance
+                        .create_surface(self.window.clone())
+                        .context("recreate lost wgpu surface")?;
+                }
                 surface.configure(&self.device, &self.config);
-            },
-        )
+            }
+            Ok(surface.get_current_texture())
+        })
+        .map(|frame| frame.map(GpuFrame::from_surface))
     }
 
     /// Create a depth texture matching the current surface dimensions.
@@ -341,37 +451,39 @@ impl GpuContext {
     }
 }
 
-/// One frame acquisition under [`GpuContext::acquire_frame`]'s rule. A
-/// timeout skips the frame. A stale, lost or failed swapchain is reconfigured
-/// once and asked again; still stale or timed out, the frame is skipped, and
-/// any other failure is the caller's error.
-fn acquire_with_recovery<Frame>(
-    mut acquire: impl FnMut() -> Result<Frame, wgpu::SurfaceError>,
-    reconfigure: impl FnOnce(&wgpu::SurfaceError),
-) -> Result<Option<Frame>, wgpu::SurfaceError> {
-    use wgpu::SurfaceError;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SurfaceRecovery {
+    Reconfigure,
+    Recreate,
+}
 
-    let error = match acquire() {
-        Ok(frame) => return Ok(Some(frame)),
-        Err(error @ SurfaceError::Timeout) => {
-            log::debug!("Surface texture: {error}; skipping this frame");
-            return Ok(None);
+/// Request at most two frames, recovering before the second acquisition only.
+fn acquire_with_recovery(
+    mut acquire: impl FnMut(Option<SurfaceRecovery>) -> Result<wgpu::CurrentSurfaceTexture>,
+) -> Result<Option<wgpu::SurfaceTexture>> {
+    use wgpu::CurrentSurfaceTexture;
+
+    let recovery = match acquire(None)? {
+        CurrentSurfaceTexture::Success(frame) => return Ok(Some(frame)),
+        CurrentSurfaceTexture::Suboptimal(frame) => {
+            // Drop the acquired texture before reconfiguring its surface.
+            drop(frame);
+            SurfaceRecovery::Reconfigure
         }
-        Err(
-            error @ (SurfaceError::Outdated
-            | SurfaceError::Lost
-            | SurfaceError::OutOfMemory
-            | SurfaceError::Other),
-        ) => error,
+        CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => return Ok(None),
+        CurrentSurfaceTexture::Outdated => SurfaceRecovery::Reconfigure,
+        CurrentSurfaceTexture::Lost => SurfaceRecovery::Recreate,
+        CurrentSurfaceTexture::Validation => bail!("surface acquisition validation failed"),
     };
-    reconfigure(&error);
-    match acquire() {
-        Ok(frame) => Ok(Some(frame)),
-        Err(error @ (SurfaceError::Timeout | SurfaceError::Outdated)) => {
-            log::debug!("Surface texture after reconfiguring: {error}; skipping this frame");
-            Ok(None)
+    match acquire(Some(recovery))? {
+        CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
+            Ok(Some(frame))
         }
-        Err(error) => Err(error),
+        CurrentSurfaceTexture::Timeout
+        | CurrentSurfaceTexture::Occluded
+        | CurrentSurfaceTexture::Outdated => Ok(None),
+        CurrentSurfaceTexture::Lost => bail!("surface still lost after recovery"),
+        CurrentSurfaceTexture::Validation => bail!("surface acquisition validation failed"),
     }
 }
 
@@ -424,56 +536,138 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::task::Poll;
 
-    use wgpu::SurfaceError::{Lost, Outdated, Timeout};
+    use wgpu::CurrentSurfaceTexture::{Lost, Occluded, Outdated, Timeout, Validation};
 
-    use super::{acquire_with_recovery, block_on};
+    use super::{CaptureTarget, SurfaceRecovery, acquire_with_recovery, block_on};
 
     /// Run one acquisition over `results`, the acquire answers in call order;
-    /// returns its outcome and how often it reconfigured the surface.
+    /// returns its outcome and recovery requests. Real frame presentation is
+    /// exercised by the normal window and GPU readback tests.
     fn acquire_over(
-        results: Vec<Result<u32, wgpu::SurfaceError>>,
-    ) -> (Result<Option<u32>, wgpu::SurfaceError>, u32) {
+        results: Vec<wgpu::CurrentSurfaceTexture>,
+    ) -> (
+        anyhow::Result<Option<wgpu::SurfaceTexture>>,
+        Vec<Option<SurfaceRecovery>>,
+    ) {
         let mut results = results.into_iter();
-        let mut reconfigures = 0;
-        let outcome = acquire_with_recovery(
-            || results.next().expect("acquired more often than scripted"),
-            |_| reconfigures += 1,
-        );
+        let mut requests = Vec::new();
+        let outcome = acquire_with_recovery(|recovery| {
+            requests.push(recovery);
+            Ok(results.next().expect("acquired more often than scripted"))
+        });
         assert!(results.next().is_none(), "scripted answers left unasked");
-        (outcome, reconfigures)
+        (outcome, requests)
     }
 
     #[test]
-    fn stale_swapchain_is_reconfigured_and_its_frame_taken() {
-        assert_eq!(acquire_over(vec![Err(Outdated), Ok(7)]), (Ok(Some(7)), 1));
+    fn timeout_and_occlusion_skip_without_recovery() {
+        let (outcome, requests) = acquire_over(vec![Timeout]);
+        assert!(outcome.unwrap().is_none());
+        assert_eq!(requests, [None]);
+        let (outcome, requests) = acquire_over(vec![Occluded]);
+        assert!(outcome.unwrap().is_none());
+        assert_eq!(requests, [None]);
     }
 
     #[test]
-    fn lost_swapchain_is_reconfigured_and_its_frame_taken() {
-        assert_eq!(acquire_over(vec![Err(Lost), Ok(7)]), (Ok(Some(7)), 1));
+    fn stale_swapchain_reconfigures_once_and_skips_if_still_stale() {
+        let (outcome, requests) = acquire_over(vec![Outdated, Outdated]);
+        assert!(outcome.unwrap().is_none());
+        assert_eq!(requests, [None, Some(SurfaceRecovery::Reconfigure)]);
     }
 
     #[test]
-    fn timeout_skips_the_frame_without_reconfiguring() {
-        assert_eq!(acquire_over(vec![Err(Timeout)]), (Ok(None), 0));
+    fn lost_surface_recreates_once_and_validation_stays_an_error() {
+        let (outcome, requests) = acquire_over(vec![Lost, Lost]);
+        assert!(outcome.unwrap_err().to_string().contains("still lost"));
+        assert_eq!(requests, [None, Some(SurfaceRecovery::Recreate)]);
+        let (outcome, requests) = acquire_over(vec![Validation]);
+        assert!(outcome.unwrap_err().to_string().contains("validation"));
+        assert_eq!(requests, [None]);
     }
 
     #[test]
-    fn swapchain_still_stale_after_its_reconfigure_skips_the_frame() {
+    #[ignore = "requires a wgpu adapter for hidden capture frame readback"]
+    fn hidden_capture_frame_renders_reads_back_and_resizes_without_a_swapchain() {
+        use crate::render::frame_readback::PendingBgra8Readback;
+
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::PRIMARY,
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
+        });
+        let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            compatible_surface: None,
+            ..Default::default()
+        }))
+        .expect("hidden capture regression requires a GPU adapter");
+        let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+            .expect("request hidden capture regression device");
+        let mut config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
+            format: wgpu::TextureFormat::Bgra8UnormSrgb,
+            width: 2,
+            height: 1,
+            present_mode: wgpu::PresentMode::Fifo,
+            alpha_mode: wgpu::CompositeAlphaMode::Opaque,
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
+        };
+        let mut target = CaptureTarget::new(&device, &config);
+        let render =
+            |target: &CaptureTarget, config: &wgpu::SurfaceConfiguration, color: wgpu::Color| {
+                let frame = target.frame();
+                assert!(frame.surface.is_none());
+                assert_eq!(frame.texture.format(), config.format);
+                assert_eq!(frame.texture.usage(), config.usage);
+                assert_eq!(frame.texture.width(), config.width);
+                assert_eq!(frame.texture.height(), config.height);
+                let view = frame.texture.create_view(&Default::default());
+                let mut encoder = device.create_command_encoder(&Default::default());
+                {
+                    let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("Hidden capture production frame regression"),
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &view,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(color),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                        timestamp_writes: None,
+                        occlusion_query_set: None,
+                        multiview_mask: None,
+                    });
+                }
+                let pending = PendingBgra8Readback::encode(
+                    &device,
+                    &mut encoder,
+                    &frame.texture,
+                    config.format,
+                    config.width,
+                    config.height,
+                )
+                .expect("read back the actual capture frame");
+                let submission = queue.submit([encoder.finish()]);
+                frame.present();
+                pending
+                    .finish(&device, submission, std::time::Duration::from_secs(10))
+                    .expect("finish hidden frame readback")
+            };
         assert_eq!(
-            acquire_over(vec![Err(Outdated), Err(Outdated)]),
-            (Ok(None), 1)
+            render(&target, &config, wgpu::Color::RED),
+            [0, 0, 255, 255, 0, 0, 255, 255]
         );
-    }
-
-    #[test]
-    fn surface_still_lost_after_its_reconfigure_is_an_error() {
-        assert_eq!(acquire_over(vec![Err(Lost), Err(Lost)]), (Err(Lost), 1));
-    }
-
-    #[test]
-    fn ready_frame_is_taken_without_reconfiguring() {
-        assert_eq!(acquire_over(vec![Ok(7)]), (Ok(Some(7)), 0));
+        (config.width, config.height) = (1, 2);
+        target.resize(&device, &config);
+        assert_eq!(
+            render(&target, &config, wgpu::Color::BLUE),
+            [255, 0, 0, 255, 255, 0, 0, 255]
+        );
     }
 
     #[test]

@@ -99,7 +99,7 @@ def project(path):
         urgency=0, bridge_list=False, **{"from": [67, 75]})
     return dict(
         schema_version=1, cases=[row], capture=path.name,
-        capture_sha256=sha(raw), projection_sha256=sha(Path(__file__).read_bytes()),
+        capture_sha256=sha(raw),
         supplied_vs_executed=[
             "Physical state, mission/NavCom, lists, occupation, terrain and normalized map dimensions are captured from Rust, not native whole-object constructors.",
             "SpeedType Foot0 is checked against the captured type diagnostic; its constructor/reader proof is the separate infantry_speed_type corpus.",

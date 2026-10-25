@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -22,5 +21,5 @@
     "unit_type_adjust": "0x00747EB0",
     "infantry_type_adjust": "0x005247D0"
   },
-  "payload_sha256": "b5e0b06158d1445aa2ee3b4e3b9fdc10e46d9ba47af9d578820e91a66b33eb4a"
+  "payload_sha256": "517a9a4e74020c4dd63e50b21b57bbc9a1701f35b26b2f3a07cccc58e7b236c0"
 }

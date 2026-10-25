@@ -36,7 +36,7 @@ BACKGROUND = 0x39E7
 
 
 def stock_type_physical():
-    """Existing lexical extraction supplies strings; original readers parse them."""
+    """Original readers parse these strings; recorded paths use portable slashes."""
     inputs = {}
     for kind, filename, keys in (
         ('rules', 'rulesmd.ini', ('Image', 'Factory', 'UnitRepair', 'Cloning')),
@@ -45,7 +45,7 @@ def stock_type_physical():
         path = Path('ini') / filename
         raw = path.read_bytes()
         section = sections(raw)['GAPILE']
-        inputs[kind] = dict(path=str(path), bytes=len(raw),
+        inputs[kind] = dict(path=path.as_posix(), bytes=len(raw),
             sha256=hashlib.sha256(raw).hexdigest(), section='GAPILE',
             keys={key: section.get(key) for key in keys})
     return inputs

@@ -133,6 +133,8 @@ impl ResolvedSidebarChrome<'_> {
 struct SidebarSideRoute<'a> {
     asset_manager: &'a AssetManager,
     archive_names: &'static [&'static str],
+    #[cfg(feature = "ares")]
+    registered_group: bool,
 }
 
 impl<'a> SidebarSideRoute<'a> {
@@ -144,10 +146,31 @@ impl<'a> SidebarSideRoute<'a> {
         Self {
             asset_manager,
             archive_names,
+            #[cfg(feature = "ares")]
+            registered_group: false,
+        }
+    }
+
+    #[cfg(feature = "ares")]
+    fn for_registered_group(asset_manager: &'a AssetManager) -> Self {
+        Self {
+            asset_manager,
+            archive_names: &[],
+            registered_group: true,
         }
     }
 
     fn resolve(&self, asset_name: &str) -> Option<ResolvedSidebarAsset<'a>> {
+        #[cfg(feature = "ares")]
+        if self.registered_group {
+            // The selected Side MIX group is registered by AssetManager.
+            // Loose/earlier expansion overrides keep CCFile first-match order.
+            let selected = self.asset_manager.resolve_ref(asset_name)?;
+            return Some(ResolvedSidebarAsset {
+                archive_name: selected.source_archive,
+                bytes: selected.bytes,
+            });
+        }
         resolve_sidebar_asset_in_order(
             self.archive_names.iter().filter_map(|&archive_name| {
                 self.asset_manager
@@ -168,7 +191,7 @@ impl<'a> SidebarSideRoute<'a> {
 
 #[derive(Clone, Copy)]
 struct ResolvedSidebarAsset<'a> {
-    archive_name: &'static str,
+    archive_name: &'a str,
     bytes: &'a [u8],
 }
 
@@ -286,14 +309,15 @@ pub struct SidebarChromeAtlas {
     pub tabs: Option<SidebarChromeEntry>,
     /// Tab buttons: per-tab × 5-frame SHP state table.
     /// Outer index: tab number (0..=3). Inner index: SHP frame (0..=4).
-    /// Frame meanings (from SBGadgetClass::Draw, gamemd 0x0069DEB0):
-    ///   0 = idle, 1 = active-tab, 2 = disabled, 3 = pressed-idle, 4 = pressed-active.
+    /// Frame meanings (`ShapeButtonClass::Draw @ 0x0069DEB0`):
+    ///   0 = idle, 1 = active-tab, 2 = disabled, 3 = flash-idle, 4 = flash-active.
     pub tab_frames: [[Option<SidebarChromeEntry>; 5]; 4],
     pub side2: SidebarChromeEntry,
     pub side3: SidebarChromeEntry,
-    /// Repair button — 5-frame SHP state table (same convention as `tab_frames`).
+    /// Repair button — same frame convention as `tab_frames`; it never
+    /// flashes, and retail art has only frames 0 (off) and 1 (on).
     pub repair_frames: [Option<SidebarChromeEntry>; 5],
-    /// Sell button — 5-frame SHP state table (same convention as `tab_frames`).
+    /// Sell button — same as `repair_frames`.
     pub sell_frames: [Option<SidebarChromeEntry>; 5],
     /// Strip scroll-up (R-UP.SHP, −page) — 3-frame convention:
     /// 0 = idle, 1 = pressed, 2 = disabled. Missing frames fall back to
@@ -323,10 +347,11 @@ impl SidebarChromeAtlas {
     }
 }
 
+/// The selected side is a runtime index, not another hardcoded faction enum.
+/// Retail keeps its three prebuilt themes; Ares prepares the current scenario's
+/// selected group through the same atlas builder and resolver.
 pub struct SidebarChromeSet {
-    pub allied: Option<SidebarChromeAtlas>,
-    pub soviet: Option<SidebarChromeAtlas>,
-    pub yuri: Option<SidebarChromeAtlas>,
+    atlases: Vec<(i32, SidebarChromeAtlas)>,
 }
 
 impl SidebarChromeSet {
@@ -334,23 +359,51 @@ impl SidebarChromeSet {
         self.resolve_theme(theme).map(|resolved| resolved.atlas)
     }
 
-    /// Resolve the atlas through the production fallback order while retaining
-    /// both the requested and actual theme identities.
-    pub fn resolve_theme(
-        &self,
-        requested_theme: SidebarTheme,
-    ) -> Option<ResolvedSidebarChrome<'_>> {
-        let (actual_theme, atlas) = select_sidebar_theme(
-            requested_theme,
-            self.allied.as_ref(),
-            self.soviet.as_ref(),
-            self.yuri.as_ref(),
-        )?;
+    pub fn resolve_theme(&self, theme: SidebarTheme) -> Option<ResolvedSidebarChrome<'_>> {
+        self.resolve_side(match theme {
+            SidebarTheme::Allied => 0,
+            SidebarTheme::Soviet => 1,
+            SidebarTheme::Yuri => 2,
+        })
+    }
+
+    pub fn resolve_side(&self, side_index: i32) -> Option<ResolvedSidebarChrome<'_>> {
+        let requested_theme = sidebar_theme_for_side(side_index);
+        #[cfg(feature = "ares")]
+        let (actual_theme, atlas) = {
+            let (_, atlas) = self.atlases.iter().find(|(side, _)| *side == side_index)?;
+            (atlas.source_identity.atlas_theme, atlas)
+        };
+        #[cfg(not(feature = "ares"))]
+        let (actual_theme, atlas) = {
+            let lookup = |index| {
+                self.atlases
+                    .iter()
+                    .find(|(side, _)| *side == index)
+                    .map(|(_, a)| a)
+            };
+            select_sidebar_theme(requested_theme, lookup(0), lookup(1), lookup(2))?
+        };
         Some(ResolvedSidebarChrome {
             requested_theme,
             actual_theme,
             atlas,
         })
+    }
+}
+
+/// Sidebar geometry6A5090 is side-zero versus nonzero. The Yuri label keeps
+/// existing stock provenance; an extra side uses the same nonzero geometry,
+/// independently of its MIX index and Yuri filename switch.
+pub(crate) fn sidebar_theme_for_side(side_index: i32) -> SidebarTheme {
+    match side_index {
+        0 => SidebarTheme::Allied,
+        1 => SidebarTheme::Soviet,
+        2 => SidebarTheme::Yuri,
+        #[cfg(feature = "ares")]
+        _ => SidebarTheme::Soviet,
+        #[cfg(not(feature = "ares"))]
+        _ => SidebarTheme::Allied,
     }
 }
 
@@ -372,51 +425,114 @@ pub(crate) fn select_sidebar_theme<'a, T>(
     }
 }
 
+/// Ares1002EAA0/1002FA60/1002FA70 consume one independent filename
+/// switch, not the actual side index or the selected MIX number.
+#[derive(Clone, Copy)]
+struct SidebarArtNames {
+    radar_palette: &'static str,
+    radar: &'static str,
+    background_palette: &'static str,
+    backgrounds: (&'static str, &'static str, &'static str),
+}
+
+impl SidebarArtNames {
+    const fn for_yuri(yuri: bool) -> Self {
+        if yuri {
+            Self {
+                radar_palette: "radaryuri.pal",
+                radar: "radary.shp",
+                background_palette: "UIBKGDY.PAL",
+                backgrounds: ("bkgdlgy.shp", "bkgdmdy.shp", "bkgdsmy.shp"),
+            }
+        } else {
+            Self {
+                radar_palette: "sidebar.pal",
+                radar: "radar.shp",
+                background_palette: "UIBKGD.PAL",
+                backgrounds: ("bkgdlg.shp", "bkgdmd.shp", "bkgdsm.shp"),
+            }
+        }
+    }
+}
+
 pub fn build_sidebar_chrome_set(
     gpu: &GpuContext,
     batch: &BatchRenderer,
-    asset_manager: &AssetManager,
-) -> Option<SidebarChromeSet> {
-    let allied = build_theme_atlas(
-        gpu,
-        batch,
-        asset_manager,
-        SidebarTheme::Allied,
-        "sidec01.mix",
-        "sidebar.pal",
-        "radar.shp",
-        Some(("bkgdlg.shp", "bkgdmd.shp", "bkgdsm.shp")),
-    );
-    let soviet = build_theme_atlas(
-        gpu,
-        batch,
-        asset_manager,
-        SidebarTheme::Soviet,
-        "sidec02.mix",
-        "sidebar.pal",
-        "radar.shp",
-        Some(("bkgdlg.shp", "bkgdmd.shp", "bkgdsm.shp")),
-    );
-    let yuri = build_theme_atlas(
-        gpu,
-        batch,
-        asset_manager,
-        SidebarTheme::Yuri,
-        "sidec02md.mix",
-        "radaryuri.pal",
-        "radary.shp",
-        Some(("bkgdlgy.shp", "bkgdmdy.shp", "bkgdsmy.shp")),
-    );
-
-    if allied.is_none() && soviet.is_none() && yuri.is_none() {
-        return None;
+    asset_manager: &mut AssetManager,
+    _rules: &crate::rules::ruleset::RuleSet,
+    _side_index: i32,
+) -> Result<Option<SidebarChromeSet>, crate::assets::error::AssetError> {
+    #[cfg(feature = "ares")]
+    {
+        let side = u8::try_from(_side_index)
+            .ok()
+            .map(crate::rules::ruleset::SideIdx);
+        let config = side.and_then(|side| {
+            Some((
+                _rules.side_sidebar_mix_file_index(side)?,
+                _rules.side_sidebar_yuri_file_names(side)?,
+            ))
+        });
+        let Some((mix_index, yuri_names)) = config else {
+            return Err(crate::assets::error::AssetError::ParseError {
+                format: "sidebar".into(),
+                detail: format!("side {_side_index} has no retained sidebar configuration"),
+            });
+        };
+        if !asset_manager.activate_sidebar_archives(mix_index)? {
+            // Full_Init687824 and saved Load67E766 abort when534FA0 fails.
+            return Err(crate::assets::error::AssetError::ParseError {
+                format: "sidebar".into(),
+                detail: format!(
+                    "side {_side_index}: sidebar MIX initialization failed for index {mix_index}"
+                ),
+            });
+        }
+        let base = format!("sidec{mix_index:02}.mix");
+        let md = format!("sidec{mix_index:02}md.mix");
+        let primary = if asset_manager.archive(&md).is_some() {
+            &md
+        } else {
+            &base
+        };
+        let atlas = build_theme_atlas(
+            gpu,
+            batch,
+            asset_manager,
+            sidebar_theme_for_side(_side_index),
+            primary,
+            SidebarArtNames::for_yuri(yuri_names),
+        )
+        .ok_or_else(|| crate::assets::error::AssetError::AssetNotFound {
+            name: format!(
+                "required sidebar shapes or palettes for side {_side_index} in {primary}"
+            ),
+        })?;
+        Ok(Some(SidebarChromeSet {
+            atlases: vec![(_side_index, atlas)],
+        }))
     }
-
-    Some(SidebarChromeSet {
-        allied,
-        soviet,
-        yuri,
-    })
+    #[cfg(not(feature = "ares"))]
+    {
+        let mut atlases = Vec::new();
+        for (index, theme, archive, yuri) in [
+            (0, SidebarTheme::Allied, "sidec01.mix", false),
+            (1, SidebarTheme::Soviet, "sidec02.mix", false),
+            (2, SidebarTheme::Yuri, "sidec02md.mix", true),
+        ] {
+            if let Some(atlas) = build_theme_atlas(
+                gpu,
+                batch,
+                asset_manager,
+                theme,
+                archive,
+                SidebarArtNames::for_yuri(yuri),
+            ) {
+                atlases.push((index, atlas));
+            }
+        }
+        Ok((!atlases.is_empty()).then_some(SidebarChromeSet { atlases }))
+    }
 }
 
 struct CpuGclockAtlas {
@@ -425,7 +541,7 @@ struct CpuGclockAtlas {
     width: u32,
     height: u32,
     frames: Vec<SidebarChromeEntry>,
-    source_archive: &'static str,
+    source_archive: String,
 }
 
 /// Resolve all GCLOCK2 frames from the active side stack and pack them into a
@@ -441,7 +557,7 @@ fn build_gclock_cpu_atlas(
 fn build_gclock_cpu_atlas_from_bytes(
     shp_bytes: &[u8],
     palette: &Palette,
-    source_archive: &'static str,
+    source_archive: &str,
 ) -> Option<CpuGclockAtlas> {
     let shp = ShpFile::from_bytes(shp_bytes).ok()?;
     let frame_count = shp.frames.len();
@@ -510,7 +626,7 @@ fn build_gclock_cpu_atlas_from_bytes(
         width: tex_w,
         height: tex_h,
         frames: entries,
-        source_archive,
+        source_archive: source_archive.to_owned(),
     })
 }
 
@@ -558,16 +674,31 @@ fn resolve_theme_palette_with_source(
     mix_name: &str,
     palette_name: &str,
 ) -> Option<(Palette, String)> {
-    if let Some(bytes) = mix.get_by_name(palette_name)
-        && let Ok(palette) = decode_sidebar_palette(bytes)
+    #[cfg(feature = "ares")]
     {
-        return Some((palette, mix_name.to_string()));
+        // Palette72ADE0 reads through a fresh CCFile4739F0/4A3890 and
+        // current MIX lookup5B4430, not SHP4A38D0 -> CRC cache5B40B0.
+        // Yuri palette names therefore follow the newly registered group
+        // even though730400 does not retire those differently named keys.
+        let _ = (mix, mix_name);
+        let selected = asset_manager.resolve_ref(palette_name)?;
+        return decode_sidebar_palette(selected.bytes)
+            .ok()
+            .map(|p| (p, selected.source_archive.to_owned()));
     }
+    #[cfg(not(feature = "ares"))]
+    {
+        if let Some(bytes) = mix.get_by_name(palette_name)
+            && let Ok(palette) = decode_sidebar_palette(bytes)
+        {
+            return Some((palette, mix_name.to_string()));
+        }
 
-    let (bytes, source_archive) = asset_manager.get_with_source_ref(palette_name)?;
-    decode_sidebar_palette(bytes)
-        .ok()
-        .map(|palette| (palette, source_archive.to_string()))
+        let (bytes, source_archive) = asset_manager.get_with_source_ref(palette_name)?;
+        decode_sidebar_palette(bytes)
+            .ok()
+            .map(|palette| (palette, source_archive.to_string()))
+    }
 }
 
 fn theme_asset_identity(
@@ -576,6 +707,14 @@ fn theme_asset_identity(
     mix_name: &str,
     logical_name: &str,
 ) -> SidebarChromeAssetIdentity {
+    #[cfg(feature = "ares")]
+    let source_archive = {
+        let _ = (mix, mix_name);
+        asset_manager
+            .resolve_ref(logical_name)
+            .map(|s| s.source_archive.to_owned())
+    };
+    #[cfg(not(feature = "ares"))]
     let source_archive = if mix.get_by_name(logical_name).is_some() {
         Some(mix_name.to_string())
     } else {
@@ -595,13 +734,17 @@ fn build_theme_atlas(
     asset_manager: &AssetManager,
     theme: SidebarTheme,
     mix_name: &str,
-    palette_name: &str,
-    radar_name: &str,
-    background_names: Option<(&str, &str, &str)>,
+    names: SidebarArtNames,
 ) -> Option<SidebarChromeAtlas> {
+    let palette_name = names.radar_palette;
+    let radar_name = names.radar;
+    let background_names = Some(names.backgrounds);
     let mix = asset_manager.archive(mix_name)?;
     let (theme_palette, theme_palette_source_archive) =
         resolve_theme_palette_with_source(asset_manager, mix, mix_name, palette_name)?;
+    #[cfg(feature = "ares")]
+    let side_route = SidebarSideRoute::for_registered_group(asset_manager);
+    #[cfg(not(feature = "ares"))]
     let side_route = SidebarSideRoute::for_theme(asset_manager, theme);
     let generic_palette_name = "SIDEBAR.PAL";
     let generic_palette_source = side_route.resolve(generic_palette_name)?;
@@ -639,8 +782,8 @@ fn build_theme_atlas(
 
     // Tab buttons: 4 tabs × 5 frames each. Missing frames in retail fall
     // back to None; the renderer skips that frame's draw if not present.
-    // Frame 0 = idle, 1 = active-tab, 2 = disabled, 3 = pressed-idle,
-    // 4 = pressed-active. See SIDEBAR_REPAIR_SELL_BUTTON §5.
+    // Frame 0 = idle, 1 = active-tab, 2 = disabled, 3 = flash-idle,
+    // 4 = flash-active (`ui::sidebar::gadget_flash::shape_button_frame`).
     let mut tab_frame_entries: [[Option<RenderedChromeEntry>; 5]; 4] = Default::default();
     for (tab, tab_entries) in tab_frame_entries.iter_mut().enumerate() {
         for (frame, slot) in tab_entries.iter_mut().enumerate() {
@@ -718,8 +861,14 @@ fn build_theme_atlas(
     let unknown_mid_panel = render_entry_by_id(mix, UNKNOWN_MID_PANEL_ID, &theme_palette, 0);
     let ([background_large, background_medium, background_small], background_palette) =
         background_names
-            .and_then(|names| {
-                in_game_shell::load_backgrounds(asset_manager, mix, mix_name, theme, names)
+            .and_then(|backgrounds| {
+                in_game_shell::load_backgrounds(
+                    asset_manager,
+                    mix,
+                    mix_name,
+                    backgrounds,
+                    names.background_palette,
+                )
             })
             .map(|(entries, identity)| (entries, Some(identity)))
             .unwrap_or(([None, None, None], None));
@@ -1124,10 +1273,16 @@ fn render_all_radar_frames(
     radar_name: &str,
     palette: &Palette,
 ) -> (Vec<Vec<u8>>, [u32; 2], [u32; 4]) {
-    let shp_bytes = match mix
+    #[cfg(feature = "ares")]
+    let bytes = {
+        let _ = mix;
+        asset_manager.get_ref(radar_name)
+    };
+    #[cfg(not(feature = "ares"))]
+    let bytes = mix
         .get_by_name(radar_name)
-        .or_else(|| asset_manager.get_ref(radar_name))
-    {
+        .or_else(|| asset_manager.get_ref(radar_name));
+    let shp_bytes = match bytes {
         Some(b) => b,
         None => return (Vec::new(), [0, 0], [0; 4]),
     };
@@ -1224,6 +1379,12 @@ fn render_entry(
     palette: &Palette,
     frame_index: usize,
 ) -> Option<RenderedChromeEntry> {
+    #[cfg(feature = "ares")]
+    let shp_bytes = {
+        let _ = mix;
+        asset_manager.get_ref(shp_name)?
+    };
+    #[cfg(not(feature = "ares"))]
     let shp_bytes = mix
         .get_by_name(shp_name)
         .or_else(|| asset_manager.get_ref(shp_name))?;
@@ -1280,6 +1441,36 @@ mod tests;
 #[cfg(test)]
 mod provenance_tests {
     use super::{SidebarTheme, select_sidebar_theme};
+
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_sidebar_filename_switch_matches_native_independent_side_controls() {
+        let corpus = crate::test_fixture::json("tools/rules_oracle/ares_side_sidebar.json");
+        for row in corpus["selector"]["rows"].as_array().unwrap() {
+            let flag = row["input"]["yuri_file_names"].as_bool().unwrap();
+            let names = super::SidebarArtNames::for_yuri(flag);
+            let expected = &corpus["filename_sets"][if flag { "yuri" } else { "plain" }];
+            assert_eq!(names.radar.to_ascii_uppercase(), expected["radar"]);
+            assert_eq!(
+                names.radar_palette.to_ascii_uppercase(),
+                expected["radar_palette"]
+            );
+            assert_eq!(
+                names.background_palette.to_ascii_uppercase(),
+                expected["background_palette"]
+            );
+            for (actual, expected) in [
+                names.backgrounds.0,
+                names.backgrounds.1,
+                names.backgrounds.2,
+            ]
+            .iter()
+            .zip(expected["backgrounds"].as_array().unwrap())
+            {
+                assert_eq!(actual.to_ascii_uppercase(), expected.as_str().unwrap());
+            }
+        }
+    }
 
     #[test]
     fn atlas_resolution_reports_actual_fallback_without_changing_order() {

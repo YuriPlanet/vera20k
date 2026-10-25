@@ -1,10 +1,12 @@
-//! Immutable lexical audio definitions selected once for a process.
+//! Immutable audio definitions selected once for a process.
 //!
 //! Init_Game reads SOUNDMD at 52C763/52C796, then EVAMD at 52C843/52C8A0.
 //! The ordinary shell/scenario loop at 48CCD8..48CFAA does not repeat these
 //! reads. Neither reader opens the RA2 base INI. Sources are selected through
 //! the shared AssetManager/physical byte parser, independently of an audio
-//! device or sample index. Lexical sample names are not native admitted slots.
+//! device. With the process sample index, `Sounds=` names are admitted as
+//! native slots ([`AudioDefinitions::select_admitting`]); without it they stay
+//! lexical.
 //!
 //! Missing inputs retain VERA's tolerant empty-catalog policy; native startup
 //! fails instead. Evidence and bounds: tools/audio_catalog_owner.md.
@@ -12,6 +14,7 @@
 use std::sync::Arc;
 
 use crate::assets::asset_manager::AssetManager;
+use crate::assets::audio_bag::AudioIndex;
 use crate::rules::retail_sources::{IniSourceIdentity, select_ini};
 use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
 
@@ -24,7 +27,16 @@ pub struct AudioDefinitions {
 }
 
 impl AudioDefinitions {
+    /// Definitions with lexical `Sounds=` names, for owners without a
+    /// sample index (headless, tools, tests).
     pub fn select(assets: &AssetManager) -> Self {
+        Self::select_admitting(assets, None)
+    }
+
+    /// Definitions whose `Sounds=` names `AddSample @ 0x004064A0` admits
+    /// against the process sample index, selected before these readers as
+    /// startup does (`406CE8` before `52C796`).
+    pub fn select_admitting(assets: &AssetManager, index: Option<&AudioIndex>) -> Self {
         let sound = select_ini(assets, "soundmd.ini")
             .map_err(|error| log::warn!("Audio definitions: {error}"))
             .ok();
@@ -32,7 +44,7 @@ impl AudioDefinitions {
             sound
                 .as_ref()
                 .map_or_else(SoundRegistry::default, |selected| {
-                    SoundRegistry::from_ini(&selected.ini)
+                    SoundRegistry::from_ini_admitting(&selected.ini, index)
                 }),
         );
         let eva = select_ini(assets, "evamd.ini")
@@ -222,7 +234,10 @@ mod tests {
         use crate::rules::native_processing::ProcessedRulesLayers;
         use crate::rules::process_owner::NativeScenarioRulesPrefix;
 
+        // Ares10063660 registers [DialogList] names through char[40]
+        // (spatial_oracle/ares_eva), so the long entry is the 39-byte prefix.
         let long_name = "E".repeat(160);
+        let registered_long_name = "E".repeat(39);
         let catalog = Arc::new(EvaRegistry::from_ini(&IniFile::from_str(&format!(
             "[DialogList]\n0=EVA_InsufficientFunds\n1=Known\n2={long_name}\n"
         ))));
@@ -233,7 +248,13 @@ mod tests {
             ("Known", "none", "Missing", None),
             ("Known", "<none>", "", None),
             ("Known", "none", "Known", Some("Known")),
-            ("Known", "", long_name.as_str(), Some(long_name.as_str())),
+            (
+                "Known",
+                "",
+                registered_long_name.as_str(),
+                Some(registered_long_name.as_str()),
+            ),
+            ("Known", "", long_name.as_str(), Some("Known")),
         ] {
             let root = IniFile::from_str(&format!(
                 "[SuperWeaponTypes]\n0=Paid\n[Paid]\nType=PsychicReveal\nMoney.Amount=-500\nEVA.InsufficientFunds={root_cue}\n"

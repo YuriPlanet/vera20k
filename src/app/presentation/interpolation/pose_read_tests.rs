@@ -11,6 +11,7 @@ fn read_before(entity: &GameEntity, frame: u32) -> RenderPose {
         screen: [x, y],
         body,
         barrel: entity.barrel_elevation().current(frame),
+        fly_bank_direction: fly_bank_direction(entity, frame),
         angles: entity
             .rocking
             .as_ref()

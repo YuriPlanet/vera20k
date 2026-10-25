@@ -15,8 +15,10 @@
 //!   is deleted, which also removes the warning anim, and no take-off anim
 //!   plays): VERA admits every bullet, and the silo's coordinate is on the
 //!   map.
-//! - The missile's `Trailer=` smoke (`[NKMSLUP] Trailer=NUKEPUFF`): VERA's
-//!   bullets spawn no trailer anims.
+//!
+//! The missile's `Trailer=` smoke (`[NKMSLUP] Trailer=NUKEPUFF`) comes from
+//! the shared Bullet AI's trailer (`0x00466826..0x004668B8`,
+//! `ProjectileStore::trailer`), not from this handler.
 //!
 //! EVIDENCE BOUNDS: `tools.superweapon_oracle` supplies GetFLH (`vt+0xB0`)
 //! and the silo's coordinate, so the missile's origin rests on the shared

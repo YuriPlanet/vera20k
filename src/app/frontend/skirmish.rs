@@ -19,7 +19,6 @@ use crate::rules::color_scheme::{
     ColorSchemeEntry, scheme_entry_by_name, scheme_entry_for_priority,
 };
 use crate::rules::house_colors::{DEFAULT_SCHEME_ENTRY, HouseColorIndex};
-use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::scenario_bootstrap::normalized_launch_slots;
@@ -120,7 +119,6 @@ pub(crate) fn build_overlay_presentation(
     batch: &BatchRenderer,
     theater_ext: &str,
     theater_name: &str,
-    rules_ini: &IniFile,
     rules: &RuleSet,
     overlay_registry: &OverlayTypeRegistry,
     theater_iso_palette: Option<&Palette>,
@@ -148,7 +146,6 @@ pub(crate) fn build_overlay_presentation(
         );
     }
 
-    let crate_rules = &rules.crate_rules;
     let art_registry = rules.art();
     let rubble_arts: Vec<_> = rules.building_rubble_arts().cloned().collect();
 
@@ -227,10 +224,10 @@ pub(crate) fn build_overlay_presentation(
         overlay_atlas::compute_overlay_radar_colors(
             asset_manager,
             overlay_registry,
+            overlay_atlas::OverlayRadarColorSource::Cell,
             &overlay_names,
             theater_ext,
             theater_name,
-            rules_ini,
             art_registry,
         );
 
@@ -251,10 +248,7 @@ pub(crate) fn build_overlay_presentation(
             theater_ext,
             theater_name,
             overlay_registry,
-            &rules.tiberium_types,
-            crate_rules,
-            rules_ini,
-            art_registry,
+            rules,
             Some(&rules.smudge_types),
             &rubble_arts,
         )
@@ -273,8 +267,6 @@ pub(crate) fn build_overlay_presentation(
             theater_ext,
             theater_name,
             overlay_registry,
-            rules_ini,
-            art_registry,
             &rubble_arts,
         )
     });
@@ -370,7 +362,13 @@ mod tests {
         let scenario_rng_before = sim.scenario_rng().state();
         let main_rng_before = sim.main_rng().state();
 
-        apply_launch_shroud_option(&mut sim, crate::sim::world::UninitContext::new(None, None));
+        apply_launch_shroud_option(
+            &mut sim,
+            crate::sim::world::UninitContext::new(
+                crate::rules::ruleset::RuleSet::empty_for_test(),
+                None,
+            ),
+        );
 
         for (rx, ry) in [(0, 0), (7, 0), (0, 5), (7, 5), (3, 2)] {
             assert!(sim.fog().is_cell_revealed(local, rx, ry));
@@ -392,7 +390,10 @@ mod tests {
         shrouded
             .houses_mut_for_test()
             .register(HouseState::new(human, 0, None, true, 10_000, 10));
-        let context = crate::sim::world::UninitContext::new(None, None);
+        let context = crate::sim::world::UninitContext::new(
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            None,
+        );
         apply_launch_shroud_option(&mut shrouded, context);
         assert!(!shrouded.fog().is_cell_revealed(human, 7, 5));
 
@@ -513,10 +514,22 @@ mod tests {
         )
     }
 
+    // A registered Country without a read section keeps the constructor's empty
+    // ParentCountry, which matches no Owner (`RuleSet::country_owner_mask`). A
+    // section whose values are all empty is skipped like a missing one
+    // (tools/rules_oracle/session_country_parent.json), so each Country here
+    // names itself as its parent.
     const ORDERED_COUNTRY_SIDE_INI: &str = "[Countries]\n\
              0=Americans\n1=Alliance\n2=French\n3=Germans\n4=British\n\
              5=Africans\n6=Arabs\n7=Confederation\n8=Russians\n9=YuriCountry\n\
              10=GDI\n11=Nod\n12=Neutral\n13=Special\n\
+             [Americans]\nParentCountry=Americans\n[Alliance]\nParentCountry=Alliance\n\
+             [French]\nParentCountry=French\n[Germans]\nParentCountry=Germans\n\
+             [British]\nParentCountry=British\n[Africans]\nParentCountry=Africans\n\
+             [Arabs]\nParentCountry=Arabs\n[Confederation]\nParentCountry=Confederation\n\
+             [Russians]\nParentCountry=Russians\n[YuriCountry]\nParentCountry=YuriCountry\n\
+             [GDI]\nParentCountry=GDI\n[Nod]\nParentCountry=Nod\n\
+             [Neutral]\nParentCountry=Neutral\n[Special]\nParentCountry=Special\n\
              [Sides]\n\
              GDI=British,French,Germans,Americans,Alliance\n\
              Nod=Russians,Africans,Confederation,Arabs\n\
@@ -755,9 +768,10 @@ mod tests {
 
     #[test]
     fn launch_color_map_initializes_neutral_houses_and_uses_session_slots() {
-        let schemes = crate::rules::color_scheme::parse_color_schemes(&IniFile::from_str(
-            crate::test_fixture::text("ini/rulesmd.ini"),
-        ));
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let schemes = crate::rules::color_scheme::parse_color_schemes(&rules);
         let colors = house_color_map_for_launch_session(
             &test_session(),
             &roster_with_neutral_and_playable(),
@@ -777,9 +791,10 @@ mod tests {
 
     #[test]
     fn launch_color_map_remaps_neutral_oil_without_authored_houses() {
-        let schemes = crate::rules::color_scheme::parse_color_schemes(&IniFile::from_str(
-            crate::test_fixture::text("ini/rulesmd.ini"),
-        ));
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let schemes = crate::rules::color_scheme::parse_color_schemes(&rules);
         // Ordinary multiplayer maps, including Storm, have neutral structures
         // but no campaign-style [Houses] roster.
         let map = IniFile::from_str("[Structures]\n0=Neutral,CAOILD,256,168,78,64,None,0,0,0\n");
@@ -812,9 +827,10 @@ mod tests {
 
     #[test]
     fn current_house_collision_preserves_launch_label_and_distinct_colors() {
-        let schemes = crate::rules::color_scheme::parse_color_schemes(&IniFile::from_str(
-            crate::test_fixture::text("ini/rulesmd.ini"),
-        ));
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let schemes = crate::rules::color_scheme::parse_color_schemes(&rules);
         for (handle, expected_key) in [
             ("Neutral", "Player"),
             (" Neutral ", "Player"),
@@ -1288,6 +1304,7 @@ mod tests {
                 veterancy: None,
                 high: false,
                 mission: None,
+                group: -1,
                 recruitable_a: true,
                 recruitable_b: true,
                 structure_upgrades: [None, None, None],
@@ -1796,7 +1813,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_launch_local_owner_drives_production_sidebar_theme() {
+    fn explicit_launch_context_drives_production_sidebar_side() {
         use crate::render::sidebar_chrome::SidebarTheme;
 
         let terrain = test_terrain(64, 64);
@@ -1831,52 +1848,39 @@ mod tests {
                 .expect("explicit launch must return its pinned local owner");
             assert_eq!(owner, "Commander");
 
-            let actual = crate::app::presentation::sidebar_render::sidebar_theme_for_owner(
+            let side = crate::app::presentation::sidebar_render::project_sidebar_side(
                 Some(&sim),
-                owner,
-            )
-            .unwrap_or(SidebarTheme::Allied);
+                Some(owner),
+            );
+            let actual = crate::render::sidebar_chrome::sidebar_theme_for_side(side);
             assert_eq!(
                 actual, expected_theme,
                 "{country:?} launch owner must reach its live side theme"
             );
-            // The map-install refresh and chrome selection use this same source
-            // projection after the new roster, simulation and owner are installed.
-            let assets = [
-                "allied-frame-palette-insets",
-                "soviet-frame-palette-insets",
-                "yuri-frame-palette-insets",
-            ];
-            let selected = crate::app::presentation::sidebar_render::project_sidebar_source(
-                Some(&sim),
-                Some(owner),
-                Some(&assets[0]),
-                Some(&assets[1]),
-                Some(&assets[2]),
-            )
-            .expect("all three source packages installed");
-            assert_eq!((selected.0, selected.1), (expected_theme, expected_theme));
-            let index = match expected_theme {
+            let expected_side = match expected_theme {
                 SidebarTheme::Allied => 0,
                 SidebarTheme::Soviet => 1,
                 SidebarTheme::Yuri => 2,
             };
-            assert_eq!(*selected.2, assets[index]);
-            let fallback = crate::app::presentation::sidebar_render::project_sidebar_source(
+            assert_eq!(side, expected_side);
+
+            // This is the actual side-index boundary used by chrome and radar,
+            // not a test-only copy of the previous House/theme projection.
+            // A fourth installed side must survive even when the pinned House
+            // still names a stock side; the non-Ares sandbox keeps that House.
+            sim.session_mut_for_test().set_scenario_side_for_test(3);
+            let selected = crate::app::presentation::sidebar_render::project_sidebar_side(
                 Some(&sim),
                 Some(owner),
-                Some(&assets[0]),
-                None,
-                None,
-            )
-            .unwrap();
-            assert_eq!(
-                (fallback.0, fallback.1),
-                (expected_theme, SidebarTheme::Allied)
             );
             assert_eq!(
-                *fallback.2, assets[0],
-                "radar and chrome share the actual fallback package"
+                selected,
+                if cfg!(feature = "ares") {
+                    3
+                } else {
+                    expected_side
+                },
+                "actual Scenario.Side and development owner have separate authority"
             );
         }
     }

@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -32,6 +31,6 @@
     "type_reset": "0x006686C0",
     "reset_stop": "0x00668A2C"
   },
-  "payload_sha256": "a2e46ba867295ad1bb16423aab632a26e6981f0dd369a924fc922ff845d00141",
+  "payload_sha256": "1e8c7bef42497587796c182158008ef978133ef8a7e6e58ca4c117a50b6d32cc",
   "replay_command": "python -m tools.rules_oracle.weapon_laser"
 }

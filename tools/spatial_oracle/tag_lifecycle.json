@@ -198214,5 +198214,2713 @@
       ]
     },
     "next_random": 2026076499
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 30,
+          "running": true
+        },
+        "tags": []
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 30,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 30,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 1,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 1,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 0,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            0,
+            13
+          ]
+        ],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 0,
+          "running": false
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            0,
+            13
+          ]
+        ],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 0,
+          "running": false
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ]
+        ],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 0,
+          "running": false
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "frame": 0,
+      "game_mode": 0,
+      "name": "scenario_timer_before_exact_after",
+      "operations": [
+        [
+          "action",
+          27,
+          0,
+          2
+        ],
+        [
+          "shared",
+          0
+        ],
+        [
+          "register_logic",
+          0
+        ],
+        [
+          "frame",
+          29
+        ],
+        [
+          "poll"
+        ],
+        [
+          "frame",
+          30
+        ],
+        [
+          "poll"
+        ],
+        [
+          "frame",
+          31
+        ],
+        [
+          "poll"
+        ]
+      ],
+      "polling": true,
+      "repeat": 2,
+      "scenario_timer": true,
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              14,
+              0
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 2026076499,
+    "rng_after_history": {
+      "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    },
+    "rng_before": {
+      "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    }
+  },
+  {
+    "allocations": [
+      56,
+      72,
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 30,
+          "running": true
+        },
+        "tags": []
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 30,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 30,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 30,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 1,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            1,
+            13
+          ],
+          [
+            1,
+            51
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 1,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            1,
+            13
+          ],
+          [
+            1,
+            51
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 0,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            1,
+            13
+          ],
+          [
+            1,
+            51
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            1,
+            27
+          ]
+        ],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 0,
+          "running": false
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            1,
+            13
+          ],
+          [
+            1,
+            51
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            1,
+            27
+          ]
+        ],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 0,
+          "running": false
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ],
+          [
+            28,
+            7
+          ],
+          [
+            28,
+            7
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            1,
+            13
+          ],
+          [
+            1,
+            51
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            1,
+            27
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            1,
+            13
+          ],
+          [
+            1,
+            51
+          ]
+        ],
+        "globals": [
+          7
+        ],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 0,
+          "running": false
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "frame": 0,
+      "game_mode": 0,
+      "name": "scenario_timer_two_tags",
+      "operations": [
+        [
+          "action",
+          27,
+          0,
+          2
+        ],
+        [
+          "shared",
+          0
+        ],
+        [
+          "shared",
+          1
+        ],
+        [
+          "register_logic",
+          0,
+          1
+        ],
+        [
+          "frame",
+          29
+        ],
+        [
+          "poll"
+        ],
+        [
+          "frame",
+          30
+        ],
+        [
+          "poll"
+        ],
+        [
+          "frame",
+          31
+        ],
+        [
+          "poll"
+        ]
+      ],
+      "polling": true,
+      "repeat": 2,
+      "scenario_timer": true,
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              14,
+              0
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 2026076499,
+    "rng_after_history": {
+      "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    },
+    "rng_before": {
+      "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    }
+  },
+  {
+    "allocations": [
+      56,
+      72,
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "006E4DE0",
+      "00725FA0",
+      "00726400",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 30,
+          "running": true
+        },
+        "tags": []
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 30,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 30,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 30,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 1,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            1,
+            13
+          ],
+          [
+            1,
+            51
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 1,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            1,
+            13
+          ],
+          [
+            1,
+            51
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 0,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ],
+          [
+            27,
+            4
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            1,
+            13
+          ],
+          [
+            1,
+            51
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            1,
+            13
+          ],
+          [
+            1,
+            51
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 60,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ],
+          [
+            27,
+            4
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            1,
+            13
+          ],
+          [
+            1,
+            51
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            1,
+            13
+          ],
+          [
+            1,
+            51
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 59,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ],
+          [
+            27,
+            4
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            1,
+            13
+          ],
+          [
+            1,
+            51
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            1,
+            13
+          ],
+          [
+            1,
+            51
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            1,
+            13
+          ],
+          [
+            1,
+            51
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0,
+          1
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 59,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          },
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "frame": 0,
+      "game_mode": 0,
+      "name": "scenario_timer_restart_on_expiry",
+      "operations": [
+        [
+          "action",
+          27,
+          0,
+          2
+        ],
+        [
+          "shared",
+          0
+        ],
+        [
+          "shared",
+          1
+        ],
+        [
+          "register_logic",
+          0,
+          1
+        ],
+        [
+          "frame",
+          29
+        ],
+        [
+          "poll"
+        ],
+        [
+          "frame",
+          30
+        ],
+        [
+          "poll"
+        ],
+        [
+          "frame",
+          31
+        ],
+        [
+          "poll"
+        ]
+      ],
+      "polling": true,
+      "repeat": 2,
+      "scenario_timer": true,
+      "triggers": [
+        {
+          "actions": [
+            [
+              27,
+              4
+            ]
+          ],
+          "events": [
+            [
+              14,
+              0
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 2026076499,
+    "rng_after_history": {
+      "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    },
+    "rng_before": {
+      "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    }
+  },
+  {
+    "allocations": [
+      56,
+      72
+    ],
+    "calls": [
+      "006E4DE0",
+      "00725FA0",
+      "00726400"
+    ],
+    "history": [
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 1,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 30,
+          "running": true
+        },
+        "tags": []
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": 0,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 30,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 30,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 1,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 1,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 0,
+          "running": true
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            0,
+            14
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 0,
+          "running": false
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            0,
+            14
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 0,
+          "running": false
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          [
+            27,
+            2
+          ]
+        ],
+        "changed": 0,
+        "dispatches": [
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            0,
+            14
+          ],
+          [
+            0,
+            13
+          ],
+          [
+            0,
+            51
+          ]
+        ],
+        "globals": [],
+        "locals": [],
+        "logic_tags": [
+          0
+        ],
+        "pending_count": 0,
+        "pending_tags": [],
+        "returned": null,
+        "rng_draws": 0,
+        "scenario_flags": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "scenario_timer": {
+          "remaining": 0,
+          "running": false
+        },
+        "tags": [
+          {
+            "pending": 0,
+            "refs": 0,
+            "triggers": [
+              {
+                "completed": 0,
+                "duration": 0,
+                "enabled": 1,
+                "pending": 0,
+                "start": 0,
+                "type": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "input": {
+      "frame": 0,
+      "game_mode": 0,
+      "name": "scenario_timer_explicit14",
+      "operations": [
+        [
+          "action",
+          27,
+          0,
+          2
+        ],
+        [
+          "shared",
+          0
+        ],
+        [
+          "register_logic",
+          0
+        ],
+        [
+          "frame",
+          29
+        ],
+        [
+          "poll"
+        ],
+        [
+          "frame",
+          30
+        ],
+        [
+          "poll"
+        ],
+        [
+          "frame",
+          31
+        ],
+        [
+          "poll"
+        ]
+      ],
+      "polling": true,
+      "repeat": 2,
+      "scenario_timer": true,
+      "triggers": [
+        {
+          "actions": [
+            [
+              28,
+              7
+            ]
+          ],
+          "events": [
+            [
+              47,
+              100
+            ]
+          ]
+        }
+      ]
+    },
+    "next_random": 2026076499,
+    "rng_after_history": {
+      "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    },
+    "rng_before": {
+      "0x2000d218": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "0x886b88": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6",
+      "0xabe890": "8604aec210a8ef4bb6754457651648dac72b66e2785b6aba5a007f6a0fa9eeb6"
+    }
   }
 ]

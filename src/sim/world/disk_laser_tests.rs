@@ -407,7 +407,7 @@ fn native_disk_constructor_fire_ai_expiry_and_common_drain_histories() {
                             let id = scene.role(&action["role"]).unwrap();
                             scene.sim.notify_pointer_expired(
                                 id,
-                                UninitContext::new(Some(rules), Some(&registry)),
+                                UninitContext::new(rules, Some(&registry)),
                             );
                         }
                         kind => panic!("unexpected action {kind}"),
@@ -510,7 +510,7 @@ fn native_disk_constructor_fire_ai_expiry_and_common_drain_histories() {
                 "drain" => {
                     let begin = scene.sim.lifecycle_test_events_for_test().len();
                     scene.sim.process_pending_delete_with(
-                        Some(rules),
+                        rules,
                         Some(&registry),
                         FrameEffects::default(),
                         1,
@@ -602,7 +602,7 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
             for _ in 0..2 {
                 scene.sim.notify_pointer_expired(
                     scene.source,
-                    UninitContext::new(Some(rules), Some(&registry)),
+                    UninitContext::new(rules, Some(&registry)),
                 );
             }
             assert_eq!(
@@ -675,7 +675,7 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
                         .collect();
                     let sound = sounds(sim, sound_start);
                     sim.process_pending_delete_with(
-                        Some(rules),
+                        rules,
                         Some(&registry),
                         FrameEffects::default(),
                         1,

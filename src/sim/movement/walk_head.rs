@@ -149,7 +149,7 @@ impl crate::sim::world::Simulation {
         &mut self,
         id: u64,
         request: Option<DriveCoord>,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: crate::sim::world::FrameEffects<'_>,
     ) -> Result<bool, String> {
@@ -217,7 +217,7 @@ impl crate::sim::world::Simulation {
         &mut self,
         id: u64,
         coord: Option<DriveCoord>,
-        rules: Option<&crate::rules::ruleset::RuleSet>,
+        rules: &crate::rules::ruleset::RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: crate::sim::world::FrameEffects<'_>,
     ) -> Result<(), String> {
@@ -842,7 +842,7 @@ mod tests {
         sim.foot_force_immediate_destination(
             id,
             Some(DriveCoord::cell(7, 5, 0)),
-            Some(&rules),
+            &rules,
             None,
             crate::sim::world::FrameEffects::default(),
         )
@@ -924,7 +924,7 @@ pub(super) fn select_step_head_at(
     raw: &mut RawCellOccupationGrid,
     terrain: Option<&ResolvedTerrainGrid>,
     grid: Option<&PathGrid>,
-    rules: Option<&crate::rules::ruleset::RuleSet>,
+    rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
     rng: &mut crate::sim::rng::SimRng,
     input: Option<DriveCoord>,
@@ -989,7 +989,7 @@ pub(super) fn select_step_head_at(
     }
     //75C434 still executes when the ordinary target already granted
     //priority. Its map lookups cannot be elided by boolean short-circuit.
-    if let (Some(terrain), Some(rules)) = (terrain, rules) {
+    if let Some(terrain) = terrain {
         let query = crate::sim::slave_deposit::SlaveDepositQuery {
             entities,
             occupancy,
@@ -1106,7 +1106,7 @@ pub(super) fn prepare_step_head_at(
         raw,
         terrain,
         grid,
-        rules,
+        rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
         interner,
         rng,
         Some(input),

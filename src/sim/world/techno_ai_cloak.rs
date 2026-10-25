@@ -46,11 +46,7 @@ fn stock_cloak_tick_facts(
         && !(object.cloak_stop
             && crate::sim::movement::motion_query::is_moving_now(
                 entity,
-                Some(crate::sim::movement::SpeedRules::new(
-                    rules,
-                    &sim.interner,
-                    &sim.houses,
-                )),
+                crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
                 sim.session.binary_frame(),
             ));
 
@@ -67,25 +63,12 @@ fn stock_cloak_tick_facts(
     // identity still needs evidence), and
     // vt+0x1D4/+0x1D8 are the chrono warp-in/warp-out flags.
     //
-    // RESIDUAL — **EMP decloak is NOT IMPLEMENTED, and this requirement is
-    // therefore UNMET, not closed.** VERA has no EMP mechanism anywhere: there
-    // is no Rust counterpart to `+0x504`, nothing writes an EMP timer, and the
-    // term is hardcoded false at both of its uses in this file. Closing it is
-    // not a cloak change — it lands with an EMP weapon/warhead system, and this
-    // gate is one of that system's consumers.
-    // - Reachability remains unproven. The former stock-source claim was false:
-    //   RULESMD's BoomerTorpedo uses APSplash2 and Robogun uses AP; EMPuls is
-    //   annotated "disabled in code" and EMPulseSpecial is commented out.
-    //   Original EMPulse::Apply4C54E0 writes Techno+504, but its only observed
-    //   caller is constructor4C52B0, which has no incoming Ghidra references.
-    //   That reference search alone does not establish unreachability. Trace
-    //   the actual creation/load path before implementing or closing this arm.
-    // - Player effect/frequency: not established for active-retail gameplay.
-    // - Downstream risk: none structurally; the predicate is one boolean and
-    //   drops into `emp_active` below the day an EMP timer lands.
-    // vt+0x380 is FootClass::IsParalyzed `0x004DE770` (Foot+6A0), armed by
-    // ParasiteClass: a released owner for 3x its ROF, and bitten victims.
-    let emp_active = false;
+    // Original active-YR producer reachability remains unproven: the
+    // dormant TS EMPulse body alone does not establish an original scenario
+    // caller. Ares's Bullet hook is a separate, established producer.
+    // Ares ordinary EMP supplies this shared native+504 predicate through
+    // the entity-owned counter. This does not prove a retail TS producer.
+    let emp_active = entity.emp_remaining() > 0;
     let paralyzed = entity.parasite.is_paralyzed(sim.session.binary_frame());
     let state_zero_head_allows =
         is_cloakable && !emp_active && !paralyzed && !chrono_active || rank_cloak;
@@ -364,7 +347,7 @@ pub(crate) fn sensor_reevaluate_stock_cloak(
         let _ = sim.assign_target_represented(
             targeter_id,
             Some(TargetKind::Entity(id)),
-            Some(rules),
+            rules,
             registry,
             FrameEffects::default(),
         );
@@ -476,7 +459,7 @@ fn start_cloaking_detach(
     sim.detach_all(
         id,
         false,
-        UninitContext::new(Some(rules), registry).with_effects(effects),
+        UninitContext::new(rules, registry).with_effects(effects),
     );
     let player = sim.session.current_house();
     if let Some(entity) = sim.substrate.entities.get_mut(id)
@@ -735,13 +718,13 @@ pub(super) fn tick_stock_cloak_producer(
         sim.detach_all(
             id,
             false,
-            UninitContext::new(Some(rules), registry).with_effects(effects),
+            UninitContext::new(rules, registry).with_effects(effects),
         );
         for targeter_id in retained {
             let _ = sim.assign_target_represented(
                 targeter_id,
                 Some(TargetKind::Entity(id)),
-                Some(rules),
+                rules,
                 registry,
                 effects,
             );

@@ -55,7 +55,7 @@ fn apply(sim: &mut Simulation, owner: Option<InternedId>, kind: i32, tail: &str)
             input: TagEventInput::default(),
         },
         &mut Vec::new(),
-        None,
+        crate::rules::ruleset::RuleSet::empty_for_test(),
         None,
         FrameEffects::default(),
     )

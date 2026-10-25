@@ -1,6 +1,5 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
@@ -28,5 +27,5 @@
     "add_cameo_observed_sink": "0x006A6300"
   },
   "replay_command": "python -m tools.can_build_oracle --construction-options",
-  "payload_sha256": "edb7212e4d0142ffdb2a968f5075f11514ee4386bd871ee20a33153b17cac2de"
+  "payload_sha256": "3c705b6ff9905476b2e20e3d2740f6b4853a59d6dc78e737a79b3c7692cecee6"
 }

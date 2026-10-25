@@ -82,7 +82,7 @@ fn native_frames(cargo_types: &[&str]) -> Vec<usize> {
 fn advance(sim: &mut Simulation, rules: &RuleSet) {
     sim.advance_app_frame(
         &[],
-        Some(rules),
+        rules,
         None,
         33,
         TickLane::Ordinary,

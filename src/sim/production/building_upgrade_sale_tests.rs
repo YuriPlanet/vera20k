@@ -59,7 +59,7 @@ fn selling_visits_refund_one_upgrade_each_before_the_host_sale_tail() {
     {
         constructor_rng.next_u32();
         sim.session.set_binary_frame_for_test(frame);
-        sim.visit_building_down(1, Some(&rules), None, FrameEffects::default());
+        sim.visit_building_down(1, &rules, None, FrameEffects::default());
         let host = sim.entities().get(1).unwrap();
         assert_eq!(host.building_upgrades().count(), count);
         assert_eq!(*host.building_upgrades().types(), types);
@@ -108,7 +108,7 @@ fn selling_visits_refund_one_upgrade_each_before_the_host_sale_tail() {
 
     *sim.power_states.house_mut(owner) = PowerState::settled_for_test();
     sim.session.set_binary_frame_for_test(3);
-    sim.visit_building_down(1, Some(&rules), None, FrameEffects::default());
+    sim.visit_building_down(1, &rules, None, FrameEffects::default());
     let host = sim.entities().get(1).unwrap();
     assert_eq!(
         host.mission.handler_state(),
@@ -137,7 +137,7 @@ fn selling_a_sparse_top_slot_stays_safe_without_compacting_or_refunding() {
     let rng = sim.scenario_rng().logical_state();
     for frame in [1, 2] {
         sim.session.set_binary_frame_for_test(frame);
-        sim.visit_building_down(1, Some(&rules), None, FrameEffects::default());
+        sim.visit_building_down(1, &rules, None, FrameEffects::default());
     }
     let host = sim.entities().get(1).unwrap();
     assert_eq!(host.building_upgrades().count(), 3);

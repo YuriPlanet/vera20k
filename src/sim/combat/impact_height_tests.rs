@@ -17,12 +17,12 @@ fn gsi_04_11_refinery_survivor_cells_follow_native_sentinel_offsets() {
         foundation_w,
         foundation_h,
         ..
-    } = building_center_smudge_request(10, 20, 3, "3x3Refinery")
+    } = building_center_smudge_request(10, 20, 3, &"3x3Refinery".into())
     else {
         panic!("the destruction-center mark");
     };
     assert_eq!((foundation_w, foundation_h), (3, 3));
-    let survivor_cells = crate::sim::crew_survival::foundation_cells(10, 20, "3x3Refinery");
+    let survivor_cells = crate::sim::crew_survival::foundation_cells(10, 20, &"3x3Refinery".into());
     assert_eq!(
         survivor_cells,
         vec![

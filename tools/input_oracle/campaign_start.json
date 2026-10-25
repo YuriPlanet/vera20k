@@ -2090,6 +2090,222 @@
       "width": 301
     }
   ],
+  "local_variable_controls": [
+    {
+      "initial_set": [
+        1,
+        7,
+        99
+      ],
+      "name": "retained_slots",
+      "passes": [
+        {
+          "names": {},
+          "ordered_sections": [],
+          "sections": {},
+          "set_slots": [
+            1,
+            7,
+            99
+          ]
+        },
+        {
+          "names": {
+            "1": "Clear",
+            "2": "Set",
+            "7": "Renamed"
+          },
+          "ordered_sections": [
+            {
+              "entries": [
+                [
+                  "1",
+                  "Clear,0"
+                ],
+                [
+                  "2",
+                  "Set,1"
+                ],
+                [
+                  "7",
+                  "Renamed"
+                ]
+              ],
+              "name": "VariableNames"
+            }
+          ],
+          "sections": {
+            "VariableNames": {
+              "1": "Clear,0",
+              "2": "Set,1",
+              "7": "Renamed"
+            }
+          },
+          "set_slots": [
+            2,
+            7,
+            99
+          ]
+        },
+        {
+          "names": {
+            "7": "Clear"
+          },
+          "ordered_sections": [
+            {
+              "entries": [
+                [
+                  "7",
+                  "Clear,0"
+                ]
+              ],
+              "name": "VariableNames"
+            }
+          ],
+          "sections": {
+            "VariableNames": {
+              "7": "Clear,0"
+            }
+          },
+          "set_slots": [
+            2,
+            99
+          ]
+        }
+      ]
+    },
+    {
+      "initial_set": [],
+      "name": "aliased_slot",
+      "passes": [
+        {
+          "names": {
+            "0": "LastName"
+          },
+          "ordered_sections": [
+            {
+              "entries": [
+                [
+                  "0",
+                  "First,1"
+                ],
+                [
+                  "junk",
+                  "LastName"
+                ]
+              ],
+              "name": "VariableNames"
+            }
+          ],
+          "sections": {
+            "VariableNames": {
+              "0": "First,1",
+              "junk": "LastName"
+            }
+          },
+          "set_slots": [
+            0
+          ]
+        },
+        {
+          "names": {
+            "0": "AnotherName"
+          },
+          "ordered_sections": [
+            {
+              "entries": [
+                [
+                  "junk",
+                  "Clear,0"
+                ],
+                [
+                  "0",
+                  "AnotherName"
+                ]
+              ],
+              "name": "VariableNames"
+            }
+          ],
+          "sections": {
+            "VariableNames": {
+              "0": "AnotherName",
+              "junk": "Clear,0"
+            }
+          },
+          "set_slots": []
+        }
+      ]
+    },
+    {
+      "initial_set": [
+        3,
+        4
+      ],
+      "name": "case_and_tokens",
+      "passes": [
+        {
+          "names": {},
+          "ordered_sections": [
+            {
+              "entries": [
+                [
+                  "3",
+                  "WrongCase,0"
+                ]
+              ],
+              "name": "variablenames"
+            }
+          ],
+          "sections": {
+            "variablenames": {
+              "3": "WrongCase,0"
+            }
+          },
+          "set_slots": [
+            3,
+            4
+          ]
+        },
+        {
+          "names": {
+            "3": "Keep",
+            "4": "Clear",
+            "5": "Set"
+          },
+          "ordered_sections": [
+            {
+              "entries": [
+                [
+                  "3",
+                  "Keep,"
+                ],
+                [
+                  "4",
+                  "Clear,garbage"
+                ],
+                [
+                  "5",
+                  "Set,-2"
+                ]
+              ],
+              "name": "VariableNames"
+            }
+          ],
+          "sections": {
+            "VariableNames": {
+              "3": "Keep,",
+              "4": "Clear,garbage",
+              "5": "Set,-2"
+            }
+          },
+          "set_slots": [
+            3,
+            5
+          ]
+        }
+      ]
+    }
+  ],
   "metadata": {
     "csf": {
       "entries": {
@@ -3223,8 +3439,7 @@
       "S07_F00e",
       "S07_P01e",
       "S07_P02e",
-      "S08_F00e",
-      "S08_F01e"
+      "S08_F00e"
     ],
     "controls": [
       {
@@ -3469,7 +3684,6 @@
         "58": "S07_P02e",
         "59": "S08_F00e",
         "6": "A01_F04e",
-        "60": "S08_F01e",
         "7": "A02_f00e",
         "8": "A02_P01e",
         "9": "A02_P02e"
@@ -3578,7 +3792,6 @@
       }
     ]
   },
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
   "progress_rows": {
     "rows": [
       {
@@ -22792,6 +23005,358 @@
         "SpecialFlags": {
           "TiberiumGrows": "junk",
           "TiberiumSpreads": "junk"
+        }
+      }
+    },
+    {
+      "after": 8,
+      "before": 8,
+      "name": "bridges_absent_bit3",
+      "reads": [
+        {
+          "ini": "0x887180",
+          "key": "TiberiumExplosive",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "MCVDeploy",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "InitialVeteran",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "IonStorms",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Meteorites",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Visceroids",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "TiberiumGrows",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "TiberiumSpreads",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "DestroyableBridges",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "FixedAlliance",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "FogOfWar",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Inert",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "HarvesterImmune",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        }
+      ],
+      "sections": {}
+    },
+    {
+      "after": 32768,
+      "before": 32768,
+      "name": "bridges_absent_bit15",
+      "reads": [
+        {
+          "ini": "0x887180",
+          "key": "TiberiumExplosive",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "MCVDeploy",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "InitialVeteran",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "IonStorms",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Meteorites",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Visceroids",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "TiberiumGrows",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "TiberiumSpreads",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "DestroyableBridges",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "FixedAlliance",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "FogOfWar",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Inert",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "HarvesterImmune",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        }
+      ],
+      "sections": {}
+    },
+    {
+      "after": 8,
+      "before": 32776,
+      "name": "bridges_no",
+      "reads": [
+        {
+          "ini": "0x887180",
+          "key": "TiberiumExplosive",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "MCVDeploy",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "InitialVeteran",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "IonStorms",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Meteorites",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Visceroids",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "TiberiumGrows",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "TiberiumSpreads",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "DestroyableBridges",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "FixedAlliance",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "FogOfWar",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Inert",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "HarvesterImmune",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        }
+      ],
+      "sections": {
+        "SpecialFlags": {
+          "DestroyableBridges": "no"
+        }
+      }
+    },
+    {
+      "after": 32776,
+      "before": 8,
+      "name": "bridges_yes",
+      "reads": [
+        {
+          "ini": "0x887180",
+          "key": "TiberiumExplosive",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "MCVDeploy",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "InitialVeteran",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "IonStorms",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Meteorites",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Visceroids",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "TiberiumGrows",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "TiberiumSpreads",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "DestroyableBridges",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "FixedAlliance",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "FogOfWar",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "Inert",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        },
+        {
+          "ini": "0x887180",
+          "key": "HarvesterImmune",
+          "reader": "0x5295f0",
+          "section": "SpecialFlags"
+        }
+      ],
+      "sections": {
+        "SpecialFlags": {
+          "DestroyableBridges": "yes"
         }
       }
     }

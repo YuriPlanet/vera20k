@@ -31,7 +31,7 @@ fn run(sim: &mut Simulation, action: &RuntimeAction, rules: Option<&RuleSet>) ->
             input: TagEventInput::default(),
         },
         &mut Vec::new(),
-        rules,
+        rules.unwrap_or(crate::rules::ruleset::RuleSet::empty_for_test()),
         None,
         FrameEffects::default(),
     )

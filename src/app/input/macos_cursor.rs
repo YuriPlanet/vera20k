@@ -278,11 +278,13 @@ mod native {
                 if verbose {
                     log::warn!("macOS cursor confinement unavailable: {error}");
                 }
+                state.platform.pointer_held.set(false);
                 return;
             }
             backend.locked.set(true);
             backend.warp_compensation.borrow_mut().clear();
         }
+        state.platform.pointer_held.set(backend.locked.get());
         let (x, y) = state.window_cursor_position();
         let size = state.platform.window.inner_size();
         if let Some(position) =
@@ -303,6 +305,7 @@ mod native {
         {
             backend.locked.set(false);
         }
+        state.platform.pointer_held.set(backend.locked.get());
         backend.from_device.set(false);
         backend.warp_compensation.borrow_mut().clear();
     }
@@ -418,6 +421,44 @@ mod tests {
             moved_position((0.0, 0.0), (1.0, 1.0), 0.0, (800, 600)),
             None
         );
+    }
+
+    #[test]
+    fn macos_integrated_motion_is_projected_once_and_reverses_out_of_letterbox() {
+        use crate::app::input::state::MatchInputState;
+        use crate::render::upscale_pass::{FrameShape, ZoomGeometry};
+
+        let mut input = MatchInputState::new(Default::default());
+        let zoom = ZoomGeometry::new(1000, 700, 150, FrameShape::Original);
+        let origin = zoom.source_to_window(100.0, 80.0);
+        input.set_cursor_from_window(origin, Some(zoom), false);
+        let moved = moved_position(
+            (f64::from(origin.0), f64::from(origin.1)),
+            (20.0, -10.0),
+            2.0,
+            (1000, 700),
+        )
+        .unwrap();
+        input.set_cursor_from_window((moved.0 as f32, moved.1 as f32), Some(zoom), false);
+        assert!((input.cursor_x - (100.0 + 40.0 / 1.5)).abs() < 0.001);
+        assert!((input.cursor_y - (80.0 - 20.0 / 1.5)).abs() < 0.001);
+
+        let edge = moved_position(moved, (-10000.0, 0.0), 2.0, (1000, 700)).unwrap();
+        input.set_cursor_from_window((edge.0 as f32, edge.1 as f32), Some(zoom), false);
+        assert_eq!(input.cursor_x, 0.0);
+        // The native integrator starts at the visible cursor rather than the
+        // physical anchor parked in the black bar. One reverse point of hand
+        // travel must move two window pixels, then project into source once.
+        let visible = zoom.source_to_window(input.cursor_x, input.cursor_y);
+        let reverse = moved_position(
+            (f64::from(visible.0), f64::from(visible.1)),
+            (1.0, 0.0),
+            2.0,
+            (1000, 700),
+        )
+        .unwrap();
+        input.set_cursor_from_window((reverse.0 as f32, reverse.1 as f32), Some(zoom), false);
+        assert!((input.cursor_x - 2.0 / 1.5).abs() < 0.001);
     }
 
     #[test]

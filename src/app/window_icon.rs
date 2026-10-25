@@ -3,6 +3,9 @@
 //! Ordinary macOS sessions use the approved bundled 王二火大 PNG. Other
 //! platforms and retail captures retain Red Alert 2's red star from `game.exe`
 //! (or `Ra2.exe`); that original icon is extracted at runtime, never committed.
+//! This icon choice is not gamemd-derived: gamemd registers its own Yuri's
+//! Revenge icon. Retail fallback without either executable leaves the program's
+//! packaged icon in place; upstream release packages extract that same group.
 
 use std::collections::HashMap;
 use std::path::Path;

@@ -166,8 +166,12 @@ impl CombatLightRenderer {
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Combat Light Exact RGB565 Pipeline Layout"),
-            bind_group_layouts: &[&camera_layout, &scene_bind_group_layout, &mask_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[
+                Some(&camera_layout),
+                Some(&scene_bind_group_layout),
+                Some(&mask_layout),
+            ],
+            immediate_size: 0,
         });
         let attributes = wgpu::vertex_attr_array![0 => Sint32x2, 1 => Uint32, 2 => Uint32];
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -196,7 +200,7 @@ impl CombatLightRenderer {
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -432,6 +436,7 @@ impl CombatLightRenderer {
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.camera_bind_group, &[]);
@@ -1228,7 +1233,8 @@ mod tests {
             wgpu::TextureFormat::Bgra8UnormSrgb,
             wgpu::TextureFormat::Rgba8UnormSrgb,
         ] {
-            let mut renderer = CombatLightRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+            let mut renderer =
+                CombatLightRenderer::new_with_device(&gpu.device, &gpu.queue, format);
             for row in rows {
                 let size: [u32; 2] = serde_json::from_value(row["size"].clone()).unwrap();
                 let mut camera: [i32; 2] = serde_json::from_value(row["camera"].clone()).unwrap();
