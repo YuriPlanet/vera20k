@@ -96,6 +96,7 @@ pub(crate) fn on_open(state: &mut AppState) {
                 .sim_runtime
                 .as_ref()
                 .is_some_and(|runtime| runtime.simulation.local_player_defeated()),
+            state.frontend.campaign_speed_control,
         );
     let options = &mut state.match_state.match_presentation.in_game_options;
     options.sound_enabled = state.audio.launcher_audio_available;
@@ -103,17 +104,18 @@ pub(crate) fn on_open(state: &mut AppState) {
 }
 
 /// BBB init hides the GameSpeed row (see `control_shown`) in GameMode 0
-/// without `-SPEEDCONTROL` ([0xA8EDDC]) and with Session+0x300, which
+/// without `-SPEEDCONTROL` ([0xA8EDDC]), or with Session+0x300, which
 /// MPlayer_Defeated (4FC205) sets only for the local House.
 ///
-/// Residual: `startup_options` accepts `-SPEEDCONTROL` and drops it, so a
-/// campaign launched with it hides the row where native shows it. Ordinary
-/// campaign startup installs Main_Tick's speed2 in the session owner.
+/// Options init4E2036..4E2079 reads the retained process flag. Ordinary
+/// campaign startup installs Main_Tick's speed2 unless that flag is set.
 fn game_speed_hidden(
     mode: crate::app::match_runtime::session::SessionMode,
     local_defeated: bool,
+    speed_control: bool,
 ) -> bool {
-    mode == crate::app::match_runtime::session::SessionMode::Campaign || local_defeated
+    (mode == crate::app::match_runtime::session::SessionMode::Campaign && !speed_control)
+        || local_defeated
 }
 
 /// Left-button press/release routing for the paused Options overlay. Non-left
@@ -368,10 +370,12 @@ mod tests {
     #[test]
     fn gamespeed_row_hides_in_campaign_and_after_local_defeat() {
         use crate::app::match_runtime::session::SessionMode;
-        assert!(game_speed_hidden(SessionMode::Campaign, false));
+        assert!(game_speed_hidden(SessionMode::Campaign, false, false));
+        assert!(!game_speed_hidden(SessionMode::Campaign, false, true));
+        assert!(game_speed_hidden(SessionMode::Campaign, true, true));
         for mode in [SessionMode::Skirmish, SessionMode::Lan, SessionMode::Wol] {
-            assert!(!game_speed_hidden(mode, false), "{mode:?}");
-            assert!(game_speed_hidden(mode, true), "{mode:?}");
+            assert!(!game_speed_hidden(mode, false, false), "{mode:?}");
+            assert!(game_speed_hidden(mode, true, true), "{mode:?}");
         }
     }
 
