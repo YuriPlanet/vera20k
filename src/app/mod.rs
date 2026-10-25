@@ -125,6 +125,7 @@ pub(crate) use state::{AppState, PlatformState, reset_scenario_exit_runtime};
 /// Top-level application. Implements winit's ApplicationHandler.
 pub struct App {
     state: Option<AppState>,
+    pending_initialization: Option<initialize::InitializationJob>,
     shell_capture: Option<crate::app::diagnostics::shell_capture::ShellCaptureSession>,
     tactical_capture:
         Option<crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession>,
@@ -184,6 +185,7 @@ impl App {
     ) -> Self {
         Self {
             state: None,
+            pending_initialization: None,
             shell_capture: None,
             tactical_capture: None,
             capture_render_not_before: None,
@@ -201,6 +203,7 @@ impl App {
     ) -> Self {
         Self {
             state: None,
+            pending_initialization: None,
             shell_capture: Some(
                 crate::app::diagnostics::shell_capture::ShellCaptureSession::new(request),
             ),
@@ -220,6 +223,7 @@ impl App {
     ) -> Self {
         Self {
             state: None,
+            pending_initialization: None,
             shell_capture: None,
             tactical_capture: Some(
                 crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession::new(
