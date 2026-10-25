@@ -921,6 +921,8 @@ fn production_action_line_gpu_matches_original_surface() {
                         timestamp_writes: None,
                         occlusion_query_set: None,
 
+
+multiview_mask: None,
                     });
                     batch.draw_with_buffer_ui_passthrough(
                         &mut pass,

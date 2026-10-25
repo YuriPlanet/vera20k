@@ -104,11 +104,11 @@ impl PackedSpriteGpu {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Packed source layout"),
                 bind_group_layouts: &[
-                    batch.camera_bind_group_layout(),
-                    source_layout,
-                    material_layout,
+                    Some(batch.camera_bind_group_layout()),
+                    Some(source_layout),
+                    Some(material_layout),
                 ],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("Packed source raster"),
@@ -135,7 +135,7 @@ impl PackedSpriteGpu {
                 primitive: Default::default(),
                 depth_stencil: None,
                 multisample: Default::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         };
@@ -186,13 +186,13 @@ impl PackedSpriteGpu {
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Packed resolve layout"),
-            bind_group_layouts: &[&layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&layout)],
+            immediate_size: 0,
         });
         let clear_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Packed stencil reset layout"),
             bind_group_layouts: &[],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
         let full_screen = |entry,
                            layout: &wgpu::PipelineLayout,
@@ -216,15 +216,15 @@ impl PackedSpriteGpu {
                 primitive: Default::default(),
                 depth_stencil,
                 multisample: Default::default(),
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             })
         };
         let depth = |write| {
             Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: write,
-                depth_compare: wgpu::CompareFunction::Always,
+                depth_write_enabled: Some(write),
+                depth_compare: Some(wgpu::CompareFunction::Always),
                 stencil: Default::default(),
                 bias: Default::default(),
             })
@@ -685,6 +685,8 @@ impl TerrainDrawRenderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
 
+
+multiview_mask: None,
             });
             pass.set_pipeline(&self.snapshot_pipeline);
             pass.set_bind_group(0, &targets.source, &[]);
@@ -699,6 +701,8 @@ impl TerrainDrawRenderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
 
+
+multiview_mask: None,
             });
             pass.set_pipeline(&packed.clear);
             pass.set_scissor_rect(rect[0], rect[1], rect[2], rect[3]);
@@ -761,6 +765,8 @@ impl TerrainDrawRenderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
 
+
+multiview_mask: None,
             });
             pass.set_pipeline(if writes {
                 &packed.resolve_write

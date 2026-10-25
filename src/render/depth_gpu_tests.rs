@@ -108,9 +108,9 @@ struct Gpu {
 
 impl Gpu {
     fn new() -> Self {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
-            ..wgpu::InstanceDescriptor::default()
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
         let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             compatible_surface: None,
@@ -241,21 +241,21 @@ impl Gpu {
                     primitive: Default::default(),
                     depth_stencil: Some(wgpu::DepthStencilState {
                         format: wgpu::TextureFormat::Depth32Float,
-                        depth_write_enabled: layer.shader.writes_depth(),
+                        depth_write_enabled: Some(layer.shader.writes_depth()),
                         // TMP leaf 0x547CF0 admits equality. Ordinary SHP leaves
                         // 0x494B60/0x497FD0 and building leaves 0x4958D0/0x4990E0
                         // use strict less-than. This exercises those contracts,
                         // not production BatchRenderer's pipeline selection.
-                        depth_compare: if matches!(layer.shader, Shader::Terrain) {
+                        depth_compare: Some(if matches!(layer.shader, Shader::Terrain) {
                             wgpu::CompareFunction::LessEqual
                         } else {
                             wgpu::CompareFunction::Less
-                        },
+                        }),
                         stencil: Default::default(),
                         bias: Default::default(),
                     }),
                     multisample: Default::default(),
-                    multiview: None,
+                    multiview_mask: None,
                     cache: None,
                 });
             let camera_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -426,6 +426,7 @@ impl Gpu {
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &camera_group, &[]);

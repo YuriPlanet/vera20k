@@ -504,6 +504,8 @@ pub(crate) fn render_launcher_options(
         timestamp_writes: None,
         occlusion_query_set: None,
 
+
+multiview_mask: None,
     });
     if let Some((buffer, count)) = &chrome_buffer {
         batch.draw_with_buffer_passthrough(&mut pass, &atlas.texture, buffer, *count);

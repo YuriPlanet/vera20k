@@ -554,6 +554,8 @@ mod tests {
                 timestamp_writes: None,
                 occlusion_query_set: None,
 
+
+multiview_mask: None,
             });
         }
         gpu.queue.submit([encoder.finish()]);

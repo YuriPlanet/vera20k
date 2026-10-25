@@ -114,11 +114,11 @@ image = { version = "0.25", default-features = false, features = ["png", "ico"] 
 rodio = { version = "0.22", default-features = false, features = ["playback"] }
 
 [target.'cfg(not(target_os = "horizon"))'.dependencies]
-wgpu = "27"
+wgpu = "29"
 winit = "0.30"
 
 [target.'cfg(target_os = "horizon")'.dependencies]
-wgpu = { version = "27", default-features = false, features = ["std", "vulkan", "wgsl", "counters"] }
+wgpu = { version = "29", default-features = false, features = ["std", "vulkan", "wgsl", "counters"] }
 winit = "=0.30.12"
 
 [target.'cfg(unix)'.dependencies]

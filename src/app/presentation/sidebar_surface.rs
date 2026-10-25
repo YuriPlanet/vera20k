@@ -254,6 +254,8 @@ impl SidebarSurface {
             timestamp_writes: None,
             occlusion_query_set: None,
 
+
+multiview_mask: None,
         })
     }
 
@@ -280,7 +282,7 @@ mod tests {
     }
 
     fn gpu() -> Gpu {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
             .expect("explicit sidebar surface GPU test requires adapter");
         let (device, queue) =
@@ -386,6 +388,8 @@ mod tests {
                 timestamp_writes: None,
                 occlusion_query_set: None,
 
+
+multiview_mask: None,
             });
             surface.composite(&mut pass);
         }

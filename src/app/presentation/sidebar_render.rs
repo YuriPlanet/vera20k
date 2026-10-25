@@ -848,6 +848,8 @@ pub(crate) fn begin_main_pass<'a>(
         timestamp_writes: None,
         occlusion_query_set: None,
 
+
+multiview_mask: None,
     })
 }
 
@@ -880,6 +882,8 @@ pub(crate) fn begin_main_load_pass<'a>(
         timestamp_writes: None,
         occlusion_query_set: None,
 
+
+multiview_mask: None,
     })
 }
 

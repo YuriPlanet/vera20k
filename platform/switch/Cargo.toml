@@ -22,7 +22,7 @@ vera20k = { path = "../..", optional = true, default-features = false, features 
 getrandom = { version = "=0.3.4" }
 getrandom_02 = { package = "getrandom", version = "0.2", features = ["custom"] }
 rayon = "1.11"
-wgpu = { version = "=27.0.1", optional = true, default-features = false, features = ["vulkan", "wgsl", "counters"] }
+wgpu = { version = "=29.0.4", optional = true, default-features = false, features = ["vulkan", "wgsl", "counters"] }
 bytemuck = { version = "1", optional = true, features = ["derive"] }
 # Keep the production shroud PNG diagnostic available without desktop codecs.
 image = { version = "=0.25.9", optional = true, default-features = false, features = ["png"] }

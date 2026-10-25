@@ -164,7 +164,7 @@ def main():
     if args.check_client_deps or args.gpu or args.client:
         patches["raw-window-handle"] = upstream / "patches/raw-window-handle"
         for name in ["wgpu", "wgpu-core", "wgpu-hal", "wgpu-core-deps-windows-linux-android"]:
-            patches[name] = upstream / "patches/bevy-0.18" / name
+            patches[name] = upstream / "patches" / name
     config.write_text("[patch.crates-io]\n" + "\n".join(
         f'{name} = {{ path = {json.dumps(str(path))} }}' for name, path in patches.items()) + "\n")
     if args.client:

@@ -167,11 +167,11 @@ impl CombatLightRenderer {
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Combat Light Exact RGB565 Pipeline Layout"),
             bind_group_layouts: &[
-                &camera_layout,
-                &scene_bind_group_layout,
-                &mask_layout,
+                Some(&camera_layout),
+                Some(&scene_bind_group_layout),
+                Some(&mask_layout),
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
         let attributes = wgpu::vertex_attr_array![0 => Sint32x2, 1 => Uint32, 2 => Uint32];
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -200,7 +200,7 @@ impl CombatLightRenderer {
             primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -437,6 +437,8 @@ impl CombatLightRenderer {
             timestamp_writes: None,
             occlusion_query_set: None,
 
+
+multiview_mask: None,
         });
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.camera_bind_group, &[]);

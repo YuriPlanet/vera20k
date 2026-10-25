@@ -667,6 +667,8 @@ impl Probe {
                 timestamp_writes: None,
                 occlusion_query_set: None,
 
+
+multiview_mask: None,
             });
             crate::app::presentation::render::draw_pooled_cell_bodies(
                 &mut pass,

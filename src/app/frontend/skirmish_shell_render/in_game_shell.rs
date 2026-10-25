@@ -596,5 +596,7 @@ fn begin_shell_pass<'e>(
         timestamp_writes: None,
         occlusion_query_set: None,
 
+
+multiview_mask: None,
     })
 }

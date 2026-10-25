@@ -705,6 +705,8 @@ pub(crate) fn clear_screen(encoder: &mut wgpu::CommandEncoder, view: &wgpu::Text
         timestamp_writes: None,
         occlusion_query_set: None,
 
+
+multiview_mask: None,
     });
 }
 

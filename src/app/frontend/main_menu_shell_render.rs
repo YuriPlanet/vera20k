@@ -735,6 +735,8 @@ fn render_main_menu_shell_to_target_inner(
         timestamp_writes: None,
         occlusion_query_set: None,
 
+
+multiview_mask: None,
     });
     if let Some((buffer, count)) = background_buffer.as_ref() {
         state.renderer.batch_renderer.draw_with_buffer_passthrough(
