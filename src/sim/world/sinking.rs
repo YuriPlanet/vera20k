@@ -68,7 +68,7 @@ impl Simulation {
         entity.health.set(1);
         entity.lifecycle.restore_alive();
         entity.sinking.active = true;
-        self.techno_death_stun(
+        self.stun(
             id,
             UninitContext::with_rules(rules).with_effects(frame_effects),
         );
@@ -106,7 +106,7 @@ impl Simulation {
                 self.dispatch_unit_lost_events(&[event]);
             }
         }
-        self.techno_death_stun(
+        self.stun(
             id,
             UninitContext::with_rules(rules).with_effects(frame_effects),
         );

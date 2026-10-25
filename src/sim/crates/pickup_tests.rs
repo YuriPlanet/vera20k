@@ -421,6 +421,137 @@ fn effect_rules(extra: &str) -> RuleSet {
     .unwrap()
 }
 
+#[test]
+fn cloak_crate_grants_foot_stealth_inside_the_strict_radius_and_then_falls_back() {
+    let (mut sim, _, registry, owner, actor) = multiplayer_fixture(POWERUP_CLOAK as u8);
+    let rules = effect_rules(
+        "[General]\nCloakingStages=6\n[E1]\nCloakingSpeed=1\n\
+         [VehicleTypes]\n0=TNK\n[TNK]\nStrength=100\nSpeed=4\nCloakingSpeed=1\n",
+    );
+    let enemy = house(&mut sim, "H1", false);
+    let nearby = place_actor(
+        &mut sim,
+        &rules,
+        enemy,
+        (11, 10),
+        EntityCategory::Unit,
+        "TNK",
+    );
+    let boundary = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (13, 10),
+        EntityCategory::Infantry,
+        "E1",
+    );
+    sim.resolve_type_handles(&rules);
+    let rng = sim.scenario_rng.native_state_hex();
+    assert!(pickup_crate(
+        &mut sim,
+        &rules,
+        &registry,
+        CELL,
+        actor,
+        Default::default()
+    ));
+    assert_eq!(
+        sim.scenario_rng.native_state_hex(),
+        rng,
+        "Cloak spends no RNG"
+    );
+    assert!(
+        sim.entities().get(actor).unwrap().cloak.is_none(),
+        "the grant starts no transition"
+    );
+    assert!(sounds(&sim).is_empty());
+    assert!(eva_events(&sim).is_empty());
+    let grid = sim.path_grid_snapshot();
+    sim.advance_tick(&[], Some(&rules), grid.as_deref(), Some(&registry), 22);
+    assert_eq!(
+        sim.entities().get(actor).unwrap().cloak.unwrap().state(),
+        1,
+        "infantry also runs Foot cloak AI"
+    );
+    assert_eq!(
+        sim.entities().get(nearby).unwrap().cloak.unwrap().state(),
+        1,
+        "the gift ignores allegiance"
+    );
+    assert!(
+        sim.entities().get(boundary).unwrap().cloak.is_none(),
+        "exact radius is excluded"
+    );
+    place_registered_crate(&mut sim, &registry, CELL, POWERUP_CLOAK as u8);
+    let credits = sim.houses[&owner].economy().credits();
+    assert!(pickup_crate(
+        &mut sim,
+        &rules,
+        &registry,
+        CELL,
+        actor,
+        Default::default()
+    ));
+    assert!(
+        sim.houses[&owner].economy().credits() > credits,
+        "already gifted actors receive Money"
+    );
+}
+
+#[test]
+fn cloak_crate_ability_survives_save_load_and_does_not_edit_the_type() {
+    use crate::sim::snapshot::GameSnapshot;
+    let (mut sim, _, registry, owner, actor) = multiplayer_fixture(POWERUP_CLOAK as u8);
+    let rules = effect_rules("");
+    assert!(pickup_crate(
+        &mut sim,
+        &rules,
+        &registry,
+        CELL,
+        actor,
+        Default::default()
+    ));
+    let untouched = place_actor(
+        &mut sim,
+        &rules,
+        owner,
+        (12, 10),
+        EntityCategory::Infantry,
+        "E1",
+    );
+    let no_grant = sim.state_hash();
+    sim.substrate
+        .entities
+        .get_mut(untouched)
+        .unwrap()
+        .stealth_ability
+        .grant();
+    assert_ne!(
+        sim.state_hash(),
+        no_grant,
+        "the ability participates in deterministic state"
+    );
+    // Match the snapshot loader's native Seed0 reset; no RNG comparison is
+    // part of this persistence regression.
+    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    let expected = sim.state_hash();
+    let bytes = GameSnapshot::save(&sim, 0, 0, "cloak-crate", 0);
+    let restored = GameSnapshot::load(&bytes).unwrap().sim;
+    assert_eq!(restored.state_hash(), expected);
+    assert!(
+        restored
+            .entities()
+            .get(actor)
+            .unwrap()
+            .stealth_ability
+            .active(false)
+    );
+    assert!(
+        !rules.object("E1").unwrap().cloakable,
+        "a permanent gift belongs to the instance"
+    );
+}
+
 /// `0x00482972..0x00482B19`: every marked, `Trainable=` Techno within the
 /// radius climbs one rank for a magnitude of 1; a civilian and a distant
 /// soldier do not.

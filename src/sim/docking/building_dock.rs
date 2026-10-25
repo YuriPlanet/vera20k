@@ -56,6 +56,13 @@
 //!   (`Type+0xED4`, initializer 0x0045C300) walked in order until the unit can
 //!   enter the cell. Scatter (`FootClass::Receive_Radio 0x17`) is only reached
 //!   from the Hospital/Armory loop and is not part of the depot flow.
+//! - **AI sale of a useless contact** follows a successful status-1
+//!   `RepairTick` when the contact is damaged or has `ManualReload=` set.
+//!   `BuildingClass::MissionRepairAndProduce` 0x0044C2FE..C312 gates the
+//!   `0x0044C4BC` contact check on that predicate and a Roger/RepairComplete
+//!   reply. It then reads Techno+3D0 and the current owner's
+//!   `IsControlledByHuman` (0x0050B730). An AI-owned useless Foot reaches
+//!   `FootClass::On_Sold` (0x004D9F70); a human-owned contact remains.
 //!
 //! Repair payment/heal is the canonical Techno radio receiver6F4AB0.
 //! The Building mission44B780 owns status and its independent+620 progress.
@@ -1545,9 +1552,9 @@ pub(crate) fn mission_repair(
                 contact.navigation.stop_moving();
             }
         }
-        if radio::transmit_to_contact(sim, depot, RadioMessage::NeedToMove, rules, frame_effects)
-            != RadioResponse::Roger
-        {
+        let need_to_move =
+            radio::transmit_to_contact(sim, depot, RadioMessage::NeedToMove, rules, frame_effects);
+        if need_to_move != RadioResponse::Roger {
             // Original44C5AB..44C61B takes the same constant-false House
             // gate, queries ILoco+60 and powers on an unpowered contact.
             if let Some(l) = sim
@@ -1570,6 +1577,26 @@ pub(crate) fn mission_repair(
         if (damaged || manual_reload)
             && matches!(reply, RadioResponse::Roger | RadioResponse::RepairComplete)
         {
+            // Native branches `0x0044C2FE -> 0x0044C308 -> 0x0044C30A/312`
+            // reach the sale block only for a damaged or ManualReload contact
+            // with Roger/RepairComplete. The depot performs that dispatch
+            // gate; the shared sale owner checks the Techno latch and current
+            // AI owner. On_Sold runs Stun, Limbo and UnInit, so return before
+            // reading this contact again in the current mission visit.
+            if crate::sim::production::sell_useless_repair_contact(
+                sim,
+                rules,
+                unit,
+                crate::sim::world::UninitContext::new(rules, registry).with_effects(frame_effects),
+            ) {
+                // `0x0044C4E1..C4EE`: reset the depot's handler cursor and
+                // mark its BuildingReady latch after On_Sold has removed the
+                // admitted contact, before returning through the common tail.
+                let building = sim.substrate.entities.get_mut(depot)?;
+                building.mission.set_handler_state(0);
+                building.mission_leaf.set_building_ready_latch(1);
+                return Some(rate);
+            }
             // Local+41A is resolved by the app, as for ToggleRepair4470B7.
             // Original44C507 announces before the service animation writes.
             let owner = sim.substrate.entities.get(depot)?.owner();

@@ -1563,6 +1563,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         b"production-start-price".hash(hasher);
         entity.production_start_price().hash(hasher);
     }
+    if entity.is_useless() {
+        // Native Techno+3D0 affects a later Repair-depot sale (`0x0044C4BC`).
+        b"techno-useless-v1".hash(hasher);
+    }
     // Shared count presence and the raw Techno reload clock affect future
     // firing/reload, including a signed -1 reached from InitialAmmo=-2.
     b"techno-ammo-reload-v1".hash(hasher);
@@ -2038,6 +2042,9 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     entity.building_light.spotlight_capable().hash(hasher);
     entity.building_light.light().hash(hasher);
     entity.low_bridge_tube_state.hash(hasher);
+    entity.stealth_ability.granted().hash(hasher);
+    #[cfg(feature = "ares")]
+    entity.stealth_ability.attached().hash(hasher);
     if let Some(cloak) = entity.cloak.as_ref() {
         1u8.hash(hasher);
         cloak.state().hash(hasher);
@@ -2398,6 +2405,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
             target.hash(hasher);
         }
         None => 0u8.hash(hasher),
+    }
+    if let Some(anim) = entity.parachute_animation() {
+        b"parachute-animation-v1".hash(hasher);
+        anim.hash(hasher);
     }
     // Preserve the idle hash while retaining every nonzero fall word.
     // Landing retains the rate/+84/+8F for a later DropAsBomb.

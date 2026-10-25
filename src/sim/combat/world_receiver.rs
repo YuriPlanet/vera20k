@@ -2040,7 +2040,7 @@ pub(crate) fn handle_death(
                 // 0x00702206..0x00702210: RADIO OVER_OUT to every contact and
                 // the Stun, between the death sounds and the debris.
                 if callbacks_enabled(world) {
-                    world.techno_death_stun(
+                    world.stun(
                         dead_id,
                         crate::sim::world::UninitContext::new(rules, overlay_registry)
                             .with_effects(run.effects()),
@@ -2377,7 +2377,7 @@ fn finish_concrete_death(
                 .with_effects(frame_effects),
         );
         // The corpse stays in the store for its death animation; the death
-        // arm's OVER_OUT to every contact (`techno_death_stun`) already
+        // arm's OVER_OUT to every contact (`stun`) already
         // released its dock slots.
         effects.despawned_ids.push(dead_id);
     } else if category == EntityCategory::Aircraft && callbacks_enabled(world) {

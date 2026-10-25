@@ -258,9 +258,32 @@ pub(crate) fn multiplayer_eligible_slot(
         // `0x00481C32`: too much infantry, or a shore cell.
         POWERUP_SQUAD => house.tracking().infantry() <= SQUAD_CRATE_MAX_INFANTRY && !shore,
         // `0x00481D3A`: an already cloakable actor (`Techno+0x3D2`, seeded
-        // from the type's `Cloakable=`; the Cloak crate's permanent write is
-        // this module's residual).
-        POWERUP_CLOAK => !object.is_some_and(|object| object.cloakable),
+        // from the type's `Cloakable=` or permanently granted by a crate).
+        POWERUP_CLOAK => {
+            #[cfg(feature = "ares")]
+            {
+                // Cloak1@1005F8D0 calls builtin type/rank predicate10043450,
+                // then checks permanent Ext+98 and TypeExt+1FA. Temporary
+                // attachment cloak must not hide an unclaimed crate bonus.
+                let builtin = object.is_some_and(|kind| {
+                    kind.cloakable
+                        || crate::sim::combat::veterancy::has_weapon_ability(
+                            actor.veterancy.rank_kind(),
+                            kind,
+                            crate::rules::object_type::Ability::Cloak,
+                        )
+                });
+                !builtin
+                    && !actor.stealth_ability.granted()
+                    && object.is_none_or(|kind| kind.cloak_allowed())
+            }
+            #[cfg(not(feature = "ares"))]
+            {
+                !actor
+                    .stealth_ability
+                    .active(object.is_some_and(|kind| kind.cloakable))
+            }
+        }
         // Stock 481C69; Ares Armor1@1005F840 instead reads the permanent
         // Ext+88, so an attached armor bonus does not consume the crate.
         POWERUP_ARMOR => actor.crate_multipliers.crate_armor() == NativeF64Bits::ONE,
@@ -541,6 +564,15 @@ pub(crate) fn pickup_crate(
                     center,
                 );
             }
+            POWERUP_CLOAK => {
+                effects::apply_cloak_crate(
+                    &mut sim.substrate,
+                    rules,
+                    &sim.interner,
+                    center,
+                    radius,
+                );
+            }
             POWERUP_ARMOR => {
                 let owners = effects::apply_multiplier_crate(
                     &mut sim.substrate,
@@ -626,9 +658,7 @@ pub(crate) fn pickup_crate(
             }
             // RESIDUAL arms, each a zero weight in retail `[Powerups]` so no
             // random pickup reaches them (a map's stored selection or a mod
-            // can): Cloak (3, `0x00482840`: `Techno+0x3D2 = 1` on every Techno
-            // in the radius; VERA keeps no instance cloakable flag),
-            // Explosion (4, `0x00482565`: C4 damage on the actor and five
+            // can): Explosion (4, `0x00482565`: C4 damage on the actor and five
             // random-offset blasts with two draws each), Napalm (5,
             // `0x0048271E`: a fire anim and warhead damage), ICBM (12,
             // `0x00482CA1`: grant the first ICBM super), Gas (16,

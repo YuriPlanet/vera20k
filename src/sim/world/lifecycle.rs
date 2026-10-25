@@ -4499,45 +4499,77 @@ impl Simulation {
         (death_effects, under_attack_events)
     }
 
-    /// The Stun of TechnoClass::ReceiveDamage's death arm (`0x00702210`),
-    /// after the death sounds and before the debris. Units, Infantry and
-    /// Aircraft take `FootClass::Stun @ 0x004D5660`: the class setter's NULL
-    /// destination (`0x004D5669`, [`Self::assign_null_destination`]), Path[0]
-    /// = -1 (`0x004D5673`) and `Stop_Driver` (vtable `+0x500`), which is
-    /// Foot's `0x004D55C0` for a Unit or an Aircraft, the locomotor's
-    /// `Stop_Moving` ([`Self::locomotor_stop_moving`]), and Infantry's
-    /// `0x0051DAF0` ([`Self::infantry_stop_driver`]). `TechnoClass::Stun @
-    /// 0x006FCD40` follows: Assign_Target(NULL), a second NULL destination
-    /// (`0x006FCD55`), RADIO OVER_OUT to every contact (`+0x280(3)`),
-    /// SpawnManager Kill_All_Spawns `0x006B7100` and ClearAllTargets
-    /// `0x006B7BB0`, Detach_All(1), and Deselect.
-    ///
-    /// Each accepted NULL destination reaches the locomotor's `Stop_Moving`
-    /// through Foot's null arm, so a moving Jumpjet stops up to three times.
-    /// A Jumpjet Unit's keeps a moving wreck flying to the cell under it and
-    /// lifts a descent back into the climb, so `Process`'s crash latch
-    /// engages wherever the kill found it. Unit `0x00741970` returns at once
-    /// without a NavCom (its `+0x1F8` override down), so the NavCom the
-    /// Stop_Driver's re-target writes is what the second NULL destination
-    /// clears. A Jumpjet Infantry's placement draws on the Scenario RNG each
-    /// time his moving byte is set, and his Stop_Driver's Do_Action at Health
-    /// 0 re-enters Stop_Driver once more when it accepts. Native execution:
-    /// `tools/spatial_oracle/jumpjet_infantry_crash`.
-    ///
-    /// A lifted Foot (`+0x6AD`, Magnetron-held) skips the spawn calls and
-    /// Detach_All (`0x006FCD79`). On the death path the spawn calls repeat
-    /// the Destroy's owner arm and find nothing left to kill. Detach_All(1) repeats the broadcast the killing hit's Destroy
-    /// already made (on a re-entered death arm, `0x0070202E..0x00702035`, that
-    /// was an earlier call). The walk is not repeated: every Target write
-    /// since then refused the Health-0 object (the setter through
-    /// `assign_target_commits`, including the Destroy walk's own Restores; the
-    /// scans, orders and legacy retaliation filter Health 0 themselves), so no
-    /// listener can hold it again. The Foot prelude's contact-0 OVER_OUT is
-    /// covered by the OVER_OUT to every contact. A living object's Stun (a
-    /// sinking hull, a retreating aircraft leaving the map) runs the walk.
-    /// Native execution of an Aircraft's: `tools/spatial_oracle/fly_stop`'s
-    /// Stun rows, replayed by `fly_process_tests::fly_death_stun_matches_native_rows`.
-    pub(crate) fn techno_death_stun(&mut self, stable_id: u64, context: UninitContext<'_>) {
+    /// Dispatch the virtual `Stun` slot to its native class layer. Foot
+    /// objects take `FootClass::Stun @ 0x004D5660` before the shared
+    /// `TechnoClass::Stun @ 0x006FCD40`; non-Foot Technos enter the Techno
+    /// body directly. This is shared by death, sinking, crash, lift release
+    /// and sale callers, so only the Foot override runs its driver prefix.
+    pub(crate) fn stun(&mut self, stable_id: u64, context: UninitContext<'_>) {
+        let Some(category) = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .map(|entity| entity.category())
+        else {
+            return;
+        };
+        if category.is_foot() {
+            self.foot_stun(stable_id, context);
+        } else {
+            self.techno_stun(stable_id, context);
+        }
+    }
+
+    /// `FootClass::Stun @ 0x004D5660`: Set_Destination(NULL, 1)
+    /// (`0x004D5667`), Path[0] = -1 (`0x004D5673`), Stop_Driver through
+    /// vtable `+0x500` (Unit/aircraft locomotor stop or Infantry
+    /// `0x0051DAF0`), then the base Techno stun.
+    fn foot_stun(&mut self, stable_id: u64, context: UninitContext<'_>) {
+        let Some(entity) = self.substrate.entities.get(stable_id) else {
+            return;
+        };
+        let category = entity.category();
+        debug_assert!(category.is_foot());
+        self.assign_null_destination(
+            stable_id,
+            context.rules,
+            context.registry,
+            context.effects(),
+        );
+        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+            entity.clear_live_path_head();
+        }
+        if category == EntityCategory::Infantry {
+            if let Err(cause) = self.infantry_stop_driver(
+                stable_id,
+                context.rules(),
+                context.registry,
+                context.effects(),
+            ) {
+                log::debug!("infantry {stable_id} Stun Stop_Driver: {cause}");
+            }
+        } else if let Err(cause) = self.locomotor_stop_moving(
+            stable_id,
+            context.rules,
+            context.registry,
+            context.effects(),
+        ) {
+            log::debug!("{stable_id} Stun Stop_Driver: {cause}");
+        }
+        self.techno_stun(stable_id, context);
+    }
+
+    /// `TechnoClass::Stun @ 0x006FCD40`: Assign_Target(NULL),
+    /// Set_Destination(NULL, 1), RADIO OVER_OUT (code 3) to every contact,
+    /// then its Foot-class gate. Techno ctor `0x006F2B40` ORs AbstractFlags
+    /// bit 0 at `0x006F3228`; Foot ctor `0x004D31E0` ORs bit 2 (`4`) at
+    /// `0x004D34DA`, so the native `+0x14 & 4` test identifies Foot, not an
+    /// active-state predicate. Only a Foot with `+0x6AD == 0` runs
+    /// Kill_All_Spawns (`0x006B7100`), ClearAllTargets (`0x006B7BB0`) and
+    /// Detach_All(1); Deselect follows on every class. Foot's constructor
+    /// clears `+0x6AD` at `0x004D3414`; ImbueLocomotor sets the lift latch at
+    /// `0x00710352`, and the Jumpjet landing paths clear it.
+    fn techno_stun(&mut self, stable_id: u64, context: UninitContext<'_>) {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };
@@ -4546,37 +4578,6 @@ impl Simulation {
             && entity.locomotor.as_ref().is_some_and(|locomotor| {
                 locomotor.active_kind() == crate::rules::locomotor_type::LocomotorKind::Walk
             });
-        if matches!(
-            category,
-            EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-        ) {
-            self.assign_null_destination(
-                stable_id,
-                context.rules,
-                context.registry,
-                context.effects(),
-            );
-            if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-                entity.clear_live_path_head();
-            }
-            if category == EntityCategory::Infantry {
-                if let Err(cause) = self.infantry_stop_driver(
-                    stable_id,
-                    context.rules(),
-                    context.registry,
-                    context.effects(),
-                ) {
-                    log::debug!("infantry {stable_id} Stun Stop_Driver: {cause}");
-                }
-            } else if let Err(cause) = self.locomotor_stop_moving(
-                stable_id,
-                context.rules,
-                context.registry,
-                context.effects(),
-            ) {
-                log::debug!("{stable_id} Stun Stop_Driver: {cause}");
-            }
-        }
         if walking_infantry {
             let _ = self.assign_target_represented(
                 stable_id,
@@ -4598,43 +4599,23 @@ impl Simulation {
             return;
         }
         crate::sim::radio::broadcast_break(self, stable_id, context.rules(), context.effects());
-        // `0x006FCD6B..0x006FCD79`: a lifted Foot keeps its spawns, its spawns'
-        // targets and its listeners.
-        let lifted = self
+        // `0x006FCD6B..0x006FCD79`: a lifted Foot keeps its spawns, their
+        // targets and its listeners. The `+0x14 & 4` test guards the whole
+        // block before the Foot-only `+0x6AD` read.
+        let foot_lifted = self
             .substrate
             .entities
             .get(stable_id)
-            .is_some_and(|entity| {
-                matches!(
-                    entity.category(),
-                    EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-                ) && entity.lift.swap_active()
-            });
-        if lifted {
-            if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-                entity.selection.deselect();
-            }
-            return;
-        }
-        crate::sim::spawn_manager::kill_all_spawns_with_context(self, stable_id, context);
-        crate::sim::spawn_manager::clear_all_spawn_targets(
-            self,
-            stable_id,
-            context.rules(),
-            context.registry(),
-            context.effects(),
-        );
-        // A living object's Stun cannot use the Health-0 elision above: its
-        // Techno6FCD9B Detach_All(1) runs, and self and other pointer-expiry
-        // callbacks observe the live object. Unit737E58 repeats Stun after
-        // restoring Health 1/+3CD, warp sinking stuns a living hull, and a
-        // retreating aircraft leaving the map is stunned alive (Fly 4CD5D7).
-        if self
-            .substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| entity.health.current() != 0)
-        {
+            .is_some_and(|entity| entity.category().is_foot() && entity.lift.swap_active());
+        if category.is_foot() && !foot_lifted {
+            crate::sim::spawn_manager::kill_all_spawns_with_context(self, stable_id, context);
+            crate::sim::spawn_manager::clear_all_spawn_targets(
+                self,
+                stable_id,
+                context.rules(),
+                context.registry(),
+                context.effects(),
+            );
             self.detach_all(stable_id, true, context);
         }
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
@@ -4683,6 +4664,9 @@ impl Simulation {
     /// VERA-only: feeds the expiry-listener index (`ExpiryListeners`) so the
     /// `0x007258D0` broadcast skips entities; the listener's fields are the truth.
     pub(super) fn entity_expiry_holds(listener: &GameEntity, mut name: impl FnMut(u64)) -> bool {
+        if let Some(anim) = listener.parachute_animation() {
+            name(anim);
+        }
         if let Some(anim) = listener.emp_sparkle() {
             name(anim);
         }
@@ -5095,6 +5079,19 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
+        // ObjectClass::PointerExpired5F5268 clears +88 regardless of control.
+        if self
+            .substrate
+            .entities
+            .get(listener_id)
+            .is_some_and(|listener| listener.parachute_animation() == Some(expired_id))
+        {
+            self.substrate
+                .entities
+                .get_mut(listener_id)
+                .unwrap()
+                .parachute_animation_expired(expired_id);
+        }
         let Some(listener) = self.substrate.entities.get(listener_id) else {
             return;
         };
@@ -5595,6 +5592,8 @@ impl Simulation {
             .entities_reached_by(&mut self.substrate.entities, expired_id);
         for owner in holders {
             if let Some(entity) = self.substrate.entities.get_mut(owner) {
+                // Techno's Anim callback710455 reaches Object5F6DA0.
+                entity.parachute_animation_expired(expired_id);
                 entity.emp_anim_pointer_expired(expired_id);
                 #[cfg(feature = "ares")]
                 entity.attached_effect_anim_expired(expired_id);

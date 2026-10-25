@@ -189,7 +189,7 @@ impl PreparedNetworkStartup {
     }
 }
 
-/// Explicit settings supplied by an external campaign launcher.
+/// Explicit campaign settings, from a client or the process speed-control flag.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CampaignLaunchOptions {
     pub game_speed: i32,
@@ -199,6 +199,17 @@ pub struct CampaignLaunchOptions {
 }
 
 impl CampaignLaunchOptions {
+    /// Main_Tick55D767..55D796 skips the ordinary speed2 store when the
+    /// Parse_Command_Line52F94B flag is set. Reuse the existing launch path;
+    /// ScenarioSession remains the only live game-speed owner.
+    pub(crate) fn for_speed_control(enabled: bool, game_speed: i32) -> Option<Self> {
+        enabled.then(|| Self {
+            game_speed,
+            build_off_ally: crate::sim::game_options::GameOptions::default().build_off_ally,
+            scenario_directory: None,
+        })
+    }
+
     fn loose_scenario_file(&self, scenario: &str) -> Option<String> {
         let path = self.scenario_directory.as_ref()?.join(scenario);
         path.is_file().then(|| path.to_string_lossy().into_owned())
@@ -1034,6 +1045,45 @@ mod tests {
         assert_eq!(next.mission_counter(), 4);
         assert!(next.plays_action_movie());
         assert_eq!(clock.reads, 2, "only the two fresh starts sample a seed");
+    }
+
+    #[test]
+    fn speed_control_campaign_preserves_uncapped_speed_through_start_and_restart() {
+        use crate::app::frontend::startup_options::consume_retail_switches;
+        let ini = crate::rules::ini_parser::IniFile::from_str(
+            "[Battles]\n0=ALL1\n[ALL1]\nCD=2\nScenario=ALL01UMD.MAP\n",
+        );
+        let mut campaigns = crate::rules::campaigns::CampaignRegistry::default();
+        campaigns.apply_ini(&ini, &crate::rules::movies::MovieRegistry::default());
+        let (ordinary, _) = consume_retail_switches(Vec::new());
+        assert!(
+            CampaignLaunchOptions::for_speed_control(ordinary.campaign_speed_control, 0).is_none()
+        );
+        let (enabled, rest) = consume_retail_switches(vec!["-speedcontrol".into()]);
+        assert!(rest.is_empty());
+        let mut clock = CountingClock {
+            value: 731,
+            reads: 0,
+        };
+        let startup = prepare_campaign_startup(
+            &campaigns,
+            "ALL1",
+            1,
+            None,
+            CampaignLaunchOptions::for_speed_control(enabled.campaign_speed_control, 0),
+            &mut clock,
+        )
+        .unwrap();
+        let options = startup.game_options().unwrap();
+        assert_eq!(options.game_speed, 0);
+        assert_eq!(
+            options.build_off_ally,
+            crate::sim::game_options::GameOptions::default().build_off_ally
+        );
+        let restart = startup.restart(1, 4, &mut clock);
+        assert_eq!(restart.game_options().unwrap().game_speed, 4);
+        assert_eq!(restart.scenario(), startup.scenario());
+        assert_eq!(restart.campaign_index(), startup.campaign_index());
     }
 
     #[test]

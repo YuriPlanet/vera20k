@@ -18,7 +18,7 @@
 use crate::map::entities::EntityCategory;
 use crate::sim::ammo::TechnoAmmo;
 use crate::sim::animation::Animation;
-use crate::sim::cloak_disguise::{CloakRuntime, DisguiseRuntime};
+use crate::sim::cloak_disguise::{CloakRuntime, DisguiseRuntime, StealthAbility};
 use crate::sim::combat::base_defense_response::BaseDefenseResponseState;
 use crate::sim::combat::{Health, TarCom};
 use crate::sim::components::{NavigationState, Position};
@@ -107,6 +107,13 @@ pub struct GameEntity {
     /// this displacement through70BE50; no simulation/RNG/timer consumer.
     /// Retain the raw datum, not a renderer-owned reconstructed animation.
     native_cloak_displacement: crate::util::native_x87::NativeF32Bits,
+    /// Techno+3D0: TechnoClass::Constructor `0x006F2B40` clears it at
+    /// `0x006F2F3D`; UnitClass::Mission_Harvest `0x0073E5E0` sets/clears it at
+    /// `0x0073E8FA`/`0x0073E925`, and the repair depot reads it at
+    /// `0x0044C4BC`. This belongs to common Techno state, not the optional
+    /// `Miner`, because owner changes retain it and the depot consumes it.
+    #[serde(default)]
+    useless: bool,
     /// Techno+300: constructor6F2EA4 initializes zero. Factory StartProduction
     /// 4C9DED retains its owner's Cost_Of quote; Grand_Opening446AF2 consumes
     /// it independently of remaining debt and later House discounts (gamemd).
@@ -585,6 +592,9 @@ pub struct GameEntity {
     /// object.
     #[serde(default)]
     pub cloak: Option<CloakRuntime>,
+    /// Instance stealth grant; sim::cloak_disguise owns its mutations.
+    #[serde(default)]
+    pub(crate) stealth_ability: StealthAbility,
     /// Last sensor coverage actually deposited into CellClass counters.
     /// Removal must use these cached owner/location/radius values after the
     /// entity's current facts have changed.
@@ -1682,6 +1692,17 @@ impl GameEntity {
             .is_some_and(|miner| miner.kind() != crate::sim::miner::MinerKind::Slave)
     }
 
+    /// The native Techno+3D0 useless latch read by Repair depots.
+    pub(crate) const fn is_useless(&self) -> bool {
+        self.useless
+    }
+
+    /// `Mission_Harvest`'s two writes to Techno+3D0 (`0x0073E8FA`,
+    /// `0x0073E925`). Other systems only read this shared Techno state.
+    pub(crate) fn set_useless(&mut self, useless: bool) {
+        self.useless = useless;
+    }
+
     /// The committed mission read at TechnoAI6FA697, before its class's
     /// subsequent Ready/Commence checkpoint. Clearing a target or destination
     /// does not change this selector; only the mission owner can commence a
@@ -1732,6 +1753,7 @@ impl GameEntity {
             stable_id,
             native_unique_id,
             native_cloak_displacement: crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO,
+            useless: false,
             production_start_price: 0,
             emp: Default::default(),
             #[cfg(feature = "ares")]
@@ -1835,6 +1857,7 @@ impl GameEntity {
             slave: Default::default(),
             mega_mission: Default::default(),
             cloak: None,
+            stealth_ability: StealthAbility::default(),
             sensor_deposit: None,
             disguise: Some(DisguiseRuntime::new(construction_frame)),
             low_bridge_tube_state: None,
@@ -1994,6 +2017,18 @@ impl GameEntity {
 
     pub(crate) fn is_parachuted(&self) -> bool {
         self.fall.parachuted()
+    }
+
+    pub(crate) fn parachute_animation(&self) -> Option<u64> {
+        self.fall.parachute_animation()
+    }
+
+    pub(crate) fn set_parachute_animation(&mut self, animation: Option<u64>) {
+        self.fall.set_parachute_animation(animation);
+    }
+
+    pub(crate) fn parachute_animation_expired(&mut self, animation: u64) {
+        self.fall.parachute_animation_expired(animation);
     }
 
     /// Paradrop5F5940 raises +84/+8D and resets +2C before placement.

@@ -1471,6 +1471,10 @@ pub struct ObjectType {
     /// Nullifies damage from an exact same-type, same-owner source object.
     pub type_immune: bool,
     emp: Option<crate::rules::ares_emp::EmpTypeRules>,
+    #[cfg(feature = "ares")]
+    self_attach_effect: Option<crate::rules::ares_warhead::AttachEffectRules>,
+    #[cfg(feature = "ares")]
+    cloak_allowed: bool,
     /// Psychedelic/mind-control immunity. Buildings default true natively.
     pub immune_to_psionics: bool,
     /// `Warpable=` (`TechnoTypeClass+0xD3A`, ReadINI `0x00714F65..0x00714F79`;
@@ -2362,8 +2366,42 @@ impl ObjectType {
     pub(crate) fn emp_rules(&self) -> Option<&crate::rules::ares_emp::EmpTypeRules> {
         self.emp.as_ref()
     }
-    pub(crate) fn bind_emp_rules(&mut self, rules: Option<&crate::rules::ares_emp::EmpTypeRules>) {
-        self.emp = rules.cloned();
+    pub(crate) fn self_attach_effect(
+        &self,
+    ) -> Option<&crate::rules::ares_warhead::AttachEffectRules> {
+        #[cfg(feature = "ares")]
+        {
+            self.self_attach_effect.as_ref()
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            None
+        }
+    }
+    pub(crate) fn cloak_allowed(&self) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            self.cloak_allowed
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            true
+        }
+    }
+    pub(crate) fn bind_ares_techno_rules(
+        &mut self,
+        emp: Option<&crate::rules::ares_emp::EmpTypeRules>,
+        attachment: Option<&crate::rules::ares_warhead::AttachEffectRules>,
+        cloak_allowed: bool,
+    ) {
+        self.emp = emp.cloned();
+        #[cfg(feature = "ares")]
+        {
+            self.self_attach_effect = attachment.cloned();
+            self.cloak_allowed = cloak_allowed;
+        }
+        #[cfg(not(feature = "ares"))]
+        let _ = (attachment, cloak_allowed);
     }
 
     /// Retained TechnoType+C9E; building crew admission reads this input
@@ -3734,6 +3772,10 @@ impl ObjectType {
             immune: section.read_bool("Immune", false),
             type_immune: section.read_bool("TypeImmune", false),
             emp: None,
+            #[cfg(feature = "ares")]
+            self_attach_effect: None,
+            #[cfg(feature = "ares")]
+            cloak_allowed: true,
             immune_to_psionics: section
                 .read_bool("ImmuneToPsionics", category == ObjectCategory::Building),
             warpable: section.read_bool("Warpable", true),

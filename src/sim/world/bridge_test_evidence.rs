@@ -360,6 +360,30 @@ pub(super) fn load_anytown_concrete() -> HeadlessScenario {
     crate::headless_scenario::load(&retail, &map, 0).unwrap()
 }
 
+pub(super) fn load_anytown_concrete_from_path(path: &std::path::Path) -> HeadlessScenario {
+    let retail = std::path::PathBuf::from(std::env::var_os("RA2_DIR").unwrap());
+    let map = path.to_string_lossy();
+    crate::headless_scenario::load(&retail, &map, 0).unwrap()
+}
+
+pub(super) fn retail_anytown_map_bytes() -> Vec<u8> {
+    use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+
+    let retail = std::path::PathBuf::from(std::env::var_os("RA2_DIR").unwrap());
+    let assets = AssetManager::new(&retail, MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    let loaded =
+        crate::map::source::load_map_by_name_or_path_with_assets(&retail, "XMP03T4.MAP", &assets)
+            .unwrap();
+    let (length, digest) = loaded
+        .source
+        .physical_identity()
+        .expect("retail Anytown has physical map bytes");
+    crate::map::source::prepare_transfer_map_source(&loaded.source, &assets)
+        .unwrap()
+        .read(digest, length)
+        .unwrap()
+}
+
 pub(super) fn load_shrapnel() -> HeadlessScenario {
     let retail = std::path::PathBuf::from(std::env::var_os("RA2_DIR").unwrap());
     let map = std::env::var("VERA20K_SHRAPNEL_MAP").unwrap_or_else(|_| "XShrapnel.MAP".to_owned());
