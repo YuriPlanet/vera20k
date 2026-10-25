@@ -437,9 +437,10 @@ pub struct AnimTypeRuntimeConfig {
     /// point. `Simulation::visit_anim` consumes it after a due frame advance.
     pub damage: NativeF64Bits,
     /// art.ini `Warhead=`, `AnimTypeClass+0x330`, resolved by
-    /// `WarheadTypeClass::FindOrAllocate`. Bouncer-landing only — the per-frame
-    /// damage arm hard-selects `[CombatDamage] C4Warhead`/`FlameDamage2`
-    /// instead.
+    /// `WarheadTypeClass::FindOrAllocate`. Stock per-frame damage selects
+    /// `[CombatDamage] C4Warhead`/`FlameDamage2`, leaving this to Bouncer
+    /// landings. Ares AnimClass_Update_DamageDelay1000B179 also uses it for
+    /// ordinary damage, before falling back to the stock selection.
     pub warhead: Option<String>,
     /// art.ini `DamageRadius=`, `AnimTypeClass+0x334`. Bouncer-landing only.
     pub damage_radius: i32,

@@ -4,6 +4,99 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
 use crate::rules::retail_ini_fixture::{retail_assets, retail_rules_owner};
 
+#[test]
+fn ordinary_anim_damage_uses_optional_ares_warhead_and_owner() {
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=TARGET\n\
+         [TARGET]\nStrength=1000\nArmor=light\n[Animations]\n0=PULSE\n\
+         [CombatDamage]\nFlameDamage2=FALLBACK\n[Warheads]\n0=FALLBACK\n1=CUSTOM\n\
+         [FALLBACK]\nCellSpread=.3\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [CUSTOM]\nCellSpread=.3\n\
+         Verses=0%,0%,0%,0%,0%,0%,0%,0%,0%,0%,0%\n",
+    );
+    let art = IniFile::from_str("[PULSE]\nRate=900\nEnd=4\nDamage=10\nWarhead=CUSTOM\n");
+    let processed = crate::rules::native_processing::RulesLayerStack::new(ini)
+        .process_with_fixed_art(&art)
+        .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let mut registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
+    registry.bind_anim_frame_count_for_test("PULSE", 4);
+    rules.install_art_data(registry);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let invoker = sim.interner.get("Americans").unwrap();
+    let mut targets = Vec::new();
+    for (x, explicit_owner) in [(20, true), (30, false)] {
+        let target = sim
+            .spawn_object("TARGET", "Russians", x, 20, 0, &rules)
+            .unwrap();
+        let coord = crate::sim::movement::ground_pose::position_world_coord(
+            &sim.entities().get(target).unwrap().position,
+        );
+        let world = AnimWorldCoord {
+            x: coord.x,
+            y: coord.y,
+            z: coord.z,
+        };
+        let (rx, ry, sx, sy, z) = world.to_cell_sub_z();
+        let pulse = sim.interner.intern("PULSE");
+        let anim = sim
+            .spawn_anim_at_world(
+                &rules,
+                AnimClassSpawnDescriptor::new(pulse, rx, ry, sx, sy, z),
+                world,
+            )
+            .unwrap();
+        sim.set_anim_owner_object(anim, Some(target), &rules);
+        if explicit_owner {
+            sim.substrate.set_anim_owner_house(anim, invoker);
+        }
+        targets.push(target);
+    }
+    let (_, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
+        for _ in 0..6 {
+            sim.advance_tick(&[], Some(&rules), None, Some(rules.overlay_registry()), 22);
+        }
+    });
+    assert!(
+        !visits.is_empty(),
+        "ordinary AnimAI must reach the real area receiver"
+    );
+    for target in targets {
+        let health = sim.entities().get(target).unwrap().health.current();
+        #[cfg(feature = "ares")]
+        assert_eq!(
+            health, 1000,
+            "CUSTOM has zero effectiveness, unlike FALLBACK"
+        );
+        #[cfg(not(feature = "ares"))]
+        assert!(
+            health < 1000,
+            "stock AnimAI keeps its effective FlameDamage2"
+        );
+    }
+    for visit in visits {
+        assert_eq!(
+            visit["no_source"], true,
+            "neither animation owner is an attacker"
+        );
+        #[cfg(feature = "ares")]
+        {
+            assert_eq!(visit["warhead"], "CUSTOM");
+            assert_eq!(
+                visit["no_source_house"], false,
+                "explicit and attached owners both propagate"
+            );
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            assert_eq!(visit["warhead"], "FALLBACK");
+            assert_eq!(visit["no_source_house"], true);
+        }
+    }
+}
+
 struct Scene {
     sim: Simulation,
     rules: RuleSet,

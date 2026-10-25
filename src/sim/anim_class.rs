@@ -2066,6 +2066,17 @@ impl Simulation {
         let terrain_owner = anim
             .owner_entity
             .is_some_and(|owner| self.terrain_objects.get(owner).is_some());
+        // Ares AnimClass_Update_DamageDelay1000B1AF..1000B1E7 passes the
+        // animation's House, falling back to an attached Techno's owner.
+        // Neither owner is an attacking object; keep RAD_NO_ATTACKER below.
+        #[cfg(feature = "ares")]
+        let source_house = anim.owner_house().or_else(|| {
+            anim.owner_entity
+                .and_then(|owner| self.substrate.entities.get(owner))
+                .map(|owner| owner.owner())
+        });
+        #[cfg(not(feature = "ares"))]
+        let source_house = None;
         let increment = if terrain_owner { damage * 5.0 } else { damage };
         let accumulated = f64::from_bits(anim.damage_accumulator.bits()) + increment;
         // Rust does not specify arithmetic NaN payloads across platforms.
@@ -2092,6 +2103,11 @@ impl Simulation {
         } else {
             rules.combat_damage.flame_damage2()
         };
+        // Ares1000B179 first reads AnimType+330 (the existing art Warhead
+        // reader); only a null pointer uses the stock INVISO/FlameDamage2
+        // fallback. Weapon= and Damage.Delay= are separate pending extensions.
+        #[cfg(feature = "ares")]
+        let warhead_name = config.warhead.as_deref().or(warhead_name);
         let Some((name, warhead)) =
             warhead_name.and_then(|name| rules.warhead(name).map(|warhead| (name, warhead)))
         else {
@@ -2108,7 +2124,11 @@ impl Simulation {
             crate::sim::projectile::ProjectileCoord::new(coord.x, coord.y, coord.z),
             whole,
             warhead,
-            (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),
+            (
+                crate::sim::combat::RAD_NO_ATTACKER,
+                source_house,
+                warhead_ref,
+            ),
             effects,
         )
     }
