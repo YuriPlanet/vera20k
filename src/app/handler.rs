@@ -337,7 +337,7 @@ impl App {
                 self.pending_initialization = Some(job);
                 event_loop.set_control_flow(ControlFlow::Poll);
             }
-            Ok(super::initialize::InitializationStep::Ready(state)) => {
+            Ok(super::initialize::InitializationStep::Ready(state, events)) => {
                 let mut state = *state;
                 // Resizes may have arrived while startup owned the renderer.
                 Self::follow_window_size(&mut state);
@@ -377,8 +377,14 @@ impl App {
                 }
                 // Clip the cursor to the window on first launch (
                 // default). A focus regain re-applies it if the OS dropped it.
-                crate::app::input::cursor::apply_cursor_confinement(&state);
+                let window_id = state.platform.window.id();
                 self.state = Some(state);
+                for event in events {
+                    self.window_event(event_loop, window_id, event);
+                }
+                if let Some(state) = self.state.as_ref() {
+                    crate::app::input::cursor::apply_cursor_confinement(state);
+                }
                 log::info!("Initialization complete");
             }
             Err(err) => {
@@ -441,10 +447,24 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        if let Some(job) = &self.pending_initialization {
-            if job.window_id() == _id && matches!(event, WindowEvent::CloseRequested) {
-                self.pending_initialization = None;
-                event_loop.exit();
+        if let Some(job) = &mut self.pending_initialization {
+            if job.window_id() == _id {
+                if matches!(event, WindowEvent::CloseRequested) {
+                    self.pending_initialization = None;
+                    event_loop.exit();
+                } else if matches!(
+                    &event,
+                    WindowEvent::Focused(_)
+                        | WindowEvent::Occluded(_)
+                        | WindowEvent::Resized(_)
+                        | WindowEvent::CursorEntered { .. }
+                        | WindowEvent::CursorLeft { .. }
+                        | WindowEvent::CursorMoved { .. }
+                ) {
+                    // The normal platform/input owners receive these edges
+                    // once the state exists. No startup-only focus authority.
+                    job.defer_window_event(event);
+                }
             }
             return;
         }

@@ -20,12 +20,13 @@ use crate::map::scenario_sources;
 /// window/GPU or process authority is lent to a worker or duplicated.
 pub(super) enum InitializationStep {
     Pending(InitializationJob),
-    Ready(Box<AppState>),
+    Ready(Box<AppState>, Vec<winit::event::WindowEvent>),
 }
 
 pub(super) struct InitializationJob {
     window: Arc<Window>,
     resume: Box<dyn FnOnce() -> Result<InitializationStep>>,
+    deferred_window_events: Vec<winit::event::WindowEvent>,
 }
 
 impl InitializationStep {
@@ -47,16 +48,32 @@ impl InitializationStep {
         Ok(Self::Pending(InitializationJob {
             window,
             resume: Box::new(resume),
+            deferred_window_events: Vec::new(),
         }))
     }
 }
 
 impl InitializationJob {
+    pub(super) fn defer_window_event(&mut self, event: winit::event::WindowEvent) {
+        self.deferred_window_events.push(event);
+    }
+
     pub(super) fn window_id(&self) -> winit::window::WindowId {
         self.window.id()
     }
     pub(super) fn advance(self) -> Result<InitializationStep> {
-        (self.resume)()
+        let step = (self.resume)()?;
+        Ok(match step {
+            InitializationStep::Pending(mut next) => {
+                next.deferred_window_events = self.deferred_window_events;
+                InitializationStep::Pending(next)
+            }
+            InitializationStep::Ready(state, mut events) => {
+                let mut deferred = self.deferred_window_events;
+                deferred.append(&mut events);
+                InitializationStep::Ready(state, deferred)
+            }
+        })
     }
 }
 
@@ -1005,7 +1022,7 @@ impl App {
                     crate::app::loading::pump::begin_loading(&mut state, request);
                 }
 
-                Ok(InitializationStep::Ready(Box::new(state)))
+                Ok(InitializationStep::Ready(Box::new(state), Vec::new()))
             })
         })
     }
