@@ -405,6 +405,12 @@ impl App {
 }
 
 impl ApplicationHandler for App {
+    fn new_events(&mut self, _event_loop: &ActiveEventLoop, _cause: winit::event::StartCause) {
+        if let Some(job) = self.pending_initialization.as_mut() {
+            job.admit_event_loop_turn();
+        }
+    }
+
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.state.is_some() || self.pending_initialization.is_some() {
             return;
@@ -1649,6 +1655,17 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // `resumed` and `about_to_wait` may share the first event-loop turn.
+        // A newly created continuation must wait for new_events, otherwise
+        // its work is joined to the preceding slice without servicing input.
+        if self
+            .pending_initialization
+            .as_ref()
+            .is_some_and(|job| !job.may_resume())
+        {
+            event_loop.set_control_flow(ControlFlow::Poll);
+            return;
+        }
         if let Some(job) = self.pending_initialization.take() {
             self.accept_initialization_step(event_loop, job.advance());
             // One completed startup slice per event-loop pass, including the

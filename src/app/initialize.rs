@@ -27,6 +27,7 @@ pub(super) struct InitializationJob {
     window: Arc<Window>,
     resume: Box<dyn FnOnce() -> Result<InitializationStep>>,
     deferred_window_events: Vec<winit::event::WindowEvent>,
+    resume_admitted: bool,
 }
 
 impl InitializationStep {
@@ -49,11 +50,20 @@ impl InitializationStep {
             window,
             resume: Box::new(resume),
             deferred_window_events: Vec::new(),
+            resume_admitted: false,
         }))
     }
 }
 
 impl InitializationJob {
+    pub(super) fn admit_event_loop_turn(&mut self) {
+        self.resume_admitted = true;
+    }
+
+    pub(super) fn may_resume(&self) -> bool {
+        self.resume_admitted
+    }
+
     pub(super) fn defer_window_event(&mut self, event: winit::event::WindowEvent) {
         self.deferred_window_events.push(event);
     }
