@@ -137,6 +137,9 @@ impl AttachEffectRules {
     pub(crate) fn discard_on_entry(&self) -> bool {
         self.discard_on_entry
     }
+    pub(crate) fn force_decloak(&self) -> bool {
+        self.force_decloak
+    }
     pub(crate) fn penetrates_iron_curtain(&self) -> bool {
         self.penetrates_iron_curtain
     }
@@ -147,12 +150,11 @@ impl AttachEffectRules {
         self.firepower
     }
     /// Ground WH effects support ordered speed and firepower aggregates. Other
-    /// stat/decloak/Temporal/self-effect consumers remain separate mechanisms.
+    /// stat/cloakability/Temporal/self-effect consumers remain separate mechanisms.
     pub(crate) fn visual_combat_path(&self) -> bool {
         self.armor == NativeF64Bits::ONE
             && self.rof == NativeF64Bits::ONE
             && !self.cloakable
-            && !self.force_decloak
             && !self.temporal_hides_anim
     }
     #[cfg(feature = "ares")]

@@ -152,8 +152,16 @@ RNG, rendering, constructor and Detach cascades are not native-emulated here;
 Rust integration exercises the production owners separately. No whole-mod or
 pixel-parity claim follows from these controls.
 
+`ForceDecloak` calls the existing `CloakRuntime::start_uncloaking` owner after
+new-entry animation/aggregate work or noncumulative refresh. Installed Ares
+`AttachEffectTypeClass::Attach` (`0x100586A4..0x100586C0`) calls stock
+`StartUncloaking` (`0x007036C0`) with the sound-suppression argument set.
+States 1/2 enter uncloaking; states 0/3 retain their clock and progress. Effect
+expiry does not reverse that transition. No additional cloak timer or state is
+introduced, and the feature-off reader/dispatch is unchanged.
+
 The current chain admits only identity armor/ROF multipliers,
-with Cloakable, ForceDecloak and TemporalHidesAnim disabled. Other nonneutral aggregate
+with Cloakable and TemporalHidesAnim disabled. Other nonneutral aggregate
 consumers, self-effects/Delay/InitialDelay, Temporal hide behavior and airborne
 half-distance collection remain later mechanisms, not silently visual-only
 effects. Their active callers keep the wider compatibility goal open. The
