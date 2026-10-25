@@ -2395,6 +2395,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         }
         None => 0u8.hash(hasher),
     }
+    if let Some(anim) = entity.parachute_animation() {
+        b"parachute-animation-v1".hash(hasher);
+        anim.hash(hasher);
+    }
     // Preserve the idle hash while retaining every nonzero fall word.
     // Landing retains the rate/+84/+8F for a later DropAsBomb.
     if entity.is_falling_down()

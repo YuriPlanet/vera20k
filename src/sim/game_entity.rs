@@ -2000,6 +2000,18 @@ impl GameEntity {
         self.fall.parachuted()
     }
 
+    pub(crate) fn parachute_animation(&self) -> Option<u64> {
+        self.fall.parachute_animation()
+    }
+
+    pub(crate) fn set_parachute_animation(&mut self, animation: Option<u64>) {
+        self.fall.set_parachute_animation(animation);
+    }
+
+    pub(crate) fn parachute_animation_expired(&mut self, animation: u64) {
+        self.fall.parachute_animation_expired(animation);
+    }
+
     /// Paradrop5F5940 raises +84/+8D and resets +2C before placement.
     pub(crate) fn begin_parachute_fall(&mut self, z: i32) {
         self.position.put_z(z);

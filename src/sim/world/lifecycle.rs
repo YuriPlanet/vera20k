@@ -4683,6 +4683,9 @@ impl Simulation {
     /// VERA-only: feeds the expiry-listener index (`ExpiryListeners`) so the
     /// `0x007258D0` broadcast skips entities; the listener's fields are the truth.
     pub(super) fn entity_expiry_holds(listener: &GameEntity, mut name: impl FnMut(u64)) -> bool {
+        if let Some(anim) = listener.parachute_animation() {
+            name(anim);
+        }
         if let Some(anim) = listener.emp_sparkle() {
             name(anim);
         }
@@ -5095,6 +5098,19 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
+        // ObjectClass::PointerExpired5F5268 clears +88 regardless of control.
+        if self
+            .substrate
+            .entities
+            .get(listener_id)
+            .is_some_and(|listener| listener.parachute_animation() == Some(expired_id))
+        {
+            self.substrate
+                .entities
+                .get_mut(listener_id)
+                .unwrap()
+                .parachute_animation_expired(expired_id);
+        }
         let Some(listener) = self.substrate.entities.get(listener_id) else {
             return;
         };
@@ -5595,6 +5611,8 @@ impl Simulation {
             .entities_reached_by(&mut self.substrate.entities, expired_id);
         for owner in holders {
             if let Some(entity) = self.substrate.entities.get_mut(owner) {
+                // Techno's Anim callback710455 reaches Object5F6DA0.
+                entity.parachute_animation_expired(expired_id);
                 entity.emp_anim_pointer_expired(expired_id);
                 #[cfg(feature = "ares")]
                 entity.attached_effect_anim_expired(expired_id);
