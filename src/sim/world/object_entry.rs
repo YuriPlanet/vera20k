@@ -526,13 +526,24 @@ impl Simulation {
     /// up (the native argument is the `CellClass`).
     pub(crate) fn aircraft_can_enter_cell(&self, id: u64, cell: Cell) -> u8 {
         let e = self.substrate.entities.get(id).unwrap();
-        // Aircraft4196BC queries Team6EC300 before owner/mission/shroud.
-        if self.member_team_is_moving_outside_playfield(id) {
-            return 0;
-        }
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return 0;
         };
+        // AircraftClass::Can_Enter_Cell @ 0x004196B0 calls
+        // IsMovingToWaypointOutsidePlayfield @ 0x006EC300; when true, it
+        // checks the candidate retained Cell with
+        // MapClass::Is_Cell_In_Playfield_CellClass @ 0x00578540 (mode 1).
+        // Only an outside cell returns before the owner checks.
+        if self.member_team_is_moving_outside_playfield(id) {
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            if !crate::sim::cell_rect::retained_cell_is_in_playfield(
+                cell,
+                self.playfield_bounds,
+                &cells,
+            ) {
+                return 0;
+            }
+        }
         if self.session.game_mode_nonzero()
             || !e.discovery.owned_by_current_house()
             || e.is_mission_only()
@@ -1827,8 +1838,9 @@ mod tests {
             entity.locomotor =
                 Some(crate::sim::movement::locomotor::LocomotorState::from_object_type(&object, 0));
             // The answer is the one Aircraft owner's; canonical lookups
-            // reproduce the shared-dummy stamps, so a dummy cell is readable.
-            let probe = |sim: &mut Simulation| {
+            // reproduce the shared-dummy stamps, so both real and dummy cells
+            // use the production retained-cell path.
+            let probe = |sim: &Simulation, cell| {
                 aircraft_entry(
                     &EntryReadContext {
                         sim,
@@ -1837,20 +1849,20 @@ mod tests {
                         facts: None,
                     },
                     &entity,
-                    Cell::Dummy,
+                    cell,
                 )
             };
             sim.session.set_game_mode(
                 crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
             );
             assert_eq!(
-                probe(&mut sim),
+                probe(&sim, Cell::Dummy),
                 Ok(sim.aircraft_can_enter_cell(id, Cell::Dummy))
             );
             sim.session.set_game_mode(
                 crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
             );
-            assert_eq!(probe(&mut sim), Ok(0));
+            assert_eq!(probe(&sim, Cell::Dummy), Ok(0));
             let script_id = sim.intern("REPAIR_WAYPOINT_EFFECT");
             sim.team_script_vm
                 .register_script(crate::sim::team_script_vm::TeamScriptDefinition {
@@ -1868,10 +1880,46 @@ mod tests {
                 sim.session.binary_frame() as i32,
             );
             assert!(sim.member_team_is_moving_outside_playfield(id));
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .discovery
+                .set_owned_by_current_house_for_test(true);
+            sim.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
+            );
+
+            let terrain = sim.resolved_terrain.as_ref().unwrap();
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            let valid = cells.lookup((15, 15));
+            assert!(crate::sim::cell_rect::retained_cell_is_in_playfield(
+                valid,
+                sim.playfield_bounds,
+                &cells,
+            ));
+            assert!(crate::sim::vision::cell_is_shrouded(
+                &sim.fog,
+                &cells,
+                entity.owner(),
+                (15, 15),
+            ));
             assert_eq!(
-                probe(&mut sim),
+                probe(&sim, valid),
+                Ok(7),
+                "a valid shrouded cell continues after the Team outside-playfield test"
+            );
+
+            let outside = cells.lookup((0, 0));
+            assert!(!crate::sim::cell_rect::retained_cell_is_in_playfield(
+                outside,
+                sim.playfield_bounds,
+                &cells,
+            ));
+            assert_eq!(
+                probe(&sim, outside),
                 Ok(0),
-                "the shared Team waypoint receiver runs before the mode gate"
+                "only a cell outside the playfield is rejected by the Team branch"
             );
         }
     }
