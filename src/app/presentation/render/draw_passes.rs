@@ -73,6 +73,12 @@ fn draw_sidebar_surface(
     encoder: &mut wgpu::CommandEncoder,
     data: &DrawPassData<'_>,
 ) {
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    if state.touch_input_mode() {
+        crate::app::ios_sidebar_art::prepare(state);
+    }
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    let theme = crate::app::presentation::sidebar_render::current_sidebar_theme(state);
     let side_index = crate::app::presentation::sidebar_render::current_sidebar_side(state);
     let presentation = &state.match_state.match_presentation;
     let chrome = presentation
@@ -91,7 +97,24 @@ fn draw_sidebar_surface(
     let mut draw = |tex: Option<&BatchTexture>, key: &'static str| {
         draw_pooled_with_camera(&mut pass, batch, camera, pool, tex, key);
     };
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    if presentation.sidebar_layout_spec.touch_controls {
+        draw(
+            renderer
+                .ios_sidebar_art
+                .as_ref()
+                .map(|art| art.texture(theme)),
+            "ios_sidebar_background",
+        );
+    }
     draw(chrome.map(|atlas| &atlas.texture), "sidebar_chrome");
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    if presentation.sidebar_layout_spec.touch_controls {
+        draw(
+            renderer.ios_sidebar_art.as_ref().map(|art| art.glyphs()),
+            "ios_sidebar_controls",
+        );
+    }
     draw(
         presentation
             .sidebar_cameo_atlas
@@ -188,10 +211,12 @@ fn draw_sidebar_surface(
     };
     draw(cameo_overlay_tex, "sidebar_cameo_overlay");
     draw(Some(renderer.bit_font.atlas()), "sidebar_text");
-    draw(
-        presentation.radar_anim.as_ref().map(|ra| ra.texture()),
-        "radar_anim",
-    );
+    if !presentation.sidebar_layout_spec.touch_controls {
+        draw(
+            presentation.radar_anim.as_ref().map(|ra| ra.texture()),
+            "radar_anim",
+        );
+    }
     let minimap = presentation.minimap.as_ref();
     draw(minimap.map(|m| m.map_texture()), "minimap");
     draw(minimap.map(|m| m.white_texture()), "viewport_rect");
@@ -934,7 +959,14 @@ pub(super) fn dispatch_draw_passes(
     // column and the bar's to the strip left of it, scaled by the Sidebar
     // size. The copies scissor themselves.
     if let Some(surface) = state.renderer.sidebar_surface.as_ref() {
-        surface.composite(&mut pass);
+        surface.composite(
+            &mut pass,
+            !state
+                .match_state
+                .match_presentation
+                .sidebar_layout_spec
+                .touch_controls,
+        );
     }
     pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
     // The message rows' black boxes: native rows render through the shared
@@ -1280,7 +1312,7 @@ mod tests {
         let outcome_text = source_offset("\"outcome_text\"");
         let chrono_capture = source_offset(".draw_tactical(");
         let screen_fixed = source_offset("// --- Screen-fixed UI:");
-        let sidebar_blit = source_offset("surface.composite(&mut pass)");
+        let sidebar_blit = source_offset("surface.composite(");
         let full_window_scissor = source_offset(
             "pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());",
         );
@@ -1391,7 +1423,7 @@ mod tests {
         let surface_pass = source_offset("draw_sidebar_surface(state, encoder, data);");
         let frame_pass = source_offset("let mut pass = begin_main_pass(");
         let timer_text = source_offset("\"super_timer_text\"");
-        let blit = source_offset("surface.composite(&mut pass)");
+        let blit = source_offset("surface.composite(");
         let message = source_offset("\"message_text\"");
 
         assert!(surface_pass < frame_pass);

@@ -11,7 +11,6 @@ use winit::dpi::PhysicalSize;
 use winit::event::{MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
-use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use winit::window::{Window, WindowAttributes, WindowId};
 
 use crate::app::match_runtime::sim_tick;
@@ -52,6 +51,25 @@ mod handler;
 mod in_game;
 mod initialize;
 pub(crate) mod input;
+#[cfg(any(target_os = "ios", target_os = "android", test))]
+#[cfg_attr(not(any(target_os = "ios", target_os = "android")), allow(dead_code))]
+mod ios_battle_touch;
+#[cfg(any(target_os = "ios", target_os = "android", test))]
+#[cfg_attr(not(any(target_os = "ios", target_os = "android")), allow(dead_code))]
+mod ios_controls;
+#[cfg(any(target_os = "ios", target_os = "android"))]
+mod ios_hud_render;
+#[cfg(any(target_os = "ios", test))]
+pub mod ios_runtime;
+#[cfg(any(target_os = "ios", target_os = "android", test))]
+#[cfg_attr(not(any(target_os = "ios", target_os = "android")), allow(dead_code))]
+mod ios_shortcuts;
+#[cfg(any(target_os = "ios", target_os = "android"))]
+mod ios_sidebar_art;
+#[cfg(any(target_os = "ios", target_os = "android", test))]
+mod ios_touch;
+#[cfg(any(target_os = "ios", target_os = "android"))]
+mod ios_unit_tags;
 pub(crate) mod lan_service;
 pub(crate) mod loading;
 pub(crate) mod match_audio;
@@ -124,7 +142,10 @@ pub(crate) use state::{AppState, PlatformState, reset_scenario_exit_runtime};
 
 /// Top-level application. Implements winit's ApplicationHandler.
 pub struct App {
-    state: Option<AppState>,
+    // UIKit's main thread has about 1 MiB of stack. Keep the large state and
+    // its transfer through initialize/resumed on the heap; storing it inline
+    // exhausted that stack before the first menu could finish loading.
+    state: Option<Box<AppState>>,
     shell_capture: Option<crate::app::diagnostics::shell_capture::ShellCaptureSession>,
     tactical_capture:
         Option<crate::app::diagnostics::tactical_capture::session::TacticalCaptureSession>,
@@ -136,6 +157,10 @@ pub struct App {
     spawn_request: Option<crate::app::frontend::cncnet_spawn::SpawnRequest>,
     replay_request: Option<crate::app::frontend::launch::ReplayLaunchRequest>,
     startup_failure: Option<String>,
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    ios_touch: ios_touch::IosTouchPointer,
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    ios_suspended: bool,
     /// Make sure config.toml names a game folder before the window opens
     /// ([`app_bundle`]).
     ask_for_game_folder: bool,
@@ -191,6 +216,10 @@ impl App {
             spawn_request: None,
             replay_request: None,
             startup_failure: None,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            ios_touch: Default::default(),
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            ios_suspended: false,
             ask_for_game_folder: false,
             dispatching_touch: false,
         }
@@ -210,6 +239,10 @@ impl App {
             spawn_request: None,
             replay_request: None,
             startup_failure: None,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            ios_touch: Default::default(),
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            ios_suspended: false,
             ask_for_game_folder: false,
             dispatching_touch: false,
         }
@@ -231,6 +264,10 @@ impl App {
             spawn_request: None,
             replay_request: None,
             startup_failure: None,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            ios_touch: Default::default(),
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            ios_suspended: false,
             ask_for_game_folder: false,
             dispatching_touch: false,
         }
@@ -269,6 +306,31 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_event_loop_owner_fits_mobile_stack_budget() {
+        assert!(
+            std::mem::size_of::<App>() < 16 * 1024,
+            "the event-loop owner must leave UIKit's main-thread stack for loading"
+        );
+    }
+
+    #[test]
+    fn app_constructs_on_a_half_megabyte_stack() {
+        let startup = crate::app::frontend::startup_options::RetailStartupOptions::default();
+        std::thread::Builder::new()
+            .name("app-small-stack".into())
+            .stack_size(512 * 1024)
+            .spawn(move || {
+                let app = std::hint::black_box(App::new(startup));
+                assert_eq!(app.startup_options, startup);
+                assert!(app.state.is_none());
+                drop(app);
+            })
+            .expect("create small-stack construction thread")
+            .join()
+            .expect("construct app without overflowing the mobile stack");
+    }
 
     #[test]
     fn gsi_01_01_noaudio_suppresses_music_and_sfx_output() {

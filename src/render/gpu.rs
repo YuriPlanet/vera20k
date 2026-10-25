@@ -28,7 +28,12 @@ use winit::window::Window;
 /// many pre-rendered sprites fit. 16384 is what current desktop GPUs offer; asking for
 /// more would fail on hardware that could otherwise run the game, and the request is
 /// clamped to the adapter's own maximum anyway.
+#[cfg(not(target_os = "ios"))]
 pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 16_384;
+// Retail sidebar sheets need more than 4096 rows. Keep them valid
+// while avoiding 16384-square atlas allocations on the phone's shared memory.
+#[cfg(target_os = "ios")]
+pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 8_192;
 
 /// One production frame, backed by either the window or its hidden capture target.
 pub struct GpuFrame {
@@ -124,9 +129,12 @@ pub struct GpuContext {
     /// The GPU surface we render to (tied to the window).
     // Loading progress shares the GPU context with asset uploads. Only this
     // owner locks the surface, briefly, to acquire or replace a lost swapchain.
-    surface: Mutex<wgpu::Surface<'static>>,
+    // Android temporarily releases it while its SurfaceView is suspended.
+    surface: Mutex<Option<wgpu::Surface<'static>>>,
     instance: wgpu::Instance,
     window: Arc<Window>,
+    #[cfg(target_os = "android")]
+    adapter: wgpu::Adapter,
     /// The logical GPU device — used to create buffers, textures, pipelines.
     pub device: wgpu::Device,
     /// The command queue — used to submit render commands to the GPU.
@@ -297,9 +305,11 @@ impl GpuContext {
         );
 
         Ok(Self {
-            surface: Mutex::new(surface),
+            surface: Mutex::new(Some(surface)),
             instance,
             window,
+            #[cfg(target_os = "android")]
+            adapter,
             device,
             queue,
             config,
@@ -324,14 +334,61 @@ impl GpuContext {
         }
         self.config.width = width;
         self.config.height = height;
-        self.surface
+        if let Some(surface) = self
+            .surface
             .get_mut()
             .unwrap_or_else(PoisonError::into_inner)
-            .configure(&self.device, &self.config);
+            .as_ref()
+        {
+            surface.configure(&self.device, &self.config);
+        }
         if let Some(target) = &mut self.capture_target {
             target.resize(&self.device, &self.config);
         }
         log::debug!("Surface resized to {}x{}", width, height);
+    }
+
+    /// Android destroys SurfaceView at Suspended; the native surface must be
+    /// released before that callback returns. GPU/game resources stay alive.
+    #[cfg(target_os = "android")]
+    pub(crate) fn suspend_surface(&mut self) {
+        *self
+            .surface
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner) = None;
+    }
+
+    #[cfg(target_os = "android")]
+    pub(crate) fn resume_surface(&mut self, window: Arc<Window>) -> Result<()> {
+        if self
+            .surface
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some()
+        {
+            return Ok(());
+        }
+        let surface = self
+            .instance
+            .create_surface(window.clone())
+            .context("recreate Android render surface")?;
+        let caps = surface.get_capabilities(&self.adapter);
+        anyhow::ensure!(
+            caps.formats.contains(&self.surface_format),
+            "resumed Android surface changed its texture format"
+        );
+        anyhow::ensure!(
+            caps.usages.contains(self.config.usage),
+            "resumed Android surface no longer supports required usages"
+        );
+        *self
+            .surface
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner) = Some(surface);
+        self.window = window.clone();
+        let size = window.inner_size();
+        self.resize(size.width, size.height);
+        Ok(())
     }
 
     /// Take the window's next frame to draw into, or `None` when there is none
@@ -345,7 +402,12 @@ impl GpuContext {
         if let Some(target) = &self.capture_target {
             return Ok(Some(target.frame()));
         }
-        let mut surface = self.surface.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut surface_guard = self.surface.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(surface) = surface_guard.as_mut() else {
+            // The retained renderer waits for Android's resumed callback to
+            // attach the replacement SurfaceView before drawing again.
+            return Ok(None);
+        };
         acquire_with_recovery(|recovery| {
             if let Some(recovery) = recovery {
                 log::warn!(

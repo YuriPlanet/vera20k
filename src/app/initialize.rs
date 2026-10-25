@@ -162,7 +162,7 @@ impl App {
         startup_options: RetailStartupOptions,
         external_launch: bool,
         replay_retail_directory: Option<&Path>,
-    ) -> Result<AppState> {
+    ) -> Result<Box<AppState>> {
         // One parsed retail profile snapshot yields two ordered products: the
         // independent frontend size selected after the early Video read, and the later
         // full-read profile retained by persistence. Capture is a sealed
@@ -262,6 +262,20 @@ impl App {
         {
             use winit::platform::macos::WindowAttributesExtMacOS;
             window_attrs = window_attrs.with_borderless_game(true);
+        }
+        #[cfg(target_os = "ios")]
+        {
+            use winit::platform::ios::{ValidOrientations, WindowAttributesExtIOS};
+            // UIKit must use the phone's screen bounds, not a desktop RA2MD
+            // screen size: winit otherwise creates an oversized UIWindow.
+            window_attrs.inner_size = None;
+            // Bound full-frame GPU scratch on 3x Retina phones. Touch positions
+            // use this same content scale through winit's physical coordinates.
+            window_attrs = window_attrs
+                .with_scale_factor(2.0)
+                .with_valid_orientations(ValidOrientations::Landscape)
+                .with_prefers_status_bar_hidden(true)
+                .with_prefers_home_indicator_hidden(true);
         }
         // Capture windows stay hidden, so only a visible session shows the icon.
         let retail_icon = game_config
@@ -648,7 +662,7 @@ impl App {
             }
             _ => crate::app::persistence::phobos_settings::PhobosClientSettings::default(),
         };
-        let mut state = AppState {
+        let mut state = Box::new(AppState {
             platform: PlatformState::new(
                 window,
                 game_config,
@@ -878,6 +892,10 @@ impl App {
             renderer: crate::app::renderer_state::RendererState {
                 gpu,
                 batch_renderer,
+                #[cfg(any(target_os = "ios", target_os = "android"))]
+                ios_hud: None,
+                #[cfg(any(target_os = "ios", target_os = "android"))]
+                ios_sidebar_art: None,
                 fps_overlay,
                 combat_light_renderer,
                 screen_presentation:
@@ -914,13 +932,15 @@ impl App {
                     }
                 },
             ),
-        };
+        });
 
         // Project all three retained profile gains before any player can start
         // an audible source. Score also initializes Theme's native +0xC gate,
         // even without a music device. The profile keeps native negative values
         // for round-trip; physical output owners provide the safe gain clamp.
         apply_startup_audio_profile(&state.persistence.options_profile, &mut state.audio);
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        crate::app::ios_controls::initialize(&mut state);
         Self::sync_zoom_pass(&mut state);
         #[cfg(feature = "telemetry-dashboard")]
         attach_dashboard(&mut state);

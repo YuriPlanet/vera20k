@@ -729,7 +729,7 @@ fn tactical_left_up(state: &mut AppState) {
 ///
 /// Display4AAD30's represented cursor rungs belong to MatchInputState.
 /// This existing selection owner handles its final UnselectAll48DC90 rung.
-fn right_click_cancel_ladder(state: &mut AppState) {
+pub(crate) fn right_click_cancel_ladder(state: &mut AppState) {
     if state
         .match_state
         .input
@@ -2168,11 +2168,24 @@ impl KeyModifiers {
 }
 
 pub(crate) fn is_shift_held(state: &AppState) -> bool {
-    state.match_state.input.hotkey_modifiers.shift_key()
+    state.match_state.input.hotkey_modifiers.shift_key() || touch_order_modifiers(state).1
 }
 
 pub(crate) fn is_ctrl_held(state: &AppState) -> bool {
-    state.match_state.input.hotkey_modifiers.control_key()
+    state.match_state.input.hotkey_modifiers.control_key() || touch_order_modifiers(state).0
+}
+
+fn touch_order_modifiers(state: &AppState) -> (bool, bool) {
+    #[cfg(any(target_os = "ios", target_os = "android", test))]
+    {
+        let controls = &state.match_state.input.ios_controls;
+        controls.order_modifiers()
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android", test)))]
+    {
+        let _ = state;
+        (false, false)
+    }
 }
 
 /// Return `true` if either Alt key is currently held.

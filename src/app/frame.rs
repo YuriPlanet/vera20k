@@ -359,6 +359,8 @@ impl App {
         // match running behind other windows instead. The gate sits at the
         // call site, not inside the runtime, so a focus edge never re-anchors
         // the frame pacer on its own.
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        crate::app::ios_controls::service(state);
         let network_frame_pending = state
             .match_state
             .sim_runtime
@@ -444,32 +446,33 @@ impl App {
     /// without mouse.sha, which the shell pages draw whenever it loaded.
     fn show_os_cursor_only_without_game_cursor(state: &mut AppState, battlefield_drawn: bool) {
         let status_screen_drawn = std::mem::take(&mut state.frontend.status_screen_drawn);
-        let visible = !state.platform.pointer_in_client
-            || if state.platform.cursor_confined {
-                // Confined: the game owns the pointer through its
-                // software cursor, so keep the OS cursor hidden everywhere the game
-                // draws one of its own — that leaves a single (software) cursor and
-                // avoids the OS arrow + game arrow flicker at the clip edge. Where
-                // the game draws *no* software cursor (the status screen, and any
-                // debug pause, since the sim is paused and `use_software_cursor`
-                // is false there), surface the OS cursor so a pointer stays
-                // visible. Do NOT gate on `battlefield_drawn`: the sim stops
-                // redrawing while paused, so the battlefield is not "drawn" yet the
-                // debug pause still needs a visible pointer.
-                status_screen_drawn || !state.use_software_cursor()
-            } else {
-                status_screen_drawn
-                    || if battlefield_drawn {
-                        !state.use_software_cursor()
-                            && state.match_state.input.cursor_visibility.is_visible()
-                    } else {
-                        state
-                            .match_state
-                            .match_presentation
-                            .software_cursor
-                            .is_none()
-                    }
-            };
+        let visible = !state.touch_input_mode()
+            && (!state.platform.pointer_in_client
+                || if state.platform.cursor_confined {
+                    // Confined: the game owns the pointer through its
+                    // software cursor, so keep the OS cursor hidden everywhere the game
+                    // draws one of its own — that leaves a single (software) cursor and
+                    // avoids the OS arrow + game arrow flicker at the clip edge. Where
+                    // the game draws *no* software cursor (the status screen, and any
+                    // debug pause, since the sim is paused and `use_software_cursor`
+                    // is false there), surface the OS cursor so a pointer stays
+                    // visible. Do NOT gate on `battlefield_drawn`: the sim stops
+                    // redrawing while paused, so the battlefield is not "drawn" yet the
+                    // debug pause still needs a visible pointer.
+                    status_screen_drawn || !state.use_software_cursor()
+                } else {
+                    status_screen_drawn
+                        || if battlefield_drawn {
+                            !state.use_software_cursor()
+                                && state.match_state.input.cursor_visibility.is_visible()
+                        } else {
+                            state
+                                .match_state
+                                .match_presentation
+                                .software_cursor
+                                .is_none()
+                        }
+                });
         // Asking winit is not free on Windows: `set_cursor_visible` runs
         // `refresh_os_cursor`, which clears any OS cursor clip winit does not own
         // itself, so repeating the same answer every frame would tear
@@ -1000,6 +1003,8 @@ impl App {
                 }
             }
         }
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        crate::app::ios_hud_render::render(state, &mut encoder, &view);
         state.renderer.fps_overlay.encode(
             &state.renderer.gpu,
             &state.renderer.batch_renderer,

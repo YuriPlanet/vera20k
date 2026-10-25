@@ -13,12 +13,70 @@
 //! Escape release (`Keyboard::Get() == 0x081B`) aborts; other keys and mouse
 //! buttons are consumed and ignored. Afterwards the screen is cleared again,
 //! paused audio resumes, and the caller's dialog is recreated.
+//!
+//! Native mobile clients have no Escape key. Holding one finger for 1.2 seconds
+//! supplies that abort action; a second contact, release or suspension cancels
+//! the hold. Desktop playback and presentation keep the original behavior.
 
 use anyhow::Result;
 
 use crate::render::batch::SpriteInstance;
 use crate::render::bink_movie::BinkMovieSurface;
 use crate::render::shell_paint::MOVIE_DEPTH;
+
+#[cfg(any(target_os = "ios", target_os = "android", test))]
+const TOUCH_SKIP_HOLD: std::time::Duration = std::time::Duration::from_millis(1200);
+
+/// Each playback owns its contacts; held input cannot cross a movie transition.
+#[cfg(any(target_os = "ios", target_os = "android", test))]
+#[derive(Default)]
+struct MovieTouchSkip {
+    contacts: Vec<(winit::event::DeviceId, u64)>,
+    holding: Option<((winit::event::DeviceId, u64), std::time::Instant)>,
+    fired: bool,
+}
+
+#[cfg(any(target_os = "ios", target_os = "android", test))]
+impl MovieTouchSkip {
+    fn cancel(&mut self) {
+        self.contacts.clear();
+        self.holding = None;
+    }
+
+    fn touch(&mut self, touch: &winit::event::Touch, now: std::time::Instant) {
+        let key = (touch.device_id, touch.id);
+        match touch.phase {
+            winit::event::TouchPhase::Started => {
+                if self.contacts.contains(&key) {
+                    return;
+                }
+                let first = self.contacts.is_empty();
+                self.contacts.push(key);
+                self.holding = (first && !self.fired).then_some((key, now));
+            }
+            winit::event::TouchPhase::Moved => {}
+            winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled => {
+                self.contacts.retain(|contact| *contact != key);
+                if self.holding.is_some_and(|(held, _)| held == key) {
+                    self.holding = None;
+                }
+            }
+        }
+    }
+
+    fn poll(&mut self, now: std::time::Instant) -> bool {
+        if self.fired
+            || !self
+                .holding
+                .is_some_and(|(_, began)| now.saturating_duration_since(began) >= TOUCH_SKIP_HOLD)
+        {
+            return false;
+        }
+        self.fired = true;
+        self.holding = None;
+        true
+    }
+}
 
 /// The continuation owned by Play_Movie's caller.
 pub(crate) enum MovieReturn {
@@ -88,6 +146,8 @@ pub(crate) fn movie_rect(screen_w: i32, screen_h: i32, movie_w: i32, movie_h: i3
 pub(crate) struct FullscreenMovie {
     playback: crate::app::movie_playback::MoviePlayback,
     return_to: MovieReturn,
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    touch_skip: MovieTouchSkip,
 }
 
 impl FullscreenMovie {
@@ -100,18 +160,30 @@ impl FullscreenMovie {
         Self {
             playback: crate::app::movie_playback::MoviePlayback::new(surface, mixer, voice_volume),
             return_to,
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            touch_skip: MovieTouchSkip::default(),
         }
     }
     pub(crate) fn into_return(self) -> MovieReturn {
         self.return_to
     }
     pub(crate) fn set_active(&mut self, active: bool) {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        if !active {
+            self.touch_skip.cancel();
+        }
         self.playback.set_active(active);
     }
     pub(crate) fn step(&mut self, gpu: &crate::render::gpu::GpuContext) -> Result<bool> {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        if self.touch_skip.poll(std::time::Instant::now()) {
+            self.abort();
+        }
         self.playback.step(gpu)
     }
     pub(crate) fn abort(&mut self) {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        self.touch_skip.cancel();
         self.playback.abort();
     }
     pub(crate) fn hold_at_frame_for_capture(
@@ -147,9 +219,80 @@ impl FullscreenMovie {
     }
 }
 
+#[cfg(any(target_os = "ios", target_os = "android"))]
+impl crate::app::App {
+    pub(crate) fn fullscreen_movie_cancel_pointer(state: &mut crate::app::AppState) {
+        if let Some(movie) = state.frontend.fullscreen_movie.as_mut() {
+            movie.touch_skip.cancel();
+        }
+    }
+
+    /// Consume movie contacts before the shell's synthetic mouse path.
+    pub(crate) fn fullscreen_movie_touch(
+        state: &mut crate::app::AppState,
+        touch: &winit::event::Touch,
+    ) -> bool {
+        if state.platform.capture_client_size.is_some() {
+            return false;
+        }
+        let Some(movie) = state.frontend.fullscreen_movie.as_mut() else {
+            return false;
+        };
+        if state.platform.window_active {
+            movie.touch_skip.touch(touch, std::time::Instant::now());
+        } else {
+            movie.touch_skip.cancel();
+        }
+        state.platform.window.request_redraw();
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn touch(id: u64, phase: winit::event::TouchPhase) -> winit::event::Touch {
+        winit::event::Touch {
+            device_id: winit::event::DeviceId::dummy(),
+            id,
+            phase,
+            location: winit::dpi::PhysicalPosition::new(40.0, 30.0),
+            force: None,
+        }
+    }
+
+    #[test]
+    fn mobile_movie_requires_a_full_single_contact_hold() {
+        use winit::event::TouchPhase::*;
+        let now = std::time::Instant::now();
+        let mut gesture = MovieTouchSkip::default();
+        gesture.touch(&touch(1, Started), now);
+        assert!(!gesture.poll(now + TOUCH_SKIP_HOLD - std::time::Duration::from_millis(1)));
+        assert!(gesture.poll(now + TOUCH_SKIP_HOLD));
+        assert!(!gesture.poll(now + std::time::Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn movie_release_second_contact_and_suspend_cancel_pending_skip() {
+        use winit::event::TouchPhase::*;
+        let now = std::time::Instant::now();
+        let late = now + std::time::Duration::from_secs(3);
+        for phase in [Ended, Cancelled] {
+            let mut gesture = MovieTouchSkip::default();
+            gesture.touch(&touch(1, Started), now);
+            gesture.touch(&touch(1, phase), now);
+            assert!(!gesture.poll(late));
+        }
+        let mut gesture = MovieTouchSkip::default();
+        gesture.touch(&touch(1, Started), now);
+        gesture.touch(&touch(2, Started), now);
+        gesture.touch(&touch(2, Ended), now);
+        assert!(!gesture.poll(late));
+        gesture.cancel();
+        gesture.touch(&touch(1, Moved), now);
+        assert!(!gesture.poll(late));
+    }
 
     #[test]
     fn origin_centers_movies_and_clamps_negative_offsets() {

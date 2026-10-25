@@ -1694,7 +1694,7 @@ Details: {details}"
         if !event.state.is_pressed() || event.repeat {
             return true;
         }
-        let unmodified = event.key_without_modifiers();
+        let unmodified = crate::app::input::keyboard::key_without_modifiers(event);
         let key = crate::app::input::hotkeys::binding_logical_key(
             &event.logical_key,
             &unmodified,

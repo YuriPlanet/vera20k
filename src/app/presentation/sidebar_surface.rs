@@ -259,11 +259,13 @@ impl SidebarSurface {
 
     /// Copy both surfaces into a frame `pass`: the sidebar into its column,
     /// the bar into the strip left of it. The scissor is left on the strip.
-    pub(crate) fn composite(&self, pass: &mut wgpu::RenderPass<'_>) {
+    pub(crate) fn composite(&self, pass: &mut wgpu::RenderPass<'_>, include_bar: bool) {
         let (x, y, width, height) = self.frame.column();
         self.column.surface.draw(pass, None, [x, y, width, height]);
-        let (x, y, width, height) = self.frame.strip();
-        self.bar.surface.draw(pass, None, [x, y, width, height]);
+        if include_bar {
+            let (x, y, width, height) = self.frame.strip();
+            self.bar.surface.draw(pass, None, [x, y, width, height]);
+        }
     }
 }
 
@@ -387,7 +389,7 @@ mod tests {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            surface.composite(&mut pass);
+            surface.composite(&mut pass, true);
         }
         let readback = crate::render::frame_readback::PendingBgra8Readback::encode(
             &gpu.device,

@@ -104,6 +104,15 @@ impl AppState {
         width: u32,
         height: u32,
     ) -> crate::ui::sidebar::SidebarFrame {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        if self.platform.capture_client_size.is_none() {
+            let window_zoom = self.tactical_zoom().map_or(1.0, |zoom| zoom.scale());
+            return crate::ui::sidebar::SidebarFrame::for_ios(
+                width,
+                height,
+                self.platform.window.scale_factor() as f32 / window_zoom,
+            );
+        }
         let percent = if self.platform.capture_client_size.is_some() {
             100
         } else {
@@ -169,6 +178,12 @@ impl AppState {
             .map_or((x, y), |zoom| zoom.source_to_window(x, y))
     }
 
+    /// Mobile platforms use direct touch targets, never a visible mouse pointer.
+    pub(crate) fn touch_input_mode(&self) -> bool {
+        cfg!(any(target_os = "ios", target_os = "android"))
+            && self.platform.capture_client_size.is_none()
+    }
+
     /// Whether the software cursor (mouse.shp) should be active this frame.
     /// Asset-independent status cards and diagnostic modals use the OS cursor,
     /// and so does the pointer once it leaves the client area: mouse.shp has no
@@ -177,7 +192,8 @@ impl AppState {
     /// the exit confirm) are shell pages that draw mouse.shp themselves, so
     /// they keep it; excluding them showed the OS arrow beside it.
     pub(crate) fn use_software_cursor(&self) -> bool {
-        self.platform.pointer_in_client
+        !self.touch_input_mode()
+            && self.platform.pointer_in_client
             && !(self.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
                 && self.frontend.main_menu_shell_error.is_some())
             && self

@@ -6,8 +6,7 @@
 use super::input::dispatch;
 use super::{
     ActiveEventLoop, App, AppState, ApplicationHandler, ControlFlow, GameScreen, Instant, KeyCode,
-    KeyEventExtModifierSupplement, MouseButton, MouseScrollDelta, PhysicalKey, PhysicalSize,
-    ShellKey, WindowEvent, WindowId,
+    MouseButton, MouseScrollDelta, PhysicalKey, PhysicalSize, ShellKey, WindowEvent, WindowId,
 };
 
 /// Active YR's launcher parent ignores IDCANCEL. Taking only an immutable
@@ -328,6 +327,35 @@ fn show_menu_bar_and_dock_after_full_screen() {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        {
+            let was_suspended = self.ios_suspended;
+            self.ios_suspended = false;
+            if let Some(state) = self.state.as_mut() {
+                #[cfg(target_os = "android")]
+                {
+                    if let Err(err) = state
+                        .renderer
+                        .gpu
+                        .resume_surface(state.platform.window.clone())
+                    {
+                        log::error!("Android surface resume failed: {err:#}");
+                        event_loop.exit();
+                        return;
+                    }
+                    let size = state.platform.window.inner_size();
+                    Self::resize_surface_for_window_size(state, size);
+                }
+                if was_suspended && state.platform.capture_client_size.is_none() {
+                    // Retain the displayed menu frame, but exclude the parked
+                    // UIKit interval from its next elapsed-time sample.
+                    state.frontend.main_menu_movie_last_step = Instant::now();
+                }
+                Self::set_window_hidden(state, false);
+                Self::set_window_active(state, true);
+                state.platform.window.request_redraw();
+            }
+        }
         if self.state.is_some() {
             return;
         }
@@ -418,6 +446,69 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        {
+            if self.ios_suspended && matches!(&event, WindowEvent::RedrawRequested) {
+                return;
+            }
+            if matches!(&event, WindowEvent::Focused(false)) {
+                self.ios_touch.reset();
+                if let Some(state) = self.state.as_mut() {
+                    crate::app::ios_controls::reset(state);
+                }
+            }
+            if self.shell_capture.is_none()
+                && self.tactical_capture.is_none()
+                && let WindowEvent::Touch(touch) = &event
+            {
+                if self.state.is_none() {
+                    self.ios_touch.reset();
+                    return;
+                }
+                if let Some(state) = self.state.as_mut() {
+                    state.match_state.input.cursor_from_touch = true;
+                    if Self::fullscreen_movie_touch(state, touch) {
+                        self.ios_touch.reset();
+                        crate::app::ios_controls::reset(state);
+                        return;
+                    }
+                    if crate::app::ios_controls::enabled(state) {
+                        self.ios_touch.reset();
+                        crate::app::ios_controls::handle_touch(state, *touch);
+                        return;
+                    }
+                    crate::app::ios_controls::reset(state);
+                }
+                let active_target = self.ios_touch.scroll_target();
+                let (region, active, scale) = {
+                    let state = self.state.as_mut().expect("touch requires app state");
+                    state.sync_cursor_space();
+                    state.set_cursor_from_window(touch.location.x as f32, touch.location.y as f32);
+                    let region = crate::app::ios_touch::ui_scroll::region_at_cursor(state);
+                    let active = active_target.is_none_or(|target| {
+                        crate::app::ios_touch::ui_scroll::is_active(state, target)
+                    });
+                    (region, active, state.platform.window.scale_factor())
+                };
+                let translated = self
+                    .ios_touch
+                    .translate_with_scroll(*touch, region, active, scale);
+                if let Some(state) = self.state.as_mut() {
+                    if translated.cancel_pointer {
+                        Self::release_in_game_pointer_state(state);
+                    }
+                    if let Some((target, rows)) = translated.scroll {
+                        crate::app::ios_touch::ui_scroll::scroll(state, target, rows);
+                    }
+                }
+                self.dispatching_touch = true;
+                for event in translated.events {
+                    self.window_event(event_loop, _id, event);
+                }
+                self.dispatching_touch = false;
+                return;
+            }
+        }
         let shell_capture_active = self.shell_capture.is_some();
         let tactical_capture_active = self.tactical_capture.is_some();
         // Set while this call re-dispatches a touch's mouse events: those carry
@@ -428,7 +519,7 @@ impl ApplicationHandler for App {
         // mouse events its gesture means; `input::touch` owns that mapping and
         // carries the per-platform gate. Capture sessions stay input-sealed:
         // a raw touch falls through and counts as a violation below.
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", target_os = "ios", target_os = "android")))]
         {
             if !shell_capture_active
                 && !tactical_capture_active
@@ -738,6 +829,8 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::Resized(size) => {
+                #[cfg(any(target_os = "ios", target_os = "android"))]
+                crate::app::ios_controls::reset(state);
                 // A zero dimension is how Windows reports a minimise — that
                 // backend never sends `Occluded` — so the hidden flag is
                 // derived here as well as from the occlusion event below.
@@ -761,6 +854,16 @@ impl ApplicationHandler for App {
                 state.match_state.input.reset_window_cursor_motion();
             }
             WindowEvent::Focused(active) => {
+                #[cfg(any(target_os = "ios", target_os = "android"))]
+                if active
+                    && !state.platform.window_active
+                    && state.platform.capture_client_size.is_none()
+                {
+                    // A focus pause can occur without a UIKit suspend event.
+                    // Only the menu clock resets; movie frames and the
+                    // independent fullscreen/campaign player are untouched.
+                    state.frontend.main_menu_movie_last_step = Instant::now();
+                }
                 state.match_state.input.reset_window_cursor_motion();
                 // The OS drops the cursor clip on alt-tab, so re-apply the
                 // player's confinement choice whenever the window returns.
@@ -768,6 +871,8 @@ impl ApplicationHandler for App {
                     crate::app::input::cursor::apply_cursor_confinement(state);
                 }
                 if !active {
+                    #[cfg(any(target_os = "ios", target_os = "android"))]
+                    Self::fullscreen_movie_cancel_pointer(state);
                     // `release_in_game_pointer_state` also drops a touch stream
                     // that ended without an `Ended`, so no phantom finger turns
                     // the next tap into a two-finger pan.
@@ -1220,7 +1325,7 @@ impl ApplicationHandler for App {
                     }
 
                     if in_game {
-                        let unmodified = event.key_without_modifiers();
+                        let unmodified = crate::app::input::keyboard::key_without_modifiers(&event);
                         crate::app::input::keyboard::in_game_key_edge(
                             state,
                             crate::app::input::keyboard::InGameKeyEdge {
@@ -1599,6 +1704,11 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        #[cfg(any(target_os = "ios", target_os = "android"))]
+        if self.ios_suspended {
+            event_loop.set_control_flow(ControlFlow::Wait);
+            return;
+        }
         let shell_scroll_wake = if let Some(state) = self.state.as_mut() {
             Self::follow_window_full_screen(state);
             // cursor lock: the OS drops the clip on focus loss /
@@ -1737,6 +1847,25 @@ impl ApplicationHandler for App {
                 state.platform.window.request_redraw();
             }
         }
+    }
+
+    #[cfg(any(target_os = "ios", target_os = "android"))]
+    fn suspended(&mut self, event_loop: &ActiveEventLoop) {
+        self.ios_suspended = true;
+        if let Some(id) = self.state.as_ref().map(|state| state.platform.window.id()) {
+            // Reuse the normal focus-loss cleanup for every shell and tactical
+            // pointer owner before parking the UIKit application's redraw loop.
+            self.window_event(event_loop, id, WindowEvent::Focused(false));
+        }
+        self.ios_touch.reset();
+        if let Some(state) = self.state.as_mut() {
+            Self::set_window_hidden(state, true);
+            #[cfg(target_os = "android")]
+            state.renderer.gpu.suspend_surface();
+        }
+        log::info!("Mobile application suspended; rendering parked");
+        log::logger().flush();
+        event_loop.set_control_flow(ControlFlow::Wait);
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {

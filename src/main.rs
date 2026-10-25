@@ -16,6 +16,8 @@ use anyhow::Result;
 use winit::event_loop::EventLoop;
 
 fn main() -> Result<()> {
+    #[cfg(target_os = "ios")]
+    vera20k::app::ios_runtime::prepare()?;
     if let Some(result) =
         vera20k::app::frontend::launch::try_replay_verify(std::env::args_os().skip(1))
     {
