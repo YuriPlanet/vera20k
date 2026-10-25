@@ -1875,7 +1875,12 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     // The flash countdown (+F0) is not folded: TechnoClass::Flash's gate and
     // the MegaMission event's flash read the current player, so lockstep
     // peers hold different values, and no gameplay decision reads it.
-    entity.crate_multipliers.armor().bits().hash(hasher);
+    entity.crate_multipliers.crate_armor().bits().hash(hasher);
+    #[cfg(feature = "ares")]
+    if entity.crate_multipliers.armor() != entity.crate_multipliers.crate_armor() {
+        b"attached-armor-v1".hash(hasher);
+        entity.crate_multipliers.armor().bits().hash(hasher);
+    }
     // Folded only once a Firepower crate changed it, so the legacy
     // hash stream of every untouched object is preserved.
     if entity.crate_multipliers.crate_firepower() != crate::util::native_x87::NativeF64Bits::ONE {

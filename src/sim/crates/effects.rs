@@ -38,11 +38,12 @@ pub(crate) enum Multiplier {
 }
 
 /// The object's crate multipliers, `Techno+0x158` (armor) and `Techno+0x160`
-/// (firepower). Under Ares, firepower retains the Ext+80 permanent baseline
-/// separately from derived Techno+160. The constructor seeds both baselines
-/// to 1.0; the Armor and Firepower arms ([`apply_multiplier_crate`]) are their only writers, and an
-/// arm skips a multiplier that is not exactly 1.0, so each changes at most
-/// once per object. The receiver's damage build reads the armor multiplier;
+/// (firepower). Under Ares, Ext+88/+80 retain permanent armor/firepower baselines
+/// separately from derived Techno+158/+160. The constructor seeds both baselines
+/// to 1.0; only the Armor and Firepower arms ([`apply_multiplier_crate`]) write
+/// these permanent baselines. Each arm skips a baseline that is not exactly 1.0.
+/// The attachment owner separately recomputes effective values. The receiver's
+/// damage build reads the armor multiplier;
 /// `FireAt`'s damage build folds in the firepower one
 /// (`0x006FE33D..0x006FE34D`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -55,6 +56,10 @@ pub(crate) struct CrateMultipliers {
     #[cfg(feature = "ares")]
     #[serde(default)]
     attached_firepower: Option<NativeF64Bits>,
+    /// Ares derived Techno+158; None retains the permanent Ext+88 baseline.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    attached_armor: Option<NativeF64Bits>,
 }
 
 fn one() -> NativeF64Bits {
@@ -69,6 +74,8 @@ impl Default for CrateMultipliers {
             firepower: NativeF64Bits::ONE,
             #[cfg(feature = "ares")]
             attached_firepower: None,
+            #[cfg(feature = "ares")]
+            attached_armor: None,
         }
     }
 }
@@ -76,7 +83,21 @@ impl Default for CrateMultipliers {
 impl CrateMultipliers {
     /// `Techno+0x158`.
     pub(crate) const fn armor(self) -> NativeF64Bits {
+        #[cfg(feature = "ares")]
+        if let Some(value) = self.attached_armor {
+            return value;
+        }
         self.armor
+    }
+
+    /// Permanent armor crate baseline (Ares Ext+88), never an AE product.
+    pub(crate) const fn crate_armor(self) -> NativeF64Bits {
+        self.armor
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_attached_armor(&mut self, value: NativeF64Bits) {
+        self.attached_armor = (value != self.armor).then_some(value);
     }
 
     /// Effective Techno+160, read by both FireAt and EstimateDamage.
@@ -102,6 +123,10 @@ impl CrateMultipliers {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_armor_multiplier_for_test(&mut self, value: NativeF64Bits) {
         self.armor = value;
+        #[cfg(feature = "ares")]
+        {
+            self.attached_armor = None;
+        }
     }
 
     /// Install a fixture's firepower multiplier.
@@ -169,13 +194,11 @@ pub(crate) fn apply_multiplier_crate(
         }
         *slot =
             X87::store_f64_masked_chop(X87::mul(X87::load_f64(magnitude), X87::load_f64(*slot)));
-        // Installed Firepower2@1005F997 writes Ext+80, then1005F99D
-        //aggregates before the recipient callback/next actor. Armor remains
-        //neutral-only in the attachment admission gate.
+        // Ares Armor2@1005F870 writes Ext+88 then calls RecalculateStats
+        // @1005F89D; Firepower2@1005F997 does the same for Ext+80. Both
+        // aggregate before the recipient callback/next actor (Ares Crates.cpp).
         #[cfg(feature = "ares")]
-        if matches!(which, Multiplier::Firepower) {
-            entity.recompute_ares_attached_stats(rules, interner);
-        }
+        entity.recompute_ares_attached_stats(rules, interner);
         let owner = entity.owner();
         if !changed_owners.contains(&owner) {
             changed_owners.push(owner);

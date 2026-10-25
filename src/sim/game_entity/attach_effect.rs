@@ -12,6 +12,10 @@ mod speed_tests;
 #[path = "attach_firepower_tests.rs"]
 mod firepower_tests;
 
+#[cfg(test)]
+#[path = "attach_armor_tests.rs"]
+mod armor_tests;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 struct AttachedEffect {
     warhead: InternedId,
@@ -35,6 +39,7 @@ impl GameEntity {
         (
             crate::util::native_x87::NativeF64Bits,
             crate::util::native_x87::NativeF64Bits,
+            crate::util::native_x87::NativeF64Bits,
         ),
         &'static str,
     > {
@@ -45,6 +50,7 @@ impl GameEntity {
         //values: rules_oracle/ares_attach_firepower and ares_attach_speed.
         let mut firepower = self.crate_multipliers.crate_firepower();
         let mut speed = X::load_f64(self.foot_speed.crate_multiplier());
+        let mut armor = self.crate_multipliers.crate_armor();
         for entry in &self.attach_effects.entries {
             let settings = interner
                 .try_resolve(entry.warhead)
@@ -55,6 +61,14 @@ impl GameEntity {
                 X::load_f64(settings.attach_effect().firepower_multiplier()),
                 X::load_f64(firepower),
             ));
+            // Ares TechnoExt::RecalculateStats @10046192..10046199:
+            // each ordered ArmorMultiplier multiplies Ext+88's aggregate,
+            // spilling binary64 before the next entry; final Techno+158
+            // is consumed by stock ReceiveDamage @701939 and EstimateDamage.
+            armor = X::store_f64_masked_chop(X::mul(
+                X::load_f64(settings.attach_effect().armor_multiplier()),
+                X::load_f64(armor),
+            ));
             if self.category().is_foot() {
                 speed = X::mul(
                     speed,
@@ -62,7 +76,7 @@ impl GameEntity {
                 );
             }
         }
-        Ok((firepower, X::store_f64_masked_chop(speed)))
+        Ok((firepower, X::store_f64_masked_chop(speed), armor))
     }
 
     /// One100460A0 projection from the canonical attachment vector. Each
@@ -72,10 +86,11 @@ impl GameEntity {
         rules: &crate::rules::ruleset::RuleSet,
         interner: &crate::sim::intern::StringInterner,
     ) {
-        let (firepower, speed) = self
+        let (firepower, speed, armor) = self
             .attached_stats_from_entries(rules, interner)
             .expect("live attachment belongs to the scenario rules");
         self.crate_multipliers.set_attached_firepower(firepower);
+        self.crate_multipliers.set_attached_armor(armor);
         if self.category().is_foot() {
             self.foot_speed.set_attached_speed(speed);
         }
@@ -415,8 +430,8 @@ mod receiver {
             if settings.duration() == 0 {
                 return;
             }
-            // Ground WH speed/firepower share the existing aggregate owner.
-            // Armor/ROF, decloak, Temporal and self-effects remain explicit
+            // Ground WH speed/firepower/armor share the existing aggregate owner.
+            // ROF, decloak, Temporal and self-effects remain explicit
             // later mechanisms; never apply a misleading visual-only substitute.
             if !settings.visual_combat_path() {
                 log::debug!(
@@ -709,6 +724,12 @@ mod receiver {
                     return Err((
                         id,
                         "saved attached speed differs from its baseline and effects",
+                    ));
+                }
+                if victim.crate_multipliers.armor() != expected.2 {
+                    return Err((
+                        id,
+                        "saved attached armor differs from its baseline and effects",
                     ));
                 }
             }

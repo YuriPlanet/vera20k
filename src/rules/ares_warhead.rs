@@ -146,11 +146,13 @@ impl AttachEffectRules {
     pub(crate) fn firepower_multiplier(&self) -> NativeF64Bits {
         self.firepower
     }
-    /// Ground WH effects support ordered speed and firepower aggregates. Other
+    pub(crate) fn armor_multiplier(&self) -> NativeF64Bits {
+        self.armor
+    }
+    /// Ground WH effects support ordered speed, firepower and armor aggregates. Other
     /// stat/decloak/Temporal/self-effect consumers remain separate mechanisms.
     pub(crate) fn visual_combat_path(&self) -> bool {
-        self.armor == NativeF64Bits::ONE
-            && self.rof == NativeF64Bits::ONE
+        self.rof == NativeF64Bits::ONE
             && !self.cloakable
             && !self.force_decloak
             && !self.temporal_hides_anim

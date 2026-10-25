@@ -261,8 +261,9 @@ pub(crate) fn multiplayer_eligible_slot(
         // from the type's `Cloakable=`; the Cloak crate's permanent write is
         // this module's residual).
         POWERUP_CLOAK => !object.is_some_and(|object| object.cloakable),
-        // `0x00481C69`: an actor already armoured.
-        POWERUP_ARMOR => actor.crate_multipliers.armor() == NativeF64Bits::ONE,
+        // Stock 481C69; Ares Armor1@1005F840 instead reads the permanent
+        // Ext+88, so an attached armor bonus does not consume the crate.
+        POWERUP_ARMOR => actor.crate_multipliers.crate_armor() == NativeF64Bits::ONE,
         // `0x00481CDE`: an actor already sped up, or an Aircraft.
         POWERUP_SPEED => {
             actor.foot_speed.crate_multiplier() == NativeF64Bits::ONE
