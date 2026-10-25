@@ -1,0 +1,5 @@
+/out/
+/.gradle/
+/app/build/
+/local.properties
+/native/target/
