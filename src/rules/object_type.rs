@@ -1986,6 +1986,10 @@ pub struct ObjectType {
     /// that write across layers. Live rejection can test both bytes separately.
     pub invisible: bool,
 
+    /// ObjectTypeClass::ObjectTypeClass stores +0x231=1 at 0x005F7168;
+    /// ReadINI retains ReadBool("LegalTarget", current) at 0x005F94AE..0x005F94C2.
+    pub legal_target: bool,
+
     /// `InvisibleInGame=yes` on BuildingType. Logical-only buildings (e.g., bridge
     /// anchors) that should not receive C4 or other interaction cursors.
     /// ReadINI460E09/460E10 also forces Invisible=true and RadarVisible=false.
@@ -3958,6 +3962,7 @@ impl ObjectType {
             can_c4: section.read_bool("CanC4", category == ObjectCategory::Building),
             eligible_for_delay_kill: section.read_bool("EligibleForDelayKill", false),
             invisible: section.read_bool("Invisible", false),
+            legal_target: section.read_bool("LegalTarget", true),
             invisible_in_game: section.read_bool("InvisibleInGame", false),
             place_anywhere: section.read_bool("PlaceAnywhere", false),
             to_tile: section.read_name("ToTile", 0x3c).map(str::to_owned),

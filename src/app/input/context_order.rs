@@ -180,8 +180,8 @@ fn friendly_attack_is_admitted(
 /// that is its TerrainType's `LegalTarget=` (retail: only `VEINHOLE`), else
 /// `[CombatDamage] TreeTargeting=` (`Rules+0x17E9`, retail no) or the
 /// `TerrainFire=` (`+0x138`) of the weapon SelectWeapon picks for it
-/// (`0x0070EF0C..0x0070EF4B`). A Techno target passes here (#605).
-fn terrain_target_is_legal(
+/// (`0x0070EF0C..0x0070EF4B`). A Techno uses its own ObjectType byte.
+fn object_target_is_legal(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     actor_id: u64,
@@ -190,7 +190,11 @@ fn terrain_target_is_legal(
     use crate::sim::combat::combat_weapon;
 
     let Some(terrain) = sim.terrain_objects().get(target_id) else {
-        return true;
+        return sim.entities().get(target_id).is_some_and(|target| {
+            sim.interner()
+                .object_type_in_category(target.type_ref(), target.category().into(), rules)
+                .is_some_and(|kind| kind.legal_target)
+        });
     };
     if rules
         .terrain_object_type_case_insensitive(sim.interner().resolve(terrain.type_ref()))
@@ -267,8 +271,8 @@ fn terrain_target_is_legal(
 ///
 /// Active YR Battle authors AttackCursorOnDisguise=yes, and SPY also authors
 /// PermaDisguise=yes: an ordinary stock Spy/Mirage is not evidence of a missed
-/// rejection. A layer disabling those grants or a non-LegalTarget type still
-/// requires the remaining admission. Those conditional paths remain open.
+/// rejection. A layer disabling those disguise grants still requires the
+/// remaining disguise admission; that conditional path remains open.
 pub(crate) fn attack_action(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -292,7 +296,7 @@ pub(crate) fn attack_action(
                 && (armed || infiltrator)
                 && (forced
                     || (friendly_attack_is_admitted(sim, rules, actor_id, *target_id)
-                        && terrain_target_is_legal(sim, rules, actor_id, *target_id)))
+                        && object_target_is_legal(sim, rules, actor_id, *target_id)))
         }
         TargetKind::Cell(..) => human,
     };
@@ -4321,6 +4325,45 @@ mod tests {
     use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::world::Simulation;
+
+    #[test]
+    fn ordinary_attack_click_honors_techno_legal_target_but_ctrl_bypasses_it() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let (rules, _, _, _) = crate::rules::retail_ini_fixture::retail_rules_owner(&assets)
+            .load_scenario(
+                crate::rules::process_owner::NativeScenarioRulesPrefix::Campaign(None),
+                &crate::rules::ini_parser::IniFile::from_str("[HTNK]\nLegalTarget=no\n"),
+            )
+            .unwrap()
+            .into_parts();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 1);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let tank = sim
+            .spawn_object("MTNK", "Americans", 10, 10, 64, &rules)
+            .unwrap();
+        let target = sim
+            .spawn_object("HTNK", "Russians", 12, 10, 64, &rules)
+            .unwrap();
+        let ordinary = sim
+            .spawn_object("MTNK", "Russians", 12, 12, 64, &rules)
+            .unwrap();
+        let action = |target, forced| {
+            attack_action(
+                &sim,
+                &rules,
+                tank,
+                &TargetKind::Entity(target),
+                forced,
+                None,
+            )
+        };
+        assert_ne!(action(target, false), AttackAction::Attack);
+        assert_eq!(action(target, true), AttackAction::Attack);
+        assert_eq!(action(ordinary, false), AttackAction::Attack);
+    }
 
     /// Without resolved terrain the attack cursor asks the shared mapless
     /// range (`sim::combat::mapless_in_range`), as the fire gate and the

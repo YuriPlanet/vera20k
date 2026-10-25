@@ -21,6 +21,43 @@ fn guard_scene(rules: &RuleSet, target_type: &str) -> (Simulation, u64, u64) {
     (sim, tank, target)
 }
 
+#[test]
+fn guard_scan_honors_the_maps_techno_legal_target_override() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::process_owner::NativeScenarioRulesPrefix;
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let mut owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+    let (rules, _, _, _) = owner
+        .load_scenario(
+            NativeScenarioRulesPrefix::Campaign(None),
+            &IniFile::from_str("[HTNK]\nLegalTarget=no\n"),
+        )
+        .unwrap()
+        .into_parts();
+    let (mut sim, tank, _) = guard_scene(&rules, "HTNK");
+    assert_eq!(
+        sim.greatest_threat_represented(&rules, None, tank, ScanMission::Guard, None),
+        None,
+        "the map's LegalTarget=no must exclude an otherwise valid enemy"
+    );
+
+    let (rules, _, _, _) = owner
+        .load_scenario(
+            NativeScenarioRulesPrefix::Campaign(None),
+            &IniFile::from_str("[HTNK]\nLegalTarget=yes\n"),
+        )
+        .unwrap()
+        .into_parts();
+    let (mut sim, tank, target) = guard_scene(&rules, "HTNK");
+    assert_eq!(
+        sim.greatest_threat_represented(&rules, None, tank, ScanMission::Guard, None),
+        Some(target),
+        "an explicit yes retains the normal target admission"
+    );
+}
+
 /// Scenario bit `0x800` (`0x006F8009..0x006F8047`): while set, a guarding
 /// tank refuses an enemy harvester — retail `[General] HarvesterUnit=HARV`
 /// is the list the production reader resolves — and still takes an enemy
