@@ -44,13 +44,21 @@ VERA20K สร้างโดยเกมเมอร์ เพื่อเก�
 
 ดาวน์โหลดตัวติดตั้งสำหรับ Windows, macOS หรือ Linux
 ได้จาก[หน้ารุ่นที่เผยแพร่](https://github.com/YuriPlanet/vera20k/releases) ตัวติดตั้งจะค้นหา
-Yuri's Revenge ของคุณจาก [Steam](https://store.steampowered.com/app/2229850/)
-หรือ[แอป EA](https://www.ea.com/games/command-and-conquer/command-and-conquer-the-ultimate-collection)
-แล้วติดตั้ง VERA20K ไว้ในโฟลเดอร์ใหม่ ม็อดและเนื้อหาใหม่จะอยู่ในโฟลเดอร์นั้นด้วย
-ไฟล์ของเกมจึงไม่ถูกแก้ไขเลย
+Yuri's Revenge ของคุณ แล้วติดตั้ง VERA20K ไว้ในโฟลเดอร์ใหม่
 
 หากต้องการเริ่มการต่อสู้ภายในเครื่องหรือแคมเปญของ YR แบบผู้เล่นคนเดียวผ่านไคลเอนต์ CnCNet
 โปรดดู[การตั้งค่าไคลเอนต์แบบออฟไลน์](integrations/cncnet/README.md)
+
+## ร่วมพัฒนา
+
+ยินดีรับความช่วยเหลือ คุณจะเขียนโค้ด รีแฟกเตอร์เอนจิน ทดสอบเกม เสนอไอเดีย หรือเล่นเทียบกับเกมต้นฉบับ
+แล้วบอกเราว่าตรงไหนรู้สึกผิดไปก็ได้ เปิด PR มาได้เลย ที่เหลือเราจัดการเอง
+
+ผู้ร่วมพัฒนาสามารถรับผิดชอบส่วนต่าง ๆ ของเอนจินได้ โดยมีอิสระอย่างมากในการเปลี่ยนแปลงที่ช่วยผลักดัน VERA20K ไปข้างหน้า
+
+ผู้ดูแลโครงการจะช่วยในการรีวิว การผสานรวม และการเมิร์จ คุณจะได้รับเครดิตเต็มที่สำหรับผลงานของคุณ
+
+การพูดคุยอยู่ใน [Discord](https://discord.gg/kmjRUn5m5F) และในกลุ่ม QQ (1097193563)
 
 ## การตั้งค่า
 
@@ -62,6 +70,8 @@ Yuri's Revenge ของคุณจาก [Steam](https://store.steampowered.co
 - **Linux:** `~/.local/share/VERA20k/VERA.INI` หรือโฟลเดอร์ข้อมูล XDG ของคุณ
 
 ใช้ `config.toml` กำหนดโฟลเดอร์เกม และเลือกโฟลเดอร์อื่นสำหรับเก็บการตั้งค่าได้
+
+เปิด **Mouse Wheel Zoom** ใน **Vera Options** หรือตั้งค่า `[VERA] MouseWheelZoom=yes` ใน `VERA.INI` (ค่าเริ่มต้นคือ `no`)
 
 หากไม่มีไฟล์ `VERA.INI` VERA จะสร้างไฟล์นี้และนำเข้าค่ากำหนดเดิมเพียงครั้งเดียว
 หากไม่มีการตั้งค่าเดิม ไฟล์จะเริ่มว่าง และ VERA จะใช้ค่าเริ่มต้นที่มีในตัวจนกว่าจะบันทึกการตั้งค่า
@@ -92,7 +102,7 @@ Yuri's Revenge ของคุณจาก [Steam](https://store.steampowered.co
 
 - **Rust และ Git:** [Rust](https://rustup.rs/) 1.97 หรือใหม่กว่า ที่ติดตั้งผ่าน rustup และ [Git](https://git-scm.com/)
 - **เครื่องมือบิลด์:** บน Windows ใช้ C++ build tools ของ Visual Studio ซึ่งตัวติดตั้ง Rust จะเสนอให้ติดตั้ง
-  บน macOS รัน `xcode-select --install` บน Debian และ Ubuntu รัน `sudo apt install build-essential libasound2-dev pkg-config`
+  บน macOS รัน `xcode-select --install` บน Debian และ Ubuntu รัน `sudo apt install build-essential libasound2-dev libxkbcommon-x11-0 pkg-config`
 
 มีการเล่น VERA20K บน Windows, Linux และ macOS แล้ว
 
@@ -103,8 +113,6 @@ cp config.toml.example config.toml
 # ก่อนรัน ให้แก้ไข config.toml และตั้งค่า ra2_dir เป็นโฟลเดอร์เกมของคุณ:
 cargo run --release --bin vera20k
 ```
-
-การบิลด์ใช้พื้นที่หลาย GB ใน `target/`
 
 ## วิธีทำงานของเรา
 
@@ -119,18 +127,10 @@ cargo run --release --bin vera20k
 
 - **ตัวเลือกของผู้เล่นใน VERA** อยู่ใน **Options → Vera Options** และบันทึกในส่วน `[VERA]` ของ `VERA.INI`
 - **ตัวเลือกตอนบิลด์** เช่น `--features ares` สำหรับ[ส่วนขยาย Ares](docs/ares.md)ที่รองรับ
-- **ตัวเลือกในล็อบบี้ของเกม** ซึ่งเลือกได้ในแต่ละแมตช์
 - **คีย์ INI** ที่ม็อดหรือแผนที่กำหนด
 
 การตั้งค่าเสียง กราฟิก และการควบคุมจะบันทึกไว้ใน `VERA.INI` กฎการเล่นมาจากการตั้งค่าล็อบบี้
 ม็อด หรือแผนที่
-
-## ร่วมพัฒนา
-
-ยินดีรับความช่วยเหลือ คุณจะเขียนโค้ด รีแฟกเตอร์เอนจิน ทดสอบเกม เสนอไอเดีย หรือเล่นเทียบกับเกมต้นฉบับ
-แล้วบอกเราว่าตรงไหนรู้สึกผิดไปก็ได้ เปิด PR มาได้เลย ที่เหลือเราจัดการเอง
-
-การพูดคุยอยู่ใน [Discord](https://discord.gg/kmjRUn5m5F) และในกลุ่ม QQ (1097193563)
 
 ## สนับสนุนโครงการ
 
@@ -151,7 +151,18 @@ Command & Conquer และ Red Alert ภายใต้ GPL, World-Altering Edi
 
 เผยแพร่ภายใต้สัญญาอนุญาต [GPLv3](LICENSE-GPL) ที่เก็บโค้ดนี้ไม่มีไฟล์เกม
 Command & Conquer และ Red Alert เป็นเครื่องหมายการค้าของ Electronic Arts Inc.
-ภาพหน้าจอแสดงงานภาพจากเกมที่เป็นของ Electronic Arts
+ภาพหน้าจอและไอคอนแอป (ดาวแดงของ Red Alert 2) แสดงงานภาพจากเกมที่เป็นของ Electronic Arts
 VERA20K ไม่มีความเกี่ยวข้องกับ Electronic Arts และไม่ได้รับการรับรองจาก Electronic Arts
+
+## เอกสาร
+
+- [บิลด์และรัน](#บิลด์และรัน): สิ่งที่ต้องมีและการบิลด์จากซอร์สโค้ด
+- [โปรไฟล์ INI](docs/ini-roots.md): การเลือกไฟล์กฎ ไฟล์ art และไฟล์ AI
+- [Ares](docs/ares.md), [Phobos](docs/phobos.md) และ [NPatch](docs/npatch.md): การรองรับส่วนขยายและข้อจำกัด
+- [ภาพรวมของเอนจิน](docs/index.md): โครงสร้างโค้ดและการทำงานร่วมกันของส่วนต่าง ๆ ในเอนจิน
+- [เครื่องมือสำหรับนักพัฒนา](tools/README.md): การบิลด์ การทดสอบ และการตรวจสอบทรัพยากรเกม
+- [การทดสอบแผนที่](tools/map_observation.md): ฉากทดสอบที่ใช้สคริปต์ ภาพหน้าจอ และการสังเกตการณ์แมตช์
+- [การเปรียบเทียบกับต้นฉบับ](tools/native_oracle.md): การเปรียบเทียบพฤติกรรมกับเกมต้นฉบับ
+- [ขั้นตอนการทำงานกับ Ghidra](docs/ghidra-workflow.md): การศึกษาเอนจินต้นฉบับ
 
 แปลจาก [README.md](README.md) โปรดปรับปรุงให้ตรงกับฉบับภาษาอังกฤษเสมอ

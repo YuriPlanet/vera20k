@@ -18,7 +18,7 @@
 يعيد VERA20K، وهو مشروع يقوده المجتمع، كتابة المحرك الأصلي، `gamemd.exe`. يستخدم ملفات اللعبة
 الأصلية، لذا ستحتاج إلى نسختك الخاصة من Red Alert 2: Yuri's Revenge.
 
-VERA20K من صنع اللاعبين ومن أجلهم، وللاعبين الكلمة الأخيرة في تحديد مساره.
+مشروع VERA20K من صنع اللاعبين ومن أجلهم، وللاعبين الكلمة الأخيرة في تحديد مساره.
 
 <img src="docs/images/vera20k-screenshots.png" alt="شاشة إعداد المناوشات ومشهد من اللعب في VERA20K" width="100%">
 
@@ -46,13 +46,21 @@ VERA20K من صنع اللاعبين ومن أجلهم، وللاعبين الك
 
 نزّل برنامج التثبيت لنظام Windows أو macOS أو Linux من
 [صفحة الإصدارات](https://github.com/YuriPlanet/vera20k/releases). يعثر البرنامج على نسختك من
-Yuri's Revenge من [Steam](https://store.steampowered.com/app/2229850/) أو
-[تطبيق EA](https://www.ea.com/games/command-and-conquer/command-and-conquer-the-ultimate-collection)،
-ويثبّت VERA20K في مجلد جديد. وستوضع فيه أيضًا المودات والمحتوى الجديد، فلا تتغير ملفات اللعبة نفسها
-أبدًا.
+Yuri's Revenge ويثبّت VERA20K في مجلد جديد.
 
 لتشغيل مناوشات YR أو حملاتها للاعب واحد عبر عميل CnCNet، راجع
 [إعداد العميل دون اتصال](integrations/cncnet/README.md).
+
+## المساهمة
+
+نرحب بالمساعدة. يمكنك كتابة الكود، أو إعادة هيكلة المحرك، أو اختبار اللعبة، أو مشاركة الأفكار، أو لعبها
+جنبًا إلى جنب مع الأصل وإخبارنا بما يبدو غير صحيح. افتح PR وسنتولى الأمر من هناك.
+
+يمكن للمساهمين تولي مسؤولية أجزاء من المحرك، مع حرية واسعة لإجراء تغييرات تدفع VERA20K إلى الأمام.
+
+سيساعد القائمون على المشروع في المراجعة والتكامل والدمج، وسيُنسب إليك الفضل كاملًا في مساهمتك.
+
+النقاش يجري على [Discord](https://discord.gg/kmjRUn5m5F) وفي مجموعة QQ (1097193563).
 
 ## الإعدادات
 
@@ -64,6 +72,8 @@ Yuri's Revenge من [Steam](https://store.steampowered.com/app/2229850/) أو
 - **Linux:** `~/.local/share/VERA20k/VERA.INI`، أو في مجلد بيانات XDG الخاص بك.
 
 يحدد `config.toml` مجلد اللعبة، ويمكن استخدامه لاختيار مجلد آخر للإعدادات.
+
+فعّل **Mouse Wheel Zoom** في **Vera Options**، أو اضبط <span dir="ltr">`[VERA] MouseWheelZoom=yes`</span> في `VERA.INI` (القيمة الافتراضية `no`).
 
 إذا كان ملف `VERA.INI` غير موجود، ينشئه VERA ويستورد التفضيلات الموجودة مرة واحدة. إذا لم توجد
 إعدادات سابقة، يبدأ الملف فارغًا ويستخدم VERA القيم الافتراضية المدمجة إلى أن تُحفظ الإعدادات.
@@ -91,9 +101,9 @@ Yuri's Revenge من [Steam](https://store.steampowered.com/app/2229850/) أو
 
 تحتاج إلى:
 
-- **Rust وGit:** [Rust](https://rustup.rs/) 1.97 أو أحدث، مثبتًا عبر rustup، و[Git](https://git-scm.com/).
+- **لغة Rust وأداة Git:** [Rust](https://rustup.rs/) 1.97 أو أحدث، مثبتًا عبر rustup، و[Git](https://git-scm.com/).
 - **أدوات البناء:** على Windows أدوات بناء C++ من Visual Studio، ويعرض مثبّت Rust تثبيتها؛ وعلى macOS الأمر
-  `xcode-select --install`؛ وعلى Debian وUbuntu الأمر `sudo apt install build-essential libasound2-dev pkg-config`.
+  `xcode-select --install`؛ وعلى Debian وUbuntu الأمر `sudo apt install build-essential libasound2-dev libxkbcommon-x11-0 pkg-config`.
 
 وقد استُخدم VERA20K للعب على Windows وLinux وmacOS.
 
@@ -109,8 +119,6 @@ cargo run --release --bin vera20k
 
 </div>
 
-يشغل البناء عدة غيغابايت في `target/`.
-
 ## كيف نعمل
 
 يكتب معظم الكود وكلاء برمجة بالذكاء الاصطناعي، يستخدمون Ghidra لدراسة المحرك الأصلي،
@@ -124,17 +132,9 @@ cargo run --release --bin vera20k
 
 - **خيار للاعب في VERA**، ضمن **Options → Vera Options**، يُحفظ في القسم `[VERA]` من `VERA.INI`.
 - **خيار بناء**، مثل `--features ares` لتضمين [إضافات Ares](docs/ares.md) المدعومة.
-- **خيار في ردهة اللعبة**، يُختار لكل مباراة.
 - **مفتاح INI**، يضبطه تعديل أو خريطة.
 
 تُحفظ إعدادات الصوت والرسوم والتحكم في `VERA.INI`. وتأتي قواعد اللعب من إعدادات الردهة أو التعديلات أو الخرائط.
-
-## المساهمة
-
-نرحب بالمساعدة. يمكنك كتابة الكود، أو إعادة هيكلة المحرك، أو اختبار اللعبة، أو مشاركة الأفكار، أو لعبها
-جنبًا إلى جنب مع الأصل وإخبارنا بما يبدو غير صحيح. افتح PR وسنتولى الأمر من هناك.
-
-النقاش يجري على [Discord](https://discord.gg/kmjRUn5m5F) وفي مجموعة QQ (1097193563).
 
 ## الدعم
 
@@ -155,7 +155,19 @@ cargo run --release --bin vera20k
 
 المشروع مرخّص بموجب [GPLv3](LICENSE-GPL). لا يحتوي هذا المستودع على أي ملفات للعبة. تُعد
 Command & Conquer وRed Alert علامتين تجاريتين لشركة Electronic Arts Inc.، وتعرض لقطات الشاشة
-رسومات من اللعبة تملكها Electronic Arts. لا يتبع VERA20K شركة Electronic Arts ولا يحظى بتأييدها.
+وأيقونة التطبيق، أي النجمة الحمراء من Red Alert 2، رسومات من اللعبة تملكها Electronic Arts.
+لا يتبع VERA20K شركة Electronic Arts ولا يحظى بتأييدها.
+
+## التوثيق
+
+- [البناء والتشغيل](#البناء-والتشغيل): المتطلبات والبناء من الشيفرة المصدرية.
+- [ملفات تعريف INI](docs/ini-roots.md): اختيار ملفات القواعد والرسوم والذكاء الاصطناعي.
+- [Ares](docs/ares.md) و[Phobos](docs/phobos.md) و[NPatch](docs/npatch.md): دعم الإضافات وحدوده.
+- [نظرة عامة على المحرك](docs/index.md): تنظيم الشيفرة وكيف تترابط أجزاء المحرك.
+- [أدوات المطورين](tools/README.md): البناء والاختبارات وفحص موارد اللعبة.
+- [اختبار الخرائط](tools/map_observation.md): سيناريوهات مبرمجة ولقطات شاشة وملاحظات عن المباريات.
+- [المقارنة مع الأصل](tools/native_oracle.md): مقارنة السلوك مع اللعبة الأصلية.
+- [سير العمل في Ghidra](docs/ghidra-workflow.md): فحص المحرك الأصلي.
 
 ترجمة لـ [README.md](README.md)؛ يُرجى تحديثها مع النسخة الإنجليزية.
 

@@ -47,13 +47,24 @@ oyuncular söylüyor.
 
 Windows, macOS veya Linux yükleyicisini
 [sürümler sayfasından](https://github.com/YuriPlanet/vera20k/releases) indirin. Yükleyici,
-[Steam](https://store.steampowered.com/app/2229850/)'den ya da
-[EA uygulamasından](https://www.ea.com/games/command-and-conquer/command-and-conquer-the-ultimate-collection)
-aldığınız Yuri's Revenge'i bulur ve VERA20K'yi yeni bir klasöre kurar. Modlar ve yeni içerikler de
-oraya gidecek; böylece oyunun kendi dosyaları hiç değiştirilmez.
+Yuri's Revenge kopyanızı bulur ve VERA20K'yi yeni bir klasöre kurar.
 
 Tek oyunculu YR çatışmalarını veya senaryolarını bir CnCNet istemcisinden başlatmak için
 [çevrimdışı istemci kurulumuna](integrations/cncnet/README.md) bakın.
+
+## Katkıda bulunma
+
+Yardımlarınızı bekliyoruz. Kod yazabilir, motoru yeniden düzenleyebilir, oyunu test edebilir,
+fikirlerinizi paylaşabilir veya orijinal oyunla yan yana oynayıp neyin yanlış hissettirdiğini
+bize anlatabilirsiniz. Bir PR açın, gerisini biz hallederiz.
+
+Katkıda bulunanlar motorun belirli alanlarının sorumluluğunu üstlenebilir ve VERA20K'yi
+ileriye taşıyan değişiklikleri geniş bir özgürlükle yapabilir.
+
+Bakımcılar inceleme, entegrasyon ve birleştirme konusunda yardımcı olur. Katkınız tamamen
+size atfedilir.
+
+Tartışmalar [Discord](https://discord.gg/kmjRUn5m5F) üzerinden ve QQ grubunda (1097193563) yürür.
 
 ## Ayarlar
 
@@ -65,6 +76,9 @@ Oyuncu tercihleri, klavye kısayolları ve lobi seçimleri `VERA.INI` dosyasına
 - **Linux:** `~/.local/share/VERA20k/VERA.INI` veya XDG veri klasörünüzde.
 
 `config.toml` oyun klasörünü belirler ve farklı bir ayar klasörü seçilmesine olanak tanır.
+
+**Vera Options** içinden **Mouse Wheel Zoom** seçeneğini açın veya `VERA.INI` dosyasında
+`[VERA] MouseWheelZoom=yes` ayarlayın (varsayılan `no`).
 
 `VERA.INI` yoksa VERA dosyayı oluşturur ve mevcut tercihleri bir kez içe aktarır.
 Eski ayarlar yoksa dosya başlangıçta boştur; ayarlar kaydedilene kadar VERA yerleşik varsayılanları
@@ -98,7 +112,7 @@ Gerekenler:
   [Git](https://git-scm.com/).
 - **Derleme araçları:** Windows'ta, Rust kurulum programının kurmayı önerdiği Visual Studio C++
   derleme araçları; macOS'te `xcode-select --install`; Debian ve Ubuntu'da
-  `sudo apt install build-essential libasound2-dev pkg-config`.
+  `sudo apt install build-essential libasound2-dev libxkbcommon-x11-0 pkg-config`.
 
 VERA20K, Windows, Linux ve macOS üzerinde oynandı.
 
@@ -109,8 +123,6 @@ cp config.toml.example config.toml
 # Çalıştırmadan önce config.toml dosyasını düzenleyip ra2_dir değerini oyun klasörünüz olarak ayarlayın:
 cargo run --release --bin vera20k
 ```
-
-Derleme `target/` içinde birkaç GB yer kaplar.
 
 ## Nasıl çalışıyoruz
 
@@ -125,19 +137,10 @@ her yeni özellik, şu yollardan biriyle açılana kadar kapalı kalmalıdır:
 
 - **Bir VERA oyuncu seçeneği**: **Options → Vera Options** altında bulunur ve `VERA.INI` dosyasının `[VERA]` bölümüne kaydedilir.
 - **Bir derleme seçeneği**: örneğin desteklenen [Ares eklentileri](docs/ares.md) için `--features ares`.
-- **Bir oyun içi lobi seçeneği**: her maç için seçilir.
 - **Bir INI anahtarı**: bir mod ya da harita tarafından ayarlanır.
 
 Ses, grafik ve kontrol ayarları `VERA.INI` dosyasına kaydedilir. Oynanış kuralları lobi
 ayarlarından, modlardan veya haritalardan gelir.
-
-## Katkıda bulunma
-
-Yardımlarınızı bekliyoruz. Kod yazabilir, motoru yeniden düzenleyebilir, oyunu test edebilir,
-fikirlerinizi paylaşabilir veya orijinal oyunla yan yana oynayıp neyin yanlış hissettirdiğini
-bize anlatabilirsiniz. Bir PR açın, gerisini biz hallederiz.
-
-Tartışmalar [Discord](https://discord.gg/kmjRUn5m5F) üzerinden ve QQ grubunda (1097193563) yürür.
 
 ## Destek
 
@@ -159,7 +162,19 @@ Ares, Phobos ve daha nicelerine teşekkürler.
 
 [GPLv3](LICENSE-GPL) ile lisanslanmıştır. Bu depo hiçbir oyun dosyası içermez.
 Command & Conquer ve Red Alert, Electronic Arts Inc. şirketinin ticari markalarıdır.
-Ekran görüntülerindeki oyun grafikleri Electronic Arts'a aittir. VERA20K, Electronic Arts
-ile bağlantılı değildir ve Electronic Arts tarafından desteklenmemektedir.
+Ekran görüntülerindeki ve uygulama simgesindeki (Red Alert 2'nin kırmızı yıldızı) oyun grafikleri
+Electronic Arts'a aittir. VERA20K, Electronic Arts ile bağlantılı değildir ve Electronic Arts
+tarafından desteklenmemektedir.
+
+## Belgeler
+
+- [Derleme ve çalıştırma](#derleme-ve-çalıştırma): gereksinimler ve kaynak koddan derleme.
+- [INI profilleri](docs/ini-roots.md): kural, grafik ve yapay zekâ dosyalarını seçme.
+- [Ares](docs/ares.md), [Phobos](docs/phobos.md) ve [NPatch](docs/npatch.md): eklenti desteği ve sınırlamaları.
+- [Motora genel bakış](docs/index.md): kodun düzeni ve motorun parçalarının nasıl bir araya geldiği.
+- [Geliştirici araçları](tools/README.md): derlemeler, testler ve oyun kaynaklarının incelenmesi.
+- [Harita testleri](tools/map_observation.md): betikli test senaryoları, ekran görüntüleri ve maç gözlemleri.
+- [Orijinalle karşılaştırmalar](tools/native_oracle.md): davranışı orijinal oyunla karşılaştırma.
+- [Ghidra iş akışı](docs/ghidra-workflow.md): orijinal motoru inceleme.
 
 [README.md](README.md) dosyasının çevirisidir; lütfen İngilizce sürümle güncel tutun.

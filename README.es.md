@@ -47,14 +47,25 @@ palabra sobre su rumbo.
 ## Descargar y jugar
 
 Descarga el instalador para Windows, macOS o Linux desde la
-[página de versiones](https://github.com/YuriPlanet/vera20k/releases). Encuentra tu Yuri's Revenge
-de [Steam](https://store.steampowered.com/app/2229850/) o de la
-[app de EA](https://www.ea.com/games/command-and-conquer/command-and-conquer-the-ultimate-collection)
-e instala VERA20K en una carpeta nueva. Ahí irán también los mods y el contenido nuevo, así que los
-archivos del juego nunca se modifican.
+[página de versiones](https://github.com/YuriPlanet/vera20k/releases). El instalador encuentra tu
+copia de Yuri's Revenge e instala VERA20K en una carpeta nueva.
 
 Para iniciar escaramuzas o campañas de YR para un jugador desde un cliente de CnCNet, consulta la
 [configuración del cliente sin conexión](integrations/cncnet/README.md).
+
+## Contribuir
+
+Toda ayuda es bienvenida. Puedes escribir código, refactorizar el motor, probar el juego, compartir
+ideas o jugarlo junto al original y decirnos qué no se siente como debería. Abre un PR y nosotros
+nos encargamos a partir de ahí.
+
+Los colaboradores pueden hacerse cargo de áreas del motor, con amplia libertad para introducir
+cambios que hagan avanzar VERA20K.
+
+Los mantenedores te ayudarán con la revisión, la integración y la fusión. Conservarás todo el
+mérito de tu contribución.
+
+Hablamos en [Discord](https://discord.gg/kmjRUn5m5F) y en el grupo de QQ (1097193563).
 
 ## Ajustes
 
@@ -67,6 +78,9 @@ en `VERA.INI`:
 - **Linux:** `~/.local/share/VERA20k/VERA.INI`, o en tu carpeta de datos XDG.
 
 `config.toml` define la carpeta del juego y permite seleccionar otra carpeta de ajustes.
+
+Activa **Mouse Wheel Zoom** en **Vera Options**, o define `[VERA] MouseWheelZoom=yes` en
+`VERA.INI` (valor predeterminado: `no`).
 
 Si falta `VERA.INI`, VERA crea el archivo e importa las preferencias existentes una sola vez.
 Si no hay ajustes anteriores, el archivo empieza vacío y VERA usa los valores predeterminados
@@ -101,7 +115,7 @@ Necesitas:
   [Git](https://git-scm.com/).
 - **Herramientas de compilación:** en Windows, las herramientas de compilación de C++ de Visual
   Studio, que el instalador de Rust ofrece instalar; en macOS, `xcode-select --install`; en Debian
-  y Ubuntu, `sudo apt install build-essential libasound2-dev pkg-config`.
+  y Ubuntu, `sudo apt install build-essential libasound2-dev libxkbcommon-x11-0 pkg-config`.
 
 VERA20K se ha jugado en Windows, Linux y macOS.
 
@@ -112,8 +126,6 @@ cp config.toml.example config.toml
 # Edita config.toml y asigna a ra2_dir la carpeta de tu juego antes de ejecutar:
 cargo run --release --bin vera20k
 ```
-
-La compilación ocupa varios GB en `target/`.
 
 ## Cómo trabajamos
 
@@ -131,19 +143,10 @@ de estas opciones:
 - **Una opción de VERA para el jugador**, en **Options → Vera Options**, guardada en la sección `[VERA]` de `VERA.INI`.
 - **Una opción de compilación**, como `--features ares` para las [extensiones de Ares](docs/ares.md)
   compatibles.
-- **Una opción del lobby del juego**, elegida para cada partida.
 - **Una clave INI**, definida por un mod o un mapa.
 
 Los ajustes de sonido, gráficos y controles se guardan en `VERA.INI`. Las reglas de juego
 provienen de los ajustes del lobby, los mods o los mapas.
-
-## Contribuir
-
-Toda ayuda es bienvenida. Puedes escribir código, refactorizar el motor, probar el juego, compartir
-ideas o jugarlo junto al original y decirnos qué no se siente como debería. Abre un PR y nosotros
-nos encargamos a partir de ahí.
-
-Hablamos en [Discord](https://discord.gg/kmjRUn5m5F) y en el grupo de QQ (1097193563).
 
 ## Apoya el proyecto
 
@@ -164,7 +167,18 @@ Ares, Phobos y muchos otros.
 
 Distribuido bajo la licencia [GPLv3](LICENSE-GPL). Este repositorio no contiene archivos del juego.
 Command & Conquer y Red Alert son marcas comerciales de Electronic Arts Inc., y las capturas de
-pantalla muestran arte del juego propiedad de Electronic Arts. VERA20K no está afiliado a Electronic
-Arts ni cuenta con su respaldo.
+pantalla y el icono de la aplicación, la estrella roja de Red Alert 2, muestran arte del juego
+propiedad de Electronic Arts. VERA20K no está afiliado a Electronic Arts ni cuenta con su respaldo.
+
+## Documentación
+
+- [Compilar y ejecutar](#compilar-y-ejecutar): requisitos y compilación desde el código fuente.
+- [Perfiles INI](docs/ini-roots.md): elegir los archivos de reglas, arte e IA.
+- [Ares](docs/ares.md), [Phobos](docs/phobos.md) y [NPatch](docs/npatch.md): compatibilidad con las extensiones y sus limitaciones.
+- [Visión general del motor](docs/index.md): organización del código y cómo encajan las piezas del motor.
+- [Herramientas para desarrolladores](tools/README.md): compilaciones, pruebas e inspección de recursos.
+- [Pruebas de mapas](tools/map_observation.md): escenarios con scripts, capturas de pantalla y observación de partidas.
+- [Comparaciones con el original](tools/native_oracle.md): comparar el comportamiento con el juego original.
+- [Flujo de trabajo con Ghidra](docs/ghidra-workflow.md): inspeccionar el motor original.
 
 Traducción de [README.md](README.md); mantenla al día con la versión en inglés.

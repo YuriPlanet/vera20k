@@ -36,7 +36,7 @@ ska gå.
   och slumpgenererade kartor, basbygge, resursinsamling, strider samt möjlighet att spara och ladda spel.
 - **Kampanjer:** Uppdrag går att starta; stödet är fortfarande ofullständigt.
 - **AI:** Delar av originalets AI sköter basbygge och skriptstyrda anfall.
-- **Pågående arbete:** Spelbeteende, grafik och prestanda.
+- **Pågående arbete:** Spelmekanikens exakthet, grafik och prestanda.
 - **Flerspelarläge:** LAN- och onlinespel finns i aktuella källkodsbyggen för macOS och Linux.
 - **Skala:** Två onlinematcher i följd klarade funktionsvalideringen med
   30 oberoende klientprocesser och fler än 20 000 aktiva rörliga enheter per match.
@@ -45,14 +45,25 @@ ska gå.
 ## Ladda ner och spela
 
 Ladda ner installationsprogrammet för Windows, macOS eller Linux från
-[releasesidan](https://github.com/YuriPlanet/vera20k/releases). Det hittar ditt Yuri's Revenge från
-[Steam](https://store.steampowered.com/app/2229850/) eller
-[EA-appen](https://www.ea.com/games/command-and-conquer/command-and-conquer-the-ultimate-collection)
-och installerar VERA20K i en ny mapp. Dit hamnar även moddar och nytt innehåll framöver, så spelets
-egna filer ändras aldrig.
+[releasesidan](https://github.com/YuriPlanet/vera20k/releases). Det hittar ditt Yuri's Revenge och
+installerar VERA20K i en ny mapp.
 
 För att starta skirmish-matcher eller kampanjer i YR för en spelare från en CnCNet-klient, se
 [installationen av offlineklienten](integrations/cncnet/README.md).
+
+## Bidra
+
+All hjälp är välkommen. Du kan skriva kod, refaktorera motorn, testa spelet, dela idéer eller
+spela det sida vid sida med originalet och berätta vad som känns fel. Öppna en PR så tar vi det
+därifrån.
+
+Medverkande kan ta ansvar för delar av motorn, med stor frihet att göra ändringar som driver
+VERA20K framåt.
+
+Underhållarna hjälper till med granskning, integrering och sammanslagning. Du får fullt
+erkännande för ditt bidrag.
+
+Diskussionen sker på [Discord](https://discord.gg/kmjRUn5m5F) och i QQ-gruppen (1097193563).
 
 ## Inställningar
 
@@ -64,6 +75,9 @@ Spelarinställningar, kortkommandon och lobbyval sparas i `VERA.INI`:
 - **Linux:** `~/.local/share/VERA20k/VERA.INI` eller i din XDG-datamapp.
 
 I `config.toml` anger du spelmappen och kan välja en annan inställningsmapp.
+
+Aktivera **Mouse Wheel Zoom** i **Vera Options**, eller sätt `[VERA] MouseWheelZoom=yes`
+i `VERA.INI` (standard `no`).
 
 Om `VERA.INI` saknas skapar VERA filen och importerar befintliga inställningar en gång.
 Om det inte finns några gamla inställningar börjar filen tom och VERA använder inbyggda
@@ -97,7 +111,7 @@ Du behöver:
   [Git](https://git-scm.com/).
 - **Byggverktyg:** på Windows Visual Studios C++-byggverktyg, som Rusts installationsprogram
   erbjuder sig att installera; på macOS `xcode-select --install`; på Debian och Ubuntu
-  `sudo apt install build-essential libasound2-dev pkg-config`.
+  `sudo apt install build-essential libasound2-dev libxkbcommon-x11-0 pkg-config`.
 
 VERA20K har spelats på Windows, Linux och macOS.
 
@@ -108,8 +122,6 @@ cp config.toml.example config.toml
 # Redigera config.toml och ange din spelmapp i ra2_dir innan du kör:
 cargo run --release --bin vera20k
 ```
-
-Bygget skriver flera GB till `target/`.
 
 ## Så arbetar vi
 
@@ -125,19 +137,10 @@ moddar som Ares, måste vara avstängd tills den slås på med något av följan
 
 - **En spelarinställning i VERA**, under **Options → Vera Options**, som sparas i avsnittet `[VERA]` i `VERA.INI`.
 - **Ett byggalternativ**, till exempel `--features ares` för de [Ares-tillägg](docs/ares.md) som stöds.
-- **Ett lobbyalternativ i spelet**, som väljs för varje match.
 - **En INI-nyckel**, som sätts av en mod eller en karta.
 
 Inställningar för ljud, grafik och kontroller sparas i `VERA.INI`. Spelreglerna kommer från
 lobbyinställningar, moddar eller kartor.
-
-## Bidra
-
-All hjälp är välkommen. Du kan skriva kod, refaktorera motorn, testa spelet, dela idéer eller
-spela det sida vid sida med originalet och berätta vad som känns fel. Öppna en PR så tar vi det
-därifrån.
-
-Diskussionen sker på [Discord](https://discord.gg/kmjRUn5m5F) och i QQ-gruppen (1097193563).
 
 ## Stöd projektet
 
@@ -157,7 +160,19 @@ Command & Conquer och Red Alert, World-Altering Editor, Final Alert, YRpp, Ares,
 många andra.
 
 Licensierat under [GPLv3](LICENSE-GPL). Det här repot innehåller inga spelfiler. Command &
-Conquer och Red Alert är varumärken som tillhör Electronic Arts Inc., och skärmbilderna visar
-spelgrafik som ägs av Electronic Arts. VERA20K har ingen koppling till och stöds inte av Electronic Arts.
+Conquer och Red Alert är varumärken som tillhör Electronic Arts Inc., och skärmbilderna och
+appikonen, Red Alert 2:s röda stjärna, visar spelgrafik som ägs av Electronic Arts. VERA20K har
+ingen koppling till och stöds inte av Electronic Arts.
+
+## Dokumentation
+
+- [Bygg och kör](#bygg-och-kör): krav och hur du bygger från källkod.
+- [INI-profiler](docs/ini-roots.md): välja regel-, grafik- och AI-filer.
+- [Ares](docs/ares.md), [Phobos](docs/phobos.md) och [NPatch](docs/npatch.md): stöd för tilläggen och deras begränsningar.
+- [Motoröversikt](docs/index.md): kodens upplägg och hur motorns delar hänger ihop.
+- [Utvecklarverktyg](tools/README.md): byggen, tester och granskning av spelresurser.
+- [Karttester](tools/map_observation.md): skriptade scenarier, skärmbilder och observationer av matcher.
+- [Jämförelser med originalet](tools/native_oracle.md): jämföra beteendet med originalspelet.
+- [Arbetsflöde i Ghidra](docs/ghidra-workflow.md): undersöka originalmotorn.
 
 Översättning av [README.md](README.md); håll den uppdaterad i takt med den engelska versionen.

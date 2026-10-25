@@ -37,7 +37,7 @@ das Projekt entwickelt.
   generierten Karten, Basisbau, Rohstoffernte, Kämpfen sowie Speichern und Laden.
 - **Kampagnen:** Missionen lassen sich starten; die Unterstützung bleibt unvollständig.
 - **KI:** Teile der ursprünglichen KI übernehmen den Basisbau und skriptgesteuerte Angriffe.
-- **Laufende Arbeiten:** Spielverhalten, Grafik und Leistung.
+- **Laufende Arbeiten:** Originaltreue des Spielverhaltens, Grafik und Leistung.
 - **Mehrspielermodus:** Aktuelle Quellcode-Builds unterstützen LAN- und Online-Spiele auf macOS und Linux.
 - **Größenordnung:** Zwei aufeinanderfolgende Online-Partien bestanden die Funktionsprüfung mit
   30 unabhängigen Client-Prozessen und jeweils mehr als 20.000 aktiven mobilen Einheiten.
@@ -47,13 +47,24 @@ das Projekt entwickelt.
 
 Lade den Installer für Windows, macOS oder Linux von der
 [Release-Seite](https://github.com/YuriPlanet/vera20k/releases) herunter. Er findet dein
-Yuri's Revenge aus [Steam](https://store.steampowered.com/app/2229850/) oder der
-[EA app](https://www.ea.com/games/command-and-conquer/command-and-conquer-the-ultimate-collection)
-und richtet VERA20K in einem neuen Ordner ein. Dort kommen künftig auch Mods und neue Inhalte hin,
-sodass die Spieldateien nie verändert werden.
+Yuri's Revenge und richtet VERA20K in einem neuen Ordner ein.
 
 Wie du Einzelspieler-Gefechte oder Kampagnen von YR über einen CnCNet-Client startest, steht in der
 [Offline-Client-Einrichtung](integrations/cncnet/README.md).
+
+## Mitmachen
+
+Hilfe ist willkommen. Du kannst Code schreiben, die Engine refaktorieren, das Spiel testen,
+Ideen einbringen oder es neben dem Original spielen und uns sagen, was sich falsch anfühlt.
+Öffne einen PR, und wir kümmern uns um den Rest.
+
+Mitwirkende können Verantwortung für Bereiche der Engine übernehmen und haben dabei viel
+Spielraum für Änderungen, die VERA20K voranbringen.
+
+Die Maintainer helfen beim Review, bei der Integration und beim Mergen. Dein Beitrag wird
+dir vollständig zugeschrieben.
+
+Diskutiert wird auf [Discord](https://discord.gg/kmjRUn5m5F) und in der QQ-Gruppe (1097193563).
 
 ## Einstellungen
 
@@ -65,6 +76,9 @@ Spielereinstellungen, Tastenkürzel und Lobby-Einstellungen werden in `VERA.INI`
 - **Linux:** `~/.local/share/VERA20k/VERA.INI` oder in deinem XDG-Datenordner.
 
 `config.toml` legt den Spielordner fest und kann einen anderen Einstellungsordner vorgeben.
+
+Aktiviere **Mouse Wheel Zoom** unter **Vera Options** oder setze `[VERA] MouseWheelZoom=yes`
+in `VERA.INI` (Standard: `no`).
 
 Wenn `VERA.INI` fehlt, erstellt VERA die Datei und importiert vorhandene Einstellungen einmalig.
 Ohne alte Einstellungen bleibt die Datei zunächst leer; VERA verwendet die integrierten
@@ -98,7 +112,7 @@ Du brauchst:
   [Git](https://git-scm.com/).
 - **Build-Werkzeuge:** unter Windows die C++-Build-Tools von Visual Studio, deren Installation
   der Rust-Installer anbietet; unter macOS `xcode-select --install`; unter Debian und Ubuntu
-  `sudo apt install build-essential libasound2-dev pkg-config`.
+  `sudo apt install build-essential libasound2-dev libxkbcommon-x11-0 pkg-config`.
 
 VERA20K wurde bereits unter Windows, Linux und macOS gespielt.
 
@@ -109,8 +123,6 @@ cp config.toml.example config.toml
 # Bearbeite config.toml und setze ra2_dir auf deinen Spielordner, bevor du das Spiel startest:
 cargo run --release --bin vera20k
 ```
-
-Der Build belegt mehrere GB in `target/`.
 
 ## So arbeiten wir
 
@@ -126,19 +138,10 @@ aus Mods wie Ares, muss ausgeschaltet bleiben, bis sie auf einem dieser Wege akt
 
 - **Eine VERA-Spieleroption** unter **Options → Vera Options**, gespeichert im Abschnitt `[VERA]` in `VERA.INI`.
 - **Eine Build-Option**, z. B. `--features ares` für die unterstützten [Ares-Erweiterungen](docs/ares.md).
-- **Eine Lobby-Option im Spiel**, die für jede Partie gewählt wird.
 - **Ein INI-Schlüssel**, den eine Mod oder eine Karte setzt.
 
 Einstellungen für Ton, Grafik und Steuerung werden in `VERA.INI` gespeichert. Die Spielregeln
 stammen aus den Lobby-Einstellungen, Mods oder Karten.
-
-## Mitmachen
-
-Hilfe ist willkommen. Du kannst Code schreiben, die Engine refaktorieren, das Spiel testen,
-Ideen einbringen oder es neben dem Original spielen und uns sagen, was sich falsch anfühlt.
-Öffne einen PR, und wir kümmern uns um den Rest.
-
-Diskutiert wird auf [Discord](https://discord.gg/kmjRUn5m5F) und in der QQ-Gruppe (1097193563).
 
 ## Unterstützen
 
@@ -159,8 +162,20 @@ des Quellcodes von Command & Conquer und Red Alert unter der GPL, World-Altering
 Final Alert, YRpp, Ares, Phobos und viele andere.
 
 Lizenziert unter der [GPLv3](LICENSE-GPL). Dieses Repository enthält keine Spieldateien.
-Command & Conquer und Red Alert sind Marken von Electronic Arts Inc. Die Screenshots zeigen
-Spielgrafiken, die Electronic Arts gehören. VERA20K steht in keiner Verbindung zu Electronic Arts
-und wird nicht von Electronic Arts unterstützt.
+Command & Conquer und Red Alert sind Marken von Electronic Arts Inc. Die Screenshots und das
+App-Symbol, der rote Stern aus Red Alert 2, zeigen Spielgrafiken, die Electronic Arts gehören.
+VERA20K steht in keiner Verbindung zu Electronic Arts und wird nicht von Electronic Arts
+unterstützt.
+
+## Dokumentation
+
+- [Kompilieren und starten](#kompilieren-und-starten): Voraussetzungen und Bauen aus dem Quellcode.
+- [INI-Profile](docs/ini-roots.md): Regel-, Grafik- und KI-Dateien auswählen.
+- [Ares](docs/ares.md), [Phobos](docs/phobos.md) und [NPatch](docs/npatch.md): Unterstützung der Erweiterungen und ihre Grenzen.
+- [Engine-Überblick](docs/index.md): Aufbau des Codes und wie die Teile der Engine zusammenspielen.
+- [Entwicklerwerkzeuge](tools/README.md): Builds, Tests und Untersuchung der Spieldaten.
+- [Kartentests](tools/map_observation.md): geskriptete Szenarien, Screenshots und Beobachtungen von Partien.
+- [Vergleiche mit dem Original](tools/native_oracle.md): Verhalten mit dem Originalspiel vergleichen.
+- [Ghidra-Arbeitsablauf](docs/ghidra-workflow.md): die ursprüngliche Engine untersuchen.
 
 Übersetzung von [README.md](README.md); bitte mit der englischen Version synchron halten.
