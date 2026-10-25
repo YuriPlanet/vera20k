@@ -2,8 +2,9 @@
 //!
 //! This module sits above simulation and owns loading-screen progress behavior
 //! verified from gamemd.exe. It also owns the request/session boundary used by
-//! app loop. The prepared map, prefix and startup move together; remaining
-//! loading stays synchronous and retains the native progress/presentation order.
+//! app loop. The prepared map, prefix and startup move together. Offline
+//! construction yields between completed native operations, then polls the
+//! display jobs; progress order and the consuming installation stay here.
 //! Private `render` owns frame drawing; this module retains preparation, cadence,
 //! failure and after-present continuation policy. Request/phase regressions live
 //! in the private `tests` child.
@@ -557,16 +558,30 @@ struct PreparedScenarioLoad {
     rules_prefix: Option<crate::rules::process_owner::NativeNonCampaignPrefixPreparation>,
 }
 
+struct ConstructingScenarioLoad {
+    load: init::FreshMapLoadJob,
+    #[cfg(feature = "ares")]
+    rules_prefix: Option<crate::rules::process_owner::NativeNonCampaignPrefixPreparation>,
+}
+
+#[cfg(feature = "ares")]
+fn retire_rules_prefix(
+    preparation: Option<crate::rules::process_owner::NativeNonCampaignPrefixPreparation>,
+    assets: &mut crate::app::process_assets::ProcessAssets,
+) {
+    if let Some(preparation) = preparation {
+        assets
+            .native_rules_mut_with_tile_cache()
+            .0
+            .expect("prepared prefix retains its process owner")
+            .cancel_prepared_noncampaign_scenario_prefix(preparation);
+    }
+}
+
 impl PreparedScenarioLoad {
     #[cfg(feature = "ares")]
     fn cancel_rules_prefix(&mut self, assets: &mut crate::app::process_assets::ProcessAssets) {
-        if let Some(preparation) = self.rules_prefix.take() {
-            assets
-                .native_rules_mut_with_tile_cache()
-                .0
-                .expect("prepared prefix retains its process owner")
-                .cancel_prepared_noncampaign_scenario_prefix(preparation);
-        }
+        retire_rules_prefix(self.rules_prefix.take(), assets);
     }
 }
 
@@ -577,6 +592,7 @@ impl PreparedScenarioLoad {
 enum LoadingStage {
     Selected(LoadingRequest),
     Prepared(PreparedScenarioLoad),
+    ConstructingScenario(ConstructingScenarioLoad),
     PreparingPresentation {
         result: Box<MapLoadResult>,
     },
@@ -596,6 +612,7 @@ impl LoadingStage {
         match self {
             Self::Selected(request) => request.startup(),
             Self::Prepared(prepared) => prepared.request.startup(),
+            Self::ConstructingScenario(constructing) => constructing.load.startup(),
             Self::PreparingPresentation { result }
             | Self::AwaitingPeers { result, .. }
             | Self::ReadyToInstall { result } => &result.scenario.startup,
@@ -865,6 +882,10 @@ impl LoadingSession {
         #[cfg(feature = "ares")]
         if let LoadingStage::Prepared(prepared) = &mut self.stage {
             prepared.cancel_rules_prefix(assets);
+        }
+        #[cfg(feature = "ares")]
+        if let LoadingStage::ConstructingScenario(constructing) = &mut self.stage {
+            retire_rules_prefix(constructing.rules_prefix.take(), assets);
         }
         if let LoadingStage::PreparingPresentation { result }
         | LoadingStage::AwaitingPeers { result, .. }
@@ -1458,6 +1479,7 @@ pub(crate) fn loading_campaign_startup(
 pub(crate) fn loading_map_source(state: &AppState) -> Option<&crate::map::source::LoadedMapSource> {
     match &state.frontend.loading_session.as_ref()?.stage {
         LoadingStage::Prepared(prepared) => Some(prepared.initial.map_source()),
+        LoadingStage::ConstructingScenario(constructing) => Some(constructing.load.map_source()),
         LoadingStage::Selected(_) => None,
         LoadingStage::PreparingPresentation { result }
         | LoadingStage::AwaitingPeers { result, .. }
@@ -1534,6 +1556,9 @@ fn pump_loading_after_present(
     let Some(session) = state.frontend.loading_session.take() else {
         return Ok(LoadingPump::Pending);
     };
+    if matches!(session.stage, LoadingStage::ConstructingScenario(_)) {
+        return pump_map_construction(state, session, observer);
+    }
     if matches!(session.stage, LoadingStage::PreparingPresentation { .. }) {
         return pump_presentation(state, session, observer);
     }
@@ -1630,7 +1655,8 @@ fn pump_loading_after_present(
         .multiplayer_shell_runtime
         .observe_loaded_scenario_header(&initial.map_data().ini);
     log::debug!(target: "vera20k::loading_attempt", "remaining_load_begin");
-    let result = (|| -> anyhow::Result<MapLoadResult> {
+    let mut continuing = None;
+    let result = (|| -> anyhow::Result<Option<MapLoadResult>> {
         let native_theater_cache_mismatch = theater_cache_mismatch(
             state.match_state.loaded_map_source.is_some(),
             &state.match_state.match_presentation.theater_name,
@@ -1736,27 +1762,54 @@ fn pump_loading_after_present(
                     )
                 },
             );
-            init::load_map_from_initial(
-                &state.renderer.gpu,
-                &state.renderer.batch_renderer,
-                asset_manager,
-                initial,
-                startup,
-                fresh_scenario_context,
-                progress.native_theater_cache_mismatch,
-                progress.runtime_color_scheme_count,
-                native_rules_owner,
-                #[cfg(feature = "ares")]
-                &mut prepared_rules_prefix,
-                audio,
-                shared_cell_dummy,
-                tile_variant_selector_cache,
-                &mut progress.sink,
-            )
+            if matches!(startup, LoadingStartup::Network(_)) {
+                init::load_map_from_initial(
+                    &state.renderer.gpu,
+                    &state.renderer.batch_renderer,
+                    asset_manager,
+                    initial,
+                    startup,
+                    fresh_scenario_context,
+                    progress.native_theater_cache_mismatch,
+                    progress.runtime_color_scheme_count,
+                    native_rules_owner,
+                    #[cfg(feature = "ares")]
+                    &mut prepared_rules_prefix,
+                    audio,
+                    shared_cell_dummy,
+                    tile_variant_selector_cache,
+                    &mut progress.sink,
+                )
+                .map(Some)
+            } else {
+                let mut load = init::FreshMapLoadJob::new(
+                    initial,
+                    startup,
+                    fresh_scenario_context,
+                    progress.native_theater_cache_mismatch,
+                    progress.runtime_color_scheme_count,
+                );
+                let result = load.step(init::FreshMapLoadServices {
+                    gpu: &state.renderer.gpu,
+                    batch: &state.renderer.batch_renderer,
+                    asset_manager,
+                    native_rules_owner,
+                    #[cfg(feature = "ares")]
+                    prepared_noncampaign_prefix: &mut prepared_rules_prefix,
+                    audio,
+                    shared_cell_dummy,
+                    tile_variant_selector_cache,
+                    progress: &mut progress.sink,
+                })?;
+                if result.is_none() {
+                    continuing = Some(load);
+                }
+                Ok(result)
+            }
         };
 
         match load_result {
-            Ok(mut result) => {
+            Ok(Some(mut result)) => {
                 if result.pending_atlases.is_none() {
                     publish_load_complete(
                         state,
@@ -1766,8 +1819,9 @@ fn pump_loading_after_present(
                     )?;
                 }
                 result.asset_manager = job.asset_manager.take();
-                Ok(result)
+                Ok(Some(result))
             }
+            Ok(None) => Ok(None),
             Err(err) => Err(err),
         }
     })();
@@ -1775,16 +1829,24 @@ fn pump_loading_after_present(
     // earlier asset/map validation failure leaves it here for explicit retire;
     // a consumed ticket's load_scenario already restored its partial Live state.
     #[cfg(feature = "ares")]
-    if let Some(preparation) = prepared_rules_prefix.take() {
-        state
-            .process_assets
-            .native_rules_mut_with_tile_cache()
-            .0
-            .expect("prepared prefix retains its process owner")
-            .cancel_prepared_noncampaign_scenario_prefix(preparation);
+    if continuing.is_none() {
+        retire_rules_prefix(prepared_rules_prefix.take(), &mut state.process_assets);
     }
     Ok(match result {
-        Ok(result) => {
+        Ok(None) => {
+            state.frontend.loading_session = Some(LoadingSession {
+                stage: LoadingStage::ConstructingScenario(ConstructingScenarioLoad {
+                    load: continuing.expect("pending native construction"),
+                    #[cfg(feature = "ares")]
+                    rules_prefix: prepared_rules_prefix,
+                }),
+                native,
+                job,
+                next_frame: NextLoadingFrame::Later,
+            });
+            LoadingPump::Pending
+        }
+        Ok(Some(result)) => {
             if result.pending_atlases.is_some() {
                 state.frontend.loading_session = Some(LoadingSession {
                     stage: LoadingStage::PreparingPresentation {
@@ -1828,6 +1890,103 @@ fn pump_loading_after_present(
             LoadingPump::Failed(err)
         }
     })
+}
+
+fn pump_map_construction(
+    state: &mut AppState,
+    mut session: LoadingSession,
+    observer: Option<
+        &mut crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
+    >,
+) -> anyhow::Result<LoadingPump> {
+    let render_size = [
+        state.renderer.gpu.config.width,
+        state.renderer.gpu.config.height,
+    ];
+    let scale = loading_scale(state);
+    let step = (|| {
+        let LoadingStage::ConstructingScenario(constructing) = &mut session.stage else {
+            unreachable!()
+        };
+        let asset_manager = session
+            .job
+            .asset_manager
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("native construction lost its asset lease"))?;
+        let shared_cell_dummy = state.process_assets.shared_cell_dummy.clone();
+        let (rules, tile_variant_selector_cache, audio) =
+            state.process_assets.native_rules_mut_with_tile_cache();
+        let native_rules_owner =
+            rules.ok_or_else(|| anyhow::anyhow!("native construction lost its Rules owner"))?;
+        let mut progress = LoadingPhaseProgress::select(
+            session.native.as_mut(),
+            constructing.load.theater_cache_mismatch(),
+            None,
+            |native, network| {
+                RenderingProgressSink::new(
+                    native,
+                    network,
+                    &state.renderer.gpu,
+                    &state.renderer.shell_surface_presenter,
+                    &state.renderer.depth_view,
+                    &state.renderer.batch_renderer,
+                    &state.renderer.bit_font,
+                    &state.renderer.fps_overlay,
+                    render_size,
+                    scale,
+                )
+            },
+        );
+        constructing.load.step(init::FreshMapLoadServices {
+            gpu: &state.renderer.gpu,
+            batch: &state.renderer.batch_renderer,
+            asset_manager,
+            native_rules_owner,
+            #[cfg(feature = "ares")]
+            prepared_noncampaign_prefix: &mut constructing.rules_prefix,
+            audio,
+            shared_cell_dummy,
+            tile_variant_selector_cache,
+            progress: &mut progress.sink,
+        })
+    })();
+    match step {
+        Err(error) => {
+            session.retire(&mut state.process_assets);
+            Ok(LoadingPump::Failed(error))
+        }
+        Ok(None) => {
+            state.frontend.loading_session = Some(session);
+            Ok(LoadingPump::Pending)
+        }
+        Ok(Some(mut result)) => {
+            #[cfg(feature = "ares")]
+            if let LoadingStage::ConstructingScenario(constructing) = &mut session.stage {
+                retire_rules_prefix(constructing.rules_prefix.take(), &mut state.process_assets);
+            }
+            if result.pending_atlases.is_none() {
+                if let Err(error) =
+                    publish_load_complete(state, &mut session.native, &mut result, observer)
+                {
+                    session.retire(&mut state.process_assets);
+                    return Ok(LoadingPump::Failed(error));
+                }
+            }
+            result.asset_manager = session.job.asset_manager.take();
+            if result.pending_atlases.is_some() {
+                session.stage = LoadingStage::PreparingPresentation {
+                    result: Box::new(result),
+                };
+                state.frontend.loading_session = Some(session);
+                Ok(LoadingPump::Pending)
+            } else {
+                Ok(LoadingPump::Finished {
+                    result: Box::new(result),
+                    timed_out: Vec::new(),
+                })
+            }
+        }
+    }
 }
 
 fn publish_load_complete(
@@ -2130,7 +2289,8 @@ fn prepare_loading_session(
         next_frame,
     } = session;
     let stage = match stage {
-        stage @ (LoadingStage::PreparingPresentation { .. }
+        stage @ (LoadingStage::ConstructingScenario(_)
+        | LoadingStage::PreparingPresentation { .. }
         | LoadingStage::AwaitingPeers { .. }
         | LoadingStage::ReadyToInstall { .. }) => stage,
         LoadingStage::Prepared(prepared) => LoadingStage::Prepared(prepared),
