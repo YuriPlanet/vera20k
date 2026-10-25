@@ -153,6 +153,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 26
             | 27
             | 30
+            | 31
             | 34
             | 37
             | 38
@@ -758,6 +759,63 @@ impl Simulation {
                     .map(TeamScriptState::owner);
                 if let Some(house) = owner.and_then(|owner| self.houses.get_mut(&owner)) {
                     house.strategy_emergency_mut().set_state_four();
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
+            31 => {
+                // TeamClass::AI, original gamemd 6E99FD..6E9A6C:
+                // ReceiveDamage(&HealthCopy, 0, C4Warhead, NULL, 1, 0, NULL)
+                // for living, marked, non-limbo members, until a pass calls
+                // no receiver. Damage/death weapons finish before reading
+                // the successor. Remove_Member6EA997 clears that link, so
+                // restart from the live head rather than caching stale ids.
+                let warhead = self.interner.intern(&rules.bridge_warheads.c4_name);
+                loop {
+                    let mut called_receiver = false;
+                    let mut member = self
+                        .team_script_vm
+                        .teams
+                        .get(&team_id)
+                        .and_then(|team| team.members().next());
+                    while let Some(current) = member {
+                        let health = self.substrate.entities.get(current).and_then(|entity| {
+                            (entity.health.current() > 0
+                                && entity.lifecycle.object_alive()
+                                && entity.lifecycle.cell_marked()
+                                && !entity.lifecycle.in_limbo())
+                            .then_some(entity.health.current())
+                        });
+                        if let Some(health) = health {
+                            self.commit_direct_damage_receiver(
+                                rules,
+                                registry,
+                                crate::sim::combat::EntityDamageEvent::direct_receiver(
+                                    current,
+                                    health,
+                                    0,
+                                    crate::sim::combat::RAD_NO_ATTACKER,
+                                    None,
+                                    warhead,
+                                    crate::sim::combat::ReceiverCallFlags {
+                                        ignore_defenses: true,
+                                        arg6: false,
+                                    },
+                                ),
+                                frame_effects,
+                            );
+                            called_receiver = true;
+                        }
+                        member = self
+                            .team_script_vm
+                            .teams
+                            .get(&team_id)
+                            .and_then(|team| team.next_member_after(current));
+                    }
+                    if !called_receiver {
+                        break;
+                    }
                 }
                 if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
                     team.advance_pending = true;

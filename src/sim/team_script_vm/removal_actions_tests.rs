@@ -1,4 +1,4 @@
-//! Script37's original member walk and production lifecycle. The native
+//! Script31/37 member walks and production damage/lifecycle owners. The native
 //! corpus excludes virtual lifecycle bodies; these regressions exercise their
 //! existing world owners through the actual script consumer and late drain.
 
@@ -8,6 +8,149 @@ use crate::rules::team_ai_ini::TeamAiDefinitionSource;
 use crate::sim::house_state::HouseState;
 use crate::sim::team_script_vm::TeamScriptDefinition;
 use crate::sim::world::{LifecycleTestEvent, SimSoundEvent, UninitContext};
+
+fn self_destruct_scene() -> Option<(Simulation, RuleSet, InternedId)> {
+    use crate::rules::process_owner::NativeScenarioRulesPrefix;
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets()?;
+    let map = IniFile::from_str(&format!(
+        "[VehicleTypes]\n90000=SCRIPTBOMB\n90001=SCRIPTNEIGHBOR\n\
+         [SCRIPTBOMB]\nStrength=200\nArmor=heavy\nSpeed=6\nLocomotor={}\n\
+         Explodes=yes\nDeathWeapon=ScriptBlast\nDeathWeaponDamageModifier=1\n\
+         Explosion=none\nMinDebris=0\nMaxDebris=0\nCrewed=no\n\
+         [SCRIPTNEIGHBOR]\nStrength=500\nArmor=heavy\nSpeed=6\nLocomotor={}\n\
+         Explosion=none\nMinDebris=0\nMaxDebris=0\nCrewed=no\n\
+         [CombatDamage]\nC4Warhead=ScriptKill\n\
+         [ScriptKill]\nVerses=0%,0%,0%,0%,0%,0%,0%,0%,0%,0%,0%\n\
+         [ScriptBlast]\nDamage=25\nWarhead=ScriptBlastWH\n\
+         [ScriptBlastWH]\nCellSpread=1\nAffectsAllies=yes\n\
+         Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         [ScriptTypes]\n0=SUICIDE-SCRIPT\n[SUICIDE-SCRIPT]\n0=31,0\n1=49,0\n",
+        crate::rules::locomotor_type::LocomotorKind::Drive.clsid(),
+        crate::rules::locomotor_type::LocomotorKind::Drive.clsid(),
+    ));
+    let (rules, _, _, _) = crate::rules::retail_ini_fixture::retail_rules_owner(&assets)
+        .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &map)
+        .unwrap()
+        .into_parts();
+    assert_eq!(rules.bridge_warheads.c4_name, "ScriptKill");
+    let mut sim = Simulation::with_seed(31);
+    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
+        &IniFile::from_str(""),
+        &map,
+        false,
+    );
+    sim.install_team_ai_registry(&registry, &rules).unwrap();
+    let owner = sim.interner.intern("Russians");
+    sim.houses
+        .register(HouseState::new(owner, 1, None, false, 0, 10));
+    Some((sim, rules, owner))
+}
+
+#[test]
+fn script31_uses_fatal_damage_and_finishes_the_death_weapon_chain() {
+    let Some((mut sim, rules, owner)) = self_destruct_scene() else {
+        return;
+    };
+    let members: Vec<_> = [10, 14]
+        .into_iter()
+        .map(|x| {
+            sim.spawn_object_at_height("SCRIPTBOMB", "Russians", x, 10, 0, 0, &rules)
+                .unwrap()
+        })
+        .collect();
+    let neighbor = sim
+        .spawn_object_at_height("SCRIPTNEIGHBOR", "Russians", 10, 11, 0, 0, &rules)
+        .unwrap();
+    let script = sim.interner.get("SUICIDE-SCRIPT").unwrap();
+    let team = sim
+        .team_script_vm
+        .create_team(owner, script, members.clone(), 0);
+
+    sim.team_step_script(team, &rules, None, Default::default());
+
+    for member in members {
+        assert!(
+            sim.substrate
+                .entities
+                .get(member)
+                .is_none_or(|e| e.health.current() <= 0)
+        );
+    }
+    assert!(
+        sim.substrate
+            .entities
+            .get(neighbor)
+            .unwrap()
+            .health
+            .current()
+            < 500,
+        "the script must run DeathWeapon, rather than dispose of the unit"
+    );
+    let state = sim.team_script_vm.team(team).unwrap();
+    assert!(state.advance_pending());
+    assert!(state.refusal().is_none());
+}
+
+#[test]
+fn script31_skips_unmarked_and_limbo_members_and_still_advances() {
+    let Some((mut sim, rules, owner)) = self_destruct_scene() else {
+        return;
+    };
+    let live = sim
+        .spawn_object_at_height("SCRIPTNEIGHBOR", "Russians", 10, 10, 0, 0, &rules)
+        .unwrap();
+    let unmarked = sim
+        .spawn_object_at_height("SCRIPTBOMB", "Russians", 13, 10, 0, 0, &rules)
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(unmarked)
+        .unwrap()
+        .lifecycle
+        .set_cell_marked_for_test(false);
+    let limbo = sim
+        .construct_object_limbo_at_height(
+            "SCRIPTBOMB",
+            "Russians",
+            15,
+            10,
+            0,
+            0,
+            &rules,
+            Default::default(),
+        )
+        .unwrap();
+    let script = sim.interner.get("SUICIDE-SCRIPT").unwrap();
+    let team = sim
+        .team_script_vm
+        .create_team(owner, script, vec![unmarked, live, limbo], 0);
+
+    sim.team_step_script(team, &rules, None, Default::default());
+
+    assert!(
+        sim.substrate
+            .entities
+            .get(live)
+            .is_none_or(|e| e.health.current() <= 0)
+    );
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(unmarked)
+            .unwrap()
+            .health
+            .current(),
+        200
+    );
+    assert_eq!(
+        sim.substrate.entities.get(limbo).unwrap().health.current(),
+        200
+    );
+    assert!(sim.team_script_vm.team(team).unwrap().advance_pending());
+}
 
 fn removal_rules() -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(&format!(
