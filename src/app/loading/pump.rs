@@ -577,6 +577,9 @@ impl PreparedScenarioLoad {
 enum LoadingStage {
     Selected(LoadingRequest),
     Prepared(PreparedScenarioLoad),
+    PreparingPresentation {
+        result: Box<MapLoadResult>,
+    },
     AwaitingPeers {
         result: Box<MapLoadResult>,
         wait: NetworkLoadWait,
@@ -593,9 +596,9 @@ impl LoadingStage {
         match self {
             Self::Selected(request) => request.startup(),
             Self::Prepared(prepared) => prepared.request.startup(),
-            Self::AwaitingPeers { result, .. } | Self::ReadyToInstall { result } => {
-                &result.scenario.startup
-            }
+            Self::PreparingPresentation { result }
+            | Self::AwaitingPeers { result, .. }
+            | Self::ReadyToInstall { result } => &result.scenario.startup,
         }
     }
 }
@@ -863,8 +866,9 @@ impl LoadingSession {
         if let LoadingStage::Prepared(prepared) = &mut self.stage {
             prepared.cancel_rules_prefix(assets);
         }
-        if let LoadingStage::AwaitingPeers { result, .. } | LoadingStage::ReadyToInstall { result } =
-            &mut self.stage
+        if let LoadingStage::PreparingPresentation { result }
+        | LoadingStage::AwaitingPeers { result, .. }
+        | LoadingStage::ReadyToInstall { result } = &mut self.stage
             && let Some(manager) = result.asset_manager.take()
         {
             assets.return_from_loading(manager);
@@ -1455,9 +1459,9 @@ pub(crate) fn loading_map_source(state: &AppState) -> Option<&crate::map::source
     match &state.frontend.loading_session.as_ref()?.stage {
         LoadingStage::Prepared(prepared) => Some(prepared.initial.map_source()),
         LoadingStage::Selected(_) => None,
-        LoadingStage::AwaitingPeers { result, .. } | LoadingStage::ReadyToInstall { result } => {
-            Some(&result.scenario.map_source)
-        }
+        LoadingStage::PreparingPresentation { result }
+        | LoadingStage::AwaitingPeers { result, .. }
+        | LoadingStage::ReadyToInstall { result } => Some(&result.scenario.map_source),
     }
 }
 
@@ -1530,6 +1534,9 @@ fn pump_loading_after_present(
     let Some(session) = state.frontend.loading_session.take() else {
         return Ok(LoadingPump::Pending);
     };
+    if matches!(session.stage, LoadingStage::PreparingPresentation { .. }) {
+        return pump_presentation(state, session, observer);
+    }
     if matches!(session.stage, LoadingStage::ReadyToInstall { .. }) {
         return finish_network_load(state, session, observer);
     }
@@ -1750,42 +1757,12 @@ fn pump_loading_after_present(
 
         match load_result {
             Ok(mut result) => {
-                if let Some(native) = native.as_mut() {
-                    result.scenario.campaign_names = native.campaign_names.take();
-                    let terminal_raw_percent = native.progress_cadence.terminal_raw_percent();
-                    if let Some(observer) = observer.as_deref_mut() {
-                        observer.observe(
-                            state,
-                            NetworkLoadingObservation {
-                                stage: "before_complete",
-                                startup: &result.scenario.startup,
-                                progress: &native.progress,
-                                rows: &native.progress_row,
-                                incomplete: native.progress_row.incomplete_remote_indices(),
-                                simulation: result.scenario.simulation.as_ref(),
-                                timeout: None,
-                                observed_bucket:
-                                    (crate::app::match_runtime::frame_pacer::wall_clock_ms() >> 4)
-                                        as i32,
-                            },
-                        )?;
-                    }
-                    advance_and_present_native_progress(
-                        &state.renderer.gpu,
-                        &state.renderer.shell_surface_presenter,
-                        &state.renderer.depth_view,
-                        &state.renderer.batch_renderer,
-                        &state.renderer.bit_font,
-                        &state.renderer.fps_overlay,
-                        native,
-                        terminal_raw_percent,
-                        render_size,
-                        scale,
-                        crate::app::lan_service::LoadingNetworkService::borrow(
-                            &mut state.match_state.session,
-                            state.match_state.lan_service.as_mut(),
-                            state.platform.capture_client_size.is_some(),
-                        )?,
+                if result.pending_atlases.is_none() {
+                    publish_load_complete(
+                        state,
+                        &mut native,
+                        &mut result,
+                        observer.as_deref_mut(),
                     )?;
                 }
                 result.asset_manager = job.asset_manager.take();
@@ -1808,6 +1785,17 @@ fn pump_loading_after_present(
     }
     Ok(match result {
         Ok(result) => {
+            if result.pending_atlases.is_some() {
+                state.frontend.loading_session = Some(LoadingSession {
+                    stage: LoadingStage::PreparingPresentation {
+                        result: Box::new(result),
+                    },
+                    native,
+                    job,
+                    next_frame: NextLoadingFrame::Later,
+                });
+                return Ok(LoadingPump::Pending);
+            }
             if matches!(result.scenario.startup, LoadingStartup::Network(_)) {
                 let native = native.expect("network load retains its source progress rows");
                 let now = (crate::app::match_runtime::frame_pacer::wall_clock_ms() >> 4) as i32;
@@ -1842,6 +1830,104 @@ fn pump_loading_after_present(
     })
 }
 
+fn publish_load_complete(
+    state: &mut AppState,
+    native: &mut Option<NativeLoadingScreenState>,
+    result: &mut MapLoadResult,
+    mut observer: Option<
+        &mut crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
+    >,
+) -> anyhow::Result<()> {
+    let render_size = [
+        state.renderer.gpu.config.width,
+        state.renderer.gpu.config.height,
+    ];
+    let scale = loading_scale(state);
+    if let Some(native) = native.as_mut() {
+        result.scenario.campaign_names = native.campaign_names.take();
+        let terminal_raw_percent = native.progress_cadence.terminal_raw_percent();
+        if let Some(observer) = observer.as_deref_mut() {
+            observer.observe(
+                state,
+                NetworkLoadingObservation {
+                    stage: "before_complete",
+                    startup: &result.scenario.startup,
+                    progress: &native.progress,
+                    rows: &native.progress_row,
+                    incomplete: native.progress_row.incomplete_remote_indices(),
+                    simulation: result.scenario.simulation.as_ref(),
+                    timeout: None,
+                    observed_bucket: (crate::app::match_runtime::frame_pacer::wall_clock_ms() >> 4)
+                        as i32,
+                },
+            )?;
+        }
+        advance_and_present_native_progress(
+            &state.renderer.gpu,
+            &state.renderer.shell_surface_presenter,
+            &state.renderer.depth_view,
+            &state.renderer.batch_renderer,
+            &state.renderer.bit_font,
+            &state.renderer.fps_overlay,
+            native,
+            terminal_raw_percent,
+            render_size,
+            scale,
+            crate::app::lan_service::LoadingNetworkService::borrow(
+                &mut state.match_state.session,
+                state.match_state.lan_service.as_mut(),
+                state.platform.capture_client_size.is_some(),
+            )?,
+        )?;
+    }
+    Ok(())
+}
+
+fn pump_presentation(
+    state: &mut AppState,
+    mut session: LoadingSession,
+    observer: Option<
+        &mut crate::app::diagnostics::shell_capture::loading_host_loss::LoadingObserver<'_>,
+    >,
+) -> anyhow::Result<LoadingPump> {
+    let LoadingStage::PreparingPresentation { result } = &mut session.stage else {
+        unreachable!()
+    };
+    let polled = result
+        .pending_atlases
+        .as_mut()
+        .expect("pending presentation owner")
+        .poll(
+            &state.renderer.gpu,
+            &state.renderer.batch_renderer,
+            &mut result.presentation,
+        );
+    match polled {
+        Err(error) => {
+            session.retire(&mut state.process_assets);
+            return Ok(LoadingPump::Failed(error));
+        }
+        Ok(false) => {
+            state.frontend.loading_session = Some(session);
+            return Ok(LoadingPump::Pending);
+        }
+        Ok(true) => {
+            result.pending_atlases = None;
+        }
+    }
+    if let Err(error) = publish_load_complete(state, &mut session.native, result, observer) {
+        session.retire(&mut state.process_assets);
+        return Ok(LoadingPump::Failed(error));
+    }
+    let LoadingStage::PreparingPresentation { result } = session.stage else {
+        unreachable!()
+    };
+    Ok(LoadingPump::Finished {
+        result,
+        timed_out: Vec::new(),
+    })
+}
+
 fn ensure_job_asset_manager(state: &mut AppState) -> anyhow::Result<()> {
     let Some(mut session) = state.frontend.loading_session.take() else {
         return Ok(());
@@ -1861,9 +1947,9 @@ fn ensure_job_asset_manager(state: &mut AppState) -> anyhow::Result<()> {
 
 fn loading_asset_manager(session: &LoadingSession) -> Option<&AssetManager> {
     match &session.stage {
-        LoadingStage::AwaitingPeers { result, .. } | LoadingStage::ReadyToInstall { result } => {
-            result.asset_manager.as_ref()
-        }
+        LoadingStage::PreparingPresentation { result }
+        | LoadingStage::AwaitingPeers { result, .. }
+        | LoadingStage::ReadyToInstall { result } => result.asset_manager.as_ref(),
         _ => session.job.asset_manager.as_ref(),
     }
 }
@@ -2044,7 +2130,9 @@ fn prepare_loading_session(
         next_frame,
     } = session;
     let stage = match stage {
-        stage @ (LoadingStage::AwaitingPeers { .. } | LoadingStage::ReadyToInstall { .. }) => stage,
+        stage @ (LoadingStage::PreparingPresentation { .. }
+        | LoadingStage::AwaitingPeers { .. }
+        | LoadingStage::ReadyToInstall { .. }) => stage,
         LoadingStage::Prepared(prepared) => LoadingStage::Prepared(prepared),
         LoadingStage::Selected(request) => {
             let ra2_dir = job

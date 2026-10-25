@@ -25,6 +25,7 @@ use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use crate::assets::asset_manager::AssetManager;
+use crate::assets::mix_archive::SharedBytes;
 use crate::assets::pal_file::Palette;
 use crate::assets::shp_file::ShpFile;
 use crate::map::entities::EntityCategory;
@@ -36,6 +37,10 @@ use crate::rules::effect_asset_catalog::available_effect_anim_frame_count;
 use crate::rules::house_colors::{HouseColorIndex, HouseColorRamps};
 use crate::rules::projectile_type::ProjectileType;
 use crate::rules::ruleset::RuleSet;
+
+#[path = "sprite_atlas_loading.rs"]
+mod loading;
+pub(crate) use loading::SpriteAtlasLoadingJob;
 
 /// Edge of a growth page: 16 MiB of newly needed physical frame indices.
 /// New palette/context aliases reuse their existing rectangles.
@@ -152,7 +157,7 @@ fn collect_building_make_asset_requests(
                 let Some((file, data)) = find_shp(asset_manager, &candidates) else {
                     continue;
                 };
-                let Ok(raw_count) = ShpFile::frame_count_from_bytes(data) else {
+                let Ok(raw_count) = ShpFile::frame_count_from_bytes(&data) else {
                     continue;
                 };
                 // RA2 make SHPs have shadow frames in the second half — only use the first half.
@@ -189,13 +194,13 @@ fn collect_building_make_asset_requests(
     }
 }
 
-fn find_shp<'a, 'n>(
-    asset_manager: &'a AssetManager,
+fn find_shp<'n>(
+    asset_manager: &AssetManager,
     candidates: &'n [String],
-) -> Option<(&'n str, &'a [u8])> {
+) -> Option<(&'n str, SharedBytes)> {
     candidates.iter().find_map(|name| {
         asset_manager
-            .get_ref(name)
+            .get_shared(name)
             .map(|data| (name.as_str(), data))
     })
 }
@@ -220,7 +225,7 @@ fn scan_building_anim_frame_count(
         theater_name,
     );
     let (file, data) = find_shp(asset_manager, &candidates)?;
-    let raw_count = ShpFile::frame_count_from_bytes(data).ok()?;
+    let raw_count = ShpFile::frame_count_from_bytes(&data).ok()?;
     let real: u16 = raw_count / 2;
     let required_count = loop_end.max(1);
     let count = if real > 0 && real >= required_count {
@@ -805,11 +810,7 @@ impl SpriteAtlas {
 
     /// Admit one logical key only after its physical rectangle was uploaded.
     /// Every alias reuses the rectangle while retaining its own draw metadata.
-    fn admit_placed_sprite(
-        &mut self,
-        sprite: &RenderedShpSprite<'_>,
-        placement: ShpFramePlacement,
-    ) {
+    fn admit_placed_sprite(&mut self, sprite: &RenderedShpSprite, placement: ShpFramePlacement) {
         match atlas_entry(
             sprite,
             placement.origin,
@@ -831,7 +832,7 @@ impl SpriteAtlas {
         }
     }
 
-    fn admit_aliases(&mut self, sprites: Vec<RenderedShpSprite<'_>>) {
+    fn admit_aliases(&mut self, sprites: Vec<RenderedShpSprite>) {
         for sprite in sprites {
             if let Some(placement) = self.physical_frames.get(&sprite.physical_frame()).copied() {
                 self.admit_placed_sprite(&sprite, placement);
@@ -851,7 +852,7 @@ impl SpriteAtlas {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         batch: &BatchRenderer,
-        sprites: Vec<RenderedShpSprite<'_>>,
+        sprites: Vec<RenderedShpSprite>,
         palettes: ShpPalettes,
     ) {
         let (sprites, aliases) = separate_physical_frames(sprites, &self.physical_frames);
@@ -977,10 +978,10 @@ struct ShpFramePlacement {
 /// Keep one upload per newly needed physical frame. All other logical keys
 /// wait until their resident or same-batch representative is admitted. Initial
 /// packing and growth share this decision and the same admission owner.
-fn separate_physical_frames<'a>(
-    sprites: Vec<RenderedShpSprite<'a>>,
+fn separate_physical_frames(
+    sprites: Vec<RenderedShpSprite>,
     resident: &HashMap<ShpPhysicalFrame, ShpFramePlacement>,
-) -> (Vec<RenderedShpSprite<'a>>, Vec<RenderedShpSprite<'a>>) {
+) -> (Vec<RenderedShpSprite>, Vec<RenderedShpSprite>) {
     let mut pending = HashSet::new();
     sprites.into_iter().partition(|sprite| {
         let frame = sprite.physical_frame();
@@ -992,14 +993,16 @@ fn separate_physical_frames<'a>(
 ///
 /// It names its frame instead of holding the pixels, so the sprites waiting
 /// for the pack hold none: each band decodes its sprites' frames as it is
-/// uploaded ([`RenderedShpSprite::indices`]).
-struct RenderedShpSprite<'a> {
+/// uploaded ([`RenderedShpSprite::indices`]). The shared physical file pins
+/// the resolver's selected storage without borrowing the process AssetManager
+/// or copying its bytes; CPU preparation can therefore outlive that lease.
+struct RenderedShpSprite {
     key: ShpSpriteKey,
     /// The atlas palette row its indices resolve through ([`ShpPalettes`]).
     palette: u32,
     /// The SHP file the frame is stored in, already decoded whole once, and
     /// the frame.
-    shp: &'a [u8],
+    shp: SharedBytes,
     source_digest: [u8; 32],
     frame: usize,
     width: u32,
@@ -1011,7 +1014,7 @@ struct RenderedShpSprite<'a> {
     extended: bool,
 }
 
-impl RenderedShpSprite<'_> {
+impl RenderedShpSprite {
     fn physical_frame(&self) -> ShpPhysicalFrame {
         ShpPhysicalFrame {
             source_digest: self.source_digest,
@@ -1021,7 +1024,7 @@ impl RenderedShpSprite<'_> {
 
     /// Palette indices of the stored frame rectangle, without canvas padding.
     fn indices(&self) -> Vec<u8> {
-        ShpFile::decode_frame(self.shp, self.frame)
+        ShpFile::decode_frame(&self.shp, self.frame)
             .expect("a rendered sprite's SHP decoded whole when it was rendered")
     }
 }
@@ -1578,17 +1581,17 @@ fn infantry_asset_frames(
 /// Return decoded object sources for the render pass to consume, so each
 /// Infantry type's frame membership and each SHP object's shadow frames are
 /// computed from its resolved SHP once per refresh, independent of house colour.
-fn insert_new_object_keys<'a>(
+fn insert_new_object_keys(
     needed: &mut HashSet<ShpSpriteKey>,
     new_objects: &HashSet<(String, HouseColorIndex)>,
     entities: &crate::sim::entity_store::EntityStore,
     interner: Option<&crate::sim::intern::StringInterner>,
-    asset_manager: &'a AssetManager,
+    asset_manager: &AssetManager,
     theater_ext: &str,
     theater_name: &str,
     rules: Option<&RuleSet>,
     art: Option<&ArtRegistry>,
-) -> HashMap<(ShpImageKind, String), Option<ShpSource<'a>>> {
+) -> HashMap<(ShpImageKind, String), Option<ShpSource>> {
     let categories: HashMap<&str, EntityCategory> = entities
         .values()
         .filter(|entity| !entity.is_voxel())
@@ -1760,7 +1763,7 @@ fn register_projectile_frames(
             let candidates = projectile_shp_candidates(projectile, theater_ext, theater_name);
             find_shp(assets, &candidates)
                 .and_then(|(file, bytes)| {
-                    ShpFile::frame_count_from_bytes(bytes)
+                    ShpFile::frame_count_from_bytes(&bytes)
                         .ok()
                         .map(|count| (file.to_string(), count))
                 })
@@ -1822,6 +1825,45 @@ pub fn build_sprite_atlas(
     existing: Option<SpriteAtlas>,
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> Option<SpriteAtlas> {
+    prepare_sprite_atlas(
+        device.limits().max_texture_dimension_2d,
+        entities,
+        asset_manager,
+        palette,
+        theater_ext,
+        theater_name,
+        rules,
+        art,
+        house_colors,
+        extra_building_types,
+        anim_remap_keys,
+        cell_drawer_type_ids,
+        additional_keys,
+        cell_palette,
+        existing,
+        interner,
+    )
+    .finish(device, queue, batch)
+}
+
+pub(crate) fn prepare_sprite_atlas(
+    max_texture_dimension_2d: u32,
+    entities: &crate::sim::entity_store::EntityStore,
+    asset_manager: &AssetManager,
+    palette: &Palette,
+    theater_ext: &str,
+    theater_name: &str,
+    rules: Option<&RuleSet>,
+    art: Option<&ArtRegistry>,
+    house_colors: &HouseColorMap,
+    extra_building_types: &[&str],
+    anim_remap_keys: &HashSet<AnimRemapKey>,
+    cell_drawer_type_ids: &HashSet<String>,
+    additional_keys: &HashSet<ShpSpriteKey>,
+    cell_palette: Option<&Palette>,
+    existing: Option<SpriteAtlas>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+) -> PreparedSpriteAtlas {
     let started = Instant::now();
     let previous_atlas = existing;
 
@@ -2080,7 +2122,7 @@ pub fn build_sprite_atlas(
                         let Some((file, data)) = find_shp(asset_manager, &candidates) else {
                             continue;
                         };
-                        let Ok(count) = ShpFile::frame_count_from_bytes(data) else {
+                        let Ok(count) = ShpFile::frame_count_from_bytes(&data) else {
                             continue;
                         };
                         object_shp_frame_counts.insert(upper.clone(), count);
@@ -2151,7 +2193,7 @@ pub fn build_sprite_atlas(
         let required_cell_drawer = *kind == ShpImageKind::Animation
             && cell_drawer_type_ids.contains(&name.to_ascii_uppercase());
         match find_shp(asset_manager, &candidates) {
-            Some((file, data)) => match ShpFile::frame_count_from_bytes(data) {
+            Some((file, data)) => match ShpFile::frame_count_from_bytes(&data) {
                 Ok(raw_count) => {
                     let name_upper = name.to_ascii_uppercase();
                     let scheduler_owned = *kind == ShpImageKind::Animation
@@ -2186,18 +2228,18 @@ pub fn build_sprite_atlas(
                     log::debug!("Effect anim SHP {}: {} frames from {}", name, count, file);
                 }
                 Err(error) if required_cell_drawer => {
-                    return abort_sprite_atlas_refresh(
+                    return PreparedSpriteAtlas::Ready(abort_sprite_atlas_refresh(
                         previous_atlas,
                         format!("bound cell-drawer animation [{name}] failed SHP decode: {error}"),
-                    );
+                    ));
                 }
                 Err(_) => {}
             },
             None if required_cell_drawer => {
-                return abort_sprite_atlas_refresh(
+                return PreparedSpriteAtlas::Ready(abort_sprite_atlas_refresh(
                     previous_atlas,
                     format!("bound cell-drawer animation [{name}] has no SHP asset"),
-                );
+                ));
             }
             None => {}
         }
@@ -2228,7 +2270,7 @@ pub fn build_sprite_atlas(
             format!("{}.SHP", shp_name),
         ];
         match find_shp(asset_manager, &candidates) {
-            Some((file, data)) => match ShpFile::frame_count_from_bytes(data) {
+            Some((file, data)) => match ShpFile::frame_count_from_bytes(&data) {
                 Ok(frame_count) => {
                     for frame in 0..frame_count {
                         needed.insert(ShpSpriteKey {
@@ -2268,7 +2310,7 @@ pub fn build_sprite_atlas(
     if previous_atlas.is_none() {
         let candidates = ["infshdw.shp".to_string(), "INFSHDW.SHP".to_string()];
         match find_shp(asset_manager, &candidates)
-            .and_then(|(file, data)| Some((file, ShpFile::frame_count_from_bytes(data).ok()?)))
+            .and_then(|(file, data)| Some((file, ShpFile::frame_count_from_bytes(&data).ok()?)))
         {
             Some((file, frame_count)) if frame_count > INFANTRY_AIR_SHADOW_FRAME => {
                 needed.insert(ShpSpriteKey {
@@ -2327,7 +2369,7 @@ pub fn build_sprite_atlas(
 
     if needed.is_empty() && previous_atlas.is_none() {
         log::info!("No SHP sprite entities found");
-        return None;
+        return PreparedSpriteAtlas::Ready(None);
     }
 
     // Step 2: the keys to render — every one at map load, afterwards only those
@@ -2427,16 +2469,16 @@ pub fn build_sprite_atlas(
         })
         .collect();
     if cell_palette.is_none() && palette_choices.contains(&SpritePaletteChoice::CellIso) {
-        return abort_sprite_atlas_refresh(
+        return PreparedSpriteAtlas::Ready(abort_sprite_atlas_refresh(
             previous_atlas,
             "terrain-attached animations require the active theater ISO palette".to_string(),
-        );
+        ));
     }
     if bullet_palette.is_none() && palette_choices.contains(&SpritePaletteChoice::Bullet) {
-        return abort_sprite_atlas_refresh(
+        return PreparedSpriteAtlas::Ready(abort_sprite_atlas_refresh(
             previous_atlas,
             "visible projectiles require PALETTE.PAL".to_string(),
-        );
+        ));
     }
     if effect_palette.is_none()
         && new_keys.iter().any(|key| {
@@ -2448,10 +2490,10 @@ pub fn build_sprite_atlas(
             )
         })
     {
-        return abort_sprite_atlas_refresh(
+        return PreparedSpriteAtlas::Ready(abort_sprite_atlas_refresh(
             previous_atlas,
             "literal animation palettes require ANIM.PAL".to_string(),
-        );
+        ));
     }
 
     let mut rendered: Vec<RenderedShpSprite> = Vec::with_capacity(new_keys.len());
@@ -2541,13 +2583,13 @@ pub fn build_sprite_atlas(
         match sprite {
             Some(sprite) => rendered.push(sprite),
             None if cell_drawer_type_ids.contains(&key.type_id.to_ascii_uppercase()) => {
-                return abort_sprite_atlas_refresh(
+                return PreparedSpriteAtlas::Ready(abort_sprite_atlas_refresh(
                     previous_atlas,
                     format!(
                         "bound cell-drawer animation [{}] frame {} failed SHP rendering",
                         key.type_id, key.frame
                     ),
-                );
+                ));
             }
             None => unrenderable.push(key.clone()),
         }
@@ -2568,66 +2610,151 @@ pub fn build_sprite_atlas(
         }
     }
 
-    if palettes.colors.len() > device.limits().max_texture_dimension_2d as usize {
-        return abort_sprite_atlas_refresh(
+    if palettes.colors.len() > max_texture_dimension_2d as usize {
+        return PreparedSpriteAtlas::Ready(abort_sprite_atlas_refresh(
             previous_atlas,
             format!(
                 "SHP atlas requires {} palette rows; device supports {}",
                 palettes.colors.len(),
-                device.limits().max_texture_dimension_2d,
+                max_texture_dimension_2d,
             ),
-        );
+        ));
     }
 
-    // Step 3: shelf-pack into new pages at map load; afterwards append to a
-    // growth page so resident sprites are never repacked or re-uploaded.
-    let added = rendered.len();
-    let mut atlas = match previous_atlas {
-        Some(mut atlas) => {
-            atlas.append_sprites(device, queue, batch, rendered, palettes);
-            atlas
+    PreparedSpriteAtlas::Upload(ShpAtlasUpload {
+        started,
+        previous_atlas,
+        rendered,
+        palettes,
+        registered_effects,
+        unrenderable,
+        make_frame_counts,
+        active_anim_frame_counts,
+        object_shp_frame_counts,
+        shp_files,
+        projectile_files,
+        new_objects,
+        new_remaps,
+        load_harvest_overlay,
+    })
+}
+
+/// Prepared draw metadata owns shared physical source files. It borrows no
+/// simulation, Rules or process AssetManager; the loading pump can retain it
+/// across frames while those existing owners stay in their original phase.
+pub(crate) enum PreparedSpriteAtlas {
+    Ready(Option<SpriteAtlas>),
+    Upload(ShpAtlasUpload),
+}
+
+pub(crate) struct ShpAtlasUpload {
+    started: Instant,
+    previous_atlas: Option<SpriteAtlas>,
+    rendered: Vec<RenderedShpSprite>,
+    palettes: ShpPalettes,
+    registered_effects: EffectRegistry,
+    unrenderable: Vec<ShpSpriteKey>,
+    make_frame_counts: HashMap<String, u16>,
+    active_anim_frame_counts: HashMap<String, u16>,
+    object_shp_frame_counts: HashMap<String, u16>,
+    shp_files: HashMap<(ShpImageKind, String), String>,
+    projectile_files: HashMap<String, (String, u16)>,
+    new_objects: HashSet<(String, HouseColorIndex)>,
+    new_remaps: HashSet<AnimRemapKey>,
+    load_harvest_overlay: bool,
+}
+
+impl PreparedSpriteAtlas {
+    pub(crate) fn finish(
+        self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+    ) -> Option<SpriteAtlas> {
+        match self {
+            Self::Ready(atlas) => atlas,
+            Self::Upload(upload) => upload.finish(device, queue, batch),
         }
-        None if rendered.is_empty() => {
-            log::warn!("No SHP sprites rendered");
-            return None;
-        }
-        None => {
-            let mut atlas = pack_sprites(device, queue, batch, rendered, palettes);
-            atlas.effects = registered_effects;
-            atlas
-        }
-    };
-    atlas.unrenderable.extend(unrenderable);
-    atlas.make_frame_counts = make_frame_counts;
-    atlas.active_anim_frame_counts = active_anim_frame_counts;
-    atlas.object_shp_frame_counts = object_shp_frame_counts;
-    atlas.shp_files = shp_files;
-    atlas.projectile_files = projectile_files;
-    for (type_id, color) in new_objects {
-        atlas
-            .covered_objects
-            .entry(type_id)
-            .or_default()
-            .insert(color);
     }
-    atlas.covered_anim_remaps.extend(new_remaps);
-    atlas.harvest_overlay_loaded |= load_harvest_overlay;
-    log::info!(
-        "SHP sprite atlas: {} sprites added in {:.1} ms; {} sprites on {} pages, {} unrenderable keys",
-        added,
-        started.elapsed().as_secs_f64() * 1000.0,
-        atlas.sprite_count(),
-        atlas.page_count(),
-        atlas.unrenderable.len(),
-    );
-    Some(atlas)
+}
+
+impl ShpAtlasUpload {
+    fn finish(
+        mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+    ) -> Option<SpriteAtlas> {
+        let initial = self.previous_atlas.is_none();
+        let rendered = std::mem::take(&mut self.rendered);
+        let palettes = std::mem::take(&mut self.palettes);
+        let added = rendered.len();
+        let atlas = match self.previous_atlas.take() {
+            Some(mut atlas) => {
+                atlas.append_sprites(device, queue, batch, rendered, palettes);
+                atlas
+            }
+            None if rendered.is_empty() => {
+                log::warn!("No SHP sprites rendered");
+                return None;
+            }
+            None => pack_sprites(device, queue, batch, rendered, palettes),
+        };
+        Some(self.publish(atlas, added, initial))
+    }
+
+    /// Publish only a complete incoming atlas; synchronous growth and loading
+    /// jobs share all coverage, source identities and failure bookkeeping.
+    fn publish(self, mut atlas: SpriteAtlas, added: usize, initial: bool) -> SpriteAtlas {
+        let Self {
+            started,
+            registered_effects,
+            unrenderable,
+            make_frame_counts,
+            active_anim_frame_counts,
+            object_shp_frame_counts,
+            shp_files,
+            projectile_files,
+            new_objects,
+            new_remaps,
+            load_harvest_overlay,
+            ..
+        } = self;
+        if initial {
+            atlas.effects = registered_effects;
+        }
+        atlas.unrenderable.extend(unrenderable);
+        atlas.make_frame_counts = make_frame_counts;
+        atlas.active_anim_frame_counts = active_anim_frame_counts;
+        atlas.object_shp_frame_counts = object_shp_frame_counts;
+        atlas.shp_files = shp_files;
+        atlas.projectile_files = projectile_files;
+        for (type_id, color) in new_objects {
+            atlas
+                .covered_objects
+                .entry(type_id)
+                .or_default()
+                .insert(color);
+        }
+        atlas.covered_anim_remaps.extend(new_remaps);
+        atlas.harvest_overlay_loaded |= load_harvest_overlay;
+        log::info!(
+            "SHP sprite atlas: {} sprites added in {:.1} ms; {} sprites on {} pages, {} unrenderable keys",
+            added,
+            started.elapsed().as_secs_f64() * 1000.0,
+            atlas.sprite_count(),
+            atlas.page_count(),
+            atlas.unrenderable.len(),
+        );
+        atlas
+    }
 }
 
 /// One type's decoded SHP and the draw offsets every key of it shares.
-struct ShpSource<'a> {
+struct ShpSource {
     shp: ShpFile,
     /// The file `shp` was decoded from, which its sprites decode frames from.
-    data: &'a [u8],
+    data: SharedBytes,
     /// Once per decoded source, shared by every palette/context frame key.
     source_digest: [u8; 32],
     found_name: String,
@@ -2635,16 +2762,16 @@ struct ShpSource<'a> {
     draw_offsets: (i32, i32),
 }
 
-impl<'a> ShpSource<'a> {
+impl ShpSource {
     /// Decode `data` whole, keeping the bytes its sprites decode frames from.
     fn decode(
-        data: &'a [u8],
+        data: SharedBytes,
         found_name: String,
         draw_offsets: (i32, i32),
     ) -> Result<Self, crate::assets::error::AssetError> {
-        let shp = ShpFile::from_bytes(data)?;
+        let shp = ShpFile::from_bytes(&data)?;
         let mut digest = crate::util::sha256::Sha256::new();
-        digest.update(data);
+        digest.update(&data);
         Ok(Self {
             shp,
             data,
@@ -2663,8 +2790,8 @@ impl<'a> ShpSource<'a> {
 /// [`art_data::building_body_shp_candidates`]; other bodies keep the object
 /// load requests retained by the Rules/type-load owner. Explicit raw-image
 /// callers retain the legacy object naming path.
-fn load_shp_source<'a>(
-    asset_manager: &'a AssetManager,
+fn load_shp_source(
+    asset_manager: &AssetManager,
     type_id: &str,
     file: Option<&str>,
     theater_ext: &str,
@@ -2672,7 +2799,7 @@ fn load_shp_source<'a>(
     rules: Option<&RuleSet>,
     art: Option<&ArtRegistry>,
     kind: ShpImageKind,
-) -> Option<ShpSource<'a>> {
+) -> Option<ShpSource> {
     let candidates: Vec<String> = match file {
         Some(file) => vec![file.to_string()],
         None if kind == ShpImageKind::Animation => {
@@ -2790,8 +2917,8 @@ fn load_shp_source<'a>(
 
 /// Load and render a single SHP sprite, with the RGBA its indices resolve to.
 #[cfg(test)]
-fn render_shp_sprite<'a>(
-    asset_manager: &'a AssetManager,
+fn render_shp_sprite(
+    asset_manager: &AssetManager,
     palette: &Palette,
     house_remap: bool,
     key: &ShpSpriteKey,
@@ -2799,7 +2926,7 @@ fn render_shp_sprite<'a>(
     theater_name: &str,
     rules: Option<&RuleSet>,
     art: Option<&ArtRegistry>,
-) -> Option<(RenderedShpSprite<'a>, Vec<u8>)> {
+) -> Option<(RenderedShpSprite, Vec<u8>)> {
     let source = load_shp_source(
         asset_manager,
         &key.type_id,
@@ -2822,14 +2949,14 @@ fn render_shp_sprite<'a>(
 /// Selects the appropriate frame based on facing (8-direction for infantry).
 /// An empty (0x0) frame has nothing to draw and returns None, as does a frame
 /// whose palette the full rows cannot take.
-fn render_shp_frame<'a>(
-    source: &ShpSource<'a>,
+fn render_shp_frame(
+    source: &ShpSource,
     palette: &Palette,
     house_remap: bool,
     key: &ShpSpriteKey,
     rules: Option<&RuleSet>,
     palettes: &mut ShpPalettes,
-) -> Option<RenderedShpSprite<'a>> {
+) -> Option<RenderedShpSprite> {
     let shp = &source.shp;
     let found_name = source.found_name.as_str();
 
@@ -2936,7 +3063,7 @@ fn render_shp_frame<'a>(
     Some(RenderedShpSprite {
         key: key.clone(),
         palette: palette_row,
-        shp: source.data,
+        shp: source.data.clone(),
         source_digest: source.source_digest,
         frame: frame_idx,
         width: fw,
@@ -2976,7 +3103,7 @@ fn register_custom_harvest_frames(
             log::warn!("gather animation [{anim}] has no loaded SHP asset");
             continue;
         };
-        let Ok(count) = ShpFile::frame_count_from_bytes(data) else {
+        let Ok(count) = ShpFile::frame_count_from_bytes(&data) else {
             log::warn!("gather animation [{anim}] has an invalid SHP asset");
             continue;
         };
@@ -3002,10 +3129,10 @@ fn register_custom_harvest_frames(
 /// Returns all 120 SHP frames (15 animation frames x 8 facings) as rendered sprites.
 /// Each frame is keyed by OREGATH, facing zero and its SHP frame index.
 /// At render time, the correct frame is: `facing_index * 15 + anim_frame`.
-fn render_harvest_overlay_frames<'a>(
-    asset_manager: &'a AssetManager,
+fn render_harvest_overlay_frames(
+    asset_manager: &AssetManager,
     palettes: &mut ShpPalettes,
-) -> Vec<RenderedShpSprite<'a>> {
+) -> Vec<RenderedShpSprite> {
     // Load effect palette (anim.pal).
     let pal_data: &[u8] = match asset_manager.get_ref("anim.pal") {
         Some(d) => d,
@@ -3023,7 +3150,7 @@ fn render_harvest_overlay_frames<'a>(
     };
 
     // Load oregath.shp.
-    let shp_data: &'a [u8] = match asset_manager.get_ref("oregath.shp") {
+    let shp_data = match asset_manager.get_shared("oregath.shp") {
         Some(d) => d,
         None => {
             log::warn!("oregath.shp not found — skipping harvest overlay");
@@ -3098,7 +3225,7 @@ fn render_harvest_overlay_frames<'a>(
             },
             // The effect palette, with no house color remap.
             palette: palette_row,
-            shp: shp_data,
+            shp: source.data.clone(),
             source_digest: source.source_digest,
             frame: frame_idx,
             width: fw,
@@ -3135,9 +3262,95 @@ fn pack_sprites(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     batch: &BatchRenderer,
-    sprites: Vec<RenderedShpSprite<'_>>,
-    mut palettes: ShpPalettes,
+    sprites: Vec<RenderedShpSprite>,
+    palettes: ShpPalettes,
 ) -> SpriteAtlas {
+    let max_texture_dim = device.limits().max_texture_dimension_2d;
+    let mut plan = plan_shp_pages(sprites, max_texture_dim);
+    let (atlas, indices) = create_packed_shp_atlas(device, queue, batch, &mut plan, palettes);
+    for (page, texture) in plan.pages.iter().zip(&indices) {
+        upload_shelves(
+            device,
+            queue,
+            texture,
+            &plan.sprites,
+            &page.placed,
+            PACK_BAND_BYTES,
+        );
+    }
+    log_shp_atlas_pack(&atlas, max_texture_dim);
+    atlas
+}
+
+fn create_packed_shp_atlas(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    batch: &BatchRenderer,
+    plan: &mut ShpAtlasPackPlan,
+    mut palettes: ShpPalettes,
+) -> (SpriteAtlas, Vec<wgpu::Texture>) {
+    let palette_rows = palettes.upload(device, queue);
+    let mut atlas = SpriteAtlas::new(
+        Vec::with_capacity(plan.pages.len()),
+        HashMap::with_capacity(plan.sprites.len() + plan.aliases.len()),
+        palettes,
+    );
+    let mut indices = Vec::with_capacity(plan.pages.len());
+    atlas.physical_frames.reserve(plan.sprites.len());
+    for (page_index, page) in plan.pages.iter().enumerate() {
+        let (texture, source_indices) =
+            batch.create_indexed_page(device, page.size[0], page.size[1], &palette_rows);
+        indices.push(source_indices);
+        atlas.pages.push(SpriteAtlasPage { texture });
+        for &(idx, origin) in &page.placed {
+            atlas.admit_placed_sprite(
+                &plan.sprites[idx],
+                ShpFramePlacement {
+                    origin,
+                    page: page_index,
+                    page_size: page.size,
+                },
+            );
+        }
+    }
+    atlas.admit_aliases(std::mem::take(&mut plan.aliases));
+    (atlas, indices)
+}
+
+fn log_shp_atlas_pack(atlas: &SpriteAtlas, max_texture_dim: u32) {
+    // One palette index a texel.
+    let texels: u64 = atlas
+        .pages
+        .iter()
+        .map(|page| u64::from(page.texture.width) * u64::from(page.texture.height))
+        .sum();
+    let sizes: Vec<String> = atlas
+        .pages
+        .iter()
+        .map(|page| format!("{}x{}", page.texture.width, page.texture.height))
+        .collect();
+    log::info!(
+        "Sprite atlas packed into {} page(s) of at most {max_texture_dim} px: {} ({:.0} MiB), {} palette row(s)",
+        atlas.pages.len(),
+        sizes.join(", "),
+        texels as f64 / (1024.0 * 1024.0),
+        atlas.palettes.colors.len(),
+    );
+}
+
+struct ShpPagePlan {
+    size: [u32; 2],
+    placed: Vec<(usize, [u32; 2])>,
+}
+
+/// One CPU-only initial pack, shared by synchronous and staged uploads.
+struct ShpAtlasPackPlan {
+    sprites: std::sync::Arc<[RenderedShpSprite]>,
+    aliases: Vec<RenderedShpSprite>,
+    pages: Vec<ShpPagePlan>,
+}
+
+fn plan_shp_pages(sprites: Vec<RenderedShpSprite>, max_texture_dim: u32) -> ShpAtlasPackPlan {
     let (sprites, aliases) = separate_physical_frames(sprites, &HashMap::new());
     // Sort by height descending for shelf packing efficiency.
     let mut indices: Vec<usize> = (0..sprites.len()).collect();
@@ -3151,7 +3364,6 @@ fn pack_sprites(
         })
         .sum();
     let estimated_side: u32 = (total_area as f64).sqrt().ceil() as u32;
-    let max_texture_dim: u32 = device.limits().max_texture_dimension_2d;
     let mut atlas_width: u32 = estimated_side.clamp(64, max_texture_dim);
 
     // Try widening atlas to fit everything in a single page.
@@ -3204,70 +3416,92 @@ fn pack_sprites(
     }
 
     let num_pages: usize = current_page as usize + 1;
-    let palette_rows = palettes.upload(device, queue);
+    let pages = (0..num_pages as u8)
+        .map(|page_idx| {
+            let placed: Vec<_> = placements
+                .iter()
+                .filter(|p| p.page == page_idx)
+                .map(|p| (p.idx, [p.px, p.py]))
+                .collect();
+            let height = placed
+                .iter()
+                .map(|&(idx, [_, y])| y + sprites[idx].height)
+                .max()
+                .unwrap_or(1);
+            ShpPagePlan {
+                size: [atlas_width, height],
+                placed,
+            }
+        })
+        .collect();
+    ShpAtlasPackPlan {
+        sprites: sprites.into(),
+        aliases,
+        pages,
+    }
+}
 
-    // Build each page's GPU texture.
-    let mut atlas = SpriteAtlas::new(
-        Vec::with_capacity(num_pages),
-        HashMap::with_capacity(sprites.len() + aliases.len()),
-        palettes,
-    );
-    atlas.physical_frames.reserve(sprites.len());
-    for page_idx in 0..num_pages as u8 {
-        // Placements run shelf by shelf, top to bottom, as `upload_shelves` needs.
-        let placed: Vec<(usize, [u32; 2])> = placements
-            .iter()
-            .filter(|p| p.page == page_idx)
-            .map(|p| (p.idx, [p.px, p.py]))
-            .collect();
-        let page_height: u32 = placed
-            .iter()
-            .map(|&(idx, [_, y])| y + sprites[idx].height)
-            .max()
-            .unwrap_or(1);
-        let (texture, source_indices) =
-            batch.create_indexed_page(device, atlas_width, page_height, &palette_rows);
-        upload_shelves(
-            device,
-            queue,
-            &source_indices,
-            &sprites,
-            &placed,
-            PACK_BAND_BYTES,
+/// CPU-only shelf bands. Borrowed inputs serve the synchronous growth caller;
+/// owned/shared inputs can travel with a loading job without retaining GPU
+/// handles or the asset manager. Both paths use the same shelf boundaries and
+/// single-band decoder, rather than materializing an entire page of pixels.
+struct ShpUploadBands<S, P> {
+    sprites: S,
+    placed: P,
+    next: usize,
+    row_bytes: u64,
+    band_bytes: u64,
+}
+
+impl<S: AsRef<[RenderedShpSprite]>, P: AsRef<[(usize, [u32; 2])]>> ShpUploadBands<S, P> {
+    fn new(sprites: S, placed: P, width: u32, band_bytes: u64) -> Self {
+        debug_assert!(
+            placed
+                .as_ref()
+                .windows(2)
+                .all(|pair| pair[0].1[1] <= pair[1].1[1]),
+            "placements must run shelf by shelf from the top"
         );
-        atlas.pages.push(SpriteAtlasPage { texture });
-        for &(idx, origin) in &placed {
-            atlas.admit_placed_sprite(
-                &sprites[idx],
-                ShpFramePlacement {
-                    origin,
-                    page: usize::from(page_idx),
-                    page_size: [atlas_width, page_height],
-                },
-            );
+        Self {
+            sprites,
+            placed,
+            next: 0,
+            row_bytes: u64::from(width),
+            band_bytes,
         }
     }
-    atlas.admit_aliases(aliases);
+}
 
-    // One palette index a texel.
-    let texels: u64 = atlas
-        .pages
-        .iter()
-        .map(|page| u64::from(page.texture.width) * u64::from(page.texture.height))
-        .sum();
-    let sizes: Vec<String> = atlas
-        .pages
-        .iter()
-        .map(|page| format!("{}x{}", page.texture.width, page.texture.height))
-        .collect();
-    log::info!(
-        "Sprite atlas packed into {} page(s) of at most {max_texture_dim} px: {} ({:.0} MiB), {} palette row(s)",
-        atlas.pages.len(),
-        sizes.join(", "),
-        texels as f64 / (1024.0 * 1024.0),
-        atlas.palettes.colors.len(),
-    );
-    atlas
+impl<S: AsRef<[RenderedShpSprite]>, P: AsRef<[(usize, [u32; 2])]>> Iterator
+    for ShpUploadBands<S, P>
+{
+    type Item = ([u32; 2], [u32; 2], Vec<u8>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let rest = &self.placed.as_ref()[self.next..];
+        let &(_, [_, top]) = rest.first()?;
+        let sprites = self.sprites.as_ref();
+        // Whole shelves until this band's rows reach the byte budget. A
+        // single taller shelf remains indivisible, as in the original path.
+        let (mut len, mut bottom) = (0, top);
+        loop {
+            let shelf_y = rest[len].1[1];
+            while len < rest.len() && rest[len].1[1] == shelf_y {
+                let (idx, [_, y]) = rest[len];
+                bottom = bottom.max(y + sprites[idx].height);
+                len += 1;
+            }
+            if len == rest.len() || u64::from(bottom - top) * self.row_bytes >= self.band_bytes {
+                break;
+            }
+        }
+        self.next += len;
+        gather_sprite_band(
+            rest[..len]
+                .iter()
+                .map(|&(idx, origin)| (origin, &sprites[idx])),
+        )
+    }
 }
 
 /// Upload the sprites `placed` on a blank index page (sprite index and origin,
@@ -3280,36 +3514,12 @@ fn upload_shelves(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     indices: &wgpu::Texture,
-    sprites: &[RenderedShpSprite<'_>],
+    sprites: &[RenderedShpSprite],
     placed: &[(usize, [u32; 2])],
     band_bytes: u64,
 ) {
-    debug_assert!(
-        placed.windows(2).all(|pair| pair[0].1[1] <= pair[1].1[1]),
-        "placements must run shelf by shelf from the top"
-    );
-    let row_bytes = u64::from(indices.width());
-    let mut rest = placed;
-    while let Some(&(_, [_, top])) = rest.first() {
-        // Whole shelves (runs of one row origin) until the band's rows reach `band_bytes`.
-        let (mut len, mut bottom) = (0, top);
-        loop {
-            let shelf_y = rest[len].1[1];
-            while len < rest.len() && rest[len].1[1] == shelf_y {
-                let (idx, [_, y]) = rest[len];
-                bottom = bottom.max(y + sprites[idx].height);
-                len += 1;
-            }
-            if len == rest.len() || u64::from(bottom - top) * row_bytes >= band_bytes {
-                break;
-            }
-        }
-        let (band, tail) = rest.split_at(len);
-        write_sprite_band(
-            queue,
-            indices,
-            band.iter().map(|&(idx, origin)| (origin, &sprites[idx])),
-        );
+    for (origin, size, bytes) in ShpUploadBands::new(sprites, placed, indices.width(), band_bytes) {
+        atlas_growth::write_texels(queue, indices, origin, size, 1, &bytes);
         let submission_index = queue.submit(std::iter::empty());
         if let Err(error) = device.poll(wgpu::PollType::Wait {
             submission_index: Some(submission_index),
@@ -3317,29 +3527,36 @@ fn upload_shelves(
         }) {
             log::warn!("Sprite atlas upload could not wait for the GPU: {error}");
         }
-        rest = tail;
     }
 }
 
 /// Upload sprites placed on rows of an index page that hold no other sprite,
 /// in one [`atlas_growth::write_band`], decoding each frame as it is gathered.
-fn write_sprite_band<'s, 'a: 's>(
+fn write_sprite_band<'s>(
     queue: &wgpu::Queue,
     indices: &wgpu::Texture,
-    sprites: impl Iterator<Item = ([u32; 2], &'s RenderedShpSprite<'a>)>,
+    sprites: impl Iterator<Item = ([u32; 2], &'s RenderedShpSprite)>,
 ) {
+    if let Some((origin, size, bytes)) = gather_sprite_band(sprites) {
+        atlas_growth::write_texels(queue, indices, origin, size, 1, &bytes);
+    }
+}
+
+fn gather_sprite_band<'s>(
+    sprites: impl Iterator<Item = ([u32; 2], &'s RenderedShpSprite)>,
+) -> Option<([u32; 2], [u32; 2], Vec<u8>)> {
     let sprites: Vec<_> = sprites.collect();
     let rects: Vec<_> = sprites
         .iter()
         .map(|&(origin, sprite)| (origin, [sprite.width, sprite.height]))
         .collect();
-    atlas_growth::write_band(queue, indices, 1, &rects, |i| sprites[i].1.indices());
+    atlas_growth::gather_band(&rects, 1, |i| sprites[i].1.indices())
 }
 
 /// Simulate shelf-packing to determine total height without allocating buffers.
 fn simulate_shelf_height(
     indices: &[usize],
-    sprites: &[RenderedShpSprite<'_>],
+    sprites: &[RenderedShpSprite],
     atlas_width: u32,
 ) -> u32 {
     let mut cursor_x: u32 = 0;

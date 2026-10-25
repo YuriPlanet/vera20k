@@ -1550,6 +1550,7 @@ pub struct PresentationLoadAssets {
 /// and presentation assets, no longer one cross-domain bag, plus the leased
 /// process asset manager on its way home.
 pub struct MapLoadResult {
+    pub(crate) pending_atlases: Option<super::init_helpers::PresentationAtlasJob>,
     pub(crate) scenario: ScenarioLoadInputs,
     pub(crate) presentation: PresentationLoadAssets,
     /// The leased process manager returning to `ProcessAssets` (F11 slot).
@@ -3514,7 +3515,7 @@ pub(crate) fn load_map_from_initial(
     // launch session has seeded its starting MCVs and units (and any debug
     // spawns): one pack then holds what the opening world draws, and later
     // arrivals grow it.
-    let manifest = crate::app::loading::init_helpers::build_presentation_manifest(
+    let prepared_manifest = crate::app::loading::init_helpers::prepare_presentation_manifest(
         &staged_simulation,
         asset_manager,
         gpu,
@@ -3527,6 +3528,14 @@ pub(crate) fn load_map_from_initial(
         unit_palette.as_ref(),
         overlay_iso_palette.as_ref(),
     );
+    // Display-only workers do not own the native Rules/process lease or
+    // advance the staged world. Keep the existing network timing path intact.
+    let (manifest, pending_atlases) = if matches!(startup, LoadingStartup::Network(_)) {
+        (prepared_manifest.finish(gpu, batch), None)
+    } else {
+        let (manifest, job) = prepared_manifest.start_loading(gpu, batch)?;
+        (manifest, Some(job))
+    };
     let mut simulation = Some(staged_simulation);
 
     // Fresh map presentation has its established connectivity pass. The
@@ -3679,6 +3688,7 @@ pub(crate) fn load_map_from_initial(
     // Move fields out of map_data (last use) instead of cloning.
     let theater_name = map_data.header.theater;
     Ok(MapLoadResult {
+        pending_atlases,
         scenario: ScenarioLoadInputs {
             campaign_names: None,
             startup,

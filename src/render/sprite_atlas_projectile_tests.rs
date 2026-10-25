@@ -161,7 +161,12 @@ fn bullet_frame_lookup_preserves_native_stencil_and_rejects_out_of_range() {
         .iter()
         .map(|c| u8::from_str_radix(std::str::from_utf8(c).unwrap(), 16).unwrap())
         .collect();
-    let source = ShpSource::decode(&bytes, "120MM.SHP".to_string(), (0, 0)).unwrap();
+    let source = ShpSource::decode(
+        std::sync::Arc::<[u8]>::from(bytes.as_slice()).into(),
+        "120MM.SHP".to_string(),
+        (0, 0),
+    )
+    .unwrap();
     let rules = simple_rules("");
     let projectile = rules.projectile("Cannon").unwrap();
     let key = projectile_key("Cannon", projectile, 0, HouseColorIndex(0));
@@ -437,13 +442,13 @@ fn projectile_asset_binding_uses_native_last_load_not_current_image_text() {
             let candidates = projectile_shp_candidates(projectile, "tem", "TEMPERATE");
             let found = find_shp(&assets, &candidates);
             assert_eq!(
-                found.map(|(name, _)| name),
+                found.as_ref().map(|(name, _)| *name),
                 row["state"]["loaded_file"].as_str(),
                 "{} {}",
                 case["name"],
                 row["rules"]
             );
-            let count = found.map_or(0, |(_, bytes)| {
+            let count = found.as_ref().map_or(0, |(_, bytes)| {
                 ShpFile::frame_count_from_bytes(bytes).unwrap()
             });
             assert_eq!(
@@ -451,7 +456,7 @@ fn projectile_asset_binding_uses_native_last_load_not_current_image_text() {
                 row["state"]["frame_count"].as_u64().unwrap()
             );
             if let Some((_, bytes)) = found {
-                let shp = ShpFile::from_bytes(bytes).unwrap();
+                let shp = ShpFile::from_bytes(&bytes).unwrap();
                 assert_eq!(
                     serde_json::json!([shp.width, shp.height]),
                     row["state"]["canvas"]

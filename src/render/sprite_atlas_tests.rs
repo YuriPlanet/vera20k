@@ -4,6 +4,73 @@ use super::*;
 use crate::assets::asset_manager::MediaArchiveMode;
 use crate::util::save_codec;
 
+#[test]
+#[ignore = "requires a wgpu adapter; asynchronous loading uploads"]
+fn loading_job_publishes_the_same_index_pages_after_gpu_retirement() {
+    let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
+    let batch = BatchRenderer::new_with_device(
+        &gpu.device,
+        &gpu.queue,
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+    );
+    let bytes = raw_shp(&[([3, 2], 7), ([2, 5], 11)]);
+    let source = ShpSource::decode(
+        std::sync::Arc::<[u8]>::from(bytes).into(),
+        "PENDING.SHP".into(),
+        (0, 0),
+    )
+    .unwrap();
+    let palette = Palette::from_rgb(|i| [i, i, i]);
+    let prepare = || {
+        let mut palettes = ShpPalettes::default();
+        let rendered = (0..2)
+            .map(|frame| {
+                let mut key = make_shp_key("PENDING", 0);
+                key.frame = frame;
+                render_shp_frame(&source, &palette, false, &key, None, &mut palettes).unwrap()
+            })
+            .collect();
+        PreparedSpriteAtlas::Upload(ShpAtlasUpload {
+            started: Instant::now(),
+            previous_atlas: None,
+            rendered,
+            palettes,
+            registered_effects: EffectRegistry::default(),
+            unrenderable: Vec::new(),
+            make_frame_counts: HashMap::new(),
+            active_anim_frame_counts: HashMap::new(),
+            object_shp_frame_counts: HashMap::new(),
+            shp_files: HashMap::new(),
+            projectile_files: HashMap::new(),
+            new_objects: HashSet::new(),
+            new_remaps: HashSet::new(),
+            load_harvest_overlay: false,
+        })
+    };
+    let expected = prepare().finish(&gpu.device, &gpu.queue, &batch).unwrap();
+    let mut pending = prepare()
+        .start_loading(&gpu.device, &gpu.queue, &batch)
+        .unwrap();
+    let deadline = Instant::now() + std::time::Duration::from_secs(5);
+    let actual = loop {
+        if let std::task::Poll::Ready(atlas) = pending.poll(&gpu.device, &gpu.queue).unwrap() {
+            break atlas.unwrap();
+        }
+        assert!(Instant::now() < deadline, "loading band did not retire");
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    };
+    assert_eq!(actual.sprite_count(), expected.sprite_count());
+    assert_eq!(actual.page_count(), expected.page_count());
+    for (actual, expected) in actual.pages.iter().zip(&expected.pages) {
+        let size = [actual.texture.width, actual.texture.height];
+        assert_eq!(size, [expected.texture.width, expected.texture.height]);
+        assert_eq!(
+            gpu.read_uint_texels(&actual.texture.view, [0, 0], size),
+            gpu.read_uint_texels(&expected.texture.view, [0, 0], size)
+        );
+    }
+}
+
 struct StoredFrameTestDirectory(std::path::PathBuf);
 
 impl StoredFrameTestDirectory {
@@ -65,6 +132,50 @@ impl Drop for StoredFrameTestDirectory {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
+}
+
+#[test]
+fn shelf_work_keeps_selected_source_after_asset_lease_is_returned() {
+    let directory = StoredFrameTestDirectory::new();
+    directory.write_raw_and_rle_frames("PENDING.SHP", [8, 8], [0, 0, 8, 8]);
+    let sprites = {
+        let assets = AssetManager::from_loose_root_for_test(&directory.0);
+        let palette = Palette::from_rgb(|i| [i, i, i]);
+        (0..2)
+            .map(|frame| {
+                let mut key = make_shp_key("PENDING", 0);
+                key.frame = frame;
+                render_shp_sprite(
+                    &assets,
+                    &palette,
+                    false,
+                    &key,
+                    "tem",
+                    "TEMPERATE",
+                    None,
+                    None,
+                )
+                .unwrap()
+                .0
+            })
+            .collect::<Vec<_>>()
+    };
+    // The two logical sprites pin one selected file, not two copied files.
+    assert_eq!(sprites[0].shp.as_ptr(), sprites[1].shp.as_ptr());
+    let work = ShpUploadBands::new(
+        std::sync::Arc::<[RenderedShpSprite]>::from(sprites),
+        vec![(0, [0, 0]), (1, [0, 8])],
+        8,
+        64,
+    );
+    let bands = std::thread::spawn(move || work.collect::<Vec<_>>())
+        .join()
+        .unwrap();
+    assert_eq!(bands.len(), 2);
+    assert_eq!((bands[0].0, bands[0].1), ([0, 0], [8, 8]));
+    assert_eq!((bands[1].0, bands[1].1), ([0, 8], [8, 8]));
+    assert_eq!(bands[0].2, bands[1].2, "raw and RLE source frames agree");
+    assert_eq!((bands[0].2[10], bands[0].2[53]), (1, 2));
 }
 
 #[test]
@@ -2088,13 +2199,17 @@ fn refreshed_sprites_upload_to_a_growth_page_and_leave_resident_ones_in_place() 
     // One raw frame a sprite, filled with its palette index.
     let frames = [([3, 2], 7), ([4, 3], 11), ([2, 5], 9)];
     let shp = raw_shp(&frames);
-    let source_digest = ShpSource::decode(&shp, "growth fixture".into(), (0, 0))
-        .unwrap()
-        .source_digest;
+    let source_digest = ShpSource::decode(
+        std::sync::Arc::<[u8]>::from(shp.as_slice()).into(),
+        "growth fixture".into(),
+        (0, 0),
+    )
+    .unwrap()
+    .source_digest;
     let sprite = |type_id: &str, frame: usize, palette| RenderedShpSprite {
         key: make_shp_key(type_id, 0),
         palette,
-        shp: &shp,
+        shp: std::sync::Arc::<[u8]>::from(shp.as_slice()).into(),
         source_digest,
         frame,
         width: frames[frame].0[0],
@@ -2235,9 +2350,13 @@ fn map_load_pages_upload_in_shelf_bands_decoding_each_sprite_frame() {
         }
     }
     let shp = raw_shp(&shelves.map(|(index, size, _)| (size, index)));
-    let source_digest = ShpSource::decode(&shp, "band fixture".into(), (0, 0))
-        .unwrap()
-        .source_digest;
+    let source_digest = ShpSource::decode(
+        std::sync::Arc::<[u8]>::from(shp.as_slice()).into(),
+        "band fixture".into(),
+        (0, 0),
+    )
+    .unwrap()
+    .source_digest;
     for band_bytes in [0, 1, 31, u64::MAX] {
         let sprites: Vec<RenderedShpSprite> = shelves
             .iter()
@@ -2245,7 +2364,7 @@ fn map_load_pages_upload_in_shelf_bands_decoding_each_sprite_frame() {
             .map(|(frame, &(index, [width, height], _))| RenderedShpSprite {
                 key: make_shp_key(&format!("SHELF{index}"), 0),
                 palette: 0,
-                shp: &shp,
+                shp: std::sync::Arc::<[u8]>::from(shp.as_slice()).into(),
                 source_digest,
                 frame,
                 width,
@@ -2853,10 +2972,20 @@ fn physical_frames_share_initial_indices_without_merging_logical_palettes_or_off
     );
     let bytes = raw_shp(&[([64, 64], 16), ([64, 64], 17)]);
     let relocated_bytes = bytes.clone();
-    let source = ShpSource::decode(&bytes, "SOURCE.SHP".into(), (0, 0)).unwrap();
+    let source = ShpSource::decode(
+        std::sync::Arc::<[u8]>::from(bytes.as_slice()).into(),
+        "SOURCE.SHP".into(),
+        (0, 0),
+    )
+    .unwrap();
     // A separately allocated resolver result with different draw offsets still
     // supplies the same physical frame. Pointer/name identity is insufficient.
-    let relocated = ShpSource::decode(&relocated_bytes, "ALIAS.SHP".into(), (7, -5)).unwrap();
+    let relocated = ShpSource::decode(
+        std::sync::Arc::<[u8]>::from(relocated_bytes.as_slice()).into(),
+        "ALIAS.SHP".into(),
+        (7, -5),
+    )
+    .unwrap();
     let red = Palette::from_rgb(|i| [i, 0, 0]);
     let green = Palette::from_rgb(|i| [0, i, 0]);
     let blue = Palette::from_rgb(|i| [0, 0, i]);
@@ -2947,9 +3076,19 @@ fn physical_frames_reuse_initial_and_growth_rectangles_but_not_different_sources
     );
     let bytes = raw_shp(&[([3, 2], 16), ([4, 3], 17)]);
     let other_bytes = raw_shp(&[([3, 2], 99)]);
-    let source = ShpSource::decode(&bytes, "SOURCE.SHP".into(), (0, 0)).unwrap();
+    let source = ShpSource::decode(
+        std::sync::Arc::<[u8]>::from(bytes.as_slice()).into(),
+        "SOURCE.SHP".into(),
+        (0, 0),
+    )
+    .unwrap();
     // Same resolved name/frame/dimensions does not alias changed source bytes.
-    let other = ShpSource::decode(&other_bytes, "SOURCE.SHP".into(), (0, 0)).unwrap();
+    let other = ShpSource::decode(
+        std::sync::Arc::<[u8]>::from(other_bytes.as_slice()).into(),
+        "SOURCE.SHP".into(),
+        (0, 0),
+    )
+    .unwrap();
     let red = Palette::from_rgb(|i| [i, 0, 0]);
     let green = Palette::from_rgb(|i| [0, i, 0]);
     let mut palettes = ShpPalettes::default();

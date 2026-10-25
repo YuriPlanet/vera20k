@@ -846,6 +846,25 @@ fn needed_unit_keys(
     (needed, frame_counts)
 }
 
+/// Caller-owned upload state. Resident GPU pages never enter a raster worker.
+pub(crate) struct UnitAtlasUpload {
+    started: Instant,
+    frame_counts: UnitFrameCounts,
+    missing: UnitAtlasDemand,
+    existing: Option<UnitAtlas>,
+}
+
+/// Owned display inputs derived from the scene; no scene state is copied.
+pub(crate) struct UnitRasterWork {
+    models: Vec<(UnitModel, Vec<UnitSpriteKey>)>,
+    vpl: Option<VplFile>,
+    failed: BTreeMap<String, usize>,
+}
+
+pub(crate) struct UnitRasterOutput {
+    rendered: Vec<CachedUnitSprite>,
+}
+
 /// Build or refresh the unit sprite atlas for every voxel model in the world.
 ///
 /// Without an `existing` atlas every model's sprites are rendered and
@@ -867,6 +886,19 @@ pub fn build_unit_atlas(
     existing: Option<UnitAtlas>,
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> Option<UnitAtlas> {
+    let (work, upload) = prepare_unit_atlas(entities, asset_manager, rules, existing, interner);
+    upload.finish(device, queue, batch, work.render())
+}
+
+/// Freeze the physical source choices in their established model/key order.
+/// CPU raster scheduling may change; asset resolution and simulation do not.
+pub(crate) fn prepare_unit_atlas(
+    entities: &crate::sim::entity_store::EntityStore,
+    asset_manager: &AssetManager,
+    rules: Option<&RuleSet>,
+    existing: Option<UnitAtlas>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+) -> (UnitRasterWork, UnitAtlasUpload) {
     let started = Instant::now();
     // Step 1: the voxel models the atlas has not collected yet — every one at
     // map load — and the keys they draw with. For turret units, separate
@@ -879,7 +911,19 @@ pub fn build_unit_atlas(
     };
     if missing.is_empty() {
         log::info!("No new voxel models — keeping the current unit atlas");
-        return existing;
+        return (
+            UnitRasterWork {
+                models: Vec::new(),
+                vpl: None,
+                failed: BTreeMap::new(),
+            },
+            UnitAtlasUpload {
+                started,
+                frame_counts: BTreeMap::new(),
+                missing,
+                existing,
+            },
+        );
     }
     let (needed, frame_counts) = needed_unit_keys(&missing, asset_manager, rules);
     // A type seeded as an aircraft after its ground variant (or the reverse)
@@ -920,12 +964,12 @@ pub fn build_unit_atlas(
         missing.len(),
     );
 
-    // Step 2: Render the new sprites.
-    let mut rendered: Vec<CachedUnitSprite> = Vec::with_capacity(new_keys.len());
-    let mut failed: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut models = Vec::new();
+    let mut failed = BTreeMap::new();
+    let mut vpl = None;
     if !new_keys.is_empty() {
         // Load VPL file for Blinn-Phong lighting lookup (optional).
-        let vpl: Option<VplFile> =
+        vpl =
             asset_manager
                 .get_ref("VOXELS.VPL")
                 .and_then(|data| match VplFile::from_bytes(data) {
@@ -942,22 +986,53 @@ pub fn build_unit_atlas(
                     }
                 });
 
-        // One model at a time, its poses spread over the cores. Each worker
-        // takes whole poses, so a pose's parts still share one render, and
-        // results are merged back in key order.
-        let workers = std::thread::available_parallelism().map_or(1, |n| n.get());
         for type_keys in new_keys.chunk_by(|a, b| a.type_id == b.type_id) {
             let type_id = type_keys[0].type_id.as_str();
-            let Some(model) = UnitModel::load(asset_manager, type_id, rules) else {
-                *failed.entry(type_id).or_default() += type_keys.len();
-                continue;
-            };
+            if let Some(model) = UnitModel::load(asset_manager, type_id, rules) {
+                models.push((model, type_keys.to_vec()));
+            } else {
+                *failed.entry(type_id.to_string()).or_default() += type_keys.len();
+            }
+        }
+    }
+    (
+        UnitRasterWork {
+            models,
+            vpl,
+            failed,
+        },
+        UnitAtlasUpload {
+            started,
+            frame_counts,
+            missing,
+            existing,
+        },
+    )
+}
+impl UnitRasterWork {
+    /// Pure CPU work: all physical files and type metadata were resolved by
+    /// prepare_unit_atlas. It owns no simulation, asset manager or GPU handles.
+    pub(crate) fn render(self) -> UnitRasterOutput {
+        self.render_cancellable(&std::sync::atomic::AtomicBool::new(false))
+    }
+
+    pub(crate) fn render_cancellable(
+        self,
+        cancelled: &std::sync::atomic::AtomicBool,
+    ) -> UnitRasterOutput {
+        let mut rendered = Vec::new();
+        let mut failed = self.failed;
+        let workers = std::thread::available_parallelism().map_or(1, |n| n.get());
+        for (model, type_keys) in self.models {
+            if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
             let poses: Vec<&[UnitSpriteKey]> = type_keys
                 .chunk_by(|a, b| {
                     (a.frame, a.facing, a.slope_type) == (b.frame, b.facing, b.slope_type)
                 })
                 .collect();
-            let (model, vpl) = (&model, vpl.as_ref());
+            let (model, vpl) = (&model, self.vpl.as_ref());
             let results: Vec<Option<RenderedKey>> = std::thread::scope(|scope| {
                 let jobs: Vec<_> = poses
                     .chunks(poses.len().div_ceil(workers))
@@ -967,6 +1042,9 @@ pub fn build_unit_atlas(
                             chunk
                                 .iter()
                                 .flat_map(|keys| keys.iter())
+                                .take_while(|_| {
+                                    !cancelled.load(std::sync::atomic::Ordering::Relaxed)
+                                })
                                 .map(|key| render_unit_key(model, key, vpl, &mut pose))
                                 .collect::<Vec<_>>()
                         })
@@ -985,7 +1063,7 @@ pub fn build_unit_atlas(
                         rendered.extend(legacy_shadow);
                         rendered.push(sprite);
                     }
-                    None => *failed.entry(key.type_id.as_str()).or_default() += 1,
+                    None => *failed.entry(key.type_id.clone()).or_default() += 1,
                 }
             }
         }
@@ -993,49 +1071,71 @@ pub fn build_unit_atlas(
         for (type_id, count) in failed {
             log::warn!("Failed to render {count} VXL sprites for {type_id}");
         }
+        UnitRasterOutput { rendered }
     }
-
-    // Step 3: shelf-pack into new pages at map load; afterwards append to a
-    // growth page so resident sprites are never repacked or re-uploaded.
-    let added = rendered.len();
-    let mut atlas = match existing {
-        Some(mut atlas) => {
-            atlas.append_sprites(device, queue, batch, rendered);
-            atlas
+}
+impl UnitAtlasUpload {
+    /// Main-thread completion of the same atlas owner used by map loading and
+    /// live growth. CPU workers never expose partially uploaded resources.
+    pub(crate) fn finish(
+        self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        output: UnitRasterOutput,
+    ) -> Option<UnitAtlas> {
+        let Self {
+            started,
+            frame_counts,
+            missing,
+            existing,
+        } = self;
+        if missing.is_empty() {
+            return existing;
         }
-        None if rendered.is_empty() => {
-            log::warn!("No unit sprites rendered");
-            return None;
-        }
-        None => match pack_sprites_on_device(device, queue, batch, &rendered) {
-            Ok(mut atlas) => {
-                atlas.rendered_cache = rendered;
+        let rendered = output.rendered;
+        // Step 3: shelf-pack into new pages at map load; afterwards append to a
+        // growth page so resident sprites are never repacked or re-uploaded.
+        let added = rendered.len();
+        let mut atlas = match existing {
+            Some(mut atlas) => {
+                atlas.append_sprites(device, queue, batch, rendered);
                 atlas
             }
-            Err(err) => {
-                log::error!("Unit atlas packing failed: {err}");
+            None if rendered.is_empty() => {
+                log::warn!("No unit sprites rendered");
                 return None;
             }
-        },
-    };
-    atlas.frame_counts.extend(frame_counts);
-    atlas.covered.extend(missing);
-    atlas.rendered = u32::try_from(added).unwrap_or(u32::MAX);
-    let page_dimensions = atlas
-        .pages
-        .iter()
-        .map(|page| format!("{}x{}", page.texture.width, page.texture.height))
-        .collect::<Vec<_>>()
-        .join(", ");
-    log::info!(
-        "Unit atlas: {} sprites added in {:.1} ms; {} sprites across {} page(s): {}",
-        added,
-        started.elapsed().as_secs_f64() * 1000.0,
-        atlas.sprite_count(),
-        atlas.page_count(),
-        page_dimensions,
-    );
-    Some(atlas)
+            None => match pack_sprites_on_device(device, queue, batch, &rendered) {
+                Ok(mut atlas) => {
+                    atlas.rendered_cache = rendered;
+                    atlas
+                }
+                Err(err) => {
+                    log::error!("Unit atlas packing failed: {err}");
+                    return None;
+                }
+            },
+        };
+        atlas.frame_counts.extend(frame_counts);
+        atlas.covered.extend(missing);
+        atlas.rendered = u32::try_from(added).unwrap_or(u32::MAX);
+        let page_dimensions = atlas
+            .pages
+            .iter()
+            .map(|page| format!("{}x{}", page.texture.width, page.texture.height))
+            .collect::<Vec<_>>()
+            .join(", ");
+        log::info!(
+            "Unit atlas: {} sprites added in {:.1} ms; {} sprites across {} page(s): {}",
+            added,
+            started.elapsed().as_secs_f64() * 1000.0,
+            atlas.sprite_count(),
+            atlas.page_count(),
+            page_dimensions,
+        );
+        Some(atlas)
+    }
 }
 
 // Physical admission has one GPU-independent owner shared with native

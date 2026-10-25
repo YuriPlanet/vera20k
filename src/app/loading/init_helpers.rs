@@ -416,6 +416,16 @@ pub(crate) fn startup_crate_anim_remap_keys(
     .collect()
 }
 
+#[path = "presentation_jobs.rs"]
+mod presentation_jobs;
+pub(crate) use presentation_jobs::PresentationAtlasJob;
+
+pub(crate) struct PreparedManifest {
+    unit_work: Option<(unit_atlas::UnitRasterWork, unit_atlas::UnitAtlasUpload)>,
+    sprite_work: Option<sprite_atlas::PreparedSpriteAtlas>,
+    palette_set: Option<crate::render::palette_textures::PaletteSet>,
+}
+
 /// The presentation-side atlas bundle the app builds AFTER GPU-free scenario
 /// construction (F09): derived from immutable resources plus the constructed
 /// simulation, never fed back into it.
@@ -477,25 +487,49 @@ pub(crate) fn build_presentation_manifest(
     theater_unit_palette: Option<&Palette>,
     theater_iso_palette: Option<&Palette>,
 ) -> PresentationManifest {
+    prepare_presentation_manifest(
+        sim,
+        asset_manager,
+        gpu,
+        batch,
+        theater_ext,
+        theater_name,
+        rules,
+        overlay_registry,
+        house_colors,
+        theater_unit_palette,
+        theater_iso_palette,
+    )
+    .finish(gpu, batch)
+}
+
+pub(crate) fn prepare_presentation_manifest(
+    sim: &Simulation,
+    asset_manager: &AssetManager,
+    gpu: &GpuContext,
+    _batch: &BatchRenderer,
+    theater_ext: &str,
+    theater_name: &str,
+    rules: Option<&RuleSet>,
+    overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+    house_colors: &HouseColorMap,
+    theater_unit_palette: Option<&Palette>,
+    theater_iso_palette: Option<&Palette>,
+) -> PreparedManifest {
     let art = rules.map(RuleSet::art);
     // `load_theater_unit_and_iso_palettes` owns both theater palettes:
     // `load_theater` publishes them and mid-match atlas growth re-reads them.
     // Without a loaded theater nothing renders, so no entity atlas is built.
     let palette = theater_unit_palette;
-    let unit_atlas: Option<UnitAtlas> = if palette.is_some() {
-        unit_atlas::build_unit_atlas(
-            &gpu.device,
-            &gpu.queue,
-            batch,
+    let unit_work = palette.map(|_| {
+        unit_atlas::prepare_unit_atlas(
             sim.entities(),
             asset_manager,
             rules,
-            None, // initial build — no existing cache
+            None,
             Some(sim.interner()),
         )
-    } else {
-        None
-    };
+    });
     // Pre-load building types that can be spawned at runtime (e.g., ConYards from MCV deploy).
     let extra_buildings: Vec<&str> = deployable_building_types(rules);
     let mut anim_remap_keys = sprite_atlas::collect_anim_remap_base_keys(sim, house_colors);
@@ -511,11 +545,9 @@ pub(crate) fn build_presentation_manifest(
     let frozen_keys = rules.map_or_else(HashSet::new, |rules| {
         sprite_atlas::collect_fogged_sprite_keys(sim, rules, house_colors)
     });
-    let shp_atlas: Option<SpriteAtlas> = palette.and_then(|pal| {
-        sprite_atlas::build_sprite_atlas(
-            &gpu.device,
-            &gpu.queue,
-            batch,
+    let sprite_work = palette.map(|pal| {
+        sprite_atlas::prepare_sprite_atlas(
+            gpu.device.limits().max_texture_dimension_2d,
             sim.entities(),
             asset_manager,
             pal,
@@ -551,9 +583,9 @@ pub(crate) fn build_presentation_manifest(
             let active = voxel_palette_demand(house_colors, rules);
             crate::render::palette_textures::PaletteSet::new(gpu, pal, global, house_ramps, &active)
         });
-    PresentationManifest {
-        unit_atlas,
-        sprite_atlas: shp_atlas,
+    PreparedManifest {
+        unit_work,
+        sprite_work,
         palette_set,
     }
 }
