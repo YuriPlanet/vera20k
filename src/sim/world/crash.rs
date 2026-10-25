@@ -214,7 +214,7 @@ impl Simulation {
             rules,
             frame_effects,
         );
-        self.techno_death_stun(
+        self.stun(
             id,
             UninitContext::new(rules, registry).with_effects(frame_effects),
         );

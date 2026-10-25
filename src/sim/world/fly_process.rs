@@ -815,7 +815,7 @@ impl Simulation {
             self.uninit_with_context(passenger, context);
         }
         self.team_script_vm.mark_member_team_leaving_map(id);
-        self.techno_death_stun(id, context);
+        self.stun(id, context);
         self.uninit_with_context(id, context);
     }
 }

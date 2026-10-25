@@ -904,7 +904,7 @@ fn fly_death_stun_matches_native_rows() {
                 .set_for_test(Some(TargetKind::Entity(10 + n)));
         }
         sim.clear_lifecycle_test_events_for_test();
-        sim.techno_death_stun(
+        sim.stun(
             AIRCRAFT,
             crate::sim::world::UninitContext::new(&rules, None),
         );

@@ -28,6 +28,426 @@ fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, owner: &str, x: u16,
         .unwrap_or_else(|| panic!("{kind} spawns at ({x}, {y})"))
 }
 
+/// A stock HARV naturally misses every ore overlay, receives an explicit
+/// Repair order and establishes the depot contact while still human-owned.
+/// The next caller can exercise `BuildingClass::MissionRepairAndProduce`'s
+/// current-owner gate without manufacturing the native useless latch.
+fn useless_harvester_contact() -> Option<(Simulation, RuleSet, PathGrid, u64, u64, u64)> {
+    let Some((mut sim, rules, grid)) = scene() else {
+        return None;
+    };
+    let americans = sim.interner.get("Americans").unwrap();
+    let russians = sim.interner.get("Russians").unwrap();
+    sim.houses
+        .get_mut(&russians)
+        .unwrap()
+        .set_multiplay_passive_for_test(true);
+    sim.houses
+        .get_mut(&russians)
+        .unwrap()
+        .economy_mut()
+        .set_credits_for_test(10_000);
+    sim.houses
+        .get_mut(&americans)
+        .unwrap()
+        .economy_mut()
+        .set_credits_for_test(10_000);
+    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(48, 48));
+    let targeter = spawn(&mut sim, &rules, "GAPOWR", "Americans", 40, 40);
+    spawn(&mut sim, &rules, "NAPOWR", "Russians", 43, 43);
+    spawn(&mut sim, &rules, "GAREFN", "Americans", 10, 10);
+    let depot = spawn(&mut sim, &rules, "GADEPT", "Americans", 24, 20);
+    let harvester = spawn(&mut sim, &rules, "HARV", "Americans", 13, 11);
+    let _ = sim.substrate.mission_assign_exact(
+        harvester,
+        MissionId::from_known(MissionType::Harvest),
+        sim.session.binary_frame(),
+    );
+    let registry = crate::sim::tiberium::test_support::overlay_registry_with_land();
+    for _ in 0..500 {
+        let commands = sim.take_due_commands();
+        sim.advance_tick(&commands, Some(&rules), Some(&grid), Some(registry), 33);
+    }
+    assert!(
+        sim.substrate.entities.get(harvester)?.is_useless(),
+        "a real no-ore Harvest miss writes Techno+3D0"
+    );
+    let saved = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "useless-harvester-sale", 0);
+    let restored = crate::sim::snapshot::GameSnapshot::load(&saved)
+        .expect("production save preserves the common Techno useless latch")
+        .sim;
+    assert!(
+        restored.substrate.entities.get(harvester)?.is_useless(),
+        "the serialized Techno+3D0 latch remains set after save/load"
+    );
+    // Continue the end-to-end service path on the original simulation; this
+    // loaded copy is inspected only for serialization of the new field.
+    let ap = sim.interner.intern("AP");
+    let harvester_strength = rules.object("HARV")?.strength;
+    sim.commit_direct_damage_receiver(
+        &rules,
+        None,
+        crate::sim::combat::EntityDamageEvent::direct_receiver(
+            harvester,
+            harvester_strength / 4,
+            0,
+            0,
+            None,
+            ap,
+            crate::sim::combat::ReceiverCallFlags {
+                ignore_defenses: true,
+                arg6: false,
+            },
+        ),
+        FrameEffects::default(),
+    );
+    assert!(
+        !sim.substrate
+            .entities
+            .get(harvester)?
+            .health
+            .is_full(harvester_strength),
+        "the contacted HARV satisfies MissionRepairAndProduce's native damaged gate"
+    );
+    let command = crate::sim::command::Command::clicked_mission(
+        harvester,
+        MissionType::Repair,
+        TargetKind::Entity(depot),
+    );
+    let record = sim.encode_megamission_record(americans, &command).unwrap();
+    let directed = sim
+        .decode_native_command_record(&record, sim.session.tick())
+        .expect("Repair event decodes with its depot destination");
+    sim.advance_tick(&[directed], Some(&rules), Some(&grid), Some(registry), 33);
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(harvester)?
+            .radio_contacts
+            .slot(0),
+        Some(depot),
+        "explicit Repair HELLO establishes the native sale contact"
+    );
+    assert_eq!(
+        sim.substrate.entities.get(depot)?.radio_contacts.slot(0),
+        Some(harvester),
+        "the depot owns the reciprocal contact"
+    );
+    assert_eq!(
+        sim.substrate.entities.get(harvester)?.navigation.nav_com(),
+        Some(crate::sim::components::NavTargetRef::object(depot)),
+        "the native Repair event installs its depot destination"
+    );
+    // Do not change ownership while the Unit is still travelling. The
+    // building must receive DockNow and enter its real Repair state first;
+    // otherwise ChangeOwner sends the Unit to Guard and no RepairTick can
+    // reach the native sale gate.
+    let mut repair_service_ready = false;
+    for _ in 0..800 {
+        let commands = sim.take_due_commands();
+        sim.advance_tick(&commands, Some(&rules), Some(&grid), Some(registry), 33);
+        if sim.substrate.entities.get(depot).is_some_and(|building| {
+            building.mission.current().known() == Some(MissionType::Repair)
+                && building.mission.handler_state() == 1
+        }) {
+            repair_service_ready = true;
+            break;
+        }
+    }
+    assert!(
+        repair_service_ready,
+        "a real HELLO/Enter/DockNow path reaches the depot's Repair state 1"
+    );
+    assert!(
+        sim.substrate.entities.get(harvester)?.health.current() < harvester_strength,
+        "the dock is ready before the first RepairTick heals the damaged HARV"
+    );
+    Some((sim, rules, grid, harvester, depot, targeter))
+}
+
+/// A no-ore HARV contact sold by a repair depot is refunded to its current AI
+/// owner exactly once, then follows the shared Stun/Limbo/UnInit cleanup.
+#[test]
+fn a_useless_harvester_contact_is_sold_to_its_current_ai_owner() {
+    let Some((mut sim, rules, grid, harvester, depot, targeter)) = useless_harvester_contact()
+    else {
+        return;
+    };
+    let americans = sim.interner.get("Americans").unwrap();
+    let russians = sim.interner.get("Russians").unwrap();
+    let old_owner_credits = sim.houses[&americans].economy().credits();
+    sim.change_owner_with_rules(harvester, russians, &rules, None, FrameEffects::default());
+    let _ = crate::sim::team_script_vm::join_team_for_test(&mut sim, &[harvester], false, false);
+    assert!(
+        sim.assign_target_represented(
+            targeter,
+            Some(TargetKind::Entity(harvester)),
+            &rules,
+            None,
+            FrameEffects::default(),
+        )
+        .is_ok()
+    );
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(harvester)
+            .unwrap()
+            .radio_contacts
+            .slot(0),
+        Some(depot),
+        "ChangeOwner retains the explicit Repair contact"
+    );
+    let expected_refund = crate::sim::production::techno_refund(&sim, &rules, harvester).unwrap();
+    let repair_cost =
+        crate::sim::production::repair_step_cost(&rules, rules.object("HARV").unwrap());
+    let credits_before = sim.houses[&russians].economy().credits();
+
+    for _ in 0..8 {
+        let commands = sim.take_due_commands();
+        sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33);
+        if sim
+            .substrate
+            .entities
+            .get(harvester)
+            .is_none_or(|entity| !entity.is_object_alive())
+        {
+            break;
+        }
+    }
+    let stop_state = sim.substrate.entities.get(depot).map(|building| {
+        format!(
+            "depot current={:?} queued={:?} effective={:?} state={} contact={:?}",
+            building.mission.current().known(),
+            building.mission.queued().known(),
+            building.mission.effective().known(),
+            building.mission.handler_state(),
+            building.radio_contacts.slot(0),
+        )
+    });
+    let unit_state = sim.substrate.entities.get(harvester).map(|unit| {
+        format!(
+            "owner={:?} useless={} health={} current={:?} queued={:?} nav={:?} contact={:?}",
+            unit.owner(),
+            unit.is_useless(),
+            unit.health.current(),
+            unit.mission.current().known(),
+            unit.mission.queued().known(),
+            unit.navigation.nav_com(),
+            unit.radio_contacts.slot(0),
+        )
+    });
+    assert!(
+        sim.substrate
+            .entities
+            .get(harvester)
+            .is_none_or(|entity| !entity.is_object_alive()),
+        "native sale gate should consume the first accepted RepairTick; {stop_state:?} {unit_state:?}"
+    );
+    assert_eq!(
+        sim.houses[&russians].economy().credits(),
+        credits_before - repair_cost + expected_refund,
+        "RepairTick bills once, then Techno GetRefund and House Add_Credits pay the current owner once"
+    );
+    assert_eq!(
+        sim.houses[&americans].economy().credits(),
+        old_owner_credits,
+        "the former owner is not paid"
+    );
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(depot)
+            .unwrap()
+            .radio_contacts
+            .slot(0),
+        None,
+        "Limbo broadcasts BREAK before UnInit"
+    );
+    let depot_state = sim.substrate.entities.get(depot).unwrap();
+    assert_eq!(
+        depot_state.mission.handler_state(),
+        0,
+        "MissionRepairAndProduce resets the native +0xBC service state after On_Sold"
+    );
+    assert_eq!(
+        depot_state.building_ready_latch(),
+        1,
+        "MissionRepairAndProduce sets the native +0x6DD ready latch after On_Sold"
+    );
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(targeter)
+            .unwrap()
+            .attack_target
+            .target(),
+        None,
+        "Techno Stun Detach_All expires external targeters"
+    );
+    assert!(
+        sim.team_script_vm()
+            .teams_in_order()
+            .all(|team| !team.members().any(|member| member == harvester)),
+        "Foot UnInit removes the sold object from its team"
+    );
+    // Native 0x0044C819 returns Repair Rate; the no-contact visit is timer-gated.
+    let next_visit_delay = sim
+        .substrate
+        .entities
+        .get(depot)
+        .unwrap()
+        .mission
+        .dispatch_timer()
+        .remaining_if_pending(sim.session.binary_frame())
+        .unwrap_or(0)
+        .max(0) as u32;
+    for _ in 0..=next_visit_delay {
+        let commands = sim.take_due_commands();
+        sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33);
+        if sim
+            .substrate
+            .entities
+            .get(depot)
+            .is_some_and(|building| building.mission.current().known() == Some(MissionType::Guard))
+        {
+            break;
+        }
+    }
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(depot)
+            .unwrap()
+            .mission
+            .current()
+            .known(),
+        Some(MissionType::Guard),
+        "the ready, state-zero repair depot promotes to Guard on its next no-contact visit"
+    );
+}
+
+/// The same explicit Repair contact is not sold while its current owner is
+/// human (`HouseClass::IsControlledByHuman @ 0x0050B730`).
+#[test]
+fn a_human_owned_useless_harvester_is_not_sold() {
+    let Some((mut sim, rules, grid, harvester, _depot, _targeter)) = useless_harvester_contact()
+    else {
+        return;
+    };
+    let americans = sim.interner.get("Americans").unwrap();
+    let credits_before = sim.houses[&americans].economy().credits();
+    let repair_cost =
+        crate::sim::production::repair_step_cost(&rules, rules.object("HARV").unwrap());
+    let health_before = sim
+        .substrate
+        .entities
+        .get(harvester)
+        .unwrap()
+        .health
+        .current();
+    let mut first_repair_step = false;
+
+    for _ in 0..8 {
+        let commands = sim.take_due_commands();
+        sim.advance_tick(&commands, Some(&rules), Some(&grid), None, 33);
+        if sim
+            .substrate
+            .entities
+            .get(harvester)
+            .is_some_and(|entity| entity.health.current() > health_before)
+        {
+            first_repair_step = true;
+            break;
+        }
+        if sim
+            .substrate
+            .entities
+            .get(harvester)
+            .is_none_or(|entity| !entity.is_object_alive())
+        {
+            break;
+        }
+    }
+
+    assert!(
+        first_repair_step,
+        "the depot's first production RepairTick reached the human-owned contact"
+    );
+    assert!(
+        sim.substrate
+            .entities
+            .get(harvester)
+            .unwrap()
+            .is_object_alive()
+    );
+    assert_eq!(
+        sim.houses[&americans].economy().credits(),
+        credits_before - repair_cost,
+        "the human repair is billed once and IsControlledByHuman withholds the sale refund"
+    );
+}
+
+/// `Mission_Harvest` installs the existing ArchiveTarget destination before
+/// its ore scan. A subsequent miss therefore reads a live NavCom and clears a
+/// stale useless latch at the native post-scan branch.
+#[test]
+fn an_archive_destination_clears_a_stale_useless_latch_after_a_scan_miss() {
+    let Some((mut sim, rules, _grid, harvester, _depot, _targeter)) = useless_harvester_contact()
+    else {
+        return;
+    };
+    assert!(sim.substrate.entities.get(harvester).unwrap().is_useless());
+    sim.substrate
+        .entities
+        .get_mut(harvester)
+        .unwrap()
+        .set_archive_target(Some(TargetKind::Cell(15, 15)));
+    let now = sim.session.binary_frame();
+    let readiness = crate::sim::mission::authority::LiveReadyInputProvider { rules: &rules };
+    sim.mission_queue_exact(
+        harvester,
+        MissionId::from_known(MissionType::Harvest),
+        1,
+        now,
+        &readiness,
+    )
+    .unwrap();
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(harvester)
+            .unwrap()
+            .mission
+            .current()
+            .known(),
+        Some(MissionType::Harvest),
+        "the real mission queue recommences Harvest"
+    );
+    crate::sim::world::dispatch_foot_mission(
+        &mut sim,
+        harvester,
+        &rules,
+        crate::sim::world::ObjectAiCtx {
+            overlay_registry: Some(
+                crate::sim::tiberium::test_support::overlay_registry_with_land(),
+            ),
+            ..Default::default()
+        },
+    );
+    let entity = sim.substrate.entities.get(harvester).unwrap();
+    assert_eq!(
+        entity.navigation.nav_com(),
+        Some(crate::sim::components::NavTargetRef::cell(15, 15)),
+        "the archive setter installs a destination before the scan miss"
+    );
+    assert_eq!(entity.archive_target(), None);
+    assert!(
+        !entity.is_useless(),
+        "the post-scan-miss NavCom read clears Techno+3D0"
+    );
+}
+
 /// A tank of `owner` at `cell` on `mission`, at half its Strength.
 fn damaged_tank(
     sim: &mut Simulation,

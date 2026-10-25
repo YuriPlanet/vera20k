@@ -1563,6 +1563,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         b"production-start-price".hash(hasher);
         entity.production_start_price().hash(hasher);
     }
+    if entity.is_useless() {
+        // Native Techno+3D0 affects a later Repair-depot sale (`0x0044C4BC`).
+        b"techno-useless-v1".hash(hasher);
+    }
     // Shared count presence and the raw Techno reload clock affect future
     // firing/reload, including a signed -1 reached from InitialAmmo=-2.
     b"techno-ammo-reload-v1".hash(hasher);
