@@ -13,12 +13,12 @@ use crate::rules::armor::armor_index;
 use crate::rules::color_add::{ColorAddSelectors, ColorAddTable};
 use crate::rules::compatibility::RulesCompatibility;
 use crate::rules::crate_rules::CrateRules;
+use crate::rules::digital_display::DigitalDisplayTypeCatalog;
 use crate::rules::error::RulesError;
 use crate::rules::gunner_turrets::GunnerTurrets;
 use crate::rules::ini_parser::{IniFile, IniSection, is_native_none_type_name};
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::phobos_radiation::RadiationTypeCatalog;
-use crate::rules::digital_display::DigitalDisplayTypeCatalog;
 use crate::rules::phobos_shields::ShieldTypeCatalog;
 use crate::rules::sound_ini::EvaRegistry;
 
@@ -1766,13 +1766,15 @@ impl ProcessedRulesLayers {
             })
     }
 
-    pub(crate) fn emp_type_states(
+    pub(crate) fn ares_techno_states(
         &self,
     ) -> impl Iterator<
         Item = (
             ObjectCategory,
             &str,
             Option<&crate::rules::ares_emp::EmpTypeRules>,
+            Option<&crate::rules::ares_warhead::AttachEffectRules>,
+            bool,
         ),
     > {
         self.native_type_construction_trace
@@ -1788,6 +1790,8 @@ impl ProcessedRulesLayers {
                         category,
                         member.native_stored_id.as_str(),
                         member.emp_type.as_ref(),
+                        member.self_attach_effect.as_ref(),
+                        member.cloak_allowed,
                     )
                 })
             })
@@ -3473,6 +3477,9 @@ struct ProcessedType {
     ares_verses: Option<AresWarheadVerses>,
     ares_warhead: Option<crate::rules::ares_warhead::AresWarheadRules>,
     emp_type: Option<crate::rules::ares_emp::EmpTypeRules>,
+    self_attach_effect: Option<crate::rules::ares_warhead::AttachEffectRules>,
+    /// TechnoTypeExt+1FA: ctor1003C9D7 defaults true; read1003EBEF.
+    cloak_allowed: bool,
     /// ObjectType4753F0 -> Ares10006E10 binds at each reached body read.
     armor_id: ArmorId,
     /// ParticleSystemType+294, the bound ParticleType's index: constructor -1
@@ -3904,6 +3911,8 @@ impl ProcessedType {
             ares_verses: None,
             ares_warhead: None,
             emp_type: None,
+            self_attach_effect: None,
+            cloak_allowed: true,
             armor_id: ArmorId::NONE,
             holds_what: None,
             super_weapon_weapon: None,
@@ -3984,6 +3993,7 @@ fn find_or_construct_type(
         #[cfg(feature = "ares")]
         {
             members[index].emp_type = Some(Default::default());
+            members[index].self_attach_effect = Some(Default::default());
         }
         #[cfg(feature = "ares")]
         {
@@ -5632,6 +5642,17 @@ impl RulesPassProcessor {
                         .as_mut()
                         .expect("TechnoType EMP extension")
                         .read_pass(&raw, sparkle);
+                    // TechnoTypeExt::LoadFromINI1003DEC0 calls the shared
+                    // descriptor reader10058A50 at1003E8D4, before subclasses.
+                    let animation = self.resolve_existing_anim_from(&raw, "AttachEffect.Animation");
+                    let member = &mut self.family_mut(family)[index];
+                    member
+                        .self_attach_effect
+                        .as_mut()
+                        .expect("TechnoType attachment descriptor")
+                        .read_pass(&raw, animation);
+                    member.cloak_allowed =
+                        raw.read_ares_bool("Cloakable.Allowed", member.cloak_allowed);
                 }
                 match family {
                     RulesTypeFamily::Building => {

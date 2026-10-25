@@ -14,10 +14,17 @@ use crate::sim::timer::CdTimer;
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct StealthAbility {
     granted: bool,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    attached: bool,
 }
 
 impl StealthAbility {
     pub(crate) fn active(self, type_seed: bool) -> bool {
+        #[cfg(feature = "ares")]
+        if self.attached {
+            return true;
+        }
         type_seed || self.granted
     }
 
@@ -27,6 +34,16 @@ impl StealthAbility {
 
     pub(crate) fn granted(self) -> bool {
         self.granted
+    }
+    #[cfg(feature = "ares")]
+    pub(crate) fn attached(self) -> bool {
+        self.attached
+    }
+    /// RecalculateStats1004617D/1004613B ORs descriptor+38 into the
+    /// raw capability, without replacing permanent crate Ext+98.
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_attached(&mut self, value: bool) {
+        self.attached = value;
     }
 }
 

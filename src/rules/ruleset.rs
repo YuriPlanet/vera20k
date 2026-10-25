@@ -4654,13 +4654,13 @@ impl RuleSet {
                 warhead.particle_system = particle_system.map(str::to_owned);
             }
         }
-        for (category, name, emp) in processed.emp_type_states() {
+        for (category, name, emp, attachment, cloak_allowed) in processed.ares_techno_states() {
             if let Some(object) = rules
                 .object_list
                 .iter_mut()
                 .find(|object| object.category == category && object.id == name)
             {
-                object.bind_emp_rules(emp);
+                object.bind_ares_techno_rules(emp, attachment, cloak_allowed);
             }
         }
         for (name, ares) in processed.ares_warhead_states() {
@@ -6731,7 +6731,11 @@ impl RuleSet {
                 .map(|object| {
                     (
                         (object.category, object.id.to_ascii_uppercase()),
-                        object.emp_rules(),
+                        (
+                            object.emp_rules(),
+                            object.self_attach_effect(),
+                            object.cloak_allowed(),
+                        ),
                     )
                 })
                 .collect::<BTreeMap<_, _>>()

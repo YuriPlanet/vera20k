@@ -259,9 +259,31 @@ pub(crate) fn multiplayer_eligible_slot(
         POWERUP_SQUAD => house.tracking().infantry() <= SQUAD_CRATE_MAX_INFANTRY && !shore,
         // `0x00481D3A`: an already cloakable actor (`Techno+0x3D2`, seeded
         // from the type's `Cloakable=` or permanently granted by a crate).
-        POWERUP_CLOAK => !actor
-            .stealth_ability
-            .active(object.is_some_and(|object| object.cloakable)),
+        POWERUP_CLOAK => {
+            #[cfg(feature = "ares")]
+            {
+                // Cloak1@1005F8D0 calls builtin type/rank predicate10043450,
+                // then checks permanent Ext+98 and TypeExt+1FA. Temporary
+                // attachment cloak must not hide an unclaimed crate bonus.
+                let builtin = object.is_some_and(|kind| {
+                    kind.cloakable
+                        || crate::sim::combat::veterancy::has_weapon_ability(
+                            actor.veterancy.rank_kind(),
+                            kind,
+                            crate::rules::object_type::Ability::Cloak,
+                        )
+                });
+                !builtin
+                    && !actor.stealth_ability.granted()
+                    && object.is_none_or(|kind| kind.cloak_allowed())
+            }
+            #[cfg(not(feature = "ares"))]
+            {
+                !actor
+                    .stealth_ability
+                    .active(object.is_some_and(|kind| kind.cloakable))
+            }
+        }
         // `0x00481C69`: an actor already armoured.
         POWERUP_ARMOR => actor.crate_multipliers.armor() == NativeF64Bits::ONE,
         // `0x00481CDE`: an actor already sped up, or an Aircraft.
@@ -542,7 +564,13 @@ pub(crate) fn pickup_crate(
                 );
             }
             POWERUP_CLOAK => {
-                effects::apply_cloak_crate(&mut sim.substrate, center, radius);
+                effects::apply_cloak_crate(
+                    &mut sim.substrate,
+                    rules,
+                    &sim.interner,
+                    center,
+                    radius,
+                );
             }
             POWERUP_ARMOR => {
                 let owners = effects::apply_multiplier_crate(

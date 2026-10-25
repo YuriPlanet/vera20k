@@ -80,8 +80,9 @@ impl AresWarheadRules {
     }
 }
 
-/// WarheadExt+88, constructor 10051890 and reader 10058A50. This is the
-/// descriptor, not the independently timed TechnoExt+20 instance vector.
+/// Shared descriptor: WarheadExt+88 (constructor10051890) and
+/// TechnoTypeExt+290 (constructor1003CA84). Both call ReadINI10058A50;
+/// TechnoType does so at1003E8D4. Instances live in TechnoExt+20.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AttachEffectRules {
     duration: i32,
@@ -149,16 +150,24 @@ impl AttachEffectRules {
     pub(crate) fn firepower_multiplier(&self) -> NativeF64Bits {
         self.firepower
     }
-    /// Ground WH effects support ordered speed and firepower aggregates. Other
-    /// stat/cloakability/Temporal/self-effect consumers remain separate mechanisms.
+    pub(crate) fn cloakable(&self) -> bool {
+        self.cloakable
+    }
+    pub(crate) fn delay(&self) -> i32 {
+        self.delay
+    }
+    pub(crate) fn initial_delay(&self) -> i32 {
+        self.initial_delay
+    }
+    /// Warhead and self effects share speed, firepower and cloak aggregates.
+    /// Armor, ROF and Temporal consumers remain separate mechanisms.
     pub(crate) fn visual_combat_path(&self) -> bool {
         self.armor == NativeF64Bits::ONE
             && self.rof == NativeF64Bits::ONE
-            && !self.cloakable
             && !self.temporal_hides_anim
     }
     #[cfg(feature = "ares")]
-    fn read_pass(&mut self, section: &IniSection, animation: Option<Option<String>>) {
+    pub(crate) fn read_pass(&mut self, section: &IniSection, animation: Option<Option<String>>) {
         // Exact 10058A59..10058B3A read order. Missing keys retain the live
         // constructor/prior-layer value; existing scalar readers own parsing.
         self.duration = section.read_ares_int("AttachEffect.Duration", self.duration);
@@ -199,6 +208,41 @@ mod tests {
         native_processing::{RulesLayerKind, RulesLayerStack},
         ruleset::RuleSet,
     };
+
+    #[test]
+    fn self_attach_effect_uses_retained_type_reader_and_build_gate() {
+        let root = IniFile::from_str(
+            "[VehicleTypes]\n0=SELF_TEST\n[Animations]\n0=GLOW\n\
+            [SELF_TEST]\nStrength=100\nAttachEffect.Duration=3\nAttachEffect.Delay=2\n\
+            AttachEffect.InitialDelay=2\nAttachEffect.Cloakable=yes\nAttachEffect.Animation=GLOW\n",
+        );
+        let read = |extra: &str| {
+            let mut layers = RulesLayerStack::new(root.clone());
+            layers.push(RulesLayerKind::Scenario, IniFile::from_str(extra));
+            RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap()
+        };
+        let rules = read(
+            "[SELF_TEST]\nAttachEffect.Duration=junk\nAttachEffect.InitialDelay=0\nCloakable.Allowed=no\n",
+        );
+        let kind = rules.object("SELF_TEST").unwrap();
+        if crate::rules::ARES_ENABLED {
+            let effect = kind.self_attach_effect().unwrap();
+            assert_eq!(
+                (effect.duration(), effect.delay(), effect.initial_delay()),
+                (3, 2, 0)
+            );
+            assert!(effect.cloakable());
+            assert_eq!(effect.animation(), Some("GLOW"));
+            assert!(!kind.cloak_allowed());
+            assert_ne!(
+                rules.simulation_config_hash(),
+                read("[SELF_TEST]\nAttachEffect.Duration=5\n").simulation_config_hash()
+            );
+        } else {
+            assert!(kind.self_attach_effect().is_none());
+            assert!(kind.cloak_allowed());
+        }
+    }
 
     #[test]
     fn attach_effect_production_layers_retain_registry_references_and_feature_gate() {
