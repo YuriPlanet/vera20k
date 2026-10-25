@@ -532,7 +532,7 @@ fn retained_ship_skips_process_but_keeps_its_head_and_runs_sinking_ai() {
     let slope_before = *slope_transition::state_for_entity(hull).unwrap();
     // A second Stun (Unit setter, Path[0] = -1, Stop_Driver) clears the
     // destination, retaining the committed head.
-    sim.techno_death_stun(id, UninitContext::with_rules(&rules));
+    sim.stun(id, UninitContext::with_rules(&rules));
     sim.advance_live_object_turn(id, &rules, ObjectAiCtx::default())
         .unwrap();
     let hull = sim.substrate.entities.get(id).unwrap();

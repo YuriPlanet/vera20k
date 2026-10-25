@@ -44,6 +44,8 @@
 
 ## 自定义战役
 
+战役内调速沿用原版启动参数 `-SPEEDCONTROL`：直接启动 VERA 时传入该参数，或在客户端副本的 `ClientDefinitions.ini` 中将它加入现有的 `ExtraCommandLineParams`，即可在暂停后的游戏选项中调速。直接从 VERA 菜单新开战役时也会保留当前选定速度；`GameSpeed=0` 为不主动限速档，实际速度取决于运行开销。不带该参数时，普通战役仍使用原版固定速度。此功能不依赖 Ares 构建选项，也不改变客户端已经明确传入的战役速度。
+
 把普通 YR 战役地图复制到客户端副本中的 `Maps/VERA20kMissions/MyMission.map`，再编辑 `INI/VERA20kBattles.ini`：
 
 ```ini

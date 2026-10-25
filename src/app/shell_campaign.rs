@@ -249,7 +249,10 @@ impl App {
                 side.campaign_name(),
                 state.persistence.options_profile.difficulty,
                 None,
-                None,
+                crate::app::match_bootstrap::CampaignLaunchOptions::for_speed_control(
+                    state.frontend.campaign_speed_control,
+                    state.persistence.options_profile.game_speed,
+                ),
                 &mut clock,
             )
         });

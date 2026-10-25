@@ -403,6 +403,14 @@ impl NetworkSetupProtocol {
         std::mem::take(&mut self.requests)
     }
 
+    fn record_remote_user_left(&mut self, host: bool, operator: bool) {
+        if host {
+            self.requests.push(NetworkSetupRequest::PublishOptions);
+        } else if operator {
+            self.requests.push(NetworkSetupRequest::Leave);
+        }
+    }
+
     pub(crate) fn editable(&self) -> bool {
         !self.locked
     }
@@ -1030,6 +1038,45 @@ pub(crate) fn acknowledge_notice(state: &mut AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remote_user_departure_queues_native_wol_requests_in_protocol_order() {
+        let mut host = NetworkSetupProtocol::new(
+            SetupDialog {
+                host: true,
+                flavor: SetupFlavor::Wol,
+            },
+            false,
+        );
+        assert_eq!(
+            host.take_service_requests(),
+            vec![
+                NetworkSetupRequest::PublishOptions,
+                NetworkSetupRequest::Advertise,
+                NetworkSetupRequest::RequestPings,
+            ]
+        );
+        host.record_remote_user_left(true, false);
+        assert_eq!(
+            host.take_service_requests(),
+            vec![NetworkSetupRequest::PublishOptions]
+        );
+
+        let mut guest = NetworkSetupProtocol::new(
+            SetupDialog {
+                host: false,
+                flavor: SetupFlavor::Wol,
+            },
+            false,
+        );
+        guest.record_remote_user_left(false, true);
+        assert_eq!(
+            guest.take_service_requests(),
+            vec![NetworkSetupRequest::Leave]
+        );
+        guest.record_remote_user_left(false, false);
+        assert!(guest.take_service_requests().is_empty());
+    }
 
     #[test]
     fn lan_go_drain_gates_match_executed_original_branches() {

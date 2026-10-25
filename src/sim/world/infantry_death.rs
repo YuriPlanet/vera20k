@@ -462,7 +462,7 @@ impl Simulation {
             if let Err(cause) = self.infantry_stop_driver(id, rules, overlay_registry, effects) {
                 log::debug!("infantry {id} death Stop_Driver: {cause}");
             }
-            self.techno_death_stun(
+            self.stun(
                 id,
                 super::UninitContext::new(rules, overlay_registry).with_effects(effects),
             );

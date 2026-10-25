@@ -789,6 +789,7 @@ impl App {
                 ),
             },
             frontend: crate::app::frontend::state::FrontendState {
+                campaign_speed_control: startup_options.campaign_speed_control,
                 external_launch: false,
                 external_launch_error: None,
                 screen: GameScreen::default(),

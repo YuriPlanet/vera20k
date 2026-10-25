@@ -25,16 +25,14 @@ use crate::assets::asset_manager::MediaArchiveMode;
 /// before anything reads them. The built-in default rule tests for exactly this.
 const SCREEN_SIZE_UNSET: i32 = -1;
 
-/// Switches whose native effect is a networking, replay, string-table or debug
-/// mode this engine has no subsystem for. Native accepts them silently, so the
-/// launch must not fail on them; recognising them here is what keeps that true.
-/// Matched as substrings, exactly as native does.
-const ACCEPTED_SUBSTRING_SWITCHES: &[&str] = &[
+/// Native substring switch chain. Speed control has a retained local effect;
+/// the other networking/debug switches remain accepted without a local effect.
+const SUBSTRING_SWITCHES: &[&str] = &[
     "-DESTNET",
     "-SOCKET",
     "-MPDEBUG",
     "-DROP=",
-    "-SPEEDCONTROL",
+    SPEED_CONTROL_SWITCH,
     "-DLINK1",
     "-NETGEAR",
     "-NOROUTER",
@@ -61,6 +59,8 @@ const WINDOWED_SWITCH: &str = "-WIN";
 /// Audio off.
 const NO_AUDIO_SWITCH: &str = "-NOAUDIO";
 
+const SPEED_CONTROL_SWITCH: &str = "-SPEEDCONTROL";
+
 /// A resolved client size in pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScreenSize {
@@ -85,6 +85,9 @@ pub struct RetailStartupOptions {
     /// Cleared by `-NOAUDIO`; the interactive `App` consumes it before audio
     /// output and index construction.
     pub audio_enabled: bool,
+    /// Parse_Command_Line52F939..52F94B sets the process flag 0xA8EDDC.
+    /// Main_Tick55D767 and Options init4E2050 consume it for campaigns.
+    pub campaign_speed_control: bool,
     /// Screen width, or [`SCREEN_SIZE_UNSET`] while nothing has chosen one.
     pub screen_width: i32,
     /// Screen height, or [`SCREEN_SIZE_UNSET`] while nothing has chosen one.
@@ -98,6 +101,7 @@ impl Default for RetailStartupOptions {
             media_archive_mode: MediaArchiveMode::STOCK_DIGITAL,
             windowed: false,
             audio_enabled: true,
+            campaign_speed_control: false,
             screen_width: SCREEN_SIZE_UNSET,
             screen_height: SCREEN_SIZE_UNSET,
         }
@@ -111,6 +115,7 @@ impl RetailStartupOptions {
             RecognizedSwitch::CdMedia => self.media_archive_mode = MediaArchiveMode::CdWildcard,
             RecognizedSwitch::Windowed => self.windowed = true,
             RecognizedSwitch::NoAudio => self.audio_enabled = false,
+            RecognizedSwitch::SpeedControl => self.campaign_speed_control = true,
             RecognizedSwitch::ScreenSize { width, height } => {
                 self.screen_width = width;
                 if let Some(height) = height {
@@ -129,6 +134,7 @@ enum RecognizedSwitch {
     CdMedia,
     Windowed,
     NoAudio,
+    SpeedControl,
     ScreenSize {
         width: i32,
         height: Option<i32>,
@@ -176,11 +182,15 @@ fn classify(normalized: &str) -> Option<RecognizedSwitch> {
     if normalized.contains(CD_MEDIA_SWITCH) {
         return Some(RecognizedSwitch::CdMedia);
     }
-    if ACCEPTED_SUBSTRING_SWITCHES
+    if let Some(switch) = SUBSTRING_SWITCHES
         .iter()
-        .any(|switch| normalized.contains(switch))
+        .find(|switch| normalized.contains(**switch))
     {
-        return Some(RecognizedSwitch::NoLocalEffect);
+        return Some(if *switch == SPEED_CONTROL_SWITCH {
+            RecognizedSwitch::SpeedControl
+        } else {
+            RecognizedSwitch::NoLocalEffect
+        });
     }
     // Native reaches its size parser through `isdigit(argument[1])`, then runs
     // `sscanf(argument, "-%dX%d", &width, &height)`.
@@ -361,7 +371,6 @@ mod tests {
             "-NOROUTER",
             "-NETGEAR",
             "-DLINK1",
-            "-SPEEDCONTROL",
             "-DROP=3",
             "-MPDEBUG",
             "-SOCKET1234",
@@ -371,5 +380,14 @@ mod tests {
         ]);
         assert!(rest.is_empty(), "every native switch must be consumed");
         assert_eq!(options, RetailStartupOptions::default());
+    }
+
+    #[test]
+    fn speed_control_retains_the_native_case_insensitive_substring_switch() {
+        assert!(!consume(&[]).0.campaign_speed_control);
+        let (options, rest) = consume(&["prefix-speedcontrolsuffix", "-WIN", "--other"]);
+        assert!(options.campaign_speed_control);
+        assert!(options.windowed);
+        assert_eq!(rest, ["--other"]);
     }
 }

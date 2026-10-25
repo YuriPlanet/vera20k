@@ -5,14 +5,22 @@ use crate::rules::mission_data::MissionType;
 use crate::sim::mission::MissionId;
 use crate::sim::world::bridge_test_evidence::{
     assert_navigation_fields_equal, navigation_authority, rebuilt_graphs, restored_retail,
-    save_scene,
+    retail_anytown_map_bytes, save_scene,
 };
 use crate::sim::world::{Simulation, TickLane};
 use crate::util::save_codec;
 use serde_json::{Value, json};
+use std::path::Path;
 
 fn authority(sim: &Simulation, source: u64, expected_load: bool) -> Value {
-    let actor = sim.substrate.entities.get(source).unwrap();
+    let mut actor = sim.substrate.entities.get(source).unwrap().clone();
+    if expected_load {
+        // Unit/Foot Load executes FootClass::Load's audio-reset tail
+        // @ 0x004DB60D..0x004DB624, rebuilding Foot+0x544 and clearing the
+        // logical MoveSound latch/countdown at +0x53C/+0x540. Compare the
+        // saved authority with the original post-Load fields.
+        actor.move_sound = crate::sim::world::MoveSoundState::default();
+    }
     let bullets: Vec<_> = sim
         .projectiles
         .iter()
@@ -113,11 +121,43 @@ fn checkpoint(
 #[test]
 #[ignore = "requires physical Anytown and retail TEMPERATE assets"]
 fn retail_fv_pursuit_missiles_collapse_and_guard_survive_restore() {
+    run_persistence_case(None, None);
+}
+
+#[test]
+#[ignore = "requires physical Anytown and retail TEMPERATE assets"]
+fn retail_fv_pursuit_missiles_collapse_and_guard_survive_restore_with_map_strength_one() {
+    let directory =
+        crate::map::source::test_support::TestDirectory::new("fv-pursuit-bridge-strength-one");
+    let mut bytes = retail_anytown_map_bytes();
+    // RulesClass::ReadCombatDamage @ 0x0066CD66..0x0066CD86 reads this live
+    // map layer over the stock BridgeStrength=1500. For this 25-damage hit,
+    // strength=1 makes the native admission deterministic while keeping its
+    // RandomRanged draw/path and the rest of the original map.
+    bytes.extend_from_slice(b"\r\n[CombatDamage]\r\nBridgeStrength=1\r\n");
+    directory.write("XMP03T4.MAP", &bytes);
+    let map_path = directory.path().join("XMP03T4.MAP");
+    run_persistence_case(Some(&map_path), Some(1));
+}
+
+fn run_persistence_case(map_path: Option<&Path>, expected_bridge_strength: Option<i32>) {
     let pristine = {
-        let (healthy, _) = prepared_paid_scene("healthy");
+        let (healthy, _) = prepared_paid_scene("healthy", map_path);
+        if let Some(expected) = expected_bridge_strength {
+            assert_eq!(
+                healthy.runtime.resources.rules.bridge_rules.strength, expected,
+                "production map layer BridgeStrength"
+            );
+        }
         healthy.sim().resolved_terrain.as_ref().unwrap().clone()
     };
-    let (mut scene, ambient) = prepared_paid_scene("damaged");
+    let (mut scene, ambient) = prepared_paid_scene("damaged", map_path);
+    if let Some(expected) = expected_bridge_strength {
+        assert_eq!(
+            scene.runtime.resources.rules.bridge_rules.strength, expected,
+            "production map layer BridgeStrength"
+        );
+    }
     // The v26 original-native damaged case with declared Scenario seed 31
     // fires at 1/4, collapses 220->232 at 32 and drains into Guard by next_frame 53.
     // Main's migrated Infantry idle scheduling changes the supplied outside

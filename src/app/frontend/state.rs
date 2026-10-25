@@ -13,6 +13,8 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::ui::game_screen::GameScreen;
 
 pub(crate) struct FrontendState {
+    /// Immutable process flag from Parse_Command_Line52F94B (0xA8EDDC).
+    pub(crate) campaign_speed_control: bool,
     /// External offline launch: returning from the session closes the process for its client.
     pub(crate) external_launch: bool,
     pub(crate) external_launch_error: Option<String>,
