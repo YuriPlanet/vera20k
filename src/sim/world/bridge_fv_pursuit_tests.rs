@@ -3,9 +3,12 @@ use crate::headless_scenario::{HeadlessScenario, SIM_TICK_MS};
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::components::NavTargetRef;
 use crate::sim::world::TickLane;
-use crate::sim::world::bridge_test_evidence::load_anytown_concrete;
+use crate::sim::world::bridge_test_evidence::{
+    load_anytown_concrete, load_anytown_concrete_from_path,
+};
 use crate::util::fixed_math::SimFixed;
 use serde_json::{Value, json};
+use std::path::Path;
 
 type AmbientAnims = std::collections::BTreeSet<crate::sim::anim_class::AnimId>;
 
@@ -211,12 +214,35 @@ fn compare_fields(actual: &Value, expected: &Value, path: &str, errors: &mut Vec
     }
 }
 
-fn prepared_paid_scene(stage: &str) -> (HeadlessScenario, AmbientAnims) {
+fn retained_behind_animations(scene: &HeadlessScenario) -> AmbientAnims {
+    let Some(behind_type) = scene.runtime.resources.rules.general.behind.as_deref() else {
+        return AmbientAnims::new();
+    };
+    let sim = scene.sim();
+    sim.substrate
+        .anims
+        .iter()
+        .filter_map(|(id, anim)| {
+            let owner_retains_anim = anim
+                .owner_entity()
+                .and_then(|owner| sim.substrate.entities.get(owner))
+                .is_some_and(|owner| owner.behind_anim() == Some(*id));
+            (owner_retains_anim
+                && sim
+                    .resolve(anim.type_id())
+                    .eq_ignore_ascii_case(behind_type)
+                && !sim.substrate.pending_delete.contains_object(id))
+            .then_some(*id)
+        })
+        .collect()
+}
+
+fn prepared_paid_scene(stage: &str, map_path: Option<&Path>) -> (HeadlessScenario, AmbientAnims) {
     use crate::sim::world::bridge_test_evidence::{
         damage_anytown_concrete, repair_anytown_concrete,
     };
-    let mut scene = load_anytown_concrete();
-    let ambient_anims: AmbientAnims = scene
+    let mut scene = map_path.map_or_else(load_anytown_concrete, load_anytown_concrete_from_path);
+    let mut ambient_anims: AmbientAnims = scene
         .sim()
         .substrate
         .anims
@@ -236,12 +262,18 @@ fn prepared_paid_scene(stage: &str) -> (HeadlessScenario, AmbientAnims) {
     // physical map state. Finish prerequisite effects before supplying
     // the declared frame/RNG inputs; this is not whole-Scenario startup.
     for _ in 0..512 {
+        // TechnoClass::AI_Update @ 0x006FA24A..0x006FA30C may create the
+        // retained `[General] Behind=` Anim via UpdateBehindIndicator
+        // @ 0x0070F1D0 after map load. It persists while the owning Techno is
+        // hidden, so only the live owner-linked indicator joins the baseline;
+        // unrelated prerequisite effects still have to drain.
+        let behind_anims = retained_behind_animations(&scene);
         if scene
             .sim()
             .substrate
             .anims
             .iter()
-            .all(|(id, _)| ambient_anims.contains(id))
+            .all(|(id, _)| ambient_anims.contains(id) || behind_anims.contains(id))
             && scene.sim().substrate.pending_delete.is_empty()
         {
             break;
@@ -256,19 +288,21 @@ fn prepared_paid_scene(stage: &str) -> (HeadlessScenario, AmbientAnims) {
             )
             .unwrap();
     }
+    let behind_anims = retained_behind_animations(&scene);
     assert!(
         scene
             .sim()
             .substrate
             .anims
             .iter()
-            .all(|(id, _)| ambient_anims.contains(id)),
+            .all(|(id, _)| ambient_anims.contains(id) || behind_anims.contains(id)),
         "{stage} prerequisite effects drain"
     );
     assert!(
         scene.sim().substrate.pending_delete.is_empty(),
         "{stage} prerequisite deletions drain"
     );
+    ambient_anims.extend(behind_anims);
     (scene, ambient_anims)
 }
 
@@ -331,7 +365,7 @@ fn retail_fv_paid_pursuit_fire_impacts_and_cleanup_match_native() {
     for case in packet["cases"].as_array().unwrap() {
         let stage = case["stage"].as_str().unwrap();
         let physical_stage = case["physical_stage"].as_str().unwrap_or(stage);
-        let (mut scene, ambient_anims) = prepared_paid_scene(physical_stage);
+        let (mut scene, ambient_anims) = prepared_paid_scene(physical_stage, None);
         let id = command_paid_fv(
             &mut scene,
             serde_json::from_value(case["supplied_spawn"]["xyz"].clone()).unwrap(),
