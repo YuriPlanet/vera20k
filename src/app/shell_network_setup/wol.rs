@@ -211,7 +211,12 @@ pub(crate) fn user_joined(state: &mut AppState, name: String) -> anyhow::Result<
 /// (`0x785764..0x785788`); after OnGameStart nothing more. Its node goes;
 /// the ready records clear and C9's Accept enables (`0x785C64..0x785CF5`);
 /// a guest whose operator left leaves the channel itself
-/// (`0x785CFA..0x785D1C`); the host republishes (`0x785D1F..0x785E81`).
+/// (`0x785CFA..0x785D1C`); the host clears readiness, sends the slot-name
+/// payload (`0x77DB90`) and publishes options (`0x5E32D0(1, 1)`) before the
+/// repaint (`0x783C80`, `0x785D1F..0x785E81`). It does not advertise the
+/// channel (`0x78F000`). The WOL adapter's one options snapshot includes the
+/// complete launch roster, so it carries both native payloads without a
+/// duplicate relay update.
 pub(crate) fn user_left(state: &mut AppState, name: &str, operator: bool) -> anyhow::Result<()> {
     play_player_left(state);
     if state
@@ -232,11 +237,9 @@ pub(crate) fn user_left(state: &mut AppState, name: &str, operator: bool) -> any
     };
     service::service_event(state, service::NetworkSetupEvent::ParticipantLeft { index })?;
     clear_guest_acceptance(state)?;
-    if state.match_state.session.host() {
-        queue(state, NetworkSetupRequest::PublishOptions);
-        queue(state, NetworkSetupRequest::Advertise);
-    } else if operator {
-        queue(state, NetworkSetupRequest::Leave);
+    let host = state.match_state.session.host();
+    if let Some(protocol) = state.frontend.network_setup_protocol.as_mut() {
+        protocol.record_remote_user_left(host, operator);
     }
     Ok(())
 }
