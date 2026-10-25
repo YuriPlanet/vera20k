@@ -12,6 +12,10 @@ mod speed_tests;
 #[path = "attach_firepower_tests.rs"]
 mod firepower_tests;
 
+#[cfg(test)]
+#[path = "attach_decloak_tests.rs"]
+mod decloak_tests;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 struct AttachedEffect {
     warhead: InternedId,
@@ -416,7 +420,7 @@ mod receiver {
                 return;
             }
             // Ground WH speed/firepower share the existing aggregate owner.
-            // Armor/ROF, decloak, Temporal and self-effects remain explicit
+            // Armor/ROF, cloakability, Temporal and self-effects remain explicit
             // later mechanisms; never apply a misleading visual-only substitute.
             if !settings.visual_combat_path() {
                 log::debug!(
@@ -495,6 +499,33 @@ mod receiver {
                     //that call still see the previously committed stats.
                     if let Some(victim) = self.substrate.entities.get_mut(target) {
                         victim.recompute_ares_attached_stats(rules, &self.interner);
+                    }
+                }
+                // Ares AttachEffectTypeClass::Attach @100586A4..100586C0:
+                // new and refreshed entries share this tail, after animation
+                // creation and any aggregate. Virtual +45C(true) is stock
+                // StartUncloaking @7036C0; its owner rejects states 0/3 and
+                // suppresses the sound without restarting an active transition.
+                if settings.force_decloak() {
+                    let speed = self
+                        .substrate
+                        .entities
+                        .get(target)
+                        .and_then(|victim| self.interner.object_type(victim.type_ref(), rules))
+                        .map(|kind| kind.cloaking_speed);
+                    if let Some(speed) = speed
+                        && let Some(cloak) = self
+                            .substrate
+                            .entities
+                            .get_mut(target)
+                            .and_then(|victim| victim.cloak.as_mut())
+                    {
+                        cloak.start_uncloaking(
+                            self.session.binary_frame() as i32,
+                            speed,
+                            rules.general.cloaking_stages,
+                            true,
+                        );
                     }
                 }
             }
