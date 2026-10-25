@@ -258,9 +258,10 @@ pub(crate) fn multiplayer_eligible_slot(
         // `0x00481C32`: too much infantry, or a shore cell.
         POWERUP_SQUAD => house.tracking().infantry() <= SQUAD_CRATE_MAX_INFANTRY && !shore,
         // `0x00481D3A`: an already cloakable actor (`Techno+0x3D2`, seeded
-        // from the type's `Cloakable=`; the Cloak crate's permanent write is
-        // this module's residual).
-        POWERUP_CLOAK => !object.is_some_and(|object| object.cloakable),
+        // from the type's `Cloakable=` or permanently granted by a crate).
+        POWERUP_CLOAK => !actor
+            .stealth_ability
+            .active(object.is_some_and(|object| object.cloakable)),
         // `0x00481C69`: an actor already armoured.
         POWERUP_ARMOR => actor.crate_multipliers.armor() == NativeF64Bits::ONE,
         // `0x00481CDE`: an actor already sped up, or an Aircraft.
@@ -540,6 +541,9 @@ pub(crate) fn pickup_crate(
                     center,
                 );
             }
+            POWERUP_CLOAK => {
+                effects::apply_cloak_crate(&mut sim.substrate, center, radius);
+            }
             POWERUP_ARMOR => {
                 let owners = effects::apply_multiplier_crate(
                     &mut sim.substrate,
@@ -625,9 +629,7 @@ pub(crate) fn pickup_crate(
             }
             // RESIDUAL arms, each a zero weight in retail `[Powerups]` so no
             // random pickup reaches them (a map's stored selection or a mod
-            // can): Cloak (3, `0x00482840`: `Techno+0x3D2 = 1` on every Techno
-            // in the radius; VERA keeps no instance cloakable flag),
-            // Explosion (4, `0x00482565`: C4 damage on the actor and five
+            // can): Explosion (4, `0x00482565`: C4 damage on the actor and five
             // random-offset blasts with two draws each), Napalm (5,
             // `0x0048271E`: a fire anim and warhead damage), ICBM (12,
             // `0x00482CA1`: grant the first ICBM super), Gas (16,

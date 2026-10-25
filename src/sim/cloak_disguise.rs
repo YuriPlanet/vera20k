@@ -4,6 +4,32 @@ use crate::sim::intern::InternedId;
 use crate::sim::rng::SimRng;
 use crate::sim::timer::CdTimer;
 
+/// Permanent instance stealth granted by CellClass::PickupCrate @0048294F.
+/// HasStealthAbility @0070C5A0 reads the same Techno+3D2 byte that the
+/// Unit/Infantry constructors seed from Cloakable= (@007355B4/@00517D86).
+/// Types are immutable for a scenario; retain only the permanent instance
+/// delta from that constructor seed. Keep it separate from cloak progress:
+/// receiving it starts no timer
+/// or transition, and leaving/re-entering the map cannot remove it.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct StealthAbility {
+    granted: bool,
+}
+
+impl StealthAbility {
+    pub(crate) fn active(self, type_seed: bool) -> bool {
+        type_seed || self.granted
+    }
+
+    pub(crate) fn grant(&mut self) {
+        self.granted = true;
+    }
+
+    pub(crate) fn granted(self) -> bool {
+        self.granted
+    }
+}
+
 /// The cloak progress stage's timer (`TechnoClass+0x22C`/`+0x234`) and its
 /// rate (`+0x238`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -316,11 +342,12 @@ impl CloakRuntime {
     /// (the constructor copy at `0x007355B6`/`0x00517D88`), fully cloaked
     /// when Unlimbo establishes state 2 ([`Self::establish_unlimbo_fully_cloaked`]).
     pub(crate) fn install(slot: &mut Option<Self>, current_frame: i32, fully_cloaked: bool) {
-        let mut cloak = Self::new(current_frame);
+        // UnitClass::Unlimbo @00737BD7..00737BEB only writes state 2;
+        // it neither clears the retained ability nor restarts cloak timers.
+        let cloak = slot.get_or_insert_with(|| Self::new(current_frame));
         if fully_cloaked {
             cloak.establish_unlimbo_fully_cloaked();
         }
-        *slot = Some(cloak);
     }
 
     /// The cloak AI's install for an object that has the Cloak ability but no

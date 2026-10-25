@@ -139,6 +139,17 @@ fn ground_members_in_radius(
         .collect()
 }
 
+/// CellClass::PickupCrate @00482840..0048296D: every marked ground-layer
+/// Techno strictly inside CrateRadius receives the permanent +3D2 flag.
+/// This arm starts no cloak transition, plays no sound and spends no RNG.
+pub(crate) fn apply_cloak_crate(substrate: &mut ObjectSubstrate, center: DriveCoord, radius: i32) {
+    for id in ground_members_in_radius(substrate, center, radius) {
+        if let Some(entity) = substrate.entities.get_mut(id) {
+            entity.stealth_ability.grant();
+        }
+    }
+}
+
 /// The Armor and Firepower arms: every Techno within the radius whose
 /// multiplier is exactly 1.0 takes `multiplier * magnitude` (x87 double
 /// multiply, `0x00482E6D..0x00482E79`). Returns the owners of the changed

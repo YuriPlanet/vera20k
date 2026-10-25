@@ -18,7 +18,7 @@
 use crate::map::entities::EntityCategory;
 use crate::sim::ammo::TechnoAmmo;
 use crate::sim::animation::Animation;
-use crate::sim::cloak_disguise::{CloakRuntime, DisguiseRuntime};
+use crate::sim::cloak_disguise::{CloakRuntime, DisguiseRuntime, StealthAbility};
 use crate::sim::combat::base_defense_response::BaseDefenseResponseState;
 use crate::sim::combat::{Health, TarCom};
 use crate::sim::components::{NavigationState, Position};
@@ -585,6 +585,9 @@ pub struct GameEntity {
     /// object.
     #[serde(default)]
     pub cloak: Option<CloakRuntime>,
+    /// Instance stealth grant; sim::cloak_disguise owns its mutations.
+    #[serde(default)]
+    pub(crate) stealth_ability: StealthAbility,
     /// Last sensor coverage actually deposited into CellClass counters.
     /// Removal must use these cached owner/location/radius values after the
     /// entity's current facts have changed.
@@ -1835,6 +1838,7 @@ impl GameEntity {
             slave: Default::default(),
             mega_mission: Default::default(),
             cloak: None,
+            stealth_ability: StealthAbility::default(),
             sensor_deposit: None,
             disguise: Some(DisguiseRuntime::new(construction_frame)),
             low_bridge_tube_state: None,

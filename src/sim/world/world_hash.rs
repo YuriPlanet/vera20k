@@ -2033,6 +2033,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     entity.building_light.spotlight_capable().hash(hasher);
     entity.building_light.light().hash(hasher);
     entity.low_bridge_tube_state.hash(hasher);
+    entity.stealth_ability.granted().hash(hasher);
     if let Some(cloak) = entity.cloak.as_ref() {
         1u8.hash(hasher);
         cloak.state().hash(hasher);

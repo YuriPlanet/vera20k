@@ -2337,13 +2337,14 @@ impl Simulation {
         stable_id: u64,
         rules: &RuleSet,
     ) {
-        let Some((category, veterancy, in_playfield, type_ref)) =
+        let Some((category, veterancy, in_playfield, type_ref, stealth_ability)) =
             substrate.entities.get(stable_id).map(|entity| {
                 (
                     entity.category(),
                     entity.veterancy.rank(),
                     entity.in_playfield(),
                     entity.type_ref(),
+                    entity.stealth_ability,
                 )
             })
         else {
@@ -2357,13 +2358,14 @@ impl Simulation {
             return;
         };
         let rank_cloak = has_weapon_ability(rank_from_u16(veterancy), object, Ability::Cloak);
-        if !object.cloakable && !rank_cloak {
+        let intrinsic_cloak = stealth_ability.active(object.cloakable);
+        if !intrinsic_cloak && !rank_cloak {
             return;
         }
         let frame = session.binary_frame() as i32;
         // Only UnitClass owns the direct Unlimbo state write, and it tests the
         // copied runtime Cloakable byte rather than rank-granted CLOAK.
-        let fully_cloaked = category == EntityCategory::Unit && object.cloakable && !in_playfield;
+        let fully_cloaked = category == EntityCategory::Unit && intrinsic_cloak && !in_playfield;
         if let Some(entity) = substrate.entities.get_mut(stable_id) {
             crate::sim::cloak_disguise::CloakRuntime::install(
                 &mut entity.cloak,
