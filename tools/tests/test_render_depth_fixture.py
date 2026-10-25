@@ -75,6 +75,26 @@ def decode_iso_cells(section):
 
 
 class RenderDepthFixtureTests(unittest.TestCase):
+    def test_magnetic_wave_uses_sleeping_stock_actors_on_clear_ground(self):
+        ini = parse_ini(build_fixture(magnetic_wave=True))
+        units = [row.split(',') for row in ini['Units'].values()]
+        self.assertEqual([row[:7] for row in units], [
+            ['Computer', 'MTNK', '256', '50', '48', '192', 'Sleep'],
+            ['<human player>', 'TELE', '256', '44', '48', '64', 'Sleep'],
+        ])
+        plant = ini['Structures']['0'].split(',')
+        self.assertEqual(plant[:5], ['Computer', 'GAPOWR', '256', '60', '60'])
+        cells = decode_iso_cells(ini['IsoMapPack5'])
+        for row in units + [plant]:
+            self.assertEqual(cells[int(row[3]), int(row[4])], (0, 0, 0))
+        self.assertFalse(ini['Infantry'])
+        self.assertEqual(set(decode_overlay_section(ini['OverlayPack'])), {255})
+        for section in ('General', 'TELE', 'MTNK', 'MagneticBeam',
+                        'MagneticBeamE', 'LocomotorBeam'):
+            self.assertNotIn(section, ini)
+        with self.assertRaises(ValueError):
+            build_fixture(magnetic_wave=True, disk_laser=True)
+
     def test_sonic_scene_retains_template_packs_and_keeps_stock_weapon_fields(self):
         # Transport-only fixture check; actual naval admission is exercised by
         # the production retail map capture, not this flat input template.

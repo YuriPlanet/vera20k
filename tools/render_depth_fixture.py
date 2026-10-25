@@ -17,6 +17,7 @@ Usage:
     python tools/render_depth_fixture.py target/ordinary-disk-laser.map --disk-laser
     python tools/render_depth_fixture.py target/ordinary-dolphin-sonic.map --sonic-wave /absolute/XMP03T4.MAP
     python tools/render_depth_fixture.py target/drone-fire.map --drone-fire
+    python tools/render_depth_fixture.py target/ordinary-tele-magnetic.map --magnetic-wave
 
 This writes only the requested map. It neither edits game configuration nor
 launches either engine. The cliff fixture deliberately focuses on one cliff
@@ -151,6 +152,7 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
                   bomb_clock: bool = False,
                   ifv_welding: str | None = None,
                   disk_laser: bool = False,
+                  magnetic_wave: bool = False,
                   temporal_gunner: bool = False,
                   drone_fire: bool = False,
                   sonic_wave: Path | None = None) -> str:
@@ -175,10 +177,10 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
     if sum((walls_only, cliff_back, building_brackets, building_repair,
             attack_order_voice is not None, house_self_heal is not None,
             damage_feedback is not None, move_order_voice is not None, bomb_clock,
-            ifv_welding is not None, disk_laser, temporal_gunner, drone_fire, sonic_wave is not None)) > 1:
+            ifv_welding is not None, disk_laser, magnetic_wave, temporal_gunner, drone_fire, sonic_wave is not None)) > 1:
         raise ValueError('Choose one comparison mode')
     building_brackets = building_brackets or building_repair
-    command_scene = sonic_wave is not None or bomb_clock or disk_laser or temporal_gunner or drone_fire or any(mode is not None for mode in
+    command_scene = sonic_wave is not None or magnetic_wave or bomb_clock or disk_laser or temporal_gunner or drone_fire or any(mode is not None for mode in
                         (attack_order_voice, house_self_heal, damage_feedback,
                          move_order_voice, ifv_welding))
     walls_only = walls_only or building_brackets or command_scene
@@ -295,7 +297,7 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
         # Keep a building's foundation-centre target comfortably in range.
         # Object rows use the native scenario names FromName50C170 reads,
         # independently of the launch's internal Americans/Computer1 keys.
-        unit_target = (bomb_clock or disk_laser or temporal_gunner or drone_fire or move_order_voice is not None
+        unit_target = (bomb_clock or disk_laser or magnetic_wave or temporal_gunner or drone_fire or move_order_voice is not None
                        or damage_feedback is not None or house_self_heal is not None
                        or ifv_welding is not None or attack_order_voice == 'unit')
         near, far = (C + (4 if unit_target else 3), C), (C + 12, C + 12)
@@ -361,6 +363,13 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
             # Structures44F8CB excludes the current House before construction.
             # Keep only the enemy survivor; the profile uses ShortGame=false.
             structures = [f'0=Computer,GAPOWR,256,{plant_cell[0]},{plant_cell[1]},0,None,0,0,1,0,0,None,None,None,0,0']
+        if magnetic_wave:
+            # Both actors sleep until the profile's ordinary Attack command.
+            # Stock TELE/MagneticBeam and MTNK fields remain untouched.
+            units = [
+                f'0=Computer,MTNK,256,{C+2},{C},192,Sleep,None,0,-1,0,-1,1,1',
+                f'1=<human player>,TELE,256,{C-4},{C},64,Sleep,None,0,-1,0,-1,1,1',
+            ]
         if temporal_gunner:
             # Ordinary boarding, approach, firing and unloading must reach
             # their callbacks at runtime; author no weapon, timer or cargo.
@@ -417,6 +426,7 @@ Color=DarkRed
 
     name = 'C24 Ordinary Engineer IFV Welding' if ifv_welding else 'Depth Continuation - ' + (
         'Dolphin Sonic' if sonic_wave is not None else
+        'Magnetic Wave' if magnetic_wave else
         'Temporal Gunner' if temporal_gunner else
         'Terror Drone Firing' if drone_fire else
         'Disk Laser' if disk_laser else
@@ -606,6 +616,10 @@ def main() -> None:
         help='Use a stock local DISK, full-health enemy MTNK and distant power plants for ordinary Attack',
     )
     modes.add_argument(
+        '--magnetic-wave', action='store_true',
+        help='Use stock sleeping TELE/MTNK and a distant enemy survivor for ordinary Attack/Stop',
+    )
+    modes.add_argument(
         '--temporal-gunner', action='store_true',
         help='Use full-health stock CLEG/FV, an enemy HTNK and distant power plant for ordinary boarding and unloading',
     )
@@ -628,6 +642,7 @@ def main() -> None:
                             bomb_clock=args.bomb_clock,
                             ifv_welding=args.ifv_welding,
                             disk_laser=args.disk_laser,
+                            magnetic_wave=args.magnetic_wave,
                             temporal_gunner=args.temporal_gunner,
                             drone_fire=args.drone_fire, sonic_wave=args.sonic_wave)
     if args.terrain_template:

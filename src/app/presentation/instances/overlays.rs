@@ -1308,6 +1308,43 @@ mod terrain_render_tests;
 #[cfg(test)]
 mod tests {
     #[test]
+    fn interpolated_wave_polygon_preserves_native_spans_when_an_edge_folds_back() {
+        use crate::app::presentation::interpolation::RenderInterpolation;
+        use crate::render::wave_geometry::{WaveClipPath, WaveDraw, WavePolygon, polygon_spans};
+        use crate::sim::world::Simulation;
+
+        let old = WaveDraw {
+            polygon: WavePolygon::Magnetic([[0, 5], [3, 7], [4, 2], [-3, 0]]),
+            source_point: [0, 0],
+            source_z: 0,
+            phase: 3,
+            direction: 0,
+            clip_path: WaveClipPath::Fast,
+        };
+        let current = WaveDraw {
+            polygon: WavePolygon::Magnetic([[0, -5], [-3, 3], [-2, 6], [5, 10]]),
+            ..old
+        };
+        let mut sim = Simulation::new();
+        sim.session_mut_for_test().set_binary_frame_for_test(1);
+        let mut cache = RenderInterpolation::new(true);
+        cache.observe(&sim, 0, Some(32.), false);
+        super::sample_weapon_wave_draw(old, 7, &cache, 1, [0, 0]);
+        sim.session_mut_for_test().set_binary_frame_for_test(2);
+        cache.observe(&sim, 32, Some(32.), false);
+        super::sample_weapon_wave_draw(current, 7, &cache, 2, [0, 0]);
+        cache.observe(&sim, 48, Some(32.), false);
+        let sampled = super::sample_weapon_wave_draw(current, 7, &cache, 2, [0, 0]);
+        assert_eq!(sampled.polygon.points(), &[[0, 0], [0, 5], [1, 4], [1, 5]]);
+
+        // Native execution of FUN_0063F080 @ 0x0063F080 (gamemd.exe) yields
+        // four visible rows; its extra edge write is outside that visible span.
+        let spans = polygon_spans(sampled.polygon.points());
+        assert_eq!(spans.top, 1);
+        assert_eq!(spans.rows, [[0, 0]; 4]);
+    }
+
+    #[test]
     fn render_interpolation_preserves_both_native_wave_shapes_and_camera_independence() {
         use crate::app::presentation::interpolation::RenderInterpolation;
         use crate::render::wave_geometry::{WaveClipPath, WaveDraw, WavePolygon};

@@ -54,9 +54,10 @@ pub(crate) struct PolygonSpans {
     pub rows: Vec<[i32; 2]>,
 }
 
-/// Original polygon63F080 and edge63F2E0. Wave0/3 supply convex six-/
-/// four-point polygons. Top-chain orientation, initial skip and the right-side
-/// minus-one are preserved before clipping; GPU triangulation would differ.
+/// Original polygon63F080 and edge63F2E0, from gamemd.exe. Wave0/3 supply
+/// six-/four-point polygons; projected or interpolated edges can fold back.
+/// Top-chain orientation, initial skip and the right-side minus-one are
+/// preserved before clipping; GPU triangulation would differ.
 pub(crate) fn polygon_spans(points: &[[i32; 2]]) -> PolygonSpans {
     let mut minimum = 0;
     let mut maximum = 0;
@@ -134,7 +135,13 @@ pub(crate) fn polygon_spans(points: &[[i32; 2]]) -> PolygonSpans {
                 end[0] = end[0].wrapping_sub(1);
             }
             span_edge(start, end, skip, |x| {
-                spans.rows[row][side] = x;
+                // gamemd.exe FUN_0063F080 @ 0x63F080 allocates 200 scratch
+                // rows after the logical count (0x63F1DF). Folded edges can
+                // write into that tail;
+                // Draw_Sonic75FA90/Draw_MagBeam7602E0 read only this prefix.
+                if let Some(span) = spans.rows.get_mut(row) {
+                    span[side] = x;
+                }
                 row += 1;
             });
             index = following;
@@ -143,9 +150,26 @@ pub(crate) fn polygon_spans(points: &[[i32; 2]]) -> PolygonSpans {
                 break;
             }
         }
-        assert_eq!(row, spans.rows.len(), "native convex polygon edge coverage");
+        assert!(row >= spans.rows.len(), "native polygon edge coverage");
     }
     spans
+}
+
+#[cfg(test)]
+mod tests {
+    use super::polygon_spans;
+
+    #[test]
+    fn folded_edges_keep_the_native_visible_prefix_on_both_sides() {
+        // Original FUN_0063F080/0063F2E0 (gamemd.exe) execution: two extra
+        // right-edge rows for the quad, one extra left-edge row for the hexagon.
+        let quad = polygon_spans(&[[0, 0], [4, 4], [2, 2], [0, 5]]);
+        assert_eq!(quad.top, 1);
+        assert_eq!(quad.rows, [[0, 0], [0, 1], [0, 2], [0, 1]]);
+        let hexagon = polygon_spans(&[[0, 0], [0, 5], [1, 4], [1, 5], [0, 4], [0, 1]]);
+        assert_eq!(hexagon.top, 1);
+        assert_eq!(hexagon.rows, [[0, -1]; 4]);
+    }
 }
 
 ///63F2E0 uses signed division and sign-dependent initial error. Its endpoint Y

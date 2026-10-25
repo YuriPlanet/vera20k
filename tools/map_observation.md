@@ -655,6 +655,25 @@ queued/head voice actions, physical sample/finite PCM and event/channel
 retirement. Loading and service can advance Main before the order, so a launch
 seed alone does not determine which entry a multi-entry list chooses.
 
+The [magnetic Wave profile](map_observation.magnetic-wave.example.json) uses
+stock sleeping TELE/MTNK actors at `(44,48)` and `(50,48)` plus a distant enemy
+survivor. Generate the flat scene with the existing fixture owner:
+
+```sh
+python tools/render_depth_fixture.py /absolute/ordinary-tele-magnetic.map --magnetic-wave
+```
+
+Copy the profile and set its selected map to that absolute path. Use the capture
+command below with an isolated settings directory and `input_delay_ticks = 2`
+in its `config.toml`. Attack at step 12 and Stop at step 24 exercise firing,
+lifting, interrupted fade and Wave cleanup through ordinary commands. For a
+shot-in-progress image, copy the profile with `ticks = 20` and remove commands
+at or after step 20. Run the same map/profile/config bytes before and after the
+change, then use `tools.map_observation compare` on the completed captures.
+These exact-step captures disable render interpolation: they check ordinary
+output and cleanup, while the production interpolation regression covers an
+interpolated foldback that reproduces the scanline overflow.
+
 The [Dolphin Sonic profile](map_observation.sonic-wave.example.json) uses a
 stock DLPH, enemy CARRIER and a distant enemy survivor. Extract the physical
 `multimd.mix/XMP03T4.MAP` with the existing asset tools, then generate the scene:
