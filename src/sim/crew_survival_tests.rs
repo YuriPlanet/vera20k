@@ -1098,7 +1098,7 @@ fn hijacked_vehicle_preserves_its_transferable_tag_until_captor_death() {
 
     kill_by(&mut sim, &rules, unit, attacker, ORDINARY);
 
-    assert!(!sim.entities().contains(unit));
+    assert!(sim.substrate.pending_delete.contains_object(&unit));
     assert!(
         !sim.global_variables()[9],
         "the captor is still alive"
