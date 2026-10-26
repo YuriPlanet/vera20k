@@ -17,10 +17,9 @@ use crate::sim::movement::locomotor::MovementLayer;
 /// captured this object. The Techno constructor stores -1 (`0x006F2EC8`). An
 /// engineer's capture stores its type after the owner change
 /// (`InfantryClass::PerCellProcess`, `0x00519A42` and `0x00519F94`, one per
-/// capture arm; [`Self::record`]). A vehicle thief's store
-/// (`InfantryClass::TryThiefVehicleCapture`, `0x00520465`) belongs to the
-/// Unit hijacker mechanism, which is separate. Its Building consumers are
-/// diagnostics.
+/// capture arm; [`Self::record`]). The vehicle capture store
+/// (`InfantryClass::TryThiefVehicleCapture`, `0x00520465`) shares this same
+/// metadata; Unit survivor creation and the house's build-limit query read it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub(crate) struct CapturedInfantryType(i32);
@@ -36,7 +35,7 @@ impl CapturedInfantryType {
         self.0
     }
 
-    /// The engineer capture's store of its native InfantryType index.
+    /// The capture receivers' store of the native InfantryType index.
     pub(crate) fn record(&mut self, native_index: i32) {
         self.0 = native_index;
     }
@@ -103,6 +102,128 @@ pub enum EntryBaseAction {
 pub(crate) struct BuildingEntryResult {
     pub(crate) bridge_state_changed: bool,
     pub(crate) return_before_foot: bool,
+}
+
+impl Simulation {
+    /// InfantryClass::TryThiefVehicleCapture5202F0..5206AA, reached at
+    /// InfantryAI51BEC0 (retail gamemd.exe). EC5 Thief, not EC6
+    /// VehicleThief, admits this original receiver. There is no mission,
+    /// health or target-owner-side gate beyond the caller's live Infantry
+    /// and the actor's directional alliance check.
+    pub(crate) fn infantry_try_thief_capture(
+        &mut self,
+        actor_id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> Result<bool, String> {
+        use crate::sim::components::NavTargetRef;
+        use crate::sim::movement::ground_pose::object_get_coords;
+        use crate::util::native_x87::distance_3d_leptons;
+        let Some(actor) = self.substrate.entities.get(actor_id) else {
+            return Ok(false);
+        };
+        if actor.category() != EntityCategory::Infantry
+            || !self
+                .entity_object_type(actor, rules)
+                .is_some_and(|ty| ty.thief)
+        {
+            return Ok(false);
+        }
+        let Some(nav @ NavTargetRef::Object { id: target_id }) = actor.navigation.nav_com() else {
+            return Ok(false);
+        };
+        let Some(target) = self.substrate.entities.get(target_id) else {
+            return Ok(false);
+        };
+        if target.category() != EntityCategory::Unit
+            || crate::sim::combat::combat_weapon::is_ally_by_object(
+                Some(self.house_alliances.as_map()),
+                &self.interner,
+                actor.owner(),
+                target.owner(),
+            )
+        {
+            return Ok(false);
+        }
+        //520343..52038D: +4C supplies only the target's approach height.
+        // A8F240 is the standard 104-lepton height (startup517910..517940).
+        let approach = self.navigation_target_coordinate(nav, Some(actor_id), rules)?;
+        let from = object_get_coords(actor, self.resolved_terrain.as_ref());
+        let to = object_get_coords(target, self.resolved_terrain.as_ref());
+        let xyz = |point: crate::sim::components::DriveCoord| [point.x, point.y, point.z];
+        let distance = distance_3d_leptons(xyz(from), xyz(to));
+        if approach.z.wrapping_sub(from.z).wrapping_abs()
+            < crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS
+            && distance < 128
+        {
+            //5203F7..52046D: each callback finishes before the next live
+            // read. Radio+274 addresses slot zero, not the broadcast walk.
+            let context = super::UninitContext::new(rules, registry).with_effects(effects);
+            self.dispatch_object_tag_event(target_id, 1, Some(actor_id), None, context);
+            crate::sim::radio::transmit_to_contact(
+                self,
+                target_id,
+                crate::sim::radio::RadioMessage::Break,
+                rules,
+                effects,
+            );
+            self.detach_all(target_id, false, context);
+            self.trigger_runtime
+                .transfer_object_tag(actor_id, target_id);
+            if let Some(owner) = self
+                .substrate
+                .entities
+                .get(actor_id)
+                .map(|actor| actor.owner())
+            {
+                self.change_owner_with_rules(target_id, owner, rules, registry, effects);
+            }
+            let captor_type = self
+                .substrate
+                .entities
+                .get(actor_id)
+                .and_then(|actor| self.entity_object_type(actor, rules))
+                .and_then(|ty| {
+                    rules.type_array_index(
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        &ty.id,
+                    )
+                });
+            if let Some(index) = captor_type
+                && let Some(target) = self.substrate.entities.get_mut(target_id)
+            {
+                target.capture_infantry_type_index.record(index);
+            }
+            self.uninit_with_context(actor_id, context);
+            return Ok(true);
+        }
+
+        //52047D..52069B: compare the locomotor's FINAL destination, not
+        // its paid step/head. Near targets retain it within 128 leptons;
+        // distant ones retain it in the target's approach cell.
+        let destination = crate::sim::movement::motion_query::destination(actor)
+            .ok_or_else(|| format!("Thief {actor_id} has no active locomotor destination"))?;
+        let null = crate::sim::components::DriveCoord { x: 0, y: 0, z: 0 };
+        let reissue = if destination == null {
+            true
+        } else if distance < 512 {
+            distance_3d_leptons(xyz(to), xyz(destination)) > 128
+        } else {
+            let cell = |coord: crate::sim::components::DriveCoord| {
+                (
+                    crate::util::lepton::lepton_to_cell_packed(coord.x),
+                    crate::util::lepton::lepton_to_cell_packed(coord.y),
+                )
+            };
+            cell(destination) != cell(approach)
+        };
+        if reissue {
+            self.assign_destination_represented(actor_id, Some(nav), rules, registry, effects)
+                .map_err(|error| format!("Thief {actor_id} destination: {error}"))?;
+        }
+        Ok(false)
+    }
 }
 
 #[cfg(test)]
