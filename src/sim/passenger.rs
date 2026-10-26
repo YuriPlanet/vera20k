@@ -1078,7 +1078,17 @@ pub(crate) fn board_passenger(
     if arm == BoardingArm::UnitTransport {
         sim.open_topped_passengers_take_target(pax_id, None, rules, registry, effects);
     }
-    if gunner && !arm.building() {
+    // FootClass::AddPassenger4DE630..4DE668 (retail gamemd.exe):
+    // after Cargo and EnterTransportSound, only count==1 receives the
+    // incoming gunner. Later passengers do not replace the first's weapon.
+    if gunner
+        && !arm.building()
+        && sim
+            .substrate
+            .entities
+            .get(carrier_id)
+            .is_some_and(|carrier| carrier.passenger_role.passenger_count() == 1)
+    {
         receive_gunner(
             &sim.interner,
             &sim.session,
