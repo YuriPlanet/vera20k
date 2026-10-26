@@ -108,6 +108,46 @@ fn fire(
 }
 
 #[test]
+fn superweapon_money_zero_fee_selection_requires_nonnegative_balance() {
+    let rules = rules("[Reveal]\nMoney.Amount=0\n[Storm]\nMoney.Amount=1\n");
+    let (mut sim, owner) = world(&rules, -1, true);
+    let reveal = ready(&mut sim, &rules, owner, "Reveal", false);
+    let reward = ready(&mut sim, &rules, owner, "Storm", false);
+    let views = superweapon::superweapon_views_for_owner(&sim, &rules, &owner);
+    assert!(
+        !views
+            .iter()
+            .find(|view| view.type_id == reveal)
+            .unwrap()
+            .can_afford
+    );
+    assert!(
+        views
+            .iter()
+            .find(|view| view.type_id == reward)
+            .unwrap()
+            .can_afford
+    );
+    assert_eq!(sim.houses[&owner].economy().available_money(), -1);
+    assert!(sim.super_weapons[&owner][&reveal].is_ready());
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .economy_mut()
+        .add_credits(1);
+    assert!(
+        superweapon::superweapon_views_for_owner(&sim, &rules, &owner)
+            .iter()
+            .find(|view| view.type_id == reveal)
+            .unwrap()
+            .can_afford
+    );
+    assert!(fire(&mut sim, &rules, owner, reveal, (15, 15)));
+    assert_eq!(sim.houses[&owner].economy().available_money(), 0);
+    assert!(!sim.super_weapons[&owner][&reveal].is_ready());
+}
+
+#[test]
 fn superweapon_money_ordered_layers_and_saved_rules_keep_the_effective_value() {
     let mut base = IniFile::from_str(SOURCE);
     base.merge(&IniFile::from_str(
@@ -286,16 +326,18 @@ fn superweapon_money_ui_affordability_is_live_and_independent_of_charge() {
 #[test]
 fn superweapon_money_ai_refuses_before_target_search_or_rng() {
     use superweapon::ai_fire::{AI_FIRE_LOG, AiFireEvent};
-    let rules = rules("[Reveal]\nMoney.Amount=-500\n");
-    let (mut sim, owner) = world(&rules, 499, false);
-    ready(&mut sim, &rules, owner, "Reveal", false);
-    let before = sim.state_hash();
-    AI_FIRE_LOG.with(|log| *log.borrow_mut() = Some(Vec::new()));
-    superweapon::ai_fire::try_fire(&mut sim, &rules, owner, None, FrameEffects::default());
-    let events = AI_FIRE_LOG.with(|log| log.borrow_mut().take().unwrap());
-    assert_eq!(events, vec![AiFireEvent::TryFire]);
-    assert_eq!(sim.state_hash(), before);
-    assert!(sim.sound_events.is_empty());
+    for (amount, balance) in [(-500, 499), (0, -1)] {
+        let rules = rules(&format!("[Reveal]\nMoney.Amount={amount}\n"));
+        let (mut sim, owner) = world(&rules, balance, false);
+        ready(&mut sim, &rules, owner, "Reveal", false);
+        let before = sim.state_hash();
+        AI_FIRE_LOG.with(|log| *log.borrow_mut() = Some(Vec::new()));
+        superweapon::ai_fire::try_fire(&mut sim, &rules, owner, None, FrameEffects::default());
+        let events = AI_FIRE_LOG.with(|log| log.borrow_mut().take().unwrap());
+        assert_eq!(events, vec![AiFireEvent::TryFire]);
+        assert_eq!(sim.state_hash(), before);
+        assert!(sim.sound_events.is_empty());
+    }
 }
 
 #[test]
