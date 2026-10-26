@@ -1100,7 +1100,7 @@ fn hijacked_vehicle_preserves_its_transferable_tag_until_captor_death() {
 
     assert!(!sim.entities().contains(unit));
     assert!(
-        !sim.trigger_runtime.globals_set.contains(&9),
+        !sim.global_variables()[9],
         "the captor is still alive"
     );
     let added = new_ids(&sim, &before);
@@ -1108,7 +1108,7 @@ fn hijacked_vehicle_preserves_its_transferable_tag_until_captor_death() {
     let escaped = added[0];
     assert!(sim.object_has_trigger_tag(escaped));
     kill_by(&mut sim, &rules, escaped, attacker, ORDINARY);
-    assert!(sim.trigger_runtime.globals_set.contains(&9));
+    assert!(sim.global_variables()[9]);
 }
 
 /// A vehicle on a bridge deck stands above the floor, so its crewman skips
