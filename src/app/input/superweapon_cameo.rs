@@ -47,7 +47,10 @@ pub(crate) fn press(
     let Some(view) = view else {
         return SuperWeaponClick::None;
     };
-    if !view.can_fire || !view.can_afford {
+    // Ares's sidebar hook 10034E75 and Phobos's LaunchSuper also refuse a
+    // `SW.UseAITargeting` type whose constraints fail. Their CannotFire
+    // message is not ported.
+    if !view.can_fire || !view.can_afford || view.constraints_blocked {
         return SuperWeaponClick::Refused;
     }
     if !action.is_some_and(|action| !action.eq_ignore_ascii_case("none")) {

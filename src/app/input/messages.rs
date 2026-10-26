@@ -45,6 +45,11 @@ pub(crate) fn post_trigger_message(state: &mut AppState, csf_key: &str) {
     // The selected campaign opening keeps its startup player/country. The
     // existing House owner supplies that side; a later scenario-side change
     // independent of the current House remains a separate retained-field gap.
+    // Ares `TActionClass_Execute_MessageColor @ 0x1002FA80` reads the saved
+    // Scenario.PlayerSideIndex instead.
+    #[cfg(feature = "ares")]
+    let side = runtime.simulation.session().scenario_side();
+    #[cfg(not(feature = "ares"))]
     let side = runtime
         .simulation
         .session()
@@ -52,6 +57,11 @@ pub(crate) fn post_trigger_message(state: &mut AppState, csf_key: &str) {
         .and_then(|owner| runtime.simulation.houses().get(&owner))
         .map_or(0, |house| i32::from(house.side_index()));
     let rules = &runtime.resources.rules;
+    #[cfg(feature = "ares")]
+    let rgb = ares_message_text_rgb(rules, side).unwrap_or_else(|| {
+        trigger_message_rgb(&rules.color_schemes, side, rules.skirmish_colors())
+    });
+    #[cfg(not(feature = "ares"))]
     let rgb = trigger_message_rgb(&rules.color_schemes, side, rules.skirmish_colors());
     let timeout = message_delay_timeout_ms(rules.general.message_delay_minutes);
     post_localized_message(
@@ -77,6 +87,21 @@ fn message_delay_buckets(delay: crate::util::native_x87::NativeF64Bits) -> i32 {
             )
         })
         .map_or(0, X87Chop53::ftol_i32_low_masked)
+}
+
+/// Ares `[Side] MessageTextColor=`: the stored runtime ColorScheme index (two
+/// schemes per `[Colors]` entry) resolves to that entry. `-1`/an
+/// out-of-range entry leaves the stock side-priority path unchanged.
+#[cfg(feature = "ares")]
+fn ares_message_text_rgb(rules: &crate::rules::ruleset::RuleSet, side: i32) -> Option<[f32; 3]> {
+    let index = rules.side_message_text_color_index(side)?;
+    if index < 0 {
+        return None;
+    }
+    let entry = usize::try_from(index).ok()? / 2;
+    crate::rules::color_scheme::scheme_hsv_by_entry(&rules.color_schemes, entry)
+        .map(crate::rules::color_scheme::hsv_to_rgb)
+        .map(|rgb| rgb.map(|channel| f32::from(channel) / 255.0))
 }
 
 fn trigger_message_rgb(
@@ -1200,5 +1225,40 @@ mod tests {
             ];
             assert_eq!(after_shader_subtraction, origin.position);
         }
+    }
+}
+
+#[cfg(all(test, feature = "ares"))]
+mod ares_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+
+    #[test]
+    fn fourth_side_message_text_color_resolves_to_its_colors_entry() {
+        let mut colors = String::from("[Colors]\n");
+        for index in 0..11 {
+            colors.push_str(&format!("C{index}={},{},{}\n", index, index, index));
+        }
+        colors.push_str("DarkRed=0,230,255\n");
+        let ini = IniFile::from_str(&format!(
+            "{colors}\
+             [Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n\
+             [Fourth]\nMessageTextColor=DarkRed\n"
+        ));
+        let processed = crate::rules::native_processing::RulesLayerStack::new(ini)
+            .process()
+            .expect("message color rules process");
+        let rules = crate::rules::ruleset::RuleSet::from_processed_rules(&processed)
+            .expect("message color projection");
+        let entry =
+            crate::rules::color_scheme::scheme_entry_by_name(&rules.color_schemes, "DarkRed")
+                .expect("DarkRed entry");
+        assert_eq!(
+            ares_message_text_rgb(&rules, 3),
+            Some(
+                crate::rules::color_scheme::hsv_to_rgb(rules.color_schemes[entry].hsv)
+                    .map(|channel| f32::from(channel) / 255.0)
+            )
+        );
     }
 }

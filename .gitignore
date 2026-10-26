@@ -40,6 +40,7 @@ Thumbs.db
 !/docs/capabilities.md
 !/docs/wasm.md
 !/docs/ares.md
+!/docs/ares-side-defaults.md
 !/docs/phobos.md
 !/docs/phobos-custom-radiation.md
 !/docs/phobos-superweapon-technos.md
@@ -53,6 +54,7 @@ Thumbs.db
 !/docs/phobos-ai-dehardcode.md
 !/docs/phobos-parallel-ai-queues.md
 !/docs/phobos-skirmish-unlimited-colors.md
+!/docs/phobos-superweapon-sidebar.md
 !/docs/npatch.md
 !/docs/verax.md
 !/docs/ares-generic-warhead.md

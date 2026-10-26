@@ -85,7 +85,6 @@ mod tests {
     fn sources(root: &[u8]) -> RetailRulesSources {
         let directory = TestDirectory::new("personal-rules");
         directory.write("rulesmd.ini", root);
-        directory.write("langrule.ini", b"[TEST]\nStrength=125\n");
         directory.write("artmd.ini", b"[TEST]\nImage=TEST\n");
         let assets = AssetManager::from_loose_root_for_test(directory.path());
         RetailRulesSources::select(&assets).unwrap()

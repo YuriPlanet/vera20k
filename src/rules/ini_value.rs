@@ -483,8 +483,10 @@ impl IniSection {
         })
     }
 
-    /// Ares Nullable<int>10008CC0 sets presence only after its Valueable<int>
-    /// read succeeds. Empty/invalid input keeps the previous value and presence.
+    /// Ares Nullable<int>::Read 10008CC0 (SideExt SurvivorDivisor at 1002E59F,
+    /// TechnoTypeExt TurretROT at 1003F267) sets presence only after its
+    /// Valueable<int> read succeeds. Absent, empty and invalid input keep the
+    /// previous value and presence.
     pub fn read_ares_nullable_int(&self, key: &str, current: Option<i32>) -> Option<i32> {
         self.read_string_with(key, 2048, current, |previous, value| {
             parse_ares_int(value).or(previous)

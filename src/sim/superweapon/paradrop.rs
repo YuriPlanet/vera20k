@@ -110,36 +110,72 @@ pub(crate) fn launch(
         sw_type,
         world,
     });
-    let plane_known = rules
-        .aircraft_ids
-        .iter()
-        .any(|id| id.eq_ignore_ascii_case(PDPLANE));
+    let side = sim.houses.get(&owner).map(|house| house.side_index());
     let Some(cell) = drop_cell(sim, (target_rx, target_ry)) else {
         return true;
     };
     let general = &rules.general;
-    let (lists, pairs_checked) = match kind {
-        ParaDropKind::American => (&general.amer_paradrop, true),
-        ParaDropKind::Generic => match sim.houses.get(&owner).map(|house| house.side_index()) {
-            Some(0) => (&general.ally_paradrop, true),
-            Some(2) => (&general.yuri_paradrop, true),
-            _ => (&general.sov_paradrop, false),
-        },
+    let (types, counts, pairs_checked) = match kind {
+        ParaDropKind::American => (
+            general.amer_paradrop.infantry.as_slice(),
+            general.amer_paradrop.counts.as_slice(),
+            true,
+        ),
+        // RESIDUAL (Ares): Ares replaces this launch (`SuperClass_Launch`
+        // hook `0x6CC390` -> `0x10074350`): per-Super `ParaDrop.*` keys, then
+        // the Country's (`0x1001BC20`/`0x1001BCB0`), then the Side's. VERA
+        // keeps the stock body with only the Side layer, and Soviet and any
+        // side >= 3 keep the stock unchecked pair, where Ares's sender
+        // `0x100741A0` sends nothing unless both lists are equally long and
+        // non-empty. Trigger: a mod with per-Super or per-Country paradrop
+        // keys, or unequal Soviet/fourth-side lists. Effect: other
+        // passengers or plane. Never on retail data.
+        ParaDropKind::Generic => {
+            let pairs_checked = matches!(side, Some(0) | Some(2));
+            let (types, counts) = match rules.side_paradrop(side.unwrap_or(-1)) {
+                Some(pair) => pair,
+                None => match side {
+                    Some(0) => (
+                        general.ally_paradrop.infantry.as_slice(),
+                        general.ally_paradrop.counts.as_slice(),
+                    ),
+                    Some(2) => (
+                        general.yuri_paradrop.infantry.as_slice(),
+                        general.yuri_paradrop.counts.as_slice(),
+                    ),
+                    _ => (
+                        general.sov_paradrop.infantry.as_slice(),
+                        general.sov_paradrop.counts.as_slice(),
+                    ),
+                },
+            };
+            (types, counts, pairs_checked)
+        }
     };
-    if pairs_checked && lists.infantry.len() != lists.counts.len() {
+    if pairs_checked && types.len() != counts.len() {
         return true;
     }
-    for (index, infantry) in lists.infantry.iter().enumerate() {
-        if !plane_known {
-            continue;
-        }
+    // Ares `[Side] ParaDrop.Aircraft=` replaces the PDPLANE type for both
+    // paradrop cases; an unset or `none` (-1) index falls back to PDPLANE
+    // (`HouseTypeExt::GetParadropPlane @ 0x1001BCB0`).
+    let plane = rules
+        .side_paradrop_aircraft(side.unwrap_or(-1))
+        .unwrap_or(PDPLANE);
+    let plane_known = rules
+        .aircraft_ids
+        .iter()
+        .any(|id| id.eq_ignore_ascii_case(plane));
+    if !plane_known {
+        return true;
+    }
+    for (index, infantry) in types.iter().enumerate() {
         // The counts RESIDUAL: past the list, or negative, sends it empty.
-        let count = lists.counts.get(index).copied().unwrap_or(0).max(0) as u32;
+        let count = counts.get(index).copied().unwrap_or(0).max(0) as u32;
         send_planes(
             sim,
             rules,
             owner,
-            PDPLANE,
+            plane,
             MissionType::ParadropApproach,
             cell,
             Some((infantry, count)),

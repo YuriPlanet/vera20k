@@ -109,6 +109,93 @@ fn ares_common_launch_constructs_hidden_anim_and_sound_only_on_admitted_fire() {
     );
 }
 
+/// SWTypeExt::LoadFromINI 0x1003362B..0x1003367D through readers 0x10034430
+/// and 0x100341D0: a donor alias or a spaced token fails the whole read and
+/// keeps the earlier layer's mask; unset AI masks use the Offensive row.
+#[test]
+fn ares_target_masks_keep_prior_layers_on_native_parse_failures() {
+    use crate::rules::superweapon_targeting::{HouseMask, TargetMask, TargetRequirements};
+    let mut layers = common_presentation_layers("all");
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str(
+            "[Strike]\nSW.RequiresTarget=buildings\nSW.RequiresHouse=enemies\n\
+             SW.AIRequiresTarget=aircraft\n",
+        ),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Strike]\nSW.RequiresTarget=units, buildings\nSW.RequiresHouse=self\n"),
+    );
+    let targeting = |layers: &RulesLayerStack| {
+        let rules = common_presentation_rules(layers);
+        let settings = rules
+            .super_weapon("Strike")
+            .unwrap()
+            .generic_warhead
+            .clone();
+        settings.unwrap().targeting
+    };
+    let retained = targeting(&layers);
+    assert_eq!(
+        (retained.manual, retained.automatic),
+        (
+            TargetRequirements {
+                target: TargetMask::BUILDING,
+                house: HouseMask::ENEMIES,
+            },
+            TargetRequirements {
+                target: TargetMask::ALL_TECHNOS,
+                house: HouseMask::ENEMIES,
+            },
+        )
+    );
+
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Strike]\nSW.RequiresTarget=,\nSW.AIRequiresHouse=OWNER\n"),
+    );
+    let replaced = targeting(&layers);
+    assert_eq!(replaced.manual.target, TargetMask::NONE);
+    assert_eq!(replaced.automatic.house, HouseMask::OWNER);
+}
+
+/// LoadFromINIFile 0x10033250 runs GenericWarhead's Initialize (0x10071860,
+/// Offensive) on a type's first rules pass only; reader 0x10034350 keeps the
+/// prior mode for a name outside its table.
+#[test]
+fn ares_ai_targeting_initializes_once_and_keeps_prior_layers_on_unknown_names() {
+    let mut layers = common_presentation_layers("all");
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str(
+            "[SuperWeaponTypes]\n1=Late\n[Late]\nType=PsychicReveal\n\
+             [Strike]\nSW.AITargeting=Bogus\n",
+        ),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Late]\nType=GenericWarhead\n"),
+    );
+    let mode = |layers: &RulesLayerStack, id| {
+        let rules = common_presentation_rules(layers);
+        let settings = rules.super_weapon(id).unwrap().generic_warhead.clone();
+        settings.unwrap().ai_targeting
+    };
+    assert_eq!(
+        mode(&layers, "Strike"),
+        GenericWarheadAiTargeting::Offensive
+    );
+    assert_eq!(mode(&layers, "Late"), GenericWarheadAiTargeting::None);
+
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Strike]\nSW.AITargeting=NONE\n[Late]\nSW.AITargeting=offensive\n"),
+    );
+    assert_eq!(mode(&layers, "Strike"), GenericWarheadAiTargeting::None);
+    assert_eq!(mode(&layers, "Late"), GenericWarheadAiTargeting::Offensive);
+}
+
 #[test]
 fn ares_common_launch_reader_retains_unknowns_and_honors_explicit_none() {
     let mut layers = common_presentation_layers("team");
@@ -146,7 +233,7 @@ fn ares_common_launch_reader_retains_unknowns_and_honors_explicit_none() {
     assert_eq!(p.height, -9);
     assert_eq!(
         p.visibility,
-        crate::rules::superweapon_targeting::HouseMask::parse("team").unwrap()
+        crate::rules::superweapon_targeting::HouseMask::TEAM
     );
     assert!(!retained.anim_type_names.contains("UNKNOWNANIM"));
     layers.push(
@@ -434,7 +521,6 @@ fn mono_invalid_preflight_preserves_charge_health_and_observable_effects() {
         "[Strike]\nSW.RequiresHouse=owner\n",
         "[Strike]\nSW.RangeMaximum=2\n",
         "[Strike]\nSW.RangeMinimum=9\nSW.RangeMaximum=2\n",
-        "[Strike]\nSW.RequiresTarget=future-content-mask\n",
     ] {
         let (mut sim, rules, owner, sw_type, target) = fixture(extra, "Russians");
         let before = sim.state_hash();
@@ -596,7 +682,7 @@ fn successful_ares_launch_history_limits_commands_survives_save_and_keeps_fallba
         rows[7]["counter"]["count"].as_i64().unwrap()
     );
     assert_eq!(
-        first.ares_last_launch_frame.unwrap() as i64,
+        first.ares_charge_origin_frame.unwrap() as i64,
         rows[7]["counter"]["last_frame"].as_i64().unwrap()
     );
     assert_eq!(sim.entities().get(target).unwrap().health.current(), 125);
@@ -656,7 +742,7 @@ fn successful_ares_launch_history_limits_commands_survives_save_and_keeps_fallba
         rows[8]["counter"]["count"].as_i64().unwrap()
     );
     assert_eq!(
-        second.ares_last_launch_frame.unwrap() as i64,
+        second.ares_charge_origin_frame.unwrap() as i64,
         rows[8]["counter"]["last_frame"].as_i64().unwrap()
     );
     assert!(restored.houses[&owner].tech_recheck_pending());

@@ -989,6 +989,8 @@ fn advance_in_game_runtime_mode(
             } else {
                 crate::app::presentation::sidebar_render::refresh_sidebar_cameo_draw_state(state);
             }
+            #[cfg(feature = "phobos")]
+            crate::app::presentation::sw_sidebar::refresh_draw_state(state);
         }
     } else if let Some(request) = mouse_scroll {
         crate::app::input::camera::commit_camera_scroll(state, request);
@@ -1207,6 +1209,8 @@ fn advance_one_simulation_frame(
                 let sidebar = std::cell::RefCell::new(
                     &mut state.match_state.match_presentation.sidebar_projection,
                 );
+                #[cfg(feature = "phobos")]
+                let sw_sidebar_expanded = state.match_state.match_presentation.sw_sidebar.expanded;
                 let production_visits = sidebar.borrow().production_factory_visits(&rt.simulation);
                 let clear_production_request = |type_id| {
                     sidebar.borrow_mut().clear_production_request(type_id);
@@ -1225,7 +1229,13 @@ fn advance_one_simulation_frame(
                         if let Some(owner) = sim.session().current_house() {
                             sidebar.reconcile_factory_links(sim, owner);
                         }
-                        prepared.refresh_sidebar_order(sidebar.saved_order());
+                        let order = sidebar.saved_order();
+                        #[cfg(feature = "phobos")]
+                        let order = order.map(|mut order| {
+                            order.set_sw_sidebar_expanded(sw_sidebar_expanded);
+                            order
+                        });
+                        prepared.refresh_sidebar_order(order);
                     }
                     crate::app::persistence::commands::initial_campaign_save(
                         prepared.take(),

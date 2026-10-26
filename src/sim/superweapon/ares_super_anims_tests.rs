@@ -124,7 +124,7 @@ fn ares_super_launch_history_rejects_incomplete_restored_pair() {
     // A same-layout damaged save can contain this pair despite the normal
     // writer always setting both fields. Exercise codec and restore admission.
     instance.ares_launch_count = 2;
-    instance.ares_last_launch_frame = None;
+    instance.ares_charge_origin_frame = None;
     let bytes = GameSnapshot::save(&sim, 0, rules.simulation_config_hash(), "bad-history", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     assert_eq!(

@@ -1785,8 +1785,11 @@ pub(crate) fn super_weapon_cursor_id(action: &str) -> Option<CursorId> {
 
 /// `cursor_confined` clips the OS pointer to the window rectangle ('s
 /// edge-scroll lock), so it cannot leave the game while the player scrolls the
-/// map. The OS drops the clip on focus loss (alt-tab), so callers re-apply this
-/// on every focus regain. A platform that cannot confine (some Wayland setups)
+/// map. The clip needs the game in front: a window that starts behind the
+/// launching terminal never receives a focus edge, so an unconditional
+/// `ClipCursor` would trap the pointer inside a window the player cannot see.
+/// The OS drops the clip on focus loss (alt-tab), so callers re-apply this on
+/// every focus regain. A platform that cannot confine (some Wayland setups)
 /// logs and leaves the cursor free rather than failing the frame.
 pub(crate) fn apply_cursor_confinement(state: &AppState) {
     apply_cursor_confinement_impl(state, true);
@@ -1842,6 +1845,13 @@ fn current_cursor_clip() -> Option<(i32, i32, i32, i32)> {
     }
 }
 
+/// Whether the player's lock should hold the OS pointer right now. The clip is
+/// a system-wide setting, so it may only stand while the game window owns the
+/// foreground; a window launched behind the caller must leave the pointer free.
+fn cursor_clip_wanted(cursor_confined: bool, window_foreground: bool) -> bool {
+    cursor_confined && window_foreground
+}
+
 fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
     // Windows: clip to the client rectangle with the Win32 ClipCursor API.
     // winit's own grab path is deliberately not used here: `refresh_os_cursor`
@@ -1856,7 +1866,9 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
         use std::ffi::c_void;
         use windows_sys::Win32::Foundation::{POINT, RECT};
         use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
-        use windows_sys::Win32::UI::WindowsAndMessaging::{ClipCursor, GetClientRect};
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            ClipCursor, GetClientRect, GetForegroundWindow,
+        };
         let handle = match state.platform.window.window_handle() {
             Ok(h) => h,
             Err(err) => {
@@ -1872,6 +1884,11 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
             return;
         };
         let hwnd = w.hwnd.get() as *mut c_void;
+        // The z-order truth: winit need not deliver a focus edge to a window
+        // that starts behind its launcher, which would leave
+        // `window_active` at its "starts true" default and trap the pointer
+        // inside a window the player cannot see.
+        let window_foreground = unsafe { GetForegroundWindow() } == hwnd;
         let mut rect: RECT = RECT {
             left: 0,
             top: 0,
@@ -1937,7 +1954,7 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
             // `WM_MOUSEMOVE` (winit guards the same way in `refresh_os_cursor`),
             // and each spurious move re-runs the enter/leave bookkeeping that
             // decides who owns the pointer image.
-            let wanted = if state.platform.cursor_confined {
+            let wanted = if cursor_clip_wanted(state.platform.cursor_confined, window_foreground) {
                 Some((clip.left, clip.top, clip.right, clip.bottom))
             } else {
                 None
@@ -1948,15 +1965,16 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
             }
             if verbose {
                 log::info!(
-                    "cursor confinement: clipping to client ({},{},{},{}) confined={}",
+                    "cursor confinement: clipping to client ({},{},{},{}) confined={} foreground={}",
                     clip.left,
                     clip.top,
                     clip.right,
                     clip.bottom,
-                    state.platform.cursor_confined
+                    state.platform.cursor_confined,
+                    window_foreground
                 );
             }
-            let ok = if state.platform.cursor_confined {
+            let ok = if wanted.is_some() {
                 ClipCursor(&clip)
             } else {
                 ClipCursor(std::ptr::null())
@@ -1964,10 +1982,7 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
             if ok == 0 && verbose {
                 log::warn!("cursor confinement: ClipCursor failed");
             }
-            state
-                .platform
-                .pointer_held
-                .set(state.platform.cursor_confined && ok != 0);
+            state.platform.pointer_held.set(wanted.is_some() && ok != 0);
         }
     }
     // Other platforms: use winit's Confined grab. On X11/macOS this confines the
@@ -1977,7 +1992,11 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
     #[cfg(not(target_os = "windows"))]
     {
         use winit::window::CursorGrabMode;
-        let mode = if state.platform.cursor_confined {
+        // Other backends expose focus through winit's activation edges; a
+        // backgrounded window must leave the pointer free for other apps.
+        let wanted =
+            cursor_clip_wanted(state.platform.cursor_confined, state.platform.window_active);
+        let mode = if wanted {
             CursorGrabMode::Confined
         } else {
             CursorGrabMode::None
@@ -1988,10 +2007,7 @@ fn apply_cursor_confinement_impl(state: &AppState, verbose: bool) {
                 log::warn!("cursor confinement unavailable on this platform: {err:#}");
             }
         }
-        state
-            .platform
-            .pointer_held
-            .set(state.platform.cursor_confined && grabbed.is_ok());
+        state.platform.pointer_held.set(wanted && grabbed.is_ok());
     }
 }
 
@@ -2047,6 +2063,16 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
     use crate::sim::world::Simulation;
+
+    /// A window launched behind its caller never sees a focus edge; the lock
+    /// must not hold the system pointer inside that non-foreground window.
+    #[test]
+    fn cursor_clip_stands_only_while_the_game_is_in_front() {
+        assert!(super::cursor_clip_wanted(true, true));
+        assert!(!super::cursor_clip_wanted(true, false));
+        assert!(!super::cursor_clip_wanted(false, true));
+        assert!(!super::cursor_clip_wanted(false, false));
+    }
 
     #[test]
     fn command_bar_blocks_world_cursor_across_the_whole_strip() {

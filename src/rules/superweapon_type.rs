@@ -129,6 +129,28 @@ pub enum GenericWarheadAiTargeting {
     Offensive,
 }
 
+#[cfg(feature = "ares")]
+impl GenericWarheadSettings {
+    /// The ordered SWTypeExt targeting reads: only the Offensive mode launches
+    /// from the AI; `none` and the other Ares modes do not.
+    pub(crate) fn install_targeting(
+        &mut self,
+        id: &str,
+        state: crate::rules::superweapon_targeting::AresSuperWeaponTargetingState,
+    ) {
+        if let Some(mode) = state.unsupported_mode() {
+            log::warn!("SuperWeapon '{id}': unsupported SW.AITargeting={mode}");
+        }
+        self.ai_targeting = if state.offensive() {
+            GenericWarheadAiTargeting::Offensive
+        } else {
+            GenericWarheadAiTargeting::None
+        };
+        self.targeting.manual = state.manual();
+        self.targeting.automatic = state.automatic();
+    }
+}
+
 /// Common Ares launch presentation, retained by the ordered SWType reader.
 /// Nullable references distinguish an omitted default from an explicit none.
 #[cfg(feature = "ares")]
@@ -211,6 +233,15 @@ pub struct SuperWeaponType {
     /// Optional Ares PCX; the existing SHP remains the loading fallback.
     #[cfg(feature = "ares")]
     sidebar_pcx: Option<String>,
+    /// Ares `SW.AITargeting.Constraints` or its mode's default, installed by
+    /// RuleSet from the ordered SWTypeExt reads.
+    #[cfg(feature = "ares")]
+    pub(crate) target_constraints: crate::rules::superweapon_targeting::TargetConstraints,
+    /// `SW.UseAITargeting=`, default no: Ares's SWTypeExt+0x20E (100335BC)
+    /// and Phobos's SWTypeExt read the same key. With it, a manual launch is
+    /// refused while the constraints fail.
+    #[cfg(any(feature = "ares", feature = "phobos"))]
+    pub use_ai_targeting: bool,
     /// Whether to show the charge timer countdown on the sidebar.
     pub show_timer: bool,
     /// Whether this SW can be disabled from the game lobby.
@@ -269,6 +300,25 @@ pub struct SuperWeaponType {
     pub ai_defend_against: bool,
     /// When true, suspension doesn't auto-resume on power restore.
     pub manual_control: bool,
+    /// Phobos `SW.ShowCameo=`, read by `SWTypeExt` for the superweapon
+    /// sidebar's `AddButton` gate. Not the ordinary right-sidebar cameo.
+    #[cfg(feature = "phobos")]
+    pub sw_show_cameo: bool,
+    /// Phobos `SuperWeaponSidebar.Allow=`. Unset falls back to
+    /// `[AudioVisual] SuperWeaponSidebar.AllowByDefault`.
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_allow: Option<bool>,
+    /// Phobos `SuperWeaponSidebar.PriorityHouses=` tokens. Owners in the list
+    /// sort before owners outside it; the constructor's mask is 0.
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_priority_houses: Vec<String>,
+    /// Phobos `SuperWeaponSidebar.RequiredHouses=` tokens; `None` keeps the
+    /// constructor's all-bits mask, and a comma-only list is mask 0.
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_required_houses: Option<Vec<String>>,
+    /// Phobos `SuperWeaponSidebar.Significance=`, default 0.
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_significance: i32,
     /// Present only for the explicitly selected Ares extension; stock types
     /// retain their existing readers and behavior.
     pub generic_warhead: Option<GenericWarheadSettings>,
@@ -279,6 +329,12 @@ impl SuperWeaponType {
     #[cfg(feature = "ares")]
     pub fn sidebar_pcx(&self) -> Option<&str> {
         self.sidebar_pcx.as_deref()
+    }
+
+    /// The effective Ares targeting constraints for this type.
+    #[cfg(feature = "ares")]
+    pub fn target_constraints(&self) -> crate::rules::superweapon_targeting::TargetConstraints {
+        self.target_constraints
     }
 
     /// Parse a SuperWeaponType from a rules.ini section
@@ -353,6 +409,10 @@ impl SuperWeaponType {
                 .map(|name| truncate_native_bytes(name, 0x18).to_string()),
             #[cfg(feature = "ares")]
             sidebar_pcx: section.read_ares_pcx_filename("SidebarPCX"),
+            #[cfg(feature = "ares")]
+            target_constraints: Default::default(),
+            #[cfg(any(feature = "ares", feature = "phobos"))]
+            use_ai_targeting: section.read_bool("SW.UseAITargeting", false),
             show_timer: section.read_bool("ShowTimer", false),
             disableable_from_shell: section.read_bool("DisableableFromShell", false),
             use_charge_drain: section.read_bool("UseChargeDrain", false),
@@ -388,26 +448,35 @@ impl SuperWeaponType {
             flash_sidebar_tab_frames: section.read_int("FlashSidebarTabFrames", -1),
             ai_defend_against: section.read_bool("AIDefendAgainst", false),
             manual_control: section.read_bool("ManualControl", false),
+            #[cfg(feature = "phobos")]
+            sw_show_cameo: section.read_bool("SW.ShowCameo", true),
+            #[cfg(feature = "phobos")]
+            sw_sidebar_allow: section.read_bool_value("SuperWeaponSidebar.Allow"),
+            // Both lists use Phobos's ReadHouseTypesList, YRpp's jump to
+            // gamemd's ReadOwners4750D0 with its char[128] buffer.
+            #[cfg(feature = "phobos")]
+            sw_sidebar_priority_houses: section
+                .read_list("SuperWeaponSidebar.PriorityHouses", 0x80)
+                .unwrap_or_default()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            #[cfg(feature = "phobos")]
+            sw_sidebar_required_houses: section
+                .read_list("SuperWeaponSidebar.RequiredHouses", 0x80)
+                .map(|tokens| tokens.into_iter().map(str::to_string).collect()),
+            #[cfg(feature = "phobos")]
+            sw_sidebar_significance: section.read_int("SuperWeaponSidebar.Significance", 0),
             #[cfg(not(feature = "ares"))]
             generic_warhead: None,
             #[cfg(feature = "ares")]
             generic_warhead: (kind == SuperWeaponKind::GenericWarhead).then(|| {
-                let ai_targeting = match section.read_name("SW.AITargeting", 0x40) {
-                    None => GenericWarheadAiTargeting::Offensive,
-                    Some(mode) if mode.eq_ignore_ascii_case("Offensive") => {
-                        GenericWarheadAiTargeting::Offensive
-                    }
-                    Some(mode) => {
-                        if !mode.eq_ignore_ascii_case("None") {
-                            log::warn!("SuperWeapon '{id}': unsupported SW.AITargeting={mode}");
-                        }
-                        GenericWarheadAiTargeting::None
-                    }
-                };
                 GenericWarheadSettings {
                     warhead: None,
                     damage: section.read_int("SW.Damage", 0),
-                    ai_targeting,
+                    // GenericWarhead's Initialize (10071860); RuleSet installs
+                    // the ordered SW.AITargeting and mask reads.
+                    ai_targeting: GenericWarheadAiTargeting::Offensive,
                     targeting: crate::rules::superweapon_targeting::SuperWeaponTargeting::from_ini(
                         section,
                     ),
@@ -494,6 +563,25 @@ pub(crate) struct AresSuperWeaponMetadata {
     availability: AresSuperWeaponAvailability,
     native_auxiliary: Option<String>,
     buildings: Option<SuperWeaponBuildingRequirements>,
+    charge: AresSuperWeaponCharge,
+}
+
+/// SWTypeExt+284/+285: constructor10031460 clears AX at10031471 and
+/// stores the pair at1003185F. The ordered 3.0 reader10033A9C/10033AB2
+/// uses Valueable<bool>::Read (1000EBF0), retaining on absent/invalid input.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresSuperWeaponCharge {
+    pub(crate) initial_ready: bool,
+    pub(crate) virtual_charge: bool,
+}
+
+#[cfg(feature = "ares")]
+impl AresSuperWeaponCharge {
+    pub(super) fn read_pass(&mut self, section: &IniSection) {
+        self.initial_ready = section.read_ares_bool("SW.InitialReady", self.initial_ready);
+        self.virtual_charge = section.read_ares_bool("SW.VirtualCharge", self.virtual_charge);
+    }
 }
 
 #[cfg(feature = "ares")]
@@ -502,11 +590,13 @@ impl AresSuperWeaponMetadata {
         availability: &AresSuperWeaponAvailability,
         native_auxiliary: Option<&str>,
         buildings: Option<&SuperWeaponBuildingRequirements>,
+        charge: &AresSuperWeaponCharge,
     ) -> Self {
         Self {
             availability: availability.clone(),
             native_auxiliary: native_auxiliary.map(str::to_owned),
             buildings: buildings.cloned(),
+            charge: charge.clone(),
         }
     }
 
@@ -518,6 +608,10 @@ impl AresSuperWeaponMetadata {
     }
     pub(crate) fn building_requirements(&self) -> Option<&SuperWeaponBuildingRequirements> {
         self.buildings.as_ref()
+    }
+
+    pub(crate) fn charge(&self) -> &AresSuperWeaponCharge {
+        &self.charge
     }
 }
 

@@ -17,6 +17,8 @@ pub(crate) struct PhobosClientSettings {
     pub(crate) show_placement_preview: bool,
     /// `[Phobos] DigitalDisplay.Enable=`, default `no`.
     pub(crate) digital_display_enabled: bool,
+    /// `[Phobos] SuperWeaponSidebar.RequiredSignificance=`, default `0`.
+    pub(crate) superweapon_sidebar_required_significance: i32,
 }
 
 impl Default for PhobosClientSettings {
@@ -26,6 +28,7 @@ impl Default for PhobosClientSettings {
         Self {
             show_placement_preview: true,
             digital_display_enabled: false,
+            superweapon_sidebar_required_significance: 0,
         }
     }
 }
@@ -49,6 +52,10 @@ pub(crate) fn read(settings_dir: &Path) -> PhobosClientSettings {
             .read_bool("ShowPlacementPreview", defaults.show_placement_preview),
         digital_display_enabled: section
             .read_bool("DigitalDisplay.Enable", defaults.digital_display_enabled),
+        superweapon_sidebar_required_significance: section.read_int(
+            "SuperWeaponSidebar.RequiredSignificance",
+            defaults.superweapon_sidebar_required_significance,
+        ),
     }
 }
 
@@ -80,12 +87,16 @@ mod tests {
 
     #[test]
     fn imported_switches_are_read() {
-        let dir = profile_with("[Phobos]\nShowPlacementPreview=no\nDigitalDisplay.Enable=yes\n");
+        let dir = profile_with(
+            "[Phobos]\nShowPlacementPreview=no\nDigitalDisplay.Enable=yes\n\
+             SuperWeaponSidebar.RequiredSignificance=2\n",
+        );
         assert_eq!(
             read(&dir),
             PhobosClientSettings {
                 show_placement_preview: false,
                 digital_display_enabled: true,
+                superweapon_sidebar_required_significance: 2,
             }
         );
         std::fs::remove_dir_all(dir).unwrap();

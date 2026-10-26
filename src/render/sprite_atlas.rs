@@ -2250,20 +2250,15 @@ pub(crate) fn prepare_sprite_atlas(
     // This registers the no-remap GlobalAnim/colour-0 fallback. The live
     // AnimClass remap closure adds SelectedScheme variants for remapped canopies;
     // both use the unit palette here because PARACH sets `AltPalette=`.
-    let parachutes = rules
-        .filter(|_| previous_atlas.is_none())
-        .into_iter()
-        .flat_map(|r| {
-            [
-                r.general.parachute_shp.as_deref(),
-                if crate::rules::NPATCH_ENABLED {
-                    r.general.vehicle_parachute.as_deref()
-                } else {
-                    None
-                },
-            ]
-        })
-        .flatten();
+    let mut parachutes: Vec<&str> = Vec::new();
+    if let Some(rules) = rules.filter(|_| previous_atlas.is_none()) {
+        parachutes.extend(rules.general.parachute_shp.as_deref());
+        if crate::rules::NPATCH_ENABLED {
+            parachutes.extend(rules.general.vehicle_parachute.as_deref());
+        }
+        #[cfg(feature = "ares")]
+        parachutes.extend(rules.side_parachute_animations());
+    }
     for shp_name in parachutes {
         let candidates = [
             format!("{}.shp", shp_name.to_ascii_lowercase()),

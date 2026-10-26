@@ -24,6 +24,8 @@
 //!   TAction140/141 now set/clear the separate timed defensive alert54F4/54FC
 //!   through that same HouseState owner. Native141 also clears54F8, whose
 //!   current constructor-zero restriction remains part of this residual.
+//!   Ares's IsTargetConstraintsEligible10032110 reads it as well, so its
+//!   defensive-cell constraints see an unset cell.
 //! - A building's cloak stage (`BuildingClass+0x6ED`): a stage of 15 also
 //!   draws in AI_FindBestRallyTarget (`0x0050CF99..0x0050CFA8`); VERA has no
 //!   writer of the stage, so only CloakState 2 draws.

@@ -575,7 +575,10 @@ mod tests {
             ("rulesmd.ini", "[General]\nBuildSpeed=.7\n"),
             ("artmd.ini", "[UNIT]\nVoxel=yes\n"),
             ("aimd.ini", "[AI]\nValue=1\n"),
-            ("langrule.ini", "[General]\nBuildSpeed=.8\n"),
+            (
+                "langrule.ini",
+                crate::rules::retail_ini_fixture::DIGESTED_LANGRULE_CONTROL,
+            ),
             ("mode.ini", "[General]\nBuildSpeed=.6\n"),
         ] {
             std::fs::write(dir.path().join(name), bytes).unwrap();
@@ -586,11 +589,7 @@ mod tests {
         process.return_from_loading(assets);
         let original = process.multiplayer_rules_digest("mode.ini").unwrap();
         assert_ne!(original, process.multiplayer_rules_digest("").unwrap());
-        std::fs::write(
-            dir.path().join("langrule.ini"),
-            "[General]\nBuildSpeed=.4\n",
-        )
-        .unwrap();
+        std::fs::remove_file(dir.path().join("langrule.ini")).unwrap();
         assert_eq!(
             original,
             process.multiplayer_rules_digest("mode.ini").unwrap(),

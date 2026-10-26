@@ -344,8 +344,8 @@ fn default_build_scene(
     match kind {
         SuperWeaponKind::GenericWarhead => {
             let unrestricted = TargetRequirements {
-                target: Ok(TargetMask::ALL),
-                house: Ok(HouseMask::NONE),
+                target: TargetMask::ALL,
+                house: HouseMask::NONE,
             };
             sw.generic_warhead = Some(GenericWarheadSettings {
                 warhead: Some("Payload".into()),

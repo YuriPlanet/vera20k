@@ -2250,3 +2250,45 @@ fn a_refused_passenger_of_a_sale_books_a_loss_with_no_kill() {
         assert_eq!(after.buildings_killed(), before.buildings_killed());
     }
 }
+
+/// Ares 3.0 SideExt reader plus the gameplay consumers. A fourth side with no
+/// keys takes the Allied defaults; explicit keys replace them.
+#[cfg(feature = "ares")]
+fn ares_fourth_side_rules(fourth: &str) -> RuleSet {
+    let text = format!("{RULES}\n[Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n[Fourth]\n{fourth}");
+    let processed = crate::rules::native_processing::RulesLayerStack::new(IniFile::from_str(&text))
+        .process_with_fixed_art(&IniFile::from_str(ART))
+        .expect("fourth-side rules process");
+    RuleSet::from_processed_rules(&processed).expect("fourth-side projection")
+}
+
+#[cfg(feature = "ares")]
+#[test]
+fn ares_fourth_side_crew_and_survivor_defaults_follow_side_extension() {
+    let defaults = ares_fourth_side_rules("");
+    let mut rng = SimRng::new(7);
+    assert_eq!(
+        techno_crew_type(&mut rng, &defaults, 3, false),
+        Some("E1".to_string()),
+        "a fourth side with no Crew key uses AlliedCrew"
+    );
+    let mut sim = sim_with_houses(1);
+    let default_building = spawn(&mut sim, &defaults, "GACNST", "Neutral", 10, 10);
+    assert_eq!(
+        sim.building_survivor_count(&defaults, default_building),
+        5,
+        "a fourth side with no SurvivorDivisor uses AlliedSurvivorDivisor"
+    );
+
+    let overridden = ares_fourth_side_rules("Crew=E2\nSurvivorDivisor=750\n");
+    let mut rng = SimRng::new(7);
+    assert_eq!(
+        techno_crew_type(&mut rng, &overridden, 3, false),
+        Some("E2".to_string())
+    );
+    let overridden_building = spawn(&mut sim, &overridden, "GACNST", "Neutral", 20, 10);
+    assert_eq!(
+        sim.building_survivor_count(&overridden, overridden_building),
+        4
+    );
+}

@@ -47,6 +47,11 @@ Supported extensions:
   game loading and default `asset csf-get` / `csf-grep` queries.
 - [Per-type SHP building palettes](ares-building-palettes.md)
 - [EVA voice tags and Side selection](ares-eva.md)
+- [Fourth and later Side defaults](ares-side-defaults.md): crew, engineer,
+  technician, disguise, survivor divisor, AI base defences and counts,
+  paradrop lists/plane, parachute animation, tooltip and message colors, and
+  the registered-side AI trigger token. Country presentation keys, score
+  screens, dialog backgrounds and the Hunter Seeker launch remain separate.
 - [Generic production prerequisites](ares-prerequisites.md)
 - [Factory-source restrictions](../src/sim/production/can_build.rs) (`BuiltAt`,
   `Factory.ExplicitOnly`) and [Country plan qualification](../tools/rules_oracle/ares_factory_owners.md)

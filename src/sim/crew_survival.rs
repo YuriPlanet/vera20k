@@ -294,7 +294,13 @@ impl Simulation {
         let yard = object.factory_type() == Some(FactoryType::BuildingType);
         let side = houses.get(&entity.owner())?.side_index();
         if !captured && scenario_rng.next_range_u32_inclusive(0, 99) < 25 && yard {
-            return rules.general.engineer_infantry.clone();
+            // `BuildingClass::GetCrew` 0x44EB10 calls
+            // `HouseExt::GetEngineer`, whose Ares SideExt+1C override wins
+            // (`SideExt::GetEngineer @ 0x1002DEE0`).
+            return rules
+                .side_engineer(side)
+                .map(|value| value.map(str::to_owned))
+                .unwrap_or_else(|| rules.general.engineer_infantry.clone());
         }
         techno_crew_type(scenario_rng, rules, side, armed)
     }
@@ -316,13 +322,19 @@ impl Simulation {
         let Some(house) = self.houses.get(&entity.owner()) else {
             return 0;
         };
-        let divisor = match house.side_index() {
-            0 => rules.general.allied_survivor_divisor,
-            1 => rules.general.soviet_survivor_divisor,
-            2 => rules.general.third_survivor_divisor,
-            _ => return 0,
+        let side_divisor = rules.side_survivor_divisor(house.side_index());
+        let divisor = match side_divisor {
+            Some(divisor) => divisor,
+            None => match house.side_index() {
+                0 => rules.general.allied_survivor_divisor,
+                1 => rules.general.soviet_survivor_divisor,
+                2 => rules.general.third_survivor_divisor,
+                _ => return 0,
+            },
         };
-        if divisor == 0 {
+        // The Ares 3.0 building hook (`0x1004C6E0`) treats every non-positive
+        // divisor as no survivors; the stock path keeps its zero-only gate.
+        if divisor == 0 || (side_divisor.is_some() && divisor < 0) {
             return 0;
         }
         let divisor = if entity.has_been_captured.is_set() {
@@ -1336,17 +1348,24 @@ impl Simulation {
 /// at707D81..707D8B. Executed controls: building_sale.py --crew-type.
 fn techno_crew_type(rng: &mut SimRng, rules: &RuleSet, side: i32, armed: bool) -> Option<String> {
     let general = &rules.general;
+    let technician = match rules.side_technician(side) {
+        Some(value) => value.map(str::to_owned),
+        None => general.technician.clone(),
+    };
     if side == -1 {
-        return general.technician.clone();
+        return technician;
     }
-    let crew = match side {
-        0 => general.allied_crew.clone(),
-        1 => general.soviet_crew.clone(),
-        2 => general.third_crew.clone(),
-        _ => general.technician.clone(),
+    let crew = match rules.side_crew(side) {
+        Some(value) => value.map(str::to_owned),
+        None => match side {
+            0 => general.allied_crew.clone(),
+            1 => general.soviet_crew.clone(),
+            2 => general.third_crew.clone(),
+            _ => general.technician.clone(),
+        },
     };
     if armed && rng.next_range_u32_inclusive(0, 99) < 15 {
-        return general.technician.clone();
+        return technician;
     }
     crew
 }

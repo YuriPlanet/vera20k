@@ -127,7 +127,11 @@ fn ares_side_sidebar_waits_for_full_type_pass_and_preserves_failed_process_state
         .as_ref()
         .unwrap();
     assert_eq!(
-        (state.phase, state.mix_file_index, state.yuri_file_names),
+        (
+            state.phase,
+            state.fields.sidebar_mix_file_index,
+            state.fields.sidebar_yuri_file_names
+        ),
         (
             native()["constructor"]["state"]["phase"].as_i64().unwrap() as i32,
             native()["constructor"]["state"]["mix_file_index"]

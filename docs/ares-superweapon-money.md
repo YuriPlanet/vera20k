@@ -34,6 +34,10 @@ GenericWarhead and UnitDelivery, and ticketed two-stage powers described below.
 It retains the existing House wallet as the
 sole owner of balances, spending and score:
 
+- Zero fees still require a nonnegative available balance for native Ares
+  sidebar and automatic-launch admission (`0x10034E2F`, `0x100382F2`).
+  A positive reward can be selected while the balance is negative.
+  Queued ordinary zero-cost launches retain their native event handling.
 - Negative amounts use the existing Spend_Money owner. The full fee must be
   available; no partial payment is accepted. The minimum signed i32 amount is
   safely unaffordable by a signed wallet, never negated into an overflow.

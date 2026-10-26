@@ -94,9 +94,9 @@ fn names_unallocated_type(lists: &Value) -> bool {
 /// A replay's rules: PDPLANE as retail authors it (unless `plane` is false),
 /// E1, E2 and INIT, both paradrop Supers, the `[General]` list keys and
 /// `ParadropRadius=radius`.
-fn rules(lists: &str, plane: bool, radius: i32) -> RuleSet {
+fn rules_text(lists: &str, plane: bool, radius: i32) -> String {
     let aircraft = if plane { "0=PDPLANE\n" } else { "" };
-    let ini = IniFile::from_str(&format!(
+    format!(
         "[General]\n{lists}FlightLevel=1500\nParadropRadius={radius}\n\
          [InfantryTypes]\n0=E1\n1=E2\n2=INIT\n[VehicleTypes]\n[AircraftTypes]\n{aircraft}\
          [BuildingTypes]\n[SuperWeaponTypes]\n0={PARADROP}\n1={AMER_PARADROP}\n\
@@ -104,8 +104,11 @@ fn rules(lists: &str, plane: bool, radius: i32) -> RuleSet {
          [E1]\nStrength=125\n[E2]\nStrength=125\n[INIT]\nStrength=125\n\
          [PDPLANE]\nStrength=400\nSpeed=15\nROT=2\nAmmo=100\nLandable=no\nSelectable=no\n\
          Spawned=yes\nSight=0\nLocomotor={FLY}\n",
-    ));
-    RuleSet::from_ini(&ini).unwrap()
+    )
+}
+
+fn rules(lists: &str, plane: bool, radius: i32) -> RuleSet {
+    RuleSet::from_ini(&IniFile::from_str(&rules_text(lists, plane, radius))).unwrap()
 }
 
 fn retail_list_rules(radius: i32) -> RuleSet {
@@ -1249,4 +1252,56 @@ fn retail_computer_paradrops_conscripts_past_the_enemy_base() {
 
     assert_eq!(chutes, 9);
     assert_landed(&sim, &passengers, &missions, target, MissionType::Hunt);
+}
+
+/// Ares 3.0 `[Side] ParaDrop.Types/Num/Aircraft` for a fourth side. The
+/// side-index branch still supplies the stock pair-length policy, but the
+/// lists come from SideExt, and a `none` plane falls back to PDPLANE
+/// (`HouseTypeExt::GetParadropPlane @ 0x1001BCB0`) instead of cancelling.
+#[cfg(feature = "ares")]
+fn ares_fourth_side_rules(lists: &str, fourth: &str) -> RuleSet {
+    let text = format!(
+        "{}\n[Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n[Fourth]\n{fourth}\n",
+        rules_text(lists, true, 1024)
+    );
+    let processed = crate::rules::native_processing::RulesLayerStack::new(IniFile::from_str(&text))
+        .process()
+        .expect("fourth-side paradrop rules process");
+    RuleSet::from_processed_rules(&processed).expect("fourth-side paradrop projection")
+}
+
+#[cfg(feature = "ares")]
+#[test]
+fn ares_fourth_side_paradrop_uses_side_lists_and_none_plane_falls_back() {
+    let (rules, mut sim, owner) = paradrop_world(ares_fourth_side_rules(
+        "AllyParaDropInf=E1\nAllyParaDropNum=6\n",
+        "ParaDrop.Types=E2\nParaDrop.Num=2\nParaDrop.Aircraft=none\n",
+    ));
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_side_index_for_test(3);
+    let sw_type = charge_super(&mut sim, owner, PARADROP);
+    assert!(launch(
+        &mut sim,
+        &rules,
+        owner,
+        TARGET.0,
+        TARGET.1,
+        ParaDropKind::Generic,
+        sw_type,
+        crate::sim::world::FrameEffects::default()
+    ));
+    let [plane] = planes(&sim)[..] else {
+        panic!("one plane");
+    };
+    let cargo = cargo(&sim, plane);
+    assert_eq!(cargo.len(), 2);
+    for id in cargo {
+        assert_eq!(
+            sim.interner
+                .resolve(sim.substrate.entities.get(id).unwrap().type_ref()),
+            "E2"
+        );
+    }
 }
