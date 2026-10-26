@@ -206,6 +206,7 @@ pub(super) fn check(
             sw.kind,
             crate::rules::superweapon_type::SuperWeaponKind::GenericWarhead
                 | crate::rules::superweapon_type::SuperWeaponKind::UnitDelivery
+                | crate::rules::superweapon_type::SuperWeaponKind::HunterSeeker
         ) {
             Err(TargetReject::InvalidPayload)
         } else {
@@ -214,6 +215,11 @@ pub(super) fn check(
     }
     #[cfg(feature = "ares")]
     {
+        // Ares SW_HunterSeeker direct clicks go straight to Activate10072850.
+        // Selected automatic cells still follow their shared CanFireAt path.
+        if !automatic && sw.kind == crate::rules::superweapon_type::SuperWeaponKind::HunterSeeker {
+            return Ok(());
+        }
         let data = prepare(sim, rules, owner, sw);
         check_with_data(sim, rules, owner, sw, cell, automatic, &data)
     }

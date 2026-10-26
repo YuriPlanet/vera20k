@@ -336,10 +336,11 @@ impl Default for AresTargetPolicy {
 
 #[cfg(feature = "ares")]
 impl AresTargetPolicy {
-    pub(crate) fn read_pass(&mut self, section: &IniSection, kind: Option<&str>) {
+    pub(crate) fn initialize_for_kind(&mut self, kind: Option<&str>) -> bool {
+        let first_read = !self.initialized;
         if !self.initialized {
             // NewSWType Initialize is called once by10033250, before the
-            // common reads. These are the two extension types in this public chain.
+            // common reads. These are the three implemented extension types.
             self.ai_mode = match kind {
                 Some(kind) if kind.eq_ignore_ascii_case("GenericWarhead") => {
                     AiTargetingMode::Offensive
@@ -347,10 +348,18 @@ impl AresTargetPolicy {
                 Some(kind) if kind.eq_ignore_ascii_case("UnitDelivery") => {
                     AiTargetingMode::ParaDrop
                 }
+                Some(kind) if kind.eq_ignore_ascii_case("HunterSeeker") => {
+                    self.affects_house = HouseMask::ENEMIES;
+                    AiTargetingMode::HunterSeeker
+                }
                 _ => AiTargetingMode::None,
             };
             self.initialized = true;
         }
+        first_read
+    }
+
+    pub(crate) fn read_pass(&mut self, section: &IniSection) {
         // SWTypeExt ReadINI10033370. Unimplemented intervening keys do not
         // alias these scalar fields. Native readers retain on unsuccessful input.
         self.fire_into_shroud = section.read_ares_bool("SW.FireIntoShroud", self.fire_into_shroud);

@@ -1811,6 +1811,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     if !entity.unit_delivery_provides_base_space() {
         b"unit-delivery-no-base-v1".hash(hasher);
     }
+    if let Some(origin) = entity.hunter_seeker_origin() {
+        b"hunter-seeker-source-v1".hash(hasher);
+        origin.hash(hasher);
+    }
     // Building+662 and Techno+1C8 (`sim::powered_unit`), folded only
     // while set.
     if entity.building_powered_center.is_counted() {

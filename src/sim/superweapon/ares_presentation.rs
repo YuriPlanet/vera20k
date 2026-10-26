@@ -1,9 +1,9 @@
 //! Accepted custom-handler presentation from SWTypeExt::Launch10032ED0.
 //! The animation owner retains a viewer-independent snapshot of Anim+19D;
 //! local presentation never writes authoritative simulation state.
-//! UnitDelivery vtable100A8E70 and GenericWarhead100A8ECC share GetAnim
+//! UnitDelivery100A8E70, GenericWarhead100A8ECC and HunterSeeker100A9280 share GetAnim
 //! 1006D0C0 (null fallback), GetSound1006D1C0 (-1 fallback), and Flags
-//! 10003650 (zero); neither handler suppresses the common animation/sound.
+//! 10003650 (zero); none suppresses the common animation/sound/Ready cleanup.
 
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_targeting::HouseMask;
@@ -77,4 +77,11 @@ pub(super) fn on_launch(
             flags: 0,
         });
     }
+    // SWTypeExt::Launch10033201..10033242 removes Ready only after the
+    // common sound. The client supplies Fire_SW's local-player predicate.
+    sim.sound_events
+        .emit(SimSoundEvent::AresSuperWeaponFinished {
+            owner,
+            sw_type: typ,
+        });
 }

@@ -1633,6 +1633,19 @@ impl ProcessedRulesLayers {
         })
     }
 
+    pub(crate) fn hunter_seeker_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &str,
+            Option<&crate::rules::hunter_seeker::HunterSeekerSettings>,
+        ),
+    > {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.hunter_seeker.as_ref()
+        })
+    }
+
     pub(crate) fn unit_delivery_states(
         &self,
     ) -> impl Iterator<Item = (&str, Option<&UnitDeliveryRules>)> {
@@ -2401,6 +2414,12 @@ pub(crate) struct CountryVeterancyState {
 /// Live Side identity plus the immutable selected extension fields. The
 /// retained ProcessedType owns initialization and reads; the RuleSet view does
 /// not replay either. No extension exists in an ordinary retail build.
+#[cfg(feature = "ares")]
+pub(crate) type SideProjection<'a> = (
+    &'a str,
+    Option<crate::rules::hunter_seeker::SideExtensionProjection<'a>>,
+);
+#[cfg(not(feature = "ares"))]
 pub(crate) type SideProjection<'a> = (&'a str, Option<(i32, bool, i32)>);
 
 /// Ares3.0 SideExt constructor1002D9F0 and dispatcher1002B450 retain the phase
@@ -2415,6 +2434,9 @@ struct AresSideState {
     mix_file_index: i32,
     yuri_file_names: bool,
     eva_voice_index: i32,
+    /// SideExt+94: constructor null, retained typed pointer.
+    #[serde(default)]
+    hunter_seeker: Option<String>,
 }
 
 #[cfg(feature = "ares")]
@@ -2427,6 +2449,7 @@ impl Default for AresSideState {
             mix_file_index: 0,
             yuri_file_names: false,
             eva_voice_index: -1,
+            hunter_seeker: None,
         }
     }
 }
@@ -2533,6 +2556,9 @@ impl CountryVeterancyState {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AresGlobalControls {
     phase: i32,
+    /// RulesExt+70: constructor empty; BeforeTypeData reads HSBuilding.
+    #[serde(default)]
+    hunter_seeker_buildings: Vec<String>,
     allow_bypass_build_limit: [bool; 3],
     // RulesExt+160/+164: constructor zero/unset; retained by the global
     // Rules owner, independently of per-Type reset.
@@ -2541,6 +2567,10 @@ pub(crate) struct AresGlobalControls {
 
 #[cfg(feature = "ares")]
 impl AresGlobalControls {
+    pub(crate) fn hunter_seeker_buildings(&self) -> &[String] {
+        &self.hunter_seeker_buildings
+    }
+
     pub(crate) fn ai_bypasses_build_limit(&self, difficulty_index: usize) -> bool {
         self.allow_bypass_build_limit
             .get(difficulty_index)
@@ -2812,11 +2842,14 @@ impl NativeRulesRegistryState {
             .map(|member| {
                 #[cfg(feature = "ares")]
                 let sidebar = member.ares_side.as_ref().map(|state| {
-                    (
-                        state.mix_file_index,
-                        state.yuri_file_names,
-                        state.eva_voice_index,
-                    )
+                    crate::rules::hunter_seeker::SideExtensionProjection {
+                        sidebar: (
+                            state.mix_file_index,
+                            state.yuri_file_names,
+                            state.eva_voice_index,
+                        ),
+                        hunter_seeker: state.hunter_seeker.as_deref(),
+                    }
                 });
                 #[cfg(not(feature = "ares"))]
                 let sidebar = None;
@@ -3562,6 +3595,8 @@ struct ProcessedType {
     /// Ares `SW.Warhead=`, read only for Type=GenericWarhead.
     generic_super_weapon_warhead: Option<String>,
     unit_delivery: Option<UnitDeliveryRules>,
+    #[serde(default)]
+    hunter_seeker: Option<crate::rules::hunter_seeker::HunterSeekerSettings>,
     /// ParticleType `Warhead=` (`0x00645043..0x00645067`): ReadString128,
     /// then WarheadType's factory (`0x0075E3B0`); an empty read keeps it.
     particle_warhead: Option<String>,
@@ -3971,6 +4006,7 @@ impl ProcessedType {
             super_weapon_weapon: None,
             super_weapon_aux_building: None,
             unit_delivery: None,
+            hunter_seeker: None,
             super_weapon_building_requirements: None,
             #[cfg(feature = "ares")]
             super_weapon_availability: AresSuperWeaponAvailability::default(),
@@ -4258,7 +4294,21 @@ impl RulesPassProcessor {
         self.read_prerequisite_lists(pass);
         self.allocate_general_references(pass);
         #[cfg(feature = "ares")]
-        self.ares_global_controls.read_before_type_data(pass);
+        {
+            // RulesExt::LoadBeforeTypeData, Ares1002AB60: HSBuilding uses
+            // the existing BuildingType pointer-vector reader, not allocation.
+            if let Some(buildings) = pass.section("SpecialWeapons").and_then(|section| {
+                self.resolve_existing_list_from(
+                    section,
+                    "HSBuilding",
+                    RulesTypeFamily::Building,
+                    2048,
+                )
+            }) {
+                self.ares_global_controls.hunter_seeker_buildings = buildings;
+            }
+            self.ares_global_controls.read_before_type_data(pass);
+        }
         self.process_type_data(pass, fixed_art, fixed_eva, primary_rules);
 
         // ReadDifficulty66D270 skips an absent section. Once present, each
@@ -4563,19 +4613,21 @@ impl RulesPassProcessor {
         Some(resolved)
     }
 
-    /// Installed Ares Anim pointer Parser1000C9C0/Find1000D3E0: look up
-    /// only registered AnimTypes. A successful none clears; unknown retains.
+    /// Installed Ares typed pointers: Anim Parser1000C9C0/Find1000D3E0
+    /// and Unit Parser1002D970/Find1002DCF0 look up registered types only.
+    /// A successful none clears; absent/unknown retains.
     #[cfg(feature = "ares")]
-    fn resolve_existing_anim_from(
+    fn resolve_existing_type_from(
         &self,
         section: &IniSection,
         key: &str,
+        family: RulesTypeFamily,
     ) -> Option<Option<String>> {
         let name = section.read_name(key, 2048)?;
         if is_native_none_type_name(name) {
             return Some(None);
         }
-        let members = self.families.get(&RulesTypeFamily::Animation)?;
+        let members = self.families.get(&family)?;
         let index = ares_type_index_of_name(
             name,
             members
@@ -5069,12 +5121,26 @@ impl RulesPassProcessor {
         // Country-only prepasses do not enter this hook. The live loop sees
         // only Sides allocated now, not any allocated by later Country reads.
         #[cfg(feature = "ares")]
-        for member in self.family_mut(RulesTypeFamily::Side) {
-            member
+        for index in 0..self
+            .families
+            .get(&RulesTypeFamily::Side)
+            .map_or(0, Vec::len)
+        {
+            let member = &self.families[&RulesTypeFamily::Side][index];
+            let unit = pass.section(&member.native_stored_id).and_then(|section| {
+                self.resolve_existing_type_from(section, "HunterSeeker", RulesTypeFamily::Vehicle)
+            });
+            let member = &mut self.family_mut(RulesTypeFamily::Side)[index];
+            let state = member
                 .ares_side
                 .as_mut()
-                .expect("allocated Side owns its Ares extension")
-                .read_pass(&member.native_stored_id, pass, _fixed_eva);
+                .expect("allocated Side owns its Ares extension");
+            if (0..=2).contains(&state.phase) {
+                if let Some(unit) = unit {
+                    state.hunter_seeker = unit;
+                }
+            }
+            state.read_pass(&member.native_stored_id, pass, _fixed_eva);
         }
         // Installed BeforeTypeData679A15 reads ArmorTypes/defaults before
         // any ordinary ObjectType/Warhead body in this Process pass.
@@ -5382,7 +5448,23 @@ impl RulesPassProcessor {
                 }
                 #[cfg(feature = "ares")]
                 {
-                    let animation = self.resolve_existing_anim_from(&raw, "SW.Animation");
+                    // InitializeConstants10033250 is shared by policy and EVA;
+                    // reuse its retained transition instead of another flag.
+                    let kind = effective.read_name("Type", 0x28);
+                    let first_read = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_targeting
+                        .initialize_for_kind(kind);
+                    let presentation = &mut self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_presentation;
+                    if first_read {
+                        presentation.eva.initialize_for_kind(kind, _fixed_eva);
+                    }
+                    presentation.eva.read_pass(&raw, _fixed_eva);
+                    let animation = self.resolve_existing_type_from(
+                        &raw,
+                        "SW.Animation",
+                        RulesTypeFamily::Animation,
+                    );
                     let message_color = raw.read_ares_color_scheme(
                         "Message.Color",
                         self.families[&RulesTypeFamily::SuperWeapon][index]
@@ -5401,7 +5483,7 @@ impl RulesPassProcessor {
                         .clone();
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_targeting
-                        .read_pass(&raw, effective.read_name("Type", 0x28));
+                        .read_pass(&raw);
                     availability.read_allowance_pass(&raw);
                     let designators =
                         self.resolve_existing_techno_list_from(&raw, "SW.Designators", 2048);
@@ -5459,6 +5541,36 @@ impl RulesPassProcessor {
                         }
                         if let Some(negative) = negative {
                             requirements.negative = negative;
+                        }
+                    }
+                    // SW_HunterSeeker::Initialize/LoadFromINI10072990/10072A30.
+                    // Scalar unknowns retain; a reached vector replaces.
+                    if effective
+                        .read_name("Type", 0x28)
+                        .is_some_and(|kind| kind.eq_ignore_ascii_case("HunterSeeker"))
+                    {
+                        let unit = self.resolve_existing_type_from(
+                            &raw,
+                            "HunterSeeker.Type",
+                            RulesTypeFamily::Vehicle,
+                        );
+                        let buildings = self.resolve_existing_list_from(
+                            &raw,
+                            "HunterSeeker.Buildings",
+                            RulesTypeFamily::Building,
+                            2048,
+                        );
+                        let settings = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                            .hunter_seeker
+                            .get_or_insert_default();
+                        settings.max_count = raw.read_ares_int("SW.MaxCount", settings.max_count);
+                        if let Some(unit) = unit {
+                            settings.unit_type = unit;
+                        }
+                        settings.random_only =
+                            raw.read_ares_bool("HunterSeeker.RandomOnly", settings.random_only);
+                        if let Some(buildings) = buildings {
+                            settings.buildings = buildings;
                         }
                     }
                     availability.read_shots_pass(&raw);
@@ -5734,7 +5846,11 @@ impl RulesPassProcessor {
                 #[cfg(feature = "ares")]
                 {
                     // Find only: this nullable Anim reader never allocates.
-                    let sparkle = self.resolve_existing_anim_from(&raw, "EMP.Sparkles");
+                    let sparkle = self.resolve_existing_type_from(
+                        &raw,
+                        "EMP.Sparkles",
+                        RulesTypeFamily::Animation,
+                    );
                     self.family_mut(family)[index]
                         .emp_type
                         .as_mut()
@@ -5742,7 +5858,11 @@ impl RulesPassProcessor {
                         .read_pass(&raw, sparkle);
                     // TechnoTypeExt::LoadFromINI1003DEC0 calls the shared
                     // descriptor reader10058A50 at1003E8D4, before subclasses.
-                    let animation = self.resolve_existing_anim_from(&raw, "AttachEffect.Animation");
+                    let animation = self.resolve_existing_type_from(
+                        &raw,
+                        "AttachEffect.Animation",
+                        RulesTypeFamily::Animation,
+                    );
                     let member = &mut self.family_mut(family)[index];
                     member
                         .self_attach_effect
@@ -6446,10 +6566,22 @@ impl RulesPassProcessor {
             {
                 let sparkle = pass
                     .section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
-                    .and_then(|raw| self.resolve_existing_anim_from(raw, "EMP.Sparkles"));
+                    .and_then(|raw| {
+                        self.resolve_existing_type_from(
+                            raw,
+                            "EMP.Sparkles",
+                            RulesTypeFamily::Animation,
+                        )
+                    });
                 let animation = pass
                     .section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
-                    .and_then(|raw| self.resolve_existing_anim_from(raw, "AttachEffect.Animation"));
+                    .and_then(|raw| {
+                        self.resolve_existing_type_from(
+                            raw,
+                            "AttachEffect.Animation",
+                            RulesTypeFamily::Animation,
+                        )
+                    });
                 let member = &mut self
                     .families
                     .get_mut(&RulesTypeFamily::Warhead)

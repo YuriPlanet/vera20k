@@ -4223,6 +4223,8 @@ pub struct RuleSet {
     /// array order as side_ids. Rebuilt after every Process/reset/save restore.
     #[cfg(feature = "ares")]
     side_extensions: Vec<(i32, bool, i32)>,
+    #[cfg(feature = "ares")]
+    side_hunter_seekers: Vec<Option<String>>,
     /// Uppercase side identity -> source-order index.
     side_indices: HashMap<String, SideIdx>,
     /// Phobos `[SOMESIDE] Sidebar.GDIPositions=`, in `[Sides]` order.
@@ -4505,6 +4507,12 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
+    /// Ares RulesExt+70, used by SW_HunterSeeker::Activate100728EB.
+    #[cfg(feature = "ares")]
+    pub(crate) fn hunter_seeker_buildings(&self) -> &[String] {
+        self.ares_global_controls.hunter_seeker_buildings()
+    }
+
     /// RulesExt+14A indexed by native House difficulty0/1/2 (hardest first).
     /// Only the compiled Ares CanBuild owner consumes this retained policy.
     pub fn ares_ai_bypasses_build_limit(&self, difficulty_index: usize) -> bool {
@@ -4713,9 +4721,10 @@ impl RuleSet {
                 .get(&(category, name.to_ascii_uppercase()))
                 .copied()
             {
-                rules.object_list[handle.0 as usize].bind_super_weapon_ranges(
+                rules.object_list[handle.0 as usize].bind_super_weapon_techno_rules(
                     retained.designator_range,
                     retained.inhibitor_range,
+                    retained.hunter_seeker_ignore,
                 );
             }
         }
@@ -5097,6 +5106,15 @@ impl RuleSet {
                 }) {
                     building.project_additional_super_weapons(supers);
                 }
+            }
+        }
+        for (name, settings) in processed.hunter_seeker_states() {
+            if let Some(sw) = rules
+                .super_weapons
+                .values_mut()
+                .find(|sw| sw.id.eq_ignore_ascii_case(name))
+            {
+                sw.hunter_seeker = settings.cloned();
             }
         }
         for (name, delivery) in processed.unit_delivery_states() {
@@ -5928,6 +5946,8 @@ impl RuleSet {
             side_gdi_positions,
             #[cfg(feature = "ares")]
             side_extensions: country_side_registry.side_extensions,
+            #[cfg(feature = "ares")]
+            side_hunter_seekers: country_side_registry.side_hunter_seekers,
             side_indices: country_side_registry.side_indices,
             country_sides: country_side_registry.country_sides,
             color_schemes,
@@ -6165,17 +6185,11 @@ impl RuleSet {
         id: &str,
     ) -> Option<&crate::rules::superweapon_targeting::AresTargetPolicy> {
         // Stock redirected effects retain their existing dispatch owners.
-        // This chain covers the two implemented extension payloads.
-        use crate::rules::superweapon_type::SuperWeaponKind as K;
-        matches!(
-            self.super_weapon(id)?.kind,
-            K::GenericWarhead | K::UnitDelivery
-        )
-            .then(|| {
-                self.super_weapon_metadata(id)
-                    .map(|metadata| metadata.targeting())
-            })
-            .flatten()
+        // This chain covers the three implemented extension payloads.
+        if !self.super_weapon(id)?.kind.has_ares_handler() {
+            return None;
+        }
+        self.super_weapon_metadata(id).map(|metadata| metadata.targeting())
     }
 
     /// `Type == Rules+0x498` (`[General] PrismType=`, `0x0044B2F8`).
@@ -6789,17 +6803,23 @@ impl RuleSet {
                 .object_list
                 .iter()
                 .filter(|object| {
-                    object.designator_range().is_some() || object.inhibitor_range().is_some()
+                    object.designator_range().is_some()
+                        || object.inhibitor_range().is_some()
+                        || object.hunter_seeker_ignored()
                 })
                 .map(|object| {
                     (
                         (object.category, object.id.to_ascii_uppercase()),
-                        (object.designator_range(), object.inhibitor_range()),
+                        (
+                            object.designator_range(),
+                            object.inhibitor_range(),
+                            object.hunter_seeker_ignored(),
+                        ),
                     )
                 })
                 .collect::<BTreeMap<_, _>>();
             if !influence_types.is_empty() {
-                b"ares-sw-influence-types-v1".hash(&mut hasher);
+                b"ares-sw-influence-types-v2".hash(&mut hasher);
                 influence_types.hash(&mut hasher);
             }
             self.object_list
@@ -7157,6 +7177,26 @@ impl RuleSet {
             .collect::<BTreeMap<_, _>>();
         if !generic_warheads.is_empty() {
             generic_warheads.hash(&mut hasher);
+        }
+        let hunters = self
+            .super_weapons
+            .iter()
+            .filter_map(|(id, sw)| {
+                sw.hunter_seeker
+                    .as_ref()
+                    .map(|settings| (id.to_ascii_uppercase(), settings))
+            })
+            .collect::<BTreeMap<_, _>>();
+        if !hunters.is_empty() {
+            b"ares-hunter-seeker-v1".hash(&mut hasher);
+            hunters.hash(&mut hasher);
+            #[cfg(feature = "ares")]
+            {
+                self.side_hunter_seekers.hash(&mut hasher);
+                self.ares_global_controls
+                    .hunter_seeker_buildings()
+                    .hash(&mut hasher);
+            }
         }
         // No extension tags means no extra hash input: preserve stock hashes.
         let building_requirements = self
@@ -7748,6 +7788,7 @@ impl RuleSet {
         #[cfg(feature = "ares")]
         {
             self.side_extensions = projection.side_extensions;
+            self.side_hunter_seekers = projection.side_hunter_seekers;
         }
         self.side_indices = projection.side_indices;
         self.country_sides = projection.country_sides;
@@ -7985,6 +8026,14 @@ impl RuleSet {
     /// Resolve a side index back to its source spelling.
     pub fn side_name(&self, index: SideIdx) -> Option<&str> {
         self.side_ids.get(index.0 as usize).map(String::as_str)
+    }
+
+    /// SideExt+94 fallback used by SW_HunterSeeker::Activate10072885.
+    #[cfg(feature = "ares")]
+    pub(crate) fn side_hunter_seeker(&self, index: SideIdx) -> Option<&str> {
+        self.side_hunter_seekers
+            .get(usize::from(index.0))
+            .and_then(Option::as_deref)
     }
 
     /// The already-allocated Side array, including constructor-only entries;
@@ -8899,6 +8948,8 @@ struct ProjectedCountrySideRegistry {
     side_ids: Vec<String>,
     #[cfg(feature = "ares")]
     side_extensions: Vec<(i32, bool, i32)>,
+    #[cfg(feature = "ares")]
+    side_hunter_seekers: Vec<Option<String>>,
     side_indices: HashMap<String, SideIdx>,
     country_sides: Vec<Option<SideIdx>>,
 }
@@ -8916,7 +8967,16 @@ fn project_country_side_registry<'a>(
     #[cfg(feature = "ares")]
     let side_extensions = sides
         .iter()
-        .map(|(_, sidebar)| sidebar.expect("allocated Side owns its Ares extension"))
+        .map(|(_, sidebar)| {
+            sidebar
+                .expect("allocated Side owns its Ares extension")
+                .sidebar
+        })
+        .collect();
+    #[cfg(feature = "ares")]
+    let side_hunter_seekers = sides
+        .iter()
+        .map(|(_, ext)| ext.and_then(|ext| ext.hunter_seeker).map(str::to_owned))
         .collect();
     let mut side_indices = HashMap::with_capacity(side_ids.len());
     for (index, id) in side_ids.iter().enumerate() {
@@ -8958,6 +9018,8 @@ fn project_country_side_registry<'a>(
         side_ids,
         #[cfg(feature = "ares")]
         side_extensions,
+        #[cfg(feature = "ares")]
+        side_hunter_seekers,
         side_indices,
         country_sides,
     }

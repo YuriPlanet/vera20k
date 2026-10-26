@@ -58,6 +58,7 @@ Supported extensions:
   cloakability and forced decloaking. Temporal and airborne victim
   collection remain outside this chain; manual game acceptance remains pending.
 - [GenericWarhead](ares-generic-warhead.md)
+- [HunterSeeker launch and initial target acquisition](ares-hunter-seeker.md)
 - [House survival](ares-house-survival.md)
 - [Superweapon building gates](ares-superweapon-building-gates.md)
 - [Superweapon money](ares-superweapon-money.md)

@@ -121,6 +121,33 @@ use crate::rules::object_type::ObjectType;
 use crate::rules::superweapon_type::SuperWeaponKind;
 use crate::sim::spy_infiltration::InfiltrationEffect;
 
+#[derive(Clone, Copy)]
+pub(crate) enum SuperWeaponEvaStage {
+    Ready,
+    Activated,
+    Detected,
+}
+
+/// Ares Ready hooks10035070/100350D0, detection100349D0 and common
+/// Launch10032FC3 select the retained EVA ordinal. New handlers suppress
+/// stock fallbacks even for -1; unported stock redirects keep their old owner.
+pub(crate) fn resolved_superweapon_eva<'a>(
+    sw: &'a crate::rules::superweapon_type::SuperWeaponType,
+    stage: SuperWeaponEvaStage,
+    stock: Option<&'static str>,
+) -> Option<&'a str> {
+    #[cfg(feature = "ares")]
+    if let Some(eva) = sw.ares_eva() {
+        return match stage {
+            SuperWeaponEvaStage::Ready => eva.ready(),
+            SuperWeaponEvaStage::Activated => eva.activated(),
+            SuperWeaponEvaStage::Detected => eva.detected(),
+        };
+    }
+    let _ = (sw, stage);
+    stock
+}
+
 /// `EVA_NewRallyPointEstablished` (string `0x00818E58`), spoken at
 /// `0x00443A69` by the click handler.
 pub(crate) const EVA_NEW_RALLY_POINT_ESTABLISHED: &str = "EVA_NewRallyPointEstablished";
@@ -169,7 +196,8 @@ pub(crate) fn super_weapon_ready_event(kind: SuperWeaponKind) -> Option<&'static
         SuperWeaponKind::ChronoWarp
         | SuperWeaponKind::NoEffect
         | SuperWeaponKind::GenericWarhead
-        | SuperWeaponKind::UnitDelivery => return None,
+        | SuperWeaponKind::UnitDelivery
+        | SuperWeaponKind::HunterSeeker => return None,
         SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => "EVA_ReinforcementsReady",
         SuperWeaponKind::PsychicDominator => "EVA_PsychicDominatorReady",
         SuperWeaponKind::SpyPlane => "EVA_SpyPlaneReady",
@@ -199,7 +227,9 @@ pub(crate) fn super_weapon_detected_event(
     // GenericWarhead also uses a negative tag, so test extension identity.
     if matches!(
         kind,
-        SuperWeaponKind::GenericWarhead | SuperWeaponKind::UnitDelivery
+        SuperWeaponKind::GenericWarhead
+            | SuperWeaponKind::UnitDelivery
+            | SuperWeaponKind::HunterSeeker
     ) {
         return None;
     }
