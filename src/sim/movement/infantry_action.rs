@@ -493,6 +493,11 @@ impl Simulation {
                 .set_foot_firing_sequence(0);
             self.infantry_do_action(id, requested, false, rules, effects)?;
         }
+        // InfantryClass::AI51BEC0 calls TryThiefVehicleCapture5202F0 before
+        // the second Ready/Commence. Success returns before Fear/Fire/Doing.
+        if self.infantry_try_thief_capture(id, rules, registry, effects)? {
+            return Ok(DamageCommitReceipt::default());
+        }
         self.object_ai_post_movement_promote_one(id, rules);
         //51BF0B is after Process and the second Ready/Commence, including a
         // retained death sequence. Shared DoAction decides stance refusal.

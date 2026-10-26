@@ -177,8 +177,9 @@ impl InfantryPips {
     }
 }
 
-/// InfantryType constructor clears EBE/EC2/EC3/EC4. ReadINI reads these
-/// current-default flags, then 52466E..52469A forces Infiltrate for any role.
+/// InfantryType constructor clears EBE/EC2..EC6. ReadINI reads these
+/// current-default flags, then 52466E..52469A forces Infiltrate for C4,
+/// Engineer or Agent, independently of either theft byte.
 /// Retain the postprocessed byte across reached rules passes.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct InfantryInfiltration {
@@ -186,6 +187,10 @@ pub(crate) struct InfantryInfiltration {
     c4: bool,
     engineer: bool,
     agent: bool,
+    #[serde(default)]
+    thief: Option<bool>,
+    #[serde(default)]
+    vehicle_thief: Option<bool>,
 }
 
 impl InfantryInfiltration {
@@ -196,6 +201,11 @@ impl InfantryInfiltration {
         self.c4 = section.read_bool("C4", self.c4);
         self.engineer = section.read_bool("Engineer", self.engineer);
         self.agent = section.read_bool("Agent", self.agent);
+        // InfantryType ReadINI5245B8..5245F5, current defaults; constructor
+        // 5237BC/5237C3 clears both bytes (retail gamemd.exe).
+        self.thief = Some(section.read_bool("Thief", self.thief.unwrap_or(false)));
+        self.vehicle_thief =
+            Some(section.read_bool("VehicleThief", self.vehicle_thief.unwrap_or(false)));
         self.infiltrate |= self.c4 || self.engineer || self.agent;
     }
 }
@@ -1572,6 +1582,11 @@ pub struct ObjectType {
     /// `BuildingClass::Infiltrate` (`0x00519FF8`).
     pub agent: bool,
 
+    /// InfantryType+EC5, constructor5237BC=false; ReadINI5245B8..5245D2
+    /// reads exact-case Thief with the current byte as default. The native
+    /// vehicle capture receiver5202F0 checks this, separately from EC6.
+    pub thief: bool,
+
     /// Whether this unit can self-deploy/undeploy via the Deploy command.
     /// Parsed from `Deployer=yes` in rules.ini. Triggers `Deploy`/`NoDeploy`
     /// cursor when the player hovers over this unit itself.
@@ -2762,6 +2777,10 @@ impl ObjectType {
         self.c4 = flags.c4;
         self.engineer = flags.engineer;
         self.agent = flags.agent;
+        // Older serialized processing states lack these two members. Keep
+        // their merged-INI projection until a reached read supplies a byte.
+        self.thief = flags.thief.unwrap_or(self.thief);
+        self.vehicle_thief = flags.vehicle_thief.unwrap_or(self.vehicle_thief);
     }
 
     /// TechnoType GetPipMax716290, virtual+74. Signed configuration capacity;
@@ -3916,7 +3935,9 @@ impl ObjectType {
             max_number_occupants: section.read_int("MaxNumberOccupants", 0).max(0) as u32,
             occupier: section.read_bool("Occupier", false),
             assaulter: section.read_bool("Assaulter", false),
-            vehicle_thief: section.read_bool("VehicleThief", false),
+            thief: category == ObjectCategory::Infantry && section.read_bool("Thief", false),
+            vehicle_thief: category == ObjectCategory::Infantry
+                && section.read_bool("VehicleThief", false),
             // Constructor nulls; only the ordered Process owner reads them.
             occupy_weapon: None,
             elite_occupy_weapon: None,

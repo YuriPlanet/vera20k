@@ -1568,6 +1568,7 @@ fn scanner_mask<'r>(
                 armed: is_armed_from_facts(attacker_obj, facts),
                 infiltrate: attacker_obj.infiltrate,
                 vehicle_thief: attacker_obj.vehicle_thief,
+                thief: attacker_obj.thief,
                 c4: super::veterancy::holds_c4(
                     super::veterancy::rank_from_u16(attacker.veterancy),
                     attacker_obj,

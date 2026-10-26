@@ -20,9 +20,6 @@
 //!   house's masks (`+0x2C4..+0x2D0`, `0x004F7A07..0x004F7A51`), but only the
 //!   House constructor writes them (zero; operand census of each offset,
 //!   2026-10-12), so it admits the house's own country only, as VERA does.
-//! - An infantry type with `VehicleThief=` also counts the house's units
-//!   that hold one of it (`UnitClass+0x338`); VERA has no hijacking, so the
-//!   count adds none.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{FactoryType, ObjectCategory, ObjectType};
@@ -33,6 +30,10 @@ use crate::sim::house_tracking::HouseTracking;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::{SimSoundEvent, Simulation};
+
+#[cfg(test)]
+#[path = "thief_capture_tests.rs"]
+mod thief_capture_tests;
 
 /// `HouseClass::CanBuild`'s answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -438,7 +439,8 @@ fn build_limit(
             house
                 .tracking()
                 .owned_count(EntityCategory::from(obj.category), type_id)
-        });
+        })
+        .wrapping_add(captured_vehicle_thief_count(sim, rules, owner, obj));
     let produced = || {
         rules
             .type_array_index(obj.category, &obj.id)
@@ -528,7 +530,7 @@ fn build_limit(
 /// magnitude is reached by what the house produced and what the factory
 /// holds; with a positive one, once the
 /// tracked count (`owned_count`) and the factory's reach it. An infantry
-/// `VehicleThief=` would add the units that hold one (module residual).
+/// `VehicleThief=` adds the units that hold one (`0x0050B4C4..0x0050B506`).
 pub(crate) fn check_build_limit(
     sim: &Simulation,
     rules: &RuleSet,
@@ -580,7 +582,38 @@ pub(crate) fn check_build_limit(
     let owned = type_id.zip(tracking).map_or(0, |(type_id, tracking)| {
         tracking.owned_count(EntityCategory::from(obj.category), type_id)
     });
-    owned.wrapping_add(queued) >= limit
+    owned
+        .wrapping_add(captured_vehicle_thief_count(sim, rules, owner, obj))
+        .wrapping_add(queued)
+        >= limit
+}
+
+/// The shared Unit census in House::CanBuild4F80E6..4F8128 and
+/// CheckBuildLimit50B4C4..50B506 (retail gamemd.exe). Both include limbo
+/// and pending destruction; only owner and retained InfantryType index are
+/// tested. The entity store owns membership; no second counter is needed.
+fn captured_vehicle_thief_count(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+) -> i32 {
+    if obj.category == ObjectCategory::Infantry && obj.vehicle_thief {
+        rules
+            .type_array_index(ObjectCategory::Infantry, &obj.id)
+            .map_or(0, |index| {
+                sim.entities()
+                    .values()
+                    .filter(|entity| {
+                        entity.category() == EntityCategory::Unit
+                            && entity.owner() == owner
+                            && entity.capture_infantry_type_index.get() == index
+                    })
+                    .fold(0i32, |count, _| count.wrapping_add(1))
+            })
+    } else {
+        0
+    }
 }
 
 /// ObjectClass::FindFactory5F5C20 resolves this object's actual type and owner,

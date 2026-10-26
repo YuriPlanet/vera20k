@@ -651,7 +651,7 @@ fn v3_launches_its_rocket_into_the_kamikaze_window() {
     // starts the tilt.
     assert!(rocket.is_moving());
     assert_eq!(
-        rocket.destination_for_test(),
+        rocket.destination(),
         crate::sim::components::DriveCoord {
             x: 20 * 256 + 128,
             y: 20 * 256 + 128,

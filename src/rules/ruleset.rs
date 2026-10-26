@@ -6612,6 +6612,28 @@ impl RuleSet {
         // v34: Country starting-veterancy; optional extensions add domains below.
         b"rules-simulation-config-v34".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        // InfantryType ReadINI5245B8..5245F5 retains both theft bytes across
+        // invalid later reads. Flattened text alone cannot identify that state.
+        let mut theft_flags: Vec<_> = self
+            .object_list
+            .iter()
+            .filter(|object| {
+                object.category == ObjectCategory::Infantry
+                    && (object.thief || object.vehicle_thief)
+            })
+            .map(|object| {
+                (
+                    object.id.to_ascii_uppercase(),
+                    object.thief,
+                    object.vehicle_thief,
+                )
+            })
+            .collect();
+        if !theft_flags.is_empty() {
+            theft_flags.sort_unstable();
+            b"infantry-theft-flags-v1".hash(&mut hasher);
+            theft_flags.hash(&mut hasher);
+        }
         // OverlayRead5FE8BE / InitTheater5FE620 retain typed history that a
         // flattened Image key cannot recover; saved resource plans matter too.
         self.overlay_registry.hash_configuration(&mut hasher);
