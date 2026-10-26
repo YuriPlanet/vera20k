@@ -114,7 +114,13 @@ impl Veterancy {
     /// `BuildingClass::Mission_Selling @ 0x0044A05E`). The rank cache
     /// (`+0x13C`) stays this object's own.
     pub(crate) fn inherit(&mut self, from: &Veterancy) {
-        self.raw = from.raw;
+        self.inherit_raw(from.raw);
+    }
+
+    /// Ares survivor100465D1..100465D4 copies only the saved +150 bits.
+    /// The receiving object's own sampled-rank cache is left untouched.
+    pub(crate) fn inherit_raw(&mut self, raw: NativeF32Bits) {
+        self.raw = raw;
     }
 
     /// `VeterancyStruct::SetElite(1) @ 0x007500B0`: store 2.0f. The rank

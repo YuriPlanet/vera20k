@@ -17,7 +17,7 @@ impl Simulation {
         FrameAdvanceError::new(self.session.tick(), self.session.binary_frame(), id, cause)
     }
 
-    pub(super) fn scatter_building_infantry(
+    pub(crate) fn scatter_building_infantry(
         &mut self,
         building: u64,
         rules: &RuleSet,

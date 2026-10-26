@@ -495,8 +495,11 @@ impl Simulation {
         }
         // InfantryClass::AI51BEC0 calls TryThiefVehicleCapture5202F0 before
         // the second Ready/Commence. Success returns before Fear/Fire/Doing.
-        if self.infantry_try_thief_capture(id, rules, registry, effects)? {
-            return Ok(DamageCommitReceipt::default());
+        let capture = self.infantry_try_thief_capture(id, rules, registry, effects)?;
+        if capture.consumed {
+            let mut receipt = DamageCommitReceipt::default();
+            receipt.bridge_state_changed = capture.bridge_state_changed;
+            return Ok(receipt);
         }
         self.object_ai_post_movement_promote_one(id, rules);
         //51BF0B is after Process and the second Ready/Commence, including a
@@ -510,7 +513,7 @@ impl Simulation {
             registry,
             effects,
         );
-        receipt.bridge_state_changed |= bridge_changed;
+        receipt.bridge_state_changed |= bridge_changed || capture.bridge_state_changed;
         if self
             .substrate
             .entities

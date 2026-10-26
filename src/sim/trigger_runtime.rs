@@ -532,10 +532,10 @@ impl RuntimeDefinitions {
 // Original jump-table bytes71F700/71F744/71F780/71F7C0 and6E3F08.
 // These are classification only, never substitutes for event predicates.
 fn event_classification(kind: i32) -> u8 {
-    // Ares3.0 GetFlags1004F6A0: EMP62..65 are attached-object events;
-    // Persistable1004F610 returns false for every one of them.
+    // Ares3.0 GetFlags1004F6A0: EMP62..65 and capture69/70 are attached
+    // object events. This is independent of the Persistable predicate.
     #[cfg(feature = "ares")]
-    if matches!(kind, 62..=65) {
+    if matches!(kind, 62..=65 | 69 | 70) {
         return 2;
     }
     let mut flags = 0;
@@ -1497,6 +1497,23 @@ impl Simulation {
             .condition
             .clone();
         match condition.kind {
+            #[cfg(feature = "ares")]
+            69 | 70 => {
+                // Ares HasOccurred71E949 ->100503E0/1004F8CA..1004F91F.
+                // Both require the affected Techno;70 additionally compares
+                // the source's raw House+30. No persistence write. Original
+                //71F950 stays false for these kinds, so they never latch.
+                input.kind == condition.kind
+                    && input
+                        .actor
+                        .is_some_and(|id| self.substrate.entities.contains(id))
+                    && (condition.kind == 69
+                        || input
+                            .source
+                            .and_then(|id| self.substrate.entities.get(id))
+                            .and_then(|source| self.base_reservation_house_index(source.owner()))
+                            .is_some_and(|index| index == condition.value))
+            }
             #[cfg(feature = "ares")]
             62..=65 => {
                 // Installed HasOccurred71E949 ->100503E0/1004F7DC..870.

@@ -24,6 +24,14 @@ use crate::sim::movement::locomotor::MovementLayer;
 #[serde(transparent)]
 pub(crate) struct CapturedInfantryType(i32);
 
+/// Native capture's consumed-actor result plus synchronous geometry changes
+/// that Rust's caller must carry to its derived map refresh.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct VehicleCaptureOutcome {
+    pub(crate) consumed: bool,
+    pub(crate) bridge_state_changed: bool,
+}
+
 impl CapturedInfantryType {
     /// The Techno constructor's -1.
     pub(crate) const fn constructed() -> Self {
@@ -116,25 +124,32 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
-    ) -> Result<bool, String> {
+    ) -> Result<VehicleCaptureOutcome, String> {
         use crate::sim::components::NavTargetRef;
         use crate::sim::movement::ground_pose::object_get_coords;
         use crate::util::native_x87::distance_3d_leptons;
         let Some(actor) = self.substrate.entities.get(actor_id) else {
-            return Ok(false);
+            return Ok(VehicleCaptureOutcome::default());
         };
         if actor.category() != EntityCategory::Infantry
-            || !self
-                .entity_object_type(actor, rules)
-                .is_some_and(|ty| ty.thief)
+            || !self.entity_object_type(actor, rules).is_some_and(|ty| {
+                #[cfg(not(feature = "ares"))]
+                {
+                    ty.thief
+                }
+                #[cfg(feature = "ares")]
+                {
+                    ty.vehicle_thief || ty.driver_rules().can_drive()
+                }
+            })
         {
-            return Ok(false);
+            return Ok(VehicleCaptureOutcome::default());
         }
         let Some(nav @ NavTargetRef::Object { id: target_id }) = actor.navigation.nav_com() else {
-            return Ok(false);
+            return Ok(VehicleCaptureOutcome::default());
         };
         let Some(target) = self.substrate.entities.get(target_id) else {
-            return Ok(false);
+            return Ok(VehicleCaptureOutcome::default());
         };
         if target.category() != EntityCategory::Unit
             || crate::sim::combat::combat_weapon::is_ally_by_object(
@@ -144,7 +159,7 @@ impl Simulation {
                 target.owner(),
             )
         {
-            return Ok(false);
+            return Ok(VehicleCaptureOutcome::default());
         }
         //520343..52038D: +4C supplies only the target's approach height.
         // A8F240 is the standard 104-lepton height (startup517910..517940).
@@ -157,46 +172,66 @@ impl Simulation {
             < crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS
             && distance < 128
         {
-            //5203F7..52046D: each callback finishes before the next live
-            // read. Radio+274 addresses slot zero, not the broadcast walk.
-            let context = super::UninitContext::new(rules, registry).with_effects(effects);
-            self.dispatch_object_tag_event(target_id, 1, Some(actor_id), None, context);
-            crate::sim::radio::transmit_to_contact(
-                self,
-                target_id,
-                crate::sim::radio::RadioMessage::Break,
-                rules,
-                effects,
-            );
-            self.detach_all(target_id, false, context);
-            self.trigger_runtime
-                .transfer_object_tag(actor_id, target_id);
-            if let Some(owner) = self
-                .substrate
-                .entities
-                .get(actor_id)
-                .map(|actor| actor.owner())
+            #[cfg(feature = "ares")]
             {
-                self.change_owner_with_rules(target_id, owner, rules, registry, effects);
+                //5203F7 ->100499A0: the shared Ares receiver returns whether
+                //this caller must consume the actor (Drive can board it).
+                let outcome =
+                    self.ares_capture_vehicle(actor_id, target_id, rules, registry, effects)?;
+                if outcome.consumed {
+                    self.uninit_with_context(
+                        actor_id,
+                        super::UninitContext::new(rules, registry).with_effects(effects),
+                    );
+                }
+                return Ok(outcome);
             }
-            let captor_type = self
-                .substrate
-                .entities
-                .get(actor_id)
-                .and_then(|actor| self.entity_object_type(actor, rules))
-                .and_then(|ty| {
-                    rules.type_array_index(
-                        crate::rules::object_type::ObjectCategory::Infantry,
-                        &ty.id,
-                    )
+            #[cfg(not(feature = "ares"))]
+            {
+                //5203F7..52046D: each callback finishes before the next live
+                // read. Radio+274 addresses slot zero, not the broadcast walk.
+                let context = super::UninitContext::new(rules, registry).with_effects(effects);
+                self.dispatch_object_tag_event(target_id, 1, Some(actor_id), None, context);
+                crate::sim::radio::transmit_to_contact(
+                    self,
+                    target_id,
+                    crate::sim::radio::RadioMessage::Break,
+                    rules,
+                    effects,
+                );
+                self.detach_all(target_id, false, context);
+                self.trigger_runtime
+                    .transfer_object_tag(actor_id, target_id);
+                if let Some(owner) = self
+                    .substrate
+                    .entities
+                    .get(actor_id)
+                    .map(|actor| actor.owner())
+                {
+                    self.change_owner_with_rules(target_id, owner, rules, registry, effects);
+                }
+                let captor_type = self
+                    .substrate
+                    .entities
+                    .get(actor_id)
+                    .and_then(|actor| self.entity_object_type(actor, rules))
+                    .and_then(|ty| {
+                        rules.type_array_index(
+                            crate::rules::object_type::ObjectCategory::Infantry,
+                            &ty.id,
+                        )
+                    });
+                if let Some(index) = captor_type
+                    && let Some(target) = self.substrate.entities.get_mut(target_id)
+                {
+                    target.capture_infantry_type_index.record(index);
+                }
+                self.uninit_with_context(actor_id, context);
+                return Ok(VehicleCaptureOutcome {
+                    consumed: true,
+                    bridge_state_changed: false,
                 });
-            if let Some(index) = captor_type
-                && let Some(target) = self.substrate.entities.get_mut(target_id)
-            {
-                target.capture_infantry_type_index.record(index);
             }
-            self.uninit_with_context(actor_id, context);
-            return Ok(true);
         }
 
         //52047D..52069B: compare the locomotor's FINAL destination, not
@@ -222,7 +257,7 @@ impl Simulation {
             self.assign_destination_represented(actor_id, Some(nav), rules, registry, effects)
                 .map_err(|error| format!("Thief {actor_id} destination: {error}"))?;
         }
-        Ok(false)
+        Ok(VehicleCaptureOutcome::default())
     }
 }
 

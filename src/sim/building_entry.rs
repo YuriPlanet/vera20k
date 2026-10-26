@@ -101,6 +101,11 @@ pub(crate) struct BuildingEntryLatches {
 }
 
 impl BuildingEntryLatches {
+    /// Ares10046A8B/10046ACC reuses the native +691 seek latch.
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_nearest_occupiable_seek(&mut self, value: bool) {
+        self.should_enter_nearest_occupiable = value;
+    }
     /// `+0x68F`, which the Guard and AreaGuard heads test.
     pub(crate) const fn should_enter_absorber(self) -> bool {
         self.should_enter_absorber
@@ -557,6 +562,16 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> bool {
+        // Installed Ares Foot4DFE00 hook10049130 redirects only Ext+B0.
+        #[cfg(feature = "ares")]
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|foot| foot.vehicle_driver.vehicle_seek())
+        {
+            return self.ares_enter_nearest_vehicle(id, rules, registry, effects);
+        }
         let mut best = None;
         let mut best_distance = i32::MAX;
         // EntityStore's monotonic construction registry includes dead/limbo

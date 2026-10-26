@@ -1116,7 +1116,11 @@ fn order_voice_key(command: &Command) -> Option<&'static str> {
             mission: crate::sim::mission::MissionType::Eaten,
             ..
         } => Some("VoiceSpecialAttack"),
-        Command::CaptureBuilding { .. } => Some("VoiceCapture"),
+        Command::CaptureBuilding { .. }
+        | Command::MegaMission {
+            mission: crate::sim::mission::MissionType::Capture,
+            ..
+        } => Some("VoiceCapture"),
         // Sabotage and area guard have no dedicated slot, so retail takes the
         // default branch and speaks a VoiceSpecialAttack line.
         Command::PlantC4 { .. } | Command::Guard { .. } => Some("VoiceSpecialAttack"),
@@ -2214,6 +2218,54 @@ pub(crate) fn try_queue_context_order(
                         .into_iter()
                         .map(|payload| CommandEnvelope::new(owner_id, execute_tick, payload)),
                 );
+                let remaining: std::collections::BTreeSet<_> =
+                    selected_units.iter().copied().collect();
+                selected_ids.retain(|id| {
+                    remaining.contains(id)
+                        || sim
+                            .entities()
+                            .get(*id)
+                            .is_some_and(|actor| actor.category() == EntityCategory::Structure)
+                });
+                if selected_ids.is_empty() {
+                    return finish_order(state, queued, speaker_id, rally_announce, None)
+                        || consumed_attack_action;
+                }
+            }
+        }
+
+        #[cfg(feature = "ares")]
+        if let Some(target) = hover.as_ref() {
+            let mut consumed = false;
+            selected_units.retain(|&id| {
+                if !vehicle_capture_action(
+                    sim,
+                    &resources.rules,
+                    id,
+                    target.stable_id,
+                    modifier,
+                    force_move_key,
+                ) {
+                    return true;
+                }
+                consumed = true;
+                // Foot4D7716 asks vt+A0 before publishing the Capture event.
+                if sim.techno_player_controllable(id, &resources.rules) {
+                    queued.push(CommandEnvelope::new(
+                        owner_id,
+                        execute_tick,
+                        Command::MegaMission {
+                            entity_id: id,
+                            mission: crate::sim::mission::MissionType::Capture,
+                            target: None,
+                            destination: Some(TargetKind::Entity(target.stable_id)),
+                        },
+                    ));
+                }
+                false
+            });
+            if consumed {
+                consumed_attack_action = true;
                 let remaining: std::collections::BTreeSet<_> =
                     selected_units.iter().copied().collect();
                 selected_ids.retain(|id| {
@@ -3441,6 +3493,22 @@ fn entry_orders(
         false
     });
     consumed.then_some(orders)
+}
+
+#[cfg(feature = "ares")]
+pub(super) fn vehicle_capture_action(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor: u64,
+    target: u64,
+    modifier: OrderModifier,
+    force_move_key: bool,
+) -> bool {
+    // Shift and the admitted Ctrl+Alt GuardArea return before51E7A6.
+    !matches!(
+        object_key_action(sim, rules, actor, Some(target), modifier, force_move_key),
+        Some(ObjectKeyAction::ToggleSelect | ObjectKeyAction::GuardArea)
+    ) && sim.ares_vehicle_capture_action(actor, target, rules)
 }
 
 /// Engineer object actions before event enqueue. No duplicate geometry query.

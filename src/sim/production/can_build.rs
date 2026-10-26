@@ -391,7 +391,10 @@ fn ares_owned_build_limit_count(
         return matching_installed_upgrades(sim, house, host, upgrade)
             .fold(0_i32, |count, _| count.wrapping_add(1));
     }
-    let own = tracked(EntityCategory::from(obj.category), &obj.id);
+    // Ares CountOwned10020C23..10020C81 keeps the original Infantry
+    // VehicleThief census. The existing Unit+338 owner supplies this count.
+    let own = tracked(EntityCategory::from(obj.category), &obj.id)
+        .wrapping_add(captured_vehicle_thief_count(sim, rules, house.name(), obj));
     let converted = match obj.category {
         ObjectCategory::Building => obj
             .undeploys_into

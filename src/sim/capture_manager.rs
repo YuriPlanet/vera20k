@@ -704,6 +704,19 @@ impl Simulation {
         }
     }
 
+    /// Installed Ares capture10045C03..10045C1C clears permanent control
+    /// and UnInit's the ring after any controller's FreeUnit has finished.
+    #[cfg(feature = "ares")]
+    pub(crate) fn clear_permanent_control_and_ring(&mut self, id: u64, rules: &RuleSet) {
+        let ring = self.substrate.entities.get_mut(id).and_then(|object| {
+            object.mind_control.permanent = false;
+            object.mind_control.ring_anim.take()
+        });
+        if let Some(ring) = ring {
+            self.destroy_anim(ring, rules);
+        }
+    }
+
     /// The MindControl arm of `BulletClass::DetonateAtCoord` (`0x0046920B..
     /// 0x0046933E`): no firer or no manager ends it; otherwise the firer's
     /// manager captures the bullet's own target (a cell or none fails), and a

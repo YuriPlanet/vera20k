@@ -1915,6 +1915,27 @@ impl ProcessedRulesLayers {
             })
     }
 
+    #[cfg(feature = "ares")]
+    pub(crate) fn driver_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            &crate::rules::ares_driver::DriverTypeRules,
+        ),
+    > {
+        let registry = self.native_type_construction_trace.registry_state();
+        registry.techno_type_order.iter().map(|&(family, index)| {
+            let member = &registry.families[&family][index];
+            (
+                family.object_category().expect("TechnoType category"),
+                member.native_stored_id.as_str(),
+                &member.driver,
+            )
+        })
+    }
+
     pub(crate) fn ares_techno_states(
         &self,
     ) -> impl Iterator<
@@ -2947,6 +2968,11 @@ struct AresCountryState {
     loading: crate::rules::country_loading::AresCountryLoading,
     presentation: crate::rules::ares_country_presentation::AresCountryPresentation,
     paradrop: crate::rules::ares_country_paradrop::AresCountryParadrop,
+    /// CountryExt+1BC/+1BD: ctor1001B8DA leaves it unset;
+    /// nullable CanBeDriven reader1001C70A..1001C71B. Parent copy
+    /// 1001BDC0..1001C0D6 deliberately does not copy this pair.
+    #[serde(default)]
+    can_be_driven: Option<bool>,
 }
 
 // GUI fields are process-retained and persisted, but do not enter simulation CRC.
@@ -2957,10 +2983,19 @@ impl Hash for AresCountryState {
         self.parent_initialized.hash(state);
         self.buildings.hash(state);
         self.paradrop.hash(state);
+        if let Some(value) = self.can_be_driven {
+            b"ares-country-driving-v1".hash(state);
+            value.hash(state);
+        }
     }
 }
 
 impl CountryVeterancyState {
+    #[cfg(feature = "ares")]
+    pub(crate) fn can_be_driven_override(&self) -> Option<bool> {
+        self.ares.can_be_driven
+    }
+
     #[cfg(feature = "ares")]
     pub(crate) fn loading(&self) -> &crate::rules::country_loading::AresCountryLoading {
         &self.ares.loading
@@ -3994,6 +4029,9 @@ struct ProcessedType {
     #[cfg(feature = "ares")]
     #[serde(default)]
     spotlight: crate::rules::ares_spotlight::SpotlightTypeRules,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    driver: crate::rules::ares_driver::DriverTypeRules,
     /// ObjectType4753F0 -> Ares10006E10 binds at each reached body read.
     armor_id: ArmorId,
     /// ParticleSystemType+294, the bound ParticleType's index: constructor -1
@@ -4447,6 +4485,8 @@ impl ProcessedType {
             turret_rot_override: None,
             #[cfg(feature = "ares")]
             spotlight: Default::default(),
+            #[cfg(feature = "ares")]
+            driver: Default::default(),
             armor_id: ArmorId::NONE,
             holds_what: None,
             super_weapon_weapon: None,
@@ -5842,6 +5882,14 @@ impl RulesPassProcessor {
                 .loading
                 .clone();
             loading.read_color(section, |name| self.loading_color_index(name));
+            let current = self.families[&RulesTypeFamily::Country][index]
+                .country_veterancy
+                .ares
+                .can_be_driven;
+            self.family_mut(RulesTypeFamily::Country)[index]
+                .country_veterancy
+                .ares
+                .can_be_driven = section.read_ares_nullable_bool("CanBeDriven", current);
             self.family_mut(RulesTypeFamily::Country)[index]
                 .country_veterancy
                 .ares
@@ -6293,6 +6341,27 @@ impl RulesPassProcessor {
                 // reach the common TechnoType extension before subclass reads.
                 #[cfg(feature = "ares")]
                 self.process_factory_owners(family, index, &raw);
+                #[cfg(feature = "ares")]
+                {
+                    use crate::rules::ares_driver::OperatorRequirement;
+                    let operator = raw.read_name("Operator", 2048).map(|name| {
+                        if name.eq_ignore_ascii_case("_ANY_") {
+                            OperatorRequirement::Any
+                        } else {
+                            let types = self
+                                .resolve_existing_techno_list_from(&raw, "Operator", 2048)
+                                .expect("same nonempty Operator read");
+                            if types.is_empty() {
+                                OperatorRequirement::None
+                            } else {
+                                OperatorRequirement::Types(types)
+                            }
+                        }
+                    });
+                    self.family_mut(family)[index]
+                        .driver
+                        .read_pass(&raw, operator);
+                }
                 #[cfg(feature = "ares")]
                 {
                     // Find only: this nullable Anim reader never allocates.

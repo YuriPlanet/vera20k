@@ -124,6 +124,16 @@ fn thief_capture_normal_ai_changes_owner_and_retains_captor_type() {
         owner,
         rules.object("THIEF").unwrap(),
     ));
+    #[cfg(feature = "ares")]
+    assert_eq!(
+        super::ares_owned_build_limit_count(
+            &sim,
+            &rules,
+            &sim.houses[&owner],
+            rules.object("THIEF").unwrap(),
+        ),
+        1
+    );
     #[cfg(not(feature = "ares"))]
     assert_eq!(
         super::can_build(
@@ -144,6 +154,16 @@ fn thief_capture_normal_ai_changes_owner_and_retains_captor_type() {
         owner,
         rules.object("THIEF").unwrap(),
     ));
+    #[cfg(feature = "ares")]
+    assert_eq!(
+        super::ares_owned_build_limit_count(
+            &sim,
+            &rules,
+            &sim.houses[&owner],
+            rules.object("THIEF").unwrap(),
+        ),
+        0
+    );
     #[cfg(not(feature = "ares"))]
     assert_eq!(
         super::can_build(
@@ -170,6 +190,7 @@ fn thief_capture_keeps_the_original_role_alliance_and_distance_gates() {
     assert!(
         !sim.infantry_try_thief_capture(actor, &rules, None, FrameEffects::default())
             .unwrap()
+            .consumed
     );
     assert_eq!(
         sim.interner
@@ -184,6 +205,7 @@ fn thief_capture_keeps_the_original_role_alliance_and_distance_gates() {
     assert!(
         !sim.infantry_try_thief_capture(actor, &rules, None, FrameEffects::default())
             .unwrap()
+            .consumed
     );
 
     let (mut sim, rules, _) = scene();
@@ -236,6 +258,7 @@ fn thief_capture_keeps_the_original_role_alliance_and_distance_gates() {
     assert!(
         !sim.infantry_try_thief_capture(actor, &rules, None, FrameEffects::default())
             .unwrap()
+            .consumed
     );
     assert_eq!(
         crate::sim::movement::motion_query::destination(sim.substrate.entities.get(actor).unwrap(),),
