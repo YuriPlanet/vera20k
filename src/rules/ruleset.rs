@@ -7446,6 +7446,25 @@ impl RuleSet {
         // draws; list order/duplicates select the sound. Hash effective lists
         // in canonical type order, independently of registry insertion order.
         b"resolved-type-sound-lists-v4".hash(&mut hasher);
+        #[cfg(feature = "ares")]
+        {
+            let promotion_sounds = self
+                .object_list
+                .iter()
+                .filter_map(|object| {
+                    let sounds = (
+                        object.promotion_sound_override(false),
+                        object.promotion_sound_override(true),
+                    );
+                    (sounds.0.is_some() || sounds.1.is_some())
+                        .then(|| ((object.category, object.id.to_ascii_uppercase()), sounds))
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !promotion_sounds.is_empty() {
+                b"ares-type-promotion-sounds-v1".hash(&mut hasher);
+                promotion_sounds.hash(&mut hasher);
+            }
+        }
         self.general.voice_ifv_repair().hash(&mut hasher);
         self.object_list
             .iter()
