@@ -1326,6 +1326,9 @@ mod tests {
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
+        sim.session_mut_for_test().set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         let local = sim.intern("Americans");
         let enemy = sim.intern("Russians");
         let typ = sim.intern("Seek");
