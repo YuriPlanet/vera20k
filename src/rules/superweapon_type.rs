@@ -542,8 +542,27 @@ pub(crate) struct AresSuperWeaponMetadata {
     availability: AresSuperWeaponAvailability,
     native_auxiliary: Option<String>,
     buildings: Option<SuperWeaponBuildingRequirements>,
+    charge: AresSuperWeaponCharge,
     influence: crate::rules::superweapon_influence::SuperWeaponInfluence,
     targeting: crate::rules::superweapon_targeting::AresTargetPolicy,
+}
+
+/// SWTypeExt+284/+285: constructor10031460 clears AX at10031471 and
+/// stores the pair at1003185F. The ordered 3.0 reader10033A9C/10033AB2
+/// uses Valueable<bool>::Read (1000EBF0), retaining on absent/invalid input.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresSuperWeaponCharge {
+    pub(crate) initial_ready: bool,
+    pub(crate) virtual_charge: bool,
+}
+
+#[cfg(feature = "ares")]
+impl AresSuperWeaponCharge {
+    pub(super) fn read_pass(&mut self, section: &IniSection) {
+        self.initial_ready = section.read_ares_bool("SW.InitialReady", self.initial_ready);
+        self.virtual_charge = section.read_ares_bool("SW.VirtualCharge", self.virtual_charge);
+    }
 }
 
 #[cfg(feature = "ares")]
@@ -552,6 +571,7 @@ impl AresSuperWeaponMetadata {
         availability: &AresSuperWeaponAvailability,
         native_auxiliary: Option<&str>,
         buildings: Option<&SuperWeaponBuildingRequirements>,
+        charge: &AresSuperWeaponCharge,
         influence: &crate::rules::superweapon_influence::SuperWeaponInfluence,
         targeting: &crate::rules::superweapon_targeting::AresTargetPolicy,
     ) -> Self {
@@ -559,6 +579,7 @@ impl AresSuperWeaponMetadata {
             availability: availability.clone(),
             native_auxiliary: native_auxiliary.map(str::to_owned),
             buildings: buildings.cloned(),
+            charge: charge.clone(),
             influence: influence.clone(),
             targeting: targeting.clone(),
         }
@@ -572,6 +593,10 @@ impl AresSuperWeaponMetadata {
     }
     pub(crate) fn building_requirements(&self) -> Option<&SuperWeaponBuildingRequirements> {
         self.buildings.as_ref()
+    }
+
+    pub(crate) fn charge(&self) -> &AresSuperWeaponCharge {
+        &self.charge
     }
 
     pub(crate) fn influence(&self) -> &crate::rules::superweapon_influence::SuperWeaponInfluence {
