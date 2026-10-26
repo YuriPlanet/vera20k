@@ -100,7 +100,9 @@ fn native_superweapon_cameo_controls_match_modes_and_requests() {
         let mut sim = Simulation::new();
         let owner = sim.intern("Americans");
         sim.houses_mut_for_test()
-            .register(crate::sim::house_state::HouseState::new(owner));
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
         let id = sim.intern("SUPER");
         let mut instance = SuperWeaponInstance::new(id, owner, 0);
         instance.set_is_active_for_test(true);
@@ -257,7 +259,9 @@ fn delivery_missing_or_custom_action_arms_the_real_cameo_targeting_path() {
         let mut sim = Simulation::new();
         let owner = sim.intern("Americans");
         sim.houses_mut_for_test()
-            .register(crate::sim::house_state::HouseState::new(owner));
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
         let id = sim.intern("Delivery");
         let mut instance = SuperWeaponInstance::new(id, owner, 0);
         instance.set_is_active_for_test(true);
