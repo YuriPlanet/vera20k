@@ -61,6 +61,9 @@ Provide the normal art/cameo assets for your mod.
   between equal-valued targets with the Scenario RNG. `None` disables AI
   launching. Other Ares targeting modes are currently unsupported; an explicit
   unsupported mode logs a warning and disables AI launching for this type.
+  An unrecognized name keeps the mode from earlier rules layers. As in Ares,
+  Offensive is set once, on the type's first rules pass, so a type that
+  becomes GenericWarhead only in a later layer starts with `None`.
 
 ## Port provenance
 
@@ -76,7 +79,7 @@ consumers and the available official Ares sources.
 
 | ra2-mono source | Rust adaptation |
 | --- | --- |
-| `TryParseTargetMask`, `TryParseHouseMask` | `TargetMask::parse`, `HouseMask::parse`; preserve composable aliases and unknown-token rejection |
+| `TryParseTargetMask`, `TryParseHouseMask` | Replaced by Ares's own readers (`0x10034430`, `0x100341D0`): `TargetMask::read_ares`, `HouseMask::read_ares` |
 | `Evaluate` and its input/result types | `evaluate_target`; same ordered terrain/content/house/shroud/range gates, typed rejection reasons |
 | `ResolveSuperweaponLaunchSites` | VERA's retained house building list and shared operational-state query; no OOP/ECS bridge copied |
 | `EvaluateSuperweaponTargetPreflight` | Read-only occupancy, alliance and fog observations; the same gate serves cursor, command and AI |
@@ -87,11 +90,15 @@ Intentional boundaries/adaptations:
 
 - Only GenericWarhead opts in. Stock superweapon readers and dispatch remain
   unchanged. Automatic target requirements are independent of manual ones;
-  the Offensive defaults are `all-technos` and `enemies` even when no explicit
-  `SW.AITargeting` is authored.
+  unset AI masks use the `SW.AITargeting` mode's row in Ares's mode table
+  (Offensive: all technos and enemies).
 - `SW.RequiresTarget`, `SW.RequiresHouse`, `SW.AIRequiresTarget`,
   `SW.AIRequiresHouse`, `SW.FireIntoShroud`, `SW.RangeMinimum` and
-  `SW.RangeMaximum` are supported. Range limits are inclusive; negative limits
+  `SW.RangeMaximum` are supported. The four masks take Ares's comma-separated
+  names only (`land`, `water`, `empty`, `infantry`, `units`, `buildings`,
+  `all`, `none`; `owner`, `allies`, `enemies`, `team`, `trump`, `others`,
+  `all`, `none`), with no spaces around commas. An unknown name keeps the
+  value from earlier rules layers, as in Ares. Range limits are inclusive; negative limits
   are disabled. Missing/inactive launchers cannot satisfy a configured range.
 - The Rust rules reader keeps VERA's native number parsing (including f32
   widening and leading numeric tokens), not C#'s strict numeric text parser.

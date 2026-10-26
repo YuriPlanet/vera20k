@@ -25,6 +25,7 @@ mod object_image_tests;
 use std::sync::Arc;
 
 use crate::rules::error::RulesError;
+use crate::rules::ini_parser::DigestVerification;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{
     NativeRulesRegistryState, NativeTypeConstructionEvent, NativeTypeConstructionTrace,
@@ -38,6 +39,65 @@ use crate::rules::personal_rules::PersonalRules;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
 
+/// Source snapshot for the optional LANGRULE input. `Selected` retains the
+/// physical parse and payload length so startup and every Full_Init reset can
+/// repeat ReadCCFile's Digest gate; `Prevalidated` keeps synthetic owner
+/// callers' existing contract.
+#[derive(Debug)]
+pub(crate) enum NativeLangRuleSource {
+    Prevalidated(IniFile),
+    Selected(crate::rules::retail_sources::SelectedIni),
+    SelectionFailed(String),
+}
+
+#[derive(Debug)]
+enum NativeLangRuleRead {
+    Absent,
+    Accepted(IniFile),
+    DigestRejected,
+    /// Native short/malformed Digest comparison reads uninitialized stack
+    /// tail bytes. VERA fails closed; this input remains a fidelity residual.
+    DigestIndeterminate,
+    /// Keep the existing optional-source parse-failure behavior distinct from
+    /// physical absence. VERA skips this optional source and runs the ordinary
+    /// root/mode tail; equivalence to native malformed-file handling is open.
+    SelectionFailed,
+}
+
+impl NativeLangRuleSource {
+    fn read_for_process(&self) -> NativeLangRuleRead {
+        match self {
+            Self::Prevalidated(ini) => NativeLangRuleRead::Accepted(ini.clone()),
+            Self::Selected(selected) => {
+                match selected
+                    .physical_ini
+                    .verify_digest(selected.source.payload_len)
+                {
+                    DigestVerification::Empty => NativeLangRuleRead::Accepted(selected.ini.clone()),
+                    DigestVerification::Valid => {
+                        let mut ini = selected.ini.clone();
+                        ini.remove_digest_for_checked_load();
+                        NativeLangRuleRead::Accepted(ini)
+                    }
+                    DigestVerification::Missing | DigestVerification::Invalid => {
+                        NativeLangRuleRead::DigestRejected
+                    }
+                    DigestVerification::Indeterminate => NativeLangRuleRead::DigestIndeterminate,
+                }
+            }
+            Self::SelectionFailed(_) => NativeLangRuleRead::SelectionFailed,
+        }
+    }
+
+    fn source_ini(&self) -> Option<&IniFile> {
+        match self {
+            Self::Prevalidated(ini) => Some(ini),
+            Self::Selected(selected) => Some(&selected.ini),
+            Self::SelectionFailed(_) => None,
+        }
+    }
+}
+
 /// The startup-selected INI objects reused by every later native Process call.
 ///
 /// This is intentionally move-only. Re-reading loose files during a scenario
@@ -48,7 +108,7 @@ struct NativeRulesSourceSnapshot {
     /// Logical names frozen with the selected snapshots, including MOD roots.
     rules_art_names: [String; 2],
     selected_rules_root: IniFile,
-    langrule: Option<IniFile>,
+    langrule: Option<NativeLangRuleSource>,
     fixed_art: IniFile,
     /// ARTMD `[Movies]`, selected once by Load_Game_Rules52D121. Movie
     /// references in campaigns and Basic share these indices across reloads.
@@ -176,6 +236,13 @@ pub struct NativeScenarioRulesReceipt {
 }
 
 impl NativeScenarioRulesReceipt {
+    /// Constructor count for the pre-reset native pass, exposed to app tests
+    /// that exercise the production Fresh_Init startup/descriptor route.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn pre_reset_event_count(&self) -> usize {
+        self.pre_reset.event_count()
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn pre_reset(&self) -> &NativeRulesPhaseReceipt {
         &self.pre_reset
@@ -241,7 +308,7 @@ impl NativeRulesProcessOwner {
     ) -> Result<Self, RulesError> {
         Self::from_named_cold_start_sources(
             selected_rules_root,
-            langrule,
+            langrule.map(NativeLangRuleSource::Prevalidated),
             fixed_art,
             fixed_sounds,
             fixed_eva,
@@ -254,7 +321,7 @@ impl NativeRulesProcessOwner {
     /// These diagnostic labels do not alter Rules processing or saved state.
     pub(crate) fn from_named_cold_start_sources(
         selected_rules_root: IniFile,
-        langrule: Option<IniFile>,
+        langrule: Option<NativeLangRuleSource>,
         fixed_art: IniFile,
         fixed_sounds: Arc<SoundRegistry>,
         fixed_eva: Arc<EvaRegistry>,
@@ -262,11 +329,26 @@ impl NativeRulesProcessOwner {
         personal_rules: PersonalRules,
     ) -> Result<Self, RulesError> {
         let movies = crate::rules::movies::MovieRegistry::from_art(&fixed_art);
+        if let Some(NativeLangRuleSource::SelectionFailed(error)) = langrule.as_ref() {
+            log::warn!("Optional LANGRULE.INI selection failed: {error}");
+        }
+        // A rejected Digest is fatal at startup. Each reset re-reads this same
+        // snapshot, so the reset tail's rejected branch cannot follow.
+        let startup_langrule = match langrule
+            .as_ref()
+            .map(NativeLangRuleSource::read_for_process)
+        {
+            Some(NativeLangRuleRead::Accepted(ini)) => Some(ini),
+            Some(NativeLangRuleRead::DigestRejected | NativeLangRuleRead::DigestIndeterminate) => {
+                return Err(RulesError::LangRuleDigestRejected);
+            }
+            None | Some(NativeLangRuleRead::Absent | NativeLangRuleRead::SelectionFailed) => None,
+        };
         let cold_trace = process_native_rules_cold_start(
             NativeRulesRegistryState::default(),
             &selected_rules_root,
             &fixed_art,
-            langrule.as_ref(),
+            startup_langrule.as_ref(),
             &fixed_eva,
         )?;
         Ok(Self {
@@ -458,7 +540,10 @@ impl NativeRulesProcessOwner {
             ),
             (
                 "LANGRULE.INI",
-                self.sources.langrule.as_ref().map(IniFile::content_hash),
+                self.sources
+                    .langrule
+                    .as_ref()
+                    .and_then(|source| source.source_ini().map(IniFile::content_hash)),
             ),
             (
                 &self.sources.rules_art_names[1],
@@ -476,7 +561,7 @@ impl NativeRulesProcessOwner {
             self.sources
                 .langrule
                 .as_ref()
-                .map(IniFile::multiplayer_digest),
+                .and_then(|source| source.source_ini().map(IniFile::multiplayer_digest)),
             Some(self.sources.fixed_art.multiplayer_digest()),
         ]
     }
@@ -570,7 +655,14 @@ impl NativeRulesProcessOwner {
     /// Build the shell-facing compatibility projection without changing the
     /// one native registry owner.
     pub fn startup_compatibility_projection(&self) -> Result<ProcessedRulesLayers, RulesError> {
-        self.startup_layers()
+        let langrule = match self.read_langrule_for_process() {
+            NativeLangRuleRead::Accepted(ini) => Some(ini),
+            NativeLangRuleRead::Absent
+            | NativeLangRuleRead::DigestRejected
+            | NativeLangRuleRead::DigestIndeterminate
+            | NativeLangRuleRead::SelectionFailed => None,
+        };
+        self.startup_layers(langrule.as_ref())
             .process_with_fixed_art_and_registry_state_recovering(
                 &self.sources.fixed_art,
                 NativeRulesRegistryState::default(),
@@ -590,17 +682,30 @@ impl NativeRulesProcessOwner {
         mode_rules_override: Option<&IniFile>,
         theater_name: &str,
     ) -> Result<ProcessedRulesLayers, RulesError> {
-        let mut layers = self.startup_layers();
-        if let Some(mode) = mode_rules_override {
+        let langrule = self.read_langrule_for_process();
+        let skip_root_color_add_and_mode = matches!(
+            langrule,
+            NativeLangRuleRead::DigestRejected | NativeLangRuleRead::DigestIndeterminate
+        );
+        let langrule = match langrule {
+            NativeLangRuleRead::Accepted(ini) => Some(ini),
+            NativeLangRuleRead::Absent
+            | NativeLangRuleRead::DigestRejected
+            | NativeLangRuleRead::DigestIndeterminate
+            | NativeLangRuleRead::SelectionFailed => None,
+        };
+        let mut layers = self.startup_layers(langrule.as_ref());
+        if !skip_root_color_add_and_mode && let Some(mode) = mode_rules_override {
             layers.push(RulesLayerKind::GameMode, self.personalized_layer(mode));
         }
         layers
             .process_with_fixed_art_and_registry_state_recovering(
                 &self.sources.fixed_art,
                 NativeRulesRegistryState::default(),
-                RulesProcessContext::ScenarioReset(
-                    crate::rules::object_image::ImageTheater::from_name(theater_name),
-                ),
+                RulesProcessContext::ScenarioReset {
+                    theater: crate::rules::object_image::ImageTheater::from_name(theater_name),
+                    skip_root_color_add_and_mode,
+                },
                 &self.sources.fixed_eva,
             )
             .map_err(|failure| failure.into_parts().0)
@@ -715,6 +820,52 @@ impl NativeRulesProcessOwner {
         prefix: NativeScenarioRulesPrefix<'_>,
         map_rules_overrides: &IniFile,
     ) -> Result<NativeScenarioRulesLoad, RulesError> {
+        self.load_scenario_inner(prefix, map_rules_overrides, None, None::<fn(RuleSet)>)
+            .map(|(load, _)| load)
+    }
+
+    /// Run the post-map AI registry read before Full_Init's optional TMCJ4F
+    /// Process. The callback takes ownership of the map-stage RuleSet
+    /// projection so later consumers can retain native read-time identities;
+    /// the same native Rules processor then continues into TMCJ4F at
+    /// 0x00687B76.
+    ///
+    /// RESIDUAL: Full_Init also runs about 20 map readers between the AI
+    /// readers and the TMCJ4F gate (0x006879E8..0x00687B13). VERA's map
+    /// loading reads the final Rules instead, so a TMCJ4F value one of those
+    /// readers consumes takes effect earlier. Stock YR mounts no TMCJ4F.INI.
+    pub fn load_scenario_with_post_map<F, T>(
+        &mut self,
+        prefix: NativeScenarioRulesPrefix<'_>,
+        map_rules_overrides: &IniFile,
+        tmcj4f_rules: &IniFile,
+        after_map: F,
+    ) -> Result<(NativeScenarioRulesLoad, T), RulesError>
+    where
+        F: FnOnce(RuleSet) -> T,
+    {
+        let (load, after_map_result) = self.load_scenario_inner(
+            prefix,
+            map_rules_overrides,
+            Some(tmcj4f_rules),
+            Some(after_map),
+        )?;
+        Ok((
+            load,
+            after_map_result.expect("TMCJ4F Rules stack includes the map boundary"),
+        ))
+    }
+
+    fn load_scenario_inner<F, T>(
+        &mut self,
+        prefix: NativeScenarioRulesPrefix<'_>,
+        map_rules_overrides: &IniFile,
+        tmcj4f_rules: Option<&IniFile>,
+        after_map: Option<F>,
+    ) -> Result<(NativeScenarioRulesLoad, Option<T>), RulesError>
+    where
+        F: FnOnce(RuleSet) -> T,
+    {
         let clear_classes = !matches!(&prefix, NativeScenarioRulesPrefix::RandomMap(_));
         let (pre_reset_trace, mode_rules_override) = match prefix {
             NativeScenarioRulesPrefix::NonCampaign(mode)
@@ -758,16 +909,57 @@ impl NativeRulesProcessOwner {
         };
         let (pre_reset_events, pre_reset_super_count, pre_reset_state) =
             pre_reset_trace.into_parts();
-        let layers = self.scenario_layers(mode_rules_override, map_rules_overrides);
-        let mut processed = match layers.process_with_fixed_art_and_registry_state_recovering(
-            &self.sources.fixed_art,
-            pre_reset_state,
-            RulesProcessContext::ScenarioReset(crate::rules::object_image::ImageTheater::from_map(
-                map_rules_overrides,
-            )),
-            &self.sources.fixed_eva,
-        ) {
-            Ok(processed) => processed,
+        let langrule = self.read_langrule_for_process();
+        let skip_root_color_add_and_mode = matches!(
+            langrule,
+            NativeLangRuleRead::DigestRejected | NativeLangRuleRead::DigestIndeterminate
+        );
+        let langrule = match langrule {
+            NativeLangRuleRead::Accepted(ini) => Some(ini),
+            NativeLangRuleRead::Absent
+            | NativeLangRuleRead::DigestRejected
+            | NativeLangRuleRead::DigestIndeterminate
+            | NativeLangRuleRead::SelectionFailed => None,
+        };
+        let layers = self.scenario_layers(
+            mode_rules_override,
+            map_rules_overrides,
+            langrule.as_ref(),
+            tmcj4f_rules,
+            skip_root_color_add_and_mode,
+        );
+        let process_result = match (tmcj4f_rules, after_map) {
+            (Some(_), Some(after_map)) => layers
+                .process_with_fixed_art_and_registry_state_recovering_after_map(
+                    &self.sources.fixed_art,
+                    pre_reset_state,
+                    RulesProcessContext::ScenarioReset {
+                        theater: crate::rules::object_image::ImageTheater::from_map(
+                            map_rules_overrides,
+                        ),
+                        skip_root_color_add_and_mode,
+                    },
+                    &self.sources.fixed_eva,
+                    after_map,
+                )
+                .map(|(processed, result)| (processed, Some(result))),
+            (None, None) => layers
+                .process_with_fixed_art_and_registry_state_recovering(
+                    &self.sources.fixed_art,
+                    pre_reset_state,
+                    RulesProcessContext::ScenarioReset {
+                        theater: crate::rules::object_image::ImageTheater::from_map(
+                            map_rules_overrides,
+                        ),
+                        skip_root_color_add_and_mode,
+                    },
+                    &self.sources.fixed_eva,
+                )
+                .map(|processed| (processed, None)),
+            _ => unreachable!("TMCJ4F Rules and its post-map callback are admitted together"),
+        };
+        let (mut processed, after_map_result) = match process_result {
+            Ok((processed, after_map_result)) => (processed, after_map_result),
             Err(failure) => {
                 let (error, partial_trace) = failure.into_parts();
                 let (_, _, partial_state) = partial_trace.into_parts();
@@ -791,26 +983,36 @@ impl NativeRulesProcessOwner {
         let (post_reset_events, post_reset_super_count) = processed.take_constructor_events();
         self.registry = Some(NativeRulesRegistryOwner::Scenario(Box::new(processed)));
 
-        Ok(NativeScenarioRulesLoad {
-            rules,
-            processed_ini,
-            fixed_art_ini: self.sources.fixed_art.clone(),
-            receipt: NativeScenarioRulesReceipt {
-                pre_reset: NativeRulesPhaseReceipt {
-                    events: pre_reset_events,
-                    allocated_super_weapon_type_count: pre_reset_super_count,
-                },
-                post_reset: NativeRulesPhaseReceipt {
-                    events: post_reset_events,
-                    allocated_super_weapon_type_count: post_reset_super_count,
+        Ok((
+            NativeScenarioRulesLoad {
+                rules,
+                processed_ini,
+                fixed_art_ini: self.sources.fixed_art.clone(),
+                receipt: NativeScenarioRulesReceipt {
+                    pre_reset: NativeRulesPhaseReceipt {
+                        events: pre_reset_events,
+                        allocated_super_weapon_type_count: pre_reset_super_count,
+                    },
+                    post_reset: NativeRulesPhaseReceipt {
+                        events: post_reset_events,
+                        allocated_super_weapon_type_count: post_reset_super_count,
+                    },
                 },
             },
-        })
+            after_map_result,
+        ))
     }
 
-    fn startup_layers(&self) -> RulesLayerStack {
+    fn read_langrule_for_process(&self) -> NativeLangRuleRead {
+        self.sources.langrule.as_ref().map_or(
+            NativeLangRuleRead::Absent,
+            NativeLangRuleSource::read_for_process,
+        )
+    }
+
+    fn startup_layers(&self, langrule: Option<&IniFile>) -> RulesLayerStack {
         let mut layers = RulesLayerStack::new(self.sources.selected_rules_root.clone());
-        if let Some(langrule) = self.sources.langrule.as_ref() {
+        if let Some(langrule) = langrule {
             layers.push(RulesLayerKind::LangRule, langrule.clone());
         }
         layers
@@ -820,15 +1022,21 @@ impl NativeRulesProcessOwner {
         &self,
         mode_rules_override: Option<&IniFile>,
         map_rules_overrides: &IniFile,
+        langrule: Option<&IniFile>,
+        tmcj4f_rules: Option<&IniFile>,
+        skip_mode: bool,
     ) -> RulesLayerStack {
-        let mut layers = self.startup_layers();
-        if let Some(mode) = mode_rules_override {
+        let mut layers = self.startup_layers(langrule);
+        if !skip_mode && let Some(mode) = mode_rules_override {
             layers.push(RulesLayerKind::GameMode, self.personalized_layer(mode));
         }
         layers.push(
             RulesLayerKind::Scenario,
             self.personalized_layer(map_rules_overrides),
         );
+        if let Some(tmcj4f) = tmcj4f_rules {
+            layers.push(RulesLayerKind::Tmcj4f, self.personalized_layer(tmcj4f));
+        }
         layers
     }
 
@@ -858,7 +1066,10 @@ mod country_loading_prefix_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::assets::asset_manager::AssetManager;
+    use crate::map::source::test_support::TestDirectory;
     use crate::rules::native_processing::RulesLayerStack;
+    use crate::rules::retail_sources::RetailRulesSources;
 
     #[test]
     fn retired_voxel_damage_survives_omitted_read_until_type_reset() {
@@ -902,5 +1113,131 @@ mod tests {
             .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &IniFile::empty())
             .unwrap();
         assert_eq!(damage(&reset.rules), 0);
+    }
+
+    #[test]
+    fn tmcj4f_runs_after_team_ai_read_and_does_not_retroactively_bind_a_member() {
+        let rulesmd = IniFile::from_str("[InfantryTypes]\n0=E1\n[E1]\nStrength=100\nTechLevel=1\n");
+        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+            rulesmd,
+            None,
+            IniFile::empty(),
+            Arc::default(),
+            Arc::default(),
+        )
+        .unwrap();
+        let ai_ini = IniFile::from_str(
+            "[TeamTypes]\n0=TEAM\n[TEAM]\nScript=SCRIPT\nTaskForce=TF\n\
+             [ScriptTypes]\n0=SCRIPT\n[SCRIPT]\n0=0,0\n\
+             [TaskForces]\n0=TF\n[TF]\n0=1,TMCJONLY\n",
+        );
+        let tmcj4f = IniFile::from_str(
+            "[InfantryTypes]\n0=TMCJONLY\n[TMCJONLY]\nStrength=100\nTechLevel=1\n",
+        );
+        let (loaded, ai_diagnostics) = owner
+            .load_scenario_with_post_map(
+                NativeScenarioRulesPrefix::NonCampaign(None),
+                &IniFile::empty(),
+                &tmcj4f,
+                |rules_at_ai_read| {
+                    let registry = crate::rules::team_ai_ini::TeamAiIniRegistry::from_sources(
+                        &IniFile::empty(),
+                        &ai_ini,
+                        true,
+                    );
+                    let mut interner = crate::sim::intern::StringInterner::default();
+                    crate::sim::team_script_vm::TeamScriptVm::from_ini_registry(
+                        &registry,
+                        &mut interner,
+                        &rules_at_ai_read,
+                    )
+                    .1
+                },
+            )
+            .unwrap();
+
+        assert!(loaded.rules.infantry_ids.iter().any(|id| id == "TMCJONLY"));
+        assert!(ai_diagnostics.iter().any(|diagnostic| matches!(
+            diagnostic,
+            crate::sim::team_script_vm::TeamAiInstallDiagnostic::UnknownTaskForceMember {
+                member_type,
+                ..
+            } if member_type == "TMCJONLY"
+        )));
+    }
+
+    #[test]
+    fn langrule_without_a_digest_fails_startup() {
+        fn load(with_langrule: bool) -> Result<RuleSet, String> {
+            let directory = TestDirectory::new(if with_langrule {
+                "langrule-missing-digest"
+            } else {
+                "langrule-absent"
+            });
+            directory.write("rulesmd.ini", b"[General]\nBuildSpeed=.8\n");
+            directory.write("artmd.ini", b"");
+            if with_langrule {
+                directory.write("langrule.ini", b"[General]\nBuildSpeed=.7\n");
+            }
+            let assets = AssetManager::from_loose_root_for_test(directory.path());
+            let mut owner = RetailRulesSources::select(&assets)
+                .unwrap()
+                .into_owner(Arc::default(), Arc::default())?;
+            let mode = IniFile::from_str("[General]\nBuildSpeed=.5\n");
+            Ok(owner
+                .load_scenario(
+                    NativeScenarioRulesPrefix::NonCampaign(Some(&mode)),
+                    &IniFile::from_str("[General]\nTreeStrength=321\n"),
+                )
+                .unwrap()
+                .rules)
+        }
+
+        assert!(
+            load(true)
+                .unwrap_err()
+                .ends_with(&RulesError::LangRuleDigestRejected.to_string())
+        );
+        let absent = load(false).unwrap();
+        assert_eq!(
+            absent.production.build_speed,
+            crate::util::native_x87::NativeF64Bits::from_bits(f64::from(0.5_f32).to_bits()),
+            "an absent LANGRULE is not a Digest failure",
+        );
+        assert_eq!(absent.general.tree_strength, 321, "map Rules still run");
+    }
+
+    #[test]
+    fn selected_langrule_digest_gates_cold_start_and_startup_projection() {
+        use crate::rules::retail_ini_fixture::DIGESTED_LANGRULE_CONTROL as VALID_LANGRULE;
+
+        fn startup_color_add(langrule: &str) -> Result<[u8; 3], String> {
+            let directory = TestDirectory::new("startup-langrule-digest");
+            directory.write("rulesmd.ini", b"[General]\nBuildSpeed=.8\n");
+            directory.write("artmd.ini", b"");
+            directory.write("langrule.ini", langrule.as_bytes());
+            let assets = AssetManager::from_loose_root_for_test(directory.path());
+            let owner = RetailRulesSources::select(&assets)
+                .unwrap()
+                .into_owner(Arc::default(), Arc::default())?;
+            let projection = owner.startup_compatibility_projection().unwrap();
+            Ok(RuleSet::from_processed_rules(&projection)
+                .unwrap()
+                .color_add
+                .entries()[0]
+                .rgb)
+        }
+
+        assert_eq!(startup_color_add(VALID_LANGRULE).unwrap(), [7, 8, 9]);
+        let invalid_langrule = VALID_LANGRULE.replacen(
+            "1=5Z9CTq3TQS20/wfWQHiRlHIBMME=",
+            "1=AZ9CTq3TQS20/wfWQHiRlHIBMME=",
+            1,
+        );
+        assert!(
+            startup_color_add(&invalid_langrule)
+                .unwrap_err()
+                .ends_with(&RulesError::LangRuleDigestRejected.to_string())
+        );
     }
 }
