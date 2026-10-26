@@ -4971,25 +4971,30 @@ impl TriggerRuntime {
     pub(crate) fn mark_crate_pickup_event(&mut self) {
         self.dirty[3] = true;
     }
-    ///6E57C0 reads each linked LIVE Trigger's Type+A0, without enabled,
-    /// pending or difficulty tests.5F5B50 replaces refs, never moves the
-    /// Engineer's attachment and never deletes the old zero-ref Tag here.
-    pub(crate) fn transfer_engineer_tag_to_building(&mut self, engineer: u64, building: u64) {
-        let attachment = TagAttachment::Object(engineer);
-        let Some(&tag) = self.attachments.get(&attachment) else {
-            return;
-        };
-        let transfer = self.tag(tag).is_some_and(|tag| {
-            tag.triggers.iter().any(|&live| {
-                self.trigger(live).is_some_and(|trigger| {
-                    self.definitions.trigger_types[trigger.type_index].transfer_on_capture
+    /// TagClass::IsTransferable6E57C0 reads each linked LIVE Trigger's
+    /// Type+A0, without enabled, pending or difficulty tests (retail gamemd).
+    pub(crate) fn object_tag_is_transferable(&self, object: u64) -> bool {
+        self.attachments
+            .get(&TagAttachment::Object(object))
+            .and_then(|&tag| self.tag(tag))
+            .is_some_and(|tag| {
+                tag.triggers.iter().any(|&live| {
+                    self.trigger(live).is_some_and(|trigger| {
+                        self.definitions.trigger_types[trigger.type_index].transfer_on_capture
+                    })
                 })
             })
-        });
-        if transfer {
-            //519F66 re-reads after the gate; keep the native attachment owner.
+    }
+
+    /// ObjectClass::SetTag5F5B50 after IsTransferable6E57C0: engineer
+    /// capture519F66, thief capture520439 and vehicle crew738374 all copy
+    /// the attachment. The source keeps its reference; the old zero-ref Tag
+    /// is not deleted here. Source: retail gamemd.exe instructions.
+    pub(crate) fn transfer_object_tag(&mut self, source: u64, target: u64) {
+        if self.object_tag_is_transferable(source) {
+            let attachment = TagAttachment::Object(source);
             let tag = self.attachments.get(&attachment).copied();
-            self.replace_trigger_tag_attachment(TagAttachment::Object(building), tag);
+            self.replace_trigger_tag_attachment(TagAttachment::Object(target), tag);
         }
     }
 }

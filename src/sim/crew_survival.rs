@@ -88,10 +88,6 @@
 //! - Original whole GAPOWR fatal/517A50/51DFF0 controls establish fresh E1
 //!   Doing=-1 and Scatter admission at51D1AA. Different preexisting passenger
 //!   Doing states remain bounded by their own Scatter controls.
-//! - HijackerType (Unit `+0x338`): VERA has no hijacking, so the always-exit
-//!   hijacker arm is unreachable.
-//! - The crewman takes the vehicle's tag (`0x006E57C0`/`0x005F5B50`): VERA
-//!   has no per-object tags.
 //! - A UnitAbsorb passenger (no stock building) leaves without its Scatter
 //!   in Phase A and with it in a sale; VERA scatters neither.
 //! - Nominal crew retain Infantry+6D9: death443127 sets it before Unlimbo
@@ -706,7 +702,9 @@ impl Simulation {
 
     /// The crew block of `UnitClass::ReceiveDamage` (`0x007381BC..0x0073838A`),
     /// after the dying unit's Mark(UP). `prevent_escape` is ReceiveDamage's
-    /// arg6. A crewed vehicle with no passenger capacity rolls CrewEscape; an
+    /// arg6. A retained captor type (+338 != -1) bypasses arg6, Crewed,
+    /// Passengers and CrewEscape (7381BC..738267), and exits as that infantry
+    /// type. Other crewed vehicles with no passenger capacity roll CrewEscape; an
     /// escaped crewman leaves from the vehicle's own coordinate with Health
     /// `RandomRanged(5, Strength/2)`, Guards for a human owner or Hunts for
     /// the computer, and is selected if the vehicle was
@@ -720,16 +718,14 @@ impl Simulation {
         selected_by_player: bool,
         effects: FrameEffects<'_>,
     ) {
-        if prevent_escape {
-            return;
-        }
         let Some(entity) = self.substrate.entities.get(unit_id) else {
             return;
         };
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        if !object.crewed || object.passengers != 0 {
+        let captor_type = entity.capture_infantry_type_index.get();
+        if captor_type == -1 && (prevent_escape || !object.crewed || object.passengers != 0) {
             return;
         }
         let owner = entity.owner();
@@ -776,11 +772,24 @@ impl Simulation {
             }
         };
 
-        let roll = self.scenario_rng.next_range_u32_inclusive(0, 0x7FFF_FFFE);
-        if !crew_escapes(roll, rules.general.crew_escape) {
-            return;
-        }
-        let Some(crew) = techno_crew_type(&mut self.scenario_rng, rules, side, armed) else {
+        // UnitClass::ReceiveDamage7381BC..73829C (retail gamemd.exe):
+        // the captor arm constructs its retained InfantryType directly,
+        // without either CrewEscape's draw or the GetCrew selection draw.
+        let crew = if captor_type != -1 {
+            rules
+                .type_array_at(
+                    crate::rules::object_type::ObjectCategory::Infantry,
+                    captor_type,
+                )
+                .map(|object| object.id.clone())
+        } else {
+            let roll = self.scenario_rng.next_range_u32_inclusive(0, 0x7FFF_FFFE);
+            if !crew_escapes(roll, rules.general.crew_escape) {
+                return;
+            }
+            techno_crew_type(&mut self.scenario_rng, rules, side, armed)
+        };
+        let Some(crew) = crew else {
             return;
         };
         let Some(id) = self.construct_crew(rules, &crew, owner, unlimbo, registry, effects) else {
@@ -806,6 +815,8 @@ impl Simulation {
                 UninitContext::new(rules, registry).with_effects(effects),
             );
         }
+        //738364..73837A, after Unlimbo, health, Scatter, mission and Select.
+        self.trigger_runtime.transfer_object_tag(unit_id, id);
     }
 
     /// The passenger block of `UnitClass::ReceiveDamage`
