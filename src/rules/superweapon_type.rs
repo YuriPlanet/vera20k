@@ -129,6 +129,50 @@ pub enum GenericWarheadAiTargeting {
     Offensive,
 }
 
+/// Common Ares launch presentation, retained by the ordered SWType reader.
+/// Nullable references distinguish an omitted default from an explicit none.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresSuperWeaponPresentation {
+    pub(crate) animation: Option<Option<String>>,
+    pub(crate) height: i32,
+    pub(crate) visibility: crate::rules::superweapon_targeting::HouseMask,
+    pub(crate) sound: Option<Option<String>>,
+}
+
+#[cfg(feature = "ares")]
+impl Default for AresSuperWeaponPresentation {
+    fn default() -> Self {
+        // SWTypeExt ctor10031701/10031721/10031733: unset Sound/Anim,
+        // AnimationHeight0 and AnimationVisibility7 (all).
+        Self {
+            animation: None,
+            height: 0,
+            visibility: crate::rules::superweapon_targeting::HouseMask::ALL,
+            sound: None,
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl AresSuperWeaponPresentation {
+    /// SWTypeExt::LoadFromINI10033370, reads1003354E/64/7A: Find-only Anim pointer,
+    /// signed retained height and native AffectedHouse mask. SOUNDMD binding
+    /// resolves the ordered Sound reads later, through the fixed catalog.
+    pub(crate) fn read_pass(&mut self, section: &IniSection, animation: Option<Option<String>>) {
+        if let Some(animation) = animation {
+            self.animation = Some(animation);
+        }
+        self.height = section.read_ares_int("SW.AnimationHeight", self.height);
+        if let Some(mask) = crate::rules::superweapon_targeting::HouseMask::read_ares(
+            section,
+            "SW.AnimationVisibility",
+        ) {
+            self.visibility = mask;
+        }
+    }
+}
+
 /// Superweapon type definition parsed from a rules.ini section.
 ///
 /// Each superweapon type defines charging behavior, sidebar presentation,
@@ -136,6 +180,8 @@ pub enum GenericWarheadAiTargeting {
 /// tracked per-house in `sim/superweapon/`.
 #[derive(Debug, Clone)]
 pub struct SuperWeaponType {
+    #[cfg(feature = "ares")]
+    pub(crate) presentation: AresSuperWeaponPresentation,
     /// Section name in rules.ini (e.g., "LightningStormSpecial").
     pub id: String,
     /// CSF label for the localized display name (`UIName=Name:LStorm`). This
@@ -260,6 +306,8 @@ impl SuperWeaponType {
         #[cfg(not(feature = "ares"))]
         let extension_kind = false;
         Self {
+            #[cfg(feature = "ares")]
+            presentation: AresSuperWeaponPresentation::default(),
             id: id.to_string(),
             // AbstractTypeClass `UIName=`, ReadString 0x20 (`0x00410AFB`).
             ui_name: section.read_name("UIName", 0x20).map(str::to_string),

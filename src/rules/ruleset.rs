@@ -5068,6 +5068,15 @@ impl RuleSet {
                     .ares_super_weapon_metadata
                     .insert(name.to_ascii_uppercase(), metadata);
             }
+            for (name, presentation) in processed.super_weapon_presentation_states() {
+                if let Some(sw) = rules
+                    .super_weapons
+                    .values_mut()
+                    .find(|sw| sw.id.eq_ignore_ascii_case(name))
+                {
+                    sw.presentation = presentation.clone();
+                }
+            }
             for (name, supers) in processed.additional_super_weapon_states() {
                 if let Some(building) = rules.object_list.iter_mut().find(|object| {
                     object.category == ObjectCategory::Building
@@ -5315,6 +5324,14 @@ impl RuleSet {
         }
         for sw in self.super_weapons.values_mut() {
             let section = ini.section(&sw.id);
+            #[cfg(feature = "ares")]
+            {
+                // SWTypeExt::LoadFromINI10033522 -> NullableIdx<Voc>
+                // 1000E9D0: successful names/none set presence; unknown
+                // retains. Read against fixed SOUNDMD, in rules-pass order.
+                sw.presentation.sound =
+                    section.and_then(|section| sounds.read_ares_reference(section, "SW.Sound"));
+            }
             // Original6CEB74..6CEBD8 keeps each current Voc ID when
             // ReadString128 or FindIndex7514D0 finds no replacement.
             sw.special_sound =
@@ -5326,15 +5343,9 @@ impl RuleSet {
                 // Ares NullableIdx<VocClass>: unknown retains the previous
                 // resolved cue; an explicit none sentinel clears it. The
                 // retained type INI owns the ordered read history.
-                delivery.activation_sound = ini.section(&sw.id).and_then(|section| {
-                    section.read_string_with("SW.ActivationSound", 2048, None, |current, name| {
-                        if crate::rules::ini_parser::is_native_none_type_name(name) {
-                            None
-                        } else {
-                            sounds.get(name).map(|entry| entry.id.clone()).or(current)
-                        }
-                    })
-                });
+                delivery.activation_sound = section
+                    .and_then(|section| sounds.read_ares_reference(section, "SW.ActivationSound"))
+                    .flatten();
             }
         }
         for object in &mut self.object_list {
@@ -7111,6 +7122,20 @@ impl RuleSet {
         if !superweapon_money.is_empty() {
             "Ares.SuperWeaponMoney".hash(&mut hasher);
             superweapon_money.hash(&mut hasher);
+        }
+        #[cfg(feature = "ares")]
+        {
+            let default = crate::rules::superweapon_type::AresSuperWeaponPresentation::default();
+            let presentation: BTreeMap<_, _> = self
+                .super_weapons
+                .iter()
+                .filter(|(_, sw)| sw.presentation != default)
+                .map(|(id, sw)| (id.to_ascii_uppercase(), &sw.presentation))
+                .collect();
+            if !presentation.is_empty() {
+                "Ares.SuperWeaponPresentation".hash(&mut hasher);
+                presentation.hash(&mut hasher);
+            }
         }
         let deliveries = self
             .super_weapons

@@ -182,6 +182,7 @@ fn emit(
         &light,
         cell,
         sim,
+        local_owner,
         building,
         &|_| 0,
         crate::render::batch::DepthAxis::NONE.origin_y,

@@ -52,7 +52,7 @@ impl TargetMask {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct HouseMask(u8);
 
 impl HouseMask {
@@ -60,10 +60,18 @@ impl HouseMask {
     pub const OWNER: Self = Self(1);
     pub const ALLIES: Self = Self(2);
     pub const ENEMIES: Self = Self(4);
+    pub const ALL: Self = Self(7);
 
     #[cfg(feature = "ares")]
-    fn intersects(self, other: Self) -> bool {
+    pub(crate) fn intersects(self, other: Self) -> bool {
         self.0 & other.0 != 0
+    }
+
+    /// Ares household-mask reader100341D0, tokens1009BCE0: successful
+    /// native comma-only lists replace; absent or unknown keeps the prior.
+    #[cfg(feature = "ares")]
+    pub(crate) fn read_ares(section: &IniSection, key: &str) -> Option<Self> {
+        read_native_mask(section, key, house_token).map(|bits| Self(bits as u8))
     }
 
     #[cfg(feature = "ares")]
@@ -81,6 +89,34 @@ impl HouseMask {
         })
         .map(Self)
     }
+}
+
+#[cfg(feature = "ares")]
+fn read_native_mask(
+    section: &IniSection,
+    key: &str,
+    token: fn(&str) -> Option<u32>,
+) -> Option<u32> {
+    section
+        .read_list(key, 2048)?
+        .into_iter()
+        .try_fold(0, |bits, name| Some(bits | token(name)?))
+}
+
+#[cfg(feature = "ares")]
+fn house_token(name: &str) -> Option<u32> {
+    [
+        ("none", 0),
+        ("owner", 1),
+        ("allies", 2),
+        ("enemies", 4),
+        ("team", 3),
+        ("trump", 5),
+        ("others", 6),
+        ("all", 7),
+    ]
+    .iter()
+    .find_map(|(key, bits)| key.eq_ignore_ascii_case(name).then_some(*bits))
 }
 
 // ra2-mono accepts composable aliases as well as the canonical Ares tokens.

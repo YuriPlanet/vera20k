@@ -34,6 +34,197 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
 ";
 const ART: &str = "[LAUNCHER]\nFoundation=1x1\n[TARGET]\nFoundation=1x1\n";
 
+fn common_presentation_layers(visibility: &str) -> RulesLayerStack {
+    let mut base = crate::sim::arena_fixture::clear_ground_ini(RULES);
+    base.merge(&IniFile::from_str(&format!(
+        "[Animations]\n0=INVOKE\n[Strike]\nSW.Animation=INVOKE\nSW.AnimationHeight=-9\n\
+         SW.AnimationVisibility={visibility}\nSW.Sound=Launch\n"
+    )));
+    RulesLayerStack::new(base)
+}
+
+fn common_presentation_rules(layers: &RulesLayerStack) -> RuleSet {
+    let art = IniFile::from_str(&format!("{ART}[INVOKE]\nEnd=4\nRate=1\n"));
+    let processed = layers.process_with_fixed_art(&art).unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+        "[SoundList]\n0=Launch\n[Launch]\nSounds=launch\n",
+    ));
+    rules.bind_type_sound_references(processed.ini(), &sounds);
+    let mut art = crate::rules::art_data::ArtRegistry::from_ini(&art);
+    art.bind_anim_frame_count_for_test("INVOKE", 4);
+    rules.install_art_data(art);
+    rules
+}
+
+#[test]
+fn ares_common_launch_constructs_hidden_anim_and_sound_only_on_admitted_fire() {
+    let rules = common_presentation_rules(&common_presentation_layers("none"));
+    assert!(
+        crate::rules::effect_asset_catalog::anim_class_roots(&rules)
+            .iter()
+            .any(|name| name == "INVOKE")
+    );
+    let (mut sim, rules, owner, typ, _) = fixture_with_rules(rules, "Russians");
+    let ground = crate::sim::superweapon::deck_coords(&sim, (15, 15));
+    assert!(fire(&mut sim, &rules, owner, typ, (15, 15)));
+    let animations: Vec<_> = sim
+        .anims()
+        .filter(|(_, anim)| sim.interner.resolve(anim.type_id()) == "INVOKE")
+        .collect();
+    assert_eq!(animations.len(), 1);
+    let anim = animations[0].1;
+    assert_eq!(
+        anim.world_coord(),
+        crate::sim::anim_class::AnimWorldCoord {
+            x: ground[0],
+            y: ground[1],
+            z: ground[2] - 9,
+        }
+    );
+    assert!(anim.hidden_for(Some(owner)) && anim.hidden_for(None));
+    let launch_sounds = || {
+        sim.sound_events.as_slice().iter().filter(|event| {
+        matches!(event, SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id == "Launch")
+    }).count()
+    };
+    assert_eq!(launch_sounds(), 1);
+    assert!(sim.sound_events.as_slice().iter().any(|event| {
+        matches!(event, SimSoundEvent::VocAtCoord { sound_id, coordinate, flags: 0 }
+            if sound_id == "Launch" && coordinate.x == ground[0]
+                && coordinate.y == ground[1] && coordinate.z == ground[2] - 9)
+    }));
+    let count = sim.anims().count();
+    assert!(!fire(&mut sim, &rules, owner, typ, (15, 15)));
+    assert_eq!(sim.anims().count(), count);
+    assert_eq!(
+        sim.sound_events
+            .as_slice()
+            .iter()
+            .filter(|event| {
+                matches!(event, SimSoundEvent::VocAtCoord { sound_id, .. } if sound_id == "Launch")
+            })
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn ares_common_launch_reader_retains_unknowns_and_honors_explicit_none() {
+    let mut layers = common_presentation_layers("team");
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str(
+            "[SuperWeaponTypes]\n1=Delivery\n[Delivery]\nType=UnitDelivery\nSW.ActivationSound=Launch\n",
+        ),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str(
+            "[Strike]\nSW.Animation=UnknownAnim\nSW.Sound=UnknownSound\n\
+         SW.AnimationHeight=invalid\nSW.AnimationVisibility=owner+enemies\n",
+        ),
+    );
+    let retained = common_presentation_rules(&layers);
+    let p = &retained.super_weapon("Strike").unwrap().presentation;
+    assert_eq!(
+        p.animation.as_ref().and_then(|x| x.as_deref()),
+        Some("INVOKE")
+    );
+    assert_eq!(p.sound.as_ref().and_then(|x| x.as_deref()), Some("Launch"));
+    assert_eq!(
+        retained
+            .super_weapon("Delivery")
+            .unwrap()
+            .unit_delivery
+            .as_ref()
+            .unwrap()
+            .activation_sound
+            .as_deref(),
+        Some("Launch"),
+    );
+    assert_eq!(p.height, -9);
+    assert_eq!(
+        p.visibility,
+        crate::rules::superweapon_targeting::HouseMask::parse("team").unwrap()
+    );
+    assert!(!retained.anim_type_names.contains("UNKNOWNANIM"));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str(
+            "[Strike]\nSW.Animation=none\nSW.Sound=none\nSW.AnimationVisibility=trump\n",
+        ),
+    );
+    let mut cleared = common_presentation_rules(&layers);
+    let p = &cleared.super_weapon("Strike").unwrap().presentation;
+    assert_eq!(p.animation, Some(None));
+    assert_eq!(p.sound, Some(None));
+    assert_ne!(
+        retained.simulation_config_hash(),
+        cleared.simulation_config_hash()
+    );
+    // NullableIdx tries the fixed sound catalog before recognizing none.
+    let named_none = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+        "[SoundList]\n0=none\n[none]\nVolume=100\n",
+    ));
+    cleared.bind_type_sound_references(
+        &IniFile::from_str("[Strike]\nSW.Sound=none\n[Delivery]\nSW.ActivationSound=none\n"),
+        &named_none,
+    );
+    assert_eq!(
+        cleared.super_weapon("Strike").unwrap().presentation.sound,
+        Some(Some("none".to_owned())),
+    );
+    assert_eq!(
+        cleared
+            .super_weapon("Delivery")
+            .unwrap()
+            .unit_delivery
+            .as_ref()
+            .unwrap()
+            .activation_sound
+            .as_deref(),
+        Some("none"),
+    );
+}
+
+#[test]
+fn ares_common_launch_visibility_snapshots_alliances_and_uniform_writes_replace_it() {
+    let rules = common_presentation_rules(&common_presentation_layers("team"));
+    let (mut sim, rules, owner, typ, _) = fixture_with_rules(rules, "Russians");
+    let enemy = sim.interner.get("Americans").unwrap();
+    let ally = sim.interner.intern("ViewerAlly");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            ally, 0, None, false, 0, 10,
+        ));
+    sim.house_alliances_mut_for_test().insert(
+        "RUSSIANS".to_owned(),
+        std::collections::BTreeSet::from(["VIEWERALLY".to_owned()]),
+    );
+    assert!(fire(&mut sim, &rules, owner, typ, (15, 15)));
+    let id = sim
+        .anims()
+        .find(|(_, anim)| sim.interner.resolve(anim.type_id()) == "INVOKE")
+        .map(|(id, _)| *id)
+        .unwrap();
+    let anim = sim.anim(id).unwrap();
+    assert!(!anim.hidden_for(Some(owner)) && !anim.hidden_for(Some(ally)));
+    assert!(anim.hidden_for(Some(enemy)) && anim.hidden_for(None));
+    let bytes = crate::util::save_codec::serialize(anim).unwrap();
+    let saved: crate::sim::anim_class::AnimObject =
+        crate::util::save_codec::deserialize(&bytes).unwrap();
+    assert!(!saved.hidden_for(Some(ally)) && saved.hidden_for(Some(enemy)));
+    sim.house_alliances_mut_for_test().clear();
+    assert!(
+        !sim.anim(id).unwrap().hidden_for(Some(ally)),
+        "visibility is a spawn-time snapshot"
+    );
+    assert!(sim.substrate.set_anim_hidden(id, false));
+    assert!(!sim.anim(id).unwrap().hidden_for(Some(enemy)));
+    assert!(!sim.anim(id).unwrap().hidden_for(None));
+}
+
 fn rules(extra: &str) -> RuleSet {
     let mut ini = crate::sim::arena_fixture::clear_ground_ini(RULES);
     ini.merge(&IniFile::from_str(extra));
@@ -42,6 +233,13 @@ fn rules(extra: &str) -> RuleSet {
 
 fn fixture(extra: &str, owner_name: &str) -> (Simulation, RuleSet, InternedId, InternedId, u64) {
     let rules = rules(extra);
+    fixture_with_rules(rules, owner_name)
+}
+
+fn fixture_with_rules(
+    rules: RuleSet,
+    owner_name: &str,
+) -> (Simulation, RuleSet, InternedId, InternedId, u64) {
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);

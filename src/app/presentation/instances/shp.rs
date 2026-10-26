@@ -1524,6 +1524,7 @@ pub(crate) fn build_building_anim_instances(
             grid,
             cell,
             sim,
+            local_owner_id,
             building,
             &|id| anim_colour_word(state, sim, cells.as_ref(), &shrouded, id),
             axis.origin_y,
@@ -1574,6 +1575,7 @@ fn emit_building_anims(
     light_grid: &crate::map::lighting::CellLightGrid,
     cell: (u16, u16),
     sim: &crate::sim::world::Simulation,
+    local_owner_id: Option<crate::sim::intern::InternedId>,
     building: &crate::sim::game_entity::GameEntity,
     anim_word: &dyn Fn(u64) -> u16,
     origin_y: f32,
@@ -1603,7 +1605,7 @@ fn emit_building_anims(
         };
         // Building's retained slot reaches DrawIt422CA0..4238AF until physical
         // release. That body gates on hidden19D, not19B or Logic membership.
-        if instance.draw_runtime().hidden {
+        if instance.hidden_for(local_owner_id) {
             continue;
         }
         let anim_name = sim.interner().resolve(instance.type_id());

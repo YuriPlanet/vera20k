@@ -32,6 +32,8 @@ use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup, parse_prerequi
 use crate::rules::projectile_type::ProjectileArtState;
 use crate::rules::rules_type_references::{DEFAULT_PARTICLE_SYSTEMS, RulesTypeReferences};
 use crate::rules::ruleset::{DetailRules, GeneralBuildingTypes, PrismSupportRules};
+#[cfg(feature = "ares")]
+use crate::rules::superweapon_type::AresSuperWeaponPresentation;
 #[cfg(feature = "phobos")]
 use crate::rules::superweapon_type::PhobosSuperWeaponAvailability;
 use crate::rules::superweapon_type::SuperWeaponBuildingRequirements;
@@ -1580,6 +1582,15 @@ impl ProcessedRulesLayers {
                 member.super_weapon_aux_building.as_deref(),
                 member.super_weapon_building_requirements.as_ref(),
             )
+        })
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn super_weapon_presentation_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, &AresSuperWeaponPresentation)> {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            &member.super_weapon_presentation
         })
     }
 
@@ -3497,6 +3508,8 @@ struct ProcessedType {
     super_weapon_building_requirements: Option<SuperWeaponBuildingRequirements>,
     #[cfg(feature = "ares")]
     super_weapon_availability: AresSuperWeaponAvailability,
+    #[cfg(feature = "ares")]
+    super_weapon_presentation: AresSuperWeaponPresentation,
     /// Phobos `SW.TechLevel`/`SW.AuxTechnos`/`SW.NegTechnos`, read by the same
     /// ordered Process owner as the Ares gates and keyed the same way.
     #[cfg(feature = "phobos")]
@@ -3921,6 +3934,8 @@ impl ProcessedType {
             super_weapon_building_requirements: None,
             #[cfg(feature = "ares")]
             super_weapon_availability: AresSuperWeaponAvailability::default(),
+            #[cfg(feature = "ares")]
+            super_weapon_presentation: AresSuperWeaponPresentation::default(),
             #[cfg(feature = "phobos")]
             super_weapon_phobos_availability: PhobosSuperWeaponAvailability::default(),
             #[cfg(feature = "ares")]
@@ -5324,6 +5339,10 @@ impl RulesPassProcessor {
                 }
                 #[cfg(feature = "ares")]
                 {
+                    let animation = self.resolve_existing_anim_from(&raw, "SW.Animation");
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_presentation
+                        .read_pass(&raw, animation);
                     // Same SWTypeExt owner and native read order: controller
                     // flags, Country masks, building vectors, then shot limit.
                     let mut availability = self.family_mut(RulesTypeFamily::SuperWeapon)[index]

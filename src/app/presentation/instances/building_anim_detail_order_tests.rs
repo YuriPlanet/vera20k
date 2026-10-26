@@ -145,6 +145,7 @@ fn retail_building_slot_preserves_mixed_display_detail_query_order() {
             &lighting,
             (building.position.rx(), building.position.ry()),
             &sim,
+            Some(building.owner()),
             building,
             &|_| 0,
             0.,
