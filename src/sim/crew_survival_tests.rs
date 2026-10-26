@@ -1099,10 +1099,7 @@ fn hijacked_vehicle_preserves_its_transferable_tag_until_captor_death() {
     kill_by(&mut sim, &rules, unit, attacker, ORDINARY);
 
     assert!(sim.substrate.pending_delete.contains_object(&unit));
-    assert!(
-        !sim.global_variables()[9],
-        "the captor is still alive"
-    );
+    assert!(!sim.global_variables()[9], "the captor is still alive");
     let added = new_ids(&sim, &before);
     assert_eq!(added.len(), 1);
     let escaped = added[0];
@@ -2468,4 +2465,111 @@ fn open_topped_death_clears_rider_flags_before_crashable_exit() {
             .is_some(),
         "a rider's own hold survives"
     );
+}
+
+/// Installed Ares100464C0 orders captor, pilots, then existing passengers;
+/// the death hook's final argument is IgnoreDefenses, not PreventCrewEscape.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_fatal_vehicle_returns_saved_captor_pilot_and_existing_passenger() {
+    use crate::sim::passenger::{BoardingArm, board_passenger};
+    use crate::util::native_x87::NativeF32Bits;
+    let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [Sides]\nGDI=Americans\nNod=Russians\n\
+         [Americans]\nSide=GDI\n[Russians]\nSide=Nod\n\
+         [General]\nAlliedCrew=CREW\nTechnician=TECH\n\
+         [InfantryTypes]\n2=THIEF\n3=CREW\n4=TECH\n\
+         [VehicleTypes]\n0=HULL\n\
+         [THIEF]\nStrength=80\nVehicleThief=yes\nVehicleThief.KillPilots=1\n\
+         SpeedType=Foot\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+         [CREW]\nStrength=100\nSpeedType=Foot\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+         [TECH]\nStrength=60\n\
+         [HULL]\nStrength=300\nCrewed=yes\nPassengers=2\n\
+         Survivor.Pilots=2\nSurvivor.PilotChance=0\nSurvivor.ElitePilotChance=100\n\
+         Survivor.PassengerChance=0\nSurvivor.ElitePassengerChance=100\n\
+         [Warheads]\n0=ESCAPEWH\n[ESCAPEWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    );
+    for (name, side) in [("Americans", 0), ("Russians", 1)] {
+        let owner = sim.interner.intern(name);
+        sim.houses
+            .register(HouseState::new(owner, side, None, false, 0, 10));
+    }
+    let hull = spawn(&mut sim, &rules, "HULL", "Russians", 16, 15);
+    let thief = spawn(&mut sim, &rules, "THIEF", "Americans", 15, 15);
+    let experience = NativeF32Bits::from_bits(1.5_f32.to_bits());
+    let actor = sim.substrate.entities.get_mut(thief).unwrap();
+    actor.health.set(60);
+    actor.veterancy.set_raw_for_test(experience);
+    let captured = sim
+        .ares_capture_vehicle(thief, hull, &rules, Some(&overlays), Default::default())
+        .unwrap();
+    assert!(captured.consumed);
+    sim.uninit_with_context(thief, UninitContext::new(&rules, Some(&overlays)));
+    let passenger = spawn(&mut sim, &rules, "ENGINEER", "Americans", 17, 15);
+    assert!(board_passenger(
+        &mut sim,
+        &rules,
+        passenger,
+        hull,
+        BoardingArm::InfantryTransport,
+        Some(&overlays),
+        Default::default()
+    ));
+    sim.substrate
+        .entities
+        .get_mut(hull)
+        .unwrap()
+        .veterancy
+        .set_raw_for_test(NativeF32Bits::from_bits(2_f32.to_bits()));
+    sim.substrate
+        .entities
+        .get_mut(passenger)
+        .unwrap()
+        .building_entry
+        .set_nearest_occupiable_seek(true);
+    let before = sim.substrate.entities.keys_sorted();
+    let warhead = sim.interner.intern("ESCAPEWH");
+    let hit = EntityDamageEvent::direct_receiver(
+        hull,
+        100_000,
+        0,
+        RAD_NO_ATTACKER,
+        None,
+        warhead,
+        ReceiverCallFlags {
+            ignore_defenses: false,
+            arg6: true,
+        },
+    );
+    sim.commit_noncombat_aoe_hits(&rules, Some(&overlays), &[hit], Default::default());
+    let escaped = new_ids(&sim, &before);
+    let types: Vec<_> = escaped
+        .iter()
+        .map(|id| {
+            sim.interner
+                .resolve(sim.entities().get(*id).unwrap().type_ref())
+        })
+        .collect();
+    assert_eq!(
+        types,
+        ["THIEF", "CREW"],
+        "KillPilots=1 removes one of two ordinary pilots"
+    );
+    let captor = sim.entities().get(escaped[0]).unwrap();
+    assert_eq!(captor.health.current(), 30);
+    assert_eq!(
+        captor.veterancy.raw(),
+        experience,
+        "the captor keeps its saved experience"
+    );
+    let pilot = sim.entities().get(escaped[1]).unwrap();
+    assert_eq!(pilot.health.current(), 50);
+    assert_eq!(pilot.veterancy.raw().bits(), 2_f32.to_bits());
+    for id in escaped.into_iter().chain([passenger]) {
+        let entity = sim.entities().get(id).unwrap();
+        assert!(entity.is_object_alive() && !entity.lifecycle.in_limbo());
+        assert!(entity.passenger_role.inside_transport().is_none());
+        assert!(!entity.building_entry.should_enter_nearest_occupiable());
+    }
 }

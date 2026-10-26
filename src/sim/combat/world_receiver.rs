@@ -2301,15 +2301,26 @@ fn finish_concrete_death(
             ignore_defenses,
             selected_by_player,
         };
-        world.release_dying_unit_passengers(rules, overlay_registry, dead_id, dying, frame_effects);
-        world.spawn_vehicle_crew(
-            rules,
-            overlay_registry,
-            dead_id,
-            prevent_crew_escape,
-            selected_by_player,
-            frame_effects,
-        );
+        #[cfg(feature = "ares")]
+        world.release_ares_unit_survivors(rules, overlay_registry, dead_id, dying, frame_effects);
+        #[cfg(not(feature = "ares"))]
+        {
+            world.release_dying_unit_passengers(
+                rules,
+                overlay_registry,
+                dead_id,
+                dying,
+                frame_effects,
+            );
+            world.spawn_vehicle_crew(
+                rules,
+                overlay_registry,
+                dead_id,
+                prevent_crew_escape,
+                selected_by_player,
+                frame_effects,
+            );
+        }
         world.drop_unit_cargo_crate(dead_id, rules, overlay_registry);
     }
 

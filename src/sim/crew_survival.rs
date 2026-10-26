@@ -102,6 +102,9 @@
 //!   such a Bio Reactor (more infantry than foundation cells) starts Phase B
 //!   past the list (open native question); VERA skips Phase B's cells.
 
+#[cfg(feature = "ares")]
+mod ares_survivors;
+
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::FactoryType;
 use crate::rules::overlay_types::OverlayTypeRegistry;

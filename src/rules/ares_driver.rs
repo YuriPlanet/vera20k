@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn ares_vehicle_driver_rules_keep_native_defaults_and_reached_layers() {
         let mut layers = RulesLayerStack::new(IniFile::from_str(
-            "[Sides]\n0=GDI\n1=Nod\n[GDI]\nCrew=OP\nTechnician=none\n\
+            "[Sides]\nGDI=Neutral\nNod=Child\n[GDI]\nCrew=OP\nTechnician=none\n\
              [Countries]\n0=Neutral\n1=Child\n\
              [Neutral]\nMultiplayPassive=yes\nCanBeDriven=no\n\
              [Child]\nParentCountry=Neutral\nMultiplayPassive=yes\n\

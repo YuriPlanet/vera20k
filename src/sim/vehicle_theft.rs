@@ -69,10 +69,10 @@ impl VehicleDriverState {
         self.killed = false;
     }
 
-    pub(crate) fn begin_survivor_release(&mut self, prevent_escape: bool) -> bool {
+    pub(crate) fn begin_survivor_release(&mut self, ignore_defenses: bool) -> bool {
         let handled = self.survivors_handled;
         self.survivors_handled = true;
-        !handled && !self.killed && !prevent_escape
+        !handled && !self.killed && !ignore_defenses
     }
 
     pub(crate) fn captured(&self) -> CapturedDriver {

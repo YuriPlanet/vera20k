@@ -282,7 +282,7 @@ fn drop_passenger(
 /// house controlled by a human, else Hunt (`HouseClass::IsControlledByHuman
 /// @ 0x0050B730`, Queue_Mission at `0x00521788`/`0x00521798`), and a forced
 /// Paradrop action (Do_Action `0x21`, `0x005217A8`).
-fn spawn_parachuted(
+pub(crate) fn spawn_parachuted(
     sim: &mut Simulation,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,
