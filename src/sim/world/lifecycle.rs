@@ -822,6 +822,12 @@ pub enum LifecycleOutput {
     ClearRedraw {
         stable_id: u64,
     },
+    /// Same-object Type changes (Ares ConvertTechno10043740) keep their
+    /// Display membership. Presentation must re-resolve that object's model
+    /// without pretending that another object spawned or entered Display.
+    ObjectTypeChanged {
+        stable_id: u64,
+    },
 }
 
 #[cfg(any(test, feature = "test-support"))]

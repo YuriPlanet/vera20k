@@ -13,7 +13,7 @@ use crate::sim::conversion_health::ConversionHealth;
 use crate::sim::house_tracking::HouseTracking;
 use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::movement::{FacingClass, ground_pose};
-use crate::sim::world::{FrameEffects, Simulation, UninitContext};
+use crate::sim::world::{FrameEffects, LifecycleOutput, Simulation, UninitContext};
 
 impl Simulation {
     pub(crate) fn convert_techno_type(
@@ -143,6 +143,13 @@ impl Simulation {
                 },
                 rules,
             );
+        }
+        if old_type != new_type {
+            // Native draw readers immediately follow the new Type pointer.
+            // VERA's derived atlas cache must observe the same change even
+            // though the entity ID, count and Display membership stay fixed.
+            self.lifecycle_outputs
+                .emit(LifecycleOutput::ObjectTypeChanged { stable_id: id });
         }
         true
     }

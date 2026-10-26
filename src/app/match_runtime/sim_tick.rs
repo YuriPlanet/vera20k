@@ -1733,7 +1733,11 @@ fn advance_one_simulation_frame(
                 // TickResult::spawned_entities (e.g. Action7's ALL01 ORCA
                 // teams). Resolve it before their first ordinary body draw;
                 // crash-pose rendering must not be the first path to load it.
-                LifecycleOutput::RevealDisplay { .. } | LifecycleOutput::DisplayRemove { .. } => {
+                // In-place conversion keeps its ID and Display membership,
+                // so its new model needs the same coverage/growth check.
+                LifecycleOutput::RevealDisplay { .. }
+                | LifecycleOutput::DisplayRemove { .. }
+                | LifecycleOutput::ObjectTypeChanged { .. } => {
                     refresh_atlases_after_tick = true;
                 }
                 LifecycleOutput::DirtyTacticalRect { .. }
@@ -2022,8 +2026,8 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState) {
         );
 }
 
-/// Refresh entity atlases after entities spawn, die, change owner or leave the
-/// display.
+/// Refresh entity atlases after entities spawn, die, change type/owner or leave
+/// the display.
 ///
 /// This runs on every such event, so the check is per object model, never per
 /// sprite key: a refresh happens only when a voxel model or an object (type,

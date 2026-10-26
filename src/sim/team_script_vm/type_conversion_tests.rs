@@ -107,7 +107,21 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
         NativeF64Bits::from_bits(2.0_f64.to_bits()),
     );
     let count = sim.entities().len();
+    sim.take_lifecycle_outputs_for_test();
     sim.team_step_script(team, &rules, None, FrameEffects::empty());
+    let changed: Vec<_> = sim
+        .take_lifecycle_outputs_for_test()
+        .into_iter()
+        .filter_map(|output| match output {
+            crate::sim::world::LifecycleOutput::ObjectTypeChanged { stable_id } => Some(stable_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        changed,
+        members[..2],
+        "new models must reach atlas refresh without an entity spawn"
+    );
     assert_eq!(
         sim.entities().len(),
         count,
