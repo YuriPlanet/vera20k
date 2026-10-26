@@ -1289,7 +1289,7 @@ impl Simulation {
                     old_house.notify_building_capture();
                 }
                 self.trigger_runtime
-                    .transfer_engineer_tag_to_building(engineer_id, building_id);
+                    .transfer_object_tag(engineer_id, building_id);
                 //519F71 loads the entrant's live owner after the second
                 //Entered callback and Tag transfer. Action36 can change it
                 //again without restarting this admitted PerCell continuation.
