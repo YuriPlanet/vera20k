@@ -28,9 +28,10 @@ pub(super) fn configuration_supported(sw: &SuperWeaponType) -> bool {
 }
 
 pub(super) fn can_afford(houses: &Houses, owner: InternedId, sw: &SuperWeaponType) -> bool {
-    if sw.money_amount == 0 {
-        return true;
-    }
+    // Installed Ares SelectAction10034E2F..10034E45 and automatic
+    // launch100382F2..1003830A bypass the wallet only for a positive reward.
+    // Zero still requires AvailableMoney>=0. Keep the documented i32::MIN
+    // cost limit below rather than overflowing its checked settlement.
     houses.get(&owner).is_some_and(|house| {
         sw.money_amount > 0
             || i64::from(house.economy().available_money()) >= -i64::from(sw.money_amount)
