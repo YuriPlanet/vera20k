@@ -5452,12 +5452,18 @@ impl RulesPassProcessor {
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_presentation
                         .read_pass(&raw, animation);
-                    let generic_warhead = effective
-                        .read_name("Type", 0x28)
-                        .is_some_and(|kind| kind.eq_ignore_ascii_case("GenericWarhead"));
+                    let kind = effective.read_name("Type", 0x28);
+                    let generic_warhead =
+                        kind.is_some_and(|kind| kind.eq_ignore_ascii_case("GenericWarhead"));
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_targeting
-                        .read_pass(&raw, generic_warhead);
+                        .read_pass(
+                            &raw,
+                            kind.map_or(
+                                0,
+                                crate::rules::superweapon_targeting::handler_initial_mode,
+                            ),
+                        );
                     // Same SWTypeExt owner and native read order: controller
                     // flags, Country masks, building vectors, then shot limit.
                     let mut availability = self.family_mut(RulesTypeFamily::SuperWeapon)[index]

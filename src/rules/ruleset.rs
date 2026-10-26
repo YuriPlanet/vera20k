@@ -4243,6 +4243,13 @@ pub struct RuleSet {
     /// NOD table. Unlike SideExt+88 this is read without the Ares feature.
     #[cfg(feature = "phobos")]
     side_gdi_positions: Vec<bool>,
+    /// Phobos `[GlobalControls]`/`[AudioVisual]` switches for the left
+    /// superweapon sidebar.
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar: crate::rules::phobos_sw_sidebar::SuperWeaponSidebarGlobals,
+    /// Phobos `[SIDE] SuperWeaponSidebar.*PCX=` names, in `[Sides]` order.
+    #[cfg(feature = "phobos")]
+    side_sw_sidebar_art: Vec<crate::rules::phobos_sw_sidebar::SuperWeaponSidebarSideArt>,
     /// Effective side for each country after `[Sides]` membership and the
     /// per-country `Side=` override have both run.
     country_sides: Vec<Option<SideIdx>>,
@@ -5095,9 +5102,11 @@ impl RuleSet {
                     .super_weapons
                     .values_mut()
                     .find(|sw| sw.id.eq_ignore_ascii_case(name))
-                    && let Some(settings) = sw.generic_warhead.as_mut()
                 {
-                    settings.install_targeting(&sw.id, targeting);
+                    sw.target_constraints = targeting.constraints();
+                    if let Some(settings) = sw.generic_warhead.as_mut() {
+                        settings.install_targeting(&sw.id, targeting);
+                    }
                 }
             }
             for (name, supers) in processed.additional_super_weapon_states() {
@@ -5664,6 +5673,20 @@ impl RuleSet {
                 })
             })
             .collect();
+        #[cfg(feature = "phobos")]
+        let sw_sidebar = crate::rules::phobos_sw_sidebar::SuperWeaponSidebarGlobals::from_ini(ini);
+        #[cfg(feature = "phobos")]
+        let side_sw_sidebar_art: Vec<
+            crate::rules::phobos_sw_sidebar::SuperWeaponSidebarSideArt,
+        > = country_side_registry
+            .side_ids
+            .iter()
+            .map(|name| {
+                ini.section(name)
+                    .map(crate::rules::phobos_sw_sidebar::SuperWeaponSidebarSideArt::from_section)
+                    .unwrap_or_default()
+            })
+            .collect();
         let color_schemes = crate::rules::color_scheme::parse_color_schemes(ini);
         let house_color_ramps =
             crate::rules::house_colors::HouseColorRamps::from_schemes(&color_schemes);
@@ -5946,6 +5969,10 @@ impl RuleSet {
             side_ids: country_side_registry.side_ids,
             #[cfg(feature = "phobos")]
             side_gdi_positions,
+            #[cfg(feature = "phobos")]
+            sw_sidebar,
+            #[cfg(feature = "phobos")]
+            side_sw_sidebar_art,
             #[cfg(feature = "ares")]
             side_extensions: country_side_registry.side_extensions,
             side_indices: country_side_registry.side_indices,
@@ -7970,6 +7997,18 @@ impl RuleSet {
             .ok()
             .and_then(|index| self.side_gdi_positions.get(index).copied())
             .unwrap_or(index == 0)
+    }
+
+    /// Phobos `[SIDE] SuperWeaponSidebar.*PCX=` for a native side index.
+    /// Missing sides have no artwork, which is valid.
+    #[cfg(feature = "phobos")]
+    pub fn side_sw_sidebar_art(
+        &self,
+        index: i32,
+    ) -> Option<&crate::rules::phobos_sw_sidebar::SuperWeaponSidebarSideArt> {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.side_sw_sidebar_art.get(index))
     }
 
     /// Resolve a side index back to its source spelling.

@@ -110,6 +110,13 @@ pub(crate) struct MatchPresentationState {
     #[cfg(feature = "phobos")]
     pub(crate) placement_preview_art:
         std::cell::RefCell<super::placement_preview::PlacementPreviewArt>,
+    /// Phobos left superweapon sidebar: `uimd.ini` settings, toggle state,
+    /// filtered order and computed geometry.
+    #[cfg(feature = "phobos")]
+    pub(crate) sw_sidebar: super::sw_sidebar::SwSidebarState,
+    /// Loaded `[SIDE] SuperWeaponSidebar.*PCX` atlas for the current match.
+    #[cfg(feature = "phobos")]
+    pub(crate) sw_sidebar_art: Option<crate::render::sw_sidebar_art::SwSidebarArt>,
     /// PBEACON/RDRBEACN in each beacon row's House Convert, loaded with the
     /// world (`Init_BeaconArt 0x004309D0`).
     pub(crate) beacon_art: Option<crate::render::beacon_art::BeaconArt>,

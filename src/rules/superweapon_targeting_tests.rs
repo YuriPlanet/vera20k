@@ -3,6 +3,55 @@
 
 use super::*;
 
+fn read_passes(type_name: &str, passes: &[&str]) -> AresSuperWeaponTargetingState {
+    let mut state = AresSuperWeaponTargetingState::default();
+    for pass in passes {
+        let ini =
+            crate::rules::ini_parser::IniFile::from_str(&format!("[SW]\nType={type_name}\n{pass}"));
+        state.read_pass(ini.section("SW").unwrap(), handler_initial_mode(type_name));
+    }
+    state
+}
+
+fn house(has_enemy: bool, offensive_cell: (u16, u16)) -> HouseTargetingObservations {
+    HouseTargetingObservations {
+        has_enemy,
+        offensive_cell,
+    }
+}
+
+#[test]
+fn handler_mode_row_supplies_constraints_until_a_pass_reads_some() {
+    // MultiMissile's Initialize (100733BC) selects mode 1, whose row needs an
+    // enemy; an unknown token keeps it and a comma-only list stores none.
+    let nuke = read_passes("MultiMissile", &["", "SW.AITargeting.Constraints=bogus\n"]);
+    assert!(!nuke.constraints().allows_manual_fire(house(false, (0, 0))));
+    assert!(nuke.constraints().allows_manual_fire(house(true, (0, 0))));
+    let cleared = read_passes("MultiMissile", &["SW.AITargeting.Constraints=,\n"]);
+    assert!(
+        cleared
+            .constraints()
+            .allows_manual_fire(house(false, (0, 0)))
+    );
+    // ChronoSphere's Initialize stores nothing, so mode 0 has no constraints.
+    let chrono = read_passes("ChronoSphere", &[""]);
+    assert!(
+        chrono
+            .constraints()
+            .allows_manual_fire(house(false, (0, 0)))
+    );
+}
+
+#[test]
+fn manual_fire_reads_the_offensive_cell_and_skips_ai_only_constraints() {
+    let state = read_passes(
+        "GenericWarhead",
+        &["SW.AITargeting.Constraints=offensive_cell_set,lowpower,attacked\n"],
+    );
+    assert!(!state.constraints().allows_manual_fire(house(true, (0, 0))));
+    assert!(state.constraints().allows_manual_fire(house(false, (4, 5))));
+}
+
 fn input(requirements: &TargetRequirements) -> TargetPreflightInput<'_> {
     TargetPreflightInput {
         target_cell: Some((10, 10)),

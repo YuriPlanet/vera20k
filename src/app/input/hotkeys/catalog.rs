@@ -29,17 +29,20 @@ macro_rules! command {
 }
 
 pub(crate) fn registered_commands() -> &'static [CommandMetadata] {
-    #[cfg(feature = "verax")]
+    #[cfg(any(feature = "verax", feature = "phobos"))]
     {
         use std::sync::OnceLock;
         static ALL: OnceLock<Vec<CommandMetadata>> = OnceLock::new();
         ALL.get_or_init(|| {
             let mut all = RETAIL_COMMANDS.to_vec();
+            #[cfg(feature = "verax")]
             all.extend_from_slice(&VERA_COMMANDS);
+            #[cfg(feature = "phobos")]
+            all.extend_from_slice(&PHOBOS_COMMANDS);
             all
         })
     }
-    #[cfg(not(feature = "verax"))]
+    #[cfg(not(any(feature = "verax", feature = "phobos")))]
     {
         retail_commands()
     }
@@ -771,3 +774,20 @@ const VERA_COMMANDS: [CommandMetadata; 1] = [command!(
     "Load the selected infantry and vehicles into nearby transports",
     None
 )];
+
+/// Phobos `FireTacticalSW1..10` and `Toggle Super Weapon Sidebar`.
+/// `FireTacticalSW.ini` reads the CSF keys `TXT_FIRE_TACTICAL_SW_XX[_DESC]`.
+#[cfg(feature = "phobos")]
+const PHOBOS_COMMANDS: [CommandMetadata; 11] = [
+    command!(HotkeyCommand::FireTacticalSw(0), "FireTacticalSW1", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(1)),
+    command!(HotkeyCommand::FireTacticalSw(1), "FireTacticalSW2", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(2)),
+    command!(HotkeyCommand::FireTacticalSw(2), "FireTacticalSW3", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(3)),
+    command!(HotkeyCommand::FireTacticalSw(3), "FireTacticalSW4", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(4)),
+    command!(HotkeyCommand::FireTacticalSw(4), "FireTacticalSW5", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(5)),
+    command!(HotkeyCommand::FireTacticalSw(5), "FireTacticalSW6", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(6)),
+    command!(HotkeyCommand::FireTacticalSw(6), "FireTacticalSW7", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(7)),
+    command!(HotkeyCommand::FireTacticalSw(7), "FireTacticalSW8", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(8)),
+    command!(HotkeyCommand::FireTacticalSw(8), "FireTacticalSW9", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(9)),
+    command!(HotkeyCommand::FireTacticalSw(9), "FireTacticalSW10", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(10)),
+    command!(HotkeyCommand::ToggleSwSidebar, "Toggle Super Weapon Sidebar", "TXT_TOGGLE_SW_SIDEBAR", "TXT_INTERFACE", "TXT_TOGGLE_SW_SIDEBAR_DESC", None),
+];

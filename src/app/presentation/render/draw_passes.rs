@@ -913,6 +913,61 @@ pub(super) fn dispatch_draw_passes(
         surface.composite(&mut pass);
     }
     pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
+    // Phobos SuperWeaponSidebar: left-edge screen-fixed layers. Drawn after
+    // the right sidebar blit and before messages, like Phobos' own gadgets.
+    #[cfg(feature = "phobos")]
+    {
+        let presentation = &state.match_state.match_presentation;
+        let chrome = crate::app::presentation::sidebar_render::current_sidebar_chrome(state);
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            presentation.sw_sidebar_art.as_ref().map(|art| &art.texture),
+            "sw_sidebar_chrome",
+        );
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            presentation
+                .sidebar_cameo_atlas
+                .as_ref()
+                .map(|atlas| &atlas.texture),
+            "sw_sidebar_cameo",
+        );
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            presentation
+                .selection_overlay
+                .as_ref()
+                .map(|overlay| overlay.white_texture()),
+            "sw_sidebar_hover",
+        );
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            chrome.and_then(|atlas| atlas.gclock_texture.as_ref()),
+            "sw_sidebar_gclock",
+        );
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            state.renderer.bit_font.darken_texture(),
+            "sw_sidebar_overlay",
+        );
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            Some(state.renderer.bit_font.atlas()),
+            "sw_sidebar_text",
+        );
+    }
     // The message rows' black boxes: native rows render through the shared
     // text engine with the row's opaque-background style, which fills a black
     // box one pixel out on every side (0x4A5EB0 @ 0x4A5F61) behind each line
