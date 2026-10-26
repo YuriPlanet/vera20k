@@ -26,7 +26,7 @@ use crate::app::frontend::shell_transition::ShellSlideKind;
 use crate::render::shell_text::{self, ShellAlign};
 use crate::ui::multiplayer_setup::*;
 use crate::ui::shell::geom::RectPx;
-use std::time::Instant;
+use crate::util::time::Instant;
 
 pub(crate) fn render_multiplayer_setup(
     state: &mut AppState,

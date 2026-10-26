@@ -161,6 +161,7 @@ Ghidra, затем переносят его поведение на Rust и п�
 Command & Conquer и Red Alert под GPL, World-Altering Editor, Final Alert, YRpp, Ares,
 Phobos и многим другим.
 
+© 2026 Halvor Nikolai Rusten и участники проекта VERA20K.
 Проект распространяется под лицензией [GPLv3](LICENSE-GPL). В этом репозитории нет файлов игры.
 Command & Conquer и Red Alert — товарные знаки Electronic Arts Inc., а на скриншотах и значке
 приложения (красной звезде из Red Alert 2) показана игровая графика, принадлежащая Electronic Arts.

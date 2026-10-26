@@ -153,6 +153,7 @@ cargo run --release --bin vera20k
 للعبتي Command & Conquer وRed Alert تحت رخصة GPL، وكذلك World-Altering Editor وFinal Alert
 وYRpp وAres وPhobos وكثيرين غيرهم.
 
+حقوق النشر © 2026 Halvor Nikolai Rusten والمساهمون في VERA20K.
 المشروع مرخّص بموجب [GPLv3](LICENSE-GPL). لا يحتوي هذا المستودع على أي ملفات للعبة. تُعد
 Command & Conquer وRed Alert علامتين تجاريتين لشركة Electronic Arts Inc.، وتعرض لقطات الشاشة
 وأيقونة التطبيق، أي النجمة الحمراء من Red Alert 2، رسومات من اللعبة تملكها Electronic Arts.

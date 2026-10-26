@@ -160,6 +160,26 @@ impl FntFile {
         })
     }
 
+    /// Every codepoint as one solid `width`-pixel, one-row glyph, so tests can
+    /// place text without retail GAME.FNT.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn solid_for_test(width: u32) -> Self {
+        let rgba = [255_u8; 4].repeat(width as usize);
+        Self {
+            source_identity: None,
+            cell_height: 2,
+            bitmap_rows: 1,
+            bytes_per_row: 1,
+            glyph_stride: 2,
+            glyphs: (0..=u16::MAX)
+                .map(|codepoint| {
+                    let rgba = rgba.clone();
+                    (codepoint, FntGlyph { width, rgba })
+                })
+                .collect(),
+        }
+    }
+
     pub fn source_identity(&self) -> Option<&FntSourceIdentity> {
         self.source_identity.as_ref()
     }

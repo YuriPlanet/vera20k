@@ -16,7 +16,7 @@ use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::lan_shell::{JOIN, PAGE};
 use crate::ui::shell::geom::{RectPx, ShellScale};
-use std::time::Instant;
+use crate::util::time::Instant;
 
 /// LB row colors carry packed00BBGGRR; -1 means the ordinary yellow text.
 fn row_rgb(color: Option<u32>) -> [f32; 3] {

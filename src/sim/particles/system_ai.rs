@@ -1,6 +1,6 @@
 //! Per-tick particle-system AI dispatch.
 //!
-//! Drives each active system at its shared LogicVector slot. Gas remains
+//! Drives each active system at its shared LogicVector slot. Gas and Smoke remain
 //! in storage because synchronous damage can append children to that same
 //! system; other behaviors temporarily take/reinsert their owned body.
 //! Ordinary Smoke, Spark and Gas are connected. Fire retains movement/damage
@@ -141,10 +141,13 @@ pub(crate) fn tick_particle_system(
     let Some(sys) = sim.particle_systems().get(id) else {
         return false;
     };
-    if rules.particle_system_type(sys.type_id).behaves_like == ParticleSystemBehavesLike::Gas {
+    let behavior = rules.particle_system_type(sys.type_id).behaves_like;
+    if behavior == ParticleSystemBehavesLike::Gas {
         // Gas damage may synchronously kill another animal and append to this
         // same system. Retain its body in storage through those callbacks.
         super::gas::tick_system(sim, rules, id, context);
+    } else if behavior == ParticleSystemBehavesLike::Smoke {
+        super::smoke::tick_system(sim, rules, id);
     } else {
         let mut sys = sim.substrate.particle_systems.take_for_tick(id).unwrap();
         tick_one_system(&mut sys, sim, rules);
@@ -189,7 +192,7 @@ pub fn tick_particle_systems(sim: &mut Simulation, rules: &RuleSet) {
 fn tick_one_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleSet) {
     let behaves_like = rules.particle_system_type(sys.type_id).behaves_like;
     match behaves_like {
-        ParticleSystemBehavesLike::Smoke => tick_smoke(sys, sim, rules),
+        ParticleSystemBehavesLike::Smoke => unreachable!("Smoke retains its body during callbacks"),
         ParticleSystemBehavesLike::Gas => unreachable!("Gas retains its body during callbacks"),
         ParticleSystemBehavesLike::Fire => tick_fire(sys, sim, rules),
         ParticleSystemBehavesLike::Spark => tick_spark(sys, sim, rules),
@@ -216,10 +219,6 @@ fn tick_spark(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleSet) {
             sys.stable_id
         );
     }
-}
-
-fn tick_smoke(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleSet) {
-    super::smoke::tick_system(sys, sim, rules);
 }
 
 fn tick_fire(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleSet) {
@@ -275,6 +274,58 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn smoke_host_stays_visible_when_gas_child_damage_creates_another_smoke_system() {
+        let ini = crate::sim::arena_fixture::clear_ground_ini(
+            "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=TARGET\n\
+             [TARGET]\nStrength=100\nArmor=light\nDamageParticleSystems=DAMAGE\n\
+             [ParticleSystems]\n0=HOST\n1=DAMAGE\n[HOST]\nBehavesLike=Smoke\nHoldsWhat=CLOUD\n\
+             [DAMAGE]\nBehavesLike=Smoke\n[Particles]\n0=CLOUD\n\
+             [CLOUD]\nBehavesLike=Gas\nMaxEC=100\nMaxDC=1\nDamage=60\nWarhead=HIT\n\
+             StateAIAdvance=3\nEndStateAI=10\nDeleteOnStateLimit=no\n\
+             [Warheads]\n0=HIT\n[HIT]\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        );
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        sim.session.set_binary_frame_for_test(1);
+        let target = sim
+            .spawn_object("TARGET", "Russians", 20, 20, 0, &rules)
+            .unwrap();
+        let host = sim
+            .spawn_particle_system(
+                rules.ps_type_id_by_name("HOST").unwrap(),
+                IVec3::new(4608, 4608, 0),
+                None,
+                None,
+                IVec3::ZERO,
+                None,
+                &rules,
+            )
+            .unwrap();
+        let kind = rules.p_type_id_by_name("CLOUD").unwrap();
+        let cloud = Particle::new(
+            kind,
+            IVec3::new(5248, 5248, 0),
+            IVec3::ZERO,
+            rules.particle_type(kind),
+            &mut sim,
+        );
+        let system = sim.substrate.particle_systems.get_mut(host).unwrap();
+        system.done_spawning = true;
+        system.particles.push(cloud);
+        assert!(tick_particle_system(
+            &mut sim,
+            &rules,
+            host,
+            crate::sim::world::UninitContext::with_rules(&rules),
+        ));
+        let target = sim.entities().get(target).unwrap();
+        assert_eq!(target.health.current(), 40);
+        assert!(target.damage_smoke_system_id.system().is_some());
+        assert_eq!(sim.particle_systems().get(host).unwrap().particles.len(), 1);
+    }
     use crate::rules::ini_parser::IniFile;
     use crate::rules::particle_system_type::ParticleSystemTypeId;
     use crate::rules::particle_type::ParticleTypeId;

@@ -168,8 +168,8 @@ fn prepare_save<'a>(
         .loaded_map_hash
         .ok_or(SaveCommandError::MissingMapHash)?;
     let sim = &runtime.simulation;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = crate::util::time::SystemTime::now()
+        .duration_since(crate::util::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let mut sinking_waterlines = state

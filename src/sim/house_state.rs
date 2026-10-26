@@ -197,7 +197,6 @@ pub struct HouseStrategyEmergencyState {
 
 impl std::hash::Hash for HouseStrategyEmergencyState {
     fn hash<H: std::hash::Hasher>(&self, hasher: &mut H) {
-        use std::hash::Hash;
         self.mode.hash(hasher);
         self.all_to_hunt_bias.hash(hasher);
         self.last_building_attack_frame.hash(hasher);

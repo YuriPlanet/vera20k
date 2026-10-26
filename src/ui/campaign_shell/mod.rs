@@ -14,7 +14,7 @@
 //! `0x0052DFAF`). The static notifies the dialog of every painted frame
 //! (`0x4D8`, `0x00615A34`); the wrap to frame 0 stops it (`0x0052F3C8`).
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{

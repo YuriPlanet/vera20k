@@ -7,7 +7,7 @@
 //! WOLAPI credential store (API+0x90/+0x94) belong to the app's WOL owner and
 //! service boundary. The `0x11D` registry variant is not ported.
 
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use crate::ui::shell::button::ShellButtonInteraction;
 use crate::ui::shell::descriptor::DialogId;

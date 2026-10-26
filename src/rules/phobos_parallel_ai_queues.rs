@@ -74,6 +74,7 @@ impl ParallelAiQueueRules {
         }
     }
 
+    #[cfg(feature = "phobos")]
     pub(crate) fn hash_into<H: std::hash::Hasher>(&self, hasher: &mut H) {
         use std::hash::Hash;
         b"phobos-parallel-ai-queues-v1".hash(hasher);

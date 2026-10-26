@@ -24,7 +24,7 @@
 //!   zero; they do not claim an independently measured subsystem.
 
 use std::ops::Range;
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 /// A local, enabled-only observer; never held by or serialized with the world.
 pub(crate) struct FrameClock {

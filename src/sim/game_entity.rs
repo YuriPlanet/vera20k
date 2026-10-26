@@ -1069,6 +1069,17 @@ impl GameEntity {
                 self.ammo_reload_timer.start(now, remaining.wrapping_add(1));
             }
         }
+        self.reload_techno_ammo(object, now);
+        Ok(())
+    }
+
+    /// gamemd.exe TechnoClass::Reload0x006FB010, shared by Unit's override
+    /// and Ares InfantryClass_Update_Reload10047980 (gamemd51BCB2).
+    pub(crate) fn reload_techno_ammo(
+        &mut self,
+        object: &crate::rules::object_type::ObjectType,
+        now: i32,
+    ) {
         if object.ammo != -1
             && self.ammo().is_some_and(|ammo| ammo.current() < object.ammo)
             && self.ammo_reload_timer.remaining(now) == 0
@@ -1078,7 +1089,6 @@ impl GameEntity {
             // callback or spatial write. No redraw event is synthesized.
             self.start_reloading_ammo(object, now);
         }
-        Ok(())
     }
 
     #[cfg(any(test, feature = "test-support"))]

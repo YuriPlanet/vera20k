@@ -83,9 +83,11 @@ impl TechnoAmmo {
 
     /// TechnoClass::DecreaseAmmo70D670, virtual+390: only positive counts
     /// debit. Aircraft overrides the slot with RET41B900 at the caller.
-    pub(crate) fn decrease(&mut self) {
-        if self.current > 0 {
-            self.current = self.current.wrapping_sub(1);
+    /// Ares100441F0 calls the same DecreaseAmmo slot once per positive
+    /// weapon Ammo. Its closed form preserves negative/unlimited counts.
+    pub(crate) fn decrease_by(&mut self, amount: i32) {
+        if self.current > 0 && amount > 0 {
+            self.current -= amount.min(self.current);
         }
     }
 

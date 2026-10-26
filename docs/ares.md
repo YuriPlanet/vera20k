@@ -65,3 +65,31 @@ Supported extensions:
 - [INI Include and inheritance](ini-directives.md). The read-only `asset ini-expand` probe works
   in every build.
 - [Extended authored House ally lists](../tools/input_oracle/ares_allies_reader.md).
+
+## Original project and authors
+
+VERA20K is an independent Rust reimplementation. It does not load `Ares.dll`,
+import Ares source code or redistribute Ares binaries; the supported behavior
+follows the [Ares 3.0 documentation](https://ares-developers.github.io/Ares-docs/)
+and observations of the installed DLL.
+
+Ares was created by **pd** in 2007 and is developed by
+[The Ares Contributors](https://ares-developers.github.io/Ares-docs/credits.html):
+
+- Current developer: **AlexB**.
+- Past developers: **pd** (creator), **DCoder**, **Renegade**, **Electro**,
+  **Marshall** and **Graion Dilach**.
+- Contributors: **Gluk-v48** (advanced rubble expansion), **Marshall** (prism
+  forwarding, Launch Base and the YR Unofficial 1.002 Mini-Patch) and
+  **A Mystery Guest** (new powered unit logic).
+- Collaborators: **Nighthawk** (project manager), **Steel Mirage**
+  (documentation), **Graion Dilach** (user support and ambassador), **Speeder**
+  (promo material), **Starkku** (Final Alert support), **Project z Zomboid**
+  (Chinese translation) and **Kik0u** (French translation).
+
+Ares does not publish per-key authorship for the features ported here, so this
+page credits the project and its developers instead of inventing individual
+owners. The official [Ares credits](https://ares-developers.github.io/Ares-docs/credits.html)
+list the remaining testers and community members.
+
+简体中文：[扩展支持与原作者](zh-CN/credits.md)。

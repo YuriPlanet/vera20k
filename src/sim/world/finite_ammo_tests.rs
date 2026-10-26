@@ -188,6 +188,104 @@ fn fired(output: &SimFrameOutput, source: u64) -> bool {
 }
 
 #[test]
+fn finite_infantry_reloads_and_resumes_fire_only_with_ares() {
+    let Some(mut scene) =
+        Scene::new("[E1]\nAmmo=1\nInitialAmmo=1\nReload=8\nEmptyReload=12\nCanPassiveAquire=no\n")
+    else {
+        return;
+    };
+    let target = scene.spawn("GACNST", "Russians", (16, 16));
+    let infantry = scene.spawn("E1", "Americans", (16, 20));
+    scene.command(
+        "Americans",
+        Command::Attack {
+            attacker_id: infantry,
+            target_id: target,
+        },
+    );
+    let first = scene.shot(infantry, target);
+    assert_eq!(scene.count(infantry), 0);
+    #[cfg(feature = "ares")]
+    assert_eq!(
+        (
+            scene.reload(infantry).start_frame(),
+            scene.reload(infantry).duration()
+        ),
+        (first, 12)
+    );
+    #[cfg(not(feature = "ares"))]
+    let _ = first;
+    let mut fired_again = false;
+    for _ in 0..100 {
+        if fired(&scene.frame(), infantry) {
+            fired_again = true;
+            break;
+        }
+    }
+    assert_eq!(
+        fired_again,
+        cfg!(feature = "ares"),
+        "Ares adds the Infantry reload visit; stock does not"
+    );
+}
+
+#[cfg(feature = "ares")]
+#[test]
+fn ares_weapon_ammo_cost_controls_admission_debit_and_reload() {
+    let weapon =
+        "[AmmoProbe]\nDamage=1\nROF=15\nRange=6\nProjectile=InvisibleLow\nWarhead=SA\nAmmo=";
+    let Some(mut free) = Scene::new(&format!(
+        "[E1]\nAmmo=0\nInitialAmmo=0\nPrimary=AmmoProbe\nElitePrimary=AmmoProbe\nCanPassiveAquire=no\n{weapon}0\n"
+    )) else {
+        return;
+    };
+    let target = free.spawn("GACNST", "Russians", (16, 16));
+    let infantry = free.spawn("E1", "Americans", (16, 20));
+    free.command(
+        "Americans",
+        Command::Attack {
+            attacker_id: infantry,
+            target_id: target,
+        },
+    );
+    free.shot(infantry, target);
+    assert_eq!(
+        free.count(infantry),
+        0,
+        "zero-cost weapons fire with an empty magazine"
+    );
+    assert_eq!(free.reload(infantry).duration(), 0);
+
+    let Some(mut pair) = Scene::new(&format!(
+        "[E1]\nAmmo=3\nInitialAmmo=3\nReload=12\nPrimary=AmmoProbe\nElitePrimary=AmmoProbe\nCanPassiveAquire=no\n{weapon}2\n"
+    )) else {
+        return;
+    };
+    let target = pair.spawn("GACNST", "Russians", (16, 16));
+    let infantry = pair.spawn("E1", "Americans", (16, 20));
+    pair.command(
+        "Americans",
+        Command::Attack {
+            attacker_id: infantry,
+            target_id: target,
+        },
+    );
+    let first = pair.shot(infantry, target);
+    assert_eq!(pair.count(infantry), 1, "one shot consumes two rounds");
+    assert_eq!(
+        (
+            pair.reload(infantry).start_frame(),
+            pair.reload(infantry).duration()
+        ),
+        (first, 12)
+    );
+    pair.shot(infantry, target);
+}
+
+// This is the stock GetROF6FCFA9 magazine shortcut. Installed Ares hook
+// 10047A60 skips it (continues at6FCFC1), independently of this ammo port.
+#[cfg(not(feature = "ares"))]
+#[test]
 fn finite_building_fires_a_rapid_pair_refills_zero_and_keeps_last_round_rearm() {
     let Some(mut scene) = Scene::new("[GAPILL]\nAmmo=2\nInitialAmmo=2\nCanPassiveAquire=no\n")
     else {

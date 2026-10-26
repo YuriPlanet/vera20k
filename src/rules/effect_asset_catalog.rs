@@ -266,6 +266,17 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
             if let Some(Some(name)) = object.emp_rules().and_then(|emp| emp.sparkles()) {
                 insert(name);
             }
+            // Self effects reach the same Anim constructor as Warhead effects
+            // (Ares Update10058E00, self-attach10058FC5 -> Attach10058520
+            // -> CreateAnim100586E0). Their image
+            // bounds are gameplay inputs too: an attached anim may kill its
+            // parent through ordinary AnimAI damage and its death weapon.
+            if let Some(name) = object
+                .self_attach_effect()
+                .and_then(|effect| effect.animation())
+            {
+                insert(name);
+            }
         }
         if let Some(name) = rules.emp_sparkles() {
             insert(name);
@@ -884,6 +895,66 @@ mod tests {
                 "{name}: {spawned:?}"
             );
         }
+    }
+
+    #[test]
+    fn self_attached_damage_animation_binds_and_reaches_the_helpers_death_weapon() {
+        let root = TestRoot::new();
+        std::fs::write(
+            root.path().join("PULSE.SHP"),
+            shp_with_undecodable_pixels(6),
+        )
+        .unwrap();
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        // Keep PULSE out of the stock InfDeath registry slots, so its only
+        // producer is the unit's own AttachEffect rather than a Warhead.
+        let ini = crate::sim::arena_fixture::clear_ground_ini(
+            "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=HELPER\n1=VICTIM\n\
+             [HELPER]\nStrength=1\nArmor=target\nExplodes=yes\nDeathWeapon=BURST\n\
+             AttachEffect.Duration=-1\nAttachEffect.Animation=PULSE\n\
+             [VICTIM]\nStrength=1000\nArmor=heavy\n[ArmorTypes]\ntarget=0%\n\
+             [Animations]\n0=DUMMY\n1=ELECTRO\n2=PULSE\n\
+             [CombatDamage]\nFlameDamage2=FIRE\n[Warheads]\n0=FIRE\n1=BLAST\n\
+             [FIRE]\nCellSpread=.3\nVerses=0%,0%,0%,0%,0%,0%,0%,0%,0%,0%,0%\nVersus.target=100%\n\
+             [BLAST]\nCellSpread=1\nPercentAtMax=1\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+             [WeaponTypes]\n0=BURST\n[BURST]\nDamage=100\nRange=1\nProjectile=INVISO\nWarhead=BLAST\n\
+             [Projectiles]\n0=INVISO\n[INVISO]\nInviso=yes\n",
+        );
+        let art = IniFile::from_str("[PULSE]\nRate=900\nLoopCount=-1\nDamage=10\n");
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&art));
+        let roots = anim_class_roots(&rules);
+        rules.bind_anim_class_assets(&roots, &assets, "TEM", "TEMPERATE");
+        assert_eq!(
+            rules
+                .art()
+                .anim_runtime_config("PULSE")
+                .unwrap()
+                .raw_shp_frame_count,
+            crate::rules::ARES_ENABLED.then_some(6),
+        );
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let helper = sim
+            .spawn_object("HELPER", "Americans", 20, 20, 0, &rules)
+            .unwrap();
+        let victim = sim
+            .spawn_object("VICTIM", "Russians", 21, 20, 0, &rules)
+            .unwrap();
+        for _ in 0..8 {
+            sim.advance_tick(&[], Some(&rules), None, Some(rules.overlay_registry()), 22);
+        }
+        let alive = sim
+            .entities()
+            .get(helper)
+            .is_some_and(|entity| entity.is_object_alive());
+        assert_eq!(alive, !crate::rules::ARES_ENABLED);
+        assert_eq!(
+            sim.entities().get(victim).unwrap().health.current() < 1000,
+            crate::rules::ARES_ENABLED,
+            "the self animation must reach the real death-weapon receiver",
+        );
     }
 
     fn catalog_hash(catalog: &EffectAssetCatalog) -> u64 {

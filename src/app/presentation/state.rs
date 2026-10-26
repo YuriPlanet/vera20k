@@ -8,7 +8,7 @@
 //! Process-lifetime GPU objects live in `app::renderer_state::RendererState`.
 
 use std::collections::{BTreeMap, HashMap};
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use crate::map::houses::{HouseColorMap, HouseRoster};
 use crate::map::overlay::TerrainObject;

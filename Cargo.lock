@@ -388,6 +388,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if",
+ "wasm-bindgen",
+]
+
+[[package]]
+name = "console_log"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86919cef3e37b9356ccf54d4421208c17ecfda01beae61393e7ffd72916c0ef1"
+dependencies = [
+ "log",
+ "web-sys",
+]
+
+[[package]]
 name = "cookie"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -842,9 +862,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi",
  "wasip2",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -2659,9 +2681,13 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "bytemuck",
+ "console_error_panic_hook",
+ "console_log",
+ "cpal",
  "getrandom 0.3.4",
  "glam",
  "image",
+ "js-sys",
  "libc",
  "log",
  "objc2 0.6.4",
@@ -2675,6 +2701,9 @@ dependencies = [
  "thiserror 2.0.18",
  "ureq",
  "vera20k-core",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
  "wgpu",
  "windows-sys 0.61.2",
  "winit",
@@ -2688,9 +2717,11 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "fixed",
+ "getrandom 0.3.4",
  "glam",
  "half",
  "hashbrown 0.16.1",
+ "js-sys",
  "libc",
  "log",
  "memmap2",
@@ -2702,6 +2733,7 @@ dependencies = [
  "thiserror 2.0.18",
  "unicode-ident",
  "vera20k-relay-protocol",
+ "web-time",
 ]
 
 [[package]]

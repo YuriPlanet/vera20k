@@ -44,6 +44,11 @@ impl PreparedManifest {
         let unit = if let Some((work, upload)) = self.unit_work {
             let (sender, receiver) = mpsc::channel();
             let cancelled = cancel.clone();
+            #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+            {
+                let _ = sender.send(work.render_cancellable(&cancelled));
+            }
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
             std::thread::Builder::new()
                 .name("voxel-loading-raster".into())
                 .spawn(move || {

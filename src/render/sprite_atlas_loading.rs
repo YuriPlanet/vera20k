@@ -26,8 +26,12 @@ struct LoadingUpload {
     completion: Option<ShpAtlasUpload>,
     atlas: Option<SpriteAtlas>,
     indices: Vec<wgpu::Texture>,
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     messages: mpsc::Receiver<RasterMessage>,
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     retired: mpsc::Sender<()>,
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    messages: Box<dyn Iterator<Item = RasterMessage>>,
     in_flight: Option<InFlightBand>,
     added: usize,
     texture_limit: u32,
@@ -63,8 +67,11 @@ impl PreparedSpriteAtlas {
         let mut plan = plan_shp_pages(rendered, texture_limit);
         let palettes = std::mem::take(&mut completion.palettes);
         let (atlas, indices) = create_packed_shp_atlas(device, queue, batch, &mut plan, palettes);
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let (send, messages) = mpsc::sync_channel(1);
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let (retired, wait_retired) = mpsc::channel();
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         std::thread::Builder::new()
             .name("shp-loading-bands".into())
             .spawn(move || {
@@ -98,6 +105,32 @@ impl PreparedSpriteAtlas {
                 }
                 let _ = send.send(RasterMessage::Finished);
             })?;
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let messages: Box<dyn Iterator<Item = RasterMessage>> = {
+            let sprites = plan.sprites;
+            Box::new(
+                plan.pages
+                    .into_iter()
+                    .enumerate()
+                    .flat_map(move |(page, placement)| {
+                        ShpUploadBands::new(
+                            sprites.clone(),
+                            placement.placed,
+                            placement.size[0],
+                            PACK_BAND_BYTES,
+                        )
+                        .map(move |(origin, size, bytes)| {
+                            RasterMessage::Band {
+                                page,
+                                origin,
+                                size,
+                                bytes,
+                            }
+                        })
+                    })
+                    .chain(std::iter::once(RasterMessage::Finished)),
+            )
+        };
         Ok(SpriteAtlasLoadingJob {
             ready: None,
             upload: Some(LoadingUpload {
@@ -105,6 +138,7 @@ impl PreparedSpriteAtlas {
                 atlas: Some(atlas),
                 indices,
                 messages,
+                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
                 retired,
                 in_flight: None,
                 added,
@@ -147,9 +181,17 @@ impl SpriteAtlasLoadingJob {
                 return Ok(Poll::Pending);
             }
             upload.in_flight = None;
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
             upload.retired.send(())?;
         }
-        match upload.messages.try_recv() {
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let message = upload.messages.try_recv();
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let message = upload
+            .messages
+            .next()
+            .ok_or(mpsc::TryRecvError::Disconnected);
+        match message {
             Ok(RasterMessage::Band {
                 page,
                 origin,

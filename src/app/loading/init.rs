@@ -2420,7 +2420,7 @@ pub(crate) fn load_map_initial_with_assets(
         let mut options = crate::map::rmg::RmgOptions::default();
         let seed_path = ra2_dir.join(seed_name);
         let mut seed_source = None;
-        match std::fs::read(&seed_path) {
+        match crate::util::file_system::read(&seed_path) {
             Ok(bytes) => {
                 seed_source = Some(
                     crate::map::source::GeneratedSeedSource::from_consumed_bytes(seed_path, &bytes),
@@ -2517,7 +2517,7 @@ pub(crate) fn load_map_initial_with_assets(
         } else if let Some(ref map_name) = quickplay_map {
             load_map_by_name_or_path_with_assets(&ra2_dir, map_name, asset_manager)?
         } else if Path::new("testmap1.map").exists() {
-            let bytes: Vec<u8> = std::fs::read("testmap1.map")?;
+            let bytes: Vec<u8> = crate::util::file_system::read("testmap1.map")?;
             log::info!("Loading default map: testmap1.map");
             LoadedMap {
                 map: MapFile::from_bytes(&bytes)?,
@@ -4050,9 +4050,9 @@ mod random_map_retail_tests {
     /// seed can come from a temp dir while the assets come from the real game.
     fn write_seed(options: &RmgOptions, tag: &str) -> (PathBuf, String) {
         let dir = std::env::temp_dir().join(format!("vera20k-rmg-retail-{tag}"));
-        std::fs::create_dir_all(&dir).expect("scratch dir");
+        crate::util::file_system::create_dir_all(&dir).expect("scratch dir");
         let name = format!("{tag}.sed");
-        std::fs::write(dir.join(&name), options.to_sed_bytes()).expect("write .SED");
+        crate::util::file_system::write(dir.join(&name), options.to_sed_bytes()).expect("write .SED");
         (dir, name)
     }
 

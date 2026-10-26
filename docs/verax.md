@@ -7,6 +7,10 @@ NPatch compatibility capabilities. Build it explicitly:
 cargo run --release --bin vera20k --features verax
 ```
 
+The `verax` feature currently compiles AutoLoad and Skirmish map hot reload.
+The translucent-fog option and foot-path overlay in "Origins and related
+first-party work" are adjacent VERA work, not VeraX features.
+
 ## AutoLoad
 
 Ctrl+D issues standard Enter orders for the current selection: selected infantry and vehicles are
@@ -36,6 +40,27 @@ This is not a directory watcher: the list changes on the next open of the choose
 keep their launch snapshot, because the map list is local and every peer must still compare the same
 catalog.
 
+## Origins and related first-party work
+
+VeraX does not bundle third-party binaries or source. Its ideas and the
+related presentation work came from:
+
+- **AutoLoad** follows the vehicle-loading idea shown in a video by Bilibili
+  user [335956233](https://space.bilibili.com/335956233). VERA implements its
+  own allocation, range and command policy; the creator's binary and source are
+  not used and are not needed to reproduce the observed behavior.
+- **Translucent fog** is VERA's own idea, not copied from an extension. It is a
+  client graphics option (`[graphics] translucent_fog=true`, off by default for
+  the retail look) that keeps terrain visible through fog while concealing
+  unseen enemy objects, enemy projectiles and walls. It is not gated by the
+  `verax` feature.
+- **Foot path steps** is a diagnostic overlay rather than an extension feature.
+  In `dev-overlays` builds, `Ctrl+Shift+O` draws the remaining path cells and
+  step labels for selected moving units (`src/app/diagnostics/debug_overlays.rs`).
+  Release builds (`--no-default-features`) do not include it. Its presentation
+  follows a video by Bilibili user [1995852436](https://space.bilibili.com/1995852436);
+  no third-party binary or source is used.
+
 ## Namespace
 
 `--features verax` compiles `rules::VERAX_ENABLED`. VeraX-only readers take their keys and
@@ -46,3 +71,5 @@ VeraX is one of four orthogonal capabilities: it combines with `ares`, `phobos` 
 `npatch` (`--features ares,phobos,npatch,verax`). The compatibility rule and the pattern for two
 extensions touching one native site are in
 [NPatch compatibility](npatch.md#cross-extension-compatibility).
+
+简体中文：[扩展支持与原作者](zh-CN/credits.md)。

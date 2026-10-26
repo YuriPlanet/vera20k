@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 /// The entry in `directory` whose name equals `name`, ignoring ASCII case.
 pub fn find(directory: &Path, name: &str) -> Option<PathBuf> {
-    std::fs::read_dir(directory)
+    crate::util::file_system::read_dir(directory)
         .ok()?
         .filter_map(Result::ok)
         .find(|entry| {

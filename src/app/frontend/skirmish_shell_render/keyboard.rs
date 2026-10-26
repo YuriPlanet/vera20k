@@ -23,7 +23,7 @@ use crate::ui::shell::keyboard::{KEYBOARD_PAGE, KeyboardButton, KeyboardParent};
 use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::list::ShellListGeometry;
 use crate::ui::shell::static_reveal::Kind1PaintWindow;
-use std::time::Instant;
+use crate::util::time::Instant;
 
 pub(crate) fn render_keyboard_shell(
     state: &mut AppState,

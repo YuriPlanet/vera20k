@@ -1347,7 +1347,7 @@ impl MultiplayerShellRuntime {
     /// `0x0049C0D0`): `None` when it cannot be read, as `ReadCCFile`
     /// failing makes each of them return false.
     pub(crate) fn cooperative_save(&self) -> Option<IniFile> {
-        let bytes = std::fs::read(self.coop_save_path()?).ok()?;
+        let bytes = crate::util::file_system::read(self.coop_save_path()?).ok()?;
         Some(IniFile::from_bytes(&bytes).unwrap_or_else(|_| IniFile::from_str("")))
     }
 
@@ -1357,13 +1357,13 @@ impl MultiplayerShellRuntime {
         let Some(path) = self.coop_save_path() else {
             return;
         };
-        let existing = std::fs::read(&path).unwrap_or_default();
+        let existing = crate::util::file_system::read(&path).unwrap_or_default();
         let values: Vec<(&str, &str)> = values
             .iter()
             .map(|(key, value)| (key.as_str(), value.as_str()))
             .collect();
         let updated = crate::util::ini_writer::replace_ini_section(&existing, section, &values);
-        if let Err(err) = std::fs::write(&path, updated) {
+        if let Err(err) = crate::util::file_system::write(&path, updated) {
             log::warn!("Could not write {}: {err}", path.display());
         }
     }
@@ -1615,7 +1615,7 @@ fn load_persistence(
     let Some(path) = path else {
         return fallback();
     };
-    match std::fs::read(path) {
+    match crate::util::file_system::read(path) {
         Ok(bytes) => {
             let snapshot = read_setup_snapshot(&bytes, defaults, SetupProfile::Skirmish)
                 .unwrap_or_else(|err| {

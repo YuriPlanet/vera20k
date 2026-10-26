@@ -913,7 +913,11 @@ fn offline_backup_recovery_distinguishes_saved_system_and_user_holds() {
 /// UpdateFactoryQueue509140 or House1FC request; native loss cleanup starts
 /// in the completing Limbo445E14. Protect the first subsequent Factory sweep
 /// before any crew/reverse-buildup work could trigger another mechanism.
+/// Stock only: Phobos TechnoClass_Init (hook `0x6F42F7`) sets House1FC for the
+/// stage-1 crew, and that recheck's strip pass abandons the head because
+/// Find_Factory skips a selling factory (`0x5F797A`/`0x5F7983`).
 #[test]
+#[cfg(not(feature = "phobos"))]
 fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
     use crate::sim::command::{Command, CommandEnvelope};
     use crate::sim::mission::MissionType;
@@ -1837,7 +1841,12 @@ fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay()
     );
     assert_eq!(output.tick.executed_commands, 3);
     assert_gone(&live.simulation, parent, &child_ids);
-    assert!(!live.simulation.houses[&owner].tech_recheck_pending());
+    // Phobos TechnoClass_Init (hook 0x6F42F7) sets House1FC again as the
+    // abandons construct the next queued heads and their slaves.
+    assert_eq!(
+        live.simulation.houses[&owner].tech_recheck_pending(),
+        crate::rules::PHOBOS_ENABLED
+    );
     let head = held_id(&live.simulation, owner, ProductionCategory::Vehicle);
     assert_eq!(
         live.simulation.interner.resolve(

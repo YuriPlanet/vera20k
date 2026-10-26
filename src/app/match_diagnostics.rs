@@ -430,7 +430,7 @@ impl MatchDiagnosticsState {
         }
 
         let result = (|| {
-            std::fs::create_dir_all(replays_dir)?;
+            crate::util::file_system::create_dir_all(replays_dir)?;
             let (path, mut file) = reserve_segment_path(replays_dir, session_tick, unix_secs)?;
             // Keep the exclusively created handle through the write. Reopening
             // its path could truncate a replacement supplied after reservation.
@@ -438,7 +438,7 @@ impl MatchDiagnosticsState {
             drop(file);
             if let Err(error) = written {
                 // Close before deleting so retry cleanup also works on Windows.
-                let _ = std::fs::remove_file(&path);
+                let _ = crate::util::file_system::remove_file(&path);
                 return Err(error.context(format!("Diagnostic log: {}", path.display())));
             }
             Ok(Some(ReplayLogFlush {

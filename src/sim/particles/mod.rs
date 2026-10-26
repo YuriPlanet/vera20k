@@ -886,6 +886,37 @@ impl ParticleSystemStore {
         id
     }
 
+    /// Resolve a child across synchronous callbacks which may append or compact
+    /// its system. The ordinary store keeps the system's display identity live.
+    pub(crate) fn particle_for_tick(&self, system: u64, index: usize, id: u64) -> Option<Particle> {
+        let particles = &self.get(system)?.particles;
+        particles
+            .get(index)
+            .filter(|p| p.stable_id() == id)
+            .or_else(|| particles.iter().find(|p| p.stable_id() == id))
+            .cloned()
+    }
+
+    /// Commit only the original child, preserving callback appends/removals.
+    pub(crate) fn commit_particle_tick(&mut self, system: u64, index: usize, updated: Particle) {
+        if let Some(sys) = self.get_mut(system) {
+            let slot = if sys
+                .particles
+                .get(index)
+                .is_some_and(|p| p.stable_id() == updated.stable_id())
+            {
+                Some(index)
+            } else {
+                sys.particles
+                    .iter()
+                    .position(|p| p.stable_id() == updated.stable_id())
+            };
+            if let Some(slot) = slot {
+                sys.particles[slot] = updated;
+            }
+        }
+    }
+
     /// Temporarily take a system while its AI owns `&mut Simulation`.
     pub(crate) fn take_for_tick(&mut self, id: u64) -> Option<ParticleSystem> {
         self.remove(id)

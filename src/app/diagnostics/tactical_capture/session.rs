@@ -6,7 +6,7 @@
 //! not focus the window, inject desktop input, or grant simulation state.
 
 use std::path::Path;
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};

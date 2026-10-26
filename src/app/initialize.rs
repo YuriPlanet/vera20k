@@ -9,11 +9,12 @@ use crate::app::persistence::options_profile::{RetailOptionsLoad, RetailOptionsP
 
 use super::{
     ActiveEventLoop, App, AppState, Arc, AssetManager, BTreeMap, BasicSection, BatchRenderer,
-    BitFont, GameConfig, GameScreen, GpuContext, HashMap, HouseRoster, Instant, MusicPlayer,
-    PhysicalSize, PlatformState, RandomMapGenerationRetention, Result, SfxPlayer,
-    SidebarChromeLayoutSpec, SidebarTab, StartupAudioDisposition, Window, WindowAttributes,
-    frontend::startup_splash,
+    BitFont, GameConfig, GameScreen, GpuContext, HashMap, HouseRoster, Instant, PhysicalSize,
+    PlatformState, RandomMapGenerationRetention, Result, SidebarChromeLayoutSpec, SidebarTab,
+    StartupAudioDisposition, Window, WindowAttributes, frontend::startup_splash,
 };
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+use super::{MusicPlayer, SfxPlayer};
 use crate::map::scenario_sources;
 
 /// Main-thread startup slices own the not-yet-installed app resources. No
@@ -28,6 +29,8 @@ pub(super) struct InitializationJob {
     resume: Box<dyn FnOnce() -> Result<InitializationStep>>,
     deferred_window_events: Vec<winit::event::WindowEvent>,
     resume_admitted: bool,
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    gpu_ready: Option<std::rc::Rc<std::cell::Cell<bool>>>,
 }
 
 impl InitializationStep {
@@ -51,6 +54,44 @@ impl InitializationStep {
             resume: Box::new(resume),
             deferred_window_events: Vec::new(),
             resume_admitted: false,
+            #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+            gpu_ready: None,
+        }))
+    }
+}
+
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+impl InitializationStep {
+    fn pending_gpu(
+        window: Arc<Window>,
+        gpu: impl std::future::Future<Output = Result<GpuContext>> + 'static,
+        resume: impl FnOnce(GpuContext) -> Result<Self> + 'static,
+    ) -> Result<Self> {
+        use std::{
+            cell::{Cell, RefCell},
+            rc::Rc,
+        };
+        let result = Rc::new(RefCell::new(None));
+        let ready = Rc::new(Cell::new(false));
+        let (output, complete, wake) = (result.clone(), ready.clone(), window.clone());
+        wasm_bindgen_futures::spawn_local(async move {
+            *output.borrow_mut() = Some(gpu.await);
+            complete.set(true);
+            wake.request_redraw();
+        });
+        Ok(Self::Pending(InitializationJob {
+            window,
+            resume: Box::new(move || {
+                resume(
+                    result
+                        .borrow_mut()
+                        .take()
+                        .expect("GPU completion admitted")?,
+                )
+            }),
+            deferred_window_events: Vec::new(),
+            resume_admitted: false,
+            gpu_ready: Some(ready),
         }))
     }
 }
@@ -61,6 +102,10 @@ impl InitializationJob {
     }
 
     pub(super) fn may_resume(&self) -> bool {
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        if self.gpu_ready.as_ref().is_some_and(|ready| !ready.get()) {
+            return false;
+        }
         self.resume_admitted
     }
 
@@ -342,6 +387,11 @@ impl App {
         if let Some(icon) = &retail_icon {
             window_attrs = icon.apply(window_attrs);
         }
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        {
+            use winit::platform::web::WindowAttributesExtWebSys;
+            window_attrs = window_attrs.with_canvas(Some(crate::web::canvas()));
+        }
         let window: Arc<Window> = Arc::new(event_loop.create_window(window_attrs)?);
         // A windowed launch on a saved screen: the window opens centred there.
         // Full screen already covers it from the attributes above.
@@ -361,8 +411,52 @@ impl App {
         if let Some(icon) = &retail_icon {
             icon.set_dock_icon();
         }
-        let gpu: GpuContext =
-            GpuContext::new(window.clone(), event_loop.owned_display_handle(), capture)?;
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        let gpu = GpuContext::new(window.clone(), event_loop.owned_display_handle(), capture)?;
+        let quickplay_allowed = replay_retail_directory.is_none();
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let pending = (
+            window.clone(),
+            GpuContext::new_browser(window.clone(), event_loop.owned_display_handle()),
+        );
+        let resume = move |gpu| {
+            Self::initialize_with_gpu(
+                gpu,
+                window,
+                game_config,
+                main_menu_shell_error,
+                personal_rules,
+                options_profile,
+                startup_options,
+                startup_audio,
+                capture_dimensions,
+                external_launch,
+                quickplay_allowed,
+            )
+        };
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        {
+            InitializationStep::pending_gpu(pending.0, pending.1, resume)
+        }
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        {
+            resume(gpu)
+        }
+    }
+
+    fn initialize_with_gpu(
+        gpu: GpuContext,
+        window: Arc<Window>,
+        game_config: Option<GameConfig>,
+        mut main_menu_shell_error: Option<String>,
+        personal_rules: crate::rules::personal_rules::PersonalRules,
+        options_profile: RetailOptionsProfile,
+        startup_options: RetailStartupOptions,
+        startup_audio: StartupAudioDisposition,
+        capture_dimensions: Option<(u32, u32)>,
+        external_launch: bool,
+        quickplay_allowed: bool,
+    ) -> Result<InitializationStep> {
         let batch_renderer: BatchRenderer = BatchRenderer::new(&gpu);
         let status_screen_fill = batch_renderer.create_texture(&gpu, &[255; 4], 1, 1);
         let status_card_glow =
@@ -491,7 +585,6 @@ impl App {
         if external_launch {
             log::info!("External launch: process-start splash skipped");
         }
-        let quickplay_allowed = replay_retail_directory.is_none();
         InitializationStep::pending(window.clone(), move || {
             // Ordinary interactive startup runs with the splash already on screen: the
             // presented swapchain frame stays composited while this thread blocks,
@@ -693,10 +786,17 @@ impl App {
                     &startup_in_game_options,
                 );
 
+                #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+                let (music_player, sfx_player) = (
+                    crate::web::take_music_output(),
+                    crate::web::take_sfx_output(),
+                );
+                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
                 let music_player = startup_audio
                     .initialize_music_output
                     .then(MusicPlayer::new)
                     .flatten();
+                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
                 let sfx_player = startup_audio
                     .initialize_sfx_output
                     .then(SfxPlayer::new)

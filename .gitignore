@@ -20,6 +20,7 @@ Thumbs.db
 *.txt
 !tools/requirements-test.txt
 !tools/telemetry-dashboard/vendor/THREE-LICENSE.txt
+!/LICENSES/*.txt
 !.github/release/macos/requirements.txt
 !.github/release/icon.png
 *.tmp
@@ -37,6 +38,7 @@ Thumbs.db
 
 /docs/*
 !/docs/capabilities.md
+!/docs/wasm.md
 !/docs/ares.md
 !/docs/phobos.md
 !/docs/phobos-custom-radiation.md

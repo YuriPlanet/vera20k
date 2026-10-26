@@ -11,7 +11,7 @@ use crate::ui::shell::list::{ListMetrics, ListScrollInteraction, ShellListGeomet
 use crate::ui::shell::modal::WolVerifyLayout;
 use crate::ui::wol_shell::WolMessageBox;
 use std::ops::Range;
-use std::time::Instant;
+use crate::util::time::Instant;
 
 /// `0x0084A1F0`: node `i`'s checkbox, stacked by `i` in the template.
 pub const BOXES: [u16; 8] = [0x769, 0x761, 0x764, 0x762, 0x765, 0x768, 0x766, 0x767];

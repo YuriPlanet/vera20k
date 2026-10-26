@@ -6,7 +6,7 @@
 //! press below the last row is ignored, the scrollbar captures and repeats,
 //! and no key or wheel case exists (`0x00618D40..0x0061C600`).
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use crate::map::skirmish_scenarios::{
     SkirmishScenarioRecord, filter_records_for_mode, upsert_random_map_sentinel,

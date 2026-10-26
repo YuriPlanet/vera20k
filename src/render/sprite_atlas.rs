@@ -22,7 +22,7 @@
 //! - Reads from sim/ via EntityStore iteration (GameEntity fields).
 
 use std::collections::{HashMap, HashSet};
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::mix_archive::SharedBytes;
@@ -3518,9 +3518,15 @@ fn upload_shelves(
     placed: &[(usize, [u32; 2])],
     band_bytes: u64,
 ) {
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    let _ = device;
     for (origin, size, bytes) in ShpUploadBands::new(sprites, placed, indices.width(), band_bytes) {
         atlas_growth::write_texels(queue, indices, origin, size, 1, &bytes);
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        queue.submit(std::iter::empty());
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let submission_index = queue.submit(std::iter::empty());
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         if let Err(error) = device.poll(wgpu::PollType::Wait {
             submission_index: Some(submission_index),
             timeout: Some(PACK_BAND_TIMEOUT),

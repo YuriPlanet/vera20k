@@ -432,6 +432,22 @@ pub(super) fn resolve_receive_damage_with_input(
     };
     let attacker_is_allied = source_house.is_some_and(|owner| allied(owner, target.owner()));
     let source_house_is_allied = source_house.is_some_and(|owner| allied(target.owner(), owner));
+    // Installed Ares TechnoClass_ReceiveDamage_Abilities1004A950, at1004AA5F:
+    // a live attacker's owner wins over arg7 sourceHouse. CanTargetHouse10051B70
+    // replaces the stock ally gate after Poison and before Psychedelic, including
+    // ignoreDefenses calls. Reuse the EMP/AttachEffect policy's retained owner.
+    #[cfg(feature = "ares")]
+    let ares_house_damage_allowed = warhead.ares_rules().map(|settings| {
+        let owner = source.map(|entity| entity.owner()).or(event.source_house);
+        settings.can_affect_house(
+            owner.is_some(),
+            owner == Some(target.owner()),
+            owner.is_some_and(|owner| allied(owner, target.owner())),
+            warhead.affects_allies,
+        )
+    });
+    #[cfg(not(feature = "ares"))]
+    let ares_house_damage_allowed = None;
 
     let target_view = damage::TargetDamageView {
         current_hp: target.health.current(),
@@ -481,6 +497,7 @@ pub(super) fn resolve_receive_damage_with_input(
         poison_immune: warhead.poison && target_type.is_some_and(|object| object.immune_to_poison),
         affects_allies: warhead.affects_allies,
         attacker_is_allied,
+        ares_house_damage_allowed,
         source_house_is_allied,
         psychedelic: warhead.psychedelic,
         psionics_immune: target_type.is_some_and(|object| object.immune_to_psionics),
@@ -695,4 +712,77 @@ pub(super) fn area_near_center_ic_isolation_armed(
         matches!(receiver, combat_aoe::AreaDamageReceiver::Entity(event)
             if event_arms_ic_isolation(event, entities, current_tick))
     })
+}
+
+#[cfg(test)]
+mod house_damage_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+
+    fn receive(extra: &str, live_attacker: bool, explicit_house: bool) -> i32 {
+        let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=TARGET\n\
+             [TARGET]\nStrength=1000\nArmor=light\n[Warheads]\n0=HIT\n\
+             [HIT]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n{extra}"
+        ));
+        let processed = crate::rules::native_processing::RulesLayerStack::new(ini)
+            .process_with_fixed_art(&IniFile::from_str(""))
+            .unwrap();
+        let rules = RuleSet::from_processed_rules(&processed).unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+        let target = sim
+            .spawn_object("TARGET", "Russians", 20, 20, 0, &rules)
+            .unwrap();
+        let attacker = if live_attacker {
+            sim.spawn_object("TARGET", "Americans", 22, 20, 0, &rules)
+                .unwrap()
+        } else {
+            RAD_NO_ATTACKER
+        };
+        let source = explicit_house.then(|| sim.interner.intern("Russians"));
+        let wh = sim.interner.intern("HIT");
+        let event = EntityDamageEvent::area(target, 10, 0, attacker, source, wh);
+        resolve_receive_damage(
+            &event,
+            sim.entities(),
+            &rules,
+            &sim.interner,
+            &sim.houses,
+            sim.house_alliances.as_map(),
+            false,
+            0,
+            sim.resolved_terrain(),
+        )
+        .unwrap()
+        .outcome
+        .hp_delta
+    }
+
+    #[test]
+    fn house_only_animation_damage_obeys_allies_and_owner_override() {
+        let blocked = if cfg!(feature = "ares") { 0 } else { 10 };
+        assert_eq!(receive("AffectsAllies=no\n", false, true), blocked);
+        assert_eq!(
+            receive("AffectsAllies=no\nAffectsOwner=yes\n", false, true),
+            10
+        );
+        assert_eq!(
+            receive("AffectsAllies=yes\nAffectsOwner=no\n", false, true),
+            blocked
+        );
+        assert_eq!(
+            receive("AffectsAllies=no\nAffectsEnemies=no\n", false, false),
+            10
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "ares")]
+    fn live_attacker_house_precedes_explicit_house_for_ares_damage_admission() {
+        assert_eq!(receive("AffectsAllies=no\n", true, true), 10);
+        assert_eq!(
+            receive("AffectsAllies=yes\nAffectsEnemies=no\n", true, true),
+            if cfg!(feature = "ares") { 0 } else { 10 },
+        );
+    }
 }

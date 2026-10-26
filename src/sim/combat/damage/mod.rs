@@ -84,6 +84,9 @@ pub(crate) struct ImmunityInputs {
     pub affects_allies: bool,
     /// Attacker owner IsAlliedWith target owner (AffectsAllies operand).
     pub attacker_is_allied: bool,
+    /// Ares replaces the stock attacker-only ally gate with WarheadExt's
+    /// House policy, including a house-only source. None keeps stock behavior.
+    pub ares_house_damage_allowed: Option<bool>,
     /// Target owner IsAlliedWith sourceHouse (Psychedelic operand).
     pub source_house_is_allied: bool,
     /// Warhead Psychedelic/MindControl (warhead+0x16d).

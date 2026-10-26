@@ -419,7 +419,7 @@ impl SkirmishShellState {
 /// A hover message to the status line ([`SkirmishStatics::hover`]). Returns
 /// whether the help changed.
 pub fn set_status_help_text(state: &mut SkirmishShellState, text: impl Into<String>) -> bool {
-    state.statics.hover(&text.into(), std::time::Instant::now())
+    state.statics.hover(&text.into(), crate::util::time::Instant::now())
 }
 
 pub fn clear_status_help_text(state: &mut SkirmishShellState) -> bool {

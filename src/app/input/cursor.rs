@@ -3,7 +3,7 @@
 //! Determines what cursor state to show based on hover target, selection,
 //! and game mode. Split from `presentation::ui_overlays` for file-size limits.
 
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner_name;

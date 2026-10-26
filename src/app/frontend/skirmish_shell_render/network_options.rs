@@ -19,7 +19,7 @@ use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::network_options::{OK, PAGE};
 use crate::ui::shell::geom::{RectPx, ShellScale};
-use std::time::Instant;
+use crate::util::time::Instant;
 
 pub(crate) fn render_network_options(
     state: &mut AppState,

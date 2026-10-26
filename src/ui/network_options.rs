@@ -119,7 +119,7 @@ pub(crate) struct NetworkOptionsState {
     pub(crate) card_top_index: usize,
     pub(crate) card_hot_row: Option<usize>,
     pub(crate) card_scroll: ListScrollInteraction,
-    focus_started_at: std::time::Instant,
+    focus_started_at: crate::util::time::Instant,
     original_send_delay: bool,
     original_port: i32,
     phase: Phase,
@@ -181,7 +181,7 @@ impl NetworkOptionsState {
             card_top_index: 0,
             card_hot_row: None,
             card_scroll: ListScrollInteraction::default(),
-            focus_started_at: std::time::Instant::now(),
+            focus_started_at: crate::util::time::Instant::now(),
             original_send_delay: send_delay,
             original_port: port,
             phase: Phase::Editing,
@@ -195,7 +195,7 @@ impl NetworkOptionsState {
             return;
         }
         if self.focused_control != control {
-            self.focus_started_at = std::time::Instant::now();
+            self.focus_started_at = crate::util::time::Instant::now();
         }
         self.focused_control = control;
         self.socket.focused = control == SOCKET;
@@ -204,7 +204,7 @@ impl NetworkOptionsState {
     }
 
     /// NewEdit's focus handler clears its phase, then toggles every 1000 ms.
-    pub(crate) fn caret_visible(&self, now: std::time::Instant) -> bool {
+    pub(crate) fn caret_visible(&self, now: crate::util::time::Instant) -> bool {
         now.saturating_duration_since(self.focus_started_at)
             .as_secs()
             % 2

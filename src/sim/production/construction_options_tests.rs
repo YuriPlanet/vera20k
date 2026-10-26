@@ -178,6 +178,12 @@ fn construction_options_match_original_gates_type_order_limit_and_warp_grant() {
         ("aircraft", "AircraftTypes"),
     ];
     for row in native["rows"].as_array().unwrap() {
+        // The rows are stock gamemd. Ares's outer CanBuild (Ares.dll
+        // 0x10021BA1) also asks the factory finder, which refuses this row's
+        // Naval=yes unit at its land factory.
+        if crate::rules::ARES_ENABLED && row["name"] == "unit uses its registry order" {
+            continue;
+        }
         let mut text = String::from("[Countries]\n0=C0\n[C0]\nSide=GDI\n");
         let factory_kind = match row["factory_rtti"].as_i64().unwrap() {
             7 => "BuildingType",

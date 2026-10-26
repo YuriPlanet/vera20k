@@ -22,7 +22,7 @@
 //! ([`crate::app::shell_network_setup`]). Quick Co-op (mode 2) is a later
 //! chain: the welcome keeps refusing it.
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use super::WolPage;
 use super::lobby;
@@ -121,8 +121,8 @@ pub(crate) struct QuickMatchDialog {
 
 /// `time()`.
 fn now_seconds() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    crate::util::time::SystemTime::now()
+        .duration_since(crate::util::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs())
 }
 

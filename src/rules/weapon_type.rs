@@ -68,6 +68,10 @@ pub struct WeaponType {
     /// Number of rapid shots per attack cycle (default 1).
     /// After the full burst, the ROF cooldown begins.
     pub burst: i32,
+    /// Ares WeaponTypeExt constructor100549B4 and reader10055898 (+D0).
+    /// Valueable<int> retains failed/missing reads; default one round.
+    #[cfg(feature = "ares")]
+    ares_ammo_cost: i32,
     /// `RevealOnFire=` (`+0x137`, default yes): a launched shot reveals the
     /// firer to a human victim (FireAt `0x006FF66C`). Retail turns it off on
     /// the sniper, Virus, disguise and Mirage weapons.
@@ -214,6 +218,13 @@ pub struct WeaponType {
 }
 
 impl WeaponType {
+    pub(crate) fn ammo_cost(&self) -> i32 {
+        #[cfg(feature = "ares")]
+        return self.ares_ammo_cost;
+        #[cfg(not(feature = "ares"))]
+        1
+    }
+
     /// `Report.Count` (`WeaponTypeClass+0xCC`).
     pub fn report_count(&self) -> i32 {
         self.report.len() as i32
@@ -252,6 +263,8 @@ impl WeaponType {
             report: sound_list(section, "Report"),
             down_report: Vec::new(),
             burst: section.read_int("Burst", 1),
+            #[cfg(feature = "ares")]
+            ares_ammo_cost: section.read_ares_int("Ammo", 1),
             // Constructor 1 (`0x00771DBB`); ReadINI passes it as the default
             // (`0x00772182..0x00772196`).
             reveal_on_fire: section.read_bool("RevealOnFire", true),
@@ -350,6 +363,29 @@ fn sound_list(section: &IniSection, key: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn weapon_ammo_cost_uses_ares_retained_integer_reader_only_when_enabled() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[InfantryTypes]\n0=PROBE\n[PROBE]\nPrimary=PAIR\nSecondary=FREE\n[PAIR]\nAmmo=2\n[FREE]\nAmmo=0\n",
+        ));
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[PAIR]\nAmmo=invalid\n"),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).unwrap();
+        assert_eq!(
+            rules.weapon("PAIR").unwrap().ammo_cost(),
+            if cfg!(feature = "ares") { 2 } else { 1 }
+        );
+        assert_eq!(
+            rules.weapon("FREE").unwrap().ammo_cost(),
+            if cfg!(feature = "ares") { 0 } else { 1 }
+        );
+    }
+
     /// Retail `RevealOnFire=` through the production reader: the constructor's
     /// yes stands unless a section says no (the sniper and disguise weapons).
     #[test]

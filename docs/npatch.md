@@ -55,6 +55,30 @@ can fail; buildings release after successful Unlimbo (`0xC33940`, `0xC2F184`,
 Failed starts and PointerExpired retain their reservation. Releases run independently
 of the switch and clamp signed negative counts to zero, matching the original hooks.
 
+## Original project and authors
+
+VERA20K implements the documented behavior in Rust. It neither loads nor patches
+`gamemd.exe`, and it does not redistribute NPatch binaries.
+
+NPatch (NewPatch) is a RockPatch-based YR platform created by **CnCVK (VK)**,
+a former RockPatch developer. The project has several editions:
+
+- **NPatch 1.00** - the original release, published by CnCVK.
+- **NPatch Extended (NPExt)** - released by **LH_Mouse**; its manual is
+  NPExt #169 (2011), and it thanks pd and CnCVK. VERA's legacy
+  `EnableAIBuildLimitation` path cites the NPExt `ext173` reader
+  (`0xC2D132`, gate `0xC2CF67`).
+- **NPatch Special Edition (NPSE)** - installer #0020 on CnCVK's NPatch
+  download page. The **NPSE 2.0 #359** manual and changelog are authored by
+  **lydjjlyd**.
+- **NPatch Autumn Edition (NPAE)** - installer #0011 on the same page.
+
+The NPSE 2.0 manual credits its testers **我爱二次元**, **蓝天白云fd**,
+**好人先昇**, **行少** and **凌敏SHOS**. That manual and its release are the
+source for the `0xC3xxxx` addresses cited above.
+
+简体中文：[扩展支持与原作者](zh-CN/credits.md)。
+
 ## Cross-extension compatibility
 
 The three capabilities — `ares`, `phobos`, `npatch` — are orthogonal and mixable:

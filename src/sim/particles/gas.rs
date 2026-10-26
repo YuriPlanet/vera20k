@@ -17,7 +17,6 @@ use crate::sim::combat::{
 use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellObjectMember;
-use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{Simulation, UninitContext};
 use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF32Bits, adjust_for_z_standard};
 use glam::IVec3;
@@ -73,37 +72,6 @@ fn reverse_ids(system: &ParticleSystem) -> Vec<(usize, u64)> {
         .collect()
 }
 
-fn particle(sim: &Simulation, system: u64, index: usize, id: u64) -> Option<Particle> {
-    let particles = &sim.particle_systems().get(system)?.particles;
-    // Ordinary callbacks only append, and reverse removals preserve lower
-    // indices. Avoid scanning the entire shared cloud list for every visit;
-    // re-resolve by identity only if a synchronous callback compacted it.
-    particles
-        .get(index)
-        .filter(|p| p.stable_id() == id)
-        .or_else(|| particles.iter().find(|p| p.stable_id() == id))
-        .cloned()
-}
-
-fn commit_particle(substrate: &mut ObjectSubstrate, system: u64, index: usize, updated: Particle) {
-    if let Some(sys) = substrate.particle_systems.get_mut(system) {
-        let slot = if sys
-            .particles
-            .get(index)
-            .is_some_and(|p| p.stable_id() == updated.stable_id())
-        {
-            Some(index)
-        } else {
-            sys.particles
-                .iter()
-                .position(|p| p.stable_id() == updated.stable_id())
-        };
-        if let Some(slot) = slot {
-            sys.particles[slot] = updated;
-        }
-    }
-}
-
 pub(super) fn tick_system(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -116,7 +84,7 @@ pub(super) fn tick_system(
     let owner_house = sys.owner_house;
     let ids = reverse_ids(sys);
     for (index, id) in ids {
-        let Some(mut p) = particle(sim, system, index, id) else {
+        let Some(mut p) = sim.particle_systems().particle_for_tick(system, index, id) else {
             continue;
         };
         if rules.particle_type(p.type_id).behaves_like == ParticleBehavesLike::Gas {
@@ -125,13 +93,15 @@ pub(super) fn tick_system(
         } else {
             super::system_ai::tick_particle(&mut p, sim, rules, owner_house);
         }
-        commit_particle(&mut sim.substrate, system, index, p);
+        sim.substrate
+            .particle_systems
+            .commit_particle_tick(system, index, p);
     }
     let Some(sys) = sim.particle_systems().get(system) else {
         return;
     };
     for (index, id) in reverse_ids(sys) {
-        let Some(mut p) = particle(sim, system, index, id) else {
+        let Some(mut p) = sim.particle_systems().particle_for_tick(system, index, id) else {
             continue;
         };
         if p.marked_for_deletion {
@@ -161,7 +131,9 @@ pub(super) fn tick_system(
             }
         } else if rules.particle_type(p.type_id).behaves_like == ParticleBehavesLike::Gas {
             move_gas(&mut p, sim, rules);
-            commit_particle(&mut sim.substrate, system, index, p);
+            sim.substrate
+                .particle_systems
+                .commit_particle_tick(system, index, p);
         }
     }
 }

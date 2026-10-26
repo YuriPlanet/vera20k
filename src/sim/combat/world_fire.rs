@@ -1956,7 +1956,7 @@ pub(super) fn emit_admitted_fire(
         && entity.category() != EntityCategory::Aircraft
         && let Some(ammo) = entity.ammo_mut()
     {
-        ammo.decrease();
+        ammo.decrease_by(weapon.ammo_cost());
     }
     // `0x006FF66C`, after DecreaseAmmo (`0x006FF656`): RevealOnFire.
     reveal_on_fire(
@@ -1977,23 +1977,42 @@ pub(super) fn emit_admitted_fire(
         overlay_registry,
         effects,
     );
-    // UnitClass::Fire741340 wraps the base FireAt6FDD50 (7413CE).
-    // Its non-null return seeds the Unit firing counter at741421, after the
-    // base tail (including LimboLaunch). Scalable then reaches46B280 at741439.
-    // This existing class-FireAt owner serves
-    // UnitTarget and direct mission calls; constructors/shrapnel/other
-    // classes never pass this Unit-only postprocessing boundary.
+    // Concrete class FireAt suffixes follow the base tail, including
+    // LimboLaunch. Infantry's Ares reload hook and Unit's firing counter /
+    // Scalable work stay here for ordinary and direct mission FireAt callers.
+    #[cfg(feature = "ares")]
+    if snap.category == EntityCategory::Infantry
+        && weapon.ammo_cost() > 0
+        && let Some(entity) = world.substrate.entities.get_mut(snap.stable_id)
+        && !entity.lifecycle.in_limbo()
+        && let Some(live_type) = world.interner.object_type(entity.type_ref(), rules)
+        && live_type.ammo > 0
+        && entity
+            .ammo()
+            .is_some_and(|ammo| ammo.current() < live_type.ammo)
+    {
+        // Installed Ares InfantryClass_Fire_Ammo10047910, gamemd51DF8C:
+        // after a returned Bullet, start the shared reload clock. The
+        // Weapon Ammo<=0 arm consumes nothing and does not restart it.
+        entity.start_reloading_ammo(live_type, binary_frame as i32);
+    }
     if snap.category == EntityCategory::Unit {
         // UnitFireAt7413D3..741401: only a nonnull base Bullet return
         // restarts a finite, non-full automatic magazine. Re-read the live
         // type after the common tail, before the firing counter/scalable.
         if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id)
             && let Some(live_type) = world.interner.object_type(entity.type_ref(), rules)
-            && live_type.ammo > 0
-            && entity
-                .ammo()
-                .is_some_and(|ammo| ammo.current() < live_type.ammo)
-            && !live_type.manual_reload
+            && if cfg!(feature = "ares") {
+                // Ares UnitClass_Fire_Ammo10047B30 replaces7413D3:
+                // positive Weapon Ammo invokes StartReloading directly.
+                weapon.ammo_cost() > 0
+            } else {
+                live_type.ammo > 0
+                    && entity
+                        .ammo()
+                        .is_some_and(|ammo| ammo.current() < live_type.ammo)
+                    && !live_type.manual_reload
+            }
         {
             entity.start_reloading_ammo(live_type, binary_frame as i32);
         }

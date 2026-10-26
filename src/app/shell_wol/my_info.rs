@@ -3,7 +3,7 @@
 //! The model is [`crate::ui::wol_my_info`]; `wolinfoMD.ini` goes through
 //! [`super::persona`].
 
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use super::WolPage;
 use super::service::{self, WolServiceRequest};

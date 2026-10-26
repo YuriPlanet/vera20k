@@ -8,8 +8,8 @@
 //! Moving Techno owners retain the constructor's world offset; buildings stay
 //! stationary. Foot owners in tubes suppress births, not existing particles.
 
+use super::Particle;
 use super::wind::{SMOKE_WIND_DX, SMOKE_WIND_DY};
-use super::{Particle, ParticleSystem};
 use crate::rules::particle_type::{ParticleBehavesLike, ParticleType};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
@@ -17,81 +17,121 @@ use crate::sim::world::Simulation;
 use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF32Bits};
 use glam::IVec3;
 
-pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleSet) {
+pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
+    let Some(sys) = sim.particle_systems().get(id) else {
+        return;
+    };
     let pst = rules.particle_system_type(sys.type_id);
-    //62ED49..62EDB5: Techno flag2, excluding Building WhatAmI6. This is
-    //before child AI even when done spawning. GetCoords has one shared owner;
-    //the offset is retained in world axes, so turning does not rotate it.
-    //Source/control: tools/spatial_oracle/damage_smoke.md (--following).
-    if let Some(owner) = sys
+    let owner_house = sys.owner_house;
+    // ParticleSystemAI62ED40 / ParticleAIDispatch62CE40: child Gas damage
+    // calls ReceiveDamage synchronously. Keep this registered system resident
+    // while that callback inserts another Ground system and reads GetYSort.
+    //62ED49..62EDB5: follow the Foot owner before any child AI, including when
+    //done spawning. Publish the new coordinates to the same store first.
+    let followed = sys
         .owner_entity
-        .and_then(|id| sim.substrate.entities.get(id))
-        && owner.category().is_foot()
+        .and_then(|owner| sim.substrate.entities.get(owner))
+        .filter(|owner| owner.category().is_foot())
+        .map(|owner| {
+            let origin = crate::sim::movement::ground_pose::object_get_coords(
+                owner,
+                sim.resolved_terrain.as_ref(),
+            );
+            offset_coords(
+                IVec3::new(origin.x, origin.y, origin.z),
+                sys.offset.x,
+                sys.offset.y,
+                sys.offset.z,
+            )
+        });
+    if let Some(coords) = followed {
+        sim.substrate.particle_systems.get_mut(id).unwrap().coords = coords;
+    }
+    //62EDC7..62EDDE re-reads Count after each synchronous child AI.
+    let mut index = 0;
+    while let Some(mut p) = sim
+        .particle_systems()
+        .get(id)
+        .and_then(|sys| sys.particles.get(index))
+        .cloned()
     {
-        let origin = crate::sim::movement::ground_pose::object_get_coords(
-            owner,
-            sim.resolved_terrain.as_ref(),
-        );
-        sys.coords = offset_coords(
-            IVec3::new(origin.x, origin.y, origin.z),
-            sys.offset.x,
-            sys.offset.y,
-            sys.offset.z,
-        );
+        super::system_ai::tick_particle(&mut p, sim, rules, owner_house);
+        sim.substrate
+            .particle_systems
+            .commit_particle_tick(id, index, p);
+        index += 1;
     }
-    //62EDD0: every original child AI forward, even one already marked dead.
-    for p in &mut sys.particles {
-        super::system_ai::tick_particle(p, sim, rules, sys.owner_house);
-    }
-    //62ED40/62F037: backward over the ORIGINAL count. Appended children wait until
-    //the next visit; parent deletion compacts only after both births/fades.
+    let Some(sys) = sim.particle_systems().get(id) else {
+        return;
+    };
+    //62EDE0 freezes the reverse walk's initial index: newly appended children
+    //wait for their next AI visit; parent removal follows both births/fades.
     for index in (0..sys.particles.len()).rev() {
-        if !sys.particles[index].marked_for_deletion {
-            let p = &mut sys.particles[index];
-            let pt = rules.particle_type(p.type_id);
+        let Some(mut p) = sim
+            .particle_systems()
+            .get(id)
+            .and_then(|sys| sys.particles.get(index))
+            .cloned()
+        else {
+            continue;
+        };
+        let pt = rules.particle_type(p.type_id);
+        if !p.marked_for_deletion {
             if pt.behaves_like == ParticleBehavesLike::Smoke {
-                move_smoke(p, pt, rules.general.wind_direction(), sim);
+                move_smoke(&mut p, pt, rules.general.wind_direction(), sim);
             }
-            // RESIDUAL: mixed Gas/Fire MoveDispatch bodies remain incomplete;
-            // neither stock damaged-building Smoke type has NextParticle.
-            continue; // a Move-dead child is retained/drawn until next visit.
+            // RESIDUAL: mixed Gas/Fire MoveDispatch bodies remain incomplete.
+            sim.substrate
+                .particle_systems
+                .commit_particle_tick(id, index, p);
+            continue;
         }
-        let parent = sys.particles[index].clone();
-        let pt = rules.particle_type(parent.type_id);
         if let Some(next) = pt.next_particle {
             let radius = pt.radius >> 3;
             let dx = symmetric_offset(radius, sim.particle_rng());
             let dy = symmetric_offset(radius, sim.particle_rng());
             for sign in [1i32, -1] {
-                let coords = offset_coords(
-                    parent.coords,
-                    dx.wrapping_mul(sign),
-                    dy.wrapping_mul(sign),
-                    0,
-                );
+                let coords =
+                    offset_coords(p.coords, dx.wrapping_mul(sign), dy.wrapping_mul(sign), 0);
                 let mut child =
                     Particle::new(next, coords, IVec3::ZERO, rules.particle_type(next), sim);
-                //62EF3B/62EFA0..62F003: ctor Smoke draw is retained even though its
-                //speed is overwritten; one fade draw follows EACH ctor.
-                child.velocity = parent.velocity;
+                //62EF3B/62EFA0..62F003: constructor draw then one fade draw.
+                child.velocity = p.velocity;
                 child.translucency = if sim.particle_rng().next_raw_modulo_signed(6) != 0 {
-                    parent.translucency.wrapping_add(25)
+                    p.translucency.wrapping_add(25)
                 } else {
-                    parent.translucency
+                    p.translucency
                 };
-                sys.particles.push(child);
+                if let Some(sys) = sim.substrate.particle_systems.get_mut(id) {
+                    sys.particles.push(child);
+                }
             }
         }
-        let particle = sys
-            .remove_expired_child(parent.stable_id())
-            .expect("the current child is present");
-        sim.retire_particle(particle, rules);
+        if let Some(particle) = sim
+            .substrate
+            .particle_systems
+            .get_mut(id)
+            .and_then(|sys| sys.remove_expired_child(p.stable_id()))
+        {
+            sim.retire_particle(particle, rules);
+        }
     }
 
     //62F047: Smoke ignores Spawns and ParticleCap. Offset draws precede
     //the HoldsWhat lookup, even when the type index is absent.
-    if !sys.done_spawning && sys.alive() {
-        let divisor = X87::ftol_i32_low_masked(X87::load_f32(sys.spawn_timer));
+    let Some(sys) = sim.particle_systems().get(id) else {
+        return;
+    };
+    let (done, alive, timer, owner, coords, target_coords) = (
+        sys.done_spawning,
+        sys.alive(),
+        sys.spawn_timer,
+        sys.owner_entity,
+        sys.coords,
+        sys.target_coords,
+    );
+    if !done && alive {
+        let divisor = X87::ftol_i32_low_masked(X87::load_f32(timer));
         if (sim.session.binary_frame() as i32)
             .checked_rem(divisor)
             .expect("native Smoke spawning requires valid IDIV")
@@ -99,8 +139,7 @@ pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules:
             //62F080..62F098: Foot flag4 with signed tube byte+684 >= 0
             //skips emission BEFORE its offset/constructor RNG draws. Existing
             //particles, spawn accumulator and system lifetime still advance.
-            && !sys
-                .owner_entity
+            && !owner
                 .and_then(|id| sim.substrate.entities.get(id))
                 .is_some_and(|owner| {
                     owner.category().is_foot() && owner.low_bridge_tube_state.is_some()
@@ -111,16 +150,16 @@ pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules:
             let dx = sim.particle_rng().next_raw_modulo_signed(radius as u32);
             let dy = sim.particle_rng().next_raw_modulo_signed(radius as u32);
             if let Some(holds) = pst.holds_what {
-                let coords = offset_coords(sys.coords, dx, dy, 10);
+                let coords = offset_coords(coords, dx, dy, 10);
                 let mut p = Particle::new(
                     holds,
                     coords,
-                    sys.target_coords,
+                    target_coords,
                     rules.particle_type(holds),
                     sim,
                 );
                 if X87::compare(
-                    X87::load_f32(sys.spawn_timer),
+                    X87::load_f32(timer),
                     X87::load_f32(pst.spawn_translucency_cutoff),
                 ) == MaskedX87Ordering::Greater
                 {
@@ -130,10 +169,7 @@ pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules:
                 let speed = X87::sub(
                     X87::load_f32(p.velocity),
                     X87::mul(
-                        X87::sub(
-                            X87::load_f32(sys.spawn_timer),
-                            X87::load_i32(pst.spawn_frames),
-                        ),
+                        X87::sub(X87::load_f32(timer), X87::load_i32(pst.spawn_frames)),
                         X87::load_f32(NativeF32Bits::from_bits(0x3EB3_3333)),
                     ),
                 );
@@ -141,16 +177,20 @@ pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules:
                 if X87::compare(speed, X87::load_i32(2)) == MaskedX87Ordering::Less {
                     p.velocity = NativeF32Bits::from_bits(0x4000_0000);
                 }
-                sys.particles.push(p);
+                if let Some(sys) = sim.substrate.particle_systems.get_mut(id) {
+                    sys.particles.push(p);
+                }
             }
         }
     }
     //62F1F3..62F218: cutoff compares the UNSTORED sum. It can exceed
     //cutoff although the chopped binary32 result equals cutoff exactly.
-    let sum = X87::add(X87::load_f32(sys.spawn_timer), X87::load_f32(pst.slowdown));
-    sys.spawn_timer = X87::store_f32_masked_chop(sum);
-    if X87::compare(sum, X87::load_f32(pst.spawn_cutoff)) == MaskedX87Ordering::Greater {
-        sys.done_spawning = true;
+    let sum = X87::add(X87::load_f32(timer), X87::load_f32(pst.slowdown));
+    if let Some(sys) = sim.substrate.particle_systems.get_mut(id) {
+        sys.spawn_timer = X87::store_f32_masked_chop(sum);
+        if X87::compare(sum, X87::load_f32(pst.spawn_cutoff)) == MaskedX87Ordering::Greater {
+            sys.done_spawning = true;
+        }
     }
 }
 

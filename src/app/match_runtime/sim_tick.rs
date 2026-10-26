@@ -9,7 +9,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 #[cfg(feature = "telemetry-dashboard")]
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use crate::app::AppState;
 use crate::app::input::commands::{preferred_local_owner, preferred_local_owner_name};
@@ -86,8 +86,8 @@ fn replay_flush_facts(state: &AppState) -> (u64, u64) {
         .sim_runtime
         .as_ref()
         .map_or(0, |rt| rt.simulation.session().tick());
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = crate::util::time::SystemTime::now()
+        .duration_since(crate::util::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
     (session_tick, now)
@@ -1384,7 +1384,7 @@ fn advance_one_simulation_frame(
                     timing.tick_hz = state
                         .match_state
                         .telemetry_tick_rate
-                        .rate(std::time::Instant::now());
+                        .rate(crate::util::time::Instant::now());
                     let mut point = rt.simulation.report_point();
                     point.timing = Some(timing);
                     point.render = state.diag.render_timing.report();

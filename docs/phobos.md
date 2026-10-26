@@ -44,3 +44,42 @@ Supported extensions:
 - [Skirmish AI dehardcoding](phobos-ai-dehardcode.md) (last-legs sale/hunt switches and MCV deploy regroup)
 - [Parallel AI queue limits](phobos-parallel-ai-queues.md) (per-category and per-type AI clone forbids)
 - [Unlimited skirmish colours](phobos-skirmish-unlimited-colors.md) (spawner colour indices address any `[Colors]` entry)
+
+## Original project and authors
+
+VERA20K implements the behavior in Rust. It does not load `Phobos.dll`, import
+Phobos C++ source or redistribute Phobos binaries; the native identities cited
+by these pages are the Phobos sources named in each page.
+
+Phobos is developed by the Phobos Developers. The features ported here
+originate with:
+
+- Custom radiation types - **Otamaa**, who ported and fixed the **Ares
+  developers**' unfinished RadTypes code.
+- Shields - **Uranusian**, **secsome**, **Belonit**; shield warhead
+  modifications **Starkku**; absorption/passthrough **Morton**; respawn
+  animation and weapon **Ollerus**.
+- Custom ore spawners - **Kerbiter**.
+- Custom gather animations - **secsome**, **Uranusian**.
+- Ore-stage animation hiding (`HideIfNoOre` threshold) - **Otamaa**.
+- Superweapon techno gates (`SW.AuxTechnos`, `SW.NegTechnos`,
+  `SW.TechLevel`) - **NetsuNegi**; their building-upgrade counts -
+  **NetsuNegi**, **Ollerus**.
+- Digital display - **ststl**, **FlyStar**, **NaotoYuuki**, **Saigyouji**,
+  **JunJacobYoung**, **CrimRecya**.
+- Placement preview - **Otamaa**, **Belonit**.
+- Sidebar GDI/NOD positions - **Belonit**.
+- Building production queue - **CrimRecya**.
+- INI `$Include` / `$Inherits` - **Morton**.
+- Skirmish AI dehardcoding (last-legs sale/hunt, MCV deploy regroup) -
+  **TaranDahl**.
+- Parallel AI queue forbids - **Trsdy**, **NetsuNegi** (by category),
+  **Starkku** (by TechnoType).
+- Unlimited skirmish colours - **Morton**.
+
+The project's full contributor list is in
+[Phobos CREDITS.md](https://github.com/Phobos-developers/Phobos/blob/develop/CREDITS.md).
+VERA's include and inheritance traversal also adapts ra2-mono's `IniFile`;
+see [INI directives](ini-directives.md#source-mapping).
+
+简体中文：[扩展支持与原作者](zh-CN/credits.md)。

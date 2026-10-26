@@ -294,16 +294,16 @@ impl WolInfoFile {
     }
 
     fn read(&self) -> Option<IniFile> {
-        let bytes = std::fs::read(&self.path).ok()?;
+        let bytes = crate::util::file_system::read(&self.path).ok()?;
         Some(IniFile::from_bytes(&bytes).unwrap_or_else(|_| IniFile::from_str("")))
     }
 
     /// CDFileClass open-or-create, as the setters and `LoadRecord` do.
     fn read_or_create(&self) -> io::Result<Vec<u8>> {
-        match std::fs::read(&self.path) {
+        match crate::util::file_system::read(&self.path) {
             Ok(bytes) => Ok(bytes),
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                std::fs::write(&self.path, b"")?;
+                crate::util::file_system::write(&self.path, b"")?;
                 Ok(Vec::new())
             }
             Err(error) => Err(error),
@@ -313,7 +313,7 @@ impl WolInfoFile {
     fn update(&self, edit: impl FnOnce(&[u8]) -> Vec<u8>) {
         let result = self
             .read_or_create()
-            .and_then(|bytes| std::fs::write(&self.path, edit(&bytes)));
+            .and_then(|bytes| crate::util::file_system::write(&self.path, edit(&bytes)));
         if let Err(error) = result {
             log::warn!("Could not save {}: {error}", self.path.display());
         }

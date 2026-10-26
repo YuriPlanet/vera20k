@@ -56,7 +56,7 @@ mod object_stages_gpu_tests;
 
 use anyhow::Result;
 #[cfg(feature = "telemetry-dashboard")]
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 // Re-export shared types so any remaining `use crate::app::presentation::render::Foo` imports still compile.
 // New code should import from `crate::app::types` directly.

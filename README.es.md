@@ -165,6 +165,7 @@ Gracias a OpenRA, XCC Mixer, la wiki ModEnc, Project Perfect Mod, la publicació
 código fuente de Command & Conquer y Red Alert bajo la GPL, World-Altering Editor, Final Alert, YRpp,
 Ares, Phobos y muchos otros.
 
+Copyright © 2026 Halvor Nikolai Rusten y los colaboradores de VERA20K.
 Distribuido bajo la licencia [GPLv3](LICENSE-GPL). Este repositorio no contiene archivos del juego.
 Command & Conquer y Red Alert son marcas comerciales de Electronic Arts Inc., y las capturas de
 pantalla y el icono de la aplicación, la estrella roja de Red Alert 2, muestran arte del juego

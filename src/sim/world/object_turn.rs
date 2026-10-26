@@ -1098,6 +1098,18 @@ impl Simulation {
             .get(stable_id)
             .is_some_and(|entity| entity.category() == EntityCategory::Infantry);
         if infantry {
+            // Installed Ares InfantryClass_Update_Reload10047980 replaces
+            // gamemd51BCB2: out of limbo, Reload(+424) before idle Scatter.
+            // The shared Techno owner supplies count/clock semantics; the
+            // Unit-only MobileFire pause is deliberately not used here.
+            #[cfg(feature = "ares")]
+            if let Some(entity) = sim.substrate.entities.get_mut(stable_id)
+                && entity.is_object_alive()
+                && !entity.lifecycle.in_limbo()
+                && let Some(obj) = sim.interner.object_type(entity.type_ref(), rules)
+            {
+                entity.reload_techno_ammo(obj, sim.session.binary_frame() as i32);
+            }
             //51BCA4..51BDCF follows the entire FootAI, including Process and
             // its tails. A successful Scatter invokes Process a second time
             // synchronously, before the Infantry Ready/Commence/fire suffix.

@@ -88,7 +88,7 @@ impl SpawnRequest {
     pub(crate) fn read(path: &Path) -> Result<Self> {
         // The client writes UTF-8 and the Spawner explicitly decodes player
         // names as UTF-8. Retail IniFile::from_bytes instead widens bytes.
-        let text = std::fs::read_to_string(path)
+        let text = crate::util::file_system::read_to_string(path)
             .with_context(|| format!("cannot read CnCNet launch file {}", path.display()))?;
         let mut request = Self::parse(&text)
             .with_context(|| format!("invalid CnCNet launch file {}", path.display()))?;

@@ -526,6 +526,12 @@ pub(crate) trait FireQuery {
     /// GetWeapon (vt+0x3F8) of this index: its WeaponType, `None` for an
     /// empty slot.
     fn weapon(&mut self, index: i32) -> Option<WeaponFacts>;
+    /// Installed Ares CanFire_Ammo100479B0, gamemd6FCA0D. Ordinary
+    /// instruction fixtures retain the original one-round requirement.
+    #[cfg(feature = "ares")]
+    fn weapon_ammo_cost(&mut self, _index: i32) -> i32 {
+        1
+    }
     /// vt+0x3A8 InRange (T61).
     fn in_range(&mut self) -> bool;
     /// vt+0x2E8, the naval target selector; -1 refuses (T40).
@@ -1058,7 +1064,11 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
         return Rearm;
     }
     // T47 `0x006FCA0D`: -1 is unlimited.
-    if firer.ammo == 0 {
+    #[cfg(feature = "ares")]
+    let lacks_ammo = firer.ammo >= 0 && firer.ammo < query.weapon_ammo_cost(facts.weapon_index);
+    #[cfg(not(feature = "ares"))]
+    let lacks_ammo = firer.ammo == 0;
+    if lacks_ammo {
         return Ammo;
     }
     // T48 `0x006FCA26`: an aircraft surfaces only from a full cloak.

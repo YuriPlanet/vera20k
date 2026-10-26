@@ -2,7 +2,7 @@
 //! NewEdit614B30 ->5EDD00 ->5DE360. Discovery and displayed rows are views;
 //! admitted participants, setup, timers and service requests belong to the app.
 
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use crate::ui::shell::button::ShellButtonInteraction;
 use crate::ui::shell::descriptor::DialogId;

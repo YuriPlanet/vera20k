@@ -105,6 +105,9 @@ Arrows show data flow:
 
 ## Build and run
 
+An opt-in [WebAssembly single-player preview](docs/wasm.md) is also available.
+It uses a separate build command; desktop builds keep their existing defaults.
+
 You need:
 
 - **Rust and Git:** [Rust](https://rustup.rs/) 1.97 or later, installed with rustup, and
@@ -158,6 +161,7 @@ Thanks to OpenRA, XCC Mixer, the ModEnc wiki, Project Perfect Mod, EA's GPL sour
 Command & Conquer and Red Alert, World-Altering Editor, Final Alert, YRpp, Ares, Phobos and
 many others.
 
+Copyright © 2026 Halvor Nikolai Rusten and VERA20K contributors.
 Licensed under the [GPLv3](LICENSE-GPL). This repository contains no game files. Command &
 Conquer and Red Alert are trademarks of Electronic Arts Inc., and the screenshots and the app
 icon, Red Alert 2's red star, show game art owned by Electronic Arts. VERA20K is not affiliated
@@ -167,7 +171,7 @@ with or endorsed by Electronic Arts.
 
 - [Build and run](#build-and-run): requirements and building from source.
 - [INI profiles](docs/ini-roots.md): choosing rules, art and AI files.
-- [Ares](docs/ares.md), [Phobos](docs/phobos.md) and [NPatch](docs/npatch.md): extension support and limitations.
+- [Ares](docs/ares.md), [Phobos](docs/phobos.md), [NPatch](docs/npatch.md) and [VeraX](docs/verax.md): extension support and limitations.
 - [Engine overview](docs/index.md): code layout and how the engine fits together.
 - [Developer tools](tools/README.md): builds, tests and asset inspection.
 - [Map testing](tools/map_observation.md): scripted scenarios, screenshots and match observations.

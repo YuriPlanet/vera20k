@@ -4,6 +4,7 @@ mod sha256;
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");
     multiplayer_build_identity();
+    source_location();
 
     // Build scripts run on the host; inspect Cargo's target for cross-builds.
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").expect("Cargo sets target OS");
@@ -84,6 +85,18 @@ fn multiplayer_build_identity() {
     );
 }
 
+/// Where the startup splash's license notice says this build's source is: the
+/// commit a release build was made from (`VERA20K_COMMIT`, which the Release
+/// workflow sets), otherwise the repository.
+fn source_location() {
+    println!("cargo::rerun-if-env-changed=VERA20K_COMMIT");
+    let source = match std::env::var("VERA20K_COMMIT") {
+        Ok(commit) if !commit.is_empty() => format!("github.com/YuriPlanet/vera20k/tree/{commit}"),
+        _ => "github.com/YuriPlanet/vera20k".to_owned(),
+    };
+    println!("cargo::rustc-env=VERA20K_SOURCE={source}");
+}
+
 /// The game's icon and version details, which Explorer, the Start menu and
 /// Task Manager show for vera20k.exe. `winresource` compiles them with the
 /// Windows SDK's resource compiler, which only a Windows host has; a build on
@@ -101,7 +114,8 @@ fn embed_windows_resources() {
         .set("OriginalFilename", "vera20k.exe")
         .set(
             "LegalCopyright",
-            "Free software under the GNU GPL version 3. \
+            "Copyright © 2026 Halvor Nikolai Rusten and VERA20k contributors. \
+             Free software under the GNU GPL version 3. \
              Not affiliated with or endorsed by Electronic Arts.",
         );
     // Only the game, like the stack size. It runs without them, so a missing
