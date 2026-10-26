@@ -4706,6 +4706,19 @@ impl RuleSet {
                 object.bind_ares_techno_rules(emp, attachment, cloak_allowed);
             }
         }
+        #[cfg(feature = "ares")]
+        for (category, name, retained) in processed.super_weapon_techno_states() {
+            if let Some(handle) = rules
+                .object_category_index
+                .get(&(category, name.to_ascii_uppercase()))
+                .copied()
+            {
+                rules.object_list[handle.0 as usize].bind_super_weapon_ranges(
+                    retained.designator_range,
+                    retained.inhibitor_range,
+                );
+            }
+        }
         for (name, ares) in processed.ares_warhead_states() {
             if let Some(warhead) = rules
                 .warheads
@@ -6131,6 +6144,40 @@ impl RuleSet {
         self.type_handle(id).map(|h| self.object_by_handle(h))
     }
 
+    /// Cameo10034E75/10034F3F and SPECIAL_PLACE10038EB9 use the same
+    /// retained flag. Expose the fact without exporting mutable SWExt state.
+    pub fn super_weapon_uses_ai_targeting(&self, id: &str) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            self.super_weapon_target_policy(id)
+                .is_some_and(|policy| policy.use_ai_targeting)
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            let _ = id;
+            false
+        }
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn super_weapon_target_policy(
+        &self,
+        id: &str,
+    ) -> Option<&crate::rules::superweapon_targeting::AresTargetPolicy> {
+        // Stock redirected effects retain their existing dispatch owners.
+        // This chain covers the two implemented extension payloads.
+        use crate::rules::superweapon_type::SuperWeaponKind as K;
+        matches!(
+            self.super_weapon(id)?.kind,
+            K::GenericWarhead | K::UnitDelivery
+        )
+            .then(|| {
+                self.super_weapon_metadata(id)
+                    .map(|metadata| metadata.targeting())
+            })
+            .flatten()
+    }
+
     /// `Type == Rules+0x498` (`[General] PrismType=`, `0x0044B2F8`).
     pub(crate) fn is_prism_type(&self, object: &ObjectType) -> bool {
         self.general
@@ -6738,6 +6785,23 @@ impl RuleSet {
                 .collect::<BTreeMap<_, _>>()
                 .hash(&mut hasher);
             b"ares-keep-alive-v1".hash(&mut hasher);
+            let influence_types = self
+                .object_list
+                .iter()
+                .filter(|object| {
+                    object.designator_range().is_some() || object.inhibitor_range().is_some()
+                })
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        (object.designator_range(), object.inhibitor_range()),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !influence_types.is_empty() {
+                b"ares-sw-influence-types-v1".hash(&mut hasher);
+                influence_types.hash(&mut hasher);
+            }
             self.object_list
                 .iter()
                 .map(|object| {

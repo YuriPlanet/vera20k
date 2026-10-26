@@ -10,7 +10,7 @@
 use crate::rules::ini_parser::IniSection;
 use crate::util::native_x87::NativeF64Bits;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct TargetMask(u8);
 
 impl TargetMask {
@@ -27,7 +27,7 @@ impl TargetMask {
     pub const ALL: Self = Self(255);
 
     #[cfg(feature = "ares")]
-    fn intersects(self, other: Self) -> bool {
+    pub(crate) fn intersects(self, other: Self) -> bool {
         self.0 & other.0 != 0
     }
 
@@ -167,42 +167,304 @@ pub struct SuperWeaponTargeting {
 
 #[cfg(feature = "ares")]
 impl SuperWeaponTargeting {
-    pub fn from_ini(section: &IniSection) -> Self {
-        let range = |key| {
-            let value = if section.is_present(key) {
-                section.read_double(key, f64::NAN)
-            } else {
-                -1.0
-            };
-            NativeF64Bits::from_bits(value.to_bits())
-        };
-        Self {
-            manual: TargetRequirements::parse(
-                section.read_name("SW.RequiresTarget", 0x100).unwrap_or(""),
-                section.read_name("SW.RequiresHouse", 0x100).unwrap_or(""),
-            ),
-            // GenericWarhead defaults to the Offensive targeting mode. Its
-            // automatic requirements are independent of the manual masks.
-            automatic: TargetRequirements::parse(
-                section
-                    .read_name("SW.AIRequiresTarget", 0x100)
-                    .unwrap_or("all-technos"),
-                section
-                    .read_name("SW.AIRequiresHouse", 0x100)
-                    .unwrap_or("enemies"),
-            ),
-            fire_into_shroud: section.read_bool("SW.FireIntoShroud", true),
-            range_minimum: range("SW.RangeMinimum"),
-            range_maximum: range("SW.RangeMaximum"),
-        }
-    }
-
     pub fn range(&self) -> (f64, f64) {
         (
             f64::from_bits(self.range_minimum.bits()),
             f64::from_bits(self.range_maximum.bits()),
         )
     }
+}
+
+/// Ares3.0 mode reader10034350, exact table1009BAF8 (21 entries).
+/// The table includes modes whose selectors are separate pending mechanisms;
+/// recognizing a mode must not substitute a different selector for it.
+#[cfg(feature = "ares")]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub(crate) enum AiTargetingMode {
+    #[default]
+    None,
+    Nuke,
+    LightningStorm,
+    PsychicDominator,
+    ParaDrop,
+    GeneticMutator,
+    ForceShield,
+    NoTarget,
+    Offensive,
+    Stealth,
+    SelfTarget,
+    Base,
+    MultiMissile,
+    HunterSeeker,
+    EnemyBase,
+    IronCurtain,
+    Attack,
+    LowPower,
+    LowPowerAttack,
+    DropPod,
+    LightningRandom,
+}
+
+#[cfg(feature = "ares")]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub(crate) enum AiTargetPreference {
+    #[default]
+    None,
+    Offensive,
+    Defensive,
+}
+
+#[cfg(feature = "ares")]
+impl AiTargetingMode {
+    fn parse(raw: &str) -> Option<Self> {
+        const MODES: [(&str, AiTargetingMode); 21] = [
+            ("None", AiTargetingMode::None),
+            ("Nuke", AiTargetingMode::Nuke),
+            ("LightningStorm", AiTargetingMode::LightningStorm),
+            ("PsychicDominator", AiTargetingMode::PsychicDominator),
+            ("ParaDrop", AiTargetingMode::ParaDrop),
+            ("GeneticMutator", AiTargetingMode::GeneticMutator),
+            ("ForceShield", AiTargetingMode::ForceShield),
+            ("NoTarget", AiTargetingMode::NoTarget),
+            ("Offensive", AiTargetingMode::Offensive),
+            ("Stealth", AiTargetingMode::Stealth),
+            ("Self", AiTargetingMode::SelfTarget),
+            ("Base", AiTargetingMode::Base),
+            ("MultiMissile", AiTargetingMode::MultiMissile),
+            ("HunterSeeker", AiTargetingMode::HunterSeeker),
+            ("EnemyBase", AiTargetingMode::EnemyBase),
+            ("IronCurtain", AiTargetingMode::IronCurtain),
+            ("Attack", AiTargetingMode::Attack),
+            ("LowPower", AiTargetingMode::LowPower),
+            ("LowPowerAttack", AiTargetingMode::LowPowerAttack),
+            ("DropPod", AiTargetingMode::DropPod),
+            ("LightningRandom", AiTargetingMode::LightningRandom),
+        ];
+        MODES
+            .iter()
+            .find_map(|(name, mode)| name.eq_ignore_ascii_case(raw).then_some(*mode))
+    }
+
+    /// Native defaults1009B8A0, stride12: constraints+4, preference+8,
+    /// automatic target+9 and house+10. Nullable overrides remain separate.
+    fn defaults(self) -> (u32, AiTargetPreference, TargetMask, HouseMask) {
+        use AiTargetPreference as P;
+        match self {
+            Self::Nuke => (4, P::Offensive, TargetMask::ALL_TECHNOS, HouseMask::ENEMIES),
+            Self::LightningStorm => (
+                12,
+                P::Offensive,
+                TargetMask::ALL_TECHNOS,
+                HouseMask::ENEMIES,
+            ),
+            Self::PsychicDominator => (21, P::None, TargetMask(24), HouseMask(7)),
+            Self::ParaDrop => (0, P::Offensive, TargetMask::NONE, HouseMask::NONE),
+            Self::GeneticMutator => (1, P::None, TargetMask::INFANTRY, HouseMask(7)),
+            Self::ForceShield => (0, P::Defensive, TargetMask::NONE, HouseMask::NONE),
+            Self::Offensive => (4, P::None, TargetMask::ALL_TECHNOS, HouseMask::ENEMIES),
+            Self::Stealth => (0, P::None, TargetMask::ALL_TECHNOS, HouseMask::ENEMIES),
+            Self::MultiMissile => (4, P::Offensive, TargetMask::BUILDING, HouseMask::ENEMIES),
+            Self::HunterSeeker | Self::EnemyBase | Self::DropPod => {
+                (4, P::None, TargetMask::NONE, HouseMask::NONE)
+            }
+            Self::Attack => (32, P::None, TargetMask::NONE, HouseMask::NONE),
+            Self::LowPower => (64, P::None, TargetMask::NONE, HouseMask::NONE),
+            Self::LowPowerAttack => (96, P::None, TargetMask::NONE, HouseMask::NONE),
+            Self::None
+            | Self::NoTarget
+            | Self::SelfTarget
+            | Self::Base
+            | Self::IronCurtain
+            | Self::LightningRandom => (0, P::None, TargetMask::NONE, HouseMask::NONE),
+        }
+    }
+}
+
+/// The retained common SWTypeExt policy, read by ProcessedType in pass order.
+/// Other definitions project it; no payload keeps its own competing copy.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresTargetPolicy {
+    initialized: bool,
+    pub(crate) use_ai_targeting: bool,
+    pub(crate) auto_fire: bool,
+    pub(crate) manual_fire: bool,
+    pub(crate) ai_mode: AiTargetingMode,
+    constraints: Option<u32>,
+    preference: Option<AiTargetPreference>,
+    pub(crate) affects_target: TargetMask,
+    pub(crate) affects_house: HouseMask,
+    manual_target: TargetMask,
+    manual_house: HouseMask,
+    ai_target: Option<TargetMask>,
+    ai_house: Option<HouseMask>,
+    fire_into_shroud: bool,
+    range_minimum: NativeF64Bits,
+    range_maximum: NativeF64Bits,
+}
+
+#[cfg(feature = "ares")]
+impl Default for AresTargetPolicy {
+    fn default() -> Self {
+        // SWTypeExt ctor10031460: packed01010007 at10031733;
+        // mode/nullable flags1003176A..10031783; masks100317AE/B8.
+        // Both ranges take binary64 -1 at1003180E/4E/59 (1009C338).
+        Self {
+            initialized: false,
+            use_ai_targeting: false,
+            auto_fire: false,
+            manual_fire: true,
+            ai_mode: AiTargetingMode::None,
+            constraints: None,
+            preference: None,
+            affects_target: TargetMask::ALL,
+            affects_house: HouseMask(7),
+            manual_target: TargetMask::NONE,
+            manual_house: HouseMask::NONE,
+            ai_target: None,
+            ai_house: None,
+            fire_into_shroud: true,
+            range_minimum: NativeF64Bits::from_bits((-1.0_f64).to_bits()),
+            range_maximum: NativeF64Bits::from_bits((-1.0_f64).to_bits()),
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl AresTargetPolicy {
+    pub(crate) fn read_pass(&mut self, section: &IniSection, kind: Option<&str>) {
+        if !self.initialized {
+            // NewSWType Initialize is called once by10033250, before the
+            // common reads. These are the two extension types in this public chain.
+            self.ai_mode = match kind {
+                Some(kind) if kind.eq_ignore_ascii_case("GenericWarhead") => {
+                    AiTargetingMode::Offensive
+                }
+                Some(kind) if kind.eq_ignore_ascii_case("UnitDelivery") => {
+                    AiTargetingMode::ParaDrop
+                }
+                _ => AiTargetingMode::None,
+            };
+            self.initialized = true;
+        }
+        // SWTypeExt ReadINI10033370. Unimplemented intervening keys do not
+        // alias these scalar fields. Native readers retain on unsuccessful input.
+        self.fire_into_shroud = section.read_ares_bool("SW.FireIntoShroud", self.fire_into_shroud);
+        self.auto_fire = section.read_ares_bool("SW.AutoFire", self.auto_fire);
+        self.manual_fire = section.read_ares_bool("SW.ManualFire", self.manual_fire);
+        if let Some(bits) = read_native_mask(section, "SW.AffectsHouse", house_token) {
+            self.affects_house = HouseMask(bits as u8);
+        }
+        self.use_ai_targeting = section.read_ares_bool("SW.UseAITargeting", self.use_ai_targeting);
+        self.ai_mode =
+            section.read_string_with("SW.AITargeting", 2048, self.ai_mode, |previous, raw| {
+                AiTargetingMode::parse(raw).unwrap_or(previous)
+            });
+        if let Some(bits) =
+            read_native_mask(section, "SW.AITargeting.Constraints", constraint_token)
+        {
+            self.constraints = Some(bits);
+        }
+        self.preference = section.read_string_with(
+            "SW.AITargeting.Preference",
+            2048,
+            self.preference,
+            |previous, raw| {
+                [
+                    ("none", AiTargetPreference::None),
+                    ("offensive", AiTargetPreference::Offensive),
+                    ("defensive", AiTargetPreference::Defensive),
+                ]
+                .iter()
+                .find_map(|(name, preference)| {
+                    name.eq_ignore_ascii_case(raw).then_some(Some(*preference))
+                })
+                .unwrap_or(previous)
+            },
+        );
+        if let Some(bits) = read_native_mask(section, "SW.AffectsTarget", target_token) {
+            self.affects_target = TargetMask(bits as u8);
+        }
+        if let Some(bits) = read_native_mask(section, "SW.RequiresTarget", target_token) {
+            self.manual_target = TargetMask(bits as u8);
+        }
+        if let Some(bits) = read_native_mask(section, "SW.RequiresHouse", house_token) {
+            self.manual_house = HouseMask(bits as u8);
+        }
+        if let Some(bits) = read_native_mask(section, "SW.AIRequiresTarget", target_token) {
+            self.ai_target = Some(TargetMask(bits as u8));
+        }
+        if let Some(bits) = read_native_mask(section, "SW.AIRequiresHouse", house_token) {
+            self.ai_house = Some(HouseMask(bits as u8));
+        }
+        self.range_minimum = section.read_ares_double_bits("SW.RangeMinimum", self.range_minimum);
+        self.range_maximum = section.read_ares_double_bits("SW.RangeMaximum", self.range_maximum);
+    }
+
+    pub(crate) fn constraints(&self) -> u32 {
+        self.constraints.unwrap_or(self.ai_mode.defaults().0)
+    }
+    pub(crate) fn preference(&self) -> AiTargetPreference {
+        self.preference.unwrap_or(self.ai_mode.defaults().1)
+    }
+    pub(crate) fn targeting(&self) -> SuperWeaponTargeting {
+        let defaults = self.ai_mode.defaults();
+        SuperWeaponTargeting {
+            manual: TargetRequirements {
+                target: Ok(self.manual_target),
+                house: Ok(self.manual_house),
+            },
+            automatic: TargetRequirements {
+                target: Ok(self.ai_target.unwrap_or(defaults.2)),
+                house: Ok(self.ai_house.unwrap_or(defaults.3)),
+            },
+            fire_into_shroud: self.fire_into_shroud,
+            range_minimum: self.range_minimum,
+            range_maximum: self.range_maximum,
+        }
+    }
+}
+
+// Ares mask readers100341D0/10034290/10034430: comma-only strtok10007920,
+// then _strcmpi7C8D20. Do not trim inner tokens or accept donor-only aliases.
+// No field is written until every token matched; invalid later passes retain.
+
+#[cfg(feature = "ares")]
+fn target_token(name: &str) -> Option<u32> {
+    [
+        ("none", 0),
+        ("land", 1),
+        ("water", 2),
+        ("empty", 4),
+        ("infantry", 8),
+        ("units", 16),
+        ("buildings", 32),
+        ("all", 255),
+    ]
+    .iter()
+    .find_map(|(key, bits)| key.eq_ignore_ascii_case(name).then_some(*bits))
+}
+
+#[cfg(feature = "ares")]
+fn constraint_token(name: &str) -> Option<u32> {
+    [
+        ("none", 0),
+        ("offensive_cell_clear", 1),
+        ("defensive_cell_clear", 2),
+        ("enemy", 4),
+        ("lightningstorm_inactive", 8),
+        ("dominator_inactive", 16),
+        ("attacked", 32),
+        ("lowpower", 64),
+        ("offensive_cell_set", 128),
+        ("defensive_cell_set", 256),
+    ]
+    .iter()
+    .find_map(|(key, bits)| key.eq_ignore_ascii_case(name).then_some(*bits))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -219,6 +481,8 @@ pub enum TargetReject {
     TargetShrouded,
     InvalidRangeConfiguration,
     NoEligibleLaunchSite,
+    NoEligibleDesignator,
+    InhibitorInRange,
 }
 
 #[derive(Debug, Clone, Copy)]

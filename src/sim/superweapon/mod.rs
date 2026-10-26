@@ -36,6 +36,8 @@ mod fire;
 pub mod force_shield;
 #[cfg(feature = "ares")]
 mod generic_warhead;
+#[cfg(all(test, feature = "ares"))]
+mod ares_target_policy_tests;
 #[cfg(feature = "ares")]
 mod ares_presentation;
 pub mod genetic_converter;
@@ -59,6 +61,17 @@ pub mod psychic_reveal;
 mod spy_plane;
 mod two_stage;
 pub use two_stage::PaidSuperWeaponSelection;
+
+/// A cell selected by the Ares selector has already followed its native
+/// CanFireAt/preference path. In particular preferred/no-target results are
+/// not passed through a second, different target-policy decision.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SuperWeaponTargetSource {
+    Manual,
+    Automatic,
+    #[cfg(feature = "ares")]
+    SelectedAutomatic,
+}
 #[cfg(test)]
 mod spy_plane_tests;
 mod targeting;
@@ -1282,10 +1295,20 @@ pub struct SuperWeaponDisplay {
     pub status: Option<SuperWeaponStatus>,
 }
 
+/// Ephemeral sidebar rejection; gameplay state remains with the Super/House owners.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AresCameoRefusal {
+    InsufficientFunds,
+    CannotFire,
+}
+
 /// View struct for sidebar display — no sim internals exposed.
 #[derive(Debug, Clone)]
 pub struct SuperWeaponView {
     pub type_id: InternedId,
+    /// Immutable selection flag projected from the common Rules owner.
+    pub use_ai_targeting: bool,
     pub display_name: String,
     pub progress: f32,
     pub display: SuperWeaponDisplay,
@@ -1298,6 +1321,8 @@ pub struct SuperWeaponView {
     pub can_fire: bool,
     /// Derived from the same wallet predicate used at launch, not readiness.
     pub can_afford: bool,
+    #[cfg(feature = "ares")]
+    pub ares_refusal: Option<AresCameoRefusal>,
 }
 
 /// Query active superweapons for a specific owner (for sidebar rendering).
@@ -1324,30 +1349,54 @@ pub fn superweapon_views_for_owner(
         let money_type = financial_type(rules, sw_type);
         let display =
             inst.sidebar_display(sw_type, current_frame, rules.general.charge_to_drain_ratio);
+        let native_can_fire = if paid_source.is_some() {
+            sim.paid_super_weapon_selection(*owner)
+                .is_some_and(|selection| selection.destination == inst.type_id)
+        } else {
+            inst.can_fire(sw_type)
+        };
+        #[cfg(feature = "ares")]
+        let can_afford = money::can_afford(&sim.houses, *owner, money_type);
+        #[cfg(feature = "ares")]
+        let admission = ai_fire::manual_cameo_admission(
+            sim,
+            rules,
+            *owner,
+            sw_type,
+            native_can_fire,
+            can_afford,
+        );
         views.push(SuperWeaponView {
             type_id: inst.type_id,
+            use_ai_targeting: rules.super_weapon_uses_ai_targeting(type_id_str),
             display_name: type_id_str.to_string(),
             progress: display.stage as f32 / 54.0,
             display,
             is_ready: inst.is_ready,
             is_online: !inst.is_suspended,
             should_flash_tab: inst.should_flash_tab(sw_type, current_frame),
-            can_fire: if paid_source.is_some() {
-                sim.paid_super_weapon_selection(*owner)
-                    .is_some_and(|selection| selection.destination == inst.type_id)
-            } else {
-                inst.can_fire(sw_type)
+            can_fire: {
+                #[cfg(feature = "ares")]
+                {
+                    admission.can_fire
+                }
+                #[cfg(not(feature = "ares"))]
+                {
+                    native_can_fire
+                }
             },
             can_afford: {
                 #[cfg(feature = "ares")]
                 {
-                    money::can_afford(&sim.houses, *owner, money_type)
+                    can_afford
                 }
                 #[cfg(not(feature = "ares"))]
                 {
                     true
                 }
             },
+            #[cfg(feature = "ares")]
+            ares_refusal: admission.refusal,
         });
     }
     views

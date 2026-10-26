@@ -656,6 +656,7 @@ mod tests {
         for (online, affordable) in [(true, true), (true, false), (false, true), (false, false)] {
             let views = [crate::sim::superweapon::SuperWeaponView {
                 type_id: id,
+                use_ai_targeting: false,
                 display_name: "Paid".to_owned(),
                 progress: 1.0,
                 is_ready: true,
@@ -664,6 +665,8 @@ mod tests {
                 display: Default::default(),
                 can_fire: online,
                 can_afford: affordable,
+                #[cfg(feature = "ares")]
+                ares_refusal: None,
             }];
             let entries = super::collect_build_entries(
                 ProductionCategory::Defense,

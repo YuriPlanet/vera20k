@@ -56,11 +56,31 @@ Provide the normal art/cameo assets for your mod.
   introduced. Like Ares's new-type action, this type uses the default attack
   cursor (`Action=Custom` is accepted); user `PreClick`, `PostClick` and
   `PreDependent` tags cannot turn it into a two-click superweapon.
-- `SW.AITargeting=Offensive` (default) uses the enemy house's eligible targets
-  and existing ion-cannon target values, ignores cloaked targets and chooses
-  between equal-valued targets with the Scenario RNG. `None` disables AI
-  launching. Other Ares targeting modes are currently unsupported; an explicit
-  unsupported mode logs a warning and disables AI launching for this type.
+- `SW.AITargeting=Offensive` is the handler default. Targeting, constraints,
+  manual/automatic masks and ranges now belong to the common SWType metadata,
+  shared with `Type=UnitDelivery`; they are not duplicated in the payload.
+- `SW.UseAITargeting=yes` makes a left click queue the automatic selector rather
+  than entering a target cursor. The selector's result is not checked again
+  against different manual masks. Script launches retain their explicit cell.
+- `SW.AutoFire=yes` also enables the human-house strategy hook. `SW.ManualFire`
+  restricts the cameo only when AutoFire is enabled. Background AI failures
+  do not produce a local refusal message.
+- `SW.Designators`/`SW.Inhibitors` resolve existing category-distinct TechnoTypes
+  in construction order. `SW.AnyDesignator`/`SW.AnyInhibitor` use the same
+  collector. `DesignatorRange`/`InhibitorRange` are nullable integer overrides;
+  omission uses Sight, and invalid later values retain an earlier override.
+- `Message.InsufficientFunds` and `Message.CannotFire` use the existing CSF,
+  message-list, colour, expiry and insert-sound owners. `Message.FirerColor`
+  and `Message.Color` select the style. Readiness precedes funds, then UseAI
+  constraints; a failed queued UseAI selector also warns its owning player.
+
+The shared parser recognizes the installed Ares table's 21 mode names. This
+is not a claim that every selector is implemented: Stealth, Self, Base,
+MultiMissile, EnemyBase, DropPod and LightningRandom still decline selection.
+The secondary defensive preferred-cell writer is also pending. Stock redirected
+superweapons retain their existing dispatch until their Ares dependencies are
+ported. The production path has focused coverage for PsychicDominator selection,
+including first-maximum ties, designation/inhibition and a queued refusal.
 
 ## Port provenance
 
@@ -85,16 +105,18 @@ consumers and the available official Ares sources.
 
 Intentional boundaries/adaptations:
 
-- Only GenericWarhead opts in. Stock superweapon readers and dispatch remain
-  unchanged. Automatic target requirements are independent of manual ones;
-  the Offensive defaults are `all-technos` and `enemies` even when no explicit
-  `SW.AITargeting` is authored.
+- The common policy is executed for GenericWarhead and UnitDelivery. Automatic
+  requirements remain independent of manual ones and take their defaults from
+  the selected native targeting mode; stock dispatch stays separate.
+- The historical pure-kernel aliases below remain API compatibility helpers.
+  Production SWType metadata reads the native comma-separated tokens and retains
+  prior values after unknown tokens; it does not reinterpret unsupported modes.
 - `SW.RequiresTarget`, `SW.RequiresHouse`, `SW.AIRequiresTarget`,
   `SW.AIRequiresHouse`, `SW.FireIntoShroud`, `SW.RangeMinimum` and
   `SW.RangeMaximum` are supported. Range limits are inclusive; negative limits
   are disabled. Missing/inactive launchers cannot satisfy a configured range.
-- The Rust rules reader keeps VERA's native number parsing (including f32
-  widening and leading numeric tokens), not C#'s strict numeric text parser.
+- SWType metadata uses the shared Ares value readers, retaining binary64
+  ranges and earlier values after unsuccessful reads.
   Non-finite or reversed ranges are rejected. A query uses isolated native-cell
   fallback state so hovering cannot change the authoritative shared Dummy.
 - The pure kernel retains per-launcher range overrides from the source, but
@@ -117,9 +139,9 @@ This is not general Ares compatibility and does not load an Ares DLL.
 Only warhead behavior already represented by VERA's shared combat pipeline
 is available. Ares warhead extensions such as EMP, attached effects, ripple,
 iron-curtain effects and permanent mind control are not added by this feature.
-Common Ares superweapon options such as designators/inhibitors,
-auto-fire, custom cursors, launch animations/sounds and EVA
-overrides remain separate work. Charge-drain superweapons remain unsupported.
+Custom cursors, additional selector strategies and stock-type Ares redirections
+remain separate work. Shared launch animations/sounds use the presentation owner
+rather than this payload. Charge-drain superweapons remain unsupported here.
 
 Implementation references:
 

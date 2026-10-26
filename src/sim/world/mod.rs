@@ -1038,6 +1038,14 @@ pub enum SimSoundEvent {
         world: crate::sim::anim_class::AnimWorldCoord,
         radar: Option<RadarEventRequest>,
     },
+    /// Ares SPECIAL_PLACE10038ECA..10038EE0: automatic selection for a
+    /// manual event failed. Only the owning client prints Message.CannotFire;
+    /// its existing message-list transport owns the insert sound.
+    #[cfg(feature = "ares")]
+    AresSuperWeaponRefused {
+        owner: InternedId,
+        sw_type: InternedId,
+    },
 }
 
 impl SimSoundEvent {

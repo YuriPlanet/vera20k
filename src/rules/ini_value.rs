@@ -291,6 +291,17 @@ const TECHNO_TYPE_CATEGORY_NAMES: [(&str, &str, TechnoTypeCategory); 11] = [
     ("Air Transport", "AirLift", TechnoTypeCategory::AirTransport),
 ];
 
+/// Shade-count1 (the odd member) of each registered scheme pair. Original
+/// ReadColor474A90 and Ares Find1001BB30 share the case-insensitive name scan.
+fn native_color_scheme_index<'a>(
+    mut schemes: impl Iterator<Item = &'a str>,
+    name: &str,
+) -> Option<i32> {
+    schemes
+        .position(|scheme| scheme.eq_ignore_ascii_case(name))
+        .map(|index| (index as i32).wrapping_mul(2).wrapping_add(1))
+}
+
 impl IniSection {
     /// ReadAction474EE0 copies31 native bytes and compares the entire trimmed
     /// buffer case-insensitively against all73 names. Unknown names reset to
@@ -397,18 +408,34 @@ impl IniSection {
         &self,
         key: &str,
         current: i32,
-        mut schemes: impl Iterator<Item = &'a str> + Clone,
+        schemes: impl Iterator<Item = &'a str> + Clone,
     ) -> i32 {
         let default_name = usize::try_from(current)
             .ok()
             .and_then(|index| schemes.clone().nth(index / 2))
             .unwrap_or("");
         let name = self.read_string(key, default_name, 0x20);
-        schemes
-            .position(|scheme| scheme.eq_ignore_ascii_case(&name))
-            .map_or(current, |index| {
-                (index as i32).wrapping_mul(2).wrapping_add(1)
+        native_color_scheme_index(schemes, &name).unwrap_or(current)
+    }
+
+    /// Ares ColorScheme parser1001CC70: ReadString2048 then Find1001BB30
+    /// (shade-count1). Lookup precedes none; an unknown name retains the field.
+    #[cfg(feature = "ares")]
+    pub(crate) fn read_ares_color_scheme<'a>(
+        &self,
+        key: &str,
+        current: i32,
+        schemes: impl Iterator<Item = &'a str> + Clone,
+    ) -> i32 {
+        self.read_string_with(key, 2048, current, |current, name| {
+            native_color_scheme_index(schemes.clone(), name).unwrap_or_else(|| {
+                if crate::rules::ini_parser::is_native_none_type_name(name) {
+                    -1
+                } else {
+                    current
+                }
             })
+        })
     }
 
     /// CCINIClass::ReadEdge475980: ReadString into128 bytes with an empty
@@ -480,6 +507,14 @@ impl IniSection {
     pub fn read_ares_int(&self, key: &str, default: i32) -> i32 {
         self.read_string_with(key, 2048, default, |current, value| {
             parse_ares_int(value).unwrap_or(current)
+        })
+    }
+
+    /// Ares Nullable<int>10008CC0 sets presence only after its Valueable<int>
+    /// read succeeds. Empty/invalid input keeps the previous value and presence.
+    pub fn read_ares_nullable_int(&self, key: &str, current: Option<i32>) -> Option<i32> {
+        self.read_string_with(key, 2048, current, |previous, value| {
+            parse_ares_int(value).or(previous)
         })
     }
 

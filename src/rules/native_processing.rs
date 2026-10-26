@@ -1581,6 +1581,8 @@ impl ProcessedRulesLayers {
                 &member.super_weapon_availability,
                 member.super_weapon_aux_building.as_deref(),
                 member.super_weapon_building_requirements.as_ref(),
+                &member.super_weapon_influence,
+                &member.super_weapon_targeting,
             )
         })
     }
@@ -1807,6 +1809,27 @@ impl ProcessedRulesLayers {
                 })
             })
     }
+    #[cfg(feature = "ares")]
+    pub(crate) fn super_weapon_techno_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            &crate::rules::superweapon_influence::TechnoSuperWeaponRules,
+        ),
+    > {
+        let registry = self.native_type_construction_trace.registry_state();
+        registry.techno_type_order.iter().map(|&(family, index)| {
+            let member = &registry.families[&family][index];
+            (
+                family.object_category().expect("TechnoType category"),
+                member.native_stored_id.as_str(),
+                &member.super_weapon_techno,
+            )
+        })
+    }
+
     pub(crate) fn ares_warhead_states(
         &self,
     ) -> impl Iterator<Item = (&str, Option<&crate::rules::ares_warhead::AresWarheadRules>)> {
@@ -3489,6 +3512,9 @@ struct ProcessedType {
     ares_warhead: Option<crate::rules::ares_warhead::AresWarheadRules>,
     emp_type: Option<crate::rules::ares_emp::EmpTypeRules>,
     self_attach_effect: Option<crate::rules::ares_warhead::AttachEffectRules>,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    super_weapon_techno: crate::rules::superweapon_influence::TechnoSuperWeaponRules,
     /// TechnoTypeExt+1FA: ctor1003C9D7 defaults true; read1003EBEF.
     cloak_allowed: bool,
     /// ObjectType4753F0 -> Ares10006E10 binds at each reached body read.
@@ -3508,6 +3534,12 @@ struct ProcessedType {
     super_weapon_building_requirements: Option<SuperWeaponBuildingRequirements>,
     #[cfg(feature = "ares")]
     super_weapon_availability: AresSuperWeaponAvailability,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    super_weapon_targeting: crate::rules::superweapon_targeting::AresTargetPolicy,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    super_weapon_influence: crate::rules::superweapon_influence::SuperWeaponInfluence,
     #[cfg(feature = "ares")]
     super_weapon_presentation: AresSuperWeaponPresentation,
     /// Phobos `SW.TechLevel`/`SW.AuxTechnos`/`SW.NegTechnos`, read by the same
@@ -3925,6 +3957,8 @@ impl ProcessedType {
             ares_warhead: None,
             emp_type: None,
             self_attach_effect: None,
+            #[cfg(feature = "ares")]
+            super_weapon_techno: Default::default(),
             cloak_allowed: true,
             armor_id: ArmorId::NONE,
             holds_what: None,
@@ -3934,6 +3968,10 @@ impl ProcessedType {
             super_weapon_building_requirements: None,
             #[cfg(feature = "ares")]
             super_weapon_availability: AresSuperWeaponAvailability::default(),
+            #[cfg(feature = "ares")]
+            super_weapon_targeting: Default::default(),
+            #[cfg(feature = "ares")]
+            super_weapon_influence: Default::default(),
             #[cfg(feature = "ares")]
             super_weapon_presentation: AresSuperWeaponPresentation::default(),
             #[cfg(feature = "phobos")]
@@ -4486,39 +4524,32 @@ impl RulesPassProcessor {
             })
     }
 
-    /// Phobos `SW.AuxTechnos`/`SW.NegTechnos`:
-    /// `ValueableVector<TechnoTypeClass*>` resolves each token across every
-    /// techno family (`TechnoTypeClass::Find`), skipping unknown ones; a
-    /// reached list replaces and an absent key retains.
-    #[cfg(feature = "phobos")]
+    /// Ares vector1000EDD0 -> Find10007EA0 scans TechnoType::Array A8EB04
+    /// in constructor order, not separate category arrays. Phobos' techno
+    /// vectors use that same Find. Unknown/none tokens are skipped; a reached
+    /// nonempty read replaces. Keep category identity across equal names.
+    #[cfg(any(feature = "ares", feature = "phobos"))]
     fn resolve_existing_techno_list_from(
         &self,
         section: &IniSection,
         key: &str,
         capacity: usize,
-    ) -> Option<Vec<String>> {
+    ) -> Option<Vec<crate::rules::superweapon_type::TechnoTypeReference>> {
         let tokens = section.read_list(key, capacity)?;
         let mut resolved = Vec::new();
         for token in tokens {
-            for family in [
-                RulesTypeFamily::Infantry,
-                RulesTypeFamily::Vehicle,
-                RulesTypeFamily::Aircraft,
-                RulesTypeFamily::Building,
-            ] {
-                let Some(members) = self.families.get(&family) else {
-                    continue;
-                };
-                let index = ares_type_index_of_name(
-                    token,
-                    members
-                        .iter()
-                        .map(|member| member.native_stored_id.as_str()),
-                );
-                if let Some(index) = index {
-                    resolved.push(members[index].native_stored_id.clone());
-                    break;
-                }
+            let index = ares_type_index_of_name(
+                token,
+                self.techno_type_order.iter().map(|&(family, index)| {
+                    self.families[&family][index].native_stored_id.as_str()
+                }),
+            );
+            if let Some(index) = index {
+                let (family, member) = self.techno_type_order[index];
+                resolved.push(crate::rules::superweapon_type::TechnoTypeReference {
+                    category: family.object_category().expect("TechnoType array category"),
+                    id: self.families[&family][member].native_stored_id.clone(),
+                });
             }
         }
         Some(resolved)
@@ -5327,12 +5358,16 @@ impl RulesPassProcessor {
                     if let Some(aux) =
                         self.resolve_existing_techno_list_from(&raw, "SW.AuxTechnos", 0x800)
                     {
-                        availability.set_aux_technos(aux);
+                        availability.set_aux_technos(
+                            aux.into_iter().map(|reference| reference.id).collect(),
+                        );
                     }
                     if let Some(neg) =
                         self.resolve_existing_techno_list_from(&raw, "SW.NegTechnos", 0x800)
                     {
-                        availability.set_neg_technos(neg);
+                        availability.set_neg_technos(
+                            neg.into_iter().map(|reference| reference.id).collect(),
+                        );
                     }
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_phobos_availability = availability;
@@ -5340,15 +5375,48 @@ impl RulesPassProcessor {
                 #[cfg(feature = "ares")]
                 {
                     let animation = self.resolve_existing_anim_from(&raw, "SW.Animation");
+                    let message_color = raw.read_ares_color_scheme(
+                        "Message.Color",
+                        self.families[&RulesTypeFamily::SuperWeapon][index]
+                            .super_weapon_presentation
+                            .messages
+                            .color_scheme(),
+                        self.colors.iter().map(|(name, _)| name.as_str()),
+                    );
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_presentation
-                        .read_pass(&raw, animation);
+                        .read_pass(&raw, animation, message_color);
                     // Same SWTypeExt owner and native read order: controller
                     // flags, Country masks, building vectors, then shot limit.
                     let mut availability = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_availability
                         .clone();
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_targeting
+                        .read_pass(&raw, effective.read_name("Type", 0x28));
                     availability.read_allowance_pass(&raw);
+                    let designators =
+                        self.resolve_existing_techno_list_from(&raw, "SW.Designators", 2048);
+                    if let Some(designators) = designators {
+                        self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                            .super_weapon_influence
+                            .designators = designators;
+                    }
+                    let influence = &mut self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_influence;
+                    influence.any_designator =
+                        raw.read_ares_bool("SW.AnyDesignator", influence.any_designator);
+                    let inhibitors =
+                        self.resolve_existing_techno_list_from(&raw, "SW.Inhibitors", 2048);
+                    if let Some(inhibitors) = inhibitors {
+                        self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                            .super_weapon_influence
+                            .inhibitors = inhibitors;
+                    }
+                    let influence = &mut self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_influence;
+                    influence.any_inhibitor =
+                        raw.read_ares_bool("SW.AnyInhibitor", influence.any_inhibitor);
                     availability.read_house_pass(|key, prior| {
                         raw.read_list(key, 128).map_or(prior, |tokens| {
                             house_type_mask_from_indices(
@@ -5672,6 +5740,7 @@ impl RulesPassProcessor {
                         .read_pass(&raw, animation);
                     member.cloak_allowed =
                         raw.read_ares_bool("Cloakable.Allowed", member.cloak_allowed);
+                    member.super_weapon_techno.read_pass(&raw);
                 }
                 match family {
                     RulesTypeFamily::Building => {

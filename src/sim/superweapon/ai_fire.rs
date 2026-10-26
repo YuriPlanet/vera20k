@@ -85,9 +85,6 @@ pub(crate) enum AiFireArm {
     GeneticMutator,
     /// `0x00509A3E`: [`force_shield_target`].
     ForceShield,
-    /// Ares default `SW.AITargeting=Offensive` (or disabled with `None`).
-    #[cfg(feature = "ares")]
-    GenericWarhead,
     /// `0x00509AD2`: Iron Curtain and the Chronosphere pair are left to team
     /// scripts.
     None,
@@ -110,7 +107,7 @@ impl AiFireArm {
             SuperWeaponKind::GeneticConverter => Self::GeneticMutator,
             SuperWeaponKind::ForceShield => Self::ForceShield,
             #[cfg(feature = "ares")]
-            SuperWeaponKind::GenericWarhead => Self::GenericWarhead,
+            SuperWeaponKind::GenericWarhead => Self::None,
             SuperWeaponKind::IronCurtain
             | SuperWeaponKind::ChronoSphere
             | SuperWeaponKind::ChronoWarp
@@ -163,11 +160,12 @@ pub(crate) fn try_fire(
 ) {
     #[cfg(any(test, feature = "test-support"))]
     observe(AiFireEvent::TryFire);
-    if sim
-        .houses
-        .get(&owner)
-        .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()))
-    {
+    let Some(house) = sim.houses.get(&owner) else {
+        return;
+    };
+    let human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
+    #[cfg(not(feature = "ares"))]
+    if human {
         return;
     }
     for name in &rules.super_weapon_order {
@@ -177,6 +175,14 @@ pub(crate) fn try_fire(
         let Some(sw_type_id) = sim.interner.get(name) else {
             continue;
         };
+        #[cfg(feature = "ares")]
+        if human
+            && rules
+                .super_weapon_target_policy(name)
+                .is_none_or(|policy| !policy.auto_fire)
+        {
+            continue;
+        }
         if !super::is_charged(sim, owner, sw_type_id) {
             continue;
         }
@@ -199,6 +205,22 @@ pub(crate) fn try_fire(
         {
             continue;
         }
+        #[cfg(feature = "ares")]
+        if rules.super_weapon_target_policy(name).is_some() {
+            // House AI hook10038E10 also excludes drain state2.
+            if sim.super_weapons[&owner][&sw_type_id].charge_drain_state() != 2 {
+                fire_extension_automatic(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    registry,
+                    frame_effects,
+                    false,
+                );
+            }
+            continue;
+        }
         let arm = AiFireArm::of(sw.kind);
         #[cfg(any(test, feature = "test-support"))]
         if matches!(
@@ -215,16 +237,6 @@ pub(crate) fn try_fire(
             AiFireArm::GroundRallyPoint => ground_rally_point(sim, rules, owner, registry),
             AiFireArm::PsychicDominator => psychic_dominator_target(sim, rules, owner),
             AiFireArm::GeneticMutator => genetic_mutator_target(sim, rules, owner),
-            #[cfg(feature = "ares")]
-            AiFireArm::GenericWarhead => {
-                use crate::rules::superweapon_type::GenericWarheadAiTargeting;
-                sw.generic_warhead
-                    .as_ref()
-                    .filter(|settings| {
-                        settings.ai_targeting == GenericWarheadAiTargeting::Offensive
-                    })
-                    .and_then(|_| offensive_target(sim, rules, owner, sw))
-            }
             AiFireArm::ForceShield => sim.houses.get(&owner).and_then(|house| {
                 force_shield_target(house, rules, sim.session.binary_frame() as i32)
             }),
@@ -242,6 +254,246 @@ pub(crate) fn try_fire(
             );
         }
     }
+}
+
+/// SWTypeExt::CanFire10032110. Manual UseAITargeting skips the transient
+/// storm/dominator/attack/power tests, but not preference or enemy constraints.
+#[cfg(feature = "ares")]
+fn extension_constraints(
+    sim: &Simulation,
+    owner: InternedId,
+    policy: &crate::rules::superweapon_targeting::AresTargetPolicy,
+    manual: bool,
+) -> bool {
+    let Some(house) = sim.houses.get(&owner) else {
+        return false;
+    };
+    let flags = policy.constraints();
+    let offensive = house.preferred_super_weapon_target() != (0, 0);
+    // House+54F8 still has its represented constructor value; the missing
+    // writer is the existing secondary-defensive-cell residual above.
+    let defensive = false;
+    if flags & 1 != 0 && offensive
+        || flags & 128 != 0 && !offensive
+        || flags & 2 != 0 && defensive
+        || flags & 256 != 0 && !defensive
+        || flags & 4 != 0 && house.enemy_house().is_none()
+    {
+        return false;
+    }
+    if manual {
+        return true;
+    }
+    if flags & 8 != 0 && super::lightning_storm::raging(sim)
+        || flags & 16 != 0 && super::psychic_dominator::active(sim)
+    {
+        return false;
+    }
+    let last_attack = house.strategy_emergency().last_building_attack_frame();
+    if flags & 32 != 0
+        && last_attack != 0
+        && last_attack.wrapping_add(75) < sim.session.binary_frame() as i32
+    {
+        return false;
+    }
+    if flags & 64 != 0
+        && sim.power_states.get(&owner).is_none_or(|power| {
+            power.total_drain() == 0 || power.total_output() >= power.total_drain()
+        })
+    {
+        return false;
+    }
+    true
+}
+
+#[cfg(feature = "ares")]
+pub(super) struct ManualCameoAdmission {
+    pub can_fire: bool,
+    pub refusal: Option<super::AresCameoRefusal>,
+}
+
+/// Sidebar hook10034DA0: base CanFire precedes money, which precedes the
+/// UseAI constraint warning. AutoFire&&!ManualFire bypasses the base test,
+/// then silently refuses selection after those warning tests. Keep one
+/// constraint owner shared with automatic launch100382D0.
+#[cfg(feature = "ares")]
+pub(super) fn manual_cameo_admission(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw: &crate::rules::superweapon_type::SuperWeaponType,
+    native_can_fire: bool,
+    can_afford: bool,
+) -> ManualCameoAdmission {
+    let Some(policy) = rules.super_weapon_target_policy(&sw.id) else {
+        return ManualCameoAdmission {
+            can_fire: native_can_fire,
+            refusal: (native_can_fire && !can_afford)
+                .then_some(super::AresCameoRefusal::InsufficientFunds),
+        };
+    };
+    let manual_disabled = policy.auto_fire && !policy.manual_fire;
+    let constraint_refused =
+        policy.use_ai_targeting && !extension_constraints(sim, owner, policy, true);
+    let refusal = if !native_can_fire && !manual_disabled {
+        None
+    } else if !can_afford {
+        Some(super::AresCameoRefusal::InsufficientFunds)
+    } else if constraint_refused {
+        Some(super::AresCameoRefusal::CannotFire)
+    } else {
+        None
+    };
+    ManualCameoAdmission {
+        can_fire: native_can_fire && !manual_disabled && !constraint_refused,
+        refusal,
+    }
+}
+
+/// Shared automatic launch100382D0 for House AI and SPECIAL_PLACE. Target
+/// selection owns any RNG; Fire_SW remains the one charge/effect transaction.
+#[cfg(feature = "ares")]
+pub(super) fn fire_extension_automatic(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw_id: InternedId,
+    registry: Option<&OverlayTypeRegistry>,
+    effects: FrameEffects<'_>,
+    manual: bool,
+) -> bool {
+    let Some(sw) = rules.super_weapon(sim.interner.resolve(sw_id)) else {
+        return false;
+    };
+    let Some(policy) = rules.super_weapon_target_policy(&sw.id) else {
+        return false;
+    };
+    if !super::money::can_afford(&sim.houses, owner, sw) {
+        return false;
+    }
+    if !super::super_weapon_available(sim, rules, owner, &sw.id) {
+        return false;
+    }
+    if !extension_constraints(sim, owner, policy, manual) {
+        return false;
+    }
+    let Some(cell) = extension_target(sim, rules, owner, sw, policy, registry) else {
+        return false;
+    };
+    let _ = sim.fire_super_weapon_selected(
+        rules,
+        owner,
+        sw_id,
+        cell,
+        registry,
+        effects,
+        super::SuperWeaponTargetSource::SelectedAutomatic,
+        None,
+    );
+    // AutoFire10038373..10038386 returns Fire_SW's AL via bridge100385A0.
+    // Native Fire_SW4FAE50 returns1 even when ClickFire declines; the Rust
+    // transaction above instead reports whether it called Launch. A selected
+    // but now-unready event is handled, not a CannotFire selector refusal.
+    true
+}
+
+#[cfg(feature = "ares")]
+fn extension_target(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw: &crate::rules::superweapon_type::SuperWeaponType,
+    policy: &crate::rules::superweapon_targeting::AresTargetPolicy,
+    registry: Option<&OverlayTypeRegistry>,
+) -> Option<(u16, u16)> {
+    use crate::rules::superweapon_targeting::{AiTargetPreference as P, AiTargetingMode as M};
+    // PickTarget10038640 prefers these cells without a CanFireAt call. It
+    // constructs the same ephemeral data even when a preference wins.
+    let data = super::targeting::prepare(sim, rules, owner, sw);
+    let house = sim.houses.get(&owner)?;
+    if policy.preference() == P::Offensive && house.preferred_super_weapon_target() != (0, 0) {
+        return Some(house.preferred_super_weapon_target());
+    }
+    // Defensive preference reads +54F8, currently the constructor-zero residual.
+    let kind = house.preferred_super_weapon_target_kind();
+    match policy.ai_mode {
+        M::None | M::IronCurtain => None,
+        M::NoTarget | M::HunterSeeker | M::Attack | M::LowPower | M::LowPowerAttack => Some((0, 0)),
+        M::PsychicDominator => ares_spread_target(sim, rules, owner, sw, policy, &data, false),
+        M::GeneticMutator => ares_spread_target(sim, rules, owner, sw, policy, &data, true),
+        M::Offensive => offensive_target(sim, rules, owner, sw, policy, &data),
+        M::Nuke | M::LightningStorm => {
+            //100386CE: type1 uses the shared rating selector. Team quarry
+            // results bypass CanFireAt, like the preferred-cell path.
+            if kind == 1 {
+                offensive_target(sim, rules, owner, sw, policy, &data)
+            } else {
+                let cell = find_team_target(sim, rules, owner, kind, registry);
+                (cell != NO_CELL).then_some((cell.0 as u16, cell.1 as u16))
+            }
+        }
+        M::ParaDrop => {
+            let cell = ground_rally_point(sim, rules, owner, registry)?;
+            super::targeting::check_with_data(sim, rules, owner, sw, cell, true, &data)
+                .is_ok()
+                .then_some(cell)
+        }
+        M::ForceShield => {
+            let cell = force_shield_target(
+                sim.houses.get(&owner)?,
+                rules,
+                sim.session.binary_frame() as i32,
+            )?;
+            super::targeting::check_with_data(sim, rules, owner, sw, cell, true, &data)
+                .is_ok()
+                .then_some(cell)
+        }
+        // These distinct3.0 selectors are still pending native ports. Do not
+        // silently replace a parsed mode with Offensive or another behavior.
+        M::Stealth
+        | M::SelfTarget
+        | M::Base
+        | M::MultiMissile
+        | M::EnemyBase
+        | M::DropPod
+        | M::LightningRandom => None,
+    }
+}
+
+/// GetPotentialAITargets100328D0 chooses native registries from the effective
+/// automatic target mask. All arrays retain construction/removal order.
+#[cfg(feature = "ares")]
+fn potential_targets(
+    sim: &Simulation,
+    mask: crate::rules::superweapon_targeting::TargetMask,
+) -> impl Iterator<Item = &GameEntity> {
+    use crate::rules::superweapon_targeting::TargetMask as T;
+    let entities = &sim.substrate.entities;
+    let buildings = mask.intersects(T::BUILDING);
+    let feet = mask.intersects(T::INFANTRY) || mask.intersects(T::UNIT);
+    let array = if buildings && !feet {
+        1
+    } else if buildings || !feet {
+        0
+    } else if mask.intersects(T::INFANTRY) && !mask.intersects(T::UNIT) {
+        2
+    } else {
+        3
+    };
+    let count = match array {
+        1 => entities.building_registry_len(),
+        2 => entities.infantry_registry_len(),
+        3 => entities.foot_registry_len(),
+        _ => entities.techno_registry_len(),
+    };
+    (0..count)
+        .filter_map(move |index| match array {
+            1 => entities.building_registry_at(index),
+            2 => entities.infantry_registry_at(index),
+            3 => entities.foot_registry_at(index),
+            _ => entities.techno_registry_at(index),
+        })
+        .filter_map(move |id| entities.get(id))
 }
 
 /// The MultiMissile arm (`0x00509968..0x005099E6`), also
@@ -340,7 +592,7 @@ fn find_best_rally_target(
         .substrate
         .entities
         .values()
-        .map(|entity| rally_entry(sim, rules, house, enemy, entity))
+        .map(|entity| rally_entry(sim, rules, house, Some(enemy), entity))
         .collect();
     pick_best_rally_target(&entries, &mut sim.scenario_rng)
 }
@@ -354,24 +606,29 @@ fn offensive_target(
     rules: &RuleSet,
     owner: InternedId,
     sw: &crate::rules::superweapon_type::SuperWeaponType,
+    policy: &crate::rules::superweapon_targeting::AresTargetPolicy,
+    data: &super::targeting::TargetingData,
 ) -> Option<(u16, u16)> {
     let house = sim.houses.get(&owner)?;
-    let enemy = house.enemy_house()?;
+    let enemy = house.enemy_house();
     let mut best = 0;
     let mut picks = Vec::new();
-    let sites: Vec<_> = super::targeting::launch_sites(sim, rules, owner, sw)
-        .into_iter()
-        .map(|(_, site)| site)
-        .collect();
-    for entity in sim.substrate.entities.values() {
+    let mask = policy
+        .targeting()
+        .automatic
+        .target
+        .expect("retained native mask");
+    for entity in potential_targets(sim, mask) {
+        if enemy.is_some_and(|enemy| entity.owner() != enemy) {
+            continue;
+        }
         let entry = rally_entry(sim, rules, house, enemy, entity);
         let cell = (entry.cell.0 as u16, entry.cell.1 as u16);
         if !entry.candidate
             || !entry.in_playfield
             || entry.cloaked
             || entry.value < best
-            || super::targeting::check_with_sites(sim, rules, owner, sw, cell, true, &sites)
-                .is_err()
+            || super::targeting::check_with_data(sim, rules, owner, sw, cell, true, data).is_err()
         {
             continue;
         }
@@ -387,6 +644,79 @@ fn offensive_target(
     let last = i32::try_from(picks.len() - 1).unwrap_or(i32::MAX);
     let cell = picks[sim.scenario_rng.next_range_i32_inclusive(0, last) as usize];
     (cell != (0, 0)).then_some(cell)
+}
+
+/// Ares PsychicDominator10038070 and GeneticMutator10037EB0 share the
+/// density kernel with retail, but use forward potential registries, exclude
+/// cloak2, and require CanFireAt before changing the maximum. Ares iterates
+/// exactly37/9 cells, unlike the retail inclusive38/10 loops.
+#[cfg(feature = "ares")]
+fn ares_spread_target(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw: &crate::rules::superweapon_type::SuperWeaponType,
+    policy: &crate::rules::superweapon_targeting::AresTargetPolicy,
+    data: &super::targeting::TargetingData,
+    genetic: bool,
+) -> Option<(u16, u16)> {
+    let terrain = sim.resolved_terrain.as_ref()?;
+    let entities = &sim.substrate.entities;
+    let infantry = |member: &CellObjectMember| {
+        counted(sim, member, |entity| {
+            entity.category() == EntityCategory::Infantry
+        })
+    };
+    let foot = |member: &CellObjectMember| {
+        counted(sim, member, |entity| {
+            entity.category() != EntityCategory::Structure
+        })
+    };
+    let mask = policy
+        .targeting()
+        .automatic
+        .target
+        .expect("retained native mask");
+    let (id, _) = best_spread_center(
+        terrain,
+        potential_targets(sim, mask),
+        crate::sim::combat::cell_spread::sweep(if genetic { 1 } else { 3 }),
+        |entity| {
+            if genetic && entity.on_bridge() {
+                MovementLayer::Bridge
+            } else {
+                MovementLayer::Ground
+            }
+        },
+        |cell, layer| {
+            sim.cell_objects(cell, layer)
+                .skip_while(|member| genetic && !infantry(member))
+                .take_while(|member| {
+                    if genetic {
+                        infantry(member)
+                    } else {
+                        foot(member)
+                    }
+                })
+                .filter(|member| {
+                    counted(sim, member, |entity| {
+                        hostile_and_low(sim, rules, terrain, owner, entity)
+                            && !entity
+                                .cloak
+                                .as_ref()
+                                .is_some_and(|cloak| cloak.is_fully_cloaked())
+                            && (genetic
+                                || sim.can_be_perma_mind_controlled(entity.stable_id(), rules))
+                    })
+                })
+                .count()
+        },
+        |cell| super::targeting::check_with_data(sim, rules, owner, sw, cell, true, data).is_ok(),
+    )?;
+    // Convert the chosen object's GetCoords, not its GetCell center; buildings
+    // selected through an explicit mask can have different foundation centers.
+    let at = crate::sim::movement::ground_pose::object_get_coords(entities.get(id)?, Some(terrain));
+    Some(((at.x / 256) as u16, (at.y / 256) as u16))
 }
 
 /// What AI_FindBestRallyTarget reads of one TechnoClass::Array entry.
@@ -416,11 +746,11 @@ fn rally_entry(
     sim: &Simulation,
     rules: &RuleSet,
     house: &HouseState,
-    enemy: InternedId,
+    enemy: Option<InternedId>,
     entity: &crate::sim::game_entity::GameEntity,
 ) -> RallyEntry {
     let id = entity.stable_id();
-    let (candidate, value) = if entity.owner() == enemy {
+    let (candidate, value) = if enemy.is_none_or(|enemy| entity.owner() == enemy) {
         let standing = sim.entity_display_layer(id, rules)
             == Some(crate::sim::world::display_layers::DisplayLayer::GROUND)
             && entity.is_object_alive()
@@ -743,13 +1073,42 @@ fn densest_spread_cell<'a>(
     centres: impl Iterator<Item = &'a GameEntity>,
     band: usize,
     list: impl Fn(&GameEntity) -> MovementLayer,
-    mut count: impl FnMut((u16, u16), MovementLayer) -> usize,
+    count: impl FnMut((u16, u16), MovementLayer) -> usize,
 ) -> Option<(u16, u16)> {
+    let (_, at) = best_spread_center(
+        terrain,
+        centres,
+        crate::sim::combat::cell_spread::inclusive_sweep(band),
+        list,
+        count,
+        |_| true,
+    )?;
+    (at != NO_CELL
+        && crate::sim::cell_rect::cell_is_in_playfield_height_aware_in_query(
+            (i32::from(at.0), i32::from(at.1)),
+            sim.playfield_bounds(),
+            Some(terrain),
+            None,
+        ))
+    .then_some((at.0 as u16, at.1 as u16))
+}
+
+/// Shared density kernel; callers retain their own registry, spread boundary,
+/// eligibility and final conversion. Counts are read-only per-attempt caches.
+fn best_spread_center<'a>(
+    terrain: &ResolvedTerrainGrid,
+    centres: impl Iterator<Item = &'a GameEntity>,
+    offsets: &[(i16, i16)],
+    list: impl Fn(&GameEntity) -> MovementLayer,
+    mut count: impl FnMut((u16, u16), MovementLayer) -> usize,
+    accept: impl Fn((u16, u16)) -> bool,
+) -> Option<(u64, (i16, i16))> {
     let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
     // Per real cell, its ground and bridge counts once read.
     let mut counts = vec![[None; 2]; terrain.cells().len()];
     let mut best = 0usize;
     let mut best_cell = NO_CELL;
+    let mut best_id = None;
     for centre in centres {
         if centre.lifecycle.in_limbo() {
             continue;
@@ -757,7 +1116,7 @@ fn densest_spread_cell<'a>(
         let layer = list(centre);
         let at = (centre.position.rx() as i16, centre.position.ry() as i16);
         let mut total = 0usize;
-        for &(dx, dy) in crate::sim::combat::cell_spread::inclusive_sweep(band) {
+        for &(dx, dy) in offsets {
             let looked = cells.lookup((at.0.wrapping_add(dx), at.1.wrapping_add(dy)));
             let crate::map::cell_index::NativeCellIdentity::Real(index) = looked else {
                 continue;
@@ -768,20 +1127,13 @@ fn densest_spread_cell<'a>(
                 count((x as u16, y as u16), layer)
             });
         }
-        if total > best {
+        if total > best && accept((at.0 as u16, at.1 as u16)) {
             best = total;
             best_cell = at;
+            best_id = Some(centre.stable_id());
         }
     }
-    (best != 0
-        && best_cell != NO_CELL
-        && crate::sim::cell_rect::cell_is_in_playfield_height_aware_in_query(
-            (i32::from(best_cell.0), i32::from(best_cell.1)),
-            sim.playfield_bounds(),
-            Some(terrain),
-            None,
-        ))
-    .then_some((best_cell.0 as u16, best_cell.1 as u16))
+    best_id.map(|id| (id, best_cell))
 }
 
 /// Whether a cell-list member is an object `test` accepts.
