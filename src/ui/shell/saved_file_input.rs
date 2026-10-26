@@ -6,7 +6,7 @@ use crate::ui::skirmish_shell::seed_list::SeedListGeometry;
 use crate::ui::skirmish_shell::{
     SavedSeedBrowserState, SavedSeedControl, SavedSeedLayout, SavedSeedMode, SavedSeedOutcome,
 };
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 use winit::keyboard::KeyCode;
 
 pub enum BrowserInputResult<I> {

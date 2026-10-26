@@ -1,6 +1,8 @@
 //! VERA's writable player profile. Retail settings are import sources only.
 
-use std::io::{self, Write};
+use std::io;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::rules::ini_parser::IniFile;
@@ -18,7 +20,7 @@ pub(crate) fn path(directory: &Path) -> PathBuf {
 /// the old files byte-for-byte, including profiles outside the retail folder.
 pub(crate) fn import_legacy(paths: &PathsConfig) -> io::Result<()> {
     let destination = path(paths.settings_dir());
-    if destination.try_exists()? {
+    if crate::util::file_system::try_exists(&destination)? {
         return Ok(());
     }
     let sources = [paths.legacy_settings_dir(), paths.ra2_dir.as_path()];
@@ -34,7 +36,7 @@ pub(crate) fn import_legacy(paths: &PathsConfig) -> io::Result<()> {
             );
         }
     }
-    std::fs::create_dir_all(paths.settings_dir())?;
+    crate::util::file_system::create_dir_all(paths.settings_dir())?;
     // These retain their own schemas and owners, but move out of the retail
     // folder with the options they accompany.
     for name in ["wolinfoMD.ini", "coopsave.ini"] {
@@ -52,12 +54,13 @@ pub(crate) fn import_legacy(paths: &PathsConfig) -> io::Result<()> {
 fn read_legacy(directories: &[&Path], name: &str) -> io::Result<Option<Vec<u8>>> {
     for directory in directories {
         if let Some(path) = find(directory, name) {
-            return std::fs::read(path).map(Some);
+            return crate::util::file_system::read(path).map(Some);
         }
     }
     Ok(None)
 }
 
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 pub(super) fn create_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
     match std::fs::OpenOptions::new()
         .write(true)
@@ -68,7 +71,7 @@ pub(super) fn create_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
             Ok(()) => Ok(()),
             Err(error) => {
                 drop(file);
-                let _ = std::fs::remove_file(path);
+                let _ = crate::util::file_system::remove_file(path);
                 Err(error)
             }
         },
@@ -80,11 +83,11 @@ pub(super) fn create_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
 /// Read current disk bytes for every update, so independent section owners
 /// cannot erase each other's newer settings.
 pub(crate) fn update(directory: &Path, transform: impl FnOnce(&[u8]) -> Vec<u8>) -> io::Result<()> {
-    std::fs::create_dir_all(directory)?;
+    crate::util::file_system::create_dir_all(directory)?;
     update_with(
         directory,
-        |path| std::fs::read(path),
-        |path, bytes| std::fs::write(path, bytes),
+        |path| crate::util::file_system::read(path),
+        |path, bytes| crate::util::file_system::write(path, bytes),
         transform,
     )
 }
@@ -102,6 +105,14 @@ pub(super) fn update_with(
         Err(error) => return Err(error),
     };
     write(&path, &transform(&input))
+}
+
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+pub(super) fn create_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    match crate::util::file_system::write_new(path, bytes) {
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+        result => result,
+    }
 }
 
 #[cfg(test)]

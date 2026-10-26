@@ -602,6 +602,23 @@ pub(super) fn prepare_random_map_generation(
     })
 }
 
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+pub(super) fn spawn_random_map_generation_worker(
+    _options: crate::map::rmg::RmgOptions,
+    _settings: crate::map::rmg::RmgSettings,
+    _resolved_inputs: crate::map::rmg::build::ResolvedTheaterInputs,
+    _blocks: crate::map::rmg::theater_blocks::TheaterTileBlocks,
+    _tech_types: Vec<crate::map::rmg::phases::tech_buildings::TechType>,
+    _shared_cell_dummy: crate::map::resolved_terrain::SharedCellDummy,
+    _map_storage_decision: RandomMapStorageDecision,
+) -> std::io::Result<std::sync::mpsc::Receiver<RandomMapUpdate>> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "Random map generation is unavailable in the single-threaded Web preview",
+    ))
+}
+
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 pub(super) fn spawn_random_map_generation_worker(
     options: crate::map::rmg::RmgOptions,
     settings: crate::map::rmg::RmgSettings,
@@ -723,7 +740,7 @@ fn write_random_map_preview_to_dir(
     match crate::assets::pcx_file::encode_direct_rgb(width, height, &rgb) {
         Ok(encoded) => {
             let path = ra2_dir.join(RANDMAP_PREVIEW_FILE);
-            if let Err(err) = std::fs::write(&path, encoded) {
+            if let Err(err) = crate::util::file_system::write(&path, encoded) {
                 log::warn!("random map: could not write {}: {err}", path.display());
             }
         }
@@ -1228,7 +1245,7 @@ impl App {
             .as_ref()
             .map(|config| config.paths.ra2_dir.clone())
             .ok_or_else(|| anyhow::anyhow!("no game config; cannot locate the RA2 directory"))?;
-        std::fs::write(ra2_dir.join(RANDMAP_SED_FILE), options.to_sed_bytes())?;
+        crate::util::file_system::write(ra2_dir.join(RANDMAP_SED_FILE), options.to_sed_bytes())?;
 
         let description_text = options.description.display_text();
         let display = if options.description.is_empty() {
@@ -1352,7 +1369,7 @@ impl App {
                 .skirmish_shell_state
                 .random_map_setup_modal
                 .as_mut()
-                && setup.statics.hover(&help, std::time::Instant::now())
+                && setup.statics.hover(&help, crate::util::time::Instant::now())
             {
                 state.platform.window.request_redraw();
             }

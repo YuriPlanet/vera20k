@@ -7,7 +7,7 @@
 //! and answers through [`service_event`]; production answers synchronously
 //! from [`WolProvider::Unavailable`]. No request ever manufactures success.
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use super::{WolBoxThen, WolPage, WolVisit};
 use crate::app::persistence::wol_profile::{WolInfoFile, WolPersona};

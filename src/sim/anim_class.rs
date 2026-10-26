@@ -367,6 +367,11 @@ pub struct AnimObject {
     effective_loop_end: i32,
     runtime: AnimRuntime,
     draw_runtime: AnimDrawRuntime,
+    /// Per-viewer snapshots of native Anim+19D for a presentation producer.
+    /// Every ordinary hidden-byte writer replaces this with a uniform value.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    viewer_hidden: Option<AnimViewerHidden>,
     /// AnimClass `+0x196`: use the containing CellClass draw/palette authority.
     #[serde(default)]
     use_cell_drawer: bool,
@@ -432,7 +437,25 @@ pub struct AnimObject {
     attached_bullet: Option<u64>,
 }
 
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+struct AnimViewerHidden {
+    viewers: Vec<(InternedId, bool)>,
+    other_hidden: bool,
+}
+
 impl AnimObject {
+    /// Read the same hidden byte for a particular client without making
+    /// simulation state depend on which house this process is displaying.
+    pub fn hidden_for(&self, _viewer: Option<InternedId>) -> bool {
+        #[cfg(feature = "ares")]
+        if let Some(snapshot) = &self.viewer_hidden {
+            return _viewer
+                .and_then(|viewer| snapshot.viewers.iter().find(|(id, _)| *id == viewer))
+                .map_or(snapshot.other_hidden, |(_, hidden)| *hidden);
+        }
+        self.draw_runtime.hidden
+    }
     #[cfg(any(test, feature = "test-support"))]
     pub fn draw_runtime_mut_for_test(&mut self) -> &mut AnimDrawRuntime {
         &mut self.draw_runtime
@@ -699,6 +722,8 @@ impl AnimObject {
             effective_loop_end: 1,
             runtime,
             draw_runtime: AnimDrawRuntime::default(),
+            #[cfg(feature = "ares")]
+            viewer_hidden: None,
             use_cell_drawer: false,
             terrain_attached: false,
             no_effects: false,
@@ -754,6 +779,11 @@ impl AnimObject {
         self.effective_loop_end.hash(hasher);
         self.runtime.hash(hasher);
         self.draw_runtime.hash(hasher);
+        #[cfg(feature = "ares")]
+        if let Some(snapshot) = &self.viewer_hidden {
+            "Ares.AnimViewerHidden".hash(hasher);
+            snapshot.hash(hasher);
+        }
         self.use_cell_drawer.hash(hasher);
         self.terrain_attached.hash(hasher);
         self.in_logic_vector.hash(hasher);
@@ -1577,6 +1607,8 @@ impl Simulation {
                 temporal_paused: false,
             },
             draw_runtime: descriptor.draw_runtime,
+            #[cfg(feature = "ares")]
+            viewer_hidden: None,
             use_cell_drawer: descriptor.use_cell_drawer,
             terrain_attached: descriptor.terrain_attached,
             no_effects: false,
@@ -1815,9 +1847,7 @@ impl Simulation {
             let hidden = value <= config.hide_if_no_ore_threshold.wrapping_abs();
             #[cfg(not(feature = "phobos"))]
             let hidden = value == 0;
-            if let Some(anim) = self.substrate.anims.get_mut(id) {
-                anim.draw_runtime.hidden = hidden;
-            }
+            self.substrate.set_anim_hidden(id, hidden);
         }
 
         // AnimClass::AI performs this before its first-AI, inactive, delay,
@@ -3451,7 +3481,28 @@ impl crate::sim::world::ObjectSubstrate {
             return false;
         };
         anim.draw_runtime.hidden = hidden;
+        #[cfg(feature = "ares")]
+        {
+            anim.viewer_hidden = None;
+        }
         true
+    }
+
+    /// Ares common Launch100330DC writes Anim+19D once, using the alliance
+    /// relation at construction, not a live visibility query on later frames.
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_anim_viewer_hidden(
+        &mut self,
+        id: AnimId,
+        viewers: Vec<(InternedId, bool)>,
+        other_hidden: bool,
+    ) {
+        if let Some(anim) = self.anims.get_mut(id) {
+            anim.viewer_hidden = Some(AnimViewerHidden {
+                viewers,
+                other_hidden,
+            });
+        }
     }
     /// `AnimClass::SetOwnerHouse @ 0x00424CA0`: store `+0x180`.
     pub(crate) fn set_anim_owner_house(&mut self, id: AnimId, house: InternedId) -> bool {

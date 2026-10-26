@@ -9,7 +9,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 #[cfg(feature = "telemetry-dashboard")]
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use crate::app::AppState;
 use crate::app::input::commands::{preferred_local_owner, preferred_local_owner_name};
@@ -86,8 +86,8 @@ fn replay_flush_facts(state: &AppState) -> (u64, u64) {
         .sim_runtime
         .as_ref()
         .map_or(0, |rt| rt.simulation.session().tick());
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = crate::util::time::SystemTime::now()
+        .duration_since(crate::util::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
     (session_tick, now)
@@ -989,6 +989,8 @@ fn advance_in_game_runtime_mode(
             } else {
                 crate::app::presentation::sidebar_render::refresh_sidebar_cameo_draw_state(state);
             }
+            #[cfg(feature = "phobos")]
+            crate::app::presentation::sw_sidebar::refresh_draw_state(state);
         }
     } else if let Some(request) = mouse_scroll {
         crate::app::input::camera::commit_camera_scroll(state, request);
@@ -1207,6 +1209,8 @@ fn advance_one_simulation_frame(
                 let sidebar = std::cell::RefCell::new(
                     &mut state.match_state.match_presentation.sidebar_projection,
                 );
+                #[cfg(feature = "phobos")]
+                let sw_sidebar_expanded = state.match_state.match_presentation.sw_sidebar.expanded;
                 let production_visits = sidebar.borrow().production_factory_visits(&rt.simulation);
                 let clear_production_request = |type_id| {
                     sidebar.borrow_mut().clear_production_request(type_id);
@@ -1225,7 +1229,13 @@ fn advance_one_simulation_frame(
                         if let Some(owner) = sim.session().current_house() {
                             sidebar.reconcile_factory_links(sim, owner);
                         }
-                        prepared.refresh_sidebar_order(sidebar.saved_order());
+                        let order = sidebar.saved_order();
+                        #[cfg(feature = "phobos")]
+                        let order = order.map(|mut order| {
+                            order.set_sw_sidebar_expanded(sw_sidebar_expanded);
+                            order
+                        });
+                        prepared.refresh_sidebar_order(order);
                     }
                     crate::app::persistence::commands::initial_campaign_save(
                         prepared.take(),
@@ -1384,7 +1394,7 @@ fn advance_one_simulation_frame(
                     timing.tick_hz = state
                         .match_state
                         .telemetry_tick_rate
-                        .rate(std::time::Instant::now());
+                        .rate(crate::util::time::Instant::now());
                     let mut point = rt.simulation.report_point();
                     point.timing = Some(timing);
                     point.render = state.diag.render_timing.report();

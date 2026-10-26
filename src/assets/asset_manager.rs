@@ -63,18 +63,27 @@ impl LooseAsset {
     fn read_snapshot(&self, maximum: Option<usize>) -> Result<Option<Arc<[u8]>>, AssetError> {
         let read = || -> Result<Vec<u8>, AssetError> {
             let Some(maximum) = maximum else {
-                return Ok(std::fs::read(&self.path)?);
+                return Ok(crate::util::file_system::read(&self.path)?);
             };
-            use std::io::Read;
-            let file = std::fs::File::open(&self.path)?;
-            check_asset_read_limit(file.metadata()?.len(), maximum)?;
-            let mut bytes = Vec::new();
-            // A file can grow after metadata inspection. Never allocate or
-            // read the rest of that growth before refusing the source.
-            file.take((maximum as u64).saturating_add(1))
-                .read_to_end(&mut bytes)?;
-            check_asset_read_limit(bytes.len() as u64, maximum)?;
-            Ok(bytes)
+            #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+            {
+                let bytes = crate::util::file_system::read_shared(&self.path)?;
+                check_asset_read_limit(bytes.len() as u64, maximum)?;
+                Ok(bytes.to_vec())
+            }
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+            {
+                use std::io::Read;
+                let file = std::fs::File::open(&self.path)?;
+                check_asset_read_limit(file.metadata()?.len(), maximum)?;
+                let mut bytes = Vec::new();
+                // A file can grow after metadata inspection. Never allocate or
+                // read the rest of that growth before refusing the source.
+                file.take((maximum as u64).saturating_add(1))
+                    .read_to_end(&mut bytes)?;
+                check_asset_read_limit(bytes.len() as u64, maximum)?;
+                Ok(bytes)
+            }
         };
         match read() {
             Ok(bytes) => Ok(Some(bytes.into())),
@@ -1068,10 +1077,10 @@ impl AssetManager {
     ///
     /// This is meant for tooling. Runtime code does not call it.
     pub fn load_all_disk_mixes(&mut self) -> Result<usize, AssetError> {
-        let mut paths: Vec<PathBuf> = std::fs::read_dir(&self.ra2_dir)?
+        let mut paths: Vec<PathBuf> = crate::util::file_system::read_dir(&self.ra2_dir)?
             .filter_map(|entry| entry.ok().map(|entry| entry.path()))
             .filter(|path| {
-                path.is_file()
+                crate::util::file_system::is_file(&path)
                     && path
                         .extension()
                         .and_then(OsStr::to_str)
@@ -1189,10 +1198,10 @@ impl AssetManager {
         let mut path = self.ra2_dir.clone();
         for component in relative.split(['\\', '/']).filter(|part| !part.is_empty()) {
             let exact = path.join(component);
-            path = if exact.exists() {
+            path = if crate::util::file_system::exists(&exact) {
                 exact
             } else {
-                std::fs::read_dir(&path)
+                crate::util::file_system::read_dir(&path)
                     .ok()?
                     .filter_map(Result::ok)
                     .map(|entry| entry.path())
@@ -1204,7 +1213,7 @@ impl AssetManager {
                     })?
             };
         }
-        std::fs::read(&path).ok()
+        crate::util::file_system::read(&path).ok()
     }
 
     fn lookup_asset_entry(&self, name: &str) -> Option<(&NamedArchive, i32)> {
@@ -1345,7 +1354,7 @@ impl AssetManager {
         let directory = relative_directory
             .map(|relative| self.ra2_dir.join(relative))
             .unwrap_or_else(|| self.ra2_dir.clone());
-        let entries = match std::fs::read_dir(&directory) {
+        let entries = match crate::util::file_system::read_dir(&directory) {
             Ok(entries) => entries,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(WildcardMount::default());
@@ -1582,10 +1591,10 @@ impl AssetManager {
     fn open_loose_root(ra2_dir: &Path) -> Result<HashMap<String, LooseAsset>, AssetError> {
         let mut files = HashMap::new();
 
-        for entry in std::fs::read_dir(ra2_dir)? {
+        for entry in crate::util::file_system::read_dir(ra2_dir)? {
             let entry = entry?;
             let path = entry.path();
-            if !path.is_file() {
+            if !crate::util::file_system::is_file(&path) {
                 continue;
             }
             let Some(file_name) = path.file_name().and_then(OsStr::to_str) else {
@@ -1661,7 +1670,7 @@ fn loose_lookup_key(name: &str) -> Option<String> {
 /// hidden, system, directory or temporary attribute (`0x116`). The asset search
 /// and the scenario listings share it.
 pub(crate) fn retail_enumerated_file(path: &Path) -> bool {
-    let Ok(metadata) = path.metadata() else {
+    let Ok(metadata) = crate::util::file_system::metadata(path) else {
         return false;
     };
     if !metadata.is_file() {

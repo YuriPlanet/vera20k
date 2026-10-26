@@ -3,7 +3,7 @@
 //! and creates `0x94`; Back (`0x686`, result -1) tears `0x94` down and state 1
 //! recreates Single Player.
 
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use super::{App, AppState};
 use crate::app::shell_route::ShellRoute;

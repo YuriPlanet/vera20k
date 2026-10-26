@@ -294,9 +294,9 @@ pub struct SavedSeedBrowserState<I = NativeFileName> {
     pub description_edit: SavedSeedDescriptionEdit,
     pub pressed_control: Option<SavedSeedControl>,
     pub prompt: Option<SavedSeedPrompt<I>>,
-    pub scroll_repeat_at: Option<std::time::Instant>,
-    pub opened_at: std::time::Instant,
-    pub last_list_press: Option<(std::time::Instant, i32, i32)>,
+    pub scroll_repeat_at: Option<crate::util::time::Instant>,
+    pub opened_at: crate::util::time::Instant,
+    pub last_list_press: Option<(crate::util::time::Instant, i32, i32)>,
     current_description: SeedDescription,
 }
 
@@ -380,7 +380,7 @@ impl<I: Clone + PartialEq> SavedSeedBrowserState<I> {
             pressed_control: None,
             prompt: None,
             scroll_repeat_at: None,
-            opened_at: std::time::Instant::now(),
+            opened_at: crate::util::time::Instant::now(),
             last_list_press: None,
             current_description,
         };

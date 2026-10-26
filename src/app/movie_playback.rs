@@ -7,7 +7,7 @@ use crate::assets::bink_file::BinkFile;
 use crate::audio::movie_stream::MovieAudioStream;
 use crate::render::bink_movie::{BinkMovieStep, BinkMovieSurface};
 use anyhow::Result;
-use std::time::Instant;
+use crate::util::time::Instant;
 
 /// Bink soundtrack track 0 fed frame by frame alongside the video.
 struct Soundtrack {

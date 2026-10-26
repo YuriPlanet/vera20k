@@ -5,7 +5,7 @@
 //! Match-lifetime state lives in the match owners; process-lifetime GPU and
 //! audio objects live in `RendererState` / `AppAudioRuntime`.
 
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use super::startup_splash;
 use crate::app::shell_random_map::{RandomMapGenerationJob, RandomMapGenerationRetention};

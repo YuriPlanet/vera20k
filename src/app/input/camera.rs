@@ -438,7 +438,7 @@ const OCTANT_DELTA: [(f32, f32); 8] = [
 pub(crate) struct EdgeScrollState {
     /// Wall-clock origin for the radar timer. Edge scroll is driven by the real
     /// cursor, so it is presentation state and never enters the sim.
-    epoch: std::time::Instant,
+    epoch: crate::util::time::Instant,
     /// gamemd's CoastLevel: 0 is the slowest creep, higher is faster.
     coast_level: i32,
     /// Last direction octant. Retained so the map keeps coasting in the same
@@ -452,7 +452,7 @@ pub(crate) struct EdgeScrollState {
 impl Default for EdgeScrollState {
     fn default() -> Self {
         Self {
-            epoch: std::time::Instant::now(),
+            epoch: crate::util::time::Instant::now(),
             coast_level: 0,
             octant: 0,
             last_coast_change: None,

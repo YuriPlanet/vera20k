@@ -27,6 +27,7 @@ use super::*;
 use crate::map::resolved_terrain::test_flat_ground_grid;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+#[cfg(not(feature = "ares"))]
 use crate::rules::ruleset::PrismSupportRules;
 use crate::sim::combat::TargetKind;
 use crate::sim::combat::receiver_fixture::with_building_fire_stub;
@@ -1032,6 +1033,7 @@ fn prism_cadence_matches_the_original() {
 /// entries is dropped, `rules::ini_parser`), so the replay gives it one key
 /// ReadGeneral does not read.
 #[test]
+#[cfg(not(feature = "ares"))]
 fn prism_general_reader_matches_the_original() {
     let golden = golden();
     let reader = rows(&golden, "reader");
@@ -1097,4 +1099,49 @@ fn prism_general_reader_matches_the_original() {
             );
         }
     }
+}
+
+#[cfg(feature = "ares")]
+#[test]
+fn ares_prism_modifier_retains_percent_across_map_layers_and_scales_one_shot() {
+    let mut layers =
+        RulesLayerStack::new(IniFile::from_str("[General]\nPrismSupportModifier=125%\n"));
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str("[General]\nName=Mode without a prism override\n"),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[General]\nName=Map without a prism override\n"),
+    );
+    let rules = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
+    assert_eq!(rules.general.prism_support.modifier, 125);
+
+    let mut fixture = Fixture::new(&serde_json::json!({}), "master");
+    let master = fixture.id("master");
+    fixture
+        .sim
+        .substrate
+        .entities
+        .get_mut(master)
+        .unwrap()
+        .prism_support_count
+        .set_for_test(1);
+    // ProcessDelayedFire4504A8: a single supporting tower adds 125%,
+    // rather than multiplying a map's retained value by another 100.
+    assert_eq!(
+        fixture.sim.substrate.take_support_bonus(master, &rules),
+        576
+    );
+    assert_eq!(
+        fixture.sim.substrate.take_support_bonus(master, &rules),
+        256
+    );
+
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[General]\nPrismSupportModifier=150%\n"),
+    );
+    let overridden = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
+    assert_eq!(overridden.general.prism_support.modifier, 150);
 }

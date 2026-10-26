@@ -412,7 +412,7 @@ fn movie_list_composition<'a>(
         atlas,
         &buttons,
         crate::app::frontend::menu_page_render::MENU_PAGE_BUTTON_POLICY,
-        std::time::Instant::now(),
+        crate::util::time::Instant::now(),
         None,
     );
     // The slide engine draws the button frames only; captions return with
@@ -493,7 +493,7 @@ pub(crate) fn render_movie_list(
         let title_window = state
             .frontend
             .shell_page_title
-            .paint(std::time::Instant::now());
+            .paint(crate::util::time::Instant::now());
         let status_text = movie_list_status_key(state)
             .map(|key| resolve_csf(state, key).into_owned())
             .unwrap_or_default();

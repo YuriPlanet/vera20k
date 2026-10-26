@@ -23,7 +23,7 @@
 //! [`Runner::QuickMatch`]) likewise keeps its lobby, game channel and users
 //! here, with the native mode 1-3 branches of the shared sinks.
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use super::WolPage;
 use super::service::{self, WolServiceEvent, WolServiceRequest};

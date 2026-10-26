@@ -164,6 +164,7 @@ fn emit_with_material(
         &grid,
         (building.position.rx(), building.position.ry()),
         sim,
+        Some(building.owner()),
         building,
         &|_| 0,
         0.0,

@@ -11,6 +11,9 @@ const BGRA8_BYTES_PER_PIXEL: u32 = 4;
 
 #[derive(Debug, Error)]
 pub enum FrameReadbackError {
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    #[error("synchronous GPU capture is unavailable in the browser")]
+    BrowserCaptureUnsupported,
     #[error("frame readback requires non-zero dimensions, got {width}x{height}")]
     EmptyExtent { width: u32, height: u32 },
     #[error("frame readback only supports BGRA8 surfaces, got {0:?}")]
@@ -116,28 +119,36 @@ impl PendingBgra8Readback {
         submission_index: wgpu::SubmissionIndex,
         timeout: std::time::Duration,
     ) -> Result<Vec<u8>, FrameReadbackError> {
-        let slice = self.buffer.slice(..);
-        let (tx, rx) = std::sync::mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |result| {
-            let _ = tx.send(result);
-        });
-        device.poll(wgpu::PollType::Wait {
-            submission_index: Some(submission_index),
-            timeout: Some(timeout),
-        })?;
-        rx.recv()??;
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        {
+            let _ = (device, submission_index, timeout);
+            Err(FrameReadbackError::BrowserCaptureUnsupported)
+        }
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        {
+            let slice = self.buffer.slice(..);
+            let (tx, rx) = std::sync::mpsc::channel();
+            slice.map_async(wgpu::MapMode::Read, move |result| {
+                let _ = tx.send(result);
+            });
+            device.poll(wgpu::PollType::Wait {
+                submission_index: Some(submission_index),
+                timeout: Some(timeout),
+            })?;
+            rx.recv()??;
 
-        let mapped = slice.get_mapped_range();
-        let tight = strip_row_padding(
-            &mapped,
-            self.width,
-            self.height,
-            self.tight_bytes_per_row,
-            self.padded_bytes_per_row,
-        )?;
-        drop(mapped);
-        self.buffer.unmap();
-        Ok(tight)
+            let mapped = slice.get_mapped_range();
+            let tight = strip_row_padding(
+                &mapped,
+                self.width,
+                self.height,
+                self.tight_bytes_per_row,
+                self.padded_bytes_per_row,
+            )?;
+            drop(mapped);
+            self.buffer.unmap();
+            Ok(tight)
+        }
     }
 }
 

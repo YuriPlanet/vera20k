@@ -24,7 +24,7 @@
 //! template, kind-1 groups, help keys and relayout were executed the same
 //! way; its body statics keep their template windows at every retail size.
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{self, RectPx, RightPanelRects, ShellScale, child_window};

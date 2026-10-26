@@ -1773,6 +1773,11 @@ fn pump_loading_after_present(
                 runtime.simulation.retire_voxel_type_damage(),
             )?;
         }
+        let the_team_enabled = state
+            .frontend
+            .main_menu_shell_state
+            .typed_codes
+            .the_team_enabled();
         let load_result = {
             let network = crate::app::lan_service::LoadingNetworkService::borrow(
                 &mut state.match_state.session,
@@ -1808,6 +1813,7 @@ fn pump_loading_after_present(
                     fresh_scenario_context,
                     progress.native_theater_cache_mismatch,
                     progress.runtime_color_scheme_count,
+                    the_team_enabled,
                     native_rules_owner,
                     #[cfg(feature = "ares")]
                     &mut prepared_rules_prefix,
@@ -1830,6 +1836,7 @@ fn pump_loading_after_present(
                     batch: &state.renderer.batch_renderer,
                     asset_manager,
                     native_rules_owner,
+                    the_team_enabled,
                     #[cfg(feature = "ares")]
                     prepared_noncampaign_prefix: &mut prepared_rules_prefix,
                     audio,
@@ -1954,6 +1961,11 @@ fn pump_map_construction(
             state.process_assets.native_rules_mut_with_tile_cache();
         let native_rules_owner =
             rules.ok_or_else(|| anyhow::anyhow!("native construction lost its Rules owner"))?;
+        let the_team_enabled = state
+            .frontend
+            .main_menu_shell_state
+            .typed_codes
+            .the_team_enabled();
         let mut progress = LoadingPhaseProgress::select(
             session.native.as_mut(),
             constructing.load.theater_cache_mismatch(),
@@ -1978,6 +1990,7 @@ fn pump_map_construction(
             batch: &state.renderer.batch_renderer,
             asset_manager,
             native_rules_owner,
+            the_team_enabled,
             #[cfg(feature = "ares")]
             prepared_noncampaign_prefix: &mut constructing.rules_prefix,
             audio,

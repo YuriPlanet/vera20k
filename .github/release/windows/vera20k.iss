@@ -166,6 +166,7 @@ Source: "vera20k.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "config.toml.example"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "LICENSE-GPL"; DestDir: "{app}"; Flags: ignoreversion
+Source: "LGPL-2.1-or-later.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "THIRD_PARTY_LICENSES.html"; DestDir: "{app}"; Flags: ignoreversion
 
 [Tasks]
@@ -761,7 +762,7 @@ var
   ConfigInfo: String;
 begin
   { Use the standard Ready memo and retain Inno Setup's normal sections.
-    Keep the filenames below aligned with the five packaged [Files] entries. }
+    Keep the filenames below aligned with the six packaged [Files] entries. }
   Result := '';
   AppendReadySection(Result, MemoUserInfoInfo, NewLine);
   AppendReadySection(Result, MemoDirInfo, NewLine);
@@ -770,7 +771,7 @@ begin
   AppendReadySection(Result, MemoGroupInfo, NewLine);
   AppendReadySection(Result, CustomMessage('ReadyFiles') + NewLine +
     Space + 'vera20k.exe, config.toml.example, README.txt' + NewLine +
-    Space + 'LICENSE-GPL, THIRD_PARTY_LICENSES.html', NewLine);
+    Space + 'LICENSE-GPL, LGPL-2.1-or-later.txt, THIRD_PARTY_LICENSES.html', NewLine);
   if FileExists(AddBackslash(WizardDirValue()) + 'config.toml') then
     ConfigInfo := CustomMessage('ReadyConfigExisting')
   else

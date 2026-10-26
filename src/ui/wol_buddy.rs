@@ -327,7 +327,7 @@ pub(crate) struct WolAddBuddy {
     /// `0x702`, created disabled; `0x0079C520` of the text.
     pub(crate) add_enabled: bool,
     pub(crate) buttons: ShellButtonInteraction<u16>,
-    pub(crate) focus_at: Option<std::time::Instant>,
+    pub(crate) focus_at: Option<crate::util::time::Instant>,
 }
 
 /// `EM_LIMITTEXT 9` and `0x4D1(1)` (byte characters only).
@@ -337,7 +337,7 @@ impl WolAddBuddy {
     /// `0x497`: an empty edit with the focus, Add disabled.
     pub(crate) fn new() -> Self {
         let mut popup = Self {
-            focus_at: Some(std::time::Instant::now()),
+            focus_at: Some(crate::util::time::Instant::now()),
             ..Self::default()
         };
         popup.edit.focused = true;

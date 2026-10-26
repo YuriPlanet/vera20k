@@ -22,7 +22,7 @@
 //! composition the quit-confirm and validation modals both delegate to.
 
 use std::borrow::Cow;
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;

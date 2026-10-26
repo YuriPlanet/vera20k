@@ -17,7 +17,7 @@
 //! Render-agnostic: geometry, the resolved model and the statics' reveal
 //! state. The app resolves strings and colours when it opens the page.
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{

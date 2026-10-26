@@ -3,7 +3,7 @@
 //! compact popup (background mode 2) with owner-draw buttons, NewEdits and
 //! an owner-draw list.
 
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use super::SHELL_LABEL_TEXT_RGB;
 use super::controls::list_controls;

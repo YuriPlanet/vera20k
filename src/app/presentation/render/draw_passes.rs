@@ -861,30 +861,6 @@ pub(super) fn dispatch_draw_passes(
         "super_timer_text",
     );
 
-    // --- Step 10.7: build description ---
-    // GScreenClass_DrawText's Phobos VersionDescription (`0x4F4583`): the
-    // black box and red text at the tactical view's top right, same
-    // screen-fixed tactical clip as the timer lines above.
-    draw_pooled_ui_passthrough(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        state
-            .match_state
-            .match_presentation
-            .selection_overlay
-            .as_ref()
-            .map(|o| o.white_texture()),
-        "build_text_fill",
-    );
-    draw_pooled_ui_passthrough(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        Some(state.renderer.bit_font.atlas()),
-        "build_text_text",
-    );
-
     // TacticalDraw6D4B25->6D4E20 is its last battlefield draw: centred
     // GRFXTXT frame, or white text if the shape/converter is unavailable.
     // Keep the tactical clip and draw before sidebar copy/Chrono capture.
@@ -937,6 +913,61 @@ pub(super) fn dispatch_draw_passes(
         surface.composite(&mut pass);
     }
     pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
+    // Phobos SuperWeaponSidebar: left-edge screen-fixed layers. Drawn after
+    // the right sidebar blit and before messages, like Phobos' own gadgets.
+    #[cfg(feature = "phobos")]
+    {
+        let presentation = &state.match_state.match_presentation;
+        let chrome = crate::app::presentation::sidebar_render::current_sidebar_chrome(state);
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            presentation.sw_sidebar_art.as_ref().map(|art| &art.texture),
+            "sw_sidebar_chrome",
+        );
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            presentation
+                .sidebar_cameo_atlas
+                .as_ref()
+                .map(|atlas| &atlas.texture),
+            "sw_sidebar_cameo",
+        );
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            presentation
+                .selection_overlay
+                .as_ref()
+                .map(|overlay| overlay.white_texture()),
+            "sw_sidebar_hover",
+        );
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            chrome.and_then(|atlas| atlas.gclock_texture.as_ref()),
+            "sw_sidebar_gclock",
+        );
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            state.renderer.bit_font.darken_texture(),
+            "sw_sidebar_overlay",
+        );
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            Some(state.renderer.bit_font.atlas()),
+            "sw_sidebar_text",
+        );
+    }
     // The message rows' black boxes: native rows render through the shared
     // text engine with the row's opaque-background style, which fills a black
     // box one pixel out on every side (0x4A5EB0 @ 0x4A5F61) behind each line
@@ -996,6 +1027,40 @@ pub(super) fn dispatch_draw_passes(
     if let Some(page) = page_draw.as_ref() {
         page.draw(&mut pass, state);
     }
+
+    // --- Step 10.7: build description ---
+    // Original4F4480's tail: MessageListClass::Draw `0x4F455D`(->`0x5D49A0`),
+    // the CCToolTip vtable+0xC call `0x4F4570` and the debug-stats call
+    // `0x4F457E` all precede the Phobos VersionDescription hook `0x4F4583`,
+    // which precedes the mouse-restore vtable+0x3C call `0x4F4593`. The black
+    // box and red text at the tactical view's top right therefore go down at
+    // the frame tail, after messages and tooltips. The dialog-vs-version-text
+    // order is unpinned natively; this draws the description after the dialog.
+    // `draw_pooled_ui_passthrough` keeps depth compare Always with no depth
+    // write, so the late draw cannot be depth-rejected by the message/tooltip
+    // quads that wrote depth, and it stays before
+    // `stage_pre_cursor_composition`, so the text is inside the
+    // ScreenCapture-retained pre-cursor composition (0x537BC0 hides the mouse
+    // while copying).
+    draw_pooled_ui_passthrough(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        state
+            .match_state
+            .match_presentation
+            .selection_overlay
+            .as_ref()
+            .map(|o| o.white_texture()),
+        "build_text_fill",
+    );
+    draw_pooled_ui_passthrough(
+        &mut pass,
+        &state.renderer.batch_renderer,
+        pool,
+        Some(state.renderer.bit_font.atlas()),
+        "build_text_text",
+    );
 
     // Active YR ScreenCaptureCommandClass::Execute (0x00537BC0) hides
     // WWMouse while copying the already-presented client. Preserve the same
@@ -1285,6 +1350,11 @@ mod tests {
             "pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());",
         );
         let first_screen_submission = source_offset("\"message_text\"");
+        let tooltip_text = source_offset("\"tooltip_text\"");
+        let build_fill = source_offset("\"build_text_fill\"");
+        let build_text = source_offset("\"build_text_text\"");
+        let pre_cursor_capture = source_offset(".stage_pre_cursor_composition(");
+        let cursor = source_offset("\"software_cursor\"");
 
         // Original6D4648,6D4656,6D465F: IonBlast DrawAll between the first
         // rally pass and the object loop.
@@ -1316,13 +1386,32 @@ mod tests {
         assert!(screen_fixed < sidebar_blit);
         assert!(sidebar_blit < full_window_scissor);
         assert!(full_window_scissor < first_screen_submission);
+        // The description lives in the chrome pass, after the scissor reset.
+        assert!(full_window_scissor < build_fill);
+        // Native tail: CCToolTip 0x4F4570 then Phobos 0x4F4583.
+        assert!(tooltip_text < build_fill);
+        // Fill box first, then the red text, like every pooled text pair.
+        assert!(build_fill < build_text);
+        // The text stays inside the pre-cursor composition (mouse restore
+        // 0x4F4593 follows the Phobos hook 0x4F4583 natively).
+        assert!(build_text < pre_cursor_capture);
+        // The software cursor draws after the retained composition.
+        assert!(pre_cursor_capture < cursor);
 
         let timer_tail = &SOURCE[sparkle..outcome_start];
         assert_eq!(
             timer_tail.matches(".draw").count() + timer_tail.matches("draw_pooled").count(),
-            5,
-            "PixelFX, the two timer submissions and the two Phobos build-description \
-             submissions (empty outside Phobos builds) precede the native result draw"
+            3,
+            "PixelFX and the two timer submissions precede the native result draw; \
+             the Phobos build description now draws at the RenderFrame_main tail"
+        );
+        // Exhaustiveness: the description draws exactly once in the span from
+        // tooltips to cursor, pinning it out of the tactical tail.
+        let tail = &SOURCE[tooltip_text..cursor];
+        assert_eq!(
+            tail.matches("\"build_text_fill\"").count(),
+            1,
+            "the Phobos build description draws exactly once, at the frame tail"
         );
     }
 

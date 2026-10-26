@@ -94,6 +94,14 @@ impl PathsConfig {
 
 /// Shared by packaged and direct launches. No writable setting defaults to
 /// the retail installation, even when VERA's executable is installed there.
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+pub fn default_settings_dir() -> Result<PathBuf> {
+    // Browser VFS: keep the profile outside imported retail assets, within the
+    // launcher's existing persisted user-data namespace.
+    Ok(PathBuf::from("/saves/profile"))
+}
+
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 pub fn default_settings_dir() -> Result<PathBuf> {
     if cfg!(target_os = "windows") {
         if let Some(path) = std::env::var_os("LOCALAPPDATA")
@@ -196,6 +204,12 @@ pub const fn default_input_delay_ticks() -> u32 {
 }
 
 impl GameConfig {
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    pub fn load() -> Result<Self> {
+        let path = Path::new("/config.toml");
+        Self::parse_from(&crate::util::file_system::read_to_string(path)?, path)
+    }
+
     /// Load the optional host override, otherwise use the retail module directory.
     ///
     /// Retail provenance: Executable-root path discovery — `WinMain` @ `0x006BB9A0`.
@@ -204,6 +218,7 @@ impl GameConfig {
     /// `SetCurrentDirectoryA` before opening `RA2MD.INI` or any MIX archive.
     /// Rust keeps the resolved directory explicit instead of mutating the
     /// process-wide current directory.
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     pub fn load() -> Result<Self> {
         let working_dir =
             std::env::current_dir().context("Failed to locate the working directory")?;
@@ -225,7 +240,7 @@ impl GameConfig {
         let root = retail_asset_root_from_executable(executable)?;
         for directory in [working_dir, root.as_path()] {
             let path = directory.join(CONFIG_FILE_NAME);
-            match std::fs::read_to_string(&path) {
+            match crate::util::file_system::read_to_string(&path) {
                 Ok(contents) => return Self::parse_from(&contents, &path),
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
                 Err(err) => {

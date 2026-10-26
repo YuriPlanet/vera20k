@@ -48,7 +48,7 @@ impl App {
             entries,
             current,
             empty.into(),
-            saved_seeds::new_slot_file_time(std::time::SystemTime::now()),
+            saved_seeds::new_slot_file_time(crate::util::time::SystemTime::now()),
             rows,
         ));
         state.frontend.skirmish_shell_state.player_name_edit.focused = false;
@@ -375,7 +375,7 @@ impl App {
             &layout,
             y,
             pointer_moved,
-            std::time::Instant::now(),
+            crate::util::time::Instant::now(),
         ) {
             Self::sync_saved_seed_edit_scroll(state);
         }
@@ -404,7 +404,7 @@ impl App {
             &layout,
             extent,
             pointer,
-            std::time::Instant::now(),
+            crate::util::time::Instant::now(),
             saved_file_input::host_double_click_limits(),
         );
         Self::apply_saved_seed_input(state, result);

@@ -520,7 +520,7 @@ pub(crate) struct WolLobbyState {
     /// `[0x84A23C]`: the row index of the last Join (initially -1).
     pub(crate) join_row: Option<usize>,
     pub(crate) popup: Option<WolLobbyPopup>,
-    focus_started_at: std::time::Instant,
+    focus_started_at: crate::util::time::Instant,
 }
 
 impl WolLobbyState {
@@ -547,7 +547,7 @@ impl WolLobbyState {
             admitted_name: None,
             join_row: None,
             popup: None,
-            focus_started_at: std::time::Instant::now(),
+            focus_started_at: crate::util::time::Instant::now(),
         }
     }
 
@@ -589,7 +589,7 @@ impl WolLobbyState {
 
     /// `SetFocus` on the chat edit `0x540`: its caret blink restarts.
     pub(crate) fn refocus_chat(&mut self) {
-        self.focus_started_at = std::time::Instant::now();
+        self.focus_started_at = crate::util::time::Instant::now();
     }
 
     pub(crate) fn set_enabled(&mut self, control: u16, enabled: bool) {
@@ -637,7 +637,7 @@ impl WolLobbyState {
         }
     }
 
-    pub(crate) fn caret_visible(&self, now: std::time::Instant) -> bool {
+    pub(crate) fn caret_visible(&self, now: crate::util::time::Instant) -> bool {
         now.saturating_duration_since(self.focus_started_at)
             .as_secs()
             % 2

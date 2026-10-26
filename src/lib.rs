@@ -8,6 +8,9 @@
 //! scenario) is the `vera20k-core` crate (`src/core_lib.rs`). Its modules are
 //! re-exported here, so `crate::sim::...` and `vera20k::sim::...` keep naming
 //! them.
+#[cfg(all(target_arch = "wasm32", target_os = "unknown", not(feature = "wasm")))]
+compile_error!("browser builds require --features wasm");
+
 pub use vera20k_core::{
     assets, headless_scenario, map, net, rules, sim, skirmish_launch, skirmish_modes, util,
 };
@@ -62,3 +65,6 @@ mod architecture_guards;
 // Fixture files that library tests read from the checkout.
 #[cfg(test)]
 use vera20k_core::test_fixture;
+
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+pub mod web;

@@ -235,6 +235,14 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
             roots.insert(name.to_ascii_uppercase());
         }
     };
+    // Ares common Launch10033068..100330AA constructs SW.Animation through
+    // the same AnimClass owner as other effects, even when it is hidden.
+    #[cfg(feature = "ares")]
+    for sw in rules.super_weapons.values() {
+        if let Some(Some(animation)) = &sw.presentation.animation {
+            insert(animation);
+        }
+    }
     for warhead in rules.warheads_iter() {
         for name in &warhead.anim_list {
             insert(name);

@@ -91,7 +91,7 @@ pub(super) fn tick_system(
             tick_particle(&mut p, sim, rules, owner_house, context);
             super::system_ai::finish_lifetime(&mut p);
         } else {
-            super::system_ai::tick_particle(&mut p, sim, rules);
+            super::system_ai::tick_particle(&mut p, sim, rules, owner_house);
         }
         sim.substrate
             .particle_systems

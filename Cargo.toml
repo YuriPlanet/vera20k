@@ -38,6 +38,8 @@ path = "src/bin/telemetry-serve.rs"
 required-features = ["telemetry-dashboard"]
 
 [features]
+# Browser host support; target selection still controls every platform implementation.
+wasm = ["vera20k-core/wasm", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:web-sys", "dep:console_log", "dep:console_error_panic_hook", "dep:cpal", "getrandom/wasm_js"]
 # Development builds carry the Ctrl+Shift dev chord. The release workflow builds
 # with `--no-default-features`, so shipped binaries do not.
 default = ["dev-overlays"]
@@ -65,7 +67,6 @@ debug-tools = ["telemetry-dashboard", "dev-overlays", "vera20k-core/debug-tools"
 vera20k-core = { path = "src" }
 
 # Background HTTPS lobby I/O; verified TLS is independent of simulation.
-ureq = { version = "3.5", default-features = false, features = ["rustls", "json"] }
 base64 = "0.22"
 
 # OS multiplayer session nonces and RFC6455 handshake; no simulation RNG or command intake.
@@ -115,6 +116,19 @@ image = { version = "0.25", default-features = false, features = ["png", "ico"] 
 # Playback only: the engine decodes its own audio and hands rodio PCM buffers, so
 # rodio's decoders (symphonia), dither and microphone recording stay off.
 rodio = { version = "0.22", default-features = false, features = ["playback"] }
+
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+ureq = { version = "3.5", default-features = false, features = ["rustls", "json"] }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+js-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", optional = true, features = ["Window", "Document", "HtmlCanvasElement", "Element", "HtmlElement"] }
+console_log = { version = "1", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+# Match rodio's CPAL version; this enables only its browser output backend.
+cpal = { version = "0.17", optional = true, features = ["wasm-bindgen"] }
 
 [target.'cfg(unix)'.dependencies]
 # Continuing presentation uptime across saved-game process restarts. The

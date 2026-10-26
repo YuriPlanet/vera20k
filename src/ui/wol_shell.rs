@@ -690,7 +690,7 @@ pub struct WolWaitBox {
     pub text: String,
     pub disconnect: String,
     pub check_status: String,
-    pub opened_at: std::time::Instant,
+    pub opened_at: crate::util::time::Instant,
     pub shown: bool,
 }
 
@@ -698,12 +698,12 @@ pub struct WolWaitBox {
 pub const WAIT_REVEAL: std::time::Duration = std::time::Duration::from_millis(7000);
 
 impl WolWaitBox {
-    pub fn reveal_at(&self) -> std::time::Instant {
+    pub fn reveal_at(&self) -> crate::util::time::Instant {
         self.opened_at + WAIT_REVEAL
     }
 
     /// The timer tick: true when this call showed the box.
-    pub fn poll(&mut self, now: std::time::Instant) -> bool {
+    pub fn poll(&mut self, now: crate::util::time::Instant) -> bool {
         if !self.shown && now >= self.reveal_at() {
             self.shown = true;
             return true;

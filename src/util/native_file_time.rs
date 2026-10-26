@@ -202,7 +202,10 @@ pub fn format_file_time_parts(ticks: u64) -> Option<(String, String)> {
     }
 }
 
-#[cfg(not(any(windows, unix)))]
+#[cfg(all(
+    not(any(windows, unix)),
+    not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))
+))]
 pub fn format_file_time_parts(_ticks: u64) -> Option<(String, String)> {
     None
 }
@@ -244,4 +247,18 @@ mod tests {
         assert!(!date.contains("ago"));
         assert!(!time.contains("ago"));
     }
+}
+
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+pub fn format_file_time_parts(ticks: u64) -> Option<(String, String)> {
+    if is_sentinel(ticks) {
+        return None;
+    }
+    let milliseconds = ticks.checked_div(10_000)?.checked_sub(11_644_473_600_000)?;
+    let date = js_sys::Date::new(&(milliseconds as f64).into());
+    let options = js_sys::Object::new();
+    Some((
+        date.to_locale_date_string("default", &options).into(),
+        date.to_locale_time_string("default").into(),
+    ))
 }

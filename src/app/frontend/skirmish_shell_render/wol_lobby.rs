@@ -22,7 +22,7 @@ use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;
 use crate::ui::wol_lobby::*;
-use std::time::Instant;
+use crate::util::time::Instant;
 
 /// The popups paint over the covered dialog, before their own controls.
 pub(super) const POPUP_DEPTHS: ModalDepths = ModalDepths {

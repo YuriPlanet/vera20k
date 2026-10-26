@@ -15,7 +15,7 @@
 //! from [`TickRateMeter`] (committed ticks), so each number keeps its owner.
 
 use std::collections::VecDeque;
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use crate::sim::telemetry::TimingSample;
 

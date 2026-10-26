@@ -12,7 +12,7 @@
 //! and `0x116`'s rows (`0x0079AF10`) read them. No RNG is drawn here.
 
 use std::collections::{HashMap, VecDeque};
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use super::service::{self, WolLadderRecord, WolServiceRequest};
 use crate::app::AppState;

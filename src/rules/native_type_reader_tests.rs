@@ -808,9 +808,10 @@ fn continued_process_keeps_the_rules_class_type_pointers() {
 /// restarted from the constructor.
 #[test]
 fn scenario_reset_clears_the_rules_class_type_pointers_and_keeps_the_scalars() {
-    let rules = after_rules_class_references(RulesProcessContext::ScenarioReset(
-        crate::rules::object_image::ImageTheater::Temperate,
-    ));
+    let rules = after_rules_class_references(RulesProcessContext::ScenarioReset {
+        theater: crate::rules::object_image::ImageTheater::Temperate,
+        skip_root_color_add_and_mode: false,
+    });
 
     assert_eq!(rules.combat_damage.ivan_warhead, None);
     assert_eq!(rules.bridge_warheads.c4_name, "");
@@ -973,9 +974,10 @@ fn retail_published_references_are_pinned() {
                     .process_with_fixed_art_and_registry_state_recovering(
                         &artmd,
                         state,
-                        RulesProcessContext::ScenarioReset(
-                            crate::rules::object_image::ImageTheater::Temperate,
-                        ),
+                        RulesProcessContext::ScenarioReset {
+                            theater: crate::rules::object_image::ImageTheater::Temperate,
+                            skip_root_color_add_and_mode: false,
+                        },
                         &crate::rules::sound_ini::EvaRegistry::default(),
                     )
                     .unwrap();

@@ -32,6 +32,11 @@ unsafe extern "system" {
 /// includes suspend (docs.kernel.org/core-api/timekeeping.html). Exact historic
 /// Windows suspend behavior is not established by the same-boot restart proof.
 pub(crate) fn wall_clock_ms() -> u64 {
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    {
+        static START: std::sync::OnceLock<crate::util::time::Instant> = std::sync::OnceLock::new();
+        START.get_or_init(crate::util::time::Instant::now).elapsed().as_millis() as u64
+    }
     #[cfg(windows)]
     {
         // SAFETY: timeGetTime takes no arguments and returns the process-wide
