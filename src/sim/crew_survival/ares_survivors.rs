@@ -1,4 +1,5 @@
-//! Installed Ares's Unit survivor hook737F97 ->1004C0E0 ->100464C0.
+//! Installed Ares survivor hooks: Unit737F97 ->1004C0E0 and
+//! Aircraft41668B ->10048C50 share100464C0.
 //! Cargo, placement, veterancy, mind control and destruction retain their
 //! existing owners; this module owns only the optional survivor transaction.
 
@@ -224,7 +225,7 @@ impl Simulation {
 
     /// Ares100464C0: the incoming flag is ReceiveDamage IgnoreDefenses (arg5),
     /// not arg6 PreventCrewEscape. Captor/pilots precede ordinary passengers.
-    pub(crate) fn release_ares_unit_survivors(
+    pub(crate) fn release_ares_vehicle_survivors(
         &mut self,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
@@ -238,12 +239,12 @@ impl Simulation {
         let Some(object) = self.entity_object_type(unit, rules) else {
             return;
         };
-        let crew_rules = object.crew_rules().clone();
+        let crew_rules = object.crew_rules();
         let crewed = object.crewed;
         let open_topped = object.open_topped;
         let original_owner = unit.owner();
         let origin = ground_pose::position_world_coord(&unit.position);
-        if open_topped {
+        if unit.category() == EntityCategory::Unit && open_topped {
             self.clear_all_in_open_transport(unit_id);
         }
         let release_crew = self
@@ -412,6 +413,7 @@ impl Simulation {
             return;
         };
         let chance = crew_rules.passenger_chances()[rank_index(unit.veterancy.raw())];
+        let unit_fallback = unit.category() == EntityCategory::Unit;
         let cell = self
             .resolved_terrain
             .as_ref()
@@ -432,7 +434,7 @@ impl Simulation {
                     let admitted = !dying.ignore_defenses
                         && if chance > 0 {
                             sim.scenario_rng.next_range_u32_inclusive(1, 100) as i32 <= chance
-                        } else if chance < 0 {
+                        } else if chance < 0 && unit_fallback {
                             cell.is_some_and(|cell| matches!(sim.foot_can_enter(id, cell,
                             crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR, rules, registry), Ok(0 | 2)))
                         } else {

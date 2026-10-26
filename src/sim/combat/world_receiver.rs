@@ -2302,7 +2302,13 @@ fn finish_concrete_death(
             selected_by_player,
         };
         #[cfg(feature = "ares")]
-        world.release_ares_unit_survivors(rules, overlay_registry, dead_id, dying, frame_effects);
+        world.release_ares_vehicle_survivors(
+            rules,
+            overlay_registry,
+            dead_id,
+            dying,
+            frame_effects,
+        );
         #[cfg(not(feature = "ares"))]
         {
             world.release_dying_unit_passengers(
@@ -2392,13 +2398,50 @@ fn finish_concrete_death(
         // released its dock slots.
         effects.despawned_ids.push(dead_id);
     } else if category == EntityCategory::Aircraft && callbacks_enabled(world) {
-        if !world.foot_crash(
-            dead_id,
-            killing_attacker(world, damage_events, dead_id),
-            rules,
-            overlay_registry,
-            frame_effects,
-        ) {
+        #[cfg(feature = "ares")]
+        {
+            //41668B ->10048C50 reads the live selected byte here (unlike
+            //Unit's entry snapshot), then calls shared survivors100464C0.
+            let selected = world
+                .substrate
+                .entities
+                .get(dead_id)
+                .is_some_and(|aircraft| {
+                    aircraft.selection.is_selected() && world.owner_is_human(aircraft.owner())
+                });
+            let dying = crate::sim::crew_survival::DyingTransport {
+                attacker: killing_attacker(world, damage_events, dead_id),
+                ignore_defenses,
+                selected_by_player: selected,
+            };
+            world.release_ares_vehicle_survivors(
+                rules,
+                overlay_registry,
+                dead_id,
+                dying,
+                frame_effects,
+            );
+        }
+        #[cfg(feature = "ares")]
+        let may_crash = world
+            .substrate
+            .entities
+            .get(dead_id)
+            .and_then(|aircraft| world.entity_object_type(aircraft, rules))
+            .is_none_or(|object| object.aircraft_crashable_override() != Some(false));
+        #[cfg(not(feature = "ares"))]
+        let may_crash = true;
+        //10048CB5..10048CDB skips the original Crash only for an explicit
+        //Crashable=no; absence still takes Aircraft416694's original call.
+        if !may_crash
+            || !world.foot_crash(
+                dead_id,
+                killing_attacker(world, damage_events, dead_id),
+                rules,
+                overlay_registry,
+                frame_effects,
+            )
+        {
             // AircraftClass::ReceiveDamage4166A3 UnInits a refused Crash
             // before returning. A later area receiver's passenger placement
             // must see its cell cleared, rather than wait for batch delivery.

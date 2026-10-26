@@ -1355,6 +1355,10 @@ pub struct ObjectType {
     /// instead of vanishing (`UnitClass::ReceiveDamage 0x00738457`), and only
     /// such a type answers its Jumpjet's impact notice (`0x0074619D`).
     pub crashable: bool,
+    /// Ares TypeExt+323/+324: the optional Aircraft Crashable override,
+    /// independent of original Unit TechnoType+D95 (10048CB5..10048CDB).
+    #[cfg(feature = "ares")]
+    aircraft_crashable: Option<bool>,
     /// `TiltCrashJumpjet=` (`TechnoTypeClass+0xD22`, constructor false at
     /// `0x007114CA`, `TechnoTypeClass::ReadINI 0x00713377..0x00713391`, key
     /// string `0x00844118`): the Jumpjet Draw_Matrix tilts the body by its
@@ -2451,6 +2455,11 @@ impl ObjectType {
     }
 
     #[cfg(feature = "ares")]
+    pub(crate) fn aircraft_crashable_override(&self) -> Option<bool> {
+        self.aircraft_crashable
+    }
+
+    #[cfg(feature = "ares")]
     pub(crate) fn crew_rules(&self) -> &crate::rules::ares_crew::CrewTypeRules {
         &self.crew
     }
@@ -2474,6 +2483,7 @@ impl ObjectType {
         attachment: Option<&crate::rules::ares_warhead::AttachEffectRules>,
         cloak_allowed: bool,
         turret_rot_override: Option<i32>,
+        aircraft_crashable: Option<bool>,
     ) {
         self.emp = emp.cloned();
         #[cfg(feature = "ares")]
@@ -2481,9 +2491,15 @@ impl ObjectType {
             self.self_attach_effect = attachment.cloned();
             self.cloak_allowed = cloak_allowed;
             self.turret_rot_override = turret_rot_override;
+            self.aircraft_crashable = aircraft_crashable;
         }
         #[cfg(not(feature = "ares"))]
-        let _ = (attachment, cloak_allowed, turret_rot_override);
+        let _ = (
+            attachment,
+            cloak_allowed,
+            turret_rot_override,
+            aircraft_crashable,
+        );
     }
 
     #[cfg(feature = "ares")]
@@ -3879,6 +3895,8 @@ impl ObjectType {
             zfudge_bridge: section.read_int("ZFudgeBridge", 0),
             too_big_to_fit_under_bridge: section.read_bool("TooBigToFitUnderBridge", false),
             crashable: section.read_bool("Crashable", false),
+            #[cfg(feature = "ares")]
+            aircraft_crashable: None,
             teleporter: section.read_bool("Teleporter", false),
             move_to_shroud: section.read_bool("MoveToShroud", category != ObjectCategory::Aircraft),
             hover_attack: section.read_bool("HoverAttack", false),

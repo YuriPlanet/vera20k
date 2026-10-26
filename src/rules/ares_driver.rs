@@ -104,7 +104,7 @@ mod tests {
              VehicleThief.OneTime=yes\nOperator=_aNy_\n\
              Survivor.Pilots=2\nSurvivor.PilotChance=30\nSurvivor.VeteranPilotChance=75\n\
              Survivor.ElitePassengerChance=90\nSurvivor.Side1=OP\nCrew.TechnicianChance=0\n\
-             [HOST]\nCanBeDriven=no\nVehicleThief.Allowed=no\n[OP]\nStrength=50\n",
+             [HOST]\nCanBeDriven=no\nVehicleThief.Allowed=no\nCrashable=no\n[OP]\nStrength=50\n",
         ));
         layers.push(
             RulesLayerKind::Scenario,
@@ -114,7 +114,7 @@ mod tests {
              Survivor.PilotChance=invalid\nSurvivor.RookiePilotChance=0\n\
              Survivor.VeteranPilotChance=invalid\nSurvivor.Side1=MISSING_PILOT\n\
              Crew.TechnicianChance=invalid\n[GDI]\nCrew=MISSING_PILOT\n\
-             [HOST]\nCanBeDriven=invalid\nVehicleThief.Allowed=invalid\n\
+             [HOST]\nCanBeDriven=invalid\nVehicleThief.Allowed=invalid\nCrashable=invalid\n\
              [Neutral]\nCanBeDriven=invalid\n",
             ),
         );
@@ -134,6 +134,14 @@ mod tests {
         assert_eq!(side_crew.crew.as_ref().unwrap().as_deref(), Some("OP"));
         assert_eq!(side_crew.technician, Some(None));
         assert!(rules.object("MISSING_PILOT").is_none());
+        assert_eq!(
+            rules.object("HOST").unwrap().aircraft_crashable_override(),
+            Some(false)
+        );
+        assert_eq!(
+            rules.object("OP").unwrap().aircraft_crashable_override(),
+            None
+        );
         let host = rules.object("HOST").unwrap().driver_rules();
         assert!(!host.can_be_driven() && !host.theft_allowed());
         assert!(!rules.country_can_be_driven("Neutral"));

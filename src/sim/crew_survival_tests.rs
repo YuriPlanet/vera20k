@@ -2573,3 +2573,70 @@ fn ares_fatal_vehicle_returns_saved_captor_pilot_and_existing_passenger() {
         assert!(!entity.building_entry.should_enter_nearest_occupiable());
     }
 }
+
+/// Aircraft41668B ->10048C50 uses the same survivor owner, before its
+/// nullable Crashable override. Negative passenger chance has no Unit fallback.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_fatal_aircraft_parachutes_crew_and_honors_explicit_no_crash() {
+    use crate::sim::passenger::{BoardingArm, board_passenger};
+    let (mut sim, rules, overlays) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[Countries]\n0=Americans\n[Sides]\nGDI=Americans\n[Americans]\nSide=GDI\n\
+         [General]\nAlliedCrew=CREW\n[InfantryTypes]\n2=CREW\n\
+         [CREW]\nStrength=100\nSpeedType=Foot\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+         [HORNET]\nCrewed=yes\nPassengers=1\nSurvivor.PilotChance=100\nCrashable=no\n",
+    );
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(HouseState::new(owner, 0, None, false, 0, 10));
+    let plane = sim
+        .spawn_object_at_height("HORNET", "Americans", 20, 15, 0, 5, &rules)
+        .unwrap();
+    assert!(
+        crate::sim::movement::ground_pose::position_world_coord(
+            &sim.entities().get(plane).unwrap().position
+        )
+        .z > 208
+    );
+    let passenger = spawn(&mut sim, &rules, "ENGINEER", "Americans", 21, 15);
+    // Seed the already-boarded flying state through the actual class arrival
+    // leaf; admission/takeoff are tested by their own owners.
+    assert!(board_passenger(
+        &mut sim,
+        &rules,
+        passenger,
+        plane,
+        BoardingArm::InfantryTransport,
+        Some(&overlays),
+        Default::default()
+    ));
+    let before = sim.substrate.entities.keys_sorted();
+    let warhead = sim.interner.intern("Super");
+    let hit = EntityDamageEvent::direct_receiver(
+        plane,
+        100_000,
+        0,
+        RAD_NO_ATTACKER,
+        None,
+        warhead,
+        ORDINARY,
+    );
+    sim.commit_noncombat_aoe_hits(&rules, Some(&overlays), &[hit], Default::default());
+    let escaped = new_ids(&sim, &before);
+    assert_eq!(escaped.len(), 1);
+    let pilot = sim.entities().get(escaped[0]).unwrap();
+    assert_eq!(sim.interner.resolve(pilot.type_ref()), "CREW");
+    assert!(pilot.is_object_alive() && pilot.is_parachuted());
+    assert_eq!(pilot.health.current(), 50);
+    assert!(
+        sim.entities()
+            .get(passenger)
+            .is_none_or(|rider| !rider.is_object_alive())
+    );
+    assert!(
+        sim.entities()
+            .get(plane)
+            .is_none_or(|aircraft| !aircraft.is_object_alive()),
+        "Crashable=no skips the falling wreck and reaches UnInit now"
+    );
+}

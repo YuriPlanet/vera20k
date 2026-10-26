@@ -4771,7 +4771,7 @@ impl RuleSet {
                 warhead.particle_system = particle_system.map(str::to_owned);
             }
         }
-        for (category, name, emp, attachment, cloak_allowed, turret_rot) in
+        for (category, name, emp, attachment, cloak_allowed, turret_rot, aircraft_crashable) in
             processed.ares_techno_states()
         {
             if let Some(object) = rules
@@ -4779,7 +4779,13 @@ impl RuleSet {
                 .iter_mut()
                 .find(|object| object.category == category && object.id == name)
             {
-                object.bind_ares_techno_rules(emp, attachment, cloak_allowed, turret_rot);
+                object.bind_ares_techno_rules(
+                    emp,
+                    attachment,
+                    cloak_allowed,
+                    turret_rot,
+                    aircraft_crashable,
+                );
             }
         }
         #[cfg(feature = "ares")]
@@ -7043,6 +7049,19 @@ impl RuleSet {
             if !drivers.is_empty() {
                 b"ares-driver-rules-v1".hash(&mut hasher);
                 drivers.hash(&mut hasher);
+            }
+            let aircraft_crash_overrides = self
+                .object_list
+                .iter()
+                .filter_map(|object| {
+                    object
+                        .aircraft_crashable_override()
+                        .map(|value| ((object.category, object.id.to_ascii_uppercase()), value))
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !aircraft_crash_overrides.is_empty() {
+                b"ares-aircraft-crashable-v1".hash(&mut hasher);
+                aircraft_crash_overrides.hash(&mut hasher);
             }
             let crews = self
                 .object_list

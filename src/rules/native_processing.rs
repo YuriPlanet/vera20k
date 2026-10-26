@@ -1967,6 +1967,7 @@ impl ProcessedRulesLayers {
             Option<&crate::rules::ares_warhead::AttachEffectRules>,
             bool,
             Option<i32>,
+            Option<bool>,
         ),
     > {
         self.native_type_construction_trace
@@ -1986,6 +1987,10 @@ impl ProcessedRulesLayers {
                         member.cloak_allowed,
                         #[cfg(feature = "ares")]
                         member.turret_rot_override,
+                        #[cfg(not(feature = "ares"))]
+                        None,
+                        #[cfg(feature = "ares")]
+                        member.aircraft_crashable,
                         #[cfg(not(feature = "ares"))]
                         None,
                     )
@@ -4056,6 +4061,10 @@ struct ProcessedType {
     #[cfg(feature = "ares")]
     #[serde(default)]
     crew: crate::rules::ares_crew::CrewTypeRules,
+    ///1003CB5B leaves the Nullable<bool> presence byte+324 clear.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    aircraft_crashable: Option<bool>,
     /// ObjectType4753F0 -> Ares10006E10 binds at each reached body read.
     armor_id: ArmorId,
     /// ParticleSystemType+294, the bound ParticleType's index: constructor -1
@@ -4513,6 +4522,8 @@ impl ProcessedType {
             driver: Default::default(),
             #[cfg(feature = "ares")]
             crew: Default::default(),
+            #[cfg(feature = "ares")]
+            aircraft_crashable: None,
             armor_id: ArmorId::NONE,
             holds_what: None,
             super_weapon_weapon: None,
@@ -6383,6 +6394,10 @@ impl RulesPassProcessor {
                         })
                         .collect::<Vec<_>>();
                     self.family_mut(family)[index].crew.read_pass(&raw, &pilots);
+                    // TypeExt ReadINI1003EADC..1003EAED, NullableBool1000E9B0.
+                    let member = &mut self.family_mut(family)[index];
+                    member.aircraft_crashable =
+                        raw.read_ares_nullable_bool("Crashable", member.aircraft_crashable);
                 }
                 #[cfg(feature = "ares")]
                 self.process_factory_owners(family, index, &raw);
