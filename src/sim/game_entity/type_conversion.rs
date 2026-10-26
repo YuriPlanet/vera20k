@@ -74,6 +74,13 @@ impl Simulation {
         actor.type_ref = new_type;
         actor.is_voxel = GameEntity::object_uses_voxel(&destination.id, destination, rules);
         actor.refresh_type_projection(Some(destination), rules);
+        // RESIDUAL: construction alone builds some Type-derived state, and
+        // nothing here refreshes it: passenger capacity (PassengerCargo from
+        // Passengers=/SizeLimit=), the SHP vehicle Animation component, the
+        // Phobos shield, the gunner weapon and voxel recoil. Trigger: an Ares
+        // Convert.Script between types that differ in them (retail sets none).
+        // Effect: the object keeps the old type's values; converting a
+        // transport is the visible case, keeping its old capacity.
         crate::sim::miner::Miner::change_type_binding(&mut actor.miner, destination);
         health.apply(actor);
         Self::update_house_tracking(
@@ -117,10 +124,18 @@ impl Simulation {
         // Conversion writes both native FacingClass rates, even on Infantry;
         // the constructor's special Infantry ROT127 does not run here.
         actor.body_facing.set_rot(destination.turret_rot);
-        actor
-            .barrel_facing
-            .get_or_insert_with(|| FacingClass::new(0, 0))
-            .set_rot(destination.secondary_turn_rate());
+        // 10043839 writes +0x3B4 unconditionally, but only a turreted Unit or
+        // an Aircraft reads its Secondary. Keep construction's rule so a
+        // turretless destination aims its body, not a phantom turret.
+        if GameEntity::type_has_secondary_facing(destination, actor.category()) {
+            let seed = actor.body_facing.destination();
+            actor
+                .barrel_facing
+                .get_or_insert_with(|| FacingClass::new(seed, 0))
+                .set_rot(destination.secondary_turn_rate());
+        } else {
+            actor.barrel_facing = None;
+        }
         if let Some(locomotor) = actor.locomotor.as_mut() {
             locomotor.change_type_binding(old_locomotor, destination, frame);
         } else {

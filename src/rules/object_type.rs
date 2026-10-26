@@ -2456,12 +2456,9 @@ impl ObjectType {
     }
 
     /// Ares conversion1004380E..10043839 selects the optional secondary ROT.
+    #[cfg(feature = "ares")]
     pub(crate) fn secondary_turn_rate(&self) -> i32 {
-        #[cfg(feature = "ares")]
-        if let Some(rate) = self.turret_rot_override {
-            return rate;
-        }
-        self.turret_rot
+        self.turret_rot_override.unwrap_or(self.turret_rot)
     }
 
     #[cfg(feature = "ares")]

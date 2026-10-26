@@ -1942,7 +1942,10 @@ impl ProcessedRulesLayers {
                         member.emp_type.as_ref(),
                         member.self_attach_effect.as_ref(),
                         member.cloak_allowed,
+                        #[cfg(feature = "ares")]
                         member.turret_rot_override,
+                        #[cfg(not(feature = "ares"))]
+                        None,
                     )
                 })
             })
@@ -3930,6 +3933,7 @@ struct ProcessedType {
     cloak_allowed: bool,
     /// Ares TypeExt+588/+58C. Constructor1003CED0/6 clears value/presence;
     /// nullable reader10008CC0 at1003F267 retains both on invalid input.
+    #[cfg(feature = "ares")]
     #[serde(default)]
     turret_rot_override: Option<i32>,
     #[cfg(feature = "ares")]
@@ -4384,6 +4388,7 @@ impl ProcessedType {
             emp_type: None,
             self_attach_effect: None,
             cloak_allowed: true,
+            #[cfg(feature = "ares")]
             turret_rot_override: None,
             #[cfg(feature = "ares")]
             spotlight: Default::default(),
@@ -4991,7 +4996,7 @@ impl RulesPassProcessor {
 
     /// Installed Ares Find10007EA0 resolves a nullable TechnoType pointer.
     /// The common construction array decides equal names across categories.
-    #[cfg(any(feature = "ares", feature = "phobos"))]
+    #[cfg(feature = "ares")]
     fn find_existing_techno_type(
         &self,
         name: &str,

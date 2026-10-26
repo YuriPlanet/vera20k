@@ -11,7 +11,7 @@ fn scene() -> (Simulation, RuleSet, u64, Vec<u64>) {
          [InfantryTypes]\n0=FOOT\n1=FOOT2\n\
          [OLD]\nStrength=100\nSpeed=5\nSpeedType=Track\nMovementZone=Normal\nAmmo=6\nInitialAmmo=5\nConvert.Script=NEW\nHarvester=yes\nStorage=3\n\
          Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
-         [NEW]\nStrength=200\nSpeed=6\nSpeedType=Hover\nMovementZone=Normal\nAmmo=3\nInitialAmmo=0\nROT=8\nTurretROT=2\nStorage=2\n\
+         [NEW]\nStrength=200\nSpeed=6\nSpeedType=Hover\nMovementZone=Normal\nAmmo=3\nInitialAmmo=0\nROT=8\nTurret=yes\nTurretROT=2\nStorage=2\n\
          Locomotor={4A582742-9839-11d1-B709-00A024DDAFD1}\n\
          [BAD]\nStrength=100\nSpeed=5\nConvert.Script=FOOT2\n\
          Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
@@ -170,6 +170,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
         6 << 8,
         "not Infantry constructor ROT127"
     );
+    assert!(foot.barrel_facing.is_none(), "no phantom turret");
     assert_eq!(foot.crate_multipliers.firepower(), NativeF64Bits::ONE);
     sim.update_ares_attach_effects(members[1], &rules);
     assert_eq!(

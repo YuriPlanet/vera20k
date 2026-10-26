@@ -178,12 +178,7 @@ impl Simulation {
         if let Some(obj) = obj {
             ge.set_body_facing_rot(obj.turret_rot);
         }
-        // `+0x3A0`: a turreted unit's turret and every aircraft's Secondary. A
-        // building aims its `+0x388`.
-        if let Some(obj) = obj.filter(|obj| {
-            (obj.has_turret && category != EntityCategory::Structure)
-                || category == EntityCategory::Aircraft
-        }) {
+        if let Some(obj) = obj.filter(|obj| GameEntity::type_has_secondary_facing(obj, category)) {
             let mut secondary = crate::sim::movement::FacingClass::new(initial, obj.turret_rot);
             if category == EntityCategory::Aircraft {
                 // Aircraft413FD2..414015 supplies ROT to BOTH controllers;
@@ -389,6 +384,15 @@ impl GameEntity {
             self.removal_facts.stamp_occupier(object.occupier);
             stamp_building_cell_profile(self, Some(object));
         }
+    }
+
+    /// Whether `barrel_facing` models the `+0x3A0` Secondary: a turreted
+    /// unit's turret and every aircraft's Secondary. A building aims its
+    /// `+0x388`, and `barrel_facing.is_some()` means "has a turret" to its
+    /// readers, so every other object keeps none.
+    pub(crate) fn type_has_secondary_facing(object: &ObjectType, category: EntityCategory) -> bool {
+        (object.has_turret && category != EntityCategory::Structure)
+            || category == EntityCategory::Aircraft
     }
 }
 
