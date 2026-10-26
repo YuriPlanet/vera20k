@@ -178,7 +178,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 62
             | 63
             | 64
-    )
+    ) || (cfg!(feature = "ares") && action_id == 68)
 }
 
 /// A member's NavCom as a team target, for `Distance`.
@@ -198,8 +198,8 @@ impl Simulation {
     /// archive target, unless the TeamType is `TransportsReturnOnUnload=`
     /// and the member carries passengers; a script run past its end
     /// destroys the team; the mission target and move target are cleared.
-    /// Otherwise the move target falls back to the mission target. Actions
-    /// outside `0..=0x40` (and the -1 before the first) do nothing.
+    /// Otherwise the move target falls back to the mission target. Stock
+    /// actions outside `0..=0x40` do nothing; an Ares build also admits68.
     pub(super) fn team_step_script(
         &mut self,
         team_id: u64,
@@ -272,7 +272,7 @@ impl Simulation {
                 argument: 0,
             },
         );
-        if action.action_id as u32 > 0x40 {
+        if action.action_id as u32 > 0x40 && !(cfg!(feature = "ares") && action.action_id == 68) {
             return;
         }
         self.team_run_action(team_id, action, first, rules, registry, frame_effects);
@@ -923,6 +923,33 @@ impl Simulation {
                     }
                 }
                 if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
+            #[cfg(feature = "ares")]
+            68 => {
+                // Installed TeamClass_Update hook6E9443 ->1003A310 ->
+                // dispatch10039C30/action6810039D7C: linked members use
+                // their own current Type's Convert.Script pointer. The
+                // argument is ignored, and even an empty team completes.
+                let members: Vec<_> = self
+                    .team_script_vm
+                    .teams
+                    .get(&team_id)
+                    .map(|team| team.members().collect())
+                    .unwrap_or_default();
+                for member in members {
+                    let target = self.substrate.entities.get(member).and_then(|actor| {
+                        self.entity_object_type(actor, rules)
+                            .and_then(|object| object.script_conversion())
+                            .cloned()
+                    });
+                    if let Some(target) = target {
+                        self.convert_techno_type(member, &target, rules, frame_effects);
+                    }
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    //10039D55: advance next visit, not recursively this tick.
                     team.advance_pending = true;
                 }
             }

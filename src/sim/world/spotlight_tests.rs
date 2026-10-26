@@ -36,7 +36,7 @@ fn overflowed_authored_spotlight_motion_keeps_its_last_pose_and_cleanup() {
         assert_eq!(sim.substrate.spotlights.get(id).unwrap().coord, before);
         assert!(sim.building_spotlight(id, &rules).is_some());
         // Invalid authored motion must not bypass ordinary orphan cleanup.
-        sim.substrate.spotlights_pointer_expired(p);
+        sim.substrate.spotlights_pointer_expired(p, true);
         sim.visit_spotlight(id, &rules, UninitContext::new(&rules, None));
         assert!(
             sim.substrate
@@ -106,7 +106,10 @@ fn original_constructor_endpoints_and_full_ai_motion_controls() {
     let rules = rules();
     for case in corpus["motions"].as_array().unwrap() {
         let mut sim = Simulation::with_seed(19);
-        let parent = parent(&mut sim, EntityCategory::Unit);
+        // These controls execute the original game's circular light AI.
+        // Use its retail-reachable Building parent: Ares intentionally gives
+        // Foot parents a different fixed-facing path (1004EC10).
+        let parent = parent(&mut sim, EntityCategory::Structure);
         let c = &case["constructor"];
         let endpoint = serde_json::from_value(c["endpoint"].clone()).unwrap();
         sim.substrate.spotlights.objects.insert(

@@ -177,17 +177,6 @@ impl GeneratedTechnoInitTable {
     }
 }
 
-fn object_uses_voxel(type_id: &str, object: &ObjectType, rules: &RuleSet) -> bool {
-    rules
-        .art()
-        .resolve_metadata_entry(type_id, &object.image)
-        .map(|entry| entry.voxel)
-        .unwrap_or(matches!(
-            object.category,
-            ObjectCategory::Vehicle | ObjectCategory::Aircraft
-        ))
-}
-
 impl Simulation {
     /// Build one deliberately lifecycle-free Techno for diagnostic tools.
     ///
@@ -463,7 +452,7 @@ impl Simulation {
                 };
                 let uses_voxel: bool = {
                         authored_health::map_object_type(map_ent.category, &map_ent.type_id, rules)
-                            .map(|object| object_uses_voxel(&map_ent.type_id, object, rules))
+                            .map(|object| GameEntity::object_uses_voxel(&map_ent.type_id, object, rules))
                     }
                     .unwrap_or(uses_voxel_default);
 

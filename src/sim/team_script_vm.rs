@@ -1616,6 +1616,8 @@ pub(crate) fn join_team_for_test(
 }
 
 #[cfg(test)]
+mod type_conversion_tests;
+#[cfg(test)]
 mod firesale_retail_tests;
 #[cfg(test)]
 mod group_recruitment_tests;

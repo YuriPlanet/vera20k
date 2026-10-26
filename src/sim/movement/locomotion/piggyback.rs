@@ -231,6 +231,18 @@ impl StashedLocomotor {
         *self.0
     }
 
+    /// Rebind the Foot's derived type caches without resuming the suspended
+    /// controller or exposing its private mutable state.
+    #[cfg(feature = "ares")]
+    pub(in crate::sim::movement) fn change_type_binding(
+        &mut self,
+        old_type_kind: LocomotorKind,
+        object: &crate::rules::object_type::ObjectType,
+        frame: u32,
+    ) {
+        self.0.change_type_binding(old_type_kind, object, frame);
+    }
+
     /// Forward typed private-storage operations without exposing the boxed
     /// object's mutable state or dispatching its suspended Process.
     pub(in crate::sim::movement) fn apply_track_state_mutation(

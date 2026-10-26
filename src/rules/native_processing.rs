@@ -1777,6 +1777,36 @@ impl ProcessedRulesLayers {
             })
     }
 
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_spotlight_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            bool,
+            crate::rules::ares_spotlight::SpotlightTypeRules,
+        ),
+    > {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        member.building_has_spotlight,
+                        member.spotlight,
+                    )
+                })
+            })
+    }
+
     pub(crate) fn ares_techno_states(
         &self,
     ) -> impl Iterator<
@@ -1786,6 +1816,7 @@ impl ProcessedRulesLayers {
             Option<&crate::rules::ares_emp::EmpTypeRules>,
             Option<&crate::rules::ares_warhead::AttachEffectRules>,
             bool,
+            Option<i32>,
         ),
     > {
         self.native_type_construction_trace
@@ -1803,6 +1834,7 @@ impl ProcessedRulesLayers {
                         member.emp_type.as_ref(),
                         member.self_attach_effect.as_ref(),
                         member.cloak_allowed,
+                        member.turret_rot_override,
                     )
                 })
             })
@@ -3491,6 +3523,13 @@ struct ProcessedType {
     self_attach_effect: Option<crate::rules::ares_warhead::AttachEffectRules>,
     /// TechnoTypeExt+1FA: ctor1003C9D7 defaults true; read1003EBEF.
     cloak_allowed: bool,
+    /// Ares TypeExt+588/+58C. Constructor1003CED0/6 clears value/presence;
+    /// nullable reader10008CC0 at1003F267 retains both on invalid input.
+    #[serde(default)]
+    turret_rot_override: Option<i32>,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    spotlight: crate::rules::ares_spotlight::SpotlightTypeRules,
     /// ObjectType4753F0 -> Ares10006E10 binds at each reached body read.
     armor_id: ArmorId,
     /// ParticleSystemType+294, the bound ParticleType's index: constructor -1
@@ -3611,6 +3650,11 @@ pub(crate) struct TechnoTypeReferences {
     /// section +1F8 names (`0x004611F5..0x0046121F`), an OverlayType.
     free_unit: Option<String>,
     to_overlay: Option<String>,
+    /// Ares TechnoTypeExt+618: ctor1003CF4C clears it; reader1003F3F3
+    /// calls1003FA40/1003C650, retaining a common TechnoType pointer.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    convert_script: Option<crate::rules::superweapon_type::DeliveryType>,
 }
 
 impl TechnoTypeReferences {
@@ -3639,6 +3683,8 @@ impl TechnoTypeReferences {
             dead_bodies: Vec::new(),
             free_unit: None,
             to_overlay: None,
+            #[cfg(feature = "ares")]
+            convert_script: None,
         }
     }
 
@@ -3678,6 +3724,8 @@ impl TechnoTypeReferences {
         object.dead_bodies.clone_from(&self.dead_bodies);
         object.free_unit.clone_from(&self.free_unit);
         object.to_overlay.clone_from(&self.to_overlay);
+        #[cfg(feature = "ares")]
+        object.bind_script_conversion(self.convert_script.as_ref());
     }
 }
 
@@ -3926,6 +3974,9 @@ impl ProcessedType {
             emp_type: None,
             self_attach_effect: None,
             cloak_allowed: true,
+            turret_rot_override: None,
+            #[cfg(feature = "ares")]
+            spotlight: Default::default(),
             armor_id: ArmorId::NONE,
             holds_what: None,
             super_weapon_weapon: None,
@@ -4522,6 +4573,41 @@ impl RulesPassProcessor {
             }
         }
         Some(resolved)
+    }
+
+    /// Installed Ares Find10007EA0 resolves a nullable TechnoType pointer.
+    /// The common construction array decides equal names across categories.
+    #[cfg(any(feature = "ares", feature = "phobos"))]
+    fn find_existing_techno_type(
+        &self,
+        name: &str,
+    ) -> Option<crate::rules::superweapon_type::DeliveryType> {
+        let index = ares_type_index_of_name(
+            name,
+            self.techno_type_order
+                .iter()
+                .map(|&(family, index)| self.families[&family][index].native_stored_id.as_str()),
+        )?;
+        let (family, member) = self.techno_type_order[index];
+        Some(crate::rules::superweapon_type::DeliveryType {
+            category: family.object_category().expect("TechnoType array category"),
+            id: self.families[&family][member].native_stored_id.clone(),
+        })
+    }
+
+    /// Ares pointer reader1003C650: ReadString2048, Find10007EA0, then
+    /// none10003950; absent/empty/unknown retains, an explicit none clears.
+    #[cfg(feature = "ares")]
+    fn resolve_existing_techno_type_from(
+        &self,
+        section: &IniSection,
+        key: &str,
+    ) -> Option<Option<crate::rules::superweapon_type::DeliveryType>> {
+        let name = section.read_name(key, 2048)?;
+        if is_native_none_type_name(name) {
+            return Some(None);
+        }
+        self.find_existing_techno_type(name).map(Some)
     }
 
     /// Installed Ares Anim pointer Parser1000C9C0/Find1000D3E0: look up
@@ -5672,6 +5758,19 @@ impl RulesPassProcessor {
                         .read_pass(&raw, animation);
                     member.cloak_allowed =
                         raw.read_ares_bool("Cloakable.Allowed", member.cloak_allowed);
+                    member.turret_rot_override =
+                        raw.read_ares_nullable_int("TurretROT", member.turret_rot_override);
+                    //1003E232: the common extension applies to all Technos.
+                    member.building_has_spotlight =
+                        raw.read_ares_bool("HasSpotlight", member.building_has_spotlight);
+                    member.spotlight.read_pass(&raw);
+                }
+                #[cfg(feature = "ares")]
+                if let Some(target) = self.resolve_existing_techno_type_from(&raw, "Convert.Script")
+                {
+                    self.family_mut(family)[index]
+                        .techno_references
+                        .convert_script = target;
                 }
                 match family {
                     RulesTypeFamily::Building => {
@@ -5691,8 +5790,11 @@ impl RulesPassProcessor {
                         let member = &mut self.families.get_mut(&family).unwrap()[index];
                         // ReadINI460F50..460F9C: exact Rules key, ReadCoord529CA0,
                         // current value as default, no clamp or conversion.
-                        member.building_has_spotlight =
-                            raw.read_bool("HasSpotlight", member.building_has_spotlight);
+                        #[cfg(not(feature = "ares"))]
+                        {
+                            member.building_has_spotlight =
+                                raw.read_bool("HasSpotlight", member.building_has_spotlight);
+                        }
                         member.building_light.read_pass(&raw);
                         member.building_extra_power.read_pass(&raw);
                         member

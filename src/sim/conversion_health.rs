@@ -48,6 +48,23 @@ pub(crate) fn native_health(
 pub(crate) struct ConversionHealth(i32);
 
 impl ConversionHealth {
+    /// Ares in-place conversion1004370E..10043752 stores the source ratio
+    /// as a double before calling ObjectClass::SetHealthFraction5F5C80.
+    /// Keep that setter with Health; deploy conversions have another clamp.
+    #[cfg(feature = "ares")]
+    pub(crate) fn capture_in_place(
+        source: &GameEntity,
+        source_type: &ObjectType,
+        destination_type: &ObjectType,
+    ) -> Self {
+        let fraction = crate::util::native_x87::MaskedX87Chop53::store_f64_masked_chop(
+            source.health.ratio(source_type.strength),
+        );
+        let mut health = source.health;
+        health.set_fraction(fraction, destination_type.strength);
+        Self(health.current())
+    }
+
     pub(crate) fn capture(
         source: &GameEntity,
         source_type: &ObjectType,

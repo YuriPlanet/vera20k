@@ -4,7 +4,7 @@
 //! callers share one constructor. Child allocation still belongs to the parent
 //! store transaction in world_spawn, after these manager descriptors exist.
 
-use super::{GeneratedTechnoInitError, object_uses_voxel};
+use super::GeneratedTechnoInitError;
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::object_type::ObjectType;
@@ -79,7 +79,7 @@ impl Simulation {
         // Original copy slices: object_health corpus / constructors.
         let health = Health::new(obj.strength);
         let category = EntityCategory::from(obj.category);
-        let uses_voxel = object_uses_voxel(type_id, obj, rules);
+        let uses_voxel = GameEntity::object_uses_voxel(type_id, obj, rules);
         let sight_range = (obj.sight.max(0) as u16).min(MAX_SIGHT_RANGE);
         let stable_id = self.substrate.allocate_stable_id();
         let owner_iid = self.interner.intern(owner);
@@ -154,7 +154,7 @@ impl Simulation {
             ge.initialize_building_loss_index(i32::from(index.0));
         }
 
-        stamp_scoring_flags(ge, obj, rules);
+        ge.refresh_type_projection(obj, rules);
         // Phobos `TechnoClass_Init` (`Hooks.cpp:297..301`): allocate the
         // ShieldClass only when the bound type resolves and its `Strength` is
         // above zero; `SetHP(InitialStrength.Get(Strength))` clamps at creation.
@@ -169,9 +169,6 @@ impl Simulation {
                 ty.initial_strength(),
                 ty.strength(),
             ));
-        }
-        if let Some(object) = obj {
-            ge.sight.stamp_type_sight(object.sight);
         }
         // The class constructor's one `+0x388` rate write (`Set_ROT`): `ROT=`
         // for a unit (`0x00735579`), an aircraft (`0x00413FE7`) and a building
@@ -237,9 +234,6 @@ impl Simulation {
             ge.set_gunner_weapon(0, obj);
         }
         ge.initialize_voxel_recoil(obj.recoil);
-        ge.crushable_facts = CrushableFacts::stamp(obj);
-        ge.mover_facts = MoverFacts::stamp(obj);
-        ge.removal_facts.stamp_occupier(obj.occupier);
         if category == EntityCategory::Structure && obj.gate {
             ge.building_gate = Some(crate::sim::game_entity::BuildingGateRuntime::at_frame(
                 session.binary_frame(),
@@ -311,7 +305,6 @@ impl Simulation {
             );
         }
 
-        stamp_building_cell_profile(ge, Some(obj));
         // TechnoClass::Init_Managers — manager-owned children are committed
         // after this parent enters the limbo store and before its Unlimbo.
         ge.capture_manager = crate::sim::capture_manager::init_capture_manager(obj, rules);
@@ -380,6 +373,22 @@ impl Simulation {
     }
 }
 
+impl GameEntity {
+    /// Derived reads of the live Type pointer. Construction and Ares in-place
+    /// conversion10043740 share these caches without replaying constructors,
+    /// manager allocation, passenger setup or discovery-history writes.
+    pub(crate) fn refresh_type_projection(&mut self, object: Option<&ObjectType>, rules: &RuleSet) {
+        stamp_scoring_flags(self, object, rules);
+        if let Some(object) = object {
+            self.sight.stamp_type_sight(object.sight);
+            self.crushable_facts = CrushableFacts::stamp(object);
+            self.mover_facts = MoverFacts::stamp(object);
+            self.removal_facts.stamp_occupier(object.occupier);
+            stamp_building_cell_profile(self, Some(object));
+        }
+    }
+}
+
 fn install_authored_bridge(ge: &mut GameEntity, origin: ComponentOrigin) {
     if let ComponentOrigin::Authored {
         bridge_deck: Some(_),
@@ -424,7 +433,7 @@ fn stamp_building_cell_profile(
 
 /// `Crushable=` and `DeployedCrushable=`, copied when the object is built for
 /// the crush passes (natively read through the type pointer). Only the
-/// construction stamp writes them.
+/// shared type projection writes them.
 ///
 /// Nothing reads the `DeployedCrushable=` copy: the deploy completion
 /// re-reads the type's key (`0x00520B3B`, `0x00520B9A`) and stamps the

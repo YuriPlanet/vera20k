@@ -966,7 +966,7 @@ impl Simulation {
     /// `ClearLinkedList @ 0x0071ADE0`: frees the target, then walks Next and
     /// Prev, unlinking a neighbour's back-link only where it points here
     /// (`0x0071AE02`, `0x0071AE19`), and idles each attacker last.
-    fn temporal_clear_linked_list(
+    pub(crate) fn temporal_clear_linked_list(
         &mut self,
         attacker: u64,
         rules: &RuleSet,

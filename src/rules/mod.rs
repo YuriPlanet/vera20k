@@ -122,6 +122,8 @@ pub(crate) mod ares_prerequisites;
 pub(crate) mod ares_armor;
 pub(crate) mod ares_emp;
 pub(crate) mod ares_warhead;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_spotlight;
 pub mod armor;
 pub mod alpha_image_assets;
 pub mod country_loading;

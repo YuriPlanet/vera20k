@@ -61,7 +61,10 @@ fn self_cloak_reaches_normal_ai_and_restores_the_initial_and_repeat_waits() {
     visit(&mut sim, &rules, actor, 102);
     let entity = sim.entities().get(actor).unwrap();
     assert_eq!(entity.attach_effects.entries[0].remaining, 3);
-    assert_eq!(entity.attach_effects.self_effect, SelfEffectState::Applied);
+    assert_eq!(
+        entity.attach_effects.self_effect,
+        SelfEffectState::Applied(0)
+    );
     assert!(entity.stealth_ability.active(false));
     assert_eq!(
         entity.cloak.unwrap().state(),

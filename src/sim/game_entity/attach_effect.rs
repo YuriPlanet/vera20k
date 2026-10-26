@@ -38,8 +38,10 @@ impl EffectOrigin {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 enum SelfEffectState {
     Pending(i32),
-    Applied,
-    Disabled,
+    // The native +2C counter survives while +31 is Applied/Disabled. A type
+    // conversion clears only that flag, exposing the same counter again.
+    Applied(i32),
+    Disabled(i32),
 }
 impl Default for SelfEffectState {
     fn default() -> Self {
@@ -846,7 +848,7 @@ mod receiver {
                     .get_mut(target)
                     .unwrap()
                     .attach_effects
-                    .self_effect = SelfEffectState::Disabled;
+                    .self_effect = SelfEffectState::Disabled(saved_delay);
                 return;
             }
             if !settings.visual_combat_path() {
@@ -878,8 +880,38 @@ mod receiver {
                         .get_mut(target)
                         .unwrap()
                         .attach_effects
-                        .self_effect = SelfEffectState::Applied;
+                        .self_effect = SelfEffectState::Applied(saved_delay);
                 }
+            }
+        }
+
+        /// Ares conversion10043792 -> vector RemoveType100589F0 clears the
+        /// applied flag without resetting its counter, then erases the first
+        /// descriptor owned by the old Type. Warhead-owned effects survive.
+        pub(crate) fn reset_self_attach_effect_for_type_change(
+            &mut self,
+            target: u64,
+            old_type: InternedId,
+            rules: &RuleSet,
+        ) {
+            let Some(victim) = self.substrate.entities.get_mut(target) else {
+                return;
+            };
+            let origin = EffectOrigin::TechnoType(victim.category().into(), old_type);
+            let delay = match victim.attach_effects.self_effect {
+                SelfEffectState::Pending(delay)
+                | SelfEffectState::Applied(delay)
+                | SelfEffectState::Disabled(delay) => delay,
+            };
+            victim.attach_effects.self_effect = SelfEffectState::Pending(delay);
+            let animation = victim
+                .attach_effects
+                .entries
+                .iter()
+                .position(|entry| entry.origin == origin)
+                .and_then(|index| victim.attach_effects.entries.remove(index).animation);
+            if let Some(animation) = animation {
+                self.destroy_anim_with_context(animation, rules);
             }
         }
 

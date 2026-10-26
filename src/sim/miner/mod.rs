@@ -61,6 +61,10 @@ pub enum MinerKind {
     /// Yuri Slave Miner (SMIN): deploys into refinery (YAREFN), spawns slave infantry.
     /// Does not harvest directly — slaves harvest and deposit at the deployed building.
     Slave,
+    /// Retained StorageClass data after an in-place conversion to a type
+    /// without a miner role. The ore, unload latch and cursor are not reset.
+    #[cfg(feature = "ares")]
+    Inactive,
 }
 
 /// State machine for the miner harvest loop.
@@ -247,6 +251,8 @@ impl Miner {
             }
             // Slave Miners don't carry cargo — their slave infantry harvest instead.
             MinerKind::Slave => 0,
+            #[cfg(feature = "ares")]
+            MinerKind::Inactive => 0,
         };
         Self {
             kind,
@@ -261,6 +267,29 @@ impl Miner {
     /// The chassis.
     pub fn kind(&self) -> MinerKind {
         self.kind
+    }
+
+    /// Ares10043740 changes the live Type without reconstructing Unit storage.
+    /// Unit Harvest73E5E0 reads the new Type's Storage (+800); only VERA's
+    /// derived role/capacity change, not its existing bales or unload state.
+    #[cfg(feature = "ares")]
+    pub(crate) fn change_type_binding(slot: &mut Option<Self>, object: &ObjectType) {
+        let kind = miner_kind_for_object(object);
+        if slot.is_none() {
+            let Some(kind) = kind else { return };
+            *slot = Some(Self::new(
+                kind,
+                &MinerConfig::default(),
+                object.storage.max(0) as u16,
+            ));
+        }
+        let miner = slot
+            .as_mut()
+            .expect("existing or newly represented storage");
+        miner.kind = kind.unwrap_or(MinerKind::Inactive);
+        // The constructor's compatibility default is not a current-Type read:
+        // a conversion to Storage=0 retains zero rather than a chassis default.
+        miner.capacity_bales = object.storage.max(0) as u16;
     }
 
     /// The retired return-order refinery (see the field).

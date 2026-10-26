@@ -4711,13 +4711,25 @@ impl RuleSet {
                 warhead.particle_system = particle_system.map(str::to_owned);
             }
         }
-        for (category, name, emp, attachment, cloak_allowed) in processed.ares_techno_states() {
+        for (category, name, emp, attachment, cloak_allowed, turret_rot) in
+            processed.ares_techno_states()
+        {
             if let Some(object) = rules
                 .object_list
                 .iter_mut()
                 .find(|object| object.category == category && object.id == name)
             {
-                object.bind_ares_techno_rules(emp, attachment, cloak_allowed);
+                object.bind_ares_techno_rules(emp, attachment, cloak_allowed, turret_rot);
+            }
+        }
+        #[cfg(feature = "ares")]
+        for (category, name, enabled, options) in processed.ares_spotlight_states() {
+            if let Some(handle) = rules
+                .object_category_index
+                .get(&(category, name.to_ascii_uppercase()))
+                .copied()
+            {
+                rules.object_list[handle.0 as usize].bind_ares_spotlight(enabled, options);
             }
         }
         for (name, ares) in processed.ares_warhead_states() {
@@ -6762,6 +6774,32 @@ impl RuleSet {
                 })
                 .collect::<BTreeMap<_, _>>()
                 .hash(&mut hasher);
+            let conversions = self
+                .object_list
+                .iter()
+                .filter_map(|object| {
+                    object
+                        .script_conversion()
+                        .map(|target| ((object.category, object.id.to_ascii_uppercase()), target))
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !conversions.is_empty() {
+                b"ares-script-conversion-v1".hash(&mut hasher);
+                conversions.hash(&mut hasher);
+            }
+            let turn_overrides = self
+                .object_list
+                .iter()
+                .filter_map(|object| {
+                    object
+                        .turret_rot_override()
+                        .map(|rate| ((object.category, object.id.to_ascii_uppercase()), rate))
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !turn_overrides.is_empty() {
+                b"ares-secondary-turn-rate-v1".hash(&mut hasher);
+                turn_overrides.hash(&mut hasher);
+            }
         }
         // Equal flattened INIs may have different retained group lists.
         self.ares_prerequisites.hash(&mut hasher);
@@ -6898,6 +6936,28 @@ impl RuleSet {
         // These current-default inputs survive a process registry handoff.
         self.general.ion_cannon_damage.hash(&mut hasher);
         self.general.spotlight.hash(&mut hasher);
+        #[cfg(feature = "ares")]
+        {
+            let extensions: Vec<_> = self
+                .object_list
+                .iter()
+                .filter(|object| {
+                    object.has_spotlight || object.spotlight_rules() != Default::default()
+                })
+                .map(|object| {
+                    (
+                        object.category,
+                        &object.id,
+                        object.has_spotlight,
+                        object.spotlight_rules(),
+                    )
+                })
+                .collect();
+            if !extensions.is_empty() {
+                b"ares-spotlight-type-v1".hash(&mut hasher);
+                extensions.hash(&mut hasher);
+            }
+        }
         self.object_list
             .iter()
             .filter(|o| o.category == ObjectCategory::Building)
@@ -13848,3 +13908,7 @@ Projectile=Invisible
 #[cfg(test)]
 #[path = "map_lighting_tests.rs"]
 mod map_lighting_tests;
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "ares_script_conversion_tests.rs"]
+mod ares_script_conversion_tests;

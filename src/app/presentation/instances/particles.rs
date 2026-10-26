@@ -207,7 +207,7 @@ pub(super) fn build_spotlight_instance(
         coord: crate::sim::projectile::ProjectileCoord::new(p[0], p[1], p[2]),
         stage: light.glow_stage,
         base_size: 16,
-        flags: 0,
+        flags: light.glow_flags,
     }
     .draw_record(&mut input.detail.borrow_mut());
     let project = |p: [i32; 3]| {
