@@ -37,7 +37,9 @@ use crate::rules::superweapon_type::PhobosSuperWeaponAvailability;
 use crate::rules::superweapon_type::SuperWeaponBuildingRequirements;
 use crate::rules::superweapon_type::UnitDeliveryRules;
 #[cfg(feature = "ares")]
-use crate::rules::superweapon_type::{AresSuperWeaponAvailability, AresSuperWeaponMetadata};
+use crate::rules::superweapon_type::{
+    AresSuperWeaponAvailability, AresSuperWeaponCharge, AresSuperWeaponMetadata,
+};
 #[cfg(feature = "ares")]
 use crate::rules::superweapon_type::{DeliveryOwner, DeliveryType};
 use crate::util::native_x87::NativeF64Bits;
@@ -1579,6 +1581,7 @@ impl ProcessedRulesLayers {
                 &member.super_weapon_availability,
                 member.super_weapon_aux_building.as_deref(),
                 member.super_weapon_building_requirements.as_ref(),
+                &member.super_weapon_charge,
             )
         })
     }
@@ -3497,6 +3500,9 @@ struct ProcessedType {
     super_weapon_building_requirements: Option<SuperWeaponBuildingRequirements>,
     #[cfg(feature = "ares")]
     super_weapon_availability: AresSuperWeaponAvailability,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    super_weapon_charge: AresSuperWeaponCharge,
     /// Phobos `SW.TechLevel`/`SW.AuxTechnos`/`SW.NegTechnos`, read by the same
     /// ordered Process owner as the Ares gates and keyed the same way.
     #[cfg(feature = "phobos")]
@@ -3921,6 +3927,8 @@ impl ProcessedType {
             super_weapon_building_requirements: None,
             #[cfg(feature = "ares")]
             super_weapon_availability: AresSuperWeaponAvailability::default(),
+            #[cfg(feature = "ares")]
+            super_weapon_charge: AresSuperWeaponCharge::default(),
             #[cfg(feature = "phobos")]
             super_weapon_phobos_availability: PhobosSuperWeaponAvailability::default(),
             #[cfg(feature = "ares")]
@@ -5367,6 +5375,9 @@ impl RulesPassProcessor {
                         }
                     }
                     availability.read_shots_pass(&raw);
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_charge
+                        .read_pass(&raw);
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_availability = availability;
                     if effective

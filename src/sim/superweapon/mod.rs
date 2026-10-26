@@ -36,6 +36,8 @@ mod fire;
 pub mod force_shield;
 #[cfg(feature = "ares")]
 mod generic_warhead;
+#[cfg(all(test, feature = "ares"))]
+mod ares_charge_tests;
 pub mod genetic_converter;
 pub mod invulnerability;
 pub mod iron_curtain;
@@ -309,7 +311,7 @@ impl SuperWeapons {
             .values()
             .flat_map(|weapons| weapons.values())
             .any(|instance| {
-                instance.ares_launch_count != 0 && instance.ares_last_launch_frame.is_none()
+                instance.ares_launch_count != 0 && instance.ares_charge_origin_frame.is_none()
             })
         {
             return Err("nonzero successful-launch count without a last frame");
@@ -421,13 +423,15 @@ pub struct SuperWeaponInstance {
     paid_sequence: u64,
     #[serde(default)]
     paid_selection: Option<PaidSuperWeaponSelection>,
-    /// HouseExt's per-definition successful-launch pair (+88 vector).
-    /// Each House already retains exactly one Super per definition, so this
-    /// pair shares that owner and survives grant/revoke/charge changes.
+    /// HouseExt's per-definition launch pair (+88 vector), shared by grants
+    /// and launches. Grant10022710 records the first recharge origin; successful
+    /// Launch100226D0 replaces it. The existing Super remains the sole owner
+    /// across grant, revoke, snapshot restoration and charge changes.
     #[cfg(feature = "ares")]
     ares_launch_count: i32,
     #[cfg(feature = "ares")]
-    ares_last_launch_frame: Option<i32>,
+    #[serde(rename = "ares_last_launch_frame")]
+    ares_charge_origin_frame: Option<i32>,
 }
 
 fn idle_fade() -> i32 {
@@ -447,14 +451,14 @@ impl SuperWeaponInstance {
     #[cfg(feature = "ares")]
     fn record_ares_launch(&mut self, frame: i32) {
         self.ares_launch_count = self.ares_launch_count.wrapping_add(1);
-        self.ares_last_launch_frame = Some(frame);
+        self.ares_charge_origin_frame = Some(frame);
     }
 
     pub(crate) fn hash_ares_launch_history(&self, hasher: &mut impl std::hash::Hasher) {
         #[cfg(not(feature = "ares"))]
         let _ = hasher;
         #[cfg(feature = "ares")]
-        if let Some(frame) = self.ares_last_launch_frame {
+        if let Some(frame) = self.ares_charge_origin_frame {
             std::hash::Hash::hash(b"ares-super-launch-history-v1", hasher);
             std::hash::Hash::hash(&(self.ares_launch_count, frame), hasher);
         }
@@ -645,7 +649,7 @@ impl SuperWeaponInstance {
             #[cfg(feature = "ares")]
             ares_launch_count: 0,
             #[cfg(feature = "ares")]
-            ares_last_launch_frame: None,
+            ares_charge_origin_frame: None,
         }
     }
 
@@ -703,10 +707,13 @@ impl SuperWeaponInstance {
     fn apply_grant_state(
         &mut self,
         sw: &SuperWeaponType,
+        rules: &RuleSet,
         current_frame: u32,
         one_time: bool,
         on_hold: bool,
     ) -> bool {
+        #[cfg(not(feature = "ares"))]
+        let _ = rules;
         if self.is_active {
             return false;
         }
@@ -732,6 +739,18 @@ impl SuperWeaponInstance {
             if sw.use_charge_drain {
                 self.charge_drain_state = 0;
             }
+            #[cfg(feature = "ares")]
+            if matches!(
+                sw.kind,
+                crate::rules::superweapon_type::SuperWeaponKind::GenericWarhead
+                    | crate::rules::superweapon_type::SuperWeaponKind::UnitDelivery
+            ) && let Some(metadata) = rules.super_weapon_metadata(&sw.id)
+            {
+                // These handlers already retain successful launch history.
+                // Stock redirects need their own success boundary before using
+                // initial/virtual charge; do not invent history for them.
+                self.apply_ares_grant_charge(sw, metadata.charge(), frame);
+            }
         }
         if on_hold && !one_time && !self.is_suspended && self.can_lose {
             let mut timer = self.charge_timer();
@@ -743,6 +762,47 @@ impl SuperWeaponInstance {
             self.set_charged(sw, current_frame);
         }
         true
+    }
+
+    /// Ares3.0 Grant hook100354E0 replaces original6CB70C..6CB74D,
+    /// before Grant's on-hold and one-time tails. HouseExt10021480 reads
+    /// (shots,origin);10022710 records an initial recharge origin if unset.
+    /// Launch100226D0 later updates this same pair. No second cooldown exists.
+    #[cfg(feature = "ares")]
+    fn apply_ares_grant_charge(
+        &mut self,
+        sw: &SuperWeaponType,
+        charge: &crate::rules::superweapon_type::AresSuperWeaponCharge,
+        frame: i32,
+    ) {
+        if charge.initial_ready && self.ares_launch_count == 0 {
+            self.charge_duration = 0;
+        }
+        if charge.virtual_charge
+            && let Some(origin) = self.ares_charge_origin_frame.filter(|origin| *origin >= 0)
+        {
+            self.charge_start_tick = origin;
+        }
+        //1003556F..1003559C uses a signed wrapping (start-now)+duration,
+        // clamped to zero; it does not replace the retained timer with zero.
+        if self.charge_start_tick != -1
+            && self
+                .charge_start_tick
+                .wrapping_sub(frame)
+                .wrapping_add(self.charge_duration)
+                <= 0
+        {
+            self.mark_ready(frame as u32);
+            if sw.use_charge_drain {
+                self.charge_drain_state = 1;
+            }
+        }
+        if self
+            .ares_charge_origin_frame
+            .is_none_or(|origin| origin < 0)
+        {
+            self.ares_charge_origin_frame = Some(frame);
+        }
     }
 
     /// Silent SetCharged6CC080 as reached from Grant6CB791.
@@ -1959,7 +2019,7 @@ fn grant_super(
     let Some(instance) = super_weapons.instance_mut(&owner, &type_id) else {
         return false;
     };
-    if !instance.apply_grant_state(sw, session.binary_frame(), one_time, on_hold) {
+    if !instance.apply_grant_state(sw, rules, session.binary_frame(), one_time, on_hold) {
         return false;
     }
     instance.timer_place = (sw.show_timer && !passive).then_some(place);

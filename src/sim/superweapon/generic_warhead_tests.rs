@@ -398,7 +398,7 @@ fn successful_ares_launch_history_limits_commands_survives_save_and_keeps_fallba
         rows[7]["counter"]["count"].as_i64().unwrap()
     );
     assert_eq!(
-        first.ares_last_launch_frame.unwrap() as i64,
+        first.ares_charge_origin_frame.unwrap() as i64,
         rows[7]["counter"]["last_frame"].as_i64().unwrap()
     );
     assert_eq!(sim.entities().get(target).unwrap().health.current(), 125);
@@ -458,7 +458,7 @@ fn successful_ares_launch_history_limits_commands_survives_save_and_keeps_fallba
         rows[8]["counter"]["count"].as_i64().unwrap()
     );
     assert_eq!(
-        second.ares_last_launch_frame.unwrap() as i64,
+        second.ares_charge_origin_frame.unwrap() as i64,
         rows[8]["counter"]["last_frame"].as_i64().unwrap()
     );
     assert!(restored.houses[&owner].tech_recheck_pending());
