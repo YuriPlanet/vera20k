@@ -7,9 +7,11 @@ use std::sync::Arc;
 
 const SOUNDS: &str = "[SoundList]\n0=GlobalVeteran\n1=GlobalElite\n2=HeroVeteran\n3=HeroElite\n";
 
+// This extension fixture has the ordinary retail/MO General section.
+// Missing-General global cues have independent stock-reader coverage.
 fn scene_rules(sounds: &str) -> (NativeRulesProcessOwner, RuleSet) {
     let root = crate::sim::arena_fixture::clear_ground_ini(
-        "[Countries]\n0=Americans\n1=Russians\n\
+        "[General]\nVeteranCombat=1.0\n[Countries]\n0=Americans\n1=Russians\n\
          [AudioVisual]\nUpgradeVeteranSound=GlobalVeteran\nUpgradeEliteSound=GlobalElite\n\
          [InfantryTypes]\n0=HERO\n1=SILENT\n2=DEFAULT\n\
          [HERO]\nStrength=100\nSpeed=4\nPromote.VeteranSound=HeroVeteran\nPromote.EliteSound=HeroElite\n\
