@@ -36,6 +36,22 @@ use self::ini_value::strtrim_ascii;
 
 const READ_LINE_PAYLOAD: usize = 511;
 
+/// Result of `ReadCCFile(..., checkDigest = true)`'s Digest check, which only
+/// the LANGRULE reads make. Physical file absence is represented by the source
+/// selector's `None`; this status also records the selected source's physical
+/// byte length.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DigestVerification {
+    Empty,
+    Missing,
+    Valid,
+    Invalid,
+    /// ReadUUBlock can return fewer than 20 bytes for malformed input. The
+    /// native comparison still reads all 20 bytes, including unwritten stack
+    /// tail bytes, so that path has no stable result to claim here.
+    Indeterminate,
+}
+
 /// One physical section occurrence in an INI file.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct IniSection {
@@ -576,6 +592,41 @@ impl IniFile {
         // clears its cached pair, without resetting the sorted flag. Retain
         // the other physical sections and their lookup order unchanged.
         self.remove_section_at(position);
+    }
+
+    /// Verify the selected `[Digest]` section as `ReadCCFile4741F0` does for
+    /// LANGRULE (`0x004741F0`). It consumes the same packed physical values as
+    /// `ReadUUBlock526FB0`, then compares the first 20 decoded bytes with
+    /// `SaveToPipe526470`'s SHA-1 after excluding the selected Digest section.
+    /// `ReadCCFile` bypasses Digest for a zero-byte physical file. The section
+    /// removal that follows a positive read is `remove_digest_for_checked_load`.
+    pub(crate) fn verify_digest(&self, payload_len: usize) -> DigestVerification {
+        if payload_len == 0 {
+            return DigestVerification::Empty;
+        }
+        let Some(position) = self.section_position("Digest") else {
+            return DigestVerification::Missing;
+        };
+        let packed = self.sections[position].read_packed_text();
+        if packed.is_empty() {
+            return DigestVerification::Missing;
+        }
+
+        let decoded = crate::util::base64::base64_decode(&packed);
+        let expected = crate::util::sha1::sha1_bytes(&self.save_to_pipe(Some("Digest")));
+        match decoded {
+            Ok(decoded) if decoded.len() >= expected.len() => {
+                if decoded[..expected.len()] == expected[..] {
+                    DigestVerification::Valid
+                } else {
+                    DigestVerification::Invalid
+                }
+            }
+            // Short or malformed text may have written some bytes before the
+            // native 20-byte compare reads its uninitialized stack tail. Do
+            // not claim the map decoder's strict error as native rejection.
+            Ok(_) | Err(_) => DigestVerification::Indeterminate,
+        }
     }
 
     fn remove_section_at(&mut self, position: usize) {

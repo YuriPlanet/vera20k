@@ -997,7 +997,10 @@ fn scenario_anim_theater_replaces_only_the_shape_and_retries_the_stored_id() {
         .process_with_fixed_art_and_registry_state_recovering(
             &fixed_art,
             Default::default(),
-            RulesProcessContext::ScenarioReset(ImageTheater::Snow),
+            RulesProcessContext::ScenarioReset {
+                theater: ImageTheater::Snow,
+                skip_root_color_add_and_mode: false,
+            },
             &Default::default(),
         )
         .unwrap();

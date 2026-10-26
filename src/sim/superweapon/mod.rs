@@ -36,6 +36,8 @@ mod fire;
 pub mod force_shield;
 #[cfg(feature = "ares")]
 mod generic_warhead;
+#[cfg(feature = "ares")]
+mod ares_presentation;
 pub mod genetic_converter;
 pub mod invulnerability;
 pub mod iron_curtain;
@@ -1736,7 +1738,13 @@ pub(crate) fn first_available_building_super<'a>(
 /// Accepted Ares handler -> HouseExt100226D0. Do not call this for merely
 /// selected, refused or unsupported stock-redirected Activate paths.
 #[cfg(feature = "ares")]
-fn record_ares_launch(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, typ: InternedId) {
+fn finish_ares_launch(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    typ: InternedId,
+    cell: (u16, u16),
+) {
     let frame = sim.session.binary_frame() as i32;
     let recheck = if let Some(instance) = sim.super_weapons.instance_mut(&owner, &typ) {
         instance.record_ares_launch(frame);
@@ -1757,6 +1765,7 @@ fn record_ares_launch(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, 
     if recheck && let Some(house) = sim.houses.get_mut(&owner) {
         house.request_tech_recheck();
     }
+    ares_presentation::on_launch(sim, rules, owner, typ, cell);
 }
 
 /// Shared provider facts for one reached House pass. Source authority is the

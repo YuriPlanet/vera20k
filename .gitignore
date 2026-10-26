@@ -20,6 +20,7 @@ Thumbs.db
 *.txt
 !tools/requirements-test.txt
 !tools/telemetry-dashboard/vendor/THREE-LICENSE.txt
+!/LICENSES/*.txt
 !.github/release/macos/requirements.txt
 !.github/release/icon.png
 *.tmp

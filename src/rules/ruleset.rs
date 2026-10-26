@@ -939,10 +939,11 @@ pub struct GeneralRules {
     /// 0x006691E0` resolves it to a Voc index at `RulesClass+0x228`
     /// (`0x00669CFD..0x00669D27`); `TechnoClass::AI_Update` plays that index
     /// positionally on a veteran promotion (`0x006FA124..0x006FA12A`). The
-    /// name is retained at the data boundary; absent or empty is silence.
+    /// fixed SOUNDMD binder retains the last valid index through reached
+    /// passes; absent, empty and unknown values keep it. Constructor66596A=-1.
     pub upgrade_veteran_sound: Option<String>,
     /// `[AudioVisual] UpgradeEliteSound=` — `RulesClass+0x22C`
-    /// (`0x00669D3E..0x00669D27`), played on an elite promotion
+    /// (`0x00669D2D..0x00669D68`, constructor665970=-1), played on an elite promotion
     /// (`0x006FA0B6..0x006FA0BC`).
     pub upgrade_elite_sound: Option<String>,
     /// `[AudioVisual] SlavesFreeSound=` — `RulesClass::ReadAudioVisual @
@@ -2270,8 +2271,8 @@ impl DetailRules {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct PrismSupportRules {
     /// `PrismSupportModifier=` (`Rules+0x49C`), the percent each supporter
-    /// adds to the shot: `ftol(ReadDouble(key, current) x 100)`, so a pass
-    /// with a `[General]` section and no key multiplies it by 100 again.
+    /// adds to the shot. Original gamemd uses the scaled integer as the
+    /// ReadDouble default; Ares converts that default back to a fraction.
     pub modifier: i32,
     /// `PrismSupportMax=` (`Rules+0x4A0`), the supporters one shot recruits.
     pub max: i32,
@@ -2300,9 +2301,23 @@ impl PrismSupportRules {
     /// `fmul qword 100.0` (`0x0067116E`) on the value ReadDouble returns, then
     /// ftol (`0x007C5F00`), under the game's masked chop control word, which
     /// also chops ReadDouble's own percent product: a modded `35%` reads 34.
+    /// Ares fixes the default's units before that read (see below).
     pub(crate) fn read_pass(self, general: &crate::rules::ini_parser::IniSection) -> Self {
         use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
-        let percent = general.read_double("PrismSupportModifier", f64::from(self.modifier));
+        let current = f64::from(self.modifier);
+        // Ares RulesClass_Addition_General_PrismSupportModifier @ 0x1005D040,
+        // hook0x00671152: FILD Rules+49C; FDIV 100.0; pass that fraction to
+        // ReadDouble. Without this, each keyless map/mode multiplies the
+        // retained percentage by another 100 (original ReadGeneral67114F).
+        #[cfg(feature = "ares")]
+        let current = f64::from_bits(
+            X87::store_f64_masked_chop(X87::div(
+                X87::load_f64(NativeF64Bits::from_bits(current.to_bits())),
+                X87::load_f64(NativeF64Bits::from_bits(100.0_f64.to_bits())),
+            ))
+            .bits(),
+        );
+        let percent = general.read_double("PrismSupportModifier", current);
         let modifier = X87::ftol_i32_low_masked(X87::mul(
             X87::load_f64(NativeF64Bits::from_bits(percent.to_bits())),
             X87::load_f64(NativeF64Bits::from_bits(100.0_f64.to_bits())),
@@ -3693,12 +3708,10 @@ impl GeneralRules {
             leave_bio_reactor_sound: None,
             enter_bio_reactor_sound: None,
             enter_grinder_sound: None,
-            upgrade_veteran_sound: audio_visual
-                .read_name("UpgradeVeteranSound", 0x80)
-                .map(str::to_owned),
-            upgrade_elite_sound: audio_visual
-                .read_name("UpgradeEliteSound", 0x80)
-                .map(str::to_owned),
+            // The fixed SOUNDMD binder resolves Rules+0x228/+0x22C as Voc
+            // indexes; keep the constructor's invalid index until it binds them.
+            upgrade_veteran_sound: None,
+            upgrade_elite_sound: None,
             slaves_free_sound: audio_visual
                 .read_name("SlavesFreeSound", 0x80)
                 .map(str::to_owned),
@@ -5068,6 +5081,25 @@ impl RuleSet {
                     .ares_super_weapon_metadata
                     .insert(name.to_ascii_uppercase(), metadata);
             }
+            for (name, presentation) in processed.super_weapon_presentation_states() {
+                if let Some(sw) = rules
+                    .super_weapons
+                    .values_mut()
+                    .find(|sw| sw.id.eq_ignore_ascii_case(name))
+                {
+                    sw.presentation = presentation.clone();
+                }
+            }
+            for (name, targeting) in processed.super_weapon_targeting_states() {
+                if let Some(sw) = rules
+                    .super_weapons
+                    .values_mut()
+                    .find(|sw| sw.id.eq_ignore_ascii_case(name))
+                    && let Some(settings) = sw.generic_warhead.as_mut()
+                {
+                    settings.install_targeting(&sw.id, targeting);
+                }
+            }
             for (name, supers) in processed.additional_super_weapon_states() {
                 if let Some(building) = rules.object_list.iter_mut().find(|object| {
                     object.category == ObjectCategory::Building
@@ -5301,6 +5333,16 @@ impl RuleSet {
         self.general.scold_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "ScoldSound"));
+        // Original RulesClass::ReadAudioVisual669CE2..669D68 resolves
+        // +228/+22C through ReadString128/VocFind7514D0, independently of
+        // ReadGeneral. Reuse the fixed-catalog/pass-history owner, including
+        // invalid later reads retaining their previous IDs (ctor66596A/70=-1).
+        self.general.upgrade_veteran_sound = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "UpgradeVeteranSound"));
+        self.general.upgrade_elite_sound = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "UpgradeEliteSound"));
         // WeaponTypeClass::ReadINI @ `0x00772080` calls
         // CCINIClass::ReadSoundList @ `0x00525430` for Report/DownReport at
         // `0x00772394`/`0x0077241A`; use its shared catalog/list owner.
@@ -5315,6 +5357,14 @@ impl RuleSet {
         }
         for sw in self.super_weapons.values_mut() {
             let section = ini.section(&sw.id);
+            #[cfg(feature = "ares")]
+            {
+                // SWTypeExt::LoadFromINI10033522 -> NullableIdx<Voc>
+                // 1000E9D0: successful names/none set presence; unknown
+                // retains. Read against fixed SOUNDMD, in rules-pass order.
+                sw.presentation.sound =
+                    section.and_then(|section| sounds.read_ares_reference(section, "SW.Sound"));
+            }
             // Original6CEB74..6CEBD8 keeps each current Voc ID when
             // ReadString128 or FindIndex7514D0 finds no replacement.
             sw.special_sound =
@@ -5326,15 +5376,9 @@ impl RuleSet {
                 // Ares NullableIdx<VocClass>: unknown retains the previous
                 // resolved cue; an explicit none sentinel clears it. The
                 // retained type INI owns the ordered read history.
-                delivery.activation_sound = ini.section(&sw.id).and_then(|section| {
-                    section.read_string_with("SW.ActivationSound", 2048, None, |current, name| {
-                        if crate::rules::ini_parser::is_native_none_type_name(name) {
-                            None
-                        } else {
-                            sounds.get(name).map(|entry| entry.id.clone()).or(current)
-                        }
-                    })
-                });
+                delivery.activation_sound = section
+                    .and_then(|section| sounds.read_ares_reference(section, "SW.ActivationSound"))
+                    .flatten();
             }
         }
         for object in &mut self.object_list {
@@ -7112,6 +7156,20 @@ impl RuleSet {
             "Ares.SuperWeaponMoney".hash(&mut hasher);
             superweapon_money.hash(&mut hasher);
         }
+        #[cfg(feature = "ares")]
+        {
+            let default = crate::rules::superweapon_type::AresSuperWeaponPresentation::default();
+            let presentation: BTreeMap<_, _> = self
+                .super_weapons
+                .iter()
+                .filter(|(_, sw)| sw.presentation != default)
+                .map(|(id, sw)| (id.to_ascii_uppercase(), &sw.presentation))
+                .collect();
+            if !presentation.is_empty() {
+                "Ares.SuperWeaponPresentation".hash(&mut hasher);
+                presentation.hash(&mut hasher);
+            }
+        }
         let deliveries = self
             .super_weapons
             .iter()
@@ -7407,7 +7465,28 @@ impl RuleSet {
         // draws; list order/duplicates select the sound. Hash effective lists
         // in canonical type order, independently of registry insertion order.
         b"resolved-type-sound-lists-v4".hash(&mut hasher);
+        #[cfg(feature = "ares")]
+        {
+            let promotion_sounds = self
+                .object_list
+                .iter()
+                .filter_map(|object| {
+                    let sounds = (
+                        object.promotion_sound_override(false),
+                        object.promotion_sound_override(true),
+                    );
+                    (sounds.0.is_some() || sounds.1.is_some())
+                        .then(|| ((object.category, object.id.to_ascii_uppercase()), sounds))
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !promotion_sounds.is_empty() {
+                b"ares-type-promotion-sounds-v1".hash(&mut hasher);
+                promotion_sounds.hash(&mut hasher);
+            }
+        }
         self.general.voice_ifv_repair().hash(&mut hasher);
+        self.general.upgrade_veteran_sound.hash(&mut hasher);
+        self.general.upgrade_elite_sound.hash(&mut hasher);
         self.object_list
             .iter()
             .map(|object| {
@@ -11116,14 +11195,6 @@ MutateWarhead=MyMutate\n\
             self_heal_interval_frames(rules.general.repair_rate_minutes),
             14
         );
-        assert_eq!(
-            rules.general.upgrade_veteran_sound.as_deref(),
-            Some("UpgradeVeteran")
-        );
-        assert_eq!(
-            rules.general.upgrade_elite_sound.as_deref(),
-            Some("UpgradeElite")
-        );
         assert_eq!(rules.general.elite_flash_timer, 150);
         let bare = RuleSet::from_ini(&IniFile::from_str(
             "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n[General]\nFixtureOnly=1\n",
@@ -13809,3 +13880,7 @@ Projectile=Invisible
 #[cfg(test)]
 #[path = "map_lighting_tests.rs"]
 mod map_lighting_tests;
+
+#[cfg(test)]
+#[path = "global_promotion_tests.rs"]
+mod global_promotion_tests;

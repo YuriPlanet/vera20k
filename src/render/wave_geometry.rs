@@ -58,6 +58,12 @@ pub(crate) struct PolygonSpans {
 /// six-/four-point polygons; projected or interpolated edges can fold back.
 /// Top-chain orientation, initial skip and the right-side minus-one are
 /// preserved before clipping; GPU triangulation would differ.
+///
+/// Once fade_in reaches fade_out, the Sonic projection
+/// (`Wave::sonic_draw_geometry`) collapses to the out-and-back slit
+/// `[c, source, d, d, source, c]`. When the source vertex is the vertical
+/// extreme, a side walks past the maximum vertex into the scratch tail below
+/// (the dolphin pile-on in #3103).
 pub(crate) fn polygon_spans(points: &[[i32; 2]]) -> PolygonSpans {
     let mut minimum = 0;
     let mut maximum = 0;

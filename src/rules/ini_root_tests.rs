@@ -103,7 +103,10 @@ fn ini_roots_process_diagnostics_freeze_selected_names_and_hashes() {
         dir.write(rules_name, b"[General]\nBuildSpeed=.7\n");
         dir.write(art_name, b"[TEST]\nVoxel=yes\n");
         dir.write(ai_name, &ai("DIAG"));
-        dir.write("langrule.ini", b"[General]\nBuildSpeed=.8\n");
+        dir.write(
+            "langrule.ini",
+            crate::rules::retail_ini_fixture::DIGESTED_LANGRULE_CONTROL.as_bytes(),
+        );
         let assets = AssetManager::from_loose_root_for_test(dir.path())
             .with_ini_roots(&config)
             .unwrap();

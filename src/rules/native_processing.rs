@@ -31,7 +31,11 @@ use crate::rules::powerups::{PowerupTable, PowerupsAccumulator};
 use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup, parse_prerequisites};
 use crate::rules::projectile_type::ProjectileArtState;
 use crate::rules::rules_type_references::{DEFAULT_PARTICLE_SYSTEMS, RulesTypeReferences};
-use crate::rules::ruleset::{DetailRules, GeneralBuildingTypes, PrismSupportRules};
+use crate::rules::ruleset::{DetailRules, GeneralBuildingTypes, PrismSupportRules, RuleSet};
+#[cfg(feature = "ares")]
+use crate::rules::superweapon_targeting::AresSuperWeaponTargetingState;
+#[cfg(feature = "ares")]
+use crate::rules::superweapon_type::AresSuperWeaponPresentation;
 #[cfg(feature = "phobos")]
 use crate::rules::superweapon_type::PhobosSuperWeaponAvailability;
 use crate::rules::superweapon_type::SuperWeaponBuildingRequirements;
@@ -141,13 +145,19 @@ pub enum RulesLayerKind {
     LangRule,
     GameMode,
     Scenario,
+    Tmcj4f,
 }
 
 /// Whether these passes continue a live registry or enter Full_Init's reset.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum RulesProcessContext {
     Ordinary,
-    ScenarioReset(ImageTheater),
+    ScenarioReset {
+        theater: ImageTheater,
+        /// ReadCCFile's LANGRULE digest-failure exit skips the root ColorAdd
+        /// reread and mode Process, while Full_Init continues into the map.
+        skip_root_color_add_and_mode: bool,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -188,10 +198,14 @@ impl RulesLayerStack {
     /// Hash both source contents and pass boundaries. Two stacks that flatten
     /// to the same key/value view can still produce different live type state.
     pub fn content_hash(&self) -> u64 {
+        self.content_hash_for_layers(self.layers.len())
+    }
+
+    fn content_hash_for_layers(&self, layer_count: usize) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         "VERA20K_RULES_LAYER_STACK_V1".hash(&mut hasher);
-        self.layers.len().hash(&mut hasher);
-        for layer in &self.layers {
+        layer_count.hash(&mut hasher);
+        for layer in &self.layers[..layer_count] {
             layer.kind.hash(&mut hasher);
             layer.ini.content_hash().hash(&mut hasher);
         }
@@ -263,16 +277,74 @@ impl RulesLayerStack {
         context: RulesProcessContext,
         fixed_eva: &EvaRegistry,
     ) -> Result<ProcessedRulesLayers, NativeRulesProcessingFailure> {
-        let (registry_state, mut root_color_add_reread, theater) = match context {
-            RulesProcessContext::Ordinary => (registry_state, None, ImageTheater::Uninitialized),
-            RulesProcessContext::ScenarioReset(theater) => (
-                registry_state.destructive_reset(),
-                Some(&self.layers[0].ini),
-                theater,
-            ),
-        };
+        self.process_internal(
+            fixed_art,
+            registry_state,
+            context,
+            fixed_eva,
+            None::<fn(RuleSet)>,
+        )
+        .map(|(processed, _)| processed)
+    }
+
+    /// Execute a read that native Full_Init places after map Rules and before
+    /// its optional TMCJ4F Rules Process. The callback takes ownership of the
+    /// map-stage RuleSet projection to retain read-time identities; the
+    /// original processor remains the single authority and continues into
+    /// TMCJ4F before producing the final Rules.
+    pub(crate) fn process_with_fixed_art_and_registry_state_recovering_after_map<F, T>(
+        &self,
+        fixed_art: &IniFile,
+        registry_state: NativeRulesRegistryState,
+        context: RulesProcessContext,
+        fixed_eva: &EvaRegistry,
+        after_map: F,
+    ) -> Result<(ProcessedRulesLayers, T), NativeRulesProcessingFailure>
+    where
+        F: FnOnce(RuleSet) -> T,
+    {
+        let (processed, after_map_result) = self.process_internal(
+            fixed_art,
+            registry_state,
+            context,
+            fixed_eva,
+            Some(after_map),
+        )?;
+        Ok((
+            processed,
+            after_map_result.expect("scenario Rules stack must contain its map pass"),
+        ))
+    }
+
+    fn process_internal<F, T>(
+        &self,
+        fixed_art: &IniFile,
+        registry_state: NativeRulesRegistryState,
+        context: RulesProcessContext,
+        fixed_eva: &EvaRegistry,
+        mut after_map: Option<F>,
+    ) -> Result<(ProcessedRulesLayers, Option<T>), NativeRulesProcessingFailure>
+    where
+        F: FnOnce(RuleSet) -> T,
+    {
+        let (registry_state, mut root_color_add_reread, reset_color_add_after_root, theater) =
+            match context {
+                RulesProcessContext::Ordinary => {
+                    (registry_state, None, false, ImageTheater::Uninitialized)
+                }
+                RulesProcessContext::ScenarioReset {
+                    theater,
+                    skip_root_color_add_and_mode,
+                } => (
+                    registry_state.destructive_reset(),
+                    (!skip_root_color_add_and_mode).then_some(&self.layers[0].ini),
+                    true,
+                    theater,
+                ),
+            };
         let mut processor = RulesPassProcessor::with_registry_state(registry_state);
         processor.image_theater = theater;
+        let mut after_map_result = None;
         for (index, (kind, ini)) in self.iter_passes().enumerate() {
             if index > 0
                 && kind != RulesLayerKind::LangRule
@@ -292,29 +364,55 @@ impl RulesLayerStack {
                     partial_trace: Box::new(partial_trace),
                 });
             }
-            if index == 0 && root_color_add_reread.is_some() {
+            if index == 0 && reset_color_add_after_root {
                 // Reset668A34..668A56 clears all16 RGB triples AFTER root
                 // Process668A27. It leaves the four selector DWORDs alone.
                 // Whole original Reset controls: tools/berserk_color.json.
                 processor.rules_color_add = ColorAddTable::default();
             }
+            if kind == RulesLayerKind::Scenario
+                && let Some(after_map) = after_map.take()
+            {
+                let (ini, native_type_construction_trace, powerups) = processor.clone().finish();
+                let prefix = ProcessedRulesLayers {
+                    ini,
+                    powerups,
+                    content_hash: self.content_hash_for_layers(index + 1),
+                    native_type_construction_trace,
+                };
+                let rules = match RuleSet::from_processed_rules(&prefix) {
+                    Ok(rules) => rules,
+                    Err(error) => {
+                        let (_, partial_trace) =
+                            prefix.into_ini_and_native_type_construction_trace();
+                        return Err(NativeRulesProcessingFailure {
+                            error,
+                            partial_trace: Box::new(partial_trace),
+                        });
+                    }
+                };
+                after_map_result = Some(after_map(rules));
+            }
         }
         if let Some(root) = root_color_add_reread {
             processor.rules_color_add.apply_pass(root);
         }
-        if matches!(context, RulesProcessContext::ScenarioReset(_)) {
+        if matches!(context, RulesProcessContext::ScenarioReset { .. }) {
             // Read_Map4AD071 / RMG59A201: all Overlay types receive this
             // postpass after the incoming scenario's ordered Rules reads.
             processor.init_overlay_theater();
             processor.init_anim_theater();
         }
         let (ini, native_type_construction_trace, powerups) = processor.finish();
-        Ok(ProcessedRulesLayers {
-            ini,
-            powerups,
-            content_hash: self.content_hash(),
-            native_type_construction_trace,
-        })
+        Ok((
+            ProcessedRulesLayers {
+                ini,
+                powerups,
+                content_hash: self.content_hash(),
+                native_type_construction_trace,
+            },
+            after_map_result,
+        ))
     }
 }
 
@@ -521,7 +619,7 @@ pub(crate) fn refresh_native_multiplayer_country_bodies(
 /// tools/rules_oracle/bridge_anim_lists.{py,json}. WeatherConClouds
 /// (`+0x2BC`, `0x0066DD28`) and WeatherConBolts (`+0x2D8`, `0x0066DE2B`) take
 /// the same ReadString128/FindOrAllocate body.
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 struct GeneralTypeLists {
     metallic_debris: Vec<String>,
     bridge_explosions: Vec<String>,
@@ -1583,6 +1681,24 @@ impl ProcessedRulesLayers {
         })
     }
 
+    #[cfg(feature = "ares")]
+    pub(crate) fn super_weapon_presentation_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, &AresSuperWeaponPresentation)> {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            &member.super_weapon_presentation
+        })
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn super_weapon_targeting_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, AresSuperWeaponTargetingState)> {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.super_weapon_targeting
+        })
+    }
+
     #[cfg(feature = "phobos")]
     pub(crate) fn phobos_super_weapon_availability_states(
         &self,
@@ -2251,7 +2367,7 @@ pub(crate) enum NativeTypeConstructorFamily {
 ///
 /// This is normally a first-new-name event, but inputs longer than the native
 /// 24-byte stored ID can repeatedly miss lookup and emit duplicate stored IDs.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NativeTypeConstructionEvent {
     family: NativeTypeConstructorFamily,
     native_stored_id: String,
@@ -3226,7 +3342,7 @@ impl RulesTypeFamily {
 /// Resolved names preserve native factory spelling and vector order. These
 /// pointer bindings belong to the retained Rules object, not merged INI text.
 /// Native reader corpus: tools/rules_oracle/select_anim_inputs.
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 struct SelectAnimRulesState {
     lightning_warhead: String,
     weather_con_bolt_explosion: String,
@@ -3497,6 +3613,10 @@ struct ProcessedType {
     super_weapon_building_requirements: Option<SuperWeaponBuildingRequirements>,
     #[cfg(feature = "ares")]
     super_weapon_availability: AresSuperWeaponAvailability,
+    #[cfg(feature = "ares")]
+    super_weapon_presentation: AresSuperWeaponPresentation,
+    #[cfg(feature = "ares")]
+    super_weapon_targeting: AresSuperWeaponTargetingState,
     /// Phobos `SW.TechLevel`/`SW.AuxTechnos`/`SW.NegTechnos`, read by the same
     /// ordered Process owner as the Ares gates and keyed the same way.
     #[cfg(feature = "phobos")]
@@ -3921,6 +4041,10 @@ impl ProcessedType {
             super_weapon_building_requirements: None,
             #[cfg(feature = "ares")]
             super_weapon_availability: AresSuperWeaponAvailability::default(),
+            #[cfg(feature = "ares")]
+            super_weapon_presentation: AresSuperWeaponPresentation::default(),
+            #[cfg(feature = "ares")]
+            super_weapon_targeting: AresSuperWeaponTargetingState::default(),
             #[cfg(feature = "phobos")]
             super_weapon_phobos_availability: PhobosSuperWeaponAvailability::default(),
             #[cfg(feature = "ares")]
@@ -4012,7 +4136,7 @@ fn find_or_construct_type(
     index
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct RulesPassProcessor {
     image_theater: ImageTheater,
     compatibility: RulesCompatibility,
@@ -5324,6 +5448,16 @@ impl RulesPassProcessor {
                 }
                 #[cfg(feature = "ares")]
                 {
+                    let animation = self.resolve_existing_anim_from(&raw, "SW.Animation");
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_presentation
+                        .read_pass(&raw, animation);
+                    let generic_warhead = effective
+                        .read_name("Type", 0x28)
+                        .is_some_and(|kind| kind.eq_ignore_ascii_case("GenericWarhead"));
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_targeting
+                        .read_pass(&raw, generic_warhead);
                     // Same SWTypeExt owner and native read order: controller
                     // flags, Country masks, building vectors, then shot limit.
                     let mut availability = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
@@ -5369,9 +5503,7 @@ impl RulesPassProcessor {
                     availability.read_shots_pass(&raw);
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_availability = availability;
-                    if effective
-                        .read_name("Type", 0x28)
-                        .is_some_and(|kind| kind.eq_ignore_ascii_case("GenericWarhead"))
+                    if generic_warhead
                         && let Some(warhead) = self.resolve_scalar_from(
                             &raw,
                             "SW.Warhead",
@@ -5443,6 +5575,11 @@ impl RulesPassProcessor {
                 }
                 #[cfg(not(feature = "ares"))]
                 let _ = effective;
+            } else {
+                #[cfg(feature = "ares")]
+                self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                    .super_weapon_targeting
+                    .skip_pass();
             }
             index += 1;
         }

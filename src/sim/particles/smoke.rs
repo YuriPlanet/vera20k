@@ -22,6 +22,7 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         return;
     };
     let pst = rules.particle_system_type(sys.type_id);
+    let owner_house = sys.owner_house;
     // ParticleSystemAI62ED40 / ParticleAIDispatch62CE40: child Gas damage
     // calls ReceiveDamage synchronously. Keep this registered system resident
     // while that callback inserts another Ground system and reads GetYSort.
@@ -54,7 +55,7 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         .and_then(|sys| sys.particles.get(index))
         .cloned()
     {
-        super::system_ai::tick_particle(&mut p, sim, rules);
+        super::system_ai::tick_particle(&mut p, sim, rules, owner_house);
         sim.substrate
             .particle_systems
             .commit_particle_tick(id, index, p);

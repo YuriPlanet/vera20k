@@ -10,7 +10,9 @@ use std::collections::BTreeMap;
 
 use crate::assets::asset_manager::AssetManager;
 use crate::rules::ini_parser::{IniFile, IniSection, is_native_none_type_name};
-use crate::rules::ini_value::{crt_atoi, parse_leading_f64, scan_decimal_i32};
+use crate::rules::ini_value::{
+    crt_atoi, parse_leading_f64, scan_decimal_i32, strtrim_ascii, truncate_native_bytes,
+};
 use crate::util::native_x87::NativeF64Bits;
 
 const SCRIPT_ACTION_CAPACITY: usize = 50;
@@ -537,7 +539,7 @@ impl TeamAiIniRegistry {
             let definition = AiTriggerTypeIni {
                 id: id.to_string(),
                 display_name: tokens[0].clone(),
-                primary_team_type: optional_reference(&tokens[1]),
+                primary_team_type: ai_trigger_team_reference(&tokens[1]),
                 owner: if tokens[2].eq_ignore_ascii_case("<all>") {
                     AiTriggerOwnerIni::All
                 } else {
@@ -555,7 +557,7 @@ impl TeamAiIniRegistry {
                 multiplayer: crt_atoi(&tokens[10]) != 0,
                 side: crt_atoi(&tokens[12]),
                 storage_flag_d1: crt_atoi(&tokens[13]) != 0,
-                secondary_team_type: optional_reference(&tokens[14]),
+                secondary_team_type: ai_trigger_team_reference(&tokens[14]),
                 difficulty_enabled: [
                     crt_atoi(&tokens[15]) != 0,
                     crt_atoi(&tokens[16]) != 0,
@@ -602,6 +604,15 @@ fn valid_identity(id: &str) -> bool {
 
 fn optional_reference(raw: &str) -> Option<String> {
     valid_identity(raw).then(|| raw.trim().to_string())
+}
+
+/// AITriggerTypeClass::ReadINI @ 0x0041F580, original gamemd.exe:
+/// both Team buffers copy 24 bytes, overwrite byte 23 with NUL, then call
+/// strtrim (0x0041F626..0x0041F63E / 0x0041F9A0..0x0041F9B8).
+/// Only the case-insensitive `<none>` sentinel skips the Team lookup.
+fn ai_trigger_team_reference(raw: &str) -> Option<String> {
+    let name = strtrim_ascii(truncate_native_bytes(raw, 23));
+    (!name.is_empty() && !name.eq_ignore_ascii_case("<none>")).then(|| name.to_string())
 }
 
 fn parse_ai_trigger_comparison(raw: &str) -> Option<[u8; 32]> {
@@ -717,6 +728,43 @@ mod tests {
              [AITriggerTypes]\nTRIGGER={}\n",
             eighteen_tokens("Trigger", "TEAM")
         ))
+    }
+
+    #[test]
+    fn ai_team_buffers_cut_before_native_strtrim() {
+        let row = eighteen_tokens("Team buffers", "  ABCDEFGHIJKLMNOPQRSTUsuffix")
+            .replace(",<none>,1,1,1", ",  x  ,1,1,1");
+        let fixed = IniFile::from_str(&format!("[AITriggerTypes]\nA={row}\n"));
+        let loaded = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let trigger = &loaded.ai_triggers[0];
+
+        assert_eq!(
+            trigger.primary_team_type.as_deref(),
+            Some("ABCDEFGHIJKLMNOPQRSTU"),
+            "the 23-byte buffer includes leading spaces before strtrim"
+        );
+        assert_eq!(
+            trigger.secondary_team_type.as_deref(),
+            Some("x "),
+            "native strtrim retains this trailing space after shifting"
+        );
+        assert_eq!(trigger.tokens[1], "  ABCDEFGHIJKLMNOPQRSTUsuffix");
+        assert_eq!(trigger.tokens[14], "  x  ");
+    }
+
+    #[test]
+    fn ai_team_buffers_preserve_non_ascii_spaces_and_other_angle_names() {
+        let row = eighteen_tokens("Team names", "<team>")
+            .replace(",<none>,1,1,1", ",\u{a0}TEAM\u{a0},1,1,1");
+        let fixed = IniFile::from_str(&format!("[AITriggerTypes]\nA={row}\n"));
+        let loaded = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+        let trigger = &loaded.ai_triggers[0];
+
+        assert_eq!(trigger.primary_team_type.as_deref(), Some("<team>"));
+        assert_eq!(
+            trigger.secondary_team_type.as_deref(),
+            Some("\u{a0}TEAM\u{a0}")
+        );
     }
 
     #[test]

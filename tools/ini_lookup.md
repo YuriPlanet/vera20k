@@ -66,6 +66,8 @@ The source selector transfers its snapshots into `NativeRulesProcessOwner`; it
 never owns a second registry. Random-map preview and `.SED` launch obtain their
 root-only terrain input and startup tech-building projection from that retained
 owner. Replacing a loose INI after startup therefore cannot change those inputs.
+This CLI still reports only its selected noncampaign Rules query; it does not
+simulate the campaign basename prepass or the mode-5 THETEAM/TMCJ4F route.
 The app-local Rules composer and source rereader have been removed.
 
 Recorded validation (`tools/ini_lookup.validation.json`, in git at 1b1a8b43e) includes strict-retail library

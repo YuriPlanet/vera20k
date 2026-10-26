@@ -653,6 +653,7 @@ impl SlotScene {
             light,
             cell,
             sim,
+            viewer_id,
             building,
             anim_word,
             crate::render::batch::DepthAxis::NONE.origin_y,

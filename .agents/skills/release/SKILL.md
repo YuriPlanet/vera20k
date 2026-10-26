@@ -12,8 +12,9 @@ builds and releases. This skill is the maintainer's order of steps and the page 
 
 - Downloads: only the Windows setup, the macOS `.dmg` and the Linux AppImage. The workflow
   uploads nothing else; GitHub adds the source code archives itself.
-- Text: a really small list of what changed, then the install lines that
-  `.github/release/notes.sh` writes. No commit dumps, tables, checksums or legal text.
+- Text: a really small list of what changed, then the install lines and the license line
+  that `.github/release/notes.sh` writes. No commit dumps, tables, checksums or other legal
+  text.
 - For a release, rewrite the list `notes.sh` drafts from pull request titles in plain player
   words: about 5 to 9 bullets, the most visible first, small fixes grouped, internal work
   (tests, refactors, version bumps, rules plumbing with no effect yet) left out, then an
@@ -36,8 +37,8 @@ builds and releases. This skill is the maintainer's order of steps and the page 
    `gh workflow run release.yml --ref main -f promote=<dev build tag>`. Merge no workflow
    change between the dev build and this step: creating a tag on a commit whose
    `.github/workflows` differ from main's fails with HTTP 403.
-2. Replace the draft's notes with the plain-words list
-   (`gh release edit vX.Y.Z --notes-file <file>`), read the rendered draft, then publish it:
+2. Replace the draft's change list with the plain-words list, keeping the install and license
+   lines (`gh release edit vX.Y.Z --notes-file <file>`), read the rendered draft, then publish it:
    `gh release edit vX.Y.Z --draft=false --latest`.
 3. Check that it is Latest, holds the three installers, and that
    `gh attestation verify <download> --repo YuriPlanet/vera20k` passes for each.

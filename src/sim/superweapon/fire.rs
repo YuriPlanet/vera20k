@@ -512,7 +512,7 @@ fn launch(
                 overlay_registry,
                 frame_effects,
             ) {
-                super::record_ares_launch(sim, rules, owner, sw_type_id);
+                super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
             }
         }
         #[cfg(not(feature = "ares"))]
@@ -609,7 +609,7 @@ fn launch(
                 overlay_registry,
                 frame_effects,
             ) {
-                super::record_ares_launch(sim, rules, owner, sw_type_id);
+                super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
             }
         }
     }

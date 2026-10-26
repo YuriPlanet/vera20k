@@ -437,6 +437,26 @@ impl SoundRegistry {
         })
     }
 
+    /// Ares NullableIdx<Voc>1000E9D0: ReadString2048, FindIndex7514D0
+    /// through1000D520, then none only if lookup failed. A registered name
+    /// spelled `none` is still a cue. Unset and explicit -1 stay distinct.
+    #[cfg(feature = "ares")]
+    pub(crate) fn read_ares_reference(
+        &self,
+        section: &IniSection,
+        key: &str,
+    ) -> Option<Option<String>> {
+        section.read_string_with(key, 2048, None, |current, name| {
+            if let Some(entry) = self.get(name) {
+                Some(Some(entry.id.clone()))
+            } else if crate::rules::ini_parser::is_native_none_type_name(name) {
+                Some(None)
+            } else {
+                current
+            }
+        })
+    }
+
     /// ReadSoundList525430 reads at most127 bytes, tokenizes on commas, then
     /// resolves each token through Voc FindPtr751520/FindIndex7515C0. Unknown
     /// tokens and FindPtr's reserved `<none>` are skipped, duplicates retained.
