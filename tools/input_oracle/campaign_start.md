@@ -179,14 +179,22 @@ These conclusions are caller/body evidence, not full engine replay:
   OS boundary outside these native fixtures and the stock-digital launch
   comparison. Missing map bytes follow the shared loader's failure route.
 * Campaign Full_Init686B20 skips the nonzero-mode early Country/House/Gather/
-  Resize generation. Its second ClearScene resets native IDs before the optional
-  basename `.INI` Process; common Rules reset and RULESMD/LANGRULE/map Process
-  follow. Campaign then creates one House/Super generation at6877BD, one Resize,
-  Fill, and the map reader's saved-ID+10000 reservation. Complete type counts
-  still require their original registry producer evidence.
-* Optional basename `.INI` uses file existence admission. After an existing
-  file is opened, CCINI.Read4741F0's return is ignored and Process668BF0 consumes
-  its resulting cache, including a partial/failed parse.
+  Resize generation. It caches whether entry GameMode is0 at686B3D, then checks
+  current GameMode at686C8B; the branch at686C9D skips the scenario-basename
+  Rules Process at686D35 unless entry mode was nonzero and current mode is
+  Campaign (0). The normal campaign path carries Campaign0 from its existing
+  session-mode owner, and the direct Start_Scenario/ReadScenario path here shows
+  no intervening mode write, so it follows0->0 and skips the basename pass. The
+  corpus uses0 as a fixture prior and excludes the full ClearScene/Rules chain;
+  it does not establish an active-YR entry-nonzero-to-current-zero transition.
+  Campaign then creates one
+  House/Super generation at6877BD, one Resize, Fill, and the map reader's
+  saved-ID+10000 reservation. Complete type counts still require their original
+  registry producer evidence.
+* If the basename gate is admitted, optional `.INI` uses file-existence
+  admission. Full_Init calls ReadCCFile4741F0 with both digest options zero,
+  so `[Digest]` remains in the INIClass; its return is ignored and
+  Process668BF0 consumes the resulting cache, including a partial/failed parse.
 * Scenario+1254 is the persistent mission counter: ctor1, no SetDefaults write,
   Victory increment685AA9..685AB0, shared battle termination reset6865B0.
   It is not parsed from filename or Basic. Theme uses this owner.

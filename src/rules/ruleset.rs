@@ -5092,6 +5092,16 @@ impl RuleSet {
                     sw.presentation = presentation.clone();
                 }
             }
+            for (name, targeting) in processed.super_weapon_targeting_states() {
+                if let Some(sw) = rules
+                    .super_weapons
+                    .values_mut()
+                    .find(|sw| sw.id.eq_ignore_ascii_case(name))
+                    && let Some(settings) = sw.generic_warhead.as_mut()
+                {
+                    settings.install_targeting(&sw.id, targeting);
+                }
+            }
             for (name, supers) in processed.additional_super_weapon_states() {
                 if let Some(building) = rules.object_list.iter_mut().find(|object| {
                     object.category == ObjectCategory::Building
