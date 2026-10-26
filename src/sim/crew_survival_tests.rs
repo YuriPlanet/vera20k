@@ -1017,6 +1017,100 @@ fn a_crewed_vehicle_rolls_crew_escape_then_places_its_crewman() {
     assert!(outcomes[0] > 0 && outcomes[1] > 0, "{outcomes:?}");
 }
 
+/// Unit7381BC jumps past every ordinary crew gate for a retained +338.
+#[test]
+fn hijacked_vehicle_returns_its_captor_without_an_escape_roll() {
+    let rules = rules();
+    let mut sim = sim_with_houses(31);
+    let owner = sim.interner.intern("AlliedHuman");
+    sim.session.set_current_house_for_test(Some(owner));
+    let unit = spawn(&mut sim, &rules, "APC", "AlliedHuman", 10, 10);
+    let captor = rules
+        .type_array_index(crate::rules::object_type::ObjectCategory::Infantry, "E2")
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(unit)
+        .unwrap()
+        .capture_infantry_type_index
+        .record(captor);
+    assert!(!rules.object("APC").unwrap().crewed);
+    assert!(rules.object("APC").unwrap().passengers > 0);
+    sim.foot_mark_remove(unit, &rules, None, FrameEffects::default());
+    let before = sim.substrate.entities.keys_sorted();
+    let mut expected_rng = sim.scenario_rng.clone();
+    expected_rng.next_u32(); // Infantry construction, no CrewEscape/GetCrew draw.
+    expected_rng.next_range_u32(4); // Ground-centre Unlimbo placement.
+    let health = expected_rng.next_range_i32_inclusive(5, 62);
+    expected_rng.next_range_u32_inclusive(0, 4); // Scatter.
+
+    sim.spawn_vehicle_crew(&rules, None, unit, true, true, FrameEffects::default());
+
+    let added = new_ids(&sim, &before);
+    assert_eq!(
+        added.len(),
+        1,
+        "arg6, Crewed and Passengers do not veto the captor"
+    );
+    let escaped = sim.substrate.entities.get(added[0]).unwrap();
+    assert_eq!(type_name(&sim, added[0]), "E2");
+    assert_eq!(escaped.owner(), owner);
+    assert_eq!(escaped.health.current(), health);
+    assert!(escaped.selection.is_selected());
+    assert_eq!(sim.scenario_rng.state(), expected_rng.state());
+}
+
+/// The vehicle's transferable Tag waits for the escaped infantry's death,
+/// rather than firing Unit744720's destruction prefix on the vehicle.
+#[test]
+fn hijacked_vehicle_preserves_its_transferable_tag_until_captor_death() {
+    let rules = rules();
+    let mut sim = sim_on_arena(31, &rules);
+    let map = crate::map::map_file::MapFile::from_bytes(
+        b"\
+[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n[Basic]\nNewINIFormat=4\n\
+[Triggers]\nSURVIVE=AlliedHuman,<none>,Survive,0,0,1,1,1\n\
+[Events]\nSURVIVE=1,48,0,0\n\
+[Actions]\nSURVIVE=1,28,0,9,0,0,0,0,A\n\
+[Tags]\nTAG=2,Survive,SURVIVE\n",
+    )
+    .unwrap();
+    sim.initialize_trigger_definitions(
+        &map,
+        &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
+        None,
+        None,
+    );
+    let unit = spawn(&mut sim, &rules, "APC", "AlliedHuman", 10, 10);
+    let attacker = spawn(&mut sim, &rules, "AMCV", "Russians", 20, 10);
+    let captor = rules
+        .type_array_index(crate::rules::object_type::ObjectCategory::Infantry, "E2")
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(unit)
+        .unwrap()
+        .capture_infantry_type_index
+        .record(captor);
+    sim.attach_object_trigger_tag(unit, Some("TAG"));
+    let before = sim.substrate.entities.keys_sorted();
+
+    kill_by(&mut sim, &rules, unit, attacker, ORDINARY);
+
+    assert!(!sim.entities().contains(unit));
+    assert!(
+        !sim.trigger_runtime.globals_set.contains(&9),
+        "the captor is still alive"
+    );
+    let added = new_ids(&sim, &before);
+    assert_eq!(added.len(), 1);
+    let escaped = added[0];
+    assert!(sim.object_has_trigger_tag(escaped));
+    kill_by(&mut sim, &rules, escaped, attacker, ORDINARY);
+    assert!(sim.trigger_runtime.globals_set.contains(&9));
+}
+
 /// A vehicle on a bridge deck stands above the floor, so its crewman skips
 /// PlaceInfantryInCell (`InfantryClass::Unlimbo`, `0x0051E01B`): no placement
 /// draw, the vehicle's exact in-cell coordinate, and its OnBridge.
