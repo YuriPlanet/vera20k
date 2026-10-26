@@ -95,12 +95,15 @@ mod tests {
     #[test]
     fn ares_vehicle_driver_rules_keep_native_defaults_and_reached_layers() {
         let mut layers = RulesLayerStack::new(IniFile::from_str(
-            "[Countries]\n0=Neutral\n1=Child\n\
+            "[Sides]\n0=GDI\n1=Nod\n[GDI]\nCrew=OP\nTechnician=none\n\
+             [Countries]\n0=Neutral\n1=Child\n\
              [Neutral]\nMultiplayPassive=yes\nCanBeDriven=no\n\
              [Child]\nParentCountry=Neutral\nMultiplayPassive=yes\n\
              [InfantryTypes]\n0=DRIVER\n1=OP\n[VehicleTypes]\n0=HOST\n\
              [DRIVER]\nCanDrive=yes\nVehicleThief.BreakMindControl=no\n\
              VehicleThief.OneTime=yes\nOperator=_aNy_\n\
+             Survivor.Pilots=2\nSurvivor.PilotChance=30\nSurvivor.VeteranPilotChance=75\n\
+             Survivor.ElitePassengerChance=90\nSurvivor.Side1=OP\nCrew.TechnicianChance=0\n\
              [HOST]\nCanBeDriven=no\nVehicleThief.Allowed=no\n[OP]\nStrength=50\n",
         ));
         layers.push(
@@ -108,6 +111,9 @@ mod tests {
             IniFile::from_str(
                 "[DRIVER]\nCanDrive=invalid\nVehicleThief.BreakMindControl=invalid\n\
              VehicleThief.OneTime=invalid\nOperator=\n\
+             Survivor.PilotChance=invalid\nSurvivor.RookiePilotChance=0\n\
+             Survivor.VeteranPilotChance=invalid\nSurvivor.Side1=MISSING_PILOT\n\
+             Crew.TechnicianChance=invalid\n[GDI]\nCrew=MISSING_PILOT\n\
              [HOST]\nCanBeDriven=invalid\nVehicleThief.Allowed=invalid\n\
              [Neutral]\nCanBeDriven=invalid\n",
             ),
@@ -117,6 +123,17 @@ mod tests {
         assert!(driver.can_drive() && driver.one_time());
         assert!(!driver.break_mind_control());
         assert_eq!(driver.operator(), &OperatorRequirement::Any);
+        let crew = rules.object("DRIVER").unwrap().crew_rules();
+        assert_eq!(crew.pilot_count(1), 2);
+        assert_eq!(crew.pilot_chances(), [0, 75, 30]);
+        assert_eq!(crew.passenger_chances(), [-1, -1, 90]);
+        assert_eq!(crew.pilot_for_side(1), Some("OP"));
+        assert_eq!(crew.technician_chance(), Some(0));
+        let side_crew = rules.side_crew_rules(0).unwrap();
+        assert_eq!(side_crew.side_index, 0);
+        assert_eq!(side_crew.crew.as_ref().unwrap().as_deref(), Some("OP"));
+        assert_eq!(side_crew.technician, Some(None));
+        assert!(rules.object("MISSING_PILOT").is_none());
         let host = rules.object("HOST").unwrap().driver_rules();
         assert!(!host.can_be_driven() && !host.theft_allowed());
         assert!(!rules.country_can_be_driven("Neutral"));

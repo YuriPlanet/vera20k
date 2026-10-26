@@ -282,23 +282,41 @@ impl Simulation {
     ) -> Option<String> {
         let entity = substrate.entities.get(building_id)?;
         let object = interner.object_type(entity.type_ref(), rules)?;
+        #[cfg(not(feature = "ares"))]
         if !object.crewed {
             return None;
         }
         let captured = entity.has_been_captured.is_set();
-        let armed = crate::sim::combat::combat_weapon::is_armed(entity, object);
         let yard = object.factory_type() == Some(FactoryType::BuildingType);
-        let side = houses.get(&entity.owner())?.side_index();
-        if !captured && scenario_rng.next_range_u32_inclusive(0, 99) < 25 && yard {
-            // `BuildingClass::GetCrew` 0x44EB10 calls
-            // `HouseExt::GetEngineer`, whose Ares SideExt+1C override wins
-            // (`SideExt::GetEngineer @ 0x1002DEE0`).
-            return rules
-                .side_engineer(side)
-                .map(|value| value.map(str::to_owned))
-                .unwrap_or_else(|| rules.general.engineer_infantry.clone());
+        let house = houses.get(&entity.owner())?;
+        #[cfg(feature = "ares")]
+        {
+            // Installed Building GetCrew1004C650 replaces44EB10. Its optional
+            // Engineer chance is tested before Techno's Crewed gate; unlike
+            // retail it draws only with a positive admitted chance.
+            let chance = object
+                .crew_rules()
+                .engineer_chance()
+                .unwrap_or(if yard { 25 } else { 0 });
+            if !captured
+                && chance > 0
+                && scenario_rng.next_range_u32_inclusive(0, 99) < chance as u32
+            {
+                return rules
+                    .side_engineer(house.side_index())
+                    .map(|value| value.map(str::to_owned))
+                    .unwrap_or_else(|| rules.general.engineer_infantry.clone());
+            }
+            ares_techno_crew_type(scenario_rng, rules, entity, object, house, interner)
         }
-        techno_crew_type(scenario_rng, rules, side, armed)
+        #[cfg(not(feature = "ares"))]
+        {
+            let armed = crate::sim::combat::combat_weapon::is_armed(entity, object);
+            if !captured && scenario_rng.next_range_u32_inclusive(0, 99) < 25 && yard {
+                return rules.general.engineer_infantry.clone();
+            }
+            techno_crew_type(scenario_rng, rules, house.side_index(), armed)
+        }
     }
 
     /// `BuildingClass::How_Many_Survivors @ 0x00451330`: zero when
@@ -1386,6 +1404,56 @@ fn techno_crew_type(rng: &mut SimRng, rules: &RuleSet, side: i32, armed: bool) -
         return technician;
     }
     crew
+}
+
+/// Installed Ares GetCrew707D20 hook1004C780..1004C867. This is the optional
+/// replacement of the retail query above, shared by every Ares crew caller.
+/// Side readers10021230/10021520 and1002DE60/1002E170 preserve explicit NULL.
+#[cfg(feature = "ares")]
+fn ares_techno_crew_type(
+    rng: &mut SimRng,
+    rules: &RuleSet,
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+    house: &crate::sim::house_state::HouseState,
+    interner: &StringInterner,
+) -> Option<String> {
+    if !object.crewed {
+        return None;
+    }
+    let side_index = house.side_index();
+    let technician = rules
+        .side_technician(side_index)
+        .map(|value| value.map(str::to_owned))
+        .unwrap_or_else(|| rules.general.technician.clone());
+    // The HouseType's +BC guard and House's +1E8 selector are distinct reads.
+    //1004C7F0 precedes both the chance draw and per-side type override.
+    if rules
+        .country_side_index_raw(interner.resolve(house.house_type_id()))
+        .unwrap_or(-1)
+        < 0
+    {
+        return technician;
+    }
+    let chance = object.crew_rules().technician_chance().unwrap_or_else(|| {
+        if entity.category().is_foot() {
+            0
+        } else if crate::sim::combat::combat_weapon::is_armed(entity, object) {
+            15
+        } else {
+            0
+        }
+    });
+    if chance > 0 && rng.next_range_u32_inclusive(0, 99) < chance as u32 {
+        return technician;
+    }
+    if let Some(pilot) = object.crew_rules().pilot_for_side(side_index) {
+        return Some(pilot.to_owned());
+    }
+    rules
+        .side_crew(side_index)
+        .map(|value| value.map(str::to_owned))
+        .unwrap_or_else(|| rules.general.technician.clone())
 }
 
 impl crate::sim::world::ObjectSubstrate {

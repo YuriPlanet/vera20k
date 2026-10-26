@@ -148,6 +148,8 @@ pub(crate) mod ares_warhead;
 pub(crate) mod ares_spotlight;
 #[cfg(feature = "ares")]
 pub(crate) mod ares_driver;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_crew;
 pub mod armor;
 pub mod alpha_image_assets;
 pub mod country_loading;

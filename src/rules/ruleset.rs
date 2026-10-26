@@ -4802,6 +4802,16 @@ impl RuleSet {
                 rules.object_list[handle.0 as usize].bind_driver_rules(driver);
             }
         }
+        #[cfg(feature = "ares")]
+        for (category, name, crew) in processed.crew_states() {
+            if let Some(handle) = rules
+                .object_category_index
+                .get(&(category, name.to_ascii_uppercase()))
+                .copied()
+            {
+                rules.object_list[handle.0 as usize].bind_crew_rules(crew);
+            }
+        }
         for (name, ares) in processed.ares_warhead_states() {
             if let Some(warhead) = rules
                 .warheads
@@ -7033,6 +7043,23 @@ impl RuleSet {
             if !drivers.is_empty() {
                 b"ares-driver-rules-v1".hash(&mut hasher);
                 drivers.hash(&mut hasher);
+            }
+            let crews = self
+                .object_list
+                .iter()
+                .filter(|object| {
+                    object.crew_rules() != &crate::rules::ares_crew::CrewTypeRules::default()
+                })
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.crew_rules(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !crews.is_empty() {
+                b"ares-survivor-rules-v1".hash(&mut hasher);
+                crews.hash(&mut hasher);
             }
             b"ares-emp-rules-v1".hash(&mut hasher);
             self.emp_sparkles.hash(&mut hasher);

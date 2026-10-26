@@ -1035,6 +1035,8 @@ pub struct ObjectType {
     spotlight: crate::rules::ares_spotlight::SpotlightTypeRules,
     #[cfg(feature = "ares")]
     driver: crate::rules::ares_driver::DriverTypeRules,
+    #[cfg(feature = "ares")]
+    crew: crate::rules::ares_crew::CrewTypeRules,
     /// Immutable projection of the retained TechnoTypeExt+308/+314/+320/+321
     /// reader. Country identities bind during Process, never from merged INI.
     #[cfg(feature = "ares")]
@@ -2449,6 +2451,16 @@ impl ObjectType {
     }
 
     #[cfg(feature = "ares")]
+    pub(crate) fn crew_rules(&self) -> &crate::rules::ares_crew::CrewTypeRules {
+        &self.crew
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_crew_rules(&mut self, crew: &crate::rules::ares_crew::CrewTypeRules) {
+        self.crew = crew.clone();
+    }
+
+    #[cfg(feature = "ares")]
     pub(crate) fn bind_driver_rules(
         &mut self,
         driver: &crate::rules::ares_driver::DriverTypeRules,
@@ -3708,6 +3720,8 @@ impl ObjectType {
             spotlight: Default::default(),
             #[cfg(feature = "ares")]
             driver: Default::default(),
+            #[cfg(feature = "ares")]
+            crew: Default::default(),
             #[cfg(feature = "ares")]
             factory_owners: Default::default(),
             #[cfg(feature = "ares")]

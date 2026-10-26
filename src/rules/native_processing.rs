@@ -1936,6 +1936,27 @@ impl ProcessedRulesLayers {
         })
     }
 
+    #[cfg(feature = "ares")]
+    pub(crate) fn crew_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            &crate::rules::ares_crew::CrewTypeRules,
+        ),
+    > {
+        let registry = self.native_type_construction_trace.registry_state();
+        registry.techno_type_order.iter().map(|&(family, index)| {
+            let member = &registry.families[&family][index];
+            (
+                family.object_category().expect("TechnoType category"),
+                member.native_stored_id.as_str(),
+                &member.crew,
+            )
+        })
+    }
+
     pub(crate) fn ares_techno_states(
         &self,
     ) -> impl Iterator<
@@ -4032,6 +4053,9 @@ struct ProcessedType {
     #[cfg(feature = "ares")]
     #[serde(default)]
     driver: crate::rules::ares_driver::DriverTypeRules,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    crew: crate::rules::ares_crew::CrewTypeRules,
     /// ObjectType4753F0 -> Ares10006E10 binds at each reached body read.
     armor_id: ArmorId,
     /// ParticleSystemType+294, the bound ParticleType's index: constructor -1
@@ -4487,6 +4511,8 @@ impl ProcessedType {
             spotlight: Default::default(),
             #[cfg(feature = "ares")]
             driver: Default::default(),
+            #[cfg(feature = "ares")]
+            crew: Default::default(),
             armor_id: ArmorId::NONE,
             holds_what: None,
             super_weapon_weapon: None,
@@ -6339,6 +6365,25 @@ impl RulesPassProcessor {
                 }
                 // Installed suffix hooks716123/716132 ->10040DF0 ->1003DEC0
                 // reach the common TechnoType extension before subclass reads.
+                #[cfg(feature = "ares")]
+                {
+                    //1003E01B sizes to the live Side array;1003E040..1003E070
+                    // reads each Survivor.Side%u through Infantry Find only.
+                    let side_count = self
+                        .families
+                        .get(&RulesTypeFamily::Side)
+                        .map_or(0, Vec::len);
+                    let pilots = (0..side_count)
+                        .map(|side| {
+                            self.resolve_existing_type_from(
+                                &raw,
+                                &format!("Survivor.Side{side}"),
+                                RulesTypeFamily::Infantry,
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    self.family_mut(family)[index].crew.read_pass(&raw, &pilots);
+                }
                 #[cfg(feature = "ares")]
                 self.process_factory_owners(family, index, &raw);
                 #[cfg(feature = "ares")]
