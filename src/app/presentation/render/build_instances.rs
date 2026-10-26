@@ -95,6 +95,18 @@ pub(super) struct SidebarInstances {
     pub queue_overlay: Vec<SpriteInstance>,
     pub queue_text: Vec<SpriteInstance>,
     pub text: Vec<SpriteInstance>,
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_chrome: Vec<SpriteInstance>,
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_cameo: Vec<SpriteInstance>,
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_gclock: Vec<SpriteInstance>,
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_hover: Vec<SpriteInstance>,
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_overlay: Vec<SpriteInstance>,
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_text: Vec<SpriteInstance>,
     pub minimap: Vec<SpriteInstance>,
     pub viewport_rect: Vec<SpriteInstance>,
     pub content_boundary: Vec<SpriteInstance>,
@@ -1271,6 +1283,13 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         .as_ref()
         .map(|v| build_sidebar_cameo_instances(state, v, status_labels))
         .unwrap_or_default();
+    #[cfg(feature = "phobos")]
+    let sw_sidebar = view
+        .as_ref()
+        .map(|_| {
+            crate::app::presentation::sw_sidebar_build::build(state, status_labels, ready_tint)
+        })
+        .unwrap_or_default();
     let mut text_layers = view
         .as_ref()
         .map(|v| build_sidebar_text_instances(state, v, status_labels, ready_tint))
@@ -1327,6 +1346,18 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         queue_overlay: cameo_layers.queue_overlay,
         queue_text: text_layers.queue,
         text: text_layers.status,
+        #[cfg(feature = "phobos")]
+        sw_sidebar_chrome: sw_sidebar.chrome,
+        #[cfg(feature = "phobos")]
+        sw_sidebar_cameo: sw_sidebar.cameo,
+        #[cfg(feature = "phobos")]
+        sw_sidebar_gclock: sw_sidebar.gclock,
+        #[cfg(feature = "phobos")]
+        sw_sidebar_hover: sw_sidebar.hover,
+        #[cfg(feature = "phobos")]
+        sw_sidebar_overlay: sw_sidebar.overlay,
+        #[cfg(feature = "phobos")]
+        sw_sidebar_text: sw_sidebar.text,
         minimap,
         viewport_rect,
         content_boundary,

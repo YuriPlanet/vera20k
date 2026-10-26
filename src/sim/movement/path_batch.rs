@@ -133,7 +133,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use super::foot_path::MoverLift;
 use super::movement_path::MovePathFailure;

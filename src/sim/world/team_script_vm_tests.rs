@@ -165,6 +165,46 @@ fn team_member_order_is_hashed() {
 }
 
 #[test]
+fn production_install_resolves_both_ai_team_buffers_in_fixed_and_map_passes() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\n",
+    ))
+    .expect("minimal rules");
+    let comparison = zero_ai_trigger_comparison();
+    let primary = "PRIMARY_123456789012345";
+    let secondary = "SECOND__123456789012345";
+    let fixed = IniFile::from_str(&format!(
+        "[TeamTypes]\n0={primary}\n1={secondary}\n\
+         [{primary}]\nScript=S\nTaskForce=F\n\
+         [{secondary}]\nScript=S\nTaskForce=F\n\
+         [ScriptTypes]\n0=S\n[S]\n0=2,0\n\
+         [TaskForces]\n0=F\n[F]\n0=1,E1\n\
+         [AITriggerTypes]\nA=Fixed,{primary}suffix,<all>,2,4,<none>,{comparison},40,10,40,1,0,1,0,{secondary}suffix,1,1,1\n"
+    ));
+    let scenario = IniFile::from_str(&format!(
+        "[AITriggerTypes]\nB=Map,{secondary}suffix,<all>,2,4,<none>,{comparison},40,10,40,1,0,1,0,{primary}suffix,1,1,1\n"
+    ));
+    let registry = TeamAiIniRegistry::from_sources(&fixed, &scenario, true);
+    let mut sim = Simulation::new();
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    assert!(
+        sim.install_team_ai_registry(&registry, &rules)
+            .expect("native team buffers resolve before fixed-source validation")
+            .is_empty()
+    );
+
+    let triggers: Vec<_> = sim.team_script_vm.ai_triggers_in_order().collect();
+    assert_eq!(triggers.len(), 2);
+    let fixed = triggers[0].0;
+    let map = triggers[1].0;
+    assert_eq!(fixed.primary_team_type, sim.interner.get(primary));
+    assert_eq!(fixed.secondary_team_type, sim.interner.get(secondary));
+    assert_eq!(map.primary_team_type, sim.interner.get(secondary));
+    assert_eq!(map.secondary_team_type, sim.interner.get(primary));
+}
+
+#[test]
 fn production_install_refuses_fixed_resolution_loss_but_keeps_scenario_omissions() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\n",

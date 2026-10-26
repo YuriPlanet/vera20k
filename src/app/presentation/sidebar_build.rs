@@ -326,9 +326,9 @@ fn push_chrome_sized(
 // ---------------------------------------------------------------------------
 
 /// Horizontal padding around the ready text (each side, in native pixels).
-const READY_PAD_X: f32 = 2.0;
+pub(crate) const READY_PAD_X: f32 = 2.0;
 /// Vertical padding around the ready text (each side, in native pixels).
-const READY_PAD_Y: f32 = 1.0;
+pub(crate) const READY_PAD_Y: f32 = 1.0;
 
 /// Horizontal padding for queue count badge (native pixels, matches ComputeTextRect x_pad=2).
 const QUEUE_COUNT_PAD_X: f32 = 2.0;
@@ -337,7 +337,7 @@ const QUEUE_COUNT_PAD_Y: f32 = 1.0;
 
 /// Compute the text scale for cameo overlay text (READY, queue count).
 /// Uses full ui_scale so text stays proportional to the scaled cameos.
-fn ready_text_scale(ui_scale: f32) -> f32 {
+pub(crate) fn ready_text_scale(ui_scale: f32) -> f32 {
     ui_scale
 }
 
@@ -350,21 +350,28 @@ pub(crate) struct CameoStatusLabels<'a> {
     pub active: &'a str,
 }
 
+/// `SuperClass::NameReadiness6CC2B0` status label; `None` while it has no
+/// status text. Shared by the right cameo strip and the left sidebar button.
+pub(crate) fn superweapon_status_label<'a>(
+    display: crate::sim::superweapon::SuperWeaponDisplay,
+    labels: CameoStatusLabels<'a>,
+) -> Option<&'a str> {
+    use crate::sim::superweapon::SuperWeaponStatus;
+    display.status.map(|status| match status {
+        SuperWeaponStatus::Hold => labels.hold,
+        SuperWeaponStatus::Ready => labels.ready,
+        SuperWeaponStatus::Charging => labels.charging,
+        SuperWeaponStatus::Active => labels.active,
+    })
+}
+
 /// The same status selection sizes the dark strip and draws its text.
 fn cameo_status_text<'a>(
     item: &crate::ui::sidebar::SidebarItem,
     labels: CameoStatusLabels<'a>,
 ) -> Option<&'a str> {
     if let Some(display) = item.super_weapon_display {
-        // SuperClass::NameReadiness6CC2B0 owns held/drain status; raw Ready
-        // can stay set while draining and must not override this projection.
-        use crate::sim::superweapon::SuperWeaponStatus;
-        return display.status.map(|status| match status {
-            SuperWeaponStatus::Hold => labels.hold,
-            SuperWeaponStatus::Ready => labels.ready,
-            SuperWeaponStatus::Charging => labels.charging,
-            SuperWeaponStatus::Active => labels.active,
-        });
+        return superweapon_status_label(display, labels);
     }
     if item.is_ready {
         Some(labels.ready)
@@ -401,7 +408,7 @@ fn shows_build_clock(item: &crate::ui::sidebar::SidebarItem) -> bool {
 /// keeps the base art and full-canvas overlays on the same pixel boundaries.
 /// The camera offset is added after screen-space rounding so the shader can
 /// subtract it without making fixed UI geometry depend on fractional panning.
-fn place_canvas_crop_in_slot(
+pub(crate) fn place_canvas_crop_in_slot(
     slot: Rect,
     canvas_size: [f32; 2],
     crop_origin: [f32; 2],
@@ -456,7 +463,7 @@ fn build_cameo_clock_instance(
     }
 }
 
-fn build_gclock_stage_instance(
+pub(crate) fn build_gclock_stage_instance(
     gclock_frames: &[SidebarChromeEntry],
     stage: i32,
     slot: Rect,
@@ -858,6 +865,7 @@ mod tests {
                 should_flash_tab: false,
                 can_fire: online,
                 can_afford: true,
+                constraints_blocked: false,
                 display,
             }];
             let cameos = sidebar::cameo_order::CameoStrips::layout_fixture(&[], &[], &supers);

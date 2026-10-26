@@ -15,7 +15,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use crate::util::time::{SystemTime, UNIX_EPOCH};
 
 use log::{LevelFilter, Log, Metadata, Record};
 

@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use anyhow::Result;
 use winit::application::ApplicationHandler;
@@ -11,7 +11,12 @@ use winit::dpi::PhysicalSize;
 use winit::event::{MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+mod web_keyboard;
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+use web_keyboard::KeyEventExtModifierSupplement;
 use winit::window::{Window, WindowAttributes, WindowId};
 
 use crate::app::match_runtime::sim_tick;

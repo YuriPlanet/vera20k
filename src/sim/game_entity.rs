@@ -330,8 +330,9 @@ pub struct GameEntity {
     distributed_fire: distributed_fire::DistributedFireState,
 
     // --- Optional subsystem components ---
-    /// Locomotor state — present on moving types and on zero-speed Foot
-    /// Drive/Ship types whose native class-local payload still exists.
+    /// Locomotor state — present on moving types, on every Infantry, and on
+    /// zero-speed Drive/Ship Units and Aircraft whose native class-local
+    /// payload still exists.
     pub locomotor: Option<LocomotorState>,
     /// FootClass-style owner navigation destination state.
     ///

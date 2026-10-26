@@ -330,9 +330,10 @@ impl OverlayTypeRegistry {
             .process_with_fixed_art_and_registry_state_recovering(
                 art_ini.unwrap_or(&empty_art),
                 crate::rules::native_processing::NativeRulesRegistryState::default(),
-                crate::rules::native_processing::RulesProcessContext::ScenarioReset(
-                    crate::rules::object_image::ImageTheater::from_map(ini),
-                ),
+                crate::rules::native_processing::RulesProcessContext::ScenarioReset {
+                    theater: crate::rules::object_image::ImageTheater::from_map(ini),
+                    skip_root_color_add_and_mode: false,
+                },
                 &crate::rules::sound_ini::EvaRegistry::default(),
             )
             .unwrap_or_else(|failure| {

@@ -9,7 +9,7 @@ use crate::skirmish_launch::SkirmishHumanSlot;
 use crate::ui::lan_shell::*;
 use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::shell::descriptor::DialogId;
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
 

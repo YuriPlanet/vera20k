@@ -3,6 +3,55 @@
 
 use super::*;
 
+fn read_passes(type_name: &str, passes: &[&str]) -> AresSuperWeaponTargetingState {
+    let mut state = AresSuperWeaponTargetingState::default();
+    for pass in passes {
+        let ini =
+            crate::rules::ini_parser::IniFile::from_str(&format!("[SW]\nType={type_name}\n{pass}"));
+        state.read_pass(ini.section("SW").unwrap(), handler_initial_mode(type_name));
+    }
+    state
+}
+
+fn house(has_enemy: bool, offensive_cell: (u16, u16)) -> HouseTargetingObservations {
+    HouseTargetingObservations {
+        has_enemy,
+        offensive_cell,
+    }
+}
+
+#[test]
+fn handler_mode_row_supplies_constraints_until_a_pass_reads_some() {
+    // MultiMissile's Initialize (100733BC) selects mode 1, whose row needs an
+    // enemy; an unknown token keeps it and a comma-only list stores none.
+    let nuke = read_passes("MultiMissile", &["", "SW.AITargeting.Constraints=bogus\n"]);
+    assert!(!nuke.constraints().allows_manual_fire(house(false, (0, 0))));
+    assert!(nuke.constraints().allows_manual_fire(house(true, (0, 0))));
+    let cleared = read_passes("MultiMissile", &["SW.AITargeting.Constraints=,\n"]);
+    assert!(
+        cleared
+            .constraints()
+            .allows_manual_fire(house(false, (0, 0)))
+    );
+    // ChronoSphere's Initialize stores nothing, so mode 0 has no constraints.
+    let chrono = read_passes("ChronoSphere", &[""]);
+    assert!(
+        chrono
+            .constraints()
+            .allows_manual_fire(house(false, (0, 0)))
+    );
+}
+
+#[test]
+fn manual_fire_reads_the_offensive_cell_and_skips_ai_only_constraints() {
+    let state = read_passes(
+        "GenericWarhead",
+        &["SW.AITargeting.Constraints=offensive_cell_set,lowpower,attacked\n"],
+    );
+    assert!(!state.constraints().allows_manual_fire(house(true, (0, 0))));
+    assert!(state.constraints().allows_manual_fire(house(false, (4, 5))));
+}
+
 fn input(requirements: &TargetRequirements) -> TargetPreflightInput<'_> {
     TargetPreflightInput {
         target_cell: Some((10, 10)),
@@ -19,6 +68,10 @@ fn input(requirements: &TargetRequirements) -> TargetPreflightInput<'_> {
     }
 }
 
+fn requirements(target: TargetMask, house: HouseMask) -> TargetRequirements {
+    TargetRequirements { target, house }
+}
+
 fn site(center: (i32, i32), eligible: bool) -> LaunchSite {
     LaunchSite {
         center,
@@ -31,20 +84,20 @@ fn site(center: (i32, i32), eligible: bool) -> LaunchSite {
 #[test]
 fn mono_requires_target_uses_land_water_semantics() {
     for (requirement, water, accepted) in [
-        ("land", false, true),
-        ("land", true, false),
-        ("water", true, true),
-        ("water", false, false),
-        ("all", true, true),
-        ("all", false, true),
+        (TargetMask::LAND, false, true),
+        (TargetMask::LAND, true, false),
+        (TargetMask::WATER, true, true),
+        (TargetMask::WATER, false, false),
+        (TargetMask::ALL, true, true),
+        (TargetMask::ALL, false, true),
     ] {
-        let requirements = TargetRequirements::parse(requirement, "");
+        let requirements = requirements(requirement, HouseMask::NONE);
         let mut input = input(&requirements);
         input.terrain_is_water = Some(water);
         assert_eq!(
             evaluate_target(&input).is_ok(),
             accepted,
-            "{requirement}/{water}"
+            "{requirement:?}/{water}"
         );
         input.terrain_is_water = None;
         assert!(
@@ -55,45 +108,10 @@ fn mono_requires_target_uses_land_water_semantics() {
 }
 
 #[test]
-fn mono_unknown_token_fails_closed_with_diagnostic() {
-    for requirements in [
-        TargetRequirements::parse("future-content-mask", ""),
-        TargetRequirements::parse("", "future-content-mask"),
-    ] {
-        assert_eq!(
-            evaluate_target(&input(&requirements)),
-            Err(TargetReject::UnsupportedTargetRequirement(
-                "future-content-mask".to_owned()
-            ))
-        );
-    }
-}
-
-#[test]
-fn mono_mask_parser_preserves_composable_semantics() {
-    for (raw, bits) in [
-        ("empty", 4),
-        ("unit", 16),
-        ("units,buildings", 48),
-        ("land water all-contents", 63),
-        ("all-cells+infantry", 11),
-        ("none", 0),
-        ("<none>", 0),
-    ] {
-        assert_eq!(TargetMask::parse(raw), Ok(TargetMask(bits)), "{raw}");
-    }
-    assert_eq!(HouseMask::parse("owner,allies"), HouseMask::parse("team"));
-    assert_eq!(
-        HouseMask::parse("enemies|allies"),
-        HouseMask::parse("others")
-    );
-}
-
-#[test]
 fn mono_content_mask_distinguishes_empty_aircraft_and_building() {
-    let empty = TargetRequirements::parse("empty", "");
+    let empty = requirements(TargetMask::EMPTY, HouseMask::NONE);
     assert!(evaluate_target(&input(&empty)).is_ok());
-    let units = TargetRequirements::parse("units", "enemies");
+    let units = requirements(TargetMask::UNIT, HouseMask::ENEMIES);
     let mut input = input(&units);
     assert_eq!(
         evaluate_target(&input),
@@ -105,7 +123,7 @@ fn mono_content_mask_distinguishes_empty_aircraft_and_building() {
     }];
     input.contents = &aircraft;
     assert!(evaluate_target(&input).is_ok());
-    let other = TargetRequirements::parse("infantry,buildings", "");
+    let other = requirements(TargetMask(0x28), HouseMask::NONE);
     input.requirements = &other;
     assert_eq!(
         evaluate_target(&input),
@@ -115,7 +133,7 @@ fn mono_content_mask_distinguishes_empty_aircraft_and_building() {
 
 #[test]
 fn mono_target_kind_and_house_must_match_same_candidate() {
-    let requirements = TargetRequirements::parse("units", "enemies");
+    let requirements = requirements(TargetMask::UNIT, HouseMask::ENEMIES);
     let mut input = input(&requirements);
     input.contents = &[
         TargetContent {
@@ -135,13 +153,13 @@ fn mono_target_kind_and_house_must_match_same_candidate() {
 
 #[test]
 fn mono_house_requirement_alone_does_not_reject_empty_cell() {
-    let requirements = TargetRequirements::parse("", "enemies");
+    let requirements = requirements(TargetMask::NONE, HouseMask::ENEMIES);
     assert!(evaluate_target(&input(&requirements)).is_ok());
 }
 
 #[test]
 fn mono_fire_into_shroud_rejects_only_never_explored_shroud() {
-    let requirements = TargetRequirements::parse("", "");
+    let requirements = requirements(TargetMask::NONE, HouseMask::NONE);
     let mut input = input(&requirements);
     input.fire_into_shroud = false;
     for (shrouded, expected) in [(Some(true), false), (Some(false), true), (None, true)] {
@@ -152,7 +170,7 @@ fn mono_fire_into_shroud_rejects_only_never_explored_shroud() {
 
 #[test]
 fn mono_range_boundary_is_inclusive_for_any_eligible_launcher() {
-    let requirements = TargetRequirements::parse("", "");
+    let requirements = requirements(TargetMask::NONE, HouseMask::NONE);
     let mut input = input(&requirements);
     input.range = (5.0, 10.0);
     let sites = [
@@ -169,7 +187,7 @@ fn mono_range_boundary_is_inclusive_for_any_eligible_launcher() {
 
 #[test]
 fn mono_range_rejects_when_only_inactive_launcher_is_in_range() {
-    let requirements = TargetRequirements::parse("", "");
+    let requirements = requirements(TargetMask::NONE, HouseMask::NONE);
     let mut input = input(&requirements);
     input.target_cell = Some((5, 0));
     input.range = (-1.0, 5.0);
@@ -183,7 +201,7 @@ fn mono_range_rejects_when_only_inactive_launcher_is_in_range() {
 
 #[test]
 fn mono_range_uses_each_launchers_effective_range() {
-    let requirements = TargetRequirements::parse("", "");
+    let requirements = requirements(TargetMask::NONE, HouseMask::NONE);
     let mut input = input(&requirements);
     input.target_cell = Some((18, 0));
     let sites = [
@@ -203,7 +221,7 @@ fn mono_range_uses_each_launchers_effective_range() {
 
 #[test]
 fn mono_range_or_required_site_without_launcher_fails_closed() {
-    let requirements = TargetRequirements::parse("", "");
+    let requirements = requirements(TargetMask::NONE, HouseMask::NONE);
     let mut input = input(&requirements);
     input.range = (-1.0, 8.0);
     assert_eq!(
@@ -223,7 +241,7 @@ fn mono_range_or_required_site_without_launcher_fails_closed() {
 
 #[test]
 fn mono_invalid_range_and_missing_target_are_rejected() {
-    let requirements = TargetRequirements::parse("", "");
+    let requirements = requirements(TargetMask::NONE, HouseMask::NONE);
     let mut input = input(&requirements);
     for range in [(8.0, 2.0), (f64::INFINITY, 5.0), (f64::NAN, -1.0)] {
         input.range = range;

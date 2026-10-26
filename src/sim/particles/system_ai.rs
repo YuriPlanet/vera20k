@@ -9,6 +9,7 @@
 use crate::rules::particle_system_type::ParticleSystemBehavesLike;
 use crate::rules::particle_type::ParticleBehavesLike;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::intern::InternedId;
 use crate::sim::particles::ParticleSystem;
 use crate::sim::world::Simulation;
 use thiserror::Error;
@@ -56,10 +57,17 @@ pub(super) fn finish_lifetime(p: &mut super::Particle) {
 
 /// One AI_Dispatch62CE40 owner, selected by the PARTICLE's behavior rather
 /// than its containing system. Spark retains its begin/query/finish boundary.
-pub(super) fn tick_particle(p: &mut super::Particle, sim: &mut Simulation, rules: &RuleSet) {
-    if let Err(error) = tick_particle_with_query(p, sim, rules, |sim, rules, motion| {
-        SparkCollisionWorld::new(sim, rules)?.query(motion)
-    }) {
+pub(super) fn tick_particle(
+    p: &mut super::Particle,
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    source_house: Option<InternedId>,
+) {
+    if let Err(error) =
+        tick_particle_with_query(p, sim, rules, source_house, |sim, rules, motion| {
+            SparkCollisionWorld::new(sim, rules)?.query(motion)
+        })
+    {
         log::warn!(
             "particles: particle {} AI failed: {error}",
             p.native_unique_id()
@@ -71,6 +79,7 @@ fn tick_particle_with_query<F>(
     p: &mut super::Particle,
     sim: &mut Simulation,
     rules: &RuleSet,
+    source_house: Option<InternedId>,
     mut query: F,
 ) -> Result<(), SparkSystemTickError>
 where
@@ -85,11 +94,14 @@ where
         ParticleBehavesLike::Smoke => {
             super::smoke::tick_particle(p, pt, sim.session.binary_frame(), sim.particle_rng())
         }
+        // gamemd.exe ParticleClass::AI_Gas (0x0062BD50), 62C2C2..62C2DC:
+        // read the parent system's +FC source House regardless of its own
+        // BehavesLike. Smoke, Fire and Spark retain that same reference.
         ParticleBehavesLike::Gas => super::gas::tick_particle(
             p,
             sim,
             rules,
-            None,
+            source_house,
             crate::sim::world::UninitContext::with_rules(rules),
         ),
         ParticleBehavesLike::Fire => super::fire::tick_particle(p, pt, sim.particle_rng()),
@@ -243,7 +255,7 @@ where
     ) -> Result<SparkCollisionFacts, SparkWorldError>,
 {
     for particle in &mut sys.particles {
-        tick_particle_with_query(particle, sim, rules, &mut query)?;
+        tick_particle_with_query(particle, sim, rules, sys.owner_house, &mut query)?;
     }
 
     // Native container cleanup walks backward so removals cannot perturb the
@@ -321,6 +333,77 @@ mod tests {
     use crate::sim::rng::SimRng;
     use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
     use glam::IVec3;
+
+    #[test]
+    fn mixed_hosts_preserve_gas_source_house_for_allied_and_enemy_receivers() {
+        for behavior in ["Smoke", "Fire", "Spark"] {
+            let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+                "[Countries]\n0=Americans\n1=Russians\n[VehicleTypes]\n0=TARGET\n\
+                 [TARGET]\nStrength=100\nArmor=light\n\
+                 [ParticleSystems]\n0=HOST\n[HOST]\nBehavesLike={behavior}\n\
+                 [Particles]\n0=CLOUD\n[CLOUD]\nBehavesLike=Gas\nMaxEC=100\n\
+                 MaxDC=1\nDamage=5\nWarhead=PSYCH\nStateAIAdvance=3\n\
+                 EndStateAI=10\nDeleteOnStateLimit=no\n[Warheads]\n0=PSYCH\n\
+                 [PSYCH]\nPsychedelic=yes\n\
+                 Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+            ));
+            let rules = RuleSet::from_ini(&ini).unwrap();
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+            sim.session.set_binary_frame_for_test(1);
+            let owner = sim.interner.intern("Americans");
+            let host = sim
+                .spawn_particle_system(
+                    rules.ps_type_id_by_name("HOST").unwrap(),
+                    IVec3::ZERO,
+                    None,
+                    None,
+                    IVec3::ZERO,
+                    Some(owner),
+                    &rules,
+                )
+                .unwrap();
+            sim.substrate
+                .particle_systems
+                .get_mut(host)
+                .unwrap()
+                .done_spawning = true;
+            let mut targets = Vec::new();
+            for (country, x) in [("Americans", 20), ("Russians", 24)] {
+                let target = sim
+                    .spawn_object("TARGET", country, x, 20, 0, &rules)
+                    .unwrap();
+                let kind = rules.p_type_id_by_name("CLOUD").unwrap();
+                let cloud = Particle::new(
+                    kind,
+                    IVec3::new(i32::from(x) * 256 + 128, 5248, 0),
+                    IVec3::ZERO,
+                    rules.particle_type(kind),
+                    &mut sim,
+                );
+                sim.substrate
+                    .particle_systems
+                    .get_mut(host)
+                    .unwrap()
+                    .particles
+                    .push(cloud);
+                targets.push(target);
+            }
+            assert!(tick_particle_system(
+                &mut sim,
+                &rules,
+                host,
+                crate::sim::world::UninitContext::with_rules(&rules),
+            ));
+            assert!(
+                !sim.entities().get(targets[0]).unwrap().berserk.is_active(),
+                "{behavior}: the source house protects its ally from Psychedelic"
+            );
+            assert!(
+                sim.entities().get(targets[1]).unwrap().berserk.is_active(),
+                "{behavior}: the enemy control must reach the same real damage receiver"
+            );
+        }
+    }
 
     fn build_rules(behaves_like: &str, lifetime: i32) -> RuleSet {
         let ini_text = format!(

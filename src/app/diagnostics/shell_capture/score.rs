@@ -14,7 +14,7 @@ use crate::ui::score_shell::{ScoreRow, ScoreScreenModel};
 use crate::ui::shell::geom::RectPx;
 use image::ImageEncoder;
 use serde_json::{Value, json};
-use std::time::Instant;
+use crate::util::time::Instant;
 
 /// Frames to present once the target state is reached.
 const SETTLE_FRAMES: u32 = 4;

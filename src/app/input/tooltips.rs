@@ -19,6 +19,11 @@ use crate::ui::tooltips::{TipRect, TipRegion};
 /// at 1000+.
 pub(crate) const CAMEO_TIP_ID_BASE: u32 = 1000;
 
+/// Phobos left superweapon sidebar cameo tips, one id per visible slot. Kept
+/// clear of the right sidebar's cameo range.
+#[cfg(feature = "phobos")]
+pub(crate) const SW_SIDEBAR_TIP_ID_BASE: u32 = 2000;
+
 /// CSF label carrying the cameo tooltip money format. Retail English value is
 /// `"%s $%d"` — name, space, currency sign, cost.
 ///
@@ -577,6 +582,41 @@ fn sync_in_game_regions(state: &mut AppState) {
             rect: tip_rect(frame, item.rect),
             text,
         });
+    }
+    // Phobos left superweapon sidebar: `SWButtonClass` shows the same super
+    // weapon name/cost tip as the right cameo.
+    #[cfg(feature = "phobos")]
+    {
+        let sw = &state.match_state.match_presentation.sw_sidebar;
+        if sw.ui.enabled && sw.expanded {
+            for (index, entry) in sw.entries.iter().enumerate() {
+                let text = dynamic_tip_text(cursor, || {
+                    let amount = state
+                        .rules()
+                        .and_then(|rules| {
+                            let super_type = rules.super_weapon(&entry.type_id)?;
+                            Some(crate::sim::superweapon::financial_type(rules, super_type))
+                        })
+                        .map_or(0, |super_type| super_type.money_amount);
+                    let money_format = state
+                        .process_assets
+                        .csf
+                        .as_ref()
+                        .map(|csf| csf.text(CAMEO_TIP_MONEY_FORMAT));
+                    superweapon_money_tip(money_format.as_deref(), &entry.view.display_name, amount)
+                });
+                regions.push(TipRegion {
+                    id: SW_SIDEBAR_TIP_ID_BASE + index as u32,
+                    rect: TipRect::new(
+                        entry.rect.x.round() as i32,
+                        entry.rect.y.round() as i32,
+                        entry.rect.w.round() as i32,
+                        entry.rect.h.round() as i32,
+                    ),
+                    text,
+                });
+            }
+        }
     }
     state
         .match_state

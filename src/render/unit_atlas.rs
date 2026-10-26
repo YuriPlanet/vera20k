@@ -17,7 +17,7 @@
 //! - Reads from sim/ via EntityStore iteration (GameEntity fields).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::time::Instant;
+use crate::util::time::Instant;
 
 #[path = "unit_shadow_cache.rs"]
 mod shadow_cache;
@@ -1022,6 +1022,7 @@ impl UnitRasterWork {
     ) -> UnitRasterOutput {
         let mut rendered = Vec::new();
         let mut failed = self.failed;
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let workers = std::thread::available_parallelism().map_or(1, |n| n.get());
         for (model, type_keys) in self.models {
             if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
@@ -1033,6 +1034,17 @@ impl UnitRasterWork {
                 })
                 .collect();
             let (model, vpl) = (&model, self.vpl.as_ref());
+            #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+            let results: Vec<Option<RenderedKey>> = {
+                let mut pose = None;
+                poses
+                    .iter()
+                    .flat_map(|keys| keys.iter())
+                    .take_while(|_| !cancelled.load(std::sync::atomic::Ordering::Relaxed))
+                    .map(|key| render_unit_key(model, key, vpl, &mut pose))
+                    .collect()
+            };
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
             let results: Vec<Option<RenderedKey>> = std::thread::scope(|scope| {
                 let jobs: Vec<_> = poses
                     .chunks(poses.len().div_ceil(workers))

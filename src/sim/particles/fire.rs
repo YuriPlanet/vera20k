@@ -108,7 +108,7 @@ pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules:
 
     // Phase 1 — tick existing particles.
     for p in &mut sys.particles {
-        super::system_ai::tick_particle(p, sim, rules);
+        super::system_ai::tick_particle(p, sim, rules, sys.owner_house);
     }
 
     // Phase 2 — prune dead particles. Fire has no NextParticle chaining

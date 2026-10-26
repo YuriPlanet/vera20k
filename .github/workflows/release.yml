@@ -30,7 +30,8 @@ name: Release
 # `on: push` for refs written with GITHUB_TOKEN, so a tag created by a job can
 # never start another workflow.
 #
-# Each installer holds the game program, the license, the third-party notices
+# Each installer holds the game program, its licenses (LICENSE-GPL, and
+# LGPL-2.1-or-later.txt for the Bink decoder), the third-party notices
 # (THIRD_PARTY_LICENSES.html) and a README.txt made from
 # .github/release/README.txt.in; the Windows one also config.toml.example. They
 # never hold game files (README.md, README.txt.in). Their one piece of game art
@@ -208,7 +209,10 @@ jobs:
           "INNO_SETUP_ISCC=$iscc" >> $env:GITHUB_ENV
       - name: Build the game
         # Shipped binaries leave out the default `dev-overlays` (the Ctrl+Shift dev chord),
-        # and use the whole-program `shipping` profile (Cargo.toml).
+        # and use the whole-program `shipping` profile (Cargo.toml). The splash's
+        # license notice names the commit built (build.rs).
+        env:
+          VERA20K_COMMIT: ${{ needs.prepare.outputs.sha }}
         run: cargo build --profile shipping --locked -p vera20k --no-default-features --bin vera20k
       - name: Package
         id: package
@@ -228,10 +232,10 @@ jobs:
           echo "name=$name" >> "$GITHUB_OUTPUT"
           # The files the platform's installer takes from this folder.
           cp "target/shipping/${{ matrix.program }}" config.toml.example LICENSE-GPL \
-            dist/THIRD_PARTY_LICENSES.html "dist/$name/"
-          # The README names the version and build, which stay true when a
-          # release republishes this installer.
-          sed -e "s/@VERSION@/${VERSION}/" -e "s/@BUILD@/${STAMP}/" \
+            LICENSES/LGPL-2.1-or-later.txt dist/THIRD_PARTY_LICENSES.html "dist/$name/"
+          # The README names the version, build and commit, which stay true when
+          # a release republishes this installer.
+          sed -e "s/@VERSION@/${VERSION}/" -e "s/@BUILD@/${STAMP}/" -e "s/@COMMIT@/${SHA7}/" \
             .github/release/README.txt.in > "dist/$name/README.txt"
       # Windows gets an installer of those files: it finds the Yuri's Revenge
       # folder and writes config.toml (.github/release/windows).
@@ -364,7 +368,8 @@ jobs:
             throw 'setup did not warn about optional music'
           }
           foreach ($f in 'vera20k.exe', 'config.toml', 'config.toml.example', 'README.txt',
-                         'LICENSE-GPL', 'THIRD_PARTY_LICENSES.html') {
+                         'LICENSE-GPL', 'LGPL-2.1-or-later.txt',
+                         'THIRD_PARTY_LICENSES.html') {
             if (-not (Test-Path (Join-Path $app $f))) { throw "setup did not install $f" }
           }
           $config = Read-Config

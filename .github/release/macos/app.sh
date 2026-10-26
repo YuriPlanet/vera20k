@@ -29,8 +29,8 @@ sed -e "s/@VERSION@/$VERSION/g" -e "s/@BUILD@/${STAMP/-/.}/g" \
 plutil -lint "$app/Contents/Info.plist" "$here/zh-Hans.lproj/InfoPlist.strings"
 # Named like the app, so its menu reads "Quit VERA20K".
 cp "$package/vera20k" "$app/Contents/MacOS/VERA20K"
-cp "$package/README.txt" "$package/LICENSE-GPL" "$package/THIRD_PARTY_LICENSES.html" \
-  "$app/Contents/Resources/"
+cp "$package/README.txt" "$package/LICENSE-GPL" "$package/LGPL-2.1-or-later.txt" \
+  "$package/THIRD_PARTY_LICENSES.html" "$app/Contents/Resources/"
 cp -R "$here/zh-Hans.lproj" "$app/Contents/Resources/"
 # The icon at every size macOS uses: Red Alert 2's red star on a tile that fills
 # macOS's icon grid (icon_tile.swift).

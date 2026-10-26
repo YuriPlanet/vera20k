@@ -56,7 +56,7 @@ mod object_stages_gpu_tests;
 
 use anyhow::Result;
 #[cfg(feature = "telemetry-dashboard")]
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 // Re-export shared types so any remaining `use crate::app::presentation::render::Foo` imports still compile.
 // New code should import from `crate::app::types` directly.
@@ -881,6 +881,39 @@ fn upload_to_gpu(
         &sidebar.cameo_overlay,
     );
     pool.upload(&state.renderer.gpu, "sidebar_text", &sidebar.text);
+    #[cfg(feature = "phobos")]
+    {
+        pool.upload(
+            &state.renderer.gpu,
+            "sw_sidebar_chrome",
+            &sidebar.sw_sidebar_chrome,
+        );
+        pool.upload(
+            &state.renderer.gpu,
+            "sw_sidebar_cameo",
+            &sidebar.sw_sidebar_cameo,
+        );
+        pool.upload(
+            &state.renderer.gpu,
+            "sw_sidebar_gclock",
+            &sidebar.sw_sidebar_gclock,
+        );
+        pool.upload(
+            &state.renderer.gpu,
+            "sw_sidebar_hover",
+            &sidebar.sw_sidebar_hover,
+        );
+        pool.upload(
+            &state.renderer.gpu,
+            "sw_sidebar_overlay",
+            &sidebar.sw_sidebar_overlay,
+        );
+        pool.upload(
+            &state.renderer.gpu,
+            "sw_sidebar_text",
+            &sidebar.sw_sidebar_text,
+        );
+    }
     pool.upload(&state.renderer.gpu, "message_text", &message_text);
     pool.upload(&state.renderer.gpu, "message_fill", &message_fill);
     pool.upload(&state.renderer.gpu, "outcome_shape", &outcome_shape);

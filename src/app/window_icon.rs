@@ -31,7 +31,7 @@ impl RetailIcon {
             let Some(path) = crate::util::case_insensitive_path::find(ra2_dir, name) else {
                 continue;
             };
-            let Some(ico) = std::fs::read(&path)
+            let Some(ico) = crate::util::file_system::read(&path)
                 .ok()
                 .and_then(|exe| executable_icon(&exe))
             else {

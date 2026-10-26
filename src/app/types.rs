@@ -9,7 +9,7 @@
 //! ## Dependency rules
 //! - Part of the app layer — no sim/render dependencies.
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use winit::keyboard::KeyCode;
 

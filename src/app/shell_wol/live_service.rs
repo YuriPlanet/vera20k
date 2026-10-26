@@ -13,9 +13,11 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
-use anyhow::{Context, Result, anyhow, ensure};
+use anyhow::{Result, anyhow, ensure};
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+use anyhow::Context;
 use base64::Engine;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -413,6 +415,12 @@ struct PendingStart {
 }
 
 impl LiveService {
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    fn new() -> Result<Self> {
+        anyhow::bail!("Online play is unavailable in the single-player browser build")
+    }
+
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     fn new() -> Result<Self> {
         let base =
             std::env::var("VERA20K_LOBBY_URL").unwrap_or_else(|_| DEFAULT_LOBBY_URL.to_owned());
@@ -1703,8 +1711,8 @@ fn poll_renewal(state: &AppState, service: &mut LiveService) {
     let Some(expires) = crate::app::lan_service::online_relay_expires(state) else {
         return;
     };
-    let unix_now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let unix_now = crate::util::time::SystemTime::now()
+        .duration_since(crate::util::time::UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0);
     let now = Instant::now();

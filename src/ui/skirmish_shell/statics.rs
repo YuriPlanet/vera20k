@@ -13,7 +13,7 @@
 //! changed text restarts a started reveal from count 1 (`0x4B2`,
 //! `0x00611BC1`), as when Use Map picks another map (`0x006ADA99`).
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use crate::ui::shell::static_reveal::{
     DialogStatics, DialogStaticsPaint, Kind1Params, PresentedKind1Static, StaticPaint,

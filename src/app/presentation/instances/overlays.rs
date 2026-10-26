@@ -418,7 +418,8 @@ pub(crate) fn build_display_effect_instances(
                     // A Super's ChronoPlacement anim: the client's byte
                     // (`match_runtime::super_selection`).
                     false => {
-                        anim.draw_runtime().hidden || input.hidden_super_anims.contains(&stable_id)
+                        anim.hidden_for(local_owner)
+                            || input.hidden_super_anims.contains(&stable_id)
                     }
                 },
                 special_hidden: anim.draw_runtime().special_hidden,

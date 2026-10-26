@@ -5,7 +5,7 @@ use super::*;
 use crate::skirmish_launch::{SkirmishLaunchSession, SkirmishLocalSlot};
 use crate::ui::lan_shell::LanChatLine;
 use crate::ui::skirmish_shell::SkirmishValidationModalState;
-use std::time::Instant;
+use crate::util::time::Instant;
 
 /// A host's full options as `0x005E3D10`'s default (digit-led) arm decodes
 /// them: from the host, or in Quick Match from the matchbot's `Start`
@@ -1163,9 +1163,9 @@ fn preview_acknowledged(state: &mut AppState, index: usize) -> anyhow::Result<()
     // RawFileClass deletes any old file, then writes the length and the
     // compressed blob.
     if path.exists() {
-        std::fs::remove_file(&path)?;
+        crate::util::file_system::remove_file(&path)?;
     }
-    std::fs::write(&path, crate::map::preview::preview_bin_bytes(&blob))?;
+    crate::util::file_system::write(&path, crate::map::preview::preview_bin_bytes(&blob))?;
     state
         .frontend
         .network_setup_protocol
@@ -1205,7 +1205,7 @@ fn preview_file_received(
         .paths
         .ra2_dir
         .join(&file);
-    let image = std::fs::read(&path)
+    let image = crate::util::file_system::read(&path)
         .ok()
         .and_then(|bytes| crate::map::preview::preview_bin_blob(&bytes))
         .and_then(|blob| crate::map::preview::paletted_preview_image(&blob));

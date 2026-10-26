@@ -337,7 +337,7 @@ pub(crate) fn render_wol_page(
         let title_window = state
             .frontend
             .shell_page_title
-            .paint(std::time::Instant::now());
+            .paint(crate::util::time::Instant::now());
         let (status_key, status_rect) = match &painted {
             Painted::Welcome(layout) => {
                 (crate::app::App::wol_status_key(state), layout.status_help)
@@ -622,7 +622,7 @@ pub(crate) fn render_wol_page(
                 screen_w,
                 screen_h,
                 &status,
-                lobby.ui.caret_visible(std::time::Instant::now()),
+                lobby.ui.caret_visible(crate::util::time::Instant::now()),
             ),
         )
     });
@@ -846,7 +846,7 @@ pub(crate) fn render_wol_page(
         chrome,
         &buttons,
         crate::app::frontend::menu_page_render::MENU_PAGE_BUTTON_POLICY,
-        std::time::Instant::now(),
+        crate::util::time::Instant::now(),
         None,
     );
     for (button, pressed, enabled) in &painted_buttons {

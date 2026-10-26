@@ -15,6 +15,12 @@ pub enum RulesError {
     #[error("Invalid saved Rules state: {0}")]
     InvalidSavedState(&'static str),
 
+    /// Load_Game_Rules52CD70 returns false at52D302 when LANGRULE's
+    /// ReadCCFile (52D26F) reports status 2, and Init_Game52C963 then fails
+    /// with "Failed to initialize Rules!".
+    #[error("LANGRULE.INI failed its Digest check")]
+    LangRuleDigestRejected,
+
     /// The INI data is not valid UTF-8.
     #[error("INI data is not valid UTF-8: {0}")]
     InvalidUtf8(#[from] std::str::Utf8Error),

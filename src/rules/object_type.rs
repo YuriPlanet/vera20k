@@ -815,6 +815,10 @@ pub struct ObjectType {
     /// Missing, empty and unregistered names retain the prior resolved ID in
     /// the existing processed-rules reader, starting at the native -1 default.
     damage_sound: Option<String>,
+    /// Installed Ares TypeExt+504/+508 and+50C/+510 (ctor1003CE14..2E).
+    /// Unset, explicit silence and a resolved Voc ID remain distinct.
+    #[cfg(feature = "ares")]
+    promotion_sounds: [Option<Option<String>>; 2],
     /// Ordered MoveSound vector, TechnoType+4F4. Constructor710E7B..710EAC
     /// creates an empty list; ReadINI713459..7134D9 uses ReadSoundList525430.
     /// The fixed SOUNDMD binder resolves each token, retaining duplicates.
@@ -2927,6 +2931,23 @@ impl ObjectType {
             section.and_then(|section| sounds.read_rules_reference(section, "CreateSound"));
         self.damage_sound =
             section.and_then(|section| sounds.read_rules_reference(section, "DamageSound"));
+        #[cfg(feature = "ares")]
+        for (slot, key) in ["Promote.VeteranSound", "Promote.EliteSound"]
+            .into_iter()
+            .enumerate()
+        {
+            // TypeExt LoadFromINI1003F0C5/1003F0DB reuses NullableIdx<Voc>
+            // 1000E9D0:2048-byte read, fixed-catalog lookup, unknown retains.
+            self.promotion_sounds[slot] =
+                section.and_then(|section| sounds.read_ares_reference(section, key));
+        }
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn promotion_sound_override(&self, elite: bool) -> Option<Option<&str>> {
+        self.promotion_sounds[usize::from(elite)]
+            .as_ref()
+            .map(|cue| cue.as_deref())
     }
 
     /// `Weapon[index]` (`TechnoTypeClass+0x898 + index*0x1C`): the weapon in
@@ -3497,6 +3518,8 @@ impl ObjectType {
             create_sound: None,
             secret_lab: Default::default(),
             damage_sound: None,
+            #[cfg(feature = "ares")]
+            promotion_sounds: [None, None],
             move_sound: Vec::new(),
             crashing_sound: section.read_name("CrashingSound", 0x80).map(str::to_owned),
             voice_crashing: section.read_name("VoiceCrashing", 0x80).map(str::to_owned),

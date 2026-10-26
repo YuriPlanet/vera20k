@@ -23,7 +23,7 @@ use crate::app::AppState;
 use crate::render::shell_text::{self, ShellAlign};
 use crate::ui::coop_score_shell::*;
 use crate::ui::shell::geom::{self, RectPx};
-use std::time::Instant;
+use crate::util::time::Instant;
 
 pub(crate) fn render_coop_score(
     state: &mut AppState,

@@ -159,7 +159,7 @@ impl PowerupTable {
 }
 
 /// Live table retained across successive `RulesClass::Process` passes.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct PowerupsAccumulator(PowerupTable);
 
 impl PowerupsAccumulator {

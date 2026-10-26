@@ -17,7 +17,7 @@ use crate::render::batch::SpriteInstance;
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw};
 use crate::ui::shell::geom::RectPx;
 use crate::ui::wol_login::{LoginPolicy, WolLoginLayout, WolLoginState};
-use std::time::Instant;
+use crate::util::time::Instant;
 
 /// Sprites (skirmish atlas) and texts of `0x10F`'s children; `popup` paints
 /// after everything else.

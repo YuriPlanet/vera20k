@@ -477,7 +477,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
             .get_mut(prepared.receiver)
             .expect("preflight guaranteed receiver");
         // RESIDUAL: a receiver no class setter above represents keeps the
-        // NavCom write set alone: a Unit or Infantry without a constructed
+        // NavCom write set alone: a Unit without a constructed
         // locomotor (the zero-speed gate in
         // `should_construct_locomotor`), a Fly or Rocket Unit, or an Infantry
         // on Drive, Ship, Hover, Fly or Rocket. Trigger: an order to such an

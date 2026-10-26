@@ -485,6 +485,248 @@ def mission_loading():
     return dict(missionmd_sha256=hashlib.sha256(raw).hexdigest(), rows=rows)
 
 
+def _native_rules_color_add(reader, rules):
+    return [list(reader.u.mem_read(rules + 0x1874 + index * 3, 3)) for index in range(2)]
+
+
+def generate_native_rules():
+    """Original Full_Init admission and selected Rules Process boundary rows."""
+    import base64
+    from tools.native_oracle import configured_gamemd, initialize_empty_windows_seh
+    from tools.rules_oracle.weapon_speed_order import RetailRulesInputs, _retail_history_class
+
+    valid_raw = (b"[ColorAdd]\nLANG0=7,8,9\nLANG1=30,31,32\n"
+                 b"[AudioVisual]\nLaserTargetColor=6\nBerserkColor=9\n"
+                 b"[Digest]\n1=5Z9CTq3TQS20/wfWQHiRlHIBMME=\n")
+    missing_raw = valid_raw.split(b"[Digest]")[0]
+    wrong_raw = valid_raw.replace(
+        b"1=5Z9CTq3TQS20/wfWQHiRlHIBMME=",
+        b"1=" + base64.b64encode(bytes(20)))
+
+    source = RetailRulesInputs(configured_gamemd().parent)
+    aimd_raw = source.lookup("AIMD.INI")
+    map_raw = source.lookup("ALL01UMD.MAP")
+    if aimd_raw is None or map_raw is None:
+        raise ValueError("Full_Init native Rules witness requires physical AIMD.INI and ALL01UMD.MAP")
+
+    m = _retail_history_class()(source, arena_size=0xC000000)
+    m.platform.configure_transport(prepared_files={
+        "aimd.ini": aimd_raw, "all01umd.map": map_raw,
+        "tmcj4f.ini": None, "all01umd.ini": None,
+    })
+    initialize_empty_windows_seh(m.u)
+    m.invoke(0x6832C0, m.scenario)
+    m.seed_streams(31)
+    initial_rules = m.alloc(0x2000)
+    m.rules = initial_rules
+    m.u.mem_write(0x8871E0, dwords(initial_rules))
+    m.invoke(0x665650, initial_rules)
+    m.original_type_initializers()
+
+    # Full_Init reads the physical global and map INIs and registers their AI
+    # definitions before its TMCJ4F block. These registry values are setup only;
+    # the compact Rust-facing corpus below asserts the gate and Rules effects.
+    m.load_physical_ini("AIMD.INI", address=0x887128)
+    map_ini, _ = m.load_physical_ini("ALL01UMD.MAP")
+    m.u.reg_write(UC_X86_REG_EDI, map_ini)
+    m.u.reg_write(UC_X86_REG_ESP, SP)
+    m.phase = "campaign_native_rules:AI_registry_readers"
+    m.run(0x68797A, 0x6879E3, context={"case": "physical_AIMD_and_map"})
+    if m.read32(0xA8ECB0) == 0:
+        raise ValueError("Original Full_Init AI readers produced no TeamTypes")
+
+    active_observation = [None]
+
+    def observe_native_load(u, pc, size, data):
+        observation = active_observation[0]
+        if observation is None:
+            return
+        if pc == 0x474311:
+            observation["statuses"].append(u.reg_read(UC_X86_REG_EAX) & 255)
+        elif pc == 0x668BF0:
+            observation["process_reached"] = True
+
+    m.u.hook_add(UC_HOOK_CODE, observe_native_load)
+
+    def new_rules():
+        rules = m.alloc(0x2000)
+        m.rules = rules
+        m.u.mem_write(0x8871E0, dwords(rules))
+        m.invoke(0x665650, rules)
+        return rules
+
+    def prepare_native_frame(index, *, current_mode, esi, cached_entry_flag,
+                             team_flag, filename, raw_ini):
+        rules = new_rules()
+        frame_sp = SP - 0x174 - index * 0x200
+        m.u.mem_write(frame_sp, bytes(0x180))
+        m.u.mem_write(frame_sp + 0x12, bytes((cached_entry_flag,)))
+        m.u.mem_write(0xA8B238, dwords(current_mode, 0))
+        m.u.mem_write(0xA8ED91, bytes((team_flag,)))
+        m.u.mem_write(m.scenario + 0x125C, filename.encode("ascii") + b"\0")
+        m.platform.configure_transport(prepared_files={
+            "aimd.ini": aimd_raw, "all01umd.map": map_raw,
+            "tmcj4f.ini": raw_ini, "all01umd.ini": raw_ini,
+        })
+        ini_object, file_object = frame_sp + 0x1C, frame_sp + 0x84
+        m.phase = "campaign_native_rules:INIClass_constructor"
+        m.invoke(0x535B30, ini_object)
+        m.phase = "campaign_native_rules:CCFile_constructor"
+        m.invoke(0x473A80, file_object)
+        # invoke() runs from the owner's SP and leaves the native return state
+        # there. Restore Full_Init's frame and nonvolatile inputs before entry.
+        m.u.reg_write(UC_X86_REG_ESP, frame_sp)
+        m.u.reg_write(UC_X86_REG_EBX, 0)
+        m.u.reg_write(UC_X86_REG_EBP, m.scenario)
+        m.u.reg_write(UC_X86_REG_ESI, esi)
+        m.u.reg_write(UC_X86_REG_EDI, map_ini)
+        return rules, ini_object
+
+    def finish_native_case(*, rules, ini_object, input_row, status_list,
+                           process_reached, io_start, before):
+        after = _native_rules_color_add(m, rules)
+        statuses = list(status_list)
+        status = statuses[0] if statuses else None
+        digest_present = None
+        if status is not None:
+            active_observation[0] = None
+            _, digest_length = m.string_read(ini_object, "Digest", "1")
+            digest_present = digest_length > 0
+        events = m.platform.file_io[io_start:]
+        requested_names = [event["name"] for event in events
+                           if event["kind"] == "CreateFile"]
+        bytes_read = sum(event.get("reported_bytes", 0) for event in events
+                         if event["kind"] == "ReadFile")
+        return {
+            "input": input_row,
+            "color_add_before": before,
+            "readccfile_status": status,
+            "process_reached": bool(process_reached),
+            "requested_filename": requested_names[0] if requested_names else None,
+            "bytes_read": bytes_read,
+            "digest_key_present_after": digest_present,
+            "color_add_after": after,
+        }
+
+    valid_text = valid_raw.decode("ascii")
+    missing_text = missing_raw.decode("ascii")
+    wrong_text = wrong_raw.decode("ascii")
+    tmcj_cases = []
+    for index, name, mode, flag, variant, raw_ini, expected_status, expected_process in (
+        (0, "mode_gate_skips_file", 4, 1, "valid", valid_raw, None, False),
+        (1, "flag_gate_skips_file", 5, 0, "valid", valid_raw, None, False),
+        (2, "admitted_file_absent", 5, 1, "none", None, None, False),
+        (3, "admitted_valid_file", 5, 1, "valid", valid_raw, 1, True),
+        (4, "admitted_missing_digest", 5, 1, "missing", missing_raw, 1, True),
+        (5, "admitted_wrong_digest", 5, 1, "wrong", wrong_raw, 1, True),
+    ):
+        # Full_Init zeroes ESI at 68773D and nothing writes it again before
+        # 687B58, which pushes it as both ReadCCFile flags.
+        rules, ini_object = prepare_native_frame(
+            index, current_mode=mode, esi=0, cached_entry_flag=0,
+            team_flag=flag, filename="ALL01UMD.MAP", raw_ini=raw_ini)
+        file_row = dict(filename="TMCJ4F.INI", present=raw_ini is not None,
+                        digest_variant=variant,
+                        raw_ini=None if raw_ini is None else {"valid": valid_text,
+                            "missing": missing_text, "wrong": wrong_text}[variant])
+        input_row = dict(case=name, mode=mode, flag=flag, file=file_row)
+        before = _native_rules_color_add(m, rules)
+        io_start = len(m.platform.file_io)
+        observation = {"statuses": [], "process_reached": False}
+        active_observation[0] = observation
+        m.phase = "campaign_native_rules:tmcj:" + name
+        m.run(0x687B18, 0x687B7B,
+              context={"case": name, "mode": mode, "flag": flag})
+        row = finish_native_case(rules=rules, ini_object=ini_object,
+            input_row=input_row, status_list=observation["statuses"],
+            process_reached=observation["process_reached"], io_start=io_start,
+            before=before)
+        assert row["readccfile_status"] == expected_status, (name, row)
+        assert row["process_reached"] is expected_process, (name, row)
+        if expected_process:
+            assert row["color_add_after"] == [[7, 8, 9], [30, 31, 32]], (name, row)
+            assert row["bytes_read"] == len(raw_ini), (name, row)
+            assert row["digest_key_present_after"] is (variant != "missing"), (name, row)
+        else:
+            assert row["color_add_after"] == before, (name, row)
+            assert row["bytes_read"] == 0, (name, row)
+        tmcj_cases.append(row)
+
+    campaign_cases = []
+    for index, name, entry_mode, current_mode, cached_entry_flag in (
+        (6, "entry0_current0_skips_named", 0, 0, 1),
+        (7, "entry1_current1_skips_by_mode", 1, 1, 0),
+        (8, "entry5_current0_prepared_named_admission", 5, 0, 0),
+    ):
+        # 686B29 loads the entry GameMode into ESI.
+        rules, ini_object = prepare_native_frame(
+            index, current_mode=current_mode, esi=entry_mode,
+            cached_entry_flag=cached_entry_flag, team_flag=1,
+            filename="ALL01UMD.MAP", raw_ini=valid_raw)
+        input_row = dict(case=name, entry_mode=entry_mode,
+            current_mode=current_mode, cached_entry_flag=cached_entry_flag,
+            scenario_file="ALL01UMD.MAP",
+            file=dict(filename="ALL01UMD.INI", present=True,
+                      digest_variant="valid", raw_ini=valid_text))
+        before = _native_rules_color_add(m, rules)
+        io_start = len(m.platform.file_io)
+        observation = {"statuses": [], "process_reached": False}
+        active_observation[0] = observation
+        m.phase = "campaign_native_rules:named_ini:" + name
+        m.run(0x686C8B, (0x6873AB, 0x686D46, 0x686D3A),
+              context={"case": name, "entry_mode": entry_mode,
+                       "current_mode": current_mode,
+                       "cached_entry_flag": cached_entry_flag})
+        row = finish_native_case(rules=rules, ini_object=ini_object,
+            input_row=input_row, status_list=observation["statuses"],
+            process_reached=observation["process_reached"], io_start=io_start,
+            before=before)
+        expected_process = entry_mode == 5 and current_mode == 0
+        assert row["process_reached"] is expected_process, (name, row)
+        if expected_process:
+            assert row["readccfile_status"] == 1, (name, row)
+            assert row["requested_filename"] == "ALL01UMD.INI", (name, row)
+            assert row["bytes_read"] == len(valid_raw), (name, row)
+            assert row["digest_key_present_after"] is True, (name, row)
+            assert row["color_add_after"] == [[7, 8, 9], [30, 31, 32]], (name, row)
+        else:
+            assert row["readccfile_status"] is None, (name, row)
+            assert row["requested_filename"] is None, (name, row)
+            assert row["bytes_read"] == 0 and row["color_add_after"] == before, (name, row)
+        campaign_cases.append({key: value for key, value in row.items()
+                               if key not in ("color_add_before", "color_add_after")})
+
+    m.check_code()
+    return dict(schema_version=1, tmcj_cases=tmcj_cases,
+                campaign_named_ini_cases=campaign_cases)
+
+
+def native_rules_metadata():
+    result = provenance(
+        scope="Original Full_Init campaign basename gate and TMCJ4F Rules admission slices with RawFile requested names, ReadCCFile status and Process reach. TMCJ4F rows also retain ColorAdd results.",
+        entry_points={"full_init_campaign_named_ini_gate": 0x686C8B,
+            "full_init_tmcj_gate": 0x687B18, "full_init_ai_registry_readers": 0x68797A,
+            "ini_class_ctor": 0x535B30, "ccfile_ctor": 0x473A80,
+            "is_available": 0x473C50, "read_cc_file": 0x4741F0,
+            "rules_process": 0x668BF0, "raw_file_create_file": 0x65CC59,
+            "native_filename_normalizer": 0x7CB673},
+        assumptions=[
+            "TMCJ4F rows enter the original mode5/A8ED91 gate at687B18 with Full_Init's local INI/CCFile objects initialized by their original constructors. The synthetic frame restores ESP after invoke's separate RET boundary; EBX/ESI/EDI inputs follow the declared Full_Init boundary.",
+            "The TMCJ4F caller pushes ESI, zeroed at68773D, for both ReadCCFile flags: Digest is not checked, every present file returns1 and keeps its Digest section, and Process668BF0 runs. The missing and wrong Digest rows show the Digest has no effect.",
+            "TMCJ4F.INI and ALL01UMD.INI are controlled immutable ASCII files because neither filename is selected from the supported retail catalog. TMCJ4F rows retain per-case ColorAdd output; both file routes retain names, bytes, admission, read status, byte count and post-read Digest presence for the focused Rules owner test. Campaign ColorAdd is an intermediate pre-reset output and is not part of the Rust-facing fixture. No ReadFile/Process return is supplied.",
+            "The valid 126-byte Digest was generated by the original SaveToPipe/SHA-1 path in the existing berserk-color oracle. The missing case removes the Digest section; the wrong case contains a complete20-byte zero Digest and differs only in that value.",
+            "Each TMCJ Rules call is preceded by physical AIMD.INI/ALL01UMD.MAP loads and the original Full_Init AI registry reader block. Its registry contents and TeamTypes count (265 on the current retail inputs) are preparation evidence only and are not stored in the Rust-facing case rows.",
+            "Campaign named-INI rows start at686C8B with declared entry/current-mode and cached-frame-flag values. The call passes zero ReadCCFile flags and keeps Digest in the INI. The entry0/current0 row is Full_Init's first pass, which skips the file; 687599 then clears the cached flag and reruns the body from 686B5D, whose second pass reads it. entry5/current0 is a prepared gate boundary only and does not prove any active-YR caller or writer creates that transition.",
+            "Campaign and TMCJ rows stop at their common Full_Init continuations after the selected Rules Process. Complete World loading, map initialization, first live frame, timers, detaches and UI effects are excluded."],
+        substitutions=[
+            "RetailRulesInputs selects actual AIMD.INI and ALL01UMD.MAP bytes; NativeAudioPlatform supplies only explicit immutable RawFile bytes or physical absence. The native INIClass/CCFile constructors, IsAvailable, ReadCCFile and Rules Process execute.",
+            "The two scenario INI files are declared controlled inputs, not stock physical content. No cached Exists result, ReadCCFile status, Process result, registry object or ColorAdd result is supplied."])
+
+    result["reproduce_command"] = (
+        "RA2_DIR='<retail-directory-containing-original-gamemd.exe>' "
+        "python -m tools.input_oracle.campaign_start --native-rules --check")
+    return result
+
 def rng_case(*, override, tick_count, saved=0, replay=0, network=0, mode=0, prior_seed=17, mapgen_disabled=0):
     m = CampaignReader()
     m.seed_streams(prior_seed)
@@ -2038,6 +2280,19 @@ def source_paths():
     return paths
 
 
+def native_rules_source_paths():
+    return {
+        "producer": Path(__file__),
+        "native_runner": HERE.parent / "native_oracle.py",
+        "native_inspect": HERE.parent / "native_inspect.py",
+        "campaign_reader": HERE.parent / "projectile_oracle/bridge_render_inputs.py",
+        "ini_reader": HERE.parent / "rules_oracle/bridge_anim_inputs.py",
+        "rules_source_selector": HERE.parent / "rules_oracle/weapon_speed_order.py",
+        "raw_file_transport": HERE.parent / "spatial_oracle/engineer_repair_admission.py",
+        "rule_storage": HERE.parent / "spatial_oracle/building_body_rules.py",
+    }
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
     selection = parser.add_mutually_exclusive_group()
@@ -2045,6 +2300,7 @@ if __name__ == "__main__":
     selection.add_argument("--scenario-names", action="store_true")
     selection.add_argument("--mission-titles", action="store_true")
     selection.add_argument("--start-prefix", action="store_true")
+    selection.add_argument("--native-rules", action="store_true")
     selection.add_argument("--ares-allies", action="store_true")
     parser.add_argument("--ares-dll", type=Path, default=os.environ.get("VERA20K_ARES_DLL"))
     args, remaining = parser.parse_known_args()
@@ -2058,9 +2314,10 @@ if __name__ == "__main__":
         finish_vectors(lambda: generate_ares_allies(ares), HERE / "ares_allies_reader.json",
                        provenance=ares_allies_metadata, argv=remaining, source_paths=paths)
     else:
-        generator = generate_mission_titles if args.mission_titles else generate_start_prefix if args.start_prefix else generate_scenario_names if args.scenario_names else generate_houses if args.houses else generate
-        filename = "campaign_mission_titles.json" if args.mission_titles else "campaign_start_prefix.json" if args.start_prefix else "campaign_house_names.json" if args.scenario_names else "campaign_start_houses.json" if args.houses else "campaign_start.json"
-        evidence = mission_titles_metadata if args.mission_titles else start_prefix_metadata if args.start_prefix else scenario_names_metadata if args.scenario_names else lambda: metadata(houses=args.houses)
+        generator = generate_native_rules if args.native_rules else generate_mission_titles if args.mission_titles else generate_start_prefix if args.start_prefix else generate_scenario_names if args.scenario_names else generate_houses if args.houses else generate
+        filename = "campaign_native_rules.json" if args.native_rules else "campaign_mission_titles.json" if args.mission_titles else "campaign_start_prefix.json" if args.start_prefix else "campaign_house_names.json" if args.scenario_names else "campaign_start_houses.json" if args.houses else "campaign_start.json"
+        evidence = native_rules_metadata if args.native_rules else mission_titles_metadata if args.mission_titles else start_prefix_metadata if args.start_prefix else scenario_names_metadata if args.scenario_names else lambda: metadata(houses=args.houses)
+        paths = native_rules_source_paths() if args.native_rules else source_paths()
         finish_vectors(generator, HERE / filename,
                        provenance=evidence, argv=remaining,
-                       source_paths=source_paths())
+                       source_paths=paths)

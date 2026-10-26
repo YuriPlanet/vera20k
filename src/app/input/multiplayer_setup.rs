@@ -7,7 +7,7 @@ use crate::ui::lan_shell::LanEditKey;
 use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::multiplayer_setup::*;
 use crate::ui::shell::trackbar::TrackbarPress;
-use std::time::Instant;
+use crate::util::time::Instant;
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
 

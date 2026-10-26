@@ -67,6 +67,8 @@ pub mod shroud_buffer;
 mod shroud_gpu_tests;
 pub mod sidebar_cameo_atlas;
 pub mod sidebar_chrome;
+#[cfg(feature = "phobos")]
+pub mod sw_sidebar_art;
 pub mod sidebar_text;
 pub(crate) mod sinking;
 pub mod skirmish_shell_chrome;

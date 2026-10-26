@@ -22,6 +22,10 @@ use anyhow::{Context, Result, bail};
 use winit::event_loop::OwnedDisplayHandle;
 use winit::window::Window;
 
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+#[path = "web_present.rs"]
+mod web_present;
+
 /// Largest 2D texture edge the renderer will ask for.
 ///
 /// Atlases are packed against the requested limit, so this is the real ceiling on how
@@ -34,6 +38,8 @@ pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 16_384;
 pub struct GpuFrame {
     pub texture: wgpu::Texture,
     surface: Option<wgpu::SurfaceTexture>,
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    web_present: Option<Arc<web_present::WebPresent>>,
 }
 
 impl GpuFrame {
@@ -41,11 +47,17 @@ impl GpuFrame {
         Self {
             texture: surface.texture.clone(),
             surface: Some(surface),
+            #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+            web_present: None,
         }
     }
 
     pub fn present(self) {
         if let Some(surface) = self.surface {
+            #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+            if let Some(presenter) = self.web_present {
+                presenter.present(&surface);
+            }
             surface.present();
         }
     }
@@ -84,6 +96,8 @@ impl CaptureTarget {
         GpuFrame {
             texture: self.texture.clone(),
             surface: None,
+            #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+            web_present: None,
         }
     }
 }
@@ -138,9 +152,19 @@ pub struct GpuContext {
     /// Exact identity returned by the adapter that backs this context.
     adapter_info: wgpu::AdapterInfo,
     capture_target: Option<CaptureTarget>,
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    web_present: Arc<web_present::WebPresent>,
 }
 
 impl GpuContext {
+    #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+    pub(crate) async fn new_browser(
+        window: Arc<Window>,
+        display: OwnedDisplayHandle,
+    ) -> Result<Self> {
+        Self::new_async(window, display, false).await
+    }
+
     /// Initialize wgpu with the given window.
     ///
     /// This blocks on async wgpu calls using [`block_on`]. Safe to call from
@@ -230,6 +254,9 @@ impl GpuContext {
         // Pick the best texture format for the surface.
         // This is usually Bgra8UnormSrgb on Windows, Bgra8Unorm on some other platforms.
         let surface_caps: wgpu::SurfaceCapabilities = surface.get_capabilities(&adapter);
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let required_surface_usages = wgpu::TextureUsages::RENDER_ATTACHMENT;
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
         let required_surface_usages = wgpu::TextureUsages::RENDER_ATTACHMENT
             | wgpu::TextureUsages::COPY_SRC
             | wgpu::TextureUsages::COPY_DST;
@@ -281,6 +308,10 @@ impl GpuContext {
             desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let web_present = Arc::new(web_present::WebPresent::new(&device, &queue, &config));
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        let surface_format = surface_format.add_srgb_suffix();
         // wgpu-hal 29.0.4 Metal acquire_texture refuses any macOS NSWindow
         // without NSWindowOcclusionStateVisible, including deliberately hidden
         // captures. Render those frames offscreen with the same format/usages;
@@ -306,6 +337,8 @@ impl GpuContext {
             surface_format,
             adapter_info,
             capture_target,
+            #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+            web_present,
         })
     }
 
@@ -330,6 +363,14 @@ impl GpuContext {
             .configure(&self.device, &self.config);
         if let Some(target) = &mut self.capture_target {
             target.resize(&self.device, &self.config);
+        }
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        {
+            self.web_present = Arc::new(web_present::WebPresent::new(
+                &self.device,
+                &self.queue,
+                &self.config,
+            ));
         }
         log::debug!("Surface resized to {}x{}", width, height);
     }
@@ -363,7 +404,18 @@ impl GpuContext {
             }
             Ok(surface.get_current_texture())
         })
-        .map(|frame| frame.map(GpuFrame::from_surface))
+        .map(|frame| {
+            frame.map(|surface| {
+                let frame = GpuFrame::from_surface(surface);
+                #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+                let frame = GpuFrame {
+                    texture: self.web_present.texture.clone(),
+                    web_present: Some(self.web_present.clone()),
+                    ..frame
+                };
+                frame
+            })
+        })
     }
 
     /// Create a depth texture matching the current surface dimensions.

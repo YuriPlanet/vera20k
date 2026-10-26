@@ -2,17 +2,25 @@
 //! enter Debug output, file storage, error strings, or the gameplay client state.
 
 use base64::Engine;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use std::io::Read;
 use std::path::PathBuf;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use std::time::{Duration, Instant};
 
-use super::wire::{ChannelList, Envelope, EventBatch, Session};
-use serde_json::{Value, json};
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+use super::wire::EventBatch;
+use super::wire::{ChannelList, Envelope, Session};
+use serde_json::Value;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+use serde_json::json;
 
 pub(super) enum Request {
     ReadMapUpload {
@@ -218,6 +226,7 @@ impl RequestFailure {
     }
 }
 
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 struct Client {
     stopping: Arc<AtomicBool>,
     agent: ureq::Agent,
@@ -234,8 +243,8 @@ fn decode_session(value: Value, requested_nickname: &str) -> Result<Session, Req
     // A successful response may preserve the requested name's casing, but
     // cannot replace the name the player chose. Session credentials
     // remain private; validation errors never contain response field values.
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = crate::util::time::SystemTime::now()
+        .duration_since(crate::util::time::UNIX_EPOCH)
         .map_err(|_| RequestFailure::Status(0))?
         .as_secs();
     if !session.nickname.eq_ignore_ascii_case(requested_nickname)
@@ -250,6 +259,7 @@ fn decode_session(value: Value, requested_nickname: &str) -> Result<Session, Req
     Ok(session)
 }
 
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 impl Client {
     fn session_failed(&mut self, error: RequestFailure, output: &Sender<Response>) -> bool {
         if error == RequestFailure::LostCursor
@@ -438,6 +448,7 @@ impl Client {
 
 /// The model takes about a second, so translation has its own thread and
 /// polling and commands never wait for it. A job carries the current bearer.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 fn spawn_translator(
     client: &Client,
     output: &Sender<Response>,
@@ -475,6 +486,7 @@ fn spawn_translator(
         .map(|_| jobs)
 }
 
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 pub(super) fn run(
     base: String,
     input: Receiver<Request>,

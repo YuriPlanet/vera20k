@@ -70,6 +70,16 @@ pub(crate) struct PreparedSidebarOrder {
     strips: CameoStrips,
     factory_links: HashMap<InternedId, CameoFactoryLink>,
     prediction_categories: HashSet<ProductionCategory>,
+    #[cfg(feature = "phobos")]
+    sw_sidebar_expanded: bool,
+}
+
+#[cfg(feature = "phobos")]
+impl PreparedSidebarOrder {
+    /// Phobos `ScenarioExt::SWSidebar_Enable` carried with the local envelope.
+    pub(crate) fn sw_sidebar_expanded(&self) -> bool {
+        self.sw_sidebar_expanded
+    }
 }
 
 impl SidebarProjectionState {
@@ -402,7 +412,7 @@ impl SidebarProjectionState {
                         })
                     })
                 }) {
-                    item.enabled = sw.is_online && sw.can_afford;
+                    item.enabled = sw.sidebar_enabled();
                     item.progress = sw.progress;
                     item.is_ready = sw.is_ready;
                     item.is_on_hold = !sw.is_online;
@@ -1063,11 +1073,20 @@ fn super_cameo(
         id: CameoId::SuperWeapon(id),
         tab: crate::ui::sidebar::SidebarTab::Defense,
         available: true,
-        key: CameoKey::SuperWeapon {
-            recharge_frames: kind.recharge_time_frames,
-            name: crate::assets::csf_file::type_ui_name(kind.ui_name.as_deref(), csf),
-        },
+        key: super_weapon_cameo_key(kind, csf),
     })
+}
+
+/// A superweapon's `BuildType::SortsBefore` (0x006A8420) inputs: RechargeTime,
+/// then its UI name.
+pub(crate) fn super_weapon_cameo_key(
+    kind: &crate::rules::superweapon_type::SuperWeaponType,
+    csf: Option<&crate::assets::csf_file::CsfFile>,
+) -> CameoKey {
+    CameoKey::SuperWeapon {
+        recharge_frames: kind.recharge_time_frames,
+        name: crate::assets::csf_file::type_ui_name(kind.ui_name.as_deref(), csf),
+    }
 }
 
 /// Validate the saved presentation against the loaded interner and rules before
@@ -1082,6 +1101,8 @@ pub(crate) fn prepare_saved_order(
     let Some(saved) = saved else {
         return Ok(None);
     };
+    #[cfg(feature = "phobos")]
+    let sw_sidebar_expanded = saved.sw_sidebar_expanded();
     let (flash_deadlines, redraw_until) = {
         let (deadlines, redraw_until) = saved.flash();
         (deadlines.clone(), redraw_until)
@@ -1204,6 +1225,8 @@ pub(crate) fn prepare_saved_order(
         strips,
         factory_links,
         prediction_categories,
+        #[cfg(feature = "phobos")]
+        sw_sidebar_expanded,
     }))
 }
 

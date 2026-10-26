@@ -7,7 +7,7 @@ use crate::app::shell_network_setup::{accept_network_map_source, set_network_map
 use crate::map::source::{LoadedTransferAsset, TransferResource};
 use anyhow::{Result, anyhow, ensure};
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 const CHUNK: usize = 32768;
 
 #[derive(PartialEq, Eq)]

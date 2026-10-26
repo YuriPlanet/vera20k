@@ -53,6 +53,15 @@ Cheer=364,8,0,E
 Panic=8,6,6
 ";
 
+/// A LANGRULE.INI control whose `[Digest]` is the native `SaveToPipe526470`
+/// SHA-1 of the rest of the file, so `ReadCCFile4741F0` accepts it. Use it
+/// wherever a test needs a LANGRULE that survives the startup Digest check.
+pub const DIGESTED_LANGRULE_CONTROL: &str = concat!(
+    "[ColorAdd]\nLANG0=7,8,9\nLANG1=30,31,32\n",
+    "[AudioVisual]\nLaserTargetColor=6\nBerserkColor=9\n",
+    "[Digest]\n1=5Z9CTq3TQS20/wfWQHiRlHIBMME=\n",
+);
+
 /// Physical ARTMD [TRST]/[TerroristSequence] inputs for fatal receiver
 /// fixtures. These are reader inputs; native death goldens remain separate.
 pub(crate) const TRST_ART_EXCERPT: &str = "\

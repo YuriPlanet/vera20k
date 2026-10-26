@@ -477,7 +477,7 @@ pub struct OverlayPacksAlreadyConsumed;
 /// new-format MIX marker; anything else is treated as INI text.
 #[cfg(any(test, feature = "test-support"))]
 pub fn load_from_path(path: &Path) -> Result<MapFile, MapError> {
-    load_from_bytes(std::fs::read(path)?)
+    load_from_bytes(crate::util::file_system::read(path)?)
 }
 
 /// Parse one consumed file buffer, auto-detecting MIX-wrapped vs raw INI.

@@ -748,17 +748,62 @@ impl TypeFacts {
 /// A Foot object owns its configured locomotor independently of the parsed
 /// `Speed=` scalar. `DriveLocomotionClass::Process @ 0x004B0500` and
 /// `ShipLocomotionClass::Process @ 0x0069FC10` consume their class-local state
-/// without a Speed gate. That state is therefore load-bearing at Speed=0,
-/// while Structures remain outside Foot and other zero-speed custom
-/// locomotors retain the existing inactive compatibility behavior.
+/// without a Speed gate. That state is therefore load-bearing at Speed=0.
+/// InfantryClass::Constructor517A50 creates and links its locomotor at
+/// 517B44..517BBA whenever its Type is nonnull, without a Speed test.
+/// Other zero-speed custom Foot classes retain their existing policy here.
 fn should_construct_locomotor(category: EntityCategory, object: &ObjectType) -> bool {
     object.speed > 0
-        || (matches!(
-            category,
-            EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-        ) && matches!(object.locomotor, LocomotorKind::Drive | LocomotorKind::Ship))
+        || category == EntityCategory::Infantry
+        || (matches!(category, EntityCategory::Unit | EntityCategory::Aircraft)
+            && matches!(object.locomotor, LocomotorKind::Drive | LocomotorKind::Ship))
 }
 
 #[cfg(test)]
 #[path = "perma_disguise_tests.rs"]
 mod perma_disguise_tests;
+
+#[cfg(test)]
+#[test]
+fn zero_speed_infantry_keeps_walk_instance_through_spawn_and_save() {
+    use crate::rules::ruleset::RuleSet;
+    use crate::sim::movement::locomotor::LocomotorState;
+
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n[InfantryTypes]\n0=STATIC\n\
+         [STATIC]\nStrength=100\nSpeed=0\nSpeedType=Foot\nMovementZone=Normal\n\
+         Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 23);
+    let actor = sim
+        .spawn_object_at_height("STATIC", "Americans", 10, 10, 0, 0, &rules)
+        .unwrap();
+    let locomotor = sim
+        .substrate
+        .entities
+        .get_mut(actor)
+        .unwrap()
+        .locomotor
+        .as_mut()
+        .expect("Infantry517B44 constructs its locomotor even at Speed0");
+    assert_eq!(locomotor.active_kind(), LocomotorKind::Walk);
+    locomotor.power_off();
+    let saved = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "stationary-infantry", 0);
+    let restored = crate::sim::snapshot::GameSnapshot::load(&saved)
+        .unwrap()
+        .sim;
+    let locomotor: &LocomotorState = restored
+        .entities()
+        .get(actor)
+        .unwrap()
+        .locomotor
+        .as_ref()
+        .unwrap();
+    assert_eq!(locomotor.active_kind(), LocomotorKind::Walk);
+    assert!(
+        !locomotor.is_powered(),
+        "the actual saved instance survives"
+    );
+    assert_eq!(rules.object("STATIC").unwrap().speed, 0);
+}

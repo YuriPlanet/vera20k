@@ -4,7 +4,7 @@
 //! MatchSession owns admitted participants, options, readiness and map status.
 //! This leaf keeps only control interaction and emits commands for that owner.
 
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use crate::ui::lan_shell::LanChatState;
 use crate::ui::shell::button::ShellButtonInteraction;

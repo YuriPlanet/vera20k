@@ -38,6 +38,8 @@ pub mod force_shield;
 mod generic_warhead;
 #[cfg(all(test, feature = "ares"))]
 mod ares_charge_tests;
+#[cfg(feature = "ares")]
+mod ares_presentation;
 pub mod genetic_converter;
 pub mod invulnerability;
 pub mod iron_curtain;
@@ -1356,6 +1358,21 @@ pub struct SuperWeaponView {
     pub can_fire: bool,
     /// Derived from the same wallet predicate used at launch, not readiness.
     pub can_afford: bool,
+    /// A `SW.UseAITargeting` type whose Ares constraints fail for a manual
+    /// launch (IsTargetConstraintsEligible10032110). Ares's sidebar hooks
+    /// darken (10034F3F) and refuse (10034E75) it, as Phobos's
+    /// SWButtonClass does. Always false without Ares.
+    pub constraints_blocked: bool,
+}
+
+impl SuperWeaponView {
+    /// The strip cameo's enabled state, the inverse of its darken flag (BL).
+    /// Stock StripDraw clears BL for every superweapon (0x006A99B5); Ares's
+    /// hook there (10034EF0) sets it while CanFire (0x006CC360) holds and the
+    /// type is unaffordable or its constraints refuse a manual launch.
+    pub fn sidebar_enabled(&self) -> bool {
+        !(self.can_fire && (!self.can_afford || self.constraints_blocked))
+    }
 }
 
 /// Query active superweapons for a specific owner (for sidebar rendering).
@@ -1404,6 +1421,22 @@ pub fn superweapon_views_for_owner(
                 #[cfg(not(feature = "ares"))]
                 {
                     true
+                }
+            },
+            constraints_blocked: {
+                #[cfg(feature = "ares")]
+                {
+                    sw_type.use_ai_targeting
+                        && !sw_type.target_constraints().allows_manual_fire(
+                            sim.houses
+                                .get(owner)
+                                .map(|house| house.target_constraints_observations())
+                                .unwrap_or_default(),
+                        )
+                }
+                #[cfg(not(feature = "ares"))]
+                {
+                    false
                 }
             },
         });
@@ -1796,7 +1829,13 @@ pub(crate) fn first_available_building_super<'a>(
 /// Accepted Ares handler -> HouseExt100226D0. Do not call this for merely
 /// selected, refused or unsupported stock-redirected Activate paths.
 #[cfg(feature = "ares")]
-fn record_ares_launch(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, typ: InternedId) {
+fn finish_ares_launch(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    typ: InternedId,
+    cell: (u16, u16),
+) {
     let frame = sim.session.binary_frame() as i32;
     let recheck = if let Some(instance) = sim.super_weapons.instance_mut(&owner, &typ) {
         instance.record_ares_launch(frame);
@@ -1817,6 +1856,7 @@ fn record_ares_launch(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, 
     if recheck && let Some(house) = sim.houses.get_mut(&owner) {
         house.request_tech_recheck();
     }
+    ares_presentation::on_launch(sim, rules, owner, typ, cell);
 }
 
 /// Shared provider facts for one reached House pass. Source authority is the
