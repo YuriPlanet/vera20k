@@ -7,6 +7,7 @@ use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
 use crate::rules::superweapon_type::SuperWeaponKind;
 use crate::sim::command::Command;
 use crate::sim::superweapon::SuperWeaponInstance;
+use crate::sim::world::SimSoundEvent;
 
 const RULES: &str = "\
 [SuperWeaponTypes]

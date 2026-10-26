@@ -5173,7 +5173,7 @@ impl RulesPassProcessor {
             self.ares_prerequisites = Some(catalog);
         }
         self.process_house_family(pass, primary_rules);
-        self.process_super_weapon_family(pass);
+        self.process_super_weapon_family(pass, _fixed_eva);
         self.process_anim_family(fixed_art);
         self.process_techno_family(RulesTypeFamily::Building, pass, fixed_art);
         self.process_techno_family(RulesTypeFamily::Aircraft, pass, fixed_art);
@@ -5400,7 +5400,7 @@ impl RulesPassProcessor {
             .push(i32::try_from(country_index).expect("native Country index exceeds i32"));
     }
 
-    fn process_super_weapon_family(&mut self, pass: &IniFile) {
+    fn process_super_weapon_family(&mut self, pass: &IniFile, _fixed_eva: &EvaRegistry) {
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::SuperWeapon) {
             if let Some((_id, raw, effective)) =
