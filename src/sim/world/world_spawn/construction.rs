@@ -748,17 +748,15 @@ impl TypeFacts {
 /// A Foot object owns its configured locomotor independently of the parsed
 /// `Speed=` scalar. `DriveLocomotionClass::Process @ 0x004B0500` and
 /// `ShipLocomotionClass::Process @ 0x0069FC10` consume their class-local state
-/// without a Speed gate. That state is therefore load-bearing at Speed=0,
+/// without a Speed gate. That state is therefore load-bearing at Speed=0.
 /// InfantryClass::Constructor517A50 creates and links its locomotor at
 /// 517B44..517BBA whenever its Type is nonnull, without a Speed test.
 /// Other zero-speed custom Foot classes retain their existing policy here.
 fn should_construct_locomotor(category: EntityCategory, object: &ObjectType) -> bool {
     object.speed > 0
         || category == EntityCategory::Infantry
-        || (matches!(
-            category,
-            EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
-        ) && matches!(object.locomotor, LocomotorKind::Drive | LocomotorKind::Ship))
+        || (matches!(category, EntityCategory::Unit | EntityCategory::Aircraft)
+            && matches!(object.locomotor, LocomotorKind::Drive | LocomotorKind::Ship))
 }
 
 #[cfg(test)]
