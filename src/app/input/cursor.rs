@@ -903,9 +903,9 @@ pub(super) fn capability_cursor_for_hover(
                 force_move_key,
             )
         }) {
-            // Capture9 uses the existing Enter feedback. RESIDUAL: installed
-            // Ares100496EF overrides its cursor with extended descriptor92;
-            // that presentation descriptor is not bound yet.
+            // Ares100496EF selects TakeVehicle92. Its default constructor
+            //1000735C..10007370 copies native Enter25's complete descriptor.
+            // RESIDUAL: custom [MouseCursors] overrides are not bound yet.
             return CursorFeedbackKind::Enter;
         }
 

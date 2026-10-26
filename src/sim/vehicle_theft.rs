@@ -400,7 +400,7 @@ impl Simulation {
             .substrate
             .entities
             .get(target_id)
-            .is_some_and(|target| target.lifecycle.object_alive)
+            .is_some_and(|target| target.lifecycle.object_alive())
         {
             self.dispatch_object_tag_event(target_id, 69, Some(target_id), None, context);
         }
@@ -453,8 +453,8 @@ impl Simulation {
         let actor = self.substrate.entities.get(actor_id)?;
         let target = self.substrate.entities.get(target_id)?;
         if actor.category() != EntityCategory::Infantry
-            || !actor.lifecycle.object_alive
-            || !target.lifecycle.object_alive
+            || !actor.lifecycle.object_alive()
+            || !target.lifecycle.object_alive()
         {
             return None;
         }
@@ -632,7 +632,7 @@ mod tests {
             .get_mut(host)
             .unwrap()
             .lifecycle
-            .object_alive = false;
+            .set_object_alive_for_test(false);
         assert_eq!(sim.ares_vehicle_capture_mode(driver, host, &rules), None);
         assert!(!sim.ares_enter_nearest_vehicle(driver, &rules, None, FrameEffects::default()));
         let stopped = sim.substrate.entities.get(driver).unwrap();
