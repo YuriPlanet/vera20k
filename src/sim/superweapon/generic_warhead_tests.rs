@@ -4,7 +4,7 @@
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
-use crate::rules::superweapon_type::SuperWeaponKind;
+use crate::rules::superweapon_type::{GenericWarheadAiTargeting, SuperWeaponKind};
 use crate::sim::command::Command;
 use crate::sim::superweapon::SuperWeaponInstance;
 
@@ -109,6 +109,93 @@ fn ares_common_launch_constructs_hidden_anim_and_sound_only_on_admitted_fire() {
     );
 }
 
+/// SWTypeExt::LoadFromINI 0x1003362B..0x1003367D through readers 0x10034430
+/// and 0x100341D0: a donor alias or a spaced token fails the whole read and
+/// keeps the earlier layer's mask; unset AI masks use the Offensive row.
+#[test]
+fn ares_target_masks_keep_prior_layers_on_native_parse_failures() {
+    use crate::rules::superweapon_targeting::{HouseMask, TargetMask, TargetRequirements};
+    let mut layers = common_presentation_layers("all");
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str(
+            "[Strike]\nSW.RequiresTarget=buildings\nSW.RequiresHouse=enemies\n\
+             SW.AIRequiresTarget=aircraft\n",
+        ),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Strike]\nSW.RequiresTarget=units, buildings\nSW.RequiresHouse=self\n"),
+    );
+    let targeting = |layers: &RulesLayerStack| {
+        let rules = common_presentation_rules(layers);
+        let settings = rules
+            .super_weapon("Strike")
+            .unwrap()
+            .generic_warhead
+            .clone();
+        settings.unwrap().targeting
+    };
+    let retained = targeting(&layers);
+    assert_eq!(
+        (retained.manual, retained.automatic),
+        (
+            TargetRequirements {
+                target: TargetMask::BUILDING,
+                house: HouseMask::ENEMIES,
+            },
+            TargetRequirements {
+                target: TargetMask::ALL_TECHNOS,
+                house: HouseMask::ENEMIES,
+            },
+        )
+    );
+
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Strike]\nSW.RequiresTarget=,\nSW.AIRequiresHouse=OWNER\n"),
+    );
+    let replaced = targeting(&layers);
+    assert_eq!(replaced.manual.target, TargetMask::NONE);
+    assert_eq!(replaced.automatic.house, HouseMask::OWNER);
+}
+
+/// LoadFromINIFile 0x10033250 runs GenericWarhead's Initialize (0x10071860,
+/// Offensive) on a type's first rules pass only; reader 0x10034350 keeps the
+/// prior mode for a name outside its table.
+#[test]
+fn ares_ai_targeting_initializes_once_and_keeps_prior_layers_on_unknown_names() {
+    let mut layers = common_presentation_layers("all");
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str(
+            "[SuperWeaponTypes]\n1=Late\n[Late]\nType=PsychicReveal\n\
+             [Strike]\nSW.AITargeting=Bogus\n",
+        ),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Late]\nType=GenericWarhead\n"),
+    );
+    let mode = |layers: &RulesLayerStack, id| {
+        let rules = common_presentation_rules(layers);
+        let settings = rules.super_weapon(id).unwrap().generic_warhead.clone();
+        settings.unwrap().ai_targeting
+    };
+    assert_eq!(
+        mode(&layers, "Strike"),
+        GenericWarheadAiTargeting::Offensive
+    );
+    assert_eq!(mode(&layers, "Late"), GenericWarheadAiTargeting::None);
+
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Strike]\nSW.AITargeting=NONE\n[Late]\nSW.AITargeting=offensive\n"),
+    );
+    assert_eq!(mode(&layers, "Strike"), GenericWarheadAiTargeting::None);
+    assert_eq!(mode(&layers, "Late"), GenericWarheadAiTargeting::Offensive);
+}
+
 #[test]
 fn ares_common_launch_reader_retains_unknowns_and_honors_explicit_none() {
     let mut layers = common_presentation_layers("team");
@@ -146,7 +233,7 @@ fn ares_common_launch_reader_retains_unknowns_and_honors_explicit_none() {
     assert_eq!(p.height, -9);
     assert_eq!(
         p.visibility,
-        crate::rules::superweapon_targeting::HouseMask::parse("team").unwrap()
+        crate::rules::superweapon_targeting::HouseMask::TEAM
     );
     assert!(!retained.anim_type_names.contains("UNKNOWNANIM"));
     layers.push(
@@ -285,110 +372,6 @@ fn fire(
 }
 
 #[test]
-fn designation_requires_own_unit_and_includes_the_range_boundary() {
-    use crate::rules::superweapon_targeting::TargetReject;
-    let (mut sim, rules, owner, sw, _) = fixture(
-        "[VehicleTypes]\n0=SCOUT\n[SCOUT]\nStrength=100\nSight=7\nDesignatorRange=3\n\
-         [Strike]\nSW.Designators=SCOUT\n",
-        "Russians",
-    );
-    sim.house_alliances_mut_for_test()
-        .insert("RUSSIANS".into(), ["AMERICANS".into()].into());
-    sim.spawn_object_at_height("SCOUT", "Americans", 10, 10, 0, 0, &rules)
-        .unwrap();
-    let before = sim.state_hash();
-    assert_eq!(
-        sim.super_weapon_target_check(&rules, owner, sw, (13, 10), false),
-        Err(TargetReject::NoEligibleDesignator),
-        "an ally cannot designate"
-    );
-    assert!(!fire(&mut sim, &rules, owner, sw, (13, 10)));
-    assert_eq!(
-        sim.state_hash(),
-        before,
-        "refusal consumes neither charge nor RNG"
-    );
-    sim.spawn_object_at_height("SCOUT", "Russians", 10, 11, 0, 0, &rules)
-        .unwrap();
-    assert_eq!(
-        sim.super_weapon_target_check(&rules, owner, sw, (13, 11), false),
-        Ok(())
-    );
-    assert_eq!(
-        sim.super_weapon_target_check(&rules, owner, sw, (14, 11), false),
-        Err(TargetReject::NoEligibleDesignator)
-    );
-    assert!(fire(&mut sim, &rules, owner, sw, (13, 11)));
-    assert!(!sim.super_weapons[&owner][&sw].is_ready());
-}
-
-#[test]
-fn hostile_building_inhibits_only_while_powered_and_within_range() {
-    use crate::rules::superweapon_targeting::TargetReject;
-    use crate::sim::power_system::PowerState;
-    let (mut sim, rules, owner, sw, target) = fixture(
-        "[Strike]\nSW.Inhibitors=TARGET\n[TARGET]\nInhibitorRange=2\nPowered=yes\nPower=-10\n",
-        "Russians",
-    );
-    let enemy = sim.interner.get("Americans").unwrap();
-    let mut power = PowerState::default();
-    power.set_total_output_for_test(100);
-    power.set_total_drain_for_test(10);
-    sim.power_states.map_mut_for_test().insert(enemy, power);
-    assert_eq!(sim.building_operational_state(target, &rules), Some(true));
-    assert_eq!(
-        sim.super_weapon_target_check(&rules, owner, sw, (17, 15), false),
-        Err(TargetReject::InhibitorInRange)
-    );
-    assert_eq!(
-        sim.super_weapon_target_check(&rules, owner, sw, (18, 15), false),
-        Ok(())
-    );
-    assert!(!fire(&mut sim, &rules, owner, sw, (17, 15)));
-    assert!(sim.super_weapons[&owner][&sw].is_ready());
-    sim.power_states
-        .get_mut(&enemy)
-        .unwrap()
-        .set_total_output_for_test(0);
-    assert_eq!(sim.building_operational_state(target, &rules), Some(false));
-    assert_eq!(
-        sim.super_weapon_target_check(&rules, owner, sw, (15, 15), true),
-        Ok(())
-    );
-    assert!(fire(&mut sim, &rules, owner, sw, (17, 15)));
-}
-
-#[test]
-fn designation_rules_retain_nullable_ranges_across_invalid_later_reads() {
-    let mut layers = RulesLayerStack::new(crate::sim::arena_fixture::clear_ground_ini(
-        "[VehicleTypes]\n0=SCOUT\n[SCOUT]\nStrength=100\nDesignatorRange=3\nInhibitorRange=0\n\
-         [SuperWeaponTypes]\n0=Strike\n[Strike]\nType=GenericWarhead\n\
-         SW.Designators=scout,UNKNOWN\nSW.AnyInhibitor=yes\n",
-    ));
-    layers.push(
-        RulesLayerKind::Scenario,
-        IniFile::from_str(
-            "[SCOUT]\nDesignatorRange=invalid\nInhibitorRange=invalid\n\
-         [Strike]\nSW.AnyInhibitor=?invalid\n",
-        ),
-    );
-    let rules = RuleSet::from_processed_rules(&layers.process().unwrap()).unwrap();
-    let scout = rules.object("SCOUT").unwrap();
-    assert_eq!(
-        (scout.designator_range(), scout.inhibitor_range()),
-        (Some(3), Some(0))
-    );
-    let influence = rules.super_weapon_metadata("Strike").unwrap().influence();
-    assert_eq!(influence.designators.len(), 1);
-    assert_eq!(influence.designators[0].id, "SCOUT");
-    assert_eq!(
-        influence.designators[0].category,
-        crate::rules::object_type::ObjectCategory::Vehicle
-    );
-    assert!(influence.any_inhibitor);
-}
-
-#[test]
 fn ares_generic_warhead_binds_unlisted_payload_and_preserves_layered_references() {
     // No [Warheads] list or WeaponType references Payload: the SW must allocate it.
     let base = IniFile::from_str(RULES);
@@ -404,10 +387,7 @@ fn ares_generic_warhead_binds_unlisted_payload_and_preserves_layered_references(
     assert_eq!(sw.action.as_deref(), Some("Attack"));
     assert_eq!(settings.warhead.as_deref(), Some("Payload"));
     assert_eq!(settings.damage, 40);
-    assert_eq!(
-        parsed.super_weapon_target_policy("Strike").unwrap().ai_mode,
-        crate::rules::superweapon_targeting::AiTargetingMode::Offensive
-    );
+    assert_eq!(settings.ai_targeting, GenericWarheadAiTargeting::Offensive);
     assert!(parsed.warhead("Payload").is_some());
 
     layers.push(
@@ -702,7 +682,7 @@ fn successful_ares_launch_history_limits_commands_survives_save_and_keeps_fallba
         rows[7]["counter"]["count"].as_i64().unwrap()
     );
     assert_eq!(
-        first.ares_last_launch_frame.unwrap() as i64,
+        first.ares_charge_origin_frame.unwrap() as i64,
         rows[7]["counter"]["last_frame"].as_i64().unwrap()
     );
     assert_eq!(sim.entities().get(target).unwrap().health.current(), 125);
@@ -762,7 +742,7 @@ fn successful_ares_launch_history_limits_commands_survives_save_and_keeps_fallba
         rows[8]["counter"]["count"].as_i64().unwrap()
     );
     assert_eq!(
-        second.ares_last_launch_frame.unwrap() as i64,
+        second.ares_charge_origin_frame.unwrap() as i64,
         rows[8]["counter"]["last_frame"].as_i64().unwrap()
     );
     assert!(restored.houses[&owner].tech_recheck_pending());

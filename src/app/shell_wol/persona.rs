@@ -4,7 +4,7 @@
 //! Match's postmatch add-buddy query `0x122`.
 
 use std::path::Path;
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use super::service::{self, WolServiceRequest};
 use super::{WolPage, WolProvider};

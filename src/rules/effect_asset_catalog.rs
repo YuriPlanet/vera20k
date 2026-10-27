@@ -369,6 +369,12 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     {
         insert(name);
     }
+    // Ares `[Side] Parachute.Anim=`: an attached canopy type needs the same
+    // physical animation bounds before the simulator creates it.
+    #[cfg(feature = "ares")]
+    for name in rules.side_parachute_animations() {
+        insert(name);
+    }
     // Techno70F1D0 attaches [General] Behind= to an obscured object. Its
     // AnimClass must have physical frame bounds before the AI can create it.
     if let Some(name) = rules.general.behind.as_deref() {

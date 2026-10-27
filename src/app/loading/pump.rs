@@ -1773,6 +1773,11 @@ fn pump_loading_after_present(
                 runtime.simulation.retire_voxel_type_damage(),
             )?;
         }
+        let the_team_enabled = state
+            .frontend
+            .main_menu_shell_state
+            .typed_codes
+            .the_team_enabled();
         let load_result = {
             let network = crate::app::lan_service::LoadingNetworkService::borrow(
                 &mut state.match_state.session,
@@ -1808,6 +1813,7 @@ fn pump_loading_after_present(
                     fresh_scenario_context,
                     progress.native_theater_cache_mismatch,
                     progress.runtime_color_scheme_count,
+                    the_team_enabled,
                     native_rules_owner,
                     #[cfg(feature = "ares")]
                     &mut prepared_rules_prefix,
@@ -1830,6 +1836,7 @@ fn pump_loading_after_present(
                     batch: &state.renderer.batch_renderer,
                     asset_manager,
                     native_rules_owner,
+                    the_team_enabled,
                     #[cfg(feature = "ares")]
                     prepared_noncampaign_prefix: &mut prepared_rules_prefix,
                     audio,
@@ -1954,6 +1961,11 @@ fn pump_map_construction(
             state.process_assets.native_rules_mut_with_tile_cache();
         let native_rules_owner =
             rules.ok_or_else(|| anyhow::anyhow!("native construction lost its Rules owner"))?;
+        let the_team_enabled = state
+            .frontend
+            .main_menu_shell_state
+            .typed_codes
+            .the_team_enabled();
         let mut progress = LoadingPhaseProgress::select(
             session.native.as_mut(),
             constructing.load.theater_cache_mismatch(),
@@ -1978,6 +1990,7 @@ fn pump_map_construction(
             batch: &state.renderer.batch_renderer,
             asset_manager,
             native_rules_owner,
+            the_team_enabled,
             #[cfg(feature = "ares")]
             prepared_noncampaign_prefix: &mut constructing.rules_prefix,
             audio,
@@ -2877,6 +2890,7 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
             |row| crate::render::loading_screen_chrome::LoadingParticipantArtInput {
                 variant: row.variant,
                 ramp: row.ramp,
+                side_icon: loading_row_insignia(state.rules(), row.variant, row.country_index),
             },
         )
         .collect();
@@ -3256,6 +3270,22 @@ pub(super) fn loading_art_variant_from_launch_country(
         9 => LoadingArtVariant::Yuri,
         _ => return None,
     })
+}
+
+/// `Game_GetFlagSurface @ 0x1001DCE0` (Ares patch site `0x4E3562`, 5 bytes)
+/// answers each loading row's insignia from that row's own HouseType index, so
+/// an added Country draws its `File.Flag` where the stock chain at `0x4E3579`
+/// has no entry. An observer row is not a Country index and keeps the stock
+/// `-3` insignia; a stock build's rules return `None` and keep the table.
+fn loading_row_insignia(
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    variant: Option<LoadingArtVariant>,
+    country_index: u16,
+) -> Option<String> {
+    if variant == Some(LoadingArtVariant::Observer) {
+        return None;
+    }
+    rules?.country_insignia_pcx(country_index)
 }
 
 /// Normalize an 8-bit RGB triple to 0..1.

@@ -1986,16 +1986,21 @@ impl SfxPlayer {
     /// the loose file first, then CCFile; a new taunt stops the last one.
     /// RESIDUAL: the suppress counter `[0x00B1D480]` is taken as 0; its
     /// writers `0x00753520`/`0x00753540` have no direct caller.
-    pub(crate) fn play_taunt(&mut self, byte: u8, assets: &AssetManager) {
+    pub(crate) fn play_taunt(&mut self, byte: u8, assets: &AssetManager, pattern: Option<&str>) {
         const COUNTRIES: [&str; 10] = ["am", "ko", "fr", "ge", "br", "li", "ir", "cu", "ru", "yu"];
         let number = byte & 0xF;
-        let Some(country) = COUNTRIES.get(usize::from(byte >> 4)) else {
-            return;
-        };
         if !(1..=8).contains(&number) {
             return;
         }
-        let name = format!("taunts\\tau{country}{number:02}.wav");
+        let name = match pattern {
+            Some(pattern) => taunt_filename(pattern, number),
+            None => {
+                let Some(country) = COUNTRIES.get(usize::from(byte >> 4)) else {
+                    return;
+                };
+                format!("taunts\\tau{country}{number:02}.wav")
+            }
+        };
         if let Some(output) = self.taunt_player.take() {
             output.player.stop();
         }
@@ -2993,6 +2998,17 @@ pub(crate) fn decode_wav(data: &[u8], filename: &str) -> Option<DecodedAudio> {
             wav.bits_per_sample / 8
         },
     })
+}
+
+/// Ares `File.Taunt=` uses the literal `~~` marker; the stock defaults use
+/// `%02i`. Either placeholder receives the two-digit taunt number.
+fn taunt_filename(pattern: &str, number: u8) -> String {
+    let number = format!("{number:02}");
+    if pattern.contains("~~") {
+        pattern.replace("~~", &number)
+    } else {
+        pattern.replace("%02i", &number)
+    }
 }
 
 #[cfg(test)]
@@ -4802,5 +4818,23 @@ mod tests {
             .map(|&f| (f * 32768.0) as i16)
             .collect();
         assert_eq!(got, want);
+    }
+}
+
+#[cfg(test)]
+mod country_taunt_tests {
+    use super::taunt_filename;
+
+    #[test]
+    fn ares_and_stock_taunt_placeholders_both_take_the_number() {
+        assert_eq!(
+            taunt_filename("Taunts\tauam~~.wav", 3),
+            "Taunts\tauam03.wav"
+        );
+        assert_eq!(
+            taunt_filename("taunts\tauam%02i.wav", 8),
+            "taunts\tauam08.wav"
+        );
+        assert_eq!(taunt_filename("taunts\\fixed.wav", 1), "taunts\\fixed.wav");
     }
 }

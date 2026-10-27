@@ -697,7 +697,7 @@ impl App {
 
         state
             .audio
-            .apply_scenario_exit_tick(tick, state.process_assets.manager(), wall_ms);
+            .apply_scenario_exit_tick(&tick, state.process_assets.manager(), wall_ms);
         if !tick.finished {
             return;
         }

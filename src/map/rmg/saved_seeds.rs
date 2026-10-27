@@ -122,7 +122,7 @@ fn enumerate_seed_files(dir: &Path) -> Vec<(NativeFileName, u32, u64)> {
 
 #[cfg(not(windows))]
 fn enumerate_seed_files(dir: &Path) -> Vec<(NativeFileName, u32, u64)> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
+    let Ok(entries) = crate::util::file_system::read_dir(dir) else {
         return Vec::new();
     };
     entries
@@ -167,9 +167,9 @@ pub fn write_browser_seed(
     native_file_name::open(dir, name, true)?.write_all(&options.to_sed_bytes())
 }
 
-pub fn system_time_to_file_time(time: std::time::SystemTime) -> u64 {
+pub fn system_time_to_file_time(time: crate::util::time::SystemTime) -> u64 {
     const UNIX_EPOCH_TICKS: u64 = 116_444_736_000_000_000;
-    match time.duration_since(std::time::UNIX_EPOCH) {
+    match time.duration_since(crate::util::time::UNIX_EPOCH) {
         Ok(duration) => UNIX_EPOCH_TICKS
             .saturating_add(u64::try_from(duration.as_nanos() / 100).unwrap_or(u64::MAX)),
         Err(before) => UNIX_EPOCH_TICKS
@@ -179,7 +179,7 @@ pub fn system_time_to_file_time(time: std::time::SystemTime) -> u64 {
 
 /// New's synthetic timestamp comes from GetSystemTime, which has millisecond
 /// fields (0x00559806), while file metadata retains full FILETIME precision.
-pub fn new_slot_file_time(time: std::time::SystemTime) -> u64 {
+pub fn new_slot_file_time(time: crate::util::time::SystemTime) -> u64 {
     let ticks = system_time_to_file_time(time);
     ticks - ticks % 10_000
 }

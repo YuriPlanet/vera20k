@@ -391,6 +391,27 @@ impl BuildingOccupants {
 }
 
 impl Simulation {
+    /// TechnoClass::ClearAllInOpenTransport @ 0x007104C0: clear only each
+    /// Cargo member's +82 byte; do not detach +11C or pop its cargo link.
+    pub(crate) fn clear_all_in_open_transport(&mut self, transport_id: u64) {
+        let passengers = self
+            .substrate
+            .entities
+            .get(transport_id)
+            .and_then(|transport| transport.passenger_role.cargo())
+            .map(|cargo| cargo.passengers().to_vec())
+            .unwrap_or_default();
+        for id in passengers {
+            if let Some(passenger) = self.substrate.entities.get_mut(id)
+                && let Some((carrier, _)) = passenger.passenger_role.inside_transport()
+            {
+                passenger
+                    .passenger_role
+                    .set_inside_transport(carrier, false);
+            }
+        }
+    }
+
     /// CargoClass::AddPassenger4733A0: Limbo the supplied head, then attach
     /// its existing member chain without count/size admission. The caller
     /// owns transport/rider policy; this native leaf does not write +11C or
@@ -454,9 +475,10 @@ enum Role {
         /// `TechnoClass+0x82` InOpenToppedTransport. Only
         /// `SetInOpenTransport @ 0x00710470` sets it, when an `OpenTopped=`
         /// transport takes the passenger aboard (Infantry `0x0051A45E`, Unit
-        /// `0x0073A75D`). Its clears coincide with leaving: a successful unload
+        /// `0x0073A75D`). It clears on a successful unload
         /// (`ClearInOpenTransport`, `0x0073DB98`) and the dying transport's
-        /// passenger block (`ClearAllInOpenTransport`, `0x00737F92`); a failed
+        /// passenger prefix (`ClearAllInOpenTransport`, `0x00737F92`), before
+        /// any passenger is removed; a failed
         /// unload re-attaches the passenger with the flag still set.
         open_topped: bool,
     },

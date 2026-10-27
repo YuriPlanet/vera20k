@@ -288,16 +288,23 @@ pub(crate) fn build_display_effect_instances(
         input.render_size[1] as f32 / z2,
     );
     let projection_viewport = [input.tactical[2] as f32 / z2, input.tactical[3] as f32 / z2];
-    // NPSE Paradrop C2FA75/C2F939 attaches either retained canopy type.
-    let parachute_types = [
+    // NPSE Paradrop C2FA75/C2F939 attaches either retained canopy type; Ares
+    // `[Side] Parachute.Anim=` adds its own attached type.
+    let mut parachute_names = vec![
         input.rules.general.parachute_shp.as_deref(),
         if crate::rules::NPATCH_ENABLED {
             input.rules.general.vehicle_parachute.as_deref()
         } else {
             None
         },
-    ]
-    .map(|name| name.and_then(|name| sim.interner().get(name)));
+    ];
+    #[cfg(feature = "ares")]
+    parachute_names.extend(input.rules.side_parachute_animations().map(Some));
+    let parachute_types = parachute_names
+        .into_iter()
+        .flatten()
+        .filter_map(|name| sim.interner().get(name))
+        .collect::<Vec<_>>();
     let local_owner = input.local_owner;
     for &stable_id in sim.display_layers().ordered_ids() {
         if let Some(light) = sim.building_spotlight(stable_id, input.rules) {
@@ -342,8 +349,8 @@ pub(crate) fn build_display_effect_instances(
         // Paradrop creates a retained Anim, whose GetCoords resolves its
         // owner-relative75-lepton lift. Draw it at its own Display encounter.
         let is_parachute = parachute_types
-            .into_iter()
-            .flatten()
+            .iter()
+            .copied()
             .any(|ty| parachute_canopy_owner(anim, ty).is_some());
         let type_name: &str = sim.interner().resolve(anim.type_id());
         let config = input.rules.art().anim_runtime_config(type_name);

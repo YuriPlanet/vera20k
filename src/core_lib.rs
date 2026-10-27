@@ -13,6 +13,9 @@
     allow(dead_code, unused_imports)
 )]
 
+#[cfg(all(target_arch = "wasm32", target_os = "unknown", not(feature = "wasm")))]
+compile_error!("browser builds require --features wasm");
+
 // Asset parsers — .mix, .shp, .vxl, .pal, .tmp, .hva, .csf, .aud
 // No dependencies on game modules. Standalone parser library.
 pub mod assets;

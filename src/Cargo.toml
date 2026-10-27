@@ -31,6 +31,8 @@ path = "bin/lan-fault-proxy.rs"
 required-features = ["test-support"]
 
 [features]
+# Forwarded by the client only for an explicitly requested browser build.
+wasm = ["dep:web-time", "dep:getrandom", "dep:js-sys"]
 # Compile the supported Ares behavior; INIs cannot enable an absent capability.
 ares = []
 # Compile the supported Phobos behavior; INIs cannot enable an absent capability.
@@ -66,7 +68,6 @@ serde_json = { workspace = true }
 # RA2's binary asset formats (.mix, .shp, .vxl, .pal, .tmp, .hva) are parsed by
 # hand-written readers in `assets/` — no parser library, no RA2-specific crates.
 # memmap2 maps disk MIX archives instead of reading them into memory.
-memmap2 = "0.9.12"
 
 # --- Error handling ---
 thiserror = { workspace = true }
@@ -78,7 +79,6 @@ log = { workspace = true }
 # --- Parallel simulation work ---
 # The persistent worker pool behind `sim::parallel::map`; its threads keep their
 # thread-local search scratch between frames. Already in the lock via `image`.
-rayon = "1.11"
 
 # --- Crypto (for MIX archive header decryption) ---
 # RA2 .mix files encrypt their file index with Blowfish (`assets::blowfish`).
@@ -90,6 +90,15 @@ num-bigint = "0.4"
 # --- Unix saved-list timestamps ---
 # Local time and the user's locale (src/util/native_file_time.rs). The
 # lockfile already carries libc 0.2.
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+memmap2 = "0.9.12"
+rayon = "1.11"
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+web-time = { version = "1", optional = true }
+getrandom = { version = "=0.3.4", optional = true, features = ["wasm_js"] }
+js-sys = { version = "0.3", optional = true }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 

@@ -362,8 +362,8 @@ impl CombatLightRenderer {
         self.targets.render_view.clone()
     }
 
-    /// Texture behind [`Self::composition_view`]. Screenshot retention copies
-    /// it at the UI/cursor boundary before the cursor pass modifies it.
+    /// Live world composition behind [`Self::composition_view`]. Wheel zoom
+    /// resolves this into a separate frame before screen-fixed UI is added.
     pub(crate) fn composition_texture(&self) -> &wgpu::Texture {
         &self.targets.texture
     }
@@ -446,31 +446,6 @@ impl CombatLightRenderer {
         pass.set_scissor_rect(tactical[0], tactical[1], tactical[2], tactical[3]);
         pass.draw(0..6, index..index + 1);
         true
-    }
-
-    /// Copy the completed tactical frame into the swapchain or upscale input.
-    pub(crate) fn copy_to(&self, encoder: &mut wgpu::CommandEncoder, destination: &wgpu::Texture) {
-        debug_assert_eq!(destination.width(), self.targets.width);
-        debug_assert_eq!(destination.height(), self.targets.height);
-        encoder.copy_texture_to_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.targets.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::TexelCopyTextureInfo {
-                texture: destination,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::Extent3d {
-                width: self.targets.width,
-                height: self.targets.height,
-                depth_or_array_layers: 1,
-            },
-        );
     }
 }
 

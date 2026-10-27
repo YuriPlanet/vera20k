@@ -61,6 +61,12 @@ pub struct CombatDamageDefaults {
     /// neither an explicit death weapon nor a live current-weapon fallback,
     /// as the ordered Rules processor resolved it.
     pub death_weapon: Option<String>,
+    /// Rules+F84, constructor666B1C null; ReadCombatDamage66C2A1..66C2CF
+    /// retains the ordered Warhead factory result. Retail `FlameDamage=Fire`;
+    /// the crate Napalm arm's per-object `ReceiveDamage` and its
+    /// `Apply_area_damage` both take this warhead (the Rules+0xF84 loads at
+    /// `0x00482803` and `0x00482827`). Null keeps every arm's damage inert.
+    flame_damage: Option<String>,
     /// Rules+F88, constructor666B22 null; ReadCombatDamage66C2D4..66C2FE
     /// retains the ordered Warhead factory result for ordinary AnimAI424630.
     flame_damage2: Option<String>,
@@ -116,6 +122,14 @@ pub struct CombatDamageDefaults {
 }
 
 impl CombatDamageDefaults {
+    pub(crate) fn bind_flame_damage(&mut self, name: Option<String>) {
+        self.flame_damage = name;
+    }
+
+    pub(crate) fn flame_damage(&self) -> Option<&str> {
+        self.flame_damage.as_deref()
+    }
+
     pub(crate) fn bind_flame_damage2(&mut self, name: Option<String>) {
         self.flame_damage2 = name;
     }
@@ -137,6 +151,7 @@ impl CombatDamageDefaults {
             incoming: section.read_speed("Incoming", 0),
             open_topped_warp_distance: section.read_int("OpenToppedWarpDistance", 5),
             death_weapon: None,
+            flame_damage: None,
             flame_damage2: None,
             drain_animation_type: None,
             falling_damage_multiplier: section.read_float("FallingDamageMultiplier", 1.0),
@@ -170,6 +185,7 @@ impl Default for CombatDamageDefaults {
             incoming: 0,
             open_topped_warp_distance: 5,
             death_weapon: None,
+            flame_damage: None,
             flame_damage2: None,
             drain_animation_type: None,
             falling_damage_multiplier: 1.0,

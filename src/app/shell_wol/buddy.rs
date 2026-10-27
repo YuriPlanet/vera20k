@@ -9,7 +9,7 @@
 //! [`crate::ui::wol_buddy`]; the mirror is [`super::buddies`]. No RNG is
 //! drawn on these paths.
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use super::WolPage;
 use super::service;

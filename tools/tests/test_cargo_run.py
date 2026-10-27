@@ -178,6 +178,15 @@ class CargoRunTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Label'):
             cargo_run.run(self.root, ['build'], '../escape', 0)
 
+    def test_browser_cdylib_uses_existing_runner_without_changing_native_targets(self):
+        args = ['rustc', '-p', 'vera20k', '--lib', '--target', 'wasm32-unknown-unknown',
+                '--no-default-features', '--features', 'wasm', '--crate-type', 'cdylib',
+                '--', '-C', 'link-arg=-zstack-size=8388608']
+        self.assertEqual(cargo_run.cargo_args(args, None),
+                         [args[0], '--message-format=json-render-diagnostics', *args[1:]])
+        with self.assertRaises(ValueError):
+            cargo_run.cargo_args([*args[:2], '--target-dir=/tmp/shared'], None)
+
     def test_core_only_tests_build_with_the_workspace_core_features(self):
         features = ['--features', 'dev-overlays,test-support']
         cases = (

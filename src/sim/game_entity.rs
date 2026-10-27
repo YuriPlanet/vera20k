@@ -38,6 +38,8 @@ mod distributed_fire;
 mod emp;
 mod foot_air;
 mod pip_fill;
+#[cfg(feature = "ares")]
+mod type_conversion;
 pub(crate) use distributed_fire::DistributedFireCandidate;
 pub use pip_fill::rounded_pip_quantity;
 
@@ -330,8 +332,9 @@ pub struct GameEntity {
     distributed_fire: distributed_fire::DistributedFireState,
 
     // --- Optional subsystem components ---
-    /// Locomotor state — present on moving types and on zero-speed Foot
-    /// Drive/Ship types whose native class-local payload still exists.
+    /// Locomotor state — present on moving types, on every Infantry, and on
+    /// zero-speed Drive/Ship Units and Aircraft whose native class-local
+    /// payload still exists.
     pub locomotor: Option<LocomotorState>,
     /// FootClass-style owner navigation destination state.
     ///
@@ -1471,7 +1474,8 @@ impl GameEntity {
         self.building_loss_index = -1;
     }
 
-    /// Immutable indexed type identity, established by construction/decoding.
+    /// Indexed type identity, established by construction/decoding and changed
+    /// only by the same-object type-conversion owner.
     pub fn type_ref(&self) -> InternedId {
         self.type_ref
     }
@@ -1487,6 +1491,23 @@ impl GameEntity {
         production: (crate::rules::object_type::ObjectCategory, InternedId),
     ) {
         self.secret_lab_fallback = Some(production);
+    }
+
+    /// One rules-to-model binding for construction and live type changes.
+    pub(crate) fn object_uses_voxel(
+        type_id: &str,
+        object: &crate::rules::object_type::ObjectType,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> bool {
+        rules
+            .art()
+            .resolve_metadata_entry(type_id, &object.image)
+            .map(|entry| entry.voxel)
+            .unwrap_or(matches!(
+                object.category,
+                crate::rules::object_type::ObjectCategory::Vehicle
+                    | crate::rules::object_type::ObjectCategory::Aircraft
+            ))
     }
 
     /// A VXL/HVA model (true) or an SHP sprite.
@@ -1703,9 +1724,12 @@ impl GameEntity {
     /// component only as an order marker (`sim::slave_manager`), so it is not
     /// one.
     pub fn is_harvester(&self) -> bool {
-        self.miner
-            .as_ref()
-            .is_some_and(|miner| miner.kind() != crate::sim::miner::MinerKind::Slave)
+        self.miner.as_ref().is_some_and(|miner| {
+            matches!(
+                miner.kind(),
+                crate::sim::miner::MinerKind::War | crate::sim::miner::MinerKind::Chrono
+            )
+        })
     }
 
     /// The native Techno+3D0 useless latch read by Repair depots.

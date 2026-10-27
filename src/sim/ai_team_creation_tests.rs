@@ -400,3 +400,13 @@ fn the_team_block_matches_the_original() {
         );
     }
 }
+
+#[cfg(feature = "ares")]
+#[test]
+fn ares_trigger_side_tokens_admit_any_registered_side() {
+    assert!(super::side_admits(0, 3), "token 0 is unrestricted");
+    assert!(super::side_admits(4, 3), "token 4 selects side index 3");
+    assert!(!super::side_admits(4, 2));
+    assert!(!super::side_admits(1, 3));
+    assert!(super::side_admits(3, 2));
+}

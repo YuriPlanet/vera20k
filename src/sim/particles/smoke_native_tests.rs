@@ -133,7 +133,7 @@ fn original_smoke_dispatch_cadence_drift_speed_and_word_lifetime() {
         adopt_rng(&mut sim, case);
         let main = sim.main_rng.native_state_hex();
         let mapgen = sim.mapgen_rng.native_state_hex();
-        super::super::system_ai::tick_particle(&mut p, &mut sim, &rules);
+        super::super::system_ai::tick_particle(&mut p, &mut sim, &rules, None);
         assert_particle(&p, &case["after"]);
         assert_eq!(
             sim.scenario_rng.native_state_hex(),

@@ -2,7 +2,7 @@
 
 use std::collections::VecDeque;
 use std::sync::{Mutex, OnceLock};
-use std::time::Instant;
+use crate::util::time::Instant;
 
 const CAPACITY: usize = 4_000;
 const MESSAGE_BYTES: usize = 2_048;

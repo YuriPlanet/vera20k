@@ -382,6 +382,7 @@ pub fn build_skirmish_shell_chrome_atlas(
     gpu: &GpuContext,
     batch: &BatchRenderer,
     assets: &AssetManager,
+    extra_flags: &[String],
 ) -> Option<SkirmishShellChromeAtlas> {
     let shell_palette = load_shell_palette(assets)?;
     let shell2_palette = load_named_palette(assets, "SHELL2.PAL")?;
@@ -652,7 +653,16 @@ pub fn build_skirmish_shell_chrome_atlas(
         [255, 255, 255, 255],
     ));
 
-    for name in SKIRMISH_FLAG_PCX_NAMES {
+    let mut flag_names: Vec<&str> = SKIRMISH_FLAG_PCX_NAMES.to_vec();
+    for name in extra_flags {
+        if !flag_names
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(name))
+        {
+            flag_names.push(name.as_str());
+        }
+    }
+    for name in &flag_names {
         push_optional(&mut rendered, render_flag_pcx_entry(assets, name), name);
     }
     for name in LAN_PCX_NAMES.into_iter().chain(WOL_SETUP_PCX_NAMES) {
@@ -667,11 +677,11 @@ pub fn build_skirmish_shell_chrome_atlas(
         .map(|entry| entry.label.clone())
         .zip(packed)
         .collect();
-    let flags = SKIRMISH_FLAG_PCX_NAMES
+    let flags = flag_names
         .into_iter()
         .filter_map(|name| {
             by_label
-                .get(name)
+                .get(&name.to_ascii_lowercase())
                 .copied()
                 .map(|entry| (name.to_string(), entry))
         })

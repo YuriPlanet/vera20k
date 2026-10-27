@@ -17,7 +17,7 @@
 //! Render-agnostic: geometry, the resolved model and the statics' reveal
 //! state. The app resolves strings and colours when it opens the page.
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{
@@ -119,6 +119,10 @@ pub struct ScoreScreenModel {
     /// session player 0's country (`0x0068779A..0x0068782D`). It picks the
     /// art (`0x0072D730`) and the bars (`0x005CA110`).
     pub side: i32,
+    /// The theme this dialog starts: the side's `MultiplayerScore.WinTheme` /
+    /// `.LoseTheme` under Ares, selected on the local player's
+    /// `HouseClass+0x1F5` defeated flag. `None` keeps gamemd's literal `SCORE`.
+    pub theme: Option<String>,
     /// Complete immutable result order. VERA pages rows beyond the eight native slots.
     pub rows: Vec<ScoreRow>,
 }
@@ -759,6 +763,7 @@ mod tests {
             game_number: 1,
             elapsed_seconds: 79,
             side: 0,
+            theme: None,
             rows: vec![
                 ScoreRow {
                     name: "Computer".into(),

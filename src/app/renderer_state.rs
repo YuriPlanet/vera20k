@@ -26,6 +26,8 @@ pub(crate) struct RendererState {
     /// The match zoom pass, present only while the Options zoom gives a factor
     /// above 1 for this window (`App::sync_zoom_pass`). Captures never zoom.
     pub(crate) upscale_pass: Option<crate::render::upscale_pass::UpscalePass>,
+    /// Wheel zoom resolves the native world before adding screen-fixed UI.
+    pub(crate) world_zoom_pass: Option<crate::render::upscale_pass::WorldZoomPass>,
     /// The sidebar's own surface, made by the first match frame and following
     /// the frame and the Sidebar size (`render_game`).
     pub(crate) sidebar_surface: Option<crate::app::presentation::sidebar_surface::SidebarSurface>,
@@ -51,4 +53,38 @@ pub(crate) struct RendererState {
     /// Previous presented pre-cursor composition, retained for input-time
     /// screenshot parity.
     pub(crate) retail_screenshot_frame_cache: crate::render::screenshot::PresentedFrameCache,
+}
+
+impl RendererState {
+    /// Completed match frame, including chrome and cursor, in frame pixels.
+    pub(crate) fn game_frame_texture(&self) -> &wgpu::Texture {
+        self.world_zoom_pass.as_ref().map_or_else(
+            || self.combat_light_renderer.composition_texture(),
+            |zoom| zoom.color_texture(),
+        )
+    }
+
+    pub(crate) fn copy_game_frame_to(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Texture,
+    ) {
+        let source = self.game_frame_texture();
+        debug_assert_eq!(destination.size(), source.size());
+        encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: source,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: destination,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            source.size(),
+        );
+    }
 }

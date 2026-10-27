@@ -153,8 +153,8 @@ def source_identity(root: Path, hashes: dict | None = None) -> dict:
 
 
 def cargo_args(args: list[str], label: str | None) -> list[str]:
-    if not args or args[0] not in {'build', 'test', 'check', 'clippy'}:
-        raise ValueError('Expected Cargo build, test, check or clippy after --')
+    if not args or args[0] not in {'build', 'test', 'check', 'clippy', 'rustc'}:
+        raise ValueError('Expected Cargo build, test, check, clippy or rustc after --')
     options = args[:args.index('--')] if '--' in args else args
     if any(a.split('=')[0] in {'--target-dir', '--manifest-path', '--message-format', '--config'}
            for a in options):

@@ -58,8 +58,8 @@ fn vs_main(
 
     let local: vec2f = quad_pos[idx];
     let is_zoomed: bool = abs(camera.zoom - 1.0) >= 0.001;
-    let pad: f32 = select(0.0, 0.5 / camera.zoom, is_zoomed);
-    let raw_pos: vec2f = (instance.position - vec2f(pad, pad) + local * (instance.size + vec2f(pad * 2.0, pad * 2.0)) - camera.camera_pos) * camera.zoom;
+    // Match the exact source scale used by the other tactical blitters.
+    let raw_pos: vec2f = (instance.position + local * instance.size - camera.camera_pos) * camera.zoom;
     let pixel_pos: vec2f = select(raw_pos, floor(raw_pos + vec2f(0.5, 0.5)), !is_zoomed);
 
     let clip_x: f32 = (pixel_pos.x / camera.screen_size.x) * 2.0 - 1.0;

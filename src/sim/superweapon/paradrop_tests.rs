@@ -94,9 +94,9 @@ fn names_unallocated_type(lists: &Value) -> bool {
 /// A replay's rules: PDPLANE as retail authors it (unless `plane` is false),
 /// E1, E2 and INIT, both paradrop Supers, the `[General]` list keys and
 /// `ParadropRadius=radius`.
-fn rules(lists: &str, plane: bool, radius: i32) -> RuleSet {
+fn rules_text(lists: &str, plane: bool, radius: i32) -> String {
     let aircraft = if plane { "0=PDPLANE\n" } else { "" };
-    let ini = IniFile::from_str(&format!(
+    format!(
         "[General]\n{lists}FlightLevel=1500\nParadropRadius={radius}\n\
          [InfantryTypes]\n0=E1\n1=E2\n2=INIT\n[VehicleTypes]\n[AircraftTypes]\n{aircraft}\
          [BuildingTypes]\n[SuperWeaponTypes]\n0={PARADROP}\n1={AMER_PARADROP}\n\
@@ -104,8 +104,11 @@ fn rules(lists: &str, plane: bool, radius: i32) -> RuleSet {
          [E1]\nStrength=125\n[E2]\nStrength=125\n[INIT]\nStrength=125\n\
          [PDPLANE]\nStrength=400\nSpeed=15\nROT=2\nAmmo=100\nLandable=no\nSelectable=no\n\
          Spawned=yes\nSight=0\nLocomotor={FLY}\n",
-    ));
-    RuleSet::from_ini(&ini).unwrap()
+    )
+}
+
+fn rules(lists: &str, plane: bool, radius: i32) -> RuleSet {
+    RuleSet::from_ini(&IniFile::from_str(&rules_text(lists, plane, radius))).unwrap()
 }
 
 fn retail_list_rules(radius: i32) -> RuleSet {
@@ -1249,4 +1252,162 @@ fn retail_computer_paradrops_conscripts_past_the_enemy_base() {
 
     assert_eq!(chutes, 9);
     assert_landed(&sim, &passengers, &missions, target, MissionType::Hunt);
+}
+
+/// Ares 3.0 `[Side] ParaDrop.Types/Num/Aircraft` for a fourth side. The
+/// side-index branch still supplies the stock pair-length policy, but the
+/// lists come from SideExt, and a `none` plane falls back to PDPLANE
+/// (`HouseTypeExt::GetParadropPlane @ 0x1001BCB0`) instead of cancelling.
+#[cfg(feature = "ares")]
+fn ares_fourth_side_rules(lists: &str, fourth: &str) -> RuleSet {
+    let text = format!(
+        "{}\n[Sides]\nGDI=x\nNod=x\nThirdSide=x\nFourth=x\n[Fourth]\n{fourth}\n",
+        rules_text(lists, true, 1024)
+    );
+    let processed = crate::rules::native_processing::RulesLayerStack::new(IniFile::from_str(&text))
+        .process()
+        .expect("fourth-side paradrop rules process");
+    RuleSet::from_processed_rules(&processed).expect("fourth-side paradrop projection")
+}
+
+#[cfg(feature = "ares")]
+#[test]
+fn ares_fourth_side_paradrop_uses_side_lists_and_none_plane_falls_back() {
+    let (rules, mut sim, owner) = paradrop_world(ares_fourth_side_rules(
+        "AllyParaDropInf=E1\nAllyParaDropNum=6\n",
+        "ParaDrop.Types=E2\nParaDrop.Num=2\nParaDrop.Aircraft=none\n",
+    ));
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_side_index_for_test(3);
+    let sw_type = charge_super(&mut sim, owner, PARADROP);
+    assert!(launch(
+        &mut sim,
+        &rules,
+        owner,
+        TARGET.0,
+        TARGET.1,
+        ParaDropKind::Generic,
+        sw_type,
+        crate::sim::world::FrameEffects::default()
+    ));
+    let [plane] = planes(&sim)[..] else {
+        panic!("one plane");
+    };
+    let cargo = cargo(&sim, plane);
+    assert_eq!(cargo.len(), 2);
+    for id in cargo {
+        assert_eq!(
+            sim.interner
+                .resolve(sim.substrate.entities.get(id).unwrap().type_ref()),
+            "E2"
+        );
+    }
+}
+
+/// Ares 3.0 `[Country] ParaDrop.Types/Num=` for the acting house's country.
+/// `GetParadropContent @ 0x1001BC20` prefers it over the side's lists, and
+/// types without counts answer false, so the launch sends nothing at all.
+#[cfg(feature = "ares")]
+fn ares_country_paradrop_rules(country: &str) -> RuleSet {
+    let text = format!(
+        "{}
+[Sides]
+GDI=x
+Nod=x
+ThirdSide=x
+Fourth=x
+         [Fourth]
+ParaDrop.Types=E2
+ParaDrop.Num=2
+ParaDrop.Aircraft=PDPLANE
+         [Countries]
+0=Greece
+[Greece]
+{}
+",
+        rules_text(
+            "AllyParaDropInf=E1
+AllyParaDropNum=6
+",
+            true,
+            1024
+        ),
+        country
+    );
+    let processed = crate::rules::native_processing::RulesLayerStack::new(IniFile::from_str(&text))
+        .process()
+        .expect("country paradrop rules process");
+    RuleSet::from_processed_rules(&processed).expect("country paradrop projection")
+}
+
+#[cfg(feature = "ares")]
+fn ares_country_paradrop_world(country: &str) -> (RuleSet, Simulation, InternedId) {
+    let (rules, mut sim, owner) = paradrop_world(ares_country_paradrop_rules(country));
+    let country = sim.interner.intern("Greece");
+    let house = sim.houses.get_mut(&owner).unwrap();
+    house.set_side_index_for_test(3);
+    house.set_country_for_test(Some(country));
+    (rules, sim, owner)
+}
+
+#[cfg(feature = "ares")]
+#[test]
+fn ares_country_paradrop_lists_beat_the_side_lists() {
+    let (rules, mut sim, owner) = ares_country_paradrop_world(
+        "ParaDrop.Types=E1
+ParaDrop.Num=5
+",
+    );
+    let sw_type = charge_super(&mut sim, owner, PARADROP);
+    assert!(launch(
+        &mut sim,
+        &rules,
+        owner,
+        TARGET.0,
+        TARGET.1,
+        ParaDropKind::Generic,
+        sw_type,
+        crate::sim::world::FrameEffects::default()
+    ));
+    let [plane] = planes(&sim)[..] else {
+        panic!("the country list has one entry, so one plane");
+    };
+    let cargo = cargo(&sim, plane);
+    assert_eq!(cargo.len(), 5, "the country count replaces the side's two");
+    for id in cargo {
+        assert_eq!(
+            sim.interner
+                .resolve(sim.substrate.entities.get(id).unwrap().type_ref()),
+            "E1"
+        );
+    }
+}
+
+#[cfg(feature = "ares")]
+#[test]
+fn ares_country_types_without_counts_send_nothing() {
+    let (rules, mut sim, owner) = ares_country_paradrop_world(
+        "ParaDrop.Types=E1
+",
+    );
+    let sw_type = charge_super(&mut sim, owner, PARADROP);
+    assert!(
+        launch(
+            &mut sim,
+            &rules,
+            owner,
+            TARGET.0,
+            TARGET.1,
+            ParaDropKind::Generic,
+            sw_type,
+            crate::sim::world::FrameEffects::default()
+        ),
+        "the launch is still consumed"
+    );
+    assert!(
+        planes(&sim).is_empty(),
+        "no side fallback after a false resolver"
+    );
 }

@@ -625,6 +625,24 @@ pub(crate) fn finish_presentation_assets(
         }
     }
     let sidebar_cameo_atlas = build_sidebar_cameo_atlas(gpu, batch, asset_manager, Some(rules));
+    #[cfg(feature = "phobos")]
+    let sw_sidebar_ui = asset_manager
+        .get_ref("UIMD.INI")
+        .map(crate::rules::phobos_sw_sidebar::SuperWeaponSidebarUi::from_uimd_bytes)
+        .unwrap_or_default();
+    #[cfg(feature = "phobos")]
+    let sw_sidebar_art = sw_sidebar_ui
+        .enabled
+        .then(|| {
+            crate::render::sw_sidebar_art::build_sw_sidebar_art(
+                gpu,
+                batch,
+                asset_manager,
+                rules,
+                simulation.session().scenario_side(),
+            )
+        })
+        .flatten();
     let sidebar_chrome = crate::render::sidebar_chrome::build_sidebar_chrome_set(
         gpu,
         batch,
@@ -632,6 +650,30 @@ pub(crate) fn finish_presentation_assets(
         rules,
         simulation.session().scenario_side(),
     )?;
+    // `Game_LoadUI_LoadSideData` (0x1002F4A0) hands the local side's
+    // `GraphicalText.Image=` / `.Palette=` to the overlay slot writer at
+    // 0x1002ECC0 on every game load, freeing the previous match's surfaces
+    // first. Only a side that names one of the two keys differs from the
+    // process InitGame art, so the override atlas belongs to this world.
+    #[cfg(feature = "ares")]
+    let outcome_banner_side_art = {
+        let (image, palette) = rules
+            .side_graphical_text(simulation.session().scenario_side())
+            .unwrap_or((None, None));
+        if image.is_some() || palette.is_some() {
+            crate::app::presentation::outcome_banner::OutcomeBannerArt::build_for_side(
+                gpu,
+                batch,
+                asset_manager,
+                image,
+                palette,
+            )
+        } else {
+            None
+        }
+    };
+    #[cfg(not(feature = "ares"))]
+    let outcome_banner_side_art = None;
     let fnt_file = asset_manager.get_ref("GAME.FNT").and_then(|data| {
         crate::assets::fnt_file::FntFile::from_bytes(data)
             .map_err(|error| log::warn!("Failed to parse GAME.FNT: {error}"))
@@ -665,6 +707,11 @@ pub(crate) fn finish_presentation_assets(
         bridge_atlas: overlays.bridge_atlas,
         sidebar_cameo_atlas,
         sidebar_chrome,
+        #[cfg(feature = "phobos")]
+        sw_sidebar_ui,
+        #[cfg(feature = "phobos")]
+        sw_sidebar_art,
+        outcome_banner_side_art,
         software_cursor,
         overlay_names: overlays.overlay_names,
         overlay_radar_colors: overlays.overlay_radar_colors,

@@ -11,6 +11,12 @@ pub struct CountryLoadingDefaults {
     name: &'static str,
     special: &'static str,
     brief: &'static str,
+    flag: &'static str,
+    status: &'static str,
+    taunt: &'static str,
+    observer_background: &'static str,
+    observer_flag: &'static str,
+    observer_alt_palette: bool,
 }
 
 impl CountryLoadingDefaults {
@@ -20,15 +26,26 @@ impl CountryLoadingDefaults {
     pub fn labels(&self) -> [&'static str; 3] {
         [self.name, self.special, self.brief]
     }
+    /// Ares1001C0F0's `File.Flag`, `MenuText.Status` and `File.Taunt` literals.
+    pub fn presentation(&self) -> [&'static str; 3] {
+        [self.flag, self.status, self.taunt]
+    }
+    /// Ares1001C0F0's observer background and flag files and alt-palette flag.
+    pub fn observer(&self) -> (&'static str, &'static str, bool) {
+        (
+            self.observer_background,
+            self.observer_flag,
+            self.observer_alt_palette,
+        )
+    }
 }
 
 const fn row(
     id: &'static str,
-    token: &'static str,
-    palette: &'static str,
-    name: &'static str,
-    special: &'static str,
-    brief: &'static str,
+    [token, palette]: [&'static str; 2],
+    [name, special, brief]: [&'static str; 3],
+    [flag, status, taunt]: [&'static str; 3],
+    (observer_background, observer_flag, observer_alt_palette): (&'static str, &'static str, bool),
 ) -> CountryLoadingDefaults {
     CountryLoadingDefaults {
         id,
@@ -37,6 +54,12 @@ const fn row(
         name,
         special,
         brief,
+        flag,
+        status,
+        taunt,
+        observer_background,
+        observer_flag,
+        observer_alt_palette,
     }
 }
 
@@ -44,88 +67,90 @@ const fn row(
 const STOCK: [CountryLoadingDefaults; 10] = [
     row(
         "Americans",
-        "ustates",
-        "MPLSU.PAL",
-        "Name:Americans",
-        "Name:Para",
-        "LoadBrief:USA",
+        ["ustates", "MPLSU.PAL"],
+        ["Name:Americans", "Name:Para", "LoadBrief:USA"],
+        ["usai.pcx", "STT:PlayerSideAmerica", "taunts\\tauam%02i.wav"],
+        ("obsalli.shp", "usai.shp", false),
     ),
     row(
         "Alliance",
-        "korea",
-        "MPLSK.PAL",
-        "Name:Alliance",
-        "Name:BEAGLE",
-        "LoadBrief:Korea",
+        ["korea", "MPLSK.PAL"],
+        ["Name:Alliance", "Name:BEAGLE", "LoadBrief:Korea"],
+        ["japi.pcx", "STT:PlayerSideKorea", "taunts\\tauko%02i.wav"],
+        ("obsalli.shp", "japi.shp", false),
     ),
     row(
         "French",
-        "france",
-        "MPLSF.PAL",
-        "Name:French",
-        "Name:GTGCAN",
-        "LoadBrief:French",
+        ["france", "MPLSF.PAL"],
+        ["Name:French", "Name:GTGCAN", "LoadBrief:French"],
+        ["frai.pcx", "STT:PlayerSideFrance", "taunts\\taufr%02i.wav"],
+        ("obsalli.shp", "frai.shp", false),
     ),
     row(
         "Germans",
-        "germany",
-        "MPLSG.PAL",
-        "Name:Germans",
-        "Name:TNKD",
-        "LoadBrief:Germans",
+        ["germany", "MPLSG.PAL"],
+        ["Name:Germans", "Name:TNKD", "LoadBrief:Germans"],
+        ["geri.pcx", "STT:PlayerSideGermany", "taunts\\tauge%02i.wav"],
+        ("obsalli.shp", "geri.shp", false),
     ),
     row(
         "British",
-        "ukingdom",
-        "MPLSUK.PAL",
-        "Name:British",
-        "Name:SNIPE",
-        "LoadBrief:British",
+        ["ukingdom", "MPLSUK.PAL"],
+        ["Name:British", "Name:SNIPE", "LoadBrief:British"],
+        ["gbri.pcx", "STT:PlayerSideBritain", "taunts\\taubr%02i.wav"],
+        ("obsalli.shp", "gbri.shp", false),
     ),
     row(
         "Africans",
-        "libya",
-        "MPLSL.PAL",
-        "Name:Africans",
-        "Name:DTRUCK",
-        "LoadBrief:Lybia",
+        ["libya", "MPLSL.PAL"],
+        ["Name:Africans", "Name:DTRUCK", "LoadBrief:Lybia"],
+        ["djbi.pcx", "STT:PlayerSideLibya", "taunts\\tauli%02i.wav"],
+        ("obssovi.shp", "djbi.shp", false),
     ),
     row(
         "Arabs",
-        "iraq",
-        "MPLSI.PAL",
-        "Name:Arabs",
-        "Name:DESO",
-        "LoadBrief:Iraq",
+        ["iraq", "MPLSI.PAL"],
+        ["Name:Arabs", "Name:DESO", "LoadBrief:Iraq"],
+        ["arbi.pcx", "STT:PlayerSideIraq", "taunts\\tauir%02i.wav"],
+        ("obssovi.shp", "arbi.shp", false),
     ),
     row(
         "Confederation",
-        "cuba",
-        "MPLSC.PAL",
-        "Name:Confederation",
-        "Name:TERROR",
-        "LoadBrief:Cuba",
+        ["cuba", "MPLSC.PAL"],
+        ["Name:Confederation", "Name:TERROR", "LoadBrief:Cuba"],
+        ["lati.pcx", "STT:PlayerSideCuba", "taunts\\taucu%02i.wav"],
+        ("obssovi.shp", "lati.shp", false),
     ),
     row(
         "Russians",
-        "russia",
-        "MPLSR.PAL",
-        "Name:Russians",
-        "Name:TTNK",
-        "LoadBrief:Russia",
+        ["russia", "MPLSR.PAL"],
+        ["Name:Russians", "Name:TTNK", "LoadBrief:Russia"],
+        ["rusi.pcx", "STT:PlayerSideRussia", "taunts\\tauru%02i.wav"],
+        ("obssovi.shp", "rusi.shp", false),
     ),
     row(
         "YuriCountry",
-        "yuri",
-        "MPYLS.PAL",
-        "Name:YuriCountry",
-        "Name:YURI",
-        "LoadBrief:YuriCountry",
+        ["yuri", "MPYLS.PAL"],
+        ["Name:YuriCountry", "Name:YURI", "LoadBrief:YuriCountry"],
+        [
+            "yrii.pcx",
+            "STT:PlayerSideYuriCountry",
+            "taunts\\tauyu%02i.wav",
+        ],
+        ("obsyuri.shp", "yrii.shp", true),
     ),
 ];
 
 pub fn stock_country_loading(index: usize) -> Option<&'static CountryLoadingDefaults> {
     STOCK.get(index)
+}
+
+/// Ares1001C107..1001C135: the stored ID compared (case-insensitively)
+/// against the literal name table at 0x10097FC8. `None` takes the unknown
+/// branch 0x1001C413, whatever the Country's registry position.
+#[cfg(feature = "ares")]
+pub(crate) fn stock_country_by_id(id: &str) -> Option<&'static CountryLoadingDefaults> {
+    STOCK.iter().find(|entry| entry.id.eq_ignore_ascii_case(id))
 }
 
 /// CountryExt+2C/+4C, three CSF label records, and signed ColorScheme+11C.
@@ -154,7 +179,7 @@ impl AresCountryLoading {
     /// Constructor1001B767 and initializer1001C0F0 compare stored ID literals,
     /// regardless of the current registry position or Side.
     pub(crate) fn for_country_id(id: &str) -> Self {
-        let defaults = STOCK.iter().find(|entry| entry.id.eq_ignore_ascii_case(id));
+        let defaults = stock_country_by_id(id);
         Self {
             file: format!("ls%s{}.shp", defaults.map_or("obs", |entry| entry.token)),
             palette: defaults

@@ -14,7 +14,7 @@ use crate::ui::score_shell::{ScoreRow, ScoreScreenModel};
 use crate::ui::shell::geom::RectPx;
 use image::ImageEncoder;
 use serde_json::{Value, json};
-use std::time::Instant;
+use crate::util::time::Instant;
 
 /// Frames to present once the target state is reached.
 const SETTLE_FRAMES: u32 = 4;
@@ -125,6 +125,7 @@ fn synthetic_campaign_score_model() -> CampaignScoreScreenModel {
         enemies_destroyed: "17".into(),
         rank: "Captain".into(),
         commendation: "Mission completed ahead of schedule.".into(),
+        ..Default::default()
     }
 }
 
@@ -718,6 +719,7 @@ fn comparison_model(state: &AppState) -> Result<ScoreScreenModel> {
         game_number: 1,
         elapsed_seconds: 79,
         side: 0,
+        theme: None,
         rows: vec![
             ScoreRow {
                 name: computer,

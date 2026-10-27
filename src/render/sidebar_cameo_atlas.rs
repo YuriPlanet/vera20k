@@ -340,11 +340,37 @@ fn render_superweapon_cameo(
     Some(cameo)
 }
 
-/// Ares3.0 Cameos1005E32D..1005E366 / gamemd PCX blit6BA580: embedded
-/// palette, then RGB(255,0,255) keyed in the packed surface-word domain.
-/// Normal, promoted and superweapon consumers share this decoder. Ares supplies
+/// One PCX as gamemd's PCX blit6BA580 draws it.
+#[cfg(any(feature = "ares", feature = "phobos"))]
+pub(crate) struct NativePcxImage {
+    pub(crate) rgba: Vec<u8>,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+}
+
+/// gamemd PCX blit6BA580: embedded palette, then RGB(255,0,255) keyed in the
+/// packed surface-word domain; only 8-bit indexed files load. No house remap
+/// or cameo.pal applies. Ares PCX cameos and Phobos' superweapon sidebar art
+/// (`PCX::BlitToSurface`) both draw through it.
+#[cfg(any(feature = "ares", feature = "phobos"))]
+pub(crate) fn decode_native_pcx(bytes: &[u8]) -> Option<NativePcxImage> {
+    let image = crate::assets::pcx_file::PcxFile::from_bytes(bytes).ok()?;
+    if !image.is_indexed() {
+        return None;
+    }
+    let mut rgba = image.to_rgba(None);
+    crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
+        .apply_packed_color_key_rgba8(&mut rgba, [255, 0, 255]);
+    Some(NativePcxImage {
+        rgba,
+        width: u32::from(image.width),
+        height: u32::from(image.height),
+    })
+}
+
+/// Ares3.0 Cameos1005E32D..1005E366 through `decode_native_pcx`. Normal,
+/// promoted and superweapon consumers share this decoder. Ares supplies
 /// a60x48 destination canvas;6BA5EF..600 uses source dimensions without scaling.
-/// No house remap or cameo.pal applies.
 /// https://ares-developers.github.io/Ares-docs/new/pcxcameos.html
 #[cfg(feature = "ares")]
 fn render_pcx_cameo(
@@ -352,23 +378,16 @@ fn render_pcx_cameo(
     filename: &str,
     asset_manager: &AssetManager,
 ) -> Option<RenderedCameo> {
-    let image =
-        crate::assets::pcx_file::PcxFile::from_bytes(asset_manager.get_ref(filename)?).ok()?;
-    if !image.is_indexed() {
-        return None;
-    }
-    let mut rgba = image.to_rgba(None);
-    crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
-        .apply_packed_color_key_rgba8(&mut rgba, [255, 0, 255]);
+    let image = decode_native_pcx(asset_manager.get_ref(filename)?)?;
     log::debug!("Sidebar PCX cameo {key} loaded from {filename}");
     // A loaded surface remains selected even if every word is keyed out.
     // Cropping it to None would incorrectly select the legacy SHP instead.
     Some(RenderedCameo {
         type_id: key.to_ascii_uppercase(),
         kind: CameoKind::Ordinary,
-        rgba,
-        width: u32::from(image.width),
-        height: u32::from(image.height),
+        rgba: image.rgba,
+        width: image.width,
+        height: image.height,
         canvas_width: 60,
         canvas_height: 48,
         crop_x: 0,

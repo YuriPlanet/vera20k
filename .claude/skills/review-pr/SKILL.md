@@ -42,7 +42,7 @@ oracles, scripts) until steps 1 and 2 are clean.
      integration. The guard lists files over 100 KB.
    - Python tools read retail inputs and write only their own outputs: no network,
      subprocess, home-directory or credential access.
-3. **Branding and odd changes.** VERA20K carries only its own name, its GPL notice
+3. **Branding and odd changes.** VERA20K carries only its own name, its license notices
    and its contributors' credit. Hold the PR and show the user the hunks when it:
    - makes another product, company, person or community part of the program's or
      a build's identity: names, logos, icons, fonts, splash or menu art, window or

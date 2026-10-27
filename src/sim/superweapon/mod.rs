@@ -37,7 +37,7 @@ pub mod force_shield;
 #[cfg(feature = "ares")]
 mod generic_warhead;
 #[cfg(all(test, feature = "ares"))]
-mod ares_target_policy_tests;
+mod ares_charge_tests;
 #[cfg(feature = "ares")]
 mod ares_presentation;
 pub mod genetic_converter;
@@ -61,17 +61,6 @@ pub mod psychic_reveal;
 mod spy_plane;
 mod two_stage;
 pub use two_stage::PaidSuperWeaponSelection;
-
-/// A cell selected by the Ares selector has already followed its native
-/// CanFireAt/preference path. In particular preferred/no-target results are
-/// not passed through a second, different target-policy decision.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SuperWeaponTargetSource {
-    Manual,
-    Automatic,
-    #[cfg(feature = "ares")]
-    SelectedAutomatic,
-}
 #[cfg(test)]
 mod spy_plane_tests;
 mod targeting;
@@ -324,7 +313,7 @@ impl SuperWeapons {
             .values()
             .flat_map(|weapons| weapons.values())
             .any(|instance| {
-                instance.ares_launch_count != 0 && instance.ares_last_launch_frame.is_none()
+                instance.ares_launch_count != 0 && instance.ares_charge_origin_frame.is_none()
             })
         {
             return Err("nonzero successful-launch count without a last frame");
@@ -436,13 +425,15 @@ pub struct SuperWeaponInstance {
     paid_sequence: u64,
     #[serde(default)]
     paid_selection: Option<PaidSuperWeaponSelection>,
-    /// HouseExt's per-definition successful-launch pair (+88 vector).
-    /// Each House already retains exactly one Super per definition, so this
-    /// pair shares that owner and survives grant/revoke/charge changes.
+    /// HouseExt's per-definition launch pair (+88 vector), shared by grants
+    /// and launches. Grant10022710 records the first recharge origin; successful
+    /// Launch100226D0 replaces it. The existing Super remains the sole owner
+    /// across grant, revoke, snapshot restoration and charge changes.
     #[cfg(feature = "ares")]
     ares_launch_count: i32,
     #[cfg(feature = "ares")]
-    ares_last_launch_frame: Option<i32>,
+    #[serde(rename = "ares_last_launch_frame")]
+    ares_charge_origin_frame: Option<i32>,
 }
 
 fn idle_fade() -> i32 {
@@ -462,14 +453,14 @@ impl SuperWeaponInstance {
     #[cfg(feature = "ares")]
     fn record_ares_launch(&mut self, frame: i32) {
         self.ares_launch_count = self.ares_launch_count.wrapping_add(1);
-        self.ares_last_launch_frame = Some(frame);
+        self.ares_charge_origin_frame = Some(frame);
     }
 
     pub(crate) fn hash_ares_launch_history(&self, hasher: &mut impl std::hash::Hasher) {
         #[cfg(not(feature = "ares"))]
         let _ = hasher;
         #[cfg(feature = "ares")]
-        if let Some(frame) = self.ares_last_launch_frame {
+        if let Some(frame) = self.ares_charge_origin_frame {
             std::hash::Hash::hash(b"ares-super-launch-history-v1", hasher);
             std::hash::Hash::hash(&(self.ares_launch_count, frame), hasher);
         }
@@ -660,7 +651,7 @@ impl SuperWeaponInstance {
             #[cfg(feature = "ares")]
             ares_launch_count: 0,
             #[cfg(feature = "ares")]
-            ares_last_launch_frame: None,
+            ares_charge_origin_frame: None,
         }
     }
 
@@ -718,10 +709,13 @@ impl SuperWeaponInstance {
     fn apply_grant_state(
         &mut self,
         sw: &SuperWeaponType,
+        rules: &RuleSet,
         current_frame: u32,
         one_time: bool,
         on_hold: bool,
     ) -> bool {
+        #[cfg(not(feature = "ares"))]
+        let _ = rules;
         if self.is_active {
             return false;
         }
@@ -747,6 +741,18 @@ impl SuperWeaponInstance {
             if sw.use_charge_drain {
                 self.charge_drain_state = 0;
             }
+            #[cfg(feature = "ares")]
+            if matches!(
+                sw.kind,
+                crate::rules::superweapon_type::SuperWeaponKind::GenericWarhead
+                    | crate::rules::superweapon_type::SuperWeaponKind::UnitDelivery
+            ) && let Some(metadata) = rules.super_weapon_metadata(&sw.id)
+            {
+                // These handlers already retain successful launch history.
+                // Stock redirects need their own success boundary before using
+                // initial/virtual charge; do not invent history for them.
+                self.apply_ares_grant_charge(sw, metadata.charge(), frame);
+            }
         }
         if on_hold && !one_time && !self.is_suspended && self.can_lose {
             let mut timer = self.charge_timer();
@@ -758,6 +764,47 @@ impl SuperWeaponInstance {
             self.set_charged(sw, current_frame);
         }
         true
+    }
+
+    /// Ares3.0 Grant hook100354E0 replaces original6CB70C..6CB74D,
+    /// before Grant's on-hold and one-time tails. HouseExt10021480 reads
+    /// (shots,origin);10022710 records an initial recharge origin if unset.
+    /// Launch100226D0 later updates this same pair. No second cooldown exists.
+    #[cfg(feature = "ares")]
+    fn apply_ares_grant_charge(
+        &mut self,
+        sw: &SuperWeaponType,
+        charge: &crate::rules::superweapon_type::AresSuperWeaponCharge,
+        frame: i32,
+    ) {
+        if charge.initial_ready && self.ares_launch_count == 0 {
+            self.charge_duration = 0;
+        }
+        if charge.virtual_charge
+            && let Some(origin) = self.ares_charge_origin_frame.filter(|origin| *origin >= 0)
+        {
+            self.charge_start_tick = origin;
+        }
+        //1003556F..1003559C uses a signed wrapping (start-now)+duration,
+        // clamped to zero; it does not replace the retained timer with zero.
+        if self.charge_start_tick != -1
+            && self
+                .charge_start_tick
+                .wrapping_sub(frame)
+                .wrapping_add(self.charge_duration)
+                <= 0
+        {
+            self.mark_ready(frame as u32);
+            if sw.use_charge_drain {
+                self.charge_drain_state = 1;
+            }
+        }
+        if self
+            .ares_charge_origin_frame
+            .is_none_or(|origin| origin < 0)
+        {
+            self.ares_charge_origin_frame = Some(frame);
+        }
     }
 
     /// Silent SetCharged6CC080 as reached from Grant6CB791.
@@ -1099,6 +1146,27 @@ pub(crate) fn super_types_with_type(
         .map(String::as_str)
 }
 
+/// `SuperWeaponTypeClass::FindFirstOfAction @ 0x006CEEB0`: the first
+/// `[SuperWeaponTypes]` entry whose `Action=` (`+0xBC`) is `action`, or none.
+/// An absent `Action=` keeps the constructor's action 0, `None`.
+pub(crate) fn first_super_type_with_action<'a>(
+    rules: &'a RuleSet,
+    action: &str,
+) -> Option<&'a str> {
+    rules
+        .super_weapon_order
+        .iter()
+        .find(|name| {
+            rules.super_weapon(name).is_some_and(|sw| {
+                sw.action
+                    .as_deref()
+                    .unwrap_or("None")
+                    .eq_ignore_ascii_case(action)
+            })
+        })
+        .map(String::as_str)
+}
+
 /// `owner`'s Super of `type_name` is granted (`+0x6D`) and, in PC53/chop, its
 /// remaining charge over its recharge time is not above `1.0f - [General]
 /// AIMinorSuperReadyPercent=` (`FCOMPP`, `TEST AH,0x1`, so an unordered
@@ -1295,20 +1363,10 @@ pub struct SuperWeaponDisplay {
     pub status: Option<SuperWeaponStatus>,
 }
 
-/// Ephemeral sidebar rejection; gameplay state remains with the Super/House owners.
-#[cfg(feature = "ares")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AresCameoRefusal {
-    InsufficientFunds,
-    CannotFire,
-}
-
 /// View struct for sidebar display — no sim internals exposed.
 #[derive(Debug, Clone)]
 pub struct SuperWeaponView {
     pub type_id: InternedId,
-    /// Immutable selection flag projected from the common Rules owner.
-    pub use_ai_targeting: bool,
     pub display_name: String,
     pub progress: f32,
     pub display: SuperWeaponDisplay,
@@ -1321,8 +1379,21 @@ pub struct SuperWeaponView {
     pub can_fire: bool,
     /// Derived from the same wallet predicate used at launch, not readiness.
     pub can_afford: bool,
-    #[cfg(feature = "ares")]
-    pub ares_refusal: Option<AresCameoRefusal>,
+    /// A `SW.UseAITargeting` type whose Ares constraints fail for a manual
+    /// launch (IsTargetConstraintsEligible10032110). Ares's sidebar hooks
+    /// darken (10034F3F) and refuse (10034E75) it, as Phobos's
+    /// SWButtonClass does. Always false without Ares.
+    pub constraints_blocked: bool,
+}
+
+impl SuperWeaponView {
+    /// The strip cameo's enabled state, the inverse of its darken flag (BL).
+    /// Stock StripDraw clears BL for every superweapon (0x006A99B5); Ares's
+    /// hook there (10034EF0) sets it while CanFire (0x006CC360) holds and the
+    /// type is unaffordable or its constraints refuse a manual launch.
+    pub fn sidebar_enabled(&self) -> bool {
+        !(self.can_fire && (!self.can_afford || self.constraints_blocked))
+    }
 }
 
 /// Query active superweapons for a specific owner (for sidebar rendering).
@@ -1349,54 +1420,46 @@ pub fn superweapon_views_for_owner(
         let money_type = financial_type(rules, sw_type);
         let display =
             inst.sidebar_display(sw_type, current_frame, rules.general.charge_to_drain_ratio);
-        let native_can_fire = if paid_source.is_some() {
-            sim.paid_super_weapon_selection(*owner)
-                .is_some_and(|selection| selection.destination == inst.type_id)
-        } else {
-            inst.can_fire(sw_type)
-        };
-        #[cfg(feature = "ares")]
-        let can_afford = money::can_afford(&sim.houses, *owner, money_type);
-        #[cfg(feature = "ares")]
-        let admission = ai_fire::manual_cameo_admission(
-            sim,
-            rules,
-            *owner,
-            sw_type,
-            native_can_fire,
-            can_afford,
-        );
         views.push(SuperWeaponView {
             type_id: inst.type_id,
-            use_ai_targeting: rules.super_weapon_uses_ai_targeting(type_id_str),
             display_name: type_id_str.to_string(),
             progress: display.stage as f32 / 54.0,
             display,
             is_ready: inst.is_ready,
             is_online: !inst.is_suspended,
             should_flash_tab: inst.should_flash_tab(sw_type, current_frame),
-            can_fire: {
-                #[cfg(feature = "ares")]
-                {
-                    admission.can_fire
-                }
-                #[cfg(not(feature = "ares"))]
-                {
-                    native_can_fire
-                }
+            can_fire: if paid_source.is_some() {
+                sim.paid_super_weapon_selection(*owner)
+                    .is_some_and(|selection| selection.destination == inst.type_id)
+            } else {
+                inst.can_fire(sw_type)
             },
             can_afford: {
                 #[cfg(feature = "ares")]
                 {
-                    can_afford
+                    money::can_afford(&sim.houses, *owner, money_type)
                 }
                 #[cfg(not(feature = "ares"))]
                 {
                     true
                 }
             },
-            #[cfg(feature = "ares")]
-            ares_refusal: admission.refusal,
+            constraints_blocked: {
+                #[cfg(feature = "ares")]
+                {
+                    sw_type.use_ai_targeting
+                        && !sw_type.target_constraints().allows_manual_fire(
+                            sim.houses
+                                .get(owner)
+                                .map(|house| house.target_constraints_observations())
+                                .unwrap_or_default(),
+                        )
+                }
+                #[cfg(not(feature = "ares"))]
+                {
+                    false
+                }
+            },
         });
     }
     views
@@ -2017,7 +2080,7 @@ fn grant_super(
     let Some(instance) = super_weapons.instance_mut(&owner, &type_id) else {
         return false;
     };
-    if !instance.apply_grant_state(sw, session.binary_frame(), one_time, on_hold) {
+    if !instance.apply_grant_state(sw, rules, session.binary_frame(), one_time, on_hold) {
         return false;
     }
     instance.timer_place = (sw.show_timer && !passive).then_some(place);

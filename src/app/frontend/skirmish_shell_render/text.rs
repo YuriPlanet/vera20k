@@ -541,7 +541,7 @@ pub(super) fn paint_skirmish_statics(
         .frontend
         .skirmish_shell_state
         .statics
-        .paint(std::time::Instant::now(), sliding);
+        .paint(crate::util::time::Instant::now(), sliding);
     let text = &layout.right_panel_text;
     [
         (shown.heading, text.title),
@@ -562,7 +562,7 @@ pub(super) fn dialog_statics_labels(
     status_line: RectPx,
     sliding: bool,
 ) -> Vec<PaintLabel<'static>> {
-    let shown = statics.paint(std::time::Instant::now(), sliding);
+    let shown = statics.paint(crate::util::time::Instant::now(), sliding);
     shown
         .heading
         .map(|shown| static_label(shown, title, ShellAlign::H_CENTER))

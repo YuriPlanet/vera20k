@@ -56,7 +56,7 @@ mod object_stages_gpu_tests;
 
 use anyhow::Result;
 #[cfg(feature = "telemetry-dashboard")]
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 // Re-export shared types so any remaining `use crate::app::presentation::render::Foo` imports still compile.
 // New code should import from `crate::app::types` directly.
@@ -208,6 +208,33 @@ pub(crate) fn render_game(
     let vsw = sw / z;
     let vsh = sh / z;
 
+    // Wheel zoom is a presentation copy of the fully resolved world. Keep all
+    // native source/depth/packed operations on the same one-texel lattice;
+    // filtering each sprite (or its palette indices) loses edges and details.
+    if z == 1.0 {
+        state.renderer.world_zoom_pass = None;
+    } else {
+        let renderer = &mut state.renderer;
+        let gpu = &renderer.gpu;
+        let target = [sw as u32, sh as u32];
+        if let Some(pass) = renderer.world_zoom_pass.as_mut() {
+            pass.set_view(&gpu.device, &gpu.queue, target, z);
+        } else {
+            renderer.world_zoom_pass = Some(crate::render::upscale_pass::WorldZoomPass::new(
+                &gpu.device,
+                &gpu.queue,
+                gpu.surface_format,
+                target,
+                z,
+            ));
+        }
+        renderer.batch_renderer.set_native_world_resolution(
+            &gpu.queue,
+            renderer.world_zoom_pass.as_ref().unwrap().source_size(),
+        );
+    }
+    let world_camera = state.renderer.batch_renderer.camera_uniform();
+
     let selected_building = state
         .match_state
         .sim_runtime
@@ -248,6 +275,9 @@ pub(crate) fn render_game(
     #[cfg(feature = "telemetry-dashboard")]
     let phase1_started = render_started.map(|_| Instant::now());
     let mut world = build_instances::build_world_instances(state, vsw, vsh, bracket_palette);
+    for layer in &mut world.object_layers {
+        object_extras::defer_health_to_frame(layer, world_camera.camera_pos, z);
+    }
     #[cfg(feature = "telemetry-dashboard")]
     let after_world = render_started.map(|_| Instant::now());
 
@@ -356,18 +386,18 @@ pub(crate) fn render_game(
     state.renderer.combat_light_renderer.prepare(
         &state.renderer.gpu,
         &combat_lights,
-        [sw, sh],
+        world_camera.screen_size,
         [
             state.match_state.input.camera_x,
             state.match_state.input.camera_y,
         ],
-        state.match_state.input.zoom_level,
+        world_camera.zoom,
     );
     let composition_view = state.renderer.combat_light_renderer.composition_view();
     let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(state);
     // Shader row coordinates are unscaled world pixels; scissor uses target
     // pixels. Native zoom1 is exact, and scaled views preserve that unit frame.
-    let native_z_origin_y = tactical_y as f32 / state.match_state.input.zoom_level;
+    let native_z_origin_y = (tactical_y as f32 / z).floor();
     state
         .renderer
         .batch_renderer
@@ -394,7 +424,11 @@ pub(crate) fn render_game(
     state.renderer.terrain_draw_renderer.prepare(
         &state.renderer.gpu.device,
         state.renderer.combat_light_renderer.composition_texture(),
-        &state.renderer.depth_view,
+        state
+            .renderer
+            .world_zoom_pass
+            .as_ref()
+            .map_or(&state.renderer.depth_view, |zoom| zoom.depth_view()),
         state.renderer.batch_renderer.camera_uniform(),
     );
 
@@ -671,7 +705,7 @@ pub(crate) fn render_game(
         &state.renderer.gpu.device,
         &state.renderer.gpu.queue,
         &ion_blasts,
-        z,
+        world_camera.zoom,
     );
 
     // Phase 7: Dispatch draw calls in render order.
@@ -733,7 +767,7 @@ pub(crate) fn tactical_surface_line_viewport(
         .map(|v| v.floor() as i32),
         clip: [x, y, w, h].map(|v| (v as f32 / z) as i32),
         z_origin_y: (y as f32 / z) as i32,
-        zoom: z,
+        zoom: 1.0,
     }
 }
 
@@ -881,6 +915,39 @@ fn upload_to_gpu(
         &sidebar.cameo_overlay,
     );
     pool.upload(&state.renderer.gpu, "sidebar_text", &sidebar.text);
+    #[cfg(feature = "phobos")]
+    {
+        pool.upload(
+            &state.renderer.gpu,
+            "sw_sidebar_chrome",
+            &sidebar.sw_sidebar_chrome,
+        );
+        pool.upload(
+            &state.renderer.gpu,
+            "sw_sidebar_cameo",
+            &sidebar.sw_sidebar_cameo,
+        );
+        pool.upload(
+            &state.renderer.gpu,
+            "sw_sidebar_gclock",
+            &sidebar.sw_sidebar_gclock,
+        );
+        pool.upload(
+            &state.renderer.gpu,
+            "sw_sidebar_hover",
+            &sidebar.sw_sidebar_hover,
+        );
+        pool.upload(
+            &state.renderer.gpu,
+            "sw_sidebar_overlay",
+            &sidebar.sw_sidebar_overlay,
+        );
+        pool.upload(
+            &state.renderer.gpu,
+            "sw_sidebar_text",
+            &sidebar.sw_sidebar_text,
+        );
+    }
     pool.upload(&state.renderer.gpu, "message_text", &message_text);
     pool.upload(&state.renderer.gpu, "message_fill", &message_fill);
     pool.upload(&state.renderer.gpu, "outcome_shape", &outcome_shape);

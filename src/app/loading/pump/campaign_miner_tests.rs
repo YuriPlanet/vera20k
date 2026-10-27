@@ -109,6 +109,7 @@ fn load_campaign(
         context,
         false,
         8,
+        false,
         rules.unwrap(),
         #[cfg(feature = "ares")]
         &mut prepared_rules_prefix,

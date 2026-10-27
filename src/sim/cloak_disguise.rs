@@ -901,14 +901,20 @@ impl crate::sim::world::Simulation {
             .session
             .current_house()
             .and_then(|id| self.houses.get(&id))
-            .map_or(2, |house| match house.side_index() {
-                0 => 0,
-                1 => 1,
-                _ => 2,
-            });
-        rules.general.infantry_disguises[side]
-            .as_deref()
-            .and_then(|name| self.interner.get(name))
+            .map(|house| house.side_index());
+        let worn = match side {
+            Some(side) => match rules.side_disguise(side) {
+                Some(value) => value,
+                None => rules.general.infantry_disguises[match side {
+                    0 => 0,
+                    1 => 1,
+                    _ => 2,
+                }]
+                .as_deref(),
+            },
+            None => rules.general.infantry_disguises[2].as_deref(),
+        };
+        worn.and_then(|name| self.interner.get(name))
     }
 
     /// vt+0x46C `DisguiseAs(target)`: what the bullet's Owner does when a

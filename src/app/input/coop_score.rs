@@ -6,7 +6,7 @@ use crate::app::{App, AppState};
 use crate::ui::coop_score_shell::*;
 use crate::ui::lan_shell::LanEditKey;
 use crate::ui::main_menu_dialogs::options::LauncherCue;
-use std::time::Instant;
+use crate::util::time::Instant;
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::{KeyCode, PhysicalKey};
 

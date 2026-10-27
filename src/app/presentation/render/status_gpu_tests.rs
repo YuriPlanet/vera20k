@@ -19,6 +19,243 @@ use crate::sim::{
 use serde_json::Value;
 
 #[test]
+#[ignore = "requires retail assets and GPU; screen-pixel health bars across wheel zoom"]
+fn wheel_zoom_keeps_mobile_health_pixels_identical() {
+    wheel_zoom_health_pixels("MTNK", EntityCategory::Unit);
+}
+
+#[test]
+#[ignore = "requires retail assets and GPU; issue3097 infantry health across wheel zoom"]
+fn wheel_zoom_keeps_infantry_health_pixels_identical() {
+    wheel_zoom_health_pixels("E1", EntityCategory::Infantry);
+}
+
+fn wheel_zoom_health_pixels(type_name: &str, category: EntityCategory) {
+    use crate::render::upscale_pass::WorldZoomPass;
+    let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+        .expect("physical Battle rules");
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
+    let gpu = Gpu::new();
+    let format = wgpu::TextureFormat::Bgra8UnormSrgb;
+    let size = [256, 256];
+    let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+    let overlay = SelectionOverlay::new_on_device(&gpu.device, &gpu.queue, &batch, Some(&assets));
+    let mut sim = Simulation::new();
+    let owner = sim.intern("Americans");
+    let object = retail.rules.object(type_name).unwrap();
+    let type_ref = sim.intern(type_name);
+    let mut entity = GameEntity::new_at_frame_zero_for_test(
+        1,
+        20,
+        20,
+        0,
+        0,
+        owner,
+        // Damaged infantry also exercises the filled/empty pip boundary.
+        Health::new(if category == EntityCategory::Infantry {
+            object.strength / 2
+        } else {
+            object.strength
+        }),
+        type_ref,
+        category,
+        0,
+        5,
+        false,
+    );
+    entity.lifecycle.set_in_limbo_for_test(false);
+    entity.discovery.set_owned_by_current_house_for_test(true);
+    entity.selection.set_selected_for_test(true);
+    sim.entities_mut_for_test().insert(entity);
+    sim.resubmit_entity_display_for_test(1);
+    let entity = sim.entities().get(1).unwrap();
+    let coord = crate::sim::movement::ground_pose::object_get_coords(entity, None);
+    let point = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
+    let mut cam = camera(size);
+    cam.camera_pos = [point.0 - 63.0, point.1 - 180.0];
+    let anchor = point;
+    let pip_count = if category == EntityCategory::Infantry {
+        8
+    } else {
+        17
+    };
+    let mut reference: Option<(Vec<u8>, [u32; 2], [i32; 2])> = None;
+    let mut native_infantry_fills = None;
+    for zoom in [1.0, 1.25, 0.8, 1.0 / 1.5] {
+        cam.zoom = zoom;
+        batch.write_camera(&gpu.queue, cam);
+        let resolve =
+            (zoom != 1.0).then(|| WorldZoomPass::new(&gpu.device, &gpu.queue, format, size, zoom));
+        let source_size = resolve.as_ref().map_or(size, WorldZoomPass::source_size);
+        if resolve.is_some() {
+            batch.set_native_world_resolution(&gpu.queue, source_size);
+        }
+        let status = techno_extras_for_parent(
+            &sim,
+            entity,
+            Some(&retail.rules),
+            &overlay,
+            None,
+            Some("Americans"),
+            StatusViewport {
+                camera: cam.camera_pos,
+                size: size.map(|n| n as f32 / zoom),
+                zoom,
+                ignore_visibility: true,
+            },
+        );
+        assert!(status.background.is_some());
+        let visible_pips = if category == EntityCategory::Infantry {
+            // Compare the damaged bar with its native-zoom fill count without
+            // duplicating the health-to-pip rounding performed by the producer.
+            *native_infantry_fills.get_or_insert_with(|| {
+                assert_eq!(zoom, 1.0);
+                assert!(status.fills.len() > 0 && status.fills.len() < pip_count);
+                status.fills.len()
+            })
+        } else {
+            pip_count
+        };
+        assert_eq!(status.fills.len(), visible_pips);
+        let display = NativeDisplayOrder::new(&[1]);
+        let draw = display.object_draw(1, SpriteEncoding::Plain).unwrap();
+        let mut parent = PlannedObjectInstance::object(draw, vec![]);
+        parent.status = Some(status);
+        let mut layer = lower_ground_object_instances(vec![parent]);
+        super::object_extras::defer_health_to_frame(&mut layer, cam.camera_pos, zoom);
+        let mut pool = InstanceBufferPool::new();
+        pool.upload_on_device(
+            &gpu.device,
+            &gpu.queue,
+            "object_extras",
+            &layer.extras_instances,
+        );
+        let a = ShroudBuffer::fixture(
+            &gpu.device,
+            &gpu.queue,
+            source_size,
+            cam.camera_pos,
+            // The mobile border straddles an A boundary at its parent point.
+            // It must still sample live A in frame pixels, while fills bypass A.
+            &(0..source_size[0] * source_size[1])
+                .map(|index| if index % source_size[0] < 63 { 0 } else { 127 })
+                .collect::<Vec<_>>(),
+        );
+        batch.bind_shroud(&gpu.device, Some(&a));
+        let color = gpu.target(source_size, format);
+        let depth = gpu.target(source_size, wgpu::TextureFormat::Depth32Float);
+        let cv = color.create_view(&Default::default());
+        let dv = depth.create_view(&Default::default());
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        clear(
+            &mut encoder,
+            &cv,
+            &dv,
+            u16::MAX,
+            wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+        );
+        let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+        terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
+        super::object_extras::draw_object_extras(
+            &mut encoder,
+            &cv,
+            &dv,
+            &mut terrain,
+            [0, 0, source_size[0], source_size[1]],
+            &batch,
+            Some(&overlay),
+            pool.get("object_extras").map(|(buffer, _)| buffer),
+            None,
+            &layer,
+        );
+        let output = if let Some(resolve) = &resolve {
+            resolve.composite(
+                &gpu.device,
+                &mut encoder,
+                &color,
+                [0, 0, size[0], size[1]],
+                wgpu::Color::BLACK,
+            );
+            let cameras = batch.create_frame_world_cameras(&gpu.device, zoom, Some(&a));
+            {
+                let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
+                    &mut encoder,
+                    resolve.color_view(),
+                    resolve.frame_depth_view(),
+                );
+                super::object_extras::draw_frame_health(
+                    &mut pass,
+                    &batch,
+                    Some(&overlay),
+                    pool.get("object_extras").map(|(buffer, _)| buffer),
+                    &layer,
+                    [&cameras[0], &cameras[1]],
+                );
+            }
+            resolve.color_texture()
+        } else {
+            &color
+        };
+        let read = gpu.read(&mut encoder, output);
+        let pixels = gpu.finish(encoder, &[read], size).remove(0);
+        let mut bounds = [size[0], size[1], 0, 0];
+        for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+            if pixel[..3] != [0; 3] {
+                let x = index as u32 % size[0];
+                let y = index as u32 / size[0];
+                bounds = [
+                    bounds[0].min(x),
+                    bounds[1].min(y),
+                    bounds[2].max(x + 1),
+                    bounds[3].max(y + 1),
+                ];
+            }
+        }
+        assert!(
+            bounds[0] < bounds[2] && bounds[1] < bounds[3],
+            "visible health pixels"
+        );
+        let extent = [bounds[2] - bounds[0], bounds[3] - bounds[1]];
+        let frame_anchor = [
+            ((anchor.0 - cam.camera_pos[0]) * zoom + 0.5).floor() as i32,
+            ((anchor.1 - cam.camera_pos[1]) * zoom + 0.5).floor() as i32,
+        ];
+        let mut strip = Vec::new();
+        for y in bounds[1]..bounds[3] {
+            let offset = ((y * size[0] + bounds[0]) * 4) as usize;
+            strip.extend_from_slice(&pixels[offset..offset + extent[0] as usize * 4]);
+        }
+        let offset = [
+            bounds[0] as i32 - frame_anchor[0],
+            bounds[1] as i32 - frame_anchor[1],
+        ];
+        if let Some((reference, reference_extent, reference_offset)) = &reference {
+            assert_eq!(
+                extent, *reference_extent,
+                "zoom {zoom}: fixed health footprint"
+            );
+            assert!(
+                &strip == reference,
+                "zoom {zoom}: health border, pip texels and spacing; first differing byte {:?}",
+                strip
+                    .iter()
+                    .zip(reference)
+                    .position(|(actual, expected)| actual != expected)
+            );
+            // Allow whole-strip rounding by one screen pixel; every internal
+            // pixel above must remain identical and the roof/parent attachment
+            // must still follow the projected world point.
+            assert!(
+                (0..2).all(|axis| (offset[axis] - reference_offset[axis]).abs() <= 1),
+                "zoom {zoom}: health follows its projected anchor"
+            );
+        } else {
+            reference = Some((strip, extent, offset));
+        }
+    }
+}
+
+#[test]
 #[ignore = "requires retail assets and GPU; original MTNK health strip A/Z and Display replay"]
 fn native_mobile_health_strips_preserve_color_a_and_z() {
     native_status_controls(
@@ -94,6 +331,7 @@ fn a_selected_mobile_shield_background_keeps_its_pipbrd_binding() {
         StatusViewport {
             camera: cam.camera_pos,
             size: size.map(|n| n as f32),
+            zoom: 1.0,
             ignore_visibility: true,
         },
     );
@@ -230,6 +468,7 @@ fn a_hovered_enemy_mirage_worn_as_terrain_draws_no_health_strip() {
             StatusViewport {
                 camera: [center.0 - 400.0, center.1 - 300.0],
                 size: [800.0, 600.0],
+                zoom: 1.0,
                 ignore_visibility: false,
             },
         )
@@ -398,6 +637,7 @@ fn native_self_heal_draw_fault_order() {
                 StatusViewport {
                     camera: [-380.0, 400.0],
                     size: [160.0, 120.0],
+                    zoom: 1.0,
                     ignore_visibility: true,
                 },
             )
@@ -503,6 +743,7 @@ fn production_self_heal_status_workload_timing() {
                             StatusViewport {
                                 camera: cam.camera_pos,
                                 size: size.map(|n| n as f32),
+                                zoom: 1.0,
                                 ignore_visibility: false,
                             },
                         );
@@ -908,6 +1149,7 @@ fn native_building_status_labels(fixture: &'static str) {
                 &font,
                 &csf,
                 cam.camera_pos,
+                1.0,
                 clip.map(|value| value as i32),
                 rules,
             );
@@ -972,6 +1214,7 @@ fn native_building_status_labels(fixture: &'static str) {
                 pool.get("building_status_text").map(|(buffer, _)| buffer),
                 Some(font.atlas()),
                 &labels.runs,
+                batch.surface_camera_bind_group(),
             );
             let reads = [
                 gpu.read(&mut encoder, &color),
@@ -1653,6 +1896,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     StatusViewport {
                         camera: cam.camera_pos,
                         size: size.map(|x| x as f32),
+                        zoom: 1.0,
                         ignore_visibility: false,
                     },
                 );

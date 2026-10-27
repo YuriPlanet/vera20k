@@ -1,7 +1,7 @@
 //! Render glue for the RA2TS-bearing right-panel menu pages: Single Player
 //! `0x100` and Movies & Credits `0x101` (`ui::shell::menu_page`).
 
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use anyhow::Result;
 

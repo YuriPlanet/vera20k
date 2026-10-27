@@ -2218,3 +2218,73 @@ fn choose_map_help_keys_match_the_native_table() {
         );
     }
 }
+
+#[cfg(feature = "ares")]
+#[test]
+fn ares_country_catalog_sorts_hides_and_exposes_flag_and_status() {
+    use crate::rules::ini_parser::IniFile;
+    let ini = IniFile::from_str(
+        "[Countries]\n0=Low\n1=High\n2=Hidden\n3=Custom\n\
+         [Low]\nMultiplay=yes\nUIName=NAME:Low\nListIndex=10\n\
+         [High]\nMultiplay=yes\nUIName=NAME:High\nListIndex=1\n\
+         [Hidden]\nMultiplay=yes\nUIName=NAME:Hidden\nListIndex=-1\n\
+         [Custom]\nMultiplay=yes\nUIName=NAME:Custom\nListIndex=5\n\
+         File.Flag=CustomFlag.PCX\nMenuText.Status=STT:Custom\n",
+    );
+    let processed = crate::rules::native_processing::RulesLayerStack::new(ini)
+        .process()
+        .expect("country catalog rules");
+    let rules =
+        crate::rules::ruleset::RuleSet::from_processed_rules(&processed).expect("country catalog");
+    let expected = vec![
+        SkirmishComboItem::Country(SkirmishCountryChoice::Random),
+        SkirmishComboItem::Country(SkirmishCountryChoice::Country(
+            LaunchCountry::from_country_index(1),
+        )),
+        SkirmishComboItem::Country(SkirmishCountryChoice::Country(
+            LaunchCountry::from_country_index(3),
+        )),
+        SkirmishComboItem::Country(SkirmishCountryChoice::Country(
+            LaunchCountry::from_country_index(0),
+        )),
+    ];
+    assert_eq!(country_choices(&rules), expected);
+    let mut shell = SkirmishShellState::default();
+    shell.refresh_country_catalog(&rules);
+    assert_eq!(
+        shell
+            .country_catalog
+            .flag_for_choice(false, LaunchCountry::from_country_index(3)),
+        Some("customflag.pcx")
+    );
+    assert_eq!(
+        shell
+            .country_catalog
+            .status_key_for_choice(SkirmishCountryChoice::Country(
+                LaunchCountry::from_country_index(3)
+            )),
+        Some("STT:Custom")
+    );
+    assert_eq!(
+        status_help_key_for_hover_with_catalog(
+            SkirmishHoverTarget::ComboItem {
+                id: SkirmishComboId::Side(0),
+                item: SkirmishComboItem::Country(SkirmishCountryChoice::Country(
+                    LaunchCountry::from_country_index(3)
+                )),
+            },
+            Some(&shell.country_catalog),
+        ),
+        Some("STT:Custom")
+    );
+    assert_eq!(
+        status_help_key_for_hover_with_catalog(
+            SkirmishHoverTarget::ComboItem {
+                id: SkirmishComboId::Side(0),
+                item: SkirmishComboItem::Country(SkirmishCountryChoice::Random),
+            },
+            Some(&shell.country_catalog),
+        ),
+        Some("STT:PlayerSideRandom")
+    );
+}

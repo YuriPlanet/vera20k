@@ -494,7 +494,7 @@ impl AppAudioRuntime {
     /// select SCORE, INTRO or the next scenario. Source: original instructions.
     pub(crate) fn apply_scenario_exit_tick(
         &mut self,
-        tick: crate::app::match_runtime::scenario_exit::ScenarioExitTick,
+        tick: &crate::app::match_runtime::scenario_exit::ScenarioExitTick,
         assets: Option<&AssetManager>,
         wall_ms: u64,
     ) {
@@ -508,15 +508,16 @@ impl AppAudioRuntime {
             }
             self.restore_sound_master();
         }
-        // Score dialogs explicitly select SCORE after the master is restored:
-        // 5C9B10 (multiplayer), original gamemd.exe. Campaign WM_INIT
-        // selects its theme after the Win movie in open_campaign_score_page.
+        // Score dialogs explicitly select their theme after the master is
+        // restored: 5C9B10 (multiplayer), original gamemd.exe, or the side's
+        // name under the hook at 0x5C9B75. Campaign WM_INIT selects its theme
+        // after the Win movie in open_campaign_score_page.
         if let Some(crate::app::match_runtime::scenario_exit::ScenarioExitAudioAction::PlayTheme(
             theme,
-        )) = tick.after_cleanup
+        )) = &tick.after_cleanup
             && let Some(assets) = assets
         {
-            let _ = self.play_theme(theme, assets, wall_ms);
+            let _ = self.play_theme(&theme, assets, wall_ms);
         }
     }
 
@@ -806,15 +807,15 @@ mod tests {
         let before = runtime.theme.saved_slots();
         assert_eq!(before, [0, -1]);
         let mut exit = ScenarioExitCascade::start(0, ScenarioExitDestination::CampaignDefeat);
-        runtime.apply_scenario_exit_tick(exit.tick(0, false, false), Some(&assets), 0);
+        runtime.apply_scenario_exit_tick(&exit.tick(0, false, false), Some(&assets), 0);
         let moving = runtime.sound_master_moving();
-        runtime.apply_scenario_exit_tick(exit.tick(500, moving, false), Some(&assets), 500);
+        runtime.apply_scenario_exit_tick(&exit.tick(500, moving, false), Some(&assets), 500);
         // GameExit__Defeat glides only the effects master (0x00685715); the
         // Theme stream keeps playing at full.
         assert_eq!(runtime.master_groups.sound_master.value(), 0x2000);
         assert_eq!(runtime.theme.saved_slots(), before);
         let moving = runtime.sound_master_moving();
-        runtime.apply_scenario_exit_tick(exit.tick(1_000, moving, false), Some(&assets), 1_000);
+        runtime.apply_scenario_exit_tick(&exit.tick(1_000, moving, false), Some(&assets), 1_000);
         assert_eq!(runtime.master_groups.sound_master.value(), 0x4000);
         assert_eq!(
             runtime.theme.saved_slots(),
@@ -835,8 +836,8 @@ mod tests {
                 model: crate::ui::score_shell::ScoreScreenModel::default(),
             },
         );
-        runtime.apply_scenario_exit_tick(score.tick(3_000, false, false), Some(&assets), 3_000);
-        runtime.apply_scenario_exit_tick(score.tick(3_000, false, false), Some(&assets), 3_000);
+        runtime.apply_scenario_exit_tick(&score.tick(3_000, false, false), Some(&assets), 3_000);
+        runtime.apply_scenario_exit_tick(&score.tick(3_000, false, false), Some(&assets), 3_000);
         assert_eq!(
             runtime.theme.current_song(),
             2,

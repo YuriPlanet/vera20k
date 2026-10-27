@@ -76,7 +76,14 @@ pub(crate) mod powered_unit; // Robot Tanks offline without a PowersUnit= buildi
 pub mod light_sources;
 pub mod multiplayer_checksum;
 pub mod native_identity;
+#[cfg_attr(
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
+    path = "parallel_web.rs"
+)]
 pub(crate) mod parallel; // order-preserving work over scoped threads
+#[cfg(all(test, feature = "wasm", not(target_arch = "wasm32")))]
+#[path = "parallel_web.rs"]
+mod parallel_web_tests;
 pub mod rng;
 pub mod scenario_bootstrap;
 pub mod scenario_post_map;

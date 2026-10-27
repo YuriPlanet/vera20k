@@ -143,16 +143,20 @@ fn rows_swap_the_local_player_into_row_zero_and_skip_non_multiplay_houses() {
             None
         ]
     );
-    // Insignia by HouseType index: Russians (2) on row 0, then the swapped
-    // Americans (0) on row 2, Alliance (1) on row 1.
+    // Stock insignia go by HouseType index: Russians (2) on row 0, then the
+    // swapped Americans (0) on row 2, Alliance (1) on row 1. Ares answers
+    // from `File.Flag`, whose default `HouseTypeExt::Initialize @ 0x1001C0F0`
+    // picks by stored ID, so Russians keeps its own flag at index 2.
+    let local = if cfg!(feature = "ares") {
+        "rusi.pcx"
+    } else {
+        "frai.pcx"
+    };
     let insignia: Vec<_> = resolved.rows[..3]
         .iter()
-        .map(|row| row.as_ref().unwrap().insignia)
+        .map(|row| row.as_ref().unwrap().insignia.as_deref())
         .collect();
-    assert_eq!(
-        insignia,
-        [Some("frai.pcx"), Some("japi.pcx"), Some("usai.pcx")]
-    );
+    assert_eq!(insignia, [Some(local), Some("japi.pcx"), Some("usai.pcx")]);
     assert!(resolved.rows[0].as_ref().unwrap().allies.is_none());
     let mut large = self::fixture();
     for index in 4..32 {

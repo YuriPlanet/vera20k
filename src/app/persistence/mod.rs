@@ -18,7 +18,7 @@ pub(crate) use resource_load::{PreparedSavedGame, SavedGamePreparationView};
 
 use std::path::{Path, PathBuf};
 #[cfg(any(feature = "dev-overlays", test))]
-use std::time::SystemTime;
+use crate::util::time::SystemTime;
 
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -28,7 +28,10 @@ use crate::sim::snapshot::{
 };
 use crate::sim::world::Simulation;
 
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 const DEFAULT_SAVES_DIRECTORY: &str = "saves";
+#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+const DEFAULT_SAVES_DIRECTORY: &str = "/saves";
 
 /// Process-lifetime save-game state owned by the app persistence domain.
 pub(crate) struct PersistenceState {
@@ -464,7 +467,7 @@ impl SaveRepository {
     }
 
     pub(crate) fn read(&self, path: &Path) -> std::io::Result<Vec<u8>> {
-        std::fs::read(path)
+        crate::util::file_system::read(path)
     }
 
     pub(crate) fn write_named(
@@ -472,10 +475,12 @@ impl SaveRepository {
         file_name: &str,
         bytes: &[u8],
     ) -> Result<PathBuf, SaveWriteError> {
-        std::fs::create_dir_all(&self.directory).map_err(|source| SaveWriteError {
-            #[cfg(any(feature = "dev-overlays", test))]
-            stage: SaveWriteStage::CreateDirectory,
-            source,
+        crate::util::file_system::create_dir_all(&self.directory).map_err(|source| {
+            SaveWriteError {
+                #[cfg(any(feature = "dev-overlays", test))]
+                stage: SaveWriteStage::CreateDirectory,
+                source,
+            }
         })?;
         let path = self.directory.join(file_name);
         self.create_new_file(&path, bytes)?;
@@ -485,19 +490,26 @@ impl SaveRepository {
     /// New saves may not silently replace a timestamp-name collision. Remove
     /// only our newly created partial file if writing fails.
     fn create_new_file(&self, path: &Path, bytes: &[u8]) -> Result<(), SaveWriteError> {
-        use std::io::Write;
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(path)
-            .map_err(SaveWriteError::write_file)?;
-        let result = file.write_all(bytes).and_then(|()| file.sync_all());
-        drop(file);
-        if let Err(source) = result {
-            let _ = std::fs::remove_file(path);
-            return Err(SaveWriteError::write_file(source));
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        {
+            crate::util::file_system::write_new(path, bytes).map_err(SaveWriteError::write_file)
         }
-        Ok(())
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        {
+            use std::io::Write;
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(path)
+                .map_err(SaveWriteError::write_file)?;
+            let result = file.write_all(bytes).and_then(|()| file.sync_all());
+            drop(file);
+            if let Err(source) = result {
+                let _ = crate::util::file_system::remove_file(path);
+                return Err(SaveWriteError::write_file(source));
+            }
+            Ok(())
+        }
     }
 
     /// Only an explicit existing repository row can be replaced. Stage the
@@ -527,25 +539,34 @@ impl SaveRepository {
     }
 
     fn replace_file(&self, path: &Path, bytes: &[u8]) -> Result<(), SaveWriteError> {
-        static NEXT_STAGE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let directory = path
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-            .unwrap_or_else(|| Path::new("."));
-        let stage = loop {
-            let id = NEXT_STAGE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let stage = directory.join(format!(".save-{}-{id}.tmp", std::process::id()));
-            match self.create_new_file(&stage, bytes) {
-                Ok(()) => break stage,
-                Err(error) if error.source.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(error) => return Err(error),
-            }
-        };
-        let result = std::fs::rename(&stage, path);
-        if result.is_err() {
-            let _ = std::fs::remove_file(&stage);
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        {
+            crate::util::file_system::write(path, bytes).map_err(SaveWriteError::write_file)
         }
-        result.map_err(SaveWriteError::write_file)
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        {
+            static NEXT_STAGE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let directory = path
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."));
+            let stage = loop {
+                let id = NEXT_STAGE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let stage = directory.join(format!(".save-{}-{id}.tmp", std::process::id()));
+                match self.create_new_file(&stage, bytes) {
+                    Ok(()) => break stage,
+                    Err(error) if error.source.kind() == std::io::ErrorKind::AlreadyExists => {
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                }
+            };
+            let result = std::fs::rename(&stage, path);
+            if result.is_err() {
+                let _ = crate::util::file_system::remove_file(&stage);
+            }
+            result.map_err(SaveWriteError::write_file)
+        }
     }
 
     /// The game's one retained initial save per mission. Native67CF13..67CF42
@@ -571,14 +592,16 @@ impl SaveRepository {
             )));
         }
         if file.is_relative() {
-            std::fs::create_dir_all(&self.directory).map_err(|source| SaveWriteError {
-                #[cfg(any(feature = "dev-overlays", test))]
-                stage: SaveWriteStage::CreateDirectory,
-                source,
+            crate::util::file_system::create_dir_all(&self.directory).map_err(|source| {
+                SaveWriteError {
+                    #[cfg(any(feature = "dev-overlays", test))]
+                    stage: SaveWriteStage::CreateDirectory,
+                    source,
+                }
             })?;
         }
         let path = self.directory.join(file);
-        if path.exists() {
+        if crate::util::file_system::exists(&path) {
             self.validate_existing_save(&path)?;
             self.replace_file(&path, bytes)?;
         } else {
@@ -595,11 +618,11 @@ impl SaveRepository {
     }
 
     pub(crate) fn delete(&self, path: &Path) -> std::io::Result<()> {
-        std::fs::remove_file(path)
+        crate::util::file_system::remove_file(path)
     }
 
     pub(crate) fn exists(&self, path: &Path) -> bool {
-        path.exists()
+        crate::util::file_system::exists(&path)
     }
 
     /// Native5596A0 browser metadata with each file's write time. The shared
@@ -641,7 +664,7 @@ impl SaveRepository {
 
     /// Saves whose header reads, with their file time, in directory order.
     fn readable_entries(&self) -> impl Iterator<Item = (SaveEntry, u64)> + '_ {
-        std::fs::read_dir(&self.directory)
+        crate::util::file_system::read_dir(&self.directory)
             .into_iter()
             .flatten()
             .filter_map(|item| {
@@ -654,7 +677,12 @@ impl SaveRepository {
                 if !metadata.is_file() {
                     return None;
                 }
-                let header = Self::read_browser_metadata(std::fs::File::open(&path).ok()?).ok()?;
+                #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+                let reader = std::fs::File::open(&path).ok()?;
+                #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+                let reader =
+                    std::io::Cursor::new(crate::util::file_system::read_shared(&path).ok()?);
+                let header = Self::read_browser_metadata(reader).ok()?;
                 let ticks = crate::map::rmg::saved_seeds::system_time_to_file_time(
                     metadata.modified().ok()?,
                 );
@@ -666,7 +694,7 @@ impl SaveRepository {
     /// modification time without reading or validating its snapshot header.
     #[cfg(any(feature = "dev-overlays", test))]
     pub(crate) fn quickload_path_by_modified_time(&self) -> Option<PathBuf> {
-        let directory = std::fs::read_dir(&self.directory).ok()?;
+        let directory = crate::util::file_system::read_dir(&self.directory).ok()?;
         newest_modified_path(directory.filter_map(|item| {
             let item = item.ok()?;
             let path = item.path();

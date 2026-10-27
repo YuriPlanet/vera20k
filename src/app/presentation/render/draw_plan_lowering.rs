@@ -162,6 +162,13 @@ pub(crate) enum ObjectExtrasRun {
     },
 }
 
+/// One parent's fixed-pixel health draw after wheel resampling.
+pub(crate) struct FrameHealthBar {
+    pub background: Option<u32>,
+    pub shield_background: Option<u32>,
+    pub fills: std::ops::Range<u32>,
+}
+
 /// One native layer output: exact integer parent order plus flat GPU instances.
 #[derive(Default)]
 pub(crate) struct ObjectLayerPass {
@@ -181,6 +188,9 @@ pub(crate) struct ObjectLayerPass {
     pub extras_lines: Vec<crate::render::surface_line::SurfaceLine>,
     pub extras_instances: Vec<SpriteInstance>,
     pub extras_runs: Vec<ObjectExtrasRun>,
+    /// Wheel-zoom health commands removed from both world Extras visits.
+    /// Indices still refer to the single `extras_instances` upload.
+    pub frame_health: Vec<FrameHealthBar>,
     /// Aligned with `instances`; retained for executable ordering checks.
     #[cfg(test)]
     pub owners: Vec<DrawId>,

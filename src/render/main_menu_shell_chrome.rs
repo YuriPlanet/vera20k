@@ -487,9 +487,11 @@ pub struct CampaignScoreArt {
     pub scra: Option<CampaignScoreFrameStrip>,
 }
 
-/// Campaign StandaloneScore asset names selected by side and native width
-/// branch (`0x72D300`/`0x72D460`): width exactly 640 chooses small; every
-/// other width chooses medium. `Scenario+0x34B8` supplies side.
+/// The stock Campaign StandaloneScore asset names selected by side and native
+/// width branch (`0x72D300`/`0x72D460`): width exactly 640 chooses small; every
+/// other width chooses medium. `Scenario+0x34B8` supplies side. An installed
+/// Ares replaces each name with its own side buffer, so the width branch no
+/// longer selects the small shapes there.
 pub fn campaign_score_art_names(
     side: i32,
     screen_w: u32,
@@ -511,9 +513,14 @@ pub fn build_campaign_score_art(
     assets: &AssetManager,
     side: i32,
     screen_w: u32,
+    art: crate::rules::ruleset::SideScoreArt<'_>,
 ) -> Option<CampaignScoreArt> {
     let (background_name, scrt_name, scra_name, palette_name) =
         campaign_score_art_names(side, screen_w);
+    let background_name = score_name(art.campaign_background, background_name);
+    let scrt_name = score_name(art.campaign_transition, scrt_name);
+    let scra_name = score_name(art.campaign_animation, scra_name);
+    let palette_name = score_name(art.campaign_palette, palette_name);
     let palette = load_named_palette(assets, palette_name)?;
     let background = render_shp_entry(assets, background_name, &palette, 0, None)?;
     let (texture, mut entries) = pack_entries(gpu, batch, &[background])?;
@@ -556,9 +563,20 @@ pub fn score_art_names(side: i32, screen_w: u32) -> (&'static str, &'static str)
     (if screen_w == 640 { small } else { large }, palette)
 }
 
-/// Band `band`'s bar by side (`0x005CA110`, tables `0x00844B24`,
-/// `0x00844B4C`, `0x00844B74`); any other side has none.
-pub fn score_bar_name(side: i32, band: usize) -> Option<String> {
+/// Each score name is substituted on its own, the way the hook copies every
+/// SideExt field over its stock buffer (`0x1002F270`).
+fn score_name<'a>(name: Option<&'a str>, stock: &'a str) -> &'a str {
+    name.unwrap_or(stock)
+}
+
+/// Band `band`'s bar: the side's `MultiplayerScore.Bars=` pattern with the first
+/// `~~` replaced by the two-digit band number (`Game_GetMultiplayerScoreScreenBar`
+/// `0x1002F300`), else the stock name by side (tables `0x00844B24`, `0x00844B4C`,
+/// `0x00844B74`); any other side has none.
+pub fn score_bar_name(bars: Option<&str>, side: i32, band: usize) -> Option<String> {
+    if let Some(pattern) = bars {
+        return Some(pattern.replacen("~~", &format!("{:02}", band + 1), 1));
+    }
     let side = match side {
         0 => 'a',
         1 => 's',
@@ -574,8 +592,11 @@ pub fn build_score_art(
     assets: &AssetManager,
     side: i32,
     screen_w: u32,
+    art: crate::rules::ruleset::SideScoreArt<'_>,
 ) -> Option<ScoreArt> {
     let (shape, palette) = score_art_names(side, screen_w);
+    let shape = score_name(art.multiplayer_background, shape);
+    let palette = score_name(art.multiplayer_palette, palette);
     let mut rendered = Vec::new();
     let mut labels: Vec<String> = Vec::new();
     if let Some(palette) = load_named_palette(assets, palette)
@@ -593,7 +614,7 @@ pub fn build_score_art(
         log::warn!("Missing score background {shape}");
     }
     for band in 0..10 {
-        let Some(file) = score_bar_name(side, band) else {
+        let Some(file) = score_bar_name(art.multiplayer_bars, side, band) else {
             break;
         };
         match render_image_static_pcx(assets, &file) {
@@ -942,9 +963,25 @@ mod tests {
         assert_eq!(score_art_names(2, 640), ("MPSSCRNS.SHP", "MPYSCRN.PAL"));
         assert_eq!(score_art_names(2, 1024), ("MPYSCRNL.SHP", "MPYSCRN.PAL"));
         assert_eq!(score_art_names(4, 800), ("MPYSCRNL.SHP", "MPYSCRN.PAL"));
-        assert_eq!(score_bar_name(0, 0).as_deref(), Some("mpascrnlbar01.pcx"));
-        assert_eq!(score_bar_name(2, 9).as_deref(), Some("mpyscrnlbar10.pcx"));
-        assert_eq!(score_bar_name(3, 0), None);
+        assert_eq!(
+            score_bar_name(None, 0, 0).as_deref(),
+            Some("mpascrnlbar01.pcx")
+        );
+        assert_eq!(
+            score_bar_name(None, 2, 9).as_deref(),
+            Some("mpyscrnlbar10.pcx")
+        );
+        assert_eq!(score_bar_name(None, 3, 0), None);
+        // The side's own pattern receives the band number at its first `~~`,
+        // and a pattern without the marker keeps every band on one file.
+        assert_eq!(
+            score_bar_name(Some("MyBars~~.pcx"), 7, 2).as_deref(),
+            Some("MyBars03.pcx")
+        );
+        assert_eq!(
+            score_bar_name(Some("only.pcx"), 7, 5).as_deref(),
+            Some("only.pcx")
+        );
     }
 
     #[test]

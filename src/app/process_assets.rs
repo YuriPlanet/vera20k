@@ -417,6 +417,55 @@ impl ProcessAssets {
             .flat_map(|rules| rules.multiplayer_countries())
     }
 
+    #[cfg(feature = "ares")]
+    pub(crate) fn country_random_rows(&self) -> Vec<(&str, Option<&str>, bool, i32, i32)> {
+        self.native_rules
+            .as_ref()
+            .map(|rules| rules.country_random_rows())
+            .unwrap_or_default()
+    }
+
+    /// The score dialog's theme name for a side, or `None` for gamemd's
+    /// literal `SCORE`.
+    pub(crate) fn side_score_theme(
+        &self,
+        side: i32,
+        theme: crate::rules::ruleset::ScoreTheme,
+    ) -> Option<&str> {
+        self.native_rules
+            .as_ref()
+            .and_then(|rules| rules.side_score_theme(side, theme))
+    }
+
+    /// The shell side's `Game_LoadCampaignScoreAssets` /
+    /// `Game_LoadMultiplayerScoreAssets` file names. Every field `None` keeps
+    /// that name's fixed stock table entry.
+    pub(crate) fn side_score_art(&self, side: i32) -> crate::rules::ruleset::SideScoreArt<'_> {
+        self.native_rules
+            .as_ref()
+            .map(|rules| rules.side_score_art(side))
+            .unwrap_or_default()
+    }
+
+    /// `Game_GetFlagSurface @ 0x1001DCE0` country insignia by HouseType index,
+    /// for lobby/diplomacy rows that resolve before a match Rules projection
+    /// exists.
+    pub(crate) fn country_flag_surface(&self, index: u16) -> Option<String> {
+        #[cfg(feature = "ares")]
+        {
+            return self
+                .native_rules
+                .as_ref()
+                .and_then(|rules| rules.country_flag_surface(index))
+                .map(str::to_owned);
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            let _ = index;
+            None
+        }
+    }
+
     pub(crate) fn project_multiplayer_countries(
         &self,
         projection: &mut crate::rules::ruleset::RuleSet,
@@ -575,7 +624,10 @@ mod tests {
             ("rulesmd.ini", "[General]\nBuildSpeed=.7\n"),
             ("artmd.ini", "[UNIT]\nVoxel=yes\n"),
             ("aimd.ini", "[AI]\nValue=1\n"),
-            ("langrule.ini", "[General]\nBuildSpeed=.8\n"),
+            (
+                "langrule.ini",
+                crate::rules::retail_ini_fixture::DIGESTED_LANGRULE_CONTROL,
+            ),
             ("mode.ini", "[General]\nBuildSpeed=.6\n"),
         ] {
             std::fs::write(dir.path().join(name), bytes).unwrap();
@@ -586,11 +638,7 @@ mod tests {
         process.return_from_loading(assets);
         let original = process.multiplayer_rules_digest("mode.ini").unwrap();
         assert_ne!(original, process.multiplayer_rules_digest("").unwrap());
-        std::fs::write(
-            dir.path().join("langrule.ini"),
-            "[General]\nBuildSpeed=.4\n",
-        )
-        .unwrap();
+        std::fs::remove_file(dir.path().join("langrule.ini")).unwrap();
         assert_eq!(
             original,
             process.multiplayer_rules_digest("mode.ini").unwrap(),

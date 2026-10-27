@@ -264,7 +264,7 @@ impl RetailOptionsLoad {
     /// [`Self::without_settings`] so user profile state cannot contaminate sealed
     /// capture output.
     pub(crate) fn from_settings(ra2_dir: &Path, startup: &RetailStartupOptions) -> Self {
-        Self::from_settings_with(ra2_dir, startup, |path| std::fs::read(path))
+        Self::from_settings_with(ra2_dir, startup, |path| crate::util::file_system::read(path))
     }
 
     /// Injectable form of [`Self::from_settings`] used to prove that both

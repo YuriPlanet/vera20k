@@ -14,7 +14,7 @@ use crate::ui::shell::geom::{
 };
 use crate::ui::shell::list::{ListMetrics, ListScrollInteraction, ShellListGeometry};
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 pub const MOVIE_LIST_DIALOG: DialogId = DialogId(0x0129);
 

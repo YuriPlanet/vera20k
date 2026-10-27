@@ -622,6 +622,7 @@ pub(crate) fn build_building_status_render_instances(
     font: &BitFont,
     csf: &crate::assets::csf_file::CsfFile,
     camera: [f32; 2],
+    zoom: f32,
     tactical_clip: [i32; 4],
     rules: &RuleSet,
 ) -> BuildingStatusTextInstances {
@@ -662,8 +663,8 @@ pub(crate) fn build_building_status_render_instances(
             crate::sim::movement::ground_pose::building_render_order_parts(location, false, false);
         let (x, y) = crate::util::lepton::absolute_leptons_to_screen(render.x, render.y, render.z);
         let anchor = [
-            (x - camera[0]).round() as i32,
-            (y - camera[1]).round() as i32,
+            ((x - camera[0]) * zoom).round() as i32,
+            ((y - camera[1]) * zoom).round() as i32,
         ];
         //6D94DD..9516's coarse caller bounds precede the actual text clip.
         if anchor[0] < -360
@@ -753,12 +754,8 @@ pub(crate) fn build_building_status_instances(
             state.match_state.input.camera_x,
             state.match_state.input.camera_y,
         ],
-        [
-            0,
-            0,
-            (width as f32 / zoom).round() as i32,
-            (height as f32 / zoom).round() as i32,
-        ],
+        zoom,
+        [0, 0, width as i32, height as i32],
         rules,
     )
 }
@@ -846,8 +843,25 @@ fn repair_wrench_frame(frame: i32, options: &crate::sim::game_options::GameOptio
 pub(crate) struct StatusViewport {
     pub camera: [f32; 2],
     pub size: [f32; 2],
+    pub zoom: f32,
     /// Existing sandbox view policy; ordinary retail views ask the Cell owner.
     pub ignore_visibility: bool,
+}
+
+impl StatusViewport {
+    fn contains(self, instance: &SpriteInstance) -> bool {
+        in_view(
+            instance.position[0],
+            instance.position[1],
+            instance.size[0],
+            instance.size[1],
+            self.camera[0],
+            self.camera[1],
+            self.size[0],
+            self.size[1],
+            48.0,
+        )
+    }
 }
 
 /// One Display parent's clock, wrench, rank, health and pip commands in Extras order.
@@ -879,6 +893,20 @@ pub(crate) struct TechnoExtras {
 }
 
 impl TechnoExtras {
+    /// Wheel zoom changes health geometry after SHP instance creation. Cull
+    /// only the final world rectangles, so fixed-pixel pips can reach in from
+    /// an anchor outside the viewport. Native zoom uses the same 48px margin.
+    fn cull_health_to_viewport(&mut self, viewport: StatusViewport) {
+        self.background = self.background.take().filter(|pip| viewport.contains(pip));
+        self.shield_background = self
+            .shield_background
+            .take()
+            .filter(|pip| viewport.contains(pip));
+        self.fills.retain(|pip| viewport.contains(pip));
+        self.scale.retain(|pip| viewport.contains(pip));
+        self.self_heal = self.self_heal.take().filter(|pip| viewport.contains(pip));
+    }
+
     /// Move every owned adornment with the prototype's painted body. Native
     /// status generation and its material/selection/health semantics stay intact.
     pub(crate) fn translate_for_interpolation(&mut self, offset: [f32; 2]) {
@@ -910,6 +938,36 @@ impl TechnoExtras {
             instance.position[1] += offset[1];
         }
     }
+}
+
+fn keep_health_pips_screen_size<'a>(
+    instances: impl IntoIterator<Item = &'a mut crate::render::batch::SpriteInstance>,
+    anchor: (f32, f32),
+    zoom: f32,
+) {
+    let zoom = if zoom.is_finite() && zoom > 0.0 {
+        zoom
+    } else {
+        1.0
+    };
+    for instance in instances {
+        instance.position[0] = anchor.0 + (instance.position[0] - anchor.0) / zoom;
+        instance.position[1] = anchor.1 + (instance.position[1] - anchor.1) / zoom;
+        instance.size[0] /= zoom;
+        instance.size[1] /= zoom;
+    }
+}
+
+fn keep_health_strip_screen_size(strip: &mut TechnoExtras, anchor: (f32, f32), zoom: f32) {
+    keep_health_pips_screen_size(
+        strip
+            .background
+            .iter_mut()
+            .chain(strip.shield_background.iter_mut())
+            .chain(strip.fills.iter_mut()),
+        anchor,
+        zoom,
+    );
 }
 
 /// Phobos `ShieldClass::DrawShieldBar_Pip`: the entry's own triplet when its
@@ -1165,18 +1223,7 @@ pub(crate) fn techno_extras_for_parent(
         // E00 rank/background reads tactical A; 600 fills bypass A. The renderer
         // chooses those bindings; both use the same plain N53 Convert.
         instance.palette_light = crate::render::palette_light::PaletteLight::plain(53, 1000);
-        in_view(
-            instance.position[0],
-            instance.position[1],
-            instance.size[0],
-            instance.size[1],
-            viewport.camera[0],
-            viewport.camera[1],
-            viewport.size[0],
-            viewport.size[1],
-            48.0,
-        )
-        .then_some(instance)
+        Some(instance)
     };
     //6F534E..5382: +C8's canonical observer-disguise query is distinct
     // from drawing disguise art; +68 uses VisualCharacter's screen(0,NULL)
@@ -1225,10 +1272,12 @@ pub(crate) fn techno_extras_for_parent(
             };
             //70AA20..AA4F: opaque PIPS E00, plain53/1000, A-consuming/no-Z.
             // Its -2 Z-adjust is unused by this leaf; do not inherit body FX.
-            strip.rank = instance(shape, frame, (sx + dx, sy + dy), 0.0006).map(|mut rank| {
-                rank.z_adjust = -2.0;
-                rank
-            });
+            strip.rank = instance(shape, frame, (sx + dx, sy + dy), 0.0006)
+                .filter(|rank| viewport.contains(rank))
+                .map(|mut rank| {
+                    rank.z_adjust = -2.0;
+                    rank
+                });
         }
     }
     let (draw_background, draw_health) =
@@ -1256,6 +1305,17 @@ pub(crate) fn techno_extras_for_parent(
         if num_pips <= 0 {
             return strip;
         }
+        // Wheel zoom is a presentation extension, not native6F64A0 behavior.
+        // Below 1:1, shorten the row instead of downsampling the PIPS artwork:
+        // its one-pixel outline would otherwise disappear or join its neighbors.
+        // The first pip still follows the roof's world anchor. Each displayed
+        // pip represents an equal share of HP, through the existing ratio owner.
+        let pip_zoom = viewport.zoom.clamp(f32::MIN_POSITIVE, 1.0);
+        let num_pips = if pip_zoom < 1.0 {
+            (((num_pips - 1) as f32 * pip_zoom).floor() as i32) + 1
+        } else {
+            num_pips
+        };
         // Phobos `TechnoClass_DrawHealthBar_Buildings 0x6F65D1` ->
         // `DrawShieldBar_Building(length, bound)`, before the native health
         // fill. The building bracket is the Top anchor minus (6,3).
@@ -1301,6 +1361,11 @@ pub(crate) fn techno_extras_for_parent(
                 0.0006,
             ));
         }
+        if pip_zoom < 1.0 {
+            keep_health_strip_screen_size(&mut strip, start, pip_zoom);
+        }
+        // Zooming in retains world dimensions; zooming out uses fewer native
+        // pixel pips. Cargo/garrison rows retain their existing world geometry.
         //6F659E projects the foundation edge at Z=0;6F682C passes it to
         //the shared709A90 owner. Building rows use PIPS, (+6,-1), step(4,2).
         //Garrison and passenger arms restart at that origin independently.
@@ -1315,6 +1380,7 @@ pub(crate) fn techno_extras_for_parent(
                 0.0006,
             ));
         }
+        strip.cull_health_to_viewport(viewport);
         return strip;
     }
     let delta = object.map_or(0.0, |object| object.pixel_selection_bracket_delta as f32);
@@ -1333,6 +1399,8 @@ pub(crate) fn techno_extras_for_parent(
         );
     }
     let (Some(rules), Some(object), Some(shape)) = (rules, object, overlay.pips()) else {
+        keep_health_strip_screen_size(&mut strip, (sx, sy), viewport.zoom);
+        strip.cull_health_to_viewport(viewport);
         return strip;
     };
     // Phobos `TechnoClass_DrawHealthBar_Units 0x6F683C` ->
@@ -1435,6 +1503,11 @@ pub(crate) fn techno_extras_for_parent(
                 });
         }
     }
+    // Only health is deferred to the final frame. PIPS2 scale and both
+    // self-heal materials (including destination-halving601) rasterize on
+    // the native world lattice and scale once with the completed scene.
+    keep_health_strip_screen_size(&mut strip, (sx, sy), viewport.zoom);
+    strip.cull_health_to_viewport(viewport);
     strip
 }
 

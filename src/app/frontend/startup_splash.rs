@@ -5,10 +5,10 @@
 //! Any window other than the two sizes gamemd's shell runs at shows it fitted
 //! like the menus, so it lines up with the menu that follows it.
 //!
-//! It also carries VERA20K's own legal notice, which gamemd's splash lacks; see
-//! [`LEGAL_NOTICE`].
+//! It also carries VERA20K's own legal notices, which gamemd's splash lacks; see
+//! [`LEGAL_NOTICE`] and [`BINK_NOTICE`].
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 
@@ -94,13 +94,21 @@ const TRADEMARK_BOTTOM_FALLBACK: &str =
 
 /// VERA20K's GPLv3 "Appropriate Legal Notices" (sections 0 and 5(d)): the
 /// copyright, the right to share under the license, no warranty, and where to
-/// read the license. Drawn top right, opposite "Loading...". Because the
-/// program shows them, modified versions must keep showing such a notice.
+/// read the license and get the source (a release build names its commit;
+/// build.rs). Drawn top right, opposite "Loading...". In GAME.FNT each row stays
+/// right of Yuri's Revenge's logo at 800x600, and the three end above the art the
+/// retail test compares. Because the program shows them, modified versions must
+/// keep showing such a notice.
 const LEGAL_NOTICE: [&str; 3] = [
     "VERA20K © 2026 Halvor Nikolai Rusten and contributors",
     "You may share it under the GNU GPL v3. It has no warranty.",
-    "License and source: github.com/YuriPlanet/vera20k",
+    concat!("License and source: ", env!("VERA20K_SOURCE")),
 ];
+
+/// The Bink decoder's LGPL 2.1 (section 6) puts FFmpeg's copyright, as FFmpeg
+/// shows it, and a reference to that license's text among the copyright notices
+/// a program shows. Drawn bottom left, above the trademark lines.
+const BINK_NOTICE: &str = "Bink decoder © the FFmpeg developers. License: LGPL-2.1-or-later.txt";
 
 /// The minimum on-screen hold, anchored at the first successful present.
 ///
@@ -421,6 +429,15 @@ fn compose_startup_splash(
         10,
         second_bottom_y,
     );
+    draw_text(
+        &mut canvas,
+        client_width,
+        client_height,
+        font,
+        BINK_NOTICE,
+        10,
+        first_bottom_y - 3 - font.cell_height as i32,
+    );
 
     Ok(canvas)
 }
@@ -533,6 +550,26 @@ mod tests {
             assert_eq!(white.first(), Some(&(width - 10 - line_width)), "{line}");
             assert_eq!(white.last(), Some(&(width - 11)), "{line}");
         }
+    }
+
+    #[test]
+    fn bink_notice_is_drawn_left_aligned_above_the_trademark_lines() {
+        let root = crate::map::source::test_support::TestDirectory::new("splash-bink-notice");
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        let font = FntFile::solid_for_test(2);
+        let (width, height) = (800, 600);
+        let composed = compose_startup_splash(&assets, None, &font, width, height, false)
+            .expect("compose the text-only splash");
+
+        let y = height - 40 - 3 - font.cell_height as usize;
+        let white: Vec<usize> = (0..width / 2)
+            .filter(|x| composed[(y * width + x) * 4..][..4] == TEXT_COLOR)
+            .collect();
+        assert_eq!(white.first(), Some(&10));
+        assert_eq!(
+            white.last(),
+            Some(&(10 + font.text_width(BINK_NOTICE) as usize - 1))
+        );
     }
 
     fn compare_composed_splash_to_retail_shape(

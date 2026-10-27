@@ -23,7 +23,7 @@ use crate::app::AppState;
 use crate::render::shell_text::{self, ShellAlign};
 use crate::ui::coop_score_shell::*;
 use crate::ui::shell::geom::{self, RectPx};
-use std::time::Instant;
+use crate::util::time::Instant;
 
 pub(crate) fn render_coop_score(
     state: &mut AppState,
@@ -207,7 +207,10 @@ pub(crate) fn render_coop_score(
         if !can_continue {
             continue;
         }
-        if let Some(flag) = slot.flag.and_then(|name| atlas.lan_player_side(name))
+        if let Some(flag) = slot
+            .flag
+            .as_deref()
+            .and_then(|name| atlas.lan_player_side(name))
             && let Some(rect) = layout.control_rect(FLAGS[row])
         {
             push_flag_entry_clipped_centered(&mut controls, flag, rect, scale, SHELL_CONTROL_DEPTH);

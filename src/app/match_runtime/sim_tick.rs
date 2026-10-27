@@ -9,7 +9,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 #[cfg(feature = "telemetry-dashboard")]
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use crate::app::AppState;
 use crate::app::input::commands::{preferred_local_owner, preferred_local_owner_name};
@@ -86,8 +86,8 @@ fn replay_flush_facts(state: &AppState) -> (u64, u64) {
         .sim_runtime
         .as_ref()
         .map_or(0, |rt| rt.simulation.session().tick());
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let now = crate::util::time::SystemTime::now()
+        .duration_since(crate::util::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
     (session_tick, now)
@@ -196,14 +196,24 @@ fn build_campaign_score_screen_model(
                 .map(|house| house.side_index())
         })
         .unwrap_or(0);
-    build_campaign_score_screen_model_from_sources(
+    let mut model = build_campaign_score_screen_model_from_sources(
         elapsed_score_ticks,
         difficulty,
         &state.match_state.map_ranking,
         houses.unwrap_or_default(),
         side,
         |key| resolve_campaign_score_label(state, key),
-    )
+    );
+    model.theme = state
+        .process_assets
+        .side_score_theme(
+            side,
+            crate::rules::ruleset::ScoreTheme::Campaign {
+                over_par: model.over_par,
+            },
+        )
+        .map(str::to_owned);
+    model
 }
 
 fn build_campaign_score_screen_model_from_sources(
@@ -225,6 +235,7 @@ fn build_campaign_score_screen_model_from_sources(
     model.par_time = format_campaign_score_time(par_score_seconds);
     // Native `0x6C9231..33` divides both Scenario+0x61C and ParTime by 60,
     // then selects the over-par strings only when elapsed is strictly greater.
+    model.over_par = elapsed_score_seconds > par_score_seconds;
     let (rank_key, commendation_key) = if elapsed_score_seconds <= par_score_seconds {
         (&ranking.under_par_title, &ranking.under_par_message)
     } else {
@@ -377,11 +388,29 @@ fn build_score_screen_model(
     );
     // Scenario +0x34B8: the side of session player 0's country, the local
     // player in a skirmish (0x0068779A..0x0068782D).
-    let side = crate::app::input::commands::preferred_local_owner_name(state)
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(state)
         .as_deref()
-        .and_then(|owner| sim.interner().get(owner))
-        .and_then(|owner| sim.houses().get(&owner))
-        .map_or(0, |house| house.side_index());
+        .and_then(|owner| sim.interner().get(owner));
+    let local_house = local_owner.and_then(|owner| sim.houses().get(&owner));
+    let side = local_house.map_or(0, |house| house.side_index());
+    // `Global_DrawScoreScreen_ScoreTheme` (0x1002F4B0, patch site 0x5C9B75)
+    // selects the side's win or lose theme on the local player's
+    // HouseClass+0x1F5 defeated flag; the literal it otherwise pushes is
+    // 0x0082FEBC "SCORE". It keeps that literal when the local player is the
+    // Observer house (`Player [0xA83D4C] == Observer [0xAC1198]`,
+    // 0x1002F4B8..0x1002F4C7).
+    let observing = local_owner.is_some() && local_owner == sim.session().observer_house();
+    let theme = (!observing)
+        .then(|| {
+            state.process_assets.side_score_theme(
+                side,
+                crate::rules::ruleset::ScoreTheme::Multiplayer {
+                    defeated: local_house.is_some_and(|house| house.is_defeated()),
+                },
+            )
+        })
+        .flatten()
+        .map(str::to_owned);
 
     ScoreScreenModel {
         title_key: score_title_key(state.match_state.session_mode()),
@@ -391,6 +420,7 @@ fn build_score_screen_model(
         // the pathological rollover representation local to this boundary.
         elapsed_seconds: elapsed_seconds as u32,
         side,
+        theme,
         rows,
     }
 }
@@ -989,6 +1019,8 @@ fn advance_in_game_runtime_mode(
             } else {
                 crate::app::presentation::sidebar_render::refresh_sidebar_cameo_draw_state(state);
             }
+            #[cfg(feature = "phobos")]
+            crate::app::presentation::sw_sidebar::refresh_draw_state(state);
         }
     } else if let Some(request) = mouse_scroll {
         crate::app::input::camera::commit_camera_scroll(state, request);
@@ -1207,6 +1239,8 @@ fn advance_one_simulation_frame(
                 let sidebar = std::cell::RefCell::new(
                     &mut state.match_state.match_presentation.sidebar_projection,
                 );
+                #[cfg(feature = "phobos")]
+                let sw_sidebar_expanded = state.match_state.match_presentation.sw_sidebar.expanded;
                 let production_visits = sidebar.borrow().production_factory_visits(&rt.simulation);
                 let clear_production_request = |type_id| {
                     sidebar.borrow_mut().clear_production_request(type_id);
@@ -1225,7 +1259,13 @@ fn advance_one_simulation_frame(
                         if let Some(owner) = sim.session().current_house() {
                             sidebar.reconcile_factory_links(sim, owner);
                         }
-                        prepared.refresh_sidebar_order(sidebar.saved_order());
+                        let order = sidebar.saved_order();
+                        #[cfg(feature = "phobos")]
+                        let order = order.map(|mut order| {
+                            order.set_sw_sidebar_expanded(sw_sidebar_expanded);
+                            order
+                        });
+                        prepared.refresh_sidebar_order(order);
                     }
                     crate::app::persistence::commands::initial_campaign_save(
                         prepared.take(),
@@ -1384,7 +1424,7 @@ fn advance_one_simulation_frame(
                     timing.tick_hz = state
                         .match_state
                         .telemetry_tick_rate
-                        .rate(std::time::Instant::now());
+                        .rate(crate::util::time::Instant::now());
                     let mut point = rt.simulation.report_point();
                     point.timing = Some(timing);
                     point.render = state.diag.render_timing.report();
@@ -1733,7 +1773,11 @@ fn advance_one_simulation_frame(
                 // TickResult::spawned_entities (e.g. Action7's ALL01 ORCA
                 // teams). Resolve it before their first ordinary body draw;
                 // crash-pose rendering must not be the first path to load it.
-                LifecycleOutput::RevealDisplay { .. } | LifecycleOutput::DisplayRemove { .. } => {
+                // In-place conversion keeps its ID and Display membership,
+                // so its new model needs the same coverage/growth check.
+                LifecycleOutput::RevealDisplay { .. }
+                | LifecycleOutput::DisplayRemove { .. }
+                | LifecycleOutput::ObjectTypeChanged { .. } => {
                     refresh_atlases_after_tick = true;
                 }
                 LifecycleOutput::DirtyTacticalRect { .. }
@@ -2022,8 +2066,8 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState) {
         );
 }
 
-/// Refresh entity atlases after entities spawn, die, change owner or leave the
-/// display.
+/// Refresh entity atlases after entities spawn, die, change type/owner or leave
+/// the display.
 ///
 /// This runs on every such event, so the check is per object model, never per
 /// sprite key: a refresh happens only when a voxel model or an object (type,

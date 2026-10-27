@@ -189,6 +189,10 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
     if button == MouseButton::Right {
         crate::app::input::chat::right_button(state);
     }
+    #[cfg(feature = "phobos")]
+    if crate::app::input::sw_sidebar::mouse(state, button, pressed) {
+        return;
+    }
     match crate::app::input::gadget_input::handle_mouse_button_event(state, button, pressed) {
         GadgetConsume::Tactical => tactical_mouse(state, button, btn_state),
         GadgetConsume::Minimap => minimap_mouse(state, button, btn_state),
@@ -1278,81 +1282,7 @@ fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
             sidebar_cameo_press(state, &type_id, press, at_build_limit, shift);
         }
         SidebarAction::SuperWeaponPress { section, right } => {
-            let selection = (|| {
-                let runtime = state.match_state.sim_runtime.as_ref()?;
-                let sim = &runtime.simulation;
-                let rules = &runtime.resources.rules;
-                let owner = sim.interner().get(&preferred_local_owner_name(state)?)?;
-                let type_id = sim.interner().get(&section)?;
-                let view = crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner)
-                    .into_iter()
-                    .find(|view| view.type_id == type_id)?;
-                Some((view, rules.super_weapon(&section)?.action.clone()))
-            })();
-            let click = super::superweapon_cameo::press(
-                &mut state.match_state.input,
-                &mut state.match_state.match_presentation.sidebar_gadget_state,
-                selection.as_ref().map(|(view, _)| view),
-                selection.as_ref().and_then(|(_, action)| action.as_deref()),
-                right,
-            );
-            if click.gui_sound() {
-                let sound = state
-                    .rules()
-                    .and_then(|rules| rules.general.gui_build_sound.clone());
-                crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
-            }
-            match click {
-                super::superweapon_cameo::SuperWeaponClick::Refused
-                    if selection.as_ref().is_some_and(|(view, _)| {
-                        #[cfg(feature = "ares")]
-                        {
-                            view.ares_refusal
-                                == Some(
-                                    crate::sim::superweapon::AresCameoRefusal::InsufficientFunds,
-                                )
-                        }
-                        #[cfg(not(feature = "ares"))]
-                        {
-                            view.can_fire && !view.can_afford
-                        }
-                    }) =>
-                {
-                    let cue = state
-                        .rules()
-                        .and_then(|rules| {
-                            rules
-                                .super_weapon(&section)
-                                .map(|sw| crate::sim::superweapon::financial_type(rules, sw))
-                        })
-                        .and_then(|sw| sw.insufficient_funds_eva.clone());
-                    if let Some(cue) = cue {
-                        push_local_eva(state, &cue);
-                    }
-                }
-                super::superweapon_cameo::SuperWeaponClick::Target => {
-                    queue_selection_snapshot_command(state, Vec::new(), false);
-                    push_local_eva(state, sidebar_eva::EVA_SELECT_TARGET);
-                }
-                super::superweapon_cameo::SuperWeaponClick::Launch(sw_type_id) => {
-                    let owner = preferred_local_owner_name(state).unwrap_or_default();
-                    crate::app::input::commands::queue_super_weapon_click(
-                        state,
-                        &owner,
-                        sw_type_id,
-                        (0, 0),
-                    );
-                }
-                _ => {}
-            }
-            #[cfg(feature = "ares")]
-            if click == super::superweapon_cameo::SuperWeaponClick::Refused
-                && let Some(refusal) = selection.as_ref().and_then(|(view, _)| view.ares_refusal)
-            {
-                crate::app::input::messages::post_ares_superweapon_refusal(
-                    state, &section, refusal,
-                );
-            }
+            press_super_weapon(state, &section, right, true);
         }
         SidebarAction::CycleProducer(category) => {
             cycle_active_producer(state, category);
@@ -1633,7 +1563,7 @@ pub(crate) fn handle_type_select_key_edge(
             .match_state
             .input
             .type_select
-            .press(physical_code, std::time::Instant::now(), repeat);
+            .press(physical_code, crate::util::time::Instant::now(), repeat);
         return true;
     }
     if !is_type_select && !state.match_state.input.type_select.owns_key(physical_code) {
@@ -1643,7 +1573,7 @@ pub(crate) fn handle_type_select_key_edge(
         .match_state
         .input
         .type_select
-        .release(physical_code, std::time::Instant::now());
+        .release(physical_code, crate::util::time::Instant::now());
     if execute_tap {
         execute_type_select_tap(state);
     }
@@ -1883,7 +1813,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
                 .match_presentation
                 .minimap
                 .as_mut()
-                .and_then(|minimap| minimap.cycle_radar_event(std::time::Instant::now()));
+                .and_then(|minimap| minimap.cycle_radar_event(crate::util::time::Instant::now()));
             if let Some((rx, ry)) = event {
                 crate::app::input::camera::center_camera_on_cell(state, rx, ry);
             }
@@ -1936,10 +1866,96 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         ),
         HotkeyCommand::PageUser => crate::app::input::page_user::execute(state),
         HotkeyCommand::PlaceBeacon => crate::app::input::beacon::execute_command(state),
+        #[cfg(feature = "phobos")]
+        HotkeyCommand::FireTacticalSw(index) => {
+            if state
+                .rules()
+                .is_some_and(|rules| rules.sw_sidebar.keys_enabled)
+                && let Some(entry) =
+                    crate::app::presentation::sw_sidebar::positional_entry(state, index)
+            {
+                let type_id = entry.type_id.clone();
+                press_super_weapon(state, &type_id, false, false);
+            }
+        }
+        #[cfg(feature = "phobos")]
+        HotkeyCommand::ToggleSwSidebar => {
+            if state
+                .rules()
+                .is_some_and(|rules| rules.sw_sidebar.toggle_key_enabled)
+                && crate::app::presentation::sw_sidebar::toggle(state)
+            {
+                crate::app::input::sw_sidebar::play_main_button_sound(state);
+                crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+            }
+        }
         #[cfg(feature = "verax")]
         HotkeyCommand::AutoLoad => crate::app::input::autoload::hotkey_pressed(state),
         #[cfg(not(feature = "verax"))]
         HotkeyCommand::AutoLoad => {}
+    }
+}
+
+/// A superweapon cameo press. Phobos's `FireTacticalSW` keys call
+/// `LaunchSuper` without the `GUIBuildSound` its button's `Action` plays, so
+/// they pass `gui_sound: false`.
+fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_sound: bool) {
+    let selection = (|| {
+        let runtime = state.match_state.sim_runtime.as_ref()?;
+        let sim = &runtime.simulation;
+        let rules = &runtime.resources.rules;
+        let owner = sim.interner().get(&preferred_local_owner_name(state)?)?;
+        let type_id = sim.interner().get(section)?;
+        let view = crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner)
+            .into_iter()
+            .find(|view| view.type_id == type_id)?;
+        Some((view, rules.super_weapon(section)?.action.clone()))
+    })();
+    let click = super::superweapon_cameo::press(
+        &mut state.match_state.input,
+        &mut state.match_state.match_presentation.sidebar_gadget_state,
+        selection.as_ref().map(|(view, _)| view),
+        selection.as_ref().and_then(|(_, action)| action.as_deref()),
+        right,
+    );
+    if gui_sound && click.gui_sound() {
+        let sound = state
+            .rules()
+            .and_then(|rules| rules.general.gui_build_sound.clone());
+        crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+    }
+    match click {
+        super::superweapon_cameo::SuperWeaponClick::Refused
+            if selection
+                .as_ref()
+                .is_some_and(|(view, _)| view.can_fire && !view.can_afford) =>
+        {
+            let cue = state
+                .rules()
+                .and_then(|rules| {
+                    rules
+                        .super_weapon(section)
+                        .map(|sw| crate::sim::superweapon::financial_type(rules, sw))
+                })
+                .and_then(|sw| sw.insufficient_funds_eva.clone());
+            if let Some(cue) = cue {
+                push_local_eva(state, &cue);
+            }
+        }
+        super::superweapon_cameo::SuperWeaponClick::Target => {
+            queue_selection_snapshot_command(state, Vec::new(), false);
+            push_local_eva(state, sidebar_eva::EVA_SELECT_TARGET);
+        }
+        super::superweapon_cameo::SuperWeaponClick::Launch(sw_type_id) => {
+            let owner = preferred_local_owner_name(state).unwrap_or_default();
+            crate::app::input::commands::queue_super_weapon_click(
+                state,
+                &owner,
+                sw_type_id,
+                (0, 0),
+            );
+        }
+        _ => {}
     }
 }
 
@@ -4034,7 +4050,7 @@ fn handle_control_group_command(
             // A recall on an empty group still clears the selection: the
             // deselect-all runs before the select loop, unconditionally.
             state.match_state.input.last_control_group_press =
-                Some((group_idx, std::time::Instant::now()));
+                Some((group_idx, crate::util::time::Instant::now()));
             if let Some(selection) = team_selection(sim, action, &group, &selected) {
                 queue_team_selection(state, selection);
             }

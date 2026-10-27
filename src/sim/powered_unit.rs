@@ -309,6 +309,8 @@ impl Simulation {
             return;
         }
         let foot = entity.category().is_foot();
+        #[cfg(feature = "ares")]
+        let was_offline = entity.deactivated.is_offline();
         self.reset_orders_to_guard(id, rules, effects);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.selection.deselect();
@@ -329,6 +331,15 @@ impl Simulation {
             true,
             rules,
         );
+        #[cfg(feature = "ares")]
+        if !was_offline {
+            // Ares Deactivate1004CE21..1004CE72 removes the owned light
+            // only on the transition. The parent and its cargo survive.
+            self.destroy_spotlight_for_parent(
+                id,
+                crate::sim::world::UninitContext::with_rules(rules).with_effects(effects),
+            );
+        }
     }
 
     /// `TechnoClass::Reactivate @ 0x0070FBE0`: ResetOrdersToGuard
@@ -392,6 +403,12 @@ impl Simulation {
                 }
             }
         }
+        #[cfg(feature = "ares")]
+        let was_offline = self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.deactivated.is_offline());
         self.reset_orders_to_guard(id, rules, effects);
         if foot
             && let Some(locomotor) = self
@@ -410,6 +427,12 @@ impl Simulation {
             false,
             rules,
         );
+        #[cfg(feature = "ares")]
+        if was_offline {
+            // Ares Activate1004CD1E..1004CD85 recreates the light after
+            // clearing Deactivated, through the same construction owner.
+            self.construct_spotlight(id, rules);
+        }
     }
 
     /// The two bodies' tails: the type's sound for a change of state, at the

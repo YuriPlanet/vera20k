@@ -919,7 +919,7 @@ fn retail_walk_reads_each_object() {
             sim,
             &rules,
             &sim.houses[&americans],
-            Some(russians),
+            russians,
             sim.substrate.entities.get(id).unwrap(),
         )
     };

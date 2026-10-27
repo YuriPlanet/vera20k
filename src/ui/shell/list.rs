@@ -2,7 +2,7 @@
 //! Native list rows use GAME.FNT height 17 + 2; inner rectangles exclude borders.
 
 use super::geom::{RectPx, ShellScale};
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListScrollPart {

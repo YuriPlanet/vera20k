@@ -13,7 +13,7 @@
 //! wave is live. The slide-in start cue is `GUIMoveInSound` (stock `MenuSlideIn`);
 //! the end cue `ShellButtonSlideSound` is empty in stock rules.
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
 

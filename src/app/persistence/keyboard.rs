@@ -7,7 +7,7 @@ use crate::util::ini_writer::replace_ini_section;
 use std::path::Path;
 
 fn read(root: &Path) -> Option<Vec<u8>> {
-    let bytes = std::fs::read(profile_file::path(root)).ok()?;
+    let bytes = crate::util::file_system::read(profile_file::path(root)).ok()?;
     // An options-only profile must still use the archive's keyboard defaults.
     IniFile::from_bytes(&bytes).ok()?.section("Hotkey")?;
     Some(bytes)

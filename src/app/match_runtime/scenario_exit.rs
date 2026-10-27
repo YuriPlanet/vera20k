@@ -187,6 +187,9 @@ pub(crate) fn campaign_outcome_route(
     })
 }
 
+/// gamemd's literal score theme name, the string at `0x0082FEBC`.
+pub(crate) const SCORE_THEME: &str = "SCORE";
+
 /// Commit the route selected for a terminal outcome. Model builders are lazy:
 /// campaign SkipScore and defeat paths do not construct either score model,
 /// and a campaign result never evaluates the multiplayer score owner.
@@ -228,7 +231,7 @@ enum ScenarioExitPhase {
     Done,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub(crate) struct ScenarioExitTick {
     /// Glide the effects master `[0x0087E758]` to zero (`0x00407070`). It is
     /// chained into Voc channels only; Theme keeps playing (on abort it runs
@@ -241,9 +244,11 @@ pub(crate) struct ScenarioExitTick {
     pub finished: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ScenarioExitAudioAction {
-    PlayTheme(&'static str),
+    /// The theme the score dialog starts: the side's own name under Ares,
+    /// gamemd's literal `SCORE` otherwise.
+    PlayTheme(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -346,11 +351,14 @@ impl ScenarioExitCascade {
             self.phase = ScenarioExitPhase::Done;
             ScenarioExitTick {
                 clear_sounds: true,
-                after_cleanup: matches!(
-                    self.destination.as_ref(),
-                    Some(ScenarioExitDestination::Score { .. })
-                )
-                .then_some(ScenarioExitAudioAction::PlayTheme("SCORE")),
+                after_cleanup: match self.destination.as_ref() {
+                    Some(ScenarioExitDestination::Score { model, .. }) => {
+                        Some(ScenarioExitAudioAction::PlayTheme(
+                            model.theme.clone().unwrap_or_else(|| SCORE_THEME.into()),
+                        ))
+                    }
+                    _ => None,
+                },
                 finished: true,
                 ..Default::default()
             }
@@ -389,6 +397,31 @@ mod tests {
         }
     }
 
+    /// `Global_DrawScoreScreen_ScoreTheme` (body 0x1002F4B0, patch site
+    /// 0x5C9B75) replaces the literal the dialog pushes with the side's own
+    /// theme, so the cascade must carry that name instead.
+    #[test]
+    fn ares_score_exit_carries_the_side_theme_name() {
+        let mut exit = ScenarioExitCascade::start(
+            15,
+            ScenarioExitDestination::Score {
+                title: "won".to_string(),
+                detail: "done".to_string(),
+                model: ScoreScreenModel {
+                    theme: Some("MYLOSE".to_owned()),
+                    ..Default::default()
+                },
+            },
+        );
+        exit.tick(515, true, false);
+        exit.tick(1_015, true, true);
+        let done = exit.tick(1_016, false, false);
+        assert_eq!(
+            done.after_cleanup,
+            Some(ScenarioExitAudioAction::PlayTheme("MYLOSE".to_owned()))
+        );
+    }
+
     #[test]
     fn production_destination_keeps_campaign_and_skirmish_models_on_their_owners() {
         use crate::app::match_runtime::session::SessionMode;
@@ -401,6 +434,7 @@ mod tests {
             enemies_destroyed: "8".into(),
             rank: "fast".into(),
             commendation: "well done".into(),
+            ..Default::default()
         };
         let victory = scenario_exit_destination(
             SessionMode::Campaign,
@@ -527,7 +561,7 @@ mod tests {
         assert!(voice_done.clear_sounds && voice_done.finished);
         assert_eq!(
             voice_done.after_cleanup,
-            Some(ScenarioExitAudioAction::PlayTheme("SCORE"))
+            Some(ScenarioExitAudioAction::PlayTheme("SCORE".to_owned()))
         );
         assert!(matches!(
             exit.take_destination(),

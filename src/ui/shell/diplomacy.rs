@@ -292,7 +292,7 @@ impl DiplomacyAlliesBox {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiplomacyRow {
     /// The 0x004E3560 insignia PCX, when the house type has one.
-    pub insignia: Option<&'static str>,
+    pub insignia: Option<String>,
     /// House UI name (House+0x1602A).
     pub name: String,
     /// Name and kills text colour (0x498).

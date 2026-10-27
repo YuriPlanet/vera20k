@@ -44,6 +44,7 @@ Supported extensions:
 - [Skirmish AI dehardcoding](phobos-ai-dehardcode.md) (last-legs sale/hunt switches and MCV deploy regroup)
 - [Parallel AI queue limits](phobos-parallel-ai-queues.md) (per-category and per-type AI clone forbids)
 - [Unlimited skirmish colours](phobos-skirmish-unlimited-colors.md) (spawner colour indices address any `[Colors]` entry)
+- [Superweapon sidebar](phobos-superweapon-sidebar.md) (left-edge superweapon cameos, toggle and positional hotkeys)
 
 ## Original project and authors
 
@@ -76,6 +77,7 @@ originate with:
 - Parallel AI queue forbids - **Trsdy**, **NetsuNegi** (by category),
   **Starkku** (by TechnoType).
 - Unlimited skirmish colours - **Morton**.
+- Superweapon sidebar - **NetsuNegi**, **CrimRecya**.
 
 The project's full contributor list is in
 [Phobos CREDITS.md](https://github.com/Phobos-developers/Phobos/blob/develop/CREDITS.md).

@@ -4,7 +4,7 @@
 //! shell/offscreen composition.
 
 use std::sync::Mutex;
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use crate::render::batch::{BatchRenderer, CameraUniform, InstanceBufferPool};
 use crate::render::bit_font::BitFont;

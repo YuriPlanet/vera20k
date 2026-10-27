@@ -110,7 +110,7 @@ impl SuperWeaponKind {
     }
 }
 
-/// The Ares GenericWarhead payload. Shared targeting stays in SWType metadata.
+/// The supported Ares GenericWarhead payload and automatic targeting mode.
 /// Ares sources: `src/Misc/SWTypes/GenericWarhead.cpp` and
 /// `src/Ext/SWType/Body.cpp` in https://github.com/Ares-Developers/Ares.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -119,6 +119,36 @@ pub struct GenericWarheadSettings {
     /// Warheads. An absent/null reference makes the launch unavailable.
     pub warhead: Option<String>,
     pub damage: i32,
+    pub ai_targeting: GenericWarheadAiTargeting,
+    pub targeting: crate::rules::superweapon_targeting::SuperWeaponTargeting,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GenericWarheadAiTargeting {
+    None,
+    Offensive,
+}
+
+#[cfg(feature = "ares")]
+impl GenericWarheadSettings {
+    /// The ordered SWTypeExt targeting reads: only the Offensive mode launches
+    /// from the AI; `none` and the other Ares modes do not.
+    pub(crate) fn install_targeting(
+        &mut self,
+        id: &str,
+        state: crate::rules::superweapon_targeting::AresSuperWeaponTargetingState,
+    ) {
+        if let Some(mode) = state.unsupported_mode() {
+            log::warn!("SuperWeapon '{id}': unsupported SW.AITargeting={mode}");
+        }
+        self.ai_targeting = if state.offensive() {
+            GenericWarheadAiTargeting::Offensive
+        } else {
+            GenericWarheadAiTargeting::None
+        };
+        self.targeting.manual = state.manual();
+        self.targeting.automatic = state.automatic();
+    }
 }
 
 /// Common Ares launch presentation, retained by the ordered SWType reader.
@@ -130,64 +160,6 @@ pub(crate) struct AresSuperWeaponPresentation {
     pub(crate) height: i32,
     pub(crate) visibility: crate::rules::superweapon_targeting::HouseMask,
     pub(crate) sound: Option<Option<String>>,
-    #[serde(default)]
-    pub(crate) messages: AresSuperWeaponMessages,
-}
-
-/// SWTypeExt message/style fields. The ordered reader owns mutation; clients
-/// resolve the retained CSF key through the existing message-list transport.
-#[cfg(feature = "ares")]
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct AresSuperWeaponMessages {
-    cannot_fire: String,
-    insufficient_funds: String,
-    firer_color: bool,
-    color_scheme: i32,
-}
-
-#[cfg(feature = "ares")]
-impl Default for AresSuperWeaponMessages {
-    fn default() -> Self {
-        // Ctor100318D9/E5 clears both CSF labels/pointers;100318EB/F5
-        // writes Color=-1 and FirerColor=false.
-        Self {
-            cannot_fire: String::new(),
-            insufficient_funds: String::new(),
-            firer_color: false,
-            color_scheme: -1,
-        }
-    }
-}
-
-#[cfg(feature = "ares")]
-impl AresSuperWeaponMessages {
-    pub fn cannot_fire(&self) -> &str {
-        &self.cannot_fire
-    }
-    pub fn insufficient_funds(&self) -> &str {
-        &self.insufficient_funds
-    }
-    pub fn firer_color(&self) -> bool {
-        self.firer_color
-    }
-    pub fn color_scheme(&self) -> i32 {
-        self.color_scheme
-    }
-
-    fn read_pass(&mut self, section: &IniSection, color_scheme: i32) {
-        // Load1003380E/24/BE and CsfText::Read10076510: ReadString2048,
-        // then copy at most31 bytes without trimming the short copy again.
-        self.firer_color = section.read_ares_bool("Message.FirerColor", self.firer_color);
-        self.color_scheme = color_scheme;
-        for (key, label) in [
-            ("Message.InsufficientFunds", &mut self.insufficient_funds),
-            ("Message.CannotFire", &mut self.cannot_fire),
-        ] {
-            *label = section.read_string_with(key, 2048, label.clone(), |_, name| {
-                crate::rules::ini_value::truncate_native_bytes(name, 31).to_owned()
-            });
-        }
-    }
 }
 
 #[cfg(feature = "ares")]
@@ -200,7 +172,6 @@ impl Default for AresSuperWeaponPresentation {
             height: 0,
             visibility: crate::rules::superweapon_targeting::HouseMask::ALL,
             sound: None,
-            messages: AresSuperWeaponMessages::default(),
         }
     }
 }
@@ -210,12 +181,7 @@ impl AresSuperWeaponPresentation {
     /// SWTypeExt::LoadFromINI10033370, reads1003354E/64/7A: Find-only Anim pointer,
     /// signed retained height and native AffectedHouse mask. SOUNDMD binding
     /// resolves the ordered Sound reads later, through the fixed catalog.
-    pub(crate) fn read_pass(
-        &mut self,
-        section: &IniSection,
-        animation: Option<Option<String>>,
-        message_color: i32,
-    ) {
+    pub(crate) fn read_pass(&mut self, section: &IniSection, animation: Option<Option<String>>) {
         if let Some(animation) = animation {
             self.animation = Some(animation);
         }
@@ -226,7 +192,6 @@ impl AresSuperWeaponPresentation {
         ) {
             self.visibility = mask;
         }
-        self.messages.read_pass(section, message_color);
     }
 }
 
@@ -268,6 +233,15 @@ pub struct SuperWeaponType {
     /// Optional Ares PCX; the existing SHP remains the loading fallback.
     #[cfg(feature = "ares")]
     sidebar_pcx: Option<String>,
+    /// Ares `SW.AITargeting.Constraints` or its mode's default, installed by
+    /// RuleSet from the ordered SWTypeExt reads.
+    #[cfg(feature = "ares")]
+    pub(crate) target_constraints: crate::rules::superweapon_targeting::TargetConstraints,
+    /// `SW.UseAITargeting=`, default no: Ares's SWTypeExt+0x20E (100335BC)
+    /// and Phobos's SWTypeExt read the same key. With it, a manual launch is
+    /// refused while the constraints fail.
+    #[cfg(any(feature = "ares", feature = "phobos"))]
+    pub use_ai_targeting: bool,
     /// Whether to show the charge timer countdown on the sidebar.
     pub show_timer: bool,
     /// Whether this SW can be disabled from the game lobby.
@@ -326,21 +300,41 @@ pub struct SuperWeaponType {
     pub ai_defend_against: bool,
     /// When true, suspension doesn't auto-resume on power restore.
     pub manual_control: bool,
+    /// Phobos `SW.ShowCameo=`, read by `SWTypeExt` for the superweapon
+    /// sidebar's `AddButton` gate. Not the ordinary right-sidebar cameo.
+    #[cfg(feature = "phobos")]
+    pub sw_show_cameo: bool,
+    /// Phobos `SuperWeaponSidebar.Allow=`. Unset falls back to
+    /// `[AudioVisual] SuperWeaponSidebar.AllowByDefault`.
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_allow: Option<bool>,
+    /// Phobos `SuperWeaponSidebar.PriorityHouses=` tokens. Owners in the list
+    /// sort before owners outside it; the constructor's mask is 0.
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_priority_houses: Vec<String>,
+    /// Phobos `SuperWeaponSidebar.RequiredHouses=` tokens; `None` keeps the
+    /// constructor's all-bits mask, and a comma-only list is mask 0.
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_required_houses: Option<Vec<String>>,
+    /// Phobos `SuperWeaponSidebar.Significance=`, default 0.
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_significance: i32,
     /// Present only for the explicitly selected Ares extension; stock types
     /// retain their existing readers and behavior.
     pub generic_warhead: Option<GenericWarheadSettings>,
 }
 
 impl SuperWeaponType {
-    #[cfg(feature = "ares")]
-    pub fn ares_messages(&self) -> &AresSuperWeaponMessages {
-        &self.presentation.messages
-    }
-
     /// Ares3.0 SWType extension reader10033B50..10033B66, PCXFile100762C0.
     #[cfg(feature = "ares")]
     pub fn sidebar_pcx(&self) -> Option<&str> {
         self.sidebar_pcx.as_deref()
+    }
+
+    /// The effective Ares targeting constraints for this type.
+    #[cfg(feature = "ares")]
+    pub fn target_constraints(&self) -> crate::rules::superweapon_targeting::TargetConstraints {
+        self.target_constraints
     }
 
     /// Parse a SuperWeaponType from a rules.ini section
@@ -415,6 +409,10 @@ impl SuperWeaponType {
                 .map(|name| truncate_native_bytes(name, 0x18).to_string()),
             #[cfg(feature = "ares")]
             sidebar_pcx: section.read_ares_pcx_filename("SidebarPCX"),
+            #[cfg(feature = "ares")]
+            target_constraints: Default::default(),
+            #[cfg(any(feature = "ares", feature = "phobos"))]
+            use_ai_targeting: section.read_bool("SW.UseAITargeting", false),
             show_timer: section.read_bool("ShowTimer", false),
             disableable_from_shell: section.read_bool("DisableableFromShell", false),
             use_charge_drain: section.read_bool("UseChargeDrain", false),
@@ -450,6 +448,25 @@ impl SuperWeaponType {
             flash_sidebar_tab_frames: section.read_int("FlashSidebarTabFrames", -1),
             ai_defend_against: section.read_bool("AIDefendAgainst", false),
             manual_control: section.read_bool("ManualControl", false),
+            #[cfg(feature = "phobos")]
+            sw_show_cameo: section.read_bool("SW.ShowCameo", true),
+            #[cfg(feature = "phobos")]
+            sw_sidebar_allow: section.read_bool_value("SuperWeaponSidebar.Allow"),
+            // Both lists use Phobos's ReadHouseTypesList, YRpp's jump to
+            // gamemd's ReadOwners4750D0 with its char[128] buffer.
+            #[cfg(feature = "phobos")]
+            sw_sidebar_priority_houses: section
+                .read_list("SuperWeaponSidebar.PriorityHouses", 0x80)
+                .unwrap_or_default()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            #[cfg(feature = "phobos")]
+            sw_sidebar_required_houses: section
+                .read_list("SuperWeaponSidebar.RequiredHouses", 0x80)
+                .map(|tokens| tokens.into_iter().map(str::to_string).collect()),
+            #[cfg(feature = "phobos")]
+            sw_sidebar_significance: section.read_int("SuperWeaponSidebar.Significance", 0),
             #[cfg(not(feature = "ares"))]
             generic_warhead: None,
             #[cfg(feature = "ares")]
@@ -457,20 +474,24 @@ impl SuperWeaponType {
                 GenericWarheadSettings {
                     warhead: None,
                     damage: section.read_int("SW.Damage", 0),
+                    // GenericWarhead's Initialize (10071860); RuleSet installs
+                    // the ordered SW.AITargeting and mask reads.
+                    ai_targeting: GenericWarheadAiTargeting::Offensive,
+                    targeting: crate::rules::superweapon_targeting::SuperWeaponTargeting::from_ini(
+                        section,
+                    ),
                 }
             }),
         }
     }
 }
 
-/// Canonical, category-distinct TechnoType pointer used by SW type lists.
+/// Canonical, category-distinct TechnoType identity for a delivery payload.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct TechnoTypeReference {
+pub struct DeliveryType {
     pub category: crate::rules::object_type::ObjectCategory,
     pub id: String,
 }
-
-pub type DeliveryType = TechnoTypeReference;
 
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
@@ -542,8 +563,25 @@ pub(crate) struct AresSuperWeaponMetadata {
     availability: AresSuperWeaponAvailability,
     native_auxiliary: Option<String>,
     buildings: Option<SuperWeaponBuildingRequirements>,
-    influence: crate::rules::superweapon_influence::SuperWeaponInfluence,
-    targeting: crate::rules::superweapon_targeting::AresTargetPolicy,
+    charge: AresSuperWeaponCharge,
+}
+
+/// SWTypeExt+284/+285: constructor10031460 clears AX at10031471 and
+/// stores the pair at1003185F. The ordered 3.0 reader10033A9C/10033AB2
+/// uses Valueable<bool>::Read (1000EBF0), retaining on absent/invalid input.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresSuperWeaponCharge {
+    pub(crate) initial_ready: bool,
+    pub(crate) virtual_charge: bool,
+}
+
+#[cfg(feature = "ares")]
+impl AresSuperWeaponCharge {
+    pub(super) fn read_pass(&mut self, section: &IniSection) {
+        self.initial_ready = section.read_ares_bool("SW.InitialReady", self.initial_ready);
+        self.virtual_charge = section.read_ares_bool("SW.VirtualCharge", self.virtual_charge);
+    }
 }
 
 #[cfg(feature = "ares")]
@@ -552,15 +590,13 @@ impl AresSuperWeaponMetadata {
         availability: &AresSuperWeaponAvailability,
         native_auxiliary: Option<&str>,
         buildings: Option<&SuperWeaponBuildingRequirements>,
-        influence: &crate::rules::superweapon_influence::SuperWeaponInfluence,
-        targeting: &crate::rules::superweapon_targeting::AresTargetPolicy,
+        charge: &AresSuperWeaponCharge,
     ) -> Self {
         Self {
             availability: availability.clone(),
             native_auxiliary: native_auxiliary.map(str::to_owned),
             buildings: buildings.cloned(),
-            influence: influence.clone(),
-            targeting: targeting.clone(),
+            charge: charge.clone(),
         }
     }
 
@@ -574,12 +610,8 @@ impl AresSuperWeaponMetadata {
         self.buildings.as_ref()
     }
 
-    pub(crate) fn influence(&self) -> &crate::rules::superweapon_influence::SuperWeaponInfluence {
-        &self.influence
-    }
-
-    pub(crate) fn targeting(&self) -> &crate::rules::superweapon_targeting::AresTargetPolicy {
-        &self.targeting
+    pub(crate) fn charge(&self) -> &AresSuperWeaponCharge {
+        &self.charge
     }
 }
 
@@ -687,47 +719,6 @@ impl PhobosSuperWeaponAvailability {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[cfg(feature = "ares")]
-    #[test]
-    fn ares_refusal_messages_retain_layers_and_resolve_registered_none_before_sentinel() {
-        use crate::rules::ini_parser::IniFile;
-        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
-        let base = IniFile::from_str(
-            "[Colors]\nnone=0,255,255\nGold=85,255,255\n\
-             [SuperWeaponTypes]\n0=Strike\n1=Clear\n\
-             [Strike]\nType=GenericWarhead\nMessage.Color=none\nMessage.FirerColor=yes\n\
-             Message.CannotFire=123456789012345678901234567890 TARGET\n\
-             Message.InsufficientFunds=MSG:Funds\n\
-             [Clear]\nType=GenericWarhead\nMessage.Color=Gold\n",
-        );
-        let mut layers = RulesLayerStack::new(base);
-        layers.push(RulesLayerKind::Scenario, IniFile::from_str(
-            "[Strike]\nMessage.Color=Unknown\nMessage.FirerColor=?invalid\nMessage.CannotFire=\n\
-             [Clear]\nMessage.Color=<none>\n",
-        ));
-        let processed = layers.process_with_fixed_art(&IniFile::empty()).unwrap();
-        let rules = crate::rules::ruleset::RuleSet::from_processed_rules(&processed).unwrap();
-        assert_eq!(
-            rules.super_weapon_target_policy("Strike").unwrap().ai_mode,
-            crate::rules::superweapon_targeting::AiTargetingMode::Offensive,
-            "handler initialization supplies the default mode in the metadata owner",
-        );
-        let strike = rules.super_weapon("Strike").unwrap().ares_messages();
-        assert_eq!(
-            strike.color_scheme(),
-            1,
-            "the registered none is a real colour"
-        );
-        assert!(strike.firer_color());
-        assert_eq!(strike.cannot_fire(), "123456789012345678901234567890 ");
-        assert_eq!(strike.insufficient_funds(), "MSG:Funds");
-        let clear = rules.super_weapon("Clear").unwrap().ares_messages();
-        assert_eq!(clear.color_scheme(), -1, "unregistered <none> clears");
-        assert!(!clear.firer_color());
-        assert!(clear.cannot_fire().is_empty() && clear.insufficient_funds().is_empty());
-    }
-
     use crate::rules::ini_parser::IniFile;
 
     #[test]
@@ -838,6 +829,10 @@ Type=BogusType
         let default_sw =
             SuperWeaponType::from_ini_section("Default", defaults.section("Default").unwrap());
         assert_eq!(default_sw.generic_warhead.as_ref().unwrap().damage, 0);
+        assert_eq!(
+            default_sw.generic_warhead.as_ref().unwrap().ai_targeting,
+            GenericWarheadAiTargeting::Offensive
+        );
     }
 
     #[cfg(not(feature = "ares"))]

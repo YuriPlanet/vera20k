@@ -126,6 +126,32 @@ impl LocomotorState {
         state
     }
 
+    /// Ares conversion1004382D..100438AD compares the two Type CLSIDs, not
+    /// the active (possibly piggybacked) locomotor. Equal CLSIDs retain the
+    /// instance and its timers; VERA's derived type caches still need rebinding.
+    #[cfg(feature = "ares")]
+    pub(crate) fn change_type_binding(
+        &mut self,
+        old_type_kind: LocomotorKind,
+        object: &ObjectType,
+        frame: u32,
+    ) {
+        if old_type_kind != object.locomotor {
+            let mut replacement = Self::from_object_type(object, frame);
+            //10043871..100438AA replaces only Foot+674. The Foot's current
+            // world position and bridge/air occupancy are not constructor state.
+            replacement.layer = self.layer;
+            *self = replacement;
+        } else {
+            self.balloon_hover = object.balloon_hover;
+            self.speed_type = object.speed_type;
+            self.movement_zone = object.movement_zone;
+            if let Some(saved) = self.piggyback.as_mut() {
+                saved.change_type_binding(old_type_kind, object, frame);
+            }
+        }
+    }
+
     /// The class's `Link_To_Object` for a Foot of type `obj`, where it copies
     /// type data: Jumpjet (`0x0054AD30`) copies the type's jumpjet block and
     /// builds the locomotor facing at its `JumpjetTurnRate=`; Hover

@@ -209,6 +209,25 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
             production::initial_construction_options(sim, state.rules().expect("sidebar rules"))
         })
         .unwrap_or_default();
+    // Phobos adds a superweapon to the left sidebar first and skips its right
+    // sidebar cameo (`SidebarClass_AddCameo` returns false once accepted).
+    #[cfg(feature = "phobos")]
+    let sw_plan = crate::app::presentation::sw_sidebar::plan(state, owner, &sw_views);
+    #[cfg(feature = "phobos")]
+    let right_sw_views: Vec<crate::sim::superweapon::SuperWeaponView> = {
+        let left: std::collections::HashSet<&str> = sw_plan
+            .1
+            .iter()
+            .map(|entry| entry.type_id.as_str())
+            .collect();
+        sw_views
+            .iter()
+            .filter(|view| !left.contains(sim.interner().resolve(view.type_id)))
+            .cloned()
+            .collect()
+    };
+    #[cfg(not(feature = "phobos"))]
+    let right_sw_views = sw_views.clone();
     let cameos = crate::app::sidebar_projection::cameo_candidates(
         sim,
         state.rules().expect("sidebar rules"),
@@ -216,7 +235,7 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         owner,
         &build_options,
         &ready_buildings,
-        &sw_views,
+        &right_sw_views,
     );
     let reconciled = state
         .match_state
@@ -319,7 +338,7 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
             .as_ref()
             .map(|rt| &rt.simulation)
             .map(|sim| sim.interner()),
-        &sw_views,
+        &right_sw_views,
         &state.match_state.match_presentation.sidebar_gadget_state,
         repair_btn_size,
         sell_btn_size,
@@ -406,6 +425,12 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         .match_presentation
         .sidebar_projection
         .replace_view(Some(view));
+    #[cfg(feature = "phobos")]
+    {
+        let sw = &mut state.match_state.match_presentation.sw_sidebar;
+        sw.layout = sw_plan.0;
+        sw.entries = sw_plan.1;
+    }
 }
 
 /// The per-frame part of the projection: each retained object cameo's drawn

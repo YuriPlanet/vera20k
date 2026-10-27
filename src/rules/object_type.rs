@@ -815,6 +815,10 @@ pub struct ObjectType {
     /// Missing, empty and unregistered names retain the prior resolved ID in
     /// the existing processed-rules reader, starting at the native -1 default.
     damage_sound: Option<String>,
+    /// Installed Ares TypeExt+504/+508 and+50C/+510 (ctor1003CE14..2E).
+    /// Unset, explicit silence and a resolved Voc ID remain distinct.
+    #[cfg(feature = "ares")]
+    promotion_sounds: [Option<Option<String>>; 2],
     /// Ordered MoveSound vector, TechnoType+4F4. Constructor710E7B..710EAC
     /// creates an empty list; ReadINI713459..7134D9 uses ReadSoundList525430.
     /// The fixed SOUNDMD binder resolves each token, retaining duplicates.
@@ -1010,6 +1014,13 @@ pub struct ObjectType {
     /// Add/Remove_Tracking owner; an explicit false is a distinct retained input.
     #[cfg(feature = "ares")]
     keep_alive: Option<bool>,
+    /// Read-only projection of Ares TechnoTypeExt+618 (Convert.Script).
+    #[cfg(feature = "ares")]
+    convert_script: Option<crate::rules::superweapon_type::DeliveryType>,
+    #[cfg(feature = "ares")]
+    turret_rot_override: Option<i32>,
+    #[cfg(feature = "ares")]
+    spotlight: crate::rules::ares_spotlight::SpotlightTypeRules,
     /// Immutable projection of the retained TechnoTypeExt+308/+314/+320/+321
     /// reader. Country identities bind during Process, never from merged INI.
     #[cfg(feature = "ares")]
@@ -1900,12 +1911,6 @@ pub struct ObjectType {
     pub berserk_friendly: bool,
     pub mobile_fire: bool,
     pub hunter_seeker: bool,
-    /// Ares TechnoTypeExt+3E0/+3E8 Nullable<int>, read1003EE23/1003EE39.
-    /// An unset value uses native Sight; zero/negative overrides remain set.
-    #[cfg(feature = "ares")]
-    designator_range: Option<i32>,
-    #[cfg(feature = "ares")]
-    inhibitor_range: Option<i32>,
     pub non_vehicle: bool,
     pub jumpjet_turn: bool,
     pub emp_pulse_cannon: bool,
@@ -2404,40 +2409,64 @@ impl ObjectType {
             true
         }
     }
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_ares_spotlight(
+        &mut self,
+        enabled: bool,
+        options: crate::rules::ares_spotlight::SpotlightTypeRules,
+    ) {
+        self.has_spotlight = enabled;
+        self.spotlight = options;
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn spotlight_rules(&self) -> crate::rules::ares_spotlight::SpotlightTypeRules {
+        self.spotlight
+    }
+
     pub(crate) fn bind_ares_techno_rules(
         &mut self,
         emp: Option<&crate::rules::ares_emp::EmpTypeRules>,
         attachment: Option<&crate::rules::ares_warhead::AttachEffectRules>,
         cloak_allowed: bool,
+        turret_rot_override: Option<i32>,
     ) {
         self.emp = emp.cloned();
         #[cfg(feature = "ares")]
         {
             self.self_attach_effect = attachment.cloned();
             self.cloak_allowed = cloak_allowed;
+            self.turret_rot_override = turret_rot_override;
         }
         #[cfg(not(feature = "ares"))]
-        let _ = (attachment, cloak_allowed);
+        let _ = (attachment, cloak_allowed, turret_rot_override);
     }
 
     #[cfg(feature = "ares")]
-    pub(crate) fn bind_super_weapon_ranges(
+    pub(crate) fn script_conversion(
+        &self,
+    ) -> Option<&crate::rules::superweapon_type::DeliveryType> {
+        self.convert_script.as_ref()
+    }
+
+    /// Retained nullable input; preserve presence independently of ROT.
+    #[cfg(feature = "ares")]
+    pub(crate) fn turret_rot_override(&self) -> Option<i32> {
+        self.turret_rot_override
+    }
+
+    /// Ares conversion1004380E..10043839 selects the optional secondary ROT.
+    #[cfg(feature = "ares")]
+    pub(crate) fn secondary_turn_rate(&self) -> i32 {
+        self.turret_rot_override.unwrap_or(self.turret_rot)
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_script_conversion(
         &mut self,
-        designator: Option<i32>,
-        inhibitor: Option<i32>,
+        target: Option<&crate::rules::superweapon_type::DeliveryType>,
     ) {
-        self.designator_range = designator;
-        self.inhibitor_range = inhibitor;
-    }
-
-    #[cfg(feature = "ares")]
-    pub(crate) fn designator_range(&self) -> Option<i32> {
-        self.designator_range
-    }
-
-    #[cfg(feature = "ares")]
-    pub(crate) fn inhibitor_range(&self) -> Option<i32> {
-        self.inhibitor_range
+        self.convert_script = target.cloned();
     }
 
     /// Retained TechnoType+C9E; building crew admission reads this input
@@ -2953,6 +2982,23 @@ impl ObjectType {
             section.and_then(|section| sounds.read_rules_reference(section, "CreateSound"));
         self.damage_sound =
             section.and_then(|section| sounds.read_rules_reference(section, "DamageSound"));
+        #[cfg(feature = "ares")]
+        for (slot, key) in ["Promote.VeteranSound", "Promote.EliteSound"]
+            .into_iter()
+            .enumerate()
+        {
+            // TypeExt LoadFromINI1003F0C5/1003F0DB reuses NullableIdx<Voc>
+            // 1000E9D0:2048-byte read, fixed-catalog lookup, unknown retains.
+            self.promotion_sounds[slot] =
+                section.and_then(|section| sounds.read_ares_reference(section, key));
+        }
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn promotion_sound_override(&self, elite: bool) -> Option<Option<&str>> {
+        self.promotion_sounds[usize::from(elite)]
+            .as_ref()
+            .map(|cue| cue.as_deref())
     }
 
     /// `Weapon[index]` (`TechnoTypeClass+0x898 + index*0x1C`): the weapon in
@@ -3523,6 +3569,8 @@ impl ObjectType {
             create_sound: None,
             secret_lab: Default::default(),
             damage_sound: None,
+            #[cfg(feature = "ares")]
+            promotion_sounds: [None, None],
             move_sound: Vec::new(),
             crashing_sound: section.read_name("CrashingSound", 0x80).map(str::to_owned),
             voice_crashing: section.read_name("VoiceCrashing", 0x80).map(str::to_owned),
@@ -3598,6 +3646,12 @@ impl ObjectType {
             no_manual_fire: section.read_ares_bool("NoManualFire", false),
             #[cfg(feature = "ares")]
             keep_alive: section.read_ares_nullable_bool("KeepAlive", None),
+            #[cfg(feature = "ares")]
+            convert_script: None,
+            #[cfg(feature = "ares")]
+            turret_rot_override: None,
+            #[cfg(feature = "ares")]
+            spotlight: Default::default(),
             #[cfg(feature = "ares")]
             factory_owners: Default::default(),
             #[cfg(feature = "ares")]
@@ -3963,10 +4017,6 @@ impl ObjectType {
             berserk_friendly: section.read_bool("BerserkFriendly", false),
             mobile_fire: section.read_bool("MobileFire", true),
             hunter_seeker: section.read_bool("HunterSeeker", false),
-            #[cfg(feature = "ares")]
-            designator_range: None,
-            #[cfg(feature = "ares")]
-            inhibitor_range: None,
             non_vehicle: category == ObjectCategory::Vehicle
                 && section.read_bool("NonVehicle", false),
             jumpjet_turn: category == ObjectCategory::Infantry

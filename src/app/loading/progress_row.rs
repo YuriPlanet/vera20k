@@ -35,6 +35,10 @@ pub(crate) const PROGRESS_ROW_MEASURE_TEXT: &str = "WWWWWWWWWWWWWWW";
 pub(crate) struct LoadingProgressParticipant {
     pub label: String,
     pub variant: Option<crate::render::loading_screen_chrome::LoadingArtVariant>,
+    /// HouseType array index this row was launched with. `Game_GetFlagSurface @
+    /// 0x1001DCE0` resolves each row's insignia from this index; an observer
+    /// row keeps its `Observer` variant instead.
+    pub country_index: u16,
     pub color_index: crate::rules::house_colors::HouseColorIndex,
     pub backing_rgb: [f32; 3],
     pub ramp: [crate::assets::pal_file::Color; 16],
@@ -72,6 +76,7 @@ impl LoadingProgressRowSnapshot {
                     } else {
                         super::pump::loading_art_variant_from_launch_country(human.slot.country)
                     },
+                    country_index: human.slot.country.raw_index(),
                     color_index: crate::rules::house_colors::HouseColorIndex(
                         skirmish_colors.entry_for_priority(i32::from(human.slot.color_index)) as u8,
                     ),

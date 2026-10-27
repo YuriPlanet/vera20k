@@ -42,6 +42,8 @@ pub enum CooperativeError {
     TooManyHumans(usize),
     #[error("the Cooperative {role} country list has no country present in the global roster")]
     NoEligibleCountries { role: &'static str },
+    #[error("no Multiplay country has a positive Ares random-selection weight")]
+    NoEligibleRandomCountries,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1547,6 +1549,12 @@ pub struct CooperativeCountryRosterEntry {
     pub id: String,
     /// Optional HouseType `Name=` alias, such as `America`.
     pub name: Option<String>,
+    /// `Multiplay=yes`, the Ares random pool's first gate.
+    pub multiplay: bool,
+    /// Ares `RandomSelectionWeight=`.
+    pub random_weight: i32,
+    /// Ares `AIRandomSelectionWeight=`.
+    pub ai_random_weight: i32,
 }
 
 impl CooperativeCountryRosterEntry {
@@ -1554,6 +1562,25 @@ impl CooperativeCountryRosterEntry {
         Self {
             id: id.into(),
             name: name.map(str::to_string),
+            multiplay: false,
+            random_weight: 1,
+            ai_random_weight: 1,
+        }
+    }
+
+    pub fn new_with_random(
+        id: impl Into<String>,
+        name: Option<&str>,
+        multiplay: bool,
+        random_weight: i32,
+        ai_random_weight: i32,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            name: name.map(str::to_string),
+            multiplay,
+            random_weight,
+            ai_random_weight,
         }
     }
 

@@ -1929,6 +1929,18 @@ impl HouseState {
         )
     }
 
+    /// Inputs for Ares `IsTargetConstraintsEligible`10032110: the house's
+    /// chosen enemy (`+0x5600`) and its scripted offensive cell (`+0x54F0`).
+    #[cfg(feature = "ares")]
+    pub fn target_constraints_observations(
+        &self,
+    ) -> crate::rules::superweapon_targeting::HouseTargetingObservations {
+        crate::rules::superweapon_targeting::HouseTargetingObservations {
+            has_enemy: self.enemy_house.is_some(),
+            offensive_cell: self.super_weapon_targets.preferred_target,
+        }
+    }
+
     /// The launch alert's stores (`0x004FB0BD`, `0x004FB0C9`), also made by
     /// House50DA20 from TAction1406E4460 with the current binary frame.
     pub(crate) fn alert_super_weapon_defense(&mut self, cell: (u16, u16), frame: i32) {

@@ -233,20 +233,103 @@ impl PlayerNameEditState {
     }
 }
 
+/// One visible country row's Ares presentation.
+#[derive(Debug, Clone)]
+pub(crate) struct CountryMenuEntry {
+    country: Option<LaunchCountry>,
+    /// `Game_GetFlagSurface @ 0x1001DCE0` answer for this row; `None` keeps the
+    /// stock static country table.
+    flag: Option<String>,
+    status_key: Option<String>,
+}
+
 /// Derived country-menu projection, refreshed from the canonical Rules
 /// registry at shell entry. It never owns a participant's selected Country.
 #[derive(Debug, Clone)]
-pub(crate) struct CountryMenuCatalog(Vec<super::SkirmishComboItem>);
+pub(crate) struct CountryMenuCatalog {
+    items: Vec<super::SkirmishComboItem>,
+    entries: Vec<CountryMenuEntry>,
+}
 impl Default for CountryMenuCatalog {
     fn default() -> Self {
-        Self(vec![super::SkirmishComboItem::Country(
-            super::SkirmishCountryChoice::Random,
-        )])
+        Self {
+            items: vec![super::SkirmishComboItem::Country(
+                super::SkirmishCountryChoice::Random,
+            )],
+            entries: vec![CountryMenuEntry {
+                country: None,
+                flag: None,
+                status_key: None,
+            }],
+        }
     }
 }
 impl CountryMenuCatalog {
+    pub(super) fn from_rules(rules: &crate::rules::ruleset::RuleSet) -> Self {
+        use crate::rules::ruleset::CountryIdx;
+        let items = super::combos::country_choices(rules);
+        let entries = items
+            .iter()
+            .map(|item| match item {
+                super::SkirmishComboItem::Country(super::SkirmishCountryChoice::Random) => {
+                    CountryMenuEntry {
+                        country: None,
+                        flag: Some("rani.pcx".to_owned()),
+                        status_key: Some("STT:PlayerSideRandom".to_owned()),
+                    }
+                }
+                super::SkirmishComboItem::Country(super::SkirmishCountryChoice::Country(
+                    country,
+                )) => {
+                    let id = rules.country_name(CountryIdx(country.raw_index()));
+                    CountryMenuEntry {
+                        country: Some(*country),
+                        flag: id.and_then(|id| rules.country_flag_surface(id)),
+                        status_key: id
+                            .and_then(|id| rules.country_status_key(id))
+                            .map(str::to_owned),
+                    }
+                }
+                _ => CountryMenuEntry {
+                    country: None,
+                    flag: None,
+                    status_key: None,
+                },
+            })
+            .collect();
+        Self { items, entries }
+    }
+
     pub(super) fn items(&self) -> &[super::SkirmishComboItem] {
-        &self.0
+        &self.items
+    }
+
+    /// Flag file this row draws. `None` keeps the stock static fallback.
+    pub(crate) fn flag_for_choice(&self, random: bool, country: LaunchCountry) -> Option<&str> {
+        if random {
+            return Some("rani.pcx");
+        }
+        self.entries
+            .iter()
+            .find(|entry| entry.country == Some(country))?
+            .flag
+            .as_deref()
+    }
+
+    /// Status-help CSF key for a row; `None` keeps the stock static fallback.
+    pub(crate) fn status_key_for_choice(
+        &self,
+        choice: super::SkirmishCountryChoice,
+    ) -> Option<&str> {
+        match choice {
+            super::SkirmishCountryChoice::Random => Some("STT:PlayerSideRandom"),
+            super::SkirmishCountryChoice::Country(country) => self
+                .entries
+                .iter()
+                .find(|entry| entry.country == Some(country))?
+                .status_key
+                .as_deref(),
+        }
     }
 }
 
@@ -315,7 +398,7 @@ pub enum SkirmishShellDialog {
 
 impl SkirmishShellState {
     pub fn refresh_country_catalog(&mut self, rules: &crate::rules::ruleset::RuleSet) {
-        self.country_catalog = CountryMenuCatalog(super::combos::country_choices(rules));
+        self.country_catalog = CountryMenuCatalog::from_rules(rules);
         self.open_combo_dropdown = None;
     }
 
@@ -419,7 +502,7 @@ impl SkirmishShellState {
 /// A hover message to the status line ([`SkirmishStatics::hover`]). Returns
 /// whether the help changed.
 pub fn set_status_help_text(state: &mut SkirmishShellState, text: impl Into<String>) -> bool {
-    state.statics.hover(&text.into(), std::time::Instant::now())
+    state.statics.hover(&text.into(), crate::util::time::Instant::now())
 }
 
 pub fn clear_status_help_text(state: &mut SkirmishShellState) -> bool {

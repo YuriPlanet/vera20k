@@ -3,7 +3,7 @@
 //! empty backdrop. The dialog states live on the visit; this module routes
 //! their input, sends what they ask and writes their transcripts.
 
-use std::time::Instant;
+use crate::util::time::Instant;
 
 use winit::keyboard::KeyCode;
 

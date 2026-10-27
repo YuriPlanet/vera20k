@@ -2648,13 +2648,14 @@ impl Simulation {
             } => {
                 // The SPECIAL_PLACE event (`EventClass::Execute 0x004C78D6`).
                 let owner = self.interner.intern(command_owner);
-                self.place_super_weapon(
+                self.fire_super_weapon(
                     rules,
                     owner,
                     *sw_type_id,
                     (*target_rx, *target_ry),
                     overlay_registry,
                     frame_effects,
+                    false,
                 )
             }
             Command::CompletePaidSuperWeapon {
@@ -2670,7 +2671,7 @@ impl Simulation {
                     (*target_rx, *target_ry),
                     overlay_registry,
                     frame_effects,
-                    crate::sim::superweapon::SuperWeaponTargetSource::Manual,
+                    false,
                     Some(*selection),
                 )
             }
@@ -2698,7 +2699,7 @@ impl Simulation {
                     (*target_rx, *target_ry),
                     overlay_registry,
                     frame_effects,
-                    crate::sim::superweapon::SuperWeaponTargetSource::Manual,
+                    false,
                     Some(*selection),
                 )
             }

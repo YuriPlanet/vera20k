@@ -20,7 +20,7 @@
 //! start cue (`GUIMoveInSound`, stock `MenuSlideIn`) and the end cue
 //! (`ShellButtonSlideSound`, empty in stock rules).
 
-use std::time::{Duration, Instant};
+use crate::util::time::{Duration, Instant};
 
 use super::descriptor::DialogId;
 use super::geom::RightPanelRects;

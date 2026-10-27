@@ -39,6 +39,7 @@
 //! - Part of assets/ — no dependencies on game modules.
 //! - Uses mix_crypto for decryption and mix_hash for filename lookup.
 
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
@@ -98,6 +99,7 @@ pub struct MixArchive {
 #[derive(Clone)]
 enum MixBytes {
     Owned(Arc<[u8]>),
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     Mapped(Arc<memmap2::Mmap>),
 }
 
@@ -119,6 +121,7 @@ impl MixData {
         }
     }
 
+    #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
     fn from_mapped(map: memmap2::Mmap) -> Self {
         let bytes = Arc::new(map);
         let len = bytes.len();
@@ -132,6 +135,7 @@ impl MixData {
     fn as_slice(&self) -> &[u8] {
         let bytes = match &self.bytes {
             MixBytes::Owned(data) => &data[..],
+            #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
             MixBytes::Mapped(map) => &map[..],
         };
         &bytes[self.start..self.start + self.len]
@@ -176,18 +180,21 @@ impl SharedBytes {
     /// disk mid-play. `StreamPlayer__PlayFile @ 0x00407B60` likewise buffers
     /// seconds of file ahead of its decoder. Owned bytes are already in memory.
     pub fn read_ahead(&self) {
-        if !matches!(self.0.bytes, MixBytes::Mapped(_)) {
-            return;
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        {
+            if !matches!(self.0.bytes, MixBytes::Mapped(_)) {
+                return;
+            }
+            let bytes = self.clone();
+            // A failed spawn only loses the warm-up; the reader still faults pages
+            // in itself.
+            let _ = std::thread::Builder::new()
+                .name("asset-read-ahead".into())
+                .spawn(move || {
+                    let touched = bytes.chunks(4096).fold(0u8, |sum, page| sum ^ page[0]);
+                    std::hint::black_box(touched);
+                });
         }
-        let bytes = self.clone();
-        // A failed spawn only loses the warm-up; the reader still faults pages
-        // in itself.
-        let _ = std::thread::Builder::new()
-            .name("asset-read-ahead".into())
-            .spawn(move || {
-                let touched = bytes.chunks(4096).fold(0u8, |sum, page| sum ^ page[0]);
-                std::hint::black_box(touched);
-            });
     }
 }
 
@@ -296,9 +303,22 @@ impl MixArchive {
 
     /// Load a MIX archive from a file path.
     pub fn load(path: &Path) -> Result<Self, AssetError> {
-        let file = File::open(path)?;
-        let data = unsafe { memmap2::MmapOptions::new().map(&file)? };
-        Self::from_data(MixData::from_mapped(data))
+        #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
+        {
+            let bytes = crate::util::file_system::read_shared(path)?;
+            let len = bytes.len();
+            return Self::from_data(MixData {
+                bytes: MixBytes::Owned(bytes),
+                start: 0,
+                len,
+            });
+        }
+        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        {
+            let file = File::open(path)?;
+            let data = unsafe { memmap2::MmapOptions::new().map(&file)? };
+            Self::from_data(MixData::from_mapped(data))
+        }
     }
 
     /// Look up a file by name. Returns the raw bytes if found.

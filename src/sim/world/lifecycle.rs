@@ -822,6 +822,12 @@ pub enum LifecycleOutput {
     ClearRedraw {
         stable_id: u64,
     },
+    /// Same-object Type changes (Ares ConvertTechno10043740) keep their
+    /// Display membership. Presentation must re-resolve that object's model
+    /// without pretending that another object spawned or entered Display.
+    ObjectTypeChanged {
+        stable_id: u64,
+    },
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -5756,9 +5762,12 @@ impl Simulation {
             return;
         };
 
-        // BuildingLight436A00 clears parent/target for either expiry control.
-        // These nullable-field writes commute with the other listener clears.
-        self.substrate.spotlights_pointer_expired(expired_id);
+        // BuildingLight436A00; Ares1004EBC0 preserves a cloaking parent's
+        // link on control0, while the target clear remains unconditional.
+        self.substrate.spotlights_pointer_expired(
+            expired_id,
+            control == PointerExpiryControl::Uninit,
+        );
 
         #[cfg(any(test, feature = "test-support"))]
         if let Some(smudge) = self

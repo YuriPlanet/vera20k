@@ -95,6 +95,18 @@ pub(super) struct SidebarInstances {
     pub queue_overlay: Vec<SpriteInstance>,
     pub queue_text: Vec<SpriteInstance>,
     pub text: Vec<SpriteInstance>,
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_chrome: Vec<SpriteInstance>,
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_cameo: Vec<SpriteInstance>,
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_gclock: Vec<SpriteInstance>,
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_hover: Vec<SpriteInstance>,
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_overlay: Vec<SpriteInstance>,
+    #[cfg(feature = "phobos")]
+    pub sw_sidebar_text: Vec<SpriteInstance>,
     pub minimap: Vec<SpriteInstance>,
     pub viewport_rect: Vec<SpriteInstance>,
     pub content_boundary: Vec<SpriteInstance>,
@@ -348,6 +360,7 @@ pub(super) fn build_world_instances(
                             state.match_state.input.camera_y,
                         ],
                         size: [sw, sh],
+                        zoom: state.match_state.input.zoom_level,
                         ignore_visibility: state.match_state.sandbox_full_visibility,
                     },
                 );
@@ -374,6 +387,7 @@ pub(super) fn build_world_instances(
                                     state.match_state.input.camera_y,
                                 ],
                                 size: [sw, sh],
+                                zoom: state.match_state.input.zoom_level,
                                 ignore_visibility: state.match_state.sandbox_full_visibility,
                             },
                             true,
@@ -854,20 +868,17 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
     let placement_preview = build_placement_preview(state);
 
     let input = &state.match_state.input;
-    let camera = [input.camera_x.round() as i32, input.camera_y.round() as i32];
     let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
-    let view = crate::app::presentation::target_lines::TacticalViewport {
-        camera,
-        clip: [
-            x as i32,
-            y as i32,
-            (width as f32 / input.zoom_level).ceil() as i32,
-            (height as f32 / input.zoom_level).ceil() as i32,
-        ],
-        zoom: input.zoom_level,
-    };
-    // Shared native logical viewport; both overlays scale the raster before
-    // the UI passthrough draw, so fractional zoom cannot pad individual pixels.
+    let view = tactical_line_viewport(
+        [input.camera_x, input.camera_y],
+        [x, y, width, height],
+        state.renderer.world_zoom_pass.as_ref(),
+    );
+    let camera = view.camera;
+    // All path, planning and rally pixels go onto the native world surface.
+    // Its camera/clip and the final WorldZoomPass own the scale. Pre-scaling
+    // individual spans here would quantize them again on that smaller/larger
+    // attachment, distorting dash spacing and node borders at fractional zoom.
     let mut designations = std::collections::HashMap::new();
     if !state.match_state.input.planning.active()
         && let Some(runtime) = state.match_state.sim_runtime.as_ref()
@@ -898,11 +909,6 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
         }
     }
     let interleave_enabled = !designations.is_empty();
-    // Surface commands keep logical pixels; the shared GPU owner applies zoom.
-    let line_view = crate::app::presentation::target_lines::TacticalViewport {
-        zoom: if interleave_enabled { 1. } else { view.zoom },
-        ..view
-    };
     // The shroud A-buffer sample DSurface4C0750's dashed lines read.
     let mut shroud_alpha = |point: [i32; 2]| -> u8 {
         if state.match_state.sandbox_full_visibility {
@@ -948,7 +954,7 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
                 .and_then(|assets| assets.get_ref("palette.pal")),
             &state.match_state.match_presentation.house_color_map,
             wall_ms,
-            line_view,
+            view,
             if interleave_enabled {
                 Some(&mut after_entity)
             } else {
@@ -996,6 +1002,22 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
         factory_rally_first,
         factory_rally_second,
         beacons: build_beacon_instances(state),
+    }
+}
+
+/// The one world-surface viewport for planning, action and rally producers.
+/// Wheel zoom changes its clip, while the native raster keeps one-pixel spans.
+fn tactical_line_viewport(
+    camera: [f32; 2],
+    tactical: [u32; 4],
+    zoom: Option<&crate::render::upscale_pass::WorldZoomPass>,
+) -> crate::app::presentation::target_lines::TacticalViewport {
+    crate::app::presentation::target_lines::TacticalViewport {
+        camera: camera.map(|v| v.round() as i32),
+        clip: zoom
+            .map_or(tactical, |zoom| zoom.world_clip(tactical))
+            .map(|v| v as i32),
+        zoom: 1.,
     }
 }
 
@@ -1271,6 +1293,13 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         .as_ref()
         .map(|v| build_sidebar_cameo_instances(state, v, status_labels))
         .unwrap_or_default();
+    #[cfg(feature = "phobos")]
+    let sw_sidebar = view
+        .as_ref()
+        .map(|_| {
+            crate::app::presentation::sw_sidebar_build::build(state, status_labels, ready_tint)
+        })
+        .unwrap_or_default();
     let mut text_layers = view
         .as_ref()
         .map(|v| build_sidebar_text_instances(state, v, status_labels, ready_tint))
@@ -1327,6 +1356,18 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         queue_overlay: cameo_layers.queue_overlay,
         queue_text: text_layers.queue,
         text: text_layers.status,
+        #[cfg(feature = "phobos")]
+        sw_sidebar_chrome: sw_sidebar.chrome,
+        #[cfg(feature = "phobos")]
+        sw_sidebar_cameo: sw_sidebar.cameo,
+        #[cfg(feature = "phobos")]
+        sw_sidebar_gclock: sw_sidebar.gclock,
+        #[cfg(feature = "phobos")]
+        sw_sidebar_hover: sw_sidebar.hover,
+        #[cfg(feature = "phobos")]
+        sw_sidebar_overlay: sw_sidebar.overlay,
+        #[cfg(feature = "phobos")]
+        sw_sidebar_text: sw_sidebar.text,
         minimap,
         viewport_rect,
         content_boundary,

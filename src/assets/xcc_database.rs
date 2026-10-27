@@ -89,7 +89,7 @@ impl XccDatabase {
         let path = std::env::var(XCC_DATABASE_PATH_ENV)
             .unwrap_or_else(|_| DEFAULT_XCC_DATABASE_PATH.to_string());
 
-        let data = std::fs::read(&path)
+        let data = crate::util::file_system::read(&path)
             .map_err(|e| format!("Cannot read XCC database at '{}': {}", path, e))?;
 
         Self::from_bytes(&data)
