@@ -607,6 +607,22 @@ impl LanUdpTransport {
         })
     }
 
+    pub fn control_ordering_pause(
+        &mut self,
+        request_id: u64,
+        expected_epoch: u64,
+        paused: bool,
+    ) -> io::Result<()> {
+        self.send_ordering(|route| {
+            route.session.control_ordering_pause(
+                request_id,
+                expected_epoch,
+                paused,
+                &mut route.encoded,
+            )
+        })
+    }
+
     pub fn leave_ordering(&mut self) -> io::Result<()> {
         self.send_ordering(|route| route.session.leave_ordering(&mut route.encoded))
     }

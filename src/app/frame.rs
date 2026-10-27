@@ -270,6 +270,11 @@ impl App {
             };
         }
         crate::app::lan_service::poll(state, scenario_now_ms);
+        // Resume receipts must release only the relay clock hold even while
+        // focus or a local modal prevents another simulation transaction.
+        state
+            .match_state
+            .sync_multiplayer_pause_clock(scenario_now_ms);
         if crate::app::match_runtime::network_failure::pending(state) {
             // ExecuteDoList64CD0C blocks inside ShellMessageBox5D3490. Its
             // message pump still reaches Network_ServiceLoop48D080/audio,
@@ -1174,6 +1179,11 @@ impl App {
                             Some(format!("Catching up - {frames} frames behind"))
                         }
                     }
+                })
+                .or_else(|| {
+                    crate::app::input::pause_menu::multiplayer_control(state)?
+                        .status
+                        .map(str::to_owned)
                 });
             if let Some(status) = status {
                 state.renderer.fps_overlay.encode_status(

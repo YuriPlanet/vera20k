@@ -19,16 +19,27 @@ pub enum PauseMenuButton {
     Delete,
     Abort,
     Resume,
+    /// VERA relay control, independent of the native local Options dialog.
+    SharedPause,
 }
 
 impl PauseMenuButton {
-    pub const ALL: [Self; 6] = [
+    pub const NATIVE: [Self; 6] = [
         Self::GameControls,
         Self::Load,
         Self::Save,
         Self::Delete,
         Self::Abort,
         Self::Resume,
+    ];
+    pub const ALL: [Self; 7] = [
+        Self::GameControls,
+        Self::Load,
+        Self::Save,
+        Self::Delete,
+        Self::Abort,
+        Self::Resume,
+        Self::SharedPause,
     ];
 }
 
@@ -61,7 +72,7 @@ impl PauseMenuTemplate {
     /// last.
     pub const fn buttons(self) -> &'static [PauseMenuButton] {
         match self {
-            Self::Offline => &PauseMenuButton::ALL,
+            Self::Offline => &PauseMenuButton::NATIVE,
             Self::Network | Self::Internet => &[
                 PauseMenuButton::GameControls,
                 PauseMenuButton::Abort,
@@ -142,7 +153,7 @@ const fn button(
     }
 }
 
-/// B5 in [`PauseMenuButton::ALL`] order.
+/// B5 in [`PauseMenuButton::NATIVE`] order.
 const B5_BUTTONS: [PauseMenuControl; 6] = [
     button(
         0x521,
@@ -312,7 +323,7 @@ impl InternetControlsLayout {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PauseMenuLayout {
     pub template: PauseMenuTemplate,
-    buttons: [Option<RectPx>; 6],
+    buttons: [Option<RectPx>; 7],
     pub title: RectPx,
     pub footer: RectPx,
     pub internet: Option<InternetControlsLayout>,
@@ -328,7 +339,24 @@ impl PauseMenuLayout {
         self.template
             .buttons()
             .iter()
+            .chain(std::iter::once(&PauseMenuButton::SharedPause))
             .filter_map(|button| Some((*button, self.button(*button)?)))
+    }
+
+    /// Add one relay control in the next unused sidebar row. Native controls,
+    /// including the local Resume button, keep their original rectangles.
+    pub fn enable_shared_pause(&mut self) {
+        if self.template == PauseMenuTemplate::Offline {
+            return;
+        }
+        let controls = self.button(PauseMenuButton::GameControls).unwrap();
+        let abort = self.button(PauseMenuButton::Abort).unwrap();
+        self.buttons[PauseMenuButton::SharedPause as usize] = Some(RectPx::new(
+            abort.x,
+            abort.y + (abort.y - controls.y),
+            abort.w,
+            abort.h,
+        ));
     }
 }
 
@@ -341,7 +369,7 @@ pub fn pause_menu_layout(
     button_size: [i32; 2],
     template: PauseMenuTemplate,
 ) -> PauseMenuLayout {
-    let mut buttons = [None; 6];
+    let mut buttons = [None; 7];
     for button in template.buttons() {
         let control = template.control(*button).expect("template button");
         let dlu = control.dlu_rect;
@@ -432,6 +460,9 @@ mod tests {
             assert_eq!(b5.title, RectPx::new(width - 165, 2, 162, 16));
             assert_eq!(b5.footer, RectPx::new(10, height - 21, 455, 20));
             assert!(b5.internet.is_none());
+            let mut offline = b5;
+            offline.enable_shared_pause();
+            assert_eq!(offline, b5);
 
             // BBA (425,122)/(425,149) and FF (424,128)/(424,154) both land on
             // the first two60B000 rows; Load/Save/Delete are absent.
@@ -440,6 +471,10 @@ mod tests {
                 assert_eq!(layout.button(PauseMenuButton::GameControls), Some(row(0)));
                 assert_eq!(layout.button(PauseMenuButton::Abort), Some(row(1)));
                 assert_eq!(layout.button(PauseMenuButton::Resume), Some(resume));
+                let mut shared = layout;
+                shared.enable_shared_pause();
+                assert_eq!(shared.button(PauseMenuButton::SharedPause), Some(row(2)));
+                assert_eq!(shared.button(PauseMenuButton::Resume), Some(resume));
                 for absent in [
                     PauseMenuButton::Load,
                     PauseMenuButton::Save,

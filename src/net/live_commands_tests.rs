@@ -1292,6 +1292,9 @@ fn ordinary_wait_uses_180_buckets_and_keeps_the_frame_send_complete() {
         frame: 10,
         checksum: 0x12345678,
     };
+    // The real UDP startup may span a 16ms wall-clock bucket. The wait must
+    // retain the measured entry RTT, which need not be zero on a loaded host.
+    let response_time_at_entry = left.response_time();
     assert_eq!(
         left.poll(
             &mut a.network_command_queues(),
@@ -1312,7 +1315,7 @@ fn ordinary_wait_uses_180_buckets_and_keeps_the_frame_send_complete() {
             mode: LiveCommandMode::Lan,
             kind: LiveWaitKind::Ordinary,
             entered_at: 2000,
-            response_time_at_entry: 0,
+            response_time_at_entry,
         })
     );
     assert_eq!(left.lowest_frame_peer().unwrap().house_id(), 1);
@@ -3608,6 +3611,279 @@ fn sequenced_push_advances_without_requests_and_repairs_a_lost_range() {
         recovered,
         "the lost push range must replay exactly once to the same world"
     );
+}
+
+#[test]
+fn sequenced_pause_stops_at_one_boundary_and_recovers_a_lost_resume() {
+    use crate::net::udp::test_support::MAX_DATAGRAM;
+    use crate::sim::command::{Command, MEGAMISSION_OPCODE};
+
+    let (mut worlds, rules, actor, boundaries, socket, mut relay) = sequenced_pair();
+    let second_address = boundaries[1].live.borrow().primary_addr().unwrap();
+    let mut committed = [
+        std::collections::BTreeMap::new(),
+        std::collections::BTreeMap::new(),
+    ];
+    let step = |worlds: &mut [Simulation; 2],
+                relay: &mut crate::net::udp::test_support::RelayServer,
+                committed: &mut [std::collections::BTreeMap<u32, u64>; 2],
+                now_ms: u64,
+                lose_second: bool,
+                lose_pause_status: bool| {
+        let now = 100 + (now_ms - 16_000) / 1000;
+        relay.advance_clock(now_ms, now);
+        for (world, boundary) in worlds.iter_mut().zip(&boundaries) {
+            boundary.now.set((now_ms >> 4) as u32);
+            boundary.live.borrow_mut().service_pending_commands(
+                &mut world.network_command_queues(),
+                (now_ms >> 4) as u32,
+            );
+        }
+        let deliver = |packet: vera20k_relay_protocol::ForwardDatagram| {
+            // Protocol v2 has a 48-byte server header; payload kind8 is
+            // PauseStatus. Lose those replies but retain canonical history.
+            let lost_status = lose_pause_status && packet.bytes.get(48) == Some(&8);
+            if packet.endpoint != second_address || (!lose_second && !lost_status) {
+                socket.send_to(&packet.bytes, packet.endpoint).unwrap();
+            }
+        };
+        loop {
+            let mut bytes = [0; MAX_DATAGRAM + 1];
+            let (length, std::net::SocketAddr::V4(source)) = (match socket.recv_from(&mut bytes) {
+                Ok(packet) => packet,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(error) => panic!("{error}"),
+            }) else {
+                unreachable!()
+            };
+            for packet in relay
+                .process_at(source, &bytes[..length], now, now_ms)
+                .unwrap()
+            {
+                deliver(packet);
+            }
+        }
+        for packet in relay.drain_ordering_push(now_ms, now) {
+            deliver(packet);
+        }
+        for (side, (world, boundary)) in worlds.iter_mut().zip(&boundaries).enumerate() {
+            boundary
+                .live
+                .borrow_mut()
+                .service_transport((now_ms >> 4) as u32);
+            for _ in 0..4 {
+                // Use the production app's canonical admission rule. A
+                // retained post-Logic transaction must finish, not be replayed.
+                let frame = world.session().binary_frame();
+                if !world.pending_network_wait()
+                    && frame != 0
+                    && frame > boundary.live.borrow().committed_frontier()
+                {
+                    break;
+                }
+                if production_frame(world, &rules, boundary)
+                    .tick
+                    .frame_committed
+                {
+                    committed[side].insert(world.session().binary_frame(), world.state_hash());
+                } else {
+                    break;
+                }
+            }
+            assert!(world.pending_network_interruption().is_none());
+        }
+        std::thread::yield_now();
+    };
+    let mut now_ms = 16_000;
+    for _ in 0..250 {
+        now_ms += 16;
+        step(&mut worlds, &mut relay, &mut committed, now_ms, false, true);
+        if boundaries[0]
+            .live
+            .borrow()
+            .multiplayer_pause()
+            .unwrap()
+            .available
+            && now_ms >= 18_000
+            && worlds
+                .iter()
+                .all(|world| world.session().binary_frame() >= 12)
+        {
+            break;
+        }
+    }
+    assert!(
+        boundaries[0]
+            .live
+            .borrow_mut()
+            .request_multiplayer_pause(true)
+    );
+    assert!(
+        !boundaries[1]
+            .live
+            .borrow()
+            .multiplayer_pause()
+            .unwrap()
+            .available,
+        "all capability replies for the second client were intentionally lost"
+    );
+    // The second player misses the pause announcement and part of its final
+    // frame range. Recovery must still bring it to exactly the same boundary.
+    for index in 0..160 {
+        now_ms += 16;
+        step(
+            &mut worlds,
+            &mut relay,
+            &mut committed,
+            now_ms,
+            index < 20,
+            true,
+        );
+    }
+    let pause = boundaries[0].live.borrow().multiplayer_pause().unwrap();
+    assert!(pause.paused && !pause.pending);
+    assert_eq!(pause.epoch, 1);
+    for (world, boundary) in worlds.iter().zip(&boundaries) {
+        let state = boundary.live.borrow().multiplayer_pause().unwrap();
+        assert!(state.paused && !state.pending);
+        assert_eq!(state.frame, pause.frame);
+        assert_eq!(world.session().binary_frame(), pause.frame + 1);
+        assert!(!world.pending_network_wait());
+    }
+    assert_eq!(worlds[0].state_hash(), worlds[1].state_hash());
+
+    let owner = worlds[0].interner.get("Alpha").unwrap();
+    let record = worlds[0]
+        .encode_megamission_record(
+            owner,
+            &Command::Move {
+                entity_id: actor,
+                target_rx: 42,
+                target_ry: 42,
+            },
+        )
+        .unwrap();
+    let tick = worlds[0].session().tick();
+    assert!(worlds[0].issue_local_command(CommandEnvelope::synchronized(record, tick)));
+    for _ in 0..20 {
+        now_ms += 16;
+        step(&mut worlds, &mut relay, &mut committed, now_ms, false, true);
+    }
+    assert!(boundaries.iter().all(|boundary| {
+        !boundary
+            .applied
+            .borrow()
+            .iter()
+            .any(|(_, record, _)| record.opcode() == MEGAMISSION_OPCODE)
+    }));
+    assert!(
+        worlds
+            .iter()
+            .all(|world| world.session().binary_frame() == pause.frame + 1)
+    );
+
+    // A different player resumes; its receipt and pushed resume are lost.
+    // Retrying the same control cannot create another pause or clock jump.
+    assert!(
+        boundaries[1]
+            .live
+            .borrow_mut()
+            .request_multiplayer_pause(false)
+    );
+    for index in 0..250 {
+        now_ms += 16;
+        step(
+            &mut worlds,
+            &mut relay,
+            &mut committed,
+            now_ms,
+            index < 20,
+            false,
+        );
+        if index > 20
+            && worlds
+                .iter()
+                .all(|world| world.session().binary_frame() > pause.frame + 12)
+        {
+            break;
+        }
+    }
+    for (world, boundary) in worlds.iter().zip(&boundaries) {
+        let state = boundary.live.borrow().multiplayer_pause().unwrap();
+        assert!(!state.paused && !state.pending);
+        assert_eq!(state.epoch, 2);
+        assert!(world.session().binary_frame() > pause.frame + 12);
+        assert_eq!(
+            boundary
+                .applied
+                .borrow()
+                .iter()
+                .filter(|(_, record, ok)| { record.opcode() == MEGAMISSION_OPCODE && *ok })
+                .count(),
+            1
+        );
+    }
+    let mut compared_after_resume = 0;
+    for (frame, hash) in &committed[0] {
+        if let Some(other) = committed[1].get(frame) {
+            assert_eq!(hash, other, "committed frame {frame}");
+            compared_after_resume += usize::from(*frame > pause.frame + 1);
+        }
+    }
+    assert!(compared_after_resume >= 10);
+
+    // Confirming Leave while a Pause request is still pending must preserve
+    // the native EXIT and keep resuming until that event can be dispatched.
+    assert!(
+        boundaries[0]
+            .live
+            .borrow_mut()
+            .request_multiplayer_pause(true)
+    );
+    let exit = crate::sim::command::ExitRecord {
+        house_id: 0,
+        frame: 0,
+    }
+    .encode()
+    .unwrap();
+    let tick = worlds[0].session().tick();
+    assert!(worlds[0].issue_local_command(CommandEnvelope::synchronized(exit, tick)));
+    boundaries[0].live.borrow_mut().keep_running_for_exit();
+    for _ in 0..200 {
+        now_ms += 16;
+        step(
+            &mut worlds,
+            &mut relay,
+            &mut committed,
+            now_ms,
+            false,
+            false,
+        );
+        if boundaries.iter().all(|boundary| {
+            boundary
+                .applied
+                .borrow()
+                .iter()
+                .any(|(_, record, ok)| record.opcode() == crate::sim::command::EXIT_OPCODE && *ok)
+        }) {
+            break;
+        }
+    }
+    for boundary in &boundaries {
+        assert_eq!(
+            boundary
+                .applied
+                .borrow()
+                .iter()
+                .filter(|(_, record, ok)| {
+                    record.opcode() == crate::sim::command::EXIT_OPCODE && *ok
+                })
+                .count(),
+            1,
+            "queued EXIT must dispatch exactly once after automatic resume"
+        );
+        assert!(!boundary.live.borrow().multiplayer_pause().unwrap().paused);
+    }
 }
 
 #[test]

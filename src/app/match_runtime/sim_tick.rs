@@ -473,11 +473,9 @@ pub(crate) enum ExactStepError {
 /// Pause is the explicit `GamePause::Enter @ 0x00406F00` path: suspend every
 /// event, stop the playing channels, and pause the EVA/speech stream.
 ///
-/// `MatchState::paused` **is** VERA's in-game-menu state: it reads
-/// `InGameMenuState::is_open()`, and apart from the `J` debug pause and the
-/// fullscreen movie below no other pause reaches the SFX player. That is not
-/// a divergence from gamemd; it is
-/// exactly gamemd's pause. `State_Machine @ 0x0048C8B0` brackets its entire
+/// `MatchState::paused` includes VERA's in-game-menu state, the developer
+/// pause and the synchronized online pause. The menu uses gamemd's pause:
+/// `State_Machine @ 0x0048C8B0` brackets its entire
 /// dialog switch — case 5 `OptionsClass::ShowInGameDialog`, case 8
 /// `Show_Diplomacy_Menu`, case 9 `ScenarioClass::ShowMissionRestateBriefing`
 /// — between `StateMachine::EnterPause @ 0x00683EB0`, whose first statement
@@ -809,6 +807,9 @@ fn advance_in_game_runtime_mode(
     main_tick_pumps_audio: bool,
 ) -> bool {
     let replaying = state.match_state.match_diagnostics.is_replay_playback();
+    state
+        .match_state
+        .sync_multiplayer_pause_clock(crate::app::match_runtime::frame_pacer::wall_clock_ms());
     // ExecuteDoList64CD0C is a blocking message box inside this frame. Even
     // exact-step diagnostics must not admit another Logic pass while it waits.
     if super::network_failure::pending(state) {
@@ -818,14 +819,21 @@ fn advance_in_game_runtime_mode(
     if crate::app::App::house_outcome_wait_pending(state) {
         // House4F8649/4F8772 services48D080 inside this Main_Tick;
         // it never re-enters55D7C2's timed-pause/Chrono/input prelude.
-        return advance_one_simulation_frame(
-            state,
-            TickLane::Ordinary,
-            None,
-            FrameResume::OutcomeWait,
-        );
+        let completed =
+            advance_one_simulation_frame(state, TickLane::Ordinary, None, FrameResume::OutcomeWait);
+        state
+            .match_state
+            .sync_multiplayer_pause_clock(crate::app::match_runtime::frame_pacer::wall_clock_ms());
+        return completed;
     }
     crate::app::input::commands::reconcile_paid_super_weapon_cursor(state);
+    // VERA's canonical pause barrier is authoritative even for diagnostic
+    // exact stepping. The derived predicate becomes true only after the
+    // entire barrier frame, including a retained network transaction, finishes.
+    // Transport and UI continue in the outer service loop.
+    if state.match_state.multiplayer_paused() {
+        return false;
+    }
     let frame_stepping = matches!(mode, RuntimeAdvanceMode::WallClock { .. })
         && state.diag.debug_frame_step_requested;
     let resume_wait = state
@@ -991,6 +999,9 @@ fn advance_in_game_runtime_mode(
             state.platform.frame_pacer.record_admitted_frame(wall_ms);
         }
         let frame_committed = advance_one_simulation_frame(state, tick_lane, mouse_scroll, resume);
+        state
+            .match_state
+            .sync_multiplayer_pause_clock(crate::app::match_runtime::frame_pacer::wall_clock_ms());
         if crate::app::App::house_outcome_wait_pending(state) {
             return false;
         }
@@ -1195,7 +1206,7 @@ fn advance_one_simulation_frame(
             .detail
             .borrow()
             .frame_rate();
-        let other_local_pause = state.match_state.paused();
+        let other_local_pause = state.match_state.local_paused();
         let rules_owner = state.process_assets.native_rules();
         let initial_save = if !resuming && tick_lane == TickLane::Ordinary {
             crate::app::persistence::commands::prepare_initial_campaign_save(state, rules_owner)

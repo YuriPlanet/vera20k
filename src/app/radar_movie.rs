@@ -207,7 +207,7 @@ pub(crate) fn enqueue(state: &mut AppState, index: i32, pause_simulation: bool) 
 fn reconcile_pause_clock(state: &mut AppState, wall_ms: u64) {
     if state
         .match_state
-        .presentation_paused(&state.frontend.screen)
+        .elapsed_clock_paused(&state.frontend.screen)
     {
         state.match_state.scenario_elapsed_clock.pause(wall_ms);
     } else {

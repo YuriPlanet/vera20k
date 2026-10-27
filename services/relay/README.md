@@ -82,6 +82,18 @@ authenticated output budgets as replies. A250ms status heartbeat exposes a lost
 tail. Clients use the existing Pull operation to repair gaps, reading at most32
 entries at a time; healthy pushed clients do not continually request frames.
 
+Synchronized pause is opt-in for every active match source. Ordering request5
+uses request ID0 to advertise support and query status; positive IDs carry an
+explicit desired state and expected epoch. Old clients and relays keep their
+existing behavior, and a mixed room cannot pause. Accepted transitions append
+an authenticated canonical pause marker after the current head's frame end.
+That frame remains the barrier until an explicit resume appends its marker and
+displaces the paused wall time; buffered input retains its assigned frames.
+Pause and resume share the existing journal/cache writer, with both marker
+reservations made before accepting pause. Retries and stale epochs never toggle
+state. Lost markers replay through Pull. Ticket loss does not resume a game;
+the last explicit Leave appends a resume marker so the departure tail can finish.
+
 The RAM hot cache retains4,096 entries/2 MiB per room under a64 MiB global
 budget. Eviction from this cache does not evict match history: every complete
 canonical frame first appends to the encrypted full-match disk journal. The data

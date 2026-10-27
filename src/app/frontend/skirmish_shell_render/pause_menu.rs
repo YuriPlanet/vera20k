@@ -11,7 +11,8 @@ use crate::render::shell_text::{self, ShellAlign, ShellTextDraw, TextRect};
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::geom::ShellScale;
 use crate::ui::shell::pause_menu::{
-    InternetSlider, PAUSE_MENU_FOOTER, PauseMenuButtonState, PauseMenuLayout, PauseMenuTemplate,
+    InternetSlider, PAUSE_MENU_FOOTER, PauseMenuButton, PauseMenuButtonState, PauseMenuLayout,
+    PauseMenuTemplate,
 };
 use crate::ui::shell::trackbar::value_text_rect;
 use crate::ui::sidebar::SidebarTheme;
@@ -96,16 +97,24 @@ fn text_draws(
     csf: Option<&CsfFile>,
     theme: SidebarTheme,
     layout: &PauseMenuLayout,
-    states: [PauseMenuButtonState; 6],
+    states: [PauseMenuButtonState; 7],
     help: Option<&str>,
+    shared_pause_caption: Option<&str>,
 ) -> Vec<ShellTextDraw> {
     let mut draws = Vec::new();
     for (button, rect) in layout.buttons() {
         let state = states[button as usize];
-        let control = layout.template.control(button).expect("template button");
+        let label = if button == PauseMenuButton::SharedPause {
+            shared_pause_caption.unwrap_or_default().to_owned()
+        } else if button == PauseMenuButton::Resume && shared_pause_caption.is_some() {
+            "Return to Game".to_owned()
+        } else {
+            let control = layout.template.control(button).expect("template button");
+            caption(csf, control.csf_key)
+        };
         draws.push(text_draw(
             font,
-            &caption(csf, control.csf_key),
+            &label,
             button_text_rect(rect, state.pressed),
             button_text_rgb(theme, state.enabled),
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
@@ -142,7 +151,7 @@ pub(crate) fn render_pause_menu_shell(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
     destination: &wgpu::Texture,
-    buttons: [PauseMenuButtonState; 6],
+    buttons: [PauseMenuButtonState; 7],
 ) -> anyhow::Result<()> {
     let in_game_shell::InGameShellGeometry {
         width,
@@ -161,6 +170,8 @@ pub(crate) fn render_pause_menu_shell(
         }
     }
     let help = crate::app::input::pause_menu::hovered_help(state);
+    let shared_pause_caption =
+        crate::app::input::pause_menu::multiplayer_control(state).map(|control| control.caption);
     let font = &state.renderer.bit_font;
     let csf = state.process_assets.csf.as_ref();
     let mut texts = text_draws(
@@ -170,6 +181,7 @@ pub(crate) fn render_pause_menu_shell(
         &layout,
         buttons,
         help,
+        shared_pause_caption,
     );
     let mut controls = Vec::new();
     if let Some(internet) = layout.internet {

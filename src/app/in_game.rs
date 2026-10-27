@@ -565,6 +565,11 @@ impl App {
             log::warn!("Abort Mission EXIT event could not be queued for '{owner}'");
             return;
         }
+        if let Some(live) = state.match_state.live_network.as_mut() {
+            // Keep the native EXIT in its queue. The network owner resumes
+            // through any pending pause request so this event can execute.
+            live.keep_running_for_exit();
+        }
         Self::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Closed);
     }
 

@@ -26,6 +26,8 @@ const PUSH_PROBE_INTERVAL_MS: i32 = 500;
 const PUSH_WATERMARK_INTERVAL_MS: i32 = 100;
 const REPLAY_RETRY_INTERVAL_MS: i32 = 100;
 const PUSH_SILENCE_REPAIR_MS: u32 = 1_000;
+const PAUSE_PROBE_INTERVAL_MS: i32 = 500;
+const PAUSE_COMPATIBILITY_PROBE_INTERVAL_MS: i32 = 5_000;
 
 /// The socket's latest contiguous-frame receipt, independent of when the app
 /// drains it. Presentation can pace these frames; only the sequencer admits
@@ -35,6 +37,37 @@ pub struct SequencedTiming {
     pub frame: u32,
     pub received_at: Instant,
     pub frames_per_second: u16,
+    /// Changes at a synchronized pause/resume boundary. Presentation must
+    /// not turn time spent paused into simulation catch-up or receipt jitter.
+    pub clock_epoch: u64,
+}
+
+/// Authenticated relay capability and the latest contiguous pause marker.
+/// A client still finishes `frame` before it is stopped; this state never
+/// pauses a local simulation ahead of another participant's canonical input.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MultiplayerPauseStatus {
+    pub available: bool,
+    pub paused: bool,
+    pub frame: u32,
+    pub epoch: u64,
+    pub pending: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct CanonicalPause {
+    paused: bool,
+    frame: u32,
+    epoch: u64,
+}
+
+#[derive(Debug)]
+struct PauseRequest {
+    id: u64,
+    expected_epoch: u64,
+    paused: bool,
+    last_sent: Option<u32>,
+    acknowledged_epoch: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -100,6 +133,15 @@ pub(super) struct SequencedSession {
     push_watermark: u64,
     remote_next_sequence: u64,
     repair_gap_since: Option<u32>,
+    pause: CanonicalPause,
+    pause_relay_supported: bool,
+    pause_supported_sources: u32,
+    pause_active_sources: u32,
+    pause_probe_attempts: u8,
+    last_pause_control: Option<u32>,
+    pause_request: Option<PauseRequest>,
+    next_pause_request: u64,
+    keep_running_for_exit: bool,
     next_sequence: u64,
     entries: BTreeMap<u64, ReceivedEntry>,
     contiguous_received_at: Option<Instant>,
@@ -166,6 +208,15 @@ impl SequencedSession {
             push_watermark: 1,
             remote_next_sequence: 1,
             repair_gap_since: None,
+            pause: CanonicalPause::default(),
+            pause_relay_supported: false,
+            pause_supported_sources: 0,
+            pause_active_sources: mask,
+            pause_probe_attempts: 0,
+            last_pause_control: None,
+            pause_request: None,
+            next_pause_request: 1,
+            keep_running_for_exit: false,
             next_sequence: 1,
             entries: BTreeMap::new(),
             contiguous_received_at: None,
@@ -213,6 +264,46 @@ impl SequencedSession {
             .flatten()
     }
 
+    pub(super) fn pause_status(&self) -> MultiplayerPauseStatus {
+        MultiplayerPauseStatus {
+            available: self.started
+                && !self.failed()
+                && self.pause_relay_supported
+                && self.pause_active_sources != 0
+                && self.pause_supported_sources & self.pause_active_sources
+                    == self.pause_active_sources,
+            pending: self.pause_request.is_some(),
+            paused: self.pause.paused,
+            frame: self.pause.frame,
+            epoch: self.pause.epoch,
+        }
+    }
+
+    pub(super) fn request_pause(&mut self, paused: bool) -> bool {
+        if !self.pause_status().available
+            || self.pause_request.is_some()
+            || self.pause.paused == paused
+        {
+            return false;
+        }
+        let Some(next) = self.next_pause_request.checked_add(1) else {
+            return false;
+        };
+        self.pause_request = Some(PauseRequest {
+            id: self.next_pause_request,
+            expected_epoch: self.pause.epoch,
+            paused,
+            last_sent: None,
+            acknowledged_epoch: None,
+        });
+        self.next_pause_request = next;
+        true
+    }
+
+    pub(super) fn keep_running_for_exit(&mut self) {
+        self.keep_running_for_exit = true;
+    }
+
     pub(super) fn service(&mut self, transport: &mut LanUdpTransport, now: u32) {
         self.first_service.get_or_insert(now);
         while let Some(received) = transport.pop_ordering_received_with_time() {
@@ -232,6 +323,7 @@ impl SequencedSession {
             return;
         }
         self.service_delivery(transport, now);
+        self.service_pause(transport, now);
         for pending in &mut self.submissions {
             // An unready route or failed local send cannot start the remote
             // receipt timer. The next service retries the same retained bytes.
@@ -247,6 +339,53 @@ impl SequencedSession {
         // Network silence is recoverable. Keep the same stream cursor,
         // unacknowledged bytes and world until the route/lease returns. Neither
         // a timeout nor peer progress may manufacture an EXIT or fail a frame.
+    }
+
+    fn service_pause(&mut self, transport: &mut LanUdpTransport, now: u32) {
+        if !self.started {
+            return;
+        }
+        // A confirmed UI exit remains in the native command queue. Keep its
+        // timeline running until teardown, including when a pending pause or
+        // another participant's pause wins before that EXIT is dispatched.
+        if self.keep_running_for_exit && self.pause.paused && self.pause_request.is_none() {
+            self.request_pause(false);
+        }
+        if let Some(request) = &mut self.pause_request {
+            if service_due(request.last_sent, now, 100)
+                && transport
+                    .control_ordering_pause(request.id, request.expected_epoch, request.paused)
+                    .is_ok()
+            {
+                request.last_sent = Some(now);
+            }
+        } else if !self.pause_status().available
+            && service_due(self.last_pause_control, now, self.pause_probe_interval())
+            && transport.control_ordering_pause(0, 0, false).is_ok()
+        {
+            self.last_pause_control = Some(now);
+            self.pause_probe_attempts = self.pause_probe_attempts.saturating_add(1);
+        }
+    }
+
+    fn pause_probe_interval(&self) -> i32 {
+        if !self.pause_relay_supported && self.pause_probe_attempts >= 3 {
+            // Older relays ignore this extension. Keep overhead low without
+            // mistaking a lost capability reply for permanent incompatibility.
+            PAUSE_COMPATIBILITY_PROBE_INTERVAL_MS
+        } else {
+            PAUSE_PROBE_INTERVAL_MS
+        }
+    }
+
+    fn finish_pause_request(&mut self) {
+        if self.pause_request.as_ref().is_some_and(|request| {
+            request
+                .acknowledged_epoch
+                .is_some_and(|epoch| epoch <= self.pause.epoch)
+        }) {
+            self.pause_request = None;
+        }
     }
 
     fn service_delivery(&mut self, transport: &mut LanUdpTransport, now: u32) {
@@ -342,6 +481,41 @@ impl SequencedSession {
                 self.started |= status.started;
                 self.head_frame = self.head_frame.max(status.head_frame);
                 self.remote_next_sequence = self.remote_next_sequence.max(status.next_seq);
+                self.pause_active_sources &= status.active_sources;
+            }
+            OrderEvent::PauseStatus {
+                supported_sources,
+                active_sources,
+                request_id,
+                epoch,
+                ..
+            } => {
+                let sources = self
+                    .houses
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, house)| house.is_some())
+                    .fold(0, |mask, (source, _)| mask | (1 << source));
+                if (supported_sources | active_sources) & !sources != 0
+                    || request_id >= self.next_pause_request
+                {
+                    return Err(SequencedError::InvalidTimeline);
+                }
+                self.pause_relay_supported = true;
+                // Capabilities only accumulate and sources only depart. Old
+                // replies cannot undo a newer availability observation.
+                self.pause_supported_sources |= supported_sources;
+                self.pause_active_sources &= active_sources;
+                if let Some(request) = &mut self.pause_request
+                    && request_id >= request.id
+                {
+                    request.acknowledged_epoch = Some(
+                        request
+                            .acknowledged_epoch
+                            .map_or(epoch, |old| old.max(epoch)),
+                    );
+                }
+                self.finish_pause_request();
             }
             OrderEvent::PushState {
                 enabled,
@@ -376,7 +550,8 @@ impl SequencedSession {
                         *sequence
                     }
                     OrderEntry::FrameEnd { sequence, .. }
-                    | OrderEntry::Departure { sequence, .. } => *sequence,
+                    | OrderEntry::Departure { sequence, .. }
+                    | OrderEntry::Pause { sequence, .. } => *sequence,
                 };
                 if sequence >= self.next_sequence && sequence - self.next_sequence < REORDER_WINDOW
                 {
@@ -503,7 +678,46 @@ impl SequencedSession {
                         frame,
                         received_at: self.contiguous_received_at.expect("consumed frame end"),
                         frames_per_second: self.fps,
+                        clock_epoch: self.pause.epoch,
                     });
+                }
+                OrderEntry::Pause {
+                    frame,
+                    epoch,
+                    paused,
+                    source,
+                    ..
+                } => {
+                    if frame.checked_add(1) != Some(self.assembling.frame)
+                        || !self.assembling.records.is_empty()
+                        || !self.assembling.reports.is_empty()
+                        || epoch.checked_sub(1) != Some(self.pause.epoch)
+                        || paused == self.pause.paused
+                        || self.houses[usize::from(source)].is_none()
+                        || (!paused && frame != self.pause.frame)
+                    {
+                        return Err(SequencedError::InvalidTimeline);
+                    }
+                    self.pause.paused = paused;
+                    self.pause.frame = frame;
+                    self.pause.epoch = epoch;
+                    // The authenticated sequencer only emits these markers
+                    // after every active source advertises support. That is
+                    // sufficient proof even if all of our status replies were
+                    // lost; departed sources can never rejoin this roster.
+                    self.pause_relay_supported = true;
+                    self.pause_supported_sources |= self.pause_active_sources;
+                    if !paused {
+                        // Anchor resumed playout to this real socket receipt.
+                        // The stopped wall time is absent from the timeline.
+                        self.latest_frame_receipt = Some(SequencedTiming {
+                            frame,
+                            received_at: self.contiguous_received_at.expect("consumed resume"),
+                            frames_per_second: self.fps,
+                            clock_epoch: epoch,
+                        });
+                    }
+                    self.finish_pause_request();
                 }
             }
         }

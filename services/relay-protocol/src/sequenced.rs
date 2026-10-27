@@ -26,6 +26,10 @@ const READY_REQUEST: u8 = 0;
 const SUBMIT_REQUEST: u8 = 1;
 const PULL_REQUEST: u8 = 2;
 const PUSH_REQUEST: u8 = 4;
+const PAUSE_REQUEST: u8 = 5;
+const PAUSE_STATUS_EVENT: u8 = 8;
+const PAUSE_EVENT: u8 = 9;
+const PAUSE_ENTRY_BYTES: usize = 23;
 const PUSH_EVENT: u8 = 7;
 const PUSH_WINDOW: u64 = 64;
 const PUSH_LEASE_MS: u64 = 3_000;
@@ -155,6 +159,14 @@ pub struct OrderStatus {
 
 #[derive(Debug)]
 pub enum OrderEntry {
+    /// A barrier after `frame` is complete, not another simulation frame.
+    Pause {
+        sequence: u64,
+        frame: u32,
+        epoch: u64,
+        paused: bool,
+        source: u8,
+    },
     Batch {
         sequence: u64,
         frame: u32,
@@ -175,6 +187,15 @@ pub enum OrderEntry {
 
 #[derive(Debug)]
 pub enum OrderEvent {
+    /// Control acknowledgement only. The canonical Pause entry owns admission.
+    PauseStatus {
+        supported_sources: u32,
+        active_sources: u32,
+        request_id: u64,
+        epoch: u64,
+        paused: bool,
+        frame: u32,
+    },
     /// Acknowledges this hop's opt-in and its cumulative contiguous cursor.
     PushState {
         enabled: bool,
@@ -408,6 +429,26 @@ impl ClientSession {
         self.encode(CONTROL, BROADCAST, &payload, out)
     }
 
+    /// Request zero advertises pause support and asks for current status.
+    /// Positive IDs are monotonic per source for this match, including across
+    /// hop renewal. A retry keeps the exact ID, expected epoch and desired state.
+    pub fn control_ordering_pause(
+        &mut self,
+        request_id: u64,
+        expected_epoch: u64,
+        paused: bool,
+        out: &mut Vec<u8>,
+    ) -> Result<(), RelayError> {
+        if !self.ready || self.ordering.is_none() {
+            return Err(RelayError::Unregistered);
+        }
+        let mut payload = vec![PAUSE_REQUEST];
+        payload.extend_from_slice(&request_id.to_le_bytes());
+        payload.extend_from_slice(&expected_epoch.to_le_bytes());
+        payload.push(u8::from(paused));
+        self.encode(CONTROL, BROADCAST, &payload, out)
+    }
+
     pub fn leave_ordering(&mut self, out: &mut Vec<u8>) -> Result<(), RelayError> {
         let Some(ordering) = self.ordering.as_ref() else {
             return Err(RelayError::Unregistered);
@@ -441,6 +482,23 @@ impl ClientSession {
             return Err(RelayError::Unregistered);
         }
         Ok(match (payload[0], payload.len()) {
+            (PAUSE_STATUS_EVENT, 30) if payload[25] <= 1 => OrderEvent::PauseStatus {
+                supported_sources: read_u32(payload, 1),
+                active_sources: read_u32(payload, 5),
+                request_id: read_u64(payload, 9),
+                epoch: read_u64(payload, 17),
+                paused: payload[25] != 0,
+                frame: read_u32(payload, 26),
+            },
+            (PAUSE_EVENT, PAUSE_ENTRY_BYTES) if payload[21] <= 1 && payload[22] < MAX_PEERS => {
+                OrderEvent::Entry(OrderEntry::Pause {
+                    sequence: read_u64(payload, 1),
+                    frame: read_u32(payload, 9),
+                    epoch: read_u64(payload, 13),
+                    paused: payload[21] != 0,
+                    source: payload[22],
+                })
+            }
             (PUSH_EVENT, 10) if payload[1] <= 1 && read_u64(payload, 2) != 0 => {
                 OrderEvent::PushState {
                     enabled: payload[1] != 0,
@@ -578,12 +636,21 @@ pub(super) struct PushSubscription {
     status_state: (bool, u32),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct PauseRequest {
+    id: u64,
+    expected_epoch: u64,
+    paused: bool,
+}
+
 #[derive(Default)]
 struct Source {
     principal: Option<([u8; 16], u64)>,
     last_batch: Option<(u64, u32, Vec<u8>)>,
     pending: usize,
     leave_packets: RateBudget,
+    pause_supported: bool,
+    pause_request: Option<PauseRequest>,
 }
 
 struct Pending {
@@ -603,6 +670,8 @@ pub(super) struct OrderingRoom {
     ready: u32,
     active: u32,
     starts_at: Option<u64>,
+    paused_at: Option<u64>,
+    pause_epoch: u64,
     head: u32,
     next_seq: u64,
     history: VecDeque<Stored>,
@@ -626,6 +695,8 @@ impl OrderingRoom {
             ready: 0,
             active: certificate.sources_mask,
             starts_at: None,
+            paused_at: None,
+            pause_epoch: 0,
             head: 0,
             next_seq: 1,
             history: VecDeque::new(),
@@ -720,6 +791,125 @@ impl OrderingRoom {
         }
     }
 
+    fn append_records(&mut self, frame: u32, records: Vec<Vec<u8>>) -> bool {
+        if let Some(journal) = self.journal.as_mut()
+            && journal.commit(&records).is_err()
+        {
+            self.storage_failed = true;
+            return false;
+        }
+        for record in records {
+            self.cache_entry(frame, record);
+        }
+        true
+    }
+
+    fn append_pause(&mut self, paused: bool, source: u8, now_ms: u64) -> Result<(), RelayError> {
+        let epoch = self
+            .pause_epoch
+            .checked_add(1)
+            .ok_or(RelayError::CounterExhausted)?;
+        let mut tail = epoch.to_le_bytes().to_vec();
+        tail.extend([u8::from(paused), source]);
+        let record = Self::encoded_entry(self.next_seq, self.head, PAUSE_EVENT, &tail);
+        if !self.append_records(self.head, vec![record]) {
+            return Ok(());
+        }
+        self.pause_epoch = epoch;
+        if paused {
+            self.paused_at = Some(now_ms);
+        } else if let Some(paused_at) = self.paused_at.take() {
+            // Displace wall time instead of generating catch-up frames for the
+            // paused interval. The next frame retains its fractional remainder.
+            if let Some(start) = self.starts_at.as_mut() {
+                *start = start.saturating_add(now_ms.saturating_sub(paused_at));
+            }
+        }
+        Ok(())
+    }
+
+    fn supported_pause_sources(&self) -> u32 {
+        self.sources
+            .iter()
+            .enumerate()
+            .filter(|(_, source)| source.pause_supported)
+            .fold(0, |mask, (index, _)| mask | (1 << index))
+    }
+
+    fn pause_status(&self, source: u8) -> Vec<Vec<u8>> {
+        let mut payload = vec![PAUSE_STATUS_EVENT];
+        payload.extend_from_slice(&self.supported_pause_sources().to_le_bytes());
+        payload.extend_from_slice(&self.active.to_le_bytes());
+        payload.extend_from_slice(
+            &self.sources[usize::from(source)]
+                .pause_request
+                .map_or(0, |request| request.id)
+                .to_le_bytes(),
+        );
+        payload.extend_from_slice(&self.pause_epoch.to_le_bytes());
+        payload.push(u8::from(self.paused_at.is_some()));
+        payload.extend_from_slice(&self.head.to_le_bytes());
+        vec![payload]
+    }
+
+    fn control_pause(
+        &mut self,
+        ticket: Ticket,
+        payload: &[u8],
+        now_ms: u64,
+    ) -> Result<Vec<Vec<u8>>, RelayError> {
+        if payload.len() != 18 || payload[17] > 1 {
+            return Err(RelayError::Malformed);
+        }
+        self.authenticate_reader(ticket)?;
+        if self.storage_failed {
+            return Ok(error(OrderError::StorageUnavailable, self.next_seq));
+        }
+        let source = ticket.source;
+        if self.active & (1 << source) == 0 {
+            return Ok(error(OrderError::Inactive, 0));
+        }
+        let request = PauseRequest {
+            id: read_u64(payload, 1),
+            expected_epoch: read_u64(payload, 9),
+            paused: payload[17] != 0,
+        };
+        if request.id == 0 {
+            self.sources[usize::from(source)].pause_supported = true;
+            return Ok(self.pause_status(source));
+        }
+        let state = &mut self.sources[usize::from(source)];
+        if let Some(previous) = state.pause_request {
+            if request.id == previous.id && request != previous {
+                return Ok(error(OrderError::ModifiedRetry, previous.id));
+            }
+            if request.id <= previous.id {
+                return Ok(self.pause_status(source));
+            }
+        }
+        state.pause_request = Some(request);
+        // Capability agreement belongs to the admitted match principals, not
+        // short hop tickets. Legacy peers never advertise, so receive no marker.
+        if self.supported_pause_sources() & self.active != self.active
+            || self.starts_at.is_none_or(|start| start > now_ms)
+            || request.expected_epoch != self.pause_epoch
+            || request.paused == self.paused_at.is_some()
+        {
+            return Ok(self.pause_status(source));
+        }
+        if request.paused
+            && let Some(journal) = self.journal.as_mut()
+            && !journal.reserve_entries(&[PAUSE_ENTRY_BYTES, PAUSE_ENTRY_BYTES])
+        {
+            return Ok(error(OrderError::Backpressure, request.id));
+        }
+        self.append_pause(request.paused, source, now_ms)?;
+        if self.storage_failed {
+            return Ok(error(OrderError::StorageUnavailable, self.next_seq));
+        }
+        Ok(self.pause_status(source))
+    }
+
     fn depart(&mut self, source: u8, now_ms: u64) {
         let bit = 1 << source;
         if self.active & bit == 0 {
@@ -744,10 +934,17 @@ impl OrderingRoom {
                 batch_id: 0,
                 opaque: Vec::new(),
             });
+        if self.active == 0 && self.paused_at.is_some() {
+            // Both markers were reserved before Pause was accepted. Explicit
+            // all-left closes the barrier so the existing departure tail ends.
+            if self.append_pause(false, source, now_ms).is_err() {
+                self.storage_failed = true;
+            }
+        }
     }
 
     fn advance(&mut self, now_ms: u64) {
-        if self.storage_failed {
+        if self.storage_failed || self.paused_at.is_some() {
             return;
         }
         let Some(start) = self.starts_at else {
@@ -840,10 +1037,7 @@ impl OrderingRoom {
                 FRAME_END_EVENT,
                 &[],
             ));
-            if let Some(journal) = self.journal.as_mut()
-                && journal.commit(&records).is_err()
-            {
-                self.storage_failed = true;
+            if !self.append_records(frame, records) {
                 return;
             }
             if let Some(entries) = self.pending.remove(&frame) {
@@ -852,9 +1046,6 @@ impl OrderingRoom {
                         self.sources[usize::from(entry.source)].pending -= 1;
                     }
                 }
-            }
-            for record in records {
-                self.cache_entry(frame, record);
             }
             self.head = frame;
         }
@@ -1159,6 +1350,280 @@ mod tests {
             .set_ordering_push(enabled, cursor, &mut bytes)
             .unwrap();
         events(server, client, &bytes, now_ms)
+    }
+
+    fn pause_control(
+        server: &mut RelayServer,
+        client: &mut ClientSession,
+        id: u64,
+        epoch: u64,
+        paused: bool,
+        now_ms: u64,
+    ) -> OrderEvent {
+        let mut bytes = Vec::new();
+        client
+            .control_ordering_pause(id, epoch, paused, &mut bytes)
+            .unwrap();
+        events(server, client, &bytes, now_ms).remove(0)
+    }
+
+    #[test]
+    fn pause_requires_all_capabilities_and_rejects_stale_control_epochs() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 2);
+        let (mut first, mut second) = (client(&key, 0), client(&key, 1));
+        let cert = certificate(&key, 3, 1400);
+        for peer in [&mut first, &mut second] {
+            connect(&mut server, peer, 0);
+            configure(&mut server, peer, &cert, 0);
+        }
+        assert!(matches!(
+            pause_control(&mut server, &mut first, 0, 0, false, 300),
+            OrderEvent::PauseStatus {
+                supported_sources: 1,
+                request_id: 0,
+                paused: false,
+                ..
+            }
+        ));
+        assert!(matches!(
+            pause_control(&mut server, &mut first, 1, 0, true, 300),
+            OrderEvent::PauseStatus {
+                request_id: 1,
+                epoch: 0,
+                paused: false,
+                ..
+            }
+        ));
+        pause_control(&mut server, &mut second, 0, 0, false, 300);
+        assert!(
+            matches!(
+                pause_control(&mut server, &mut first, 1, 0, true, 310),
+                OrderEvent::PauseStatus {
+                    request_id: 1,
+                    epoch: 0,
+                    paused: false,
+                    ..
+                }
+            ),
+            "a previously rejected request cannot become an action after quorum"
+        );
+        assert!(matches!(
+            pause_control(&mut server, &mut first, 2, 0, true, 310),
+            OrderEvent::PauseStatus {
+                supported_sources: 3,
+                request_id: 2,
+                epoch: 1,
+                paused: true,
+                frame: 4,
+                ..
+            }
+        ));
+        // Fresh envelopes carrying the same request cannot append twice.
+        assert!(matches!(
+            pause_control(&mut server, &mut first, 2, 0, true, 1000),
+            OrderEvent::PauseStatus {
+                epoch: 1,
+                frame: 4,
+                paused: true,
+                ..
+            }
+        ));
+        assert!(matches!(
+            pause_control(&mut server, &mut first, 2, 0, false, 1000),
+            OrderEvent::Error {
+                code: OrderError::ModifiedRetry,
+                expected: 2
+            }
+        ));
+        assert!(matches!(
+            pause_control(&mut server, &mut second, 1, 0, false, 1000),
+            OrderEvent::PauseStatus {
+                request_id: 1,
+                epoch: 1,
+                paused: true,
+                ..
+            }
+        ));
+        assert!(matches!(
+            pause_control(&mut server, &mut second, 2, 1, false, 2000),
+            OrderEvent::PauseStatus {
+                epoch: 2,
+                paused: false,
+                frame: 4,
+                ..
+            }
+        ));
+        server.advance_clock(2001, unix(2001));
+        assert_eq!(server.rooms[&[5; 16]].ordering.as_ref().unwrap().head, 4);
+        server.advance_clock(2020, unix(2020));
+        assert_eq!(
+            server.rooms[&[5; 16]].ordering.as_ref().unwrap().head,
+            5,
+            "resume preserves the next frame deadline instead of catching up paused time"
+        );
+        let markers: Vec<_> = pull(&mut server, &mut first, 1, 2020)
+            .into_iter()
+            .filter_map(|event| match event {
+                OrderEvent::Entry(OrderEntry::Pause {
+                    epoch,
+                    paused,
+                    frame,
+                    ..
+                }) => Some((epoch, paused, frame)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(markers, [(1, true, 4), (2, false, 4)]);
+    }
+
+    #[test]
+    fn lost_pause_marker_replays_after_renewal_and_preserves_pending_input() {
+        let directory = TestDirectory::new();
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::with_journal(key.clone(), 2, &directory.0).unwrap();
+        let (mut first, mut second) = (client(&key, 0), client(&key, 1));
+        let cert = certificate(&key, 3, 1400);
+        for peer in [&mut first, &mut second] {
+            connect(&mut server, peer, 0);
+            configure(&mut server, peer, &cert, 0);
+            pause_control(&mut server, peer, 0, 0, false, 0);
+        }
+        subscribe(&mut server, &mut first, true, 1, 300);
+        let mut bytes = Vec::new();
+        second
+            .submit_ordering(1, b"accepted before pause", &mut bytes)
+            .unwrap();
+        events(&mut server, &mut second, &bytes, 300);
+        pause_control(&mut server, &mut first, 1, 0, true, 300);
+        let mut lost = None;
+        for packet in server.drain_ordering_push(300, unix(300)) {
+            if packet.bytes[SERVER_HEADER] == PAUSE_EVENT {
+                lost = Some(packet.bytes[SERVER_HEADER..packet.bytes.len() - MAC_LEN].to_vec());
+            } else {
+                first.receive(&packet.bytes).unwrap();
+            }
+        }
+        let lost = lost.expect("the pause marker was the intentionally lost push");
+        server.advance_clock(1000, unix(1000));
+        assert_eq!(server.rooms[&[5; 16]].ordering.as_ref().unwrap().head, 4);
+        renew(&mut server, &mut first, 1000);
+        configure(&mut server, &mut first, &cert, 1000);
+        assert!(matches!(
+            pause_control(&mut server, &mut first, 1, 0, true, 1000),
+            OrderEvent::PauseStatus {
+                request_id: 1,
+                epoch: 1,
+                paused: true,
+                ..
+            }
+        ));
+        assert!(matches!(
+            pause_control(&mut server, &mut second, 1, 1, false, 1000),
+            OrderEvent::PauseStatus {
+                epoch: 2,
+                paused: false,
+                frame: 4,
+                ..
+            }
+        ));
+        server.advance_clock(250_000, unix(250_000));
+        assert!(
+            server.rooms[&[5; 16]]
+                .ordering
+                .as_ref()
+                .unwrap()
+                .hot_oldest_seq()
+                > 1
+        );
+        renew(&mut server, &mut first, 250_000);
+        configure(&mut server, &mut first, &cert, 250_000);
+        first.pull_ordering(1, &mut bytes).unwrap();
+        let packets = server
+            .process_at(endpoint(&first), &bytes, unix(250_000), 250_000)
+            .unwrap();
+        assert!(
+            packets
+                .iter()
+                .any(|packet| packet.bytes[SERVER_HEADER..packet.bytes.len() - MAC_LEN] == lost),
+            "disk replay retains exactly the lost canonical marker bytes"
+        );
+        let mut markers = Vec::new();
+        let mut inputs = Vec::new();
+        for packet in packets {
+            match first.receive(&packet.bytes).unwrap() {
+                ServerEvent::Ordering(OrderEvent::Entry(OrderEntry::Pause {
+                    epoch,
+                    paused,
+                    ..
+                })) => markers.push((epoch, paused)),
+                ServerEvent::Ordering(OrderEvent::Entry(OrderEntry::Batch {
+                    frame,
+                    bytes,
+                    ..
+                })) => inputs.push((frame, bytes.as_bytes().to_vec())),
+                _ => {}
+            }
+        }
+        assert_eq!(markers, [(1, true), (2, false)]);
+        assert_eq!(inputs, [(6, b"accepted before pause".to_vec())]);
+    }
+
+    #[test]
+    fn last_explicit_leave_resumes_the_paused_canonical_departure_tail() {
+        let directory = TestDirectory::new();
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::with_journal(key.clone(), 2, &directory.0).unwrap();
+        let (mut first, mut second) = (client(&key, 0), client(&key, 1));
+        let cert = certificate(&key, 3, 1400);
+        for peer in [&mut first, &mut second] {
+            connect(&mut server, peer, 0);
+            configure(&mut server, peer, &cert, 0);
+            pause_control(&mut server, peer, 0, 0, false, 0);
+        }
+        pause_control(&mut server, &mut first, 1, 0, true, 200);
+        assert_eq!(server.rooms[&[5; 16]].ordering.as_ref().unwrap().head, 0);
+        let mut bytes = Vec::new();
+        first.leave_ordering(&mut bytes).unwrap();
+        events(&mut server, &mut first, &bytes, 500);
+        server.advance_clock(600, unix(600));
+        assert!(
+            server.rooms[&[5; 16]]
+                .ordering
+                .as_ref()
+                .unwrap()
+                .paused_at
+                .is_some()
+        );
+        second.leave_ordering(&mut bytes).unwrap();
+        events(&mut server, &mut second, &bytes, 600);
+        server.advance_clock(700, unix(700));
+        let events = pull(&mut server, &mut first, 1, 700);
+        let mut resumed = false;
+        let mut departed = Vec::new();
+        for event in events {
+            match event {
+                OrderEvent::Entry(OrderEntry::Pause {
+                    epoch: 2,
+                    paused: false,
+                    source: 1,
+                    frame: 0,
+                    ..
+                }) => resumed = true,
+                OrderEvent::Entry(OrderEntry::Departure {
+                    source, frame: 2, ..
+                }) => departed.push(source),
+                _ => {}
+            }
+        }
+        assert!(
+            resumed,
+            "the just-departing source remains a valid original roster identity"
+        );
+        assert_eq!(departed, [0, 1]);
+        let ordering = server.rooms[&[5; 16]].ordering.as_ref().unwrap();
+        assert_eq!(ordering.head, 2);
+        assert!(ordering.finished_at.is_some());
     }
 
     #[test]
@@ -2481,6 +2946,24 @@ impl RelayServer {
         let payload = message.payload;
         if payload.first() == Some(&PUSH_REQUEST) {
             return self.ordering_push_request(message, now, now_ms);
+        }
+        if payload.first() == Some(&PAUSE_REQUEST) {
+            if !self.reserve_ordering(2 * (PAUSE_ENTRY_BYTES + ENTRY_OVERHEAD)) {
+                return self.ordering_reply(
+                    message.ticket,
+                    error(OrderError::Backpressure, 0),
+                    now,
+                );
+            }
+            let room = self
+                .rooms
+                .get_mut(&message.ticket.room)
+                .ok_or(RelayError::Unregistered)?;
+            let replies = match room.ordering.as_mut() {
+                Some(ordering) => ordering.control_pause(message.ticket, payload, now_ms)?,
+                None => error(OrderError::NotConfigured, 0),
+            };
+            return self.ordering_reply(message.ticket, replies, now);
         }
         let replies = if payload.first() == Some(&READY_REQUEST) {
             if payload.len() != 1 + ORDERING_CERTIFICATE_LEN + 32 {

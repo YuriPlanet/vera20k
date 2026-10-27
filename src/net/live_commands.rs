@@ -15,7 +15,7 @@ use std::num::NonZeroU32;
 mod sequenced;
 mod startup;
 mod timing;
-pub use sequenced::{SequencedError, SequencedTiming};
+pub use sequenced::{MultiplayerPauseStatus, SequencedError, SequencedTiming};
 pub use startup::{StartupAgreement, StartupError};
 
 use crate::sim::world::{NetworkCommandQueues, NetworkQueueContext, NetworkQueuePass};
@@ -288,6 +288,32 @@ impl LiveCommandSession {
     /// owned by this session, irrespective of presentation's chosen cadence.
     pub fn sequenced_timing(&self) -> Option<SequencedTiming> {
         self.sequenced.as_ref()?.timing()
+    }
+
+    /// Shared pause is a relay timeline control, independent of local menus.
+    /// Unsupported or mixed-version matches leave it unavailable.
+    pub fn multiplayer_pause(&self) -> Option<MultiplayerPauseStatus> {
+        let mut status = self.sequenced.as_ref()?.pause_status();
+        status.available &= !self.sequenced_failed;
+        Some(status)
+    }
+
+    /// Request an explicit state. Network service retries the same request;
+    /// canonical receipt, never this button press, determines the boundary.
+    pub fn request_multiplayer_pause(&mut self, paused: bool) -> bool {
+        !self.sequenced_failed
+            && self
+                .sequenced
+                .as_mut()
+                .is_some_and(|session| session.request_pause(paused))
+    }
+
+    /// Called only after a confirmed UI exit has queued its native EXIT.
+    /// Keep that command dispatchable even if a shared pause is in flight.
+    pub fn keep_running_for_exit(&mut self) {
+        if let Some(session) = self.sequenced.as_mut() {
+            session.keep_running_for_exit();
+        }
     }
 
     pub fn recovery_status(

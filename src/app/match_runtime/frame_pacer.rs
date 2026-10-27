@@ -132,6 +132,24 @@ impl OnlinePacer {
         }
     }
 
+    fn same_clock(&self, receipt: SequencedTiming) -> bool {
+        self.receipt.frames_per_second == receipt.frames_per_second
+            && self.receipt.clock_epoch == receipt.clock_epoch
+    }
+
+    /// A confirmed relay resume starts a new clock at its socket receipt.
+    /// Retain only the bounded jitter estimate, never paused-time debt or an
+    /// underrun from the intentionally closed frontier.
+    fn reset_clock(&mut self, receipt: SequencedTiming, now: Instant) {
+        let reserve = (self.receipt.frames_per_second == receipt.frames_per_second)
+            .then_some(self.reserve)
+            .unwrap_or_default();
+        let underruns = self.underruns;
+        *self = Self::new(receipt, now);
+        self.reserve = reserve.min(Duration::from_millis(20)).min(self.span(1));
+        self.underruns = underruns;
+    }
+
     fn span(&self, frames: u32) -> Duration {
         // One division of the whole frame distance avoids rounded per-tick
         // drift (45Hz is not an integral number of milliseconds/nanoseconds).
@@ -256,6 +274,9 @@ impl OnlinePacer {
 pub(crate) struct ScenarioElapsedClock {
     start_bucket: u32,
     accumulated_buckets: u32,
+    // A relay hold preserves the native clock's running intent. It is local
+    // presentation state, never saved with Scenario+614/+61C.
+    multiplayer_resume: Option<bool>,
 }
 
 /// Temporary source-clock continuation across the synchronous save write.
@@ -281,6 +302,7 @@ impl ScenarioElapsedClock {
         Self {
             start_bucket: ELAPSED_CLOCK_STOPPED,
             accumulated_buckets: 0,
+            multiplayer_resume: None,
         }
     }
 
@@ -288,7 +310,9 @@ impl ScenarioElapsedClock {
     /// stream write. The source resumes at689454 only if it was running.
     /// Original wrapping/bucket controls: storage_oracle/saved_game_layout.
     pub(crate) fn begin_save(&mut self, now_ms: u64) -> ScenarioClockSave {
-        let resume_source = self.start_bucket != ELAPSED_CLOCK_STOPPED;
+        let resume_source = self
+            .multiplayer_resume
+            .unwrap_or(self.start_bucket != ELAPSED_CLOCK_STOPPED);
         self.pause(now_ms);
         ScenarioClockSave {
             accumulated_buckets: self.accumulated_buckets,
@@ -308,6 +332,7 @@ impl ScenarioElapsedClock {
         Self {
             start_bucket: frame_bucket(now_ms),
             accumulated_buckets,
+            multiplayer_resume: None,
         }
     }
 
@@ -318,6 +343,7 @@ impl ScenarioElapsedClock {
     /// WallClock__Get16msBucket @ 0x006C8C40 value to ScenarioClass+0x614.
     pub(crate) fn start(&mut self, now_ms: u64) {
         self.accumulated_buckets = 0;
+        self.multiplayer_resume = None;
         self.start_bucket = frame_bucket(now_ms);
     }
 
@@ -327,6 +353,13 @@ impl ScenarioElapsedClock {
     /// StateMachine__EnterPause @ 0x00683EB0 accumulates ScenarioClass+0x61C
     /// and sentinelizes ScenarioClass+0x614 in offline modes 0 and 5.
     pub(crate) fn pause(&mut self, now_ms: u64) {
+        if let Some(resume) = &mut self.multiplayer_resume {
+            *resume = false;
+        }
+        self.accumulate_and_stop(now_ms);
+    }
+
+    fn accumulate_and_stop(&mut self, now_ms: u64) {
         if self.start_bucket == ELAPSED_CLOCK_STOPPED {
             return;
         }
@@ -342,8 +375,29 @@ impl ScenarioElapsedClock {
     /// StateMachine__ExitPause @ 0x00683FB0 writes a fresh 16-ms bucket to
     /// ScenarioClass+0x614 when leaving an offline modal pause.
     pub(crate) fn resume(&mut self, now_ms: u64) {
-        if self.start_bucket == ELAPSED_CLOCK_STOPPED {
+        if let Some(resume) = &mut self.multiplayer_resume {
+            *resume = true;
+        } else if self.start_bucket == ELAPSED_CLOCK_STOPPED {
             self.start_bucket = frame_bucket(now_ms);
+        }
+    }
+
+    /// Compose the relay's completed-frame hold with native clock ownership.
+    /// Native pause/resume calls still update their intent while this hold
+    /// prevents time from accumulating; releasing it never undoes their stop.
+    pub(crate) fn set_multiplayer_paused(&mut self, paused: bool, now_ms: u64) {
+        match (paused, self.multiplayer_resume) {
+            (true, None) => {
+                self.multiplayer_resume = Some(self.start_bucket != ELAPSED_CLOCK_STOPPED);
+                self.accumulate_and_stop(now_ms);
+            }
+            (false, Some(resume)) => {
+                self.multiplayer_resume = None;
+                if resume {
+                    self.resume(now_ms);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -431,12 +485,10 @@ impl LocalFramePacer {
         if receipt.frames_per_second == 0 {
             return OnlineFrameDecision::WaitingForCanonical;
         }
-        if self
-            .online
-            .as_ref()
-            .is_none_or(|online| online.receipt.frames_per_second != receipt.frames_per_second)
-        {
-            self.online = Some(OnlinePacer::new(receipt, now));
+        match self.online.as_mut() {
+            Some(online) if !online.same_clock(receipt) => online.reset_clock(receipt, now),
+            None => self.online = Some(OnlinePacer::new(receipt, now)),
+            _ => {}
         }
         self.online
             .as_mut()
@@ -460,9 +512,11 @@ impl LocalFramePacer {
         let mut online = self
             .online
             .as_ref()
-            .filter(|online| online.receipt.frames_per_second == receipt.frames_per_second)
             .cloned()
             .unwrap_or_else(|| OnlinePacer::new(receipt, now));
+        if !online.same_clock(receipt) {
+            online.reset_clock(receipt, now);
+        }
         matches!(
             online.decide(now, next_frame, frontier, receipt, recovering),
             OnlineFrameDecision::CatchUp
@@ -644,7 +698,37 @@ mod tests {
             frame,
             received_at: at,
             frames_per_second: 45,
+            clock_epoch: 0,
         }
+    }
+
+    #[test]
+    fn confirmed_resume_reanchors_once_without_pause_debt_or_losing_jitter_reserve() {
+        let start = Instant::now();
+        let tick = Duration::from_nanos(1_000_000_000 / 45);
+        let mut pacer = LocalFramePacer::new();
+        pacer.online_frame_decision(start, 1, 1, push_receipt(start, 1), false, false);
+        let late = push_receipt(start + tick + Duration::from_millis(15), 2);
+        pacer.online_frame_decision(late.received_at, 2, 2, late, false, false);
+        let resumed_at = start + Duration::from_secs(30);
+        let resumed = SequencedTiming {
+            clock_epoch: 1,
+            ..push_receipt(resumed_at, 2)
+        };
+        let due = resumed_at + tick + Duration::from_millis(15);
+        assert!(!pacer.online_catch_up_ready(resumed_at, 3, 3, resumed, false));
+        for _ in 0..2 {
+            assert_eq!(
+                pacer.online_frame_decision(resumed_at, 3, 3, resumed, false, false),
+                OnlineFrameDecision::HoldUntil(due)
+            );
+        }
+        assert_eq!(pacer.online_pacing_status().unwrap().reserve_micros, 15_000);
+        assert_eq!(
+            pacer.online_frame_decision(due, 3, 3, resumed, false, false),
+            OnlineFrameDecision::Run
+        );
+        assert_eq!(pacer.online.as_ref().unwrap().origin_at, resumed_at);
     }
 
     #[test]
@@ -960,6 +1044,61 @@ mod tests {
     }
 
     #[test]
+    fn multiplayer_clock_preserves_native_pause_and_resume_intent() {
+        let mut clock = ScenarioElapsedClock::new();
+        clock.start(0);
+        clock.set_multiplayer_paused(true, 10 << 4);
+        clock.pause(20 << 4); // A native hold enters while the relay is paused.
+        clock.set_multiplayer_paused(false, 30 << 4);
+        assert_eq!(clock.elapsed_buckets(40 << 4), 10);
+        clock.set_multiplayer_paused(true, 40 << 4);
+        // A native hold ends during the shared pause. Audio remains paused,
+        // while this production owner must remember the elapsed resume.
+        crate::app::match_runtime::scenario_pause::resume_with_owners(
+            &mut clock,
+            None,
+            false,
+            true,
+            50 << 4,
+        );
+        assert_eq!(clock.elapsed_buckets(60 << 4), 10);
+        clock.set_multiplayer_paused(false, 70 << 4);
+        assert_eq!(clock.elapsed_buckets(80 << 4), 20);
+    }
+
+    #[test]
+    fn multiplayer_clock_save_restores_intent_without_releasing_the_hold() {
+        let mut clock = ScenarioElapsedClock::new();
+        clock.start(0);
+        clock.set_multiplayer_paused(true, 10 << 4);
+        let saved = clock.begin_save(20 << 4);
+        assert_eq!(saved.accumulated_buckets(), 10);
+        clock.finish_save(saved, 30 << 4);
+        assert_eq!(clock.elapsed_buckets(40 << 4), 10);
+        clock.set_multiplayer_paused(false, 50 << 4);
+        assert_eq!(clock.elapsed_buckets(60 << 4), 20);
+    }
+
+    #[test]
+    fn multiplayer_clock_terminal_stop_reset_and_load_drop_resume_intent() {
+        let mut clock = ScenarioElapsedClock::new();
+        clock.start(0);
+        clock.set_multiplayer_paused(true, 10 << 4);
+        assert_eq!(clock.stop_buckets(20 << 4), 10);
+        clock.set_multiplayer_paused(false, 30 << 4);
+        assert_eq!(clock.elapsed_buckets(40 << 4), 10);
+        clock.set_multiplayer_paused(true, 50 << 4);
+        clock.reset();
+        clock.set_multiplayer_paused(false, 60 << 4);
+        assert_eq!(clock.elapsed_buckets(70 << 4), 0);
+        clock.set_multiplayer_paused(true, 80 << 4);
+        clock.start(90 << 4);
+        assert_eq!(clock.elapsed_buckets(100 << 4), 10);
+        let loaded = ScenarioElapsedClock::from_saved_accumulator(77, 110 << 4);
+        assert_eq!(loaded.elapsed_buckets(120 << 4), 87);
+    }
+
+    #[test]
     fn scenario_elapsed_clock_preserves_native_rollover_arithmetic() {
         let mut clock = ScenarioElapsedClock::new();
         clock.start(u64::from(u32::MAX - 15));
@@ -1002,6 +1141,7 @@ mod tests {
             let mut clock = ScenarioElapsedClock {
                 start_bucket: input.elapsed_before[0],
                 accumulated_buckets: input.elapsed_before[2],
+                ..ScenarioElapsedClock::new()
             };
             let saved = clock.begin_save(input.milliseconds[0]);
             assert_eq!(clock.start_bucket, case.saved_elapsed[0], "{}", input.name);

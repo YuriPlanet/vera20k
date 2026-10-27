@@ -1075,8 +1075,26 @@ impl ApplicationHandler for App {
                         code == KeyCode::Escape && event.state.is_pressed() && !event.repeat;
                     let in_game: bool = state.frontend.screen == GameScreen::InGame;
                     let paused_at_event = in_game && state.match_state.paused();
+                    let locally_paused_at_event = in_game && state.match_state.local_paused();
 
                     if crate::app::frontend::shell_transition::blocks_shell_input(state) {
+                        return;
+                    }
+
+                    // A shared pause must be resumable without a simulation
+                    // tick, including while the local Options dialog is open.
+                    let modifiers = state.platform.live_modifiers;
+                    if in_game
+                        && code == KeyCode::Pause
+                        && !(modifiers.shift_key()
+                            || modifiers.control_key()
+                            || modifiers.alt_key()
+                            || modifiers.super_key())
+                        && crate::app::input::pause_menu::multiplayer_control(state).is_some()
+                    {
+                        if event.state.is_pressed() && !event.repeat {
+                            crate::app::input::pause_menu::toggle_multiplayer_pause(state);
+                        }
                         return;
                     }
 
@@ -1271,7 +1289,9 @@ impl ApplicationHandler for App {
                         return;
                     }
                     if !crate::app::input::hotkeys::input_admitted_while_paused(
-                        paused_at_event,
+                        // Shared pause still admits chat. The keyboard owner
+                        // consumes chat first, then blocks gameplay hotkeys.
+                        locally_paused_at_event,
                         &event.logical_key,
                     ) {
                         return;
