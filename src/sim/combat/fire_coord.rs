@@ -362,7 +362,7 @@ pub(crate) fn fire_coordinate(
     )
     .unwrap_or((0, 0, 0));
     if snap.category == EntityCategory::Structure
-        && let Some((px, py)) = art.and_then(|art| building_pixel_offset(art, snap))
+        && let Some((px, py)) = building_pixel_offset(art, snap)
     {
         let (dx, dy) = PixelConversionBounds::isometric_pixel_to_leptons(px, py);
         // Building4538ED..45395A: PrimaryFireDualOffset+1764 adds the
@@ -839,18 +839,21 @@ fn open_topped_port_coordinate(
 }
 
 /// The art pixel offset a building's shot leaves from, if it has one.
-fn building_pixel_offset(art: &ArtEntry, snap: &FireSource) -> Option<(i32, i32)> {
+fn building_pixel_offset(art: Option<&ArtEntry>, snap: &FireSource) -> Option<(i32, i32)> {
     if let Some(fire_index) = snap.garrison_fire_index {
+        // BuildingClass::GetFLH453849..4538C2 returns the stored muzzle
+        // port before TechnoClass's weapon coordinate. Missing metadata
+        // supplies the existing zero-port fallback, never a weapon FLH.
         return Some(
-            art.muzzle_flash_positions
-                .get(usize::try_from(fire_index).ok()?)
-                .copied()
+            usize::try_from(fire_index)
+                .ok()
+                .and_then(|index| art?.muzzle_flash_positions.get(index).copied())
                 .unwrap_or((0, 0)),
         );
     }
     // Original4538D1 tests only +E44 even for weapon1; the prior secondary
     // offset and pixel-X mirror here had no native counterpart.
-    primary_fire_pixel_offset(Some(art))
+    primary_fire_pixel_offset(art)
 }
 
 /// The muzzle animation type a shot constructs.
