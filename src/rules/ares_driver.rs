@@ -219,10 +219,8 @@ mod tests {
         assert_eq!(crew.passenger_chances(), [-1, -1, 90]);
         assert_eq!(crew.pilot_for_side(1), Some("OP"));
         assert_eq!(crew.technician_chance(), Some(0));
-        let side_crew = rules.side_crew_rules(0).unwrap();
-        assert_eq!(side_crew.side_index, 0);
-        assert_eq!(side_crew.crew.as_ref().unwrap().as_deref(), Some("OP"));
-        assert_eq!(side_crew.technician, Some(None));
+        assert_eq!(rules.side_crew(0), Some(Some("OP")));
+        assert_eq!(rules.side_technician(0), Some(None));
         assert!(rules.object("MISSING_PILOT").is_none());
         assert_eq!(
             rules.object("HOST").unwrap().aircraft_crashable_override(),
