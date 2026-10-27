@@ -375,6 +375,8 @@ fn rules_for_birth(retail: &RetailBattleRules, actor: &str, input: &Value) -> Ru
         )));
         // Parse the declared ART string through the production owner. Never
         // install row.physical_flh or row.beam.source as an implementation input.
+        rules = RuleSet::from_ini_with_fixed_art_for_test(&retail.processed_rules, &art)
+            .expect("controlled radiation-beam rules");
         rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
     }
     rules
