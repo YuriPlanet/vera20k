@@ -67,7 +67,7 @@
 
 Fetch 仍发送现有路径、HTTP 方法、Authorization、JSON 请求和 request_id，接收原状态码和响应体。`/v1/*` 代理不反序列化和改写游戏 JSON，不修改 `RelayGrant.address`，不增加 Web 客户端能力字段。
 
-优先同源部署静态页面与网关入口。跨源部署时，仅网关处理指定 Origin 的 OPTIONS，允许现有 GET/POST 及 Authorization/Content-Type；原大厅代码不变。HTTP 代理不得跟随到未知上游的重定向，保留请求和响应大小限制。Fetch 配置 `credentials: omit`、`redirect: error`、`cache: no-store`，沿用现有请求超时和错误映射。依据 [Fetch CORS 规范](https://fetch.spec.whatwg.org/#http-cors-protocol)。
+网关入口由编译期 `WS_PROXY_URL` 固定，不从静态页面域名推导。现有方案的 `/v1/*` HTTPS 代理使用同一网关 authority，将 `wss:` 映射为 `https:`（本地开发 `ws:` 映射为 `http:`）。跨源部署时，仅网关处理指定 Origin 的 OPTIONS，允许现有 GET/POST 及 Authorization/Content-Type；原大厅代码不变。HTTP 代理不得跟随到未知上游的重定向，保留请求和响应大小限制。Fetch 配置 `credentials: omit`、`redirect: error`、`cache: no-store`，沿用现有请求超时和错误映射。依据 [Fetch CORS 规范](https://fetch.spec.whatwg.org/#http-cors-protocol)。
 
 WS 侧只接触原加密报文，不需要任何密钥。但同一网关若终止或转发大厅 HTTPS，会经手 bearer 和包含 payload key 的响应，属于大厅凭据的信任边界；不能宣称整台网关看不到这些秘密。不得记录 Authorization、响应体、票据或 payload key。
 
@@ -107,7 +107,31 @@ python3 tools/wasm/build.py
 python3 tools/wasm/build.py --network
 ```
 
-打包必须按模式选择文件，避免在同一输出目录中把上一次联网构建的 JS 或配置留给单机构建。运行时配置不能启用未编译的能力。Cargo feature 会合并，因此必须同时检查 target，参见 [Cargo Features](https://doc.rust-lang.org/cargo/reference/features.html)。
+### 编译期代理地址
+
+新增构建环境变量 `WS_PROXY_URL`，默认域名按用户指定为 `wss.vera20k.com`，完整默认值为 `wss://wss.vera20k.com`。它表示代理 origin，不含通道路由。默认连接地址为：
+
+- 主通道：`wss://wss.vera20k.com/game/primary`。
+- 辅通道：`wss://wss.vera20k.com/game/alternate`。
+
+只有编译 `wasm-net` 浏览器版本时读取并嵌入该值。浏览器模块使用 Rust 的 `option_env!("WS_PROXY_URL")` 获取编译环境，未设置时采用完整默认值；由同一配置 owner 将该 origin 传给 JS 桥，JS 不另设默认地址。构建入口验证自定义值为完整 `wss://` origin，拒绝空值、用户信息、路径、查询串和片段；本地调试允许回环地址的 `ws://`。变量变化必须触发重新编译并更新产物，不能复用旧地址的 WASM。
+
+实施后的构建示例：
+
+```sh
+# 未设置 WS_PROXY_URL 时使用 wss://wss.vera20k.com
+python3 tools/wasm/build.py --network
+
+# 自定义代理，需要重新编译
+WS_PROXY_URL=wss://gateway.example.com python3 tools/wasm/build.py --network
+
+# 本地开发
+WS_PROXY_URL=ws://localhost:8788 python3 tools/wasm/build.py --network
+```
+
+不增加运行时网关设置、URL 参数、localStorage 或 `location.host` 回退。`WS_PROXY_URL` 只决定浏览器连接哪台代理，不修改大厅下发的 `RelayGrant.address` 或 UDP 协议。默认域名是构建约定，不表示本任务已部署该服务。桌面构建以及仅启用 `wasm` 的单机包不读取或使用此配置。
+
+打包必须按模式选择文件，避免在同一输出目录中把上一次联网构建的 JS 或配置留给单机构建。Cargo feature 会合并，因此必须同时检查 target，参见 [Cargo Features](https://doc.rust-lang.org/cargo/reference/features.html)。
 
 ## 客户端最小改动
 
@@ -181,8 +205,8 @@ WS 的可靠有序传输可能增加丢包时的队头阻塞，这是转换方�
 | `src/app/shell_wol/live_service.rs` | 构造与调度边界，不改房间规则、消息内容、启动和清理规则 |
 | `src/app/shell_wol/live_service/http.rs` 及其新 browser 子模块 | 共享规则最小提取和 Fetch 执行器，保持原生执行方式 |
 | `src/app/lan_service/loading.rs`、`src/app/loading/pump.rs`，必要时已有加载 job | 浏览器在线分段与 pending 网络等待，不复制 loader |
-| `src/web.rs`、`tools/wasm/host.js` | 仅联网构建的网关配置和 JS 接线，不引入新大厅 UI |
-| `tools/wasm/build.py`、WASM workflow、相邻测试与文档 | 可选联网打包与定向检查；默认桌面 workflow 不变 |
+| `src/web.rs`、`tools/wasm/host.js` | 仅联网构建的编译期代理地址和 JS 接线，不增加运行时地址设置或新大厅 UI |
+| `tools/wasm/build.py`、WASM workflow、相邻测试与文档 | 可选联网打包、`WS_PROXY_URL` 构建输入和定向检查；默认桌面 workflow 不变 |
 | 新 `tools/wasm/network.js`、`lobby.js`、`gateway/` | 传输桥、HTTP 字节访问和独立部署服务 |
 
 默认零改动区域：`services/relay-protocol/`、`services/relay/`、`services/lobby/`、模拟算法、规则解析、指令 codec、可靠队列和排序状态机。发现其中既有缺陷先记录和报告，不能借本任务扩大修改范围或通过网关绕过。
@@ -200,6 +224,7 @@ WS 的可靠有序传输可能增加丢包时的队头阻塞，这是转换方�
 
 ### 定向测试
 
+- 编译配置：未设置变量时使用默认域名，自定义地址进入产物，非法值构建失败；连续使用两个地址构建时不能残留旧值；桌面和 WASM 单机包均不启用该地址或联网 JS。
 - 网关：真实 WS↔UDP round trip 保持任意二进制字节及报文边界；多连接源端口隔离；关闭释放端口；拒绝错误 Origin、文本、超长消息和任意转发目的地；缓冲压力可控。测试使用实际生产入口，不仅 mock。
 - socket：Connecting/OPEN/Closed、WouldBlock、缓冲溢出、断线重连后的旧消息隔离；原认证通过前 readiness 不变。使用少量边界用例，避免维护另一套协议实现。
 - HTTP：现有 batch/cursor、resume、命令幂等与 finish/leave/logout 测试继续通过；新增浏览器取消、响应超限和回调生命周期测试。请求参数与状态语义由同一生产逻辑生成。
